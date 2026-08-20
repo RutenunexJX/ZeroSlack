@@ -1,8 +1,13 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.15.0`
+Product version: `v0.15.1`
 
 ## Current status
+
+- Wave Simulation toolchain paths are global Settings Center fields. Explicit
+  selections override portable `WaveWorkbench/toolchain`, environment, and
+  `PATH` discovery, and runner failures identify Verilator and C++ compiler
+  problems independently.
 
 - Module Manifest v5 adds portable declaration/driver links, source columns,
   and stable semantic identities for ports and internal observations while

@@ -250,20 +250,36 @@ void WaveSimulationCoordinator::startNextStage()
              prepared.stimulusPath});
         return;
     case WaveSimulationStage::ExportingStimulus:
+    {
+        QStringList arguments{
+            QStringLiteral("run-module"),
+            QStringLiteral("--manifest=") + prepared.manifestPath,
+            QStringLiteral("--stimulus=") + prepared.stimulusPath,
+            QStringLiteral("--workspace=") + prepared.mirrorWorkspaceRoot,
+            QStringLiteral("--artifacts=") + prepared.resultRoot,
+            QStringLiteral("--build-cache=")
+                + currentRequest.preparation.cachePaths.buildCache,
+            QStringLiteral("--scenario-directory=")
+                + prepared.scenarioDirectory,
+            QStringLiteral("--result-project=")
+                + prepared.resultProjectPath,
+        };
+        if (!currentRequest.tools.verilator.trimmed().isEmpty()) {
+            arguments.append(
+                QStringLiteral("--verilator=")
+                + currentRequest.tools.verilator);
+        }
+        if (!currentRequest.tools.cxxCompiler.trimmed().isEmpty()) {
+            arguments.append(
+                QStringLiteral("--cxx=")
+                + currentRequest.tools.cxxCompiler);
+        }
         startProcess(
             WaveSimulationStage::Running,
             currentRequest.tools.runner,
-            {QStringLiteral("run-module"),
-             QStringLiteral("--manifest=") + prepared.manifestPath,
-             QStringLiteral("--stimulus=") + prepared.stimulusPath,
-             QStringLiteral("--workspace=") + prepared.mirrorWorkspaceRoot,
-             QStringLiteral("--artifacts=") + prepared.resultRoot,
-             QStringLiteral("--build-cache=")
-                 + currentRequest.preparation.cachePaths.buildCache,
-             QStringLiteral("--scenario-directory=")
-                 + prepared.scenarioDirectory,
-             QStringLiteral("--result-project=") + prepared.resultProjectPath});
+            arguments);
         return;
+    }
     case WaveSimulationStage::Running:
         if (!QFileInfo::exists(prepared.resultProjectPath)) {
             fail(QStringLiteral(
@@ -384,5 +400,40 @@ QString WaveSimulationCoordinator::publishRunnerDiagnostics()
         if (diagnostic.isValid())
             emit diagnosticAvailable(diagnostic);
     }
+    const QJsonObject tools = report.value(QStringLiteral("toolchain"))
+                                  .toObject()
+                                  .value(QStringLiteral("tools"))
+                                  .toObject();
+    QStringList toolchainFailures;
+    const auto appendToolFailure =
+        [&tools, &toolchainFailures](const QString& key,
+                                     const QString& label) {
+            const QJsonObject tool = tools.value(key).toObject();
+            if (tool.isEmpty()
+                || tool.value(QStringLiteral("status")).toString()
+                       == QStringLiteral("ready")) {
+                return;
+            }
+            const QString diagnostic = tool.value(
+                QStringLiteral("diagnostic")).toString().trimmed();
+            if (!diagnostic.isEmpty()) {
+                toolchainFailures.append(
+                    QStringLiteral("%1: %2").arg(label, diagnostic));
+            }
+        };
+    appendToolFailure(QStringLiteral("verilator"),
+                      QStringLiteral("Verilator"));
+    appendToolFailure(QStringLiteral("cxx"),
+                      QStringLiteral("C++ compiler"));
+    if (!toolchainFailures.isEmpty()) {
+        toolchainFailures.prepend(
+            QStringLiteral("Simulation toolchain is unavailable."));
+        toolchainFailures.append(
+            QStringLiteral(
+                "Configure executable paths in Settings > Simulation, or "
+                "install them on PATH."));
+        return toolchainFailures.join(QLatin1Char('\n'));
+    }
+
     return report.value(QStringLiteral("diagnostic")).toString().trimmed();
 }

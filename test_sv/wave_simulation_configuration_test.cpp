@@ -1,10 +1,12 @@
 #include "wavesimulationconfiguration.h"
+#include "settingscenterkeys.h"
 
 #include <QCoreApplication>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
 #include <QStandardPaths>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <iostream>
@@ -101,6 +103,23 @@ int main(int argc, char** argv)
     check(widgetLibrary.open(QIODevice::WriteOnly),
           "fake WaveWorkbench widget library can be created");
     widgetLibrary.close();
+    const QString portableToolchainDirectory =
+        QDir(toolDirectory).absoluteFilePath(
+            QStringLiteral("toolchain/bin"));
+    QDir().mkpath(portableToolchainDirectory);
+    for (const QString& name : {
+             QStringLiteral("verilator"),
+             QStringLiteral("g++")}) {
+        QFile tool(QDir(portableToolchainDirectory).absoluteFilePath(
+            name + executableSuffix));
+        check(tool.open(QIODevice::WriteOnly),
+              "fake portable compiler can be created");
+        tool.close();
+    }
+    const QByteArray oldVerilator = qgetenv("VERILATOR");
+    const QByteArray oldCxx = qgetenv("CXX");
+    qputenv("VERILATOR", QByteArrayLiteral("ambient-verilator"));
+    qputenv("CXX", QByteArrayLiteral("ambient-cxx"));
     const WaveSimulationToolPaths toolPaths =
         WaveSimulationConfiguration(
             settingsPath,
@@ -109,12 +128,61 @@ int main(int argc, char** argv)
             .toolPaths();
     check(toolPaths.isValid()
               && toolPaths.missingTools().isEmpty()
-              && QFileInfo(toolPaths.fstReader).isFile(),
-          "an explicit WaveWorkbench tool directory resolves all executables");
+              && QFileInfo(toolPaths.fstReader).isFile()
+              && QFileInfo(toolPaths.verilator).isFile()
+              && QFileInfo(toolPaths.cxxCompiler).isFile(),
+          "an explicit WaveWorkbench directory resolves core tools and its portable toolchain");
+    if (oldVerilator.isNull())
+        qunsetenv("VERILATOR");
+    else
+        qputenv("VERILATOR", oldVerilator);
+    if (oldCxx.isNull())
+        qunsetenv("CXX");
+    else
+        qputenv("CXX", oldCxx);
     check(QFile::remove(toolPaths.application)
               && toolPaths.isValid()
               && toolPaths.missingTools().isEmpty(),
           "the standalone application is optional for embedded Wave tabs");
+
+    const QString explicitDirectory = temporary.filePath(
+        QStringLiteral("explicit-toolchain"));
+    QDir().mkpath(explicitDirectory);
+    const QString explicitVerilator = QDir(explicitDirectory)
+        .absoluteFilePath(QStringLiteral("custom-verilator")
+                          + executableSuffix);
+    const QString explicitCompiler = QDir(explicitDirectory)
+        .absoluteFilePath(QStringLiteral("custom-cxx")
+                          + executableSuffix);
+    for (const QString& path : {explicitVerilator, explicitCompiler}) {
+        QFile tool(path);
+        check(tool.open(QIODevice::WriteOnly),
+              "explicit toolchain fixture can be created");
+        tool.close();
+    }
+    {
+        QSettings settings(settingsPath, QSettings::IniFormat);
+        settings.setValue(
+            QString::fromLatin1(
+                SettingsCenterKeys::SimulationVerilatorPath),
+            explicitVerilator);
+        settings.setValue(
+            QString::fromLatin1(
+                SettingsCenterKeys::SimulationCxxCompilerPath),
+            explicitCompiler);
+        settings.sync();
+    }
+    const WaveSimulationToolPaths explicitTools =
+        WaveSimulationConfiguration(
+            settingsPath,
+            cacheRoot,
+            toolDirectory)
+            .toolPaths();
+    check(explicitTools.verilator
+                  == QFileInfo(explicitVerilator).absoluteFilePath()
+              && explicitTools.cxxCompiler
+                     == QFileInfo(explicitCompiler).absoluteFilePath(),
+          "explicit Simulation settings override portable toolchain discovery");
 
     WaveSimulationConfiguration productionDefaults(settingsPath);
     const WaveSimulationCachePaths defaultPaths =

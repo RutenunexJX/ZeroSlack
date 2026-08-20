@@ -12,6 +12,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QPushButton>
 #include <QSettings>
 #include <QSpinBox>
 #include <QTemporaryDir>
@@ -135,8 +136,8 @@ int main(int argc, char* argv[])
     auto* categories =
         panel.findChild<QListWidget*>(
             QStringLiteral("settingsCenterCategoryList"));
-    check(categories && categories->count() == 7,
-          "all seven schema categories are shown");
+    check(categories && categories->count() == 8,
+          "all eight schema categories are shown");
     bool everyCategoryHasPage = true;
     bool everyFieldHasStableEditor = true;
     int generatedFieldCount = 0;
@@ -186,6 +187,23 @@ int main(int argc, char* argv[])
               && themeEditor->isEnabled()
               && themeOverride->isHidden(),
           "Appearance exposes an always-active Light/Dark selector");
+
+    QWidget* verilatorEditor = panel.fieldEditor(
+        QStringLiteral("simulation.verilatorPath"));
+    auto* verilatorPathEdit = verilatorEditor
+        ? verilatorEditor->findChild<QLineEdit*>(
+              QStringLiteral(
+                  "settingsCenterFilePathEdit.simulation.verilatorPath"))
+        : nullptr;
+    auto* verilatorBrowse = verilatorEditor
+        ? verilatorEditor->findChild<QPushButton*>(
+              QStringLiteral(
+                  "settingsCenterFilePathBrowse.simulation.verilatorPath"))
+        : nullptr;
+    check(verilatorEditor && verilatorPathEdit && verilatorBrowse
+              && verilatorPathEdit->text().isEmpty()
+              && !verilatorPathEdit->placeholderText().isEmpty(),
+          "Simulation executable settings expose an optional path editor and browse command");
 
     auto* sizeEditor = qobject_cast<QSpinBox*>(
         panel.fieldEditor(QStringLiteral("font.sizePt")));

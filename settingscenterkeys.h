@@ -30,6 +30,10 @@ inline constexpr const char* AnalysisIncremental =
     "settingsCenter/analysis/incremental";
 inline constexpr const char* AnalysisMaxDiagnostics =
     "settingsCenter/analysis/maxDiagnostics";
+inline constexpr const char* SimulationVerilatorPath =
+    "settingsCenter/simulation/verilatorPath";
+inline constexpr const char* SimulationCxxCompilerPath =
+    "settingsCenter/simulation/cxxCompilerPath";
 inline constexpr const char* LayoutRestoreWorkspaceSession =
     "settingsCenter/layout/restoreWorkspaceSession";
 inline constexpr const char* LayoutRememberPanelState =

@@ -19,6 +19,7 @@ enum class SettingsCenterCategory {
     Shortcut,
     Annotation,
     Analysis,
+    Simulation,
     Layout,
 };
 
@@ -27,6 +28,7 @@ enum class SettingsCenterValueKind {
     Integer,
     Real,
     String,
+    FilePath,
     StringMap,
 };
 
@@ -54,6 +56,7 @@ struct SettingsCenterFieldDescriptor {
     bool workspaceAllowed = true;
     bool alwaysActive = false;
     bool immediateApply = false;
+    bool allowEmpty = false;
 };
 
 struct SettingsCenterCategoryDescriptor {

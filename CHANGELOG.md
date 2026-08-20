@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.1] - 2026-08-20
+
+### Portable Wave Simulation toolchain setup
+
+- Added global `Settings > Simulation` executable selectors for Verilator and
+  the C++ compiler, with empty values retaining automatic discovery.
+- Added portable adjacent-toolchain, environment-variable, and `PATH`
+  discovery, then passed resolved tools explicitly to `wave-sim-runner`.
+- Replaced the generic toolchain failure with separate Verilator and compiler
+  diagnostics plus the applicable settings location.
+- Added schema, settings UI, portable discovery, runner argument, and
+  structured failure regression coverage.
+
 ## [0.15.0] - 2026-08-19
 
 ### Simulation result/source navigation

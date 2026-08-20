@@ -77,7 +77,7 @@ int runFakeTool(const QString& toolName,
         if (qEnvironmentVariableIntValue(
                 "ZEROSLACK_FAKE_WAVE_RUNNER_FAILURE") == 1) {
             std::cout
-                << R"({"schema":"wave-workbench.simulation-run/v1","schemaVersion":1,"ok":false,"status":"build-failed","stage":"build-model","diagnostic":"forced runner failure","diagnostics":[{"severity":"error","stage":"build-model","code":"VLT_TEST","message":"forced runner failure","sourceFile":"rtl/top.sv","line":8,"column":5}]})"
+                << R"({"schema":"wave-workbench.simulation-run/v1","schemaVersion":1,"ok":false,"status":"toolchain-unavailable","stage":"probe-toolchain","diagnostic":"A compatible Verilator and C++ compiler are required.","toolchain":{"schema":"wave-workbench.toolchain-probe/v1","schemaVersion":1,"status":"unavailable","ok":false,"tools":{"verilator":{"status":"program-not-found","diagnostic":"Verilator executable was not found."},"cxx":{"status":"program-not-found","diagnostic":"g++ was not found on PATH."}}},"diagnostics":[{"severity":"error","stage":"build-model","code":"VLT_TEST","message":"forced runner failure","sourceFile":"rtl/top.sv","line":8,"column":5}]})"
                 << '\n';
             return 9;
         }
@@ -87,10 +87,16 @@ int runFakeTool(const QString& toolName,
             arguments, QStringLiteral("--build-cache="));
         const QString scenarioDirectory = optionValue(
             arguments, QStringLiteral("--scenario-directory="));
+        const QString verilator = optionValue(
+            arguments, QStringLiteral("--verilator="));
+        const QString cxxCompiler = optionValue(
+            arguments, QStringLiteral("--cxx="));
         const QString portableScenarioPath = QDir::fromNativeSeparators(
             QFileInfo(scenarioDirectory).absoluteFilePath());
         return !output.isEmpty() && !buildCache.isEmpty()
                 && !scenarioDirectory.isEmpty()
+                && !verilator.isEmpty()
+                && !cxxCompiler.isEmpty()
                 && portableScenarioPath.contains(
                     QStringLiteral("/.zs/simulation/"))
                 && !portableScenarioPath.startsWith(
@@ -104,6 +110,11 @@ int runFakeTool(const QString& toolName,
                     QDir(scenarioDirectory).absoluteFilePath(
                         QStringLiteral("runner-scenario.marker")),
                     QByteArrayLiteral("portable-scenario"))
+                && writeFile(
+                    QDir(QFileInfo(output).absolutePath())
+                        .absoluteFilePath(
+                            QStringLiteral("runner-toolchain.marker")),
+                    (verilator + QLatin1Char('\n') + cxxCompiler).toUtf8())
                 && writeFile(output, QByteArrayLiteral("{}"))
             ? 0
             : 3;
@@ -248,6 +259,10 @@ int main(int argc, char** argv)
         toolFileName(QStringLiteral("wave-workbench")));
     run.tools.widgetLibrary = QDir(toolsDirectory).absoluteFilePath(
         widgetLibraryFileName());
+    run.tools.verilator = QDir(toolsDirectory).absoluteFilePath(
+        toolFileName(QStringLiteral("verilator")));
+    run.tools.cxxCompiler = QDir(toolsDirectory).absoluteFilePath(
+        toolFileName(QStringLiteral("g++")));
 
     WaveSimulationCoordinator coordinator;
     QEventLoop loop;
@@ -311,6 +326,14 @@ int main(int argc, char** argv)
               QDir(preparation.cachePaths.buildCache).absoluteFilePath(
                   QStringLiteral("runner-cache.marker"))),
           "runner did not receive the shared build-cache directory");
+    QFile runnerToolchain(
+        QDir(QFileInfo(resultProject).absolutePath()).absoluteFilePath(
+            QStringLiteral("runner-toolchain.marker")));
+    check(runnerToolchain.open(QIODevice::ReadOnly)
+              && runnerToolchain.readAll()
+                     == (run.tools.verilator + QLatin1Char('\n')
+                         + run.tools.cxxCompiler).toUtf8(),
+          "runner receives explicit Verilator and C++ compiler paths");
     const QDir scenarioRoot(QDir(workspace).absoluteFilePath(
         QStringLiteral(".zs/simulation")));
     const auto scenarioTargets = scenarioRoot.entryInfoList(
@@ -472,8 +495,12 @@ int main(int argc, char** argv)
               && failingCoordinator.stage()
                      == WaveSimulationStage::Failed
               && failureMessage.contains(
-                  QStringLiteral("forced runner failure")),
-          "runner failure reaches an explicit terminal state with diagnostics");
+                  QStringLiteral("Verilator: Verilator executable was not found."))
+              && failureMessage.contains(
+                  QStringLiteral("C++ compiler: g++ was not found on PATH."))
+              && failureMessage.contains(
+                  QStringLiteral("Settings > Simulation")),
+          "toolchain failure reaches an explicit terminal state with per-tool remediation");
     check(failureDiagnostic.isValid()
               && QFileInfo(failureDiagnostic.sourceFile)
                      .absoluteFilePath()

@@ -1,5 +1,7 @@
 #include "wavesimulationconfiguration.h"
 
+#include "settingscenterkeys.h"
+
 #include <QDir>
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -122,6 +124,158 @@ QString libraryOnPath(const QString& name)
     }
     return QString();
 }
+
+QString configuredProgram(const QSettings& settings,
+                         const char* settingKey)
+{
+    const QString value = settings.value(
+        QString::fromLatin1(settingKey)).toString().trimmed();
+    if (value.isEmpty())
+        return QString();
+    if (QDir::isAbsolutePath(value)
+        || value.contains(QLatin1Char('/'))
+        || value.contains(QLatin1Char('\\'))) {
+        return cleanAbsolutePath(value);
+    }
+    const QString resolved = QStandardPaths::findExecutable(value);
+    return resolved.isEmpty() ? value : resolved;
+}
+
+QString environmentProgram(const QString& variable)
+{
+    const QString value = QProcessEnvironment::systemEnvironment()
+                              .value(variable)
+                              .trimmed();
+    if (value.isEmpty())
+        return QString();
+    if (QDir::isAbsolutePath(value)
+        || value.contains(QLatin1Char('/'))
+        || value.contains(QLatin1Char('\\'))) {
+        return cleanAbsolutePath(value);
+    }
+    const QString resolved = QStandardPaths::findExecutable(value);
+    return resolved.isEmpty() ? value : resolved;
+}
+
+QString firstExecutableInDirectories(
+    const QStringList& directories,
+    const QStringList& names)
+{
+    QSet<QString> visited;
+    for (const QString& directory : directories) {
+        const QString normalized = cleanAbsolutePath(directory);
+        if (normalized.isEmpty() || visited.contains(normalized))
+            continue;
+        visited.insert(normalized);
+        const QDir root(normalized);
+        for (const QString& name : names) {
+            const QString candidate = existingExecutable(
+                root.absoluteFilePath(name));
+            if (!candidate.isEmpty())
+                return candidate;
+        }
+    }
+    return QString();
+}
+
+QString firstExecutableOnPath(const QStringList& names)
+{
+    for (const QString& name : names) {
+        const QString candidate = QStandardPaths::findExecutable(name);
+        if (!candidate.isEmpty())
+            return candidate;
+    }
+    return QString();
+}
+
+QStringList portableToolchainDirectories(const QString& waveDirectory)
+{
+    QStringList roots;
+    if (!waveDirectory.isEmpty())
+        roots.append(waveDirectory);
+    const QString applicationDirectory =
+        QCoreApplication::applicationDirPath();
+    if (!applicationDirectory.isEmpty()) {
+        roots.append(applicationDirectory);
+        roots.append(QDir(applicationDirectory).absoluteFilePath(
+            QStringLiteral("WaveWorkbench")));
+    }
+
+    QStringList directories;
+    for (const QString& root : roots) {
+        const QDir directory(root);
+        directories.append(root);
+        directories.append(directory.absoluteFilePath(
+            QStringLiteral("bin")));
+        directories.append(directory.absoluteFilePath(
+            QStringLiteral("toolchain/bin")));
+        directories.append(directory.absoluteFilePath(
+            QStringLiteral("toolchain/verilator/bin")));
+        directories.append(directory.absoluteFilePath(
+            QStringLiteral("toolchain/mingw/bin")));
+        directories.append(directory.absoluteFilePath(
+            QStringLiteral("toolchain/llvm/bin")));
+    }
+    return directories;
+}
+
+void populateToolchainPaths(WaveSimulationToolPaths* paths,
+                            const QSettings& settings,
+                            const QString& waveDirectory)
+{
+    if (!paths)
+        return;
+
+    paths->verilator = configuredProgram(
+        settings, SettingsCenterKeys::SimulationVerilatorPath);
+    paths->cxxCompiler = configuredProgram(
+        settings, SettingsCenterKeys::SimulationCxxCompilerPath);
+
+    const QStringList directories =
+        portableToolchainDirectories(waveDirectory);
+    if (paths->verilator.isEmpty()) {
+        const QStringList names{
+            executableName(QStringLiteral("verilator")),
+        };
+        paths->verilator = firstExecutableInDirectories(
+            directories, names);
+        if (paths->verilator.isEmpty()) {
+            paths->verilator = environmentProgram(
+                QStringLiteral("VERILATOR"));
+        }
+        if (paths->verilator.isEmpty()) {
+            const QString verilatorRoot = cleanAbsolutePath(
+                QProcessEnvironment::systemEnvironment().value(
+                    QStringLiteral("VERILATOR_ROOT")));
+            if (!verilatorRoot.isEmpty()) {
+                paths->verilator = firstExecutableInDirectories(
+                    {verilatorRoot,
+                     QDir(verilatorRoot).absoluteFilePath(
+                         QStringLiteral("bin"))},
+                    names);
+            }
+        }
+        if (paths->verilator.isEmpty()) {
+            paths->verilator = firstExecutableOnPath(names);
+        }
+    }
+    if (paths->cxxCompiler.isEmpty()) {
+        const QStringList names{
+            executableName(QStringLiteral("g++")),
+            executableName(QStringLiteral("clang++")),
+            executableName(QStringLiteral("cl")),
+        };
+        paths->cxxCompiler = firstExecutableInDirectories(
+            directories, names);
+        if (paths->cxxCompiler.isEmpty()) {
+            paths->cxxCompiler = environmentProgram(
+                QStringLiteral("CXX"));
+        }
+        if (paths->cxxCompiler.isEmpty()) {
+            paths->cxxCompiler = firstExecutableOnPath(names);
+        }
+    }
+}
 }
 
 bool WaveSimulationCachePaths::isValid() const
@@ -206,8 +360,11 @@ WaveSimulationConfiguration::toolPaths() const
         visited.insert(normalized);
         const WaveSimulationToolPaths candidate =
             toolsInDirectory(normalized);
-        if (candidate.isValid())
-            return candidate;
+        if (candidate.isValid()) {
+            WaveSimulationToolPaths resolved = candidate;
+            populateToolchainPaths(&resolved, *settings, normalized);
+            return resolved;
+        }
     }
 
     WaveSimulationToolPaths pathTools;
@@ -221,6 +378,7 @@ WaveSimulationConfiguration::toolPaths() const
         libraryName(QStringLiteral("wavewidgets")));
     pathTools.fstReader = QStandardPaths::findExecutable(
         executableName(QStringLiteral("wave-wellen-reader")));
+    populateToolchainPaths(&pathTools, *settings, QString());
     return pathTools;
 }
 

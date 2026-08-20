@@ -6,7 +6,10 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QDir>
 #include <QFrame>
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
@@ -589,6 +592,50 @@ QWidget* SettingsCenterPanel::createEditor(
             return editor;
         }
         return new QLineEdit(parent);
+    case SettingsCenterValueKind::FilePath: {
+        auto* container = new QWidget(parent);
+        auto* layout = new QHBoxLayout(container);
+        layout->setContentsMargins(0, 0, 0, 0);
+
+        auto* editor = new QLineEdit(container);
+        editor->setObjectName(
+            QStringLiteral("settingsCenterFilePathEdit.%1")
+                .arg(descriptor.id));
+        editor->setPlaceholderText(tr("Automatic discovery"));
+        layout->addWidget(editor, 1);
+
+        auto* browseButton = new QPushButton(tr("Browse..."), container);
+        browseButton->setObjectName(
+            QStringLiteral("settingsCenterFilePathBrowse.%1")
+                .arg(descriptor.id));
+        layout->addWidget(browseButton);
+        container->setFocusProxy(editor);
+        binding->filePathEditor = editor;
+
+        connect(browseButton,
+                &QPushButton::clicked,
+                this,
+                [this, descriptor, editor]() {
+                    const QString current = editor->text().trimmed();
+                    const QString initialDirectory = current.isEmpty()
+                        ? QString()
+                        : QFileInfo(current).absolutePath();
+#ifdef Q_OS_WIN
+                    const QString filter = tr(
+                        "Executables (*.exe);;All files (*)");
+#else
+                    const QString filter = tr("All files (*)");
+#endif
+                    const QString selected = QFileDialog::getOpenFileName(
+                        this,
+                        tr("Select %1").arg(descriptor.title),
+                        initialDirectory,
+                        filter);
+                    if (!selected.isEmpty())
+                        editor->setText(QDir::toNativeSeparators(selected));
+                });
+        return container;
+    }
     case SettingsCenterValueKind::StringMap: {
         auto* container = new QWidget(parent);
         auto* layout = new QVBoxLayout(container);
@@ -722,6 +769,14 @@ void SettingsCenterPanel::connectEditor(
                         updateDraftFromEditor(fieldId);
                     });
         }
+        break;
+    case SettingsCenterValueKind::FilePath:
+        connect(binding.filePathEditor,
+                &QLineEdit::textChanged,
+                this,
+                [this, fieldId]() {
+                    updateDraftFromEditor(fieldId);
+                });
         break;
     case SettingsCenterValueKind::StringMap:
         connect(binding.stringMapModel,
@@ -1071,6 +1126,10 @@ QVariant SettingsCenterPanel::editorValue(
         }
         return qobject_cast<QLineEdit*>(
                    binding.editor)->text();
+    case SettingsCenterValueKind::FilePath:
+        return binding.filePathEditor
+            ? binding.filePathEditor->text()
+            : QString();
     case SettingsCenterValueKind::StringMap: {
         QVariantMap result;
         if (!binding.stringMapModel)
@@ -1139,6 +1198,13 @@ void SettingsCenterPanel::setEditorValue(
             editor->setText(value.toString());
         }
         break;
+    case SettingsCenterValueKind::FilePath: {
+        if (!binding->filePathEditor)
+            break;
+        const QSignalBlocker blocker(binding->filePathEditor);
+        binding->filePathEditor->setText(value.toString());
+        break;
+    }
     case SettingsCenterValueKind::StringMap: {
         if (!binding->stringMapModel)
             break;

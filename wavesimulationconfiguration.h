@@ -19,6 +19,8 @@ struct WaveSimulationToolPaths {
     QString application;
     QString widgetLibrary;
     QString fstReader;
+    QString verilator;
+    QString cxxCompiler;
 
     bool isValid() const;
     QStringList missingTools() const;

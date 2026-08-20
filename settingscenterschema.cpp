@@ -25,7 +25,8 @@ SettingsCenterFieldDescriptor field(
     bool globalAllowed = true,
     bool workspaceAllowed = true,
     bool alwaysActive = false,
-    bool immediateApply = false)
+    bool immediateApply = false,
+    bool allowEmpty = false)
 {
     SettingsCenterFieldDescriptor result;
     result.id = id;
@@ -42,6 +43,7 @@ SettingsCenterFieldDescriptor field(
     result.workspaceAllowed = workspaceAllowed;
     result.alwaysActive = alwaysActive;
     result.immediateApply = immediateApply;
+    result.allowEmpty = allowEmpty;
     return result;
 }
 
@@ -232,6 +234,52 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
                   2000,
                   1,
                   100000),
+        },
+    });
+    result.append({
+        Category::Simulation,
+        QStringLiteral("simulation"),
+        QStringLiteral("Simulation"),
+        QStringLiteral(
+            "External toolchain used by Wave Simulation. Empty paths use "
+            "portable-directory, environment and PATH discovery."),
+        {
+            field(QStringLiteral("simulation.verilatorPath"),
+                  QString::fromLatin1(
+                      SettingsCenterKeys::SimulationVerilatorPath),
+                  Category::Simulation,
+                  QStringLiteral("Verilator executable"),
+                  QStringLiteral(
+                      "Optional Verilator executable path. Leave empty for "
+                      "automatic discovery."),
+                  Kind::FilePath,
+                  QString(),
+                  {},
+                  {},
+                  {},
+                  true,
+                  false,
+                  true,
+                  false,
+                  true),
+            field(QStringLiteral("simulation.cxxCompilerPath"),
+                  QString::fromLatin1(
+                      SettingsCenterKeys::SimulationCxxCompilerPath),
+                  Category::Simulation,
+                  QStringLiteral("C++ compiler executable"),
+                  QStringLiteral(
+                      "Optional g++, clang++ or cl executable path. Leave "
+                      "empty for automatic discovery."),
+                  Kind::FilePath,
+                  QString(),
+                  {},
+                  {},
+                  {},
+                  true,
+                  false,
+                  true,
+                  false,
+                  true),
         },
     });
     result.append({
@@ -445,6 +493,8 @@ QVariant normalizeString(
         return descriptor.defaultValue;
     }
     QString normalized = value.toString().trimmed();
+    if (normalized.isEmpty() && descriptor.allowEmpty)
+        return QString();
     if (normalized.isEmpty()) {
         addIssue(issues,
                  scope,
@@ -561,6 +611,7 @@ QVariant normalizeValue(
     case SettingsCenterValueKind::Real:
         return normalizeReal(value, descriptor, scope, issues);
     case SettingsCenterValueKind::String:
+    case SettingsCenterValueKind::FilePath:
         return normalizeString(value, descriptor, scope, issues);
     case SettingsCenterValueKind::StringMap:
         return normalizeStringMap(value, descriptor, scope, issues);

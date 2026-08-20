@@ -75,8 +75,8 @@ int main(int argc, char* argv[])
 
     const QList<SettingsCenterCategoryDescriptor>& categories =
         SettingsCenterSchema::categories();
-    check(categories.size() == 7,
-          "schema exposes exactly seven settings categories");
+    check(categories.size() == 8,
+          "schema exposes exactly eight settings categories");
     check(SettingsCenterSchema::categoryId(
               SettingsCenterCategory::Appearance)
               == QStringLiteral("appearance")
@@ -96,6 +96,9 @@ int main(int argc, char* argv[])
                      SettingsCenterCategory::Analysis)
                      == QStringLiteral("analysis")
               && SettingsCenterSchema::categoryId(
+                     SettingsCenterCategory::Simulation)
+                     == QStringLiteral("simulation")
+              && SettingsCenterSchema::categoryId(
                      SettingsCenterCategory::Layout)
                      == QStringLiteral("layout"),
           "category identifiers are stable for UI binding");
@@ -111,6 +114,8 @@ int main(int argc, char* argv[])
                      QStringLiteral("annotation.maxLanes"))
               && SettingsCenterSchema::field(
                      QStringLiteral("analysis.incremental"))
+              && SettingsCenterSchema::field(
+                     QStringLiteral("simulation.verilatorPath"))
               && SettingsCenterSchema::field(
                      QStringLiteral("layout.rememberPanelState")),
           "each category provides a field description model");
@@ -138,6 +143,27 @@ int main(int argc, char* argv[])
                      QStringLiteral("formatter.profile"))->storageKey
                      == QStringLiteral("formatter/profile"),
           "legacy appearance and formatter keys are schema-owned");
+    const SettingsCenterFieldDescriptor* verilatorField =
+        SettingsCenterSchema::field(
+            QStringLiteral("simulation.verilatorPath"));
+    const SettingsCenterLayerValidation emptyToolPath =
+        SettingsCenterSchema::validateLayer(
+            {{QStringLiteral("simulation.verilatorPath"), QString()}},
+            SettingsCenterScope::Global);
+    check(verilatorField
+              && verilatorField->valueKind
+                     == SettingsCenterValueKind::FilePath
+              && verilatorField->defaultValue.toString().isEmpty()
+              && verilatorField->globalAllowed
+              && !verilatorField->workspaceAllowed
+              && verilatorField->allowEmpty
+              && emptyToolPath.values.value(
+                     QStringLiteral("simulation.verilatorPath"))
+                     .toString().isEmpty()
+              && !hasIssue(emptyToolPath.issues,
+                           SettingsCenterIssueKind::InvalidValue,
+                           QStringLiteral("simulation.verilatorPath")),
+          "Simulation tool paths are global optional file paths with automatic discovery defaults");
 
     QTemporaryDir temporary;
     check(temporary.isValid(), "temporary settings root is valid");

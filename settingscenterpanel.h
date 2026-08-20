@@ -19,6 +19,7 @@ class QCheckBox;
 class QComboBox;
 class QLabel;
 class QListWidget;
+class QLineEdit;
 class QPushButton;
 class QStackedWidget;
 class QStandardItemModel;
@@ -77,6 +78,7 @@ private:
         QWidget* editor = nullptr;
         QCheckBox* overrideCheck = nullptr;
         QLabel* stateLabel = nullptr;
+        QLineEdit* filePathEditor = nullptr;
         QStandardItemModel* stringMapModel = nullptr;
     };
 

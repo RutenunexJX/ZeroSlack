@@ -1,16 +1,19 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.15.0`
+Product version: `v0.15.1`
 
 ## Objective
 
-Complete S12.9 by adding result-to-declaration/driver and source-to-result
-navigation while retaining the S11 shared-widget architecture and all prior
-S12 behavior.
+Make Wave Simulation toolchain setup portable and diagnosable without changing
+the shared WaveWorkbench architecture or simulation data contracts.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.15.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.15.1.
+- Users can select Verilator and C++ compiler executables in global Settings,
+  while empty fields retain deterministic automatic discovery.
+- Portable adjacent tools are preferred over ambient `PATH`, resolved paths are
+  passed explicitly to the runner, and failures identify each missing tool.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
