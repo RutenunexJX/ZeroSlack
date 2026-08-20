@@ -1,19 +1,23 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.15.1`
+Product version: `v0.16.0`
 
 ## Objective
 
-Make Wave Simulation toolchain setup portable and diagnosable without changing
+Ship Wave Simulation with a self-contained Windows toolchain without changing
 the shared WaveWorkbench architecture or simulation data contracts.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.15.1.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.16.0.
 - Users can select Verilator and C++ compiler executables in global Settings,
   while empty fields retain deterministic automatic discovery.
 - Portable adjacent tools are preferred over ambient `PATH`, resolved paths are
   passed explicitly to the runner, and failures identify each missing tool.
+- The formal Windows package contains Verilator 5.050, MinGW 13.1, GNU Make,
+  required runtime DLLs, licenses, and a machine-readable toolchain manifest.
+- A clean target computer can compile and run a real RTL fixture without a
+  system compiler installation or global environment changes.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
   workspace; ZeroSlack validates its ABI and workspace contract before hosting.
 - The embedded and standalone forms consume the same project, stimulus canvas,
@@ -80,9 +84,10 @@ the shared WaveWorkbench architecture or simulation data contracts.
 
 ## Current status
 
-S12.9 is complete. Module Manifest v5 exports portable Slang-backed source
-links; the shared workspace supports result-to-source and source-to-result
-navigation without changing its v1 ABI. Cross-workspace and ambiguous requests
-are rejected. This machine does not have a real Verilator installation, so
-external compile/run behavior is verified with deterministic process fixtures
-rather than represented as a real RTL compile.
+S12.10 is complete. The Windows package carries a pinned native Verilator
+5.050 and MinGW 13.1 toolchain. ZeroSlack discovers it beside WaveWorkbench,
+propagates `PATH`, `VERILATOR_ROOT`, and `MAKE` to every runner child, and uses
+the portable launcher to supply context-time compatibility for generated
+models. A real SystemVerilog fixture compiled in about 7.8 seconds, simulated
+200000 ticks in 56 ms, and produced a parsed VCD with 8 signals and 168
+transitions. Package and build-cache paths use no-space directory names.

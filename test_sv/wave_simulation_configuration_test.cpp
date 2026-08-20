@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -103,19 +104,39 @@ int main(int argc, char** argv)
     check(widgetLibrary.open(QIODevice::WriteOnly),
           "fake WaveWorkbench widget library can be created");
     widgetLibrary.close();
-    const QString portableToolchainDirectory =
+    const QString portableVerilatorDirectory =
         QDir(toolDirectory).absoluteFilePath(
-            QStringLiteral("toolchain/bin"));
-    QDir().mkpath(portableToolchainDirectory);
-    for (const QString& name : {
-             QStringLiteral("verilator"),
-             QStringLiteral("g++")}) {
-        QFile tool(QDir(portableToolchainDirectory).absoluteFilePath(
-            name + executableSuffix));
+            QStringLiteral("toolchain/verilator/bin"));
+    const QString portableVerilatorRoot =
+        QFileInfo(portableVerilatorDirectory).absolutePath();
+    const QString portableCompilerDirectory =
+        QDir(toolDirectory).absoluteFilePath(
+            QStringLiteral("toolchain/mingw/bin"));
+    QDir().mkpath(portableVerilatorDirectory);
+    QDir().mkpath(QDir(portableVerilatorRoot).absoluteFilePath(
+        QStringLiteral("include")));
+    QDir().mkpath(portableCompilerDirectory);
+    for (const auto& toolSpec : {
+             qMakePair(portableVerilatorDirectory,
+                       QStringLiteral("verilator")),
+             qMakePair(portableVerilatorDirectory,
+                       QStringLiteral("verilator_bin")),
+             qMakePair(portableCompilerDirectory,
+                       QStringLiteral("g++")),
+             qMakePair(portableCompilerDirectory,
+                       QStringLiteral("mingw32-make"))}) {
+        QFile tool(QDir(toolSpec.first).absoluteFilePath(
+            toolSpec.second + executableSuffix));
         check(tool.open(QIODevice::WriteOnly),
               "fake portable compiler can be created");
         tool.close();
     }
+    QFile verilatedMakefile(
+        QDir(portableVerilatorRoot).absoluteFilePath(
+            QStringLiteral("include/verilated.mk")));
+    check(verilatedMakefile.open(QIODevice::WriteOnly),
+          "fake Verilator runtime support can be created");
+    verilatedMakefile.close();
     const QByteArray oldVerilator = qgetenv("VERILATOR");
     const QByteArray oldCxx = qgetenv("CXX");
     qputenv("VERILATOR", QByteArrayLiteral("ambient-verilator"));
@@ -132,6 +153,30 @@ int main(int argc, char** argv)
               && QFileInfo(toolPaths.verilator).isFile()
               && QFileInfo(toolPaths.cxxCompiler).isFile(),
           "an explicit WaveWorkbench directory resolves core tools and its portable toolchain");
+    const QProcessEnvironment portableEnvironment =
+        toolPaths.processEnvironment();
+    const QStringList portablePathEntries =
+        portableEnvironment.value(QStringLiteral("PATH"))
+            .split(QDir::listSeparator(), Qt::SkipEmptyParts);
+    check(QFileInfo(toolPaths.verilator).fileName()
+                  == QStringLiteral("verilator") + executableSuffix
+              && toolPaths.verilatorRoot
+                  == QDir::cleanPath(portableVerilatorRoot),
+          "the portable Verilator launcher resolves its runtime root");
+    check(QFileInfo(toolPaths.makeProgram).fileName()
+                  == QStringLiteral("mingw32-make") + executableSuffix
+              && portableEnvironment.value(QStringLiteral("MAKE"))
+                  == QFileInfo(toolPaths.makeProgram).fileName(),
+          "portable GNU Make is selected explicitly");
+    check(portablePathEntries.size() >= 2
+              && QDir::cleanPath(portablePathEntries.at(0))
+                  == QDir::cleanPath(portableCompilerDirectory)
+              && QDir::cleanPath(portablePathEntries.at(1))
+                  == QDir::cleanPath(portableVerilatorDirectory)
+              && portableEnvironment.value(
+                     QStringLiteral("VERILATOR_ROOT"))
+                  == QDir::cleanPath(portableVerilatorRoot),
+          "portable compiler and Verilator directories lead the child PATH");
     if (oldVerilator.isNull())
         qunsetenv("VERILATOR");
     else

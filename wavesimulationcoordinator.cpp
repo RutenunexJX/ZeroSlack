@@ -138,6 +138,8 @@ void WaveSimulationCoordinator::startProcess(
     next->setProgram(program);
     next->setArguments(arguments);
     next->setWorkingDirectory(prepared.resultRoot);
+    next->setProcessEnvironment(
+        currentRequest.tools.processEnvironment());
     connect(next, &QProcess::readyReadStandardOutput,
             this, [this, next]() {
                 appendBounded(&standardOutput,

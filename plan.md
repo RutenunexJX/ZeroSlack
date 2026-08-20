@@ -1,13 +1,17 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.15.1`
+Product version: `v0.16.0`
 
 ## Current status
 
-- Wave Simulation toolchain paths are global Settings Center fields. Explicit
-  selections override portable `WaveWorkbench/toolchain`, environment, and
-  `PATH` discovery, and runner failures identify Verilator and C++ compiler
-  problems independently.
+- The Windows package includes a pinned `WaveWorkbench/toolchain` containing
+  Verilator 5.050, MinGW 13.1, GNU Make, runtime DLLs, licenses, and a manifest.
+  Package, staging, object, and default release destination names contain no
+  spaces. Explicit Settings Center paths still override portable discovery.
+- ZeroSlack passes the resolved compiler, Verilator root, make program, and
+  portable `PATH` to the runner. The native launcher adds context-time support
+  for WaveWorkbench's `VerilatedContext` harness and preserves quoted source
+  arguments. Missing tools continue to be diagnosed independently.
 
 - Module Manifest v5 adds portable declaration/driver links, source columns,
   and stable semantic identities for ports and internal observations while

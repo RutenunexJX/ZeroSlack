@@ -4,6 +4,8 @@
 #include <QString>
 #include <QStringList>
 
+class QProcessEnvironment;
+
 struct WaveSimulationCachePaths {
     QString root;
     QString sourceMirrors;
@@ -21,9 +23,12 @@ struct WaveSimulationToolPaths {
     QString fstReader;
     QString verilator;
     QString cxxCompiler;
+    QString verilatorRoot;
+    QString makeProgram;
 
     bool isValid() const;
     QStringList missingTools() const;
+    QProcessEnvironment processEnvironment() const;
 };
 
 class WaveSimulationConfiguration

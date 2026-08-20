@@ -50,6 +50,10 @@ assert_version_marker(
     "VERSIONING.md"
     "Current controlled baseline:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
     "VERSIONING")
+assert_version_marker(
+    "packaging/ZeroSlack-PACKAGE-README.txt"
+    "ZeroSlack[ \\t]+v?([0-9]+\\.[0-9]+\\.[0-9]+)"
+    "package README")
 
 file(READ "${ZEROSLACK_SOURCE_DIR}/VERSIONING.md" versioning_policy)
 if(NOT versioning_policy MATCHES "ZeroSlack-win64")

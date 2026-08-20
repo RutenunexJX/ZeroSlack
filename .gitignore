@@ -2,6 +2,7 @@ build/
 build-*/
 cmake-build-*/
 artifacts/
+.toolchain-build/
 
 # Explicit local overrides for experimental wave simulation artifacts.
 wave-simulation-cache/

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.15.1`
+Current version: `v0.16.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -64,10 +64,13 @@ and preview-first RTL editing workflows.
   can reveal its corresponding row in an already open result. Stable semantic
   identities are preferred over source-location fallback; ambiguous, unmapped,
   cross-workspace, and non-portable paths are rejected rather than guessed.
-  Wave Simulation requires Verilator and a compatible C++ compiler. Their
-  executable paths can be selected under `Settings > Simulation`; empty fields
-  use portable `WaveWorkbench/toolchain` discovery, environment variables, and
-  `PATH` in that order. A failed probe reports each unavailable tool separately.
+  The Windows package includes a self-contained Verilator 5.050, MinGW 13.1,
+  and GNU Make toolchain under `WaveWorkbench/toolchain`, so a target computer
+  needs no separate compiler installation or `PATH` changes. Explicit paths
+  can still be selected under `Settings > Simulation`; empty fields use the
+  bundled toolchain first, then environment variables and `PATH`. Child build
+  and simulator processes receive the complete portable runtime environment,
+  and a failed probe reports each unavailable tool separately.
 - Preview and apply guarded RTL changes through the existing rename,
   connection, expose-to-top, scoped replace, instance-pair connection, and
   multi-signal propagation workflows. Module-port changes can be synchronized

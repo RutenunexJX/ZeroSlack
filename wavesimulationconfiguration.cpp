@@ -188,6 +188,53 @@ QString firstExecutableOnPath(const QStringList& names)
     return QString();
 }
 
+QString verilatorRootForProgram(const QString& program)
+{
+    if (program.trimmed().isEmpty())
+        return QString();
+    QDir directory = QFileInfo(program).absoluteDir();
+    if (directory.dirName().compare(QStringLiteral("bin"),
+                                    Qt::CaseInsensitive) == 0) {
+        directory.cdUp();
+    }
+    return QFileInfo(directory.absoluteFilePath(
+                         QStringLiteral("include/verilated.mk"))).isFile()
+        ? directory.absolutePath()
+        : QString();
+}
+
+void populateToolchainSupport(WaveSimulationToolPaths* paths,
+                              const QStringList& directories)
+{
+    if (!paths)
+        return;
+    paths->verilatorRoot = verilatorRootForProgram(paths->verilator);
+    if (paths->verilatorRoot.isEmpty()) {
+        const QString configuredRoot = cleanAbsolutePath(
+            QProcessEnvironment::systemEnvironment().value(
+                QStringLiteral("VERILATOR_ROOT")));
+        if (QFileInfo(QDir(configuredRoot).absoluteFilePath(
+                          QStringLiteral("include/verilated.mk"))).isFile()) {
+            paths->verilatorRoot = configuredRoot;
+        }
+    }
+    paths->makeProgram = firstExecutableInDirectories(
+        directories,
+        {
+            executableName(QStringLiteral("make")),
+            executableName(QStringLiteral("mingw32-make")),
+            executableName(QStringLiteral("gmake")),
+        });
+    if (paths->makeProgram.isEmpty()) {
+        paths->makeProgram = firstExecutableOnPath(
+            {
+                executableName(QStringLiteral("make")),
+                executableName(QStringLiteral("mingw32-make")),
+                executableName(QStringLiteral("gmake")),
+            });
+    }
+}
+
 QStringList portableToolchainDirectories(const QString& waveDirectory)
 {
     QStringList roots;
@@ -236,6 +283,7 @@ void populateToolchainPaths(WaveSimulationToolPaths* paths,
     if (paths->verilator.isEmpty()) {
         const QStringList names{
             executableName(QStringLiteral("verilator")),
+            executableName(QStringLiteral("verilator_bin")),
         };
         paths->verilator = firstExecutableInDirectories(
             directories, names);
@@ -275,6 +323,7 @@ void populateToolchainPaths(WaveSimulationToolPaths* paths,
             paths->cxxCompiler = firstExecutableOnPath(names);
         }
     }
+    populateToolchainSupport(paths, directories);
 }
 }
 
@@ -303,6 +352,37 @@ QStringList WaveSimulationToolPaths::missingTools() const
     if (existingFile(widgetLibrary).isEmpty())
         missing.append(QStringLiteral("wavewidgets"));
     return missing;
+}
+
+QProcessEnvironment WaveSimulationToolPaths::processEnvironment() const
+{
+    QProcessEnvironment environment =
+        QProcessEnvironment::systemEnvironment();
+    QStringList pathEntries;
+    for (const QString& program : {cxxCompiler, verilator, makeProgram}) {
+        if (program.trimmed().isEmpty())
+            continue;
+        const QString directory = QFileInfo(program).absolutePath();
+        if (!directory.isEmpty() && !pathEntries.contains(
+                directory, Qt::CaseInsensitive)) {
+            pathEntries.append(directory);
+        }
+    }
+    pathEntries.append(
+        environment.value(QStringLiteral("PATH"))
+            .split(QDir::listSeparator(), Qt::SkipEmptyParts));
+    pathEntries.removeDuplicates();
+    environment.insert(QStringLiteral("PATH"),
+                       pathEntries.join(QDir::listSeparator()));
+    if (!verilatorRoot.isEmpty()) {
+        environment.insert(QStringLiteral("VERILATOR_ROOT"),
+                           QDir::fromNativeSeparators(verilatorRoot));
+    }
+    if (!makeProgram.isEmpty()) {
+        environment.insert(QStringLiteral("MAKE"),
+                           QFileInfo(makeProgram).fileName());
+    }
+    return environment;
 }
 
 WaveSimulationConfiguration::WaveSimulationConfiguration(

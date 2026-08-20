@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.16.0] - 2026-08-20
+
+### Bundled Wave Simulation toolchain
+
+- Added a self-contained Windows toolchain package with Verilator 5.050,
+  MinGW 13.1, GNU Make, runtime dependencies, licenses, and a manifest.
+- Added native Verilator launcher and source-includer helpers, portable Windows
+  build patches, and reproducible build/package scripts with real compile/run
+  smoke tests.
+- Propagated the portable compiler, make, `VERILATOR_ROOT`, and `PATH` to the
+  WaveWorkbench runner and its generated simulator processes.
+- Added `VerilatedContext` time compatibility and verified a real 200000-tick
+  SystemVerilog run through VCD import.
+- Standardized package, staging, object, and release destination directory
+  names without spaces while preserving quoted user source paths.
+
 ## [0.15.1] - 2026-08-20
 
 ### Portable Wave Simulation toolchain setup

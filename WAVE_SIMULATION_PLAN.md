@@ -1047,3 +1047,26 @@ lane-to-trace mapping 的信号参与反向定位，歧义匹配明确拒绝。
 应作为新的独立切片重新登记。
 恢复开发所需上下文：从 Module Manifest v5、`simulation_source_navigation`、共享工作区
 `result-source-navigation/v1` 和 ZeroSlack Action Registry 继续；不得恢复名称猜测或跨工作区回退。
+
+本轮切片：S12.10 Windows 便携仿真工具链
+完成内容：固定 Verilator 5.050 源码构建补丁、MinGW 13.1 与 GNU Make 运行环境、原生
+`verilator.exe` launcher、原生 source includer、工具链 manifest/许可证、可重复构建与打包脚本，
+以及 ZeroSlack 对 `PATH`、`VERILATOR_ROOT` 和 `MAKE` 的子进程传递。
+明确未做：系统级工具链安装、自动在线下载、修改用户环境变量、替换用户显式选择的外部工具链。
+用户可见行为：Windows 正式包无需另装 Verilator 或 C++ 编译器即可运行 Wave Simulation；
+`Settings > Simulation` 的显式路径仍可覆盖内置工具链。正式包、staging、cache 与 object 目录
+使用无空格名称，用户源码路径继续通过参数引用支持空格。
+自动测试：ZeroSlack CTest `90/90`；包内 probe 识别 Verilator 5.050 与 GCC 13.1；使用包内
+runner 和全新 build cache 完成真实 SystemVerilog 编译、运行及 VCD 导入。
+人工验证：200000 tick fixture 首次构建约 7.9 秒，模拟约 54 毫秒；解析 8 个信号、168 次
+变化。工作区 zip 与正式部署 zip 的 SHA-256 一致。
+Schema/接口版本：Module Manifest v5、Stimulus Scenario v5、simulation session v2、
+`wavewidgets` C ABI 与 workspace contract 均未变化；新增工具链 manifest
+`zeroslack.wave-toolchain/v1`。
+修改仓库与提交：ZeroSlack `v0.16.0` 当前交付；WaveWorkbench 无代码修改。
+已知限制：未压缩工具链约 645.6 MiB，完整应用目录约 852.1 MiB，zip 约 295.1 MiB；
+首次模型编译仍受目标模块规模和机器性能影响。
+下一最小切片：无。后续 Wave Simulation 需求按独立小切片登记。
+恢复开发所需上下文：从 `WaveSimulationConfiguration`、`WaveSimulationCoordinator`、
+`packaging/verilator_*` 与 `scripts/package-wave-toolchain.ps1` 继续；不得恢复系统 PATH 依赖，
+也不得把工具链安装逻辑耦合进 WaveWorkbench 数据契约。
