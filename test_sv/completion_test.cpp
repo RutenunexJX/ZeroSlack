@@ -11605,21 +11605,25 @@ int main(int argc, char** argv) {
         expectBool("Workspace session scan manager restores list",
                    sessionScanManager.restoreSessionScanState(
                        QStringList{normalizeTestPath(sessionBTopFile),
-                                   normalizeTestPath(sessionBHelperFile),
                                    QDir(sessionBRtlDir).absoluteFilePath(
                                        QStringLiteral("missing.sv"))},
                        true),
                    true);
-        expectBool("Workspace session scan manager filters stale files",
-                   sessionScanManager.getAllFiles().size() == 2
-                       && sessionScanManager.getAllFiles().contains(
-                              normalizeTestPath(sessionBTopFile))
-                       && sessionScanManager.getAllFiles().contains(
-                              normalizeTestPath(sessionBHelperFile))
-                       && sessionScanManager.workspaceEntries().size() == 1
-                       && sessionScanManager.workspaceEntries()
-                              .first()
-                              .scanComplete,
+        expectBool("Workspace session scan manager reconciles stale cache",
+                   waitForEventPredicate(
+                       [&]() {
+                           return sessionScanManager.getAllFiles().size() == 2
+                               && sessionScanManager.getAllFiles().contains(
+                                      normalizeTestPath(sessionBTopFile))
+                               && sessionScanManager.getAllFiles().contains(
+                                      normalizeTestPath(sessionBHelperFile))
+                               && sessionScanManager.workspaceEntries().size()
+                                      == 1
+                               && sessionScanManager.workspaceEntries()
+                                      .first()
+                                      .scanComplete;
+                       },
+                       3000),
                    true);
 
         QTemporaryDir slangConfigWorkspace;

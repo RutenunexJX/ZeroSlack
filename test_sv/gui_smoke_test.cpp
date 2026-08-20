@@ -1987,6 +1987,18 @@ static void runWorkspaceCachedSwitchRegression()
                }, 2000),
                true);
 
+    const QString addedFileA =
+        QDir(workspaceA.path()).absoluteFilePath(
+            QStringLiteral("a_added.sv"));
+    {
+        QFile out(addedFileA);
+        if (out.open(QIODevice::WriteOnly | QIODevice::Text))
+            out.write("module a_added; endmodule\n");
+    }
+    const QString normalizedAddedA =
+        QDir::cleanPath(QDir::fromNativeSeparators(
+            QFileInfo(addedFileA).absoluteFilePath()));
+
     const int openedBeforeSwitch = openedSpy.count();
     const int filesScannedBeforeSwitch = filesScannedSpy.count();
     const int scanStartedBeforeSwitch = scanStartedSpy.count();
@@ -1995,34 +2007,47 @@ static void runWorkspaceCachedSwitchRegression()
     expectBool("workspace cached switch activates A",
                workspace.switchWorkspace(0),
                true);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     const QString normalizedA =
         QDir::cleanPath(QDir::fromNativeSeparators(
             QFileInfo(fileA).absoluteFilePath()));
-    expectBool("workspace cached switch restores A files",
-               workspace.getSystemVerilogFiles() == QStringList{normalizedA},
+    expectBool("workspace cached switch restores A cache immediately",
+               workspace.getSystemVerilogFiles() == QStringList{normalizedA}
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch + 1,
                true);
-    expectBool("workspace cached switch emits activation only",
+    expectBool("workspace cached switch reconciles inactive additions",
+               waitUntil([&]() {
+                   return workspace.getSystemVerilogFiles().contains(
+                       normalizedAddedA);
+               }, 2000),
+               true);
+    expectBool("workspace cached switch publishes changed membership",
                activatedSpy.count() == activatedBeforeSwitch + 1
                    && openedSpy.count() == openedBeforeSwitch
-                   && filesScannedSpy.count() == filesScannedBeforeSwitch
-                   && scanStartedSpy.count() == scanStartedBeforeSwitch,
+                   && filesScannedSpy.count() == filesScannedBeforeSwitch + 1
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch + 1,
                true);
 
+    const int filesScannedAfterASwitch = filesScannedSpy.count();
     expectBool("workspace cached switch activates B",
                workspace.switchWorkspace(1),
                true);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     const QString normalizedB =
         QDir::cleanPath(QDir::fromNativeSeparators(
             QFileInfo(fileB).absoluteFilePath()));
-    expectBool("workspace cached switch restores B files",
-               workspace.getSystemVerilogFiles() == QStringList{normalizedB},
+    expectBool("workspace cached switch restores B cache immediately",
+               workspace.getSystemVerilogFiles() == QStringList{normalizedB}
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch + 2,
                true);
-    expectBool("workspace cached switch still avoids rescan",
-               openedSpy.count() == openedBeforeSwitch
-                   && filesScannedSpy.count() == filesScannedBeforeSwitch
-                   && scanStartedSpy.count() == scanStartedBeforeSwitch,
+    expectBool("workspace unchanged reconciliation stays passive",
+               waitUntil([&]() {
+                   return !workspace.scanIterator
+                       && workspace.scanningPath.isEmpty();
+               }, 2000)
+                   && workspace.getSystemVerilogFiles()
+                          == QStringList{normalizedB}
+                   && filesScannedSpy.count() == filesScannedAfterASwitch
+                   && openedSpy.count() == openedBeforeSwitch
+                   && scanStartedSpy.count() == scanStartedBeforeSwitch + 2,
                true);
 }
 
@@ -2085,15 +2110,22 @@ static void runWorkspaceScanSignalReentrancyRegression()
             workspace.openWorkspace(directory.path()),
             true);
         expectBool(
-            "workspace activation restore owns completed scan",
+            "workspace activation restore starts reconciliation scan",
             restoredActivations == 1
                 && workspace.isWorkspaceOpen()
                 && workspace.getWorkspacePath()
                        == expectedPath
                 && workspace.getSystemVerilogFiles()
                        == QStringList{expectedSource}
-                && !workspace.scanIterator
-                && workspace.scanningPath.isEmpty(),
+                && workspace.scanIterator
+                && workspace.scanningPath == expectedPath,
+            true);
+        expectBool(
+            "workspace activation reconciliation completes",
+            waitUntil([&]() {
+                return !workspace.scanIterator
+                    && workspace.scanningPath.isEmpty();
+            }, 2000),
             true);
 
         workspace.closeWorkspace();
@@ -2102,14 +2134,21 @@ static void runWorkspaceScanSignalReentrancyRegression()
             workspace.openWorkspace(directory.path()),
             true);
         expectBool(
-            "workspace activation restore remains isolated after close",
+            "workspace activation restore restarts reconciliation after close",
             restoredActivations == 2
                 && workspace.isWorkspaceOpen()
                 && workspace.workspaceEntries().size() == 1
                 && workspace.getSystemVerilogFiles()
                        == QStringList{expectedSource}
-                && !workspace.scanIterator
-                && workspace.scanningPath.isEmpty(),
+                && workspace.scanIterator
+                && workspace.scanningPath == expectedPath,
+            true);
+        expectBool(
+            "workspace reopened reconciliation completes",
+            waitUntil([&]() {
+                return !workspace.scanIterator
+                    && workspace.scanningPath.isEmpty();
+            }, 2000),
             true);
     }
 
@@ -2192,13 +2231,21 @@ static void runWorkspaceScanSignalReentrancyRegression()
         expectBool("workspace scan-start switch reports synchronous override",
                    workspace.openWorkspace(scanningDirectory.path()),
                    false);
-        expectBool("workspace scan-start switch leaves cached workspace idle",
+        expectBool("workspace scan-start switch reconciles cached workspace",
                    switchedFromStarted
                        && workspace.getWorkspacePath() == cachedPath
-                       && !workspace.scanIterator
-                       && workspace.scanningPath.isEmpty()
+                       && workspace.scanIterator
+                       && workspace.scanningPath == cachedPath
                        && workspace.scanTimer
-                       && !workspace.scanTimer->isActive(),
+                       && workspace.scanTimer->isActive(),
+                   true);
+        expectBool("workspace switched reconciliation completes",
+                   waitUntil([&]() {
+                       return !workspace.scanIterator
+                           && workspace.scanningPath.isEmpty()
+                           && workspace.scanTimer
+                           && !workspace.scanTimer->isActive();
+                   }, 2000),
                    true);
     }
 

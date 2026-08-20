@@ -688,13 +688,10 @@ bool WorkspaceManager::restoreSessionScanState(const QStringList& scannedFiles,
     updateFileWatcher();
     emit filesScanned(files.systemVerilogFiles);
     emit workspaceListChanged();
-    if (scanComplete) {
-        emit workspaceScanFinished(workspacePath,
-                                   files.allFiles.size(),
-                                   files.systemVerilogFiles.size());
-    } else {
-        startDirectoryScan(workspacePath);
-    }
+    // A completed session scan is only a cache snapshot. Files may have been
+    // added, removed, or renamed while ZeroSlack was closed, so reconcile the
+    // restored list with the directory without delaying its initial display.
+    startDirectoryScan(workspacePath);
     return true;
 }
 
@@ -1154,23 +1151,21 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
             return false;
         }
     }
-    const bool requiresScan =
-        index < 0
-        || index >= workspaces.size()
-        || !workspaces.at(index).scanComplete;
-    if (requiresScan) {
-        const bool scanAlreadyStarted =
-            scanIterator
-            && scanningPath == activatedPath;
-        if (!scanAlreadyStarted)
-            startDirectoryScan(workspacePath);
-        if (!self
-            || workspaceActivationGeneration
-                   != requestedActivationGeneration
-            || workspacePath != activatedPath
-            || activeIndex != index) {
-            return false;
-        }
+    // Cached file lists make activation immediate, but they cannot prove that
+    // the directory remained unchanged while this workspace was inactive.
+    // Reconcile every activation; finishDirectoryScan only republishes files
+    // when the resulting set actually differs.
+    const bool scanAlreadyStarted =
+        scanIterator
+        && scanningPath == activatedPath;
+    if (!scanAlreadyStarted)
+        startDirectoryScan(workspacePath);
+    if (!self
+        || workspaceActivationGeneration
+               != requestedActivationGeneration
+        || workspacePath != activatedPath
+        || activeIndex != index) {
+        return false;
     }
     return true;
 }

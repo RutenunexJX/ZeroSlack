@@ -1,8 +1,12 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.17.0`
+Product version: `v0.17.1`
 
 ## Current status
+
+- Workspace activation restores the cached file list immediately and always
+  follows it with an asynchronous directory reconciliation. A changed file set
+  is published once; an unchanged set does not retrigger semantic analysis.
 
 - The editor context menu can replace ordinary multiline or rectangular column
   selections with equal-width whitespace in one undoable transaction.

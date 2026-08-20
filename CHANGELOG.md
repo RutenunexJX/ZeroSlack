@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.1] - 2026-08-20
+
+### Workspace file reconciliation
+
+- Kept cached workspace activation immediate while always reconciling the file
+  list against the current directory in the background.
+- Added regression coverage for files added while a workspace is inactive and
+  for stale persisted scan lists, without republishing unchanged file sets.
+
 ## [0.17.0] - 2026-08-20
 
 ### Context-aware editor refactors

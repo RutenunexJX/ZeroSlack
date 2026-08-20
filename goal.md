@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.17.0`
+Product version: `v0.17.1`
 
 ## Objective
 
@@ -10,7 +10,9 @@ fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.17.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.17.1.
+- Cached workspace activation remains immediate while a background directory
+  reconciliation discovers files changed outside ZeroSlack.
 - Ordinary multiline and rectangular column selections can be replaced with
   equal-width whitespace while retaining their line structure and one-step undo.
 - Signal organization is derived from the current Tree-sitter module, moves only
