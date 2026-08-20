@@ -2,6 +2,7 @@
 
 #include "actionregistry.h"
 #include "editorappearancesettings.h"
+#include "editorcolumnmodecontroller.h"
 #include "formattersettings.h"
 #include "editoractioncontextservice.h"
 #include "editorcontextmenumodel.h"
@@ -1234,6 +1235,16 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     const bool editable = !editor->isReadOnly();
     const bool hasSelection =
         editor->textCursor().hasSelection();
+    const EditorColumnModeSnapshot columnSelection =
+        editor->columnModeSnapshotForTest();
+    const bool hasColumnSelection =
+        columnSelection.selectionActive
+        && columnSelection.anchorLine >= 0
+        && columnSelection.currentLine >= 0
+        && columnSelection.anchorColumn
+               != columnSelection.currentColumn;
+    const bool hasReplaceableSelection =
+        hasSelection || hasColumnSelection;
     const int cursorPosition =
         context.cursorPosition >= 0
             ? context.cursorPosition
@@ -1336,6 +1347,25 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            editable
                ? QStringLiteral("Select text to change its case.")
                : QStringLiteral("The editor is read-only."));
+    append(QString::fromLatin1(
+               ActionIds::EditReplaceSelectionWithSpaces),
+           hasReplaceableSelection,
+           editable && hasReplaceableSelection,
+           editable
+               ? QStringLiteral("Select text to replace with spaces.")
+               : QStringLiteral("The editor is read-only."));
+
+    QString organizeReason;
+    const bool organizeReady =
+        editor->canOrganizeSignalDeclarationsAt(
+            cursorPosition, &organizeReason);
+    append(QString::fromLatin1(
+               ActionIds::RefactorOrganizeSignalDeclarations),
+           !context.moduleName.trimmed().isEmpty(),
+           editable && organizeReady,
+           editable
+               ? organizeReason
+               : QStringLiteral("The editor is read-only."));
 
     const EditorStructuralContextMenuState structural =
         editor->structuralContextMenuState(cursorPosition);
@@ -1385,6 +1415,12 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId
                        == QString::fromLatin1(
                            ActionIds::EditToggleSelectionCase)
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::EditReplaceSelectionWithSpaces)
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::RefactorOrganizeSignalDeclarations)
                 || actionId == QStringLiteral("navigation.goLine")
                 || actionId
                        == QString::fromLatin1(
@@ -1483,6 +1519,25 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                            ActionIds::EditToggleSelectionCase)) {
                 QString reason;
                 if (!editor->toggleSelectionCase(&reason)
+                    && !reason.isEmpty()
+                    && statusMessageHandler) {
+                    statusMessageHandler(reason, 5000);
+                }
+            } else if (actionId
+                       == QString::fromLatin1(
+                           ActionIds::EditReplaceSelectionWithSpaces)) {
+                QString reason;
+                if (!editor->replaceSelectionWithSpaces(&reason)
+                    && !reason.isEmpty()
+                    && statusMessageHandler) {
+                    statusMessageHandler(reason, 5000);
+                }
+            } else if (actionId
+                       == QString::fromLatin1(
+                           ActionIds::RefactorOrganizeSignalDeclarations)) {
+                QString reason;
+                if (!editor->organizeSignalDeclarationsAt(
+                        cursorPosition, &reason)
                     && !reason.isEmpty()
                     && statusMessageHandler) {
                     statusMessageHandler(reason, 5000);

@@ -1,8 +1,15 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.16.0`
+Product version: `v0.17.0`
 
 ## Current status
+
+- The editor context menu can replace ordinary multiline or rectangular column
+  selections with equal-width whitespace in one undoable transaction.
+- A Tree-sitter-authored organization plan moves complete top-level net and
+  variable declarations to the current module's safe declaration section. It
+  preserves dependency preambles, declaration order, attached comments, and
+  procedural locals, and rejects unsafe syntax or preprocessor boundaries.
 
 - The Windows package includes a pinned `WaveWorkbench/toolchain` containing
   Verilator 5.050, MinGW 13.1, GNU Make, runtime DLLs, licenses, and a manifest.

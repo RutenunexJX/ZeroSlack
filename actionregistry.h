@@ -130,6 +130,10 @@ inline constexpr const char EditDeleteSelection[] =
     "edit.deleteSelection";
 inline constexpr const char EditToggleSelectionCase[] =
     "edit.toggleSelectionCase";
+inline constexpr const char EditReplaceSelectionWithSpaces[] =
+    "edit.replaceSelectionWithSpaces";
+inline constexpr const char RefactorOrganizeSignalDeclarations[] =
+    "refactor.organizeSignalDeclarations";
 inline constexpr const char InsertColumnNumbers[] =
     "insert.columnNumbers";
 inline constexpr const char FoldShelfDeleteSelected[] =

@@ -1006,6 +1006,97 @@ int main(int argc, char* argv[])
 
     {
         MyCodeEditor editor;
+        editor.setPlainText(QStringLiteral("abc\ndef"));
+        setCursor(editor, 6, 1);
+        QString reason;
+        expect("ordinary selection can be replaced with equal spaces",
+               editor.replaceSelectionWithSpaces(&reason)
+                   && reason.isEmpty()
+                   && editor.toPlainText()
+                          == QStringLiteral("a  \n  f")
+                   && editor.textCursor().hasSelection()
+                   && editor.textCursor().selectionStart() == 1
+                   && editor.textCursor().selectionEnd() == 6);
+        editor.undo();
+        expect("ordinary space replacement is one undo transaction",
+               editor.toPlainText() == QStringLiteral("abc\ndef"));
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.resize(520, 160);
+        editor.setPlainText(QStringLiteral("abcd\nwxyz"));
+        editor.show();
+        editor.setFocus();
+        QCoreApplication::processEvents();
+        setCursor(editor, 1);
+        QTest::keyClick(&editor,
+                        Qt::Key_Down,
+                        Qt::ShiftModifier | Qt::AltModifier);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ShiftModifier | Qt::AltModifier);
+        QTest::keyClick(&editor,
+                        Qt::Key_Right,
+                        Qt::ShiftModifier);
+        const EditorColumnModeSnapshot before =
+            editor.columnModeSnapshotForTest();
+        QString reason;
+        expect("column selection can be replaced with equal-width spaces",
+               before.selectionActive
+                   && before.anchorColumn == 1
+                   && before.currentColumn == 3
+                   && editor.replaceSelectionWithSpaces(&reason)
+                   && reason.isEmpty()
+                   && editor.toPlainText()
+                          == QStringLiteral("a  d\nw  z"));
+        const EditorColumnModeSnapshot after =
+            editor.columnModeSnapshotForTest();
+        expect("column space replacement preserves the rectangular selection",
+               after.selectionActive
+                   && after.anchorLine == before.anchorLine
+                   && after.currentLine == before.currentLine
+                   && after.anchorColumn == before.anchorColumn
+                   && after.currentColumn == before.currentColumn);
+        editor.undo();
+        expect("column space replacement is one undo transaction",
+               editor.toPlainText() == QStringLiteral("abcd\nwxyz"));
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString source =
+            QStringLiteral("module organize_ui;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  assign y = late;\n")
+            + QStringLiteral("  wire late;\n")
+            + QStringLiteral("endmodule\n");
+        editor.setPlainText(source);
+        QCoreApplication::processEvents();
+        QString reason;
+        const int cursorPosition =
+            source.indexOf(QStringLiteral("assign"));
+        expect("editor exposes a safe organize-signals action",
+               editor.canOrganizeSignalDeclarationsAt(
+                   cursorPosition, &reason)
+                   && reason.isEmpty());
+        expect("editor organizes module signals through one structural edit",
+               editor.organizeSignalDeclarationsAt(
+                   cursorPosition, &reason)
+                   && editor.toPlainText()
+                          == QStringLiteral(
+                              "module organize_ui;\n"
+                              "  logic early;\n"
+                              "  wire late;\n"
+                              "  assign y = late;\n"
+                              "endmodule\n"));
+        editor.undo();
+        expect("organize signals is one undo transaction",
+               editor.toPlainText() == source);
+    }
+
+    {
+        MyCodeEditor editor;
         editor.resize(520, 160);
         editor.setLineWrapMode(
             QPlainTextEdit::NoWrap);

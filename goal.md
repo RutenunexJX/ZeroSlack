@@ -1,15 +1,22 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.16.0`
+Product version: `v0.17.0`
 
 ## Objective
 
-Ship Wave Simulation with a self-contained Windows toolchain without changing
-the shared WaveWorkbench architecture or simulation data contracts.
+Maintain the completed portable Wave Simulation baseline while adding safe,
+selection-aware editor refactors without creating a second SystemVerilog syntax
+fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.16.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.17.0.
+- Ordinary multiline and rectangular column selections can be replaced with
+  equal-width whitespace while retaining their line structure and one-step undo.
+- Signal organization is derived from the current Tree-sitter module, moves only
+  complete top-level net and variable declarations, preserves dependencies and
+  attached comments, excludes procedural locals, and fails closed at unsafe
+  syntax or preprocessing boundaries.
 - Users can select Verilator and C++ compiler executables in global Settings,
   while empty fields retain deterministic automatic discovery.
 - Portable adjacent tools are preferred over ambient `PATH`, resolved paths are

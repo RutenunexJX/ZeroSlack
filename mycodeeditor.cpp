@@ -1419,6 +1419,190 @@ bool MyCodeEditor::toggleSelectionCase(QString* failureReason)
     return true;
 }
 
+bool MyCodeEditor::replaceSelectionWithSpaces(
+    QString* failureReason)
+{
+    if (failureReason)
+        failureReason->clear();
+    if (isReadOnly()) {
+        if (failureReason)
+            *failureReason = tr("The editor is read-only.");
+        return false;
+    }
+
+    if (columnSelectionActive()) {
+        const EditorColumnModeSnapshot snapshot =
+            state->columnMode.snapshotForTest();
+        const int width = qAbs(snapshot.currentColumn
+                               - snapshot.anchorColumn);
+        const int rowCount = qAbs(snapshot.currentLine
+                                  - snapshot.anchorLine) + 1;
+        if (width <= 0 || rowCount <= 0) {
+            if (failureReason)
+                *failureReason = tr("Select text to replace with spaces.");
+            return false;
+        }
+
+        const QStringList rows(
+            rowCount,
+            QString(width, QLatin1Char(' ')));
+        auto edit = beginSynchronousEditTransaction();
+        QString message;
+        if (!state->columnMode.applyRows(
+                this, rows, true, &message)) {
+            if (failureReason)
+                *failureReason = message;
+            return false;
+        }
+        state->columnMode.restoreSnapshot(this, snapshot);
+        emit editorStatusMessageRequested(
+            tr("Column selection replaced with spaces"));
+        return true;
+    }
+
+    QTextCursor cursor = textCursor();
+    if (!cursor.hasSelection()) {
+        if (failureReason)
+            *failureReason = tr("Select text to replace with spaces.");
+        return false;
+    }
+
+    const int selectionStart = cursor.selectionStart();
+    const int selectionLength =
+        cursor.selectionEnd() - selectionStart;
+    QString replacement = cachedDocumentText().mid(
+        selectionStart, selectionLength);
+    for (QChar& character : replacement) {
+        if (character != QLatin1Char('\n')
+            && character != QLatin1Char('\r')) {
+            character = QLatin1Char(' ');
+        }
+    }
+
+    auto edit = beginSynchronousEditTransaction();
+    cursor.beginEditBlock();
+    cursor.insertText(replacement);
+    cursor.endEditBlock();
+    cursor.setPosition(selectionStart);
+    cursor.setPosition(selectionStart + replacement.size(),
+                       QTextCursor::KeepAnchor);
+    setTextCursor(cursor);
+    emit editorStatusMessageRequested(
+        tr("Selection replaced with spaces"));
+    return true;
+}
+
+namespace {
+QString signalOrganizationFailureMessage(
+    const TSSignalDeclarationOrganizationPlan& plan)
+{
+    if (!plan.failureReason.trimmed().isEmpty())
+        return plan.failureReason.trimmed();
+    switch (plan.status) {
+    case TSSignalDeclarationOrganizationStatus::Ok:
+        return {};
+    case TSSignalDeclarationOrganizationStatus::NoCurrentModule:
+        return MyCodeEditor::tr("Place the cursor inside a module.");
+    case TSSignalDeclarationOrganizationStatus::ModuleHasSyntaxError:
+        return MyCodeEditor::tr(
+            "Fix syntax errors in the current module before organizing declarations.");
+    case TSSignalDeclarationOrganizationStatus::NoSignalDeclarations:
+        return MyCodeEditor::tr(
+            "The current module has no top-level signal declarations.");
+    case TSSignalDeclarationOrganizationStatus::AlreadyOrganized:
+        return MyCodeEditor::tr(
+            "Signal declarations are already organized.");
+    case TSSignalDeclarationOrganizationStatus::UnsafeLayout:
+        return MyCodeEditor::tr(
+            "Signal declarations cannot be moved safely across the current module structure.");
+    }
+    return MyCodeEditor::tr(
+        "Signal declarations cannot be organized.");
+}
+}
+
+bool MyCodeEditor::canOrganizeSignalDeclarationsAt(
+    int cursorPosition,
+    QString* failureReason) const
+{
+    if (failureReason)
+        failureReason->clear();
+    const TSDocument* syntaxDocument = state->syntax.tsDocument();
+    if (!syntaxDocument) {
+        if (failureReason)
+            *failureReason = tr("Syntax information is not available.");
+        return false;
+    }
+
+    const TSSignalDeclarationOrganizationPlan plan =
+        syntaxDocument->signalDeclarationOrganizationPlan(
+            cursorPosition);
+    if (!plan.ok() && failureReason) {
+        *failureReason =
+            signalOrganizationFailureMessage(plan);
+    }
+    return plan.ok();
+}
+
+bool MyCodeEditor::organizeSignalDeclarationsAt(
+    int cursorPosition,
+    QString* failureReason)
+{
+    if (failureReason)
+        failureReason->clear();
+    if (isReadOnly()) {
+        if (failureReason)
+            *failureReason = tr("The editor is read-only.");
+        return false;
+    }
+
+    const TSDocument* syntaxDocument = state->syntax.tsDocument();
+    if (!syntaxDocument) {
+        if (failureReason)
+            *failureReason = tr("Syntax information is not available.");
+        return false;
+    }
+    const TSSignalDeclarationOrganizationPlan plan =
+        syntaxDocument->signalDeclarationOrganizationPlan(
+            cursorPosition);
+    if (!plan.ok()) {
+        if (failureReason) {
+            *failureReason =
+                signalOrganizationFailureMessage(plan);
+        }
+        return false;
+    }
+
+    const QTextCursor previous = textCursor();
+    int restoredPosition = previous.position();
+    if (restoredPosition >= plan.replaceEndChar) {
+        restoredPosition += plan.replacementText.size()
+            - (plan.replaceEndChar - plan.replaceStartChar);
+    } else if (restoredPosition > plan.replaceStartChar) {
+        restoredPosition = plan.replaceStartChar;
+    }
+
+    auto edit = beginSynchronousEditTransaction();
+    QTextCursor transaction(document());
+    transaction.setPosition(plan.replaceStartChar);
+    transaction.setPosition(plan.replaceEndChar,
+                            QTextCursor::KeepAnchor);
+    transaction.beginEditBlock();
+    transaction.insertText(plan.replacementText);
+    transaction.endEditBlock();
+
+    QTextCursor restored(document());
+    restored.setPosition(qBound(
+        0,
+        restoredPosition,
+        document()->characterCount() - 1));
+    setTextCursor(restored);
+    emit editorStatusMessageRequested(
+        tr("Organized %1 signal declaration(s)")
+            .arg(plan.movedDeclarationCount));
+    return true;
+}
+
 void MyCodeEditor::commentSelectionOrLine()
 {
     auto edit = beginSynchronousEditTransaction();

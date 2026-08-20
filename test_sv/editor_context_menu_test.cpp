@@ -98,6 +98,10 @@ int main(int argc, char* argv[])
         capability(QStringLiteral("refactor.exposeSignalToTop")),
         capability(QString::fromLatin1(
             ActionIds::EditToggleSelectionCase)),
+        capability(QString::fromLatin1(
+            ActionIds::EditReplaceSelectionWithSpaces)),
+        capability(QString::fromLatin1(
+            ActionIds::RefactorOrganizeSignalDeclarations)),
         capability(QStringLiteral("format.selection"), false),
         capability(QStringLiteral("format.document"))
     };
@@ -199,6 +203,10 @@ int main(int argc, char* argv[])
             ActionIds::WaveSimulationRevealSignalInResult),
         QString::fromLatin1(
             ActionIds::EditToggleSelectionCase),
+        QString::fromLatin1(
+            ActionIds::EditReplaceSelectionWithSpaces),
+        QString::fromLatin1(
+            ActionIds::RefactorOrganizeSignalDeclarations),
         QStringLiteral("format.profile.structured"),
         QStringLiteral("format.profile.indentOnly"),
         QStringLiteral("format.selection"),

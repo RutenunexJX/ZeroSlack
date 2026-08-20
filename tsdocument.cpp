@@ -3625,6 +3625,104 @@ bool isModuleBodyBoundaryNode(TSNode node)
         || nodeTypeIs(node, "task_declaration");
 }
 
+bool isStandaloneCommentNode(TSNode node)
+{
+    return nodeTypeIs(node, "one_line_comment")
+        || nodeTypeIs(node, "block_comment");
+}
+
+TSNode moduleItemPayload(TSNode node)
+{
+    if (!nodeTypeIs(node, "module_item"))
+        return node;
+
+    TSNode payload{};
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t index = 0; index < count; ++index) {
+        const TSNode child = ts_node_named_child(node, index);
+        if (nodeTypeIs(child, "attribute_instance")
+            || isStandaloneCommentNode(child)) {
+            continue;
+        }
+        if (!ts_node_is_null(payload))
+            return node;
+        payload = child;
+    }
+    return ts_node_is_null(payload) ? node : payload;
+}
+
+TSNode moduleItemSignalDeclaration(TSNode node)
+{
+    if (isInternalSignalDeclaration(node))
+        return node;
+    if (!nodeTypeIs(node, "module_item"))
+        return {};
+
+    TSNode declaration{};
+    const uint32_t count = ts_node_named_child_count(node);
+    for (uint32_t index = 0; index < count; ++index) {
+        const TSNode child = ts_node_named_child(node, index);
+        if (!isInternalSignalDeclaration(child))
+            continue;
+        if (!ts_node_is_null(declaration))
+            return {};
+        declaration = child;
+    }
+    return declaration;
+}
+
+bool isSignalOrganizationPreamble(TSNode node)
+{
+    if (isStandaloneCommentNode(node))
+        return true;
+    const TSNode payload = moduleItemPayload(node);
+    if (isStandaloneCommentNode(payload))
+        return true;
+    const bool wrappedDataPreamble =
+        nodeTypeIs(payload, "data_declaration")
+        && (nodeTypeIs(
+                directNamedChildOfType(payload, "type_declaration"),
+                "type_declaration")
+            || nodeTypeIs(
+                directNamedChildOfType(
+                    payload, "package_import_declaration"),
+                "package_import_declaration")
+            || nodeTypeIs(
+                directNamedChildOfType(payload, "nettype_declaration"),
+                "nettype_declaration"));
+    return isParameterLikeDeclaration(payload)
+        || wrappedDataPreamble
+        || nodeTypeIs(payload, "package_import_declaration")
+        || nodeTypeIs(payload, "type_declaration")
+        || nodeTypeIs(payload, "nettype_declaration")
+        || nodeTypeIs(payload, "genvar_declaration")
+        || nodeTypeIs(payload, "port_declaration")
+        || nodeTypeIs(payload, "timeunits_declaration")
+        || nodeTypeIs(payload, "let_declaration")
+        || nodeTypeIs(payload, "attribute_instance")
+        || nodeTypeIs(payload, "pragma")
+        || nodeTypeIs(payload, "include_compiler_directive")
+        || nodeTypeIs(payload, "line_compiler_directive")
+        || nodeTypeIs(payload, "file_or_line_compiler_directive")
+        || nodeTypeIs(payload, "default_nettype_compiler_directive");
+}
+
+bool isSignalOrganizationBarrier(TSNode node)
+{
+    const TSNode payload = moduleItemPayload(node);
+    if (nodeTypeIs(payload, "conditional_compilation_directive"))
+        return true;
+    if (isSignalOrganizationPreamble(node)
+        && !isStandaloneCommentNode(node)
+        && !isStandaloneCommentNode(payload)) {
+        return true;
+    }
+    const char* type = ts_node_type(payload);
+    return type
+        && QString::fromLatin1(type).endsWith(
+            QStringLiteral("_compiler_directive"));
+}
+
 TSNode directModuleHeader(TSNode module)
 {
     TSNode header = directNamedChildOfType(module, "module_ansi_header");
@@ -4137,6 +4235,252 @@ TSSignalInsertTarget TSDocument::signalInsertTarget(int charOffset) const
     target.insertText = anchor.indent + QLatin1Char('\n');
     target.caretCharAfterEdit = insertChar + anchor.indent.size();
     return target;
+}
+
+TSSignalDeclarationOrganizationPlan
+TSDocument::signalDeclarationOrganizationPlan(int charOffset) const
+{
+    TSSignalDeclarationOrganizationPlan plan;
+    if (!m_tree || m_text.isEmpty())
+        return plan;
+
+    const int bounded = qBound(0, charOffset, m_text.size() - 1);
+    TSNode node = namedNodeAt(m_tree, bounded, m_text.size());
+    TSNode module = ancestorOfType(node, "module_declaration");
+    if (ts_node_is_null(module) && bounded > 0) {
+        node = namedNodeAt(m_tree, bounded - 1, m_text.size());
+        module = ancestorOfType(node, "module_declaration");
+    }
+    if (ts_node_is_null(module))
+        return plan;
+    if (ts_node_has_error(module)) {
+        plan.status =
+            TSSignalDeclarationOrganizationStatus::ModuleHasSyntaxError;
+        return plan;
+    }
+
+    const TSNode header = directModuleHeader(module);
+    if (ts_node_is_null(header)) {
+        plan.status =
+            TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+        plan.failureReason = QStringLiteral(
+            "The current module header cannot be identified safely.");
+        return plan;
+    }
+
+    struct ModuleEntry {
+        TSNode node{};
+        TSNode signalDeclaration{};
+        bool comment = false;
+    };
+    QList<ModuleEntry> entries;
+    bool seenHeader = false;
+    const uint32_t childCount = ts_node_named_child_count(module);
+    for (uint32_t index = 0; index < childCount; ++index) {
+        const TSNode child = ts_node_named_child(module, index);
+        if (ts_node_eq(child, header)) {
+            seenHeader = true;
+            continue;
+        }
+        if (!seenHeader || nodeEndChar(child) <= nodeEndChar(header))
+            continue;
+        ModuleEntry entry;
+        entry.node = child;
+        entry.signalDeclaration = moduleItemSignalDeclaration(child);
+        entry.comment = isStandaloneCommentNode(child);
+        entries.append(entry);
+    }
+
+    QList<int> signalIndexes;
+    int bodyIndex = entries.size();
+    for (int index = 0; index < entries.size(); ++index) {
+        const ModuleEntry& entry = entries.at(index);
+        if (!ts_node_is_null(entry.signalDeclaration)) {
+            signalIndexes.append(index);
+            continue;
+        }
+        if (bodyIndex == entries.size()
+            && !isSignalOrganizationPreamble(entry.node)) {
+            bodyIndex = index;
+        }
+    }
+    plan.declarationCount = signalIndexes.size();
+    if (signalIndexes.isEmpty()) {
+        plan.status =
+            TSSignalDeclarationOrganizationStatus::NoSignalDeclarations;
+        return plan;
+    }
+
+    bool hasLateSignal = false;
+    for (const int signalIndex : signalIndexes) {
+        if (signalIndex >= bodyIndex) {
+            hasLateSignal = true;
+            break;
+        }
+    }
+    if (hasLateSignal) {
+        for (int index = bodyIndex; index < entries.size(); ++index) {
+            if (isSignalOrganizationBarrier(entries.at(index).node)) {
+                const TSNode payload =
+                    moduleItemPayload(entries.at(index).node);
+                plan.status =
+                    TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+                plan.failureReason = QStringLiteral(
+                    "A %1 boundary prevents safe declaration movement.")
+                    .arg(QString::fromLatin1(ts_node_type(payload)));
+                return plan;
+            }
+        }
+    }
+
+    struct TextRange {
+        int start = -1;
+        int end = -1;
+    };
+    QList<TextRange> declarationRanges;
+    declarationRanges.reserve(signalIndexes.size());
+    QSet<int> claimedCommentIndexes;
+    for (const int signalIndex : signalIndexes) {
+        const ModuleEntry& signal = entries.at(signalIndex);
+        int startLine = nodeStartLine(signal.node);
+        int endLine = nodeLastLine(signal.node);
+
+        for (int commentIndex = signalIndex - 1;
+             commentIndex >= 0
+             && entries.at(commentIndex).comment
+             && !claimedCommentIndexes.contains(commentIndex);
+             --commentIndex) {
+            const TSNode comment = entries.at(commentIndex).node;
+            if (nodeLastLine(comment) + 1 != startLine)
+                break;
+            const int commentLineStart =
+                lineStartChar(m_text, nodeStartLine(comment));
+            if (!m_text.mid(commentLineStart,
+                            nodeStartChar(comment) - commentLineStart)
+                     .trimmed()
+                     .isEmpty()) {
+                break;
+            }
+            startLine = nodeStartLine(comment);
+            claimedCommentIndexes.insert(commentIndex);
+        }
+
+        if (signalIndex + 1 < entries.size()
+            && entries.at(signalIndex + 1).comment
+            && !claimedCommentIndexes.contains(signalIndex + 1)) {
+            const TSNode comment = entries.at(signalIndex + 1).node;
+            if (nodeStartLine(comment) == endLine
+                && m_text.mid(nodeEndChar(signal.node),
+                              nodeStartChar(comment)
+                                  - nodeEndChar(signal.node))
+                       .trimmed()
+                       .isEmpty()) {
+                endLine = nodeLastLine(comment);
+                claimedCommentIndexes.insert(signalIndex + 1);
+            }
+        }
+
+        const int declarationLineStart =
+            lineStartChar(m_text, nodeStartLine(signal.node));
+        const int start = lineStartChar(m_text, startLine);
+        int end = lineEndChar(m_text, endLine);
+        if (end < m_text.size()
+            && m_text.at(end) == QLatin1Char('\n')) {
+            ++end;
+        }
+        if (!m_text.mid(declarationLineStart,
+                        nodeStartChar(signal.node)
+                            - declarationLineStart)
+                 .trimmed()
+                 .isEmpty()) {
+            plan.status =
+                TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+            plan.failureReason = QStringLiteral(
+                "A signal declaration shares its line with unrelated syntax.");
+            return plan;
+        }
+        declarationRanges.append(TextRange{start, end});
+    }
+
+    std::sort(declarationRanges.begin(), declarationRanges.end(),
+              [](const TextRange& lhs, const TextRange& rhs) {
+                  return lhs.start < rhs.start;
+              });
+    for (int index = 1; index < declarationRanges.size(); ++index) {
+        if (declarationRanges.at(index - 1).end
+            > declarationRanges.at(index).start) {
+            plan.status =
+                TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+            plan.failureReason = QStringLiteral(
+                "Attached declaration ranges overlap.");
+            return plan;
+        }
+    }
+
+    int anchorIndex = bodyIndex;
+    while (anchorIndex > 0
+           && entries.at(anchorIndex - 1).comment
+           && !claimedCommentIndexes.contains(anchorIndex - 1)) {
+        --anchorIndex;
+    }
+    int anchor = -1;
+    if (anchorIndex < entries.size()) {
+        anchor = lineStartChar(
+            m_text, nodeStartLine(entries.at(anchorIndex).node));
+    } else {
+        const int endLine = endmoduleLine(module, m_text);
+        if (endLine < 0) {
+            plan.status =
+                TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+            plan.failureReason = QStringLiteral(
+                "The end of the current module cannot be identified safely.");
+            return plan;
+        }
+        anchor = lineStartChar(m_text, endLine);
+    }
+
+    const int replaceStart = qMin(anchor, declarationRanges.first().start);
+    const int replaceEnd = qMax(anchor, declarationRanges.last().end);
+    QString replacement = m_text.mid(replaceStart,
+                                     replaceEnd - replaceStart);
+    QString declarationBlock;
+    int removedBeforeAnchor = 0;
+    for (const TextRange& range : declarationRanges) {
+        declarationBlock += m_text.mid(range.start,
+                                       range.end - range.start);
+        if (range.end <= anchor)
+            removedBeforeAnchor += range.end - range.start;
+    }
+    for (int index = declarationRanges.size() - 1; index >= 0; --index) {
+        const TextRange& range = declarationRanges.at(index);
+        replacement.remove(range.start - replaceStart,
+                           range.end - range.start);
+    }
+    const int adjustedAnchor =
+        anchor - replaceStart - removedBeforeAnchor;
+    if (adjustedAnchor < 0 || adjustedAnchor > replacement.size()) {
+        plan.status =
+            TSSignalDeclarationOrganizationStatus::UnsafeLayout;
+        plan.failureReason = QStringLiteral(
+            "A stable declaration insertion point cannot be derived.");
+        return plan;
+    }
+    replacement.insert(adjustedAnchor, declarationBlock);
+
+    const QString original = m_text.mid(replaceStart,
+                                        replaceEnd - replaceStart);
+    if (replacement == original) {
+        plan.status =
+            TSSignalDeclarationOrganizationStatus::AlreadyOrganized;
+        return plan;
+    }
+
+    plan.status = TSSignalDeclarationOrganizationStatus::Ok;
+    plan.replaceStartChar = replaceStart;
+    plan.replaceEndChar = replaceEnd;
+    plan.replacementText = replacement;
+    plan.movedDeclarationCount = declarationRanges.size();
+    return plan;
 }
 
 TSSignalInsertTarget TSDocument::blockSignalInsertTarget(

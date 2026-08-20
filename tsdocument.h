@@ -203,6 +203,34 @@ struct TSSignalInsertTarget {
     bool ok() const { return status == TSSignalInsertStatus::Ok; }
 };
 
+enum class TSSignalDeclarationOrganizationStatus {
+    Ok,
+    NoCurrentModule,
+    ModuleHasSyntaxError,
+    NoSignalDeclarations,
+    AlreadyOrganized,
+    UnsafeLayout
+};
+
+struct TSSignalDeclarationOrganizationPlan {
+    TSSignalDeclarationOrganizationStatus status =
+        TSSignalDeclarationOrganizationStatus::NoCurrentModule;
+    int replaceStartChar = -1;
+    int replaceEndChar = -1;
+    QString replacementText;
+    QString failureReason;
+    int declarationCount = 0;
+    int movedDeclarationCount = 0;
+
+    bool ok() const
+    {
+        return status
+                   == TSSignalDeclarationOrganizationStatus::Ok
+            && replaceStartChar >= 0
+            && replaceEndChar > replaceStartChar;
+    }
+};
+
 enum class TSParameterInsertStatus {
     Ok,
     NoCurrentParameterScope,
@@ -759,6 +787,13 @@ public:
 
     // Clear module-member insert point for adding an internal signal declaration.
     TSSignalInsertTarget signalInsertTarget(int charOffset) const;
+
+    // Reorder complete top-level net/data declarations in the current module
+    // into one declaration section before executable module items. Ports,
+    // parameters, types, conditional compilation, and procedural locals are
+    // never moved.
+    TSSignalDeclarationOrganizationPlan
+    signalDeclarationOrganizationPlan(int charOffset) const;
 
     // Clear declaration point in the nearest sequential block. Only a
     // declaration section before the first statement is accepted.

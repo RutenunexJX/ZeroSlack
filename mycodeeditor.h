@@ -278,6 +278,14 @@ public:
     int showGotoLineDialog();
     void showReplaceDialog();
     bool toggleSelectionCase(QString* failureReason = nullptr);
+    bool replaceSelectionWithSpaces(
+        QString* failureReason = nullptr);
+    bool canOrganizeSignalDeclarationsAt(
+        int cursorPosition,
+        QString* failureReason = nullptr) const;
+    bool organizeSignalDeclarationsAt(
+        int cursorPosition,
+        QString* failureReason = nullptr);
     void commentSelectionOrLine();
     void uncommentSelectionOrLine();
     void indentSelectionOrLine();

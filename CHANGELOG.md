@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.17.0] - 2026-08-20
+
+### Context-aware editor refactors
+
+- Added `Replace Selection with Spaces` for ordinary multiline and rectangular
+  column selections, preserving line breaks, selection shape, and one-step undo.
+- Added a Tree-sitter-backed `Organize Signal Declarations` action for the
+  current module. It keeps imports, types, parameters, declaration order, and
+  attached comments intact; excludes procedural locals; and rejects syntax or
+  preprocessor boundaries that cannot be moved safely.
+
 ## [0.16.0] - 2026-08-20
 
 ### Bundled Wave Simulation toolchain

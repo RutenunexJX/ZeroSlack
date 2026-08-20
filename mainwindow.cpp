@@ -4264,6 +4264,10 @@ ActionExecutionResult MainWindow::executeActionRoute(
         || route == QStringLiteral("editor.edit.replace")
         || route == QStringLiteral("editor.edit.toggleSelectionCase")
         || route == QStringLiteral(
+                        "editor.edit.replaceSelectionWithSpaces")
+        || route == QStringLiteral(
+                        "editor.structure.organizeSignalDeclarations")
+        || route == QStringLiteral(
                         "editor.structure.createSignalDefinition")
         || route == QStringLiteral(
                         "editor.structure.editInstanceSlots")
@@ -4293,6 +4297,10 @@ ActionExecutionResult MainWindow::executeActionRoute(
             || route == QStringLiteral(
                             "editor.edit.toggleSelectionCase")
             || route == QStringLiteral(
+                            "editor.edit.replaceSelectionWithSpaces")
+            || route == QStringLiteral(
+                            "editor.structure.organizeSignalDeclarations")
+            || route == QStringLiteral(
                             "editor.format.commentLines")
             || route == QStringLiteral(
                             "editor.format.uncommentLines")
@@ -4320,6 +4328,24 @@ ActionExecutionResult MainWindow::executeActionRoute(
             QString message;
             if (!editor->toggleSelectionCase(&message))
                 return fail(message);
+        } else if (route == QStringLiteral(
+                                "editor.edit.replaceSelectionWithSpaces")) {
+            QString message;
+            if (!editor->replaceSelectionWithSpaces(&message))
+                return fail(message);
+        } else if (route == QStringLiteral(
+                                "editor.structure.organizeSignalDeclarations")) {
+            const int cursorPosition =
+                invocation.parameters
+                    .value(
+                        QStringLiteral("cursorPosition"),
+                        editor->textCursor().position())
+                    .toInt();
+            QString message;
+            if (!editor->organizeSignalDeclarationsAt(
+                    cursorPosition, &message)) {
+                return fail(message);
+            }
         } else if (route == QStringLiteral(
                                 "editor.structure.createSignalDefinition")) {
             const int cursorPosition =

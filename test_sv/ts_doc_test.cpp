@@ -62,6 +62,18 @@ static QString applySignalInsertEdit(const QString& src,
     return result;
 }
 
+static QString applySignalOrganizationEdit(
+    const QString& src,
+    const TSSignalDeclarationOrganizationPlan& plan) {
+    QString result = src;
+    if (plan.ok()) {
+        result.replace(plan.replaceStartChar,
+                       plan.replaceEndChar - plan.replaceStartChar,
+                       plan.replacementText);
+    }
+    return result;
+}
+
 static QString applyParameterInsertEdit(const QString& src,
                                         const TSParameterInsertTarget& target) {
     QString result = src;
@@ -806,6 +818,93 @@ int main() {
             noModule.signalInsertTarget(0);
         check("add signal target: reports no current module",
               noModuleTarget.status == TSSignalInsertStatus::NoCurrentModule);
+    }
+
+    // Signal organization uses only direct module declarations and preserves
+    // declaration order plus attached comments.
+    {
+        const QString src =
+            QStringLiteral("module organize_demo;\n")
+            + QStringLiteral("  import pkg::*;\n")
+            + QStringLiteral("  typedef logic [3:0] nibble_t;\n")
+            + QStringLiteral("  localparam int W = 4;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  assign y = late;\n")
+            + QStringLiteral("  // late signal\n")
+            + QStringLiteral("  wire [W-1:0] late; // retained\n")
+            + QStringLiteral("  always_comb begin\n")
+            + QStringLiteral("    logic procedural_local;\n")
+            + QStringLiteral("    procedural_local = early;\n")
+            + QStringLiteral("  end\n")
+            + QStringLiteral("endmodule\n");
+        const QString expected =
+            QStringLiteral("module organize_demo;\n")
+            + QStringLiteral("  import pkg::*;\n")
+            + QStringLiteral("  typedef logic [3:0] nibble_t;\n")
+            + QStringLiteral("  localparam int W = 4;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  // late signal\n")
+            + QStringLiteral("  wire [W-1:0] late; // retained\n")
+            + QStringLiteral("  assign y = late;\n")
+            + QStringLiteral("  always_comb begin\n")
+            + QStringLiteral("    logic procedural_local;\n")
+            + QStringLiteral("    procedural_local = early;\n")
+            + QStringLiteral("  end\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+        const TSSignalDeclarationOrganizationPlan plan =
+            d.signalDeclarationOrganizationPlan(
+                src.indexOf(QStringLiteral("assign")));
+        check("organize signals: late declaration has a safe edit plan",
+              plan.ok()
+                  && plan.declarationCount == 2
+                  && plan.movedDeclarationCount == 2);
+        check("organize signals: comments move with declarations and locals stay put",
+              plan.ok()
+                  && applySignalOrganizationEdit(src, plan) == expected);
+
+        TSDocument organized;
+        organized.setText(expected);
+        check("organize signals: already organized module is reported",
+              organized.signalDeclarationOrganizationPlan(
+                           expected.indexOf(QStringLiteral("assign")))
+                      .status
+                  == TSSignalDeclarationOrganizationStatus::AlreadyOrganized);
+    }
+
+    {
+        const QString broken =
+            QStringLiteral("module broken;\n")
+            + QStringLiteral("  logic missing_semicolon\n")
+            + QStringLiteral("  assign y = missing_semicolon;\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(broken);
+        check("organize signals: syntax errors reject structural movement",
+              d.signalDeclarationOrganizationPlan(
+                   broken.indexOf(QStringLiteral("assign")))
+                      .status
+                  == TSSignalDeclarationOrganizationStatus::ModuleHasSyntaxError);
+    }
+
+    {
+        const QString conditional =
+            QStringLiteral("module conditional_demo;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  assign y = early;\n")
+            + QStringLiteral("`ifdef FEATURE\n")
+            + QStringLiteral("  assign feature_y = early;\n")
+            + QStringLiteral("`endif\n")
+            + QStringLiteral("  logic late;\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(conditional);
+        check("organize signals: conditional compilation is a movement barrier",
+              d.signalDeclarationOrganizationPlan(
+                   conditional.indexOf(QStringLiteral("late")))
+                      .status
+                  == TSSignalDeclarationOrganizationStatus::UnsafeLayout);
     }
 
     // 9) add parameter: parameter lists precede body declarations.
