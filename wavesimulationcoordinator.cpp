@@ -45,6 +45,69 @@ bool WaveSimulationCoordinator::start(
     cancellation = std::make_shared<std::atomic_bool>(false);
     active = true;
     processTerminalHandled = false;
+    if (currentRequest.tools.requiresBundledToolchain()) {
+        startToolchainPreparation();
+    } else {
+        startPreparation();
+    }
+    return true;
+}
+
+void WaveSimulationCoordinator::startToolchainPreparation()
+{
+    setStage(WaveSimulationStage::PreparingToolchain,
+             QStringLiteral("Preparing the local Wave Simulation toolchain..."));
+    toolchainWatcher = new QFutureWatcher<WaveToolchainBundleResult>(this);
+    connect(toolchainWatcher,
+            &QFutureWatcher<WaveToolchainBundleResult>::finished,
+            this,
+            &WaveSimulationCoordinator::handleToolchainPreparationFinished);
+    const WaveToolchainBundleDescriptor descriptor =
+        currentRequest.tools.toolchainBundle;
+    const std::shared_ptr<std::atomic_bool> cancelFlag = cancellation;
+    toolchainWatcher->setFuture(QtConcurrent::run(
+        [descriptor, cancelFlag]() {
+            return WaveToolchainBundleService::prepare(
+                descriptor,
+                QString(),
+                [cancelFlag]() {
+                    return cancelFlag->load(std::memory_order_relaxed);
+                });
+        }));
+}
+
+void WaveSimulationCoordinator::handleToolchainPreparationFinished()
+{
+    if (!toolchainWatcher)
+        return;
+    const WaveToolchainBundleResult result = toolchainWatcher->result();
+    toolchainWatcher->deleteLater();
+    toolchainWatcher = nullptr;
+    if (!active)
+        return;
+    if (cancellation
+        && cancellation->load(std::memory_order_relaxed)) {
+        finishCancelled();
+        return;
+    }
+    if (!result.succeeded()) {
+        fail(result.message.isEmpty()
+                 ? QStringLiteral("Wave toolchain preparation failed.")
+                 : result.message);
+        return;
+    }
+    WaveSimulationConfiguration::applyToolchainRoot(
+        &currentRequest.tools, result.toolchainRoot);
+    if (currentRequest.tools.requiresBundledToolchain()) {
+        fail(QStringLiteral(
+            "The local Wave toolchain cache does not contain a compatible Verilator and C++ compiler."));
+        return;
+    }
+    startPreparation();
+}
+
+void WaveSimulationCoordinator::startPreparation()
+{
     setStage(WaveSimulationStage::Preparing,
              QStringLiteral("Preparing the selected module for Wave Simulation..."));
 
@@ -54,7 +117,7 @@ bool WaveSimulationCoordinator::start(
             this,
             &WaveSimulationCoordinator::handlePreparationFinished);
     const WaveSimulationPreparationRequest preparation =
-        request.preparation;
+        currentRequest.preparation;
     const std::shared_ptr<std::atomic_bool> cancelFlag = cancellation;
     watcher->setFuture(QtConcurrent::run(
         [preparation, cancelFlag]() {
@@ -64,7 +127,6 @@ bool WaveSimulationCoordinator::start(
                     return cancelFlag->load(std::memory_order_relaxed);
                 });
         }));
-    return true;
 }
 
 void WaveSimulationCoordinator::cancel()

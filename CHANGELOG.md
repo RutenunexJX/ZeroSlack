@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.18.0] - 2026-08-21
+
+### Stable lazy Wave toolchain bundle
+
+- Added discovery of a sibling Wave toolchain bundle while preserving explicit
+  Simulation settings, legacy expanded portable layouts, environment variables,
+  and `PATH` in their existing priority order.
+- Added asynchronous first-use preparation with archive-size and SHA-256
+  verification, unsafe-path rejection, staging extraction, atomic publication,
+  cancellation, and content-addressed local-cache reuse.
+- Added a stable bundle packaging script that reuses an unchanged archive by
+  default, preventing normal application releases and sync clients from
+  rewriting nearly 19000 expanded compiler files.
+- Added regression coverage for first extraction, cache reuse, process-path
+  population, explicit and legacy precedence, hash mismatch, and manifest path
+  traversal rejection.
+
 ## [0.17.3] - 2026-08-21
 
 ### Editor completion, formatting, and refactoring fixes

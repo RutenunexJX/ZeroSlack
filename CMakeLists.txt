@@ -338,6 +338,7 @@ set(ZEROSLACK_CORE_SOURCES
     structuredwhitespaceformatter.cpp
     ghostannotationservice.cpp
     graphexportservice.cpp
+    wavetoolchainbundleservice.cpp
     wavesimulationconfiguration.cpp
     wavesimulationcoordinator.cpp
     wavesimulationresultnavigationcoordinator.cpp
@@ -962,6 +963,7 @@ if(BUILD_TESTING)
 
     add_executable(wave_simulation_configuration_test
         test_sv/wave_simulation_configuration_test.cpp
+        wavetoolchainbundleservice.cpp
         wavesimulationconfiguration.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(wave_simulation_configuration_test PRIVATE

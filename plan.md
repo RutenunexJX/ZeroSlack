@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.17.3`
+Product version: `v0.18.0`
 
 ## Current status
 
@@ -27,10 +27,12 @@ Product version: `v0.17.3`
   procedural locals, treats module-level macro definitions as preamble items,
   and rejects unsafe syntax or preprocessor boundaries.
 
-- The Windows package includes a pinned `WaveWorkbench/toolchain` containing
-  Verilator 5.050, MinGW 13.1, GNU Make, runtime DLLs, licenses, and a manifest.
-  Package, staging, object, and default release destination names contain no
-  spaces. Explicit Settings Center paths still override portable discovery.
+- The Windows package stores the pinned Verilator 5.050, MinGW 13.1, GNU Make,
+  runtime DLLs, licenses, and toolchain manifest in one stable sibling ZIP.
+  The first simulation verifies its SHA-256 and extracts it asynchronously to
+  a content-addressed local cache; subsequent runs and application releases
+  reuse the ready cache. Legacy expanded `WaveWorkbench/toolchain` packages
+  remain compatible, and explicit Settings Center paths retain priority.
 - ZeroSlack passes the resolved compiler, Verilator root, make program, and
   portable `PATH` to the runner. The native launcher adds context-time support
   for WaveWorkbench's `VerilatedContext` harness and preserves quoted source

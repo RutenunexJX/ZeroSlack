@@ -16,6 +16,7 @@ class QFutureWatcher;
 
 enum class WaveSimulationStage {
     Idle,
+    PreparingToolchain,
     Preparing,
     ImportingTarget,
     ExportingStimulus,
@@ -77,6 +78,7 @@ private:
 
     WaveSimulationRunRequest currentRequest;
     WaveSimulationPreparationResult prepared;
+    QFutureWatcher<WaveToolchainBundleResult>* toolchainWatcher = nullptr;
     QFutureWatcher<WaveSimulationPreparationResult>* watcher = nullptr;
     QPointer<QProcess> process;
     std::shared_ptr<std::atomic_bool> cancellation;
@@ -88,6 +90,9 @@ private:
 
     void setStage(WaveSimulationStage next,
                   const QString& message);
+    void startToolchainPreparation();
+    void handleToolchainPreparationFinished();
+    void startPreparation();
     void handlePreparationFinished();
     void startProcess(WaveSimulationStage stage,
                       const QString& program,

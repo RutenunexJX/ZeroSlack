@@ -2,15 +2,20 @@
 #include "settingscenterkeys.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 #include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QProcessEnvironment>
 #include <QStandardPaths>
 #include <QSettings>
 #include <QTemporaryDir>
 
 #include <iostream>
+#include <future>
 
 namespace {
 int checks = 0;
@@ -30,6 +35,26 @@ bool isChildPath(const QString& parent, const QString& child)
     const QString prefix = QDir::cleanPath(parent)
         + QLatin1Char('/');
     return QDir::cleanPath(child).startsWith(prefix);
+}
+
+bool writeFixtureFile(const QString& path,
+                      const QByteArray& content = {})
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly)
+        && file.write(content) == content.size();
+}
+
+QString sha256(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    while (!file.atEnd())
+        hash.addData(file.read(1024 * 1024));
+    return QString::fromLatin1(hash.result().toHex());
 }
 }
 
@@ -228,6 +253,177 @@ int main(int argc, char** argv)
               && explicitTools.cxxCompiler
                      == QFileInfo(explicitCompiler).absoluteFilePath(),
           "explicit Simulation settings override portable toolchain discovery");
+
+    const QString bundleWaveDirectory = temporary.filePath(
+        QStringLiteral("bundle-wave"));
+    QDir().mkpath(bundleWaveDirectory);
+    for (const QString& name : {
+             QStringLiteral("wave-bridge"),
+             QStringLiteral("wave-sim-runner"),
+             QStringLiteral("wave-workbench"),
+             QStringLiteral("wave-wellen-reader")}) {
+        check(writeFixtureFile(QDir(bundleWaveDirectory).absoluteFilePath(
+                  name + executableSuffix)),
+              "bundle fixture WaveWorkbench tool can be created");
+    }
+    check(writeFixtureFile(QDir(bundleWaveDirectory).absoluteFilePath(
+              widgetLibraryName)),
+          "bundle fixture widget library can be created");
+
+    const QString bundleSource = temporary.filePath(
+        QStringLiteral("bundle-source"));
+    for (const QString& relative : {
+             QStringLiteral("toolchain-manifest.json"),
+             QStringLiteral("verilator/bin/verilator") + executableSuffix,
+             QStringLiteral("verilator/bin/verilator_bin") + executableSuffix,
+             QStringLiteral("verilator/include/verilated.mk"),
+             QStringLiteral("mingw/bin/g++") + executableSuffix,
+             QStringLiteral("mingw/bin/mingw32-make") + executableSuffix}) {
+        const QByteArray content = relative
+                == QStringLiteral("toolchain-manifest.json")
+            ? QByteArrayLiteral(
+                  "{\"schema\":\"zeroslack.wave-toolchain/v1\"}")
+            : QByteArrayLiteral("fixture");
+        check(writeFixtureFile(
+                  QDir(bundleSource).absoluteFilePath(relative),
+                  content),
+              "bundle toolchain member can be created");
+    }
+    const QString bundleDirectory = QDir(bundleWaveDirectory)
+        .absoluteFilePath(QStringLiteral("Toolchain"));
+    QDir().mkpath(bundleDirectory);
+    const QString archivePath = QDir(bundleDirectory).absoluteFilePath(
+        QStringLiteral("wave-toolchain-v1.zip"));
+    QString tar = QStandardPaths::findExecutable(
+        QStringLiteral("tar") + executableSuffix);
+#ifdef Q_OS_WIN
+    if (tar.isEmpty()) {
+        const QString candidate = QDir(qEnvironmentVariable("SystemRoot"))
+            .absoluteFilePath(QStringLiteral("System32/tar.exe"));
+        if (QFileInfo(candidate).isFile())
+            tar = candidate;
+    }
+#endif
+    check(!tar.isEmpty(),
+          "a platform archive tool is available for the bundle fixture");
+    if (!tar.isEmpty()) {
+        check(QProcess::execute(
+                  tar,
+                  {QStringLiteral("-a"), QStringLiteral("-cf"), archivePath,
+                   QStringLiteral("-C"), bundleSource, QStringLiteral(".")}) == 0,
+              "bundle fixture archive can be created");
+    }
+    const QString archiveHash = sha256(archivePath);
+    QJsonObject bundleManifest;
+    bundleManifest.insert(
+        QStringLiteral("schema"),
+        QStringLiteral("zeroslack.wave-toolchain-bundle/v1"));
+    bundleManifest.insert(QStringLiteral("schemaVersion"), 1);
+    bundleManifest.insert(QStringLiteral("bundleId"),
+                          QStringLiteral("sha256-") + archiveHash);
+    bundleManifest.insert(QStringLiteral("archive"),
+                          QFileInfo(archivePath).fileName());
+    bundleManifest.insert(QStringLiteral("archiveSha256"), archiveHash);
+    bundleManifest.insert(QStringLiteral("archiveBytes"),
+                          static_cast<double>(QFileInfo(archivePath).size()));
+    const QString bundleManifestPath = QDir(bundleDirectory).absoluteFilePath(
+        QString::fromLatin1(
+            WaveToolchainBundleService::kManifestFileName));
+    check(writeFixtureFile(
+              bundleManifestPath,
+              QJsonDocument(bundleManifest).toJson(QJsonDocument::Indented)),
+          "bundle manifest can be created");
+
+    const QString bundleSettingsPath = temporary.filePath(
+        QStringLiteral("bundle-settings.ini"));
+    {
+        QSettings settings(bundleSettingsPath, QSettings::IniFormat);
+        settings.setValue(
+            QString::fromLatin1(
+                SettingsCenterKeys::SimulationVerilatorPath),
+            temporary.filePath(QStringLiteral("missing-verilator")
+                               + executableSuffix));
+        settings.setValue(
+            QString::fromLatin1(
+                SettingsCenterKeys::SimulationCxxCompilerPath),
+            temporary.filePath(QStringLiteral("missing-cxx")
+                               + executableSuffix));
+    }
+    WaveSimulationToolPaths bundleTools =
+        WaveSimulationConfiguration(
+            bundleSettingsPath,
+            cacheRoot,
+            bundleWaveDirectory)
+            .toolPaths();
+    check(bundleTools.isValid()
+              && bundleTools.toolchainBundle.isValid()
+              && bundleTools.requiresBundledToolchain(),
+          "a compact bundle is discovered when configured and expanded tools are unavailable");
+    const QString bundleCache = temporary.filePath(
+        QStringLiteral("bundle-cache"));
+    const WaveToolchainBundleResult preparedBundle =
+        WaveToolchainBundleService::prepare(
+            bundleTools.toolchainBundle, bundleCache);
+    check(preparedBundle.succeeded() && !preparedBundle.reused,
+          "the compact bundle is verified and extracted into the local cache");
+    WaveSimulationConfiguration::applyToolchainRoot(
+        &bundleTools, preparedBundle.toolchainRoot);
+    check(!bundleTools.requiresBundledToolchain()
+              && QFileInfo(bundleTools.verilator).isFile()
+              && QFileInfo(bundleTools.cxxCompiler).isFile()
+              && QFileInfo(bundleTools.makeProgram).isFile(),
+          "cached bundle tools populate the simulation process environment");
+    const WaveToolchainBundleResult reusedBundle =
+        WaveToolchainBundleService::prepare(
+            bundleTools.toolchainBundle, bundleCache);
+    check(reusedBundle.succeeded() && reusedBundle.reused
+              && reusedBundle.toolchainRoot == preparedBundle.toolchainRoot,
+          "a prepared bundle is reused without extraction");
+
+    const QString concurrentCache = temporary.filePath(
+        QStringLiteral("concurrent-bundle-cache"));
+    auto firstPreparation = std::async(
+        std::launch::async,
+        [descriptor = bundleTools.toolchainBundle, concurrentCache]() {
+            return WaveToolchainBundleService::prepare(
+                descriptor, concurrentCache);
+        });
+    auto secondPreparation = std::async(
+        std::launch::async,
+        [descriptor = bundleTools.toolchainBundle, concurrentCache]() {
+            return WaveToolchainBundleService::prepare(
+                descriptor, concurrentCache);
+        });
+    const WaveToolchainBundleResult firstConcurrent =
+        firstPreparation.get();
+    const WaveToolchainBundleResult secondConcurrent =
+        secondPreparation.get();
+    check(firstConcurrent.succeeded() && secondConcurrent.succeeded()
+              && firstConcurrent.toolchainRoot
+                     == secondConcurrent.toolchainRoot
+              && firstConcurrent.reused != secondConcurrent.reused,
+          "concurrent first use publishes one cache and reuses it in the other process path");
+
+    WaveToolchainBundleDescriptor wrongHash = bundleTools.toolchainBundle;
+    wrongHash.archiveSha256[0] = wrongHash.archiveSha256.at(0)
+            == QLatin1Char('0') ? QLatin1Char('1') : QLatin1Char('0');
+    check(WaveToolchainBundleService::prepare(
+              wrongHash,
+              temporary.filePath(QStringLiteral("wrong-hash-cache"))).status
+              == WaveToolchainBundleStatus::ArchiveHashMismatch,
+          "a bundle with a mismatched SHA-256 is rejected");
+
+    QJsonObject unsafeManifest = bundleManifest;
+    unsafeManifest.insert(QStringLiteral("archive"),
+                          QStringLiteral("../outside.zip"));
+    const QString unsafeManifestPath = temporary.filePath(
+        QStringLiteral("unsafe-bundle.json"));
+    check(writeFixtureFile(
+              unsafeManifestPath,
+              QJsonDocument(unsafeManifest).toJson(QJsonDocument::Compact))
+              && !WaveToolchainBundleService::fromManifest(
+                      unsafeManifestPath).isValid(),
+          "a bundle manifest cannot escape its own directory");
 
     WaveSimulationConfiguration productionDefaults(settingsPath);
     const WaveSimulationCachePaths defaultPaths =

@@ -1,16 +1,16 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.17.3`
+Product version: `v0.18.0`
 
 ## Objective
 
-Maintain the completed portable Wave Simulation baseline while keeping editor
-completion, formatting, rename, and declaration organization structurally
-correct without creating a second SystemVerilog syntax fact source.
+Maintain the portable Wave Simulation baseline while distributing its stable
+toolchain as a compact verified bundle, without regressing editor semantics or
+creating a second SystemVerilog syntax fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.17.3.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.18.0.
 - ASCII numeric peeks display every radix row, including hexadecimal output.
 - Column-mode Tab completion expands canonical SystemVerilog keywords across
   the selected rows in one undoable edit, and its selection is visibly pink.
@@ -34,7 +34,10 @@ correct without creating a second SystemVerilog syntax fact source.
 - Portable adjacent tools are preferred over ambient `PATH`, resolved paths are
   passed explicitly to the runner, and failures identify each missing tool.
 - The formal Windows package contains Verilator 5.050, MinGW 13.1, GNU Make,
-  required runtime DLLs, licenses, and a machine-readable toolchain manifest.
+  required runtime DLLs, and licenses in one stable ZIP with a SHA-256 manifest.
+- The first simulation prepares the bundle outside the UI thread in a
+  content-addressed local cache; later runs reuse it, and legacy expanded
+  toolchain layouts retain their existing priority and behavior.
 - A clean target computer can compile and run a real RTL fixture without a
   system compiler installation or global environment changes.
 - `wavewidgets` provides a versioned runtime factory for the complete simulation
@@ -103,10 +106,9 @@ correct without creating a second SystemVerilog syntax fact source.
 
 ## Current status
 
-S12.10 is complete. The Windows package carries a pinned native Verilator
-5.050 and MinGW 13.1 toolchain. ZeroSlack discovers it beside WaveWorkbench,
-propagates `PATH`, `VERILATOR_ROOT`, and `MAKE` to every runner child, and uses
-the portable launcher to supply context-time compatibility for generated
-models. A real SystemVerilog fixture compiled in about 7.8 seconds, simulated
-200000 ticks in 56 ms, and produced a parsed VCD with 8 signals and 168
-transitions. Package and build-cache paths use no-space directory names.
+S13.1 is complete. The Windows package can keep its pinned native Verilator
+5.050 and MinGW 13.1 toolchain as one stable ZIP beside the application. The
+first simulation verifies size and SHA-256, rejects unsafe archive paths, and
+extracts into a content-addressed local cache on a worker thread. Ready caches
+are reused without hashing or extraction. ZeroSlack then propagates `PATH`,
+`VERILATOR_ROOT`, and `MAKE` exactly as for the legacy expanded layout.

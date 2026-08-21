@@ -1,6 +1,8 @@
 #ifndef WAVESIMULATIONCONFIGURATION_H
 #define WAVESIMULATIONCONFIGURATION_H
 
+#include "wavetoolchainbundleservice.h"
+
 #include <QString>
 #include <QStringList>
 
@@ -25,9 +27,11 @@ struct WaveSimulationToolPaths {
     QString cxxCompiler;
     QString verilatorRoot;
     QString makeProgram;
+    WaveToolchainBundleDescriptor toolchainBundle;
 
     bool isValid() const;
     QStringList missingTools() const;
+    bool requiresBundledToolchain() const;
     QProcessEnvironment processEnvironment() const;
 };
 
@@ -45,6 +49,8 @@ public:
 
     WaveSimulationCachePaths cachePaths() const;
     WaveSimulationToolPaths toolPaths() const;
+    static void applyToolchainRoot(WaveSimulationToolPaths* paths,
+                                   const QString& root);
 
 private:
     QString settingsFilePath;
