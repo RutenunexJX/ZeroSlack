@@ -225,7 +225,7 @@ int main(int argc, char** argv)
                    pwmCodecHeader,
                    pwmCodecHeaderReport.formattedText));
     const FormatterReport pwmCodecSelectionReport =
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             pwmCodecHeader, FormatterProfile::Structured);
     expect("pwm codec header selection uses the same structural alignment",
            pwmCodecSelectionReport.formattedText

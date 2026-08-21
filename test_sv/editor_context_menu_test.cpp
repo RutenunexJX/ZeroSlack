@@ -102,7 +102,6 @@ int main(int argc, char* argv[])
             ActionIds::EditReplaceSelectionWithSpaces)),
         capability(QString::fromLatin1(
             ActionIds::RefactorOrganizeSignalDeclarations)),
-        capability(QStringLiteral("format.selection"), false),
         capability(QStringLiteral("format.document"))
     };
 
@@ -154,8 +153,6 @@ int main(int argc, char* argv[])
     check(findItem(model, QStringLiteral("insight.stateTransitionGraph"))
               == nullptr,
           "irrelevant specialized Insight action is omitted");
-    check(findItem(model, QStringLiteral("format.selection")) == nullptr,
-          "selection-only action is omitted without a selection");
     const EditorContextMenuItem* temporaryEditor =
         findItem(model, QString::fromLatin1(
             ActionIds::ViewTemporaryEditorOpen));
@@ -209,7 +206,6 @@ int main(int argc, char* argv[])
             ActionIds::RefactorOrganizeSignalDeclarations),
         QStringLiteral("format.profile.structured"),
         QStringLiteral("format.profile.indentOnly"),
-        QStringLiteral("format.selection"),
         QStringLiteral("format.document")
     };
     for (const QString& actionId : requiredContextActions) {
@@ -220,6 +216,8 @@ int main(int argc, char* argv[])
                   && descriptor->hasSurface(ActionSurface::ContextMenu),
               "every retained editor menu descriptor declares its surface");
     }
+    check(findActionById(QStringLiteral("format.selection")) == nullptr,
+          "removed Format Selection action has no registry descriptor");
 
     const QStringList retainedShortcutActions = {
         QStringLiteral("edit.undo"),

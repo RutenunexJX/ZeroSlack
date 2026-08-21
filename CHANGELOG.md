@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.17.3] - 2026-08-21
+
+### Editor completion, formatting, and refactoring fixes
+
+- Restored hexadecimal output in the ASCII numeric peek by sizing the popup
+  for every rendered radix row.
+- Added structural keyword completion for rectangular column carets and changed
+  the active column-selection fill to light pink.
+- Extended formatter alignment to typedef-typed declarations and enum values
+  containing concatenations.
+- Removed the user-facing Format Selection action and its obsolete editor
+  workflow while retaining the syntax-aware snippet formatter used internally
+  by generated RTL transactions.
+- Made rename symbol lookup accept caret boundaries next to punctuation.
+- Kept signal declaration organization available when preprocessing directives
+  appear after the final declaration that needs to move.
+
 ## [0.17.2] - 2026-08-20
 
 ### Signal declaration organization
@@ -353,7 +370,7 @@
 
 ### Editor reliability update
 
-- Stabilized Format Document and Format Selection by retaining full syntax
+- Stabilized formatter output by retaining full syntax
   context, preserving immutable string/comment content, reporting conservative
   fallbacks, and aligning mixed ANSI parameter and port declarations.
 - Corrected editor command ownership for ordinary and mode-specific Tab /

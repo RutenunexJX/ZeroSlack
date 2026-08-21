@@ -1382,10 +1382,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 
     append(QStringLiteral("format.profile.structured"));
     append(QStringLiteral("format.profile.indentOnly"));
-    append(QStringLiteral("format.selection"),
-           hasSelection,
-           editable,
-           QStringLiteral("The editor is read-only."));
     append(QStringLiteral("format.document"),
            true,
            editable,
@@ -1591,9 +1587,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                            "format.profile.indentOnly")) {
                 editor->setFormatterProfile(
                     FormatterProfile::IndentOnly);
-            } else if (actionId
-                       == QStringLiteral("format.selection")) {
-                editor->formatSelection();
             } else if (actionId
                        == QStringLiteral("format.document")) {
                 editor->formatDocument();

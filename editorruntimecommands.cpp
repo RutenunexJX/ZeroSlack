@@ -1011,8 +1011,6 @@ void MyCodeEditorState::executeEditorActionCommand(
 {
     if (command == QStringLiteral("format_document"))
         formatDocument(editor);
-    else if (command == QStringLiteral("format_selection"))
-        formatSelection(editor);
 }
 
 void MyCodeEditorState::setFormatterProfile(FormatterProfile profile)

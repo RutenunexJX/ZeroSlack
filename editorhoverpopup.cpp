@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QKeyEvent>
@@ -543,7 +544,10 @@ void EditorHoverPopup::showNumericLiteral(const QString& displayText,
     PeekContentModel content;
     content.kind = PeekContentKind::NumericRadix;
     content.title = QStringLiteral("Numeric value");
-    content.maximumSize = QSize(520, 160);
+    const int lineCount = qMax(1, displayText.count(QLatin1Char('\n')) + 1);
+    const int contentHeight =
+        104 + lineCount * QFontMetrics(editorFont).lineSpacing();
+    content.maximumSize = QSize(520, qBound(160, contentHeight, 320));
     content.rows.append(
         {displayText, PeekContentRowRole::Code, false});
     showContent(content,

@@ -492,7 +492,6 @@ struct MyCodeEditorState
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
     FormatterReport formatDocument(MyCodeEditor* editor);
-    FormatterReport formatSelection(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);
     void uncommentSelectionOrLine(MyCodeEditor* editor);
     void indentSelectionOrLine(MyCodeEditor* editor);

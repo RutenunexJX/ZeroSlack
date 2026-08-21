@@ -4,6 +4,7 @@
 #include "editorgeometry.h"
 #include "editormodecontroller.h"
 #include "mycodeeditor.h"
+#include "tsdocument.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -308,6 +309,93 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
     }
     updateColumnSelectionHighlight(editor, state);
     editor->viewport()->update();
+}
+
+bool completeColumnKeywords(MyCodeEditor* editor,
+                            EditorColumnModeController::State& state)
+{
+    if (!editor || !editor->syntaxDocument())
+        return false;
+
+    const auto [firstLine, lastLine] = lineSpan(state);
+    const auto [leftColumn, rightColumn] = columnSpan(state);
+    if (leftColumn != rightColumn)
+        return false;
+
+    const int tabWidth = editorTabStopColumns(editor);
+    struct CompletionRow {
+        QString lineText;
+        int offset = -1;
+        int cursorPosition = -1;
+        TSIdentifierTarget prefix;
+        TSKeywordCompletionTarget target;
+    };
+    QList<CompletionRow> completionRows;
+    completionRows.reserve(lastLine - firstLine + 1);
+    QString canonicalPrefix;
+    QString canonicalKeyword;
+    for (int line = firstLine; line <= lastLine; ++line) {
+        const QTextBlock block = editor->document()->findBlockByNumber(line);
+        if (!block.isValid())
+            return false;
+        CompletionRow row;
+        row.lineText = block.text();
+        const int lineEndVisual = layoutVisualColumnForOffset(
+            editor, block, row.lineText.size());
+        if (leftColumn > lineEndVisual)
+            return false;
+        row.offset = layoutOffsetForVisualColumn(
+            editor, block, leftColumn, VisualBoundary::Start);
+        row.cursorPosition = block.position() + row.offset;
+        row.target = editor->syntaxDocument()->uniqueKeywordCompletionAt(
+            row.cursorPosition, 3);
+        row.prefix = editor->syntaxDocument()->identifierAt(
+            qMax(0, row.cursorPosition - 1));
+        if (!row.prefix.ok()
+            || row.prefix.endChar != row.cursorPosition) {
+            return false;
+        }
+        if (row.target.ok()
+            && row.target.endChar == row.cursorPosition) {
+            if (canonicalKeyword.isEmpty()) {
+                canonicalPrefix = row.target.prefix;
+                canonicalKeyword = row.target.keyword;
+            } else if (canonicalKeyword != row.target.keyword) {
+                return false;
+            }
+        }
+        completionRows.append(row);
+    }
+    if (canonicalKeyword.isEmpty())
+        return false;
+
+    int acceptedWidth = -1;
+    QStringList acceptedRows;
+    acceptedRows.reserve(completionRows.size());
+    for (const CompletionRow& row : completionRows) {
+        if (row.prefix.text != canonicalPrefix
+            || !canonicalKeyword.startsWith(row.prefix.text)
+            || canonicalKeyword == row.prefix.text) {
+            return false;
+        }
+
+        QString acceptedText =
+            canonicalKeyword.mid(row.prefix.text.size());
+        if (row.offset >= row.lineText.size()
+            || (row.lineText.at(row.offset) != QLatin1Char(' ')
+                && row.lineText.at(row.offset) != QLatin1Char('\t'))) {
+            acceptedText.append(QLatin1Char(' '));
+        }
+        const int width = visualWidthOfText(
+            acceptedText, leftColumn, tabWidth);
+        if (acceptedWidth >= 0 && acceptedWidth != width)
+            return false;
+        acceptedWidth = width;
+        acceptedRows.append(acceptedText);
+    }
+
+    replaceColumnSelectionRows(editor, state, acceptedRows, true, false);
+    return true;
 }
 
 void clearColumnSelection(MyCodeEditor* editor, EditorColumnModeController::State& state)
@@ -718,6 +806,11 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
     const bool hasWidth = rightColumn > leftColumn;
+    if (forwardTab && !hasWidth
+        && completeColumnKeywords(editor, state)) {
+        event->accept();
+        return true;
+    }
     const int backwardTargetColumn =
         backwardTab ? previousTabStopVisual(leftColumn, tabWidth) : leftColumn;
     const int editColumn =

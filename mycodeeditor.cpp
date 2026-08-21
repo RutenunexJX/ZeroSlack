@@ -1246,12 +1246,6 @@ FormatterReport MyCodeEditor::formatDocument()
     return state->formatDocument(this);
 }
 
-FormatterReport MyCodeEditor::formatSelection()
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->formatSelection(this);
-}
-
 bool MyCodeEditor::goToLineNumber(int lineNumber)
 {
     const int maxLine = document() ? document()->blockCount() : 0;

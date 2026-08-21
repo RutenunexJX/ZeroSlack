@@ -1074,7 +1074,13 @@ DeclarationAlignmentLine parseDeclarationAlignmentLine(const QString& line)
             return parsed;
         family = QStringLiteral("signal");
     } else {
-        return parsed;
+        const QString declaration = codeBody + terminator;
+        if (terminator != QStringLiteral(";")
+            || !TSDocument::isSingleSignalDeclaration(
+                declaration, name, false)) {
+            return parsed;
+        }
+        family = QStringLiteral("signal");
     }
 
     if (isPortDirectionKeyword(firstToken)
@@ -1303,10 +1309,7 @@ EnumItemAlignmentLine parseEnumItemAlignmentLine(const QString& line)
     const int indentWidth = leadingWhitespaceWidth(parts.code);
     const QString indent = parts.code.left(indentWidth);
     QString code = parts.code.mid(indentWidth).trimmed();
-    if (code.isEmpty()
-        || code.contains(QLatin1Char('{'))
-        || code.contains(QLatin1Char('}'))
-        || code.endsWith(QLatin1Char(';'))) {
+    if (code.isEmpty() || code.endsWith(QLatin1Char(';'))) {
         return parsed;
     }
 
@@ -2238,7 +2241,7 @@ FormatterReport FormatterService::formatDocument(
     return formatDocument(text, optionsForProfile(profile));
 }
 
-FormatterReport FormatterService::formatSelection(
+FormatterReport FormatterService::formatSnippet(
     const QString& text,
     const FormatterOptions& options) const
 {
@@ -2304,7 +2307,7 @@ FormatterReport FormatterService::formatSelection(
         if (!report.diagnostic.isEmpty())
             report.diagnostic += QLatin1Char(' ');
         report.diagnostic += QStringLiteral(
-            "Selection formatting was limited to lexical whitespace because the result changed the token stream.");
+            "Snippet formatting was limited to lexical whitespace because the result changed the token stream.");
     }
     report.changed = report.formattedText != text;
     report.formattedLines = formatted.size();
@@ -2316,9 +2319,9 @@ FormatterReport FormatterService::formatSelection(
     return report;
 }
 
-FormatterReport FormatterService::formatSelection(
+FormatterReport FormatterService::formatSnippet(
     const QString& text,
     FormatterProfile profile) const
 {
-    return formatSelection(text, optionsForProfile(profile));
+    return formatSnippet(text, optionsForProfile(profile));
 }

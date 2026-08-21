@@ -1,8 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.17.2`
+Product version: `v0.17.3`
 
 ## Current status
+
+- ASCII numeric peeks expose every radix row, including hexadecimal output.
+- Column-mode keyword completion uses the same structural keyword source as
+  ordinary editing, and active rectangular selections use a light-pink fill.
+- Formatter declaration alignment covers typedef-typed variables and enum
+  values containing concatenations. Format Document is the sole user-facing
+  formatter action; generated RTL transactions retain an internal snippet
+  formatter without exposing a second editor workflow.
+- Rename resolves symbols at punctuation boundaries, and declaration
+  organization ignores preprocessing barriers that occur only after the final
+  declaration being moved.
 
 - Workspace activation restores the cached file list immediately and always
   follows it with an asynchronous directory reconciliation. A changed file set

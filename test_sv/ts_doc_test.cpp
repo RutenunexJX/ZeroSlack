@@ -935,6 +935,35 @@ int main() {
                   == TSSignalDeclarationOrganizationStatus::UnsafeLayout);
     }
 
+    {
+        const QString src =
+            QStringLiteral("module trailing_conditional_demo;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  assign y = early;\n")
+            + QStringLiteral("  logic late;\n")
+            + QStringLiteral("`ifdef FEATURE\n")
+            + QStringLiteral("  assign feature_y = late;\n")
+            + QStringLiteral("`endif\n")
+            + QStringLiteral("endmodule\n");
+        const QString expected =
+            QStringLiteral("module trailing_conditional_demo;\n")
+            + QStringLiteral("  logic early;\n")
+            + QStringLiteral("  logic late;\n")
+            + QStringLiteral("  assign y = early;\n")
+            + QStringLiteral("`ifdef FEATURE\n")
+            + QStringLiteral("  assign feature_y = late;\n")
+            + QStringLiteral("`endif\n")
+            + QStringLiteral("endmodule\n");
+        TSDocument d;
+        d.setText(src);
+        const TSSignalDeclarationOrganizationPlan plan =
+            d.signalDeclarationOrganizationPlan(
+                src.indexOf(QStringLiteral("late")));
+        check("organize signals: trailing conditional compilation is not crossed",
+              plan.ok()
+                  && applySignalOrganizationEdit(src, plan) == expected);
+    }
+
     // 9) add parameter: parameter lists precede body declarations.
     {
         QString src =
@@ -1124,6 +1153,16 @@ int main() {
                   && src.mid(identifier.startChar,
                              identifier.endChar - identifier.startChar)
                       == identifier.text);
+
+        const int identifierEnd =
+            src.indexOf(QStringLiteral("missing_data"))
+            + QStringLiteral("missing_data").size();
+        const TSIdentifierTarget beforePunctuation =
+            d.identifierAt(identifierEnd);
+        check("structural identifier resolves from the caret before punctuation",
+              beforePunctuation.ok()
+                  && beforePunctuation.text
+                      == QStringLiteral("missing_data"));
 
         const TSInstantiationTarget instance =
             d.instantiationAt(dataPos);

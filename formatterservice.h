@@ -59,10 +59,10 @@ public:
     FormatterReport formatDocument(
         const QString& text,
         FormatterProfile profile) const;
-    FormatterReport formatSelection(
+    FormatterReport formatSnippet(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
-    FormatterReport formatSelection(
+    FormatterReport formatSnippet(
         const QString& text,
         FormatterProfile profile) const;
 

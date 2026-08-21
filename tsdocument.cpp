@@ -975,10 +975,7 @@ TSIdentifierTarget TSDocument::identifierAt(int charOffset) const
 
     TSNode identifier = identifierNodeAt(
         qMin(charOffset, m_text.size() - 1));
-    if (ts_node_is_null(identifier)
-        && charOffset > 0
-        && (charOffset == m_text.size()
-            || m_text.at(charOffset).isSpace())) {
+    if (ts_node_is_null(identifier) && charOffset > 0) {
         identifier = identifierNodeAt(charOffset - 1);
     }
     if (ts_node_is_null(identifier))
@@ -4312,15 +4309,15 @@ TSDocument::signalDeclarationOrganizationPlan(int charOffset) const
         return plan;
     }
 
-    bool hasLateSignal = false;
+    int lastLateSignalIndex = -1;
     for (const int signalIndex : signalIndexes) {
-        if (signalIndex >= bodyIndex) {
-            hasLateSignal = true;
-            break;
-        }
+        if (signalIndex >= bodyIndex)
+            lastLateSignalIndex = signalIndex;
     }
-    if (hasLateSignal) {
-        for (int index = bodyIndex; index < entries.size(); ++index) {
+    if (lastLateSignalIndex >= bodyIndex) {
+        for (int index = bodyIndex;
+             index < lastLateSignalIndex;
+             ++index) {
             if (isSignalOrganizationBarrier(entries.at(index).node)) {
                 const TSNode payload =
                     moduleItemPayload(entries.at(index).node);

@@ -4309,8 +4309,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
             || route == QStringLiteral(
                             "editor.format.unindentLines")
             || route == QStringLiteral(
-                            "editor.format.selection")
-            || route == QStringLiteral(
                             "editor.format.document");
         if (editsDocument && editor->isReadOnly()) {
             return fail(QStringLiteral(
@@ -4411,37 +4409,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
                                 "editor.format.profile.indentOnly")) {
             editor->setFormatterProfile(
                 FormatterProfile::IndentOnly);
-        } else if (route == QStringLiteral(
-                                "editor.format.selection")) {
-            if (!editor->textCursor().hasSelection()) {
-                return fail(QStringLiteral(
-                    "Select text to format."));
-            }
-            const FormatterReport report =
-                editor->formatSelection();
-            if (!report.accepted()) {
-                return fail(report.diagnostic.isEmpty()
-                    ? QStringLiteral(
-                          "Selection formatting was rejected.")
-                    : report.diagnostic);
-            }
-            result.output.insert(
-                QStringLiteral("changed"), report.changed);
-            result.output.insert(
-                QStringLiteral("outcome"),
-                report.outcome
-                        == FormatterOutcome::ConservativeFallback
-                    ? QStringLiteral("conservativeFallback")
-                    : (report.outcome
-                               == FormatterOutcome::Applied
-                           ? QStringLiteral("applied")
-                           : QStringLiteral("unchanged")));
-            result.message = report.diagnostic;
-            if (result.message.isEmpty()
-                && !report.changed) {
-                result.message = QStringLiteral(
-                    "Selection already formatted");
-            }
         } else if (route == QStringLiteral(
                                 "editor.format.document")) {
             const FormatterReport report =

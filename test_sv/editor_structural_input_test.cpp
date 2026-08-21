@@ -395,6 +395,36 @@ int main(int argc, char* argv[])
     {
         MyCodeEditor editor;
         const QString original =
+            QStringLiteral("module m;\n"
+                           "always_comb begin\n"
+                           "    beg\n"
+                           "    beg\n"
+                           "end\n"
+                           "endmodule\n");
+        editor.setPlainText(original);
+        const int cursor =
+            original.indexOf(QStringLiteral("    beg")) + 7;
+        setCursor(editor, cursor);
+        QTest::keyClick(&editor,
+                        Qt::Key_Down,
+                        Qt::ShiftModifier | Qt::AltModifier);
+        QTest::keyClick(&editor, Qt::Key_Tab);
+        expect("Tab accepts structural keyword completion on every column row",
+               editor.toPlainText()
+                   == QStringLiteral("module m;\n"
+                                     "always_comb begin\n"
+                                     "    begin \n"
+                                     "    begin \n"
+                                     "end\n"
+                                     "endmodule\n"));
+        editor.undo();
+        expect("column keyword completion is one undo transaction",
+               editor.toPlainText() == original);
+    }
+
+    {
+        MyCodeEditor editor;
+        const QString original =
             QStringLiteral("module m;\n    logic value;\nendmodule\n");
         editor.setPlainText(original);
         setCursor(editor,

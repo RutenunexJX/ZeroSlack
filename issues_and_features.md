@@ -383,8 +383,7 @@ This file is a running checklist for problems to fix and new features to conside
   regular-expression or character-column guesses. Formatting may change only
   horizontal whitespace and permitted line breaks; it must preserve every
   token, comment, expression, and association. Use the minimum padding needed,
-  emit spaces rather than Tabs, and remain idempotent for both Format Selection
-  and Format Document.
+  emit spaces rather than Tabs, and remain idempotent for Format Document.
 - [x] Add general regression fixtures for indexed and unindexed assignment
   rows, named associations, chained suffixes, part-selects, ternary expressions,
   comments, incomplete syntax, and mixed-width identifiers. Assert token-stream

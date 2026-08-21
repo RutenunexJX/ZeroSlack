@@ -267,7 +267,6 @@ public:
     void setFormatterProfile(FormatterProfile profile);
     FormatterProfile formatterProfile() const;
     FormatterReport formatDocument();
-    FormatterReport formatSelection();
     bool goToLineNumber(int lineNumber);
     bool replaceNextText(const QString& needle,
                          const QString& replacement,

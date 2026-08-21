@@ -1,16 +1,26 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.17.2`
+Product version: `v0.17.3`
 
 ## Objective
 
-Maintain the completed portable Wave Simulation baseline while adding safe,
-selection-aware editor refactors without creating a second SystemVerilog syntax
-fact source.
+Maintain the completed portable Wave Simulation baseline while keeping editor
+completion, formatting, rename, and declaration organization structurally
+correct without creating a second SystemVerilog syntax fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.17.2.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.17.3.
+- ASCII numeric peeks display every radix row, including hexadecimal output.
+- Column-mode Tab completion expands canonical SystemVerilog keywords across
+  the selected rows in one undoable edit, and its selection is visibly pink.
+- Format Document aligns typedef-typed declarations and enum concatenations;
+  no user-facing Format Selection route, action, command, or editor API remains.
+- Rename accepts a caret on either insertion boundary of a semantic symbol,
+  including punctuation-adjacent boundaries.
+- Signal organization remains available when a preprocessing directive occurs
+  only after the final late declaration, while unsafe crossed barriers still
+  fail closed.
 - Cached workspace activation remains immediate while a background directory
   reconciliation discovers files changed outside ZeroSlack.
 - Ordinary multiline and rectangular column selections can be replaced with

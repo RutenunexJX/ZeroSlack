@@ -1404,7 +1404,7 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
     }
 
     // Formatting remains a single ZeroSlack fact source. Only generated
-    // snippets are passed through the existing selection formatter; anchors,
+    // snippets are passed through the shared snippet formatter; anchors,
     // semantic decisions, and multi-file application remain in rtleditcore.
     auto& workspaceEdit =
         report.planResult.plan.workspaceEdit;
@@ -1420,7 +1420,7 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
             continue;
         }
         const FormatterReport formatted =
-            FormatterService::getInstance()->formatSelection(
+            FormatterService::getInstance()->formatSnippet(
                 fromUtf8String(workspaceEdit.edits[index].newText),
                 FormatterProfile::Structured);
         workspaceEdit.edits[index].newText =

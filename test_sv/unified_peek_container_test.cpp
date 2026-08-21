@@ -103,7 +103,11 @@ int main(int argc, char* argv[])
 
     EditorHoverPopup* originalContainer = &peek;
     peek.showNumericLiteral(
-        QStringLiteral("1010_1010\n252\nfa"),
+        QStringLiteral("character: ~\n"
+                       "binary: 0111_1110\n"
+                       "octal: 0176\n"
+                       "decimal: 126\n"
+                       "hex: 7e"),
         host.mapToGlobal(QPoint(400, 230)),
         editorFont);
     QApplication::processEvents();
@@ -112,6 +116,11 @@ int main(int argc, char* argv[])
                && peek.contentModel().kind
                       == PeekContentKind::NumericRadix
                && !peek.hasNavigableTarget());
+    expect("ASCII numeric radix reserves height for the hexadecimal row",
+           peek.contentModel().maximumSize.height() > 160
+               && peek.contentModel().rows.size() == 1
+               && peek.contentModel().rows.first().text
+                      .endsWith(QStringLiteral("hex: 7e")));
 
     CodePreviewReport graphPreview;
     graphPreview.available = true;

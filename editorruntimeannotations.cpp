@@ -270,9 +270,9 @@ void paintColumnCaretAnnotation(
         const int actualRight =
             qMin(selectionRight, lineEndColumn);
         if (actualRight > selectionLeft) {
-            QColor selected = accent;
+            QColor selected(255, 205, 220);
             selected.setAlpha(
-                annotation.active ? 86 : 68);
+                annotation.active ? 176 : 132);
             const int actualRightX =
                 annotationXForVisualColumn(
                     editor,
@@ -300,9 +300,9 @@ void paintColumnCaretAnnotation(
             EditorVisualBoundary::End)
         + laneOffset;
     if (selectionRight > lineEndColumn) {
-        QColor fill = accent;
+        QColor fill(255, 205, 220);
         fill.setAlpha(
-            annotation.active ? 40 : 24);
+            annotation.active ? 112 : 78);
         painter.fillRect(
             QRect(endRect.left(),
                   endRect.top() + 2,

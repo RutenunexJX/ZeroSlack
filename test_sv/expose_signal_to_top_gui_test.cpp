@@ -2170,77 +2170,6 @@ void runEditorViewTargetedActionRegression()
         "\tassign alpha=beta;\n"
         "endmodule\n");
     auxiliary->setPlainText(formatInput);
-    const int selectionStart =
-        formatInput.indexOf(QStringLiteral("\tlogic    alpha;"));
-    const int selectionEnd =
-        formatInput.indexOf(
-            QLatin1Char('\n'),
-            formatInput.indexOf(
-                QStringLiteral("\tlogic      beta;"))) + 1;
-    const int logicalSelectionStart =
-        formatInput.indexOf(QStringLiteral("alpha")) + 2;
-    const int logicalSelectionEnd =
-        formatInput.indexOf(QStringLiteral("beta")) + 2;
-    QTextCursor peerSelectionCursor(targetTab->document());
-    peerSelectionCursor.setPosition(logicalSelectionStart);
-    targetTab->setTextCursor(peerSelectionCursor);
-    QTextCursor reverseSelection(auxiliary->document());
-    reverseSelection.setPosition(logicalSelectionEnd);
-    reverseSelection.setPosition(
-        logicalSelectionStart, QTextCursor::KeepAnchor);
-    auxiliary->setTextCursor(reverseSelection);
-    const FormatterReport selectionContextReport =
-        FormatterService::getInstance()->formatDocument(
-            formatInput,
-            FormatterProfile::Structured);
-    const QStringList selectionContextLines =
-        selectionContextReport.formattedText.split(
-            QLatin1Char('\n'));
-    const QString formattedSelection =
-        selectionContextLines.size() >= 3
-        ? selectionContextLines.at(1)
-              + QLatin1Char('\n')
-              + selectionContextLines.at(2)
-              + QLatin1Char('\n')
-        : QString();
-    QString expectedSelectionText = formatInput;
-    expectedSelectionText.replace(
-        selectionStart,
-        selectionEnd - selectionStart,
-        formattedSelection);
-    const bool selectionRouted =
-        requestAction(QStringLiteral("format.selection"));
-    const QTextCursor selectionAfter =
-        auxiliary->textCursor();
-    QTextCursor activeEndpoint(auxiliary->document());
-    activeEndpoint.setPosition(selectionAfter.position());
-    activeEndpoint.select(QTextCursor::WordUnderCursor);
-    QTextCursor anchorEndpoint(auxiliary->document());
-    anchorEndpoint.setPosition(selectionAfter.anchor());
-    anchorEndpoint.select(QTextCursor::WordUnderCursor);
-    QTextCursor peerSelectionAfter = targetTab->textCursor();
-    peerSelectionAfter.select(QTextCursor::WordUnderCursor);
-    const bool reverseEndpointsPreserved =
-        selectionAfter.position() < selectionAfter.anchor()
-        && activeEndpoint.selectedText()
-               == QStringLiteral("alpha")
-        && anchorEndpoint.selectedText()
-               == QStringLiteral("beta")
-        && peerSelectionAfter.selectedText()
-               == QStringLiteral("alpha");
-    auxiliary->undo();
-    const bool selectionUndo =
-        auxiliary->toPlainText() == formatInput;
-    auxiliary->redo();
-    check("Format Selection targets the source View and preserves reverse endpoints in one undo unit",
-          selectionContextReport.changed
-              && !formattedSelection.isEmpty()
-              && selectionRouted
-              && expectedSelectionText
-                     == auxiliary->toPlainText()
-              && reverseEndpointsPreserved
-              && selectionUndo);
-
     auxiliary->setPlainText(formatInput);
     QTextCursor documentCursor(auxiliary->document());
     documentCursor.setPosition(
@@ -2325,29 +2254,15 @@ void runEditorViewTargetedActionRegression()
             && currentEditor->formatterProfile()
                    == profile;
         auxiliary->setPlainText(formatInput);
-        const bool selectionPass = iteration % 2 != 0;
-        FormatterReport expected;
-        QString formatAction;
-        if (selectionPass) {
-            QTextCursor selection(auxiliary->document());
-            selection.setPosition(formatInput.size());
-            selection.setPosition(
-                0, QTextCursor::KeepAnchor);
-            auxiliary->setTextCursor(selection);
-            expected = FormatterService::getInstance()
-                           ->formatSelection(formatInput, profile);
-            formatAction = QStringLiteral("format.selection");
-        } else {
-            QTextCursor cursor(auxiliary->document());
-            cursor.setPosition(
-                formatInput.indexOf(QStringLiteral("alpha")) + 2);
-            auxiliary->setTextCursor(cursor);
-            expected = FormatterService::getInstance()
-                           ->formatDocument(formatInput, profile);
-            formatAction = QStringLiteral("format.document");
-        }
+        QTextCursor cursor(auxiliary->document());
+        cursor.setPosition(
+            formatInput.indexOf(QStringLiteral("alpha")) + 2);
+        auxiliary->setTextCursor(cursor);
+        const FormatterReport expected =
+            FormatterService::getInstance()
+                ->formatDocument(formatInput, profile);
         const bool formatRouted =
-            requestAction(formatAction);
+            requestAction(QStringLiteral("format.document"));
         const bool formatApplied =
             expected.changed
             && formatRouted
@@ -2366,7 +2281,7 @@ void runEditorViewTargetedActionRegression()
             && undoRestored
             && redoRestored;
     }
-    check("format profile, Selection/Document, undo/redo, and multi-View transitions remain deterministic",
+    check("format profile, document, undo/redo, and multi-View transitions remain deterministic",
           transitionStressOk);
 }
 

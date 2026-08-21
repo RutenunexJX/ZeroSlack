@@ -2311,6 +2311,29 @@ int main(int argc, char** argv) {
     expectBool("Formatter alignment idempotent",
                unchangedAlignmentReport.changed,
                false);
+    const QString formatterTypedefVariableInput =
+        QStringLiteral("module typedef_variable_demo;\n"
+                       "typedef logic [7:0] byte_t;\n"
+                       "byte_t short_name;\n"
+                       "byte_t much_longer_name;\n"
+                       "endmodule\n");
+    const FormatterReport formatterTypedefVariableReport =
+        FormatterService::getInstance()->formatDocument(
+            formatterTypedefVariableInput);
+    const QStringList formatterTypedefVariableLines =
+        formatterTypedefVariableReport.formattedText.split(
+            QLatin1Char('\n'));
+    expectBool("Formatter aligns variables declared with a typedef type",
+               formatterTypedefVariableLines.size() >= 4
+                   && formatterTypedefVariableLines.at(2)
+                          .indexOf(QStringLiteral("short_name"))
+                      == formatterTypedefVariableLines.at(3)
+                             .indexOf(QStringLiteral("much_longer_name"))
+                   && formatterTypedefVariableLines.at(2)
+                          .indexOf(QLatin1Char(';'))
+                      == formatterTypedefVariableLines.at(3)
+                             .indexOf(QLatin1Char(';')),
+               true);
     const QString formatterArrayDeclInput =
         QStringLiteral("module array_decl_demo;\n"
                        "logic flag [3:0];\n"
@@ -3168,9 +3191,9 @@ int main(int argc, char** argv) {
 
     const QString formatterEnumInput =
         QStringLiteral("module enum_demo;\n"
-                       "typedef enum logic [1:0] {\n"
-                       "IDLE = 2'd0,\n"
-                       "LONG_STATE = 2'd1, // active\n"
+                       "typedef enum logic [3:0] {\n"
+                       "IDLE = {P_0, P_1},\n"
+                       "LONG_STATE = 4'd1, // active\n"
                        "DONE\n"
                        "} state_e;\n"
                        "endmodule\n");
@@ -3183,9 +3206,9 @@ int main(int argc, char** argv) {
     expectEq("Formatter aligns enum items",
              formatterEnumReport.formattedText,
              QStringLiteral("module enum_demo;\n"
-                            "typedef enum logic [1:0] {\n"
-                            "    IDLE       = 2'd0,\n"
-                            "    LONG_STATE = 2'd1,  // active\n"
+                            "typedef enum logic [3:0] {\n"
+                            "    IDLE       = {P_0, P_1},\n"
+                            "    LONG_STATE = 4'd1,        // active\n"
                             "    DONE\n"
                             "} state_e;\n"
                             "endmodule\n"));
@@ -3202,9 +3225,9 @@ int main(int argc, char** argv) {
     expectEq("Formatter indent-only skips enum item alignment",
              indentOnlyEnumReport.formattedText,
              QStringLiteral("module enum_demo;\n"
-                            "typedef enum logic [1:0] {\n"
-                            "    IDLE = 2'd0,\n"
-                            "    LONG_STATE = 2'd1, // active\n"
+                            "typedef enum logic [3:0] {\n"
+                            "    IDLE = {P_0, P_1},\n"
+                            "    LONG_STATE = 4'd1, // active\n"
                             "    DONE\n"
                             "} state_e;\n"
                             "endmodule\n"));
@@ -3320,7 +3343,7 @@ int main(int argc, char** argv) {
                        "    tx_stop_bit <= next_stop;\n"
                        "    tx_axi_wr_eff_len[SHORT] <= next_eff[LONG_NAME];\n");
     const FormatterReport formatterSuffixSelectionReport =
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterSuffixSelectionInput);
     expectEq("Formatter selection aligns assignment suffix columns",
              formatterSuffixSelectionReport.formattedText,
@@ -3335,7 +3358,7 @@ int main(int argc, char** argv) {
                true);
     expectBool("Formatter suffix selection idempotent",
                !FormatterService::getInstance()
-                    ->formatSelection(
+                    ->formatSnippet(
                         formatterSuffixSelectionReport.formattedText)
                     .changed,
                true);
@@ -3645,7 +3668,7 @@ int main(int argc, char** argv) {
         QStringLiteral("    logic a; // flag\n"
                        "    logic [7:0] data; // byte\n");
     const FormatterReport formatterSelectionReport =
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterSelectionInput);
     expectBool("Formatter selection report changed",
                formatterSelectionReport.changed,
@@ -3655,7 +3678,7 @@ int main(int argc, char** argv) {
              QStringLiteral("    logic       a   ;  // flag\n"
                             "    logic [7:0] data;  // byte\n"));
     const FormatterReport unchangedSelectionReport =
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterSelectionReport.formattedText);
     expectBool("Formatter selection idempotent",
                unchangedSelectionReport.changed,
@@ -3830,7 +3853,7 @@ int main(int argc, char** argv) {
             "// keep\tcomment\n"
             "    endmodule    \n");
     const FormatterReport formatterLexicalTabIndentOnlySelection =
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterLexicalTabInput,
             FormatterProfile::IndentOnly);
     expectEq("Formatter selection expands lexical Tabs by four",
@@ -3842,7 +3865,7 @@ int main(int argc, char** argv) {
         FormatterService::getInstance()->formatDocument(
             formatterLexicalTabInput,
             FormatterProfile::IndentOnly),
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterLexicalTabInput),
         formatterLexicalTabIndentOnlySelection,
     };
@@ -3907,9 +3930,9 @@ int main(int argc, char** argv) {
         FormatterService::getInstance()->formatDocument(
             formatterMalformedTabInput,
             FormatterProfile::IndentOnly),
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterMalformedTabInput),
-        FormatterService::getInstance()->formatSelection(
+        FormatterService::getInstance()->formatSnippet(
             formatterMalformedTabInput,
             FormatterProfile::IndentOnly),
     };
