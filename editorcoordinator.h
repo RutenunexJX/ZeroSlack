@@ -17,9 +17,7 @@
 
 class FileCommandCoordinator;
 class EditorAppearanceSettings;
-class FormatterSettings;
 class EditorSemanticContextService;
-enum class FormatterProfile;
 struct EditorSemanticContext;
 struct EditorSourceNavigationTarget;
 struct HierarchyInstanceContext;
@@ -48,7 +46,6 @@ public:
         NavigationCommandCoordinator* navigationCommandCoordinator,
         SemanticPanelRefreshCoordinator* semanticPanelRefresh);
     void setAppearanceSettings(EditorAppearanceSettings* settings);
-    void setFormatterSettings(FormatterSettings* settings);
     void setAnnotationDisplayOptions(
         const EditorAnnotationDisplayOptions& options);
     void setStatusMessageHandler(
@@ -134,8 +131,6 @@ private:
     EditorSemanticContextService* contextService() const;
     void applyAppearance(MyCodeEditor* editor) const;
     void applyAppearanceToOpenEditors() const;
-    void applyFormatterSettings(MyCodeEditor* editor) const;
-    void applyFormatterSettingsToOpenEditors() const;
     void applyAnnotationDisplayOptions(
         MyCodeEditor* editor) const;
     void applyAnnotationDisplayOptionsToOpenEditors() const;
@@ -176,10 +171,8 @@ private:
 
     TabManager* tabManager = nullptr;
     EditorAppearanceSettings* appearanceSettings = nullptr;
-    FormatterSettings* formatterSettings = nullptr;
     EditorAnnotationDisplayOptions annotationDisplayOptions;
     QMetaObject::Connection appearanceSettingsConnection;
-    QMetaObject::Connection formatterSettingsConnection;
     WorkflowDependencies dependencies;
     SemanticRuntime semanticRuntime;
     std::unique_ptr<EditorActionContextService>
@@ -194,7 +187,6 @@ private:
         registeredActionRequestHandler;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
-    mutable bool applyingFormatterSettings = false;
 };
 
 #endif // EDITORCOORDINATOR_H

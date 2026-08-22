@@ -107,17 +107,15 @@ int main(int argc, char* argv[])
 
     const EditorContextMenuModel model =
         buildEditorContextMenuModel(request);
-    check(model.sections.size() == 4,
+    check(model.sections.size() == 3,
           "removed context surfaces do not leave empty sections");
-    check(model.sections.size() == 4
+    check(model.sections.size() == 3
               && model.sections.at(0).section
                      == EditorContextMenuSection::Navigate
               && model.sections.at(1).section
                      == EditorContextMenuSection::Inspect
               && model.sections.at(2).section
-                     == EditorContextMenuSection::Refactor
-              && model.sections.at(3).section
-                     == EditorContextMenuSection::Format,
+                     == EditorContextMenuSection::Refactor,
           "remaining context-menu sections retain stable order");
 
     const QStringList removedContextActions = {
@@ -136,6 +134,7 @@ int main(int argc, char* argv[])
         QStringLiteral("format.uncommentLines"),
         QStringLiteral("format.indentLines"),
         QStringLiteral("format.unindentLines"),
+        QStringLiteral("format.document"),
     };
     for (const QString& actionId : removedContextActions) {
         check(findItem(model, actionId) == nullptr,
@@ -203,10 +202,7 @@ int main(int argc, char* argv[])
         QString::fromLatin1(
             ActionIds::EditReplaceSelectionWithSpaces),
         QString::fromLatin1(
-            ActionIds::RefactorOrganizeSignalDeclarations),
-        QStringLiteral("format.profile.structured"),
-        QStringLiteral("format.profile.indentOnly"),
-        QStringLiteral("format.document")
+            ActionIds::RefactorOrganizeSignalDeclarations)
     };
     for (const QString& actionId : requiredContextActions) {
         const ActionDescriptor* descriptor = findActionById(actionId);
@@ -218,6 +214,12 @@ int main(int argc, char* argv[])
     }
     check(findActionById(QStringLiteral("format.selection")) == nullptr,
           "removed Format Selection action has no registry descriptor");
+    check(findActionById(QStringLiteral("format.profile.structured"))
+              == nullptr
+              && findActionById(
+                     QStringLiteral("format.profile.indentOnly"))
+                     == nullptr,
+          "removed formatter profiles have no registry descriptors");
 
     const QStringList retainedShortcutActions = {
         QStringLiteral("edit.undo"),
@@ -233,6 +235,7 @@ int main(int argc, char* argv[])
         QStringLiteral("format.uncommentLines"),
         QStringLiteral("format.indentLines"),
         QStringLiteral("format.unindentLines"),
+        QStringLiteral("format.document"),
     };
     for (const QString& actionId : retainedShortcutActions) {
         const ActionDescriptor* descriptor = findActionById(actionId);

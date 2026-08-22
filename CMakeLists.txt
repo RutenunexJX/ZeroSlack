@@ -330,7 +330,6 @@ set(ZEROSLACK_CORE_SOURCES
     fsmgraphlayout.cpp
     fsmgraphservice.cpp
     formattercursoranchor.cpp
-    formattersettings.cpp
     formatterservice.cpp
     settingscenterschema.cpp
     settingscenterpanel.cpp
@@ -573,7 +572,6 @@ set(ZEROSLACK_CORE_SOURCES
     fsmgraphlayout.h
     fsmgraphservice.h
     formattercursoranchor.h
-    formattersettings.h
     formatterservice.h
     ghostannotationservice.h
     wavepreviewpanelcoordinator.h

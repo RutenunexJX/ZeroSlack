@@ -1107,20 +1107,6 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
          ActionScope::Editor,
          "Open an editable editor tab.",
          "Ctrl+["},
-        {"format.profile.structured",
-         "Structured Profile",
-         "Use the structure-aware formatter profile.",
-         "editor.format.profile.structured",
-         ActionCategory::Format,
-         ActionScope::Editor,
-         "Open an editor tab."},
-        {"format.profile.indentOnly",
-         "Indent-Only Profile",
-         "Use the indentation-only formatter profile.",
-         "editor.format.profile.indentOnly",
-         ActionCategory::Format,
-         ActionScope::Editor,
-         "Open an editor tab."},
         {"format.document",
          "Format Document",
          "Format the complete current document.",
@@ -1162,10 +1148,7 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
             || descriptor.id == QStringLiteral("edit.find");
         const bool hiddenFromContextMenu =
             descriptor.id == QStringLiteral("edit.replace")
-            || descriptor.id == QStringLiteral("format.commentLines")
-            || descriptor.id == QStringLiteral("format.uncommentLines")
-            || descriptor.id == QStringLiteral("format.indentLines")
-            || descriptor.id == QStringLiteral("format.unindentLines");
+            || descriptor.category == ActionCategory::Format;
         if (!standardEditorAction && !hiddenFromContextMenu) {
             descriptor.aliases.append(
                 alias(ActionSurface::ContextMenu,

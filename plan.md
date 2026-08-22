@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.18.0`
+Product version: `v0.18.1`
 
 ## Current status
 
@@ -11,6 +11,9 @@ Product version: `v0.18.0`
   values containing concatenations. Format Document is the sole user-facing
   formatter action; generated RTL transactions retain an internal snippet
   formatter without exposing a second editor workflow.
+- Structured formatting is now the single formatting policy. The obsolete
+  Indent-Only profile, profile persistence, and editor context-menu Format
+  section have been removed; `Ctrl+Shift+I` remains the document entry point.
 - Rename resolves symbols at punctuation boundaries, and declaration
   organization ignores preprocessing barriers that occur only after the final
   declaration being moved.

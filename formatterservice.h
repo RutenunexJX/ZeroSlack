@@ -4,11 +4,6 @@
 #include <QString>
 #include <memory>
 
-enum class FormatterProfile {
-    IndentOnly,
-    Structured
-};
-
 enum class FormatterOutcome {
     Applied,
     Unchanged,
@@ -50,21 +45,13 @@ class FormatterService
 {
 public:
     static FormatterService* getInstance();
-    static FormatterOptions optionsForProfile(FormatterProfile profile);
-    static QString profileDisplayName(FormatterProfile profile);
 
     FormatterReport formatDocument(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
-    FormatterReport formatDocument(
-        const QString& text,
-        FormatterProfile profile) const;
     FormatterReport formatSnippet(
         const QString& text,
         const FormatterOptions& options = FormatterOptions()) const;
-    FormatterReport formatSnippet(
-        const QString& text,
-        FormatterProfile profile) const;
 
 private:
     static std::unique_ptr<FormatterService> instance;

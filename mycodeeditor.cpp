@@ -1214,19 +1214,6 @@ MyCodeEditor::annotationDisplayOptions() const
     return state->currentAnnotationDisplayOptions();
 }
 
-void MyCodeEditor::setFormatterProfile(FormatterProfile profile)
-{
-    if (state->formatterProfile() == profile)
-        return;
-    state->setFormatterProfile(profile);
-    emit formatterProfileChanged(profile);
-}
-
-FormatterProfile MyCodeEditor::formatterProfile() const
-{
-    return state->formatterProfile();
-}
-
 QList<MyCodeEditor*>
 MyCodeEditor::sharedDocumentViewsForFormatting() const
 {

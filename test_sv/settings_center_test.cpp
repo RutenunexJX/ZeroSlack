@@ -75,17 +75,14 @@ int main(int argc, char* argv[])
 
     const QList<SettingsCenterCategoryDescriptor>& categories =
         SettingsCenterSchema::categories();
-    check(categories.size() == 8,
-          "schema exposes exactly eight settings categories");
+    check(categories.size() == 7,
+          "schema exposes exactly seven settings categories");
     check(SettingsCenterSchema::categoryId(
               SettingsCenterCategory::Appearance)
               == QStringLiteral("appearance")
               && SettingsCenterSchema::categoryId(
                      SettingsCenterCategory::Font)
               == QStringLiteral("font")
-              && SettingsCenterSchema::categoryId(
-                     SettingsCenterCategory::Formatter)
-                     == QStringLiteral("formatter")
               && SettingsCenterSchema::categoryId(
                      SettingsCenterCategory::Shortcut)
                      == QStringLiteral("shortcut")
@@ -106,8 +103,6 @@ int main(int argc, char* argv[])
               QStringLiteral("appearance.theme"))
               && SettingsCenterSchema::field(
                      QStringLiteral("font.sizePt"))
-              && SettingsCenterSchema::field(
-                     QStringLiteral("formatter.profile"))
               && SettingsCenterSchema::field(
                      QStringLiteral("shortcut.overrides"))
               && SettingsCenterSchema::field(
@@ -138,11 +133,8 @@ int main(int argc, char* argv[])
           "appearance theme is a global immediate Light/Dark choice");
     check(SettingsCenterSchema::field(
               QStringLiteral("font.sizePt"))->storageKey
-              == QStringLiteral("editorAppearance/fontSizePt")
-              && SettingsCenterSchema::field(
-                     QStringLiteral("formatter.profile"))->storageKey
-                     == QStringLiteral("formatter/profile"),
-          "legacy appearance and formatter keys are schema-owned");
+              == QStringLiteral("editorAppearance/fontSizePt"),
+          "legacy appearance key is schema-owned");
     const SettingsCenterFieldDescriptor* verilatorField =
         SettingsCenterSchema::field(
             QStringLiteral("simulation.verilatorPath"));
@@ -188,9 +180,6 @@ int main(int argc, char* argv[])
             QStringLiteral("editorAppearance/fontSizePt"),
             18);
         settings.setValue(
-            QStringLiteral("formatter/profile"),
-            QStringLiteral("indent_only"));
-        settings.setValue(
             QStringLiteral("settingsCenter/annotation/maxPerLine"),
             9);
         settings.setValue(
@@ -212,8 +201,6 @@ int main(int argc, char* argv[])
         {QStringLiteral("appearance.theme"),
          QStringLiteral("Dark")},
         {QStringLiteral("font.sizePt"), 99},
-        {QStringLiteral("formatter.profile"),
-         QStringLiteral("STRUCTURED")},
         {QStringLiteral("shortcut.overrides"),
          QJsonObject{
              {QStringLiteral("navigate.open"),
@@ -242,16 +229,10 @@ int main(int argc, char* argv[])
               == QStringLiteral("Iosevka")
               && snapshot.globalValues.value(
                      QStringLiteral("font.sizePt")).toInt()
-                     == 18
-              && snapshot.globalValues.value(
-                     QStringLiteral("formatter.profile")).toString()
-                     == QStringLiteral("indent_only"),
-          "existing appearance and formatter keys are reused");
+                     == 18,
+          "existing appearance keys are reused");
     check(snapshot.value(QStringLiteral("font.sizePt")).toInt()
               == 32
-              && snapshot.value(
-                     QStringLiteral("formatter.profile")).toString()
-                     == QStringLiteral("structured")
               && snapshot.value(
                      QStringLiteral("annotation.maxLanes")).toInt()
                      == 1,
@@ -270,9 +251,6 @@ int main(int argc, char* argv[])
     check(hasIssue(snapshot.issues,
                    SettingsCenterIssueKind::NormalizedValue,
                    QStringLiteral("font.sizePt"))
-              && hasIssue(snapshot.issues,
-                          SettingsCenterIssueKind::NormalizedValue,
-                          QStringLiteral("formatter.profile"))
               && hasIssue(snapshot.issues,
                           SettingsCenterIssueKind::UnknownField,
                           QStringLiteral("future.setting"))
@@ -304,11 +282,8 @@ int main(int argc, char* argv[])
         QSettings settings(globalPath, QSettings::IniFormat);
         check(settings.value(
                   QStringLiteral("editorAppearance/fontSizePt")).toInt()
-                  == 18
-                  && settings.value(
-                         QStringLiteral("formatter/profile")).toString()
-                         == QStringLiteral("indent_only"),
-              "global save retains canonical legacy storage keys");
+                  == 18,
+              "global save retains the canonical appearance storage key");
         check(settings.value(
                   QStringLiteral("unrelated/futureGlobal")).toString()
                   == QStringLiteral("preserve"),

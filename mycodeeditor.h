@@ -264,8 +264,6 @@ public:
         const EditorAnnotationDisplayOptions& options);
     EditorAnnotationDisplayOptions
     annotationDisplayOptions() const;
-    void setFormatterProfile(FormatterProfile profile);
-    FormatterProfile formatterProfile() const;
     FormatterReport formatDocument();
     bool goToLineNumber(int lineNumber);
     bool replaceNextText(const QString& needle,
@@ -421,7 +419,6 @@ signals:
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
     void editorModeStateChanged(const EditorModeSnapshot& snapshot);
-    void formatterProfileChanged(FormatterProfile profile);
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);

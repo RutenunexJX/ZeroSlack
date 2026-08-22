@@ -18,7 +18,7 @@ EditorContextMenuSection sectionFor(
     case ActionCategory::Inspect:
         return EditorContextMenuSection::Inspect;
     case ActionCategory::Format:
-        return EditorContextMenuSection::Format;
+        return EditorContextMenuSection::Refactor;
     case ActionCategory::Refactor:
     case ActionCategory::Insert:
     case ActionCategory::Select:
@@ -126,8 +126,6 @@ QString editorContextMenuSectionText(EditorContextMenuSection section)
         return QStringLiteral("Inspect");
     case EditorContextMenuSection::Refactor:
         return QStringLiteral("Refactor");
-    case EditorContextMenuSection::Format:
-        return QStringLiteral("Format");
     }
     return QString();
 }
@@ -195,8 +193,7 @@ EditorContextMenuModel buildEditorContextMenuModel(
         EditorContextMenuSection::Standard,
         EditorContextMenuSection::Navigate,
         EditorContextMenuSection::Inspect,
-        EditorContextMenuSection::Refactor,
-        EditorContextMenuSection::Format
+        EditorContextMenuSection::Refactor
     };
     for (EditorContextMenuSection section : order) {
         for (const EditorContextMenuSectionModel& candidate :

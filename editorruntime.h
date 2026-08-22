@@ -211,7 +211,6 @@ struct MyCodeEditorState
     QList<QPointer<QObject>> ghostQueryWatchers;
     EditorHotPathMetrics hotPathMetrics;
     bool hotPathTimingEnabled = false;
-    FormatterProfile currentFormatterProfile = FormatterProfile::Structured;
     EditorPackageToolAvailability lastPackageToolAvailability;
     bool packageToolAvailabilityInitialized = false;
     QString lastWavePreviewScopeKey;
@@ -489,8 +488,6 @@ struct MyCodeEditorState
                                        const QString& fileName,
                                        QString* failureReason = nullptr);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
-    void setFormatterProfile(FormatterProfile profile);
-    FormatterProfile formatterProfile() const;
     FormatterReport formatDocument(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);
     void uncommentSelectionOrLine(MyCodeEditor* editor);

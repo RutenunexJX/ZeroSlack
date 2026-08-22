@@ -2076,33 +2076,6 @@ FormatterService* FormatterService::getInstance()
     return instance.get();
 }
 
-FormatterOptions FormatterService::optionsForProfile(FormatterProfile profile)
-{
-    FormatterOptions options;
-    if (profile == FormatterProfile::IndentOnly) {
-        options.alignDeclarationBlocks = false;
-        options.alignPortLists = false;
-        options.alignInstanceMaps = false;
-        options.alignCaseItems = false;
-        options.alignEnumItems = false;
-        options.alignAssignments = false;
-        options.alignContinuationOperators = false;
-        options.alignCallArgumentContinuations = false;
-    }
-    return options;
-}
-
-QString FormatterService::profileDisplayName(FormatterProfile profile)
-{
-    switch (profile) {
-    case FormatterProfile::IndentOnly:
-        return QStringLiteral("Indent Only");
-    case FormatterProfile::Structured:
-        return QStringLiteral("Structured");
-    }
-    return QStringLiteral("Structured");
-}
-
 FormatterReport FormatterService::formatDocument(
     const QString& text,
     const FormatterOptions& options) const
@@ -2234,13 +2207,6 @@ FormatterReport FormatterService::formatDocument(
     return report;
 }
 
-FormatterReport FormatterService::formatDocument(
-    const QString& text,
-    FormatterProfile profile) const
-{
-    return formatDocument(text, optionsForProfile(profile));
-}
-
 FormatterReport FormatterService::formatSnippet(
     const QString& text,
     const FormatterOptions& options) const
@@ -2317,11 +2283,4 @@ FormatterReport FormatterService::formatSnippet(
             : FormatterOutcome::Unchanged;
     }
     return report;
-}
-
-FormatterReport FormatterService::formatSnippet(
-    const QString& text,
-    FormatterProfile profile) const
-{
-    return formatSnippet(text, optionsForProfile(profile));
 }

@@ -10,8 +10,7 @@ enum class EditorContextMenuSection {
     Standard,
     Navigate,
     Inspect,
-    Refactor,
-    Format
+    Refactor
 };
 
 struct EditorContextMenuCapability {

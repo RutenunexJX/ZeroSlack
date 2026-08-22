@@ -1421,8 +1421,7 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
         }
         const FormatterReport formatted =
             FormatterService::getInstance()->formatSnippet(
-                fromUtf8String(workspaceEdit.edits[index].newText),
-                FormatterProfile::Structured);
+                fromUtf8String(workspaceEdit.edits[index].newText));
         workspaceEdit.edits[index].newText =
             utf8String(formatted.formattedText);
     }

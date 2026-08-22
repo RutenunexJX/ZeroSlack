@@ -496,11 +496,10 @@ bool allGeneratedSnippetsFormatterStable(
             static_cast<qsizetype>(edit.newText.size()));
         const FormatterReport once =
             FormatterService::getInstance()->formatSnippet(
-                text, FormatterProfile::Structured);
+                text);
         const FormatterReport twice =
             FormatterService::getInstance()->formatSnippet(
-                once.formattedText,
-                FormatterProfile::Structured);
+                once.formattedText);
         if (once.formattedText != text
             || twice.formattedText != once.formattedText) {
             return false;

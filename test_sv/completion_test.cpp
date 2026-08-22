@@ -78,6 +78,20 @@
 static int g_checks = 0;
 static int g_fails = 0;
 
+static FormatterOptions alignmentDisabledFormatterOptions()
+{
+    FormatterOptions options;
+    options.alignDeclarationBlocks = false;
+    options.alignPortLists = false;
+    options.alignInstanceMaps = false;
+    options.alignCaseItems = false;
+    options.alignEnumItems = false;
+    options.alignAssignments = false;
+    options.alignContinuationOperators = false;
+    options.alignCallArgumentContinuations = false;
+    return options;
+}
+
 static std::shared_ptr<SemanticIndexSnapshot> sharedSnapshotFromRecords(
     const QList<SemanticSymbolRecord>& records,
     const QList<SemanticRelationship>& relationships = {},
@@ -2019,8 +2033,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlySingleStatementReport =
         FormatterService::getInstance()->formatDocument(
             formatterSingleStatementInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps single statement body indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps single statement body indentation",
              indentOnlySingleStatementReport.formattedText,
              formatterSingleStatementReport.formattedText);
 
@@ -2113,8 +2127,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyProceduralBodyReport =
         FormatterService::getInstance()->formatDocument(
             formatterProceduralBodyInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps procedural body indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps procedural body indentation",
              indentOnlyProceduralBodyReport.formattedText,
              formatterProceduralBodyReport.formattedText);
 
@@ -2162,8 +2176,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyMultilineHeaderBodyReport =
         FormatterService::getInstance()->formatDocument(
             formatterMultilineHeaderBodyInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps multiline header body indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps multiline header body indentation",
              indentOnlyMultilineHeaderBodyReport.formattedText,
              formatterMultilineHeaderBodyReport.formattedText);
 
@@ -2220,8 +2234,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlySvBlockReport =
         FormatterService::getInstance()->formatDocument(
             formatterSvBlockInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps SystemVerilog block boundary indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps SystemVerilog block boundary indentation",
              indentOnlySvBlockReport.formattedText,
              QStringLiteral("program tb;\n"
                             "default clocking cb @(posedge clk);\n"
@@ -2280,8 +2294,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyForkReport =
         FormatterService::getInstance()->formatDocument(
             formatterForkInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps fork statement indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps fork statement indentation",
              indentOnlyForkReport.formattedText,
              formatterForkReport.formattedText);
 
@@ -2389,27 +2403,11 @@ int main(int argc, char** argv) {
     expectBool("Formatter parameter port list idempotent",
                unchangedParameterPortReport.changed,
                false);
-    const FormatterOptions indentOnlyOptions =
-        FormatterService::optionsForProfile(FormatterProfile::IndentOnly);
-    expectBool("Formatter indent-only profile disables alignments",
-               !indentOnlyOptions.alignDeclarationBlocks
-                   && !indentOnlyOptions.alignPortLists
-                   && !indentOnlyOptions.alignInstanceMaps
-                   && !indentOnlyOptions.alignCaseItems
-                   && !indentOnlyOptions.alignEnumItems
-                   && !indentOnlyOptions.alignAssignments
-                   && !indentOnlyOptions.alignContinuationOperators
-                   && !indentOnlyOptions.alignCallArgumentContinuations,
-               true);
-    expectEq("Formatter indent-only profile name",
-             FormatterService::profileDisplayName(
-                 FormatterProfile::IndentOnly),
-             QStringLiteral("Indent Only"));
     const FormatterReport indentOnlyReport =
         FormatterService::getInstance()->formatDocument(
             formatterAlignmentInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only profile skips declaration alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip declaration alignment",
              indentOnlyReport.formattedText,
              QStringLiteral("module align_demo;\n"
                             "logic [7:0] data;\n"
@@ -2420,8 +2418,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyArrayDeclReport =
         FormatterService::getInstance()->formatDocument(
             formatterArrayDeclInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips declaration array dimension alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip declaration array dimension alignment",
              indentOnlyArrayDeclReport.formattedText,
              QStringLiteral("module array_decl_demo;\n"
                             "logic flag [3:0];\n"
@@ -2432,8 +2430,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyParameterPortReport =
         FormatterService::getInstance()->formatDocument(
             formatterParameterPortInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips parameter port list alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip parameter port list alignment",
              indentOnlyParameterPortReport.formattedText,
              QStringLiteral("module param_port_demo #(\n"
                             "    parameter int P = 8,\n"
@@ -3120,8 +3118,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyCaseBodyReport =
         FormatterService::getInstance()->formatDocument(
             formatterCaseBodyInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps case item body indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps case item body indentation",
              indentOnlyCaseBodyReport.formattedText,
              QStringLiteral("module case_body_demo;\n"
                             "always_comb begin\n"
@@ -3221,8 +3219,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyEnumReport =
         FormatterService::getInstance()->formatDocument(
             formatterEnumInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips enum item alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip enum item alignment",
              indentOnlyEnumReport.formattedText,
              QStringLiteral("module enum_demo;\n"
                             "typedef enum logic [3:0] {\n"
@@ -3387,8 +3385,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyAssignmentReport =
         FormatterService::getInstance()->formatDocument(
             formatterAssignmentInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only profile skips assignment alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip assignment alignment",
              indentOnlyAssignmentReport.formattedText,
              QStringLiteral("module assign_demo;\n"
                             "assign short = a;\n"
@@ -3420,7 +3418,7 @@ int main(int argc, char** argv) {
     const FormatterReport formatterContinuationReport =
         FormatterService::getInstance()->formatDocument(
             formatterContinuationInput,
-            FormatterProfile::IndentOnly);
+            alignmentDisabledFormatterOptions());
     expectBool("Formatter continuation indent report changed",
                formatterContinuationReport.changed,
                true);
@@ -3441,7 +3439,7 @@ int main(int argc, char** argv) {
     const FormatterReport unchangedContinuationReport =
         FormatterService::getInstance()->formatDocument(
             formatterContinuationReport.formattedText,
-            FormatterProfile::IndentOnly);
+            alignmentDisabledFormatterOptions());
     expectBool("Formatter continuation indent idempotent",
                unchangedContinuationReport.changed,
                false);
@@ -3488,8 +3486,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyRhsContinuationReport =
         FormatterService::getInstance()->formatDocument(
             formatterRhsContinuationInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only keeps RHS continuation indentation",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter structural indentation keeps RHS continuation indentation",
              indentOnlyRhsContinuationReport.formattedText,
              QStringLiteral("module rhs_demo;\n"
                             "always_comb begin\n"
@@ -3540,8 +3538,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyCallArgumentReport =
         FormatterService::getInstance()->formatDocument(
             formatterCallArgumentInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips call argument continuation alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip call argument continuation alignment",
              indentOnlyCallArgumentReport.formattedText,
              QStringLiteral("module call_arg_demo;\n"
                             "always_comb begin\n"
@@ -3594,8 +3592,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyOperatorReport =
         FormatterService::getInstance()->formatDocument(
             formatterOperatorInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips continuation operator alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip continuation operator alignment",
              indentOnlyOperatorReport.formattedText,
              QStringLiteral("module op_demo;\n"
                             "always_comb begin\n"
@@ -3650,8 +3648,8 @@ int main(int argc, char** argv) {
     const FormatterReport indentOnlyTernaryReport =
         FormatterService::getInstance()->formatDocument(
             formatterTernaryInput,
-            FormatterProfile::IndentOnly);
-    expectEq("Formatter indent-only skips ternary continuation alignment",
+            alignmentDisabledFormatterOptions());
+    expectEq("Formatter alignment-disabled options skip ternary continuation alignment",
              indentOnlyTernaryReport.formattedText,
              QStringLiteral("module ternary_demo;\n"
                             "assign mux = sel\n"
@@ -3792,7 +3790,7 @@ int main(int argc, char** argv) {
     const FormatterReport formatterDesignUnitIndentOnlyReport =
         FormatterService::getInstance()->formatDocument(
             formatterDesignUnitInput,
-            FormatterProfile::IndentOnly);
+            alignmentDisabledFormatterOptions());
     const QStringList formatterDesignUnitIndentOnlyLines =
         formatterDesignUnitIndentOnlyReport.formattedText.split(
             QLatin1Char('\n'));
@@ -3807,7 +3805,7 @@ int main(int argc, char** argv) {
             return -1;
         };
     expectBool(
-        "Formatter indent-only direct members ignore arbitrary indentation",
+        "Formatter structural indentation makes direct members ignore arbitrary indentation",
         indentOnlyDesignUnitLineColumn(QStringLiteral("logic q")) == 0
             && indentOnlyDesignUnitLineColumn(
                    QStringLiteral("child u_child"))
@@ -3823,7 +3821,7 @@ int main(int argc, char** argv) {
                    == 0,
         true);
     expectBool(
-        "Formatter indent-only parameter and port indentation",
+        "Formatter structural parameter and port indentation",
         indentOnlyDesignUnitLineColumn(
             QStringLiteral("parameter int P"))
                 == 4
@@ -3855,7 +3853,7 @@ int main(int argc, char** argv) {
     const FormatterReport formatterLexicalTabIndentOnlySelection =
         FormatterService::getInstance()->formatSnippet(
             formatterLexicalTabInput,
-            FormatterProfile::IndentOnly);
+            alignmentDisabledFormatterOptions());
     expectEq("Formatter selection expands lexical Tabs by four",
              formatterLexicalTabIndentOnlySelection.formattedText,
              formatterLexicalTabIndentOnlySelectionExpected);
@@ -3864,7 +3862,7 @@ int main(int argc, char** argv) {
             formatterLexicalTabInput),
         FormatterService::getInstance()->formatDocument(
             formatterLexicalTabInput,
-            FormatterProfile::IndentOnly),
+            alignmentDisabledFormatterOptions()),
         FormatterService::getInstance()->formatSnippet(
             formatterLexicalTabInput),
         formatterLexicalTabIndentOnlySelection,
@@ -3929,12 +3927,12 @@ int main(int argc, char** argv) {
             formatterMalformedTabInput),
         FormatterService::getInstance()->formatDocument(
             formatterMalformedTabInput,
-            FormatterProfile::IndentOnly),
+            alignmentDisabledFormatterOptions()),
         FormatterService::getInstance()->formatSnippet(
             formatterMalformedTabInput),
         FormatterService::getInstance()->formatSnippet(
             formatterMalformedTabInput,
-            FormatterProfile::IndentOnly),
+            alignmentDisabledFormatterOptions()),
     };
     bool formatterMalformedTabPathsSafe = true;
     bool formatterMalformedTabDiagnosticsVisible = true;

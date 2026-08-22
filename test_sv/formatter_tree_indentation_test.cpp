@@ -57,6 +57,20 @@ bool usesOnlyCrlfLineEndings(const QString& text)
     return sawNewline;
 }
 
+FormatterOptions structuralIndentationOptions()
+{
+    FormatterOptions options;
+    options.alignDeclarationBlocks = false;
+    options.alignPortLists = false;
+    options.alignInstanceMaps = false;
+    options.alignCaseItems = false;
+    options.alignEnumItems = false;
+    options.alignAssignments = false;
+    options.alignContinuationOperators = false;
+    options.alignCallArgumentContinuations = false;
+    return options;
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -104,7 +118,7 @@ int main(int argc, char** argv)
 
     const FormatterReport report =
         FormatterService::getInstance()->formatDocument(
-            source, FormatterProfile::IndentOnly);
+            source, structuralIndentationOptions());
     expect("tree formatter changes unindented structure",
            report.changed);
     expect("function body uses syntax ownership",
@@ -154,7 +168,7 @@ int main(int argc, char** argv)
 
     const FormatterReport stable =
         FormatterService::getInstance()->formatDocument(
-            report.formattedText, FormatterProfile::IndentOnly);
+            report.formattedText, structuralIndentationOptions());
     expect("tree formatter is idempotent",
            !stable.changed
                && stable.formattedText == report.formattedText);
@@ -200,7 +214,7 @@ int main(int argc, char** argv)
             "endmodule\n");
     const FormatterReport pwmCodecHeaderReport =
         FormatterService::getInstance()->formatDocument(
-            pwmCodecHeader, FormatterProfile::Structured);
+            pwmCodecHeader);
     const bool pwmCodecHeaderAligned =
            hasLine(pwmCodecHeaderReport.formattedText,
                    QStringLiteral(
@@ -226,7 +240,7 @@ int main(int argc, char** argv)
                    pwmCodecHeaderReport.formattedText));
     const FormatterReport pwmCodecSelectionReport =
         FormatterService::getInstance()->formatSnippet(
-            pwmCodecHeader, FormatterProfile::Structured);
+            pwmCodecHeader);
     expect("pwm codec header selection uses the same structural alignment",
            pwmCodecSelectionReport.formattedText
                == pwmCodecHeaderReport.formattedText);
@@ -240,7 +254,7 @@ int main(int argc, char** argv)
             "endmodule\n");
     const FormatterReport declarationWidthReport =
         FormatterService::getInstance()->formatDocument(
-            declarationWidths, FormatterProfile::Structured);
+            declarationWidths);
     const QString encodedPeriodLine = lineContaining(
         declarationWidthReport.formattedText,
         QStringLiteral("encoded_period"));
@@ -266,8 +280,7 @@ int main(int argc, char** argv)
                declarationWidthReport.formattedText));
     const FormatterReport declarationWidthStable =
         FormatterService::getInstance()->formatDocument(
-            declarationWidthReport.formattedText,
-            FormatterProfile::Structured);
+            declarationWidthReport.formattedText);
     expect("internal declaration alignment is idempotent",
            !declarationWidthStable.changed
                && declarationWidthStable.formattedText
@@ -325,7 +338,7 @@ int main(int argc, char** argv)
             "endmodule\n");
     const FormatterReport danglingElseReport =
         FormatterService::getInstance()->formatDocument(
-            danglingElseSource, FormatterProfile::IndentOnly);
+            danglingElseSource, structuralIndentationOptions());
     expect("nested case and dangling else use parsed ownership",
            danglingElseReport.formattedText == danglingElseExpected);
     expect("nested case and dangling else preserve tokens",
@@ -336,7 +349,7 @@ int main(int argc, char** argv)
     const FormatterReport danglingElseStable =
         FormatterService::getInstance()->formatDocument(
             danglingElseReport.formattedText,
-            FormatterProfile::IndentOnly);
+            structuralIndentationOptions());
     expect("nested case and dangling else are idempotent",
            !danglingElseStable.changed
                && danglingElseStable.formattedText
@@ -358,7 +371,7 @@ int main(int argc, char** argv)
             "endmodule\n");
     const FormatterReport triviaReport =
         FormatterService::getInstance()->formatDocument(
-            triviaSource, FormatterProfile::IndentOnly);
+            triviaSource, structuralIndentationOptions());
     expect("comments strings and preprocessor text remain exact",
            triviaReport.formattedText.contains(
                QStringLiteral(
@@ -380,7 +393,7 @@ int main(int argc, char** argv)
     const FormatterReport triviaStable =
         FormatterService::getInstance()->formatDocument(
             triviaReport.formattedText,
-            FormatterProfile::IndentOnly);
+            structuralIndentationOptions());
     expect("comments preprocessor strings remain idempotent",
            !triviaStable.changed
                && triviaStable.formattedText
@@ -408,7 +421,7 @@ int main(int argc, char** argv)
             "endmodule\r\n");
     const FormatterReport crlfReport =
         FormatterService::getInstance()->formatDocument(
-            crlfSource, FormatterProfile::IndentOnly);
+            crlfSource, structuralIndentationOptions());
     expect("CRLF structure formats without line-ending conversion",
            crlfReport.formattedText == crlfExpected
                && usesOnlyCrlfLineEndings(
@@ -420,7 +433,7 @@ int main(int argc, char** argv)
     const FormatterReport crlfStable =
         FormatterService::getInstance()->formatDocument(
             crlfReport.formattedText,
-            FormatterProfile::IndentOnly);
+            structuralIndentationOptions());
     expect("CRLF formatting is idempotent",
            !crlfStable.changed
                && crlfStable.formattedText
@@ -441,7 +454,7 @@ int main(int argc, char** argv)
             "endmodule\n");
     const FormatterReport malformedReport =
         FormatterService::getInstance()->formatDocument(
-            malformed, FormatterProfile::IndentOnly);
+            malformed, structuralIndentationOptions());
     expect("parse-error lines remain conservative",
            malformedReport.formattedText.contains(
                QStringLiteral("  if (\n    broken = ;\n")));

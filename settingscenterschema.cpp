@@ -122,26 +122,6 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         },
     });
     result.append({
-        Category::Formatter,
-        QStringLiteral("formatter"),
-        QStringLiteral("Formatter"),
-        QStringLiteral("SystemVerilog whitespace formatting policy."),
-        {
-            field(QStringLiteral("formatter.profile"),
-                  QString::fromLatin1(
-                      SettingsCenterKeys::FormatterProfile),
-                  Category::Formatter,
-                  QStringLiteral("Profile"),
-                  QStringLiteral("Formatter profile."),
-                  Kind::String,
-                  QStringLiteral("structured"),
-                  {},
-                  {},
-                  {QStringLiteral("structured"),
-                   QStringLiteral("indent_only")}),
-        },
-    });
-    result.append({
         Category::Shortcut,
         QStringLiteral("shortcut"),
         QStringLiteral("Shortcuts"),

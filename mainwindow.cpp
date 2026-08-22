@@ -27,7 +27,6 @@
 #include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancesettings.h"
-#include "formattersettings.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
 #include "foldshelfpersistenceservice.h"
@@ -4402,14 +4401,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
                                 "editor.format.unindentLines")) {
             editor->unindentSelectionOrLine();
         } else if (route == QStringLiteral(
-                                "editor.format.profile.structured")) {
-            editor->setFormatterProfile(
-                FormatterProfile::Structured);
-        } else if (route == QStringLiteral(
-                                "editor.format.profile.indentOnly")) {
-            editor->setFormatterProfile(
-                FormatterProfile::IndentOnly);
-        } else if (route == QStringLiteral(
                                 "editor.format.document")) {
             const FormatterReport report =
                 editor->formatDocument();
@@ -6632,15 +6623,12 @@ void MainWindow::setupSettingsCenter()
     settingsCenterService =
         std::make_unique<SettingsCenterService>();
 
-    // SettingsCenterService is the only persistence owner. These existing
-    // settings objects remain the runtime adapters consumed by
-    // EditorCoordinator, with null QSettings backends to prevent workspace
-    // effective values from being written into the global layer.
+    // SettingsCenterService is the only persistence owner. The appearance
+    // object remains the runtime adapter consumed by EditorCoordinator, with
+    // a null QSettings backend to prevent effective workspace values from
+    // being written into the global layer.
     editorAppearanceSettings =
         std::make_unique<EditorAppearanceSettings>(
-            std::unique_ptr<QSettings>());
-    formatterSettings =
-        std::make_unique<FormatterSettings>(
             std::unique_ptr<QSettings>());
 
     settingsCenterDock = new QDockWidget(tr("Settings"), this);
@@ -6707,16 +6695,6 @@ void MainWindow::applySettingsCenterSnapshot(
             snapshot.value(
                 QStringLiteral("font.ligaturesEnabled")).toBool();
         editorAppearanceSettings->setOptions(options);
-    }
-
-    if (formatterSettings) {
-        const QString profile =
-            snapshot.value(
-                QStringLiteral("formatter.profile")).toString();
-        formatterSettings->setProfile(
-            profile == QStringLiteral("indent_only")
-                ? FormatterProfile::IndentOnly
-                : FormatterProfile::Structured);
     }
 
     if (workspaceSessionCoordinator) {
@@ -6832,7 +6810,6 @@ void MainWindow::setupEditorCoordinator()
     editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
     editorCoordinator->setAnnotationDisplayOptions(
         editorAnnotationDisplayOptions);
-    editorCoordinator->setFormatterSettings(formatterSettings.get());
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
             if (statusBar()) {

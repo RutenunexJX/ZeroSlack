@@ -98,7 +98,6 @@
 #include "filecommandcoordinator.h"
 #include "foldblockshelfmodel.h"
 #include "foldblockshelfpanel.h"
-#include "formattersettings.h"
 #include "columnnumbertool.h"
 #include "commandlayercommandregistry.h"
 #include "commandlayercoordinator.h"
@@ -814,96 +813,6 @@ static void runEditorAppearanceCoordinatorRegression()
                    newEditor->verticalScrollBar()->value() >= scrollBefore,
                    true);
     }
-}
-
-static void runFormatterSettingsRegression()
-{
-    QTemporaryDir settingsDir;
-    expectBool("formatter settings temp dir valid",
-               settingsDir.isValid(),
-               true);
-    if (!settingsDir.isValid())
-        return;
-
-    const QString settingsFile =
-        settingsDir.filePath(QStringLiteral("formatter.ini"));
-    {
-        FormatterSettings settings(makeTemporarySettings(settingsFile));
-        QSignalSpy spy(&settings, &FormatterSettings::settingsChanged);
-        settings.setProfile(FormatterProfile::IndentOnly);
-        expectBool("formatter settings emits change",
-                   spy.count() == 1,
-                   true);
-    }
-
-    FormatterSettings reloaded(makeTemporarySettings(settingsFile));
-    expectBool("formatter settings persists profile",
-               reloaded.profile() == FormatterProfile::IndentOnly,
-               true);
-
-    {
-        QSettings writer(settingsFile, QSettings::IniFormat);
-        writer.setValue(QStringLiteral("formatter/profile"),
-                        QStringLiteral("unknown"));
-        writer.sync();
-    }
-    FormatterSettings invalidReload(makeTemporarySettings(settingsFile));
-    expectBool("formatter settings invalid profile falls back",
-               invalidReload.profile() == FormatterProfile::Structured,
-               true);
-}
-
-static void runFormatterCoordinatorRegression()
-{
-    QTemporaryDir settingsDir;
-    expectBool("formatter coordinator temp dir valid",
-               settingsDir.isValid(),
-               true);
-    if (!settingsDir.isValid())
-        return;
-
-    QTabWidget tabsWidget;
-    TabManager tabs(&tabsWidget);
-    EditorCoordinator coordinator(&tabs);
-    FormatterSettings settings(
-        makeTemporarySettings(
-            settingsDir.filePath(QStringLiteral("formatter.ini"))));
-
-    coordinator.setFormatterSettings(&settings);
-    coordinator.connectSignals();
-
-    tabs.createNewTab();
-    tabs.createNewTab();
-    expectBool("formatter coordinator has editors",
-               tabs.editorCount() == 2,
-               true);
-
-    settings.setProfile(FormatterProfile::IndentOnly);
-    bool allOpenEditorsUpdated = true;
-    for (int i = 0; i < tabs.editorCount(); ++i) {
-        MyCodeEditor* editor = tabs.getEditorAt(i);
-        allOpenEditorsUpdated = allOpenEditorsUpdated
-            && editor
-            && editor->formatterProfile() == FormatterProfile::IndentOnly;
-    }
-    expectBool("formatter coordinator updates open editors",
-               allOpenEditorsUpdated,
-               true);
-
-    MyCodeEditor* currentEditor = tabs.getCurrentEditor();
-    if (currentEditor) {
-        currentEditor->setFormatterProfile(FormatterProfile::Structured);
-    }
-    expectBool("formatter coordinator stores editor change",
-               settings.profile() == FormatterProfile::Structured,
-               true);
-    tabs.createNewTab();
-    MyCodeEditor* newEditor = tabs.getCurrentEditor();
-    expectBool("formatter coordinator applies new editor",
-               newEditor
-                   && newEditor->formatterProfile()
-                       == FormatterProfile::Structured,
-               true);
 }
 
 static void runTabOpenDedupRegression()
@@ -5249,26 +5158,6 @@ static void runEditorFormatterRegression()
                                      "end\n"
                                      "endmodule\n"),
                true);
-    editor.setPlainText(QStringLiteral("module profile_demo;\n"
-                                       "            logic [7:0] data;\n"
-                                       "    logic valid;\n"
-                                       "endmodule\n"));
-    editor.setFormatterProfile(FormatterProfile::IndentOnly);
-    editor.formatDocument();
-    expectBool("editor formatter indent-only profile skips alignment",
-               editor.toPlainText()
-                   == QStringLiteral("module profile_demo;\n"
-                                     "logic [7:0] data;\n"
-                                     "logic valid;\n"
-                                     "endmodule\n"),
-               true);
-    expectBool("editor formatter status names profile",
-               statusMessage.contains(QStringLiteral("Indent Only")),
-               true);
-    expectBool("editor formatter stores selected profile",
-               editor.formatterProfile() == FormatterProfile::IndentOnly,
-               true);
-
 }
 
 static void runEditorHoverPreviewRegression(const QString& workspacePath)
@@ -11894,8 +11783,7 @@ void runEditorContextMenuGroupingRegression()
                    == QStringList{
                        QStringLiteral("Navigate"),
                        QStringLiteral("Inspect"),
-                       QStringLiteral("Refactor"),
-                       QStringLiteral("Format")},
+                       QStringLiteral("Refactor")},
                true);
     expectBool("context menu omits standard editing actions",
                leadingStandardIds.isEmpty(),
@@ -12562,7 +12450,6 @@ int main(int argc, char** argv)
     runActivityLogServiceRegression();
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
-    runFormatterSettingsRegression();
     runEditorBracketRangeRegression();
     runEditorSmartSelectionRegression();
     runEditorOccurrenceNavigationRegression();
@@ -12574,7 +12461,6 @@ int main(int argc, char** argv)
     runSignalKernelGraphPopupInteractionRegression();
     runEditorFormatterRegression();
     runEditorAppearanceCoordinatorRegression();
-    runFormatterCoordinatorRegression();
     runTabOpenDedupRegression();
     runTabOpenGhostLifecycleRegression();
     runWorkspaceCloseRegression();
@@ -13374,8 +13260,7 @@ int main(int argc, char** argv)
                     "  \"schema\": \"ZeroSlack.SettingsCenter\",\n"
                     "  \"version\": 1,\n"
                     "  \"values\": {\n"
-                    "    \"font.sizePt\": 19,\n"
-                    "    \"formatter.profile\": \"indent_only\"\n"
+                    "    \"font.sizePt\": 19\n"
                     "  }\n"
                     "}\n")),
         true);
@@ -13405,13 +13290,10 @@ int main(int argc, char** argv)
                               QStringLiteral("font.sizePt")).toInt()
                               == 19,
                    true);
-        expectBool("effective appearance and formatter drive runtime backends",
+        expectBool("effective appearance drives the runtime backend",
                    window.editorAppearanceSettings
                        && window.editorAppearanceSettings
-                              ->options().fontSizePt == 19
-                       && window.formatterSettings
-                       && window.formatterSettings->profile()
-                              == FormatterProfile::IndentOnly,
+                              ->options().fontSizePt == 19,
                    true);
 
         window.settingsCenterPanel->setScope(

@@ -1575,7 +1575,7 @@ int main()
         contextExecution.succeeded
         && contextHistoryAction
         && contextHistoryAction->hasSurface(
-               ActionSurface::ContextMenu)
+               ActionSurface::Shortcut)
         && applicationHistory.lastActionId()
                == contextHistoryAction->id;
 
@@ -1594,7 +1594,7 @@ int main()
                && actionHost.route == lineAction->executionRoute
                && actionHost.lastInvocation.parameters
                       .value(QStringLiteral("line")).toInt() == 37);
-    expect("menu, shortcut, context, and Command Mode share application history",
+    expect("menu, shortcut, formatter shortcut, and Command Mode share application history",
            menuRecorded
                && shortcutRecorded
                && contextRecorded

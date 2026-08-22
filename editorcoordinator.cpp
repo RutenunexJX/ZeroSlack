@@ -3,7 +3,6 @@
 #include "actionregistry.h"
 #include "editorappearancesettings.h"
 #include "editorcolumnmodecontroller.h"
-#include "formattersettings.h"
 #include "editoractioncontextservice.h"
 #include "editorcontextmenumodel.h"
 #include "editorsemanticcontextservice.h"
@@ -20,7 +19,6 @@
 #include "workspacemanager.h"
 #include "workspaceeditdocumentmanager.h"
 
-#include <QActionGroup>
 #include <QDir>
 #include <QFileInfo>
 #include <QInputDialog>
@@ -320,30 +318,6 @@ void EditorCoordinator::setAppearanceSettings(
     applyAppearanceToOpenEditors();
 }
 
-void EditorCoordinator::setFormatterSettings(FormatterSettings* settings)
-{
-    if (formatterSettings == settings)
-        return;
-
-    if (formatterSettingsConnection)
-        disconnect(formatterSettingsConnection);
-
-    formatterSettings = settings;
-    if (formatterSettings) {
-        formatterSettingsConnection = connect(
-            formatterSettings,
-            &FormatterSettings::settingsChanged,
-            this,
-            [this](FormatterProfile) {
-                applyFormatterSettingsToOpenEditors();
-            });
-    } else {
-        formatterSettingsConnection = QMetaObject::Connection();
-    }
-
-    applyFormatterSettingsToOpenEditors();
-}
-
 void EditorCoordinator::setAnnotationDisplayOptions(
     const EditorAnnotationDisplayOptions& options)
 {
@@ -428,7 +402,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             return createIncludeNewHeader(request);
         });
     applyAppearance(editor);
-    applyFormatterSettings(editor);
     applyAnnotationDisplayOptions(editor);
     connect(editor, &MyCodeEditor::sourceNavigationRequested,
             this, [this, editor](const EditorSourceNavigationTarget& target,
@@ -508,12 +481,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     modeStateHandler(snapshot);
                 }
             });
-    connect(editor, &MyCodeEditor::formatterProfileChanged,
-            this, [this](FormatterProfile profile) {
-                if (!formatterSettings || applyingFormatterSettings)
-                    return;
-                formatterSettings->setProfile(profile);
-            });
     connect(editor, &MyCodeEditor::fontZoomRequested,
             this, [this](int steps) {
                 if (!appearanceSettings || steps == 0)
@@ -536,16 +503,6 @@ void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
     if (!editor || !appearanceSettings)
         return;
     editor->applyAppearanceSettings(appearanceSettings->options());
-}
-
-void EditorCoordinator::applyFormatterSettings(MyCodeEditor* editor) const
-{
-    if (!editor || !formatterSettings)
-        return;
-
-    applyingFormatterSettings = true;
-    editor->setFormatterProfile(formatterSettings->profile());
-    applyingFormatterSettings = false;
 }
 
 void EditorCoordinator::applyAnnotationDisplayOptions(
@@ -574,21 +531,6 @@ void EditorCoordinator::applyAppearanceToOpenEditors() const
     for (MyCodeEditor* editor :
          tabManager->auxiliaryViews()) {
         applyAppearance(editor);
-    }
-}
-
-void EditorCoordinator::applyFormatterSettingsToOpenEditors() const
-{
-    if (!tabManager)
-        return;
-
-    for (MyCodeEditor* editor :
-         tabManager->openEditors()) {
-        applyFormatterSettings(editor);
-    }
-    for (MyCodeEditor* editor :
-         tabManager->auxiliaryViews()) {
-        applyFormatterSettings(editor);
     }
 }
 
@@ -1380,18 +1322,9 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            false,
            true);
 
-    append(QStringLiteral("format.profile.structured"));
-    append(QStringLiteral("format.profile.indentOnly"));
-    append(QStringLiteral("format.document"),
-           true,
-           editable,
-           QStringLiteral("The editor is read-only."));
-
     const EditorContextMenuModel model =
         buildEditorContextMenuModel(request);
     menu->clear();
-    QActionGroup* profileGroup = new QActionGroup(menu);
-    profileGroup->setExclusive(true);
 
     const auto execute =
         [this,
@@ -1433,9 +1366,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                        == QStringLiteral(
                            "refactor.exposeSignalToTop")
                 || actionId.startsWith(
-                    QStringLiteral("waveSimulation."))
-                || actionId.startsWith(
-                    QStringLiteral("format."));
+                    QStringLiteral("waveSimulation."));
             if (registeredEditorAction
                 && registeredActionRequestHandler) {
                 QVariantMap parameters;
@@ -1565,31 +1496,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                        == QStringLiteral(
                            "refactor.exposeSignalToTop")) {
                 handleExposeSignalToTopRequested(context);
-            } else if (actionId
-                       == QStringLiteral("format.commentLines")) {
-                editor->commentSelectionOrLine();
-            } else if (actionId
-                       == QStringLiteral("format.uncommentLines")) {
-                editor->uncommentSelectionOrLine();
-            } else if (actionId
-                       == QStringLiteral("format.indentLines")) {
-                editor->indentSelectionOrLine();
-            } else if (actionId
-                       == QStringLiteral("format.unindentLines")) {
-                editor->unindentSelectionOrLine();
-            } else if (actionId
-                       == QStringLiteral(
-                           "format.profile.structured")) {
-                editor->setFormatterProfile(
-                    FormatterProfile::Structured);
-            } else if (actionId
-                       == QStringLiteral(
-                           "format.profile.indentOnly")) {
-                editor->setFormatterProfile(
-                    FormatterProfile::IndentOnly);
-            } else if (actionId
-                       == QStringLiteral("format.document")) {
-                editor->formatDocument();
             } else {
                 for (const EditorSourceSymbolMenuItemState& item :
                      menuState.items) {
@@ -1648,24 +1554,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                     QStringLiteral(
                         "refactor.exposeSignalToTop"));
             }
-            if (item.actionId
-                == QStringLiteral(
-                    "format.profile.structured")) {
-                action->setCheckable(true);
-                action->setActionGroup(profileGroup);
-                action->setChecked(
-                    editor->formatterProfile()
-                    == FormatterProfile::Structured);
-            } else if (item.actionId
-                       == QStringLiteral(
-                           "format.profile.indentOnly")) {
-                action->setCheckable(true);
-                action->setActionGroup(profileGroup);
-                action->setChecked(
-                    editor->formatterProfile()
-                    == FormatterProfile::IndentOnly);
-            }
-
             const QString shortcut =
                 effectiveActionShortcut(item.actionId);
             if (!shortcut.isEmpty()) {

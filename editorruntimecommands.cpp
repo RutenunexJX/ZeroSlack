@@ -1013,16 +1013,6 @@ void MyCodeEditorState::executeEditorActionCommand(
         formatDocument(editor);
 }
 
-void MyCodeEditorState::setFormatterProfile(FormatterProfile profile)
-{
-    currentFormatterProfile = profile;
-}
-
-FormatterProfile MyCodeEditorState::formatterProfile() const
-{
-    return currentFormatterProfile;
-}
-
 FormatterReport MyCodeEditorState::formatDocument(
     MyCodeEditor* editor)
 {
@@ -1037,8 +1027,7 @@ FormatterReport MyCodeEditorState::formatDocument(
     const QString oldText = editor->toPlainText();
     const FormatterReport report =
         FormatterService::getInstance()->formatDocument(
-            oldText,
-            currentFormatterProfile);
+            oldText);
     if (!report.changed) {
         emit editor->editorStatusMessageRequested(
             report.diagnostic.isEmpty()
@@ -1068,10 +1057,8 @@ FormatterReport MyCodeEditorState::formatDocument(
             anchoredView.first, positionMapper);
     }
     QString message =
-        QStringLiteral("Formatted document (%1 lines, %2)")
-            .arg(report.formattedLines)
-            .arg(FormatterService::profileDisplayName(
-                currentFormatterProfile));
+        QStringLiteral("Formatted document (%1 lines)")
+            .arg(report.formattedLines);
     if (!report.diagnostic.isEmpty())
         message += QStringLiteral(": ") + report.diagnostic;
     emit editor->editorStatusMessageRequested(message);

@@ -1,6 +1,6 @@
-ZeroSlack v0.18.0
+ZeroSlack v0.18.1
 
-Build date: 2026-08-21
+Build date: 2026-08-22
 Build profile: Shared Release
 Qt: 6.10.2
 Compiler: MinGW 13.1.0

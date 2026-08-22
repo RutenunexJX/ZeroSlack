@@ -2181,8 +2181,7 @@ void runEditorViewTargetedActionRegression()
     targetTab->setTextCursor(peerDocumentCursor);
     const FormatterReport documentReport =
         FormatterService::getInstance()->formatDocument(
-            formatInput,
-            FormatterProfile::Structured);
+            formatInput);
     const QString currentBeforeFormat =
         currentEditor->toPlainText();
     auxiliary->setFocus();
@@ -2238,21 +2237,6 @@ void runEditorViewTargetedActionRegression()
 
     bool transitionStressOk = true;
     for (int iteration = 0; iteration < 12; ++iteration) {
-        const FormatterProfile profile =
-            iteration % 2 == 0
-                ? FormatterProfile::Structured
-                : FormatterProfile::IndentOnly;
-        const QString profileAction =
-            profile == FormatterProfile::Structured
-                ? QStringLiteral("format.profile.structured")
-                : QStringLiteral("format.profile.indentOnly");
-        const bool profileRouted =
-            requestAction(profileAction);
-        const bool profileTargeted =
-            profileRouted
-            && auxiliary->formatterProfile() == profile
-            && currentEditor->formatterProfile()
-                   == profile;
         auxiliary->setPlainText(formatInput);
         QTextCursor cursor(auxiliary->document());
         cursor.setPosition(
@@ -2260,7 +2244,7 @@ void runEditorViewTargetedActionRegression()
         auxiliary->setTextCursor(cursor);
         const FormatterReport expected =
             FormatterService::getInstance()
-                ->formatDocument(formatInput, profile);
+                ->formatDocument(formatInput);
         const bool formatRouted =
             requestAction(QStringLiteral("format.document"));
         const bool formatApplied =
@@ -2276,12 +2260,11 @@ void runEditorViewTargetedActionRegression()
             auxiliary->toPlainText()
                 == expected.formattedText;
         transitionStressOk = transitionStressOk
-            && profileTargeted
             && formatApplied
             && undoRestored
             && redoRestored;
     }
-    check("format profile, document, undo/redo, and multi-View transitions remain deterministic",
+    check("format document, undo/redo, and multi-View transitions remain deterministic",
           transitionStressOk);
 }
 

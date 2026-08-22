@@ -14,8 +14,6 @@ inline constexpr const char* FontLineHeight =
 inline constexpr const char* FontLigaturesEnabled =
     "editorAppearance/ligaturesEnabled";
 
-inline constexpr const char* FormatterProfile =
-    "formatter/profile";
 inline constexpr const char* ShortcutOverrides =
     "settingsCenter/shortcut/overrides";
 inline constexpr const char* AnnotationEnabled =

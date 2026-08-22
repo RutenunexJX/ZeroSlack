@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.18.0`
+Product version: `v0.18.1`
 
 ## Objective
 
@@ -10,12 +10,14 @@ creating a second SystemVerilog syntax fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.18.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.18.1.
 - ASCII numeric peeks display every radix row, including hexadecimal output.
 - Column-mode Tab completion expands canonical SystemVerilog keywords across
   the selected rows in one undoable edit, and its selection is visibly pink.
 - Format Document aligns typedef-typed declarations and enum concatenations;
   no user-facing Format Selection route, action, command, or editor API remains.
+- Structured is the only formatter policy; no Indent-Only profile, formatter
+  profile setting, or editor context-menu Format section remains.
 - Rename accepts a caret on either insertion boundary of a semantic symbol,
   including punctuation-adjacent boundaries.
 - Signal organization remains available when a preprocessing directive occurs

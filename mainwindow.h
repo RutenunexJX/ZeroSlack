@@ -19,7 +19,6 @@
 
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
-class FormatterSettings;
 class SettingsCenterPanel;
 class SettingsCenterService;
 class MyCodeEditor;
@@ -164,7 +163,6 @@ private:
         scopedReplaceWorkflow;
     std::unique_ptr<SettingsCenterService> settingsCenterService;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
-    std::unique_ptr<FormatterSettings> formatterSettings;
     SettingsCenterPanel* settingsCenterPanel = nullptr;
     QDockWidget* settingsCenterDock = nullptr;
     QMenu* viewMenu = nullptr;

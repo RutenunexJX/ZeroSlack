@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.18.1] - 2026-08-22
+
+### Single structured formatter policy
+
+- Removed the Indent-Only formatter profile, its editor state, settings
+  persistence, Action Registry entries, and Settings Center category.
+- Kept Structured formatting as the sole document and internal snippet policy.
+- Removed all formatting actions from the editor context menu while preserving
+  their keyboard shortcuts, including `Ctrl+Shift+I` for Format Document.
+
 ## [0.18.0] - 2026-08-21
 
 ### Stable lazy Wave toolchain bundle

@@ -15,7 +15,6 @@ enum class SettingsCenterScope {
 enum class SettingsCenterCategory {
     Appearance,
     Font,
-    Formatter,
     Shortcut,
     Annotation,
     Analysis,
