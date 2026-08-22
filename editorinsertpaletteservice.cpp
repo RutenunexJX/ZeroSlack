@@ -73,7 +73,8 @@ ParsedSymbolQuery parseSymbolQuery(const QString& text)
 
     ParsedSymbolQuery parsed;
     parsed.filter = text.trimmed();
-    parsed.kinds = {CompletionCommandKind::VisibleSymbol};
+    parsed.kinds = {CompletionCommandKind::VisibleSymbol,
+                    CompletionCommandKind::EnumValue};
     return parsed;
 }
 

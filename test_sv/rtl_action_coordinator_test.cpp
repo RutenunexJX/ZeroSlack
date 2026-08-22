@@ -222,6 +222,11 @@ int main(int argc, char* argv[])
         [&showPanelCalls](const QString&) {
             ++showPanelCalls;
         };
+    QStringList semanticRefreshFiles;
+    callbacks.refreshSemanticDocuments =
+        [&semanticRefreshFiles](const QStringList& fileNames) {
+            semanticRefreshFiles = fileNames;
+        };
     RtlActionCoordinator coordinator(
         &tabManager,
         &workspaceManager,
@@ -378,6 +383,11 @@ int main(int argc, char* argv[])
            renamedTopEditor
                && renamedTopEditor->toPlainText().contains(
                    QStringLiteral("payload_i")));
+    expect("applied rename requests one semantic refresh for every edited file",
+           semanticRefreshFiles.contains(childFile,
+                                         Qt::CaseInsensitive)
+               && semanticRefreshFiles.contains(topFile,
+                                                Qt::CaseInsensitive));
     const RtlHighRiskEditPanelOutcome undo = highRisk->undo();
     expect("popup-applied rename retains protected transaction undo",
            undo.panelState == RtlHighRiskEditPanelState::Undone);

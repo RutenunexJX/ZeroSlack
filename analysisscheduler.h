@@ -56,6 +56,7 @@ public:
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
     void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
+    void requestDocumentSemanticRefresh(const QStringList& fileNames);
     void cancelWorkspaceAnalysis();
     void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceRelationshipAnalysis();
@@ -154,7 +155,9 @@ private:
                                  SemanticChangeImpact impactHint,
                                  const QString& triggerFile,
                                  const QStringList& changedFiles,
-                                 const ProjectSnapshot& project = {});
+                                 const ProjectSnapshot& project = {},
+                                 const QHash<QString, QString>&
+                                     sourceOverrides = {});
     void setDocumentSemanticState(const QString& fileName,
                                   DocumentSemanticState state,
                                   std::uint64_t documentRevision,
@@ -170,6 +173,9 @@ private:
         SemanticAnalysisRequestDisposition disposition);
     ProjectSnapshot projectForAnalysis(const QString& triggerFile) const;
     QString normalizedFileName(const QString& fileName) const;
+    bool requestUsesCurrentDocumentText(
+        const SemanticAnalysisRequest& request,
+        const DocumentSnapshot& snapshot) const;
     bool isSelfWriteWatcherEvent(const QString& fileName) const;
     void scheduleExternalFileAnalysis(const QString& fileName,
                                       int debounceMs);

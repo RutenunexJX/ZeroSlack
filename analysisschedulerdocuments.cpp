@@ -110,6 +110,33 @@ QString AnalysisScheduler::normalizedFileName(const QString& fileName) const
     return path;
 }
 
+bool AnalysisScheduler::requestUsesCurrentDocumentText(
+    const SemanticAnalysisRequest& request,
+    const DocumentSnapshot& snapshot) const
+{
+    if (snapshot.fileName.isEmpty())
+        return false;
+    const QString target = normalizedFileName(snapshot.fileName);
+    bool revisionMatches = false;
+    for (auto it = request.documentRevisions.constBegin();
+         it != request.documentRevisions.constEnd(); ++it) {
+        if (normalizedFileName(it.key()) != target)
+            continue;
+        revisionMatches = it.value()
+            == static_cast<std::uint64_t>(snapshot.textVersion);
+        break;
+    }
+    if (!revisionMatches)
+        return false;
+
+    for (auto it = request.sourceOverrides.constBegin();
+         it != request.sourceOverrides.constEnd(); ++it) {
+        if (normalizedFileName(it.key()) == target)
+            return it.value() == snapshot.text;
+    }
+    return false;
+}
+
 DocumentSemanticStatus AnalysisScheduler::semanticStatus(
     const QString& fileName) const
 {
@@ -173,7 +200,8 @@ void AnalysisScheduler::requestSemanticAnalysis(
     SemanticChangeImpact impactHint,
     const QString& triggerFile,
     const QStringList& changedFiles,
-    const ProjectSnapshot& requestedProject)
+    const ProjectSnapshot& requestedProject,
+    const QHash<QString, QString>& requestedSourceOverrides)
 {
     if (shuttingDown || !workspaceSymbolAnalysis)
         return;
@@ -306,6 +334,10 @@ void AnalysisScheduler::requestSemanticAnalysis(
         if (!content.isNull())
             request.sourceOverrides.insert(triggerFile, content);
     }
+    for (auto it = requestedSourceOverrides.constBegin();
+         it != requestedSourceOverrides.constEnd(); ++it) {
+        request.sourceOverrides.insert(it.key(), it.value());
+    }
 
     for (const QString& fileName : request.changedFiles) {
         const DocumentSnapshot snapshot = documentModel
@@ -317,8 +349,10 @@ void AnalysisScheduler::requestSemanticAnalysis(
                 continue;
             setDocumentSemanticState(
                 fileName,
-                snapshot.dirty ? DocumentSemanticState::Dirty
-                               : DocumentSemanticState::Queued,
+                snapshot.dirty
+                        && !requestUsesCurrentDocumentText(request, snapshot)
+                    ? DocumentSemanticState::Dirty
+                    : DocumentSemanticState::Queued,
                 static_cast<std::uint64_t>(snapshot.textVersion),
                 request.generation);
         }
@@ -596,8 +630,10 @@ void AnalysisScheduler::onSemanticAnalysisStarted(
                 continue;
             setDocumentSemanticState(
                 fileName,
-                snapshot.dirty ? DocumentSemanticState::Dirty
-                               : DocumentSemanticState::Analyzing,
+                snapshot.dirty
+                        && !requestUsesCurrentDocumentText(request, snapshot)
+                    ? DocumentSemanticState::Dirty
+                    : DocumentSemanticState::Analyzing,
                 static_cast<std::uint64_t>(snapshot.textVersion),
                 request.generation);
         }
@@ -637,7 +673,13 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
         const DocumentSemanticStatus current = semanticStatus(fileName);
         if (current.analysisGeneration > request.generation)
             continue;
-        if (snapshot.dirty) {
+        const QString publishedText =
+            SemanticIndex::getInstance()->getCachedFileContent(fileName);
+        const bool dirtyBufferPublished = snapshot.dirty
+            && requestUsesCurrentDocumentText(request, snapshot)
+            && !publishedText.isNull()
+            && publishedText == snapshot.text;
+        if (snapshot.dirty && !dirtyBufferPublished) {
             setDocumentSemanticState(
                 fileName,
                 DocumentSemanticState::Dirty,
@@ -648,8 +690,6 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
         bool revisionCaptured = false;
         const std::uint64_t requestedRevision =
             requestedRevisionForFile(fileName, &revisionCaptured);
-        const QString publishedText =
-            SemanticIndex::getInstance()->getCachedFileContent(fileName);
         const bool capturedRevisionMatches = revisionCaptured
             && static_cast<std::uint64_t>(snapshot.textVersion)
                 == requestedRevision;
@@ -658,7 +698,9 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
             && current.state == DocumentSemanticState::Queued
             && current.documentRevision
                 == static_cast<std::uint64_t>(snapshot.textVersion);
-        if ((capturedRevisionMatches || openedDuringActiveRequest)
+        if ((dirtyBufferPublished
+             || capturedRevisionMatches
+             || openedDuringActiveRequest)
             && !publishedText.isNull()
             && publishedText == snapshot.text) {
             setDocumentSemanticState(

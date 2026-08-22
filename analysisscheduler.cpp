@@ -3,6 +3,8 @@
 #include "relationshipresultpublisher.h"
 #include "symbolanalyzer.h"
 
+#include <QSet>
+
 #include <utility>
 
 AnalysisScheduler::AnalysisScheduler(QObject* parent)
@@ -180,6 +182,47 @@ void AnalysisScheduler::requestWorkspaceAnalysis(const ProjectSnapshot& project)
                             QString(),
                             project.systemVerilogFiles,
                             project);
+}
+
+void AnalysisScheduler::requestDocumentSemanticRefresh(
+    const QStringList& fileNames)
+{
+    if (shuttingDown || !documentModel || fileNames.isEmpty())
+        return;
+
+    QStringList changedFiles;
+    QHash<QString, QString> sourceOverrides;
+    QSet<QString> seen;
+    for (const QString& fileName : fileNames) {
+        const DocumentSnapshot snapshot =
+            documentModel->cachedDocumentForFile(fileName);
+        const QString key = normalizedFileName(snapshot.fileName);
+        if (snapshot.fileName.isEmpty() || key.isEmpty()
+            || seen.contains(key)) {
+            continue;
+        }
+        seen.insert(key);
+        changedFiles.append(snapshot.fileName);
+        sourceOverrides.insert(snapshot.fileName, snapshot.text);
+    }
+    if (changedFiles.isEmpty())
+        return;
+
+    ProjectSnapshot project = projectForAnalysis(changedFiles.first());
+    for (const QString& fileName : std::as_const(changedFiles)) {
+        if (!project.systemVerilogFiles.contains(fileName,
+                                                 Qt::CaseInsensitive)) {
+            project.systemVerilogFiles.append(fileName);
+        }
+        if (!project.allFiles.contains(fileName, Qt::CaseInsensitive))
+            project.allFiles.append(fileName);
+    }
+    requestSemanticAnalysis(SemanticAnalysisReason::Refactor,
+                            SemanticChangeImpact::Unknown,
+                            changedFiles.first(),
+                            changedFiles,
+                            project,
+                            sourceOverrides);
 }
 
 void AnalysisScheduler::cancelWorkspaceAnalysis()

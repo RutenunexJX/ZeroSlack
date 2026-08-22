@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.18.1`
+Product version: `v0.18.2`
 
 ## Objective
 
@@ -10,7 +10,7 @@ creating a second SystemVerilog syntax fact source.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.18.1.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.18.2.
 - ASCII numeric peeks display every radix row, including hexadecimal output.
 - Column-mode Tab completion expands canonical SystemVerilog keywords across
   the selected rows in one undoable edit, and its selection is visibly pink.
@@ -20,6 +20,11 @@ creating a second SystemVerilog syntax fact source.
   profile setting, or editor context-menu Format section remains.
 - Rename accepts a caret on either insertion boundary of a semantic symbol,
   including punctuation-adjacent boundaries.
+- A successful rename refreshes semantic facts from the exact edited document
+  revisions, so a second `Ctrl+R` operation works without saving first.
+- The default `Ctrl+Space` Symbols view searches all insertable symbols visible
+  in the current scope, including enum values, without exposing another
+  module's internal signals; selectors remain optional narrowing filters.
 - Signal organization remains available when a preprocessing directive occurs
   only after the final late declaration, while unsafe crossed barriers still
   fail closed.

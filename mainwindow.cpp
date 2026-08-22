@@ -2787,6 +2787,11 @@ void MainWindow::setupRtlActionCoordinator()
         [this](const QString& panelId) {
             showPanelById(panelId);
         };
+    callbacks.refreshSemanticDocuments =
+        [this](const QStringList& fileNames) {
+            if (analysisScheduler)
+                analysisScheduler->requestDocumentSemanticRefresh(fileNames);
+        };
 
     rtlActionCoordinator =
         std::make_unique<RtlActionCoordinator>(

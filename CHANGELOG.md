@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.18.2] - 2026-08-22
+
+### Scope-complete symbol search and repeatable rename
+
+- Expanded the default `Ctrl+Space` Symbols query to include every insertable
+  symbol visible in the current module/package scope, including visible enum
+  values, while retaining semantic selectors as optional narrowing filters.
+- Kept other modules' internal symbols outside the default result set and
+  preserved receiver-member and expected-enum prioritization.
+- Added revision-guarded semantic refreshes for the current in-memory buffers
+  after single- and multi-file rename transactions, allowing consecutive
+  `Ctrl+R` operations without requiring `Ctrl+S` between them.
+
 ## [0.18.1] - 2026-08-22
 
 ### Single structured formatter policy

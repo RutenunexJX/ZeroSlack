@@ -1266,6 +1266,91 @@ void runSaveQueuesExactlyOnceAndRejectsStaleRevision()
     scheduler.shutdown();
 }
 
+void runDirtyBufferSemanticRefreshPublishesCurrentRevision()
+{
+    QTemporaryDir directory;
+    expect("dirty-buffer semantic refresh fixture directory is valid",
+           directory.isValid());
+    if (!directory.isValid())
+        return;
+
+    const QString fileName =
+        directory.filePath(QStringLiteral("refactor_refresh.sv"));
+    const QString initialText = QStringLiteral(
+        "module refactor_refresh; logic old_name; endmodule\n");
+    QFile file(fileName);
+    expect("dirty-buffer semantic refresh fixture opens",
+           file.open(QIODevice::WriteOnly | QIODevice::Text));
+    if (!file.isOpen())
+        return;
+    file.write(initialText.toUtf8());
+    file.close();
+
+    SemanticIndex::getInstance()->installPreparedSnapshot(
+        std::make_shared<const SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolRecords(
+                {}, {}, {}, {{fileName, initialText}})),
+        {fileName});
+
+    AnalysisScheduler scheduler;
+    SymbolAnalyzer analyzer;
+    DocumentModel documents;
+    MyCodeEditor editor;
+    scheduler.setSymbolAnalyzer(&analyzer);
+    scheduler.setDocumentModel(&documents);
+    editor.setPlainText(initialText);
+    documents.registerEditor(&editor, fileName);
+    expect("dirty-buffer semantic refresh starts from current snapshot",
+           scheduler.semanticStatus(fileName).state
+               == DocumentSemanticState::Current);
+
+    QTextCursor renameCursor(editor.document());
+    const int oldNamePosition = initialText.indexOf(
+        QStringLiteral("old_name"));
+    renameCursor.setPosition(oldNamePosition);
+    renameCursor.setPosition(
+        oldNamePosition + QStringLiteral("old_name").size(),
+        QTextCursor::KeepAnchor);
+    renameCursor.insertText(QStringLiteral("new_name"));
+    expect("dirty-buffer semantic refresh observes unsaved edit",
+           documents.cachedDocumentForFile(fileName).dirty
+               && scheduler.semanticStatus(fileName).state
+                      == DocumentSemanticState::Dirty);
+
+    int refactorSchedulingCount = 0;
+    QObject::connect(
+        &scheduler,
+        &AnalysisScheduler::semanticAnalysisTelemetry,
+        &scheduler,
+        [&](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling
+                && telemetry.reason == SemanticAnalysisReason::Refactor) {
+                ++refactorSchedulingCount;
+            }
+        });
+    scheduler.requestDocumentSemanticRefresh({fileName});
+    expect("dirty-buffer semantic refresh schedules one refactor request",
+           refactorSchedulingCount == 1);
+    expect("dirty-buffer semantic refresh publishes current in-memory text",
+           waitUntil(
+               [&]() {
+                   return scheduler.semanticStatus(fileName).state
+                              == DocumentSemanticState::Current
+                       && SemanticIndex::getInstance()
+                                  ->getCachedFileContent(fileName)
+                              == editor.toPlainText();
+               },
+               10000));
+    expect("dirty-buffer semantic refresh does not mark the file saved",
+           documents.cachedDocumentForFile(fileName).dirty);
+
+    editor.insertPlainText(QStringLiteral("// later edit\n"));
+    expect("later edit invalidates refreshed in-memory semantics",
+           scheduler.semanticStatus(fileName).state
+               == DocumentSemanticState::Dirty);
+    scheduler.shutdown();
+}
+
 void runExternalChangesConvergeAndCoalesce()
 {
     QTemporaryDir directory;
@@ -3369,6 +3454,7 @@ int main(int argc, char** argv)
     runSupersededRequestsConvergeDocumentStates();
     runSinglePendingCleanChangeMergesIntoDifferentRequest();
     runSaveQueuesExactlyOnceAndRejectsStaleRevision();
+    runDirtyBufferSemanticRefreshPublishesCurrentRevision();
     runExternalChangesConvergeAndCoalesce();
     runFullWorkspaceRebuildDropsRemovedFilesAndKeepsGraph();
     runIncrementalEffectiveFactsKeepInstanceContext();

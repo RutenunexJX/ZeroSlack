@@ -1559,6 +1559,18 @@ int main(int argc, char** argv) {
                 CollectorKind::Logic, QStringLiteral("palette_top"),
                 QStringLiteral("logic"), 3, palettePath),
             makeSemanticFixtureRecord(
+                QStringLiteral("reg_sig"), DeclarationKind::Signal,
+                CollectorKind::Reg, QStringLiteral("palette_top"),
+                QStringLiteral("reg"), 11, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("port_sig"), DeclarationKind::Port,
+                CollectorKind::PortInput, QStringLiteral("palette_top"),
+                QStringLiteral("logic"), 12, palettePath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("other_module_sig"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("palette_child"),
+                QStringLiteral("logic"), 13, palettePath),
+            makeSemanticFixtureRecord(
                 QStringLiteral("u_signal"), DeclarationKind::Signal,
                 CollectorKind::Logic, QStringLiteral("palette_top"),
                 QStringLiteral("logic"), 3, palettePath),
@@ -1720,6 +1732,28 @@ int main(int argc, char** argv) {
                            GlobalControlCategory::Symbols,
                            QStringLiteral("ns "), typedContext))
                               .contains(QStringLiteral("ns_signal")),
+                   true);
+
+        const QSet<QString> defaultVisibleTitles = itemTitles(
+            insertPalette.query(GlobalControlCategory::Symbols,
+                                QString(), typedContext));
+        expectBool("Ctrl+Space default symbols include visible enum values",
+                   defaultVisibleTitles.contains(QStringLiteral("wire_sig"))
+                       && defaultVisibleTitles.contains(QStringLiteral("logic_sig"))
+                       && defaultVisibleTitles.contains(QStringLiteral("reg_sig"))
+                       && defaultVisibleTitles.contains(QStringLiteral("port_sig"))
+                       && defaultVisibleTitles.contains(QStringLiteral("state"))
+                       && defaultVisibleTitles.contains(QStringLiteral("packet"))
+                       && defaultVisibleTitles.contains(QStringLiteral("IDLE"))
+                       && defaultVisibleTitles.contains(QStringLiteral("RUN"))
+                       && !defaultVisibleTitles.contains(
+                           QStringLiteral("other_module_sig")),
+                   true);
+        expectBool("Ctrl+Space default text filters visible enum values",
+                   itemTitles(insertPalette.query(
+                       GlobalControlCategory::Symbols,
+                       QStringLiteral("IDL"), typedContext))
+                       == QSet<QString>{QStringLiteral("IDLE")},
                    true);
 
         typedContext.memberAccess = true;

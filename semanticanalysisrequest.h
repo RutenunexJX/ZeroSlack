@@ -14,6 +14,7 @@ enum class SemanticAnalysisReason {
     WorkspaceOpen,
     DocumentOpen,
     Save,
+    Refactor,
     ExternalFileChange,
     WorkspaceConfiguration,
     ExplicitRequest

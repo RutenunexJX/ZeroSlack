@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.18.1`
+Product version: `v0.18.2`
 
 ## Current status
 
@@ -17,6 +17,10 @@ Product version: `v0.18.1`
 - Rename resolves symbols at punctuation boundaries, and declaration
   organization ignores preprocessing barriers that occur only after the final
   declaration being moved.
+- Default `Ctrl+Space` symbol search covers every insertable symbol in the
+  current semantic scope, including enum values, while explicit selectors only
+  narrow that set. Rename transactions publish revision-matched dirty-buffer
+  semantics so consecutive renames do not depend on an intervening save.
 
 - Workspace activation restores the cached file list immediately and always
   follows it with an asynchronous directory reconciliation. A changed file set

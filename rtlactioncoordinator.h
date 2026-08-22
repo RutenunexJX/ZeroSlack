@@ -7,6 +7,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include <functional>
 
@@ -25,6 +26,8 @@ struct RtlActionCoordinatorCallbacks {
         resolveContext;
     std::function<void(const QString& panelId)>
         showPanel;
+    std::function<void(const QStringList& fileNames)>
+        refreshSemanticDocuments;
 };
 
 class ZEROSLACK_API RtlActionCoordinator final : public QObject

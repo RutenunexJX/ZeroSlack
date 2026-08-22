@@ -3,7 +3,7 @@
 `VERSION` is the single manually maintained product version source. It must
 contain exactly one SemVer value in strict `X.Y.Z` numeric form.
 
-Current controlled baseline: `v0.18.1`.
+Current controlled baseline: `v0.18.2`.
 
 ## Upgrade Rules
 

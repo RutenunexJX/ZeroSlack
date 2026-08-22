@@ -136,8 +136,10 @@ int main(int argc, char* argv[])
     auto* categories =
         panel.findChild<QListWidget*>(
             QStringLiteral("settingsCenterCategoryList"));
-    check(categories && categories->count() == 8,
-          "all eight schema categories are shown");
+    check(categories
+              && categories->count()
+                     == SettingsCenterSchema::categories().size(),
+          "all schema categories are shown");
     bool everyCategoryHasPage = true;
     bool everyFieldHasStableEditor = true;
     int generatedFieldCount = 0;

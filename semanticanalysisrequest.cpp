@@ -9,6 +9,8 @@ QString semanticAnalysisReasonName(SemanticAnalysisReason reason)
         return QStringLiteral("DocumentOpen");
     case SemanticAnalysisReason::Save:
         return QStringLiteral("Save");
+    case SemanticAnalysisReason::Refactor:
+        return QStringLiteral("Refactor");
     case SemanticAnalysisReason::ExternalFileChange:
         return QStringLiteral("ExternalFileChange");
     case SemanticAnalysisReason::WorkspaceConfiguration:

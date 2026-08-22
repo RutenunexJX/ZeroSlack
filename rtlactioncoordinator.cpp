@@ -814,6 +814,25 @@ void RtlActionCoordinator::connectPanelSignals()
         this,
         [this](
             const RtlHighRiskEditPanelOutcome& outcome) {
+            if (callbacks.refreshSemanticDocuments
+                && (outcome.panelState
+                        == RtlHighRiskEditPanelState::Applied
+                    || outcome.panelState
+                        == RtlHighRiskEditPanelState::Undone)) {
+                QStringList fileNames;
+                for (const rtledit::SourceDiffFile& file :
+                     outcome.sourceDiff.files) {
+                    const QString fileName =
+                        rtlActionFromUtf8(file.filePath);
+                    if (!fileName.isEmpty()
+                        && !fileNames.contains(fileName,
+                                               Qt::CaseInsensitive)) {
+                        fileNames.append(fileName);
+                    }
+                }
+                if (!fileNames.isEmpty())
+                    callbacks.refreshSemanticDocuments(fileNames);
+            }
             if (!notificationCenter)
                 return;
             const QString actionId =
@@ -1042,6 +1061,10 @@ RtlActionCoordinator::executeRtlRenameAction(
                     safePlan.fileEdits.constFirst(),
                     &applyFailure)) {
                 return fail(applyFailure);
+            }
+            if (callbacks.refreshSemanticDocuments) {
+                callbacks.refreshSemanticDocuments(
+                    {safePlan.fileEdits.constFirst().fileName});
             }
             result.succeeded = true;
             result.message = QStringLiteral(
