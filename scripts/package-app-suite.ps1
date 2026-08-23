@@ -21,6 +21,11 @@ param(
     [string]$QtBinDirectory = "E:\QT6\6.10.2\mingw_64\bin",
     [string]$OutputRoot = "E:\PinloomRoot\AppPackage",
     [string]$SuiteName = "AppSuite",
+    [string]$ZeroSlackVersion = "",
+    [string]$PinloomVersion = "",
+    [string]$WaveWorkbenchVersion = "",
+    [string]$RegMapWorkbenchVersion = "",
+    [string]$RuntimeVersion = "",
     [switch]$ReplaceExisting
 )
 
@@ -53,6 +58,13 @@ function Read-ExecutableVersion([string]$Executable) {
         return "unknown"
     }
     return $version.Trim()
+}
+
+function Resolve-ComponentVersion([string]$ExplicitVersion, [string]$Executable) {
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitVersion)) {
+        return $ExplicitVersion.Trim()
+    }
+    return Read-ExecutableVersion $Executable
 }
 
 $zeroSlackSource = Resolve-RequiredDirectory $ZeroSlackDirectory "ZeroSlack"
@@ -136,23 +148,27 @@ foreach ($runtimeExecutable in @("suite-runtime.exe", "suite-cli.exe")) {
 $components = @(
     [ordered]@{
         id = "zeroslack"
-        version = Read-ExecutableVersion (Join-Path $zeroSlackTarget "ZeroSlack.exe")
+        version = Resolve-ComponentVersion `
+            $ZeroSlackVersion (Join-Path $zeroSlackTarget "ZeroSlack.exe")
         executable = "Apps/ZeroSlack-win64/ZeroSlack.exe"
     },
     [ordered]@{
         id = "pinloom"
-        version = Read-ExecutableVersion (Join-Path $pinloomTarget "pinloom_app.exe")
+        version = Resolve-ComponentVersion `
+            $PinloomVersion (Join-Path $pinloomTarget "pinloom_app.exe")
         executable = "Apps/Pinloom/pinloom_app.exe"
     },
     [ordered]@{
         id = "wave"
-        version = Read-ExecutableVersion (Join-Path $waveTarget "wave-workbench.exe")
+        version = Resolve-ComponentVersion `
+            $WaveWorkbenchVersion (Join-Path $waveTarget "wave-workbench.exe")
         executable = "Apps/WaveWorkbench/wave-workbench.exe"
         nativeSurfaceAbi = 1
     },
     [ordered]@{
         id = "regmap"
-        version = Read-ExecutableVersion (Join-Path $regMapTarget "RegMapWorkbench.exe")
+        version = Resolve-ComponentVersion `
+            $RegMapWorkbenchVersion (Join-Path $regMapTarget "RegMapWorkbench.exe")
         executable = "Apps/RegMapWorkbench/RegMapWorkbench.exe"
     }
 )
@@ -161,7 +177,8 @@ $manifest = [ordered]@{
     protocol = "suite-app/v1"
     generatedUtc = [DateTime]::UtcNow.ToString("o")
     runtime = [ordered]@{
-        version = Read-ExecutableVersion (Join-Path $runtimeTarget "suite-runtime.exe")
+        version = Resolve-ComponentVersion `
+            $RuntimeVersion (Join-Path $runtimeTarget "suite-runtime.exe")
         executable = "Apps/Runtime/suite-runtime.exe"
     }
     components = $components
@@ -179,7 +196,7 @@ $hashLines = Get-ChildItem -Recurse -File -LiteralPath $stagingDirectory |
         "$hash  $relative"
     }
 $hashLines | Set-Content -LiteralPath `
-    (Join-Path $stagingDirectory "SHA256SUMS.txt") -Encoding ascii
+    (Join-Path $stagingDirectory "SHA256SUMS.txt") -Encoding utf8
 
 if (Test-Path -LiteralPath $suiteDirectory) {
     Remove-Item -LiteralPath $suiteDirectory -Recurse -Force
