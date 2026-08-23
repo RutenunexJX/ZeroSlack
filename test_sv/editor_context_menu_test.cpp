@@ -101,6 +101,10 @@ int main(int argc, char* argv[])
         capability(QString::fromLatin1(
             ActionIds::EditReplaceSelectionWithSpaces)),
         capability(QString::fromLatin1(
+            ActionIds::PinloomLinkSelection)),
+        capability(QString::fromLatin1(
+            ActionIds::PinloomOpenLinkedContent)),
+        capability(QString::fromLatin1(
             ActionIds::RefactorOrganizeSignalDeclarations)),
         capability(QStringLiteral("format.document"))
     };
@@ -179,6 +183,19 @@ int main(int argc, char* argv[])
               && revealWave && revealWave->enabled
               && revealWave->executable,
           "current semantic symbol context exposes formal Wave Simulation Actions");
+    const EditorContextMenuItem* linkPinloom = findItem(
+        model,
+        QString::fromLatin1(ActionIds::PinloomLinkSelection));
+    const EditorContextMenuItem* openPinloom = findItem(
+        model,
+        QString::fromLatin1(ActionIds::PinloomOpenLinkedContent));
+    check(linkPinloom && linkPinloom->enabled
+              && linkPinloom->section
+                     == EditorContextMenuSection::Refactor
+              && openPinloom && openPinloom->enabled
+              && openPinloom->section
+                     == EditorContextMenuSection::Inspect,
+          "Pinloom link creation and linked-content navigation have registry-owned context actions");
 
     const QStringList requiredContextActions = {
         QString::fromLatin1(
@@ -201,6 +218,10 @@ int main(int argc, char* argv[])
             ActionIds::EditToggleSelectionCase),
         QString::fromLatin1(
             ActionIds::EditReplaceSelectionWithSpaces),
+        QString::fromLatin1(
+            ActionIds::PinloomLinkSelection),
+        QString::fromLatin1(
+            ActionIds::PinloomOpenLinkedContent),
         QString::fromLatin1(
             ActionIds::RefactorOrganizeSignalDeclarations)
     };

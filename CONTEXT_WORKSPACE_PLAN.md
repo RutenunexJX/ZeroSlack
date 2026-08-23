@@ -185,6 +185,12 @@ promotion, session restoration, automatic resident launch, and explicit
 offline or missing-entry states. Session data contains identity, URI, and view
 query only; Pinloom content is always resolved from Pinloom.
 
+Source-link authoring is also complete. A non-empty editor selection can attach
+an existing Pinloom entry or create a Pinloom-owned source anchor through
+`createSourceAnchor`. ZeroSlack stores only the portable source range and stable
+URI in `.zeroslack/pinloom-links.json`; relative file identity and surrounding
+text relocate the link after workspace moves or nearby edits.
+
 ### Stage 6: Insight providers and cleanup
 
 - Add Wave, FSM, and Module Diagram providers with full-view promotion.
@@ -199,11 +205,12 @@ They can be added without changing Context Workspace ownership or persistence.
 
 ## Verification strategy
 
-ZeroSlack passes all `91/91` configured tests, including the dedicated Pinloom
+ZeroSlack passes all `92/92` configured tests, including the dedicated Pinloom
 provider/URI/lifecycle suite and the existing Context Workspace regressions.
 Pinloom passes all `6/6` configured tests, including its host-bridge suite; a
 real hidden Pinloom process also passed capabilities, search, and stable-
-identity resolution checks over the local bridge.
+identity resolution checks over the local bridge. Source-anchor creation is
+covered by the same bridge suite.
 
 - Unit tests for resource identity, provider routing, replacement, promotion,
   ordering, serialization, and unavailable providers.

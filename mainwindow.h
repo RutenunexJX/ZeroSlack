@@ -35,6 +35,7 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
 class ContextWorkspaceController;
+class PinloomCodeLinkCoordinator;
 class PinloomHostClient;
 class EditorCoordinator;
 class EditorActionContextService;
@@ -118,6 +119,9 @@ public:
     editorActionContextChipWriteCountsForTesting() const;
     void resetEditorActionContextChipWriteCountsForTesting();
     NotificationCenter* notificationCenterForTesting() const;
+    bool revealSuiteSource(const QString& filePath,
+                           int lineNumber = 1,
+                           int columnNumber = 1);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -137,6 +141,8 @@ private:
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<ContextWorkspaceController>
         contextWorkspaceController;
+    std::unique_ptr<PinloomCodeLinkCoordinator>
+        pinloomCodeLinkCoordinator;
     std::unique_ptr<PinloomHostClient> pinloomHostClient;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<TemporaryEditorSearchProvider>

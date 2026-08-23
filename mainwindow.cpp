@@ -25,6 +25,7 @@
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
+#include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "pinloomhostclient.h"
 #include "diagnosticnavigationservice.h"
@@ -2778,66 +2779,6 @@ void MainWindow::setupPanelLayoutController()
     }
 }
 
-void MainWindow::setupContextWorkspace()
-{
-    if (!editorSplitHost || contextWorkspaceController)
-        return;
-    contextWorkspaceController =
-        std::make_unique<ContextWorkspaceController>(
-            this,
-            editorSplitHost,
-            this);
-    if (panelLayoutController) {
-        panelLayoutController->registerSidePanel(
-            QStringLiteral("contextWorkspace"),
-            contextWorkspaceController->dockWidget());
-    }
-    if (workspaceManager) {
-        contextWorkspaceController->setWorkspaceRoot(
-            workspaceManager->isWorkspaceOpen()
-                ? workspaceManager->getWorkspacePath()
-                : QString());
-        connect(workspaceManager.get(),
-                &WorkspaceManager::workspaceActivated,
-                contextWorkspaceController.get(),
-                [controller = contextWorkspaceController.get()](
-                    int,
-                    const QString&,
-                    const QString& path) {
-                    controller->setWorkspaceRoot(path);
-                });
-        connect(workspaceManager.get(),
-                &WorkspaceManager::workspaceClosed,
-                contextWorkspaceController.get(),
-                [controller = contextWorkspaceController.get()]() {
-                    controller->setWorkspaceRoot({});
-                });
-    }
-    auto temporaryProvider =
-        std::make_unique<TemporaryEditorContextProvider>(
-            tabManager.get());
-    temporaryProvider->setSearchProvider(
-        [this](const QString& rawQuery)
-            -> EditorSearchCandidates {
-            return temporaryEditorSearchProvider
-                ? temporaryEditorSearchProvider->query(rawQuery)
-                : EditorSearchCandidates{};
-        });
-    contextWorkspaceController->registerProvider(
-        std::move(temporaryProvider));
-    pinloomHostClient = std::make_unique<PinloomHostClient>(this);
-    if (settingsCenterPanel) {
-        pinloomHostClient->setExecutablePath(
-            settingsCenterPanel->snapshot()
-                .value(QStringLiteral(
-                    "integration.pinloomExecutablePath"))
-                .toString());
-    }
-    contextWorkspaceController->registerProvider(
-        std::make_unique<PinloomContextProvider>(
-            pinloomHostClient.get()));
-}
-
 void MainWindow::setupRtlActionCoordinator()
 {
     RtlActionCoordinatorCallbacks callbacks;
@@ -3941,6 +3882,13 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return editorCoordinator
             ->executeRegisteredExposeSignalAction(
                 descriptor, invocation);
+    }
+    if (PinloomCodeLinkCoordinator::handlesRoute(route)) {
+        if (!pinloomCodeLinkCoordinator)
+            return fail(QStringLiteral(
+                "Pinloom code linking is unavailable."));
+        return pinloomCodeLinkCoordinator->execute(
+            descriptor, invocation);
     }
     if (route
         == QStringLiteral(
@@ -6906,6 +6854,10 @@ void MainWindow::setupEditorCoordinator()
     editorCoordinator->setAppearanceSettings(editorAppearanceSettings.get());
     editorCoordinator->setAnnotationDisplayOptions(
         editorAnnotationDisplayOptions);
+    editorCoordinator->setPinloomCodeLinkStore(
+        pinloomCodeLinkCoordinator
+            ? pinloomCodeLinkCoordinator->store()
+            : nullptr);
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
             if (statusBar()) {

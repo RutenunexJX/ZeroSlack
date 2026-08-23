@@ -125,6 +125,21 @@ and preview-first RTL editing workflows.
   caret follows the moved text; once column selection is active,
   `Shift+Left` / `Shift+Right` extends or contracts its column span.
 
+## Suite application protocol
+
+ZeroSlack is a `suite-app/v1` provider. It resolves
+`zeroslack://source?file=...&line=...&column=...`, exposes the
+`zeroslack.source.reveal` action, and publishes the model Surface
+`zeroslack.source.preview`. The adapter uses the neutral `SuiteApp::suiteapp`
+SDK; it does not read another application's database or include another
+application's private headers.
+
+The optional Runtime is located through `SUITEAPP_RUNTIME_EXECUTABLE`, a local
+or sibling `Runtime` directory, or `PATH`. If it is absent, ZeroSlack continues
+to run normally and only suite discovery is unavailable. The complete contract
+and cross-application verification record are in
+[Suite App Protocol Plan](SUITE_APP_PROTOCOL_PLAN.md).
+
 ## Build, run, and test
 
 Requirements are CMake 3.27 or newer, a C++20/C99 toolchain, Qt 6 with Core,

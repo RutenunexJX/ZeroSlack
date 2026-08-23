@@ -17,6 +17,11 @@ PinloomContextProvider::PinloomContextProvider(
 {
 }
 
+void PinloomContextProvider::setLinkHandler(LinkHandler handler)
+{
+    linkHandler = std::move(handler);
+}
+
 QString PinloomContextProvider::staticProviderId()
 {
     return QStringLiteral("pinloom");
@@ -107,9 +112,11 @@ QWidget* PinloomContextProvider::createView(
     const ContextResource&,
     QWidget* parent)
 {
-    return clientValue
-        ? new PinloomContextView(clientValue, parent)
-        : nullptr;
+    if (!clientValue)
+        return nullptr;
+    auto* view = new PinloomContextView(clientValue, parent);
+    view->setLinkHandler(linkHandler);
+    return view;
 }
 
 bool PinloomContextProvider::activateView(

@@ -2,6 +2,7 @@
 #include "contextdockhost.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
+#include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "pinloomcontextview.h"
 #include "pinloomhostclient.h"
@@ -78,8 +79,12 @@ int main(int argc, char* argv[])
     int searchRequests = 0;
     int resolveRequests = 0;
     int openRequests = 0;
+    int createRequests = 0;
     PinloomHostClient client(
-        [&searchRequests, &resolveRequests, &openRequests](
+        [&searchRequests,
+         &resolveRequests,
+         &openRequests,
+         &createRequests](
             const QJsonObject& request,
             PinloomHostClient::RawReplyHandler reply) {
             const QString method =
@@ -109,6 +114,17 @@ int main(int argc, char* argv[])
                         QStringLiteral("Opened anchor")}}, {});
                 return;
             }
+            if (method == QStringLiteral("createSourceAnchor")) {
+                ++createRequests;
+                check(request.value(QStringLiteral("params"))
+                          .toObject()
+                          .value(QStringLiteral("content"))
+                          .toString()
+                          == QStringLiteral("always_ff @(posedge clk)"),
+                      "createSourceAnchor maps the selected source text to the host content field");
+                reply({{QStringLiteral("entry"), entryJson()}}, {});
+                return;
+            }
             reply({}, QStringLiteral("unexpected method"));
         });
     client.setExecutablePath(QStringLiteral("   "));
@@ -123,8 +139,21 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
 
     ContextWorkspaceController controller(&window, editorRegion, &window);
-    check(controller.registerProvider(
-              std::make_unique<PinloomContextProvider>(&client)),
+    int linkCalls = 0;
+    auto provider = std::make_unique<PinloomContextProvider>(&client);
+    provider->setLinkHandler(
+        [&linkCalls](const QVariantMap& source,
+                     const PinloomHostEntry& entry,
+                     QString* failureReason) {
+            if (failureReason)
+                failureReason->clear();
+            ++linkCalls;
+            return source.value(QStringLiteral("selectedText")).toString()
+                       == QStringLiteral("always_ff @(posedge clk)")
+                && entry.identity.anchorId
+                       == QStringLiteral("clock-reset");
+        });
+    check(controller.registerProvider(std::move(provider)),
           "Pinloom provider registers in Context Workspace");
     check(controller.providerIds().contains(QStringLiteral("pinloom"))
               && controller.rail()->entryIds().contains(
@@ -181,6 +210,60 @@ int main(int argc, char* argv[])
     check(openRequests == 1
               && view->statusText() == QStringLiteral("Opened anchor"),
           "Open delegates to Pinloom's authoritative primary action");
+
+    const QVariantMap linkSource{
+        {QStringLiteral("workspaceRoot"),
+         QStringLiteral("workspace-a")},
+        {QStringLiteral("selectedText"),
+         QStringLiteral("always_ff @(posedge clk)")},
+        {QStringLiteral("relativeFilePath"),
+         QStringLiteral("rtl/top.sv")},
+        {QStringLiteral("absoluteFilePath"),
+         QStringLiteral("workspace-a/rtl/top.sv")},
+        {QStringLiteral("selectedTextHash"),
+         QStringLiteral("source-hash")},
+        {QStringLiteral("startPosition"), 0},
+        {QStringLiteral("endPosition"), 24},
+        {QStringLiteral("startLine"), 12},
+        {QStringLiteral("startColumn"), 1},
+        {QStringLiteral("endLine"), 12},
+        {QStringLiteral("endColumn"), 25},
+        {QStringLiteral("suggestedTitle"),
+         QStringLiteral("Clocked process")},
+    };
+    PinloomCodeLinkCoordinator codeLinks(&controller);
+    codeLinks.setWorkspaceRoot(QStringLiteral("workspace-a"));
+    ActionInvocation linkInvocation;
+    linkInvocation.parameters.insert(
+        QStringLiteral("linkSource"), linkSource);
+    const ActionDescriptor* linkDescriptor = findActionById(
+        QString::fromLatin1(ActionIds::PinloomLinkSelection));
+    const ActionExecutionResult linkResult = linkDescriptor
+        ? codeLinks.execute(*linkDescriptor, linkInvocation)
+        : ActionExecutionResult{};
+    check(linkResult.succeeded && view->linkModeActive(),
+          "the registered source-link route opens Pinloom in explicit link mode");
+    auto* attachButton = view->findChild<QToolButton*>(
+        QStringLiteral("pinloomContextAttachEntry"));
+    check(attachButton && attachButton->isEnabled(),
+          "link mode can attach the selected existing Pinloom entry");
+    attachButton->click();
+    check(linkCalls == 1 && !view->linkModeActive(),
+          "attaching an existing entry persists the code link and closes link mode");
+
+    const ActionExecutionResult secondLinkResult = linkDescriptor
+        ? codeLinks.execute(*linkDescriptor, linkInvocation)
+        : ActionExecutionResult{};
+    check(secondLinkResult.succeeded && view->linkModeActive(),
+          "link mode can be reopened for another source anchor");
+    auto* createButton = view->findChild<QToolButton*>(
+        QStringLiteral("pinloomContextCreateAnchor"));
+    check(createButton && createButton->isEnabled(),
+          "link mode exposes source-anchor creation");
+    createButton->click();
+    check(createRequests == 1 && linkCalls == 2
+              && !view->linkModeActive(),
+          "creating a Pinloom source anchor immediately persists its code link");
 
     check(controller.pinPeek(&failureReason),
           "resolved Pinloom view can be pinned without recreation");

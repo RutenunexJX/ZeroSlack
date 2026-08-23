@@ -7,6 +7,9 @@
 #include <QPointer>
 #include <QWidget>
 
+#include <functional>
+
+class QFrame;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -18,6 +21,11 @@ class ZEROSLACK_API PinloomContextView final : public QWidget
     Q_OBJECT
 
 public:
+    using LinkHandler = std::function<bool(
+        const QVariantMap&,
+        const PinloomHostEntry&,
+        QString*)>;
+
     explicit PinloomContextView(PinloomHostClient* client,
                                 QWidget* parent = nullptr);
 
@@ -31,6 +39,9 @@ public:
     QToolButton* openButton() const;
     QToolButton* copyLinkButton() const;
     QString statusText() const;
+    void setLinkHandler(LinkHandler handler);
+    void setLinkSource(const QVariantMap& source);
+    bool linkModeActive() const;
 
 signals:
     void currentEntryChanged(const PinloomHostEntry& entry);
@@ -46,10 +57,17 @@ private:
     QToolButton* reloadButton = nullptr;
     QToolButton* openTargetButton = nullptr;
     QToolButton* copyUriButton = nullptr;
+    QFrame* linkPanel = nullptr;
+    QLabel* linkSourceLabel = nullptr;
+    QLineEdit* linkTitleEdit = nullptr;
+    QToolButton* attachEntryButton = nullptr;
+    QToolButton* createAnchorButton = nullptr;
     PinloomHostEntry selectedEntry;
     PinloomHostIdentity preferredIdentity;
     quint64 searchGeneration = 0;
     quint64 resolveGeneration = 0;
+    QVariantMap activeLinkSource;
+    LinkHandler linkHandler;
 
     void buildUi();
     void startSearch();
@@ -67,6 +85,9 @@ private:
                       bool announceChange);
     void openCurrentEntry();
     void copyCurrentUri();
+    void attachCurrentEntry();
+    void createSourceAnchor();
+    void finishLink(const PinloomHostEntry& entry);
     void setStatus(const QString& status);
 };
 

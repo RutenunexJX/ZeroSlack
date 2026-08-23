@@ -24,6 +24,7 @@ struct HierarchyInstanceContext;
 enum class SourceSymbolAction;
 class MyCodeEditor;
 class NavigationCommandCoordinator;
+class PinloomCodeLinkStore;
 class QMenu;
 class SemanticPanelRefreshCoordinator;
 class TabManager;
@@ -60,6 +61,7 @@ public:
     void setRegisteredActionRequestHandler(
         std::function<void(const QString&,
                            const QVariantMap&)> handler);
+    void setPinloomCodeLinkStore(PinloomCodeLinkStore* store);
     void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
@@ -185,6 +187,7 @@ private:
     std::function<void(const QString&,
                        const QVariantMap&)>
         registeredActionRequestHandler;
+    PinloomCodeLinkStore* pinloomCodeLinkStore = nullptr;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
 };

@@ -217,6 +217,7 @@ set(CMAKE_AUTOUIC ON)
 
 # Required Qt modules.
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg Network)
+find_package(SuiteApp 1 CONFIG QUIET)
 
 # =========================================================
 # 4. Sources and Resources
@@ -246,6 +247,7 @@ set(ZEROSLACK_CORE_SOURCES
     codetemplateservice.cpp
     customabbreviationservice.cpp
     mainwindow.cpp
+    mainwindowcontextworkspace.cpp
     rtlactioncoordinator.cpp
     moduleblockdiagramservice.cpp
     modulebriefservice.cpp
@@ -370,6 +372,8 @@ set(ZEROSLACK_CORE_SOURCES
     contextdockhost.cpp
     contextworkspacecontroller.cpp
     pinloomhostclient.cpp
+    pinloomcodelinkstore.cpp
+    pinloomcodelinkcoordinator.cpp
     pinloomcontextview.cpp
     pinloomcontextprovider.cpp
     temporaryeditorsession.cpp
@@ -821,6 +825,13 @@ else()
 endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
+if(SuiteApp_FOUND)
+    target_sources(demo PRIVATE
+        suiteappintegration.cpp
+        suiteappintegration.h)
+    target_link_libraries(demo PRIVATE SuiteApp::suiteapp)
+    target_compile_definitions(demo PRIVATE ZEROSLACK_HAS_SUITEAPP=1)
+endif()
 
 # =========================================================
 # 7. Compiler Flags and Definitions
@@ -840,6 +851,15 @@ endif()
 # =========================================================
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+
+    if(SuiteApp_FOUND)
+        add_executable(zeroslack_suiteapp_integration_test
+            test_sv/suiteapp_integration_test.cpp
+            suiteappintegration.cpp
+            suiteappintegration.h)
+        target_link_libraries(zeroslack_suiteapp_integration_test
+            PRIVATE zeroslack_core SuiteApp::suiteapp Qt6::Test)
+    endif()
 
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -1283,6 +1303,11 @@ if(BUILD_TESTING)
     add_executable(pinloom_context_provider_test
         test_sv/pinloom_context_provider_test.cpp)
     target_link_libraries(pinloom_context_provider_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(pinloom_code_link_store_test
+        test_sv/pinloom_code_link_store_test.cpp)
+    target_link_libraries(pinloom_code_link_store_test
         PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(editor_view_local_folding_test
@@ -1731,6 +1756,22 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:pinloom_context_provider_test>
     )
+    add_test(NAME pinloom_code_link_store_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:pinloom_code_link_store_test>
+    )
+    if(SuiteApp_FOUND)
+        add_test(NAME zeroslack_suiteapp_integration_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:zeroslack_suiteapp_integration_test>
+        )
+    endif()
     add_test(NAME editor_view_local_folding_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

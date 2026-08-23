@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QFontDatabase>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -15,6 +16,7 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 QString entrySecondaryText(const PinloomHostEntry& entry)
@@ -102,6 +104,7 @@ void PinloomContextView::restoreState(const QVariantMap& state)
         PinloomHostEntry::fromVariantMap(
             state.value(QStringLiteral("entry")).toMap());
     preferredIdentity = identity;
+    setLinkSource(state.value(QStringLiteral("linkSource")).toMap());
     if (cached.isValid())
         selectEntry(cached, false);
     else if (identity.isValid())
@@ -144,6 +147,55 @@ QString PinloomContextView::statusText() const
     return statusLabel->text();
 }
 
+void PinloomContextView::setLinkHandler(LinkHandler handler)
+{
+    linkHandler = std::move(handler);
+}
+
+void PinloomContextView::setLinkSource(const QVariantMap& source)
+{
+    activeLinkSource = source;
+    const bool active = !source.isEmpty()
+        && !source.value(QStringLiteral("selectedText")).toString().isEmpty();
+    linkPanel->setVisible(active);
+    if (!active)
+        return;
+    const QString relativePath =
+        source.value(QStringLiteral("relativeFilePath")).toString();
+    const int startLine =
+        source.value(QStringLiteral("startLine")).toInt();
+    const int endLine =
+        source.value(QStringLiteral("endLine")).toInt();
+    linkSourceLabel->setText(
+        startLine == endLine
+            ? QStringLiteral("Link %1:%2").arg(relativePath).arg(startLine)
+            : QStringLiteral("Link %1:%2-%3")
+                  .arg(relativePath)
+                  .arg(startLine)
+                  .arg(endLine));
+    QString title =
+        source.value(QStringLiteral("suggestedTitle")).toString().trimmed();
+    if (title.isEmpty()) {
+        const QStringList rows =
+            source.value(QStringLiteral("selectedText"))
+                .toString().split(QLatin1Char('\n'));
+        for (const QString& row : rows) {
+            if (!row.simplified().isEmpty()) {
+                title = row.simplified().left(72);
+                break;
+            }
+        }
+    }
+    linkTitleEdit->setText(title);
+    attachEntryButton->setEnabled(selectedEntry.isValid());
+    createAnchorButton->setEnabled(clientValue);
+}
+
+bool PinloomContextView::linkModeActive() const
+{
+    return linkPanel && linkPanel->isVisible();
+}
+
 void PinloomContextView::buildUi()
 {
     auto* root = new QVBoxLayout(this);
@@ -164,6 +216,39 @@ void PinloomContextView::buildUi()
     searchRow->addWidget(searchEdit, 1);
     searchRow->addWidget(reloadButton);
     root->addLayout(searchRow);
+
+    linkPanel = new QFrame(this);
+    linkPanel->setObjectName(QStringLiteral("pinloomContextLinkPanel"));
+    linkPanel->setFrameShape(QFrame::StyledPanel);
+    auto* linkLayout = new QVBoxLayout(linkPanel);
+    linkLayout->setContentsMargins(8, 6, 8, 6);
+    linkLayout->setSpacing(4);
+    linkSourceLabel = new QLabel(linkPanel);
+    linkSourceLabel->setObjectName(QStringLiteral("pinloomContextLinkSource"));
+    QFont linkSourceFont = linkSourceLabel->font();
+    linkSourceFont.setBold(true);
+    linkSourceLabel->setFont(linkSourceFont);
+    linkLayout->addWidget(linkSourceLabel);
+    linkTitleEdit = new QLineEdit(linkPanel);
+    linkTitleEdit->setObjectName(QStringLiteral("pinloomContextLinkTitle"));
+    linkTitleEdit->setPlaceholderText(QStringLiteral("Anchor title"));
+    linkLayout->addWidget(linkTitleEdit);
+    auto* linkButtons = new QHBoxLayout;
+    attachEntryButton = new QToolButton(linkPanel);
+    attachEntryButton->setObjectName(QStringLiteral("pinloomContextAttachEntry"));
+    attachEntryButton->setText(QStringLiteral("Link Selected"));
+    attachEntryButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    attachEntryButton->setEnabled(false);
+    createAnchorButton = new QToolButton(linkPanel);
+    createAnchorButton->setObjectName(QStringLiteral("pinloomContextCreateAnchor"));
+    createAnchorButton->setText(QStringLiteral("Create Anchor"));
+    createAnchorButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    linkButtons->addWidget(attachEntryButton);
+    linkButtons->addWidget(createAnchorButton);
+    linkButtons->addStretch(1);
+    linkLayout->addLayout(linkButtons);
+    root->addWidget(linkPanel);
+    linkPanel->hide();
 
     auto* splitter = new QSplitter(Qt::Vertical, this);
     splitter->setObjectName(QStringLiteral("pinloomContextSplitter"));
@@ -247,6 +332,10 @@ void PinloomContextView::buildUi()
             this, &PinloomContextView::openCurrentEntry);
     connect(copyUriButton, &QToolButton::clicked,
             this, &PinloomContextView::copyCurrentUri);
+    connect(attachEntryButton, &QToolButton::clicked,
+            this, &PinloomContextView::attachCurrentEntry);
+    connect(createAnchorButton, &QToolButton::clicked,
+            this, &PinloomContextView::createSourceAnchor);
 }
 
 void PinloomContextView::startSearch()
@@ -316,6 +405,9 @@ void PinloomContextView::selectEntry(const PinloomHostEntry& entry,
     if (!entry.isValid())
         return;
     selectedEntry = entry;
+    if (attachEntryButton)
+        attachEntryButton->setEnabled(
+            linkModeActive() && selectedEntry.isValid());
     preferredIdentity = entry.identity;
     titleLabel->setText(entry.title);
     detailsLabel->setText(entrySecondaryText(entry));
@@ -410,6 +502,63 @@ void PinloomContextView::copyCurrentUri()
     QApplication::clipboard()->setText(
         selectedEntry.uri.toString(QUrl::FullyEncoded));
     setStatus(QStringLiteral("Pinloom link copied."));
+}
+
+void PinloomContextView::attachCurrentEntry()
+{
+    if (!linkModeActive() || !selectedEntry.isValid())
+        return;
+    finishLink(selectedEntry);
+}
+
+void PinloomContextView::createSourceAnchor()
+{
+    if (!clientValue || !linkModeActive())
+        return;
+    attachEntryButton->setEnabled(false);
+    createAnchorButton->setEnabled(false);
+    setStatus(QStringLiteral("Creating Pinloom source anchor..."));
+    const QVariantMap source = activeLinkSource;
+    const QString title = linkTitleEdit->text().trimmed();
+    const QPointer<PinloomContextView> self(this);
+    clientValue->createSourceAnchor(
+        source,
+        title,
+        [self](const PinloomHostEntry& entry,
+               const QString& error) {
+            if (!self)
+                return;
+            self->createAnchorButton->setEnabled(true);
+            self->attachEntryButton->setEnabled(
+                self->selectedEntry.isValid());
+            if (!error.isEmpty() || !entry.isValid()) {
+                self->setStatus(
+                    error.isEmpty()
+                        ? QStringLiteral("Pinloom did not return the created anchor.")
+                        : error);
+                return;
+            }
+            self->selectEntry(entry);
+            self->finishLink(entry);
+        });
+}
+
+void PinloomContextView::finishLink(const PinloomHostEntry& entry)
+{
+    if (!linkHandler) {
+        setStatus(QStringLiteral("Code-link storage is unavailable."));
+        return;
+    }
+    QString failureReason;
+    if (!linkHandler(activeLinkSource, entry, &failureReason)) {
+        setStatus(failureReason.trimmed().isEmpty()
+                      ? QStringLiteral("The Pinloom link could not be saved.")
+                      : failureReason);
+        return;
+    }
+    activeLinkSource.clear();
+    linkPanel->hide();
+    setStatus(QStringLiteral("Pinloom link attached to the code selection."));
 }
 
 void PinloomContextView::setStatus(const QString& status)

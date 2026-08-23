@@ -76,6 +76,9 @@ public:
                            const QString&)>;
     using CompletionHandler =
         std::function<void(bool, const QString&)>;
+    using CreateSourceAnchorHandler =
+        std::function<void(const PinloomHostEntry&,
+                           const QString&)>;
 
     explicit PinloomHostClient(QObject* parent = nullptr);
     explicit PinloomHostClient(RequestTransport transport,
@@ -91,6 +94,9 @@ public:
                  ResolveHandler handler);
     void open(const PinloomHostIdentity& identity,
               CompletionHandler handler);
+    void createSourceAnchor(const QVariantMap& source,
+                            const QString& title,
+                            CreateSourceAnchorHandler handler);
     void capabilities(RawReplyHandler handler);
 
     static QString protocolName();

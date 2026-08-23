@@ -383,6 +383,30 @@ void PinloomHostClient::open(const PinloomHostIdentity& identity,
             });
 }
 
+void PinloomHostClient::createSourceAnchor(
+    const QVariantMap& source,
+    const QString& title,
+    CreateSourceAnchorHandler handler)
+{
+    QJsonObject params = QJsonObject::fromVariantMap(source);
+    params.insert(
+        QStringLiteral("content"),
+        source.value(QStringLiteral("selectedText")).toString());
+    params.insert(QStringLiteral("title"), title.trimmed());
+    request(QStringLiteral("createSourceAnchor"),
+            params,
+            [handler = std::move(handler)](
+                const QJsonObject& result,
+                const QString& error) {
+                const PinloomHostEntry entry = error.isEmpty()
+                    ? PinloomHostEntry::fromJson(
+                          result.value(QStringLiteral("entry")).toObject())
+                    : PinloomHostEntry{};
+                if (handler)
+                    handler(entry, error);
+            });
+}
+
 void PinloomHostClient::capabilities(RawReplyHandler handler)
 {
     request(QStringLiteral("capabilities"), {}, std::move(handler));

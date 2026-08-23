@@ -13,6 +13,7 @@
 #include "mycodeeditor.h"
 #include "navigationcommandcoordinator.h"
 #include "packagetoolservice.h"
+#include "pinloomcodelinkstore.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
@@ -361,6 +362,12 @@ void EditorCoordinator::setRegisteredActionRequestHandler(
 {
     registeredActionRequestHandler =
         std::move(handler);
+}
+
+void EditorCoordinator::setPinloomCodeLinkStore(
+    PinloomCodeLinkStore* store)
+{
+    pinloomCodeLinkStore = store;
 }
 
 void EditorCoordinator::setFoldShelfItemConsumedHandler(
@@ -1191,6 +1198,36 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
         context.cursorPosition >= 0
             ? context.cursorPosition
             : editor->textCursor().position();
+    const QString& documentText = editor->cachedDocumentText();
+    QVariantMap pinloomLinkSource;
+    if (hasSelection && !actionContext.workspacePath.trimmed().isEmpty()) {
+        const QTextCursor selection = editor->textCursor();
+        PinloomSourceSelection source =
+            PinloomSourceSelection::fromDocumentSelection(
+                actionContext.workspacePath,
+                editor->documentFileName(),
+                context.moduleName,
+                documentText,
+                selection.selectionStart(),
+                selection.selectionEnd());
+        if (source.isValid()) {
+            pinloomLinkSource = source.toVariantMap();
+            pinloomLinkSource.insert(
+                QStringLiteral("suggestedTitle"),
+                source.suggestedTitle());
+        }
+    }
+    const QList<ResolvedPinloomCodeLink> pinloomLinks =
+        pinloomCodeLinkStore
+        ? pinloomCodeLinkStore->linksAtPosition(
+              editor->documentFileName(),
+              documentText,
+              cursorPosition)
+        : QList<ResolvedPinloomCodeLink>{};
+    const QString pinloomUri = pinloomLinks.isEmpty()
+        ? QString()
+        : pinloomLinks.constFirst().record.uri.toString(
+              QUrl::FullyEncoded);
 
     const auto append =
         [&request](const QString& actionId,
@@ -1296,6 +1333,18 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            editable
                ? QStringLiteral("Select text to replace with spaces.")
                : QStringLiteral("The editor is read-only."));
+    append(QString::fromLatin1(
+               ActionIds::PinloomLinkSelection),
+           hasSelection,
+           !pinloomLinkSource.isEmpty(),
+           actionContext.workspacePath.trimmed().isEmpty()
+               ? QStringLiteral("Open a workspace before linking code.")
+               : QStringLiteral("Select code inside the active workspace."));
+    append(QString::fromLatin1(
+               ActionIds::PinloomOpenLinkedContent),
+           !pinloomUri.isEmpty(),
+           !pinloomUri.isEmpty(),
+           QStringLiteral("Place the cursor inside code linked to Pinloom."));
 
     QString organizeReason;
     const bool organizeReady =
@@ -1332,7 +1381,9 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
          context,
          cursorPosition,
          menuState,
-         sourceContext](
+         sourceContext,
+         pinloomLinkSource,
+         pinloomUri](
             const QString& actionId) {
             const bool registeredEditorAction =
                 actionId == QStringLiteral("edit.undo")
@@ -1350,6 +1401,12 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId
                        == QString::fromLatin1(
                            ActionIds::RefactorOrganizeSignalDeclarations)
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::PinloomLinkSelection)
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::PinloomOpenLinkedContent)
                 || actionId == QStringLiteral("navigation.goLine")
                 || actionId
                        == QString::fromLatin1(
@@ -1395,6 +1452,18 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                             QStringLiteral("selectionEnd"),
                             selection.selectionEnd());
                     }
+                } else if (actionId
+                           == QString::fromLatin1(
+                               ActionIds::PinloomLinkSelection)) {
+                    parameters.insert(
+                        QStringLiteral("linkSource"),
+                        pinloomLinkSource);
+                } else if (actionId
+                           == QString::fromLatin1(
+                               ActionIds::PinloomOpenLinkedContent)) {
+                    parameters.insert(
+                        QStringLiteral("pinloomUri"),
+                        pinloomUri);
                 } else if (actionId.startsWith(
                                QStringLiteral("waveSimulation."))) {
                     parameters.insert(

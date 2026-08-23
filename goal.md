@@ -11,9 +11,10 @@ legacy-overlay cleanup, and Pinloom integration are complete. Wave, FSM, and
 diagram content can enter through providers rather than introducing new window
 management code.
 
-Verification status: ZeroSlack passes all `91/91` configured tests. Pinloom
+Verification status: ZeroSlack passes all `92/92` configured tests. Pinloom
 passes all `6/6` configured tests, and the real cross-process host bridge has
-been verified for capabilities, search, and stable-identity resolution.
+been verified for capabilities, search, stable-identity resolution, and source-
+anchor creation.
 
 ## Objective
 
@@ -24,8 +25,9 @@ semantics, and single SystemVerilog syntax/semantic fact sources.
 ## Completion criteria
 
 - `VERSION`, generated GUI metadata, and current documents agree on 0.20.0.
-- Pinloom search, resolve, and open operations use `pinloom-host/v1`; ZeroSlack
-  persists stable identity and URI without copying Pinloom content.
+- Pinloom search, resolve, open, and source-anchor creation use
+  `pinloom-host/v1`; ZeroSlack stores portable code-range-to-URI links without
+  copying authoritative Pinloom content.
 - Context resources open through a registered provider into one transient Peek
   or the native tabbed Pinned Dock; Pin and Unpin move the exact live view.
 - Temporary editing shares `TabManager` document identity, text, undo state,

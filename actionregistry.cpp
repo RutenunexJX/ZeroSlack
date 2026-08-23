@@ -1054,6 +1054,20 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
          ActionCategory::Refactor,
          ActionScope::Module,
          "Place the cursor in a module with movable signal declarations."},
+        {ActionIds::PinloomLinkSelection,
+         "Link Pinloom",
+         "Attach the current code selection to an existing or new Pinloom anchor.",
+         "ui.pinloom.linkSelection",
+         ActionCategory::Refactor,
+         ActionScope::Editor,
+         "Select code inside an open workspace."},
+        {ActionIds::PinloomOpenLinkedContent,
+         "Open Pinloom Link",
+         "Open the Pinloom content attached to the current code range.",
+         "ui.pinloom.openLinkedContent",
+         ActionCategory::Inspect,
+         ActionScope::Editor,
+         "Place the cursor inside code linked to Pinloom."},
         {"refactor.createSignalDefinition",
          "Create Signal Definition",
          "Create a declaration for the undeclared signal at the context cursor.",
@@ -1136,6 +1150,10 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
         }
         if (descriptor.id
             == QStringLiteral("refactor.createSignalDefinition")) {
+            label += QStringLiteral("...");
+        }
+        if (descriptor.id
+            == QString::fromLatin1(ActionIds::PinloomLinkSelection)) {
             label += QStringLiteral("...");
         }
         const bool standardEditorAction =

@@ -13,13 +13,17 @@ are implemented. The architecture and provider extension contract are documented
 content use the same hosting system; Wave/FSM/diagram compact providers remain
 future additions.
 
-ZeroSlack passes all `91/91` configured tests, including the Pinloom provider,
+ZeroSlack passes all `92/92` configured tests, including the Pinloom provider,
 URI, lifecycle, GUI, workspace, and existing regression suites. Pinloom passes
 all `6/6` configured tests; a real hidden Pinloom process also passed host
-capability, search, and stable-identity resolution checks.
+capability, search, stable-identity resolution, and source-anchor creation
+checks.
 
 ## Current status
 
+- Selected code can link to an existing Pinloom entry or create a new source
+  anchor. Portable links live in `.zeroslack/pinloom-links.json`; linked content
+  resolves into Context Workspace without duplicating Pinloom content.
 - ASCII numeric peeks expose every radix row, including hexadecimal output.
 - Column-mode keyword completion uses the same structural keyword source as
   ordinary editing, and active rectangular selections use a light-pink fill.

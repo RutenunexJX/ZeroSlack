@@ -6,13 +6,21 @@
 
 #include <QPointer>
 
+#include <functional>
+
 class PinloomContextView;
 
 class ZEROSLACK_API PinloomContextProvider final
     : public IContextContentProvider
 {
 public:
+    using LinkHandler = std::function<bool(
+        const QVariantMap&,
+        const PinloomHostEntry&,
+        QString*)>;
+
     explicit PinloomContextProvider(PinloomHostClient* client);
+    void setLinkHandler(LinkHandler handler);
 
     static QString staticProviderId();
     static ContextResource homeResource(
@@ -54,6 +62,7 @@ public:
 
 private:
     QPointer<PinloomHostClient> clientValue;
+    LinkHandler linkHandler;
 };
 
 #endif // PINLOOMCONTEXTPROVIDER_H
