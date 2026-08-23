@@ -41,6 +41,8 @@ public:
     ~PanelLayoutController() override;
 
     void setNavigationDock(QDockWidget* dock);
+    bool registerSidePanel(const QString& panelId,
+                           QDockWidget* dock);
     bool registerBottomPanel(const QString& panelId,
                              QDockWidget* dock);
     void finalize();
@@ -93,9 +95,15 @@ private:
         QDockWidget::DockWidgetFeatures dockFeatures;
     };
 
+    struct SidePanelEntry {
+        QString id;
+        QPointer<QDockWidget> dock;
+    };
+
     QPointer<QMainWindow> window;
     QPointer<QDockWidget> navigationDock;
     QVector<PanelEntry> panels;
+    QVector<SidePanelEntry> sidePanels;
     QStringList defaultOrder;
     QStringList order;
     QHash<QString, bool> panelOpen;
@@ -113,6 +121,7 @@ private:
     bool focusMode = false;
     bool navigationOpenBeforeFocus = false;
     QHash<QString, bool> panelOpenBeforeFocus;
+    QHash<QString, bool> sidePanelOpenBeforeFocus;
     std::function<void()> stateChangedHandler;
     RegisteredPanelActionRequestHandler
         registeredPanelActionRequestHandler;

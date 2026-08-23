@@ -2,7 +2,7 @@
 #include "mycodeeditor.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
-#include "temporaryeditordrawercontroller.h"
+#include "temporaryeditorsession.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -14,7 +14,6 @@
 #include <QPainter>
 #include <QPalette>
 #include <QScrollBar>
-#include <QSettings>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextBlock>
@@ -526,11 +525,8 @@ void exerciseDrawerHistoryRestoresPerEntryFolds()
     editorRegion.show();
     expect("main fixture opens", manager.openFileInTab(firstFile));
 
-    auto settings = std::make_unique<QSettings>(
-        temporaryDirectory.filePath(QStringLiteral("drawer.ini")),
-        QSettings::IniFormat);
-    TemporaryEditorDrawerController controller(
-        &manager, &editorRegion, std::move(settings), &editorRegion);
+    TemporaryEditorSession session(&manager, &editorRegion);
+    session.setViewParent(&editorRegion);
     EditorLocation firstLocation;
     firstLocation.filePath = firstFile;
     firstLocation.line = 1;
@@ -539,9 +535,9 @@ void exerciseDrawerHistoryRestoresPerEntryFolds()
     secondLocation.line = 1;
 
     expect("drawer opens first history target",
-           controller.openLocation(firstLocation));
+           session.openLocation(firstLocation));
     pumpEvents();
-    MyCodeEditor* drawerEditor = controller.editor();
+    MyCodeEditor* drawerEditor = session.editor();
     expect("first history item owns its first fold",
            drawerEditor
                && drawerEditor->toggleFoldAtLineForTest(1));
@@ -551,7 +547,7 @@ void exerciseDrawerHistoryRestoresPerEntryFolds()
         ->setTextCursor(hiddenHistoryCursor);
 
     expect("drawer opens second history target",
-           controller.openLocation(secondLocation));
+           session.openLocation(secondLocation));
     pumpEvents();
     expect("second history item owns a different fold",
            drawerEditor
@@ -564,20 +560,20 @@ void exerciseDrawerHistoryRestoresPerEntryFolds()
             QStringLiteral("// non-active history prefix\n"));
     }
     pumpEvents();
-    controller.goBack();
+    session.goBack();
     pumpEvents();
     expect("Back restores and remaps the non-active first history fold",
            drawerEditor
                && drawerEditor->foldCollapsedAtLineForTest(2)
                && !drawerEditor->foldCollapsedAtLineForTest(7)
                && drawerEditor->textCursor().blockNumber() == 2);
-    controller.goForward();
+    session.goForward();
     pumpEvents();
     expect("Forward restores only the second history item's fold collection",
            drawerEditor
                && drawerEditor->foldCollapsedAtLineForTest(9)
                && !drawerEditor->foldCollapsedAtLineForTest(4));
-    controller.goBack();
+    session.goBack();
     pumpEvents();
     expect("A to B to A restoration is stable across repeated traversal",
            drawerEditor

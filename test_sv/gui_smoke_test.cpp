@@ -47,6 +47,7 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPixmap>
+#include <QPointer>
 #include <QRegularExpression>
 #include <QRadioButton>
 #include <QScrollBar>
@@ -146,9 +147,13 @@
 #include "workspacemanager.h"
 #undef private
 #include "applicationthememanager.h"
+#include "contextdockhost.h"
+#include "contextpeekhost.h"
+#include "contextrail.h"
+#include "contextworkspacecontroller.h"
 #include "editordroppreviewoverlay.h"
-#include "temporaryeditordrawer.h"
-#include "temporaryeditordrawercontroller.h"
+#include "temporaryeditorcontextprovider.h"
+#include "temporaryeditorcontextview.h"
 
 static int g_checks = 0;
 static int g_fails = 0;
@@ -13804,15 +13809,25 @@ int main(int argc, char** argv)
                    == editorCountBeforeSplit,
                true);
 
-    TemporaryEditorDrawerController* themeDrawerController =
-        window.temporaryEditorDrawerController.get();
-    TemporaryEditorDrawer* themeDrawer =
-        themeDrawerController
-            ? themeDrawerController->drawer()
+    ContextWorkspaceController* themeContextController =
+        window.contextWorkspaceController.get();
+    ContextPeekHost* themePeek =
+        themeContextController
+            ? themeContextController->peekHost()
             : nullptr;
+    ContextDockHost* themeDock =
+        themeContextController
+            ? themeContextController->dockHost()
+            : nullptr;
+    QDockWidget* themeContextDockWidget =
+        themeContextController
+            ? themeContextController->dockWidget()
+            : nullptr;
+    if (themeContextController)
+        themeContextController->clearResources();
+
     MyCodeEditor* themeMainEditor =
         window.tabManager->getCurrentEditor();
-
     EditorSplitController* themeSplitController =
         window.tabManager->editorSplitController();
     QTabWidget* themeMainGroup =
@@ -13837,22 +13852,22 @@ int main(int argc, char** argv)
         && themeTextDocument->characterCount() <= 8
         && themeMainDocument->fileName().isEmpty()) {
         themeMainEditor->setPlainText(
-            QStringLiteral("module theme_drawer_preview;\n"
+            QStringLiteral("module theme_context_preview;\n"
                            "  logic selected_signal;\n"
                            "endmodule\n"));
     }
     if (themeMainEditor && themeTextDocument) {
         const int lastPosition =
             qMax(0, themeTextDocument->characterCount() - 1);
-        QTextCursor themeSelection(themeTextDocument);
-        themeSelection.setPosition(qMin(2, lastPosition));
-        themeSelection.setPosition(qMin(8, lastPosition),
-                                   QTextCursor::KeepAnchor);
-        themeMainEditor->setTextCursor(themeSelection);
-        QScrollBar* scrollBar =
-            themeMainEditor->verticalScrollBar();
-        if (scrollBar)
+        QTextCursor selection(themeTextDocument);
+        selection.setPosition(qMin(2, lastPosition));
+        selection.setPosition(qMin(8, lastPosition),
+                              QTextCursor::KeepAnchor);
+        themeMainEditor->setTextCursor(selection);
+        if (QScrollBar* scrollBar =
+                themeMainEditor->verticalScrollBar()) {
             scrollBar->setValue(scrollBar->maximum() / 2);
+        }
     }
 
     if (window.settingsCenterPanel) {
@@ -13892,16 +13907,6 @@ int main(int argc, char** argv)
             QEventLoop::AllEvents, 50);
     }
 
-    const TemporaryEditorDrawer::Edge originalDrawerEdge =
-        themeDrawer
-            ? themeDrawer->edge()
-            : TemporaryEditorDrawer::Edge::None;
-    const QSize originalDrawerPreferredSize =
-        themeDrawer
-            ? themeDrawer->preferredSize()
-            : QSize();
-    const bool originalDrawerPinned =
-        themeDrawer && themeDrawer->pinned();
     const int themeSplitCountBefore =
         window.tabManager->splitCount();
     const int themeEditorCountBefore =
@@ -13910,11 +13915,6 @@ int main(int argc, char** argv)
         themeSplitController
             ? themeSplitController->groups()
             : QList<QTabWidget*>();
-    QList<QRect> themeGroupGeometriesBefore;
-    for (QTabWidget* group : themeGroupsBefore) {
-        themeGroupGeometriesBefore.append(
-            group ? group->geometry() : QRect());
-    }
     const int themeSharedViewCountBefore =
         themeMainDocument
             ? themeMainDocument->viewCount()
@@ -13935,98 +13935,95 @@ int main(int argc, char** argv)
         themeMainEditor && themeMainEditor->verticalScrollBar()
             ? themeMainEditor->verticalScrollBar()->value()
             : -1;
-    expectBool("theme drawer integration has a selectable shared document",
-               lightThemeSelected
-                   && ApplicationThemeManager::instance().mode()
-                          == ThemeMode::Light
-                   && themeMainEditor
-                   && themeMainDocument
-                   && themeTextDocument
-                   && themeTextDocument->characterCount() > 8
-                   && themeMainGroup
-                   && themeCursorBefore != themeAnchorBefore,
-               true);
 
-    EditorLocation themeDrawerLocation;
+    EditorLocation themeContextLocation;
     if (themeMainDocument) {
-        themeDrawerLocation.documentId =
+        themeContextLocation.documentId =
             themeMainDocument->documentId();
-        themeDrawerLocation.filePath =
+        themeContextLocation.filePath =
             themeMainDocument->fileName();
     }
-    themeDrawerLocation.line = 1;
-    themeDrawerLocation.column = 1;
-    themeDrawerLocation.symbolKey =
-        QStringLiteral("theme.drawer.preview");
-    const bool themeDrawerOpened =
-        themeDrawerController
-            && themeDrawerController->openLocation(
-                themeDrawerLocation);
-    if (themeDrawer) {
-        // Pin during deterministic screenshots so the test controls every
-        // stow/expand transition explicitly instead of racing auto-collapse.
-        themeDrawer->setPinned(true);
-        themeDrawer->setState(
-            TemporaryEditorDrawer::State::Floating);
-    }
+    themeContextLocation.line = 1;
+    themeContextLocation.column = 1;
+    themeContextLocation.symbolKey =
+        QStringLiteral("theme.context.preview");
+    const ContextResource themeContextResource =
+        TemporaryEditorContextProvider::resourceForLocation(
+            themeContextLocation,
+            window.workspaceManager
+                ? window.workspaceManager->getWorkspacePath()
+                : QString());
+    const bool themeContextOpened =
+        themeContextController
+        && themeContextController->openResource(
+            themeContextResource,
+            ContextOpenMode::Peek);
     for (int iteration = 0; iteration < 3; ++iteration) {
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
     }
-
+    auto* themeContextView =
+        themePeek
+        ? qobject_cast<TemporaryEditorContextView*>(
+              themePeek->view())
+        : nullptr;
+    QPointer<QWidget> themeContextViewIdentity =
+        themeContextView;
     const QColor lightWindowSurface =
         window.palette().color(QPalette::Window);
-    const QColor lightDrawerSurface =
-        themeDrawer
-            ? themeDrawer->palette().color(QPalette::Window)
-            : QColor();
-    const QImage lightDrawerImage = window.grab().toImage();
-    expectBool("Light theme temporary drawer screenshot saved",
-               themeDrawerOpened
-                   && themeDrawer
-                   && themeDrawer->state()
-                          == TemporaryEditorDrawer::State::Floating
-                   && themeDrawer->searchField()
-                   && themeDrawer->searchField()->isVisible()
-                   && themeDrawerController->editor()
-                   && themeDrawerController->editor()->document()
+    const QColor lightPeekSurface =
+        themePeek
+        ? themePeek->palette().color(QPalette::Window)
+        : QColor();
+    expectBool("Light theme Context Peek screenshot saved",
+               lightThemeSelected
+                   && ApplicationThemeManager::instance().mode()
+                          == ThemeMode::Light
+                   && themeContextOpened
+                   && themePeek
+                   && themePeek->isVisible()
+                   && themeContextView
+                   && themeContextView->searchField()
+                   && themeContextView->searchField()->isVisible()
+                   && themeContextView->editor()
+                   && themeContextView->editor()->document()
                           == themeTextDocument
+                   && themeContextController->rail()->isVisible()
                    && saveEditorLayoutScreenshot(
                        window,
                        QStringLiteral(
-                           "theme_light_temporary_drawer_floating.png")),
+                           "theme_light_context_peek.png")),
                true);
 
-    bool lightHandleScreenshotSaved = false;
-    bool lightPreviewScreenshotSaved = false;
-    if (themeDrawer) {
-        themeDrawer->stow(
-            TemporaryEditorDrawer::Edge::Right);
+    const bool themeContextPinned =
+        themeContextController
+        && themeContextController->pinPeek();
+    for (int iteration = 0; iteration < 3; ++iteration) {
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
-        lightHandleScreenshotSaved =
-            themeDrawer->isHandleVisible()
-            && saveEditorLayoutScreenshot(
-                window,
-                QStringLiteral(
-                    "theme_light_temporary_drawer_right_handle.png"));
-        themeDrawer->setState(
-            TemporaryEditorDrawer::State::Floating);
-        themeDrawer->showDockPreview(
-            TemporaryEditorDrawer::Edge::Left);
-        QCoreApplication::processEvents(
-            QEventLoop::AllEvents, 50);
-        lightPreviewScreenshotSaved =
-            themeDrawer->dockPreviewVisible()
-            && saveEditorLayoutScreenshot(
-                window,
-                QStringLiteral(
-                    "theme_light_temporary_drawer_left_preview.png"));
-        themeDrawer->clearDockPreview();
     }
-    expectBool("Light theme drawer handle and preview screenshots saved",
-               lightHandleScreenshotSaved
-                   && lightPreviewScreenshotSaved,
+    const QColor lightPinnedSurface =
+        themeContextDockWidget
+        ? themeContextDockWidget->palette().color(
+              QPalette::Window)
+        : QColor();
+    const QImage lightPinnedImage =
+        window.grab().toImage();
+    expectBool("Light theme pinned Context Dock screenshot saved",
+               themeContextPinned
+                   && themeDock
+                   && themeDock->resourceCount() == 1
+                   && themeDock->viewForResource(
+                          themeContextResource.stableKey())
+                          == themeContextViewIdentity
+                   && themeContextDockWidget
+                   && themeContextDockWidget->isVisible()
+                   && themePeek
+                   && !themePeek->hasResource()
+                   && saveEditorLayoutScreenshot(
+                       window,
+                       QStringLiteral(
+                           "theme_light_context_pinned.png")),
                true);
 
     const bool darkThemeSelected =
@@ -14039,147 +14036,33 @@ int main(int argc, char** argv)
     }
     const QColor darkWindowSurface =
         window.palette().color(QPalette::Window);
-    const QColor darkDrawerSurface =
-        themeDrawer
-            ? themeDrawer->palette().color(QPalette::Window)
-            : QColor();
-    const QImage darkDrawerImage = window.grab().toImage();
-    const bool darkThemeModeReady =
-        ApplicationThemeManager::instance().mode()
-            == ThemeMode::Dark;
-    const bool darkThemeSettingReady =
-        darkThemeSelected
-        && themeSettingEditor
-        && themeSettingEditor->currentText()
-               == QStringLiteral("Dark");
-    const bool darkDrawerFloating =
-        themeDrawer
-        && themeDrawer->pinned()
-        && themeDrawer->state()
-               == TemporaryEditorDrawer::State::Floating;
-    const bool darkSurfacesChanged =
-        lightWindowSurface != darkWindowSurface
-        && lightDrawerSurface != darkDrawerSurface;
-    const bool darkPixelsChanged =
-        !differentPixelBounds(
-             lightDrawerImage,
-             darkDrawerImage)
-             .isNull();
-    const bool darkFloatingScreenshotSaved =
-        saveEditorLayoutScreenshot(
-            window,
-            QStringLiteral(
-                "theme_dark_temporary_drawer_floating.png"));
-    if (!(darkThemeModeReady
-          && darkThemeSettingReady
-          && darkDrawerFloating
-          && darkSurfacesChanged
-          && darkPixelsChanged
-          && darkFloatingScreenshotSaved)) {
-        QStringList settingIssues;
-        if (window.settingsCenterPanel) {
-            for (const SettingsCenterValidationIssue& issue :
-                 window.settingsCenterPanel->currentIssues()) {
-                settingIssues.append(issue.message);
-            }
-        }
-        const QByteArray settingIssueText =
-            settingIssues.join(QStringLiteral(" | "))
-                .toUtf8();
-        const SettingsCenterSnapshot settingSnapshot =
-            window.settingsCenterPanel
-            ? window.settingsCenterPanel->snapshot()
-            : SettingsCenterSnapshot();
-        const QByteArray settingStoragePath =
-            settingSnapshot.globalStoragePath.toUtf8();
-        const QByteArray settingRevision =
-            settingSnapshot.globalRevision.toUtf8();
-        const auto* settingStatusLabel =
-            window.settingsCenterPanel
-            ? window.settingsCenterPanel->findChild<QLabel*>(
-                  QStringLiteral("settingsCenterStatusLabel"))
-            : nullptr;
-        const QByteArray settingStatus =
-            settingStatusLabel
-            ? settingStatusLabel->text().toUtf8()
-            : QByteArray();
-        const int settingScope =
-            window.settingsCenterPanel
-            ? static_cast<int>(
-                  window.settingsCenterPanel->scope())
-            : -1;
-        std::fprintf(
-            stderr,
-            "Dark drawer integration mismatch: mode=%d setting=%d "
-            "floating=%d surfaces=%d pixels=%d saved=%d scope=%d "
-            "path=%s revision=%s status=%s reason=%s\n",
-            darkThemeModeReady,
-            darkThemeSettingReady,
-            darkDrawerFloating,
-            darkSurfacesChanged,
-            darkPixelsChanged,
-            darkFloatingScreenshotSaved,
-            settingScope,
-            settingStoragePath.isEmpty()
-                ? "<empty>"
-                : settingStoragePath.constData(),
-            settingRevision.isEmpty()
-                ? "<empty>"
-                : settingRevision.constData(),
-            settingStatus.isEmpty()
-                ? "<none>"
-                : settingStatus.constData(),
-            settingIssueText.isEmpty()
-                ? "<none>"
-                : settingIssueText.constData());
-    }
-    expectBool("Dark theme temporary drawer screenshot saved",
-                darkThemeModeReady
-                    && darkThemeSettingReady
-                    && darkDrawerFloating
-                    && darkSurfacesChanged
-                    && darkPixelsChanged
-                    && darkFloatingScreenshotSaved,
-                true);
-
-    bool darkHandleScreenshotSaved = false;
-    bool darkPreviewScreenshotSaved = false;
-    if (themeDrawer) {
-        themeDrawer->stow(
-            TemporaryEditorDrawer::Edge::Right);
-        QCoreApplication::processEvents(
-            QEventLoop::AllEvents, 50);
-        darkHandleScreenshotSaved =
-            themeDrawer->isHandleVisible()
-            && saveEditorLayoutScreenshot(
-                window,
-                QStringLiteral(
-                    "theme_dark_temporary_drawer_right_handle.png"));
-        themeDrawer->setState(
-            TemporaryEditorDrawer::State::Floating);
-        themeDrawer->showDockPreview(
-            TemporaryEditorDrawer::Edge::Left);
-        QCoreApplication::processEvents(
-            QEventLoop::AllEvents, 50);
-        darkPreviewScreenshotSaved =
-            themeDrawer->dockPreviewVisible()
-            && saveEditorLayoutScreenshot(
-                window,
-                QStringLiteral(
-                    "theme_dark_temporary_drawer_left_preview.png"));
-        themeDrawer->clearDockPreview();
-    }
-    expectBool("Dark theme drawer handle and preview screenshots saved",
-               darkHandleScreenshotSaved
-                   && darkPreviewScreenshotSaved,
+    const QColor darkPinnedSurface =
+        themeContextDockWidget
+        ? themeContextDockWidget->palette().color(
+              QPalette::Window)
+        : QColor();
+    const QImage darkPinnedImage =
+        window.grab().toImage();
+    expectBool("Dark theme pinned Context Dock screenshot saved",
+               darkThemeSelected
+                   && ApplicationThemeManager::instance().mode()
+                          == ThemeMode::Dark
+                   && themeContextDockWidget
+                   && themeContextDockWidget->isVisible()
+                   && themeContextViewIdentity
+                   && lightWindowSurface != darkWindowSurface
+                   && lightPinnedSurface != darkPinnedSurface
+                   && !differentPixelBounds(
+                           lightPinnedImage,
+                           darkPinnedImage)
+                           .isNull()
+                   && saveEditorLayoutScreenshot(
+                       window,
+                       QStringLiteral(
+                           "theme_dark_context_pinned.png")),
                true);
 
-    QList<QRect> themeGroupGeometriesAfterDark;
-    for (QTabWidget* group : themeGroupsBefore) {
-        themeGroupGeometriesAfterDark.append(
-            group ? group->geometry() : QRect());
-    }
-    expectBool("Light-to-Dark preserves active document and editor state",
+    expectBool("Context workspace preserves the active document and split model",
                window.tabManager->getCurrentEditor()
                        == themeMainEditor
                    && window.tabManager->sharedDocumentForEditor(
@@ -14195,19 +14078,14 @@ int main(int argc, char** argv)
                    && themeMainEditor->textCursor().anchor()
                           == themeAnchorBefore
                    && themeMainEditor->verticalScrollBar()->value()
-                          == themeScrollBefore,
-               true);
-    expectBool("temporary drawer remains outside the split layout during theme switch",
-               window.tabManager->splitCount()
-                       == themeSplitCountBefore
+                          == themeScrollBefore
+                   && window.tabManager->splitCount()
+                          == themeSplitCountBefore
                    && window.tabManager->editorCount()
                           == themeEditorCountBefore
                    && themeSplitController
                    && themeSplitController->groups()
                           == themeGroupsBefore
-                   && themeGroupGeometriesAfterDark
-                          == themeGroupGeometriesBefore
-                   && themeMainDocument
                    && themeMainDocument->viewCount()
                           == themeSharedViewCountBefore + 1,
                true);
@@ -14220,57 +14098,45 @@ int main(int argc, char** argv)
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
     }
-    expectBool("Light-Dark-Light round trip preserves editor and drawer state",
+    expectBool("Light-Dark-Light preserves the pinned Context view",
                lightThemeRestored
                    && ApplicationThemeManager::instance().mode()
-                       == ThemeMode::Light
+                          == ThemeMode::Light
                    && window.palette().color(QPalette::Window)
                           == lightWindowSurface
-                   && themeDrawer
-                   && themeDrawer->palette().color(QPalette::Window)
-                          == lightDrawerSurface
-                   && themeDrawerController
-                   && themeDrawerController->isOpen()
-                    && themeDrawerController->editor()
-                    && themeDrawerController->editor()->document()
-                           == themeTextDocument
-                    && themeDrawer->pinned()
-                   && window.tabManager->getCurrentEditor()
-                          == themeMainEditor
-                   && themeMainEditor->textCursor().position()
-                          == themeCursorBefore
-                   && themeMainEditor->textCursor().anchor()
-                          == themeAnchorBefore
-                   && themeMainEditor->verticalScrollBar()->value()
-                          == themeScrollBefore,
+                   && themeContextDockWidget
+                   && themeContextDockWidget->palette().color(
+                          QPalette::Window)
+                          == lightPinnedSurface
+                   && themeDock
+                   && themeDock->viewForResource(
+                          themeContextResource.stableKey())
+                          == themeContextViewIdentity,
                true);
 
-    if (themeDrawer)
-        themeDrawer->setPinned(originalDrawerPinned);
-    if (themeDrawerController)
-        themeDrawerController->closeDrawer();
+    const bool themeContextUnpinned =
+        themeContextController
+        && themeContextController->unpinResource(
+            themeContextResource.stableKey());
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    if (themeDrawer) {
-        if (themeDrawer->edge() == originalDrawerEdge) {
-            themeDrawer->setEdge(
-                originalDrawerEdge
-                        == TemporaryEditorDrawer::Edge::Left
-                    ? TemporaryEditorDrawer::Edge::Right
-                    : TemporaryEditorDrawer::Edge::Left);
-        }
-        themeDrawer->setEdge(originalDrawerEdge);
-        if (originalDrawerPreferredSize.isValid()) {
-            themeDrawer->setPreferredSize(
-                originalDrawerPreferredSize);
-        }
-    }
-    expectBool("closing temporary drawer restores shared-view and split baselines",
-               themeDrawerController
-                   && !themeDrawerController->isOpen()
+    expectBool("unpinning moves the exact Context view back to Peek",
+               themeContextUnpinned
+                   && themePeek
+                   && themePeek->view()
+                          == themeContextViewIdentity
+                   && themeDock
+                   && themeDock->resourceCount() == 0,
+               true);
+    if (themeContextController)
+        themeContextController->closePeek();
+    QCoreApplication::sendPostedEvents(
+        nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    expectBool("closing Context Peek restores shared-view and split baselines",
+               themeContextViewIdentity.isNull()
                    && themeMainDocument
-                   && themeMainDocument->textDocument()
-                          == themeTextDocument
                    && themeMainDocument->viewCount()
                           == themeSharedViewCountBefore
                    && window.tabManager->splitCount()
@@ -14281,7 +14147,6 @@ int main(int argc, char** argv)
                    && themeSplitController->groups()
                           == themeGroupsBefore,
                true);
-
     MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
     QTemporaryDir wavePreviewNavDir;
     expectBool("wave preview nav temp dir valid",

@@ -1,3 +1,4 @@
+#include "contextresource.h"
 #include "workspaceconfigurationservice.h"
 #include "workspacesessionstateservice.h"
 
@@ -347,6 +348,28 @@ int main(int argc, char* argv[])
     sessionA.ui.panelLayout.bottomCollapsed = true;
     sessionA.ui.panelLayout.navigationVisible = false;
     sessionA.ui.panelLayout.valid = true;
+    ContextResource pinnedContext;
+    pinnedContext.providerId = QStringLiteral("temporaryEditor");
+    pinnedContext.resourceId = QStringLiteral("primary");
+    pinnedContext.uri = QUrl(
+        QStringLiteral("zeroslack://temporary-editor/primary"));
+    pinnedContext.title = QStringLiteral("top.sv : 7");
+    pinnedContext.state.insert(
+        QStringLiteral("location"),
+        QVariantMap{{QStringLiteral("workspaceRelativePath"),
+                     QStringLiteral("top.sv")},
+                    {QStringLiteral("line"), 7},
+                    {QStringLiteral("column"), 3}});
+    sessionA.ui.contextWorkspace.pinnedResources = {
+        pinnedContext.toVariantMap(),
+    };
+    sessionA.ui.contextWorkspace.activePinnedResourceKey =
+        pinnedContext.stableKey();
+    sessionA.ui.contextWorkspace.peekWidth = 604;
+    sessionA.ui.contextWorkspace.dockWidth = 588;
+    sessionA.ui.contextWorkspace.dockVisible = true;
+    sessionA.ui.contextWorkspace.railVisible = true;
+    sessionA.ui.contextWorkspace.valid = true;
     sessionA.scannedFiles = {topA, helperA};
     sessionA.scanComplete = true;
     const QByteArray projectDigestBeforeSession =
@@ -410,12 +433,21 @@ int main(int argc, char* argv[])
               && loadA.state.ui.panelLayout.expandedBottomHeight == 312
               && loadA.state.ui.panelLayout.bottomCollapsed
               && !loadA.state.ui.panelLayout.navigationVisible
+              && loadA.state.ui.contextWorkspace.valid
+              && loadA.state.ui.contextWorkspace.pinnedResources
+                     == sessionA.ui.contextWorkspace.pinnedResources
+              && loadA.state.ui.contextWorkspace.activePinnedResourceKey
+                     == pinnedContext.stableKey()
+              && loadA.state.ui.contextWorkspace.peekWidth == 604
+              && loadA.state.ui.contextWorkspace.dockWidth == 588
+              && loadA.state.ui.contextWorkspace.dockVisible
+              && loadA.state.ui.contextWorkspace.railVisible
               && loadA.state.scannedFiles
                      == QStringList{
                          cleanPath(helperA),
                          cleanPath(topA)}
               && loadA.state.scanComplete,
-          "local session restores tabs UI and scan cache");
+          "local session restores tabs, context workspace, UI, and scan cache");
 
     WorkspaceSessionState sessionB;
     sessionB.workspaceRoot = workspaceB;

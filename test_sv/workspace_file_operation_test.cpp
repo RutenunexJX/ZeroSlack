@@ -7,7 +7,7 @@
 #include "navigationwidget.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
-#include "temporaryeditordrawercontroller.h"
+#include "temporaryeditorsession.h"
 #include "workspacefileoperationservice.h"
 #include "workspacemanager.h"
 
@@ -902,15 +902,9 @@ int main(int argc, char** argv)
     }
     QWidget temporaryEditorRegion;
     temporaryEditorRegion.resize(640, 420);
-    auto drawerSettings = std::make_unique<QSettings>(
-        QDir(sandbox.path()).absoluteFilePath(
-            QStringLiteral("workspace-drawer.ini")),
-        QSettings::IniFormat);
-    TemporaryEditorDrawerController drawerController(
-        &tabManager,
-        &temporaryEditorRegion,
-        std::move(drawerSettings),
-        &temporaryEditorRegion);
+    TemporaryEditorSession temporarySession(
+        &tabManager, &temporaryEditorRegion);
+    temporarySession.setViewParent(&temporaryEditorRegion);
     EditorLocation pendingDrawerLocation;
     pendingDrawerLocation.documentId = pendingDocument
         ? pendingDocument->documentId()
@@ -919,9 +913,9 @@ int main(int argc, char** argv)
     pendingDrawerLocation.line = 1;
     pendingDrawerLocation.column = 1;
     expect("path-mutation fixture opens the affected shared document in the drawer",
-           drawerController.openLocation(
+           temporarySession.openLocation(
                pendingDrawerLocation)
-               && drawerController.isOpen()
+               && temporarySession.isOpen()
                && pendingDocument
                && pendingDocument->viewCount() == 2);
 
@@ -1004,8 +998,8 @@ int main(int argc, char** argv)
                        &mutationFailure)
                && tabManager.editorCount() == 0
                && tabManager.auxiliaryViews().isEmpty()
-               && !drawerController.isOpen()
-               && drawerController.historyCount() == 0
+               && !temporarySession.isOpen()
+               && temporarySession.historyCount() == 0
                && pendingDocumentLifetime.isNull()
                && tabManager.getDocumentModel()
                       ->documentForFile(pendingPath)
@@ -1023,9 +1017,9 @@ int main(int argc, char** argv)
     deleteDrawerLocation.line = 1;
     deleteDrawerLocation.column = 1;
     expect("Delete preflight recognizes an auxiliary-only affected document",
-           drawerController.openLocation(
+           temporarySession.openLocation(
                deleteDrawerLocation)
-               && drawerController.isOpen()
+               && temporarySession.isOpen()
                && tabManager.auxiliaryViews().size() == 1
                && tabManager.prepareWorkspacePathMutation(
                    deleteDrawerPath,
@@ -1034,7 +1028,7 @@ int main(int argc, char** argv)
                    &mutationFailure));
     QPointer<SharedDocument> deleteDrawerDocument(
         tabManager.sharedDocumentForEditor(
-            drawerController.editor()));
+            temporarySession.editor()));
     expect("Delete fixture applies after auxiliary preflight",
            QFile::remove(deleteDrawerPath));
     expect("Delete finalization synchronously clears drawer history and the old path binding",
@@ -1043,8 +1037,8 @@ int main(int argc, char** argv)
                false,
                &mutationFailure)
                && tabManager.auxiliaryViews().isEmpty()
-               && !drawerController.isOpen()
-               && drawerController.historyCount() == 0
+               && !temporarySession.isOpen()
+               && temporarySession.historyCount() == 0
                && deleteDrawerDocument.isNull()
                && tabManager.getDocumentModel()
                       ->documentForFile(deleteDrawerPath)

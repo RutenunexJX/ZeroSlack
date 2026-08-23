@@ -364,8 +364,14 @@ set(ZEROSLACK_CORE_SOURCES
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
     statetransitiontriggerservice.cpp
-    temporaryeditordrawer.cpp
-    temporaryeditordrawercontroller.cpp
+    contextresource.cpp
+    contextrail.cpp
+    contextpeekhost.cpp
+    contextdockhost.cpp
+    contextworkspacecontroller.cpp
+    temporaryeditorsession.cpp
+    temporaryeditorcontextview.cpp
+    temporaryeditorcontextprovider.cpp
     temporaryeditorsearchpopup.cpp
     temporaryeditorsearchprovider.cpp
     triviapositionmap.cpp
@@ -594,6 +600,16 @@ set(ZEROSLACK_CORE_SOURCES
     sourcenavigationservice.h
     statetransitiongraphservice.h
     statetransitiontriggerservice.h
+    contextresource.h
+    contextworkspacestate.h
+    contextcontentprovider.h
+    contextrail.h
+    contextpeekhost.h
+    contextdockhost.h
+    contextworkspacecontroller.h
+    temporaryeditorsession.h
+    temporaryeditorcontextview.h
+    temporaryeditorcontextprovider.h
     temporaryeditorsearchpopup.h
     temporaryeditorsearchprovider.h
     triviapositionmap.h
@@ -1205,6 +1221,7 @@ if(BUILD_TESTING)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
+        contextresource.cpp
         workspaceconfigurationservice.cpp
         workspacesessionstateservice.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -1244,19 +1261,19 @@ if(BUILD_TESTING)
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
 
-    add_executable(temporary_editor_drawer_test
-        test_sv/temporary_editor_drawer_test.cpp)
-    target_link_libraries(temporary_editor_drawer_test
+    add_executable(temporary_editor_context_search_test
+        test_sv/temporary_editor_context_search_test.cpp)
+    target_link_libraries(temporary_editor_context_search_test
         PRIVATE zeroslack_core Qt6::Test)
 
-    add_executable(temporary_editor_drawer_search_test
-        test_sv/temporary_editor_drawer_search_test.cpp)
-    target_link_libraries(temporary_editor_drawer_search_test
+    add_executable(context_workspace_test
+        test_sv/context_workspace_test.cpp)
+    target_link_libraries(context_workspace_test
         PRIVATE zeroslack_core Qt6::Test)
 
-    add_executable(temporary_editor_drawer_event_filter_test
-        test_sv/temporary_editor_drawer_event_filter_test.cpp)
-    target_link_libraries(temporary_editor_drawer_event_filter_test
+    add_executable(temporary_editor_context_provider_test
+        test_sv/temporary_editor_context_provider_test.cpp)
+    target_link_libraries(temporary_editor_context_provider_test
         PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(editor_view_local_folding_test
@@ -1677,26 +1694,26 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_split_controller_test>
     )
-    add_test(NAME temporary_editor_drawer_test
+    add_test(NAME temporary_editor_context_search_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:temporary_editor_drawer_test>
+            $<TARGET_FILE:temporary_editor_context_search_test>
     )
-    add_test(NAME temporary_editor_drawer_search_test
+    add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:temporary_editor_drawer_search_test>
+            $<TARGET_FILE:context_workspace_test>
     )
-    add_test(NAME temporary_editor_drawer_event_filter_test
+    add_test(NAME temporary_editor_context_provider_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:temporary_editor_drawer_event_filter_test>
+            $<TARGET_FILE:temporary_editor_context_provider_test>
     )
     add_test(NAME editor_view_local_folding_test
         COMMAND ${CMAKE_COMMAND} -E env

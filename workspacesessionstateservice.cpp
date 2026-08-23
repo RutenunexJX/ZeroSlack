@@ -197,6 +197,37 @@ QJsonObject sessionObject(
         QStringLiteral("valid"),
         state.ui.panelLayout.valid);
     ui.insert(QStringLiteral("panelLayout"), panelLayout);
+
+    QJsonObject contextWorkspace;
+    contextWorkspace.insert(
+        QStringLiteral("version"),
+        ContextWorkspaceState::kVersion);
+    QJsonArray pinnedResources;
+    for (const QVariantMap& resource :
+         state.ui.contextWorkspace.pinnedResources) {
+        pinnedResources.append(QJsonObject::fromVariantMap(resource));
+    }
+    contextWorkspace.insert(
+        QStringLiteral("pinnedResources"), pinnedResources);
+    contextWorkspace.insert(
+        QStringLiteral("activePinnedResourceKey"),
+        state.ui.contextWorkspace.activePinnedResourceKey);
+    contextWorkspace.insert(
+        QStringLiteral("peekWidth"),
+        qMax(1, state.ui.contextWorkspace.peekWidth));
+    contextWorkspace.insert(
+        QStringLiteral("dockWidth"),
+        qMax(1, state.ui.contextWorkspace.dockWidth));
+    contextWorkspace.insert(
+        QStringLiteral("dockVisible"),
+        state.ui.contextWorkspace.dockVisible);
+    contextWorkspace.insert(
+        QStringLiteral("railVisible"),
+        state.ui.contextWorkspace.railVisible);
+    contextWorkspace.insert(
+        QStringLiteral("valid"),
+        state.ui.contextWorkspace.valid);
+    ui.insert(QStringLiteral("contextWorkspace"), contextWorkspace);
     object.insert(QStringLiteral("ui"), ui);
 
     QJsonArray files;
@@ -378,6 +409,41 @@ void restoreUi(
                 .toBool(true);
         ui->panelLayout.valid =
             panelLayout.value(QStringLiteral("valid")).toBool(true);
+    }
+    if (object.contains(QStringLiteral("contextWorkspace"))) {
+        const QJsonObject contextWorkspace =
+            object.value(QStringLiteral("contextWorkspace")).toObject();
+        if (contextWorkspace.value(QStringLiteral("version")).toInt()
+            == ContextWorkspaceState::kVersion) {
+            for (const QJsonValue& value :
+                 contextWorkspace.value(
+                     QStringLiteral("pinnedResources")).toArray()) {
+                if (value.isObject()) {
+                    ui->contextWorkspace.pinnedResources.append(
+                        value.toObject().toVariantMap());
+                }
+            }
+            ui->contextWorkspace.activePinnedResourceKey =
+                contextWorkspace.value(
+                    QStringLiteral("activePinnedResourceKey")).toString();
+            ui->contextWorkspace.peekWidth =
+                qMax(1,
+                     contextWorkspace.value(
+                         QStringLiteral("peekWidth")).toInt(520));
+            ui->contextWorkspace.dockWidth =
+                qMax(1,
+                     contextWorkspace.value(
+                         QStringLiteral("dockWidth")).toInt(520));
+            ui->contextWorkspace.dockVisible =
+                contextWorkspace.value(
+                    QStringLiteral("dockVisible")).toBool(false);
+            ui->contextWorkspace.railVisible =
+                contextWorkspace.value(
+                    QStringLiteral("railVisible")).toBool(true);
+            ui->contextWorkspace.valid =
+                contextWorkspace.value(
+                    QStringLiteral("valid")).toBool(true);
+        }
     }
 }
 
@@ -614,16 +680,16 @@ WorkspaceSessionStateService::load(
         QJsonDocument::fromJson(bytes);
     const QJsonObject object =
         document.object();
+    const int version = object.value(
+        QStringLiteral("version")).toInt();
     if (!document.isObject()
         || object.value(
                QStringLiteral("schema"))
                    .toString()
                != QString::fromLatin1(
                    kLocalSchema)
-        || object.value(
-               QStringLiteral("version"))
-                   .toInt()
-               != kVersion) {
+        || version < 2
+        || version > kVersion) {
         result.message =
             QStringLiteral(
                 "Local workspace session schema "

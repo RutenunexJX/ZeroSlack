@@ -844,6 +844,41 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                        t.textSecondary.name(),
                        t.canvasBackground.name(),
                        t.accent.name());
+    result += QStringLiteral(
+                  "QToolBar#contextRail { background: %1; "
+                  "border-left: 1px solid %2; padding: 4px; spacing: 3px; }"
+                  "QToolBar#contextRail QToolButton { min-width: 30px; "
+                  "max-width: 30px; min-height: 30px; max-height: 30px; "
+                  "padding: 0; border-color: transparent; }"
+                  "QToolBar#contextRail QToolButton:checked { "
+                  "background: %3; border-color: %4; color: %5; }"
+                  "QWidget#contextPeekHost { background: %6; color: %7; "
+                  "border-left: 1px solid %8; }"
+                  "QWidget#contextPeekHeader { background: %1; "
+                  "border-bottom: 1px solid %2; }"
+                  "QLabel#contextPeekTitle { color: %7; font-weight: 600; }"
+                  "QWidget#contextPeekContent, "
+                  "QWidget#temporaryEditorContextView, "
+                  "QWidget#temporaryEditorContextContent { background: %6; }"
+                  "QWidget#temporaryEditorContextSearchBar { "
+                  "background: %9; border-bottom: 1px solid %2; }"
+                  "QWidget#temporaryEditorContextSearchBar QToolButton { "
+                  "padding: 3px; min-width: 24px; min-height: 24px; }"
+                  "QDockWidget#contextWorkspaceDock { background: %6; "
+                  "border-left: 1px solid %8; }"
+                  "QTabWidget#contextDockTabs::pane { background: %6; "
+                  "border: 0; border-top: 1px solid %2; }"
+                  "QTabWidget#contextDockTabs QTabBar::tab { "
+                  "padding: 5px 10px; min-height: 19px; }")
+                  .arg(t.toolbarBackground.name(),
+                       t.border.name(),
+                       t.button.backgroundChecked.name(),
+                       t.button.borderChecked.name(),
+                       t.button.textChecked.name(),
+                       t.panelBackground.name(),
+                       t.textPrimary.name(),
+                       t.borderStrong.name(),
+                       t.panelSubtle.name());
     return result;
 }
 

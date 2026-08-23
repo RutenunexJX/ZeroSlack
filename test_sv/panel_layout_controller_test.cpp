@@ -121,6 +121,12 @@ int main(int argc, char* argv[])
                  QStringLiteral("Activity"),
                  QStringLiteral("activityDock"));
     window.tabifyDockWidget(problems, activity);
+    auto* contextDock = new QDockWidget(
+        QStringLiteral("Context"), &window);
+    contextDock->setObjectName(QStringLiteral("contextDock"));
+    contextDock->setWidget(new QLabel(
+        QStringLiteral("Context"), contextDock));
+    window.addDockWidget(Qt::RightDockWidgetArea, contextDock);
 
     PanelLayoutController controller(&window);
     controller.setNavigationDock(navigation);
@@ -133,6 +139,11 @@ int main(int argc, char* argv[])
     check(!controller.registerBottomPanel(
               QStringLiteral("activity"), activity),
           "duplicate bottom panel is rejected");
+    check(controller.registerSidePanel(
+              QStringLiteral("context"), contextDock)
+              && !controller.registerSidePanel(
+                  QStringLiteral("context"), contextDock),
+          "generic side panel registers once");
     controller.finalize();
 
     window.show();
@@ -436,16 +447,18 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
     check(controller.isFocusModeActive()
               && !navigation->toggleViewAction()->isChecked()
-              && !problems->toggleViewAction()->isChecked(),
-          "focus mode hides navigation and open bottom pages together");
+              && !problems->toggleViewAction()->isChecked()
+              && !contextDock->toggleViewAction()->isChecked(),
+          "focus mode hides navigation, bottom pages, and side tools together");
     controller.setFocusModeActive(false);
     QApplication::processEvents();
     check(!controller.isFocusModeActive()
               && navigation->toggleViewAction()->isChecked()
                      == navigationWasOpen
               && problems->toggleViewAction()->isChecked()
-              && !activity->toggleViewAction()->isChecked(),
-          "focus mode restores the exact prior open state");
+              && !activity->toggleViewAction()->isChecked()
+              && contextDock->toggleViewAction()->isChecked(),
+          "focus mode restores the exact prior open state for every panel class");
     const PanelLayoutState afterFocus =
         controller.layoutState();
     check(afterFocus.bottomPanelOrder

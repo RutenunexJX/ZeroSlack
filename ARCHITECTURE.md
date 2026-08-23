@@ -78,6 +78,14 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   `WorkspaceManager`, `TabManager`, optional `PanelLayoutController` state
   notifications, and narrow UI capture/restore/status callbacks assembled by
   `MainWindow`.
+- `ContextWorkspaceController` owns the right-side Context Rail, one transient
+  Peek, and a native tabbed Context Dock. Domain content enters through
+  `IContextContentProvider`; providers create views and serialize only their
+  portable resource state, while the controller owns presentation, exact
+  Peek/Pin transfer, lifecycle, and workspace isolation. The temporary-editor
+  provider reuses `TabManager` auxiliary views and the authoritative shared
+  document. `MainWindow` registers providers and routes actions but does not
+  calculate context geometry or inspect provider state.
 - `RtlActionCoordinator` owns validation, parameter recovery, document capture,
   instance-selection UI, panel activation, and launch/preview orchestration for
   RTL rename, instance-connection transform, instance-pair connection, and
@@ -116,6 +124,8 @@ alive.
 - Route high-risk RTL launch behavior through `RtlActionCoordinator` and reuse
   the existing RTL workflows. A new panel must not duplicate planning or
   edit-application semantics.
+- Add new sidebar content as an `IContextContentProvider`; do not create another
+  floating-window, docking, persistence, or global-event ownership system.
 - Persist portable engineering configuration separately from local UI/session
   state. Do not write local tabs or layout into project configuration.
 - Add behavior-focused tests at the owning boundary and keep full-text

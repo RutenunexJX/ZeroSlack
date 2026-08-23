@@ -24,6 +24,7 @@
 #include "navigationpanecoordinator.h"
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
+#include "contextworkspacecontroller.h"
 #include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancesettings.h"
@@ -50,8 +51,7 @@
 #include "settingscenterpanel.h"
 #include "settingscenterservice.h"
 #include "searchservice.h"
-#include "temporaryeditordrawer.h"
-#include "temporaryeditordrawercontroller.h"
+#include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorsearchprovider.h"
 #include "usertemplateservice.h"
 #include "activitylogpanelcoordinator.h"
@@ -270,6 +270,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupFileCommandCoordinator();
     setupFoldBlockShelf();
     setupPanelLayoutController();
+    setupContextWorkspace();
     setupRtlActionCoordinator();
     setupWaveSimulation();
     setupWorkspaceSessionCoordinator();
@@ -759,20 +760,10 @@ void MainWindow::setupEditorCentralArea()
     setupExternalConflictReviewUi(layout, editorContainer);
     if (tabManager) {
         tabManager->enableSplitLayout(editorSplitHost);
-        temporaryEditorDrawerController =
-            std::make_unique<TemporaryEditorDrawerController>(
-                tabManager.get(), editorSplitHost, this);
         temporaryEditorSearchProvider =
             std::make_unique<TemporaryEditorSearchProvider>();
         refreshTemporaryEditorFileCatalog();
         refreshTemporaryEditorSemanticCatalog();
-        temporaryEditorDrawerController->setSearchProvider(
-            [this](const QString& rawQuery)
-                -> EditorSearchCandidates {
-                return temporaryEditorSearchProvider
-                    ? temporaryEditorSearchProvider->query(rawQuery)
-                    : EditorSearchCandidates{};
-            });
         if (workspaceManager) {
             connectTemporaryEditorFileCatalogRefresh(
                 workspaceManager.get(),
@@ -1404,12 +1395,21 @@ void MainWindow::setupWorkspaceProgressIndicator()
 void MainWindow::setupManagerConnections()
 {
     if (navigationManager
-        && temporaryEditorDrawerController) {
+        && contextWorkspaceController) {
         navigationManager->setTemporaryEditorOpenHandler(
             [this](const EditorLocation& location) {
-                return temporaryEditorDrawerController
-                    && temporaryEditorDrawerController
-                           ->openLocation(location);
+                if (!contextWorkspaceController)
+                    return false;
+                const ContextResource resource =
+                    TemporaryEditorContextProvider::
+                        resourceForLocation(
+                            location,
+                            workspaceManager
+                                ? workspaceManager
+                                      ->getWorkspacePath()
+                                : QString());
+                return contextWorkspaceController->openResource(
+                    resource, ContextOpenMode::Peek);
             });
         connect(
             navigationManager.get(),
@@ -2774,6 +2774,76 @@ void MainWindow::setupPanelLayoutController()
                     panelLayoutController->setFocusModeActive(false);
             });
     }
+}
+
+void MainWindow::setupContextWorkspace()
+{
+    if (!editorSplitHost || contextWorkspaceController)
+        return;
+    contextWorkspaceController =
+        std::make_unique<ContextWorkspaceController>(
+            this,
+            editorSplitHost,
+            this);
+    if (panelLayoutController) {
+        panelLayoutController->registerSidePanel(
+            QStringLiteral("contextWorkspace"),
+            contextWorkspaceController->dockWidget());
+    }
+    if (workspaceManager) {
+        contextWorkspaceController->setWorkspaceRoot(
+            workspaceManager->isWorkspaceOpen()
+                ? workspaceManager->getWorkspacePath()
+                : QString());
+        connect(workspaceManager.get(),
+                &WorkspaceManager::workspaceActivated,
+                contextWorkspaceController.get(),
+                [controller = contextWorkspaceController.get()](
+                    int,
+                    const QString&,
+                    const QString& path) {
+                    controller->setWorkspaceRoot(path);
+                });
+        connect(workspaceManager.get(),
+                &WorkspaceManager::workspaceClosed,
+                contextWorkspaceController.get(),
+                [controller = contextWorkspaceController.get()]() {
+                    controller->setWorkspaceRoot({});
+                });
+    }
+    auto temporaryProvider =
+        std::make_unique<TemporaryEditorContextProvider>(
+            tabManager.get());
+    temporaryProvider->setSearchProvider(
+        [this](const QString& rawQuery)
+            -> EditorSearchCandidates {
+            return temporaryEditorSearchProvider
+                ? temporaryEditorSearchProvider->query(rawQuery)
+                : EditorSearchCandidates{};
+        });
+    contextWorkspaceController->registerProvider(
+        std::move(temporaryProvider));
+    connect(contextWorkspaceController.get(),
+            &ContextWorkspaceController::providerActivationRequested,
+            this,
+            [this](const QString& providerId) {
+                if (providerId
+                        != TemporaryEditorContextProvider::
+                            staticProviderId()
+                    || !contextWorkspaceController) {
+                    return;
+                }
+                const ContextResource resource =
+                    TemporaryEditorContextProvider::
+                        resourceForCurrentEditor(
+                            tabManager.get(),
+                            contextWorkspaceController
+                                ->workspaceRoot());
+                if (resource.isValid()) {
+                    contextWorkspaceController->openResource(
+                        resource, ContextOpenMode::Peek);
+                }
+            });
 }
 
 void MainWindow::setupRtlActionCoordinator()
@@ -4478,7 +4548,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
     if (route
         == QStringLiteral("ui.temporaryEditor.open")) {
         if (!tabManager
-            || !temporaryEditorDrawerController) {
+            || !contextWorkspaceController) {
             return fail(QStringLiteral(
                 "The temporary editor is unavailable."));
         }
@@ -4621,8 +4691,14 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return fail(QStringLiteral(
                 "The temporary-editor target has no document identity."));
         }
-        if (!temporaryEditorDrawerController
-                 ->openLocation(location)) {
+        const ContextResource contextResource =
+            TemporaryEditorContextProvider::resourceForLocation(
+                location,
+                workspaceManager
+                    ? workspaceManager->getWorkspacePath()
+                    : QString());
+        if (!contextWorkspaceController->openResource(
+                contextResource, ContextOpenMode::Peek)) {
             return fail(QStringLiteral(
                 "The temporary editor could not open the target."));
         }
@@ -5866,6 +5942,10 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                 state.panelLayout =
                     panelLayoutController->layoutState();
             }
+            if (contextWorkspaceController) {
+                state.contextWorkspace =
+                    contextWorkspaceController->captureState();
+            }
             return state;
         };
     bridge.restoreUiState =
@@ -5899,6 +5979,14 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                     panelLayoutController->bindManagedTabBars();
                 }
             }
+            if (contextWorkspaceController) {
+                contextWorkspaceController->setWorkspaceRoot(
+                    workspaceManager
+                        ? workspaceManager->getWorkspacePath()
+                        : QString());
+                contextWorkspaceController->restoreState(
+                    state.contextWorkspace);
+            }
             return result;
         };
     bridge.showStatus =
@@ -5916,6 +6004,12 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             QString(),
             WorkspaceSessionCoordinator::kDefaultSaveDelayMs,
             this);
+    if (contextWorkspaceController) {
+        connect(contextWorkspaceController.get(),
+                &ContextWorkspaceController::workspaceStateChanged,
+                workspaceSessionCoordinator.get(),
+                &WorkspaceSessionCoordinator::scheduleSessionSave);
+    }
 
     if (fileCommandCoordinator) {
         QPointer<WorkspaceSessionCoordinator> sessionCoordinator(

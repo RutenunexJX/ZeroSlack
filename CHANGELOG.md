@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.19.0] - 2026-08-23
+
+### Provider-based Context Workspace
+
+- Replaced the hand-written temporary editor overlay with a stable right-side
+  Context Rail, one transient Peek, and a native tabbed Pinned Dock.
+- Added a typed resource/provider contract with explicit presentation
+  capabilities, exact Peek-to-Pin view transfer, common actions, and reusable
+  Light/Dark styling for future Pinloom and RTL insight content.
+- Migrated temporary editing to the authoritative shared `QTextDocument`,
+  preserving search, Back/Forward history, per-history folding, saving, file
+  identity changes, and workspace file operations without a second document
+  model.
+- Persisted pinned resource order, active tab, widths, visibility, and
+  provider-owned portable state. Temporary editor paths are workspace-relative
+  and restore after the workspace directory moves; unavailable providers or
+  missing resources are skipped explicitly.
+- Removed the legacy drawer geometry, edge handles, drag/resize behavior,
+  application-wide popup observation, compatibility controller, and obsolete
+  tests after Context Workspace parity passed.
+- Verified the migration with the complete `90/90` ZeroSlack test suite,
+  including workspace relocation, GUI smoke, architecture boundaries, and
+  version-documentation consistency.
+
 ## [0.18.2] - 2026-08-22
 
 ### Scope-complete symbol search and repeatable rename

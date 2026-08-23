@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.18.2`
+Current version: `v0.19.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -19,6 +19,10 @@ and preview-first RTL editing workflows.
   and supports horizontal category switching without leaving its filter.
   Triple-clicking selects a complete logical line, including its line break
   when one exists.
+- Open contextual content through the right-side Context Rail. Temporary source
+  editing appears in one transient Peek and can be pinned into the native
+  tabbed Context Dock without losing the live editor, undo state, search
+  history, or workspace-relative restore identity.
 - Query Slang-backed symbols, diagnostics, definitions, references,
   relationships, hierarchy, hover information, and effective compile-time
   values from the current workspace snapshot.
@@ -81,6 +85,13 @@ and preview-first RTL editing workflows.
 - Save and restore workspace-local tabs, layout, navigation filters, and scan
   state. Current sessions use local application storage; a workspace `.zs`
   file is accepted only as a legacy read-only import source.
+- Open contextual content through the right-side Context Rail. A transient
+  Peek overlays the editor without changing its split model; Pin moves the
+  exact live view into a native tabbed Context Dock. Temporary editing shares
+  the authoritative document, undo state, search catalog, and navigation
+  history with ordinary editor views. Pinned resources, order, active tab, and
+  portable provider state restore with the workspace, including after its root
+  directory is moved.
 - Restore cached workspace files immediately, then reconcile them with the
   directory in the background so files added, removed, or renamed while the
   workspace was inactive are discovered without forcing unchanged semantic

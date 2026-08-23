@@ -1,6 +1,7 @@
 #ifndef WORKSPACESESSIONSTATESERVICE_H
 #define WORKSPACESESSIONSTATESERVICE_H
 
+#include "contextworkspacestate.h"
 #include "panellayoutstate.h"
 #include "workspaceconfigurationservice.h"
 
@@ -33,6 +34,7 @@ struct WorkspaceSessionUiState {
     QString navigationDesignQuery;
     QString tabGroupingMode = QStringLiteral("none");
     PanelLayoutState panelLayout;
+    ContextWorkspaceState contextWorkspace;
 };
 
 struct WorkspaceSessionState {
@@ -74,7 +76,7 @@ struct WorkspaceLegacyImportResult {
 class WorkspaceSessionStateService
 {
 public:
-    static constexpr int kVersion = 2;
+    static constexpr int kVersion = 3;
 
     explicit WorkspaceSessionStateService(
         const QString& settingsFilePath =

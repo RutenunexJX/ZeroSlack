@@ -64,6 +64,35 @@ void PanelLayoutController::setNavigationDock(QDockWidget* dock)
             });
 }
 
+bool PanelLayoutController::registerSidePanel(
+    const QString& panelId,
+    QDockWidget* dock)
+{
+    const QString id = panelId.trimmed();
+    if (id.isEmpty() || !dock || dock == navigationDock
+        || isBottomPanel(dock)) {
+        return false;
+    }
+    for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
+        if (entry.id == id || entry.dock == dock)
+            return false;
+    }
+
+    SidePanelEntry entry;
+    entry.id = id;
+    entry.dock = dock;
+    sidePanels.append(entry);
+    dock->setProperty("sidePanelId", id);
+    connect(dock->toggleViewAction(),
+            &QAction::toggled,
+            this,
+            [this](bool) {
+                if (!applying && !focusMode)
+                    notifyStateChanged();
+            });
+    return true;
+}
+
 bool PanelLayoutController::registerBottomPanel(
     const QString& panelId,
     QDockWidget* dock)
@@ -430,10 +459,20 @@ void PanelLayoutController::setFocusModeActive(bool active)
             panelOpenBeforeFocus.insert(entry.id, open);
             panelOpen.insert(entry.id, open);
         }
+        sidePanelOpenBeforeFocus.clear();
+        for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
+            const bool open = entry.dock
+                && entry.dock->toggleViewAction()->isChecked();
+            sidePanelOpenBeforeFocus.insert(entry.id, open);
+        }
         focusMode = true;
         if (navigationDock)
             navigationDock->hide();
         for (PanelEntry& entry : panels) {
+            if (entry.dock)
+                entry.dock->hide();
+        }
+        for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
             if (entry.dock)
                 entry.dock->hide();
         }
@@ -449,6 +488,12 @@ void PanelLayoutController::setFocusModeActive(bool active)
             if (entry.dock)
                 entry.dock->setVisible(wasOpen);
         }
+        for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
+            if (entry.dock) {
+                entry.dock->setVisible(
+                    sidePanelOpenBeforeFocus.value(entry.id, false));
+            }
+        }
         if (PanelEntry* activeEntry = entryForId(activePanel)) {
             if (activeEntry->dock
                 && panelOpen.value(activePanel, false)) {
@@ -456,6 +501,7 @@ void PanelLayoutController::setFocusModeActive(bool active)
             }
         }
         panelOpenBeforeFocus.clear();
+        sidePanelOpenBeforeFocus.clear();
         focusMode = false;
     }
     applying = false;

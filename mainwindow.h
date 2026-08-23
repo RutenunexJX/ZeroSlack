@@ -34,6 +34,7 @@ class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
+class ContextWorkspaceController;
 class EditorCoordinator;
 class EditorActionContextService;
 class InsightFocusController;
@@ -43,7 +44,6 @@ class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
-class TemporaryEditorDrawerController;
 class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
@@ -134,11 +134,11 @@ private:
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
+    std::unique_ptr<ContextWorkspaceController>
+        contextWorkspaceController;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<TemporaryEditorSearchProvider>
         temporaryEditorSearchProvider;
-    std::unique_ptr<TemporaryEditorDrawerController>
-        temporaryEditorDrawerController;
     std::unique_ptr<EditorActionContextService> editorActionContextService;
     std::unique_ptr<InsightFocusController> insightFocusController;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
@@ -247,6 +247,7 @@ private:
     void insertPackageTool(PackageToolKind kind);
     void setupFoldBlockShelf();
     void setupPanelLayoutController();
+    void setupContextWorkspace();
     void setupViewMenu();
     void setupWorkspaceMenu();
     void refreshWorkspaceMenuEntries();

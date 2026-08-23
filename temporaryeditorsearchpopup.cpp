@@ -1,5 +1,6 @@
 #include "temporaryeditorsearchpopup.h"
 
+#include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 
 #include <QEvent>
@@ -59,6 +60,10 @@ TemporaryEditorSearchPopup::TemporaryEditorSearchPopup(
         });
 
     refreshTheme();
+    connect(&ApplicationThemeManager::instance(),
+            &ApplicationThemeManager::themeChanged,
+            this,
+            [this](ThemeMode) { refreshTheme(); });
     hide();
 }
 
