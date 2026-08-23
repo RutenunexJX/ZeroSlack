@@ -263,6 +263,32 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         },
     });
     result.append({
+        Category::Integration,
+        QStringLiteral("integration"),
+        QStringLiteral("Integration"),
+        QStringLiteral("External applications connected to ZeroSlack."),
+        {
+            field(QStringLiteral("integration.pinloomExecutablePath"),
+                  QString::fromLatin1(
+                      SettingsCenterKeys::IntegrationPinloomExecutablePath),
+                  Category::Integration,
+                  QStringLiteral("Pinloom executable"),
+                  QStringLiteral(
+                      "Optional Pinloom executable path. Leave empty for "
+                      "portable-directory, environment and PATH discovery."),
+                  Kind::FilePath,
+                  QString(),
+                  {},
+                  {},
+                  {},
+                  true,
+                  false,
+                  true,
+                  false,
+                  true),
+        },
+    });
+    result.append({
         Category::Layout,
         QStringLiteral("layout"),
         QStringLiteral("Layout"),

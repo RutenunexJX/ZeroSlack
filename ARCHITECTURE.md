@@ -84,8 +84,12 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   portable resource state, while the controller owns presentation, exact
   Peek/Pin transfer, lifecycle, and workspace isolation. The temporary-editor
   provider reuses `TabManager` auxiliary views and the authoritative shared
-  document. `MainWindow` registers providers and routes actions but does not
-  calculate context geometry or inspect provider state.
+  document. The Pinloom provider consumes a versioned local IPC contract and
+  stores only stable Pinloom identity, URI, and provider view state; Pinloom
+  remains authoritative for search, content, anchor resolution, and opening.
+  Provider rail activation is resolved by the provider contract rather than
+  provider-specific `MainWindow` branches. `MainWindow` registers providers
+  but does not calculate context geometry or inspect provider state.
 - `RtlActionCoordinator` owns validation, parameter recovery, document capture,
   instance-selection UI, panel activation, and launch/preview orchestration for
   RTL rename, instance-connection transform, instance-pair connection, and
@@ -126,6 +130,8 @@ alive.
   edit-application semantics.
 - Add new sidebar content as an `IContextContentProvider`; do not create another
   floating-window, docking, persistence, or global-event ownership system.
+- Keep cross-application integrations behind versioned bounded IPC contracts.
+  Do not read or duplicate another application's private database in UI code.
 - Persist portable engineering configuration separately from local UI/session
   state. Do not write local tabs or layout into project configuration.
 - Add behavior-focused tests at the owning boundary and keep full-text

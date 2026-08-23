@@ -26,6 +26,12 @@ public:
         return {};
     }
 
+    virtual ContextResource activationResource(
+        const QString&) const
+    {
+        return {};
+    }
+
     virtual bool canOpen(const ContextResource& resource) const
     {
         return resource.isValid()

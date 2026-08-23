@@ -32,6 +32,8 @@ inline constexpr const char* SimulationVerilatorPath =
     "settingsCenter/simulation/verilatorPath";
 inline constexpr const char* SimulationCxxCompilerPath =
     "settingsCenter/simulation/cxxCompilerPath";
+inline constexpr const char* IntegrationPinloomExecutablePath =
+    "settingsCenter/integration/pinloomExecutablePath";
 inline constexpr const char* LayoutRestoreWorkspaceSession =
     "settingsCenter/layout/restoreWorkspaceSession";
 inline constexpr const char* LayoutRememberPanelState =

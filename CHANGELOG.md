@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.20.0] - 2026-08-23
+
+### Pinloom Context Integration
+
+- Added a versioned, user-local Pinloom host protocol for capabilities,
+  unified entry search, stable identity resolution, and authoritative open
+  actions without sharing Pinloom's database with ZeroSlack.
+- Added a Pinloom Context Workspace provider with search results, metadata and
+  text preview, stable `pinloom://` links, direct opening through Pinloom, and
+  exact Peek-to-Pin behavior.
+- Persisted only stable Pinloom identity, URI, and view query state. Pinloom
+  content remains authoritative in Pinloom and is resolved again after a
+  workspace session is restored.
+- Added non-blocking IPC, automatic resident-app launch, explicit unavailable
+  states, configurable executable discovery, and in-flight view-lifetime
+  guards.
+
 ## [0.19.0] - 2026-08-23
 
 ### Provider-based Context Workspace

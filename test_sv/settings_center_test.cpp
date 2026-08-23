@@ -75,8 +75,8 @@ int main(int argc, char* argv[])
 
     const QList<SettingsCenterCategoryDescriptor>& categories =
         SettingsCenterSchema::categories();
-    check(categories.size() == 7,
-          "schema exposes exactly seven settings categories");
+    check(categories.size() == 8,
+          "schema exposes exactly eight settings categories");
     check(SettingsCenterSchema::categoryId(
               SettingsCenterCategory::Appearance)
               == QStringLiteral("appearance")
@@ -96,6 +96,9 @@ int main(int argc, char* argv[])
                      SettingsCenterCategory::Simulation)
                      == QStringLiteral("simulation")
               && SettingsCenterSchema::categoryId(
+                     SettingsCenterCategory::Integration)
+                     == QStringLiteral("integration")
+              && SettingsCenterSchema::categoryId(
                      SettingsCenterCategory::Layout)
                      == QStringLiteral("layout"),
           "category identifiers are stable for UI binding");
@@ -111,6 +114,8 @@ int main(int argc, char* argv[])
                      QStringLiteral("analysis.incremental"))
               && SettingsCenterSchema::field(
                      QStringLiteral("simulation.verilatorPath"))
+              && SettingsCenterSchema::field(
+                     QStringLiteral("integration.pinloomExecutablePath"))
               && SettingsCenterSchema::field(
                      QStringLiteral("layout.rememberPanelState")),
           "each category provides a field description model");

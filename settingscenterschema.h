@@ -19,6 +19,7 @@ enum class SettingsCenterCategory {
     Annotation,
     Analysis,
     Simulation,
+    Integration,
     Layout,
 };
 

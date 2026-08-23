@@ -77,6 +77,18 @@ ContextWorkspaceController::ContextWorkspaceController(
                 }
                 if (activatePinnedProvider(providerId))
                     return;
+                IContextContentProvider* provider =
+                    providerForId(providerId);
+                if (provider) {
+                    const ContextResource resource =
+                        provider->activationResource(
+                            currentWorkspaceRoot);
+                    if (resource.isValid()
+                        && openResource(resource,
+                                        ContextOpenMode::Peek)) {
+                        return;
+                    }
+                }
                 emit providerActivationRequested(providerId);
             });
     connect(peekHostValue,

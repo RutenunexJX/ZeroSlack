@@ -126,6 +126,14 @@ QString TemporaryEditorContextProvider::iconKey() const
     return QStringLiteral("document-edit");
 }
 
+ContextResource
+TemporaryEditorContextProvider::activationResource(
+    const QString& workspaceId) const
+{
+    return resourceForCurrentEditor(
+        tabManagerValue, workspaceId);
+}
+
 bool TemporaryEditorContextProvider::canOpen(
     const ContextResource& resource) const
 {

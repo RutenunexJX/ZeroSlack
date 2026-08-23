@@ -35,6 +35,7 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
 class ContextWorkspaceController;
+class PinloomHostClient;
 class EditorCoordinator;
 class EditorActionContextService;
 class InsightFocusController;
@@ -136,6 +137,7 @@ private:
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<ContextWorkspaceController>
         contextWorkspaceController;
+    std::unique_ptr<PinloomHostClient> pinloomHostClient;
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<TemporaryEditorSearchProvider>
         temporaryEditorSearchProvider;

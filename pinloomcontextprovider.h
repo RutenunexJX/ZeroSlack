@@ -1,35 +1,29 @@
-#ifndef TEMPORARYEDITORCONTEXTPROVIDER_H
-#define TEMPORARYEDITORCONTEXTPROVIDER_H
+#ifndef PINLOOMCONTEXTPROVIDER_H
+#define PINLOOMCONTEXTPROVIDER_H
 
 #include "contextcontentprovider.h"
-#include "editorlocation.h"
-#include "editorsearchcandidate.h"
+#include "pinloomhostclient.h"
 
 #include <QPointer>
 
-#include <functional>
+class PinloomContextView;
 
-class TabManager;
-class TemporaryEditorContextView;
-
-class ZEROSLACK_API TemporaryEditorContextProvider final
+class ZEROSLACK_API PinloomContextProvider final
     : public IContextContentProvider
 {
 public:
-    using SearchProvider =
-        std::function<EditorSearchCandidates(const QString&)>;
-
-    explicit TemporaryEditorContextProvider(TabManager* tabManager);
+    explicit PinloomContextProvider(PinloomHostClient* client);
 
     static QString staticProviderId();
-    static ContextResource resourceForLocation(
-        const EditorLocation& location,
-        const QString& workspaceId = {});
-    static ContextResource resourceForCurrentEditor(
-        TabManager* tabManager,
-        const QString& workspaceId = {});
-    static EditorLocation locationFromResource(
-        const ContextResource& resource);
+    static ContextResource homeResource(
+        const QString& workspaceId = QString());
+    static ContextResource resourceForEntry(
+        const PinloomHostEntry& entry,
+        const QString& workspaceId = QString(),
+        const QString& query = QString());
+    static ContextResource resourceForUri(
+        const QUrl& uri,
+        const QString& workspaceId = QString());
 
     QString providerId() const override;
     QString displayName() const override;
@@ -58,11 +52,8 @@ public:
         const ContextResource& resource,
         const QString& workspaceRoot) const override;
 
-    void setSearchProvider(SearchProvider provider);
-
 private:
-    QPointer<TabManager> tabManagerValue;
-    SearchProvider searchProvider;
+    QPointer<PinloomHostClient> clientValue;
 };
 
-#endif // TEMPORARYEDITORCONTEXTPROVIDER_H
+#endif // PINLOOMCONTEXTPROVIDER_H

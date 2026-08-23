@@ -216,7 +216,7 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Required Qt modules.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg Network)
 
 # =========================================================
 # 4. Sources and Resources
@@ -369,6 +369,9 @@ set(ZEROSLACK_CORE_SOURCES
     contextpeekhost.cpp
     contextdockhost.cpp
     contextworkspacecontroller.cpp
+    pinloomhostclient.cpp
+    pinloomcontextview.cpp
+    pinloomcontextprovider.cpp
     temporaryeditorsession.cpp
     temporaryeditorcontextview.cpp
     temporaryeditorcontextprovider.cpp
@@ -807,6 +810,7 @@ target_link_libraries(zeroslack_core PUBLIC
     Qt6::Svg
     rtledit::core
 )
+target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
 
 if(ZEROSLACK_SHARED_CORE)
     target_link_libraries(zeroslack_core PRIVATE slang::slang)
@@ -1276,6 +1280,11 @@ if(BUILD_TESTING)
     target_link_libraries(temporary_editor_context_provider_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(pinloom_context_provider_test
+        test_sv/pinloom_context_provider_test.cpp)
+    target_link_libraries(pinloom_context_provider_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(editor_view_local_folding_test
         test_sv/editor_view_local_folding_test.cpp)
     target_link_libraries(editor_view_local_folding_test
@@ -1714,6 +1723,13 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:temporary_editor_context_provider_test>
+    )
+    add_test(NAME pinloom_context_provider_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:pinloom_context_provider_test>
     )
     add_test(NAME editor_view_local_folding_test
         COMMAND ${CMAKE_COMMAND} -E env

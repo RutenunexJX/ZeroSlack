@@ -1,19 +1,19 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.19.0`
+Product version: `v0.20.0`
 
 ## Active initiative
 
 Complete the provider-based Context Workspace described in
 [`CONTEXT_WORKSPACE_PLAN.md`](CONTEXT_WORKSPACE_PLAN.md). The host foundation,
 temporary-editor migration, portable session restoration, theme integration,
-and legacy-overlay cleanup are complete. Pinloom, Wave, FSM, and diagram
-content now enter through providers rather than introducing new window
+legacy-overlay cleanup, and Pinloom integration are complete. Wave, FSM, and
+diagram content can enter through providers rather than introducing new window
 management code.
 
-Verification status: complete on 2026-08-23. The Shared-Debug build and all
-`90/90` configured tests pass; no production or CMake reference to the legacy
-drawer remains.
+Verification status: ZeroSlack passes all `91/91` configured tests. Pinloom
+passes all `6/6` configured tests, and the real cross-process host bridge has
+been verified for capabilities, search, and stable-identity resolution.
 
 ## Objective
 
@@ -23,7 +23,9 @@ semantics, and single SystemVerilog syntax/semantic fact sources.
 
 ## Completion criteria
 
-- `VERSION`, generated GUI metadata, and current documents agree on 0.19.0.
+- `VERSION`, generated GUI metadata, and current documents agree on 0.20.0.
+- Pinloom search, resolve, and open operations use `pinloom-host/v1`; ZeroSlack
+  persists stable identity and URI without copying Pinloom content.
 - Context resources open through a registered provider into one transient Peek
   or the native tabbed Pinned Dock; Pin and Unpin move the exact live view.
 - Temporary editing shares `TabManager` document identity, text, undo state,

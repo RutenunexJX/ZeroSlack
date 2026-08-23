@@ -25,6 +25,8 @@
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
+#include "pinloomcontextprovider.h"
+#include "pinloomhostclient.h"
 #include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancesettings.h"
@@ -2823,27 +2825,17 @@ void MainWindow::setupContextWorkspace()
         });
     contextWorkspaceController->registerProvider(
         std::move(temporaryProvider));
-    connect(contextWorkspaceController.get(),
-            &ContextWorkspaceController::providerActivationRequested,
-            this,
-            [this](const QString& providerId) {
-                if (providerId
-                        != TemporaryEditorContextProvider::
-                            staticProviderId()
-                    || !contextWorkspaceController) {
-                    return;
-                }
-                const ContextResource resource =
-                    TemporaryEditorContextProvider::
-                        resourceForCurrentEditor(
-                            tabManager.get(),
-                            contextWorkspaceController
-                                ->workspaceRoot());
-                if (resource.isValid()) {
-                    contextWorkspaceController->openResource(
-                        resource, ContextOpenMode::Peek);
-                }
-            });
+    pinloomHostClient = std::make_unique<PinloomHostClient>(this);
+    if (settingsCenterPanel) {
+        pinloomHostClient->setExecutablePath(
+            settingsCenterPanel->snapshot()
+                .value(QStringLiteral(
+                    "integration.pinloomExecutablePath"))
+                .toString());
+    }
+    contextWorkspaceController->registerProvider(
+        std::make_unique<PinloomContextProvider>(
+            pinloomHostClient.get()));
 }
 
 void MainWindow::setupRtlActionCoordinator()
@@ -6771,6 +6763,11 @@ void MainWindow::setupSettingsCenter()
 void MainWindow::applySettingsCenterSnapshot(
     const SettingsCenterSnapshot& snapshot)
 {
+    if (pinloomHostClient) {
+        pinloomHostClient->setExecutablePath(
+            snapshot.value(QStringLiteral(
+                "integration.pinloomExecutablePath")).toString());
+    }
     const QString themeName =
         snapshot.value(
             QStringLiteral("appearance.theme"))

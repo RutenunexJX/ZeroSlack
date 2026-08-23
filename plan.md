@@ -1,21 +1,22 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.19.0`
+Product version: `v0.20.0`
 
 ## Active initiative: Context Workspace
 
 The reusable Peek/Pinned Context Workspace baseline is complete. The generic
 resource/provider contract, Context Rail, transient Peek, native tabbed Dock,
 temporary-editor provider, portable workspace restoration, focus-mode
-integration, theme coverage, and legacy-overlay removal are implemented and
-verified. The architecture and provider extension contract are documented in
+integration, theme coverage, legacy-overlay removal, and the Pinloom provider
+are implemented. The architecture and provider extension contract are documented in
 [`CONTEXT_WORKSPACE_PLAN.md`](CONTEXT_WORKSPACE_PLAN.md). Pinloom and insight
-content are future providers and do not require another hosting system.
+content use the same hosting system; Wave/FSM/diagram compact providers remain
+future additions.
 
-Final verification on 2026-08-23: the Shared-Debug build succeeded and all
-`90/90` configured ZeroSlack tests passed, including the context contracts,
-workspace relocation, panel focus, GUI smoke, architecture boundaries, and
-version-documentation guard.
+ZeroSlack passes all `91/91` configured tests, including the Pinloom provider,
+URI, lifecycle, GUI, workspace, and existing regression suites. Pinloom passes
+all `6/6` configured tests; a real hidden Pinloom process also passed host
+capability, search, and stable-identity resolution checks.
 
 ## Current status
 

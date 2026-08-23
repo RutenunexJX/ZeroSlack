@@ -1,6 +1,6 @@
 # ZeroSlack Context Workspace Plan
 
-Status: host migration complete; provider expansion ready
+Status: host migration and Pinloom provider complete; insight providers ready
 
 ## Objective
 
@@ -52,11 +52,13 @@ objects are not part of the resource contract.
 must declare whether it can open a resource, create and destroy its view, save
 and restore provider-owned state, and expose compact/full-view capabilities.
 
-Initial providers:
+Registered providers:
 
 - `TemporaryEditorContextProvider` reuses `TabManager`, shared documents, and
   the existing temporary-editor navigation/search behavior.
-- Later providers: Pinloom, Wave, FSM, and Module Diagram.
+- `PinloomContextProvider` resolves stable Pinloom identities through the local
+  `pinloom-host/v1` contract without copying Pinloom's library into ZeroSlack.
+- Later providers: Wave, FSM, and Module Diagram.
 
 Providers do not dock, float, resize, persist application layout, or install
 application-wide event filters.
@@ -175,9 +177,13 @@ restored.
 - Keep source code free of embedded Pinloom content copies.
 - Define explicit unavailable-library and missing-anchor states.
 
-Pending the Pinloom-side URI and launch/query contract. The host and provider
-boundary are ready; ZeroSlack does not invent or duplicate Pinloom document
-content while that external contract is undefined.
+Completed on 2026-08-23. Pinloom exposes a bounded user-local
+`pinloom-host/v1` bridge for capabilities, unified search, stable identity
+resolution, and authoritative opening. ZeroSlack adds a Pinloom rail provider,
+search and preview view, stable `pinloom://` URI round-tripping, Peek/Pin
+promotion, session restoration, automatic resident launch, and explicit
+offline or missing-entry states. Session data contains identity, URI, and view
+query only; Pinloom content is always resolved from Pinloom.
 
 ### Stage 6: Insight providers and cleanup
 
@@ -193,11 +199,11 @@ They can be added without changing Context Workspace ownership or persistence.
 
 ## Verification strategy
 
-Final result on 2026-08-23: the Shared-Debug build completed and all `90/90`
-configured tests passed in 389.57 seconds. This includes the new context
-contract/provider/search tests, workspace relocation and stale-resource cases,
-panel focus integration, GUI smoke, architecture boundaries, and version
-documentation consistency.
+ZeroSlack passes all `91/91` configured tests, including the dedicated Pinloom
+provider/URI/lifecycle suite and the existing Context Workspace regressions.
+Pinloom passes all `6/6` configured tests, including its host-bridge suite; a
+real hidden Pinloom process also passed capabilities, search, and stable-
+identity resolution checks over the local bridge.
 
 - Unit tests for resource identity, provider routing, replacement, promotion,
   ordering, serialization, and unavailable providers.
