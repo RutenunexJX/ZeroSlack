@@ -61,6 +61,7 @@ public:
     QString getWorkspaceAlias() const;
     QList<WorkspaceEntry> workspaceEntries() const;
     QList<WorkspaceEntry> recentWorkspaceEntries() const;
+    bool removeRecentWorkspace(const QString& path);
     int activeWorkspaceIndex() const;
     QStringList ignoredDirectories() const;
     WorkspaceConfiguration workspaceConfiguration() const;

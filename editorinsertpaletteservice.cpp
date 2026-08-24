@@ -11,6 +11,8 @@
 #include <QSet>
 #include <Qt>
 
+#include <algorithm>
+
 namespace {
 
 struct ParsedSymbolQuery {
@@ -108,7 +110,20 @@ QList<GlobalControlItem> symbolItems(
     QSet<QString> seen;
     auto append = [&](const QList<SemanticSymbolRecord>& records,
                       CompletionCommandKind kind) {
-        for (const SemanticSymbolRecord& record : records) {
+        QList<SemanticSymbolRecord> rankedRecords = records;
+        if (!parsed.filter.isEmpty()) {
+            std::stable_sort(
+                rankedRecords.begin(),
+                rankedRecords.end(),
+                [service, &parsed](const SemanticSymbolRecord& left,
+                                   const SemanticSymbolRecord& right) {
+                    return service->completionItemScore(
+                               left.name, parsed.filter)
+                        > service->completionItemScore(
+                               right.name, parsed.filter);
+                });
+        }
+        for (const SemanticSymbolRecord& record : rankedRecords) {
             const QString stable = record.stableKey.isValid()
                 ? symbolStableKeyText(record.stableKey)
                 : QStringLiteral("%1|%2|%3")
@@ -140,6 +155,20 @@ QList<GlobalControlItem> symbolItems(
                 return;
         }
     };
+    const auto rankMatches = [&]() {
+        if (parsed.filter.isEmpty())
+            return;
+        std::stable_sort(
+            result.begin(),
+            result.end(),
+            [service, &parsed](const GlobalControlItem& left,
+                               const GlobalControlItem& right) {
+                return service->completionItemScore(
+                           left.title, parsed.filter)
+                    > service->completionItemScore(
+                           right.title, parsed.filter);
+            });
+    };
 
     const auto expectedEnumValues = [&]() {
         return service->findExpectedEnumValueRecords(
@@ -166,6 +195,7 @@ QList<GlobalControlItem> symbolItems(
         const QList<SemanticSymbolRecord> members = structMembers();
         if (!members.isEmpty()) {
             append(members, CompletionCommandKind::StructMember);
+            rankMatches();
             return result;
         }
     }
@@ -214,6 +244,7 @@ QList<GlobalControlItem> symbolItems(
                    completionQuery(context, kind, parsed.filter)),
                kind);
     }
+    rankMatches();
     return result;
 }
 

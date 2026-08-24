@@ -1815,6 +1815,69 @@ int main(int argc, char** argv) {
                            == QSet<QString>{QStringLiteral("IDLE"),
                                             QStringLiteral("RUN")},
                    true);
+
+        const QString rankingPath =
+            QStringLiteral("palette_ranking.sv");
+        const QString rankingSource =
+            QStringLiteral(
+                "module ranking_top;\n"
+                "  logic abc_xxx_yyy;\n"
+                "  typedef enum logic { axxx_byyy_csss } rank_state_t;\n"
+                "  rank_state_t rank_state;\n"
+                "endmodule\n");
+        const QList<SemanticSymbolRecord> rankingRecords{
+            makeSemanticFixtureRecord(
+                QStringLiteral("ranking_top"), DeclarationKind::Module,
+                CollectorKind::User, QString(), QString(), 1, rankingPath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("abc_xxx_yyy"), DeclarationKind::Signal,
+                CollectorKind::Logic, QStringLiteral("ranking_top"),
+                QStringLiteral("logic"), 2, rankingPath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("rank_state_t"), DeclarationKind::Enum,
+                CollectorKind::Enum, QStringLiteral("ranking_top"),
+                QStringLiteral("logic"), 3, rankingPath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("rank_state"), DeclarationKind::Signal,
+                CollectorKind::EnumVariable,
+                QStringLiteral("ranking_top"),
+                QStringLiteral("rank_state_t"), 4, rankingPath),
+            makeSemanticFixtureRecord(
+                QStringLiteral("axxx_byyy_csss"), DeclarationKind::Enum,
+                CollectorKind::EnumValue,
+                QStringLiteral("rank_state_t"),
+                QStringLiteral("rank_state_t"), 3, rankingPath),
+        };
+        SemanticIndex rankingIndex;
+        rankingIndex.setSnapshot(
+            sharedSnapshotFromRecords(rankingRecords));
+        CompletionService::getInstance()->setSemanticIndex(&rankingIndex);
+        GlobalControlQueryContext rankingContext;
+        rankingContext.editorAvailable = true;
+        rankingContext.fileName = rankingPath;
+        rankingContext.moduleName = QStringLiteral("ranking_top");
+        rankingContext.documentText = rankingSource;
+        rankingContext.cursorLine = 4;
+        rankingContext.cursorPosition = rankingSource.indexOf(
+            QStringLiteral("endmodule"));
+        rankingContext.expectedTypeIdentifier =
+            QStringLiteral("rank_state");
+        const QList<GlobalControlItem> rankedFuzzyItems =
+            insertPalette.query(GlobalControlCategory::Symbols,
+                                QStringLiteral("abc"),
+                                rankingContext);
+        expectBool("Ctrl+Space prefix match outranks fuzzy subsequence",
+                   rankedFuzzyItems.size() >= 2
+                       && rankedFuzzyItems.first().title
+                              == QStringLiteral("abc_xxx_yyy")
+                       && std::any_of(
+                           rankedFuzzyItems.cbegin(),
+                           rankedFuzzyItems.cend(),
+                           [](const GlobalControlItem& item) {
+                               return item.title
+                                   == QStringLiteral("axxx_byyy_csss");
+                           }),
+                   true);
         CompletionService::getInstance()->setSemanticIndex(
             SemanticIndex::getInstance());
     }

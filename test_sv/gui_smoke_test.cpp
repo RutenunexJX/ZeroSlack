@@ -2334,6 +2334,30 @@ static void runWorkspaceAliasRenameRegression()
     expectBool("workspace rename updates recent metadata",
                sawRecentA && sawRecentB,
                true);
+    expectBool("workspace recent removal succeeds",
+               workspace.removeRecentWorkspace(pathA),
+               true);
+    const QList<WorkspaceManager::WorkspaceEntry> recentAfterRemoval =
+        workspace.recentWorkspaceEntries();
+    expectBool("workspace recent removal keeps open workspace",
+               workspace.workspaceEntries().size() == 2
+                   && workspace.getWorkspacePath() == pathA
+                   && std::none_of(
+                       recentAfterRemoval.cbegin(),
+                       recentAfterRemoval.cend(),
+                       [&pathA](const WorkspaceManager::WorkspaceEntry& entry) {
+                           return entry.path == pathA;
+                       })
+                   && std::any_of(
+                       recentAfterRemoval.cbegin(),
+                       recentAfterRemoval.cend(),
+                       [&pathB](const WorkspaceManager::WorkspaceEntry& entry) {
+                           return entry.path == pathB;
+                       }),
+               true);
+    expectBool("workspace recent removal rejects missing entry",
+               workspace.removeRecentWorkspace(pathA),
+               false);
     expectBool("workspace rename emits list changes",
                listSpy.size() >= 4,
                true);
@@ -10368,21 +10392,51 @@ static void runGlobalControlRegression(MainWindow& window,
         window.workspaceManager ? window.workspaceManager->getWorkspacePath()
                                 : QString();
     bool recentWindowShowsActiveWorkspace = false;
+    QTreeWidgetItem* activeRecentItem = nullptr;
     if (recentTree) {
         for (int i = 0; i < recentTree->topLevelItemCount(); ++i) {
             QTreeWidgetItem* item = recentTree->topLevelItem(i);
-            recentWindowShowsActiveWorkspace =
-                recentWindowShowsActiveWorkspace
-                || (item
-                    && item->text(0) == activeAlias
-                    && item->data(0, Qt::UserRole).toString() == activePath);
+            if (item
+                && item->text(0) == activeAlias
+                && item->data(0, Qt::UserRole).toString() == activePath) {
+                recentWindowShowsActiveWorkspace = true;
+                activeRecentItem = item;
+            }
         }
+        if (activeRecentItem)
+            recentTree->setCurrentItem(activeRecentItem);
     }
     expectBool("ow r opens recent workspace window",
                recentDialog && recentDialog->isVisible() && recentTree,
                true);
     expectBool("ow r window lists alias and path",
                recentWindowShowsActiveWorkspace,
+               true);
+    QPushButton* recentRemoveButton = recentDialog
+        ? recentDialog->findChild<QPushButton*>(
+              QStringLiteral("recentWorkspacesRemoveButton"))
+        : nullptr;
+    expectBool("ow r exposes remove-from-recent action",
+               recentRemoveButton && recentRemoveButton->isEnabled(),
+               true);
+    if (recentRemoveButton) {
+        QTest::mouseClick(recentRemoveButton, Qt::LeftButton);
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    }
+    bool activeWorkspaceStillRecent = false;
+    if (window.workspaceManager) {
+        for (const WorkspaceManager::WorkspaceEntry& entry :
+             window.workspaceManager->recentWorkspaceEntries()) {
+            activeWorkspaceStillRecent = activeWorkspaceStillRecent
+                || entry.path == activePath;
+        }
+    }
+    expectBool("ow r removal preserves workspace files",
+               !activeWorkspaceStillRecent
+                   && QDir(activePath).exists()
+                   && window.workspaceManager
+                   && window.workspaceManager->getWorkspacePath()
+                          == activePath,
                true);
     if (recentDialog)
         recentDialog->close();
@@ -15705,20 +15759,37 @@ int main(int argc, char** argv)
         if (positionedPalette) {
             positionedPalette->searchEdit->setText(
                 QStringLiteral("anchor"));
+            positionedPalette->searchEdit->setCursorPosition(3);
             QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Right);
-            expectBool("Ctrl+Space Right switches category",
-                       positionedPalette->category()
-                               == GlobalControlCategory::Templates
-                           && positionedPalette->queryText()
-                                  == QStringLiteral("anchor")
-                           && positionedPalette->searchEdit->hasFocus(),
-                       true);
-            QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Left);
-            expectBool("Ctrl+Space Left switches category",
+            expectBool("Ctrl+Space Right moves query cursor",
                        positionedPalette->category()
                                == GlobalControlCategory::Symbols
                            && positionedPalette->queryText()
-                                  == QStringLiteral("anchor"),
+                                  == QStringLiteral("anchor")
+                           && positionedPalette->searchEdit->cursorPosition()
+                                  == 4
+                           && positionedPalette->searchEdit->hasFocus(),
+                       true);
+            QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Left);
+            expectBool("Ctrl+Space Left moves query cursor",
+                       positionedPalette->category()
+                               == GlobalControlCategory::Symbols
+                           && positionedPalette->queryText()
+                                  == QStringLiteral("anchor")
+                           && positionedPalette->searchEdit->cursorPosition()
+                                  == 3,
+                       true);
+            QTest::keyClick(positionedPalette->searchEdit, Qt::Key_Tab);
+            expectBool("Ctrl+Space Tab switches category",
+                       positionedPalette->category()
+                               == GlobalControlCategory::Templates,
+                       true);
+            QTest::keyClick(positionedPalette->searchEdit,
+                            Qt::Key_Tab,
+                            Qt::ShiftModifier);
+            expectBool("Ctrl+Space Shift+Tab switches category",
+                       positionedPalette->category()
+                               == GlobalControlCategory::Symbols,
                        true);
             positionedPalette->hide();
         }

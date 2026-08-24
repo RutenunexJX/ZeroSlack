@@ -6460,9 +6460,28 @@ void MainWindow::showRecentWorkspacesDialog()
     auto* buttons = new QDialogButtonBox(dialog);
     QPushButton* openButton =
         buttons->addButton(tr("Open"), QDialogButtonBox::AcceptRole);
+    openButton->setObjectName(QStringLiteral("recentWorkspacesOpenButton"));
+    QPushButton* removeButton = buttons->addButton(
+        tr("Remove from Recent"),
+        QDialogButtonBox::DestructiveRole);
+    removeButton->setObjectName(
+        QStringLiteral("recentWorkspacesRemoveButton"));
+    removeButton->setToolTip(
+        tr("Remove the selected entry from Recent Workspaces. "
+           "Workspace files are not deleted."));
     buttons->addButton(QDialogButtonBox::Close);
     openButton->setEnabled(!entries.isEmpty());
+    removeButton->setEnabled(!entries.isEmpty());
     layout->addWidget(buttons);
+
+    const auto updateButtonState =
+        [tree, openButton, removeButton]() {
+            QTreeWidgetItem* item = tree ? tree->currentItem() : nullptr;
+            const bool hasWorkspace = item
+                && !item->data(0, Qt::UserRole).toString().isEmpty();
+            openButton->setEnabled(hasWorkspace);
+            removeButton->setEnabled(hasWorkspace);
+        };
 
     auto openSelected = [this, dialog, tree]() {
         QTreeWidgetItem* item = tree ? tree->currentItem() : nullptr;
@@ -6475,6 +6494,32 @@ void MainWindow::showRecentWorkspacesDialog()
             dialog->close();
         }
     };
+
+    const auto removeSelected =
+        [this, tree, updateButtonState]() {
+            QTreeWidgetItem* item = tree ? tree->currentItem() : nullptr;
+            const QString path =
+                item ? item->data(0, Qt::UserRole).toString() : QString();
+            if (path.isEmpty() || !workspaceManager
+                || !workspaceManager->removeRecentWorkspace(path)) {
+                return;
+            }
+
+            const int row = tree->indexOfTopLevelItem(item);
+            delete tree->takeTopLevelItem(row);
+            if (tree->topLevelItemCount() == 0) {
+                auto* emptyItem = new QTreeWidgetItem;
+                emptyItem->setText(0, tr("No recent workspaces"));
+                emptyItem->setText(1, tr("Open a workspace first"));
+                emptyItem->setDisabled(true);
+                tree->addTopLevelItem(emptyItem);
+            } else {
+                tree->setCurrentItem(
+                    tree->topLevelItem(
+                        qMin(row, tree->topLevelItemCount() - 1)));
+            }
+            updateButtonState();
+        };
 
     connect(tree,
             &QTreeWidget::itemDoubleClicked,
@@ -6490,6 +6535,16 @@ void MainWindow::showRecentWorkspacesDialog()
             &QDialogButtonBox::rejected,
             dialog,
             &QDialog::close);
+    connect(removeButton,
+            &QPushButton::clicked,
+            dialog,
+            removeSelected);
+    connect(tree,
+            &QTreeWidget::currentItemChanged,
+            dialog,
+            [updateButtonState](QTreeWidgetItem*, QTreeWidgetItem*) {
+                updateButtonState();
+            });
 
     dialog->show();
     dialog->raise();

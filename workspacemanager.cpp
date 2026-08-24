@@ -528,6 +528,26 @@ QList<WorkspaceManager::WorkspaceEntry> WorkspaceManager::recentWorkspaceEntries
     return recentWorkspaces;
 }
 
+bool WorkspaceManager::removeRecentWorkspace(const QString& path)
+{
+    const QString normalizedPath = normalizeWorkspacePath(path);
+    if (normalizedPath.isEmpty())
+        return false;
+
+    bool removed = false;
+    for (int i = recentWorkspaces.size() - 1; i >= 0; --i) {
+        if (recentWorkspaces.at(i).path != normalizedPath)
+            continue;
+        recentWorkspaces.removeAt(i);
+        removed = true;
+    }
+    if (!removed)
+        return false;
+
+    saveRecentWorkspaces();
+    return true;
+}
+
 int WorkspaceManager::activeWorkspaceIndex() const
 {
     return activeIndex;

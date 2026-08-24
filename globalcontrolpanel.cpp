@@ -211,10 +211,6 @@ bool GlobalControlPanel::handleKey(QKeyEvent* event)
         moveSelection(1);
     } else if (event->key() == Qt::Key_Up) {
         moveSelection(-1);
-    } else if (event->key() == Qt::Key_Right) {
-        moveCategory(1);
-    } else if (event->key() == Qt::Key_Left) {
-        moveCategory(-1);
     } else if (event->key() == Qt::Key_Tab) {
         moveCategory(event->modifiers().testFlag(Qt::ShiftModifier) ? -1 : 1);
     } else if (event->key() == Qt::Key_Backtab) {
