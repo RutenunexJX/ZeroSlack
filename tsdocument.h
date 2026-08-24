@@ -554,6 +554,29 @@ struct TSBeginEndInsideTarget {
     }
 };
 
+enum class TSBindableCodeAnchorKind {
+    AlwaysBlock,
+    ContinuousAssign
+};
+
+struct TSBindableCodeAnchor {
+    TSBindableCodeAnchorKind kind =
+        TSBindableCodeAnchorKind::AlwaysBlock;
+    int startChar = -1;
+    int endChar = -1;
+    int startLine = 0; // 0-based source line
+    int endLine = 0;   // 0-based source line
+    QString moduleName;
+    QString syntaxKind;
+    QString identityText;
+    QString label;
+
+    bool ok() const
+    {
+        return startChar >= 0 && endChar > startChar;
+    }
+};
+
 struct TSStructuralNewlineTarget {
     QString insertionText;
     int caretOffset = -1;
@@ -829,6 +852,15 @@ public:
     TSAlwaysScopeTarget alwaysScopeTarget(int cursorChar,
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;
+
+    // Complete semantic code units that may own Pinloom bindings. Arbitrary
+    // text ranges are deliberately excluded: callers receive either a whole
+    // always construct or a whole continuous assignment.
+    TSBindableCodeAnchor bindableCodeAnchorAt(
+        int cursorChar,
+        int selectionStartChar = -1,
+        int selectionEndChar = -1) const;
+    QList<TSBindableCodeAnchor> bindableCodeAnchors() const;
 
     // Current/selected module/interface/program range for scoped Wave Preview.
     TSModuleScopeTarget moduleScopeTarget(int cursorChar,

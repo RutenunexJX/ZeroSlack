@@ -5,8 +5,14 @@
 
 #include <QList>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 #include <QVariantMap>
+#include <functional>
+
+class TSDocument;
+struct SemanticSymbolRecord;
+struct TSBindableCodeAnchor;
 
 enum class PinloomCodeLinkResolution {
     Exact,
@@ -15,7 +21,17 @@ enum class PinloomCodeLinkResolution {
     Missing
 };
 
+enum class PinloomCodeAnchorKind {
+    LegacySelection,
+    Symbol,
+    AlwaysBlock,
+    ContinuousAssign
+};
+
 struct ZEROSLACK_API PinloomSourceSelection {
+    QString anchorId;
+    PinloomCodeAnchorKind anchorKind =
+        PinloomCodeAnchorKind::LegacySelection;
     QString workspaceRoot;
     QString relativeFilePath;
     QString absoluteFilePath;
@@ -24,6 +40,12 @@ struct ZEROSLACK_API PinloomSourceSelection {
     QString selectedTextHash;
     QString prefixContext;
     QString suffixContext;
+    QString logicalKey;
+    QString structuralFingerprint;
+    QString syntaxKind;
+    QString ownerScope;
+    QString symbolName;
+    QStringList semanticTokens;
     int startPosition = -1;
     int endPosition = -1;
     int startLine = 0;
@@ -43,6 +65,15 @@ struct ZEROSLACK_API PinloomSourceSelection {
         const QString& documentText,
         int startPosition,
         int endPosition);
+    static PinloomSourceSelection fromSemanticSymbol(
+        const QString& workspaceRoot,
+        const QString& documentText,
+        const SemanticSymbolRecord& symbol);
+    static PinloomSourceSelection fromSyntaxAnchor(
+        const QString& workspaceRoot,
+        const QString& filePath,
+        const QString& documentText,
+        const TSBindableCodeAnchor& anchor);
 };
 
 struct ZEROSLACK_API PinloomCodeLinkRecord {
@@ -56,7 +87,19 @@ struct ZEROSLACK_API PinloomCodeLinkRecord {
     bool isValid() const;
 };
 
+struct ZEROSLACK_API PinloomCodeLinkAnchorRecord {
+    QString id;
+    PinloomSourceSelection source;
+    QList<PinloomCodeLinkRecord> links;
+    QString createdAtUtc;
+
+    bool isValid() const;
+};
+
 struct ZEROSLACK_API ResolvedPinloomCodeLink {
+    PinloomCodeLinkAnchorRecord anchor;
+    // First target retained as a compatibility convenience. New consumers
+    // should use anchor.links so one source anchor can expose every target.
     PinloomCodeLinkRecord record;
     PinloomCodeLinkResolution resolution =
         PinloomCodeLinkResolution::Missing;
@@ -70,12 +113,14 @@ struct ZEROSLACK_API ResolvedPinloomCodeLink {
         return resolution == PinloomCodeLinkResolution::Exact
             || resolution == PinloomCodeLinkResolution::Moved;
     }
+
+    int linkCount() const { return anchor.links.size(); }
 };
 
 class ZEROSLACK_API PinloomCodeLinkStore
 {
 public:
-    static constexpr int kVersion = 1;
+    static constexpr int kVersion = 2;
 
     void setWorkspaceRoot(const QString& workspaceRoot);
     QString workspaceRoot() const;
@@ -88,16 +133,26 @@ public:
                  QString* failureReason = nullptr);
     QList<ResolvedPinloomCodeLink> linksForDocument(
         const QString& filePath,
-        const QString& documentText) const;
+        const QString& documentText,
+        const TSDocument* syntaxDocument = nullptr) const;
     QList<ResolvedPinloomCodeLink> linksAtPosition(
         const QString& filePath,
         const QString& documentText,
-        int position) const;
+        int position,
+        const TSDocument* syntaxDocument = nullptr) const;
+    ResolvedPinloomCodeLink anchorByIdForDocument(
+        const QString& anchorId,
+        const QString& filePath,
+        const QString& documentText,
+        const TSDocument* syntaxDocument = nullptr) const;
+    QList<PinloomCodeLinkAnchorRecord> anchors() const;
     QList<PinloomCodeLinkRecord> records() const;
+    void setChangedHandler(std::function<void()> handler);
 
 private:
     QString root;
-    QList<PinloomCodeLinkRecord> linkRecords;
+    QList<PinloomCodeLinkAnchorRecord> anchorRecords;
+    std::function<void()> changedHandler;
 
     bool load(QString* failureReason = nullptr);
     bool save(QString* failureReason = nullptr) const;

@@ -274,6 +274,18 @@ bool ContextWorkspaceController::openResource(
     }
 
     const QString key = resource.stableKey();
+    if (mode == ContextOpenMode::TransientDock
+        && transientDockResourceKey == key
+        && dockHostValue->containsResource(key)
+        && dockValue->isVisible()) {
+        closePinnedResource(key);
+        return true;
+    }
+    if (mode == ContextOpenMode::TransientDock
+        && !transientDockResourceKey.isEmpty()
+        && transientDockResourceKey != key) {
+        closePinnedResource(transientDockResourceKey);
+    }
     if (dockHostValue->containsResource(key)) {
         QWidget* view = dockHostValue->viewForResource(key);
         if (!provider->activateView(view, resource)) {
@@ -291,7 +303,8 @@ bool ContextWorkspaceController::openResource(
         dockValue->show();
         dockValue->raise();
         updateActiveRailEntry();
-        notifyWorkspaceStateChanged();
+        if (mode == ContextOpenMode::Pinned)
+            notifyWorkspaceStateChanged();
         return true;
     }
     if (peekHostValue->hasResource()
@@ -372,6 +385,8 @@ bool ContextWorkspaceController::openResource(
                 {capabilities.preferredWidth},
                 Qt::Horizontal);
         }
+        if (mode == ContextOpenMode::TransientDock)
+            transientDockResourceKey = key;
     }
     updateActiveRailEntry();
     emit resourceOpened(resource, mode);
@@ -469,6 +484,8 @@ bool ContextWorkspaceController::unpinResource(
             *failureReason = QStringLiteral("Pinned context was not found.");
         return false;
     }
+    if (transientDockResourceKey == resourceKey)
+        transientDockResourceKey.clear();
     closePeek();
     peekHostValue->setPreferredWidth(
         provider->capabilities(resource).preferredWidth);
@@ -501,15 +518,19 @@ bool ContextWorkspaceController::closePinnedResource(
     }
     if (!resource.isValid())
         return false;
+    const bool transient = transientDockResourceKey == resourceKey;
     QWidget* view = dockHostValue->takeResource(resourceKey);
     if (!view)
         return false;
+    if (transient)
+        transientDockResourceKey.clear();
     disposeView(resource, view);
     if (dockHostValue->resourceCount() == 0)
         dockValue->hide();
     updateActiveRailEntry();
     emit resourceClosed(resource);
-    notifyWorkspaceStateChanged();
+    if (!transient)
+        notifyWorkspaceStateChanged();
     return true;
 }
 
@@ -550,6 +571,7 @@ void ContextWorkspaceController::clearResources()
     }
     if (dockValue)
         dockValue->hide();
+    transientDockResourceKey.clear();
     restoringState = previousRestoring;
     updateActiveRailEntry();
     notifyWorkspaceStateChanged();
@@ -570,13 +592,19 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
     if (!dockHostValue)
         return state;
 
-    state.activePinnedResourceKey =
+    const QString activeKey =
         dockHostValue->currentResource().stableKey();
+    if (activeKey != transientDockResourceKey)
+        state.activePinnedResourceKey = activeKey;
     for (int index = 0;
          index < dockHostValue->resourceCount();
          ++index) {
         const ContextResource resource =
             dockHostValue->resourceAt(index);
+        if (resource.stableKey() == transientDockResourceKey)
+            continue;
+        if (state.activePinnedResourceKey.isEmpty())
+            state.activePinnedResourceKey = resource.stableKey();
         IContextContentProvider* provider = providerFor(resource);
         QWidget* view = dockHostValue->viewForResource(
             resource.stableKey());

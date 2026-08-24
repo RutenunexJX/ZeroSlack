@@ -1585,6 +1585,8 @@ void MainWindow::setupManagerConnections()
             &AnalysisScheduler::fileSymbolAnalysisFinished,
             this,
             [this](const QString&, int) {
+                if (editorCoordinator)
+                    editorCoordinator->refreshPinloomCodeLinkMarkers();
                 if (!analysisScheduler
                     || !analysisScheduler->isSemanticAnalysisActive()) {
                     refreshTemporaryEditorSemanticCatalog();
@@ -3882,6 +3884,19 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return editorCoordinator
             ->executeRegisteredExposeSignalAction(
                 descriptor, invocation);
+    }
+    if (route == QStringLiteral(
+                     "ui.pinloom.toggleBindingMarkers")) {
+        if (!editorCoordinator) {
+            return fail(QStringLiteral(
+                "Pinloom binding markers are unavailable."));
+        }
+        editorCoordinator->togglePinloomCodeLinkMarkers();
+        result.message = editorCoordinator
+                ->pinloomCodeLinkMarkersVisible()
+            ? QStringLiteral("Pinloom binding markers shown.")
+            : QStringLiteral("Pinloom binding markers hidden.");
+        return succeeded();
     }
     if (PinloomCodeLinkCoordinator::handlesRoute(route)) {
         if (!pinloomCodeLinkCoordinator)

@@ -23,7 +23,8 @@ class QWidget;
 
 enum class ContextOpenMode {
     Peek,
-    Pinned
+    Pinned,
+    TransientDock
 };
 
 class ZEROSLACK_API ContextWorkspaceController final : public QObject
@@ -86,6 +87,7 @@ private:
     std::map<QString,
              std::unique_ptr<IContextContentProvider>> providers;
     QString currentWorkspaceRoot;
+    QString transientDockResourceKey;
     bool restoringState = false;
 
     IContextContentProvider* providerFor(

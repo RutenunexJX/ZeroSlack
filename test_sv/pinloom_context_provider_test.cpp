@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QClipboard>
+#include <QDockWidget>
 #include <QJsonArray>
 #include <QListWidget>
 #include <QMainWindow>
@@ -212,6 +213,12 @@ int main(int argc, char* argv[])
           "Open delegates to Pinloom's authoritative primary action");
 
     const QVariantMap linkSource{
+        {QStringLiteral("anchorKind"), QStringLiteral("always")},
+        {QStringLiteral("logicalKey"),
+         QStringLiteral("syntax|always|top|always_ff|always_ff@(posedgeclk)")},
+        {QStringLiteral("structuralFingerprint"),
+         QStringLiteral("process-fingerprint")},
+        {QStringLiteral("syntaxKind"), QStringLiteral("always_ff")},
         {QStringLiteral("workspaceRoot"),
          QStringLiteral("workspace-a")},
         {QStringLiteral("selectedText"),
@@ -231,6 +238,55 @@ int main(int argc, char* argv[])
         {QStringLiteral("suggestedTitle"),
          QStringLiteral("Clocked process")},
     };
+
+    PinloomCodeLinkAnchorRecord bindingAnchor;
+    bindingAnchor.id = QStringLiteral("source-anchor");
+    bindingAnchor.source =
+        PinloomSourceSelection::fromVariantMap(linkSource);
+    bindingAnchor.source.anchorId = bindingAnchor.id;
+    bindingAnchor.createdAtUtc = QStringLiteral("2026-01-01T00:00:00Z");
+    PinloomCodeLinkRecord firstBinding;
+    firstBinding.id = QStringLiteral("binding-one");
+    firstBinding.title = QStringLiteral("Clock reset note");
+    firstBinding.uri = QUrl(
+        entryJson().value(QStringLiteral("uri")).toString());
+    firstBinding.identity = entryJson()
+        .value(QStringLiteral("identity")).toObject().toVariantMap();
+    firstBinding.source = bindingAnchor.source;
+    firstBinding.createdAtUtc = bindingAnchor.createdAtUtc;
+    PinloomCodeLinkRecord secondBinding = firstBinding;
+    secondBinding.id = QStringLiteral("binding-two");
+    secondBinding.title = QStringLiteral("Clock reset review");
+    bindingAnchor.links = {firstBinding, secondBinding};
+    const ContextResource bindingsResource =
+        PinloomContextProvider::resourceForBindings(
+            bindingAnchor, QStringLiteral("workspace-a"));
+    check(bindingsResource.isValid()
+              && bindingsResource.resourceId
+                     == QStringLiteral("bindings/source-anchor"),
+          "one code anchor produces a grouped multi-target resource");
+    check(controller.openResource(
+              bindingsResource,
+              ContextOpenMode::TransientDock,
+              &failureReason),
+          "a binding marker opens grouped Pinloom content in the real side dock");
+    auto* boundView = qobject_cast<PinloomContextView*>(
+        controller.dockHost()->viewForResource(
+            bindingsResource.stableKey()));
+    check(controller.dockWidget()->isVisible()
+              && boundView && boundView->boundModeActive()
+              && boundView->resultList()->count() == 2,
+          "the transient side dock lists every Pinloom target for the anchor");
+    check(controller.captureState().pinnedResources.isEmpty(),
+          "transient binding content is excluded from workspace persistence");
+    check(controller.openResource(
+              bindingsResource,
+              ContextOpenMode::TransientDock,
+              &failureReason)
+              && !controller.dockHost()->containsResource(
+                  bindingsResource.stableKey()),
+          "activating the same binding marker closes its transient side dock tab");
+
     PinloomCodeLinkCoordinator codeLinks(&controller);
     codeLinks.setWorkspaceRoot(QStringLiteral("workspace-a"));
     ActionInvocation linkInvocation;

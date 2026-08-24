@@ -9,6 +9,7 @@
 #include <functional>
 
 class PinloomContextView;
+struct PinloomCodeLinkAnchorRecord;
 
 class ZEROSLACK_API PinloomContextProvider final
     : public IContextContentProvider
@@ -31,6 +32,9 @@ public:
         const QString& query = QString());
     static ContextResource resourceForUri(
         const QUrl& uri,
+        const QString& workspaceId = QString());
+    static ContextResource resourceForBindings(
+        const PinloomCodeLinkAnchorRecord& anchor,
         const QString& workspaceId = QString());
 
     QString providerId() const override;

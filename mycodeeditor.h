@@ -260,6 +260,8 @@ public:
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
+    void setPinloomCodeLinkAnnotations(
+        const QList<EditorAnnotation>& annotations);
     void setAnnotationDisplayOptions(
         const EditorAnnotationDisplayOptions& options);
     EditorAnnotationDisplayOptions
@@ -422,6 +424,7 @@ signals:
     void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);
+    void pinloomCodeLinkActivated(const QString& anchorId);
     void packageToolAvailabilityChanged(
         const EditorPackageToolAvailability& availability);
     void wavePreviewScopeChanged();

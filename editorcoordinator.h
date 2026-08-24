@@ -62,6 +62,9 @@ public:
         std::function<void(const QString&,
                            const QVariantMap&)> handler);
     void setPinloomCodeLinkStore(PinloomCodeLinkStore* store);
+    void togglePinloomCodeLinkMarkers();
+    bool pinloomCodeLinkMarkersVisible() const;
+    void refreshPinloomCodeLinkMarkers();
     void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
@@ -170,6 +173,8 @@ private:
     void handleExposeSignalToTopRequested(
         const EditorSemanticContext& context) const;
     void handleActiveEditorChanged(MyCodeEditor* editor);
+    void refreshPinloomCodeLinks(MyCodeEditor* editor) const;
+    void refreshPinloomCodeLinksForOpenEditors() const;
 
     TabManager* tabManager = nullptr;
     EditorAppearanceSettings* appearanceSettings = nullptr;
@@ -188,6 +193,7 @@ private:
                        const QVariantMap&)>
         registeredActionRequestHandler;
     PinloomCodeLinkStore* pinloomCodeLinkStore = nullptr;
+    bool pinloomMarkersVisible = true;
     std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
 };

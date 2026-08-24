@@ -105,6 +105,8 @@ int main(int argc, char* argv[])
         capability(QString::fromLatin1(
             ActionIds::PinloomOpenLinkedContent)),
         capability(QString::fromLatin1(
+            ActionIds::PinloomToggleBindingMarkers)),
+        capability(QString::fromLatin1(
             ActionIds::RefactorOrganizeSignalDeclarations)),
         capability(QStringLiteral("format.document"))
     };
@@ -189,13 +191,21 @@ int main(int argc, char* argv[])
     const EditorContextMenuItem* openPinloom = findItem(
         model,
         QString::fromLatin1(ActionIds::PinloomOpenLinkedContent));
+    const EditorContextMenuItem* togglePinloomMarkers = findItem(
+        model,
+        QString::fromLatin1(
+            ActionIds::PinloomToggleBindingMarkers));
     check(linkPinloom && linkPinloom->enabled
               && linkPinloom->section
                      == EditorContextMenuSection::Refactor
               && openPinloom && openPinloom->enabled
               && openPinloom->section
+                     == EditorContextMenuSection::Inspect
+              && togglePinloomMarkers
+              && togglePinloomMarkers->enabled
+              && togglePinloomMarkers->section
                      == EditorContextMenuSection::Inspect,
-          "Pinloom link creation and linked-content navigation have registry-owned context actions");
+          "Pinloom binding creation, navigation, and marker visibility have registry-owned context actions");
 
     const QStringList requiredContextActions = {
         QString::fromLatin1(
@@ -222,6 +232,8 @@ int main(int argc, char* argv[])
             ActionIds::PinloomLinkSelection),
         QString::fromLatin1(
             ActionIds::PinloomOpenLinkedContent),
+        QString::fromLatin1(
+            ActionIds::PinloomToggleBindingMarkers),
         QString::fromLatin1(
             ActionIds::RefactorOrganizeSignalDeclarations)
     };

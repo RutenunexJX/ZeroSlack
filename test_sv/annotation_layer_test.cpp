@@ -132,6 +132,38 @@ int main()
                        == EditorAnnotationKind::Diagnostic
                 && conflictReport.conflictSuppressedCount == 2);
 
+    AnnotationLayer gutterMarkers;
+    EditorAnnotation colocatedGutterDiagnostic = annotation(
+        EditorAnnotationKind::Diagnostic,
+        20, 30, 2, QStringLiteral("error"),
+        QStringLiteral("diagnostic:gutter"));
+    colocatedGutterDiagnostic.placement =
+        EditorAnnotationPlacement::Gutter;
+    EditorAnnotation pinloomMarker = annotation(
+        EditorAnnotationKind::PinloomLink,
+        20, 30, 2, QStringLiteral("2"),
+        QStringLiteral("pinloom:anchor"));
+    pinloomMarker.placement = EditorAnnotationPlacement::Gutter;
+    gutterMarkers.setSourceAnnotations(
+        QStringLiteral("diagnostics"),
+        {colocatedGutterDiagnostic});
+    gutterMarkers.setSourceAnnotations(
+        QStringLiteral("pinloom"), {pinloomMarker});
+    AnnotationLayerQuery twoGutterLanes;
+    twoGutterLanes.firstVisibleLine = 2;
+    twoGutterLanes.lastVisibleLine = 2;
+    twoGutterLanes.maxAnnotationsPerLine = 6;
+    twoGutterLanes.maxLanes = 2;
+    const AnnotationLayerReport gutterReport =
+        gutterMarkers.resolve(twoGutterLanes);
+    expect("Pinloom and diagnostic gutter markers coexist",
+           gutterReport.annotations.size() == 2
+               && gutterReport.annotations.first().annotation.kind
+                      == EditorAnnotationKind::Diagnostic
+               && gutterReport.annotations.last().annotation.kind
+                      == EditorAnnotationKind::PinloomLink
+               && gutterReport.annotations.last().lane == 1);
+
     AnnotationLayer unifiedOverlays;
     EditorAnnotation activeSlot = annotation(
         EditorAnnotationKind::TemplateSlot,

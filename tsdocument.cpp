@@ -5094,6 +5094,198 @@ TSAlwaysScopeTarget TSDocument::alwaysScopeTarget(
     return target;
 }
 
+namespace {
+QString compactAnchorIdentity(const QString& value)
+{
+    QString result;
+    result.reserve(value.size());
+    for (const QChar character : value) {
+        if (!character.isSpace())
+            result.append(character);
+    }
+    return result;
+}
+
+QStringList assignmentTargets(const TSUTF16Text& text, TSNode root)
+{
+    QSet<QString> uniqueTargets;
+    QList<TSNode> pending{root};
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        if (nodeTypeIs(node, "nonblocking_assignment")
+            || nodeTypeIs(node, "blocking_assignment")
+            || nodeTypeIs(node, "operator_assignment")
+            || nodeTypeIs(node, "variable_assignment")
+            || nodeTypeIs(node, "net_assignment")) {
+            const TSNode lvalue = firstLvalueChild(node);
+            if (!ts_node_is_null(lvalue)) {
+                const QString target = compactAnchorIdentity(
+                    nodeText(text, lvalue));
+                if (!target.isEmpty())
+                    uniqueTargets.insert(target);
+            }
+            continue;
+        }
+        const uint32_t childCount = ts_node_named_child_count(node);
+        for (uint32_t index = 0; index < childCount; ++index)
+            pending.append(ts_node_named_child(node, index));
+    }
+    QStringList targets = uniqueTargets.values();
+    std::sort(targets.begin(), targets.end());
+    return targets;
+}
+
+TSBindableCodeAnchor bindableAnchorFromNode(
+    const TSUTF16Text& text,
+    TSNode node)
+{
+    TSBindableCodeAnchor target;
+    if (ts_node_is_null(node) || ts_node_has_error(node))
+        return target;
+
+    const bool always = nodeTypeIs(node, "always_construct");
+    const bool continuous = nodeTypeIs(node, "continuous_assign");
+    if (!always && !continuous)
+        return target;
+
+    target.kind = always
+        ? TSBindableCodeAnchorKind::AlwaysBlock
+        : TSBindableCodeAnchorKind::ContinuousAssign;
+    target.startChar = nodeStartChar(node);
+    target.endChar = nodeEndChar(node);
+    target.startLine = nodeStartLine(node);
+    target.endLine = nodeEndLine(node);
+    target.syntaxKind = always
+        ? leadingIdentifierAt(text, target.startChar, target.endChar)
+        : QStringLiteral("assign");
+    if (target.syntaxKind.isEmpty()) {
+        target.syntaxKind = always
+            ? QStringLiteral("always")
+            : QStringLiteral("assign");
+    }
+
+    TSNode container = rtlContainerAncestor(node);
+    if (!ts_node_is_null(container))
+        target.moduleName = declarationName(text, container).trimmed();
+
+    const QString source = nodeText(text, node);
+    const QStringList writes = assignmentTargets(text, node);
+    if (continuous) {
+        // Assigned nets are stable across RHS edits and distinguish adjacent
+        // continuous assignments without depending on source coordinates.
+        target.identityText = QStringLiteral("assign|writes=%1")
+            .arg(writes.join(QLatin1Char(',')));
+    } else {
+        // Event/control headers plus assigned targets distinguish processes.
+        // The complete node remains a secondary fingerprint, so body edits do
+        // not invalidate an otherwise stable process anchor.
+        const int eventStart = source.indexOf(QLatin1Char('@'));
+        int eventEnd = -1;
+        if (eventStart >= 0) {
+            int depth = 0;
+            for (int index = eventStart; index < source.size(); ++index) {
+                if (source.at(index) == QLatin1Char('('))
+                    ++depth;
+                else if (source.at(index) == QLatin1Char(')')
+                    && depth > 0 && --depth == 0) {
+                    eventEnd = index + 1;
+                    break;
+                }
+            }
+        }
+        const QString control = eventEnd > 0
+            ? source.left(eventEnd).simplified()
+            : target.syntaxKind;
+        target.identityText = QStringLiteral("%1|writes=%2")
+            .arg(control, writes.join(QLatin1Char(',')));
+    }
+    target.label = QStringLiteral("%1 lines %2-%3")
+                       .arg(target.syntaxKind)
+                       .arg(target.startLine + 1)
+                       .arg(target.endLine + 1);
+    return target;
+}
+
+TSNode bindableAncestor(TSNode node)
+{
+    for (TSNode current = node;
+         !ts_node_is_null(current);
+         current = ts_node_parent(current)) {
+        if (nodeTypeIs(current, "continuous_assign")
+            || nodeTypeIs(current, "always_construct")) {
+            return current;
+        }
+    }
+    return TSNode{};
+}
+}
+
+TSBindableCodeAnchor TSDocument::bindableCodeAnchorAt(
+    int cursorChar,
+    int selectionStartChar,
+    int selectionEndChar) const
+{
+    TSBindableCodeAnchor target;
+    const int textSize = m_text.size();
+    if (textSize <= 0)
+        return target;
+
+    const bool hasSelection = selectionStartChar >= 0
+        && selectionEndChar > selectionStartChar;
+    int lookupStart = qBound(0, cursorChar, textSize - 1);
+    int lookupEnd = lookupStart;
+    if (hasSelection) {
+        const int rawStart = qBound(
+            0, qMin(selectionStartChar, selectionEndChar), textSize);
+        const int rawEnd = qBound(
+            0, qMax(selectionStartChar, selectionEndChar), textSize);
+        lookupStart = firstNonSpaceChar(m_text, rawStart, rawEnd);
+        lookupEnd = lastNonSpaceChar(m_text, rawStart, rawEnd);
+        if (lookupStart > lookupEnd)
+            return target;
+    }
+
+    const TSNode start = namedNodeAtChar(m_tree, lookupStart, textSize);
+    const TSNode anchor = bindableAncestor(start);
+    if (ts_node_is_null(anchor))
+        return target;
+    if (hasSelection) {
+        const TSNode end = namedNodeAtChar(m_tree, lookupEnd, textSize);
+        const TSNode endAnchor = bindableAncestor(end);
+        if (ts_node_is_null(endAnchor)
+            || !ts_node_eq(anchor, endAnchor)) {
+            return target;
+        }
+    }
+    return bindableAnchorFromNode(m_text, anchor);
+}
+
+QList<TSBindableCodeAnchor> TSDocument::bindableCodeAnchors() const
+{
+    QList<TSBindableCodeAnchor> result;
+    QList<TSNode> pending{ts_tree_root_node(m_tree)};
+    while (!pending.isEmpty()) {
+        const TSNode node = pending.takeLast();
+        if (nodeTypeIs(node, "always_construct")
+            || nodeTypeIs(node, "continuous_assign")) {
+            const TSBindableCodeAnchor anchor =
+                bindableAnchorFromNode(m_text, node);
+            if (anchor.ok())
+                result.append(anchor);
+            continue;
+        }
+        const uint32_t childCount = ts_node_named_child_count(node);
+        for (uint32_t index = 0; index < childCount; ++index)
+            pending.append(ts_node_named_child(node, index));
+    }
+    std::sort(result.begin(), result.end(),
+              [](const TSBindableCodeAnchor& left,
+                 const TSBindableCodeAnchor& right) {
+                  return left.startChar < right.startChar;
+              });
+    return result;
+}
+
 TSModuleScopeTarget TSDocument::moduleScopeTarget(
     int cursorChar,
     int selectionStartChar,

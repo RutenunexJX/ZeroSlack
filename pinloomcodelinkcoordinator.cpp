@@ -3,6 +3,8 @@
 #include "contextworkspacecontroller.h"
 #include "pinloomcontextprovider.h"
 
+#include <algorithm>
+
 namespace {
 const QString kLinkSelectionRoute =
     QStringLiteral("ui.pinloom.linkSelection");
@@ -79,7 +81,7 @@ ActionExecutionResult PinloomCodeLinkCoordinator::execute(
             PinloomSourceSelection::fromVariantMap(sourceMap);
         if (!source.isValid()) {
             return fail(QStringLiteral(
-                "Select code inside the active workspace."));
+                "Select a symbol, an always block, or a continuous assign block inside the active workspace."));
         }
         resource = PinloomContextProvider::homeResource(
             linkStore.workspaceRoot());
@@ -88,26 +90,45 @@ ActionExecutionResult PinloomCodeLinkCoordinator::execute(
         result.message = QStringLiteral(
             "Choose a Pinloom entry or create a source anchor.");
     } else {
-        const QUrl uri(
-            invocation.parameters
-                .value(QStringLiteral("pinloomUri"))
-                .toString(),
-            QUrl::StrictMode);
-        resource = PinloomContextProvider::resourceForUri(
-            uri,
-            linkStore.workspaceRoot());
+        const QString anchorId = invocation.parameters
+            .value(QStringLiteral("pinloomAnchorId"))
+            .toString().trimmed();
+        if (!anchorId.isEmpty()) {
+            const QList<PinloomCodeLinkAnchorRecord> anchors =
+                linkStore.anchors();
+            const auto anchor = std::find_if(
+                anchors.cbegin(), anchors.cend(),
+                [&anchorId](const PinloomCodeLinkAnchorRecord& candidate) {
+                    return candidate.id == anchorId;
+                });
+            if (anchor != anchors.cend()) {
+                resource = PinloomContextProvider::resourceForBindings(
+                    *anchor, linkStore.workspaceRoot());
+            }
+        } else {
+            const QUrl uri(
+                invocation.parameters
+                    .value(QStringLiteral("pinloomUri"))
+                    .toString(),
+                QUrl::StrictMode);
+            resource = PinloomContextProvider::resourceForUri(
+                uri,
+                linkStore.workspaceRoot());
+        }
         if (!resource.isValid()) {
             return fail(QStringLiteral(
-                "The Pinloom link is invalid."));
+                "The Pinloom binding is invalid or unavailable."));
         }
         result.message = QStringLiteral(
-            "Pinloom content opened in Context Workspace.");
+            "Pinloom bindings opened in the Context sidebar.");
     }
 
     QString failureReason;
     if (!contextWorkspace->openResource(
             resource,
-            ContextOpenMode::Peek,
+            descriptor.executionRoute == kLinkSelectionRoute
+                ? ContextOpenMode::Peek
+                : ContextOpenMode::TransientDock,
             &failureReason)) {
         return fail(failureReason);
     }

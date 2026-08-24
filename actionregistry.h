@@ -138,6 +138,8 @@ inline constexpr const char PinloomLinkSelection[] =
     "pinloom.linkSelection";
 inline constexpr const char PinloomOpenLinkedContent[] =
     "pinloom.openLinkedContent";
+inline constexpr const char PinloomToggleBindingMarkers[] =
+    "pinloom.toggleBindingMarkers";
 inline constexpr const char InsertColumnNumbers[] =
     "insert.columnNumbers";
 inline constexpr const char FoldShelfDeleteSelected[] =

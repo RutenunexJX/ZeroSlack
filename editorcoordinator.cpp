@@ -14,6 +14,7 @@
 #include "navigationcommandcoordinator.h"
 #include "packagetoolservice.h"
 #include "pinloomcodelinkstore.h"
+#include "semanticindex.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
@@ -28,8 +29,10 @@
 #include <QMessageBox>
 #include <QMenu>
 #include <QPushButton>
+#include <QPointer>
 #include <QSaveFile>
 #include <QTextCursor>
+#include <QTimer>
 
 #include <utility>
 
@@ -367,7 +370,35 @@ void EditorCoordinator::setRegisteredActionRequestHandler(
 void EditorCoordinator::setPinloomCodeLinkStore(
     PinloomCodeLinkStore* store)
 {
+    if (pinloomCodeLinkStore
+        && pinloomCodeLinkStore != store) {
+        pinloomCodeLinkStore->setChangedHandler({});
+    }
     pinloomCodeLinkStore = store;
+    if (pinloomCodeLinkStore) {
+        const QPointer<EditorCoordinator> self(this);
+        pinloomCodeLinkStore->setChangedHandler([self]() {
+            if (self)
+                self->refreshPinloomCodeLinksForOpenEditors();
+        });
+    }
+    refreshPinloomCodeLinksForOpenEditors();
+}
+
+void EditorCoordinator::togglePinloomCodeLinkMarkers()
+{
+    pinloomMarkersVisible = !pinloomMarkersVisible;
+    refreshPinloomCodeLinksForOpenEditors();
+}
+
+bool EditorCoordinator::pinloomCodeLinkMarkersVisible() const
+{
+    return pinloomMarkersVisible;
+}
+
+void EditorCoordinator::refreshPinloomCodeLinkMarkers()
+{
+    refreshPinloomCodeLinksForOpenEditors();
 }
 
 void EditorCoordinator::setFoldShelfItemConsumedHandler(
@@ -503,6 +534,121 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 if (foldShelfItemConsumedHandler)
                     foldShelfItemConsumedHandler(id);
             });
+    connect(editor,
+            &MyCodeEditor::pinloomCodeLinkActivated,
+            this,
+            [this, editor](const QString& anchorId) {
+                if (!registeredActionRequestHandler
+                    || anchorId.trimmed().isEmpty()) {
+                    return;
+                }
+                QVariantMap parameters;
+                parameters.insert(
+                    QStringLiteral("pinloomAnchorId"), anchorId);
+                registeredActionRequestHandler(
+                    QString::fromLatin1(
+                        ActionIds::PinloomOpenLinkedContent),
+                    withEditorActionTarget(editor, parameters));
+            });
+    connect(editor,
+            &MyCodeEditor::documentChangeApplied,
+            this,
+            [this, guarded = QPointer<MyCodeEditor>(editor)](
+                const DocumentChange&) {
+                if (!guarded
+                    || guarded->property(
+                           "pinloomCodeLinkRefreshPending")
+                           .toBool()) {
+                    return;
+                }
+                guarded->setProperty(
+                    "pinloomCodeLinkRefreshPending", true);
+                QTimer::singleShot(0, this, [this, guarded]() {
+                    if (guarded) {
+                        guarded->setProperty(
+                            "pinloomCodeLinkRefreshPending", false);
+                        refreshPinloomCodeLinks(guarded);
+                    }
+                });
+            });
+    connect(editor,
+            &MyCodeEditor::fileNameChanged,
+            this,
+            [this, guarded = QPointer<MyCodeEditor>(editor)](const QString&) {
+                if (guarded)
+                    refreshPinloomCodeLinks(guarded);
+            });
+    refreshPinloomCodeLinks(editor);
+}
+
+void EditorCoordinator::refreshPinloomCodeLinks(
+    MyCodeEditor* editor) const
+{
+    if (!editor || !pinloomMarkersVisible || !pinloomCodeLinkStore) {
+        if (editor)
+            editor->setPinloomCodeLinkAnnotations({});
+        return;
+    }
+    QList<EditorAnnotation> annotations;
+    const QList<ResolvedPinloomCodeLink> links =
+        pinloomCodeLinkStore->linksForDocument(
+            editor->documentFileName(),
+            editor->cachedDocumentText(),
+            editor->syntaxDocument());
+    for (const ResolvedPinloomCodeLink& link : links) {
+        if (link.anchor.links.isEmpty())
+            continue;
+        QStringList titles;
+        for (const PinloomCodeLinkRecord& target : link.anchor.links)
+            titles.append(target.title);
+        EditorAnnotation annotation;
+        annotation.kind = EditorAnnotationKind::PinloomLink;
+        annotation.placement = EditorAnnotationPlacement::Gutter;
+        const int fallbackPosition = qBound(
+            0,
+            link.anchor.source.startPosition,
+            qMax(0, editor->cachedDocumentLength() - 1));
+        const int fallbackLine = qBound(
+            0,
+            link.anchor.source.startLine - 1,
+            qMax(0, editor->blockCount() - 1));
+        annotation.range.startPosition = link.available()
+            ? link.startPosition : fallbackPosition;
+        annotation.range.endPosition = link.available()
+            ? link.endPosition : fallbackPosition + 1;
+        annotation.range.firstLine = link.available()
+            ? link.firstLine : fallbackLine;
+        annotation.range.lastLine = link.available()
+            ? link.lastLine : fallbackLine;
+        annotation.text = QString::number(link.anchor.links.size());
+        const QString resolutionNote = link.available()
+            ? QString()
+            : (link.resolution
+                       == PinloomCodeLinkResolution::Ambiguous
+                   ? QStringLiteral(
+                         "\nAnchor resolution is ambiguous; the binding data is preserved.")
+                   : QStringLiteral(
+                         "\nAnchor is not currently resolved; the binding data is preserved."));
+        annotation.detail = QStringLiteral(
+            "%1 Pinloom binding(s)\n%2%3")
+            .arg(link.anchor.links.size())
+            .arg(titles.join(QLatin1Char('\n')),
+                 resolutionNote);
+        annotation.semanticKey = link.anchor.id;
+        annotation.priority = 550;
+        annotations.append(annotation);
+    }
+    editor->setPinloomCodeLinkAnnotations(annotations);
+}
+
+void EditorCoordinator::refreshPinloomCodeLinksForOpenEditors() const
+{
+    if (!tabManager)
+        return;
+    for (MyCodeEditor* editor : tabManager->openEditors())
+        refreshPinloomCodeLinks(editor);
+    for (MyCodeEditor* editor : tabManager->auxiliaryViews())
+        refreshPinloomCodeLinks(editor);
 }
 
 void EditorCoordinator::applyAppearance(MyCodeEditor* editor) const
@@ -1199,35 +1345,114 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
             ? context.cursorPosition
             : editor->textCursor().position();
     const QString& documentText = editor->cachedDocumentText();
-    QVariantMap pinloomLinkSource;
-    if (hasSelection && !actionContext.workspacePath.trimmed().isEmpty()) {
-        const QTextCursor selection = editor->textCursor();
-        PinloomSourceSelection source =
-            PinloomSourceSelection::fromDocumentSelection(
-                actionContext.workspacePath,
-                editor->documentFileName(),
-                context.moduleName,
-                documentText,
-                selection.selectionStart(),
-                selection.selectionEnd());
-        if (source.isValid()) {
-            pinloomLinkSource = source.toVariantMap();
-            pinloomLinkSource.insert(
-                QStringLiteral("suggestedTitle"),
-                source.suggestedTitle());
-        }
-    }
     const QList<ResolvedPinloomCodeLink> pinloomLinks =
         pinloomCodeLinkStore
         ? pinloomCodeLinkStore->linksAtPosition(
               editor->documentFileName(),
               documentText,
-              cursorPosition)
+              cursorPosition,
+              editor->syntaxDocument())
         : QList<ResolvedPinloomCodeLink>{};
-    const QString pinloomUri = pinloomLinks.isEmpty()
+    const QString pinloomAnchorId = pinloomLinks.isEmpty()
         ? QString()
-        : pinloomLinks.constFirst().record.uri.toString(
-              QUrl::FullyEncoded);
+        : pinloomLinks.constFirst().anchor.id;
+
+    QVariantMap pinloomLinkSource;
+    QString pinloomLinkReason;
+    if (actionContext.workspacePath.trimmed().isEmpty()) {
+        pinloomLinkReason = QStringLiteral(
+            "Open a workspace before linking code.");
+    } else if (const TSDocument* syntax = editor->syntaxDocument()) {
+        const QTextCursor selection = editor->textCursor();
+        int selectedStart = selection.hasSelection()
+            ? selection.selectionStart() : cursorPosition;
+        int selectedEnd = selection.hasSelection()
+            ? selection.selectionEnd() : cursorPosition;
+        while (selectedStart < selectedEnd
+               && documentText.at(selectedStart).isSpace()) {
+            ++selectedStart;
+        }
+        while (selectedEnd > selectedStart
+               && documentText.at(selectedEnd - 1).isSpace()) {
+            --selectedEnd;
+        }
+        const TSIdentifierTarget identifier =
+            syntax->identifierAt(selectedStart);
+        const bool exactSymbolSelection = identifier.ok()
+            && (!selection.hasSelection()
+                || (selectedStart == identifier.startChar
+                    && selectedEnd == identifier.endChar));
+        PinloomSourceSelection source;
+        if (exactSymbolSelection) {
+            const EditorSemanticContext symbolContext =
+                editor->editorSemanticContextForPosition(
+                    identifier.startChar, false);
+            const DefinitionNavigationTarget definition =
+                contextService()->resolveDefinitionTarget(
+                    identifier.text, symbolContext);
+            if (definition.found
+                && definition.symbolRecord.isValid()) {
+                SemanticSymbolRecord definitionSymbol =
+                    definition.symbolRecord;
+                const QString definitionFile =
+                    definitionSymbol.location.fileName.isEmpty()
+                    ? (definition.fileName.isEmpty()
+                           ? editor->documentFileName()
+                           : definition.fileName)
+                    : definitionSymbol.location.fileName;
+                definitionSymbol.location.fileName = definitionFile;
+                const bool currentFile =
+                    normalizedEditorCoordinatorFileName(definitionFile)
+                    == normalizedEditorCoordinatorFileName(
+                        editor->documentFileName());
+                const QString definitionText = currentFile
+                    ? documentText
+                    : SemanticIndex::getInstance()
+                          ->getCachedFileContent(definitionFile);
+                if (!definitionText.isEmpty()) {
+                    source = PinloomSourceSelection::fromSemanticSymbol(
+                        actionContext.workspacePath,
+                        definitionText,
+                        definitionSymbol);
+                }
+            }
+        }
+        if (!source.isValid()) {
+            const TSBindableCodeAnchor syntaxAnchor =
+                syntax->bindableCodeAnchorAt(
+                    cursorPosition,
+                    selection.hasSelection()
+                        ? selection.selectionStart() : -1,
+                    selection.hasSelection()
+                        ? selection.selectionEnd() : -1);
+            if (syntaxAnchor.ok()) {
+                source = PinloomSourceSelection::fromSyntaxAnchor(
+                    actionContext.workspacePath,
+                    editor->documentFileName(),
+                    documentText,
+                    syntaxAnchor);
+            }
+        }
+        if (source.isValid()) {
+            for (const ResolvedPinloomCodeLink& existing : pinloomLinks) {
+                if (existing.anchor.source.anchorKind
+                    == source.anchorKind) {
+                    source.anchorId = existing.anchor.id;
+                    break;
+                }
+            }
+            pinloomLinkSource = source.toVariantMap();
+            pinloomLinkSource.insert(
+                QStringLiteral("suggestedTitle"),
+                source.suggestedTitle());
+        } else {
+            pinloomLinkReason = QStringLiteral(
+                "Place the cursor on a resolvable symbol or inside one complete always/assign block.");
+        }
+    } else {
+        pinloomLinkReason = QStringLiteral(
+            "Semantic syntax information is not ready.");
+    }
 
     const auto append =
         [&request](const QString& actionId,
@@ -1335,16 +1560,16 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                : QStringLiteral("The editor is read-only."));
     append(QString::fromLatin1(
                ActionIds::PinloomLinkSelection),
-           hasSelection,
+           true,
            !pinloomLinkSource.isEmpty(),
-           actionContext.workspacePath.trimmed().isEmpty()
-               ? QStringLiteral("Open a workspace before linking code.")
-               : QStringLiteral("Select code inside the active workspace."));
+           pinloomLinkReason);
     append(QString::fromLatin1(
                ActionIds::PinloomOpenLinkedContent),
-           !pinloomUri.isEmpty(),
-           !pinloomUri.isEmpty(),
+           !pinloomAnchorId.isEmpty(),
+           !pinloomAnchorId.isEmpty(),
            QStringLiteral("Place the cursor inside code linked to Pinloom."));
+    append(QString::fromLatin1(
+               ActionIds::PinloomToggleBindingMarkers));
 
     QString organizeReason;
     const bool organizeReady =
@@ -1383,7 +1608,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
          menuState,
          sourceContext,
          pinloomLinkSource,
-         pinloomUri](
+         pinloomAnchorId](
             const QString& actionId) {
             const bool registeredEditorAction =
                 actionId == QStringLiteral("edit.undo")
@@ -1407,6 +1632,9 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || actionId
                        == QString::fromLatin1(
                            ActionIds::PinloomOpenLinkedContent)
+                || actionId
+                       == QString::fromLatin1(
+                           ActionIds::PinloomToggleBindingMarkers)
                 || actionId == QStringLiteral("navigation.goLine")
                 || actionId
                        == QString::fromLatin1(
@@ -1462,8 +1690,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                            == QString::fromLatin1(
                                ActionIds::PinloomOpenLinkedContent)) {
                     parameters.insert(
-                        QStringLiteral("pinloomUri"),
-                        pinloomUri);
+                        QStringLiteral("pinloomAnchorId"),
+                        pinloomAnchorId);
                 } else if (actionId.startsWith(
                                QStringLiteral("waveSimulation."))) {
                     parameters.insert(

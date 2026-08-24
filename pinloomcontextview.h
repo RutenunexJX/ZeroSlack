@@ -42,6 +42,7 @@ public:
     void setLinkHandler(LinkHandler handler);
     void setLinkSource(const QVariantMap& source);
     bool linkModeActive() const;
+    bool boundModeActive() const;
 
 signals:
     void currentEntryChanged(const PinloomHostEntry& entry);
@@ -67,10 +68,14 @@ private:
     quint64 searchGeneration = 0;
     quint64 resolveGeneration = 0;
     QVariantMap activeLinkSource;
+    QVariantList activeBoundEntries;
+    bool boundMode = false;
     LinkHandler linkHandler;
 
     void buildUi();
     void startSearch();
+    void applyBoundEntries(const QVariantList& entries,
+                           const PinloomHostIdentity& preferred = {});
     void applySearchResults(const QList<PinloomHostEntry>& entries,
                             const QString& error,
                             quint64 generation,

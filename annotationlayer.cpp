@@ -319,6 +319,8 @@ int AnnotationLayer::defaultPriority(EditorAnnotationKind kind)
     switch (kind) {
     case EditorAnnotationKind::Diagnostic:
         return 600;
+    case EditorAnnotationKind::PinloomLink:
+        return 550;
     case EditorAnnotationKind::TemplateSlot:
         return 500;
     case EditorAnnotationKind::ColumnCaret:

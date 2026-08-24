@@ -1,6 +1,7 @@
 #include "pinloomcontextprovider.h"
 
 #include "pinloomcontextview.h"
+#include "pinloomcodelinkstore.h"
 
 #include <QLineEdit>
 #include <QObject>
@@ -74,6 +75,40 @@ ContextResource PinloomContextProvider::resourceForUri(
     return resource;
 }
 
+ContextResource PinloomContextProvider::resourceForBindings(
+    const PinloomCodeLinkAnchorRecord& anchor,
+    const QString& workspaceId)
+{
+    if (!anchor.isValid())
+        return {};
+    ContextResource resource = homeResource(workspaceId);
+    resource.resourceId = QStringLiteral("bindings/%1").arg(anchor.id);
+    resource.title = anchor.source.suggestedTitle();
+    resource.uri = QUrl(QStringLiteral("pinloom://library"));
+    QVariantList entries;
+    for (const PinloomCodeLinkRecord& link : anchor.links) {
+        PinloomHostEntry entry;
+        entry.identity = PinloomHostIdentity::fromVariantMap(link.identity);
+        if (!entry.identity.isValid())
+            entry.identity = PinloomHostIdentity::fromUri(link.uri);
+        entry.uri = link.uri;
+        entry.type = QStringLiteral("binding");
+        entry.title = link.title.trimmed().isEmpty()
+            ? anchor.source.suggestedTitle()
+            : link.title;
+        entry.summary = QStringLiteral("Linked from %1")
+            .arg(anchor.source.suggestedTitle());
+        if (entry.isValid())
+            entries.append(entry.toVariantMap());
+    }
+    if (entries.isEmpty())
+        return {};
+    resource.state.insert(QStringLiteral("boundEntries"), entries);
+    resource.state.insert(QStringLiteral("bindingAnchorId"), anchor.id);
+    resource.state.insert(QStringLiteral("bindingTitle"), resource.title);
+    return resource;
+}
+
 QString PinloomContextProvider::providerId() const
 {
     return staticProviderId();
@@ -104,7 +139,9 @@ bool PinloomContextProvider::canOpen(
         PinloomHostIdentity::fromUri(resource.uri).isValid();
     return clientValue
         && resource.providerId == providerId()
-        && resource.resourceId == kLibraryResourceId
+        && (resource.resourceId == kLibraryResourceId
+            || resource.resourceId.startsWith(
+                QStringLiteral("bindings/")))
         && (libraryResource || linkedResource);
 }
 
@@ -167,6 +204,8 @@ void PinloomContextProvider::observeViewResourceChanges(
         context,
         [pinloomView, handler = std::move(handler)](
             const PinloomHostEntry& entry) {
+            if (pinloomView->boundModeActive())
+                return;
             handler(resourceForEntry(
                 entry,
                 pinloomView->property("contextWorkspaceId").toString(),

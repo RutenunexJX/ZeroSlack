@@ -15,8 +15,8 @@
 #include <QWidget>
 
 namespace {
-constexpr int kEditorGutterWidth = 80;
-constexpr int kLineNumberLeft = 28;
+constexpr int kEditorGutterWidth = 94;
+constexpr int kLineNumberLeft = 43;
 constexpr int kLineNumberRightPadding = 3;
 constexpr qreal kLineNumberPointSize = 10.0;
 constexpr qreal kMinimumLineNumberPointSize = 7.0;

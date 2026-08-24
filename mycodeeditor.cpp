@@ -1202,6 +1202,19 @@ void MyCodeEditor::setGhostAnnotations(
     state->setGhostAnnotations(this, annotations);
 }
 
+void MyCodeEditor::setPinloomCodeLinkAnnotations(
+    const QList<EditorAnnotation>& annotations)
+{
+    const QString sourceId = QStringLiteral("pinloom-code-links");
+    if (annotations.isEmpty())
+        state->annotationLayer.removeSource(sourceId);
+    else
+        state->annotationLayer.setSourceAnnotations(sourceId, annotations);
+    state->gutter.handleUpdateRequest(
+        this, viewport()->rect(), 0);
+    viewport()->update();
+}
+
 void MyCodeEditor::setAnnotationDisplayOptions(
     const EditorAnnotationDisplayOptions& options)
 {

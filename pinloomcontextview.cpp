@@ -80,6 +80,10 @@ PinloomContextView::PinloomContextView(PinloomHostClient* client,
 QVariantMap PinloomContextView::saveState() const
 {
     QVariantMap state;
+    if (boundMode) {
+        state.insert(QStringLiteral("boundEntries"), activeBoundEntries);
+        return state;
+    }
     state.insert(QStringLiteral("query"), searchEdit->text());
     if (selectedEntry.isValid()) {
         state.insert(QStringLiteral("identity"),
@@ -92,6 +96,20 @@ QVariantMap PinloomContextView::saveState() const
 
 void PinloomContextView::restoreState(const QVariantMap& state)
 {
+    activeBoundEntries =
+        state.value(QStringLiteral("boundEntries")).toList();
+    boundMode = !activeBoundEntries.isEmpty();
+    searchEdit->setVisible(!boundMode);
+    reloadButton->setVisible(!boundMode);
+    if (boundMode) {
+        ++searchGeneration;
+        setLinkSource({});
+        const PinloomHostIdentity preferred =
+            PinloomHostIdentity::fromVariantMap(
+                state.value(QStringLiteral("identity")).toMap());
+        applyBoundEntries(activeBoundEntries, preferred);
+        return;
+    }
     const QString query = state.value(QStringLiteral("query")).toString();
     {
         const QSignalBlocker blocker(searchEdit);
@@ -194,6 +212,11 @@ void PinloomContextView::setLinkSource(const QVariantMap& source)
 bool PinloomContextView::linkModeActive() const
 {
     return linkPanel && linkPanel->isVisible();
+}
+
+bool PinloomContextView::boundModeActive() const
+{
+    return boundMode;
 }
 
 void PinloomContextView::buildUi()
@@ -340,6 +363,8 @@ void PinloomContextView::buildUi()
 
 void PinloomContextView::startSearch()
 {
+    if (boundMode)
+        return;
     const quint64 generation = ++searchGeneration;
     if (!clientValue) {
         applySearchResults({}, QStringLiteral("Pinloom client is unavailable."),
@@ -361,6 +386,46 @@ void PinloomContextView::startSearch()
             if (self)
                 self->applySearchResults(entries, error, generation, preferred);
         });
+}
+
+void PinloomContextView::applyBoundEntries(
+    const QVariantList& encodedEntries,
+    const PinloomHostIdentity& preferred)
+{
+    QList<PinloomHostEntry> entries;
+    entries.reserve(encodedEntries.size());
+    for (const QVariant& encoded : encodedEntries) {
+        const PinloomHostEntry entry =
+            PinloomHostEntry::fromVariantMap(encoded.toMap());
+        if (entry.isValid())
+            entries.append(entry);
+    }
+    int preferredRow = -1;
+    {
+        const QSignalBlocker blocker(results);
+        results->clear();
+        for (int row = 0; row < entries.size(); ++row) {
+            const PinloomHostEntry& entry = entries.at(row);
+            auto* item = new QListWidgetItem(entry.title, results);
+            item->setData(Qt::UserRole, entry.toVariantMap());
+            item->setToolTip(entryToolTip(entry));
+            if (preferred.isValid()
+                && entry.identity.entryId == preferred.entryId) {
+                preferredRow = row;
+            }
+        }
+    }
+    setStatus(QStringLiteral("%1 linked Pinloom item(s)")
+                  .arg(entries.size()));
+    if (entries.isEmpty()) {
+        selectedEntry = {};
+        titleLabel->setText(QStringLiteral("Pinloom bindings"));
+        detailsLabel->clear();
+        contentPreview->setPlainText(
+            QStringLiteral("No linked Pinloom item is available."));
+        return;
+    }
+    results->setCurrentRow(preferredRow >= 0 ? preferredRow : 0);
 }
 
 void PinloomContextView::applySearchResults(

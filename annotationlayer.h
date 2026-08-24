@@ -10,6 +10,7 @@
 
 enum class EditorAnnotationKind {
     Diagnostic,
+    PinloomLink,
     PortDefinition,
     EffectiveValue,
     TemplateSlot,

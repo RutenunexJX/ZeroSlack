@@ -41,6 +41,7 @@
 #include <QTextEdit>
 #include <QTextLayout>
 #include <QTimer>
+#include <QToolTip>
 #include <QStringList>
 
 #include <algorithm>
@@ -3060,6 +3061,31 @@ bool MyCodeEditorState::handleGutterMousePress(
     if (y < geometry.top || y > geometry.top + geometry.height)
         return false;
 
+    const qreal x = event->position().x();
+    if (annotationDisplayOptions.enabled
+        && x >= 29.0 && x <= 43.0) {
+        AnnotationLayerQuery query;
+        query.firstVisibleLine = block.blockNumber();
+        query.lastVisibleLine = block.blockNumber();
+        query.maxAnnotationsPerLine =
+            annotationDisplayOptions.maxAnnotationsPerLine;
+        query.maxLanes = qMax(2, annotationDisplayOptions.maxLanes);
+        const AnnotationLayerReport report = annotationLayer.resolve(query);
+        for (const ResolvedEditorAnnotation& resolved :
+             report.annotations) {
+            const EditorAnnotation& annotation = resolved.annotation;
+            if (annotation.kind == EditorAnnotationKind::PinloomLink
+                && annotation.placement
+                       == EditorAnnotationPlacement::Gutter
+                && annotation.range.firstLine
+                       == block.blockNumber()) {
+                emit editor->pinloomCodeLinkActivated(
+                    annotation.semanticKey);
+                return true;
+            }
+        }
+    }
+
     if (folding.foldRegionMarkModeActive())
         return folding.handleFoldRegionGutterLine(editor,
                                                   block.blockNumber());
@@ -3105,6 +3131,32 @@ bool MyCodeEditorState::handleGutterMouseMove(
     }
 
     const qreal x = event->position().x();
+    if (annotationDisplayOptions.enabled
+        && x >= 29.0 && x <= 43.0) {
+        AnnotationLayerQuery query;
+        query.firstVisibleLine = block.blockNumber();
+        query.lastVisibleLine = block.blockNumber();
+        query.maxAnnotationsPerLine =
+            annotationDisplayOptions.maxAnnotationsPerLine;
+        query.maxLanes = qMax(2, annotationDisplayOptions.maxLanes);
+        const AnnotationLayerReport report = annotationLayer.resolve(query);
+        for (const ResolvedEditorAnnotation& resolved :
+             report.annotations) {
+            const EditorAnnotation& annotation = resolved.annotation;
+            if (annotation.kind == EditorAnnotationKind::PinloomLink
+                && annotation.placement
+                       == EditorAnnotationPlacement::Gutter
+                && annotation.range.firstLine
+                       == block.blockNumber()) {
+                closeDiagnosticPeek();
+                QToolTip::showText(
+                    event->globalPosition().toPoint(),
+                    annotation.detail,
+                    editor);
+                return true;
+            }
+        }
+    }
     if (annotationDisplayOptions.enabled
         && x >= 14.0 && x <= 28.0
         && diagnosticSeverityByLine.contains(block.blockNumber())) {
@@ -3171,11 +3223,10 @@ void MyCodeEditorState::paintGutterDecorations(
     const QRect& rect) const
 {
     folding.paintGutter(editor, painter, rect);
-    if (!editor
-        || !annotationDisplayOptions.enabled
-        || diagnosticSeverityByLine.isEmpty()) {
+    if (!editor || !annotationDisplayOptions.enabled) {
         return;
     }
+    const QPalette palette = editor->palette();
 
     QTextBlock block = editor->firstVisibleBlock();
     AnnotationLayerQuery query;
@@ -3186,8 +3237,9 @@ void MyCodeEditorState::paintGutterDecorations(
             QPoint(0, qMax(0, rect.bottom()))).blockNumber());
     query.maxAnnotationsPerLine =
         annotationDisplayOptions.maxAnnotationsPerLine;
-    query.maxLanes = 1;
+    query.maxLanes = qMax(2, annotationDisplayOptions.maxLanes);
     QHash<int, SemanticDiagnostic::Severity> visibleDiagnostics;
+    QHash<int, EditorAnnotation> visiblePinloomLinks;
     const AnnotationLayerReport report = annotationLayer.resolve(query);
     for (const ResolvedEditorAnnotation& resolved :
          report.annotations) {
@@ -3195,11 +3247,19 @@ void MyCodeEditorState::paintGutterDecorations(
         if (annotation.kind != EditorAnnotationKind::Diagnostic
             || annotation.placement
                    != EditorAnnotationPlacement::Gutter) {
-            continue;
+            if (annotation.kind == EditorAnnotationKind::PinloomLink
+                && annotation.placement
+                       == EditorAnnotationPlacement::Gutter
+                && !visiblePinloomLinks.contains(
+                    annotation.range.firstLine)) {
+                visiblePinloomLinks.insert(
+                    annotation.range.firstLine, annotation);
+            }
+        } else {
+            visibleDiagnostics.insert(
+                annotation.range.firstLine,
+                annotationDiagnosticSeverity(annotation));
         }
-        visibleDiagnostics.insert(
-            annotation.range.firstLine,
-            annotationDiagnosticSeverity(annotation));
     }
 
     int top = static_cast<int>(
@@ -3233,6 +3293,25 @@ void MyCodeEditorState::paintGutterDecorations(
                 QRect(15, middle - 5, 12, 10),
                 Qt::AlignCenter,
                 QStringLiteral("!"));
+            painter.restore();
+        }
+        const auto pinloom =
+            visiblePinloomLinks.constFind(block.blockNumber());
+        if (pinloom != visiblePinloomLinks.constEnd()) {
+            const int middle = top + (bottom - top) / 2;
+            const QRect badge(30, middle - 6, 12, 12);
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing, true);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(palette.color(QPalette::Highlight));
+            painter.drawRoundedRect(badge, 4, 4);
+            painter.setPen(palette.color(QPalette::HighlightedText));
+            QFont badgeFont = painter.font();
+            badgeFont.setBold(true);
+            badgeFont.setPixelSize(8);
+            painter.setFont(badgeFont);
+            painter.drawText(badge, Qt::AlignCenter,
+                             pinloom->text.left(2));
             painter.restore();
         }
 
