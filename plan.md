@@ -2,7 +2,15 @@
 
 Product version: `v0.20.0`
 
-## Planned initiative: Live Insight visualization
+## Active cross-suite implementation
+
+The competition UI scope and cross-repository delivery order are frozen in
+[`APP_SUITE_UI_IMPLEMENTATION_PLAN.md`](APP_SUITE_UI_IMPLEMENTATION_PLAN.md).
+Context Peek width/height resizing is specified separately in
+[`CONTEXT_WORKSPACE_RESIZE_PLAN.md`](CONTEXT_WORKSPACE_RESIZE_PLAN.md).
+Implementation is active; packaging is explicitly excluded.
+
+## Active initiative: Live Insight visualization
 
 Module Diagram, State Diagram, Signal Hotspot, and Wave Preview will become
 revision-aware Context Workspace providers with compact sidebar entries and
@@ -11,7 +19,7 @@ WaveWorkbench will own the shared waveform renderer used by symbolic preview
 and simulated results. The planned architecture, migration order, and
 acceptance criteria are recorded in
 [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
-This initiative is not yet implemented and does not change the current package.
+Implementation is active and does not change the current package.
 
 ## Active initiative: Context Workspace
 

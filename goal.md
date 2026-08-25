@@ -2,15 +2,24 @@
 
 Product version: `v0.20.0`
 
-## Planned successor initiative
+## Active delivery goal
+
+Execute [`APP_SUITE_UI_IMPLEMENTATION_PLAN.md`](APP_SUITE_UI_IMPLEMENTATION_PLAN.md),
+including [`CONTEXT_WORKSPACE_RESIZE_PLAN.md`](CONTEXT_WORKSPACE_RESIZE_PLAN.md)
+and [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md),
+through per-repository implementation, verification, commit, and push. The
+formal package is not produced by this goal.
+
+## Live Insight implementation detail
 
 The next visualization initiative is defined in
 [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
 It will place compact live-insight entries in the Context Rail, open full
 resizable canvases in the editor area, make Module Diagram, State Diagram, and
 Signal Hotspot revision-aware, and replace ZeroSlack's private Wave Preview
-renderer with a reusable WaveWorkbench waveform view. It is recorded as
-planned work and is not part of the completed verification claims below.
+renderer with a reusable WaveWorkbench waveform view. It is active work and is
+not part of the completed verification claims below until its acceptance suite
+passes.
 
 ## Active initiative
 

@@ -1,6 +1,6 @@
 # Live Insight Visualization Plan
 
-Status: planned; no implementation or packaging is included in this change.
+Status: active; packaging is excluded.
 
 ## Purpose
 
