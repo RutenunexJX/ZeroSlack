@@ -35,6 +35,8 @@ class AnalysisCoordinator;
 class AnalysisScheduler;
 class CommandLayerCoordinator;
 class ContextWorkspaceController;
+class LiveInsightSession;
+class LiveInsightToolPage;
 class PinloomCodeLinkCoordinator;
 class PinloomHostClient;
 class EditorCoordinator;
@@ -77,6 +79,8 @@ struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
 struct SettingsCenterSnapshot;
 struct ScopedSearchPanelContext;
+struct ContextResource;
+struct LiveInsightToolContext;
 struct WaveSimulationObservationRequest;
 struct WaveSimulationObservationScopeRequest;
 
@@ -141,6 +145,9 @@ private:
     std::unique_ptr<CommandLayerCoordinator> commandLayerCoordinator;
     std::unique_ptr<ContextWorkspaceController>
         contextWorkspaceController;
+    std::unique_ptr<LiveInsightSession> liveInsightSession;
+    QHash<int, QPointer<LiveInsightToolPage>>
+        liveInsightToolPages;
     std::unique_ptr<PinloomCodeLinkCoordinator>
         pinloomCodeLinkCoordinator;
     std::unique_ptr<PinloomHostClient> pinloomHostClient;
@@ -256,6 +263,12 @@ private:
     void setupFoldBlockShelf();
     void setupPanelLayoutController();
     void setupContextWorkspace();
+    void requestLiveInsightUpdates();
+    void refreshLiveInsightToolPages(int kindValue);
+    void openLiveInsightFullView(
+        const ContextResource& resource);
+    LiveInsightToolContext activeLiveInsightToolContext() const;
+    QString liveInsightWaveformLibraryPath() const;
     void setupViewMenu();
     void setupWorkspaceMenu();
     void refreshWorkspaceMenuEntries();
@@ -375,9 +388,6 @@ private:
         const QString& changedFileName = QString());
     void runActiveEditorPassiveRefresh();
     void refreshActiveEditorWavePreview();
-    void applyActiveEditorWavePreviewChange(
-        MyCodeEditor* editor,
-        const DocumentChange& change);
 
 };
 

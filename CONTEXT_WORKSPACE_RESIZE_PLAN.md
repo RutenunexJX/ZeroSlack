@@ -1,6 +1,21 @@
 # Context Workspace Resize Implementation
 
-Status: active
+Status: completed
+
+## Completion evidence
+
+- Transient width, height, and corner dragging, preferred-size reset, anchoring,
+  minimum/maximum bounds, persistence, restoration, Pin/Unpin, and host-resize
+  behavior are covered by `context_workspace_test` and
+  `workspace_persistence_test` in the Release suite.
+- The default test plus `context_workspace_125pct_dpi_test`,
+  `context_workspace_150pct_dpi_test`, and
+  `context_workspace_200pct_dpi_test` passed, covering 100, 125, 150, and 200
+  percent logical scaling without clipped handles or content.
+- The 960x720 and 1440x900 light/dark screenshots under
+  `build/codex-release-full/artifacts/ui/live-insights` provide reproducible
+  responsive-size evidence. The complete Release CTest result is `99/99`.
+- No application or formal package was generated or modified.
 
 ## Required behavior
 

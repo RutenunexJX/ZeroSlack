@@ -700,9 +700,11 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     toolbar->setSpacing(6);
     trackModeButton = modeButton(QStringLiteral("Track"), this);
     matrixModeButton = modeButton(QStringLiteral("Matrix"), this);
+    trackModeButton->setObjectName(
+        QStringLiteral("signalUsageHotspotTrackModeButton"));
+    matrixModeButton->setObjectName(
+        QStringLiteral("signalUsageHotspotMatrixModeButton"));
     trackModeButton->setChecked(true);
-    trackModeButton->setVisible(false);
-    matrixModeButton->setVisible(false);
     searchEdit = new QLineEdit(this);
     searchEdit->setPlaceholderText(QStringLiteral("Search usage"));
     InsightVisualStyle::applySearchField(searchEdit);
@@ -804,12 +806,8 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
                                 resetLayoutButton}) {
         InsightVisualStyle::applyToolbarButton(button);
     }
-    searchEdit->setVisible(false);
-    zoomOutButton->setVisible(false);
-    zoomInButton->setVisible(false);
-    fitButton->setVisible(false);
-    centerCurrentButton->setVisible(false);
-    resetLayoutButton->setVisible(false);
+    toolbar->addWidget(trackModeButton);
+    toolbar->addWidget(matrixModeButton);
     toolbar->addWidget(searchEdit, 1);
     toolbar->addWidget(zoomOutButton);
     toolbar->addWidget(zoomInButton);
@@ -829,7 +827,6 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
         check->setChecked(true);
         check->setProperty("hotspotRole", static_cast<int>(role));
         InsightVisualStyle::applySegmentedCheckBox(check);
-        check->setVisible(false);
         roleChecks.append(check);
         roleLayout->addWidget(check);
     }
@@ -855,7 +852,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     trackView->setContextMenuPolicy(Qt::CustomContextMenu);
     modeStack->addWidget(trackView);
 
-    auto* matrixPage = new QWidget(contentSplitter);
+    auto* matrixPage = new QWidget(modeStack);
     auto* matrixLayout = new QHBoxLayout(matrixPage);
     matrixLayout->setContentsMargins(0, 0, 0, 0);
     matrixLayout->setSpacing(0);
@@ -879,19 +876,22 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     matrixItemsTree->setRootIsDecorated(false);
     matrixItemsTree->setVisible(false);
 
-    auto* inspector = new QWidget(matrixPage);
-    inspector->setObjectName(QStringLiteral("signalUsageHotspotInspector"));
-    inspector->setMinimumWidth(250);
-    inspector->setMaximumWidth(300);
-    InsightVisualStyle::applySideInspector(inspector);
-    auto* inspectorLayout = new QVBoxLayout(inspector);
-    inspectorLayout->setContentsMargins(10, 90, 8, 10);
+    inspectorPanel = new QWidget(contentSplitter);
+    inspectorPanel->setObjectName(
+        QStringLiteral("signalUsageHotspotInspector"));
+    inspectorPanel->setMinimumWidth(220);
+    inspectorPanel->setMaximumWidth(300);
+    InsightVisualStyle::applySideInspector(inspectorPanel);
+    auto* inspectorLayout = new QVBoxLayout(inspectorPanel);
+    inspectorLayout->setContentsMargins(10, 10, 8, 10);
     inspectorLayout->setSpacing(8);
-    inspectorTitleLabel = new QLabel(QStringLiteral("Cell Details"), inspector);
+    inspectorTitleLabel = new QLabel(
+        QStringLiteral("Evidence Details"), inspectorPanel);
     inspectorTitleLabel->setFont(
         InsightVisualStyle::titleFont(inspectorTitleLabel->font()));
     inspectorDetailLabel = new QLabel(
-        QStringLiteral("Select a matrix cell to see hits."), inspector);
+        QStringLiteral("Select a usage or matrix cell to inspect its source evidence."),
+        inspectorPanel);
     inspectorDetailLabel->setTextFormat(Qt::RichText);
     inspectorDetailLabel->setWordWrap(true);
     inspectorDetailLabel->setTextInteractionFlags(Qt::TextSelectableByMouse
@@ -925,14 +925,12 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
                 refreshThemePresentation();
             });
     matrixLayout->addWidget(matrixView, 1);
-    matrixLayout->addWidget(inspector, 0);
-    inspector->setVisible(false);
     matrixItemsTree->setParent(matrixPage);
+    modeStack->addWidget(matrixPage);
     contentSplitter->addWidget(modeStack);
-    contentSplitter->addWidget(matrixPage);
-    matrixPage->setVisible(true);
-    contentSplitter->setStretchFactor(0, 6);
-    contentSplitter->setStretchFactor(1, 7);
+    contentSplitter->addWidget(inspectorPanel);
+    contentSplitter->setStretchFactor(0, 1);
+    contentSplitter->setStretchFactor(1, 0);
     rootLayout->addWidget(contentSplitter, 1);
     restoreLayout();
 
@@ -1034,6 +1032,8 @@ void SignalUsageHotspotPanel::setStatusMessageHandler(
 void SignalUsageHotspotPanel::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
+    if (inspectorPanel)
+        inspectorPanel->setVisible(width() >= 760);
     if (!currentReport.found || currentReport.items.isEmpty())
         return;
     QTimer::singleShot(0, this, [this]() {
@@ -1400,15 +1400,32 @@ QString SignalUsageHotspotPanel::currentDeclarationDisplayNameForTest() const
     return currentReport.declarationDisplayName;
 }
 
+void SignalUsageHotspotPanel::setMatrixModeForTest(bool matrixMode)
+{
+    setMode(matrixMode);
+}
+
+bool SignalUsageHotspotPanel::matrixModeForTest() const
+{
+    return modeStack && modeStack->currentIndex() == 1;
+}
+
 void SignalUsageHotspotPanel::setMode(bool matrixMode)
 {
-    Q_UNUSED(matrixMode);
     if (trackModeButton)
-        trackModeButton->setChecked(true);
+        trackModeButton->setChecked(!matrixMode);
     if (matrixModeButton)
-        matrixModeButton->setChecked(false);
+        matrixModeButton->setChecked(matrixMode);
     if (modeStack)
-        modeStack->setCurrentIndex(0);
+        modeStack->setCurrentIndex(matrixMode ? 1 : 0);
+    for (QPushButton* button : {zoomOutButton,
+                                zoomInButton,
+                                fitButton,
+                                centerCurrentButton,
+                                resetLayoutButton}) {
+        if (button)
+            button->setVisible(!matrixMode);
+    }
     saveLayout();
     rebuild();
 }
@@ -2881,7 +2898,7 @@ bool SignalUsageHotspotPanel::resetLayout()
     selectedItemIndex = -1;
     const bool zoomReset = setTrackZoom(1.0);
     if (contentSplitter)
-        contentSplitter->setSizes({820, 980});
+        contentSplitter->setSizes({900, 280});
     saveLayout();
     rebuild();
     return zoomReset;
@@ -2893,8 +2910,10 @@ void SignalUsageHotspotPanel::restoreLayout()
     settings.beginGroup(QString::fromLatin1(kSettingsGroup));
     trackZoomFactor = settings.value(QStringLiteral("trackZoom"), 1.0).toDouble();
     trackZoomFactor = std::clamp(trackZoomFactor, kMinTrackZoom, kMaxTrackZoom);
+    const int savedMode = qBound(
+        0, settings.value(QStringLiteral("mode"), 0).toInt(), 1);
     if (modeStack)
-        modeStack->setCurrentIndex(0);
+        modeStack->setCurrentIndex(savedMode);
     const QByteArray splitterState =
         settings.value(QStringLiteral("splitterState")).toByteArray();
     settings.endGroup();
@@ -2902,13 +2921,21 @@ void SignalUsageHotspotPanel::restoreLayout()
         contentSplitter->restoreState(splitterState);
     if (contentSplitter) {
         const QList<int> sizes = contentSplitter->sizes();
-        if (sizes.size() < 2 || sizes.value(0) < 560 || sizes.value(1) < 720) {
-            contentSplitter->setSizes({820, 980});
+        if (sizes.size() < 2 || sizes.value(0) < 360 || sizes.value(1) < 180) {
+            contentSplitter->setSizes({900, 280});
         }
     }
     if (trackModeButton && matrixModeButton) {
-        trackModeButton->setChecked(true);
-        matrixModeButton->setChecked(false);
+        trackModeButton->setChecked(savedMode == 0);
+        matrixModeButton->setChecked(savedMode == 1);
+    }
+    for (QPushButton* button : {zoomOutButton,
+                                zoomInButton,
+                                fitButton,
+                                centerCurrentButton,
+                                resetLayoutButton}) {
+        if (button)
+            button->setVisible(savedMode == 0);
     }
 }
 
@@ -2919,7 +2946,8 @@ void SignalUsageHotspotPanel::saveLayout() const
     if (contentSplitter)
         settings.setValue(QStringLiteral("splitterState"),
                           contentSplitter->saveState());
-    settings.setValue(QStringLiteral("mode"), 0);
+    settings.setValue(QStringLiteral("mode"),
+                      modeStack ? modeStack->currentIndex() : 0);
     settings.setValue(QStringLiteral("trackZoom"), trackZoomFactor);
     settings.endGroup();
 }

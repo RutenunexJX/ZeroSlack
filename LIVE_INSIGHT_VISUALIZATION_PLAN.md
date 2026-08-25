@@ -1,6 +1,28 @@
 # Live Insight Visualization Plan
 
-Status: active; packaging is excluded.
+Status: completed; packaging was excluded.
+
+## Completion evidence
+
+- Module Diagram, State Diagram, Signal Hotspot, and Wave Preview now share the
+  Live Insights sidebar/session model, bounded update scheduling, generation
+  and cancellation guards, latest-wins publication, semantic visual states,
+  stable layout, selection, and source navigation.
+- The Release tree `build/codex-release-full` built successfully and its full
+  configured CTest suite passed `99/99`.
+- `waveform_preview_real_library_test` loaded the real WaveWorkbench library
+  from baseline `99d75ab`, validated both waveform contracts and strict
+  generation-tagged payload handling, and covered malformed, stale, source
+  navigation, and host-destruction paths.
+- `live_insights_wave_ready_1440x900_dark.png` in
+  `build/codex-release-full/artifacts/ui/live-insights` is the stable-state
+  evidence for the real `wave::WaveformView`; it visibly renders the symbolic
+  lanes rather than only the pending/state shell. The four
+  `live_insights_context_*` screenshots cover 960x720 and 1440x900 in light and
+  dark themes.
+- The standard Context Workspace test and its 125, 150, and 200 percent scale
+  variants passed, giving automated 100/125/150/200 percent bounds and clipping
+  coverage. No package was generated or modified.
 
 ## Purpose
 

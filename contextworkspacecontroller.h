@@ -63,7 +63,8 @@ public:
     void clearResources();
     ContextWorkspaceState captureState() const;
     ContextWorkspaceRestoreResult restoreState(
-        const ContextWorkspaceState& state);
+        const ContextWorkspaceState& state,
+        bool preserveRestoredDockGeometry = false);
 
 signals:
     void providerActivationRequested(const QString& providerId);
@@ -88,7 +89,10 @@ private:
              std::unique_ptr<IContextContentProvider>> providers;
     QString currentWorkspaceRoot;
     QString transientDockResourceKey;
+    int preferredDockWidthValue =
+        ContextWorkspaceState::kDefaultDockWidth;
     bool restoringState = false;
+    bool applyingDockWidth = false;
 
     IContextContentProvider* providerFor(
         const ContextResource& resource) const;
@@ -101,6 +105,9 @@ private:
         const ContextResource& resource);
     void updateActiveRailEntry();
     bool activatePinnedProvider(const QString& providerId);
+    void resetPeekToProviderPreferredSize();
+    int boundedDockWidthForWindow(int width) const;
+    void showDock(bool applyPreferredWidth);
     void notifyWorkspaceStateChanged();
 };
 

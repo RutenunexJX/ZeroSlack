@@ -1,39 +1,44 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.20.0`
+Product version: `v0.21.0`
 
-## Active delivery goal
+## Completed delivery goal
 
-Execute [`APP_SUITE_UI_IMPLEMENTATION_PLAN.md`](APP_SUITE_UI_IMPLEMENTATION_PLAN.md),
+The ZeroSlack portion of
+[`APP_SUITE_UI_IMPLEMENTATION_PLAN.md`](APP_SUITE_UI_IMPLEMENTATION_PLAN.md),
 including [`CONTEXT_WORKSPACE_RESIZE_PLAN.md`](CONTEXT_WORKSPACE_RESIZE_PLAN.md)
 and [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md),
-through per-repository implementation, verification, commit, and push. The
-formal package is not produced by this goal.
+is complete. The formal package was not produced or modified by this goal.
 
 ## Live Insight implementation detail
 
-The next visualization initiative is defined in
+The completed visualization initiative is defined in
 [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
-It will place compact live-insight entries in the Context Rail, open full
-resizable canvases in the editor area, make Module Diagram, State Diagram, and
-Signal Hotspot revision-aware, and replace ZeroSlack's private Wave Preview
-renderer with a reusable WaveWorkbench waveform view. It is active work and is
-not part of the completed verification claims below until its acceptance suite
-passes.
+It places compact live-insight entries in the Context Rail, opens full
+resizable canvases in the editor area, makes Module Diagram, State Diagram, and
+Signal Hotspot revision-aware, and replaces ZeroSlack's private Wave Preview
+renderer with the reusable WaveWorkbench `wave::WaveformView`. The acceptance
+suite has passed and is included in the verification result below.
 
-## Active initiative
+## Completed initiative
 
-Complete the provider-based Context Workspace described in
-[`CONTEXT_WORKSPACE_PLAN.md`](CONTEXT_WORKSPACE_PLAN.md). The host foundation,
-temporary-editor migration, portable session restoration, theme integration,
-legacy-overlay cleanup, and Pinloom integration are complete. Wave, FSM, and
-diagram content can enter through providers rather than introducing new window
-management code.
+The provider-based Context Workspace described in
+[`CONTEXT_WORKSPACE_PLAN.md`](CONTEXT_WORKSPACE_PLAN.md) is complete. It includes
+the host foundation, temporary-editor migration, portable session restoration,
+theme integration, legacy-overlay cleanup, and Pinloom integration. Wave, FSM,
+and diagram content now enter through providers rather than introducing new
+window management code. Context width and height resizing, bounds, persistence,
+and restoration are complete.
 
-Verification status: ZeroSlack passes all `92/92` configured tests. Pinloom
-passes all `6/6` configured tests, and the real cross-process host bridge has
-been verified for capabilities, search, stable-identity resolution, and source-
-anchor creation.
+Verification status: the full Release suite passes all `99/99` configured
+tests. This includes the real WaveWorkbench `99d75ab` round trip, strict wave
+payload and lifecycle checks, responsive 960x720 and 1440x900 light/dark
+screenshots, and Context Workspace tests at 100, 125, 150, and 200 percent
+logical scaling. The stable wave evidence is
+`live_insights_wave_ready_1440x900_dark.png` under
+`build/codex-release-full/artifacts/ui/live-insights`. Pinloom passes all `7/7`
+configured tests, and the real cross-process host bridge has been verified for
+capabilities, search, stable-identity resolution, and source-anchor creation.
 
 ## Objective
 

@@ -90,6 +90,8 @@ public:
     quint64 reportBuildRequestCountForTest() const;
     int selectedItemIndexForTest() const;
     QString currentDeclarationDisplayNameForTest() const;
+    void setMatrixModeForTest(bool matrixMode);
+    bool matrixModeForTest() const;
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -119,6 +121,7 @@ private:
     QGraphicsScene* matrixScene = nullptr;
     InsightGraphView* matrixView = nullptr;
     QTreeWidget* matrixItemsTree = nullptr;
+    QWidget* inspectorPanel = nullptr;
     QLabel* inspectorTitleLabel = nullptr;
     QLabel* inspectorDetailLabel = nullptr;
 

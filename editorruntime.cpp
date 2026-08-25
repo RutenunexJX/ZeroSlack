@@ -216,6 +216,19 @@ bool hasDeclareSignalIssue(
     return false;
 }
 
+int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
+{
+    switch (severity) {
+    case SemanticDiagnostic::Error:
+        return 2;
+    case SemanticDiagnostic::Warning:
+        return 1;
+    case SemanticDiagnostic::Info:
+    default:
+        return 0;
+    }
+}
+
 QColor diagnosticSeverityColor(SemanticDiagnostic::Severity severity)
 {
     return severity == SemanticDiagnostic::Error
@@ -3256,9 +3269,16 @@ void MyCodeEditorState::paintGutterDecorations(
                     annotation.range.firstLine, annotation);
             }
         } else {
-            visibleDiagnostics.insert(
-                annotation.range.firstLine,
-                annotationDiagnosticSeverity(annotation));
+            const SemanticDiagnostic::Severity candidate =
+                annotationDiagnosticSeverity(annotation);
+            const auto existing = visibleDiagnostics.constFind(
+                annotation.range.firstLine);
+            if (existing == visibleDiagnostics.constEnd()
+                || diagnosticSeverityRank(candidate)
+                       > diagnosticSeverityRank(existing.value())) {
+                visibleDiagnostics.insert(
+                    annotation.range.firstLine, candidate);
+            }
         }
     }
 

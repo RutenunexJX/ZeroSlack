@@ -87,6 +87,7 @@ struct FsmGraph {
     QString stateRegisterTypeDisplayName;
     QString stateRegisterSourceRoleDisplayName;
     QString nextStateSignalDisplayName;
+    QString initialStateDisplayName;
     QString nextStateSignalTypeDisplayName;
     QString nextStateSignalSourceRoleDisplayName;
     QString statesGroupDisplayName;

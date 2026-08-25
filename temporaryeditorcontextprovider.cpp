@@ -180,6 +180,9 @@ TemporaryEditorContextProvider::capabilities(
     result.minimumWidth = 360;
     result.preferredWidth = 580;
     result.maximumWidth = 900;
+    result.minimumHeight = 260;
+    result.preferredHeight = 480;
+    result.maximumHeight = 920;
     return result;
 }
 

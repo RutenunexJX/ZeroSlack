@@ -451,11 +451,12 @@ void exerciseFoldAnchorBoundariesAndFindReveal()
 
 void exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection()
 {
-    QString text = QStringLiteral("module huge;\n// fold huge\n");
+    QString text = QStringLiteral(
+        "module huge;\n// fold huge\n/* projection fixture\n");
     text.reserve(1700000);
     for (int line = 0; line < 100000; ++line)
-        text += QStringLiteral("// folded body %1\n").arg(line);
-    text += QStringLiteral("// endfold\nendmodule\n");
+        text += QStringLiteral("folded body %1\n").arg(line);
+    text += QStringLiteral("*/\n// endfold\nendmodule\n");
 
     ProjectionTestEditor editor;
     editor.resize(720, 420);

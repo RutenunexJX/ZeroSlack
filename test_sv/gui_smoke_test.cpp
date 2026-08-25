@@ -73,6 +73,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
+#include <iostream>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -111,6 +112,7 @@
 #include "globalcontrolservice.h"
 #include "hierarchyservice.h"
 #include "insightfocuscontroller.h"
+#include "liveinsightsession.h"
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
 #include "navigationwidget.h"
@@ -14241,6 +14243,10 @@ int main(int argc, char** argv)
         viewWavePreviewAction->trigger();
     }
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    WavePreviewPanelCoordinator* waveCoordinator =
+        window.semanticDocks
+            ? window.semanticDocks->wavePreviewPanelCoordinator()
+            : nullptr;
     QTreeWidget* waveTree = wavePreviewTree(window);
     bool sawWaveQ = false;
     bool sawWaveOut = false;
@@ -14364,36 +14370,43 @@ int main(int argc, char** argv)
                        QStringLiteral("activity assign 1/comb 1/seq 1")),
                true);
     QWidget* waveCanvas = wavePreviewCanvas(window);
+    QWidget* sharedWaveformView = waveCoordinator
+        ? waveCoordinator->waveformViewForTest()
+        : nullptr;
     expectBool("wave preview canvas exists",
                waveCanvas != nullptr,
                true);
-    expectBool("wave preview canvas renders sketch",
-               renderedWidgetHasColorVariation(waveCanvas),
+    expectBool("wave preview canvas hosts shared waveform view",
+               waveCanvas && sharedWaveformView
+                   && sharedWaveformView->parentWidget() == waveCanvas
+                   && sharedWaveformView->isVisible(),
                true);
-    if (waveCanvas) {
-        const int labelWidth =
-            std::min(130, std::max(84, waveCanvas->width() / 4));
-        const QPoint traceLanePoint(10 + qMin(32, labelWidth - 12),
-                                    44 + 16);
-        QTest::mouseMove(waveCanvas, traceLanePoint);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        QTest::mouseClick(waveCanvas,
-                          Qt::LeftButton,
-                          Qt::NoModifier,
-                          traceLanePoint);
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("wave preview canvas hover has waveform details",
-               waveCanvas
-                   && waveCanvas->toolTip().contains(
-                       QStringLiteral("waveform signal:")),
+    const QStringList waveformCapabilities = sharedWaveformView
+        ? sharedWaveformView->property(
+              "wavewidgets.capabilities").toStringList()
+        : QStringList();
+    expectBool("shared waveform view accepts symbolic payload",
+               sharedWaveformView
+                   && sharedWaveformView->property(
+                          "wavewidgets.contract").toString()
+                          == QStringLiteral(
+                              "wave-workbench.waveform-view/v1")
+                   && sharedWaveformView->property(
+                          "wavewidgets.previewContract").toString()
+                          == QStringLiteral("wave-preview/v1")
+                   && sharedWaveformView->property(
+                          "previewMode").toString()
+                          == QStringLiteral("symbolic")
+                   && sharedWaveformView->property(
+                          "previewGeneration").toULongLong() > 0,
                true);
-    expectBool("wave preview canvas click selects waveform summary",
-               waveSummary
-                   && waveSummary->text().contains(
-                       QStringLiteral("Selected waveform"))
-                   && waveSummary->text().contains(
-                       QStringLiteral("values")),
+    expectBool("shared waveform view exposes interaction capabilities",
+               waveformCapabilities.contains(
+                   QStringLiteral("generation-replace/v1"))
+                   && waveformCapabilities.contains(
+                       QStringLiteral("waveform-theme/v1"))
+                   && waveformCapabilities.contains(
+                       QStringLiteral("source-navigation/v1")),
                true);
     if (waveEditor) {
         const QString waveSelectionText = waveEditor->toPlainText();
@@ -14535,10 +14548,6 @@ int main(int argc, char** argv)
     expectBool("wave preview refreshes dirty editor text",
                waveTree && sawWaveZ,
                true);
-    WavePreviewPanelCoordinator* waveCoordinator =
-        window.semanticDocks
-            ? window.semanticDocks->wavePreviewPanelCoordinator()
-            : nullptr;
     auto currentWaveAssignmentExpression = [waveEditor]() {
         if (!waveEditor)
             return QString();
@@ -14566,6 +14575,7 @@ int main(int argc, char** argv)
         waveCoordinator->resetRefreshMetricsForTest();
     if (waveEditor)
         QTest::keyClick(waveEditor, Qt::Key_X);
+    QTest::qWait(420);
     const QString visibleExpectedExpression =
         currentWaveAssignmentExpression();
     const WavePreviewRefreshMetrics visibleWaveMetrics =
@@ -14585,17 +14595,60 @@ int main(int argc, char** argv)
             }
         }
     }
-    expectBool("visible wave preview renders one synchronous document delta",
-               waveEditor && waveCoordinator
-                   && visibleWaveMetrics.documentChangeRenderCount == 1
-                   && visibleWaveMetrics.renderCount == 1
-                   && visibleWaveMetrics.scopeDeltaUpdateCount == 1
-                   && visibleWaveMetrics.scopeRebuildCount == 0,
+    const bool visibleWaveRenderedLatest =
+        waveEditor && waveCoordinator
+        && visibleWaveMetrics.renderCount == 1
+        && visibleWaveMetrics.documentChangeRenderCount == 0
+        && visibleWaveMetrics.scopeDeltaUpdateCount == 0
+        && visibleWaveMetrics.scopeRebuildCount == 1;
+    const bool visibleWaveParsedLatest =
+        waveEditor && visibleWaveConsumedLatestText
+        && visibleWaveMetrics.lastParsedCharacterCount
+               < waveEditor->cachedDocumentText().size();
+    if (!visibleWaveRenderedLatest || !visibleWaveParsedLatest) {
+        const LiveInsightSnapshot liveWaveSnapshot =
+            window.liveInsightSession
+                ? window.liveInsightSession->snapshot(
+                      LiveInsightKind::Wave)
+                : LiveInsightSnapshot();
+        std::cerr << "wave latest snapshot metrics: render="
+                  << visibleWaveMetrics.renderCount
+                  << " documentDelta="
+                  << visibleWaveMetrics.documentChangeRenderCount
+                  << " scopeDelta="
+                  << visibleWaveMetrics.scopeDeltaUpdateCount
+                  << " scopeRebuild="
+                  << visibleWaveMetrics.scopeRebuildCount
+                  << " parsedChars="
+                  << visibleWaveMetrics.lastParsedCharacterCount
+                  << " documentChars="
+                  << (waveEditor
+                          ? waveEditor->cachedDocumentText().size()
+                          : -1)
+                  << " expected="
+                  << visibleExpectedExpression.toStdString()
+                  << " consumed="
+                  << (visibleWaveConsumedLatestText ? "true" : "false")
+                  << " dockVisible="
+                  << (wavePreviewDock && wavePreviewDock->isVisible()
+                          ? "true" : "false")
+                  << " sessionVisible="
+                  << (liveWaveSnapshot.visible ? "true" : "false")
+                  << " phase="
+                  << static_cast<int>(liveWaveSnapshot.phase)
+                  << " requested="
+                  << liveWaveSnapshot.requestedGeneration
+                  << " published="
+                  << liveWaveSnapshot.publishedGeneration
+                  << " stale="
+                  << (liveWaveSnapshot.stale ? "true" : "false")
+                  << '\n';
+    }
+    expectBool("visible wave preview renders one debounced latest snapshot",
+               visibleWaveRenderedLatest,
                true);
     expectBool("visible wave preview consumes latest scoped text",
-               waveEditor && visibleWaveConsumedLatestText
-                   && visibleWaveMetrics.lastParsedCharacterCount
-                          < waveEditor->cachedDocumentText().size(),
+               visibleWaveParsedLatest,
                true);
 
     if (waveCoordinator)

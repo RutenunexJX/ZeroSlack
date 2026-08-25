@@ -1102,7 +1102,7 @@ int main(int argc, char** argv) {
     if (diagnosticGutter) {
         const QImage gutterImage = diagnosticGutter->grab().toImage();
         for (int y = 0; y < gutterImage.height(); ++y) {
-            for (int x = 14; x < qMin(29, gutterImage.width()); ++x) {
+            for (int x = 0; x < gutterImage.width(); ++x) {
                 const QColor pixel = gutterImage.pixelColor(x, y);
                 gutterHasRedIcon = gutterHasRedIcon
                     || (pixel.red() > 210

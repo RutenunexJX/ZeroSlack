@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.20.0`
+Current version: `v0.21.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax

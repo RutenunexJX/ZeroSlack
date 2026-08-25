@@ -1,18 +1,125 @@
 #include "contextpeekhost.h"
 
+#include "contextworkspacestate.h"
+
+#include <QEnterEvent>
 #include <QEvent>
 #include <QHBoxLayout>
+#include <QHideEvent>
 #include <QLabel>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPalette>
+#include <QResizeEvent>
 #include <QShortcut>
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include <algorithm>
-
 namespace {
-constexpr int kMinimumPeekWidth = 280;
-constexpr int kMaximumPeekWidth = 920;
+constexpr int kMinimumRemainingEditorWidth = 240;
+constexpr int kMinimumResizeHitExtent = 8;
+constexpr int kMinimumCornerHitExtent = 16;
+
+enum class HandleKind {
+    Left,
+    Bottom,
+    Corner
+};
+
+class ContextPeekResizeHandle final : public QWidget
+{
+public:
+    ContextPeekResizeHandle(HandleKind kindValue,
+                            QWidget* parent)
+        : QWidget(parent)
+        , kind(kindValue)
+    {
+        setAttribute(Qt::WA_StyledBackground, false);
+        setFocusPolicy(Qt::NoFocus);
+        setMouseTracking(true);
+    }
+
+    void setPressed(bool value)
+    {
+        if (pressed == value)
+            return;
+        pressed = value;
+        update();
+    }
+
+protected:
+    void enterEvent(QEnterEvent* event) override
+    {
+        hovered = true;
+        update();
+        QWidget::enterEvent(event);
+    }
+
+    void leaveEvent(QEvent* event) override
+    {
+        hovered = false;
+        update();
+        QWidget::leaveEvent(event);
+    }
+
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        const QPalette activePalette = palette();
+        QColor surface = activePalette.color(QPalette::Highlight);
+        surface.setAlpha(pressed ? 92 : (hovered ? 58 : 28));
+        painter.fillRect(rect(), surface);
+
+        QColor line = hovered || pressed
+            ? activePalette.color(QPalette::Highlight)
+            : activePalette.color(QPalette::Mid);
+        QPen pen(line, pressed ? 2.0 : 1.0);
+        pen.setCosmetic(true);
+        painter.setPen(pen);
+
+        if (kind == HandleKind::Left) {
+            const int x = width() / 2;
+            painter.drawLine(x, 0, x, height());
+            const int center = height() / 2;
+            for (int offset : {-6, 0, 6}) {
+                painter.drawLine(qMax(0, x - 2), center + offset,
+                                 qMin(width() - 1, x + 2), center + offset);
+            }
+        } else if (kind == HandleKind::Bottom) {
+            const int y = height() / 2;
+            painter.drawLine(0, y, width(), y);
+            const int center = width() / 2;
+            for (int offset : {-6, 0, 6}) {
+                painter.drawLine(center + offset, qMax(0, y - 2),
+                                 center + offset, qMin(height() - 1, y + 2));
+            }
+        } else {
+            const int inset = qMax(3, qMin(width(), height()) / 4);
+            painter.drawLine(inset, height() - inset,
+                             width() - inset, inset);
+            painter.drawLine(inset + 4, height() - inset,
+                             width() - inset, inset + 4);
+        }
+    }
+
+private:
+    HandleKind kind;
+    bool hovered = false;
+    bool pressed = false;
+};
+
+int resizeHandleThickness(const QWidget* widget)
+{
+    if (!widget || !widget->style())
+        return kMinimumResizeHitExtent;
+    return qMax(
+        kMinimumResizeHitExtent,
+        widget->style()->pixelMetric(
+            QStyle::PM_SplitterWidth,
+            nullptr,
+            widget));
+}
 }
 
 ContextPeekHost::ContextPeekHost(QWidget* editorRegion)
@@ -29,6 +136,7 @@ ContextPeekHost::ContextPeekHost(QWidget* editorRegion)
 
 ContextPeekHost::~ContextPeekHost()
 {
+    finishResize(false);
     if (parentWidget())
         parentWidget()->removeEventFilter(this);
 }
@@ -48,19 +156,38 @@ QWidget* ContextPeekHost::view() const
     return currentView;
 }
 
+QSize ContextPeekHost::preferredSize() const
+{
+    return preferredSizeValue;
+}
+
 int ContextPeekHost::preferredWidth() const
 {
-    return preferredWidthValue;
+    return preferredSizeValue.width();
+}
+
+int ContextPeekHost::preferredHeight() const
+{
+    return preferredSizeValue.height();
+}
+
+void ContextPeekHost::setPreferredSize(const QSize& size)
+{
+    const QSize bounded = boundedStoredSize(size);
+    if (preferredSizeValue == bounded)
+        return;
+    preferredSizeValue = bounded;
+    synchronizeGeometry();
 }
 
 void ContextPeekHost::setPreferredWidth(int width)
 {
-    const int bounded = std::clamp(
-        width, kMinimumPeekWidth, kMaximumPeekWidth);
-    if (preferredWidthValue == bounded)
-        return;
-    preferredWidthValue = bounded;
-    synchronizeGeometry();
+    setPreferredSize(QSize(width, preferredSizeValue.height()));
+}
+
+void ContextPeekHost::setPreferredHeight(int height)
+{
+    setPreferredSize(QSize(preferredSizeValue.width(), height));
 }
 
 void ContextPeekHost::setActionsAvailable(
@@ -136,12 +263,24 @@ void ContextPeekHost::clearView()
 
 bool ContextPeekHost::eventFilter(QObject* watched, QEvent* event)
 {
+    if ((watched == leftResizeHandle
+         || watched == bottomResizeHandle
+         || watched == cornerResizeHandle)
+        && event) {
+        return handleResizeEvent(
+            static_cast<QWidget*>(watched), event);
+    }
     if (watched == parentWidget() && event) {
         switch (event->type()) {
         case QEvent::Resize:
+            finishResize(false);
+            [[fallthrough]];
         case QEvent::Show:
         case QEvent::LayoutRequest:
             synchronizeGeometry();
+            break;
+        case QEvent::Hide:
+            finishResize(false);
             break;
         default:
             break;
@@ -150,11 +289,23 @@ bool ContextPeekHost::eventFilter(QObject* watched, QEvent* event)
     return QWidget::eventFilter(watched, event);
 }
 
+void ContextPeekHost::hideEvent(QHideEvent* event)
+{
+    finishResize(false);
+    QWidget::hideEvent(event);
+}
+
+void ContextPeekHost::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateResizeHandleGeometry();
+}
+
 void ContextPeekHost::buildUi()
 {
-    auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
+    rootLayout = new QVBoxLayout(this);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
 
     header = new QWidget(this);
     header->setObjectName(QStringLiteral("contextPeekHeader"));
@@ -186,14 +337,16 @@ void ContextPeekHost::buildUi()
         style()->standardIcon(QStyle::SP_DialogCloseButton));
     closeButton->setToolTip(tr("Close preview"));
     headerLayout->addWidget(closeButton);
-    root->addWidget(header);
+    rootLayout->addWidget(header);
 
     contentHost = new QWidget(this);
     contentHost->setObjectName(QStringLiteral("contextPeekContent"));
     contentLayout = new QVBoxLayout(contentHost);
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(0);
-    root->addWidget(contentHost, 1);
+    rootLayout->addWidget(contentHost, 1);
+
+    buildResizeHandles();
 
     connect(pinButton,
             &QToolButton::clicked,
@@ -213,7 +366,52 @@ void ContextPeekHost::buildUi()
     connect(escape,
             &QShortcut::activated,
             this,
-            &ContextPeekHost::closeRequested);
+            [this]() {
+                finishResize(false);
+                emit closeRequested();
+            });
+}
+
+void ContextPeekHost::buildResizeHandles()
+{
+    leftResizeHandle = new ContextPeekResizeHandle(
+        HandleKind::Left, this);
+    leftResizeHandle->setObjectName(
+        QStringLiteral("contextPeekResizeLeft"));
+    leftResizeHandle->setAccessibleName(
+        tr("Resize context preview width"));
+    leftResizeHandle->setToolTip(
+        tr("Drag left or right to resize. Double-click to reset."));
+    leftResizeHandle->setCursor(Qt::SizeHorCursor);
+
+    bottomResizeHandle = new ContextPeekResizeHandle(
+        HandleKind::Bottom, this);
+    bottomResizeHandle->setObjectName(
+        QStringLiteral("contextPeekResizeBottom"));
+    bottomResizeHandle->setAccessibleName(
+        tr("Resize context preview height"));
+    bottomResizeHandle->setToolTip(
+        tr("Drag upward or downward to resize. Double-click to reset."));
+    bottomResizeHandle->setCursor(Qt::SizeVerCursor);
+
+    cornerResizeHandle = new ContextPeekResizeHandle(
+        HandleKind::Corner, this);
+    cornerResizeHandle->setObjectName(
+        QStringLiteral("contextPeekResizeCorner"));
+    cornerResizeHandle->setAccessibleName(
+        tr("Resize context preview width and height"));
+    cornerResizeHandle->setToolTip(
+        tr("Drag diagonally to resize. Double-click to reset."));
+    cornerResizeHandle->setCursor(Qt::SizeBDiagCursor);
+
+    for (QWidget* handle : {leftResizeHandle,
+                            bottomResizeHandle,
+                            cornerResizeHandle}) {
+        handle->installEventFilter(this);
+        handle->show();
+        handle->raise();
+    }
+    updateResizeHandleGeometry();
 }
 
 void ContextPeekHost::synchronizeGeometry()
@@ -224,12 +422,210 @@ void ContextPeekHost::synchronizeGeometry()
     const QRect available = region->contentsRect();
     if (available.isEmpty())
         return;
-    const int width = std::clamp(
-        preferredWidthValue,
-        qMin(kMinimumPeekWidth, available.width()),
+    const QSize visibleSize = boundedVisibleSize(preferredSizeValue);
+    setGeometry(available.right() - visibleSize.width() + 1,
+                available.bottom() - visibleSize.height() + 1,
+                visibleSize.width(),
+                visibleSize.height());
+    updateResizeHandleGeometry();
+}
+
+void ContextPeekHost::updateResizeHandleGeometry()
+{
+    if (!rootLayout
+        || !leftResizeHandle
+        || !bottomResizeHandle
+        || !cornerResizeHandle) {
+        return;
+    }
+    const int thickness = qMin(
+        resizeHandleThickness(this),
+        qMax(1, qMin(width(), height())));
+    const int cornerExtent = qMin(
+        qMax(kMinimumCornerHitExtent, thickness * 2),
+        qMax(1, qMin(width(), height())));
+    rootLayout->setContentsMargins(
+        thickness, 0, 0, thickness);
+
+    const int leftHeight = qMax(0, height() - cornerExtent);
+    leftResizeHandle->setGeometry(
+        0, 0, thickness, leftHeight);
+    const int bottomWidth = qMax(0, width() - cornerExtent);
+    bottomResizeHandle->setGeometry(
+        cornerExtent,
+        qMax(0, height() - thickness),
+        bottomWidth,
+        thickness);
+    cornerResizeHandle->setGeometry(
+        0,
+        qMax(0, height() - cornerExtent),
+        cornerExtent,
+        cornerExtent);
+    leftResizeHandle->raise();
+    bottomResizeHandle->raise();
+    cornerResizeHandle->raise();
+}
+
+QSize ContextPeekHost::boundedStoredSize(
+    const QSize& requested) const
+{
+    return QSize(
+        ContextWorkspaceState::boundedPeekWidth(
+            requested.width()),
+        ContextWorkspaceState::boundedPeekHeight(
+            requested.height()));
+}
+
+QSize ContextPeekHost::boundedVisibleSize(
+    const QSize& requested) const
+{
+    QWidget* region = parentWidget();
+    if (!region || region->contentsRect().isEmpty())
+        return boundedStoredSize(requested);
+
+    const QSize stored = boundedStoredSize(requested);
+    const QSize available = region->contentsRect().size();
+    const int minimumWidth = qMin(
+        ContextWorkspaceState::kMinimumPeekWidth,
         available.width());
-    setGeometry(available.right() - width + 1,
-                available.top(),
-                width,
-                available.height());
+    const int reservedEditorWidth = qMin(
+        kMinimumRemainingEditorWidth,
+        qMax(0, available.width() - minimumWidth));
+    const int maximumWidth = qMax(
+        minimumWidth,
+        qMin(ContextWorkspaceState::kMaximumPeekWidth,
+             available.width() - reservedEditorWidth));
+    const int minimumHeight = qMin(
+        ContextWorkspaceState::kMinimumPeekHeight,
+        available.height());
+    return QSize(
+        qBound(minimumWidth, stored.width(), maximumWidth),
+        qBound(minimumHeight,
+               stored.height(),
+               available.height()));
+}
+
+ContextPeekHost::ResizeMode ContextPeekHost::modeForHandle(
+    const QObject* object) const
+{
+    if (object == leftResizeHandle)
+        return ResizeMode::Width;
+    if (object == bottomResizeHandle)
+        return ResizeMode::Height;
+    if (object == cornerResizeHandle)
+        return ResizeMode::WidthAndHeight;
+    return ResizeMode::None;
+}
+
+bool ContextPeekHost::handleResizeEvent(
+    QWidget* handle,
+    QEvent* event)
+{
+    if (!handle || !event)
+        return false;
+    auto* resizeHandle =
+        static_cast<ContextPeekResizeHandle*>(handle);
+    auto* mouseEvent = dynamic_cast<QMouseEvent*>(event);
+    if (event->type() == QEvent::MouseButtonDblClick
+        && mouseEvent
+        && mouseEvent->button() == Qt::LeftButton) {
+        finishResize(false);
+        mouseEvent->accept();
+        emit preferredSizeResetRequested();
+        return true;
+    }
+    if (event->type() == QEvent::MouseButtonPress
+        && mouseEvent
+        && mouseEvent->button() == Qt::LeftButton) {
+        finishResize(false);
+        resizeMode = modeForHandle(handle);
+        resizeStartGlobal =
+            mouseEvent->globalPosition().toPoint();
+        resizeStartSize = size();
+        resizeStartPreference = preferredSizeValue;
+        resizeChanged = false;
+        resizeHandle->setPressed(true);
+        handle->grabMouse();
+        mouseEvent->accept();
+        return true;
+    }
+    if (event->type() == QEvent::MouseMove
+        && mouseEvent
+        && resizeMode != ResizeMode::None) {
+        applyResizePosition(
+            mouseEvent->globalPosition().toPoint());
+        mouseEvent->accept();
+        return true;
+    }
+    if (event->type() == QEvent::MouseButtonRelease
+        && mouseEvent
+        && mouseEvent->button() == Qt::LeftButton
+        && resizeMode != ResizeMode::None) {
+        applyResizePosition(
+            mouseEvent->globalPosition().toPoint());
+        mouseEvent->accept();
+        finishResize(true);
+        return true;
+    }
+    if (event->type() == QEvent::UngrabMouse
+        && resizeMode != ResizeMode::None) {
+        finishResize(isVisible());
+        return false;
+    }
+    return false;
+}
+
+void ContextPeekHost::applyResizePosition(
+    const QPoint& globalPosition)
+{
+    if (resizeMode == ResizeMode::None)
+        return;
+    const QPoint delta = globalPosition - resizeStartGlobal;
+    QSize requested = resizeStartSize;
+    const bool resizeWidth = resizeMode == ResizeMode::Width
+        || resizeMode == ResizeMode::WidthAndHeight;
+    const bool resizeHeight = resizeMode == ResizeMode::Height
+        || resizeMode == ResizeMode::WidthAndHeight;
+    if (resizeWidth)
+        requested.setWidth(resizeStartSize.width() - delta.x());
+    if (resizeHeight)
+        requested.setHeight(resizeStartSize.height() - delta.y());
+    const QSize visible = boundedVisibleSize(requested);
+    QSize next = preferredSizeValue;
+    if (resizeWidth)
+        next.setWidth(visible.width());
+    if (resizeHeight)
+        next.setHeight(visible.height());
+    next = boundedStoredSize(next);
+    if (next == preferredSizeValue)
+        return;
+    preferredSizeValue = next;
+    resizeChanged = true;
+    synchronizeGeometry();
+}
+
+void ContextPeekHost::finishResize(bool commit)
+{
+    if (resizeMode == ResizeMode::None)
+        return;
+    const bool changed = resizeChanged;
+    resizeMode = ResizeMode::None;
+    resizeChanged = false;
+    for (QWidget* handle : {leftResizeHandle,
+                            bottomResizeHandle,
+                            cornerResizeHandle}) {
+        if (!handle)
+            continue;
+        static_cast<ContextPeekResizeHandle*>(handle)
+            ->setPressed(false);
+        if (QWidget::mouseGrabber() == handle)
+            handle->releaseMouse();
+    }
+    if (!commit && changed) {
+        preferredSizeValue = resizeStartPreference;
+        synchronizeGeometry();
+        return;
+    }
+    if (commit && changed)
+        emit preferredSizeChanged(preferredSizeValue);
 }

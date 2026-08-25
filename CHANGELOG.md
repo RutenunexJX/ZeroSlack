@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.21.0] - 2026-08-25
+
+### Live Insights Workspace
+
+- Added a resizable, persistent Context Workspace with unified Module, State,
+  Hotspot, and Symbolic Wave views.
+- Added bounded, generation-aware Live Insight refresh and the shared
+  WaveWorkbench waveform-view contract for symbolic previews.
+
 ## [0.20.0] - 2026-08-23
 
 ### Pinloom Context Integration

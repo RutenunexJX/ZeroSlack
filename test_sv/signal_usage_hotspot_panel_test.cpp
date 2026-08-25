@@ -495,6 +495,33 @@ int main(int argc, char** argv)
         });
     panel.renderReportForTest(sampleReport());
 
+    QPushButton* trackModeButton =
+        panel.findChild<QPushButton*>(
+            QStringLiteral("signalUsageHotspotTrackModeButton"));
+    QPushButton* matrixModeButton =
+        panel.findChild<QPushButton*>(
+            QStringLiteral("signalUsageHotspotMatrixModeButton"));
+    if (!trackModeButton || !matrixModeButton
+        || !trackModeButton->isVisibleTo(&panel)
+        || !matrixModeButton->isVisibleTo(&panel)) {
+        qWarning() << "Hotspot view switch is not available";
+        return 1;
+    }
+    panel.setMatrixModeForTest(true);
+    if (!panel.matrixModeForTest()
+        || !matrixModeButton->isChecked()
+        || trackModeButton->isChecked()) {
+        qWarning() << "Hotspot Matrix view did not activate";
+        return 1;
+    }
+    panel.setMatrixModeForTest(false);
+    if (panel.matrixModeForTest()
+        || !trackModeButton->isChecked()
+        || matrixModeButton->isChecked()) {
+        qWarning() << "Hotspot Track view did not reactivate";
+        return 1;
+    }
+
     const QList<QAction*> graphViewActions =
         panel.graphViewActionsForTest();
     const auto graphActionById =

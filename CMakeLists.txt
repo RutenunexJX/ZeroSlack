@@ -20,6 +20,11 @@ list(GET ZEROSLACK_VERSION_PARTS 2 ZEROSLACK_VERSION_PATCH)
 # Project target. C is enabled because tree-sitter includes .c sources.
 project(ZeroSlack VERSION ${ZEROSLACK_VERSION} LANGUAGES C CXX)
 
+set(ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY "" CACHE FILEPATH
+    "Optional wavewidgets library used for the real waveform-preview ABI CTest")
+set(ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH
+    "Read-only source tree containing the legacy .zs compatibility fixtures")
+
 string(TIMESTAMP ZEROSLACK_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 set(ZEROSLACK_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 configure_file(
@@ -344,10 +349,12 @@ set(ZEROSLACK_CORE_SOURCES
     wavesimulationcoordinator.cpp
     wavesimulationresultnavigationcoordinator.cpp
     waveembeddedworkspaceloader.cpp
+    waveformpreviewloader.cpp
     wavesimulationmodulemanifest.cpp
     wavesimulationmanifestservice.cpp
     wavesimulationpreparationservice.cpp
     wavepreviewpanelcoordinator.cpp
+    wavepreviewpayloadadapter.cpp
     wavepreviewservice.cpp
     workspaceconfigurationdialog.cpp
     workspaceconfigurationservice.cpp
@@ -362,6 +369,10 @@ set(ZEROSLACK_CORE_SOURCES
     insightfocuscontroller.cpp
     insightfocuscontrolleractions.cpp
     insightvisualstyle.cpp
+    liveinsightsession.cpp
+    liveinsightscontextview.cpp
+    liveinsightscontextprovider.cpp
+    liveinsighttoolpage.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
@@ -588,6 +599,8 @@ set(ZEROSLACK_CORE_SOURCES
     formatterservice.h
     ghostannotationservice.h
     wavepreviewpanelcoordinator.h
+    waveformpreviewloader.h
+    wavepreviewpayloadadapter.h
     wavepreviewservice.h
     workspaceconfigurationdialog.h
     workspaceconfigurationservice.h
@@ -602,6 +615,11 @@ set(ZEROSLACK_CORE_SOURCES
     insightgraphview.h
     insightfocuscontroller.h
     insightvisualstyle.h
+    liveinsighttypes.h
+    liveinsightsession.h
+    liveinsightscontextview.h
+    liveinsightscontextprovider.h
+    liveinsighttoolpage.h
     editorsearchcandidate.h
     inlinecommandmode.h
     sourcenavigationservice.h
@@ -1033,6 +1051,21 @@ if(BUILD_TESTING)
     add_dependencies(wave_embedded_workspace_test
         wavewidgets_fixture)
 
+    add_executable(live_insight_session_test
+        test_sv/live_insight_session_test.cpp)
+    target_link_libraries(live_insight_session_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(live_insights_context_provider_test
+        test_sv/live_insights_context_provider_test.cpp)
+    target_link_libraries(live_insights_context_provider_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(live_insights_ui_snapshot_test
+        test_sv/live_insights_ui_snapshot_test.cpp)
+    target_link_libraries(live_insights_ui_snapshot_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(unified_peek_container_test
         test_sv/unified_peek_container_test.cpp)
     target_link_libraries(unified_peek_container_test
@@ -1284,6 +1317,7 @@ if(BUILD_TESTING)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+    add_dependencies(gui_smoke_test wavewidgets_fixture)
 
     add_executable(temporary_editor_context_search_test
         test_sv/temporary_editor_context_search_test.cpp)
@@ -1531,6 +1565,53 @@ if(BUILD_TESTING)
             $<TARGET_FILE:wave_embedded_workspace_test>
             $<TARGET_FILE:wavewidgets_fixture>
     )
+    if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
+        add_test(NAME waveform_preview_real_library_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:wave_embedded_workspace_test>
+                "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}"
+                --waveform-only
+        )
+        set_tests_properties(waveform_preview_real_library_test
+            PROPERTIES TIMEOUT 120)
+    endif()
+    add_test(NAME live_insight_session_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:live_insight_session_test>
+    )
+    set_tests_properties(live_insight_session_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME live_insights_context_provider_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:live_insights_context_provider_test>
+    )
+    set_tests_properties(live_insights_context_provider_test
+        PROPERTIES TIMEOUT 120)
+    set(ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS)
+    if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
+        list(APPEND ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS
+            --wave-library
+            "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
+    endif()
+    add_test(NAME live_insights_ui_snapshot_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:live_insights_ui_snapshot_test>
+            --output-dir
+            "${CMAKE_CURRENT_BINARY_DIR}/artifacts/ui/live-insights"
+            ${ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS}
+    )
+    set_tests_properties(live_insights_ui_snapshot_test
+        PROPERTIES TIMEOUT 120)
     add_test(NAME unified_peek_container_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1742,6 +1823,35 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:context_workspace_test>
     )
+    add_test(NAME context_workspace_125pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=1.25"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:context_workspace_test>
+    )
+    add_test(NAME context_workspace_150pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=1.5"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:context_workspace_test>
+    )
+    add_test(NAME context_workspace_200pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=2"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:context_workspace_test>
+    )
+    set_tests_properties(
+        context_workspace_125pct_dpi_test
+        context_workspace_150pct_dpi_test
+        context_workspace_200pct_dpi_test
+        PROPERTIES TIMEOUT 120)
     add_test(NAME temporary_editor_context_provider_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1783,8 +1893,8 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:workspace_persistence_test>
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
-            ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
+            ${ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR}/test_sv/new
+            ${ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR}/test_sv/huge_prj
     )
     add_test(NAME workspace_session_coordinator_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -1836,6 +1946,7 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            "ZEROSLACK_WAVEWIDGETS_LIBRARY=$<TARGET_FILE:wavewidgets_fixture>"
             $<TARGET_FILE:gui_smoke_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv

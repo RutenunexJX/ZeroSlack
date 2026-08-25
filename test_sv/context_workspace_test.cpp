@@ -11,11 +11,15 @@
 #include <QEvent>
 #include <QLabel>
 #include <QMainWindow>
+#include <QMouseEvent>
 #include <QPointer>
+#include <QSignalSpy>
+#include <QTest>
 #include <QToolButton>
 #include <QUrl>
 
 #include <iostream>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -35,6 +39,73 @@ void processDeferredDeletes()
 {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QApplication::processEvents();
+}
+
+void sendMouseEvent(QWidget* target,
+                    QEvent::Type type,
+                    const QPoint& globalPosition,
+                    Qt::MouseButton button,
+                    Qt::MouseButtons buttons)
+{
+    if (!target)
+        return;
+    QMouseEvent event(
+        type,
+        QPointF(target->mapFromGlobal(globalPosition)),
+        QPointF(globalPosition),
+        button,
+        buttons,
+        Qt::NoModifier);
+    QApplication::sendEvent(target, &event);
+}
+
+void dragHandle(QWidget* handle, const QPoint& globalDelta)
+{
+    if (!handle)
+        return;
+    const QPoint start =
+        handle->mapToGlobal(handle->rect().center());
+    const QPoint finish = start + globalDelta;
+    sendMouseEvent(handle,
+                   QEvent::MouseButtonPress,
+                   start,
+                   Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(handle,
+                   QEvent::MouseMove,
+                   finish,
+                   Qt::NoButton,
+                   Qt::LeftButton);
+    sendMouseEvent(handle,
+                   QEvent::MouseButtonRelease,
+                   finish,
+                   Qt::LeftButton,
+                   Qt::NoButton);
+    QApplication::processEvents();
+}
+
+void doubleClickHandle(QWidget* handle)
+{
+    if (!handle)
+        return;
+    const QPoint global =
+        handle->mapToGlobal(handle->rect().center());
+    sendMouseEvent(handle,
+                   QEvent::MouseButtonDblClick,
+                   global,
+                   Qt::LeftButton,
+                   Qt::LeftButton);
+    QApplication::processEvents();
+}
+
+bool anchoredToBottomRight(const QWidget* host,
+                           const QWidget* region)
+{
+    return host && region
+        && host->geometry().right()
+               == region->contentsRect().right()
+        && host->geometry().bottom()
+               == region->contentsRect().bottom();
 }
 
 struct ProviderCounters {
@@ -82,6 +153,7 @@ public:
             | ContextPresentation::Pinned
             | ContextPresentation::FullView;
         result.preferredWidth = 460;
+        result.preferredHeight = 510;
         return result;
     }
 
@@ -191,6 +263,105 @@ int main(int argc, char* argv[])
               && controller.peekHost()->resource() == original
               && !controller.dockWidget()->isVisible(),
           "resource opens in the single transient Peek host");
+    QApplication::processEvents();
+    QWidget* leftHandle =
+        controller.peekHost()->findChild<QWidget*>(
+            QStringLiteral("contextPeekResizeLeft"));
+    QWidget* bottomHandle =
+        controller.peekHost()->findChild<QWidget*>(
+            QStringLiteral("contextPeekResizeBottom"));
+    QWidget* cornerHandle =
+        controller.peekHost()->findChild<QWidget*>(
+            QStringLiteral("contextPeekResizeCorner"));
+    check(leftHandle && bottomHandle && cornerHandle
+              && leftHandle->isVisible()
+              && bottomHandle->isVisible()
+              && cornerHandle->isVisible()
+              && leftHandle->cursor().shape()
+                     == Qt::SizeHorCursor
+              && bottomHandle->cursor().shape()
+                     == Qt::SizeVerCursor
+              && cornerHandle->cursor().shape()
+                     == Qt::SizeBDiagCursor
+              && controller.peekHost()->rect().contains(
+                     leftHandle->geometry())
+              && controller.peekHost()->rect().contains(
+                     bottomHandle->geometry())
+              && controller.peekHost()->rect().contains(
+                     cornerHandle->geometry()),
+          "Peek exposes reachable logical-DPI left, bottom, and corner handles");
+
+    QSignalSpy peekSizeSpy(
+        controller.peekHost(),
+        &ContextPeekHost::preferredSizeChanged);
+    const QSize initialPeekSize =
+        controller.peekHost()->preferredSize();
+    dragHandle(leftHandle, QPoint(-50, 0));
+    const QSize widthResized =
+        controller.peekHost()->preferredSize();
+    check(widthResized.width() == initialPeekSize.width() + 50
+              && widthResized.height() == initialPeekSize.height()
+              && anchoredToBottomRight(
+                     controller.peekHost(), editorRegion),
+          "left handle resizes width independently while preserving the bottom-right anchor");
+    dragHandle(bottomHandle, QPoint(0, -40));
+    const QSize heightResized =
+        controller.peekHost()->preferredSize();
+    check(heightResized.width() == widthResized.width()
+              && heightResized.height() == widthResized.height() + 40
+              && anchoredToBottomRight(
+                     controller.peekHost(), editorRegion),
+          "bottom handle resizes height independently while preserving the bottom-right anchor");
+    dragHandle(cornerHandle, QPoint(30, 20));
+    const QSize cornerResized =
+        controller.peekHost()->preferredSize();
+    check(cornerResized.width() == heightResized.width() - 30
+              && cornerResized.height() == heightResized.height() - 20
+              && peekSizeSpy.count() == 3
+              && anchoredToBottomRight(
+                     controller.peekHost(), editorRegion),
+          "corner handle resizes both dimensions and publishes completed user preferences");
+
+    controller.peekHost()->setPreferredSize(
+        QSize(std::numeric_limits<int>::max(), -1));
+    check(controller.peekHost()->preferredSize()
+              == QSize(ContextWorkspaceState::kMaximumPeekWidth,
+                       ContextWorkspaceState::kMinimumPeekHeight)
+              && controller.peekHost()->geometry().width()
+                     <= editorRegion->contentsRect().width()
+              && controller.peekHost()->geometry().height()
+                     <= editorRegion->contentsRect().height()
+              && anchoredToBottomRight(
+                     controller.peekHost(), editorRegion),
+          "Peek applies a second clamp to malformed or external dimensions");
+
+    controller.peekHost()->setPreferredSize(QSize(700, 600));
+    doubleClickHandle(cornerHandle);
+    check(controller.peekHost()->preferredSize()
+              == QSize(460, 510),
+          "double-click resets both dimensions to the active provider preference");
+
+    const QSize retainedUserSize(610, 390);
+    controller.peekHost()->setPreferredSize(retainedUserSize);
+    window.resize(560, 500);
+    QApplication::processEvents();
+    check(editorRegion->contentsRect().contains(
+              controller.peekHost()->geometry())
+              && editorRegion->contentsRect().width()
+                     - controller.peekHost()->width() > 0
+              && anchoredToBottomRight(
+                     controller.peekHost(), editorRegion)
+              && leftHandle->isVisible()
+              && bottomHandle->isVisible()
+              && cornerHandle->isVisible(),
+          "narrow windows keep Peek and every handle reachable while retaining editor width");
+    window.resize(1000, 700);
+    QApplication::processEvents();
+    check(controller.peekHost()->preferredSize()
+              == retainedUserSize
+              && controller.peekHost()->size()
+                     == retainedUserSize,
+          "temporary window constraints do not overwrite the stored user size");
     QToolButton* peekFullView =
         controller.peekHost()->findChild<QToolButton*>(
             QStringLiteral("contextPeekFullView"));
@@ -206,9 +377,11 @@ int main(int argc, char* argv[])
                                   ContextOpenMode::Peek,
                                   &failureReason)
               && controller.peekHost()->resource() == second
+              && controller.peekHost()->preferredSize()
+                     == retainedUserSize
               && counters.created == 2
               && counters.restored == 2,
-          "opening another Peek resource replaces the preview");
+          "opening another Peek resource replaces the preview without overwriting user size");
     processDeferredDeletes();
     check(firstView.isNull() && counters.saved == 1,
           "replaced Peek view is disposed through its provider");
@@ -242,8 +415,10 @@ int main(int argc, char* argv[])
     check(controller.unpinResource(second.stableKey(), &failureReason)
               && failureReason.isEmpty()
               && controller.peekHost()->resource() == second
+              && controller.peekHost()->preferredSize()
+                     == retainedUserSize
               && controller.dockHost()->resourceCount() == 1,
-          "a pinned resource can return to transient Peek mode");
+          "a pinned resource returns to Peek without overwriting user size");
     controller.closePeek();
     processDeferredDeletes();
     check(secondView.isNull(),
@@ -276,6 +451,10 @@ int main(int argc, char* argv[])
                                          ContextOpenMode::Pinned,
                                          &failureReason),
           "workspace-scoped resources can be pinned before capture");
+    window.resizeDocks(
+        {controller.dockWidget()}, {420}, Qt::Horizontal);
+    QApplication::processEvents();
+    const int userDockWidth = controller.dockWidget()->width();
     controller.dockHost()->activateResource(original.stableKey());
     const ContextResource transient = resource(QStringLiteral("transient"));
     check(controller.openResource(transient,
@@ -286,8 +465,11 @@ int main(int argc, char* argv[])
     check(savedState.valid
               && savedState.pinnedResources.size() == 2
               && savedState.activePinnedResourceKey
-                     == original.stableKey(),
-          "session capture preserves pinned order and active tab but omits Peek");
+                     == original.stableKey()
+              && savedState.peekWidth == retainedUserSize.width()
+              && savedState.peekHeight == retainedUserSize.height()
+              && savedState.dockWidth == userDockWidth,
+          "session capture preserves both Peek dimensions, actual Dock width, pinned order, and active tab");
 
     QVariantMap unavailableMap = original.toVariantMap();
     unavailableMap.insert(QStringLiteral("providerId"),
@@ -304,6 +486,28 @@ int main(int argc, char* argv[])
               && !controller.peekHost()->hasResource(),
           "restore skips unavailable providers without blocking valid pinned tabs");
 
+    window.resizeDocks(
+        {controller.dockWidget()}, {350}, Qt::Horizontal);
+    QApplication::processEvents();
+    const int qtRestoredWidth = controller.dockWidget()->width();
+    ContextWorkspaceState alternateDockState = savedState;
+    alternateDockState.dockWidth = 650;
+    const ContextWorkspaceRestoreResult preservedDockRestore =
+        controller.restoreState(alternateDockState, true);
+    QApplication::processEvents();
+    const int preservedDockWidth = controller.dockWidget()->width();
+    check(preservedDockRestore.restoredResources == 2
+              && qAbs(preservedDockWidth - qtRestoredWidth) <= 12,
+          "Context restore can preserve geometry already restored by QMainWindow");
+    const ContextWorkspaceRestoreResult portableDockRestore =
+        controller.restoreState(alternateDockState, false);
+    QApplication::processEvents();
+    const int portableDockWidth = controller.dockWidget()->width();
+    check(portableDockRestore.restoredResources == 2
+              && portableDockWidth > preservedDockWidth
+              && qAbs(portableDockWidth - 650) <= 12,
+          "Context restore applies the portable Dock width only when requested");
+
     ContextResource foreign = resource(QStringLiteral("foreign"));
     foreign.workspaceId = QStringLiteral("workspace-b");
     check(!controller.openResource(foreign,
@@ -312,6 +516,75 @@ int main(int argc, char* argv[])
               && failureReason.contains(QStringLiteral("another workspace")),
           "resources from another workspace cannot leak into the active context");
     controller.clearResources();
+
+    ContextWorkspaceState malformedState;
+    malformedState.valid = true;
+    malformedState.peekWidth = std::numeric_limits<int>::max();
+    malformedState.peekHeight = std::numeric_limits<int>::min();
+    malformedState.dockWidth = std::numeric_limits<int>::max();
+    controller.restoreState(malformedState);
+    const ContextWorkspaceState sanitizedState =
+        controller.captureState();
+    check(sanitizedState.peekWidth
+                  == ContextWorkspaceState::kMaximumPeekWidth
+              && sanitizedState.peekHeight
+                     == ContextWorkspaceState::kMinimumPeekHeight
+              && sanitizedState.dockWidth
+                     == ContextWorkspaceState::
+                            kMaximumStoredDockWidth,
+          "controller clamps malformed dimensions again when bypassing JSON persistence");
+
+    QWidget resizeLifecycleRegion;
+    resizeLifecycleRegion.resize(820, 620);
+    resizeLifecycleRegion.show();
+    auto* lifecycleHost =
+        new ContextPeekHost(&resizeLifecycleRegion);
+    lifecycleHost->setView(
+        original,
+        new QLabel(QStringLiteral("Resize lifecycle"),
+                   lifecycleHost));
+    lifecycleHost->setPreferredSize(QSize(520, 440));
+    lifecycleHost->setFocus();
+    QApplication::processEvents();
+    QWidget* lifecycleHandle =
+        lifecycleHost->findChild<QWidget*>(
+            QStringLiteral("contextPeekResizeCorner"));
+    QSignalSpy closeSpy(
+        lifecycleHost,
+        &ContextPeekHost::closeRequested);
+    const QPoint lifecycleStart = lifecycleHandle
+        ? lifecycleHandle->mapToGlobal(
+              lifecycleHandle->rect().center())
+        : QPoint();
+    sendMouseEvent(lifecycleHandle,
+                   QEvent::MouseButtonPress,
+                   lifecycleStart,
+                   Qt::LeftButton,
+                   Qt::LeftButton);
+    sendMouseEvent(lifecycleHandle,
+                   QEvent::MouseMove,
+                   lifecycleStart + QPoint(-40, -30),
+                   Qt::NoButton,
+                   Qt::LeftButton);
+    QTest::keyClick(lifecycleHost, Qt::Key_Escape);
+    QApplication::processEvents();
+    check(closeSpy.count() == 1
+              && lifecycleHost->preferredSize()
+                     == QSize(520, 440)
+              && QWidget::mouseGrabber() != lifecycleHandle,
+          "Escape cancels an in-progress resize and releases pointer ownership");
+
+    QPointer<QWidget> lifecycleHandleGuard(lifecycleHandle);
+    sendMouseEvent(lifecycleHandle,
+                   QEvent::MouseButtonPress,
+                   lifecycleStart,
+                   Qt::LeftButton,
+                   Qt::LeftButton);
+    delete lifecycleHost;
+    QApplication::processEvents();
+    check(lifecycleHandleGuard.isNull()
+              && QWidget::mouseGrabber() == nullptr,
+          "destroying a resizing host safely releases and destroys its local handles");
 
     if (failures == 0) {
         std::cout << "context_workspace_test: "

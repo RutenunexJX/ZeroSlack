@@ -12,7 +12,6 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 #include <QUuid>
@@ -37,24 +36,66 @@ QString textHash(const QString& text)
             .toHex());
 }
 
-QString normalizedStructure(QString text)
+QString withoutDelimitedComments(QString text)
 {
-    static const QRegularExpression blockComment(
-        QStringLiteral("/\\*.*?\\*/"),
-        QRegularExpression::DotMatchesEverythingOption);
-    static const QRegularExpression lineComment(
-        QStringLiteral("//[^\\r\\n]*"));
-    static const QRegularExpression spaces(QStringLiteral("\\s+"));
-    text.remove(blockComment);
-    text.remove(lineComment);
-    text.remove(spaces);
+    qsizetype searchFrom = 0;
+    while (searchFrom < text.size()) {
+        const qsizetype start = text.indexOf(
+            QStringLiteral("/*"), searchFrom);
+        if (start < 0)
+            break;
+        const qsizetype end = text.indexOf(
+            QStringLiteral("*/"), start + 2);
+        if (end < 0)
+            break;
+        text.remove(start, end + 2 - start);
+        searchFrom = start;
+    }
     return text;
+}
+
+QString normalizedStructure(const QString& source)
+{
+    const QString text = withoutDelimitedComments(source);
+    QString normalized;
+    normalized.reserve(text.size());
+    for (qsizetype index = 0; index < text.size();) {
+        if (text.at(index) == QLatin1Char('/')
+            && index + 1 < text.size()
+            && text.at(index + 1) == QLatin1Char('/')) {
+            index += 2;
+            while (index < text.size()
+                   && text.at(index) != QLatin1Char('\r')
+                   && text.at(index) != QLatin1Char('\n')) {
+                ++index;
+            }
+            continue;
+        }
+        if (!text.at(index).isSpace())
+            normalized.append(text.at(index));
+        ++index;
+    }
+    return normalized;
+}
+
+bool isAsciiIdentifierStart(QChar character)
+{
+    const ushort code = character.unicode();
+    return character == QLatin1Char('_')
+        || (code >= 'A' && code <= 'Z')
+        || (code >= 'a' && code <= 'z');
+}
+
+bool isAsciiIdentifierContinue(QChar character)
+{
+    const ushort code = character.unicode();
+    return isAsciiIdentifierStart(character)
+        || character == QLatin1Char('$')
+        || (code >= '0' && code <= '9');
 }
 
 QStringList collectSemanticTokens(const QString& text)
 {
-    static const QRegularExpression identifier(
-        QStringLiteral("[A-Za-z_][A-Za-z0-9_$]*"));
     static const QSet<QString> ignored{
         QStringLiteral("always"), QStringLiteral("always_comb"),
         QStringLiteral("always_ff"), QStringLiteral("always_latch"),
@@ -66,9 +107,17 @@ QStringList collectSemanticTokens(const QString& text)
         QStringLiteral("logic"), QStringLiteral("wire"),
         QStringLiteral("reg")};
     QSet<QString> unique;
-    auto matches = identifier.globalMatch(text);
-    while (matches.hasNext()) {
-        const QString token = matches.next().captured().toLower();
+    for (qsizetype index = 0; index < text.size();) {
+        if (!isAsciiIdentifierStart(text.at(index))) {
+            ++index;
+            continue;
+        }
+        const qsizetype start = index++;
+        while (index < text.size()
+               && isAsciiIdentifierContinue(text.at(index))) {
+            ++index;
+        }
+        const QString token = text.mid(start, index - start).toLower();
         if (!ignored.contains(token))
             unique.insert(token);
     }

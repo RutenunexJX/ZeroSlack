@@ -645,10 +645,17 @@ QPointF chooseCurvedEdgeLabelAnchor(
 
 int chooseInitialState(const QList<FsmStateRow>& rows,
                        const QList<WorkEdge>& edges,
-                       int stateCount)
+                       int stateCount,
+                       const QString& preferredState)
 {
     if (rows.isEmpty())
         return -1;
+    if (!preferredState.isEmpty()) {
+        for (int i = 0; i < rows.size(); ++i) {
+            if (rows.at(i).stateDisplayName == preferredState)
+                return i;
+        }
+    }
     QList<int> incoming(stateCount, 0);
     for (const WorkEdge& edge : edges) {
         if (!edge.selfLoop && edge.to >= 0 && edge.to < incoming.size())
@@ -1966,7 +1973,8 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
 
     const int initialState = chooseInitialState(stateRows,
                                                workEdges,
-                                               stateCount);
+                                               stateCount,
+                                               graph.initialStateDisplayName);
     const QSet<int> reversedEdgeIds =
         findDfsBackEdges(workEdges, stateCount, initialState);
     for (int i = 0; i < workEdges.size(); ++i) {
@@ -2182,6 +2190,8 @@ FsmGraphLayout layoutFsmGraphPass(const FsmGraph& graph,
         node.rank = vertex.rank;
         node.order = orderByVertex.value(vertex.id);
         node.alias = vertex.alias;
+        node.initialState =
+            vertex.canonicalStateIndex == initialState;
         node.implicitState = vertex.implicitState;
         node.canonicalNodeId = stateVertexIds.at(vertex.canonicalStateIndex);
         node.deadEndState = row.deadEndState;

@@ -1,6 +1,6 @@
 # AppSuite UI Implementation Plan
 
-Status: active implementation plan
+Status: completed; packaging was excluded.
 
 Date: 2026-08-25
 
@@ -13,6 +13,32 @@ Repositories remain independent:
 
 The formal package remains outside the source workspaces and is not rebuilt as
 part of this goal.
+
+## ZeroSlack completion record
+
+The ZeroSlack delivery governed by this plan completed on 2026-08-25 with the
+following reproducible evidence:
+
+- The Release tree `build/codex-release-full` built successfully. Its full
+  configured CTest run passed all `99/99` tests with output-on-failure and a
+  300-second per-test timeout.
+- The real WaveWorkbench library from baseline `99d75ab` was exercised through
+  `waveform_preview_real_library_test`. The stable
+  `live_insights_wave_ready_1440x900_dark.png` evidence in
+  `build/codex-release-full/artifacts/ui/live-insights` shows the loaded
+  `wave::WaveformView` rendering the symbolic wave.
+- Responsive light/dark evidence is retained at 960x720 and 1440x900 in the
+  same artifact directory. Context Workspace geometry tests passed at 100,
+  125, 150, and 200 percent logical scaling, including resize, bounds,
+  persistence, and restoration assertions.
+- No ZeroSlack application package or formal AppSuite package was generated or
+  modified.
+
+Cross-repository completion evidence is Pinloom `4b1118f` with `7/7` tests,
+WaveWorkbench `99d75ab` with `101/101` tests, RegMapWorkbench implementation
+`2d68a6e` plus documentation `7b1bde5` with Debug/Release `4/4` tests and 166
+GUI assertions, and the final ZeroSlack branch commit containing this record
+with Release `99/99` CTest.
 
 ## Scope freeze
 

@@ -391,12 +391,41 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
                                                             states);
         if (states.isEmpty() || transitions.isEmpty())
             continue;
+        QSet<QString> stateNames;
+        for (const SemanticSymbolRecord& state : states)
+            stateNames.insert(state.name);
+        QString initialStateName;
+        const QStringList moduleLines = content.split(QLatin1Char('\n'));
+        const int moduleLineCount =
+            static_cast<int>(moduleLines.size());
+        const int firstLine = qMax(0, moduleRecord.location.startLine - 1);
+        const int lastLine = moduleRecord.location.endLine > 0
+            ? qMin(moduleLineCount - 1,
+                   moduleRecord.location.endLine - 1)
+            : moduleLineCount - 1;
+        for (int line = firstLine; line <= lastLine; ++line) {
+            const QString code = stripLineComment(moduleLines.at(line));
+            if (assignmentTarget(code) != stateRegister.name)
+                continue;
+            const QList<QString> assigned =
+                assignedStateValues(code, stateNames);
+            if (!assigned.isEmpty()) {
+                initialStateName = assigned.constFirst();
+                break;
+            }
+        }
         fillDisplayMetadata(graph,
                             moduleRecord,
                             stateRegister,
                             nextState,
                             states,
                             transitions);
+        for (const FsmStateRow& row : graph.stateRows) {
+            if (row.stateRecord.name == initialStateName) {
+                graph.initialStateDisplayName = row.stateDisplayName;
+                break;
+            }
+        }
         report.graphs.append(graph);
     }
 

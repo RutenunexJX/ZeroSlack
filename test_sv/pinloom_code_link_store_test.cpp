@@ -22,6 +22,7 @@ private slots:
     void migratesV1WithoutDroppingLinks();
     void rejectsArbitraryNewSelections();
     void survivesSymbolMoveAndRename();
+    void normalizesAnchorTextWithoutRegex();
 };
 
 void PinloomCodeLinkStoreTest::persistsAndRelocatesWorkspaceRelativeLinks()
@@ -397,6 +398,50 @@ void PinloomCodeLinkStoreTest::survivesSymbolMoveAndRename()
                             - resolved.constFirst().startPosition),
              QStringLiteral("sample_count"));
     index->clearSemanticState();
+}
+
+void PinloomCodeLinkStoreTest::normalizesAnchorTextWithoutRegex()
+{
+    QTemporaryDir workspace;
+    QVERIFY(workspace.isValid());
+    const QString filePath =
+        QDir(workspace.path()).filePath(QStringLiteral("rtl/top.sv"));
+    const QString commented = QStringLiteral(
+        "module top;\n"
+        "  always_comb begin\n"
+        "    /* block\n       comment */ foo_bar$1 = data_2; // tail\n"
+        "  end\n"
+        "endmodule\n");
+    const QString compact = QStringLiteral(
+        "module top;\n"
+        "always_comb begin foo_bar$1=data_2; end\n"
+        "endmodule\n");
+
+    TSDocument commentedSyntax;
+    commentedSyntax.setText(commented);
+    const TSBindableCodeAnchor commentedAnchor =
+        commentedSyntax.bindableCodeAnchorAt(
+            commented.indexOf(QStringLiteral("foo_bar$1")));
+    QVERIFY(commentedAnchor.ok());
+    TSDocument compactSyntax;
+    compactSyntax.setText(compact);
+    const TSBindableCodeAnchor compactAnchor =
+        compactSyntax.bindableCodeAnchorAt(
+            compact.indexOf(QStringLiteral("foo_bar$1")));
+    QVERIFY(compactAnchor.ok());
+
+    const PinloomSourceSelection commentedSource =
+        PinloomSourceSelection::fromSyntaxAnchor(
+            workspace.path(), filePath, commented, commentedAnchor);
+    const PinloomSourceSelection compactSource =
+        PinloomSourceSelection::fromSyntaxAnchor(
+            workspace.path(), filePath, compact, compactAnchor);
+    QCOMPARE(commentedSource.structuralFingerprint,
+             compactSource.structuralFingerprint);
+    QVERIFY(commentedSource.semanticTokens.contains(
+        QStringLiteral("foo_bar$1")));
+    QVERIFY(commentedSource.semanticTokens.contains(
+        QStringLiteral("data_2")));
 }
 
 QTEST_MAIN(PinloomCodeLinkStoreTest)

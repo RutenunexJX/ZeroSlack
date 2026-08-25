@@ -187,6 +187,9 @@ ContextViewCapabilities PinloomContextProvider::capabilities(
     result.minimumWidth = 380;
     result.preferredWidth = 540;
     result.maximumWidth = 900;
+    result.minimumHeight = 300;
+    result.preferredHeight = 560;
+    result.maximumHeight = 920;
     return result;
 }
 

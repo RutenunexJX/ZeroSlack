@@ -1,12 +1,17 @@
 #include "wavepreviewpanelcoordinator.h"
 
+#include "applicationthememanager.h"
 #include "graphexportui.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
+#include "waveformpreviewloader.h"
+#include "wavepreviewpayloadadapter.h"
+#include "wavesimulationconfiguration.h"
 
 #include <QAction>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
 #include <QFileInfo>
 #include <QElapsedTimer>
 #include <QFont>
@@ -14,11 +19,9 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
-#include <QMouseEvent>
-#include <QPainter>
+#include <QResizeEvent>
 #include <QSizePolicy>
 #include <QSignalBlocker>
-#include <QToolTip>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -37,10 +40,6 @@ constexpr int kRoleColumn = Qt::UserRole + 3;
 constexpr int kRoleDefaultExpanded = Qt::UserRole + 4;
 constexpr int kRoleStableIdentity = Qt::UserRole + 5;
 
-QString canvasEventLabel(const WavePreviewAssignment& assignment);
-QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
-                                 const WavePreviewReport& report);
-QString canvasLaneSelectionText(const WavePreviewLane& lane);
 QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
                                 const WavePreviewReport& report);
 QString laneDetailTooltip(const WavePreviewLane& lane);
@@ -48,33 +47,21 @@ QString laneSummaryText(const WavePreviewLaneSummary& summary);
 QString laneWarningText(const WavePreviewLaneSummary& summary);
 QString reportSummaryText(const WavePreviewReport& report, bool dirty);
 QString sketchLegendText(const WavePreviewReport& report);
-QColor colorForAssignmentKind(WavePreviewAssignmentKind kind);
 
-struct CanvasEventHit {
-    QRect rect;
-    QString tooltip;
-    QString selectionText;
-    int line = 0;
-    int column = 0;
-};
-
-struct CanvasLaneHit {
-    QRect rect;
-    QString tooltip;
-    QString selectionText;
-    QString signalName;
-};
-
-class WavePreviewCanvas : public QWidget
+class WaveformPreviewSurface final : public QWidget
 {
 public:
-    explicit WavePreviewCanvas(QWidget* parent = nullptr)
+    explicit WaveformPreviewSurface(QWidget* parent = nullptr)
         : QWidget(parent)
     {
         setObjectName(QStringLiteral("wavePreviewCanvas"));
         setMinimumHeight(132);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        setMouseTracking(true);
+        surfaceLayout = new QVBoxLayout(this);
+        surfaceLayout->setContentsMargins(0, 0, 0, 0);
+        surfaceLayout->setSpacing(0);
+        setUnavailableMessage(
+            QStringLiteral("Waveform component is not configured."));
     }
 
     QSize sizeHint() const override
@@ -85,559 +72,101 @@ public:
                             280));
     }
 
-    void setReport(const WavePreviewReport& nextReport,
-                   const QString& fileName)
+    void installContent(QWidget* nextContent)
+    {
+        if (!nextContent || nextContent == content)
+            return;
+        const QSize previousSizeHint = sizeHint();
+        if (content) {
+            QWidget* previousContent = content.data();
+            surfaceLayout->removeWidget(previousContent);
+            content = nullptr;
+            delete previousContent;
+        }
+        content = nextContent;
+        content->setParent(this);
+        surfaceLayout->addWidget(content);
+        if (sizeHint() != previousSizeHint)
+            updateGeometry();
+        updateCompactMode();
+    }
+
+    void setUnavailableMessage(const QString& message)
+    {
+        if (content && content->objectName()
+                != QStringLiteral("wavePreviewUnavailable")) {
+            return;
+        }
+        QLabel* label = qobject_cast<QLabel*>(content.data());
+        if (!label) {
+            label = new QLabel(this);
+            label->setObjectName(QStringLiteral("wavePreviewUnavailable"));
+            label->setAlignment(Qt::AlignCenter);
+            label->setWordWrap(true);
+            InsightVisualStyle::applyLabel(label);
+            installContent(label);
+        }
+        label->setText(message);
+    }
+
+    void setReportShape(const WavePreviewReport& report,
+                        const QString& fileName)
     {
         const QSize previousSizeHint = sizeHint();
-        const int nextLaneCount = nextReport.trace.isValid()
-            ? nextReport.trace.traceSignals.size()
-            : (nextReport.available ? nextReport.lanes.size() : 2);
-        const bool sameFileSession =
-            reportSessionActive && currentFileName == fileName;
+        const int nextLaneCount = report.trace.isValid()
+            ? report.trace.traceSignals.size()
+            : (report.available ? report.lanes.size() : 2);
+        const bool sameFileSession = reportSessionActive
+            && currentFileName == fileName;
         sizeHintLaneCapacity = sameFileSession
             ? qMax(sizeHintLaneCapacity, nextLaneCount)
             : nextLaneCount;
         reportSessionActive = true;
-        report = nextReport;
         currentFileName = fileName;
-        eventHits.clear();
-        laneHits.clear();
-        selectedLine = 0;
-        selectedColumn = 0;
-        selectedSignalName.clear();
-        setToolTip(QString());
-        unsetCursor();
         if (sizeHint() != previousSizeHint)
             updateGeometry();
-        update();
     }
 
-    void resetPaintMetricsForTest()
-    {
-        paintTimingEnabled = true;
-        paintNanoseconds = 0;
-        paintCount = 0;
-    }
-    std::uint64_t paintNanosecondsForTest() const { return paintNanoseconds; }
-    int paintCountForTest() const { return paintCount; }
-
-    void clearReport()
+    void clearReportShape()
     {
         const QSize previousSizeHint = sizeHint();
-        report = WavePreviewReport();
         currentFileName.clear();
         reportSessionActive = false;
         sizeHintLaneCapacity = 2;
-        eventHits.clear();
-        laneHits.clear();
-        selectedLine = 0;
-        selectedColumn = 0;
-        selectedSignalName.clear();
-        setToolTip(QString());
-        unsetCursor();
         if (sizeHint() != previousSizeHint)
             updateGeometry();
-        update();
     }
 
-    void setNavigationHandler(
-        std::function<void(const QString&, int, int)> handler)
+    void setCompactHandler(std::function<void(bool)> handler)
     {
-        navigationHandler = std::move(handler);
-    }
-
-    void setSelectionHandler(std::function<void(const QString&)> handler)
-    {
-        selectionHandler = std::move(handler);
+        compactHandler = std::move(handler);
+        updateCompactMode();
     }
 
 protected:
-    void paintEvent(QPaintEvent*) override
+    void resizeEvent(QResizeEvent* event) override
     {
-        QElapsedTimer paintTimer;
-        if (paintTimingEnabled)
-            paintTimer.start();
-        const auto recordPaint = [this, &paintTimer]() {
-            if (!paintTimingEnabled)
-                return;
-            paintNanoseconds += static_cast<std::uint64_t>(
-                paintTimer.nsecsElapsed());
-            ++paintCount;
-        };
-        eventHits.clear();
-        laneHits.clear();
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        const InsightTheme t = InsightVisualStyle::theme();
-        const QRect canvasRect = rect().adjusted(0, 0, -1, -1);
-        painter.fillRect(canvasRect, t.canvasBackground);
-        painter.setPen(InsightVisualStyle::panelBorderPen());
-        painter.drawRect(canvasRect);
-
-        if (!report.available || report.lanes.isEmpty()) {
-            painter.setPen(t.warning);
-            const QString reason =
-                !report.warnings.isEmpty()
-                    ? report.warnings.first()
-                    : QStringLiteral(
-                          "No symbolic preview: no assign/always events were recognized for this scope.");
-            painter.drawText(canvasRect,
-                             Qt::AlignCenter | Qt::TextWordWrap,
-                             reason);
-            recordPaint();
-            return;
-        }
-
-        if (report.trace.isValid()) {
-            paintTrace(painter, canvasRect);
-            recordPaint();
-            return;
-        }
-
-        int maxCycle = 0;
-        for (const WavePreviewLane& lane : report.lanes) {
-            for (const WavePreviewAssignment& assignment : lane.assignments)
-                maxCycle = std::max(maxCycle, assignment.cycleOffset);
-        }
-        maxCycle = std::max(maxCycle, 2);
-
-        const int labelWidth = qMin(130, qMax(84, width() / 4));
-        const int left = 10;
-        const int right = 12;
-        const int top = 44;
-        const int rowHeight = 32;
-        const int timelineLeft = left + labelWidth;
-        const int timelineRight = width() - right;
-        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
-        const int laneBottom = top + report.lanes.size() * rowHeight;
-
-        paintSketchLegend(painter, canvasRect);
-
-        painter.setPen(t.textMuted);
-        for (int cycle = 0; cycle <= maxCycle; ++cycle) {
-            const int x = timelineLeft
-                + static_cast<int>((timelineWidth * cycle) / maxCycle);
-            painter.drawLine(x, top - 8, x, laneBottom + 4);
-            painter.drawText(QRect(x - 20, 22, 40, 18),
-                             Qt::AlignCenter,
-                             QStringLiteral("t+%1").arg(cycle));
-        }
-
-        QFont labelFont = painter.font();
-        labelFont.setBold(true);
-        painter.setFont(labelFont);
-        painter.setPen(t.textPrimary);
-
-        for (int laneIndex = 0; laneIndex < report.lanes.size(); ++laneIndex) {
-            const WavePreviewLane& lane = report.lanes.at(laneIndex);
-            const int y = top + laneIndex * rowHeight;
-            const int centerY = y + rowHeight / 2;
-            const QRect laneRect(left,
-                                 y + 2,
-                                 timelineRight - left,
-                                 rowHeight - 4);
-
-            if (lane.signalName == selectedSignalName) {
-                painter.fillRect(laneRect, t.hover.lighter(190));
-            }
-            laneHits.append({laneRect,
-                             laneDetailTooltip(lane),
-                             canvasLaneSelectionText(lane),
-                             lane.signalName});
-
-            painter.setPen(InsightVisualStyle::hairlinePen(t.border));
-            painter.drawLine(left, centerY, timelineRight, centerY);
-            painter.setPen(t.textPrimary);
-            painter.drawText(QRect(left, y + 2, labelWidth - 8, 15),
-                             Qt::AlignRight | Qt::AlignVCenter,
-                             lane.signalName);
-            QFont summaryFont = painter.font();
-            summaryFont.setBold(false);
-            painter.setFont(summaryFont);
-            painter.setPen(t.textMuted);
-            painter.drawText(QRect(left, y + 17, labelWidth - 8, 13),
-                             Qt::AlignRight | Qt::AlignVCenter,
-                             laneSummaryText(lane.summary));
-            painter.setFont(labelFont);
-            painter.setPen(t.textPrimary);
-
-            for (int eventIndex = 0;
-                 eventIndex < lane.assignments.size();
-                 ++eventIndex) {
-                const WavePreviewAssignment& assignment =
-                    lane.assignments.at(eventIndex);
-                const int clampedCycle =
-                    qBound(0, assignment.cycleOffset, maxCycle);
-                const int eventCenterX = timelineLeft
-                    + static_cast<int>((timelineWidth * clampedCycle)
-                                       / maxCycle);
-                const int eventWidth = qBound(52,
-                                              timelineWidth / 3,
-                                              112);
-                const int yOffset =
-                    (eventIndex % 2 == 0) ? -10 : 4;
-                QRect eventRect(eventCenterX - eventWidth / 2,
-                                centerY + yOffset,
-                                eventWidth,
-                                18);
-                eventRect = eventRect.intersected(
-                    QRect(timelineLeft + 2, y + 2,
-                          timelineWidth - 4, rowHeight - 4));
-
-                const QColor fill = colorForAssignmentKind(assignment.kind);
-
-                const bool selected =
-                    assignment.line > 0
-                    && assignment.line == selectedLine
-                    && qMax(1, assignment.column) == selectedColumn;
-                painter.setPen(QPen(selected
-                                        ? t.textPrimary
-                                        : fill.darker(125),
-                                    selected ? 2 : 1));
-                painter.setBrush(fill.lighter(180));
-                painter.drawRoundedRect(eventRect, 4, 4);
-                painter.setPen(t.textPrimary);
-                painter.drawText(eventRect.adjusted(5, 0, -5, 0),
-                                 Qt::AlignCenter,
-                                 canvasEventLabel(assignment));
-                eventHits.append({eventRect,
-                                  assignmentDetailTooltip(assignment, report),
-                                  canvasEventSelectionText(assignment, report),
-                                  assignment.line,
-                                  assignment.column});
-            }
-        }
-        recordPaint();
-    }
-
-    void mousePressEvent(QMouseEvent* event) override
-    {
-        if (event->button() != Qt::LeftButton) {
-            QWidget::mousePressEvent(event);
-            return;
-        }
-
-        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
-            if (!it->rect.contains(event->pos()))
-                continue;
-            selectedLine = it->line;
-            selectedColumn = qMax(1, it->column);
-            selectedSignalName.clear();
-            if (selectionHandler)
-                selectionHandler(it->selectionText);
-            update();
-            event->accept();
-            return;
-        }
-        for (auto it = laneHits.crbegin(); it != laneHits.crend(); ++it) {
-            if (!it->rect.contains(event->pos()))
-                continue;
-            selectedLine = 0;
-            selectedColumn = 0;
-            selectedSignalName = it->signalName;
-            if (selectionHandler)
-                selectionHandler(it->selectionText);
-            update();
-            event->accept();
-            return;
-        }
-        selectedLine = 0;
-        selectedColumn = 0;
-        selectedSignalName.clear();
-        if (selectionHandler)
-            selectionHandler(QString());
-        update();
-        QWidget::mousePressEvent(event);
-    }
-
-    void mouseMoveEvent(QMouseEvent* event) override
-    {
-        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
-            if (!it->rect.contains(event->pos()))
-                continue;
-            setToolTip(it->tooltip);
-            setCursor(Qt::PointingHandCursor);
-            QToolTip::showText(event->globalPosition().toPoint(),
-                               it->tooltip,
-                               this,
-                               it->rect);
-            return;
-        }
-        for (auto it = laneHits.crbegin(); it != laneHits.crend(); ++it) {
-            if (!it->rect.contains(event->pos()))
-                continue;
-            setToolTip(it->tooltip);
-            setCursor(Qt::PointingHandCursor);
-            QToolTip::showText(event->globalPosition().toPoint(),
-                               it->tooltip,
-                               this,
-                               it->rect);
-            return;
-        }
-        setToolTip(QString());
-        unsetCursor();
-        QToolTip::hideText();
-    }
-
-    void mouseDoubleClickEvent(QMouseEvent* event) override
-    {
-        if (!navigationHandler || event->button() != Qt::LeftButton) {
-            QWidget::mouseDoubleClickEvent(event);
-            return;
-        }
-
-        for (auto it = eventHits.crbegin(); it != eventHits.crend(); ++it) {
-            if (!it->rect.contains(event->pos()))
-                continue;
-            if (it->line > 0) {
-                navigationHandler(currentFileName,
-                                  it->line,
-                                  qMax(1, it->column));
-                event->accept();
-                return;
-            }
-        }
-        QWidget::mouseDoubleClickEvent(event);
-    }
-
-    void leaveEvent(QEvent*) override
-    {
-        setToolTip(QString());
-        unsetCursor();
-        QToolTip::hideText();
+        QWidget::resizeEvent(event);
+        updateCompactMode();
     }
 
 private:
-    static void drawLegendChip(QPainter& painter,
-                               int* x,
-                               int y,
-                               const QColor& color,
-                               const QString& text)
+    void updateCompactMode()
     {
-        if (!x || text.isEmpty())
+        const bool compact = width() < 720;
+        if (compact == lastCompact || !compactHandler)
             return;
-        const QFontMetrics metrics(painter.font());
-        const int textWidth = metrics.horizontalAdvance(text);
-        const QRect chipRect(*x, y, textWidth + 22, 18);
-        painter.setPen(QPen(color.darker(130), 1));
-        painter.setBrush(color.lighter(180));
-        painter.drawRoundedRect(chipRect, 4, 4);
-        painter.setPen(InsightVisualStyle::theme().textPrimary);
-        painter.drawText(chipRect.adjusted(18, 0, -5, 0),
-                         Qt::AlignVCenter | Qt::AlignLeft,
-                         text);
-        painter.setBrush(color);
-        painter.setPen(Qt::NoPen);
-        painter.drawEllipse(QRect(chipRect.left() + 6,
-                                  chipRect.top() + 5,
-                                  8,
-                                  8));
-        *x += chipRect.width() + 6;
+        lastCompact = compact;
+        compactHandler(compact);
     }
 
-    void paintSketchLegend(QPainter& painter, const QRect& canvasRect) const
-    {
-        painter.save();
-        int x = canvasRect.left() + 10;
-        constexpr int y = 5;
-        QFont legendFont = painter.font();
-        legendFont.setPointSize(qMax(8, legendFont.pointSize() - 1));
-        painter.setFont(legendFont);
-        drawLegendChip(painter,
-                       &x,
-                       y,
-                       colorForAssignmentKind(
-                           WavePreviewAssignmentKind::Continuous),
-                       QStringLiteral("assign"));
-        drawLegendChip(painter,
-                       &x,
-                       y,
-                       colorForAssignmentKind(
-                           WavePreviewAssignmentKind::Blocking),
-                       QStringLiteral("blocking"));
-        drawLegendChip(painter,
-                       &x,
-                       y,
-                       colorForAssignmentKind(
-                           WavePreviewAssignmentKind::NonBlocking),
-                       QStringLiteral("nonblocking"));
-        painter.setPen(InsightVisualStyle::theme().textMuted);
-        painter.drawText(QRect(x + 4,
-                               y,
-                               qMax(40, canvasRect.right() - x - 8),
-                               18),
-                         Qt::AlignVCenter | Qt::AlignLeft,
-                         QStringLiteral("code sketch"));
-        painter.restore();
-    }
-
-    void paintTraceLegend(QPainter& painter, const QRect& canvasRect) const
-    {
-        painter.save();
-        int x = canvasRect.left() + 10;
-        constexpr int y = 5;
-        QFont legendFont = painter.font();
-        legendFont.setPointSize(qMax(8, legendFont.pointSize() - 1));
-        painter.setFont(legendFont);
-        drawLegendChip(painter,
-                       &x,
-                       y,
-                       InsightVisualStyle::theme().hover,
-                       QStringLiteral("trace"));
-        painter.setPen(InsightVisualStyle::theme().textMuted);
-        painter.drawText(QRect(x + 4,
-                               y,
-                               qMax(40, canvasRect.right() - x - 8),
-                               18),
-                         Qt::AlignVCenter | Qt::AlignLeft,
-                         QStringLiteral("symbolic preview only"));
-        painter.restore();
-    }
-
-    void paintTrace(QPainter& painter, const QRect& canvasRect)
-    {
-        const int labelWidth = qMin(130, qMax(84, width() / 4));
-        const int left = 10;
-        const int right = 12;
-        const int top = 44;
-        const int rowHeight = 32;
-        const int timelineLeft = left + labelWidth;
-        const int timelineRight = width() - right;
-        const int timelineWidth = std::max(80, timelineRight - timelineLeft);
-        const int maxCycle = qMax(1, report.trace.cycleCount);
-        const int laneBottom = top + report.trace.traceSignals.size() * rowHeight;
-
-        paintTraceLegend(painter, canvasRect);
-
-        painter.setPen(InsightVisualStyle::theme().textMuted);
-        for (int cycle = 0; cycle <= maxCycle; ++cycle) {
-            const int x = timelineLeft
-                + static_cast<int>((timelineWidth * cycle) / maxCycle);
-            painter.drawLine(x, top - 8, x, laneBottom + 4);
-            painter.drawText(QRect(x - 20, 22, 40, 18),
-                             Qt::AlignCenter,
-                             QStringLiteral("%1").arg(cycle));
-        }
-
-        QFont labelFont = painter.font();
-        labelFont.setBold(true);
-        painter.setFont(labelFont);
-
-        for (int signalIndex = 0;
-             signalIndex < report.trace.traceSignals.size();
-             ++signalIndex) {
-            const WavePreviewTraceSignal& signal =
-                report.trace.traceSignals.at(signalIndex);
-            const int y = top + signalIndex * rowHeight;
-            const int centerY = y + rowHeight / 2;
-            const QRect laneRect(left,
-                                 y + 2,
-                                 timelineRight - left,
-                                 rowHeight - 4);
-            if (signal.signalName == selectedSignalName)
-                painter.fillRect(laneRect,
-                                 InsightVisualStyle::theme().hover.lighter(190));
-            const QString signalValues =
-                signal.values.join(QStringLiteral(" -> "));
-            laneHits.append(
-                {laneRect,
-                 QStringLiteral("waveform signal: %1\nvalues: %2")
-                     .arg(signal.signalName, signalValues),
-                 QStringLiteral("Selected waveform %1 values %2")
-                     .arg(signal.signalName, signalValues),
-                 signal.signalName});
-            painter.setPen(InsightVisualStyle::hairlinePen(
-                InsightVisualStyle::theme().border));
-            painter.drawLine(left, centerY, timelineRight, centerY);
-            painter.setPen(InsightVisualStyle::theme().textPrimary);
-            painter.drawText(QRect(left, y + 2, labelWidth - 8, rowHeight - 4),
-                             Qt::AlignRight | Qt::AlignVCenter,
-                             signal.signalName);
-
-            const int highY = y + 7;
-            const int lowY = y + rowHeight - 8;
-            const int busTop = y + 7;
-            const int busHeight = rowHeight - 14;
-            QPen wavePen(InsightVisualStyle::theme().hover, 2);
-            painter.setPen(wavePen);
-            painter.setBrush(Qt::NoBrush);
-
-            const int sampleCount = signal.values.size();
-            if (sampleCount < 2)
-                continue;
-
-            auto xForSample = [&](int sample) {
-                return timelineLeft
-                    + static_cast<int>((timelineWidth * sample)
-                                       / qMax(1, sampleCount - 1));
-            };
-            if (signal.width <= 1) {
-                for (int sample = 0; sample < sampleCount - 1; ++sample) {
-                    const QString value = signal.values.at(sample);
-                    const QString nextValue = signal.values.at(sample + 1);
-                    const bool unknown = value == QStringLiteral("x");
-                    const int yValue =
-                        unknown ? centerY
-                                : (value == QStringLiteral("0") ? lowY : highY);
-                    const int x0 = xForSample(sample);
-                    const int x1 = xForSample(sample + 1);
-                    if (unknown) {
-                        painter.setPen(QPen(
-                            InsightVisualStyle::theme().textMuted, 1));
-                        painter.drawLine(x0, centerY, x1, centerY);
-                        painter.drawText(QRect(x0, y + 2, x1 - x0, 12),
-                                         Qt::AlignCenter,
-                                         QStringLiteral("x"));
-                    } else {
-                        painter.setPen(wavePen);
-                        painter.drawLine(x0, yValue, x1, yValue);
-                    }
-                    if (nextValue != value) {
-                        const bool nextUnknown = nextValue == QStringLiteral("x");
-                        const int nextY =
-                            nextUnknown ? centerY
-                                        : (nextValue == QStringLiteral("0")
-                                               ? lowY
-                                               : highY);
-                        painter.drawLine(x1, yValue, x1, nextY);
-                    }
-                }
-            } else {
-                for (int sample = 0; sample < sampleCount - 1; ++sample) {
-                    const int x0 = xForSample(sample);
-                    const int x1 = xForSample(sample + 1);
-                    QRect segment(x0 + 1,
-                                  busTop,
-                                  qMax(8, x1 - x0 - 2),
-                                  busHeight);
-                    painter.setPen(QPen(InsightVisualStyle::theme().hover, 1));
-                    painter.setBrush(
-                        InsightVisualStyle::theme().hover.lighter(185));
-                    painter.drawRect(segment);
-                    painter.setPen(InsightVisualStyle::theme().textPrimary);
-                    painter.drawText(segment.adjusted(2, 0, -2, 0),
-                                     Qt::AlignCenter,
-                                     signal.values.at(sample));
-                }
-            }
-        }
-    }
-
-    WavePreviewReport report;
-    QVector<CanvasEventHit> eventHits;
-    QVector<CanvasLaneHit> laneHits;
+    QVBoxLayout* surfaceLayout = nullptr;
+    QPointer<QWidget> content;
     QString currentFileName;
     bool reportSessionActive = false;
     int sizeHintLaneCapacity = 2;
-    int selectedLine = 0;
-    int selectedColumn = 0;
-    QString selectedSignalName;
-    bool paintTimingEnabled = false;
-    std::uint64_t paintNanoseconds = 0;
-    int paintCount = 0;
-    std::function<void(const QString&, int, int)> navigationHandler;
-    std::function<void(const QString&)> selectionHandler;
+    bool lastCompact = false;
+    std::function<void(bool)> compactHandler;
 };
 
 QString displayFileName(const QString& fileName)
@@ -690,19 +219,6 @@ QString assignmentKindText(WavePreviewAssignmentKind kind)
         return QStringLiteral("nonblocking");
     }
     return QStringLiteral("assignment");
-}
-
-QColor colorForAssignmentKind(WavePreviewAssignmentKind kind)
-{
-    switch (kind) {
-    case WavePreviewAssignmentKind::Continuous:
-        return InsightVisualStyle::theme().semantic.read;
-    case WavePreviewAssignmentKind::Blocking:
-        return InsightVisualStyle::theme().semantic.port;
-    case WavePreviewAssignmentKind::NonBlocking:
-        return InsightVisualStyle::theme().semantic.condition;
-    }
-    return InsightVisualStyle::roleColor(InsightVisualRole::Unknown);
 }
 
 QString sketchLegendText(const WavePreviewReport& report)
@@ -1062,44 +578,6 @@ QString assignmentDetailTooltip(const WavePreviewAssignment& assignment,
     }.join(QStringLiteral("\n"));
 }
 
-QString canvasEventSelectionText(const WavePreviewAssignment& assignment,
-                                 const WavePreviewReport& report)
-{
-    QStringList parts;
-    parts.append(QStringLiteral("Selected %1").arg(assignment.target));
-    parts.append(timingText(assignment));
-    if (!assignment.guardText.isEmpty())
-        parts.append(QStringLiteral("guard %1").arg(assignment.guardText));
-    const QString sources = sourcesText(assignment.sourceSignals);
-    if (sources != QStringLiteral("-"))
-        parts.append(QStringLiteral("sources %1").arg(sources));
-    const QString clockReset = clockResetText(assignment, report);
-    if (clockReset != QStringLiteral("-"))
-        parts.append(clockReset);
-    const QString location = locationText(assignment);
-    if (location != QStringLiteral("-"))
-        parts.append(location);
-    return parts.join(QStringLiteral(" - "));
-}
-
-QString canvasLaneSelectionText(const WavePreviewLane& lane)
-{
-    QStringList parts;
-    parts.append(QStringLiteral("Selected lane %1").arg(lane.signalName));
-    parts.append(laneSummaryText(lane.summary));
-    const QString activity = laneActivityText(lane.summary);
-    if (activity != QStringLiteral("-"))
-        parts.append(QStringLiteral("activity %1").arg(activity));
-    const QString warnings = laneWarningText(lane.summary);
-    if (warnings != QStringLiteral("-"))
-        parts.append(QStringLiteral("warnings %1").arg(warnings));
-    const QString context =
-        signalContextBrief(lane.context.isValid() ? &lane.context : nullptr);
-    if (context != QStringLiteral("-"))
-        parts.append(QStringLiteral("context %1").arg(context));
-    return parts.join(QStringLiteral(" - "));
-}
-
 QString laneDetailTooltip(const WavePreviewLane& lane)
 {
     QStringList sources;
@@ -1138,14 +616,6 @@ QString eventText(const WavePreviewAssignment& assignment,
              assignment.expression.isEmpty()
                  ? QStringLiteral("<expr>")
                  : assignment.expression);
-}
-
-QString canvasEventLabel(const WavePreviewAssignment& assignment)
-{
-    QString label = assignment.target;
-    if (!assignment.guardText.isEmpty())
-        label += QStringLiteral(" if ") + assignment.guardText;
-    return label;
 }
 
 void setNavigationData(QTreeWidgetItem* item,
@@ -1487,7 +957,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    titleLabel = new QLabel(QStringLiteral("Wave Preview"), panel);
+    titleLabel = new QLabel(QStringLiteral("Symbolic Preview"), panel);
     titleLabel->setObjectName(QStringLiteral("wavePreviewTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
@@ -1564,22 +1034,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
     toolbarLayout->addWidget(exportButton);
     layout->addLayout(toolbarLayout);
 
-    auto* canvas = new WavePreviewCanvas(panel);
-    canvas->setNavigationHandler(
-        [this](const QString& fileName, int line, int column) {
-            if (!navigationHandler || line <= 0)
-                return;
-            navigationHandler(fileName.isEmpty() ? currentFileName : fileName,
-                              line,
-                              qMax(1, column));
-        });
-    canvas->setSelectionHandler([this](const QString& selectionText) {
-        if (!summaryLabel)
-            return;
-        summaryLabel->setText(selectionText.isEmpty()
-                                  ? currentSummaryText
-                                  : selectionText);
-    });
+    auto* canvas = new WaveformPreviewSurface(panel);
     previewCanvas = canvas;
     layout->addWidget(previewCanvas, 0);
 
@@ -1628,6 +1083,41 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                              QDockWidget::DockWidgetClosable);
     previewDock->hide();
 
+    waveformPreviewLoader = std::make_unique<WaveformPreviewLoader>();
+    waveformPreviewLoader->setSourceNavigationHandler(
+        [this](const QString& sourceFile,
+               int sourceLine,
+               int sourceColumn,
+               const QString&,
+               const QString&) {
+            if (!navigationHandler || sourceLine <= 0)
+                return;
+            navigationHandler(resolveNavigationFile(sourceFile),
+                              sourceLine,
+                              qMax(1, sourceColumn));
+        });
+    canvas->setCompactHandler([this](bool compact) {
+        if (waveformPreviewLoader && waveformView) {
+            waveformPreviewLoader->setCompact(
+                waveformView.data(), compact);
+        }
+    });
+    themeConnection = QObject::connect(
+        &ApplicationThemeManager::instance(),
+        &ApplicationThemeManager::themeChanged,
+        panel,
+        [this](ThemeMode mode) {
+            if (waveformPreviewLoader && waveformView) {
+                waveformPreviewLoader->setTheme(
+                    waveformView.data(),
+                    mode == ThemeMode::Dark
+                        ? QStringLiteral("dark")
+                        : QStringLiteral("light"));
+            }
+        });
+    const WaveSimulationConfiguration waveConfiguration;
+    installWaveformView(waveConfiguration.toolPaths().widgetLibrary);
+
     QObject::connect(previewTree,
                      &QTreeWidget::itemDoubleClicked,
                      previewTree,
@@ -1645,26 +1135,24 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
                      });
 }
 
-WavePreviewPanelCoordinator::~WavePreviewPanelCoordinator() = default;
+WavePreviewPanelCoordinator::~WavePreviewPanelCoordinator()
+{
+    QObject::disconnect(themeConnection);
+    if (waveformPreviewLoader)
+        waveformPreviewLoader->setSourceNavigationHandler({});
+    waveformView = nullptr;
+}
 
 WavePreviewRefreshMetrics
 WavePreviewPanelCoordinator::refreshMetricsForTest() const
 {
-    WavePreviewRefreshMetrics result = refreshMetrics;
-    if (const auto* canvas =
-            static_cast<const WavePreviewCanvas*>(previewCanvas)) {
-        result.canvasPaintNanoseconds = canvas->paintNanosecondsForTest();
-        result.canvasPaintCount = canvas->paintCountForTest();
-    }
-    return result;
+    return refreshMetrics;
 }
 
 void WavePreviewPanelCoordinator::resetRefreshMetricsForTest()
 {
     refreshMetrics = {};
     refreshTimingEnabled = true;
-    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
-        canvas->resetPaintMetricsForTest();
 }
 
 void WavePreviewPanelCoordinator::setNavigationHandler(
@@ -1679,8 +1167,116 @@ void WavePreviewPanelCoordinator::setStatusMessageHandler(
     statusMessageHandler = std::move(handler);
 }
 
+void WavePreviewPanelCoordinator::setWaveformLibraryPath(
+    const QString& libraryPath)
+{
+    QWidget* previousView = waveformView.data();
+    installWaveformView(libraryPath);
+    if (waveformView && waveformView.data() != previousView
+        && currentReport.trace.isValid()) {
+        renderReport(currentReport, currentFileName, currentDirty);
+    }
+}
+
+void WavePreviewPanelCoordinator::setWorkspaceRoot(const QString& rootPath)
+{
+    const QString normalized = QDir::cleanPath(
+        QDir::fromNativeSeparators(rootPath.trimmed()));
+    workspaceRoot = QDir::isAbsolutePath(normalized)
+        ? normalized
+        : QString();
+    if (waveformView && currentReport.trace.isValid())
+        renderReport(currentReport, currentFileName, currentDirty);
+}
+
+void WavePreviewPanelCoordinator::installWaveformView(
+    const QString& libraryPath)
+{
+    auto* surface = static_cast<WaveformPreviewSurface*>(previewCanvas);
+    if (!surface || !waveformPreviewLoader)
+        return;
+
+    const QString requestedPath = QFileInfo(libraryPath).absoluteFilePath();
+    if (libraryPath.trimmed().isEmpty()) {
+        waveformFailure = QStringLiteral(
+            "Waveform component is not configured. Symbolic details remain available below.");
+        if (!waveformView)
+            surface->setUnavailableMessage(waveformFailure);
+        return;
+    }
+    if (waveformView
+        && waveformPreviewLoader->loadedLibraryPath() == requestedPath) {
+        return;
+    }
+
+    QString failure;
+    QWidget* nextView = waveformPreviewLoader->createView(
+        requestedPath, surface, &failure);
+    if (!nextView) {
+        waveformFailure = failure;
+        if (waveformView) {
+            setWaveformPresentationState(QStringLiteral("failed"), failure);
+        } else {
+            surface->setUnavailableMessage(
+                failure.isEmpty()
+                    ? QStringLiteral("Waveform component is unavailable.")
+                    : failure);
+        }
+        return;
+    }
+
+    surface->installContent(nextView);
+    waveformView = nextView;
+    waveformLibraryPath = waveformPreviewLoader->loadedLibraryPath();
+    waveformFailure.clear();
+    waveformPreviewLoader->setTheme(
+        waveformView.data(),
+        ApplicationThemeManager::instance().mode() == ThemeMode::Dark
+            ? QStringLiteral("dark")
+            : QStringLiteral("light"));
+    waveformPreviewLoader->setCompact(
+        waveformView.data(), surface->width() < 720);
+    setWaveformPresentationState(
+        QStringLiteral("empty"),
+        QStringLiteral("No document selected."));
+}
+
+void WavePreviewPanelCoordinator::setWaveformPresentationState(
+    const QString& state,
+    const QString& message)
+{
+    if (!waveformPreviewLoader || !waveformView)
+        return;
+    QString failure;
+    if (!waveformPreviewLoader->setPresentationState(
+            waveformView.data(), state, message, &failure)
+        && !failure.isEmpty()) {
+        waveformFailure = failure;
+    }
+}
+
+QString WavePreviewPanelCoordinator::resolveNavigationFile(
+    const QString& sourceFile) const
+{
+    if (!currentFileName.trimmed().isEmpty())
+        return currentFileName;
+    const QString portable = QDir::cleanPath(
+        QDir::fromNativeSeparators(sourceFile.trimmed()));
+    if (portable.isEmpty() || portable == QLatin1String(".")
+        || QDir::isAbsolutePath(portable)
+        || portable == QLatin1String("..")
+        || portable.startsWith(QStringLiteral("../"))) {
+        return {};
+    }
+    return workspaceRoot.isEmpty()
+        ? portable
+        : QDir(workspaceRoot).absoluteFilePath(portable);
+}
+
 void WavePreviewPanelCoordinator::focusFit()
 {
+    if (waveformPreviewLoader && waveformView)
+        waveformPreviewLoader->fitAll(waveformView.data());
     focusZoomFactor = 1.0;
     applyFocusZoom();
     if (!previewTree)
@@ -1694,6 +1290,8 @@ void WavePreviewPanelCoordinator::focusFit()
 
 void WavePreviewPanelCoordinator::focusZoomIn()
 {
+    if (waveformPreviewLoader && waveformView)
+        waveformPreviewLoader->zoomIn(waveformView.data());
     focusZoomFactor =
         qMin<qreal>(1.75, focusZoomFactor * 1.12);
     applyFocusZoom();
@@ -1701,6 +1299,8 @@ void WavePreviewPanelCoordinator::focusZoomIn()
 
 void WavePreviewPanelCoordinator::focusZoomOut()
 {
+    if (waveformPreviewLoader && waveformView)
+        waveformPreviewLoader->zoomOut(waveformView.data());
     focusZoomFactor =
         qMax<qreal>(0.75, focusZoomFactor / 1.12);
     applyFocusZoom();
@@ -1952,6 +1552,9 @@ void WavePreviewPanelCoordinator::renderDocumentNow(
     int sourcePositionOffset,
     int sourceLineOffset)
 {
+    setWaveformPresentationState(
+        QStringLiteral("loading"),
+        QStringLiteral("Updating Symbolic Preview"));
     QElapsedTimer waveServiceTimer;
     if (refreshTimingEnabled)
         waveServiceTimer.start();
@@ -1987,7 +1590,7 @@ void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
     currentReport = WavePreviewReport();
     currentDirty = false;
     if (titleLabel)
-        titleLabel->setText(QStringLiteral("Wave Preview"));
+        titleLabel->setText(QStringLiteral("Symbolic Preview"));
     if (summaryLabel) {
         currentSummaryText = message;
         summaryLabel->setText(message);
@@ -1998,8 +1601,9 @@ void WavePreviewPanelCoordinator::renderUnavailable(const QString& message)
         clockCombo->clear();
     if (resetCombo)
         resetCombo->clear();
-    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas))
-        canvas->clearReport();
+    if (auto* canvas = static_cast<WaveformPreviewSurface*>(previewCanvas))
+        canvas->clearReportShape();
+    setWaveformPresentationState(QStringLiteral("empty"), message);
     if (previewTree)
         previewTree->clear();
     GraphExportUi::updateActionAvailability(
@@ -2023,11 +1627,39 @@ void WavePreviewPanelCoordinator::renderReport(
     currentReport = report;
     currentDirty = dirty;
     QTreeWidgetItem stagingRoot;
-    if (auto* canvas = static_cast<WavePreviewCanvas*>(previewCanvas)) {
+    if (auto* canvas = static_cast<WaveformPreviewSurface*>(previewCanvas)) {
         QElapsedTimer canvasUpdateTimer;
         if (refreshTimingEnabled)
             canvasUpdateTimer.start();
-        canvas->setReport(report, fileName);
+        canvas->setReportShape(report, fileName);
+        if (report.trace.isValid()) {
+            QString payloadRoot = workspaceRoot;
+            if (payloadRoot.isEmpty() && QFileInfo(fileName).isAbsolute())
+                payloadRoot = QFileInfo(fileName).absolutePath();
+            const WavePreviewPayloadBuildResult payload =
+                WavePreviewPayloadAdapter::buildSymbolic(
+                    report, fileName, payloadRoot);
+            if (!payload.ok()) {
+                waveformFailure = payload.error;
+                setWaveformPresentationState(
+                    QStringLiteral("failed"), payload.error);
+            } else if (waveformPreviewLoader && waveformView) {
+                QString failure;
+                if (!waveformPreviewLoader->replacePreview(
+                        waveformView.data(), payload.payload, &failure)) {
+                    waveformFailure = failure;
+                } else {
+                    waveformFailure.clear();
+                }
+            }
+        } else {
+            setWaveformPresentationState(
+                QStringLiteral("empty"),
+                report.warnings.isEmpty()
+                    ? QStringLiteral(
+                          "Symbolic Preview is unavailable for this scope.")
+                    : report.warnings.constFirst());
+        }
         if (refreshTimingEnabled) {
             canvasUpdateElapsed = canvasUpdateTimer.nsecsElapsed();
             refreshMetrics.canvasUpdateNanoseconds +=
@@ -2041,7 +1673,7 @@ void WavePreviewPanelCoordinator::renderReport(
                 : QString();
         setLabelTextIfChanged(
             titleLabel,
-            QStringLiteral("Wave Preview - %1%2")
+            QStringLiteral("Symbolic Preview - %1%2")
                 .arg(displayFileName(fileName), titleScope));
     }
     if (summaryLabel) {

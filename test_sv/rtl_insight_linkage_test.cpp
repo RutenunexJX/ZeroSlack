@@ -22,6 +22,7 @@
 #include <QTransform>
 #include <QWidget>
 
+#include <algorithm>
 #include <iostream>
 #include <memory>
 
@@ -187,6 +188,23 @@ int main(int argc, char** argv)
     check(panel.graphModeForTest()
               == QStringLiteral("fsm"),
           "state graph mode is retained");
+    const QStringList initialGraphSummaries =
+        panel.graphElementSummariesForTest();
+    const bool initialStateMarked = std::any_of(
+              initialGraphSummaries.cbegin(),
+              initialGraphSummaries.cend(),
+              [](const QString& summary) {
+                  return summary.startsWith(
+                      QStringLiteral("state|IDLE|initial"));
+              });
+    if (!initialStateMarked) {
+        std::cerr << "RTL initial state diagnostic: ["
+                  << initialGraphSummaries.join(
+                         QStringLiteral(" || ")).toStdString()
+                  << "]\n";
+    }
+    check(initialStateMarked,
+          "state graph marks the deterministic layout root as initial");
     QToolButton* pinButton =
         panel.pinButtonForTest();
     check(pinButton && pinButton->isCheckable(),
@@ -361,12 +379,65 @@ int main(int argc, char** argv)
                      == QStringLiteral("state_d"),
           "pin preserves the displayed file, module, and signal context");
 
+    check(panel.selectGraphItemForTest(
+              QStringLiteral("state"),
+              QStringLiteral("RUN")),
+          "refresh fixture selects a stable graph identity");
+    QGraphicsView* refreshGraphView = panel.graphView();
+    if (refreshGraphView) {
+        refreshGraphView->setTransform(
+            QTransform::fromScale(1.41, 1.41));
+        refreshGraphView->centerOn(
+            refreshGraphView->scene()->sceneRect().center()
+                + QPointF(19.0, -13.0));
+    }
+    const QTransform beforeRefreshTransform = refreshGraphView
+        ? refreshGraphView->transform() : QTransform();
+    const QPointF beforeRefreshCenter = refreshGraphView
+        ? refreshGraphView->mapToScene(
+              refreshGraphView->viewport()->rect().center())
+        : QPointF();
+    const QStringList beforeRefreshSelection =
+        panel.graphSelectedElementSummariesForTest();
     panel.refresh();
     check(panel.graphBuildGenerationForTest()
               == pinnedGeneration + 1,
           "an explicit graph refresh remains available while pinned");
     check(panel.isPinned(),
           "explicit refresh does not silently clear pin state");
+    const QPointF afterRefreshCenter = refreshGraphView
+        ? refreshGraphView->mapToScene(
+              refreshGraphView->viewport()->rect().center())
+        : QPointF();
+    const QTransform afterRefreshTransform = refreshGraphView
+        ? refreshGraphView->transform() : QTransform();
+    const QStringList afterRefreshSelection =
+        panel.graphSelectedElementSummariesForTest();
+    const bool compatibleRefreshPreserved = refreshGraphView
+        && afterRefreshTransform == beforeRefreshTransform
+        && QLineF(beforeRefreshCenter, afterRefreshCenter).length() < 1.0
+        && afterRefreshSelection == beforeRefreshSelection;
+    if (!compatibleRefreshPreserved) {
+        std::cerr << "RTL compatible refresh diagnostic: before scale=("
+                  << beforeRefreshTransform.m11() << ','
+                  << beforeRefreshTransform.m22() << "), after scale=("
+                  << afterRefreshTransform.m11() << ','
+                  << afterRefreshTransform.m22() << "), before center=("
+                  << beforeRefreshCenter.x() << ','
+                  << beforeRefreshCenter.y() << "), after center=("
+                  << afterRefreshCenter.x() << ','
+                  << afterRefreshCenter.y() << "), distance="
+                  << QLineF(beforeRefreshCenter, afterRefreshCenter).length()
+                  << ", before selection=["
+                  << beforeRefreshSelection.join(
+                         QStringLiteral(" || ")).toStdString()
+                  << "], after selection=["
+                  << afterRefreshSelection.join(
+                         QStringLiteral(" || ")).toStdString()
+                  << "]\n";
+    }
+    check(compatibleRefreshPreserved,
+          "compatible graph refresh preserves viewport and stable selection");
 
     RtlInsightSourceLocation activated;
     panel.setSourceNavigationHandler(

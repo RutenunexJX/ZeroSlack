@@ -4,6 +4,7 @@
 #include "zeroslackexport.h"
 
 #include <QFlags>
+#include <QSize>
 #include <QString>
 #include <QUrl>
 #include <QVariantMap>
@@ -23,6 +24,14 @@ struct ZEROSLACK_API ContextViewCapabilities {
     int minimumWidth = 320;
     int preferredWidth = 520;
     int maximumWidth = 720;
+    int minimumHeight = 220;
+    int preferredHeight = 440;
+    int maximumHeight = 920;
+
+    QSize preferredSize() const
+    {
+        return QSize(preferredWidth, preferredHeight);
+    }
 
     bool supports(ContextPresentation presentation) const
     {

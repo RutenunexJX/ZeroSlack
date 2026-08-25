@@ -106,6 +106,17 @@ ContextWorkspaceController::ContextWorkspaceController(
                 if (peekHostValue && peekHostValue->hasResource())
                     emit fullViewRequested(peekHostValue->resource());
             });
+    connect(peekHostValue,
+            &ContextPeekHost::preferredSizeChanged,
+            this,
+            [this](const QSize&) {
+                notifyWorkspaceStateChanged();
+            });
+    connect(peekHostValue,
+            &ContextPeekHost::preferredSizeResetRequested,
+            this,
+            &ContextWorkspaceController::
+                resetPeekToProviderPreferredSize);
     connect(dockHostValue,
             &ContextDockHost::closeResourceRequested,
             this,
@@ -300,8 +311,7 @@ bool ContextWorkspaceController::openResource(
             key,
             capabilities.supports(ContextPresentation::FullView));
         dockHostValue->activateResource(key);
-        dockValue->show();
-        dockValue->raise();
+        showDock(false);
         updateActiveRailEntry();
         if (mode == ContextOpenMode::Pinned)
             notifyWorkspaceStateChanged();
@@ -359,12 +369,13 @@ bool ContextWorkspaceController::openResource(
 
     if (mode == ContextOpenMode::Peek) {
         closePeek();
-        peekHostValue->setPreferredWidth(capabilities.preferredWidth);
         peekHostValue->setActionsAvailable(
             capabilities.supports(ContextPresentation::Pinned),
             capabilities.supports(ContextPresentation::FullView));
         peekHostValue->setView(resource, view);
     } else {
+        const bool dockWasEmpty =
+            dockHostValue->resourceCount() == 0;
         if (!dockHostValue->addResource(
                 resource,
                 view,
@@ -377,14 +388,7 @@ bool ContextWorkspaceController::openResource(
             }
             return false;
         }
-        dockValue->show();
-        dockValue->raise();
-        if (!dockValue->isFloating() && window) {
-            window->resizeDocks(
-                {dockValue},
-                {capabilities.preferredWidth},
-                Qt::Horizontal);
-        }
+        showDock(dockWasEmpty && !restoringState);
         if (mode == ContextOpenMode::TransientDock)
             transientDockResourceKey = key;
     }
@@ -418,6 +422,8 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
         return false;
     }
 
+    const bool dockWasEmpty =
+        dockHostValue->resourceCount() == 0;
     QWidget* view = peekHostValue->takeView();
     if (!view || !dockHostValue->addResource(
                      resource,
@@ -432,14 +438,7 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
         }
         return false;
     }
-    dockValue->show();
-    dockValue->raise();
-    if (!dockValue->isFloating() && window) {
-        window->resizeDocks(
-            {dockValue},
-            {provider->capabilities(resource).preferredWidth},
-            Qt::Horizontal);
-    }
+    showDock(dockWasEmpty && !restoringState);
     updateActiveRailEntry();
     emit resourceOpened(resource, ContextOpenMode::Pinned);
     emit activeResourceChanged(resource);
@@ -487,8 +486,6 @@ bool ContextWorkspaceController::unpinResource(
     if (transientDockResourceKey == resourceKey)
         transientDockResourceKey.clear();
     closePeek();
-    peekHostValue->setPreferredWidth(
-        provider->capabilities(resource).preferredWidth);
     peekHostValue->setActionsAvailable(
         provider->capabilities(resource).supports(
             ContextPresentation::Pinned),
@@ -581,12 +578,19 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
 {
     ContextWorkspaceState state;
     state.valid = true;
-    state.peekWidth = peekHostValue
-        ? peekHostValue->preferredWidth()
-        : state.peekWidth;
-    state.dockWidth = dockValue
-        ? qMax(1, dockValue->width())
-        : state.dockWidth;
+    if (peekHostValue) {
+        const QSize peekSize = peekHostValue->preferredSize();
+        state.peekWidth =
+            ContextWorkspaceState::boundedPeekWidth(
+                peekSize.width());
+        state.peekHeight =
+            ContextWorkspaceState::boundedPeekHeight(
+                peekSize.height());
+    }
+    state.dockWidth = ContextWorkspaceState::boundedDockWidth(
+        dockValue && dockValue->isVisible()
+            ? dockValue->width()
+            : preferredDockWidthValue);
     state.dockVisible = dockValue && dockValue->isVisible();
     state.railVisible = railValue && railValue->isVisible();
     if (!dockHostValue)
@@ -622,16 +626,41 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
 }
 
 ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
-    const ContextWorkspaceState& state)
+    const ContextWorkspaceState& state,
+    bool preserveRestoredDockGeometry)
 {
     ContextWorkspaceRestoreResult result;
-    clearResources();
-    if (!state.valid)
-        return result;
-
+    const int restoredQtDockWidth =
+        dockValue && dockValue->width() > 0
+        ? boundedDockWidthForWindow(dockValue->width())
+        : ContextWorkspaceState::kDefaultDockWidth;
+    const bool previousRestoring = restoringState;
     restoringState = true;
-    if (peekHostValue)
-        peekHostValue->setPreferredWidth(state.peekWidth);
+    clearResources();
+    if (!state.valid) {
+        if (peekHostValue) {
+            peekHostValue->setPreferredSize(
+                QSize(ContextWorkspaceState::kDefaultPeekWidth,
+                      ContextWorkspaceState::kDefaultPeekHeight));
+        }
+        preferredDockWidthValue =
+            ContextWorkspaceState::kDefaultDockWidth;
+        restoringState = previousRestoring;
+        return result;
+    }
+
+    if (peekHostValue) {
+        peekHostValue->setPreferredSize(
+            QSize(
+                ContextWorkspaceState::boundedPeekWidth(
+                    state.peekWidth),
+                ContextWorkspaceState::boundedPeekHeight(
+                    state.peekHeight)));
+    }
+    preferredDockWidthValue = preserveRestoredDockGeometry
+        ? restoredQtDockWidth
+        : ContextWorkspaceState::boundedDockWidth(
+              state.dockWidth);
 
     for (const QVariantMap& encoded : state.pinnedResources) {
         QString failureReason;
@@ -673,20 +702,27 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
             state.activePinnedResourceKey);
     }
     if (dockValue && dockHostValue) {
+        const bool previousApplying = applyingDockWidth;
+        applyingDockWidth = true;
         dockValue->setVisible(
             state.dockVisible
             && dockHostValue->resourceCount() > 0);
-        if (state.dockWidth > 0
+        if (!preserveRestoredDockGeometry
+            && state.dockWidth > 0
             && !dockValue->isFloating()
             && window
             && dockHostValue->resourceCount() > 0) {
             window->resizeDocks(
-                {dockValue}, {state.dockWidth}, Qt::Horizontal);
+                {dockValue},
+                {boundedDockWidthForWindow(
+                    preferredDockWidthValue)},
+                Qt::Horizontal);
         }
+        applyingDockWidth = previousApplying;
     }
     if (railValue)
         railValue->setVisible(state.railVisible);
-    restoringState = false;
+    restoringState = previousRestoring;
     updateActiveRailEntry();
     return result;
 }
@@ -698,7 +734,15 @@ bool ContextWorkspaceController::eventFilter(
     if (watched == dockValue
         && event
         && event->type() == QEvent::Resize) {
-        notifyWorkspaceStateChanged();
+        if (!restoringState
+            && !applyingDockWidth
+            && dockValue
+            && dockValue->isVisible()) {
+            preferredDockWidthValue =
+                ContextWorkspaceState::boundedDockWidth(
+                    dockValue->width());
+            notifyWorkspaceStateChanged();
+        }
     }
     return QObject::eventFilter(watched, event);
 }
@@ -783,12 +827,67 @@ bool ContextWorkspaceController::activatePinnedProvider(
         if (resource.providerId != providerId)
             continue;
         dockHostValue->activateResource(resource.stableKey());
-        dockValue->show();
-        dockValue->raise();
+        showDock(false);
         updateActiveRailEntry();
         return true;
     }
     return false;
+}
+
+void ContextWorkspaceController::resetPeekToProviderPreferredSize()
+{
+    if (!peekHostValue || !peekHostValue->hasResource())
+        return;
+    IContextContentProvider* provider =
+        providerFor(peekHostValue->resource());
+    if (!provider)
+        return;
+    const QSize previous = peekHostValue->preferredSize();
+    peekHostValue->setPreferredSize(
+        provider->capabilities(peekHostValue->resource())
+            .preferredSize());
+    if (peekHostValue->preferredSize() != previous)
+        notifyWorkspaceStateChanged();
+}
+
+int ContextWorkspaceController::boundedDockWidthForWindow(
+    int width) const
+{
+    const int stored =
+        ContextWorkspaceState::boundedDockWidth(width);
+    if (!window)
+        return stored;
+    const int available = qMax(1, window->width());
+    const int minimum = qMin(
+        ContextWorkspaceState::kMinimumDockWidth,
+        available);
+    const int reservedCenter = qMin(
+        240,
+        qMax(0, available - minimum));
+    const int maximum = qMax(
+        minimum,
+        available - reservedCenter);
+    return qBound(minimum, stored, maximum);
+}
+
+void ContextWorkspaceController::showDock(bool applyPreferredWidth)
+{
+    if (!dockValue)
+        return;
+    const bool previousApplying = applyingDockWidth;
+    applyingDockWidth = true;
+    dockValue->show();
+    dockValue->raise();
+    if (applyPreferredWidth
+        && !dockValue->isFloating()
+        && window) {
+        window->resizeDocks(
+            {dockValue},
+            {boundedDockWidthForWindow(
+                preferredDockWidthValue)},
+            Qt::Horizontal);
+    }
+    applyingDockWidth = previousApplying;
 }
 
 void ContextWorkspaceController::notifyWorkspaceStateChanged()

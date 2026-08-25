@@ -41,6 +41,7 @@
 #include "globalcontrolservice.h"
 #include "insightfocuscontroller.h"
 #include "insightvisualstyle.h"
+#include "liveinsightsession.h"
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
 #include "semanticdockcoordinator.h"
@@ -1516,6 +1517,7 @@ void MainWindow::setupManagerConnections()
                 scheduleActiveEditorPassiveRefresh();
                 updatePackageTools();
                 refreshEditorActionContextChip();
+                requestLiveInsightUpdates();
                 if (analysisScheduler && !snapshot.fileName.isEmpty()) {
                     refreshDiagnosticsAnalysisState();
                 }
@@ -1537,6 +1539,7 @@ void MainWindow::setupManagerConnections()
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
                                 refreshEditorActionContextChip();
+                                requestLiveInsightUpdates();
                             }
                         });
                 connect(editor,
@@ -1569,15 +1572,19 @@ void MainWindow::setupManagerConnections()
                                     QStringLiteral("wavePreview"))) {
                                 refreshActiveEditorWavePreview();
                             }
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                requestLiveInsightUpdates();
+                            }
                         });
                 connect(editor,
                         &MyCodeEditor::documentChangeApplied,
                         this,
-                        [this, editor](const DocumentChange& change) {
-                            applyActiveEditorWavePreviewChange(editor, change);
+                        [this, editor](const DocumentChange&) {
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
                                 refreshEditorActionContextChip();
+                                requestLiveInsightUpdates();
                             }
                         });
             });
@@ -1613,6 +1620,7 @@ void MainWindow::setupManagerConnections()
                     refreshTemporaryEditorSemanticCatalog();
                 refreshDiagnosticsAnalysisState();
                 refreshEditorActionContextChip();
+                requestLiveInsightUpdates();
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisDeferred,
@@ -1924,66 +1932,6 @@ void MainWindow::refreshActiveEditorWavePreview()
         moduleScope.label,
         moduleScope.startLine);
 }
-
-void MainWindow::applyActiveEditorWavePreviewChange(
-    MyCodeEditor* editor,
-    const DocumentChange& change)
-{
-    if (!editor || !tabManager || !semanticDocks
-        || tabManager->getCurrentEditor() != editor
-        || !semanticDocks->wavePreviewPanelCoordinator()) {
-        return;
-    }
-
-    if (!insightPanelVisibleOrFocused(
-            QStringLiteral("wavePreview"))) {
-        return;
-    }
-
-    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
-    const int latestDocumentLength = editor->cachedDocumentLength();
-    const auto latestDocumentSlice =
-        [editor](int position, int length) {
-            return editor->cachedDocumentSlice(position, length);
-        };
-    const EditorAlwaysScopeTarget alwaysScope =
-        editor->currentAlwaysScopeTarget();
-    if (alwaysScope.ok()) {
-        semanticDocks->wavePreviewPanelCoordinator()->applyDocumentChange(
-            document.fileName,
-            change,
-            latestDocumentLength,
-            latestDocumentSlice,
-            document.dirty,
-            alwaysScope.startPosition,
-            alwaysScope.endPosition,
-            alwaysScope.label,
-            alwaysScope.startLine);
-        return;
-    }
-
-    const EditorModuleScopeTarget moduleScope =
-        editor->currentModuleScopeTarget();
-    if (moduleScope.ok()) {
-        semanticDocks->wavePreviewPanelCoordinator()->applyDocumentChange(
-            document.fileName,
-            change,
-            latestDocumentLength,
-            latestDocumentSlice,
-            document.dirty,
-            moduleScope.startPosition,
-            moduleScope.endPosition,
-            moduleScope.label,
-            moduleScope.startLine);
-        return;
-    }
-
-    semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
-        moduleScope.failureMessage.isEmpty()
-            ? QStringLiteral("Place the cursor in a module or always block to preview.")
-            : moduleScope.failureMessage);
-}
-
 
 void MainWindow::setupNavigationPane()
 {
@@ -5940,7 +5888,9 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                         ? workspaceManager->getWorkspacePath()
                         : QString());
                 contextWorkspaceController->restoreState(
-                    state.contextWorkspace);
+                    state.contextWorkspace,
+                    rememberPanelState
+                        && result.dockStateRestored);
             }
             return result;
         };

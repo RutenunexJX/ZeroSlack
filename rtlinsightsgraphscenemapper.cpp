@@ -35,6 +35,7 @@
 #include <QPen>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QSpinBox>
 #include <QStyle>
@@ -111,60 +112,54 @@ QString graphElidedText(const QString& text, const QFont& font, int width)
     return QFontMetrics(font).elidedText(text, Qt::ElideRight, width);
 }
 
-uint stableStringHash(const QString& value)
+QColor fsmStateFillColor(bool initialState,
+                         bool terminalState,
+                         bool deadState,
+                         bool unreachableState,
+                         bool aliasState)
 {
-    uint hash = 2166136261u;
-    for (QChar ch : value) {
-        hash ^= static_cast<uint>(ch.unicode());
-        hash *= 16777619u;
+    if (unreachableState) {
+        return InsightVisualStyle::roleFillColor(
+            InsightVisualRole::Unknown);
     }
-    return hash;
-}
-
-QColor fsmStateFillColor(const QString& stateName,
-                         const QSet<int>& aliasCanonicalIds,
-                         int canonicalNodeId,
-                         bool deadEndState)
-{
-    if (deadEndState)
+    if (deadState)
         return InsightVisualStyle::theme().statusBar.errorBackground;
-    if (!aliasCanonicalIds.contains(canonicalNodeId))
-        return InsightVisualStyle::theme().graph.nodeFill;
-    const QList<InsightVisualRole> roles{
-        InsightVisualRole::Timing,
-        InsightVisualRole::Read,
-        InsightVisualRole::Condition,
-        InsightVisualRole::Write,
-        InsightVisualRole::Port,
-        InsightVisualRole::Case,
-        InsightVisualRole::Data};
-    const InsightVisualRole role =
-        roles.at(static_cast<int>(stableStringHash(stateName)
-                                  % static_cast<uint>(roles.size())));
-    return InsightVisualStyle::roleFillColor(role);
+    if (terminalState)
+        return InsightVisualStyle::theme().statusBar.successBackground;
+    if (initialState) {
+        return InsightVisualStyle::roleFillColor(
+            InsightVisualRole::Kernel);
+    }
+    if (aliasState) {
+        return InsightVisualStyle::roleFillColor(
+            InsightVisualRole::Data);
+    }
+    return InsightVisualStyle::theme().graph.nodeFill;
 }
 
-QColor fsmStateStrokeColor(const QString& stateName,
-                           const QSet<int>& aliasCanonicalIds,
-                           int canonicalNodeId,
-                           bool deadEndState)
+QColor fsmStateStrokeColor(bool initialState,
+                           bool terminalState,
+                           bool deadState,
+                           bool unreachableState,
+                           bool aliasState)
 {
-    if (deadEndState)
+    if (unreachableState) {
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Unknown);
+    }
+    if (deadState)
         return InsightVisualStyle::theme().statusBar.errorBorder;
-    if (!aliasCanonicalIds.contains(canonicalNodeId))
-        return InsightVisualStyle::theme().graph.nodeBorder;
-    const QList<InsightVisualRole> roles{
-        InsightVisualRole::Timing,
-        InsightVisualRole::Read,
-        InsightVisualRole::Condition,
-        InsightVisualRole::Write,
-        InsightVisualRole::Port,
-        InsightVisualRole::Case,
-        InsightVisualRole::Data};
-    const InsightVisualRole role =
-        roles.at(static_cast<int>(stableStringHash(stateName)
-                                  % static_cast<uint>(roles.size())));
-    return InsightVisualStyle::roleColor(role);
+    if (terminalState)
+        return InsightVisualStyle::theme().statusBar.successBorder;
+    if (initialState) {
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Kernel);
+    }
+    if (aliasState) {
+        return InsightVisualStyle::roleColor(
+            InsightVisualRole::Data);
+    }
+    return InsightVisualStyle::theme().graph.nodeBorder;
 }
 
 QFont readableGraphFont(const QFont& base)
@@ -953,6 +948,115 @@ QGraphicsItem* graphItemByData(QGraphicsScene* scene,
     return nullptr;
 }
 
+struct GraphElementIdentity {
+    QString kind;
+    QString primary;
+    QString secondary;
+};
+
+struct GraphRefreshPresentation {
+    bool preserve = false;
+    QTransform transform;
+    QPointF center;
+    int horizontalScroll = 0;
+    int verticalScroll = 0;
+    QList<GraphElementIdentity> selected;
+    QList<GraphElementIdentity> hovered;
+};
+
+GraphElementIdentity graphElementIdentity(const QGraphicsItem* item)
+{
+    GraphElementIdentity identity;
+    if (!item)
+        return identity;
+    identity.kind = item->data(kGraphKindRole).toString();
+    identity.primary = item->data(kGraphPrimaryRole).toString();
+    identity.secondary = item->data(kGraphSecondaryRole).toString();
+    return identity;
+}
+
+GraphRefreshPresentation captureGraphRefreshPresentation(
+    const RtlInsightsPanelViewState& state,
+    const QString& nextMode)
+{
+    GraphRefreshPresentation presentation;
+    if (!state.insightsGraphScene || !state.insightsGraphView
+        || state.currentGraphMode != nextMode
+        || state.insightsGraphScene->items().isEmpty()) {
+        return presentation;
+    }
+
+    presentation.preserve = true;
+    presentation.transform = state.insightsGraphView->transform();
+    presentation.center = state.insightsGraphView->mapToScene(
+        state.insightsGraphView->viewport()->rect().center());
+    presentation.horizontalScroll =
+        state.insightsGraphView->horizontalScrollBar()->value();
+    presentation.verticalScroll =
+        state.insightsGraphView->verticalScrollBar()->value();
+    for (QGraphicsItem* item : state.insightsGraphScene->items()) {
+        const GraphElementIdentity identity = graphElementIdentity(item);
+        if (identity.kind.isEmpty())
+            continue;
+        if (item->isSelected())
+            presentation.selected.append(identity);
+        if (item->data(kGraphHoverActiveRole).toBool())
+            presentation.hovered.append(identity);
+    }
+    return presentation;
+}
+
+QGraphicsItem* graphItemByIdentity(
+    QGraphicsScene* scene,
+    const GraphElementIdentity& identity)
+{
+    if (!scene)
+        return nullptr;
+    for (QGraphicsItem* item : scene->items()) {
+        if (item->data(kGraphKindRole).toString() == identity.kind
+            && item->data(kGraphPrimaryRole).toString() == identity.primary
+            && item->data(kGraphSecondaryRole).toString() == identity.secondary) {
+            return item;
+        }
+    }
+    return nullptr;
+}
+
+void restoreGraphRefreshPresentation(
+    RtlInsightsPanelViewState& state,
+    const GraphRefreshPresentation& presentation)
+{
+    if (!presentation.preserve
+        || !state.insightsGraphScene
+        || !state.insightsGraphView) {
+        return;
+    }
+
+    state.insightsGraphView->setTransform(presentation.transform);
+    state.insightsGraphView->centerOn(presentation.center);
+    state.insightsGraphView->horizontalScrollBar()->setValue(
+        presentation.horizontalScroll);
+    state.insightsGraphView->verticalScrollBar()->setValue(
+        presentation.verticalScroll);
+
+    QList<QGraphicsItem*> selectedItems;
+    for (const GraphElementIdentity& identity : presentation.selected) {
+        if (QGraphicsItem* item =
+                graphItemByIdentity(state.insightsGraphScene, identity)) {
+            selectedItems.append(item);
+        }
+    }
+    if (!selectedItems.isEmpty()) {
+        state.insightsGraphScene->clearSelection();
+        for (QGraphicsItem* item : selectedItems)
+            item->setSelected(true);
+    }
+    for (const GraphElementIdentity& identity : presentation.hovered) {
+        setGraphItemHoverVisual(
+            graphItemByIdentity(state.insightsGraphScene, identity), true);
+    }
+}
+
 QString normalizedInsightSourcePath(const QString& path)
 {
     if (path.trimmed().isEmpty())
@@ -1156,6 +1260,8 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
     controller.showGraphSurface();
     if (!state.insightsGraphScene || !state.insightsGraphView)
         return;
+    const GraphRefreshPresentation presentation =
+        captureGraphRefreshPresentation(state, mode);
     controller.configureToolbarForMode(mode);
     clearDetails();
     state.insightsGraphScene->clear();
@@ -1181,9 +1287,37 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
     }
 
     QSet<int> aliasCanonicalIds;
+    QHash<int, int> canonicalByNodeId;
     for (const FsmLayoutNode& node : layout.nodes) {
         if (node.alias)
             aliasCanonicalIds.insert(node.canonicalNodeId);
+        canonicalByNodeId.insert(node.nodeId, node.canonicalNodeId);
+    }
+    QHash<int, int> outgoingCount;
+    QHash<int, QSet<int>> outgoingNodes;
+    for (const FsmLayoutEdge& edge : layout.edges) {
+        const int fromCanonical =
+            canonicalByNodeId.value(edge.fromNodeId, edge.fromNodeId);
+        const int toCanonical =
+            canonicalByNodeId.value(edge.toNodeId, edge.toNodeId);
+        ++outgoingCount[fromCanonical];
+        outgoingNodes[fromCanonical].insert(toCanonical);
+    }
+    QSet<int> initialCanonicalIds;
+    for (const FsmLayoutNode& node : layout.nodes) {
+        if (node.initialState)
+            initialCanonicalIds.insert(node.canonicalNodeId);
+    }
+    QSet<int> reachableCanonicalIds = initialCanonicalIds;
+    QList<int> reachabilityQueue = initialCanonicalIds.values();
+    while (!reachabilityQueue.isEmpty()) {
+        const int current = reachabilityQueue.takeFirst();
+        for (int next : outgoingNodes.value(current)) {
+            if (reachableCanonicalIds.contains(next))
+                continue;
+            reachableCanonicalIds.insert(next);
+            reachabilityQueue.append(next);
+        }
     }
     const auto navigate = [this](const RtlInsightGraphElement& element) {
         if (!navigateGraphElement(state, element)
@@ -1276,58 +1410,81 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
     }
 
     for (const FsmLayoutNode& node : layout.nodes) {
+        const bool initialState = node.initialState;
+        const bool terminalState =
+            outgoingCount.value(node.canonicalNodeId) == 0;
+        const bool deadState = node.deadEndState;
+        const bool unreachableState = !initialCanonicalIds.isEmpty()
+            && !reachableCanonicalIds.contains(node.canonicalNodeId);
+        const bool aliasState =
+            aliasCanonicalIds.contains(node.canonicalNodeId);
         RtlInsightGraphElement element;
         element.kind = QStringLiteral("state");
         element.primary = node.displayName;
-        element.secondary = node.deadEndState
-            ? QStringLiteral("dead/end state")
-            : graph.stateRegisterDisplayName;
+        QStringList semanticStates;
+        if (initialState)
+            semanticStates.append(QStringLiteral("initial"));
+        if (terminalState)
+            semanticStates.append(QStringLiteral("terminal"));
+        if (deadState)
+            semanticStates.append(QStringLiteral("dead"));
+        if (unreachableState)
+            semanticStates.append(QStringLiteral("unreachable"));
+        if (node.alias)
+            semanticStates.append(QStringLiteral("alias"));
+        if (node.implicitState)
+            semanticStates.append(QStringLiteral("implicit"));
+        element.secondary = semanticStates.isEmpty()
+            ? graph.stateRegisterDisplayName
+            : semanticStates.join(QStringLiteral(" · "));
         element.detail = node.detail;
-        element.badge = node.deadEndState
-            ? QStringLiteral("dead/end")
-            : QString();
+        element.badge = semanticStates.join(QLatin1Char('/'));
         element.codeLink = node.codeLink;
         applyCurrentSourceContext(element, state);
 
-        const QColor fill = fsmStateFillColor(node.stateName,
-                                              aliasCanonicalIds,
-                                              node.canonicalNodeId,
-                                              node.deadEndState);
-        const QColor stroke = fsmStateStrokeColor(node.stateName,
-                                                  aliasCanonicalIds,
-                                                  node.canonicalNodeId,
-                                                  node.deadEndState);
+        const QColor fill = fsmStateFillColor(initialState,
+                                              terminalState,
+                                              deadState,
+                                              unreachableState,
+                                              aliasState);
+        const QColor stroke = fsmStateStrokeColor(initialState,
+                                                  terminalState,
+                                                  deadState,
+                                                  unreachableState,
+                                                  aliasState);
         auto* item = new RtlInsightGraphNodeItem(element,
                                                 node.rect,
                                                 fill,
                                                 stroke,
                                                 font,
-                                                node.alias || node.implicitState,
+                                                node.alias || node.implicitState
+                                                    || unreachableState,
                                                 node.canonicalNodeId,
                                                 node.showDetail);
-        const QString stateName = node.stateName;
-        const int canonicalNodeId = node.canonicalNodeId;
-        const bool deadEndState = node.deadEndState;
         item->setThemeColorResolvers(
-            [stateName,
-             aliasCanonicalIds,
-             canonicalNodeId,
-             deadEndState]() {
+            [initialState,
+             terminalState,
+             deadState,
+             unreachableState,
+             aliasState]() {
                 return fsmStateFillColor(
-                    stateName,
-                    aliasCanonicalIds,
-                    canonicalNodeId,
-                    deadEndState);
+                    initialState,
+                    terminalState,
+                    deadState,
+                    unreachableState,
+                    aliasState);
             },
-            [stateName,
-             aliasCanonicalIds,
-             canonicalNodeId,
-             deadEndState]() {
+            [initialState,
+             terminalState,
+             deadState,
+             unreachableState,
+             aliasState]() {
                 return fsmStateStrokeColor(
-                    stateName,
-                    aliasCanonicalIds,
-                    canonicalNodeId,
-                    deadEndState);
+                    initialState,
+                    terminalState,
+                    deadState,
+                    unreachableState,
+                    aliasState);
             });
         item->setData(kGraphFsmNodeIdRole, node.nodeId);
         item->setData(kGraphFsmCanonicalNodeIdRole, node.canonicalNodeId);
@@ -1342,6 +1499,7 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
     state.insightsGraphView->fitRect(state.lastGraphFitRect, Qt::KeepAspectRatio);
     populateFsmTransitionsTable(graph);
     applySearchHighlight();
+    restoreGraphRefreshPresentation(state, presentation);
 }
 
 void RtlInsightsGraphSceneMapper::renderStateTransitionGraphScene(
@@ -1350,11 +1508,6 @@ void RtlInsightsGraphSceneMapper::renderStateTransitionGraphScene(
     controller.showGraphSurface();
     if (!state.insightsGraphScene || !state.insightsGraphView)
         return;
-    controller.configureToolbarForMode(QStringLiteral("state-transition"));
-    clearDetails();
-    state.insightsGraphScene->clear();
-    state.insightsGraphView->resetView();
-    state.lastGraphFitRect = QRectF();
 
     if (!report.found) {
         controller.renderUnavailable(
@@ -1397,11 +1550,6 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphScene(
     controller.showGraphSurface();
     if (!state.insightsGraphScene || !state.insightsGraphView)
         return;
-    controller.configureToolbarForMode(QStringLiteral("fsm"));
-    clearDetails();
-    state.insightsGraphScene->clear();
-    state.insightsGraphView->resetView();
-    state.lastGraphFitRect = QRectF();
 
     if (!report.found || report.graphs.isEmpty()) {
         controller.renderUnavailable(
@@ -1445,6 +1593,9 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
     controller.showGraphSurface();
     if (!state.insightsGraphScene || !state.insightsGraphView)
         return;
+    const GraphRefreshPresentation presentation =
+        captureGraphRefreshPresentation(
+            state, QStringLiteral("module-block"));
     controller.configureToolbarForMode(QStringLiteral("module-block"));
     clearDetails();
     state.currentModuleBlockReport = report;
@@ -1916,6 +2067,7 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
     populateModuleBlockInstancesTable(report);
     selectModuleBlockNode(report.root.nodeId, false, false);
     applySearchHighlight();
+    restoreGraphRefreshPresentation(state, presentation);
 }
 void RtlInsightsGraphSceneMapper::applySearchHighlight()
 {

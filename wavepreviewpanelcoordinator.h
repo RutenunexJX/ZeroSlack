@@ -6,10 +6,13 @@
 #include "wavepreviewservice.h"
 
 #include <QDockWidget>
+#include <QMetaObject>
+#include <QPointer>
 #include <QString>
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 
 class QLabel;
 class QAction;
@@ -19,6 +22,7 @@ class QLineEdit;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QWidget;
+class WaveformPreviewLoader;
 
 struct WavePreviewRefreshMetrics {
     int renderCount = 0;
@@ -43,6 +47,8 @@ public:
     void setNavigationHandler(std::function<void(const QString&, int, int)> handler);
     void setStatusMessageHandler(
         std::function<void(const QString&, int)> handler);
+    void setWaveformLibraryPath(const QString& libraryPath);
+    void setWorkspaceRoot(const QString& rootPath);
     void refreshFromDocument(const QString& fileName,
                              const QString& documentText,
                              bool dirty,
@@ -86,6 +92,7 @@ public:
     QDockWidget* dock() const { return previewDock; }
     QTreeWidget* tree() const { return previewTree; }
     QWidget* canvas() const { return previewCanvas; }
+    QWidget* waveformViewForTest() const { return waveformView.data(); }
     const WavePreviewReport& reportForTest() const { return currentReport; }
     WavePreviewRefreshMetrics refreshMetricsForTest() const;
     void resetRefreshMetricsForTest();
@@ -104,6 +111,7 @@ private:
     QCheckBox* sourceLinesCheck = nullptr;
     QAction* exportAction = nullptr;
     QWidget* previewCanvas = nullptr;
+    QPointer<QWidget> waveformView;
     QTreeWidget* previewTree = nullptr;
     QString currentFileName;
     QString currentScopeText;
@@ -120,6 +128,11 @@ private:
     bool refreshTimingEnabled = false;
     qreal focusZoomFactor = 1.0;
     qreal focusBaseTreePointSize = 0.0;
+    std::unique_ptr<WaveformPreviewLoader> waveformPreviewLoader;
+    QString waveformLibraryPath;
+    QString workspaceRoot;
+    QString waveformFailure;
+    QMetaObject::Connection themeConnection;
 
     std::function<void(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
@@ -135,6 +148,10 @@ private:
     void renderReport(const WavePreviewReport& report,
                       const QString& fileName,
                       bool dirty);
+    void installWaveformView(const QString& libraryPath);
+    void setWaveformPresentationState(const QString& state,
+                                      const QString& message = QString());
+    QString resolveNavigationFile(const QString& sourceFile) const;
     void navigateItem(QTreeWidgetItem* item) const;
     void applyFocusZoom();
 };

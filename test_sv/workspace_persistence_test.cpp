@@ -11,9 +11,11 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSettings>
 #include <QTemporaryDir>
 
 #include <iostream>
+#include <limits>
 
 namespace {
 int checks = 0;
@@ -366,6 +368,7 @@ int main(int argc, char* argv[])
     sessionA.ui.contextWorkspace.activePinnedResourceKey =
         pinnedContext.stableKey();
     sessionA.ui.contextWorkspace.peekWidth = 604;
+    sessionA.ui.contextWorkspace.peekHeight = 477;
     sessionA.ui.contextWorkspace.dockWidth = 588;
     sessionA.ui.contextWorkspace.dockVisible = true;
     sessionA.ui.contextWorkspace.railVisible = true;
@@ -439,6 +442,7 @@ int main(int argc, char* argv[])
               && loadA.state.ui.contextWorkspace.activePinnedResourceKey
                      == pinnedContext.stableKey()
               && loadA.state.ui.contextWorkspace.peekWidth == 604
+              && loadA.state.ui.contextWorkspace.peekHeight == 477
               && loadA.state.ui.contextWorkspace.dockWidth == 588
               && loadA.state.ui.contextWorkspace.dockVisible
               && loadA.state.ui.contextWorkspace.railVisible
@@ -448,6 +452,82 @@ int main(int argc, char* argv[])
                          cleanPath(topA)}
               && loadA.state.scanComplete,
           "local session restores tabs, context workspace, UI, and scan cache");
+
+    QSettings rawSessionSettings(localStore, QSettings::IniFormat);
+    QString workspaceAStateKey;
+    for (const QString& key : rawSessionSettings.allKeys()) {
+        if (key.endsWith(QStringLiteral("/state"))) {
+            workspaceAStateKey = key;
+            break;
+        }
+    }
+    const QByteArray savedSessionBytes =
+        rawSessionSettings.value(workspaceAStateKey).toByteArray();
+    QJsonDocument editableSession =
+        QJsonDocument::fromJson(savedSessionBytes);
+    QJsonObject editableRoot = editableSession.object();
+    QJsonObject editableUi =
+        editableRoot.value(QStringLiteral("ui")).toObject();
+    QJsonObject editableContext =
+        editableUi.value(QStringLiteral("contextWorkspace")).toObject();
+    check(!workspaceAStateKey.isEmpty()
+              && editableSession.isObject()
+              && editableContext.value(QStringLiteral("version")).toInt()
+                     == ContextWorkspaceState::kVersion
+              && editableContext.value(QStringLiteral("peekHeight")).toInt()
+                     == 477,
+          "saved Context Workspace state uses v2 and contains Peek height");
+
+    editableContext.insert(
+        QStringLiteral("version"),
+        ContextWorkspaceState::kLegacyVersion);
+    editableContext.remove(QStringLiteral("peekHeight"));
+    editableUi.insert(QStringLiteral("contextWorkspace"), editableContext);
+    editableRoot.insert(QStringLiteral("ui"), editableUi);
+    rawSessionSettings.setValue(
+        workspaceAStateKey,
+        QJsonDocument(editableRoot).toJson(QJsonDocument::Compact));
+    rawSessionSettings.sync();
+    const WorkspaceSessionRestoreResult legacyContextLoad =
+        sessionService.load(workspaceA);
+    check(legacyContextLoad.loaded
+              && legacyContextLoad.state.ui.contextWorkspace.valid
+              && legacyContextLoad.state.ui.contextWorkspace.peekWidth == 604
+              && legacyContextLoad.state.ui.contextWorkspace.peekHeight
+                     == ContextWorkspaceState::kDefaultPeekHeight
+              && legacyContextLoad.state.ui.contextWorkspace.dockWidth == 588,
+          "v1 Context Workspace state restores with a version-compatible height default");
+
+    editableContext.insert(
+        QStringLiteral("version"),
+        ContextWorkspaceState::kVersion);
+    editableContext.insert(QStringLiteral("peekWidth"), -4000);
+    editableContext.insert(
+        QStringLiteral("peekHeight"),
+        std::numeric_limits<int>::max());
+    editableContext.insert(
+        QStringLiteral("dockWidth"),
+        std::numeric_limits<int>::max());
+    editableUi.insert(QStringLiteral("contextWorkspace"), editableContext);
+    editableRoot.insert(QStringLiteral("ui"), editableUi);
+    rawSessionSettings.setValue(
+        workspaceAStateKey,
+        QJsonDocument(editableRoot).toJson(QJsonDocument::Compact));
+    rawSessionSettings.sync();
+    const WorkspaceSessionRestoreResult malformedContextLoad =
+        sessionService.load(workspaceA);
+    check(malformedContextLoad.loaded
+              && malformedContextLoad.state.ui.contextWorkspace.peekWidth
+                     == ContextWorkspaceState::kMinimumPeekWidth
+              && malformedContextLoad.state.ui.contextWorkspace.peekHeight
+                     == ContextWorkspaceState::
+                            kMaximumStoredPeekHeight
+              && malformedContextLoad.state.ui.contextWorkspace.dockWidth
+                     == ContextWorkspaceState::
+                            kMaximumStoredDockWidth,
+          "malformed persisted Context dimensions are clamped during JSON restore");
+    rawSessionSettings.setValue(workspaceAStateKey, savedSessionBytes);
+    rawSessionSettings.sync();
 
     WorkspaceSessionState sessionB;
     sessionB.workspaceRoot = workspaceB;

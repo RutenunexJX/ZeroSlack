@@ -214,10 +214,16 @@ QJsonObject sessionObject(
         state.ui.contextWorkspace.activePinnedResourceKey);
     contextWorkspace.insert(
         QStringLiteral("peekWidth"),
-        qMax(1, state.ui.contextWorkspace.peekWidth));
+        ContextWorkspaceState::boundedPeekWidth(
+            state.ui.contextWorkspace.peekWidth));
+    contextWorkspace.insert(
+        QStringLiteral("peekHeight"),
+        ContextWorkspaceState::boundedPeekHeight(
+            state.ui.contextWorkspace.peekHeight));
     contextWorkspace.insert(
         QStringLiteral("dockWidth"),
-        qMax(1, state.ui.contextWorkspace.dockWidth));
+        ContextWorkspaceState::boundedDockWidth(
+            state.ui.contextWorkspace.dockWidth));
     contextWorkspace.insert(
         QStringLiteral("dockVisible"),
         state.ui.contextWorkspace.dockVisible);
@@ -413,8 +419,10 @@ void restoreUi(
     if (object.contains(QStringLiteral("contextWorkspace"))) {
         const QJsonObject contextWorkspace =
             object.value(QStringLiteral("contextWorkspace")).toObject();
-        if (contextWorkspace.value(QStringLiteral("version")).toInt()
-            == ContextWorkspaceState::kVersion) {
+        const int contextVersion =
+            contextWorkspace.value(QStringLiteral("version")).toInt();
+        if (contextVersion >= ContextWorkspaceState::kLegacyVersion
+            && contextVersion <= ContextWorkspaceState::kVersion) {
             for (const QJsonValue& value :
                  contextWorkspace.value(
                      QStringLiteral("pinnedResources")).toArray()) {
@@ -427,13 +435,28 @@ void restoreUi(
                 contextWorkspace.value(
                     QStringLiteral("activePinnedResourceKey")).toString();
             ui->contextWorkspace.peekWidth =
-                qMax(1,
-                     contextWorkspace.value(
-                         QStringLiteral("peekWidth")).toInt(520));
+                ContextWorkspaceState::boundedPeekWidth(
+                    contextWorkspace.value(
+                        QStringLiteral("peekWidth"))
+                        .toInt(
+                            ContextWorkspaceState::
+                                kDefaultPeekWidth));
+            ui->contextWorkspace.peekHeight =
+                contextVersion >= ContextWorkspaceState::kVersion
+                ? ContextWorkspaceState::boundedPeekHeight(
+                      contextWorkspace.value(
+                          QStringLiteral("peekHeight"))
+                          .toInt(
+                              ContextWorkspaceState::
+                                  kDefaultPeekHeight))
+                : ContextWorkspaceState::kDefaultPeekHeight;
             ui->contextWorkspace.dockWidth =
-                qMax(1,
-                     contextWorkspace.value(
-                         QStringLiteral("dockWidth")).toInt(520));
+                ContextWorkspaceState::boundedDockWidth(
+                    contextWorkspace.value(
+                        QStringLiteral("dockWidth"))
+                        .toInt(
+                            ContextWorkspaceState::
+                                kDefaultDockWidth));
             ui->contextWorkspace.dockVisible =
                 contextWorkspace.value(
                     QStringLiteral("dockVisible")).toBool(false);

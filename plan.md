@@ -1,27 +1,31 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.20.0`
+Product version: `v0.21.0`
 
-## Active cross-suite implementation
+## Completed cross-suite implementation
 
 The competition UI scope and cross-repository delivery order are frozen in
 [`APP_SUITE_UI_IMPLEMENTATION_PLAN.md`](APP_SUITE_UI_IMPLEMENTATION_PLAN.md).
 Context Peek width/height resizing is specified separately in
 [`CONTEXT_WORKSPACE_RESIZE_PLAN.md`](CONTEXT_WORKSPACE_RESIZE_PLAN.md).
-Implementation is active; packaging is explicitly excluded.
+The ZeroSlack delivery in this round is complete; packaging was explicitly
+excluded and no package was generated or modified.
 
-## Active initiative: Live Insight visualization
+## Completed initiative: Live Insight visualization
 
-Module Diagram, State Diagram, Signal Hotspot, and Wave Preview will become
-revision-aware Context Workspace providers with compact sidebar entries and
-full editor-area canvases. ZeroSlack will own RTL semantic/symbolic analysis;
-WaveWorkbench will own the shared waveform renderer used by symbolic preview
-and simulated results. The planned architecture, migration order, and
+Module Diagram, State Diagram, Signal Hotspot, and Wave Preview are now
+revision-aware Context Workspace providers in one Live Insights surface.
+ZeroSlack retains RTL semantic/symbolic ownership, while the symbolic Wave
+Preview uses the shared WaveWorkbench renderer. The architecture and completed
 acceptance criteria are recorded in
 [`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
-Implementation is active and does not change the current package.
+The real baseline `99d75ab` library passed capability, payload, stale,
+malformed, navigation, and destruction checks. The stable
+`live_insights_wave_ready_1440x900_dark.png` artifact shows the loaded
+`wave::WaveformView`, and the 960x720/1440x900 light/dark artifacts record the
+responsive states.
 
-## Active initiative: Context Workspace
+## Completed initiative: Context Workspace
 
 The reusable Peek/Pinned Context Workspace baseline is complete. The generic
 resource/provider contract, Context Rail, transient Peek, native tabbed Dock,
@@ -29,14 +33,15 @@ temporary-editor provider, portable workspace restoration, focus-mode
 integration, theme coverage, legacy-overlay removal, and the Pinloom provider
 are implemented. The architecture and provider extension contract are documented in
 [`CONTEXT_WORKSPACE_PLAN.md`](CONTEXT_WORKSPACE_PLAN.md). Pinloom and insight
-content use the same hosting system; Wave/FSM/diagram compact providers remain
-future additions.
+content use the same hosting system; Wave, FSM, Module, and Hotspot providers
+are implemented. Width/height resize and restoration tests pass at 100, 125,
+150, and 200 percent logical scaling.
 
-ZeroSlack passes all `92/92` configured tests, including the Pinloom provider,
-URI, lifecycle, GUI, workspace, and existing regression suites. Pinloom passes
-all `6/6` configured tests; a real hidden Pinloom process also passed host
-capability, search, stable-identity resolution, and source-anchor creation
-checks.
+ZeroSlack passes all `99/99` configured Release tests, including Live Insights,
+real WaveWorkbench integration, Context Workspace resizing, GUI, workspace,
+guard, and existing regression suites. Pinloom passes all `7/7` configured
+tests; a real hidden Pinloom process also passed host capability, search,
+stable-identity resolution, and source-anchor creation checks.
 
 ## Current status
 
