@@ -2,6 +2,17 @@
 
 Product version: `v0.20.0`
 
+## Planned initiative: Live Insight visualization
+
+Module Diagram, State Diagram, Signal Hotspot, and Wave Preview will become
+revision-aware Context Workspace providers with compact sidebar entries and
+full editor-area canvases. ZeroSlack will own RTL semantic/symbolic analysis;
+WaveWorkbench will own the shared waveform renderer used by symbolic preview
+and simulated results. The planned architecture, migration order, and
+acceptance criteria are recorded in
+[`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
+This initiative is not yet implemented and does not change the current package.
+
 ## Active initiative: Context Workspace
 
 The reusable Peek/Pinned Context Workspace baseline is complete. The generic

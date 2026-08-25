@@ -2,6 +2,16 @@
 
 Product version: `v0.20.0`
 
+## Planned successor initiative
+
+The next visualization initiative is defined in
+[`LIVE_INSIGHT_VISUALIZATION_PLAN.md`](LIVE_INSIGHT_VISUALIZATION_PLAN.md).
+It will place compact live-insight entries in the Context Rail, open full
+resizable canvases in the editor area, make Module Diagram, State Diagram, and
+Signal Hotspot revision-aware, and replace ZeroSlack's private Wave Preview
+renderer with a reusable WaveWorkbench waveform view. It is recorded as
+planned work and is not part of the completed verification claims below.
+
 ## Active initiative
 
 Complete the provider-based Context Workspace described in
