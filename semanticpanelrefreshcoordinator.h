@@ -1,6 +1,7 @@
 #ifndef SEMANTICPANELREFRESHCOORDINATOR_H
 #define SEMANTICPANELREFRESHCOORDINATOR_H
 
+#include "liveinsighttypes.h"
 #include "rtlinsightlink.h"
 
 #include <QMetaObject>
@@ -22,6 +23,13 @@ class WorkspaceManager;
 class SemanticPanelRefreshCoordinator
 {
 public:
+    using LiveInsightOpenHandler = std::function<bool(
+        LiveInsightKind,
+        const QString&,
+        const QString&,
+        const QString&,
+        const QString&)>;
+
     SemanticPanelRefreshCoordinator(TabManager* tabManager,
                                     WorkspaceManager* workspaceManager,
                                     NavigationManager* navigationManager,
@@ -32,6 +40,7 @@ public:
     ~SemanticPanelRefreshCoordinator();
 
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
+    void setLiveInsightOpenHandler(LiveInsightOpenHandler handler);
     void configurePanels();
 
     void updateProblemsPanel();
@@ -154,6 +163,7 @@ private:
     PanelSet panels;
 
     std::function<void(const QString&, int)> statusMessageHandler;
+    LiveInsightOpenHandler liveInsightOpenHandler;
     MyCodeEditor* observedEditor = nullptr;
     QMetaObject::Connection editorCursorConnection;
     QMetaObject::Connection editorSelectionConnection;

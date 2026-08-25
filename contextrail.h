@@ -26,6 +26,7 @@ public:
 
     bool addEntry(const ContextRailEntry& entry);
     bool removeEntry(const QString& id);
+    bool setEntryIcon(const QString& id, const QIcon& icon);
     void clearEntries();
     QStringList entryIds() const;
 

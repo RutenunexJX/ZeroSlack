@@ -13,6 +13,7 @@
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
+#include "semanticpanelrefreshcoordinator.h"
 #include "semanticindex.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
@@ -193,6 +194,22 @@ void MainWindow::setupContextWorkspace()
         });
     contextWorkspaceController->registerProvider(
         std::move(liveInsightsProvider));
+    if (semanticDocks && semanticDocks->refreshCoordinator()) {
+        semanticDocks->refreshCoordinator()
+            ->setLiveInsightOpenHandler(
+                [this](LiveInsightKind kind,
+                       const QString& symbolName,
+                       const QString& fileName,
+                       const QString& moduleName,
+                       const QString& signalAccessPath) {
+                    return openLiveInsightFromSourceAction(
+                        kind,
+                        symbolName,
+                        fileName,
+                        moduleName,
+                        signalAccessPath);
+                });
+    }
     connect(
         contextWorkspaceController.get(),
         &ContextWorkspaceController::fullViewRequested,
@@ -464,8 +481,68 @@ void MainWindow::refreshLiveInsightToolPages(int kindValue)
     page->setContext(activeLiveInsightToolContext());
 }
 
+bool MainWindow::openLiveInsightFromSourceAction(
+    LiveInsightKind kind,
+    const QString& symbolName,
+    const QString& fileName,
+    const QString& moduleName,
+    const QString& signalAccessPath)
+{
+    if (!contextWorkspaceController || !tabManager)
+        return false;
+
+    LiveInsightToolContext context = activeLiveInsightToolContext();
+    if (!fileName.trimmed().isEmpty())
+        context.fileName = fileName;
+    if (kind == LiveInsightKind::Module) {
+        context.moduleName = !symbolName.trimmed().isEmpty()
+            ? symbolName
+            : moduleName;
+        context.signalName.clear();
+        context.signalAccessPath.clear();
+    } else {
+        if (!moduleName.trimmed().isEmpty())
+            context.moduleName = moduleName;
+        context.signalName = symbolName;
+        context.signalAccessPath = signalAccessPath;
+    }
+
+    QVariantMap state;
+    state.insert(QStringLiteral("followEditor"), true);
+    state.insert(QStringLiteral("pinned"), true);
+    const ContextResource resource =
+        LiveInsightsContextProvider::resourceForKind(
+            kind,
+            contextWorkspaceController->workspaceRoot(),
+            state);
+    QString failureReason;
+    if (!contextWorkspaceController->openResource(
+            resource,
+            ContextOpenMode::Peek,
+            &failureReason)
+        || !contextWorkspaceController->openResource(
+            resource,
+            ContextOpenMode::Pinned,
+            &failureReason)) {
+        if (statusBar()) {
+            statusBar()->showMessage(
+                failureReason.trimmed().isEmpty()
+                    ? QStringLiteral(
+                          "Live Insights sidebar is unavailable.")
+                    : failureReason,
+                5000);
+        }
+        return false;
+    }
+
+    requestLiveInsightUpdates();
+    openLiveInsightFullView(resource, &context);
+    return true;
+}
+
 void MainWindow::openLiveInsightFullView(
-    const ContextResource& resource)
+    const ContextResource& resource,
+    const LiveInsightToolContext* contextOverride)
 {
     if (!tabManager)
         return;
@@ -474,12 +551,15 @@ void MainWindow::openLiveInsightFullView(
             resource, &kind)) {
         return;
     }
+    const LiveInsightToolContext context = contextOverride
+        ? *contextOverride
+        : activeLiveInsightToolContext();
     const QString stableId =
         QStringLiteral("live-insight:%1")
             .arg(liveInsightKindId(kind));
     if (auto* existing = dynamic_cast<LiveInsightToolPage*>(
             tabManager->toolPage(stableId))) {
-        existing->setContext(activeLiveInsightToolContext());
+        existing->setContext(context);
         tabManager->activateToolPage(stableId);
         return;
     }
@@ -516,7 +596,7 @@ void MainWindow::openLiveInsightFullView(
                 }
             }
         });
-    page->setContext(activeLiveInsightToolContext());
+    page->setContext(context);
     const QString title = kind == LiveInsightKind::Wave
         ? QStringLiteral("Symbolic Wave Preview")
         : QStringLiteral("%1 Diagram")

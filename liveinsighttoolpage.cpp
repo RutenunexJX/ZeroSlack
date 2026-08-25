@@ -190,7 +190,8 @@ void LiveInsightToolPage::renderContext()
         rtlCoordinator->showSignalUsageHotspotForSignal(
             currentContext.fileName,
             currentContext.moduleName,
-            currentContext.signalName);
+            currentContext.signalName,
+            currentContext.signalAccessPath);
         break;
     case LiveInsightKind::Wave:
         break;

@@ -19,6 +19,7 @@ struct LiveInsightToolContext {
     QString documentText;
     QString moduleName;
     QString signalName;
+    QString signalAccessPath;
     QString scopeLabel;
     bool dirty = false;
     int scopeStartPosition = -1;

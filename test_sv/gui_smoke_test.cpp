@@ -154,6 +154,9 @@
 #include "contextrail.h"
 #include "contextworkspacecontroller.h"
 #include "editordroppreviewoverlay.h"
+#include "liveinsightscontextprovider.h"
+#include "liveinsightscontextview.h"
+#include "liveinsighttoolpage.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
 
@@ -11883,6 +11886,148 @@ void runEditorContextMenuGroupingRegression()
                true);
 }
 
+QAction* contextRailAction(
+    ContextRail* rail,
+    const QString& providerId)
+{
+    if (!rail)
+        return nullptr;
+    for (QAction* action : rail->actions()) {
+        if (action
+            && action->data().toString() == providerId) {
+            return action;
+        }
+    }
+    return nullptr;
+}
+
+QImage contextRailIconImage(
+    QAction* action,
+    QIcon::State state = QIcon::Off)
+{
+    return action
+        ? action->icon()
+              .pixmap(QSize(32, 32), QIcon::Normal, state)
+              .toImage()
+        : QImage();
+}
+
+void runContextRailIconRegression(MainWindow& window)
+{
+    ContextRail* rail = window.contextWorkspaceController
+        ? window.contextWorkspaceController->rail()
+        : nullptr;
+    QAction* editorAction = contextRailAction(
+        rail, QStringLiteral("temporaryEditor"));
+    QAction* insightsAction = contextRailAction(
+        rail, QStringLiteral("liveInsights"));
+    QAction* pinloomAction = contextRailAction(
+        rail, QStringLiteral("pinloom"));
+    const QImage editorIcon = contextRailIconImage(editorAction);
+    const QImage insightsIcon = contextRailIconImage(insightsAction);
+    const QImage pinloomIcon = contextRailIconImage(pinloomAction);
+
+    expectBool("Context Rail providers have explicit icons",
+               editorAction
+                   && insightsAction
+                   && pinloomAction
+                   && !editorIcon.isNull()
+                   && !insightsIcon.isNull()
+                   && !pinloomIcon.isNull(),
+               true);
+    expectBool("Context Rail provider icons are visually distinct",
+               !editorIcon.isNull()
+                   && editorIcon != insightsIcon
+                   && editorIcon != pinloomIcon
+                   && insightsIcon != pinloomIcon,
+               true);
+    expectBool("Context Rail active icons have a selected treatment",
+               editorAction
+                   && insightsAction
+                   && pinloomAction
+                   && contextRailIconImage(editorAction, QIcon::On)
+                          != editorIcon
+                   && contextRailIconImage(insightsAction, QIcon::On)
+                          != insightsIcon
+                   && contextRailIconImage(pinloomAction, QIcon::On)
+                          != pinloomIcon,
+               true);
+}
+
+void runLiveInsightSidebarRoutingRegression(
+    MainWindow& window,
+    const QString& fixturePath)
+{
+    ContextWorkspaceController* controller =
+        window.contextWorkspaceController.get();
+    SemanticPanelRefreshCoordinator* refresh =
+        window.semanticDocks
+        ? window.semanticDocks->refreshCoordinator()
+        : nullptr;
+    RtlInsightsPanelCoordinator* legacy =
+        window.semanticDocks
+        ? window.semanticDocks->rtlInsightsPanelCoordinator()
+        : nullptr;
+    QDockWidget* legacyDock = legacy ? legacy->dock() : nullptr;
+    expectBool("Live Insight sidebar route dependencies exist",
+               controller && refresh && legacyDock,
+               true);
+    if (!controller || !refresh || !legacyDock)
+        return;
+
+    legacyDock->hide();
+    refresh->showStateTransitionGraphForSymbol(
+        QStringLiteral("state_q"),
+        fixturePath,
+        QStringLiteral("insight_top"));
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 100);
+
+    const ContextResource active =
+        controller->dockHost()->currentResource();
+    LiveInsightKind activeKind = LiveInsightKind::Module;
+    auto* compactView = qobject_cast<LiveInsightsContextView*>(
+        controller->dockHost()->viewForResource(
+            active.stableKey()));
+    QWidget* fullView = window.tabManager
+        ? window.tabManager->toolPage(
+              QStringLiteral("live-insight:state"))
+        : nullptr;
+    expectBool("State Transition command opens the right Live Insights dock",
+               controller->dockWidget()->isVisible()
+                   && compactView
+                   && LiveInsightsContextProvider::kindFromResource(
+                       active, &activeKind)
+                   && activeKind == LiveInsightKind::State
+                   && compactView->selectedKind()
+                          == LiveInsightKind::State,
+               true);
+    expectBool("State Transition command opens the full state canvas",
+               dynamic_cast<LiveInsightToolPage*>(fullView) != nullptr,
+               true);
+    expectBool("State Transition command does not raise the legacy bottom dock",
+               !legacyDock->isVisible(),
+               true);
+
+    if (active.isValid())
+        controller->closePinnedResource(active.stableKey());
+    if (fullView) {
+        auto* group = qobject_cast<QTabWidget*>(
+            fullView->parentWidget());
+        if (group) {
+            const int index = group->indexOf(fullView);
+            if (index >= 0)
+                window.tabManager->closePage(group, index);
+        }
+    }
+    window.liveInsightToolPages.remove(
+        static_cast<int>(LiveInsightKind::State));
+    if (window.tabManager)
+        window.tabManager->activateOpenFile(fixturePath);
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+}
+
 void runInsightFocusIntegrationRegression(
     MainWindow& window,
     const QString& fixturePath,
@@ -16135,6 +16280,10 @@ int main(int argc, char** argv)
                    true);
         drainRelationshipWork(window);
     }
+
+    runContextRailIconRegression(window);
+    runLiveInsightSidebarRoutingRegression(
+        window, normalizedSymbolFixturePath);
 
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;

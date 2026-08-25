@@ -106,6 +106,7 @@ private:
     void updateActiveRailEntry();
     bool activatePinnedProvider(const QString& providerId);
     void resetPeekToProviderPreferredSize();
+    void refreshProviderIcons();
     int boundedDockWidthForWindow(int width) const;
     void showDock(bool applyPreferredWidth);
     void notifyWorkspaceStateChanged();

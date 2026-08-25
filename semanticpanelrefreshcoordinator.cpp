@@ -207,6 +207,12 @@ void SemanticPanelRefreshCoordinator::setStatusMessageHandler(
     statusMessageHandler = std::move(handler);
 }
 
+void SemanticPanelRefreshCoordinator::setLiveInsightOpenHandler(
+    LiveInsightOpenHandler handler)
+{
+    liveInsightOpenHandler = std::move(handler);
+}
+
 void SemanticPanelRefreshCoordinator::configurePanels()
 {
     if (panels.isConfigured())
@@ -278,6 +284,15 @@ void SemanticPanelRefreshCoordinator::showSignalUsageHotspotForSymbol(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
+    if (liveInsightOpenHandler
+        && liveInsightOpenHandler(
+            LiveInsightKind::Hotspot,
+            symbolName,
+            fileName,
+            moduleName,
+            signalAccessPath)) {
+        return;
+    }
     panels.showSignalUsageHotspotForSymbol(symbolName,
                                            fileName,
                                            moduleName,
@@ -289,6 +304,15 @@ void SemanticPanelRefreshCoordinator::showStateTransitionGraphForSymbol(
     const QString& fileName,
     const QString& moduleName)
 {
+    if (liveInsightOpenHandler
+        && liveInsightOpenHandler(
+            LiveInsightKind::State,
+            symbolName,
+            fileName,
+            moduleName,
+            {})) {
+        return;
+    }
     panels.showStateTransitionGraphForSymbol(symbolName, fileName, moduleName);
 }
 
@@ -297,6 +321,15 @@ void SemanticPanelRefreshCoordinator::showModuleBlockDiagramForSymbol(
     const QString& fileName,
     const QString& moduleName)
 {
+    if (liveInsightOpenHandler
+        && liveInsightOpenHandler(
+            LiveInsightKind::Module,
+            symbolName,
+            fileName,
+            moduleName,
+            {})) {
+        return;
+    }
     panels.showModuleBlockDiagramForSymbol(symbolName, fileName, moduleName);
 }
 

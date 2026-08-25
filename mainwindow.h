@@ -54,6 +54,7 @@ class WorkspaceEditDocumentManager;
 class WaveSimulationCoordinator;
 class WaveSimulationResultNavigationCoordinator;
 class WaveEmbeddedWorkspaceLoader;
+enum class LiveInsightKind : quint8;
 class QAction;
 class QDialog;
 class QDockWidget;
@@ -266,7 +267,14 @@ private:
     void requestLiveInsightUpdates();
     void refreshLiveInsightToolPages(int kindValue);
     void openLiveInsightFullView(
-        const ContextResource& resource);
+        const ContextResource& resource,
+        const LiveInsightToolContext* contextOverride = nullptr);
+    bool openLiveInsightFromSourceAction(
+        LiveInsightKind kind,
+        const QString& symbolName,
+        const QString& fileName,
+        const QString& moduleName,
+        const QString& signalAccessPath);
     LiveInsightToolContext activeLiveInsightToolContext() const;
     QString liveInsightWaveformLibraryPath() const;
     void setupViewMenu();

@@ -1,9 +1,11 @@
 #include "contextworkspacecontroller.h"
 
+#include "applicationthememanager.h"
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
+#include "insightvisualstyle.h"
 
 #include <QDockWidget>
 #include <QDir>
@@ -11,8 +13,13 @@
 #include <QFileInfo>
 #include <QIcon>
 #include <QMainWindow>
+#include <QPainter>
+#include <QPainterPath>
+#include <QPixmap>
 #include <QStyle>
 #include <QWidget>
+
+#include <array>
 
 namespace {
 QString normalizedRoot(const QString& root)
@@ -33,6 +40,157 @@ bool sameRoot(const QString& lhs, const QString& rhs)
 #else
     return normalizedRoot(lhs) == normalizedRoot(rhs);
 #endif
+}
+
+bool hasBuiltInProviderIcon(const QString& providerId)
+{
+    return providerId == QStringLiteral("temporaryEditor")
+        || providerId == QStringLiteral("liveInsights")
+        || providerId == QStringLiteral("pinloom");
+}
+
+QColor providerAccent(const QString& providerId, ThemeMode mode)
+{
+    const bool dark = mode == ThemeMode::Dark;
+    if (providerId == QStringLiteral("temporaryEditor")) {
+        return QColor(dark ? QStringLiteral("#75A7FF")
+                           : QStringLiteral("#2563C9"));
+    }
+    if (providerId == QStringLiteral("liveInsights")) {
+        return QColor(dark ? QStringLiteral("#35D3E4")
+                           : QStringLiteral("#087F96"));
+    }
+    return QColor(dark ? QStringLiteral("#F6BE4B")
+                       : QStringLiteral("#B86613"));
+}
+
+QPixmap providerIconPixmap(
+    const QString& providerId,
+    bool checked)
+{
+    constexpr int kPhysicalExtent = 40;
+    constexpr qreal kDrawingScale = 1.25;
+    QPixmap pixmap(kPhysicalExtent, kPhysicalExtent);
+    pixmap.fill(Qt::transparent);
+
+    const ThemeMode mode =
+        ApplicationThemeManager::instance().mode();
+    const InsightTheme& theme =
+        InsightVisualStyle::theme(mode);
+    const QColor accent = providerAccent(providerId, mode);
+    const QColor foreground = checked
+        ? accent
+        : theme.textSecondary;
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.scale(kDrawingScale, kDrawingScale);
+    painter.setPen(Qt::NoPen);
+    if (checked) {
+        QColor selectedFill = accent;
+        selectedFill.setAlpha(mode == ThemeMode::Dark ? 52 : 34);
+        painter.setBrush(selectedFill);
+        painter.drawRoundedRect(
+            QRectF(1.5, 1.5, 29.0, 29.0), 6.0, 6.0);
+    }
+
+    const QPen outline(
+        foreground,
+        checked ? 2.15 : 1.85,
+        Qt::SolidLine,
+        Qt::RoundCap,
+        Qt::RoundJoin);
+    const QPen accentPen(
+        accent,
+        checked ? 2.25 : 2.0,
+        Qt::SolidLine,
+        Qt::RoundCap,
+        Qt::RoundJoin);
+
+    if (providerId == QStringLiteral("temporaryEditor")) {
+        QPainterPath page;
+        page.moveTo(7.5, 4.5);
+        page.lineTo(19.5, 4.5);
+        page.lineTo(24.5, 9.5);
+        page.lineTo(24.5, 27.0);
+        page.lineTo(7.5, 27.0);
+        page.closeSubpath();
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(outline);
+        painter.drawPath(page);
+        painter.drawLine(QPointF(19.5, 4.8), QPointF(19.5, 9.5));
+        painter.drawLine(QPointF(19.5, 9.5), QPointF(24.2, 9.5));
+        painter.setPen(accentPen);
+        painter.drawLine(QPointF(11.0, 22.5), QPointF(21.5, 12.0));
+        painter.drawLine(QPointF(10.2, 23.8), QPointF(12.8, 23.0));
+        painter.setPen(outline);
+        painter.drawLine(QPointF(10.5, 10.5), QPointF(16.5, 10.5));
+        painter.drawLine(QPointF(10.5, 14.5), QPointF(14.0, 14.5));
+    } else if (providerId == QStringLiteral("liveInsights")) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(outline);
+        painter.drawLine(QPointF(7.5, 22.5), QPointF(15.5, 9.0));
+        painter.drawLine(QPointF(15.5, 9.0), QPointF(25.0, 20.5));
+        painter.drawLine(QPointF(7.5, 22.5), QPointF(25.0, 20.5));
+        painter.setPen(accentPen);
+        painter.drawLine(QPointF(15.5, 9.0), QPointF(24.0, 7.0));
+        const std::array<QPointF, 4> nodes = {
+            QPointF(7.5, 22.5),
+            QPointF(15.5, 9.0),
+            QPointF(25.0, 20.5),
+            QPointF(24.0, 7.0)};
+        for (int index = 0; index < 4; ++index) {
+            const bool emphasized = index == 1 || index == 3;
+            painter.setPen(emphasized ? accentPen : outline);
+            painter.setBrush(
+                emphasized ? accent : theme.panelBackground);
+            painter.drawEllipse(nodes.at(index), 2.7, 2.7);
+        }
+    } else {
+        QPainterPath bookmark;
+        bookmark.moveTo(8.5, 5.0);
+        bookmark.lineTo(23.5, 5.0);
+        bookmark.lineTo(23.5, 27.0);
+        bookmark.lineTo(16.0, 22.0);
+        bookmark.lineTo(8.5, 27.0);
+        bookmark.closeSubpath();
+        QColor bookmarkFill = accent;
+        bookmarkFill.setAlpha(mode == ThemeMode::Dark ? 34 : 24);
+        painter.setBrush(bookmarkFill);
+        painter.setPen(outline);
+        painter.drawPath(bookmark);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(accentPen);
+        painter.drawEllipse(QRectF(11.0, 10.0, 7.5, 6.0));
+        painter.drawEllipse(QRectF(15.0, 13.0, 6.0, 5.5));
+    }
+
+    return pixmap;
+}
+
+QIcon contextProviderIcon(
+    const QString& providerId,
+    const QString& iconName,
+    QStyle* fallbackStyle)
+{
+    if (!hasBuiltInProviderIcon(providerId)) {
+        QIcon icon = QIcon::fromTheme(iconName);
+        if (icon.isNull() && fallbackStyle) {
+            icon = fallbackStyle->standardIcon(
+                QStyle::SP_FileDialogContentsView);
+        }
+        return icon;
+    }
+
+    QIcon icon;
+    const QPixmap normal = providerIconPixmap(providerId, false);
+    const QPixmap checked = providerIconPixmap(providerId, true);
+    icon.addPixmap(normal, QIcon::Normal, QIcon::Off);
+    icon.addPixmap(normal, QIcon::Active, QIcon::Off);
+    icon.addPixmap(checked, QIcon::Normal, QIcon::On);
+    icon.addPixmap(checked, QIcon::Active, QIcon::On);
+    icon.addPixmap(checked, QIcon::Selected, QIcon::On);
+    return icon;
 }
 }
 
@@ -150,6 +308,11 @@ ContextWorkspaceController::ContextWorkspaceController(
                 updateActiveRailEntry();
                 notifyWorkspaceStateChanged();
             });
+    connect(
+        &ApplicationThemeManager::instance(),
+        &ApplicationThemeManager::themeChanged,
+        this,
+        [this](ThemeMode) { refreshProviderIcons(); });
     dockValue->installEventFilter(this);
 }
 
@@ -198,12 +361,10 @@ bool ContextWorkspaceController::registerProvider(
     entry.title = provider->displayName();
     entry.toolTip = provider->displayName();
     const QString iconName = provider->iconKey().trimmed();
-    if (!iconName.isEmpty())
-        entry.icon = QIcon::fromTheme(iconName);
-    if (entry.icon.isNull() && window) {
-        entry.icon = window->style()->standardIcon(
-            QStyle::SP_FileDialogContentsView);
-    }
+    entry.icon = contextProviderIcon(
+        id,
+        iconName,
+        window ? window->style() : nullptr);
     if (!railValue->addEntry(entry))
         return false;
     providers.emplace(id, std::move(provider));
@@ -848,6 +1009,22 @@ void ContextWorkspaceController::resetPeekToProviderPreferredSize()
             .preferredSize());
     if (peekHostValue->preferredSize() != previous)
         notifyWorkspaceStateChanged();
+}
+
+void ContextWorkspaceController::refreshProviderIcons()
+{
+    if (!railValue)
+        return;
+    for (const auto& [id, provider] : providers) {
+        if (!provider)
+            continue;
+        railValue->setEntryIcon(
+            id,
+            contextProviderIcon(
+                id,
+                provider->iconKey().trimmed(),
+                window ? window->style() : nullptr));
+    }
 }
 
 int ContextWorkspaceController::boundedDockWidthForWindow(

@@ -50,6 +50,17 @@ bool ContextRail::removeEntry(const QString& id)
     return true;
 }
 
+bool ContextRail::setEntryIcon(
+    const QString& id,
+    const QIcon& icon)
+{
+    QAction* action = actionsById.value(id.trimmed(), nullptr);
+    if (!action)
+        return false;
+    action->setIcon(icon);
+    return true;
+}
+
 void ContextRail::clearEntries()
 {
     const QList<QAction*> entries = actionsById.values();
