@@ -10,12 +10,21 @@
 #include <QApplication>
 #include <QAction>
 #include <QClipboard>
+#include <QColor>
+#include <QDialog>
 #include <QDockWidget>
+#include <QFileInfo>
+#include <QImage>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QLabel>
 #include <QListWidget>
 #include <QMainWindow>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QSignalSpy>
+#include <QTemporaryDir>
+#include <QTest>
 #include <QToolButton>
 #include <QVector>
 
@@ -62,6 +71,96 @@ QJsonObject entryJson()
         {QStringLiteral("metadata"), QJsonObject{}},
     };
 }
+
+QJsonObject rectangleEntryJson(const QString& suffix,
+                               const QString& title)
+{
+    QJsonObject entry = entryJson();
+    const QString entryId = QStringLiteral("anchor:pdf-%1").arg(suffix);
+    const QString resourceId = QStringLiteral("resource-pdf-%1").arg(suffix);
+    const QString anchorId = QStringLiteral("pdf-%1").arg(suffix);
+    entry.insert(
+        QStringLiteral("identity"),
+        QJsonObject{{QStringLiteral("entryId"), entryId},
+                    {QStringLiteral("resourceId"), resourceId},
+                    {QStringLiteral("anchorId"), anchorId},
+                    {QStringLiteral("clipId"), QString()}});
+    entry.insert(
+        QStringLiteral("uri"),
+        QStringLiteral("pinloom://entry/%1?resource=%2&anchor=%3")
+            .arg(entryId, resourceId, anchorId));
+    entry.insert(QStringLiteral("title"), title);
+    entry.insert(QStringLiteral("aliases"),
+                 QJsonArray{QStringLiteral("reset figure")});
+    entry.insert(QStringLiteral("tags"),
+                 QJsonArray{QStringLiteral("timing")});
+    entry.insert(QStringLiteral("summary"), QStringLiteral("clock.pdf"));
+    entry.insert(QStringLiteral("location"),
+                 QStringLiteral("E:/docs/clock.pdf"));
+    return entry;
+}
+
+QJsonObject readyPreviewJson(const QString& filePath,
+                             const QSize& size,
+                             int page)
+{
+    return {{QStringLiteral("kind"), QStringLiteral("image")},
+            {QStringLiteral("state"), QStringLiteral("ready")},
+            {QStringLiteral("mimeType"), QStringLiteral("image/png")},
+            {QStringLiteral("uri"),
+             QUrl::fromLocalFile(filePath).toString(QUrl::FullyEncoded)},
+            {QStringLiteral("filePath"),
+             QFileInfo(filePath).absoluteFilePath()},
+            {QStringLiteral("byteSize"), QFileInfo(filePath).size()},
+            {QStringLiteral("pixelWidth"), size.width()},
+            {QStringLiteral("pixelHeight"), size.height()},
+            {QStringLiteral("page"), page},
+            {QStringLiteral("cropped"), true},
+            {QStringLiteral("altText"),
+             QStringLiteral("Reset crossing | clock.pdf | Page %1").arg(page)}};
+}
+
+QJsonObject unavailablePreviewJson(const QString& error, int page)
+{
+    return {{QStringLiteral("kind"), QStringLiteral("image")},
+            {QStringLiteral("state"), QStringLiteral("unavailable")},
+            {QStringLiteral("page"), page},
+            {QStringLiteral("cropped"), false},
+            {QStringLiteral("error"), error}};
+}
+
+QJsonObject rectangleDocumentJson(const QJsonObject& entry,
+                                  const QJsonObject& preview,
+                                  int page)
+{
+    const QString anchorId = entry.value(QStringLiteral("identity"))
+                                 .toObject()
+                                 .value(QStringLiteral("anchorId"))
+                                 .toString();
+    return {{QStringLiteral("entry"), entry},
+            {QStringLiteral("content"),
+             QStringLiteral("Fallback PDF anchor text")},
+            {QStringLiteral("contentType"),
+             QStringLiteral("text/plain")},
+            {QStringLiteral("details"),
+             QJsonObject{
+                 {QStringLiteral("title"),
+                  entry.value(QStringLiteral("title"))},
+                 {QStringLiteral("fileName"), QStringLiteral("clock.pdf")},
+                 {QStringLiteral("page"), page},
+                 {QStringLiteral("aliases"),
+                  entry.value(QStringLiteral("aliases"))},
+                 {QStringLiteral("tags"),
+                  entry.value(QStringLiteral("tags"))},
+                 {QStringLiteral("anchorId"), anchorId},
+                 {QStringLiteral("locatorType"),
+                  QStringLiteral("sumatrapdf.rect")},
+                 {QStringLiteral("locatorJson"),
+                  QStringLiteral(
+                      "{\"type\":\"sumatrapdf.rect\",\"page\":%1,\"rect\":[72,144,252,252]}")
+                      .arg(page)}}},
+            {QStringLiteral("preview"), preview}};
+}
 }
 
 int main(int argc, char* argv[])
@@ -76,6 +175,102 @@ int main(int argc, char* argv[])
               && parsedIdentity.anchorId == QStringLiteral("clock-reset")
               && parsedIdentity.toUri().scheme() == QStringLiteral("pinloom"),
           "stable Pinloom URI round-trips without cached content");
+
+    QTemporaryDir previewDirectory;
+    check(previewDirectory.isValid(),
+          "image preview tests have a private temporary directory");
+    const QString mainPreviewPath =
+        previewDirectory.filePath(QStringLiteral("main-preview.png"));
+    QImage mainPreviewImage(640, 320, QImage::Format_ARGB32_Premultiplied);
+    mainPreviewImage.fill(QColor(QStringLiteral("#c08a16")));
+    check(mainPreviewImage.save(mainPreviewPath, "PNG"),
+          "main PNG preview fixture is created");
+    const QString oldPreviewPath =
+        previewDirectory.filePath(QStringLiteral("old-preview.png"));
+    QImage oldPreviewImage(320, 160, QImage::Format_ARGB32_Premultiplied);
+    oldPreviewImage.fill(QColor(QStringLiteral("#d02020")));
+    check(oldPreviewImage.save(oldPreviewPath, "PNG"),
+          "old-generation PNG preview fixture is created");
+    const QString latestPreviewPath =
+        previewDirectory.filePath(QStringLiteral("latest-preview.png"));
+    QImage latestPreviewImage(300, 300, QImage::Format_ARGB32_Premultiplied);
+    latestPreviewImage.fill(QColor(QStringLiteral("#2050d0")));
+    check(latestPreviewImage.save(latestPreviewPath, "PNG"),
+          "latest-generation PNG preview fixture is created");
+
+    const QJsonObject readyRectangleEntry =
+        rectangleEntryJson(QStringLiteral("ready"),
+                           QStringLiteral("Reset crossing diagram"));
+    const PinloomHostDocument parsedReadyDocument =
+        PinloomHostDocument::fromJson(rectangleDocumentJson(
+            readyRectangleEntry,
+            readyPreviewJson(mainPreviewPath, QSize(640, 320), 4),
+            4));
+    check(parsedReadyDocument.preview.present
+              && parsedReadyDocument.preview.isImage()
+              && parsedReadyDocument.preview.isReady()
+              && parsedReadyDocument.preview.mimeType
+                     == QStringLiteral("image/png")
+              && parsedReadyDocument.preview.uri.isLocalFile()
+              && parsedReadyDocument.preview.filePath
+                     == QFileInfo(mainPreviewPath).absoluteFilePath()
+              && parsedReadyDocument.preview.byteSize > 0
+              && parsedReadyDocument.preview.pixelWidth == 640
+              && parsedReadyDocument.preview.pixelHeight == 320
+              && parsedReadyDocument.preview.page == 4
+              && parsedReadyDocument.preview.cropped,
+          "host document parser accepts the complete ready image descriptor");
+
+    const QString rendererUnavailable =
+        QStringLiteral("PDF preview renderer executable was not found");
+    const PinloomHostDocument parsedUnavailableDocument =
+        PinloomHostDocument::fromJson(rectangleDocumentJson(
+            readyRectangleEntry,
+            unavailablePreviewJson(rendererUnavailable, 4),
+            4));
+    check(parsedUnavailableDocument.preview.present
+              && parsedUnavailableDocument.preview.isImage()
+              && !parsedUnavailableDocument.preview.isReady()
+              && parsedUnavailableDocument.preview.state
+                     == QStringLiteral("unavailable")
+              && parsedUnavailableDocument.preview.error
+                     == rendererUnavailable,
+          "host document parser preserves an unavailable image reason");
+
+    QJsonObject compatiblePreview{
+        {QStringLiteral("state"), QStringLiteral("ready")},
+        {QStringLiteral("filePath"),
+         QFileInfo(mainPreviewPath).absoluteFilePath()},
+    };
+    const PinloomHostPreview parsedCompatiblePreview =
+        PinloomHostPreview::fromJson(compatiblePreview);
+    check(parsedCompatiblePreview.isReady()
+              && parsedCompatiblePreview.kind
+                     == QStringLiteral("image")
+              && parsedCompatiblePreview.mimeType.isEmpty(),
+          "preview parser tolerates omitted optional ready fields");
+
+    QJsonObject remotePreview =
+        readyPreviewJson(mainPreviewPath, QSize(640, 320), 4);
+    remotePreview.insert(
+        QStringLiteral("uri"),
+        QStringLiteral("https://example.invalid/preview.png"));
+    check(!PinloomHostPreview::fromJson(remotePreview)
+               .validationError.isEmpty(),
+          "preview parser rejects non-local image URIs");
+    QJsonObject oversizedPreview =
+        readyPreviewJson(mainPreviewPath, QSize(640, 320), 4);
+    oversizedPreview.insert(QStringLiteral("altText"),
+                            QString(17 * 1024, QLatin1Char('x')));
+    check(PinloomHostPreview::fromJson(oversizedPreview)
+              .validationError.contains(QStringLiteral("16 KiB")),
+          "preview parser enforces the 16 KiB descriptor limit");
+    QJsonObject oversizedDimensions =
+        readyPreviewJson(mainPreviewPath, QSize(640, 320), 4);
+    oversizedDimensions.insert(QStringLiteral("pixelWidth"), 20000);
+    check(!PinloomHostPreview::fromJson(oversizedDimensions)
+               .validationError.isEmpty(),
+          "preview parser rejects unsafe declared dimensions");
 
     int searchRequests = 0;
     int resolveRequests = 0;
@@ -211,6 +406,277 @@ int main(int argc, char* argv[])
     check(openRequests == 1
               && view->statusText() == QStringLiteral("Opened anchor"),
           "Open delegates to Pinloom's authoritative primary action");
+
+    int imageOpenRequests = 0;
+    PinloomHostClient imageClient(
+        [&readyRectangleEntry,
+         &mainPreviewPath,
+         &imageOpenRequests](
+            const QJsonObject& request,
+            PinloomHostClient::RawReplyHandler reply) {
+            const QString method =
+                request.value(QStringLiteral("method")).toString();
+            if (method == QStringLiteral("resolve")) {
+                reply(rectangleDocumentJson(
+                          readyRectangleEntry,
+                          readyPreviewJson(
+                              mainPreviewPath, QSize(640, 320), 4),
+                          4),
+                      {});
+                return;
+            }
+            if (method == QStringLiteral("open")) {
+                ++imageOpenRequests;
+                reply({{QStringLiteral("message"),
+                        QStringLiteral("Opened original PDF")}}, {});
+                return;
+            }
+            reply({}, QStringLiteral("unexpected image preview method"));
+        });
+    PinloomContextView imageView(&imageClient);
+    imageView.resize(360, 700);
+    imageView.restoreState(
+        {{QStringLiteral("boundEntries"),
+          QVariantList{PinloomHostEntry::fromJson(readyRectangleEntry)
+                           .toVariantMap()}}});
+    imageView.show();
+    QApplication::processEvents();
+
+    QLabel* imageLabel = imageView.imagePreviewLabel();
+    QLabel* imageSummary = imageView.findChild<QLabel*>(
+        QStringLiteral("pinloomContextDetails"));
+    QLabel* technicalDetails = imageView.findChild<QLabel*>(
+        QStringLiteral("pinloomContextTechnicalDetails"));
+    QToolButton* technicalToggle = imageView.technicalDetailsToggle();
+    const QPixmap narrowPixmap = imageLabel
+        ? imageLabel->pixmap(Qt::ReturnByValue)
+        : QPixmap();
+    check(imageLabel && imageLabel->isVisible()
+              && !narrowPixmap.isNull(),
+          "sumatrapdf.rect displays its cropped PNG in the side-view main area");
+    check(imageSummary
+              && imageSummary->text().contains(QStringLiteral("clock.pdf"))
+              && imageSummary->text().contains(QStringLiteral("Page 4"))
+              && imageSummary->text().contains(QStringLiteral("reset figure"))
+              && imageSummary->text().contains(QStringLiteral("timing"))
+              && !imageSummary->text().contains(QStringLiteral("anchorId"))
+              && !imageSummary->text().contains(QStringLiteral("locatorJson")),
+          "default image metadata is limited to file, page, aliases, and tags");
+    check(technicalToggle && !technicalToggle->isChecked()
+              && technicalDetails && !technicalDetails->isVisible()
+              && technicalDetails->text().contains(
+                     QStringLiteral("anchorId"))
+              && technicalDetails->text().contains(
+                     QStringLiteral("locatorJson")),
+          "technical identity and locator fields are collapsed by default");
+    if (technicalToggle) {
+        technicalToggle->click();
+        QApplication::processEvents();
+    }
+    check(technicalDetails && technicalDetails->isVisible(),
+          "technical details can be expanded explicitly");
+    if (technicalToggle)
+        technicalToggle->click();
+
+    imageView.resize(760, 700);
+    QApplication::processEvents();
+    const QPixmap widePixmap = imageLabel
+        ? imageLabel->pixmap(Qt::ReturnByValue)
+        : QPixmap();
+    check(!narrowPixmap.isNull() && !widePixmap.isNull()
+              && widePixmap.width() > narrowPixmap.width()
+              && qAbs(widePixmap.width() * 320
+                      - widePixmap.height() * 640) <= 640,
+          "image preview scales with side-view width while preserving aspect ratio");
+    if (imageLabel)
+        QTest::mouseClick(imageLabel, Qt::LeftButton);
+    QApplication::processEvents();
+    QDialog* imageDialog = imageView.findChild<QDialog*>(
+        QStringLiteral("pinloomContextImageDialog"));
+    check(imageDialog && imageDialog->isVisible()
+              && imageDialog->findChild<QLabel*>(
+                     QStringLiteral("pinloomContextLargeImage")),
+          "clicking the scaled image opens a larger preview");
+    if (imageDialog)
+        imageDialog->close();
+    QApplication::processEvents();
+
+    const QJsonObject unavailableRectangleEntry =
+        rectangleEntryJson(QStringLiteral("unavailable"),
+                           QStringLiteral("Unavailable PDF crop"));
+    int unavailableImageOpenRequests = 0;
+    PinloomHostClient unavailableImageClient(
+        [&unavailableRectangleEntry,
+         &rendererUnavailable,
+         &unavailableImageOpenRequests](
+            const QJsonObject& request,
+            PinloomHostClient::RawReplyHandler reply) {
+            const QString method =
+                request.value(QStringLiteral("method")).toString();
+            if (method == QStringLiteral("resolve")) {
+                reply(rectangleDocumentJson(
+                          unavailableRectangleEntry,
+                          unavailablePreviewJson(rendererUnavailable, 5),
+                          5),
+                      {});
+                return;
+            }
+            if (method == QStringLiteral("open")) {
+                ++unavailableImageOpenRequests;
+                reply({{QStringLiteral("message"),
+                        QStringLiteral("Opened unavailable preview target")}},
+                      {});
+                return;
+            }
+            reply({}, QStringLiteral("unexpected unavailable preview method"));
+        });
+    PinloomContextView unavailableImageView(&unavailableImageClient);
+    unavailableImageView.resize(480, 600);
+    unavailableImageView.restoreState(
+        {{QStringLiteral("boundEntries"),
+          QVariantList{PinloomHostEntry::fromJson(unavailableRectangleEntry)
+                           .toVariantMap()}}});
+    unavailableImageView.show();
+    QApplication::processEvents();
+    check(unavailableImageView.previewEditor()->isVisible()
+              && unavailableImageView.previewEditor()->toPlainText().contains(
+                     rendererUnavailable)
+              && unavailableImageView.statusText() == rendererUnavailable
+              && unavailableImageView.openButton()->text()
+                     == QStringLiteral("Open original location"),
+          "image rendering failure shows its concrete reason and original-location action");
+    unavailableImageView.openButton()->click();
+    check(unavailableImageOpenRequests == 1,
+          "image failure original-location action delegates to Pinloom open");
+
+    QJsonObject clipEntry = entryJson();
+    clipEntry.insert(QStringLiteral("type"), QStringLiteral("clip"));
+    clipEntry.insert(QStringLiteral("title"), QStringLiteral("Saved reset clip"));
+    clipEntry.insert(
+        QStringLiteral("identity"),
+        QJsonObject{{QStringLiteral("entryId"), QStringLiteral("clip:reset")},
+                    {QStringLiteral("resourceId"), QString()},
+                    {QStringLiteral("anchorId"), QString()},
+                    {QStringLiteral("clipId"), QStringLiteral("reset")}});
+    clipEntry.insert(
+        QStringLiteral("uri"),
+        QStringLiteral("pinloom://entry/clip:reset?clip=reset"));
+    PinloomHostClient clipClient(
+        [&clipEntry](const QJsonObject& request,
+                     PinloomHostClient::RawReplyHandler reply) {
+            if (request.value(QStringLiteral("method")).toString()
+                == QStringLiteral("resolve")) {
+                reply({{QStringLiteral("entry"), clipEntry},
+                       {QStringLiteral("content"),
+                        QStringLiteral("Saved clip text remains selectable.")},
+                       {QStringLiteral("contentType"),
+                        QStringLiteral("text/plain")},
+                       {QStringLiteral("details"), QJsonObject{}}},
+                      {});
+                return;
+            }
+            reply({}, QStringLiteral("unexpected clip method"));
+        });
+    PinloomContextView clipView(&clipClient);
+    clipView.resize(480, 600);
+    clipView.restoreState(
+        {{QStringLiteral("boundEntries"),
+          QVariantList{PinloomHostEntry::fromJson(clipEntry).toVariantMap()}}});
+    clipView.show();
+    QApplication::processEvents();
+    check(clipView.previewEditor()->isVisible()
+              && clipView.previewEditor()->toPlainText().contains(
+                     QStringLiteral("selectable"))
+              && !clipView.imagePreviewLabel()->isVisible(),
+          "Saved Clip and text-only anchors continue to use the text preview");
+
+    struct PendingImageResolve {
+        QString entryId;
+        PinloomHostClient::RawReplyHandler reply;
+    };
+    QVector<PendingImageResolve> pendingImageResolves;
+    PinloomHostClient delayedImageClient(
+        [&pendingImageResolves](
+            const QJsonObject& request,
+            PinloomHostClient::RawReplyHandler reply) {
+            if (request.value(QStringLiteral("method")).toString()
+                != QStringLiteral("resolve")) {
+                reply({}, QStringLiteral("unexpected delayed image method"));
+                return;
+            }
+            const QString entryId =
+                request.value(QStringLiteral("params")).toObject()
+                    .value(QStringLiteral("identity")).toObject()
+                    .value(QStringLiteral("entryId")).toString();
+            pendingImageResolves.append(
+                PendingImageResolve{entryId, std::move(reply)});
+        });
+    const QJsonObject oldRectangleEntry =
+        rectangleEntryJson(QStringLiteral("old"),
+                           QStringLiteral("Old rectangle"));
+    const QJsonObject latestRectangleEntry =
+        rectangleEntryJson(QStringLiteral("latest"),
+                           QStringLiteral("Latest rectangle"));
+    PinloomContextView delayedImageView(&delayedImageClient);
+    delayedImageView.resize(560, 650);
+    delayedImageView.restoreState(
+        {{QStringLiteral("boundEntries"),
+          QVariantList{PinloomHostEntry::fromJson(oldRectangleEntry)
+                           .toVariantMap(),
+                       PinloomHostEntry::fromJson(latestRectangleEntry)
+                           .toVariantMap()}}});
+    delayedImageView.show();
+    QApplication::processEvents();
+    check(pendingImageResolves.size() == 1,
+          "first binding starts one image resolve generation");
+    delayedImageView.resultList()->setCurrentRow(1);
+    QApplication::processEvents();
+    check(pendingImageResolves.size() == 2,
+          "switching bindings starts a new image resolve generation");
+    if (pendingImageResolves.size() == 2) {
+        pendingImageResolves[1].reply(
+            rectangleDocumentJson(
+                latestRectangleEntry,
+                readyPreviewJson(latestPreviewPath, QSize(300, 300), 7),
+                7),
+            {});
+        QApplication::processEvents();
+        const QPixmap latestPixmap =
+            delayedImageView.imagePreviewLabel()->pixmap(Qt::ReturnByValue);
+        const QColor latestColor = latestPixmap.isNull()
+            ? QColor()
+            : latestPixmap.toImage().pixelColor(
+                  latestPixmap.width() / 2, latestPixmap.height() / 2);
+        check(delayedImageView.currentEntry().identity.entryId
+                  == QStringLiteral("anchor:pdf-latest")
+                  && latestColor.blue() > latestColor.red(),
+              "new binding response installs the matching image preview");
+
+        pendingImageResolves[0].reply(
+            rectangleDocumentJson(
+                oldRectangleEntry,
+                readyPreviewJson(oldPreviewPath, QSize(320, 160), 6),
+                6),
+            {});
+        QApplication::processEvents();
+        const QPixmap retainedPixmap =
+            delayedImageView.imagePreviewLabel()->pixmap(Qt::ReturnByValue);
+        const QColor retainedColor = retainedPixmap.isNull()
+            ? QColor()
+            : retainedPixmap.toImage().pixelColor(
+                  retainedPixmap.width() / 2, retainedPixmap.height() / 2);
+        check(delayedImageView.currentEntry().identity.entryId
+                  == QStringLiteral("anchor:pdf-latest")
+                  && delayedImageView.findChild<QLabel*>(
+                         QStringLiteral("pinloomContextTitle"))->text()
+                         == QStringLiteral("Latest rectangle")
+                  && retainedColor.blue() > retainedColor.red(),
+              "stale asynchronous resolve cannot overwrite the newer binding preview");
+    }
+    imageView.close();
+    unavailableImageView.close();
+    clipView.close();
+    delayedImageView.close();
 
     const QVariantMap linkSource{
         {QStringLiteral("anchorKind"), QStringLiteral("always")},

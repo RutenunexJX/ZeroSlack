@@ -15,6 +15,8 @@
 #include <QUuid>
 #include <QtConcurrent>
 
+#include <cmath>
+#include <limits>
 #include <utility>
 
 namespace {
@@ -24,6 +26,10 @@ constexpr int kConnectTimeoutMs = 160;
 constexpr int kResponseTimeoutMs = 1800;
 constexpr int kLaunchAttempts = 20;
 constexpr qsizetype kMaximumResponseBytes = 4 * 1024 * 1024;
+constexpr qsizetype kMaximumPreviewDescriptorBytes = 16 * 1024;
+constexpr qint64 kMaximumPreviewFileBytes = 64LL * 1024LL * 1024LL;
+constexpr int kMaximumPreviewDimension = 16384;
+constexpr qint64 kMaximumPreviewPixels = 64LL * 1024LL * 1024LL;
 
 struct RawReply {
     QJsonObject result;
@@ -36,6 +42,18 @@ QStringList jsonStringList(const QJsonValue& value)
     for (const QJsonValue& item : value.toArray())
         result.append(item.toString());
     return result;
+}
+
+void setPreviewValidationError(PinloomHostPreview* preview,
+                               const QString& error)
+{
+    if (preview && preview->validationError.isEmpty())
+        preview->validationError = error;
+}
+
+bool isUncPath(const QString& path)
+{
+    return QDir::fromNativeSeparators(path).startsWith(QStringLiteral("//"));
 }
 
 QString firstExistingExecutable(const QStringList& candidates)
@@ -273,6 +291,211 @@ PinloomHostEntry PinloomHostEntry::fromVariantMap(const QVariantMap& map)
     return result;
 }
 
+bool PinloomHostPreview::isImage() const
+{
+    return present
+        && kind.compare(QStringLiteral("image"), Qt::CaseInsensitive) == 0;
+}
+
+bool PinloomHostPreview::isReady() const
+{
+    return isImage()
+        && validationError.isEmpty()
+        && state.compare(QStringLiteral("ready"), Qt::CaseInsensitive) == 0;
+}
+
+PinloomHostPreview PinloomHostPreview::fromJson(
+    const QJsonObject& object)
+{
+    PinloomHostPreview result;
+    result.present = true;
+    if (QJsonDocument(object).toJson(QJsonDocument::Compact).size()
+        > kMaximumPreviewDescriptorBytes) {
+        result.kind = QStringLiteral("image");
+        result.state = QStringLiteral("error");
+        result.validationError = QStringLiteral(
+            "Pinloom preview descriptor exceeds the 16 KiB size limit.");
+        return result;
+    }
+
+    const auto stringValue = [&object, &result](const QString& key) {
+        const QJsonValue value = object.value(key);
+        if (value.isUndefined() || value.isNull())
+            return QString();
+        if (!value.isString()) {
+            setPreviewValidationError(
+                &result,
+                QStringLiteral("Pinloom preview field '%1' has an invalid type.")
+                    .arg(key));
+            return QString();
+        }
+        return value.toString().trimmed();
+    };
+    const auto integerValue = [&object, &result](
+                                  const QString& key,
+                                  qint64* target,
+                                  bool* present) {
+        const QJsonValue value = object.value(key);
+        *present = !value.isUndefined() && !value.isNull();
+        if (!*present)
+            return;
+        if (!value.isDouble()) {
+            setPreviewValidationError(
+                &result,
+                QStringLiteral("Pinloom preview field '%1' is not an integer.")
+                    .arg(key));
+            return;
+        }
+        const double number = value.toDouble();
+        constexpr double kMaximumExactJsonInteger = 9007199254740991.0;
+        if (!std::isfinite(number)
+            || std::floor(number) != number
+            || number < -kMaximumExactJsonInteger
+            || number > kMaximumExactJsonInteger) {
+            setPreviewValidationError(
+                &result,
+                QStringLiteral("Pinloom preview field '%1' is out of range.")
+                    .arg(key));
+            return;
+        }
+        *target = qint64(number);
+    };
+
+    result.kind = stringValue(QStringLiteral("kind")).toLower();
+    if (result.kind.isEmpty())
+        result.kind = QStringLiteral("image");
+    result.state = stringValue(QStringLiteral("state")).toLower();
+    result.mimeType = stringValue(QStringLiteral("mimeType")).toLower();
+    result.filePath = stringValue(QStringLiteral("filePath"));
+    result.altText = stringValue(QStringLiteral("altText"));
+    result.error = stringValue(QStringLiteral("error"));
+
+    const QString uriText = stringValue(QStringLiteral("uri"));
+    if (!uriText.isEmpty())
+        result.uri = QUrl(uriText, QUrl::StrictMode);
+
+    bool byteSizePresent = false;
+    integerValue(QStringLiteral("byteSize"),
+                 &result.byteSize, &byteSizePresent);
+    qint64 pixelWidth = 0;
+    bool pixelWidthPresent = false;
+    integerValue(QStringLiteral("pixelWidth"),
+                 &pixelWidth, &pixelWidthPresent);
+    qint64 pixelHeight = 0;
+    bool pixelHeightPresent = false;
+    integerValue(QStringLiteral("pixelHeight"),
+                 &pixelHeight, &pixelHeightPresent);
+    qint64 page = -1;
+    bool pagePresent = false;
+    integerValue(QStringLiteral("page"), &page, &pagePresent);
+    if (pixelWidthPresent
+        && pixelWidth > 0
+        && pixelWidth <= std::numeric_limits<int>::max()) {
+        result.pixelWidth = int(pixelWidth);
+    }
+    if (pixelHeightPresent
+        && pixelHeight > 0
+        && pixelHeight <= std::numeric_limits<int>::max()) {
+        result.pixelHeight = int(pixelHeight);
+    }
+    if (pagePresent
+        && page >= std::numeric_limits<int>::min()
+        && page <= std::numeric_limits<int>::max()) {
+        result.page = int(page);
+    }
+
+    const QJsonValue croppedValue = object.value(QStringLiteral("cropped"));
+    if (!croppedValue.isUndefined() && !croppedValue.isNull()) {
+        if (croppedValue.isBool()) {
+            result.cropped = croppedValue.toBool();
+        } else {
+            setPreviewValidationError(
+                &result,
+                QStringLiteral("Pinloom preview field 'cropped' has an invalid type."));
+        }
+    }
+
+    if (object.contains(QStringLiteral("data"))
+        || object.contains(QStringLiteral("base64"))) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Embedded Pinloom preview data is not supported."));
+    }
+    if (result.kind != QStringLiteral("image")) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Unsupported Pinloom preview kind: %1.")
+                .arg(result.kind.isEmpty()
+                         ? QStringLiteral("(missing)")
+                         : result.kind));
+    }
+    if (result.state.isEmpty()) {
+        if (!result.filePath.isEmpty() || !result.uri.isEmpty())
+            result.state = QStringLiteral("ready");
+        else if (!result.error.isEmpty())
+            result.state = QStringLiteral("unavailable");
+        else
+            setPreviewValidationError(
+                &result,
+                QStringLiteral("Pinloom preview state is missing."));
+    } else if (result.state != QStringLiteral("ready")
+               && result.state != QStringLiteral("unavailable")
+               && result.state != QStringLiteral("error")) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Unsupported Pinloom preview state: %1.")
+                .arg(result.state));
+    }
+    if (!result.mimeType.isEmpty()
+        && result.mimeType != QStringLiteral("image/png")) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Unsupported Pinloom preview MIME type: %1.")
+                .arg(result.mimeType));
+    }
+    if (!uriText.isEmpty()
+        && (!result.uri.isValid()
+            || !result.uri.isLocalFile()
+            || !result.uri.host().isEmpty())) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview URI is not a local file URI."));
+    }
+    if (!result.filePath.isEmpty()
+        && (!QFileInfo(result.filePath).isAbsolute()
+            || isUncPath(result.filePath))) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview file path is not an absolute local path."));
+    }
+    if (byteSizePresent
+        && (result.byteSize < 0
+            || result.byteSize > kMaximumPreviewFileBytes)) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview file size exceeds the safety limit."));
+    }
+    if (pixelWidthPresent
+        && (pixelWidth <= 0 || pixelWidth > kMaximumPreviewDimension)) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview width exceeds the safety limit."));
+    }
+    if (pixelHeightPresent
+        && (pixelHeight <= 0 || pixelHeight > kMaximumPreviewDimension)) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview height exceeds the safety limit."));
+    }
+    if (pixelWidth > 0 && pixelHeight > 0
+        && (pixelWidth > kMaximumPreviewPixels / pixelHeight)) {
+        setPreviewValidationError(
+            &result,
+            QStringLiteral("Pinloom preview pixel count exceeds the safety limit."));
+    }
+    return result;
+}
+
 bool PinloomHostDocument::isValid() const
 {
     return entry.isValid();
@@ -286,6 +509,19 @@ PinloomHostDocument PinloomHostDocument::fromJson(const QJsonObject& object)
     result.content = object.value(QStringLiteral("content")).toString();
     result.contentType = object.value(QStringLiteral("contentType")).toString();
     result.details = object.value(QStringLiteral("details")).toObject().toVariantMap();
+    const QJsonValue previewValue = object.value(QStringLiteral("preview"));
+    if (!previewValue.isUndefined() && !previewValue.isNull()) {
+        if (previewValue.isObject()) {
+            result.preview = PinloomHostPreview::fromJson(
+                previewValue.toObject());
+        } else {
+            result.preview.present = true;
+            result.preview.kind = QStringLiteral("image");
+            result.preview.state = QStringLiteral("error");
+            result.preview.validationError = QStringLiteral(
+                "Pinloom preview descriptor is not a JSON object.");
+        }
+    }
     return result;
 }
 

@@ -14,7 +14,9 @@ class QLabel;
 class QLineEdit;
 class QListWidget;
 class QPlainTextEdit;
+class QStackedWidget;
 class QToolButton;
+class PinloomPreviewImageLabel;
 
 class ZEROSLACK_API PinloomContextView final : public QWidget
 {
@@ -36,6 +38,8 @@ public:
     QLineEdit* searchField() const;
     QListWidget* resultList() const;
     QPlainTextEdit* previewEditor() const;
+    QLabel* imagePreviewLabel() const;
+    QToolButton* technicalDetailsToggle() const;
     QToolButton* openButton() const;
     QToolButton* copyLinkButton() const;
     QString statusText() const;
@@ -53,7 +57,11 @@ private:
     QListWidget* results = nullptr;
     QLabel* titleLabel = nullptr;
     QLabel* detailsLabel = nullptr;
+    QToolButton* technicalDetailsButton = nullptr;
+    QLabel* technicalDetailsLabel = nullptr;
+    QStackedWidget* previewStack = nullptr;
     QPlainTextEdit* contentPreview = nullptr;
+    PinloomPreviewImageLabel* imagePreview = nullptr;
     QLabel* statusLabel = nullptr;
     QToolButton* reloadButton = nullptr;
     QToolButton* openTargetButton = nullptr;
@@ -88,6 +96,9 @@ private:
                       const QString& error,
                       quint64 generation,
                       bool announceChange);
+    void showTextPreview(const QString& text);
+    void showImageFailure(const QString& reason);
+    void openImagePreview();
     void openCurrentEntry();
     void copyCurrentUri();
     void attachCurrentEntry();

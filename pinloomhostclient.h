@@ -49,11 +49,33 @@ struct ZEROSLACK_API PinloomHostEntry {
     static PinloomHostEntry fromVariantMap(const QVariantMap& map);
 };
 
+struct ZEROSLACK_API PinloomHostPreview {
+    bool present = false;
+    QString kind;
+    QString state;
+    QString mimeType;
+    QUrl uri;
+    QString filePath;
+    qint64 byteSize = -1;
+    int pixelWidth = 0;
+    int pixelHeight = 0;
+    int page = -1;
+    bool cropped = false;
+    QString altText;
+    QString error;
+    QString validationError;
+
+    bool isImage() const;
+    bool isReady() const;
+    static PinloomHostPreview fromJson(const QJsonObject& object);
+};
+
 struct ZEROSLACK_API PinloomHostDocument {
     PinloomHostEntry entry;
     QString content;
     QString contentType;
     QVariantMap details;
+    PinloomHostPreview preview;
 
     bool isValid() const;
     static PinloomHostDocument fromJson(const QJsonObject& object);
@@ -115,6 +137,7 @@ private:
 
 Q_DECLARE_METATYPE(PinloomHostIdentity)
 Q_DECLARE_METATYPE(PinloomHostEntry)
+Q_DECLARE_METATYPE(PinloomHostPreview)
 Q_DECLARE_METATYPE(PinloomHostDocument)
 
 #endif // PINLOOMHOSTCLIENT_H
