@@ -19,6 +19,8 @@ _EXPORT_PATTERN = re.compile(
 _FILTERED_PREFIXES = (
     "_ZN17QArrayDataPointerI",
     "_ZNK17QArrayDataPointerI",
+    "_ZN12QHashPrivate",
+    "_ZNK12QHashPrivate",
 )
 
 _REQUIRED_EXPORTS = {

@@ -151,6 +151,7 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
 
     rtlInsightsPanel =
         std::make_unique<RtlInsightsPanelCoordinator>(dependencies.mainWindow);
+    rtlInsightsPanel->setStateViewEnabled(false);
     signalKernelGraphPanel =
         std::make_unique<SignalKernelGraphPanelCoordinator>(dependencies.mainWindow);
     wavePreviewPanel =

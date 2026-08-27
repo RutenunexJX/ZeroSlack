@@ -8134,17 +8134,14 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     scanRtlInsightItems();
     installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showFsmGraph();
+    RtlInsightsPanelCoordinator* mainRtlInsights =
+        window.semanticDocks->rtlInsightsPanelCoordinator();
+    const QString graphModeBeforeDisabledState =
+        mainRtlInsights->graphModeForTest();
+    mainRtlInsights->showFsmGraph();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const int fsmGraphNodeCount =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphNodeItemCountForTest();
-    const int fsmGraphEdgeCount =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphEdgeItemCountForTest();
-    const QStringList fsmGraphTexts =
-        window.semanticDocks->rtlInsightsPanelCoordinator()
-            ->graphTextItemsForTest();
+    const QString graphModeAfterDisabledState =
+        mainRtlInsights->graphModeForTest();
     installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
         fixturePath,
@@ -8226,16 +8223,18 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     expectBool("RTL insights renders unmapped clock category",
                sawUnmappedClockCategory,
                true);
-    expectBool("RTL insights FSM drawing state nodes",
-               fsmGraphNodeCount > 0,
+    expectBool("RTL insights bottom dock disables State views",
+               !mainRtlInsights->stateViewEnabledForTest(),
                true);
-    expectBool("RTL insights FSM drawing transition edges",
-               fsmGraphEdgeCount > 0,
+    expectBool("disabled State command preserves bottom dock graph mode",
+               graphModeAfterDisabledState
+                   == graphModeBeforeDisabledState,
                true);
-    expectBool("RTL insights FSM drawing compact labels",
-               fsmGraphTexts.join(QLatin1Char('\n')).contains(QStringLiteral("C0"))
-                   && !fsmGraphTexts.join(QLatin1Char('\n'))
-                           .contains(QStringLiteral("state_d = RUN")),
+    expectBool("RTL insights bottom dock does not carry State",
+               mainRtlInsights->dock()
+                   && !mainRtlInsights->dock()
+                           ->property("carriesStateInsight")
+                           .toBool(),
                true);
     expectBool("RTL insights renders signal journey", sawSignalJourney, true);
     expectBool("RTL insights renders signal journey declaration source role",
@@ -11919,38 +11918,57 @@ void runContextRailIconRegression(MainWindow& window)
         : nullptr;
     QAction* editorAction = contextRailAction(
         rail, QStringLiteral("temporaryEditor"));
-    QAction* insightsAction = contextRailAction(
-        rail, QStringLiteral("liveInsights"));
+    const QList<QAction*> insightActions = {
+        contextRailAction(
+            rail,
+            LiveInsightsContextProvider::providerIdForKind(
+                LiveInsightKind::Kernel)),
+        contextRailAction(
+            rail,
+            LiveInsightsContextProvider::providerIdForKind(
+                LiveInsightKind::Module)),
+        contextRailAction(
+            rail,
+            LiveInsightsContextProvider::providerIdForKind(
+                LiveInsightKind::Hotspot)),
+        contextRailAction(
+            rail,
+            LiveInsightsContextProvider::providerIdForKind(
+                LiveInsightKind::State))
+    };
     QAction* pinloomAction = contextRailAction(
         rail, QStringLiteral("pinloom"));
     const QImage editorIcon = contextRailIconImage(editorAction);
-    const QImage insightsIcon = contextRailIconImage(insightsAction);
     const QImage pinloomIcon = contextRailIconImage(pinloomAction);
 
+    QList<QImage> icons = {editorIcon, pinloomIcon};
+    bool allActionsPresent = editorAction && pinloomAction;
+    bool selectedTreatment = allActionsPresent
+        && contextRailIconImage(editorAction, QIcon::On) != editorIcon
+        && contextRailIconImage(pinloomAction, QIcon::On) != pinloomIcon;
+    for (QAction* action : insightActions) {
+        const QImage icon = contextRailIconImage(action);
+        allActionsPresent = allActionsPresent && action && !icon.isNull();
+        selectedTreatment = selectedTreatment && action
+            && contextRailIconImage(action, QIcon::On) != icon;
+        icons.append(icon);
+    }
+    bool visuallyDistinct = true;
+    for (int left = 0; left < icons.size(); ++left) {
+        visuallyDistinct = visuallyDistinct && !icons.at(left).isNull();
+        for (int right = left + 1; right < icons.size(); ++right)
+            visuallyDistinct = visuallyDistinct
+                && icons.at(left) != icons.at(right);
+    }
+
     expectBool("Context Rail providers have explicit icons",
-               editorAction
-                   && insightsAction
-                   && pinloomAction
-                   && !editorIcon.isNull()
-                   && !insightsIcon.isNull()
-                   && !pinloomIcon.isNull(),
+               allActionsPresent,
                true);
     expectBool("Context Rail provider icons are visually distinct",
-               !editorIcon.isNull()
-                   && editorIcon != insightsIcon
-                   && editorIcon != pinloomIcon
-                   && insightsIcon != pinloomIcon,
+               visuallyDistinct,
                true);
     expectBool("Context Rail active icons have a selected treatment",
-               editorAction
-                   && insightsAction
-                   && pinloomAction
-                   && contextRailIconImage(editorAction, QIcon::On)
-                          != editorIcon
-                   && contextRailIconImage(insightsAction, QIcon::On)
-                          != insightsIcon
-                   && contextRailIconImage(pinloomAction, QIcon::On)
-                          != pinloomIcon,
+               selectedTreatment,
                true);
 }
 
@@ -12192,12 +12210,14 @@ void runInsightFocusIntegrationRegression(
         fixturePath,
         QStringLiteral("insight_top"),
         QStringLiteral("state_q"));
-    rtl->showFsmGraph();
+    rtl->showModuleBlockDiagramForModule(
+        fixturePath,
+        QStringLiteral("insight_top"));
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    expectBool("FSM graph is populated before Focus View",
+    expectBool("module block graph is populated before Focus View",
                rtl->graphNodeItemCountForTest() > 0
-                   && rtl->graphEdgeItemCountForTest() > 0,
+                   && rtl->graphItemsReadableForTest(),
                true);
     if (window.panelLayoutController)
         window.panelLayoutController->setBottomCollapsed(true);
@@ -12228,7 +12248,7 @@ void runInsightFocusIntegrationRegression(
                           ->currentWidget()
                           == focusPage,
                true);
-    expectBool("FSM Focus View is readable at 1100x760",
+    expectBool("module block Focus View is readable at 1100x760",
                focusedGeometryReadable()
                    && window.panelLayoutController
                    && window.panelLayoutController
@@ -12236,15 +12256,15 @@ void runInsightFocusIntegrationRegression(
                true);
 
     fitButton->click();
-    searchEdit->setText(QStringLiteral("IDLE"));
+    searchEdit->setText(QStringLiteral("insight_top"));
     zoomInButton->click();
     inspectorButton->click();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     const bool fsmSelectionMade =
         rtl->selectGraphItemForTest(
-            QStringLiteral("state"),
-            QStringLiteral("IDLE"));
+            QStringLiteral("module"),
+            QStringLiteral("insight_top"));
     const qreal fsmScaleBeforeReturn =
         rtl->graphView()
         ? rtl->graphView()->transform().m11()
@@ -12254,7 +12274,7 @@ void runInsightFocusIntegrationRegression(
     backButton->click();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    expectBool("Back to Editor restores the FSM panel",
+    expectBool("Back to Editor restores the RTL Insights panel",
                !controller->isFocused()
                    && rtlDock
                    && rtlDock->widget() == rtlPanel
@@ -12265,11 +12285,11 @@ void runInsightFocusIntegrationRegression(
                           ->currentWidget()
                           == window.editorCentralPage,
                true);
-    expectBool("FSM search zoom and selection survive Back",
+    expectBool("module block search zoom and selection survive Back",
                fsmSelectionMade
                    && fsmSelectionBeforeReturn > 0
                    && rtl->focusSearchText()
-                          == QStringLiteral("IDLE")
+                          == QStringLiteral("insight_top")
                    && rtl->graphView()
                    && qAbs(
                           rtl->graphView()
@@ -12284,7 +12304,7 @@ void runInsightFocusIntegrationRegression(
         window.panelLayoutController
         ? window.panelLayoutController->layoutState()
         : PanelLayoutState();
-    expectBool("FSM Focus exit restores exact bottom layout",
+    expectBool("RTL Focus exit restores exact bottom layout",
                window.panelLayoutController
                    && panelLayoutAfterRtlFocus.bottomPanelOrder
                           == panelLayoutBeforeRtlFocus.bottomPanelOrder
@@ -12310,11 +12330,11 @@ void runInsightFocusIntegrationRegression(
     focusRtlAction->trigger();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    expectBool("FSM re-entry restores shared Focus state",
+    expectBool("module block re-entry restores shared Focus state",
                controller->focusedPanelWidget()
                        == rtlPanel
                    && searchEdit->text()
-                          == QStringLiteral("IDLE")
+                          == QStringLiteral("insight_top")
                    && rtl->graphSelectedItemCountForTest()
                           == fsmSelectionBeforeReturn,
                true);

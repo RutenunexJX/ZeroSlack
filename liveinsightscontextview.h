@@ -29,6 +29,10 @@ public:
     explicit LiveInsightsContextView(
         LiveInsightSession* session,
         QWidget* parent = nullptr);
+    LiveInsightsContextView(
+        LiveInsightSession* session,
+        LiveInsightKind fixedKind,
+        QWidget* parent = nullptr);
     ~LiveInsightsContextView() override;
 
     LiveInsightSession* session() const;
@@ -53,6 +57,7 @@ public:
     QCheckBox* followEditorCheckBox() const;
     QPushButton* pinButton() const;
     QPushButton* openFullViewButton() const;
+    bool hasFixedKind() const;
 
 signals:
     void selectedKindChanged(LiveInsightKind kind);
@@ -80,11 +85,13 @@ private:
     QCheckBox* followCheck = nullptr;
     QPushButton* pinToggle = nullptr;
     QPushButton* fullViewButton = nullptr;
-    LiveInsightKind selected = LiveInsightKind::Module;
+    LiveInsightKind selected = LiveInsightKind::Kernel;
+    bool fixedKindValue = false;
     QString workspaceIdValue;
     FullViewHandler fullViewHandler;
 
     static int indexForKind(LiveInsightKind kind);
+    void initialize();
     void buildUi();
     void refreshSnapshot(LiveInsightKind kind,
                          const LiveInsightSnapshot& snapshot);

@@ -6,10 +6,11 @@
 #include <QVariantMap>
 
 enum class LiveInsightKind : quint8 {
-    Module,
-    State,
-    Hotspot,
-    Wave
+    Module = 0,
+    State = 1,
+    Hotspot = 2,
+    Wave = 3,
+    Kernel = 4
 };
 
 enum class LiveInsightPhase : quint8 {
@@ -24,8 +25,10 @@ enum class LiveInsightPhase : quint8 {
 inline QString liveInsightKindId(LiveInsightKind kind)
 {
     switch (kind) {
+    case LiveInsightKind::Kernel:
+        return QStringLiteral("kernel");
     case LiveInsightKind::Module:
-        return QStringLiteral("module");
+        return QStringLiteral("block");
     case LiveInsightKind::State:
         return QStringLiteral("state");
     case LiveInsightKind::Hotspot:
@@ -39,8 +42,10 @@ inline QString liveInsightKindId(LiveInsightKind kind)
 inline QString liveInsightKindDisplayName(LiveInsightKind kind)
 {
     switch (kind) {
+    case LiveInsightKind::Kernel:
+        return QStringLiteral("Kernel");
     case LiveInsightKind::Module:
-        return QStringLiteral("Module");
+        return QStringLiteral("Block");
     case LiveInsightKind::State:
         return QStringLiteral("State");
     case LiveInsightKind::Hotspot:
@@ -56,7 +61,10 @@ inline bool liveInsightKindFromId(const QString& id,
 {
     const QString normalized = id.trimmed().toLower();
     LiveInsightKind parsed = LiveInsightKind::Module;
-    if (normalized == QStringLiteral("module"))
+    if (normalized == QStringLiteral("kernel"))
+        parsed = LiveInsightKind::Kernel;
+    else if (normalized == QStringLiteral("block")
+             || normalized == QStringLiteral("module"))
         parsed = LiveInsightKind::Module;
     else if (normalized == QStringLiteral("state"))
         parsed = LiveInsightKind::State;

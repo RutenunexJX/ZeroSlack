@@ -82,6 +82,7 @@ struct RtlInsightsPanelViewState
     RtlInsightSourceLocation pendingSourceLocation;
     bool hasPendingSourceLocation = false;
     bool pinned = false;
+    bool stateViewEnabled = true;
     quint64 graphBuildGeneration = 0;
     quint64 graphDocumentRevision = 0;
     QString graphSearchText;

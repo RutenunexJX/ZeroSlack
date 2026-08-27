@@ -58,6 +58,8 @@ public:
         const RtlInsightSourceLocation& location);
     void setPinned(bool pinned);
     bool isPinned() const;
+    void setStateViewEnabled(bool enabled);
+    bool stateViewEnabledForTest() const;
     void showModuleInsights(
         const QString& fileName,
         const QString& moduleName,

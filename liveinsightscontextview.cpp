@@ -27,13 +27,13 @@ LiveInsightKind kindForIndex(int index)
 {
     switch (index) {
     case 1:
-        return LiveInsightKind::State;
+        return LiveInsightKind::Module;
     case 2:
         return LiveInsightKind::Hotspot;
     case 3:
-        return LiveInsightKind::Wave;
+        return LiveInsightKind::State;
     default:
-        return LiveInsightKind::Module;
+        return LiveInsightKind::Kernel;
     }
 }
 
@@ -119,6 +119,23 @@ LiveInsightsContextView::LiveInsightsContextView(
     : QWidget(parent)
     , sessionValue(session)
 {
+    initialize();
+}
+
+LiveInsightsContextView::LiveInsightsContextView(
+    LiveInsightSession* session,
+    LiveInsightKind fixedKind,
+    QWidget* parent)
+    : QWidget(parent)
+    , sessionValue(session)
+    , selected(fixedKind)
+    , fixedKindValue(true)
+{
+    initialize();
+}
+
+void LiveInsightsContextView::initialize()
+{
     setObjectName(QStringLiteral("liveInsightsContextView"));
     buildUi();
     if (sessionValue) {
@@ -161,6 +178,8 @@ LiveInsightKind LiveInsightsContextView::selectedKind() const
 void LiveInsightsContextView::setSelectedKind(LiveInsightKind kind)
 {
     const int index = indexForKind(kind);
+    if (index < 0 || (fixedKindValue && kind != selected))
+        return;
     if (selected == kind) {
         if (cards.at(index).button)
             cards.at(index).button->setChecked(true);
@@ -272,19 +291,22 @@ void LiveInsightsContextView::restoreState(
 QPushButton* LiveInsightsContextView::kindButton(
     LiveInsightKind kind) const
 {
-    return cards.at(indexForKind(kind)).button;
+    const int index = indexForKind(kind);
+    return index >= 0 ? cards.at(index).button : nullptr;
 }
 
 QLabel* LiveInsightsContextView::kindStatusLabel(
     LiveInsightKind kind) const
 {
-    return cards.at(indexForKind(kind)).status;
+    const int index = indexForKind(kind);
+    return index >= 0 ? cards.at(index).status : nullptr;
 }
 
 QLabel* LiveInsightsContextView::kindSummaryLabel(
     LiveInsightKind kind) const
 {
-    return cards.at(indexForKind(kind)).summary;
+    const int index = indexForKind(kind);
+    return index >= 0 ? cards.at(index).summary : nullptr;
 }
 
 QCheckBox* LiveInsightsContextView::followEditorCheckBox() const
@@ -300,6 +322,11 @@ QPushButton* LiveInsightsContextView::pinButton() const
 QPushButton* LiveInsightsContextView::openFullViewButton() const
 {
     return fullViewButton;
+}
+
+bool LiveInsightsContextView::hasFixedKind() const
+{
+    return fixedKindValue;
 }
 
 void LiveInsightsContextView::showEvent(QShowEvent* event)
@@ -323,14 +350,16 @@ void LiveInsightsContextView::hideEvent(QHideEvent* event)
 int LiveInsightsContextView::indexForKind(LiveInsightKind kind)
 {
     switch (kind) {
-    case LiveInsightKind::Module:
+    case LiveInsightKind::Kernel:
         return 0;
-    case LiveInsightKind::State:
+    case LiveInsightKind::Module:
         return 1;
     case LiveInsightKind::Hotspot:
         return 2;
-    case LiveInsightKind::Wave:
+    case LiveInsightKind::State:
         return 3;
+    case LiveInsightKind::Wave:
+        return -1;
     }
     return 0;
 }
@@ -343,7 +372,7 @@ void LiveInsightsContextView::buildUi()
 
     auto* titleRow = new QHBoxLayout;
     titleRow->setSpacing(6);
-    auto* title = new QLabel(QStringLiteral("Live Insights"), this);
+    auto* title = new QLabel(QStringLiteral("RTL Insight Workbench"), this);
     title->setObjectName(QStringLiteral("liveInsightsContextTitle"));
     InsightVisualStyle::applyTitleLabel(title);
     titleRow->addWidget(title, 1);
@@ -392,6 +421,7 @@ void LiveInsightsContextView::buildUi()
             QStringLiteral("liveInsightCard_%1").arg(kindId));
         card->setFrameShape(QFrame::NoFrame);
         InsightVisualStyle::applyPanel(card);
+        card->setVisible(!fixedKindValue || kind == selected);
         auto* cardLayout = new QVBoxLayout(card);
         cardLayout->setContentsMargins(5, 5, 5, 5);
         cardLayout->setSpacing(3);
@@ -438,7 +468,11 @@ void LiveInsightsContextView::buildUi()
             this,
             [this, kind]() { setSelectedKind(kind); });
     }
-    cards.at(0).button->setChecked(true);
+    const int selectedIndex = indexForKind(selected);
+    if (selectedIndex >= 0) {
+        cards.at(selectedIndex).button->setChecked(true);
+        contentStack->setCurrentIndex(selectedIndex);
+    }
     root->addLayout(cardGrid);
     root->addWidget(contentStack, 1);
 
@@ -488,6 +522,8 @@ void LiveInsightsContextView::refreshSnapshot(
     const LiveInsightSnapshot& snapshot)
 {
     const int index = indexForKind(kind);
+    if (index < 0 || (fixedKindValue && kind != selected))
+        return;
     if (!followEditor() && hasRenderedSnapshot.at(index))
         return;
     renderedSnapshots.at(index) = snapshot;

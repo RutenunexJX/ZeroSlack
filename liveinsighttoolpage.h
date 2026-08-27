@@ -3,18 +3,25 @@
 
 #include "liveinsighttypes.h"
 
+#include <QPointer>
 #include <QWidget>
 
 #include <functional>
 #include <memory>
 
 class RtlInsightsPanelCoordinator;
+class RtlInsightWorkbench;
 class WavePreviewPanelCoordinator;
+class QMainWindow;
 class QHideEvent;
 class QShowEvent;
 
 struct LiveInsightToolContext {
     QString workspaceRoot;
+    QString workspaceId;
+    QString documentId;
+    quint64 documentRevision = 0;
+    quint64 semanticRevision = 0;
     QString fileName;
     QString documentText;
     QString moduleName;
@@ -49,7 +56,10 @@ public:
     void setContext(const LiveInsightToolContext& context);
 
     RtlInsightsPanelCoordinator* rtlCoordinatorForTest() const;
+    RtlInsightWorkbench* workbenchForTest() const;
     WavePreviewPanelCoordinator* waveCoordinatorForTest() const;
+    QMainWindow* detachToWindow();
+    QMainWindow* detachedWindowForTest() const;
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -64,6 +74,9 @@ private:
     VisibilityHandler visibilityHandler;
     std::unique_ptr<RtlInsightsPanelCoordinator> rtlCoordinator;
     std::unique_ptr<WavePreviewPanelCoordinator> waveCoordinator;
+    RtlInsightWorkbench* workbench = nullptr;
+    QPointer<QMainWindow> detachedWindow;
+    QPointer<LiveInsightToolPage> detachedPage;
 
     void createSurface();
     void renderContext();

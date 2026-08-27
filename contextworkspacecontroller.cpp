@@ -46,6 +46,7 @@ bool hasBuiltInProviderIcon(const QString& providerId)
 {
     return providerId == QStringLiteral("temporaryEditor")
         || providerId == QStringLiteral("liveInsights")
+        || providerId.startsWith(QStringLiteral("rtlInsight."))
         || providerId == QStringLiteral("pinloom");
 }
 
@@ -59,6 +60,22 @@ QColor providerAccent(const QString& providerId, ThemeMode mode)
     if (providerId == QStringLiteral("liveInsights")) {
         return QColor(dark ? QStringLiteral("#35D3E4")
                            : QStringLiteral("#087F96"));
+    }
+    if (providerId == QStringLiteral("rtlInsight.kernel")) {
+        return QColor(dark ? QStringLiteral("#35D3E4")
+                           : QStringLiteral("#087F96"));
+    }
+    if (providerId == QStringLiteral("rtlInsight.block")) {
+        return QColor(dark ? QStringLiteral("#70B8FF")
+                           : QStringLiteral("#2563A8"));
+    }
+    if (providerId == QStringLiteral("rtlInsight.hotspot")) {
+        return QColor(dark ? QStringLiteral("#FFB45D")
+                           : QStringLiteral("#B85B14"));
+    }
+    if (providerId == QStringLiteral("rtlInsight.state")) {
+        return QColor(dark ? QStringLiteral("#C39BFF")
+                           : QStringLiteral("#7543B5"));
     }
     return QColor(dark ? QStringLiteral("#F6BE4B")
                        : QStringLiteral("#B86613"));
@@ -126,6 +143,61 @@ QPixmap providerIconPixmap(
         painter.setPen(outline);
         painter.drawLine(QPointF(10.5, 10.5), QPointF(16.5, 10.5));
         painter.drawLine(QPointF(10.5, 14.5), QPointF(14.0, 14.5));
+    } else if (providerId == QStringLiteral("rtlInsight.kernel")) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(outline);
+        painter.drawLine(QPointF(7.0, 9.0), QPointF(15.8, 16.0));
+        painter.drawLine(QPointF(7.0, 23.0), QPointF(15.8, 16.0));
+        painter.drawLine(QPointF(15.8, 16.0), QPointF(25.0, 8.0));
+        painter.drawLine(QPointF(15.8, 16.0), QPointF(25.0, 24.0));
+        painter.setPen(accentPen);
+        painter.setBrush(accent);
+        painter.drawEllipse(QPointF(15.8, 16.0), 4.0, 4.0);
+        painter.setBrush(theme.panelBackground);
+        for (const QPointF& point : {QPointF(7.0, 9.0), QPointF(7.0, 23.0),
+                                     QPointF(25.0, 8.0), QPointF(25.0, 24.0)}) {
+            painter.drawEllipse(point, 2.3, 2.3);
+        }
+    } else if (providerId == QStringLiteral("rtlInsight.block")) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(outline);
+        painter.drawLine(QPointF(11.5, 9.0), QPointF(19.0, 9.0));
+        painter.drawLine(QPointF(11.5, 23.0), QPointF(19.0, 23.0));
+        painter.setBrush(theme.panelBackground);
+        painter.drawRoundedRect(QRectF(4.5, 5.0, 7.0, 8.0), 1.2, 1.2);
+        painter.drawRoundedRect(QRectF(4.5, 19.0, 7.0, 8.0), 1.2, 1.2);
+        painter.setPen(accentPen);
+        painter.drawRoundedRect(QRectF(19.0, 9.0, 8.5, 14.0), 1.5, 1.5);
+        painter.drawLine(QPointF(21.5, 13.0), QPointF(25.0, 13.0));
+        painter.drawLine(QPointF(21.5, 17.0), QPointF(25.0, 17.0));
+    } else if (providerId == QStringLiteral("rtlInsight.hotspot")) {
+        painter.setPen(outline);
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                QColor fill = column + row >= 3 ? accent : theme.panelBackground;
+                fill.setAlpha(column + row >= 3 ? 210 : 255);
+                painter.setBrush(fill);
+                painter.drawRoundedRect(
+                    QRectF(6.0 + column * 7.0, 6.0 + row * 7.0, 5.0, 5.0),
+                    1.0,
+                    1.0);
+            }
+        }
+        painter.setPen(accentPen);
+        painter.drawEllipse(QPointF(23.5, 9.0), 3.2, 3.2);
+    } else if (providerId == QStringLiteral("rtlInsight.state")) {
+        painter.setBrush(theme.panelBackground);
+        painter.setPen(outline);
+        painter.drawEllipse(QPointF(8.0, 16.0), 4.0, 4.0);
+        painter.drawEllipse(QPointF(24.0, 9.0), 4.0, 4.0);
+        painter.drawEllipse(QPointF(24.0, 24.0), 4.0, 4.0);
+        painter.setPen(accentPen);
+        painter.drawLine(QPointF(12.0, 14.5), QPointF(19.8, 10.5));
+        painter.drawLine(QPointF(24.0, 13.0), QPointF(24.0, 19.5));
+        painter.drawLine(QPointF(20.0, 23.0), QPointF(12.0, 18.0));
+        painter.drawLine(QPointF(18.3, 9.8), QPointF(20.2, 10.6));
+        painter.drawLine(QPointF(24.0, 18.0), QPointF(22.5, 20.0));
+        painter.drawLine(QPointF(13.8, 19.0), QPointF(12.0, 18.0));
     } else if (providerId == QStringLiteral("liveInsights")) {
         painter.setBrush(Qt::NoBrush);
         painter.setPen(outline);

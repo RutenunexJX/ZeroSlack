@@ -366,6 +366,8 @@ set(ZEROSLACK_CORE_SOURCES
     hierarchyservice.cpp
     hierarchyservicetraversal.cpp
     insightgraphview.cpp
+    insightgraphcore.cpp
+    insightcanvas.cpp
     insightfocuscontroller.cpp
     insightfocuscontrolleractions.cpp
     insightvisualstyle.cpp
@@ -373,6 +375,8 @@ set(ZEROSLACK_CORE_SOURCES
     liveinsightscontextview.cpp
     liveinsightscontextprovider.cpp
     liveinsighttoolpage.cpp
+    rtlinsightviewplugins.cpp
+    rtlinsightworkbench.cpp
     inlinecommandmode.cpp
     sourcenavigationservice.cpp
     statetransitiongraphservice.cpp
@@ -613,6 +617,8 @@ set(ZEROSLACK_CORE_SOURCES
     globalcontrolservice.h
     hierarchyservice.h
     insightgraphview.h
+    insightgraphcore.h
+    insightcanvas.h
     insightfocuscontroller.h
     insightvisualstyle.h
     liveinsighttypes.h
@@ -620,6 +626,8 @@ set(ZEROSLACK_CORE_SOURCES
     liveinsightscontextview.h
     liveinsightscontextprovider.h
     liveinsighttoolpage.h
+    rtlinsightviewplugins.h
+    rtlinsightworkbench.h
     editorsearchcandidate.h
     inlinecommandmode.h
     sourcenavigationservice.h
@@ -1059,6 +1067,11 @@ if(BUILD_TESTING)
     add_executable(live_insights_context_provider_test
         test_sv/live_insights_context_provider_test.cpp)
     target_link_libraries(live_insights_context_provider_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(rtl_insight_workbench_test
+        test_sv/rtl_insight_workbench_test.cpp)
+    target_link_libraries(rtl_insight_workbench_test
         PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(live_insights_ui_snapshot_test
@@ -1593,6 +1606,15 @@ if(BUILD_TESTING)
             $<TARGET_FILE:live_insights_context_provider_test>
     )
     set_tests_properties(live_insights_context_provider_test
+        PROPERTIES TIMEOUT 120)
+    add_test(NAME rtl_insight_workbench_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:rtl_insight_workbench_test>
+    )
+    set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)
     set(ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS)
     if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")

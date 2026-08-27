@@ -272,6 +272,15 @@ void SemanticPanelRefreshCoordinator::showSignalKernelGraphForSymbol(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
+    if (liveInsightOpenHandler
+        && liveInsightOpenHandler(
+            LiveInsightKind::Kernel,
+            symbolName,
+            fileName,
+            moduleName,
+            signalAccessPath)) {
+        return;
+    }
     panels.showSignalKernelGraphForSymbol(symbolName,
                                           fileName,
                                           moduleName,

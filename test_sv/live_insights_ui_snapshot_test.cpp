@@ -159,7 +159,7 @@ public:
         sessionValue.setConsumerVisible(
             &hotspotConsumer, LiveInsightKind::Hotspot, true);
         sessionValue.setConsumerVisible(
-            &waveConsumer, LiveInsightKind::Wave, true);
+            &kernelConsumer, LiveInsightKind::Kernel, true);
 
         bool ready = publishReady(
             LiveInsightKind::Module,
@@ -179,11 +179,10 @@ public:
                         "ctrl_state · 19 semantic uses\nPeak density: always_ff"))
             && ready;
         ready = publishReady(
-                    LiveInsightKind::Wave,
+                    LiveInsightKind::Kernel,
                     34,
                     QStringLiteral(
-                        "Symbolic Preview\nDerived from RTL declarations and assignments. "
-                        "This is not a simulation result."))
+                        "Signal Kernel Graph\nStable data-flow inputs and outputs."))
             && ready;
 
         sessionValue.setConsumerVisible(
@@ -204,13 +203,13 @@ public:
         return ready;
     }
 
-    bool verifyAndSelectWave(const QString& scenario)
+    bool verifyAndSelectKernel(const QString& scenario)
     {
         const std::array<LiveInsightKind, 4> kinds = {
             LiveInsightKind::Module,
             LiveInsightKind::State,
             LiveInsightKind::Hotspot,
-            LiveInsightKind::Wave
+            LiveInsightKind::Kernel
         };
         for (LiveInsightKind kind : kinds) {
             QPushButton* button = insightsView->kindButton(kind);
@@ -245,16 +244,16 @@ public:
                    == QStringLiteral("Update pending"),
                scenario + QStringLiteral(" shows Hotspot hidden-dirty freshness"));
         expect(insightsView->kindStatusLabel(
-                   LiveInsightKind::Wave)->text()
+                   LiveInsightKind::Kernel)->text()
                    == QStringLiteral("Current"),
-               scenario + QStringLiteral(" shows Wave freshness"));
+               scenario + QStringLiteral(" shows Kernel freshness"));
         expect(insightsView->kindSummaryLabel(
-                   LiveInsightKind::Wave)->text()
-                   .contains(QStringLiteral("Symbolic Preview"))
-                   && insightsView->kindSummaryLabel(
-                          LiveInsightKind::Wave)->text()
-                          .contains(QStringLiteral("not a simulation")),
-               scenario + QStringLiteral(" labels Wave as Symbolic Preview"));
+                   LiveInsightKind::Kernel)->text()
+                   .contains(QStringLiteral("Signal Kernel Graph"))
+               && insightsView->kindSummaryLabel(
+                          LiveInsightKind::Kernel)->text()
+                          .contains(QStringLiteral("data-flow")),
+               scenario + QStringLiteral(" labels the shared Kernel view"));
 
         verifyGeometry(scenario);
         return gFailures == 0;
@@ -471,8 +470,8 @@ private:
 
         symbolicPreviewLabel = new QLabel(
             QStringLiteral(
-                "WAVE  ·  Symbolic Preview derives structure from RTL. "
-                "Simulation data is not implied."),
+                "WORKBENCH  ·  Shared InsightGraphCore / InsightCanvas  ·  "
+                "four independently routed views"),
             contextPanel);
         symbolicPreviewLabel->setObjectName(
             QStringLiteral("snapshotSymbolicPreviewNotice"));
@@ -528,13 +527,13 @@ private:
                 request,
                 {{QStringLiteral("summary"),
                   request.input.value(QStringLiteral("summary"))},
-                 {QStringLiteral("symbolicPreview"),
-                  request.key.kind == LiveInsightKind::Wave}});
+                 {QStringLiteral("kernelGraph"),
+                  request.key.kind == LiveInsightKind::Kernel}});
         };
         sessionValue.setBuilder(LiveInsightKind::Module, builder);
         sessionValue.setBuilder(LiveInsightKind::State, builder);
         sessionValue.setBuilder(LiveInsightKind::Hotspot, builder);
-        sessionValue.setBuilder(LiveInsightKind::Wave, builder);
+        sessionValue.setBuilder(LiveInsightKind::Kernel, builder);
     }
 
     bool publishReady(LiveInsightKind kind,
@@ -565,13 +564,13 @@ private:
         expect(fullyVisibleTo(contextPanelValue, insightsView),
                scenario + QStringLiteral(" keeps Live Insights inside Context Workspace"));
         expect(fullyVisibleTo(contextPanelValue, symbolicPreviewLabel),
-               scenario + QStringLiteral(" keeps Symbolic Preview notice visible"));
+               scenario + QStringLiteral(" keeps Workbench notice visible"));
 
         const std::array<LiveInsightKind, 4> kinds = {
+            LiveInsightKind::Kernel,
             LiveInsightKind::Module,
             LiveInsightKind::State,
-            LiveInsightKind::Hotspot,
-            LiveInsightKind::Wave
+            LiveInsightKind::Hotspot
         };
         for (LiveInsightKind kind : kinds) {
             QPushButton* button = insightsView->kindButton(kind);
@@ -608,7 +607,7 @@ private:
     QObject moduleConsumer;
     QObject stateConsumer;
     QObject hotspotConsumer;
-    QObject waveConsumer;
+    QObject kernelConsumer;
     QList<LiveInsightSession::Task> pendingTasks;
     LiveInsightsContextView* insightsView = nullptr;
     QFrame* contextPanelValue = nullptr;
@@ -627,7 +626,7 @@ bool renderScenario(const QSize& size,
     window.show();
     QApplication::processEvents();
     QApplication::processEvents();
-    window.verifyAndSelectWave(scenario);
+    window.verifyAndSelectKernel(scenario);
 
     const QString outputPath = QDir(outputDirectory).filePath(
         QStringLiteral("live_insights_context_%1x%2_%3.png")

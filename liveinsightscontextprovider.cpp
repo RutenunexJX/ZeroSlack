@@ -34,9 +34,62 @@ LiveInsightsContextProvider::LiveInsightsContextProvider(
         sessionValue = new LiveInsightSession(this);
 }
 
+LiveInsightsContextProvider::LiveInsightsContextProvider(
+    LiveInsightKind kind,
+    LiveInsightSession* session,
+    QObject* parent)
+    : QObject(parent)
+    , sessionValue(session)
+    , fixedKind(kind)
+    , fixedKindEnabled(true)
+{
+    if (!sessionValue)
+        sessionValue = new LiveInsightSession(this);
+}
+
 QString LiveInsightsContextProvider::staticProviderId()
 {
     return QStringLiteral("liveInsights");
+}
+
+QString LiveInsightsContextProvider::providerIdForKind(
+    LiveInsightKind kind)
+{
+    return QStringLiteral("rtlInsight.%1").arg(liveInsightKindId(kind));
+}
+
+QString LiveInsightsContextProvider::iconKeyForKind(
+    LiveInsightKind kind)
+{
+    switch (kind) {
+    case LiveInsightKind::Kernel:
+        return QStringLiteral("rtl-insight-kernel");
+    case LiveInsightKind::Module:
+        return QStringLiteral("rtl-insight-block");
+    case LiveInsightKind::Hotspot:
+        return QStringLiteral("rtl-insight-hotspot");
+    case LiveInsightKind::State:
+        return QStringLiteral("rtl-insight-state");
+    case LiveInsightKind::Wave:
+        return QStringLiteral("rtl-insight-wave");
+    }
+    return {};
+}
+
+bool LiveInsightsContextProvider::isWorkbenchProviderId(
+    const QString& providerId)
+{
+    if (providerId == staticProviderId())
+        return true;
+    for (LiveInsightKind kind : {
+             LiveInsightKind::Kernel,
+             LiveInsightKind::Module,
+             LiveInsightKind::Hotspot,
+             LiveInsightKind::State}) {
+        if (providerId == providerIdForKind(kind))
+            return true;
+    }
+    return false;
 }
 
 ContextResource LiveInsightsContextProvider::resourceForKind(
@@ -45,11 +98,30 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
     const QVariantMap& state)
 {
     ContextResource resource;
-    resource.providerId = staticProviderId();
-    resource.resourceId = kPrimaryResourceId;
+    const bool legacyWave = kind == LiveInsightKind::Wave;
+    resource.providerId = legacyWave
+        ? staticProviderId() : providerIdForKind(kind);
+    resource.resourceId = legacyWave
+        ? kPrimaryResourceId : liveInsightKindId(kind);
     resource.uri = uriForKind(kind);
-    resource.title = QStringLiteral("Live Insights");
-    resource.iconKey = QStringLiteral("view-statistics");
+    switch (kind) {
+    case LiveInsightKind::Kernel:
+        resource.title = QStringLiteral("Signal Kernel Graph");
+        break;
+    case LiveInsightKind::Module:
+        resource.title = QStringLiteral("Module Block Diagram");
+        break;
+    case LiveInsightKind::Hotspot:
+        resource.title = QStringLiteral("Signal Hotspot");
+        break;
+    case LiveInsightKind::State:
+        resource.title = QStringLiteral("State Transition Graph");
+        break;
+    case LiveInsightKind::Wave:
+        resource.title = QStringLiteral("Symbolic Wave Preview");
+        break;
+    }
+    resource.iconKey = iconKeyForKind(kind);
     resource.workspaceId = workspaceId;
     resource.state = state;
     resource.state.insert(
@@ -63,8 +135,7 @@ bool LiveInsightsContextProvider::kindFromResource(
     const ContextResource& resource,
     LiveInsightKind* kind)
 {
-    if (resource.providerId != staticProviderId()
-        || resource.resourceId != kPrimaryResourceId
+    if (!isWorkbenchProviderId(resource.providerId)
         || resource.uri.scheme() != kUriScheme
         || resource.uri.host() != kUriHost) {
         return false;
@@ -72,7 +143,19 @@ bool LiveInsightsContextProvider::kindFromResource(
     QString path = resource.uri.path();
     if (path.startsWith(QLatin1Char('/')))
         path.remove(0, 1);
-    return liveInsightKindFromId(path, kind);
+    LiveInsightKind parsed = LiveInsightKind::Kernel;
+    if (!liveInsightKindFromId(path, &parsed))
+        return false;
+    const bool legacy = resource.providerId == staticProviderId()
+        && resource.resourceId == kPrimaryResourceId;
+    if (!legacy
+        && (resource.providerId != providerIdForKind(parsed)
+            || resource.resourceId != liveInsightKindId(parsed))) {
+        return false;
+    }
+    if (kind)
+        *kind = parsed;
+    return true;
 }
 
 LiveInsightSession* LiveInsightsContextProvider::session() const
@@ -94,24 +177,36 @@ void LiveInsightsContextProvider::setPinRequestHandler(
 
 QString LiveInsightsContextProvider::providerId() const
 {
-    return staticProviderId();
+    return fixedKindEnabled
+        ? providerIdForKind(fixedKind)
+        : staticProviderId();
 }
 
 QString LiveInsightsContextProvider::displayName() const
 {
-    return QStringLiteral("Live Insights");
+    return fixedKindEnabled
+        ? liveInsightKindDisplayName(fixedKind)
+        : QStringLiteral("RTL Insight Workbench");
 }
 
 QString LiveInsightsContextProvider::iconKey() const
 {
-    return QStringLiteral("view-statistics");
+    return fixedKindEnabled
+        ? iconKeyForKind(fixedKind)
+        : QStringLiteral("view-statistics");
 }
 
 ContextResource LiveInsightsContextProvider::activationResource(
     const QString& workspaceId) const
 {
-    return resourceForKind(
-        LiveInsightKind::Module, workspaceId);
+    ContextResource resource = resourceForKind(
+        fixedKindEnabled ? fixedKind : LiveInsightKind::Kernel,
+        workspaceId);
+    if (!fixedKindEnabled) {
+        resource.providerId = staticProviderId();
+        resource.resourceId = kPrimaryResourceId;
+    }
+    return resource;
 }
 
 bool LiveInsightsContextProvider::canOpen(
@@ -119,17 +214,22 @@ bool LiveInsightsContextProvider::canOpen(
 {
     LiveInsightKind kind = LiveInsightKind::Module;
     return sessionValue
-        && kindFromResource(resource, &kind);
+        && kindFromResource(resource, &kind)
+        && (!fixedKindEnabled || kind == fixedKind);
 }
 
 QWidget* LiveInsightsContextProvider::createView(
-    const ContextResource&,
+    const ContextResource& resource,
     QWidget* parent)
 {
     if (!sessionValue)
         return nullptr;
-    auto* view = new LiveInsightsContextView(
-        sessionValue, parent);
+    LiveInsightKind resourceKind = fixedKind;
+    const bool hasResourceKind = kindFromResource(resource, &resourceKind);
+    auto* view = fixedKindEnabled
+        ? new LiveInsightsContextView(sessionValue, fixedKind, parent)
+        : new LiveInsightsContextView(sessionValue, parent);
+    Q_UNUSED(hasResourceKind)
     connect(
         view,
         &LiveInsightsContextView::openFullViewRequested,
@@ -192,7 +292,7 @@ void LiveInsightsContextProvider::observeViewResourceChanges(
         return;
     auto sharedHandler =
         std::make_shared<ResourceUpdateHandler>(std::move(handler));
-    auto announce = [insightsView, sharedHandler]() {
+    auto announce = [this, insightsView, sharedHandler]() {
         (*sharedHandler)(resourceForView(insightsView));
     };
     connect(
@@ -241,8 +341,7 @@ ContextResource LiveInsightsContextProvider::resourceForPersistence(
         qobject_cast<LiveInsightsContextView*>(view);
     if (!insightsView)
         return {};
-    ContextResource persisted = resourceForKind(
-        insightsView->selectedKind(), {}, insightsView->saveState());
+    ContextResource persisted = resourceForView(insightsView);
     persisted.workspaceId.clear();
     return persisted;
 }
@@ -256,16 +355,25 @@ ContextResource LiveInsightsContextProvider::resourceFromPersistence(
         return {};
     ContextResource restored = resourceForKind(
         kind, workspaceRoot, resource.state);
+    if (!fixedKindEnabled) {
+        restored.providerId = staticProviderId();
+        restored.resourceId = kPrimaryResourceId;
+    }
     return canOpen(restored) ? restored : ContextResource{};
 }
 
 ContextResource LiveInsightsContextProvider::resourceForView(
-    const LiveInsightsContextView* view)
+    const LiveInsightsContextView* view) const
 {
     if (!view)
         return {};
-    return resourceForKind(
+    ContextResource resource = resourceForKind(
         view->selectedKind(),
         view->workspaceId(),
         view->saveState());
+    if (!fixedKindEnabled) {
+        resource.providerId = staticProviderId();
+        resource.resourceId = kPrimaryResourceId;
+    }
+    return resource;
 }

@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalSpy>
 #include <QTest>
 
@@ -49,7 +50,7 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
 {
     LiveInsightsContextProvider provider;
     QCOMPARE(provider.providerId(), QStringLiteral("liveInsights"));
-    QCOMPARE(provider.displayName(), QStringLiteral("Live Insights"));
+    QCOMPARE(provider.displayName(), QStringLiteral("RTL Insight Workbench"));
     QVERIFY(provider.session());
 
     const ContextResource activation =
@@ -60,25 +61,35 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
     LiveInsightKind parsed = LiveInsightKind::Wave;
     QVERIFY(LiveInsightsContextProvider::kindFromResource(
         activation, &parsed));
-    QCOMPARE(parsed, LiveInsightKind::Module);
+    QCOMPARE(parsed, LiveInsightKind::Kernel);
 
-    const QString stableKey = activation.stableKey();
     const QList<LiveInsightKind> kinds = {
+        LiveInsightKind::Kernel,
         LiveInsightKind::Module,
         LiveInsightKind::State,
-        LiveInsightKind::Hotspot,
-        LiveInsightKind::Wave
+        LiveInsightKind::Hotspot
     };
+    QSet<QString> stableKeys;
     for (LiveInsightKind kind : kinds) {
         const ContextResource resource =
             LiveInsightsContextProvider::resourceForKind(
                 kind, QStringLiteral("workspace-a"));
         QVERIFY(provider.canOpen(resource));
-        QCOMPARE(resource.stableKey(), stableKey);
+        stableKeys.insert(resource.stableKey());
         QVERIFY(LiveInsightsContextProvider::kindFromResource(
             resource, &parsed));
         QCOMPARE(parsed, kind);
     }
+    QCOMPARE(stableKeys.size(), 4);
+
+    const ContextResource wave =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Wave,
+            QStringLiteral("workspace-a"));
+    QVERIFY(provider.canOpen(wave));
+    QCOMPARE(wave.stableKey(), activation.stableKey());
+    QVERIFY(LiveInsightsContextProvider::kindFromResource(wave, &parsed));
+    QCOMPARE(parsed, LiveInsightKind::Wave);
 
     ContextResource malformed = activation;
     malformed.uri = QUrl(
@@ -189,6 +200,8 @@ void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSema
         provider.resourceFromPersistence(
             persisted, QStringLiteral("workspace-b"));
     QCOMPARE(restored.workspaceId, QStringLiteral("workspace-b"));
+    QCOMPARE(restored.providerId, provider.providerId());
+    QCOMPARE(restored.resourceId, QStringLiteral("primary"));
     QVERIFY(provider.canOpen(restored));
 }
 

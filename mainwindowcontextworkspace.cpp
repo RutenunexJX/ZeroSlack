@@ -147,6 +147,7 @@ void MainWindow::setupContextWorkspace()
         return LiveInsightBuildResult::success(request, payload);
     };
     for (LiveInsightKind kind : {
+             LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::State,
              LiveInsightKind::Hotspot,
@@ -174,26 +175,33 @@ void MainWindow::setupContextWorkspace()
             }
         });
 
-    auto liveInsightsProvider =
-        std::make_unique<LiveInsightsContextProvider>(
-            liveInsightSession.get());
-    liveInsightsProvider->setFullViewHandler(
-        [this](const ContextResource& resource) {
-            openLiveInsightFullView(resource);
-        });
-    liveInsightsProvider->setPinRequestHandler(
-        [this](bool pinned, const ContextResource& resource) {
-            if (!contextWorkspaceController)
-                return;
-            if (pinned) {
-                contextWorkspaceController->pinPeek();
-            } else {
-                contextWorkspaceController->unpinResource(
-                    resource.stableKey());
-            }
-        });
-    contextWorkspaceController->registerProvider(
-        std::move(liveInsightsProvider));
+    for (LiveInsightKind kind : {
+             LiveInsightKind::Kernel,
+             LiveInsightKind::Module,
+             LiveInsightKind::Hotspot,
+             LiveInsightKind::State}) {
+        auto provider =
+            std::make_unique<LiveInsightsContextProvider>(
+                kind,
+                liveInsightSession.get());
+        provider->setFullViewHandler(
+            [this](const ContextResource& resource) {
+                openLiveInsightFullView(resource);
+            });
+        provider->setPinRequestHandler(
+            [this](bool pinned, const ContextResource& resource) {
+                if (!contextWorkspaceController)
+                    return;
+                if (pinned) {
+                    contextWorkspaceController->pinPeek();
+                } else {
+                    contextWorkspaceController->unpinResource(
+                        resource.stableKey());
+                }
+            });
+        contextWorkspaceController->registerProvider(
+            std::move(provider));
+    }
     if (semanticDocks && semanticDocks->refreshCoordinator()) {
         semanticDocks->refreshCoordinator()
             ->setLiveInsightOpenHandler(
@@ -215,8 +223,8 @@ void MainWindow::setupContextWorkspace()
         &ContextWorkspaceController::fullViewRequested,
         this,
         [this](const ContextResource& resource) {
-            if (resource.providerId
-                == LiveInsightsContextProvider::staticProviderId()) {
+            if (LiveInsightsContextProvider::isWorkbenchProviderId(
+                    resource.providerId)) {
                 openLiveInsightFullView(resource);
             }
         });
@@ -290,6 +298,9 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext() const
         workspaceManager && workspaceManager->isWorkspaceOpen()
         ? workspaceManager->getWorkspacePath()
         : QString();
+    context.workspaceId = context.workspaceRoot.trimmed().isEmpty()
+        ? QStringLiteral("standalone")
+        : QDir::cleanPath(context.workspaceRoot);
     if (!tabManager)
         return context;
 
@@ -298,10 +309,22 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext() const
         return context;
     const DocumentSnapshot document =
         tabManager->getCurrentDocumentMetadata();
+    context.documentId = document.documentId.trimmed();
+    if (context.documentId.isEmpty())
+        context.documentId = document.fileName.trimmed();
     context.fileName = document.fileName;
     context.documentText = editor->cachedDocumentText();
     context.dirty = document.dirty;
     context.moduleName = document.currentModuleName;
+    if (SharedDocument* sharedDocument =
+            tabManager->sharedDocumentForEditor(editor)) {
+        context.documentRevision = sharedDocument->textRevision();
+    } else {
+        context.documentRevision =
+            static_cast<quint64>(qMax(0, document.textVersion));
+    }
+    context.semanticRevision =
+        SemanticIndex::getInstance()->snapshotToken().revision;
 
     QTextCursor symbolCursor = editor->textCursor();
     if (!symbolCursor.hasSelection())
@@ -361,6 +384,7 @@ void MainWindow::requestLiveInsightUpdates()
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor) {
         for (LiveInsightKind kind : {
+                 LiveInsightKind::Kernel,
                  LiveInsightKind::Module,
                  LiveInsightKind::State,
                  LiveInsightKind::Hotspot,
@@ -402,6 +426,7 @@ void MainWindow::requestLiveInsightUpdates()
             .arg(context.scopeEndPosition);
 
     for (LiveInsightKind kind : {
+             LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::State,
              LiveInsightKind::Hotspot,
@@ -422,6 +447,16 @@ void MainWindow::requestLiveInsightUpdates()
         input.insert(QStringLiteral("scopeLabel"), context.scopeLabel);
         input.insert(QStringLiteral("dirty"), context.dirty);
         switch (kind) {
+        case LiveInsightKind::Kernel:
+            input.insert(QStringLiteral("title"),
+                         QStringLiteral("Signal Kernel Graph"));
+            input.insert(
+                QStringLiteral("summary"),
+                context.signalName.trimmed().isEmpty()
+                    ? QStringLiteral("Select a signal to trace its data-flow kernel.")
+                    : QStringLiteral("%1 · inputs and outputs")
+                          .arg(context.signalName));
+            break;
         case LiveInsightKind::Module:
             input.insert(QStringLiteral("title"),
                          QStringLiteral("Module Diagram"));
@@ -599,8 +634,13 @@ void MainWindow::openLiveInsightFullView(
     page->setContext(context);
     const QString title = kind == LiveInsightKind::Wave
         ? QStringLiteral("Symbolic Wave Preview")
-        : QStringLiteral("%1 Diagram")
-              .arg(liveInsightKindDisplayName(kind));
+        : kind == LiveInsightKind::Kernel
+            ? QStringLiteral("Signal Kernel Graph")
+            : kind == LiveInsightKind::Module
+                ? QStringLiteral("Module Block Diagram")
+                : kind == LiveInsightKind::Hotspot
+                    ? QStringLiteral("Signal Hotspot")
+                    : QStringLiteral("State Transition Graph");
     tabManager->openToolPage(page, stableId, title);
     liveInsightToolPages.insert(static_cast<int>(kind), page);
     if (liveInsightSession) {

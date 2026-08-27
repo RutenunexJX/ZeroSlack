@@ -29,8 +29,15 @@ public:
     explicit LiveInsightsContextProvider(
         LiveInsightSession* session = nullptr,
         QObject* parent = nullptr);
+    LiveInsightsContextProvider(
+        LiveInsightKind fixedKind,
+        LiveInsightSession* session = nullptr,
+        QObject* parent = nullptr);
 
     static QString staticProviderId();
+    static QString providerIdForKind(LiveInsightKind kind);
+    static QString iconKeyForKind(LiveInsightKind kind);
+    static bool isWorkbenchProviderId(const QString& providerId);
     static ContextResource resourceForKind(
         LiveInsightKind kind,
         const QString& workspaceId = {},
@@ -77,11 +84,13 @@ signals:
 
 private:
     QPointer<LiveInsightSession> sessionValue;
+    LiveInsightKind fixedKind = LiveInsightKind::Kernel;
+    bool fixedKindEnabled = false;
     FullViewHandler fullViewHandler;
     PinRequestHandler pinRequestHandler;
 
-    static ContextResource resourceForView(
-        const LiveInsightsContextView* view);
+    ContextResource resourceForView(
+        const LiveInsightsContextView* view) const;
 };
 
 #endif // LIVEINSIGHTSCONTEXTPROVIDER_H

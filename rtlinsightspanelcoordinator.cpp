@@ -680,6 +680,39 @@ bool RtlInsightsPanelCoordinator::isPinned() const
     return presenter->isPinned();
 }
 
+void RtlInsightsPanelCoordinator::setStateViewEnabled(bool enabled)
+{
+    if (!viewState || viewState->stateViewEnabled == enabled)
+        return;
+    viewState->stateViewEnabled = enabled;
+    for (QWidget* control : {
+             static_cast<QWidget*>(viewState->fsmGraphButton),
+             static_cast<QWidget*>(viewState->stateTransitionSignalCombo),
+             static_cast<QWidget*>(viewState->stateTransitionCurrentCombo),
+             static_cast<QWidget*>(viewState->stateTransitionNextCombo),
+             static_cast<QWidget*>(viewState->stateTransitionResetCheck),
+             static_cast<QWidget*>(viewState->stateTransitionErrorCheck),
+             static_cast<QWidget*>(viewState->stateTransitionUnreachableCheck)}) {
+        if (control)
+            control->setVisible(enabled);
+    }
+    if (viewState->insightsDock) {
+        viewState->insightsDock->setProperty(
+            "carriesStateInsight", enabled);
+    }
+    if (!enabled
+        && (viewState->currentGraphMode == QStringLiteral("fsm")
+            || viewState->currentGraphMode
+                   == QStringLiteral("state-transition"))) {
+        presenter->showModuleBrief();
+    }
+}
+
+bool RtlInsightsPanelCoordinator::stateViewEnabledForTest() const
+{
+    return viewState && viewState->stateViewEnabled;
+}
+
 void RtlInsightsPanelCoordinator::showModuleInsights(
     const QString& fileName,
     const QString& moduleName,
@@ -697,6 +730,8 @@ void RtlInsightsPanelCoordinator::
         const QString& moduleName,
         const QString& signalName)
 {
+    if (!viewState->stateViewEnabled)
+        return;
     presenter->showStateTransitionGraphForSignal(
         fileName,
         moduleName,
@@ -778,6 +813,8 @@ void RtlInsightsPanelCoordinator::showClockResetDomainMap()
 
 void RtlInsightsPanelCoordinator::showFsmGraph()
 {
+    if (!viewState->stateViewEnabled)
+        return;
     presenter->showFsmGraph();
 }
 
