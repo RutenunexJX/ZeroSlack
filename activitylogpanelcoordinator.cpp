@@ -132,7 +132,7 @@ void ActivityLogPanelCoordinator::flushPendingEvents()
 
 bool ActivityLogPanelCoordinator::isVisibleToUser() const
 {
-    return activityDock
-        && activityDock->isVisible()
-        && !activityDock->visibleRegion().isEmpty();
+    return outputText
+        && outputText->isVisible()
+        && !outputText->visibleRegion().isEmpty();
 }

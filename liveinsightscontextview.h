@@ -78,9 +78,9 @@ private:
     };
 
     QPointer<LiveInsightSession> sessionValue;
-    std::array<CardWidgets, 4> cards;
-    std::array<LiveInsightSnapshot, 4> renderedSnapshots;
-    std::array<bool, 4> hasRenderedSnapshot{};
+    std::array<CardWidgets, 5> cards;
+    std::array<LiveInsightSnapshot, 5> renderedSnapshots;
+    std::array<bool, 5> hasRenderedSnapshot{};
     QStackedWidget* contentStack = nullptr;
     QCheckBox* followCheck = nullptr;
     QPushButton* pinToggle = nullptr;

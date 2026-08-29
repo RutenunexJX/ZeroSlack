@@ -3,14 +3,18 @@
 
 #include <QApplication>
 #include <QDockWidget>
-#include <QLabel>
+#include <QHBoxLayout>
 #include <QMainWindow>
-#include <QPoint>
-#include <QSize>
-#include <QSizePolicy>
-#include <QStyle>
-#include <QTabBar>
-#include <QWidget>
+#include <QPalette>
+#include <QPlainTextEdit>
+#include <QScrollBar>
+#include <QStackedWidget>
+#include <QTabWidget>
+#include <QTest>
+#include <QTextCursor>
+#include <QToolButton>
+#include <QTreeWidget>
+#include <QVBoxLayout>
 
 #include <iostream>
 
@@ -27,760 +31,431 @@ void check(bool condition, const char* message)
     std::cerr << "FAIL: " << message << '\n';
 }
 
-void processUiEvents()
-{
-    for (int iteration = 0; iteration < 3; ++iteration) {
-        QApplication::sendPostedEvents();
-        QApplication::processEvents();
-    }
-}
-
-int visibleBottomContentHeight(QMainWindow* window,
-                               QTabBar* bar)
-{
-    if (!window || !window->centralWidget()
-        || !bar || !bar->isVisible()) {
-        return -1;
-    }
-    QWidget* central = window->centralWidget();
-    const int centralBottom =
-        central->mapTo(window, QPoint(0, 0)).y()
-        + central->height();
-    const int tabTop = bar->mapTo(window, QPoint(0, 0)).y();
-    const int separatorExtent = window->style()->pixelMetric(
-        QStyle::PM_DockWidgetSeparatorExtent,
-        nullptr,
-        window);
-    return qMax(0,
-                tabTop - centralBottom
-                    - qMax(0, separatorExtent));
-}
-
-class TallMinimumPanel final : public QLabel
-{
-public:
-    explicit TallMinimumPanel(const QString& text,
-                              QWidget* parent = nullptr)
-        : QLabel(text, parent)
-    {
-        setMinimumHeight(180);
-    }
-
-    QSize minimumSizeHint() const override
-    {
-        return QSize(160, 180);
-    }
-
-    QSize sizeHint() const override
-    {
-        return QSize(320, 260);
-    }
+struct PanelFixture {
+    QDockWidget* dock = nullptr;
+    QWidget* root = nullptr;
+    QTabWidget* tabs = nullptr;
+    QTreeWidget* tree = nullptr;
+    QPlainTextEdit* log = nullptr;
 };
 
-QDockWidget* makeDock(QMainWindow* window,
-                      const QString& title,
-                      const QString& objectName)
+PanelFixture createPanel(QMainWindow* window,
+                         const QString& id,
+                         const QString& title)
 {
-    auto* dock = new QDockWidget(title, window);
-    dock->setObjectName(objectName);
-    dock->setWidget(new QLabel(title, dock));
-    window->addDockWidget(Qt::BottomDockWidgetArea, dock);
-    return dock;
+    PanelFixture fixture;
+    fixture.dock = new QDockWidget(title, window);
+    fixture.dock->setObjectName(id + QStringLiteral("Dock"));
+    fixture.root = new QWidget(fixture.dock);
+    fixture.root->setObjectName(id + QStringLiteral("Panel"));
+    auto* layout = new QVBoxLayout(fixture.root);
+    layout->setContentsMargins(0, 0, 0, 0);
+    fixture.tabs = new QTabWidget(fixture.root);
+    fixture.tabs->setObjectName(id + QStringLiteral("InternalTabs"));
+
+    fixture.tree = new QTreeWidget(fixture.tabs);
+    fixture.tree->setObjectName(id + QStringLiteral("SelectionTree"));
+    fixture.tree->setHeaderHidden(true);
+    for (int index = 0; index < 24; ++index) {
+        auto* item = new QTreeWidgetItem(fixture.tree);
+        item->setText(0, QStringLiteral("item-%1").arg(index));
+    }
+    fixture.tabs->addTab(fixture.tree, QStringLiteral("Primary"));
+
+    fixture.log = new QPlainTextEdit(fixture.tabs);
+    fixture.log->setObjectName(id + QStringLiteral("ScrollLog"));
+    QStringList lines;
+    for (int index = 0; index < 120; ++index)
+        lines.append(QStringLiteral("line-%1").arg(index));
+    fixture.log->setPlainText(lines.join(QLatin1Char('\n')));
+    fixture.tabs->addTab(fixture.log, QStringLiteral("Secondary"));
+    layout->addWidget(fixture.tabs);
+    fixture.dock->setWidget(fixture.root);
+    window->addDockWidget(Qt::BottomDockWidgetArea, fixture.dock);
+    return fixture;
 }
 
-QDockWidget* makeTallDock(QMainWindow* window,
-                          const QString& title,
-                          const QString& objectName)
+class DrawerHarness
 {
-    auto* dock = new QDockWidget(title, window);
-    dock->setObjectName(objectName);
-    dock->setWidget(new TallMinimumPanel(title, dock));
-    window->addDockWidget(Qt::BottomDockWidgetArea, dock);
-    return dock;
+public:
+    DrawerHarness()
+    {
+        window.resize(1080, 760);
+        editor = new QPlainTextEdit(&window);
+        editor->setObjectName(QStringLiteral("editor"));
+        QStringList lines;
+        for (int index = 0; index < 180; ++index)
+            lines.append(QStringLiteral("editor-line-%1").arg(index));
+        editor->setPlainText(lines.join(QLatin1Char('\n')));
+        window.setCentralWidget(editor);
+
+        controller = new PanelLayoutController(&window, &window);
+        controller->setAnimationsEnabled(false);
+        const QList<QPair<QString, QString>> descriptors = {
+            {QStringLiteral("problems"), QStringLiteral("Problems")},
+            {QStringLiteral("scopedSearch"), QStringLiteral("Search")},
+            {QStringLiteral("activity"), QStringLiteral("Activity")},
+            {QStringLiteral("rtlHighRiskEdit"), QStringLiteral("High+Diff")},
+            {QStringLiteral("connections"), QStringLiteral("Connections")},
+            {QStringLiteral("foldShelf"), QStringLiteral("Fold Shelf")},
+        };
+        for (const auto& descriptor : descriptors) {
+            PanelFixture fixture = createPanel(
+                &window, descriptor.first, descriptor.second);
+            fixtures.insert(descriptor.first, fixture);
+            check(controller->registerBottomPanel(
+                      descriptor.first, fixture.dock),
+                  "bottom panel registers");
+        }
+        check(controller->registerBottomPanelAlias(
+                  QStringLiteral("instancePairConnection"),
+                  QStringLiteral("connections")),
+              "instance-pair alias registers");
+        check(controller->registerBottomPanelAlias(
+                  QStringLiteral("multiSignalPropagation"),
+                  QStringLiteral("connections")),
+              "multi-signal alias registers");
+        controller->finalize();
+        window.show();
+        QApplication::processEvents();
+    }
+
+    QMainWindow window;
+    QPlainTextEdit* editor = nullptr;
+    PanelLayoutController* controller = nullptr;
+    QHash<QString, PanelFixture> fixtures;
+};
+
+void verifyButtonContract(DrawerHarness& harness)
+{
+    const QStringList ids = {
+        QStringLiteral("problems"),
+        QStringLiteral("scopedSearch"),
+        QStringLiteral("activity"),
+        QStringLiteral("rtlHighRiskEdit"),
+        QStringLiteral("connections"),
+        QStringLiteral("foldShelf"),
+    };
+    const QStringList labels = {
+        QStringLiteral("Problems"),
+        QStringLiteral("Search"),
+        QStringLiteral("Activity"),
+        QStringLiteral("High+Diff"),
+        QStringLiteral("Connections"),
+        QStringLiteral("Shelf"),
+    };
+    check(harness.controller->bottomPanelIds() == ids,
+          "six bottom buttons keep the fixed product order");
+    for (int index = 0; index < ids.size(); ++index) {
+        QToolButton* button =
+            harness.controller->buttonForPanel(ids.at(index));
+        check(button
+                  && button->text() == labels.at(index)
+                  && button->accessibleName() == labels.at(index)
+                  && !button->icon().isNull()
+                  && button->toolTip().contains(QStringLiteral("Ctrl+J")),
+              "bottom button exposes icon text accessible name and shortcut tooltip");
+    }
+    check(harness.controller->resizeHandle()
+              && harness.controller->resizeHandle()->height() >= 6,
+          "drawer exposes an accessible resize hit target");
+}
+
+void verifyClickAndShortcutBehavior(DrawerHarness& harness)
+{
+    QToolButton* problems =
+        harness.controller->buttonForPanel(QStringLiteral("problems"));
+    QToolButton* search =
+        harness.controller->buttonForPanel(QStringLiteral("scopedSearch"));
+    QToolButton* activity =
+        harness.controller->buttonForPanel(QStringLiteral("activity"));
+    check(problems && problems->isChecked()
+              && harness.controller->activeBottomPanelId()
+                     == QStringLiteral("problems"),
+          "first panel starts selected");
+
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QApplication::processEvents();
+    check(harness.controller->isBottomCollapsed()
+              && harness.controller->buttonBar()->isVisibleTo(&harness.window)
+              && !problems->isChecked(),
+          "clicking the active button fully closes content but keeps the bar");
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QApplication::processEvents();
+    check(!harness.controller->isBottomCollapsed()
+              && problems->isChecked(),
+          "clicking the last button restores its panel");
+
+    QTest::mouseClick(search, Qt::LeftButton);
+    QApplication::processEvents();
+    check(harness.controller->activeBottomPanelId()
+                  == QStringLiteral("scopedSearch")
+              && search->isChecked()
+              && !problems->isChecked()
+              && harness.controller->isPanelOpen(
+                  QStringLiteral("scopedSearch"))
+              && !harness.controller->isPanelOpen(
+                  QStringLiteral("problems")),
+          "switching buttons keeps exactly one content panel visible");
+
+    QTest::mouseClick(activity, Qt::LeftButton);
+    QApplication::processEvents();
+    const ActionDescriptor* ctrlJ = findActionById(
+        QString::fromLatin1(ActionIds::ViewBottomPanelCollapsed));
+    check(ctrlJ
+              && ctrlJ->defaultShortcut
+                     == QStringLiteral("Ctrl+J")
+              && actionRegistryIsValid(),
+          "Ctrl+J is registry-backed and has no shortcut conflict");
+    auto* shortcutAction = new QAction(&harness.window);
+    shortcutAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+J")));
+    shortcutAction->setShortcutContext(Qt::ApplicationShortcut);
+    harness.window.addAction(shortcutAction);
+    QObject::connect(
+        shortcutAction,
+        &QAction::triggered,
+        harness.controller,
+        [controller = harness.controller]() {
+            controller->toggleBottomCollapsed();
+        });
+    QTest::keyClick(&harness.window, Qt::Key_J, Qt::ControlModifier);
+    QApplication::processEvents();
+    check(harness.controller->isBottomCollapsed(),
+          "Ctrl+J closes the active panel");
+    QTest::keyClick(&harness.window, Qt::Key_J, Qt::ControlModifier);
+    QApplication::processEvents();
+    check(!harness.controller->isBottomCollapsed()
+              && harness.controller->activeBottomPanelId()
+                     == QStringLiteral("activity"),
+          "Ctrl+J restores the last used panel");
+}
+
+void verifyFocusAndEditorPreservation(DrawerHarness& harness)
+{
+    harness.controller->restorePanel(QStringLiteral("problems"));
+    QTextCursor cursor(harness.editor->document());
+    cursor.setPosition(90);
+    cursor.setPosition(118, QTextCursor::KeepAnchor);
+    harness.editor->setTextCursor(cursor);
+    harness.editor->verticalScrollBar()->setValue(42);
+    const int anchor = harness.editor->textCursor().anchor();
+    const int position = harness.editor->textCursor().position();
+    const int scroll = harness.editor->verticalScrollBar()->value();
+    harness.editor->setFocus();
+    QApplication::processEvents();
+
+    QTest::keyClick(harness.editor, Qt::Key_Escape);
+    QApplication::processEvents();
+    check(!harness.controller->isBottomCollapsed(),
+          "editor Escape does not close the bottom panel");
+
+    QTreeWidget* panelTree =
+        harness.fixtures.value(QStringLiteral("problems")).tree;
+    panelTree->setFocus();
+    QApplication::processEvents();
+    QTest::keyClick(panelTree, Qt::Key_Escape);
+    QApplication::processEvents();
+    check(harness.controller->isBottomCollapsed()
+              && QApplication::focusWidget() == harness.editor,
+          "panel-scoped Escape closes the drawer and restores editor focus");
+    check(harness.editor->textCursor().anchor() == anchor
+              && harness.editor->textCursor().position() == position
+              && harness.editor->verticalScrollBar()->value() == scroll,
+          "close preserves editor cursor selection and scroll");
+
+    const int collapsedEditorHeight = harness.editor->height();
+    harness.controller->setBottomCollapsed(false);
+    QApplication::processEvents();
+    check(harness.editor->height() < collapsedEditorHeight
+              && harness.editor->textCursor().anchor() == anchor
+              && harness.editor->textCursor().position() == position,
+          "expanded drawer reflows the editor without overlaying or resetting it");
+}
+
+void verifySizing(DrawerHarness& harness)
+{
+    harness.controller->restorePanel(QStringLiteral("problems"));
+    harness.controller->setPanelHeight(QStringLiteral("problems"), 10);
+    check(harness.controller->panelHeight(QStringLiteral("problems"))
+              == PanelLayoutController::kMinimumContentHeight,
+          "height clamps to the 160 px lower bound");
+    harness.controller->setPanelHeight(QStringLiteral("problems"), 100000);
+    check(harness.controller->panelHeight(QStringLiteral("problems"))
+              == harness.controller->maximumContentHeight(),
+          "height clamps to 55 percent of available window height");
+
+    harness.controller->resetPanelHeight(QStringLiteral("problems"));
+    harness.controller->setPanelHeight(QStringLiteral("scopedSearch"), 340);
+    harness.controller->restorePanel(QStringLiteral("scopedSearch"));
+    check(harness.controller->panelHeight(QStringLiteral("scopedSearch")) == 340,
+          "search keeps its independent height");
+    harness.controller->restorePanel(QStringLiteral("problems"));
+    check(harness.controller->panelHeight(QStringLiteral("problems"))
+              == PanelLayoutController::kDefaultContentHeight,
+          "switching panels restores the selected panel height");
+
+    QWidget* handle = harness.controller->resizeHandle();
+    const QPoint center = handle->rect().center();
+    QTest::mousePress(handle, Qt::LeftButton, Qt::NoModifier, center);
+    QTest::mouseMove(handle, center + QPoint(0, 5000));
+    QTest::mouseRelease(handle, Qt::LeftButton, Qt::NoModifier, center);
+    check(harness.controller->panelHeight(QStringLiteral("problems"))
+              == PanelLayoutController::kMinimumContentHeight,
+          "drag resize obeys the lower bound");
+    QTest::mouseDClick(handle, Qt::LeftButton, Qt::NoModifier, center);
+    QApplication::processEvents();
+    check(harness.controller->panelHeight(QStringLiteral("problems"))
+              == PanelLayoutController::kDefaultContentHeight,
+          "double-click restores the panel default height");
+}
+
+PanelLayoutState preparePersistentState(DrawerHarness& harness)
+{
+    harness.controller->restorePanel(QStringLiteral("connections"));
+    PanelFixture connection =
+        harness.fixtures.value(QStringLiteral("connections"));
+    connection.tree->setCurrentItem(connection.tree->topLevelItem(13));
+    connection.tabs->setCurrentIndex(1);
+    connection.log->verticalScrollBar()->setValue(
+        connection.log->verticalScrollBar()->maximum());
+    harness.controller->setPanelHeight(QStringLiteral("connections"), 330);
+    QApplication::processEvents();
+    return harness.controller->layoutState();
+}
+
+void verifyPersistenceAndFocusIsolation(DrawerHarness& harness)
+{
+    const PanelLayoutState state = preparePersistentState(harness);
+    check(state.bottomPanelHeights.value(QStringLiteral("connections")) == 330
+              && state.bottomPanelViewStates
+                     .value(QStringLiteral("connections"))
+                     .contains(QStringLiteral("tabs")),
+          "workspace state captures per-panel height and internal view state");
+
+    const PanelLayoutState beforeFocus =
+        harness.controller->layoutState();
+    harness.controller->setFocusModeActive(true);
+    QApplication::processEvents();
+    const PanelLayoutState duringFocus =
+        harness.controller->layoutState();
+    check(!harness.controller->drawerDock()->isVisible()
+              && duringFocus.activeBottomPanel
+                     == beforeFocus.activeBottomPanel
+              && duringFocus.bottomCollapsed
+                     == beforeFocus.bottomCollapsed
+              && duringFocus.bottomPanelHeights
+                     == beforeFocus.bottomPanelHeights
+              && duringFocus.navigationVisible
+                     == beforeFocus.navigationVisible,
+          "Focus Mode hides the drawer without polluting normal layout state");
+    harness.controller->setFocusModeActive(false);
+    QApplication::processEvents();
+    check(harness.controller->activeBottomPanelId()
+                  == beforeFocus.activeBottomPanel
+              && !harness.controller->isBottomCollapsed(),
+          "leaving Focus Mode restores the normal drawer state");
+
+    DrawerHarness restored;
+    restored.controller->restoreLayoutState(state);
+    QApplication::processEvents();
+    PanelFixture connection =
+        restored.fixtures.value(QStringLiteral("connections"));
+    check(restored.controller->activeBottomPanelId()
+                  == QStringLiteral("connections")
+              && restored.controller->panelHeight(
+                     QStringLiteral("connections")) == 330
+              && connection.tabs->currentIndex() == 1
+              && connection.tree->currentItem()
+              && connection.tree->currentItem()->text(0)
+                     == QStringLiteral("item-13")
+              && connection.log->verticalScrollBar()->value() > 0,
+          "workspace restore reapplies height scroll selection and internal tab");
+
+    PanelLayoutState legacy;
+    legacy.valid = true;
+    legacy.activeBottomPanel =
+        QStringLiteral("instancePairConnection");
+    legacy.expandedBottomHeight = 245;
+    restored.controller->restoreLayoutState(legacy);
+    check(restored.controller->activeBottomPanelId()
+                  == QStringLiteral("connections")
+              && restored.controller->panelHeight(
+                     QStringLiteral("connections")) == 245,
+          "legacy connection panel state migrates into Connections");
+}
+
+void verifyBadgesAndTheme(DrawerHarness& harness)
+{
+    harness.controller->restorePanel(QStringLiteral("problems"));
+    harness.window.activateWindow();
+    harness.editor->setFocus();
+    QApplication::processEvents();
+    QWidget* focusBeforeBadge = QApplication::focusWidget();
+    QDockWidget* problemsDock = harness.fixtures.value(
+        QStringLiteral("problems")).dock;
+    problemsDock->setProperty("bottomBadgeText", QStringLiteral("3"));
+    problemsDock->setProperty("bottomBadgeTone", QStringLiteral("error"));
+    QApplication::processEvents();
+    check(harness.controller->panelBadgeText(
+                  QStringLiteral("problems")) == QStringLiteral("3")
+              && harness.controller->panelBadgeTone(
+                     QStringLiteral("problems")) == QStringLiteral("error")
+              && harness.controller->buttonForPanel(
+                     QStringLiteral("problems"))
+                     ->accessibleDescription()
+                     .contains(QStringLiteral("3")),
+          "Problems exposes a compact count and severity badge");
+    problemsDock->setProperty(
+        "bottomBadgeTone", QStringLiteral("warning"));
+    QApplication::processEvents();
+    check(harness.controller->panelBadgeTone(
+              QStringLiteral("problems")) == QStringLiteral("warning"),
+          "Problems badge severity updates when the count is unchanged");
+
+    const QString activeBefore =
+        harness.controller->activeBottomPanelId();
+    harness.controller->setPanelBadge(
+        QStringLiteral("activity"),
+        QStringLiteral("Running"),
+        QStringLiteral("info"));
+    QApplication::processEvents();
+    check(harness.controller->activeBottomPanelId() == activeBefore
+              && QApplication::focusWidget() == focusBeforeBadge,
+          "background Activity status neither opens the panel nor steals focus");
+    harness.controller->setPanelBadge(
+        QStringLiteral("activity"), QString(), QString());
+    check(harness.controller->panelBadgeText(
+              QStringLiteral("activity")).isEmpty(),
+          "empty Activity status produces no badge noise");
+
+    const QPalette original = QApplication::palette();
+    QPalette dark = original;
+    dark.setColor(QPalette::Window, QColor(28, 30, 34));
+    dark.setColor(QPalette::WindowText, QColor(232, 234, 238));
+    QApplication::setPalette(dark);
+    QApplication::processEvents();
+    check(harness.controller->buttonBar()->isVisible()
+              && harness.controller->buttonForPanel(
+                     QStringLiteral("problems"))->devicePixelRatioF() > 0.0,
+          "theme and device-pixel changes keep drawer controls available");
+    QApplication::setPalette(original);
 }
 }
 
 int main(int argc, char* argv[])
 {
+    if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
+        qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
-    QMainWindow window;
-    window.resize(900, 640);
-    window.setCentralWidget(new QWidget(&window));
-
-    auto* navigation = new QDockWidget(QStringLiteral("Navigation"), &window);
-    navigation->setObjectName(QStringLiteral("navigationDock"));
-    navigation->setWidget(new QLabel(QStringLiteral("Navigation"), navigation));
-    window.addDockWidget(Qt::LeftDockWidgetArea, navigation);
-
-    QDockWidget* problems =
-        makeDock(&window,
-                 QStringLiteral("Problems"),
-                 QStringLiteral("problemsDock"));
-    QDockWidget* activity =
-        makeDock(&window,
-                 QStringLiteral("Activity"),
-                 QStringLiteral("activityDock"));
-    window.tabifyDockWidget(problems, activity);
-    auto* contextDock = new QDockWidget(
-        QStringLiteral("Context"), &window);
-    contextDock->setObjectName(QStringLiteral("contextDock"));
-    contextDock->setWidget(new QLabel(
-        QStringLiteral("Context"), contextDock));
-    window.addDockWidget(Qt::RightDockWidgetArea, contextDock);
-
-    PanelLayoutController controller(&window);
-    controller.setNavigationDock(navigation);
-    check(controller.registerBottomPanel(
-              QStringLiteral("problems"), problems),
-          "first bottom panel registers");
-    check(controller.registerBottomPanel(
-              QStringLiteral("activity"), activity),
-          "second bottom panel registers");
-    check(!controller.registerBottomPanel(
-              QStringLiteral("activity"), activity),
-          "duplicate bottom panel is rejected");
-    check(controller.registerSidePanel(
-              QStringLiteral("context"), contextDock)
-              && !controller.registerSidePanel(
-                  QStringLiteral("context"), contextDock),
-          "generic side panel registers once");
-    controller.finalize();
-
-    window.show();
-    QApplication::processEvents();
-    check(controller.bottomPanelIds()
-              == QStringList{
-                  QStringLiteral("problems"),
-                  QStringLiteral("activity")},
-          "registration defines a stable initial order");
-    QTabBar* bottomTabs =
-        window.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    check(bottomTabs && bottomTabs->isMovable()
-              && bottomTabs->tabsClosable(),
-          "bottom pages expose drag reorder and close controls");
-    int stateChangeCount = 0;
-    controller.setStateChangedHandler(
-        [&stateChangeCount]() { ++stateChangeCount; });
-    const QList<BottomPanelContextAction>
-        initialPanelContext =
-            controller.bottomPanelContextActions(
-                QStringLiteral("problems"));
-    const QStringList expectedPanelContextIds = {
-        QString::fromLatin1(
-            ActionIds::ViewBottomPanelPinned),
-        QString::fromLatin1(
-            ActionIds::ViewBottomPanelClose),
-    };
-    QStringList actualPanelContextIds;
-    bool panelContextMetadataMatches =
-        initialPanelContext.size()
-        == expectedPanelContextIds.size();
-    for (const BottomPanelContextAction& item :
-         initialPanelContext) {
-        actualPanelContextIds.append(item.actionId);
-        const ActionDescriptor* descriptor =
-            findActionById(item.actionId);
-        panelContextMetadataMatches =
-            panelContextMetadataMatches
-            && descriptor
-            && item.label
-                   == descriptor
-                          ->aliasForSurface(
-                              ActionSurface::PanelContextMenu)
-                          .label
-            && item.executionRoute
-                   == descriptor->executionRoute
-            && item.enabled;
-    }
-    check(actualPanelContextIds
-                  == expectedPanelContextIds
-              && panelContextMetadataMatches,
-          "bottom-page context model consumes Registry metadata");
-
-    QStringList requestedPanelActionIds;
-    QStringList requestedPanelIds;
-    controller.setRegisteredPanelActionRequestHandler(
-        [&controller,
-         &requestedPanelActionIds,
-         &requestedPanelIds](
-            const QString& actionId,
-            const QString& panelId,
-            QString* failureReason) {
-            requestedPanelActionIds.append(actionId);
-            requestedPanelIds.append(panelId);
-            bool succeeded = false;
-            if (actionId
-                == QString::fromLatin1(
-                    ActionIds::ViewBottomPanelPinned)) {
-                succeeded = controller.setPanelPinned(
-                    panelId,
-                    !controller.isPanelPinned(panelId));
-            } else if (actionId
-                       == QString::fromLatin1(
-                           ActionIds::ViewBottomPanelClose)) {
-                succeeded =
-                    controller.closePanel(panelId);
-            }
-            if (failureReason) {
-                if (succeeded)
-                    failureReason->clear();
-                else
-                    *failureReason = QStringLiteral("failed");
-            }
-            return succeeded;
-        });
-    QString panelActionFailure =
-        QStringLiteral("stale failure");
-    const QString pinPanelActionId =
-        QString::fromLatin1(
-            ActionIds::ViewBottomPanelPinned);
-    check(controller.requestBottomPanelAction(
-              pinPanelActionId,
-              QStringLiteral("problems"),
-              &panelActionFailure)
-              && panelActionFailure.isEmpty()
-              && requestedPanelActionIds
-                     == QStringList{pinPanelActionId}
-              && requestedPanelIds
-                     == QStringList{
-                         QStringLiteral("problems")}
-              && controller.isPanelPinned(
-                     QStringLiteral("problems")),
-          "bottom-page pin requests its canonical registered Action");
-
-    const QList<BottomPanelContextAction>
-        pinnedPanelContext =
-            controller.bottomPanelContextActions(
-                QStringLiteral("problems"));
-    const QString closePanelActionId =
-        QString::fromLatin1(
-            ActionIds::ViewBottomPanelClose);
-    panelActionFailure.clear();
-    check(pinnedPanelContext.size() == 2
-              && pinnedPanelContext.first().label
-                     == QStringLiteral("Unpin Page")
-              && !pinnedPanelContext.last().enabled
-              && !controller.requestBottomPanelAction(
-                  closePanelActionId,
-                  QStringLiteral("problems"),
-                  &panelActionFailure)
-              && !panelActionFailure.isEmpty()
-              && requestedPanelActionIds.size() == 1,
-          "pinned page exposes dynamic label and blocks close before dispatch");
-
-    panelActionFailure = QStringLiteral("stale failure");
-    const bool contextFixtureRestored =
-        controller.requestBottomPanelAction(
-            pinPanelActionId,
-            QStringLiteral("problems"),
-            &panelActionFailure)
-        && panelActionFailure.isEmpty()
-        && controller.requestBottomPanelAction(
-            closePanelActionId,
-            QStringLiteral("problems"),
-            &panelActionFailure)
-        && panelActionFailure.isEmpty()
-        && !controller.isPanelOpen(
-            QStringLiteral("problems"))
-        && controller.restorePanel(
-            QStringLiteral("problems"));
-    check(contextFixtureRestored
-              && requestedPanelActionIds
-                     == QStringList{
-                         pinPanelActionId,
-                         pinPanelActionId,
-                         closePanelActionId}
-              && requestedPanelIds
-                     == QStringList{
-                         QStringLiteral("problems"),
-                         QStringLiteral("problems"),
-                         QStringLiteral("problems")},
-          "bottom-page unpin and close share the registered Action route");
-    bottomTabs =
-        window.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    activity->show();
-    activity->raise();
-    QApplication::processEvents();
-    if (bottomTabs && bottomTabs->count() >= 2) {
-        const int originalIndex = bottomTabs->currentIndex();
-        const int selectedIndex =
-            originalIndex == 0 ? 1 : 0;
-        const QString selectedTitle =
-            bottomTabs->tabText(selectedIndex);
-        const int changesBeforeSelection = stateChangeCount;
-        bottomTabs->setCurrentIndex(selectedIndex);
-        QApplication::processEvents();
-        check(stateChangeCount == changesBeforeSelection + 1
-                  && controller.layoutState().activeBottomPanel
-                         == (selectedTitle == QStringLiteral("Problems")
-                                 ? QStringLiteral("problems")
-                                 : QStringLiteral("activity")),
-              "bottom page selection schedules active-page persistence once");
-        bottomTabs->setCurrentIndex(selectedIndex);
-        QApplication::processEvents();
-        check(stateChangeCount == changesBeforeSelection + 1,
-              "reselecting the active bottom page does not reschedule persistence");
-        bottomTabs->setCurrentIndex(originalIndex);
-        QApplication::processEvents();
-    }
-    const bool navigationVisibleBeforeToggle =
-        controller.layoutState().navigationVisible;
-    const int changesBeforeNavigationToggle = stateChangeCount;
-    navigation->toggleViewAction()->trigger();
-    QApplication::processEvents();
-    check(stateChangeCount == changesBeforeNavigationToggle + 1
-              && controller.layoutState().navigationVisible
-                     != navigationVisibleBeforeToggle,
-          "navigation visibility change schedules layout persistence once");
-    navigation->toggleViewAction()->trigger();
-    QApplication::processEvents();
-    check(stateChangeCount == changesBeforeNavigationToggle + 2
-              && controller.layoutState().navigationVisible
-                     == navigationVisibleBeforeToggle,
-          "navigation visibility restore schedules and preserves the original state");
-
-    activity->raise();
-    processUiEvents();
-    window.resizeDocks({activity}, {173}, Qt::Vertical);
-    processUiEvents();
-    const int expandedDockHeight =
-        visibleBottomContentHeight(&window, bottomTabs);
-    check(expandedDockHeight > 64,
-          "bottom panel accepts a user-selected expanded height");
-    controller.setBottomCollapsed(true);
-    processUiEvents();
-    const int collapsedContentHeight =
-        visibleBottomContentHeight(&window, bottomTabs);
-    check(controller.isBottomCollapsed()
-              && collapsedContentHeight <= 1
-              && problems->widget()->maximumHeight() > 0
-              && activity->widget()->maximumHeight() > 0,
-          "collapse leaves no page content visible without locking expansion");
-    check(collapsedContentHeight <= expandedDockHeight,
-          "collapse never increases the bottom panel height");
-    check(controller.layoutState().expandedBottomHeight
-              == expandedDockHeight,
-          "collapse records the exact current expanded height");
-    controller.setBottomCollapsed(false);
-    processUiEvents();
-    check(!controller.isBottomCollapsed()
-              && problems->widget()->maximumHeight() > 0
-              && visibleBottomContentHeight(&window, bottomTabs)
-                     == expandedDockHeight,
-          "expansion restores panel constraints and exact height");
-
-    check(controller.setPanelPinned(
-              QStringLiteral("problems"), true)
-              && controller.isPanelPinned(
-                  QStringLiteral("problems")),
-          "a bottom page can be pinned");
-    check(!controller.closePanel(QStringLiteral("problems"))
-              && controller.isPanelOpen(
-                  QStringLiteral("problems")),
-          "a pinned page cannot be closed");
-    check(controller.setPanelPinned(
-              QStringLiteral("problems"), false)
-              && controller.closePanel(
-                  QStringLiteral("problems"))
-              && !controller.isPanelOpen(
-                  QStringLiteral("problems")),
-          "an unpinned page can be closed");
-    check(controller.restorePanel(QStringLiteral("problems"))
-              && controller.isPanelOpen(
-                  QStringLiteral("problems")),
-          "a closed page restores without duplication");
-    const int dockCountBeforeRepeatedRestore =
-        window.findChildren<QDockWidget*>(
-            QString(),
-            Qt::FindDirectChildrenOnly).size();
-    QWidget* const problemsContentBeforeRepeatedRestore =
-        problems->widget();
-    for (int iteration = 0; iteration < 6; ++iteration)
-        controller.restorePanel(QStringLiteral("problems"));
-    check(window.findChildren<QDockWidget*>(
-              QString(),
-              Qt::FindDirectChildrenOnly).size()
-              == dockCountBeforeRepeatedRestore
-              && problems->widget()
-                     == problemsContentBeforeRepeatedRestore,
-          "repeated business restore reuses the registered page");
-    activity->hide();
-    QApplication::processEvents();
-    const bool directHideTracked =
-        !controller.isPanelOpen(
-            QStringLiteral("activity"));
-    activity->show();
-    activity->raise();
-    QApplication::processEvents();
-    check(directHideTracked
-              && controller.isPanelOpen(
-                  QStringLiteral("activity")),
-          "programmatic business visibility updates the registered page state");
-
-    check(controller.movePanel(
-              QStringLiteral("activity"), 0)
-              && controller.bottomPanelIds().first()
-                     == QStringLiteral("activity"),
-          "a bottom page can be reordered");
-    QApplication::processEvents();
-    bottomTabs =
-        window.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    check(bottomTabs
-              && bottomTabs->count() >= 2
-              && bottomTabs->tabText(0)
-                     == QStringLiteral("Activity"),
-          "programmatic reorder changes the real Qt tab order");
-
-    controller.closePanel(QStringLiteral("activity"));
-    controller.setBottomCollapsed(true);
-    QApplication::processEvents();
-    const PanelLayoutState beforeFocus =
-        controller.layoutState();
-    const int collapsedHeightBeforeFocus =
-        problems->height();
-    const bool navigationWasOpen =
-        navigation->toggleViewAction()->isChecked();
-    controller.setFocusModeActive(true);
-    QApplication::processEvents();
-    check(controller.isFocusModeActive()
-              && !navigation->toggleViewAction()->isChecked()
-              && !problems->toggleViewAction()->isChecked()
-              && !contextDock->toggleViewAction()->isChecked(),
-          "focus mode hides navigation, bottom pages, and side tools together");
-    controller.setFocusModeActive(false);
-    QApplication::processEvents();
-    check(!controller.isFocusModeActive()
-              && navigation->toggleViewAction()->isChecked()
-                     == navigationWasOpen
-              && problems->toggleViewAction()->isChecked()
-              && !activity->toggleViewAction()->isChecked()
-              && contextDock->toggleViewAction()->isChecked(),
-          "focus mode restores the exact prior open state for every panel class");
-    const PanelLayoutState afterFocus =
-        controller.layoutState();
-    check(afterFocus.bottomPanelOrder
-                  == beforeFocus.bottomPanelOrder
-              && afterFocus.closedBottomPanels
-                     == beforeFocus.closedBottomPanels
-              && afterFocus.pinnedBottomPanels
-                     == beforeFocus.pinnedBottomPanels
-              && afterFocus.activeBottomPanel
-                     == beforeFocus.activeBottomPanel
-              && afterFocus.expandedBottomHeight
-                     == beforeFocus.expandedBottomHeight
-              && afterFocus.bottomCollapsed
-                     == beforeFocus.bottomCollapsed
-              && afterFocus.navigationVisible
-                     == beforeFocus.navigationVisible
-              && problems->height()
-                     == collapsedHeightBeforeFocus,
-          "focus mode preserves order, active page, collapse, and height");
-
-    const int passiveUpdateHeight = problems->height();
-    activity->setWindowTitle(
-        QStringLiteral("Activity (updated)"));
-    if (QLabel* label =
-            qobject_cast<QLabel*>(activity->widget())) {
-        label->setText(
-            QStringLiteral("Passive result update"));
-    }
-    QApplication::processEvents();
-    check(!activity->isVisible()
-              && controller.isBottomCollapsed()
-              && problems->height() == passiveUpdateHeight,
-          "passive result updates preserve closed and collapsed layout");
-
-    PanelLayoutState state = controller.layoutState();
-    state.pinnedBottomPanels = {QStringLiteral("problems")};
-    state.closedBottomPanels = {QStringLiteral("activity")};
-    state.bottomCollapsed = true;
-    state.navigationVisible = false;
-    state.expandedBottomHeight = 318;
-    controller.restoreLayoutState(state);
-    QApplication::processEvents();
-    const PanelLayoutState restored = controller.layoutState();
-    check(restored.valid
-              && restored.bottomPanelOrder == state.bottomPanelOrder
-              && restored.closedBottomPanels
-                     == state.closedBottomPanels
-              && restored.pinnedBottomPanels
-                     == state.pinnedBottomPanels
-              && restored.bottomCollapsed
-              && restored.expandedBottomHeight == 318
-              && !restored.navigationVisible,
-          "workspace panel state restores atomically");
-
-    for (int iteration = 0; iteration < 8; ++iteration) {
-        controller.resetLayout();
-        QApplication::processEvents();
-    }
-    const PanelLayoutState reset = controller.layoutState();
-    check(reset.bottomPanelOrder
-                  == QStringList{
-                      QStringLiteral("problems"),
-                      QStringLiteral("activity")}
-              && reset.closedBottomPanels.isEmpty()
-              && reset.pinnedBottomPanels.isEmpty()
-              && !reset.bottomCollapsed
-              && reset.navigationVisible,
-          "repeated reset ignores synchronous Qt tab reorder signals");
-
-    QMainWindow denseWindow;
-    denseWindow.resize(1100, 720);
-    denseWindow.setCentralWidget(new QWidget(&denseWindow));
-    PanelLayoutController denseController(&denseWindow);
-    QDockWidget* denseFirst = nullptr;
-    const QStringList denseIds = {
-        QStringLiteral("problems"),
-        QStringLiteral("activity"),
-        QStringLiteral("insights"),
-        QStringLiteral("graph"),
-        QStringLiteral("wave"),
-        QStringLiteral("fold"),
-    };
-    for (const QString& id : denseIds) {
-        QDockWidget* dock =
-            makeDock(
-                &denseWindow,
-                id,
-                id + QStringLiteral("Dock"));
-        if (!denseFirst)
-            denseFirst = dock;
-        else
-            denseWindow.tabifyDockWidget(
-                denseFirst,
-                dock);
-        check(denseController.registerBottomPanel(
-                  id,
-                  dock),
-              "dense bottom page registers");
-    }
-    denseController.finalize();
-    denseWindow.show();
-    QApplication::processEvents();
-    denseController.closePanel(
-        QStringLiteral("activity"));
-    denseController.closePanel(
-        QStringLiteral("wave"));
-    for (int iteration = 0; iteration < 8; ++iteration) {
-        denseController.resetLayout();
-        QApplication::processEvents();
-    }
-    bool denseAreasCurrent = true;
-    for (const QString& id : denseIds) {
-        QDockWidget* dock = denseWindow.findChild<QDockWidget*>(
-            id + QStringLiteral("Dock"));
-        denseAreasCurrent =
-            denseAreasCurrent
-            && dock
-            && denseWindow.dockWidgetArea(dock)
-                   == Qt::BottomDockWidgetArea
-            && denseController.isPanelOpen(id);
-    }
-    check(denseAreasCurrent
-              && denseController.bottomPanelIds()
-                     == denseIds,
-          "six-page reset preserves Qt dock ownership and order");
-
-    QMainWindow resizeWindow;
-    resizeWindow.resize(980, 700);
-    resizeWindow.setCentralWidget(new QWidget(&resizeWindow));
-    QDockWidget* manualFirst = makeTallDock(
-        &resizeWindow,
-        QStringLiteral("Manual First"),
-        QStringLiteral("manualFirstDock"));
-    QDockWidget* manualSecond = makeTallDock(
-        &resizeWindow,
-        QStringLiteral("Manual Second"),
-        QStringLiteral("manualSecondDock"));
-    resizeWindow.tabifyDockWidget(manualFirst, manualSecond);
-    PanelLayoutController resizeController(&resizeWindow);
-    check(resizeController.registerBottomPanel(
-              QStringLiteral("manualFirst"), manualFirst)
-              && resizeController.registerBottomPanel(
-                  QStringLiteral("manualSecond"), manualSecond),
-          "minimum-size fixture registers as real tabified docks");
-    resizeController.finalize();
-    resizeWindow.show();
-    manualSecond->raise();
-    processUiEvents();
-
-    QTabBar* resizeTabs =
-        resizeWindow.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    if (resizeTabs) {
-        for (int index = 0; index < resizeTabs->count(); ++index) {
-            if (resizeTabs->tabText(index)
-                == QStringLiteral("Manual Second")) {
-                resizeTabs->setCurrentIndex(index);
-                break;
-            }
-        }
-        manualSecond->raise();
-        processUiEvents();
-    }
-    check(resizeTabs
-              && resizeTabs->isVisible()
-              && resizeTabs->contextMenuPolicy()
-                     == Qt::CustomContextMenu
-              && manualFirst->widget()->minimumHeight() == 0
-              && manualSecond->widget()->minimumHeight() == 0
-              && manualFirst->widget()->sizePolicy().verticalPolicy()
-                     == QSizePolicy::Ignored
-              && manualSecond->widget()->sizePolicy().verticalPolicy()
-                     == QSizePolicy::Ignored
-              && resizeController.activeBottomPanelId()
-                     == QStringLiteral("manualSecond"),
-          "bottom pages ignore content minimum-size hints while preserving the tab bar");
-
-    resizeWindow.resizeDocks(
-        {manualSecond}, {260}, Qt::Vertical);
-    processUiEvents();
-    const int startingExpandedHeight =
-        visibleBottomContentHeight(&resizeWindow, resizeTabs);
-    int previousContentHeight = startingExpandedHeight;
-    bool shrankContinuously = startingExpandedHeight > 64;
-    const QList<int> requestedHeights = {180, 120, 70, 35, 1};
-    for (int requestedHeight : requestedHeights) {
-        resizeWindow.resizeDocks(
-            {manualSecond}, {requestedHeight}, Qt::Vertical);
-        processUiEvents();
-        const int contentHeight =
-            visibleBottomContentHeight(&resizeWindow, resizeTabs);
-        shrankContinuously =
-            shrankContinuously
-            && contentHeight <= previousContentHeight;
-        previousContentHeight = contentHeight;
-    }
-    const PanelLayoutState manuallyCollapsed =
-        resizeController.layoutState();
-    const int collapsedCentralHeight =
-        resizeWindow.centralWidget()->height();
-    const int collapsedBottomAreaHeight =
-        resizeWindow.height() - collapsedCentralHeight;
-    check(shrankContinuously
-              && previousContentHeight <= 1
-              && resizeTabs
-              && collapsedBottomAreaHeight
-                     <= resizeTabs->height() + 12
-              && resizeController.isBottomCollapsed()
-              && manuallyCollapsed.bottomCollapsed
-              && manuallyCollapsed.expandedBottomHeight >= 64,
-          "native dock resizing continuously reaches tab-only height and enters the shared collapsed state");
-    check(resizeTabs
-              && resizeTabs->isVisible()
-              && manualSecond->toggleViewAction()->isChecked(),
-          "manual collapse keeps the dock and its interactive tab bar visible");
-
-    if (resizeTabs && resizeTabs->count() >= 2) {
-        const int otherIndex =
-            resizeTabs->currentIndex() == 0 ? 1 : 0;
-        resizeTabs->setCurrentIndex(otherIndex);
-        processUiEvents();
-    }
-    QDockWidget* selectedManualDock =
-        resizeController.activeBottomPanelId()
-                == QStringLiteral("manualFirst")
-            ? manualFirst
-            : manualSecond;
-    check(resizeWindow.centralWidget()->height()
-                  == collapsedCentralHeight
-              && visibleBottomContentHeight(
-                     &resizeWindow, resizeTabs) <= 1
-              && resizeController.isBottomCollapsed(),
-          "switching bottom pages at tab-only height preserves panel geometry");
-
-    resizeWindow.resizeDocks(
-        {selectedManualDock}, {260}, Qt::Vertical);
-    processUiEvents();
-    const int manuallyReopenedHeight =
-        visibleBottomContentHeight(&resizeWindow, resizeTabs);
-    check(manuallyReopenedHeight > 64
-              && !resizeController.isBottomCollapsed(),
-          "the native separator reopens a manually collapsed bottom panel");
-    resizeWindow.resizeDocks(
-        {selectedManualDock}, {1}, Qt::Vertical);
-    processUiEvents();
-    const PanelLayoutState recollapsedState =
-        resizeController.layoutState();
-    check(recollapsedState.bottomCollapsed
-              && recollapsedState.expandedBottomHeight
-                     == manuallyReopenedHeight,
-          "manual collapse persists the last stable expanded dock height");
-
-    resizeController.setBottomCollapsed(false);
-    processUiEvents();
-    check(!resizeController.isBottomCollapsed()
-              && qAbs(visibleBottomContentHeight(
-                          &resizeWindow, resizeTabs)
-                      - manuallyReopenedHeight) <= 1,
-          "explicit expansion uses the same persisted height as manual resizing");
-    resizeController.setBottomCollapsed(true);
-    processUiEvents();
-    resizeWindow.resizeDocks(
-        {selectedManualDock}, {260}, Qt::Vertical);
-    processUiEvents();
-    check(!resizeController.isBottomCollapsed()
-              && visibleBottomContentHeight(
-                     &resizeWindow, resizeTabs) > 4,
-          "a panel collapsed explicitly can be dragged open from its tab bar");
-
-    resizeController.setBottomCollapsed(true);
-    processUiEvents();
-    const PanelLayoutState savedManualState =
-        resizeController.layoutState();
-    QMainWindow restoredWindow;
-    restoredWindow.resize(980, 700);
-    restoredWindow.setCentralWidget(new QWidget(&restoredWindow));
-    QDockWidget* restoredFirst = makeTallDock(
-        &restoredWindow,
-        QStringLiteral("Manual First"),
-        QStringLiteral("restoredManualFirstDock"));
-    QDockWidget* restoredSecond = makeTallDock(
-        &restoredWindow,
-        QStringLiteral("Manual Second"),
-        QStringLiteral("restoredManualSecondDock"));
-    restoredWindow.tabifyDockWidget(restoredFirst, restoredSecond);
-    PanelLayoutController restoredController(&restoredWindow);
-    restoredController.registerBottomPanel(
-        QStringLiteral("manualFirst"), restoredFirst);
-    restoredController.registerBottomPanel(
-        QStringLiteral("manualSecond"), restoredSecond);
-    restoredController.finalize();
-    restoredWindow.show();
-    processUiEvents();
-    restoredController.restoreLayoutState(savedManualState);
-    processUiEvents();
-    QTabBar* restoredTabs =
-        restoredWindow.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    QDockWidget* restoredActive =
-        restoredController.activeBottomPanelId()
-                == QStringLiteral("manualFirst")
-            ? restoredFirst
-            : restoredSecond;
-    const PanelLayoutState roundTrippedManualState =
-        restoredController.layoutState();
-    check(restoredController.isBottomCollapsed()
-              && restoredTabs
-              && restoredTabs->isVisible()
-              && visibleBottomContentHeight(
-                     &restoredWindow, restoredTabs) <= 1
-              && roundTrippedManualState.expandedBottomHeight
-                     == savedManualState.expandedBottomHeight,
-          "tab-only state and expanded height survive session restoration");
-    restoredWindow.resizeDocks(
-        {restoredActive}, {260}, Qt::Vertical);
-    processUiEvents();
-    check(!restoredController.isBottomCollapsed()
-              && visibleBottomContentHeight(
-                     &restoredWindow, restoredTabs) > 4,
-          "a restored tab-only panel remains draggable upward");
+    DrawerHarness harness;
+    verifyButtonContract(harness);
+    verifyClickAndShortcutBehavior(harness);
+    verifyFocusAndEditorPreservation(harness);
+    verifySizing(harness);
+    verifyPersistenceAndFocusIsolation(harness);
+    verifyBadgesAndTheme(harness);
 
     std::cout << (checks - failures) << "/" << checks
-              << " panel layout checks passed\n";
+              << " bottom tool drawer checks passed\n";
     return failures == 0 ? 0 : 1;
 }

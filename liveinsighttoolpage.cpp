@@ -1,11 +1,11 @@
 #include "liveinsighttoolpage.h"
 
-#include "rtlinsightspanelcoordinator.h"
 #include "rtlinsightworkbench.h"
 #include "wavepreviewpanelcoordinator.h"
 
 #include <QDockWidget>
 #include <QHideEvent>
+#include <QHBoxLayout>
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSizePolicy>
@@ -60,9 +60,6 @@ void LiveInsightToolPage::setNavigationHandler(
         detachedPage->setNavigationHandler(navigationHandler);
     if (workbench)
         workbench->setNavigationHandler(navigationHandler);
-    if (rtlCoordinator) {
-        rtlCoordinator->setNavigationHandler(navigationHandler);
-    }
     if (waveCoordinator) {
         waveCoordinator->setNavigationHandler(
             [handler = navigationHandler](
@@ -78,8 +75,6 @@ void LiveInsightToolPage::setStatusHandler(StatusHandler handler)
     statusHandler = std::move(handler);
     if (detachedPage)
         detachedPage->setStatusHandler(statusHandler);
-    if (rtlCoordinator)
-        rtlCoordinator->setStatusMessageHandler(statusHandler);
     if (waveCoordinator)
         waveCoordinator->setStatusMessageHandler(statusHandler);
 }
@@ -88,6 +83,22 @@ void LiveInsightToolPage::setVisibilityHandler(
     VisibilityHandler handler)
 {
     visibilityHandler = std::move(handler);
+    if (detachedPage) {
+        detachedPage->setVisibilityHandler(
+            [owner = QPointer<LiveInsightToolPage>(this)](bool) {
+                if (owner)
+                    owner->notifyVisibility();
+            });
+    }
+    notifyVisibility();
+}
+
+void LiveInsightToolPage::setRefreshHandler(
+    RefreshHandler handler)
+{
+    refreshHandler = std::move(handler);
+    if (detachedPage)
+        detachedPage->setRefreshHandler(refreshHandler);
 }
 
 void LiveInsightToolPage::setWaveformLibraryPath(
@@ -109,10 +120,10 @@ void LiveInsightToolPage::setContext(
         detachedPage->setContext(context);
 }
 
-RtlInsightsPanelCoordinator*
-LiveInsightToolPage::rtlCoordinatorForTest() const
+bool LiveInsightToolPage::hasVisibleSurface() const
 {
-    return rtlCoordinator.get();
+    return isVisible()
+        || (detachedWindow && detachedWindow->isVisible());
 }
 
 RtlInsightWorkbench* LiveInsightToolPage::workbenchForTest() const
@@ -147,10 +158,24 @@ QMainWindow* LiveInsightToolPage::detachToWindow()
     page->setWaveformLibraryPath(waveformLibraryPath);
     page->setNavigationHandler(navigationHandler);
     page->setStatusHandler(statusHandler);
+    page->setRefreshHandler(refreshHandler);
+    page->setVisibilityHandler(
+        [owner = QPointer<LiveInsightToolPage>(this)](bool) {
+            if (owner)
+                owner->notifyVisibility();
+        });
     page->setContext(currentContext);
     window->setCentralWidget(page);
     window->resize(1120, 760);
     detachedWindow = window;
+    QObject::connect(
+        window,
+        &QObject::destroyed,
+        this,
+        [owner = QPointer<LiveInsightToolPage>(this)]() {
+            if (owner)
+                owner->notifyVisibility();
+        });
     window->show();
     return window;
 }
@@ -163,15 +188,13 @@ QMainWindow* LiveInsightToolPage::detachedWindowForTest() const
 void LiveInsightToolPage::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
-    if (visibilityHandler)
-        visibilityHandler(true);
+    notifyVisibility();
 }
 
 void LiveInsightToolPage::hideEvent(QHideEvent* event)
 {
-    if (visibilityHandler)
-        visibilityHandler(false);
     QWidget::hideEvent(event);
+    notifyVisibility();
 }
 
 void LiveInsightToolPage::createSurface()
@@ -181,9 +204,43 @@ void LiveInsightToolPage::createSurface()
     layout->setSpacing(0);
 
     if (insightKind == LiveInsightKind::Wave) {
+        auto* toolbar = new QHBoxLayout;
+        toolbar->setContentsMargins(8, 6, 8, 0);
+        toolbar->setSpacing(6);
+        toolbar->addStretch(1);
+        auto* refreshButton = new QPushButton(
+            QStringLiteral("Refresh"), this);
+        refreshButton->setObjectName(
+            QStringLiteral("liveInsightWaveRefresh"));
+        refreshButton->setToolTip(
+            QStringLiteral("Refresh from the current editor context"));
+        auto* detachButton = new QPushButton(
+            QStringLiteral("Detach"), this);
+        detachButton->setObjectName(
+            QStringLiteral("liveInsightWaveDetach"));
+        detachButton->setToolTip(
+            QStringLiteral("Open this Wave view in a separate window"));
+        toolbar->addWidget(refreshButton);
+        toolbar->addWidget(detachButton);
+        layout->addLayout(toolbar);
         waveCoordinator =
             std::make_unique<WavePreviewPanelCoordinator>(this);
         embedDock(waveCoordinator->dock(), layout);
+        QObject::connect(
+            refreshButton,
+            &QPushButton::clicked,
+            this,
+            [this]() {
+                if (refreshHandler)
+                    refreshHandler();
+                else
+                    renderContext();
+            });
+        QObject::connect(
+            detachButton,
+            &QPushButton::clicked,
+            this,
+            [this]() { detachToWindow(); });
         return;
     }
     workbench = new RtlInsightWorkbench(this);
@@ -241,40 +298,11 @@ void LiveInsightToolPage::renderContext()
         context.signalName = currentContext.signalName;
         context.signalAccessPath = currentContext.signalAccessPath;
         workbench->setContext(context);
-        return;
     }
-    if (!rtlCoordinator)
-        return;
-    rtlCoordinator->updateModuleContext(
-        currentContext.fileName,
-        currentContext.moduleName,
-        currentContext.signalName);
-    switch (insightKind) {
-    case LiveInsightKind::Module:
-        rtlCoordinator->showModuleBlockDiagramForModule(
-            currentContext.fileName,
-            currentContext.moduleName);
-        break;
-    case LiveInsightKind::State:
-        if (!currentContext.signalName.trimmed().isEmpty()) {
-            rtlCoordinator->showStateTransitionGraphForSignal(
-                currentContext.fileName,
-                currentContext.moduleName,
-                currentContext.signalName);
-        } else {
-            rtlCoordinator->showFsmGraph();
-        }
-        break;
-    case LiveInsightKind::Hotspot:
-        rtlCoordinator->showSignalUsageHotspotForSignal(
-            currentContext.fileName,
-            currentContext.moduleName,
-            currentContext.signalName,
-            currentContext.signalAccessPath);
-        break;
-    case LiveInsightKind::Wave:
-        break;
-    case LiveInsightKind::Kernel:
-        break;
-    }
+}
+
+void LiveInsightToolPage::notifyVisibility()
+{
+    if (visibilityHandler)
+        visibilityHandler(hasVisibleSurface());
 }

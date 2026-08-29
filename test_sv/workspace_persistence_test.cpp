@@ -335,17 +335,32 @@ int main(int argc, char* argv[])
         QStringLiteral("module");
     sessionA.ui.panelLayout.bottomPanelOrder = {
         QStringLiteral("problems"),
+        QStringLiteral("scopedSearch"),
         QStringLiteral("activity"),
-        QStringLiteral("wavePreview"),
-    };
-    sessionA.ui.panelLayout.closedBottomPanels = {
-        QStringLiteral("activity"),
-    };
-    sessionA.ui.panelLayout.pinnedBottomPanels = {
-        QStringLiteral("problems"),
+        QStringLiteral("rtlHighRiskEdit"),
+        QStringLiteral("connections"),
+        QStringLiteral("foldShelf"),
     };
     sessionA.ui.panelLayout.activeBottomPanel =
         QStringLiteral("problems");
+    sessionA.ui.panelLayout.lastBottomPanel =
+        QStringLiteral("connections");
+    sessionA.ui.panelLayout.bottomPanelHeights = {
+        {QStringLiteral("problems"), 312},
+        {QStringLiteral("connections"), 344},
+    };
+    sessionA.ui.panelLayout.bottomPanelViewStates.insert(
+        QStringLiteral("connections"),
+        QVariantMap{
+            {QStringLiteral("tabs"),
+             QVariantMap{
+                 {QStringLiteral("connectionsWorkflowTabs"), 1}}},
+            {QStringLiteral("scrolls"),
+             QVariantMap{
+                 {QStringLiteral("connectionPreview"),
+                  QVariantMap{
+                      {QStringLiteral("vertical"), 37},
+                      {QStringLiteral("horizontal"), 4}}}}}});
     sessionA.ui.panelLayout.expandedBottomHeight = 312;
     sessionA.ui.panelLayout.bottomCollapsed = true;
     sessionA.ui.panelLayout.navigationVisible = false;
@@ -427,12 +442,14 @@ int main(int argc, char* argv[])
               && loadA.state.ui.panelLayout.valid
               && loadA.state.ui.panelLayout.bottomPanelOrder
                      == sessionA.ui.panelLayout.bottomPanelOrder
-              && loadA.state.ui.panelLayout.closedBottomPanels
-                     == sessionA.ui.panelLayout.closedBottomPanels
-              && loadA.state.ui.panelLayout.pinnedBottomPanels
-                     == sessionA.ui.panelLayout.pinnedBottomPanels
               && loadA.state.ui.panelLayout.activeBottomPanel
                      == QStringLiteral("problems")
+              && loadA.state.ui.panelLayout.lastBottomPanel
+                     == QStringLiteral("connections")
+              && loadA.state.ui.panelLayout.bottomPanelHeights
+                     == sessionA.ui.panelLayout.bottomPanelHeights
+              && loadA.state.ui.panelLayout.bottomPanelViewStates
+                     == sessionA.ui.panelLayout.bottomPanelViewStates
               && loadA.state.ui.panelLayout.expandedBottomHeight == 312
               && loadA.state.ui.panelLayout.bottomCollapsed
               && !loadA.state.ui.panelLayout.navigationVisible
@@ -526,6 +543,43 @@ int main(int argc, char* argv[])
                      == ContextWorkspaceState::
                             kMaximumStoredDockWidth,
           "malformed persisted Context dimensions are clamped during JSON restore");
+    rawSessionSettings.setValue(workspaceAStateKey, savedSessionBytes);
+    rawSessionSettings.sync();
+
+    QJsonDocument legacyPanelDocument =
+        QJsonDocument::fromJson(savedSessionBytes);
+    QJsonObject legacyPanelRoot = legacyPanelDocument.object();
+    QJsonObject legacyPanelUi =
+        legacyPanelRoot.value(QStringLiteral("ui")).toObject();
+    QJsonObject legacyPanel =
+        legacyPanelUi.value(QStringLiteral("panelLayout")).toObject();
+    legacyPanel.remove(QStringLiteral("version"));
+    legacyPanel.remove(QStringLiteral("last"));
+    legacyPanel.remove(QStringLiteral("heights"));
+    legacyPanel.remove(QStringLiteral("viewStates"));
+    legacyPanel.insert(
+        QStringLiteral("active"),
+        QStringLiteral("instancePairConnection"));
+    legacyPanel.insert(QStringLiteral("expandedHeight"), 245);
+    legacyPanelUi.insert(QStringLiteral("panelLayout"), legacyPanel);
+    legacyPanelRoot.insert(QStringLiteral("ui"), legacyPanelUi);
+    rawSessionSettings.setValue(
+        workspaceAStateKey,
+        QJsonDocument(legacyPanelRoot).toJson(QJsonDocument::Compact));
+    rawSessionSettings.sync();
+    const WorkspaceSessionRestoreResult legacyPanelLoad =
+        sessionService.load(workspaceA);
+    check(legacyPanelLoad.loaded
+              && legacyPanelLoad.state.ui.panelLayout.version == 1
+              && legacyPanelLoad.state.ui.panelLayout.activeBottomPanel
+                     == QStringLiteral("instancePairConnection")
+              && legacyPanelLoad.state.ui.panelLayout.lastBottomPanel
+                     == QStringLiteral("instancePairConnection")
+              && legacyPanelLoad.state.ui.panelLayout.bottomPanelHeights
+                     .isEmpty()
+              && legacyPanelLoad.state.ui.panelLayout.expandedBottomHeight
+                     == 245,
+          "legacy panel sessions preserve enough state for drawer migration");
     rawSessionSettings.setValue(workspaceAStateKey, savedSessionBytes);
     rawSessionSettings.sync();
 

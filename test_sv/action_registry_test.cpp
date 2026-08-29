@@ -661,56 +661,11 @@ int main()
          "ui.panel.activity.toggle",
          0,
          ""},
-        {ActionIds::ViewRtlInsights,
-         "viewRtlInsightsAction",
-         "ui.panel.rtlInsights.toggle",
-         0,
-         ""},
-        {ActionIds::ViewSignalKernelGraph,
-         "viewSignalKernelGraphAction",
-         "ui.panel.signalKernelGraph.toggle",
-         0,
-         ""},
-        {ActionIds::ViewWavePreview,
-         "viewWavePreviewAction",
-         "ui.panel.wavePreview.toggle",
-         0,
-         ""},
         {ActionIds::ViewBottomPanelCollapsed,
          "toggleBottomPanelCollapsedAction",
          "ui.bottomPanel.collapsed.toggle",
          0,
          "Ctrl+J"},
-        {ActionIds::ViewBottomPanelPinned,
-         "pinActiveBottomPanelAction",
-         "ui.bottomPanel.pinned.toggle",
-         0,
-         ""},
-        {ActionIds::ViewBottomPanelClose,
-         "closeActiveBottomPanelAction",
-         "ui.bottomPanel.closeActive",
-         0,
-         ""},
-        {ActionIds::ViewFocusRtlInsights,
-         "focusRtlInsightsAction",
-         "ui.insightFocus.rtlInsights.enter",
-         0,
-         ""},
-        {ActionIds::ViewFocusSignalKernelGraph,
-         "focusSignalKernelGraphAction",
-         "ui.insightFocus.signalKernelGraph.enter",
-         0,
-         ""},
-        {ActionIds::ViewFocusWavePreview,
-         "focusWavePreviewAction",
-         "ui.insightFocus.wavePreview.enter",
-         0,
-         ""},
-        {ActionIds::ViewLeaveInsightFocus,
-         "leaveInsightFocusAction",
-         "ui.insightFocus.leave",
-         0,
-         ""},
         {ActionIds::ViewFoldShelf,
          "viewFoldShelfAction",
          "ui.panel.foldShelf.toggle",
@@ -886,6 +841,43 @@ int main()
                       ActionSurface::ActionCatalog)
                       .size()
                       >= stableMenuActionCount);
+    bool retiredInsightDescriptorsAreAbsent = true;
+    for (const char* id : {
+             ActionIds::ViewRtlInsights,
+             ActionIds::ViewSignalKernelGraph,
+             ActionIds::ViewFocusRtlInsights,
+             ActionIds::ViewFocusSignalKernelGraph,
+             ActionIds::ViewFocusWavePreview,
+             ActionIds::ViewLeaveInsightFocus}) {
+        retiredInsightDescriptorsAreAbsent =
+            retiredInsightDescriptorsAreAbsent
+            && findActionById(QString::fromLatin1(id)) == nullptr;
+    }
+    expect("retired bottom and Insight Focus descriptors are absent",
+           retiredInsightDescriptorsAreAbsent);
+    const ActionDescriptor* waveLiveInsightAction =
+        findActionById(QString::fromLatin1(
+            ActionIds::ViewWavePreview));
+    bool retainedBottomCommandsAreCatalogOnly =
+        waveLiveInsightAction
+        && waveLiveInsightAction->canonicalName
+               == QStringLiteral("Open Wave in Live Insights")
+        && !waveLiveInsightAction->hasSurface(ActionSurface::Menu)
+        && waveLiveInsightAction->hasSurface(
+            ActionSurface::ActionCatalog);
+    for (const char* id : {
+             ActionIds::ViewBottomPanelPinned,
+             ActionIds::ViewBottomPanelClose}) {
+        const ActionDescriptor* descriptor =
+            findActionById(QString::fromLatin1(id));
+        retainedBottomCommandsAreCatalogOnly =
+            retainedBottomCommandsAreCatalogOnly
+            && descriptor
+            && !descriptor->hasSurface(ActionSurface::Menu)
+            && descriptor->hasSurface(ActionSurface::ActionCatalog);
+    }
+    expect("Wave uses Live Insights and retained bottom commands avoid menus",
+           retainedBottomCommandsAreCatalogOnly);
     const ActionDescriptor* globalControlAction =
         findActionById(QString::fromLatin1(
             ActionIds::ViewGlobalControl));
@@ -1190,8 +1182,8 @@ int main()
                    ActionSurface::CommandLayer)
             && descriptor->hasSurface(
                    ActionSurface::ActionCatalog)
-            && descriptor->hasSurface(
-                   ActionSurface::Menu)
+            && !descriptor->hasSurface(
+                    ActionSurface::Menu)
             && !descriptor->repeatable
             && panelAlias.token == id
             && panelAlias.label

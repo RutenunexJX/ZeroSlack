@@ -76,7 +76,7 @@ struct WorkspaceLegacyImportResult {
 class WorkspaceSessionStateService
 {
 public:
-    static constexpr int kVersion = 3;
+    static constexpr int kVersion = 4;
 
     explicit WorkspaceSessionStateService(
         const QString& settingsFilePath =

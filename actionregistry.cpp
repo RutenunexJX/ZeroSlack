@@ -1699,36 +1699,16 @@ void appendApplicationMenuActions(
          ActionScope::Application,
          0,
          "The Activity / Output panel is unavailable."},
-        {ActionIds::ViewRtlInsights,
-         "Toggle RTL Insights Panel",
-         "Show or hide the RTL Insights panel.",
-         "ui.panel.rtlInsights.toggle",
-         "RTL Insights",
-         "viewRtlInsightsAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The RTL Insights panel is unavailable."},
-        {ActionIds::ViewSignalKernelGraph,
-         "Toggle Signal Kernel Graph Panel",
-         "Show or hide the Signal Kernel Graph panel.",
-         "ui.panel.signalKernelGraph.toggle",
-         "Signal Kernel Graph",
-         "viewSignalKernelGraphAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The Signal Kernel Graph panel is unavailable."},
         {ActionIds::ViewWavePreview,
-         "Toggle Wave Preview Panel",
-         "Show or hide the Wave Preview panel.",
+         "Open Wave in Live Insights",
+         "Open the Wave provider in the right-side Live Insights workspace.",
          "ui.panel.wavePreview.toggle",
-         "Wave Preview",
+         "Wave in Live Insights",
          "viewWavePreviewAction",
          ActionCategory::Workspace,
          ActionScope::Application,
          0,
-         "The Wave Preview panel is unavailable."},
+         "The Live Insights Wave provider is unavailable."},
         {ActionIds::ViewBottomPanelCollapsed,
          "Toggle Bottom Panel Collapse",
          "Collapse or restore the bottom panel area.",
@@ -1760,46 +1740,6 @@ void appendApplicationMenuActions(
          ActionScope::Application,
          0,
          "No closable bottom page is active."},
-        {ActionIds::ViewFocusRtlInsights,
-         "Maximize RTL Insights",
-         "Show RTL Insights in the focused insight view.",
-         "ui.insightFocus.rtlInsights.enter",
-         "RTL Insights",
-         "focusRtlInsightsAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The RTL Insights focus view is unavailable."},
-        {ActionIds::ViewFocusSignalKernelGraph,
-         "Maximize Signal Kernel Graph",
-         "Show the Signal Kernel Graph in the focused insight view.",
-         "ui.insightFocus.signalKernelGraph.enter",
-         "Signal Kernel Graph",
-         "focusSignalKernelGraphAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The Signal Kernel Graph focus view is unavailable."},
-        {ActionIds::ViewFocusWavePreview,
-         "Maximize Wave Preview",
-         "Show the Wave Preview in the focused insight view.",
-         "ui.insightFocus.wavePreview.enter",
-         "Wave Preview",
-         "focusWavePreviewAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The Wave Preview focus view is unavailable."},
-        {ActionIds::ViewLeaveInsightFocus,
-         "Return to Editor",
-         "Leave the focused insight view and return to the editor.",
-         "ui.insightFocus.leave",
-         "Back to Editor",
-         "leaveInsightFocusAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "No focused insight view is active."},
         {ActionIds::ViewFoldShelf,
          "Toggle Fold Shelf",
          "Show or hide the Fold Shelf.",
@@ -1935,15 +1875,6 @@ void appendApplicationMenuActions(
             QString::fromLatin1(spec.shortcut);
         descriptor.aliases = {
             alias(
-                ActionSurface::Menu,
-                QString::fromLatin1(spec.id),
-                QString::fromLatin1(spec.label),
-                QString::fromLatin1(
-                    spec.description),
-                QString(),
-                QString::fromLatin1(
-                    spec.objectName)),
-            alias(
                 ActionSurface::ActionCatalog,
                 QString::fromLatin1(spec.id),
                 QString::fromLatin1(
@@ -1956,6 +1887,28 @@ void appendApplicationMenuActions(
                 false,
                 true),
         };
+        const bool hasVisibleMenuEntry =
+            descriptor.id
+                    != QString::fromLatin1(
+                        ActionIds::ViewWavePreview)
+            && descriptor.id
+                    != QString::fromLatin1(
+                        ActionIds::ViewBottomPanelPinned)
+            && descriptor.id
+                    != QString::fromLatin1(
+                        ActionIds::ViewBottomPanelClose);
+        if (hasVisibleMenuEntry) {
+            descriptor.aliases.prepend(
+                alias(
+                    ActionSurface::Menu,
+                    QString::fromLatin1(spec.id),
+                    QString::fromLatin1(spec.label),
+                    QString::fromLatin1(
+                        spec.description),
+                    QString(),
+                    QString::fromLatin1(
+                        spec.objectName)));
+        }
         QString tabContextLabel;
         QString commandToken;
         if (descriptor.id

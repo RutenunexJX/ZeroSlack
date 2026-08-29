@@ -1,29 +1,165 @@
 #include "panellayoutcontroller.h"
 
-#include "actionregistry.h"
-
-#include <QAction>
+#include <QAbstractItemView>
+#include <QAbstractScrollArea>
 #include <QApplication>
-#include <QDockWidget>
+#include <QDynamicPropertyChangeEvent>
 #include <QEvent>
+#include <QFrame>
+#include <QHBoxLayout>
 #include <QMainWindow>
-#include <QMenu>
 #include <QMouseEvent>
-#include <QPoint>
-#include <QSizePolicy>
+#include <QPainter>
+#include <QPropertyAnimation>
+#include <QScrollBar>
+#include <QShortcut>
+#include <QStackedWidget>
 #include <QStyle>
-#include <QTabBar>
 #include <QTabWidget>
-#include <QTimer>
-#include <QWidget>
+#include <QToolButton>
+#include <QVBoxLayout>
 
 #include <algorithm>
 #include <utility>
 
 namespace {
-constexpr int kMinimumStoredExpandedHeight = 64;
-constexpr int kCollapsedContentHeight = 1;
-constexpr int kExpandedContentHeight = 4;
+constexpr int kResizeHandleHeight = 8;
+constexpr int kButtonBarHeight = 38;
+
+QString colorCss(const QColor& color)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
+}
+
+QString panelLabel(const QString& panelId)
+{
+    if (panelId == QStringLiteral("problems"))
+        return QStringLiteral("Problems");
+    if (panelId == QStringLiteral("scopedSearch"))
+        return QStringLiteral("Search");
+    if (panelId == QStringLiteral("activity"))
+        return QStringLiteral("Activity");
+    if (panelId == QStringLiteral("rtlHighRiskEdit"))
+        return QStringLiteral("High+Diff");
+    if (panelId == QStringLiteral("connections"))
+        return QStringLiteral("Connections");
+    if (panelId == QStringLiteral("foldShelf"))
+        return QStringLiteral("Shelf");
+    return panelId;
+}
+
+QStyle::StandardPixmap panelIcon(const QString& panelId)
+{
+    if (panelId == QStringLiteral("problems"))
+        return QStyle::SP_MessageBoxWarning;
+    if (panelId == QStringLiteral("scopedSearch"))
+        return QStyle::SP_FileDialogContentsView;
+    if (panelId == QStringLiteral("activity"))
+        return QStyle::SP_BrowserReload;
+    if (panelId == QStringLiteral("rtlHighRiskEdit"))
+        return QStyle::SP_DialogApplyButton;
+    if (panelId == QStringLiteral("connections"))
+        return QStyle::SP_DriveNetIcon;
+    return QStyle::SP_DirOpenIcon;
+}
+
+QString modelIndexPath(const QModelIndex& index)
+{
+    if (!index.isValid())
+        return {};
+    QStringList rows;
+    QModelIndex cursor = index;
+    while (cursor.isValid()) {
+        rows.prepend(QString::number(cursor.row()));
+        cursor = cursor.parent();
+    }
+    return rows.join(QLatin1Char('/'));
+}
+
+QModelIndex modelIndexFromPath(QAbstractItemModel* model,
+                               const QString& path,
+                               int column)
+{
+    if (!model || path.isEmpty())
+        return {};
+    QModelIndex parent;
+    const QStringList rows = path.split(QLatin1Char('/'));
+    for (int index = 0; index < rows.size(); ++index) {
+        bool ok = false;
+        const int row = rows.at(index).toInt(&ok);
+        if (!ok || row < 0)
+            return {};
+        const int targetColumn = index + 1 == rows.size()
+            ? qMax(0, column) : 0;
+        parent = model->index(row, targetColumn, parent);
+        if (!parent.isValid())
+            return {};
+        if (index + 1 < rows.size() && parent.column() != 0)
+            parent = parent.siblingAtColumn(0);
+    }
+    return parent;
+}
+
+class DrawerToolButton final : public QToolButton
+{
+public:
+    explicit DrawerToolButton(QWidget* parent = nullptr)
+        : QToolButton(parent)
+    {
+    }
+
+    void setBadge(const QString& text, const QString& tone)
+    {
+        badgeText = text.trimmed();
+        badgeTone = tone.trimmed().toLower();
+        setProperty("hasBadge", !badgeText.isEmpty());
+        style()->unpolish(this);
+        style()->polish(this);
+        updateGeometry();
+        update();
+    }
+
+protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        QToolButton::paintEvent(event);
+        if (badgeText.isEmpty())
+            return;
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QFont badgeFont = font();
+        badgeFont.setBold(true);
+        badgeFont.setPointSizeF(qMax(7.0, badgeFont.pointSizeF() - 1.0));
+        painter.setFont(badgeFont);
+        const int width = qMax(18,
+            painter.fontMetrics().horizontalAdvance(badgeText) + 10);
+        const QRect badgeRect(rect().right() - width - 6,
+                              rect().center().y() - 9,
+                              width,
+                              18);
+        QColor background = palette().highlight().color();
+        if (badgeTone == QStringLiteral("error"))
+            background = QColor(196, 56, 56);
+        else if (badgeTone == QStringLiteral("warning"))
+            background = QColor(196, 126, 24);
+        else if (badgeTone == QStringLiteral("success"))
+            background = QColor(52, 132, 81);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(background);
+        painter.drawRoundedRect(badgeRect, 9, 9);
+        painter.setPen(Qt::white);
+        painter.drawText(badgeRect, Qt::AlignCenter, badgeText);
+    }
+
+private:
+    QString badgeText;
+    QString badgeTone;
+};
 }
 
 PanelLayoutController::PanelLayoutController(
@@ -32,6 +168,16 @@ PanelLayoutController::PanelLayoutController(
     : QObject(parent)
     , window(mainWindow)
 {
+    animationsEnabledValue =
+        !qEnvironmentVariableIsSet("ZEROSLACK_DISABLE_ANIMATIONS")
+        && !QApplication::platformName().contains(
+            QStringLiteral("offscreen"), Qt::CaseInsensitive)
+        && QApplication::isEffectEnabled(Qt::UI_AnimateCombo);
+    buildDrawer();
+    if (qApp)
+        qApp->installEventFilter(this);
+    if (window)
+        window->installEventFilter(this);
 }
 
 PanelLayoutController::~PanelLayoutController()
@@ -40,28 +186,107 @@ PanelLayoutController::~PanelLayoutController()
         qApp->removeEventFilter(this);
 }
 
-void PanelLayoutController::setNavigationDock(QDockWidget* dock)
+void PanelLayoutController::buildDrawer()
 {
-    if (navigationDock == dock)
-        return;
-    navigationDock = dock;
-    if (!dock)
+    if (!window || bottomDrawerDock)
         return;
 
-    connect(dock->toggleViewAction(),
-            &QAction::toggled,
+    bottomDrawerDock = new QDockWidget(window);
+    bottomDrawerDock->setObjectName(
+        QStringLiteral("bottomToolDrawerDock"));
+    bottomDrawerDock->setAccessibleName(
+        QStringLiteral("Bottom tool drawer"));
+    bottomDrawerDock->setAllowedAreas(Qt::BottomDockWidgetArea);
+    bottomDrawerDock->setFeatures(QDockWidget::NoDockWidgetFeatures);
+    auto* titleBar = new QWidget(bottomDrawerDock);
+    titleBar->setFixedHeight(0);
+    bottomDrawerDock->setTitleBarWidget(titleBar);
+
+    bottomDrawerRoot = new QWidget(bottomDrawerDock);
+    bottomDrawerRoot->setObjectName(
+        QStringLiteral("bottomToolDrawerRoot"));
+    auto* rootLayout = new QVBoxLayout(bottomDrawerRoot);
+    rootLayout->setContentsMargins(0, 0, 0, 0);
+    rootLayout->setSpacing(0);
+
+    bottomResizeHandle = new QWidget(bottomDrawerRoot);
+    bottomResizeHandle->setObjectName(
+        QStringLiteral("bottomToolDrawerResizeHandle"));
+    bottomResizeHandle->setAccessibleName(
+        QStringLiteral("Resize bottom panel"));
+    bottomResizeHandle->setCursor(Qt::SplitVCursor);
+    bottomResizeHandle->setFixedHeight(kResizeHandleHeight);
+    bottomResizeHandle->installEventFilter(this);
+    rootLayout->addWidget(bottomResizeHandle);
+
+    bottomContentStack = new QStackedWidget(bottomDrawerRoot);
+    bottomContentStack->setObjectName(
+        QStringLiteral("bottomToolDrawerContent"));
+    bottomContentStack->setSizePolicy(
+        QSizePolicy::Expanding, QSizePolicy::Fixed);
+    rootLayout->addWidget(bottomContentStack);
+
+    bottomButtonBar = new QFrame(bottomDrawerRoot);
+    bottomButtonBar->setObjectName(
+        QStringLiteral("bottomToolDrawerButtonBar"));
+    bottomButtonBar->setAccessibleName(
+        QStringLiteral("Bottom panel buttons"));
+    bottomButtonBar->setFixedHeight(kButtonBarHeight);
+    auto* buttonLayout = new QHBoxLayout(bottomButtonBar);
+    buttonLayout->setObjectName(
+        QStringLiteral("bottomToolDrawerButtonLayout"));
+    buttonLayout->setContentsMargins(6, 0, 6, 0);
+    buttonLayout->setSpacing(0);
+    buttonLayout->addStretch(1);
+    rootLayout->addWidget(bottomButtonBar);
+
+    bottomDrawerDock->setWidget(bottomDrawerRoot);
+    window->addDockWidget(Qt::BottomDockWidgetArea, bottomDrawerDock);
+
+    heightAnimation = new QPropertyAnimation(
+        bottomContentStack, "maximumHeight", this);
+    heightAnimation->setDuration(kAnimationDurationMs);
+    heightAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(heightAnimation,
+            &QPropertyAnimation::valueChanged,
             this,
-            [this, dock](bool) {
-                if (applying
-                    || focusMode
-                    || navigationDock != dock
-                    || dock->property(
-                           "panelLayoutVisibilityTransient")
-                           .toBool()) {
-                    return;
-                }
-                notifyStateChanged();
+            [this](const QVariant& value) {
+                applyContentHeight(value.toInt());
             });
+    connect(heightAnimation,
+            &QPropertyAnimation::finished,
+            this,
+            [this]() {
+                if (!focusMode && collapsed) {
+                    if (bottomContentStack)
+                        bottomContentStack->hide();
+                    if (bottomResizeHandle)
+                        bottomResizeHandle->hide();
+                    applyContentHeight(0);
+                }
+            });
+
+    auto* escapeShortcut = new QShortcut(
+        QKeySequence(Qt::Key_Escape), bottomContentStack);
+    escapeShortcut->setObjectName(
+        QStringLiteral("bottomToolDrawerEscapeShortcut"));
+    escapeShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escapeShortcut,
+            &QShortcut::activated,
+            this,
+            [this]() {
+                if (focusIsInsideDrawer())
+                    setBottomCollapsed(true);
+            });
+
+    updateDrawerStyle();
+    collapsed = false;
+    applyContentHeight(kDefaultContentHeight);
+}
+
+void PanelLayoutController::setNavigationDock(QDockWidget* dock)
+{
+    navigationDock = dock;
 }
 
 bool PanelLayoutController::registerSidePanel(
@@ -69,27 +294,13 @@ bool PanelLayoutController::registerSidePanel(
     QDockWidget* dock)
 {
     const QString id = panelId.trimmed();
-    if (id.isEmpty() || !dock || dock == navigationDock
-        || isBottomPanel(dock)) {
+    if (id.isEmpty() || !dock)
         return false;
-    }
     for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
         if (entry.id == id || entry.dock == dock)
             return false;
     }
-
-    SidePanelEntry entry;
-    entry.id = id;
-    entry.dock = dock;
-    sidePanels.append(entry);
-    dock->setProperty("sidePanelId", id);
-    connect(dock->toggleViewAction(),
-            &QAction::toggled,
-            this,
-            [this](bool) {
-                if (!applying && !focusMode)
-                    notifyStateChanged();
-            });
+    sidePanels.append({id, dock});
     return true;
 }
 
@@ -98,100 +309,172 @@ bool PanelLayoutController::registerBottomPanel(
     QDockWidget* dock)
 {
     const QString id = panelId.trimmed();
-    if (id.isEmpty() || !dock || entryForId(id) || isBottomPanel(dock))
+    if (id.isEmpty() || !dock || !bottomContentStack
+        || entryForId(id) || isBottomPanel(dock)) {
         return false;
+    }
+    QWidget* content = dock->widget();
+    if (!content)
+        return false;
+
+    if (window)
+        window->removeDockWidget(dock);
+    dock->hide();
+    dock->setWidget(nullptr);
+    content->setParent(bottomContentStack);
+    content->setSizePolicy(
+        QSizePolicy::Expanding, QSizePolicy::Expanding);
+    content->setProperty("bottomDrawerPanelId", id);
+    bottomContentStack->addWidget(content);
 
     PanelEntry entry;
     entry.id = id;
+    entry.label = panelLabel(id);
     entry.initialTitle = dock->windowTitle();
     entry.dock = dock;
-    entry.content = dock->widget();
-    entry.dockFeatures = dock->features();
+    entry.content = content;
     panels.append(entry);
-    dock->installEventFilter(this);
-    prepareContentForManualResize(panels.last());
     defaultOrder.append(id);
-    order.append(id);
-    panelOpen.insert(id, !dock->isHidden());
-    dock->setProperty("bottomPanelId", id);
+    buildButton(panels.last());
+    setPanelBadge(
+        id,
+        dock->property("bottomBadgeText").toString(),
+        dock->property("bottomBadgeTone").toString());
 
-    auto* titleBar = new QWidget(dock);
-    titleBar->setObjectName(
-        QStringLiteral("bottomPanelTitleBar.%1").arg(id));
-    titleBar->setFixedHeight(0);
-    titleBar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    dock->setTitleBarWidget(titleBar);
-
-    connect(dock->toggleViewAction(),
-            &QAction::toggled,
+    if (activePanel.isEmpty()) {
+        activePanel = id;
+        lastPanel = id;
+        bottomContentStack->setCurrentWidget(content);
+    }
+    dock->setProperty("bottomDrawerPanelId", id);
+    connect(dock,
+            &QDockWidget::windowTitleChanged,
             this,
-            [this, id](bool checked) {
-                PanelEntry* entry = entryForId(id);
-                if (applying
-                    || focusMode
-                    || (entry
-                        && entry->dock
-                        && entry->dock->property(
-                               "panelLayoutVisibilityTransient")
-                               .toBool())) {
-                    return;
+            [this, id](const QString&) {
+                if (PanelEntry* changed = entryForId(id)) {
+                    if (changed->dock) {
+                        setPanelBadge(
+                            id,
+                            changed->dock->property(
+                                "bottomBadgeText").toString(),
+                            changed->dock->property(
+                                "bottomBadgeTone").toString());
+                    }
                 }
-                panelOpen.insert(id, checked);
-                if (checked)
-                    activePanel = id;
-                notifyStateChanged();
+                updateButtons();
             });
     return true;
 }
 
+bool PanelLayoutController::registerBottomPanelAlias(
+    const QString& alias,
+    const QString& panelId)
+{
+    const QString cleanAlias = alias.trimmed();
+    const QString canonical = canonicalPanelId(panelId);
+    if (cleanAlias.isEmpty() || cleanAlias == canonical
+        || !entryForId(canonical)) {
+        return false;
+    }
+    aliases.insert(cleanAlias, canonical);
+    return true;
+}
+
+void PanelLayoutController::buildButton(PanelEntry& entry)
+{
+    if (!bottomButtonBar)
+        return;
+    auto* layout = qobject_cast<QHBoxLayout*>(bottomButtonBar->layout());
+    if (!layout)
+        return;
+    auto* button = new DrawerToolButton(bottomButtonBar);
+    button->setObjectName(
+        QStringLiteral("bottomPanelButton_%1").arg(entry.id));
+    button->setText(entry.label);
+    button->setAccessibleName(entry.label);
+    button->setAccessibleDescription(
+        QStringLiteral("Open or close the %1 bottom panel. Ctrl+J toggles the last panel.")
+            .arg(entry.label));
+    QString tooltip = QStringLiteral("%1\nToggle last panel: Ctrl+J")
+        .arg(entry.label);
+    if (entry.id == QStringLiteral("scopedSearch"))
+        tooltip.prepend(QStringLiteral("Search workspace: Ctrl+Shift+F\n"));
+    button->setToolTip(tooltip);
+    button->setCheckable(true);
+    button->setAutoRaise(true);
+    button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    button->setIcon(
+        window->style()->standardIcon(panelIcon(entry.id)));
+    button->setIconSize(QSize(15, 15));
+    button->setFocusPolicy(Qt::StrongFocus);
+    entry.button = button;
+    layout->insertWidget(qMax(0, layout->count() - 1), button);
+    connect(button,
+            &QToolButton::clicked,
+            this,
+            [this, id = entry.id]() {
+                PanelEntry* selected = entryForId(id);
+                if (!selected)
+                    return;
+                if (!focusIsInsideDrawer())
+                    focusBeforeDrawer = QApplication::focusWidget();
+                if (activePanel == id && !collapsed && !focusMode) {
+                    setBottomCollapsed(true);
+                } else {
+                    activatePanel(*selected, false);
+                }
+            });
+}
+
 void PanelLayoutController::finalize()
 {
-    if (finalized || !window || panels.isEmpty())
+    if (finalized)
         return;
     finalized = true;
-    if (qApp)
-        qApp->installEventFilter(this);
-    applyOrder();
-    bindManagedTabBars();
-    initialBottomGeometryPending = true;
-    scheduleBottomGeometrySync();
+    if (panels.isEmpty()) {
+        if (bottomDrawerDock)
+            bottomDrawerDock->hide();
+        return;
+    }
+    if (!entryForId(activePanel))
+        activePanel = panels.constFirst().id;
+    if (!entryForId(lastPanel))
+        lastPanel = activePanel;
+    PanelEntry* entry = entryForId(activePanel);
+    if (entry && entry->content) {
+        bottomContentStack->setCurrentWidget(entry->content);
+        restorePanelViewState(*entry);
+    }
+    applyDrawerState(false);
+    updateButtons();
 }
 
 PanelLayoutState PanelLayoutController::layoutState() const
 {
-    PanelLayoutState result;
-    result.bottomPanelOrder = order;
+    PanelLayoutState state;
+    state.version = PanelLayoutState::kVersion;
+    state.bottomPanelOrder = defaultOrder;
+    state.activeBottomPanel = activePanel;
+    state.lastBottomPanel = lastPanel;
+    state.bottomCollapsed = collapsed;
+    state.navigationVisible = focusMode
+        ? navigationOpenBeforeFocus
+        : navigationDock
+            ? navigationDock->isVisible()
+            : true;
     for (const PanelEntry& entry : panels) {
-        if (!panelOpen.value(entry.id, false))
-            result.closedBottomPanels.append(entry.id);
-        if (pinnedPanels.contains(entry.id))
-            result.pinnedBottomPanels.append(entry.id);
+        state.bottomPanelHeights.insert(entry.id, entry.height);
+        state.bottomPanelViewStates.insert(
+            entry.id,
+            entry.content
+                ? captureWidgetState(entry.content)
+                : entry.viewState);
     }
-    const QString currentActive =
-        focusMode ? activePanel : activeBottomPanelId();
-    result.activeBottomPanel =
-        currentActive.isEmpty() ? activePanel : currentActive;
-    result.expandedBottomHeight =
-        currentExpandedBottomHeight();
-    result.bottomCollapsed = collapsed;
-    if (focusMode) {
-        result.navigationVisible =
-            navigationOpenBeforeFocus;
-    } else if (navigationDock
-               && navigationDock->property(
-                      "panelLayoutVisibilityTransient")
-                      .toBool()) {
-        result.navigationVisible =
-            navigationDock->property(
-                "panelLayoutVisibilityBeforeTransient")
-                .toBool();
-    } else {
-        result.navigationVisible =
-            navigationDock
-            && navigationDock->toggleViewAction()->isChecked();
-    }
-    result.valid = true;
-    return result;
+    const PanelEntry* active = entryForId(activePanel);
+    state.expandedBottomHeight = active
+        ? active->height : kDefaultContentHeight;
+    state.valid = finalized;
+    return state;
 }
 
 void PanelLayoutController::restoreLayoutState(
@@ -199,218 +482,222 @@ void PanelLayoutController::restoreLayoutState(
 {
     if (!state.valid || panels.isEmpty())
         return;
-
-    if (focusMode)
-        setFocusModeActive(false);
     applying = true;
-
-    QStringList restoredOrder;
-    for (const QString& id : state.bottomPanelOrder) {
-        if (entryForId(id) && !restoredOrder.contains(id))
-            restoredOrder.append(id);
+    if (window && bottomDrawerDock) {
+        for (const PanelEntry& entry : std::as_const(panels)) {
+            if (entry.dock) {
+                window->removeDockWidget(entry.dock);
+                entry.dock->hide();
+            }
+        }
+        window->addDockWidget(
+            Qt::BottomDockWidgetArea, bottomDrawerDock);
     }
-    for (const QString& id : std::as_const(defaultOrder)) {
-        if (!restoredOrder.contains(id))
-            restoredOrder.append(id);
+
+    const int legacyHeight = qMax(
+        kMinimumContentHeight, state.expandedBottomHeight);
+    for (PanelEntry& entry : panels) {
+        int height = state.bottomPanelHeights.value(
+            entry.id, legacyHeight);
+        if (entry.id == QStringLiteral("connections")) {
+            if (state.bottomPanelHeights.contains(
+                    QStringLiteral("instancePairConnection"))) {
+                height = state.bottomPanelHeights.value(
+                    QStringLiteral("instancePairConnection"));
+            } else if (state.bottomPanelHeights.contains(
+                           QStringLiteral("multiSignalPropagation"))) {
+                height = state.bottomPanelHeights.value(
+                    QStringLiteral("multiSignalPropagation"));
+            }
+        }
+        entry.height = qMax(kMinimumContentHeight, height);
+        entry.viewState = state.bottomPanelViewStates.value(entry.id);
+        if (entry.id == QStringLiteral("connections")
+            && entry.viewState.isEmpty()) {
+            entry.viewState = state.bottomPanelViewStates.value(
+                QStringLiteral("instancePairConnection"));
+            if (entry.viewState.isEmpty()) {
+                entry.viewState = state.bottomPanelViewStates.value(
+                    QStringLiteral("multiSignalPropagation"));
+            }
+        }
     }
-    order = restoredOrder;
 
-    pinnedPanels.clear();
-    for (const QString& id : state.pinnedBottomPanels) {
-        if (entryForId(id))
-            pinnedPanels.insert(id);
-    }
-    for (PanelEntry& entry : panels)
-        applyPinnedFeatures(entry);
-
-    QSet<QString> closed;
-    for (const QString& id : state.closedBottomPanels)
-        closed.insert(id);
-    for (const PanelEntry& entry : panels)
-        panelOpen.insert(entry.id, !closed.contains(entry.id));
-
-    activePanel = entryForId(state.activeBottomPanel)
-        ? state.activeBottomPanel
-        : QString();
-    expandedHeight = qMax(kMinimumStoredExpandedHeight,
-                          state.expandedBottomHeight);
-    applyOrder();
-
+    QString restoredActive = canonicalPanelId(
+        state.activeBottomPanel);
+    if (!entryForId(restoredActive))
+        restoredActive = panels.constFirst().id;
+    QString restoredLast = canonicalPanelId(state.lastBottomPanel);
+    if (!entryForId(restoredLast))
+        restoredLast = restoredActive;
+    activePanel = restoredActive;
+    lastPanel = restoredLast;
+    collapsed = state.bottomCollapsed;
     if (navigationDock)
         navigationDock->setVisible(state.navigationVisible);
-    for (const PanelEntry& entry : panels) {
-        if (entry.dock)
-            entry.dock->setVisible(panelOpen.value(entry.id, false));
+    if (PanelEntry* entry = entryForId(activePanel)) {
+        if (entry->content)
+            bottomContentStack->setCurrentWidget(entry->content);
+        restorePanelViewState(*entry);
     }
-    if (PanelEntry* active = entryForId(activePanel)) {
-        if (active->dock && panelOpen.value(activePanel, false))
-            active->dock->raise();
-    }
-
-    const bool restoreCollapsed = state.bottomCollapsed;
-    collapsed = restoreCollapsed;
-    applyBottomPanelGeometry(restoreCollapsed);
     applying = false;
-    bindManagedTabBars();
+    applyDrawerState(false);
+    updateButtons();
+    notifyStateChanged();
 }
 
 void PanelLayoutController::resetLayout()
 {
-    if (focusMode)
-        setFocusModeActive(false);
     applying = true;
-    order = defaultOrder;
-    pinnedPanels.clear();
-    activePanel = order.isEmpty() ? QString() : order.first();
-    expandedHeight = 240;
+    for (PanelEntry& entry : panels) {
+        entry.height = kDefaultContentHeight;
+        entry.viewState.clear();
+    }
+    activePanel = panels.isEmpty()
+        ? QString() : panels.constFirst().id;
+    lastPanel = activePanel;
     collapsed = false;
-    applyBottomPanelGeometry(false);
     if (navigationDock)
         navigationDock->show();
-    for (PanelEntry& entry : panels) {
-        panelOpen.insert(entry.id, true);
-        applyPinnedFeatures(entry);
-    }
-    applyOrder();
-    for (PanelEntry& entry : panels) {
+    for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
         if (entry.dock)
-            entry.dock->show();
+            entry.dock->hide();
     }
-    if (PanelEntry* active = entryForId(activePanel)) {
-        if (active->dock)
-            active->dock->raise();
+    if (PanelEntry* entry = entryForId(activePanel)) {
+        if (entry->content)
+            bottomContentStack->setCurrentWidget(entry->content);
     }
     applying = false;
-    bindManagedTabBars();
+    applyDrawerState(false);
+    updateButtons();
     notifyStateChanged();
 }
 
 QStringList PanelLayoutController::bottomPanelIds() const
 {
-    return order;
+    return defaultOrder;
 }
 
 QString PanelLayoutController::activeBottomPanelId() const
 {
-    for (const QPointer<QTabBar>& bar : managedTabBars) {
-        if (!bar)
-            continue;
-        const QString id = idForTab(bar, bar->currentIndex());
-        if (!id.isEmpty())
-            return id;
-    }
     return activePanel;
+}
+
+QString PanelLayoutController::lastBottomPanelId() const
+{
+    return lastPanel;
 }
 
 bool PanelLayoutController::isBottomPanel(
     const QDockWidget* dock) const
 {
-    return !panelIdForDock(dock).isEmpty();
+    if (!dock)
+        return false;
+    return std::any_of(
+        panels.cbegin(), panels.cend(),
+        [dock](const PanelEntry& entry) {
+            return entry.dock == dock;
+        });
 }
 
 QString PanelLayoutController::panelIdForDock(
     const QDockWidget* dock) const
 {
-    if (!dock)
-        return QString();
     for (const PanelEntry& entry : panels) {
         if (entry.dock == dock)
             return entry.id;
     }
-    return QString();
+    return {};
 }
 
 bool PanelLayoutController::isPanelOpen(
     const QString& panelId) const
 {
-    return entryForId(panelId)
-        && panelOpen.value(panelId, false);
+    const QString id = canonicalPanelId(panelId);
+    return !focusMode && !collapsed && activePanel == id
+        && entryForId(id);
 }
 
-bool PanelLayoutController::isPanelPinned(
-    const QString& panelId) const
+bool PanelLayoutController::isPanelPinned(const QString&) const
 {
-    return entryForId(panelId)
-        && pinnedPanels.contains(panelId);
+    return false;
 }
 
 bool PanelLayoutController::closePanel(const QString& panelId)
 {
-    PanelEntry* entry = entryForId(panelId);
-    if (!entry || !entry->dock || pinnedPanels.contains(panelId))
+    const QString id = canonicalPanelId(panelId);
+    if (!entryForId(id))
         return false;
-    if (focusMode)
-        setFocusModeActive(false);
-    applying = true;
-    entry->dock->hide();
-    panelOpen.insert(panelId, false);
-    if (activePanel == panelId) {
-        activePanel.clear();
-        for (const QString& candidate : std::as_const(order)) {
-            if (panelOpen.value(candidate, false)) {
-                activePanel = candidate;
-                break;
-            }
-        }
-    }
-    applying = false;
-    notifyStateChanged();
+    if (activePanel == id && !collapsed)
+        setBottomCollapsed(true);
     return true;
 }
 
 bool PanelLayoutController::restorePanel(const QString& panelId)
 {
     PanelEntry* entry = entryForId(panelId);
-    if (!entry || !entry->dock)
+    if (!entry)
         return false;
-    if (focusMode)
-        setFocusModeActive(false);
-    applying = true;
-    panelOpen.insert(panelId, true);
-    activePanel = panelId;
-    entry->dock->show();
-    entry->dock->raise();
-    applying = false;
-    bindManagedTabBars();
-    notifyStateChanged();
+    activatePanel(*entry, false);
     return true;
 }
 
 bool PanelLayoutController::setPanelPinned(
     const QString& panelId,
-    bool pinned)
+    bool)
 {
-    PanelEntry* entry = entryForId(panelId);
-    if (!entry)
-        return false;
-    if (pinned == pinnedPanels.contains(panelId))
-        return true;
-    if (pinned)
-        pinnedPanels.insert(panelId);
-    else
-        pinnedPanels.remove(panelId);
-    applyPinnedFeatures(*entry);
-    updateTabCloseButtons();
-    notifyStateChanged();
-    return true;
+    return entryForId(panelId) != nullptr;
 }
 
 bool PanelLayoutController::movePanel(
     const QString& panelId,
     int destinationIndex)
 {
-    const int sourceIndex = order.indexOf(panelId);
-    if (sourceIndex < 0 || destinationIndex < 0
-        || destinationIndex >= order.size()) {
+    const int current = defaultOrder.indexOf(canonicalPanelId(panelId));
+    return current >= 0 && current == destinationIndex;
+}
+
+QList<BottomPanelContextAction>
+PanelLayoutController::bottomPanelContextActions(
+    const QString& panelId) const
+{
+    if (!entryForId(panelId))
+        return {};
+    return {
+        {QStringLiteral("view.bottomPanel.collapsed"),
+         collapsed ? QStringLiteral("Restore Panel")
+                   : QStringLiteral("Close Panel"),
+         QStringLiteral("ui.bottomPanel.collapsed.toggle"),
+         true}
+    };
+}
+
+void PanelLayoutController::
+setRegisteredPanelActionRequestHandler(
+    RegisteredPanelActionRequestHandler handler)
+{
+    registeredPanelActionRequestHandler = std::move(handler);
+}
+
+bool PanelLayoutController::requestBottomPanelAction(
+    const QString& actionId,
+    const QString& panelId,
+    QString* failureReason)
+{
+    if (!entryForId(panelId)) {
+        if (failureReason)
+            *failureReason = QStringLiteral("Unknown bottom panel.");
         return false;
     }
-    if (sourceIndex == destinationIndex)
-        return true;
-    order.move(sourceIndex, destinationIndex);
-    applyOrder();
-    bindManagedTabBars();
-    notifyStateChanged();
-    return true;
+    if (!registeredPanelActionRequestHandler) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "The bottom-panel action registry is unavailable.");
+        }
+        return false;
+    }
+    return registeredPanelActionRequestHandler(
+        actionId, canonicalPanelId(panelId), failureReason);
 }
 
 bool PanelLayoutController::isBottomCollapsed() const
@@ -420,16 +707,108 @@ bool PanelLayoutController::isBottomCollapsed() const
 
 void PanelLayoutController::setBottomCollapsed(bool shouldCollapse)
 {
-    if (collapsed == shouldCollapse)
+    if (panels.isEmpty() || collapsed == shouldCollapse)
         return;
-    if (focusMode)
-        setFocusModeActive(false);
-    setBottomCollapsedState(shouldCollapse, true, true);
+    if (PanelEntry* entry = entryForId(activePanel))
+        capturePanelViewState(*entry);
+    collapsed = shouldCollapse;
+    if (!collapsed && activePanel.isEmpty())
+        activePanel = !lastPanel.isEmpty()
+            ? lastPanel : panels.constFirst().id;
+    if (!collapsed)
+        lastPanel = activePanel;
+    applyDrawerState(true);
+    updateButtons();
+    if (collapsed)
+        restoreEditorFocus();
+    notifyStateChanged();
 }
 
 void PanelLayoutController::toggleBottomCollapsed()
 {
     setBottomCollapsed(!collapsed);
+}
+
+int PanelLayoutController::panelHeight(const QString& panelId) const
+{
+    const PanelEntry* entry = entryForId(panelId);
+    return entry ? boundedContentHeight(entry->height) : 0;
+}
+
+bool PanelLayoutController::setPanelHeight(
+    const QString& panelId,
+    int height)
+{
+    PanelEntry* entry = entryForId(panelId);
+    if (!entry)
+        return false;
+    const int bounded = boundedContentHeight(height);
+    if (entry->height == bounded
+        && (activePanel != entry->id || collapsed)) {
+        return true;
+    }
+    entry->height = bounded;
+    if (activePanel == entry->id && !collapsed && !focusMode)
+        applyContentHeight(bounded);
+    notifyStateChanged();
+    return true;
+}
+
+bool PanelLayoutController::resetPanelHeight(
+    const QString& panelId)
+{
+    return setPanelHeight(panelId, kDefaultContentHeight);
+}
+
+int PanelLayoutController::maximumContentHeight() const
+{
+    const int available = window
+        ? window->contentsRect().height() : 900;
+    return qMax(kMinimumContentHeight,
+                available * kMaximumHeightPercent / 100);
+}
+
+void PanelLayoutController::setPanelBadge(
+    const QString& panelId,
+    const QString& text,
+    const QString& tone)
+{
+    PanelEntry* entry = entryForId(panelId);
+    if (!entry)
+        return;
+    const QString cleanText = text.trimmed();
+    const QString cleanTone = tone.trimmed().toLower();
+    if (entry->badgeText == cleanText
+        && entry->badgeTone == cleanTone) {
+        return;
+    }
+    entry->badgeText = cleanText;
+    entry->badgeTone = cleanTone;
+    if (entry->button) {
+        static_cast<DrawerToolButton*>(entry->button.data())
+            ->setBadge(cleanText, cleanTone);
+        entry->button->setAccessibleDescription(
+            cleanText.isEmpty()
+                ? QStringLiteral(
+                      "Open or close the %1 bottom panel. Ctrl+J toggles the last panel.")
+                      .arg(entry->label)
+                : QStringLiteral("%1 status: %2")
+                      .arg(entry->label, cleanText));
+    }
+}
+
+QString PanelLayoutController::panelBadgeText(
+    const QString& panelId) const
+{
+    const PanelEntry* entry = entryForId(panelId);
+    return entry ? entry->badgeText : QString();
+}
+
+QString PanelLayoutController::panelBadgeTone(
+    const QString& panelId) const
+{
+    const PanelEntry* entry = entryForId(panelId);
+    return entry ? entry->badgeTone : QString();
 }
 
 bool PanelLayoutController::isFocusModeActive() const
@@ -441,70 +820,33 @@ void PanelLayoutController::setFocusModeActive(bool active)
 {
     if (focusMode == active)
         return;
-
-    applying = true;
     if (active) {
-        const QString currentActive =
-            activeBottomPanelId();
-        if (!currentActive.isEmpty())
-            activePanel = currentActive;
-        navigationOpenBeforeFocus =
-            navigationDock
-            && navigationDock->toggleViewAction()->isChecked();
-        panelOpenBeforeFocus.clear();
-        for (const PanelEntry& entry : panels) {
-            const bool open =
-                entry.dock
-                && entry.dock->toggleViewAction()->isChecked();
-            panelOpenBeforeFocus.insert(entry.id, open);
-            panelOpen.insert(entry.id, open);
-        }
+        navigationOpenBeforeFocus = navigationDock
+            ? navigationDock->isVisible() : true;
         sidePanelOpenBeforeFocus.clear();
         for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
-            const bool open = entry.dock
-                && entry.dock->toggleViewAction()->isChecked();
-            sidePanelOpenBeforeFocus.insert(entry.id, open);
+            sidePanelOpenBeforeFocus.insert(
+                entry.id, entry.dock && entry.dock->isVisible());
+            if (entry.dock)
+                entry.dock->hide();
         }
-        focusMode = true;
         if (navigationDock)
             navigationDock->hide();
-        for (PanelEntry& entry : panels) {
-            if (entry.dock)
-                entry.dock->hide();
-        }
-        for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
-            if (entry.dock)
-                entry.dock->hide();
-        }
-    } else {
+    }
+    focusMode = active;
+    if (!active) {
         if (navigationDock)
             navigationDock->setVisible(navigationOpenBeforeFocus);
-        for (PanelEntry& entry : panels) {
-            const bool wasOpen =
-                panelOpenBeforeFocus.value(
-                    entry.id,
-                    panelOpen.value(entry.id, false));
-            panelOpen.insert(entry.id, wasOpen);
-            if (entry.dock)
-                entry.dock->setVisible(wasOpen);
-        }
         for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
             if (entry.dock) {
                 entry.dock->setVisible(
                     sidePanelOpenBeforeFocus.value(entry.id, false));
             }
         }
-        if (PanelEntry* activeEntry = entryForId(activePanel)) {
-            if (activeEntry->dock
-                && panelOpen.value(activePanel, false)) {
-                activeEntry->dock->raise();
-            }
-        }
-        panelOpenBeforeFocus.clear();
-        sidePanelOpenBeforeFocus.clear();
-        focusMode = false;
     }
-    applying = false;
+    applyDrawerState(false);
+    updateButtons();
+    notifyStateChanged();
 }
 
 void PanelLayoutController::toggleFocusMode()
@@ -514,67 +856,7 @@ void PanelLayoutController::toggleFocusMode()
 
 void PanelLayoutController::bindManagedTabBars()
 {
-    if (!window)
-        return;
-
-    const QList<QTabBar*> bars = window->findChildren<QTabBar*>();
-    for (QTabBar* bar : bars) {
-        if (!bar)
-            continue;
-        int managedCount = 0;
-        for (int index = 0; index < bar->count(); ++index) {
-            if (!idForTab(bar, index).isEmpty())
-                ++managedCount;
-        }
-        if (managedCount < 2)
-            continue;
-
-        if (!managedTabBars.contains(bar))
-            managedTabBars.append(bar);
-        bar->installEventFilter(this);
-        bar->setObjectName(QStringLiteral("bottomPanelTabBar"));
-        bar->setMovable(true);
-        bar->setTabsClosable(true);
-        bar->setContextMenuPolicy(Qt::CustomContextMenu);
-        if (!bar->property("bottomPanelConnectionsBound").toBool()) {
-            bar->setProperty("bottomPanelConnectionsBound", true);
-            connect(bar,
-                    &QTabBar::tabMoved,
-                    this,
-                    [this, bar](int, int) {
-                        if (applying)
-                            return;
-                        synchronizeOrderFromTabBar(bar);
-                    });
-            connect(bar,
-                    &QTabBar::currentChanged,
-                    this,
-                    [this, bar](int index) {
-                        if (applying)
-                            return;
-                        const QString id = idForTab(bar, index);
-                        if (id.isEmpty() || activePanel == id)
-                            return;
-                        activePanel = id;
-                        scheduleBottomGeometrySync();
-                        notifyStateChanged();
-                    });
-            connect(bar,
-                    &QTabBar::tabCloseRequested,
-                    this,
-                    [this, bar](int index) {
-                        closePanel(idForTab(bar, index));
-                    });
-            connect(bar,
-                    &QTabBar::customContextMenuRequested,
-                    this,
-                    [this, bar](const QPoint& position) {
-                        showTabContextMenu(bar, position);
-                    });
-        }
-        synchronizeOrderFromTabBar(bar);
-    }
-    updateTabCloseButtons();
+    // Kept as a compatibility no-op for pre-drawer session restore code.
 }
 
 void PanelLayoutController::setStateChangedHandler(
@@ -583,52 +865,123 @@ void PanelLayoutController::setStateChangedHandler(
     stateChangedHandler = std::move(handler);
 }
 
-bool PanelLayoutController::eventFilter(QObject* watched,
-                                        QEvent* event)
+void PanelLayoutController::setAnimationsEnabled(bool enabled)
+{
+    animationsEnabledValue = enabled;
+    if (!enabled && heightAnimation
+        && heightAnimation->state() == QAbstractAnimation::Running) {
+        heightAnimation->stop();
+        applyDrawerState(false);
+    }
+}
+
+bool PanelLayoutController::animationsEnabled() const
+{
+    return animationsEnabledValue;
+}
+
+QDockWidget* PanelLayoutController::drawerDock() const
+{
+    return bottomDrawerDock;
+}
+
+QWidget* PanelLayoutController::drawerContent() const
+{
+    return bottomContentStack;
+}
+
+QWidget* PanelLayoutController::resizeHandle() const
+{
+    return bottomResizeHandle;
+}
+
+QWidget* PanelLayoutController::buttonBar() const
+{
+    return bottomButtonBar;
+}
+
+QToolButton* PanelLayoutController::buttonForPanel(
+    const QString& panelId) const
+{
+    const PanelEntry* entry = entryForId(panelId);
+    return entry ? entry->button : nullptr;
+}
+
+bool PanelLayoutController::eventFilter(
+    QObject* watched,
+    QEvent* event)
 {
     if (!event)
         return QObject::eventFilter(watched, event);
 
-    const bool geometryEvent =
-        event->type() == QEvent::Resize
-        || event->type() == QEvent::LayoutRequest
-        || event->type() == QEvent::Show;
-    if (geometryEvent) {
-        bool watchesBottomGeometry =
-            window && watched == window->centralWidget();
-        if (!watchesBottomGeometry) {
-            for (const QPointer<QTabBar>& bar : managedTabBars) {
-                if (bar && watched == bar) {
-                    watchesBottomGeometry = true;
-                    break;
-                }
+    if (watched == bottomResizeHandle) {
+        if (event->type() == QEvent::MouseButtonDblClick) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton) {
+                resetPanelHeight(activePanel);
+                return true;
             }
-        }
-        if (!watchesBottomGeometry) {
-            for (const PanelEntry& entry : std::as_const(panels)) {
-                if (watched == entry.dock
-                    || watched == entry.content) {
-                    watchesBottomGeometry = true;
-                    break;
-                }
+        } else if (event->type() == QEvent::MouseButtonPress) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            if (mouseEvent->button() == Qt::LeftButton
+                && !collapsed && !focusMode) {
+                dragging = true;
+                dragStartGlobalY =
+                    qRound(mouseEvent->globalPosition().y());
+                dragStartHeight = panelHeight(activePanel);
+                return true;
             }
+        } else if (event->type() == QEvent::MouseMove && dragging) {
+            auto* mouseEvent = static_cast<QMouseEvent*>(event);
+            const int globalY =
+                qRound(mouseEvent->globalPosition().y());
+            setPanelHeight(
+                activePanel,
+                dragStartHeight + dragStartGlobalY - globalY);
+            return true;
+        } else if (event->type() == QEvent::MouseButtonRelease
+                   && dragging) {
+            dragging = false;
+            return true;
         }
-        if (watchesBottomGeometry)
-            scheduleBottomGeometrySync();
     }
-    if (watched == window && event->type() == QEvent::Show)
-        scheduleBottomGeometrySync();
 
-    if (event->type() == QEvent::MouseButtonRelease) {
-        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
-        QWidget* widget = qobject_cast<QWidget*>(watched);
-        if (mouseEvent->button() == Qt::LeftButton
-            && window
-            && widget
-            && (widget == window
-                || window->isAncestorOf(widget))) {
-            scheduleBottomGeometrySync();
+    if (event->type() == QEvent::DynamicPropertyChange) {
+        auto* propertyEvent =
+            static_cast<QDynamicPropertyChangeEvent*>(event);
+        if (propertyEvent->propertyName() == "bottomBadgeText"
+            || propertyEvent->propertyName() == "bottomBadgeTone") {
+            auto* dock = qobject_cast<QDockWidget*>(watched);
+            for (PanelEntry& entry : panels) {
+                if (entry.dock != dock)
+                    continue;
+                setPanelBadge(
+                    entry.id,
+                    dock->property("bottomBadgeText").toString(),
+                    dock->property("bottomBadgeTone").toString());
+                break;
+            }
         }
+    }
+
+    if (event->type() == QEvent::FocusIn) {
+        QWidget* widget = qobject_cast<QWidget*>(watched);
+        if (widget && bottomDrawerRoot
+            && widget != bottomDrawerRoot
+            && !bottomDrawerRoot->isAncestorOf(widget)) {
+            focusBeforeDrawer = widget;
+        }
+    }
+    if (watched == window && event->type() == QEvent::Resize
+        && !collapsed && !focusMode && !applyingDrawerGeometry) {
+        if (PanelEntry* entry = entryForId(activePanel))
+            applyContentHeight(boundedContentHeight(entry->height));
+    }
+    if ((watched == window || watched == bottomDrawerRoot)
+        && (event->type() == QEvent::PaletteChange
+            || event->type() == QEvent::StyleChange)
+        && !applyingDrawerStyle) {
+        updateDrawerStyle();
     }
     return QObject::eventFilter(watched, event);
 }
@@ -636,8 +989,9 @@ bool PanelLayoutController::eventFilter(QObject* watched,
 PanelLayoutController::PanelEntry*
 PanelLayoutController::entryForId(const QString& panelId)
 {
+    const QString id = canonicalPanelId(panelId);
     for (PanelEntry& entry : panels) {
-        if (entry.id == panelId)
+        if (entry.id == id)
             return &entry;
     }
     return nullptr;
@@ -646,604 +1000,333 @@ PanelLayoutController::entryForId(const QString& panelId)
 const PanelLayoutController::PanelEntry*
 PanelLayoutController::entryForId(const QString& panelId) const
 {
+    const QString id = canonicalPanelId(panelId);
     for (const PanelEntry& entry : panels) {
-        if (entry.id == panelId)
+        if (entry.id == id)
             return &entry;
     }
     return nullptr;
 }
 
-PanelLayoutController::PanelEntry*
-PanelLayoutController::activeBottomEntry()
+QString PanelLayoutController::canonicalPanelId(
+    const QString& panelId) const
 {
-    return const_cast<PanelEntry*>(
-        std::as_const(*this).activeBottomEntry());
+    const QString id = panelId.trimmed();
+    return aliases.value(id, id);
 }
 
-const PanelLayoutController::PanelEntry*
-PanelLayoutController::activeBottomEntry() const
+int PanelLayoutController::boundedContentHeight(int height) const
 {
-    const QString currentId = activeBottomPanelId();
-    const PanelEntry* current = entryForId(currentId);
-    if (current
-        && current->dock
-        && panelOpen.value(current->id, false)) {
-        return current;
-    }
-    current = entryForId(activePanel);
-    if (current
-        && current->dock
-        && panelOpen.value(current->id, false)) {
-        return current;
-    }
-    for (const QString& id : order) {
-        current = entryForId(id);
-        if (current
-            && current->dock
-            && panelOpen.value(id, false)
-            && current->dock->toggleViewAction()->isChecked()) {
-            return current;
-        }
-    }
-    return nullptr;
+    return qBound(kMinimumContentHeight,
+                  height,
+                  maximumContentHeight());
 }
 
-QTabBar* PanelLayoutController::managedBottomTabBar() const
+int PanelLayoutController::visibleContentHeight() const
 {
-    const auto isManagedBar = [this](QTabBar* bar) {
-        if (!bar)
-            return false;
-        int managedCount = 0;
-        for (int index = 0; index < bar->count(); ++index) {
-            if (!idForTab(bar, index).isEmpty())
-                ++managedCount;
-        }
-        return managedCount >= 2;
-    };
-    for (const QPointer<QTabBar>& bar : managedTabBars) {
-        if (isManagedBar(bar))
-            return bar;
-    }
-    if (!window)
-        return nullptr;
-    const QList<QTabBar*> bars = window->findChildren<QTabBar*>();
-    for (QTabBar* bar : bars) {
-        if (isManagedBar(bar))
-            return bar;
-    }
-    return nullptr;
+    if (!bottomContentStack || !bottomContentStack->isVisible())
+        return 0;
+    return qMax(0, bottomContentStack->height());
 }
 
-int PanelLayoutController::visibleBottomContentHeight() const
+void PanelLayoutController::activatePanel(
+    PanelEntry& entry,
+    bool moveFocus)
 {
-    if (!window || !window->centralWidget())
-        return -1;
-    QTabBar* bar = managedBottomTabBar();
-    if (!bar || !bar->isVisible())
-        return -1;
-
-    QWidget* central = window->centralWidget();
-    const int centralBottom =
-        central->mapTo(window, QPoint(0, 0)).y()
-        + central->height();
-    const int tabTop =
-        bar->mapTo(window, QPoint(0, 0)).y();
-    const int separatorExtent = window->style()->pixelMetric(
-        QStyle::PM_DockWidgetSeparatorExtent,
-        nullptr,
-        window);
-    return qMax(0,
-                tabTop - centralBottom
-                    - qMax(0, separatorExtent));
-}
-
-void PanelLayoutController::prepareContentForManualResize(
-    PanelEntry& entry)
-{
-    if (!entry.dock)
-        return;
-    QWidget* content = entry.dock->widget();
-    if (content != entry.content) {
-        if (entry.content)
-            entry.content->removeEventFilter(this);
-        entry.content = content;
-    }
-    if (!entry.content)
-        return;
-
-    entry.content->installEventFilter(this);
-    if (entry.content->minimumHeight() != 0)
-        entry.content->setMinimumHeight(0);
-    QSizePolicy policy = entry.content->sizePolicy();
-    if (policy.verticalPolicy() != QSizePolicy::Ignored) {
-        policy.setVerticalPolicy(QSizePolicy::Ignored);
-        entry.content->setSizePolicy(policy);
-    }
-}
-
-void PanelLayoutController::scheduleBottomGeometrySync()
-{
-    if (applying
-        || resizingBottomPanel
-        || bottomGeometrySyncPending
-        || focusMode) {
-        return;
-    }
-    if (initialBottomGeometryPending) {
-        if (!window || !window->isVisible()
-            || bottomGeometrySyncPending) {
-            return;
-        }
-        bottomGeometrySyncPending = true;
-        QTimer::singleShot(0, this, [this]() {
-            bottomGeometrySyncPending = false;
-            if (!initialBottomGeometryPending
-                || !window
-                || !window->isVisible()
-                || applying
-                || resizingBottomPanel
-                || focusMode) {
-                return;
-            }
-            initialBottomGeometryPending = false;
-            applyBottomPanelGeometry(collapsed);
-            scheduleBottomGeometrySync();
-        });
-        return;
-    }
-    bottomGeometrySyncPending = true;
-    QTimer::singleShot(0, this, [this]() {
-        bottomGeometrySyncPending = false;
-        if (!applying && !resizingBottomPanel && !focusMode)
-            synchronizeBottomStateFromGeometry();
-    });
-}
-
-void PanelLayoutController::synchronizeBottomStateFromGeometry()
-{
-    PanelEntry* entry = activeBottomEntry();
-    if (!entry || !entry->dock)
-        return;
-    prepareContentForManualResize(*entry);
-    if (!entry->content || !entry->dock->isVisible())
-        return;
-
-    const int contentHeight = visibleBottomContentHeight();
-    if (contentHeight < 0)
-        return;
-    if (collapsed && contentHeight > kExpandedContentHeight) {
-        ++expandedGeometrySamples;
-        if (expandedGeometrySamples < 2) {
-            QTimer::singleShot(0, this, [this]() {
-                if (!applying
-                    && !resizingBottomPanel
-                    && !focusMode) {
-                    synchronizeBottomStateFromGeometry();
-                }
-            });
-            return;
-        }
-    } else {
-        expandedGeometrySamples = 0;
-    }
-    const bool shouldCollapse = collapsed
-        ? contentHeight <= kExpandedContentHeight
-        : contentHeight <= kCollapsedContentHeight;
-    if (shouldCollapse != collapsed) {
-        if (!shouldCollapse
-            && contentHeight
-                   > kMinimumStoredExpandedHeight
-            && !(QApplication::mouseButtons()
-                 & Qt::LeftButton)) {
-            expandedHeight = contentHeight;
-        }
-        setBottomCollapsedState(shouldCollapse, false, true);
-        return;
-    }
-
-    if (collapsed
-        || contentHeight <= kExpandedContentHeight
-        || (QApplication::mouseButtons() & Qt::LeftButton)) {
-        return;
-    }
-    const int height = contentHeight;
-    if (height <= kMinimumStoredExpandedHeight
-        || height == expandedHeight) {
-        return;
-    }
-    expandedHeight = height;
+    if (PanelEntry* current = entryForId(activePanel))
+        capturePanelViewState(*current);
+    activePanel = entry.id;
+    lastPanel = entry.id;
+    collapsed = false;
+    if (bottomContentStack && entry.content)
+        bottomContentStack->setCurrentWidget(entry.content);
+    restorePanelViewState(entry);
+    applyDrawerState(true);
+    updateButtons();
+    if (moveFocus && entry.content)
+        entry.content->setFocus(Qt::ShortcutFocusReason);
     notifyStateChanged();
 }
 
-void PanelLayoutController::setBottomCollapsedState(
-    bool shouldCollapse,
-    bool resizeDock,
-    bool notify)
+void PanelLayoutController::applyDrawerState(bool animate)
 {
-    const bool changed = collapsed != shouldCollapse;
-    expandedGeometrySamples = 0;
-    if (changed && shouldCollapse)
-        expandedHeight = currentExpandedBottomHeight();
-    collapsed = shouldCollapse;
-    if (resizeDock)
-        applyBottomPanelGeometry(shouldCollapse);
-    if (changed && notify)
-        notifyStateChanged();
-}
-
-QString PanelLayoutController::idForTab(
-    const QTabBar* bar,
-    int index) const
-{
-    if (!bar || index < 0 || index >= bar->count())
-        return QString();
-    const QString title = bar->tabText(index);
-    for (const PanelEntry& entry : panels) {
-        if (entry.dock && entry.dock->windowTitle() == title)
-            return entry.id;
-    }
-    return QString();
-}
-
-int PanelLayoutController::currentExpandedBottomHeight() const
-{
-    if (collapsed)
-        return expandedHeight;
-
-    const PanelEntry* active = activeBottomEntry();
-    if (active && active->dock) {
-        if (active->dock->property(
-                "panelLayoutVisibilityTransient")
-                .toBool()) {
-            const int savedHeight =
-                active->dock->property(
-                    "panelLayoutHeightBeforeTransient")
-                    .toInt();
-            if (savedHeight > kMinimumStoredExpandedHeight)
-                return savedHeight;
-        }
-    }
-    const int visibleHeight = visibleBottomContentHeight();
-    if (visibleHeight > kMinimumStoredExpandedHeight)
-        return visibleHeight;
-    return expandedHeight;
-}
-
-void PanelLayoutController::applyOrder()
-{
-    if (!window || order.isEmpty())
+    if (!bottomDrawerDock || panels.isEmpty())
         return;
-
-    const bool wasApplying = applying;
-    applying = true;
-    QHash<QString, bool> savedOpen = panelOpen;
-    QList<QPointer<QDockWidget>> orderedDocks;
-    orderedDocks.reserve(order.size());
-    for (const QString& id : std::as_const(order)) {
-        const PanelEntry* entry = entryForId(id);
-        if (entry && entry->dock)
-            orderedDocks.append(entry->dock);
-    }
-
-    QDockWidget* first = nullptr;
-    for (const QPointer<QDockWidget>& dock : orderedDocks) {
-        if (!dock)
-            continue;
-        if (window->dockWidgetArea(dock)
-            != Qt::BottomDockWidgetArea) {
-            window->addDockWidget(
-                Qt::BottomDockWidgetArea,
-                dock);
-        }
-        if (!first)
-            first = dock;
-        else
-            window->tabifyDockWidget(first, dock);
-    }
-    window->setTabPosition(
-        Qt::BottomDockWidgetArea,
-        QTabWidget::South);
-    for (const PanelEntry& entry : panels) {
-        if (entry.dock)
-            entry.dock->setVisible(savedOpen.value(entry.id, false));
-    }
-    panelOpen = savedOpen;
-    applyTabBarOrder();
-    if (PanelEntry* active = entryForId(activePanel)) {
-        if (active->dock && panelOpen.value(activePanel, false))
-            active->dock->raise();
-    }
-    applying = wasApplying;
-}
-
-void PanelLayoutController::applyTabBarOrder()
-{
-    if (!window || order.size() < 2)
+    if (focusMode) {
+        if (heightAnimation)
+            heightAnimation->stop();
+        bottomDrawerDock->hide();
         return;
+    }
 
-    const QList<QTabBar*> bars =
-        window->findChildren<QTabBar*>();
-    for (QTabBar* bar : bars) {
-        if (!bar)
-            continue;
-        int managedCount = 0;
-        for (int index = 0; index < bar->count(); ++index) {
-            if (!idForTab(bar, index).isEmpty())
-                ++managedCount;
-        }
-        if (managedCount < 2)
-            continue;
-
-        int destination = 0;
-        for (const QString& id : std::as_const(order)) {
-            int source = -1;
-            for (int index = destination;
-                 index < bar->count();
-                 ++index) {
-                if (idForTab(bar, index) == id) {
-                    source = index;
-                    break;
-                }
-            }
-            if (source < 0)
-                continue;
-            if (source != destination)
-                bar->moveTab(source, destination);
-            ++destination;
-        }
-    }
-}
-
-void PanelLayoutController::applyPinnedFeatures(PanelEntry& entry)
-{
-    if (!entry.dock)
-        return;
-    QDockWidget::DockWidgetFeatures features = entry.dockFeatures;
-    if (pinnedPanels.contains(entry.id))
-        features &= ~QDockWidget::DockWidgetClosable;
-    entry.dock->setFeatures(features);
-}
-
-void PanelLayoutController::applyBottomPanelGeometry(
-    bool shouldCollapse)
-{
-    PanelEntry* activeEntry = activeBottomEntry();
-    QDockWidget* resizeTarget =
-        activeEntry
-            && activeEntry->dock
-            && panelOpen.value(activeEntry->id, false)
-        ? activeEntry->dock.data()
-        : nullptr;
-    QDockWidget* fallbackTarget = nullptr;
-    for (PanelEntry& entry : panels) {
-        if (!entry.dock)
-            continue;
-        if (!fallbackTarget)
-            fallbackTarget = entry.dock;
-        if (!resizeTarget
-            && panelOpen.value(entry.id, false)
-            && entry.dock->toggleViewAction()->isChecked()) {
-            resizeTarget = entry.dock;
-        }
-        prepareContentForManualResize(entry);
-    }
-    if (!resizeTarget)
-        resizeTarget = fallbackTarget;
-    if (window && resizeTarget) {
-        int requestedHeight =
-            shouldCollapse ? 1 : expandedHeight;
-        if (!shouldCollapse) {
-            if (QTabBar* bar = managedBottomTabBar()) {
-                requestedHeight +=
-                    qMax(bar->height(),
-                         bar->sizeHint().height());
-            }
-        }
-        resizingBottomPanel = true;
-        window->resizeDocks({resizeTarget},
-                            {requestedHeight},
-                            Qt::Vertical);
-        resizingBottomPanel = false;
-    }
-}
-
-void PanelLayoutController::updateTabCloseButtons()
-{
-    for (const QPointer<QTabBar>& bar : managedTabBars) {
-        if (!bar)
-            continue;
-        for (int index = 0; index < bar->count(); ++index) {
-            const QString id = idForTab(bar, index);
-            QWidget* button =
-                bar->tabButton(index, QTabBar::RightSide);
-            if (button && !id.isEmpty())
-                button->setVisible(!pinnedPanels.contains(id));
-            if (!id.isEmpty()) {
-                bar->setTabToolTip(
-                    index,
-                    pinnedPanels.contains(id)
-                        ? QStringLiteral("%1 (Pinned)")
-                              .arg(bar->tabText(index))
-                        : bar->tabText(index));
-            }
-        }
-    }
-}
-
-void PanelLayoutController::synchronizeOrderFromTabBar(QTabBar* bar)
-{
-    if (!bar || applying)
-        return;
-    QStringList tabOrder;
-    for (int index = 0; index < bar->count(); ++index) {
-        const QString id = idForTab(bar, index);
-        if (!id.isEmpty() && !tabOrder.contains(id))
-            tabOrder.append(id);
-    }
-    if (tabOrder.size() < 2)
-        return;
-    for (const QString& id : std::as_const(order)) {
-        if (!tabOrder.contains(id))
-            tabOrder.append(id);
-    }
-    if (tabOrder != order) {
-        order = tabOrder;
-        notifyStateChanged();
-    }
-    const QString current = idForTab(bar, bar->currentIndex());
-    if (!current.isEmpty())
-        activePanel = current;
-}
-
-void PanelLayoutController::showTabContextMenu(
-    QTabBar* bar,
-    const QPoint& position)
-{
-    if (!bar)
-        return;
-    const int index = bar->tabAt(position);
-    const QString id = idForTab(bar, index);
-    if (id.isEmpty())
-        return;
-
-    QMenu menu(bar);
-    for (const BottomPanelContextAction& item :
-         bottomPanelContextActions(id)) {
-        QAction* action = menu.addAction(item.label);
-        action->setObjectName(
-            QStringLiteral("panelContext.%1")
-                .arg(item.actionId));
-        action->setProperty(
-            "actionId", item.actionId);
-        action->setProperty(
-            "executionRoute",
-            item.executionRoute);
-        action->setProperty("panelId", id);
-        action->setEnabled(item.enabled);
-    }
-    QAction* selected = menu.exec(bar->mapToGlobal(position));
-    if (!selected)
-        return;
-    const QString actionId =
-        selected->property("actionId").toString();
-    if (!actionId.isEmpty())
-        requestBottomPanelAction(actionId, id);
-}
-
-QList<BottomPanelContextAction>
-PanelLayoutController::bottomPanelContextActions(
-    const QString& panelId) const
-{
-    const PanelEntry* entry = entryForId(panelId);
-    if (!entry || !entry->dock)
-        return {};
-    const bool pinned =
-        pinnedPanels.contains(panelId);
-    struct Spec {
-        const char* actionId;
-        bool enabled;
-    };
-    const Spec specs[] = {
-        {ActionIds::ViewBottomPanelPinned, true},
-        {ActionIds::ViewBottomPanelClose, !pinned},
-    };
-    QList<BottomPanelContextAction> result;
-    result.reserve(
-        static_cast<qsizetype>(
-            sizeof(specs) / sizeof(specs[0])));
-    for (const Spec& spec : specs) {
-        const ActionDescriptor* descriptor =
-            findActionById(
-                QString::fromLatin1(spec.actionId));
-        if (!descriptor
-            || !descriptor->hasSurface(
-                ActionSurface::PanelContextMenu)) {
-            continue;
-        }
-        const ActionAliasDescriptor panelAlias =
-            descriptor->aliasForSurface(
-                ActionSurface::PanelContextMenu);
-        BottomPanelContextAction item;
-        item.actionId = descriptor->id;
-        item.label = panelAlias.label.isEmpty()
-            ? descriptor->canonicalName
-            : panelAlias.label;
-        if (pinned
-            && item.actionId
-                   == QString::fromLatin1(
-                       ActionIds::ViewBottomPanelPinned)) {
-            item.label = QStringLiteral("Unpin Page");
-        }
-        item.executionRoute =
-            descriptor->executionRoute;
-        item.enabled = spec.enabled;
-        result.append(item);
-    }
-    return result;
-}
-
-void PanelLayoutController::
-setRegisteredPanelActionRequestHandler(
-    RegisteredPanelActionRequestHandler handler)
-{
-    registeredPanelActionRequestHandler =
-        std::move(handler);
-}
-
-bool PanelLayoutController::requestBottomPanelAction(
-    const QString& actionId,
-    const QString& panelId,
-    QString* failureReason)
-{
-    const QList<BottomPanelContextAction> actions =
-        bottomPanelContextActions(panelId);
-    const auto selected = std::find_if(
-        actions.cbegin(),
-        actions.cend(),
-        [&actionId](
-            const BottomPanelContextAction& action) {
-            return action.actionId == actionId;
-        });
-    if (selected == actions.cend()) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Unknown bottom-panel Action: %1")
-                                     .arg(actionId);
-        }
-        return false;
-    }
-    if (!selected->enabled) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "The selected bottom page is pinned.");
-        }
-        return false;
-    }
-    if (registeredPanelActionRequestHandler) {
-        return registeredPanelActionRequestHandler(
-            actionId, panelId, failureReason);
-    }
-    bool succeeded = false;
-    if (actionId
-        == QString::fromLatin1(
-            ActionIds::ViewBottomPanelPinned)) {
-        succeeded = setPanelPinned(
-            panelId,
-            !isPanelPinned(panelId));
-    } else if (actionId
-               == QString::fromLatin1(
-                   ActionIds::ViewBottomPanelClose)) {
-        succeeded = closePanel(panelId);
-    }
-    if (failureReason) {
-        if (succeeded) {
-            failureReason->clear();
+    bottomDrawerDock->show();
+    if (collapsed) {
+        const int start = visibleContentHeight();
+        if (animate && animationsEnabledValue && start > 0) {
+            bottomContentStack->show();
+            bottomResizeHandle->show();
+            animateContentHeight(start, 0);
         } else {
-            *failureReason = QStringLiteral(
-                "The bottom-panel Action could not be applied.");
+            if (heightAnimation)
+                heightAnimation->stop();
+            bottomContentStack->hide();
+            bottomResizeHandle->hide();
+            applyContentHeight(0);
+        }
+        return;
+    }
+
+    PanelEntry* entry = entryForId(activePanel);
+    if (!entry)
+        return;
+    bottomContentStack->show();
+    bottomResizeHandle->show();
+    const int target = boundedContentHeight(entry->height);
+    const int start = visibleContentHeight();
+    if (animate && animationsEnabledValue && start != target)
+        animateContentHeight(start, target);
+    else {
+        if (heightAnimation)
+            heightAnimation->stop();
+        applyContentHeight(target);
+    }
+}
+
+void PanelLayoutController::animateContentHeight(int start, int end)
+{
+    if (!heightAnimation) {
+        applyContentHeight(end);
+        return;
+    }
+    heightAnimation->stop();
+    heightAnimation->setStartValue(qMax(0, start));
+    heightAnimation->setEndValue(qMax(0, end));
+    heightAnimation->start();
+}
+
+void PanelLayoutController::applyContentHeight(int height)
+{
+    if (!bottomContentStack || !bottomDrawerDock
+        || applyingDrawerGeometry)
+        return;
+    applyingDrawerGeometry = true;
+    const int safeHeight = qMax(0, height);
+    bottomContentStack->setMinimumHeight(safeHeight);
+    bottomContentStack->setMaximumHeight(safeHeight);
+    const int handleHeight = safeHeight > 0 ? kResizeHandleHeight : 0;
+    const int totalHeight = safeHeight + handleHeight + kButtonBarHeight;
+    bottomDrawerDock->setMinimumHeight(totalHeight);
+    bottomDrawerDock->setMaximumHeight(totalHeight);
+    bottomDrawerRoot->updateGeometry();
+    bottomDrawerDock->updateGeometry();
+    if (window && bottomDrawerDock->isVisible()) {
+        window->resizeDocks(
+            {bottomDrawerDock}, {totalHeight}, Qt::Vertical);
+    }
+    applyingDrawerGeometry = false;
+}
+
+void PanelLayoutController::updateButtons()
+{
+    const bool expanded = !collapsed && !focusMode;
+    for (PanelEntry& entry : panels) {
+        if (!entry.button)
+            continue;
+        entry.button->setChecked(expanded && entry.id == activePanel);
+        entry.button->setProperty(
+            "activePanel", expanded && entry.id == activePanel);
+        entry.button->setAccessibleDescription(
+            entry.badgeText.isEmpty()
+                ? QStringLiteral("%1 the %2 bottom panel. Ctrl+J toggles the last panel.")
+                      .arg(expanded && entry.id == activePanel
+                               ? QStringLiteral("Close")
+                               : QStringLiteral("Open"),
+                           entry.label)
+                : QStringLiteral("%1 status: %2")
+                      .arg(entry.label, entry.badgeText));
+    }
+}
+
+void PanelLayoutController::updateDrawerStyle()
+{
+    if (!bottomDrawerRoot || applyingDrawerStyle)
+        return;
+    applyingDrawerStyle = true;
+    const QPalette palette = bottomDrawerRoot->palette();
+    const QColor background = palette.color(QPalette::Window);
+    const QColor text = palette.color(QPalette::WindowText);
+    const QColor border = palette.color(QPalette::Mid);
+    QColor hover = palette.color(QPalette::Highlight);
+    hover.setAlpha(28);
+    QColor active = palette.color(QPalette::Highlight);
+    active.setAlpha(42);
+    const QColor accent = palette.color(QPalette::Highlight);
+    bottomDrawerRoot->setStyleSheet(QStringLiteral(
+        "QWidget#bottomToolDrawerRoot { background: %1; }"
+        "QWidget#bottomToolDrawerResizeHandle {"
+        " background: %1; border-top: 1px solid %2; }"
+        "QWidget#bottomToolDrawerResizeHandle:hover { background: %3; }"
+        "QFrame#bottomToolDrawerButtonBar {"
+        " background: %1; border-top: 1px solid %2; }"
+        "QToolButton { color: %4; border: 0; border-radius: 3px;"
+        " padding: 0 11px 0 9px; min-height: 30px; }"
+        "QToolButton[hasBadge=\"true\"] { padding-right: 35px; }"
+        "QToolButton:hover { background: %3; }"
+        "QToolButton:checked { background: %5;"
+        " border-bottom: 2px solid %6; }"
+        "QToolButton:focus { outline: none;"
+        " border: 1px solid %6; }"
+        "QToolButton:checked:focus { border: 1px solid %6;"
+        " border-bottom: 2px solid %6; }"
+    ).arg(colorCss(background),
+          colorCss(border),
+          colorCss(hover),
+          colorCss(text),
+          colorCss(active),
+          colorCss(accent)));
+    applyingDrawerStyle = false;
+}
+
+void PanelLayoutController::capturePanelViewState(
+    PanelEntry& entry) const
+{
+    if (entry.content)
+        entry.viewState = captureWidgetState(entry.content);
+}
+
+void PanelLayoutController::restorePanelViewState(PanelEntry& entry)
+{
+    if (entry.content && !entry.viewState.isEmpty())
+        restoreWidgetState(entry.content, entry.viewState);
+}
+
+QVariantMap PanelLayoutController::captureWidgetState(
+    QWidget* root) const
+{
+    QVariantMap state;
+    if (!root)
+        return state;
+
+    QVariantMap tabs;
+    QList<QTabWidget*> tabWidgets = root->findChildren<QTabWidget*>();
+    if (auto* self = qobject_cast<QTabWidget*>(root))
+        tabWidgets.prepend(self);
+    for (QTabWidget* tabsWidget : std::as_const(tabWidgets)) {
+        if (tabsWidget && !tabsWidget->objectName().isEmpty())
+            tabs.insert(tabsWidget->objectName(), tabsWidget->currentIndex());
+    }
+    if (!tabs.isEmpty())
+        state.insert(QStringLiteral("tabs"), tabs);
+
+    QVariantMap scrolls;
+    QList<QAbstractScrollArea*> scrollAreas =
+        root->findChildren<QAbstractScrollArea*>();
+    if (auto* self = qobject_cast<QAbstractScrollArea*>(root))
+        scrollAreas.prepend(self);
+    for (QAbstractScrollArea* area : std::as_const(scrollAreas)) {
+        if (!area || area->objectName().isEmpty())
+            continue;
+        QVariantMap scroll;
+        scroll.insert(QStringLiteral("vertical"),
+                      area->verticalScrollBar()->value());
+        scroll.insert(QStringLiteral("horizontal"),
+                      area->horizontalScrollBar()->value());
+        scrolls.insert(area->objectName(), scroll);
+    }
+    if (!scrolls.isEmpty())
+        state.insert(QStringLiteral("scrolls"), scrolls);
+
+    QVariantMap selections;
+    QList<QAbstractItemView*> views = root->findChildren<QAbstractItemView*>();
+    if (auto* self = qobject_cast<QAbstractItemView*>(root))
+        views.prepend(self);
+    for (QAbstractItemView* view : std::as_const(views)) {
+        if (!view || view->objectName().isEmpty()
+            || !view->currentIndex().isValid()) {
+            continue;
+        }
+        QVariantMap selection;
+        selection.insert(QStringLiteral("path"),
+                         modelIndexPath(view->currentIndex()));
+        selection.insert(QStringLiteral("column"),
+                         view->currentIndex().column());
+        selections.insert(view->objectName(), selection);
+    }
+    if (!selections.isEmpty())
+        state.insert(QStringLiteral("selections"), selections);
+    return state;
+}
+
+void PanelLayoutController::restoreWidgetState(
+    QWidget* root,
+    const QVariantMap& state)
+{
+    if (!root)
+        return;
+    const QVariantMap tabs = state.value(QStringLiteral("tabs")).toMap();
+    for (auto iterator = tabs.cbegin(); iterator != tabs.cend(); ++iterator) {
+        QTabWidget* widget = root->objectName() == iterator.key()
+            ? qobject_cast<QTabWidget*>(root)
+            : root->findChild<QTabWidget*>(iterator.key());
+        if (widget)
+            widget->setCurrentIndex(
+                qBound(0, iterator.value().toInt(),
+                       qMax(0, widget->count() - 1)));
+    }
+
+    const QVariantMap scrolls =
+        state.value(QStringLiteral("scrolls")).toMap();
+    for (auto iterator = scrolls.cbegin();
+         iterator != scrolls.cend(); ++iterator) {
+        QAbstractScrollArea* area = root->objectName() == iterator.key()
+            ? qobject_cast<QAbstractScrollArea*>(root)
+            : root->findChild<QAbstractScrollArea*>(iterator.key());
+        if (!area)
+            continue;
+        const QVariantMap scroll = iterator.value().toMap();
+        area->verticalScrollBar()->setValue(
+            scroll.value(QStringLiteral("vertical")).toInt());
+        area->horizontalScrollBar()->setValue(
+            scroll.value(QStringLiteral("horizontal")).toInt());
+    }
+
+    const QVariantMap selections =
+        state.value(QStringLiteral("selections")).toMap();
+    for (auto iterator = selections.cbegin();
+         iterator != selections.cend(); ++iterator) {
+        QAbstractItemView* view = root->objectName() == iterator.key()
+            ? qobject_cast<QAbstractItemView*>(root)
+            : root->findChild<QAbstractItemView*>(iterator.key());
+        if (!view || !view->model())
+            continue;
+        const QVariantMap selection = iterator.value().toMap();
+        const QModelIndex index = modelIndexFromPath(
+            view->model(),
+            selection.value(QStringLiteral("path")).toString(),
+            selection.value(QStringLiteral("column")).toInt());
+        if (index.isValid()) {
+            view->setCurrentIndex(index);
+            view->scrollTo(index);
         }
     }
-    return succeeded;
+}
+
+void PanelLayoutController::restoreEditorFocus()
+{
+    if (focusBeforeDrawer && focusBeforeDrawer->isVisible()) {
+        focusBeforeDrawer->setFocus(Qt::OtherFocusReason);
+        return;
+    }
+    if (window && window->centralWidget())
+        window->centralWidget()->setFocus(Qt::OtherFocusReason);
+}
+
+bool PanelLayoutController::focusIsInsideDrawer() const
+{
+    QWidget* focus = QApplication::focusWidget();
+    return focus && bottomDrawerRoot
+        && (focus == bottomDrawerRoot
+            || bottomDrawerRoot->isAncestorOf(focus));
 }
 
 void PanelLayoutController::notifyStateChanged()

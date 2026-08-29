@@ -41,7 +41,9 @@
 #include "globalcontrolservice.h"
 #include "insightfocuscontroller.h"
 #include "insightvisualstyle.h"
+#include "liveinsightscontextprovider.h"
 #include "liveinsightsession.h"
+#include "liveinsighttoolpage.h"
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
 #include "semanticdockcoordinator.h"
@@ -63,9 +65,6 @@
 #include "problemspanelcoordinator.h"
 #include "rtlhighriskeditpanel.h"
 #include "rtlactioncoordinator.h"
-#include "rtlinsightspanelcoordinator.h"
-#include "signalkernelgraphpanelcoordinator.h"
-#include "wavepreviewpanelcoordinator.h"
 #include "wavesimulationconfiguration.h"
 #include "wavesimulationcoordinator.h"
 #include "wavesimulationresultnavigationcoordinator.h"
@@ -269,7 +268,6 @@ MainWindow::MainWindow(QWidget *parent)
     setupNavigationPane();
     setupNavigationCommandCoordinator();
     setupSemanticDocks();
-    setupInsightFocusView();
     setupSettingsCenter();
     setupFileCommandCoordinator();
     setupFoldBlockShelf();
@@ -310,24 +308,6 @@ MainWindow::MainWindow(QWidget *parent)
                 RtlHighRiskEditPanelCoordinator::
                     panelId());
         }
-        if (semanticDocks->instancePairConnectionDock())
-            panelLayoutController->closePanel(
-                InstancePairConnectionCoordinator::panelId());
-        if (semanticDocks->multiSignalPropagationDock())
-            panelLayoutController->closePanel(
-                MultiSignalPropagationPanel::panelId());
-        if (semanticDocks->rtlInsightsPanelCoordinator()
-            && semanticDocks->rtlInsightsPanelCoordinator()->dock())
-            panelLayoutController->closePanel(
-                QStringLiteral("rtlInsights"));
-        if (semanticDocks->signalKernelGraphPanelCoordinator()
-            && semanticDocks->signalKernelGraphPanelCoordinator()->dock())
-            panelLayoutController->closePanel(
-                QStringLiteral("signalKernelGraph"));
-        if (semanticDocks->wavePreviewPanelCoordinator()
-            && semanticDocks->wavePreviewPanelCoordinator()->dock())
-            panelLayoutController->closePanel(
-                QStringLiteral("wavePreview"));
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
@@ -694,22 +674,6 @@ void MainWindow::refreshThemePresentation()
             continue;
         editor->refreshSemanticPresentation();
         editor->viewport()->update();
-    }
-
-    if (semanticDocks) {
-        if (RtlInsightsPanelCoordinator* insights =
-                semanticDocks->rtlInsightsPanelCoordinator()) {
-            insights->refreshThemePresentation();
-        }
-        if (SignalKernelGraphPanelCoordinator* kernel =
-                semanticDocks->signalKernelGraphPanelCoordinator()) {
-            kernel->refreshThemePresentation();
-        }
-        if (WavePreviewPanelCoordinator* wave =
-                semanticDocks->wavePreviewPanelCoordinator()) {
-            if (wave->canvas())
-                wave->canvas()->update();
-        }
     }
 
     const QList<QWidget*> widgets = findChildren<QWidget*>();
@@ -1521,10 +1485,6 @@ void MainWindow::setupManagerConnections()
                 if (analysisScheduler && !snapshot.fileName.isEmpty()) {
                     refreshDiagnosticsAnalysisState();
                 }
-                if (insightPanelVisibleOrFocused(
-                        QStringLiteral("wavePreview"))) {
-                    refreshActiveEditorWavePreview();
-                }
             });
     connect(tabManager.get(),
             &TabManager::tabCreated,
@@ -1566,12 +1526,6 @@ void MainWindow::setupManagerConnections()
                         &MyCodeEditor::wavePreviewScopeChanged,
                         this,
                         [this, editor]() {
-                            if (tabManager
-                                && tabManager->getCurrentEditor() == editor
-                                && insightPanelVisibleOrFocused(
-                                    QStringLiteral("wavePreview"))) {
-                                refreshActiveEditorWavePreview();
-                            }
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
                                 requestLiveInsightUpdates();
@@ -1884,55 +1838,6 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
         }));
 }
 
-void MainWindow::refreshActiveEditorWavePreview()
-{
-    if (!tabManager || !semanticDocks
-        || !semanticDocks->wavePreviewPanelCoordinator()) {
-        return;
-    }
-
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor) {
-        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
-            QStringLiteral("No document selected."));
-        return;
-    }
-
-    const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
-    const EditorAlwaysScopeTarget alwaysScope =
-        editor->currentAlwaysScopeTarget();
-    if (alwaysScope.ok()) {
-        semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
-            document.fileName,
-            editor->cachedDocumentText(),
-            document.dirty,
-            alwaysScope.startPosition,
-            alwaysScope.endPosition,
-            alwaysScope.label,
-            alwaysScope.startLine);
-        return;
-    }
-
-    const EditorModuleScopeTarget moduleScope =
-        editor->currentModuleScopeTarget();
-    if (!moduleScope.ok()) {
-        semanticDocks->wavePreviewPanelCoordinator()->renderUnavailable(
-            moduleScope.failureMessage.isEmpty()
-                ? QStringLiteral("Place the cursor in a module or always block to preview.")
-                : moduleScope.failureMessage);
-        return;
-    }
-
-    semanticDocks->wavePreviewPanelCoordinator()->refreshFromDocument(
-        document.fileName,
-        editor->cachedDocumentText(),
-        document.dirty,
-        moduleScope.startPosition,
-        moduleScope.endPosition,
-        moduleScope.label,
-        moduleScope.startLine);
-}
-
 void MainWindow::setupNavigationPane()
 {
     navigationPane = std::make_unique<NavigationPaneCoordinator>(this);
@@ -1967,15 +1872,6 @@ void MainWindow::setupSemanticDocks()
                 statusBar()->showMessage(message, timeoutMs);
         });
     semanticDocks->setup();
-    if (RtlInsightsPanelCoordinator* rtlInsights =
-            semanticDocks->rtlInsightsPanelCoordinator()) {
-        rtlInsights->setRegisteredActionRequestHandler(
-            [this](const QString& actionId,
-                   const QVariantMap& parameters) {
-                return executeRegisteredUiAction(
-                    actionId, parameters);
-            });
-    }
     if (semanticDocks->scopedSearchPanelCoordinator()) {
         scopedReplaceDocuments =
             std::make_unique<WorkspaceEditDocumentManager>(
@@ -2009,23 +1905,6 @@ void MainWindow::setupSemanticDocks()
                     return executeRegisteredUiAction(
                         actionId, parameters);
                 });
-    }
-    if (semanticDocks->wavePreviewPanelCoordinator()) {
-        semanticDocks->wavePreviewPanelCoordinator()->setNavigationHandler(
-            [this](const QString& fileName, int line, int column) {
-                if (navigationCommandCoordinator)
-                    navigationCommandCoordinator->navigateToFileAndLine(
-                        fileName, line, column);
-            });
-        if (semanticDocks->wavePreviewPanelCoordinator()->dock()) {
-            connect(semanticDocks->wavePreviewPanelCoordinator()->dock(),
-                    &QDockWidget::visibilityChanged,
-                    this,
-                    [this](bool visible) {
-                        if (visible)
-                            refreshActiveEditorWavePreview();
-                    });
-        }
     }
 }
 
@@ -2186,81 +2065,6 @@ ScopedSearchPanelContext MainWindow::scopedSearchContext() const
         }
     }
     return context;
-}
-
-void MainWindow::setupInsightFocusView()
-{
-    if (!insightFocusController || !semanticDocks)
-        return;
-
-    if (RtlInsightsPanelCoordinator* panel =
-            semanticDocks->rtlInsightsPanelCoordinator()) {
-        InsightFocusPanelRegistration registration;
-        registration.id = QStringLiteral("rtlInsights");
-        registration.title = QStringLiteral("RTL Insights");
-        registration.dock = panel->dock();
-        registration.fit = [panel]() { panel->focusFit(); };
-        registration.zoomIn =
-            [panel]() { panel->focusZoomIn(); };
-        registration.zoomOut =
-            [panel]() { panel->focusZoomOut(); };
-        registration.setSearchText =
-            [panel](const QString& text) {
-                panel->setFocusSearchText(text);
-            };
-        registration.searchText =
-            [panel]() { return panel->focusSearchText(); };
-        registration.showInspector =
-            [panel]() { panel->focusInspector(); };
-        insightFocusController->registerPanel(registration);
-    }
-
-    if (SignalKernelGraphPanelCoordinator* panel =
-            semanticDocks
-                ->signalKernelGraphPanelCoordinator()) {
-        InsightFocusPanelRegistration registration;
-        registration.id =
-            QStringLiteral("signalKernelGraph");
-        registration.title =
-            QStringLiteral("Signal Kernel Graph");
-        registration.dock = panel->dock();
-        registration.fit = [panel]() { panel->focusFit(); };
-        registration.zoomIn =
-            [panel]() { panel->focusZoomIn(); };
-        registration.zoomOut =
-            [panel]() { panel->focusZoomOut(); };
-        registration.setSearchText =
-            [panel](const QString& text) {
-                panel->setFocusSearchText(text);
-            };
-        registration.searchText =
-            [panel]() { return panel->focusSearchText(); };
-        registration.showInspector =
-            [panel]() { panel->focusInspector(); };
-        insightFocusController->registerPanel(registration);
-    }
-
-    if (WavePreviewPanelCoordinator* panel =
-            semanticDocks->wavePreviewPanelCoordinator()) {
-        InsightFocusPanelRegistration registration;
-        registration.id = QStringLiteral("wavePreview");
-        registration.title = QStringLiteral("Wave Preview");
-        registration.dock = panel->dock();
-        registration.fit = [panel]() { panel->focusFit(); };
-        registration.zoomIn =
-            [panel]() { panel->focusZoomIn(); };
-        registration.zoomOut =
-            [panel]() { panel->focusZoomOut(); };
-        registration.setSearchText =
-            [panel](const QString& text) {
-                panel->setFocusSearchText(text);
-            };
-        registration.searchText =
-            [panel]() { return panel->focusSearchText(); };
-        registration.showInspector =
-            [panel]() { panel->focusInspector(); };
-        insightFocusController->registerPanel(registration);
-    }
 }
 
 void MainWindow::setupFileCommandCoordinator()
@@ -2670,15 +2474,15 @@ void MainWindow::setupPanelLayoutController()
             ? semanticDocks->problemsPanelCoordinator()->dock()
             : nullptr);
     registerPanel(
-        QStringLiteral("activity"),
-        semanticDocks && semanticDocks->activityLogPanelCoordinator()
-            ? semanticDocks->activityLogPanelCoordinator()->dock()
-            : nullptr);
-    registerPanel(
         ScopedSearchPanelCoordinator::panelId(),
         semanticDocks
                 && semanticDocks->scopedSearchPanelCoordinator()
             ? semanticDocks->scopedSearchPanelCoordinator()->dock()
+            : nullptr);
+    registerPanel(
+        QStringLiteral("activity"),
+        semanticDocks && semanticDocks->activityLogPanelCoordinator()
+            ? semanticDocks->activityLogPanelCoordinator()->dock()
             : nullptr);
     registerPanel(
         RtlHighRiskEditPanelCoordinator::panelId(),
@@ -2690,33 +2494,172 @@ void MainWindow::setupPanelLayoutController()
                   ->dock()
             : nullptr);
     registerPanel(
-        InstancePairConnectionCoordinator::panelId(),
+        QStringLiteral("connections"),
         semanticDocks
-            ? semanticDocks->instancePairConnectionDock()
-            : nullptr);
-    registerPanel(
-        MultiSignalPropagationPanel::panelId(),
-        semanticDocks
-            ? semanticDocks->multiSignalPropagationDock()
-            : nullptr);
-    registerPanel(
-        QStringLiteral("rtlInsights"),
-        semanticDocks && semanticDocks->rtlInsightsPanelCoordinator()
-            ? semanticDocks->rtlInsightsPanelCoordinator()->dock()
-            : nullptr);
-    registerPanel(
-        QStringLiteral("signalKernelGraph"),
-        semanticDocks
-                && semanticDocks->signalKernelGraphPanelCoordinator()
-            ? semanticDocks->signalKernelGraphPanelCoordinator()->dock()
-            : nullptr);
-    registerPanel(
-        QStringLiteral("wavePreview"),
-        semanticDocks && semanticDocks->wavePreviewPanelCoordinator()
-            ? semanticDocks->wavePreviewPanelCoordinator()->dock()
+            ? semanticDocks->connectionsDock()
             : nullptr);
     registerPanel(QStringLiteral("foldShelf"), foldShelfDock);
+    panelLayoutController->registerBottomPanelAlias(
+        InstancePairConnectionCoordinator::panelId(),
+        QStringLiteral("connections"));
+    panelLayoutController->registerBottomPanelAlias(
+        MultiSignalPropagationPanel::panelId(),
+        QStringLiteral("connections"));
     panelLayoutController->finalize();
+    const bool drawerAnimationsEnabled =
+        panelLayoutController->animationsEnabled();
+    panelLayoutController->setAnimationsEnabled(false);
+    panelLayoutController->setBottomCollapsed(true);
+    panelLayoutController->setAnimationsEnabled(
+        drawerAnimationsEnabled);
+
+    if (semanticDocks
+        && semanticDocks->scopedSearchPanelCoordinator()
+        && semanticDocks->scopedSearchPanelCoordinator()->panel()) {
+        ScopedSearchPanel* searchPanel =
+            semanticDocks->scopedSearchPanelCoordinator()->panel();
+        connect(searchPanel,
+                &ScopedSearchPanel::searchCompleted,
+                this,
+                [this, searchPanel](const ScopedSearchResponse&) {
+                    const int count = searchPanel->displayedResultCount();
+                    panelLayoutController->setPanelBadge(
+                        ScopedSearchPanelCoordinator::panelId(),
+                        count > 0 ? QString::number(count) : QString(),
+                        count > 0 ? QStringLiteral("info") : QString());
+                });
+    }
+    if (semanticDocks
+        && semanticDocks->rtlHighRiskEditPanelCoordinator()) {
+        connect(
+            semanticDocks->rtlHighRiskEditPanelCoordinator(),
+            &RtlHighRiskEditPanelCoordinator::stateChanged,
+            this,
+            [this](const RtlHighRiskEditPanelOutcome& outcome) {
+                const bool failed =
+                    outcome.panelState == RtlHighRiskEditPanelState::Rejected
+                    || outcome.panelState == RtlHighRiskEditPanelState::Conflict;
+                const bool confirmationRequired = outcome.canConfirm;
+                panelLayoutController->setPanelBadge(
+                    RtlHighRiskEditPanelCoordinator::panelId(),
+                    failed
+                        ? QStringLiteral("Failed")
+                        : confirmationRequired
+                            ? QStringLiteral("Confirm")
+                            : QString(),
+                    failed
+                        ? QStringLiteral("error")
+                        : confirmationRequired
+                            ? QStringLiteral("warning")
+                            : QString());
+            });
+    }
+    const auto activeActivityOperations =
+        std::make_shared<int>(0);
+    const auto markActivityRunning =
+        [this, activeActivityOperations]() {
+            ++(*activeActivityOperations);
+            panelLayoutController->setPanelBadge(
+                QStringLiteral("activity"),
+                QStringLiteral("Running"),
+                QStringLiteral("info"));
+        };
+    const auto clearActivityRunning =
+        [this, activeActivityOperations]() {
+            *activeActivityOperations =
+                qMax(0, *activeActivityOperations - 1);
+            if (*activeActivityOperations == 0
+                && panelLayoutController->panelBadgeText(
+                    QStringLiteral("activity"))
+                       == QStringLiteral("Running")) {
+                panelLayoutController->setPanelBadge(
+                    QStringLiteral("activity"), QString(), QString());
+            }
+        };
+    if (analysisScheduler) {
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::fileSymbolAnalysisStarted,
+                this,
+                [markActivityRunning](const QString&) {
+                    markActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceSymbolAnalysisStarted,
+                this,
+                [markActivityRunning](const ProjectSnapshot&, int) {
+                    markActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
+                this,
+                [markActivityRunning](const ProjectSnapshot&, int) {
+                    markActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::fileSymbolAnalysisFinished,
+                this,
+                [clearActivityRunning](const QString&, int) {
+                    clearActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+                this,
+                [clearActivityRunning](const ProjectSnapshot&, int, int) {
+                    clearActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
+                this,
+                [clearActivityRunning](const WorkspaceRelationshipAnalysisResult&) {
+                    clearActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
+                this,
+                [clearActivityRunning](
+                    const WorkspaceAnalysisRequestTelemetry&) {
+                    clearActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
+                this,
+                [clearActivityRunning]() {
+                    clearActivityRunning();
+                });
+        connect(analysisScheduler.get(),
+                &AnalysisScheduler::relationshipAnalysisError,
+                this,
+                [this](const QString&, const QString&) {
+                    panelLayoutController->setPanelBadge(
+                        QStringLiteral("activity"),
+                        QStringLiteral("Failed"),
+                        QStringLiteral("error"));
+                });
+    }
+    connect(ActivityLogService::getInstance(),
+            &ActivityLogService::eventAppended,
+            this,
+            [this](const ActivityLogEvent& event) {
+                if (event.level == ActivityLogLevel::Error) {
+                    panelLayoutController->setPanelBadge(
+                        QStringLiteral("activity"),
+                        QStringLiteral("Failed"),
+                        QStringLiteral("error"));
+                }
+            });
+    connect(ActivityLogService::getInstance(),
+            &ActivityLogService::cleared,
+            this,
+            [this]() {
+                if (panelLayoutController->panelBadgeText(
+                        QStringLiteral("activity"))
+                    == QStringLiteral("Failed")) {
+                    panelLayoutController->setPanelBadge(
+                        QStringLiteral("activity"),
+                        QString(),
+                        QString());
+                }
+            });
 
     if (insightFocusController) {
         insightFocusController->setBeforeEnterHandler(
@@ -2762,8 +2705,12 @@ void MainWindow::showFoldBlockShelf()
 {
     if (!foldShelfDock)
         return;
-    foldShelfDock->show();
-    foldShelfDock->raise();
+    if (panelLayoutController)
+        panelLayoutController->restorePanel(QStringLiteral("foldShelf"));
+    else {
+        foldShelfDock->show();
+        foldShelfDock->raise();
+    }
     if (statusBar())
         statusBar()->showMessage(QStringLiteral("Fold Shelf ready"), 3000);
 }
@@ -2867,21 +2814,9 @@ void MainWindow::setupViewMenu()
     QAction* activityAction =
         addRegistryAction(
             viewMenu, ActionIds::ViewActivity);
-    QAction* rtlInsightsAction =
-        addRegistryAction(
-            viewMenu, ActionIds::ViewRtlInsights);
-    QAction* signalKernelAction =
-        addRegistryAction(
-            viewMenu, ActionIds::ViewSignalKernelGraph);
-    QAction* wavePreviewAction =
-        addRegistryAction(
-            viewMenu, ActionIds::ViewWavePreview);
     for (QAction* action :
          {problemsAction,
-          activityAction,
-          rtlInsightsAction,
-          signalKernelAction,
-          wavePreviewAction}) {
+          activityAction}) {
         if (action)
             action->setCheckable(true);
     }
@@ -2891,42 +2826,6 @@ void MainWindow::setupViewMenu()
             ActionIds::ViewBottomPanelCollapsed);
     if (collapseBottomAction)
         collapseBottomAction->setCheckable(true);
-    QAction* pinBottomAction =
-        addRegistryAction(
-            viewMenu,
-            ActionIds::ViewBottomPanelPinned);
-    QAction* closeBottomAction =
-        addRegistryAction(
-            viewMenu,
-            ActionIds::ViewBottomPanelClose);
-
-    QAction* focusRtlInsightsAction = nullptr;
-    QAction* focusSignalKernelAction = nullptr;
-    QAction* focusWavePreviewAction = nullptr;
-    QAction* leaveInsightFocusAction = nullptr;
-    if (insightFocusController) {
-        QMenu* focusMenu =
-            viewMenu->addMenu(tr("Focus View"));
-        focusMenu->setObjectName(
-            QStringLiteral("insightFocusMenu"));
-        focusRtlInsightsAction =
-            addRegistryAction(
-                focusMenu,
-                ActionIds::ViewFocusRtlInsights);
-        focusSignalKernelAction =
-            addRegistryAction(
-                focusMenu,
-                ActionIds::ViewFocusSignalKernelGraph);
-        focusWavePreviewAction =
-            addRegistryAction(
-                focusMenu,
-                ActionIds::ViewFocusWavePreview);
-        focusMenu->addSeparator();
-        leaveInsightFocusAction =
-            addRegistryAction(
-                focusMenu,
-                ActionIds::ViewLeaveInsightFocus);
-    }
     QAction* foldShelfAction =
         addRegistryAction(
             viewMenu, ActionIds::ViewFoldShelf);
@@ -2948,13 +2847,13 @@ void MainWindow::setupViewMenu()
                 return;
             const QDockWidget* dock =
                 dockForPanelId(panelId);
-            action->setChecked(
-                (dock && dock->isVisible())
-                || (insightFocusController
-                    && insightFocusController->isFocused()
-                    && insightFocusController
-                           ->focusedPanelId()
-                           == panelId));
+            if (dock && panelLayoutController
+                && panelLayoutController->isBottomPanel(dock)) {
+                action->setChecked(
+                    panelLayoutController->isPanelOpen(panelId));
+                return;
+            }
+            action->setChecked(dock && dock->isVisible());
         };
     connect(
         viewMenu,
@@ -2977,16 +2876,7 @@ void MainWindow::setupViewMenu()
          groupWorkspaceAction,
          problemsAction,
          activityAction,
-         rtlInsightsAction,
-         signalKernelAction,
-         wavePreviewAction,
          collapseBottomAction,
-         pinBottomAction,
-         closeBottomAction,
-         focusRtlInsightsAction,
-         focusSignalKernelAction,
-         focusWavePreviewAction,
-         leaveInsightFocusAction,
          foldShelfAction,
          settingsAction,
          resetLayoutAction,
@@ -3031,27 +2921,13 @@ void MainWindow::setupViewMenu()
                   groupWorkspaceAction,
                   problemsAction,
                   activityAction,
-                  rtlInsightsAction,
-                  signalKernelAction,
-                  wavePreviewAction,
                   collapseBottomAction,
-                  pinBottomAction,
-                  closeBottomAction,
-                  focusRtlInsightsAction,
-                  focusSignalKernelAction,
-                  focusWavePreviewAction,
-                  leaveInsightFocusAction,
                   foldShelfAction,
                   settingsAction,
                   resetLayoutAction}) {
                 refreshAvailability(action);
             }
 
-            const QString activeId =
-                panelLayoutController
-                ? panelLayoutController
-                      ->activeBottomPanelId()
-                : QString();
             if (focusModeAction) {
                 focusModeAction->setChecked(
                     panelLayoutController
@@ -3063,32 +2939,6 @@ void MainWindow::setupViewMenu()
                     panelLayoutController
                     && panelLayoutController
                            ->isBottomCollapsed());
-            }
-            const bool hasActive =
-                !activeId.isEmpty();
-            if (pinBottomAction) {
-                pinBottomAction->setEnabled(
-                    hasActive
-                    && panelLayoutController);
-                pinBottomAction->setText(
-                    panelLayoutController
-                            && panelLayoutController
-                                   ->isPanelPinned(activeId)
-                    ? tr("Unpin Active Bottom Page")
-                    : tr("Pin Active Bottom Page"));
-            }
-            if (closeBottomAction) {
-                closeBottomAction->setEnabled(
-                    hasActive
-                    && panelLayoutController
-                    && !panelLayoutController
-                            ->isPanelPinned(activeId));
-            }
-            if (leaveInsightFocusAction) {
-                leaveInsightFocusAction->setEnabled(
-                    insightFocusController
-                    && insightFocusController
-                           ->isFocused());
             }
             if (equalizeSplitsAction) {
                 equalizeSplitsAction->setEnabled(
@@ -3126,15 +2976,6 @@ void MainWindow::setupViewMenu()
             setPanelChecked(
                 activityAction,
                 QStringLiteral("activity"));
-            setPanelChecked(
-                rtlInsightsAction,
-                QStringLiteral("rtlInsights"));
-            setPanelChecked(
-                signalKernelAction,
-                QStringLiteral("signalKernelGraph"));
-            setPanelChecked(
-                wavePreviewAction,
-                QStringLiteral("wavePreview"));
             setPanelChecked(
                 foldShelfAction,
                 QStringLiteral("foldShelf"));
@@ -3783,6 +3624,13 @@ ActionExecutionResult MainWindow::executeActionRoute(
             if (!dock)
                 return false;
 
+            if (panelLayoutController
+                && panelLayoutController->isBottomPanel(dock)) {
+                if (panelLayoutController->isPanelOpen(panelId))
+                    return panelLayoutController->closePanel(panelId);
+                return panelLayoutController->restorePanel(panelId);
+            }
+
             const bool focused =
                 insightFocusController
                 && insightFocusController->isFocused()
@@ -3794,12 +3642,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
 
             const bool visible = dock->isVisible();
             if (visible) {
-                if (panelLayoutController
-                    && panelLayoutController
-                           ->isBottomPanel(dock)) {
-                    return panelLayoutController
-                        ->closePanel(panelId);
-                }
                 dock->hide();
                 return true;
             }
@@ -4750,13 +4592,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
          QStringLiteral("problems")},
         {QStringLiteral("ui.panel.activity.toggle"),
          QStringLiteral("activity")},
-        {QStringLiteral("ui.panel.rtlInsights.toggle"),
-         QStringLiteral("rtlInsights")},
-        {QStringLiteral(
-             "ui.panel.signalKernelGraph.toggle"),
-         QStringLiteral("signalKernelGraph")},
-        {QStringLiteral("ui.panel.wavePreview.toggle"),
-         QStringLiteral("wavePreview")},
         {QStringLiteral("ui.panel.foldShelf.toggle"),
          QStringLiteral("foldShelf")},
     };
@@ -4766,6 +4601,26 @@ ActionExecutionResult MainWindow::executeActionRoute(
         if (!togglePanel(panelRoute.value()))
             return fail();
         return succeeded();
+    }
+
+    const QHash<QString, LiveInsightKind> liveInsightKindsByRoute = {
+        {QStringLiteral("ui.panel.wavePreview.toggle"),
+         LiveInsightKind::Wave},
+    };
+    const auto liveInsightRoute =
+        liveInsightKindsByRoute.constFind(route);
+    if (liveInsightRoute != liveInsightKindsByRoute.constEnd()) {
+        const LiveInsightToolContext context =
+            activeLiveInsightToolContext();
+        const bool opened = openLiveInsightFromSourceAction(
+            liveInsightRoute.value(),
+            liveInsightRoute.value() == LiveInsightKind::Module
+                ? context.moduleName
+                : context.signalName,
+            context.fileName,
+            context.moduleName,
+            context.signalAccessPath);
+        return opened ? succeeded() : fail();
     }
 
     if (route
@@ -4825,43 +4680,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return fail(QStringLiteral(
                 "The selected bottom page is pinned or unavailable."));
         }
-        return succeeded();
-    }
-
-    const QHash<QString, QString> focusIdsByRoute = {
-        {QStringLiteral(
-             "ui.insightFocus.rtlInsights.enter"),
-         QStringLiteral("rtlInsights")},
-        {QStringLiteral(
-             "ui.insightFocus.signalKernelGraph.enter"),
-         QStringLiteral("signalKernelGraph")},
-        {QStringLiteral(
-             "ui.insightFocus.wavePreview.enter"),
-         QStringLiteral("wavePreview")},
-    };
-    const auto focusRoute =
-        focusIdsByRoute.constFind(route);
-    if (focusRoute != focusIdsByRoute.constEnd()) {
-        if (!insightFocusController)
-            return fail();
-        if (focusRoute.value()
-            == QStringLiteral("wavePreview")) {
-            refreshActiveEditorWavePreview();
-        }
-        if (!insightFocusController
-                 ->enter(focusRoute.value())) {
-            return fail();
-        }
-        return succeeded();
-    }
-    if (route
-        == QStringLiteral(
-            "ui.insightFocus.leave")) {
-        if (!insightFocusController
-            || !insightFocusController->isFocused()) {
-            return fail();
-        }
-        insightFocusController->leaveToEditor();
         return succeeded();
     }
 
@@ -6283,27 +6101,17 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
     if (panelId
         == InstancePairConnectionCoordinator::panelId()) {
         return semanticDocks
-            ? semanticDocks->instancePairConnectionDock()
+            ? semanticDocks->connectionsDock()
             : nullptr;
     }
     if (panelId
         == MultiSignalPropagationPanel::panelId()) {
         return semanticDocks
-            ? semanticDocks->multiSignalPropagationDock()
+            ? semanticDocks->connectionsDock()
             : nullptr;
     }
-    if (panelId == QStringLiteral("rtlInsights"))
-        return semanticDocks && semanticDocks->rtlInsightsPanelCoordinator()
-            ? semanticDocks->rtlInsightsPanelCoordinator()->dock()
-            : nullptr;
-    if (panelId == QStringLiteral("signalKernelGraph"))
-        return semanticDocks && semanticDocks->signalKernelGraphPanelCoordinator()
-            ? semanticDocks->signalKernelGraphPanelCoordinator()->dock()
-            : nullptr;
-    if (panelId == QStringLiteral("wavePreview"))
-        return semanticDocks && semanticDocks->wavePreviewPanelCoordinator()
-            ? semanticDocks->wavePreviewPanelCoordinator()->dock()
-            : nullptr;
+    if (panelId == QStringLiteral("connections"))
+        return semanticDocks ? semanticDocks->connectionsDock() : nullptr;
     if (panelId == QStringLiteral("foldShelf"))
         return foldShelfDock;
     if (panelId == QStringLiteral("settingsCenter")
@@ -6311,17 +6119,6 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
         return settingsCenterDock;
     }
     return nullptr;
-}
-
-bool MainWindow::insightPanelVisibleOrFocused(
-    const QString& panelId) const
-{
-    const QDockWidget* dock = dockForPanelId(panelId);
-    return (dock && dock->isVisible())
-        || (insightFocusController
-            && insightFocusController->isFocused()
-            && insightFocusController->focusedPanelId()
-                   == panelId);
 }
 
 void MainWindow::showDockWidget(QDockWidget* dock,
@@ -6360,6 +6157,34 @@ void MainWindow::showDockWidget(QDockWidget* dock,
 
 void MainWindow::showPanelById(const QString& panelId)
 {
+    if (panelId == QStringLiteral("rtlInsights")
+        || panelId == QStringLiteral("signalKernelGraph")
+        || panelId == QStringLiteral("wavePreview")) {
+        const LiveInsightKind kind =
+            panelId == QStringLiteral("signalKernelGraph")
+            ? LiveInsightKind::Kernel
+            : panelId == QStringLiteral("wavePreview")
+                ? LiveInsightKind::Wave
+                : LiveInsightKind::Module;
+        const LiveInsightToolContext context =
+            activeLiveInsightToolContext();
+        openLiveInsightFromSourceAction(
+            kind,
+            kind == LiveInsightKind::Module
+                ? context.moduleName
+                : context.signalName,
+            context.fileName,
+            context.moduleName,
+            context.signalAccessPath);
+        return;
+    }
+    QString resolvedPanelId = panelId;
+    if (panelId == InstancePairConnectionCoordinator::panelId()
+        || panelId == MultiSignalPropagationPanel::panelId()) {
+        if (semanticDocks)
+            semanticDocks->showConnectionPage(panelId);
+        resolvedPanelId = QStringLiteral("connections");
+    }
     if (panelId == QStringLiteral("foldShelf")) {
         showFoldBlockShelf();
         return;
@@ -6370,10 +6195,7 @@ void MainWindow::showPanelById(const QString& panelId)
                != panelId) {
         insightFocusController->leaveToEditor();
     }
-    if (panelId == QStringLiteral("wavePreview"))
-        refreshActiveEditorWavePreview();
-
-    QDockWidget* dock = dockForPanelId(panelId);
+    QDockWidget* dock = dockForPanelId(resolvedPanelId);
     showDockWidget(dock);
 }
 
@@ -6525,11 +6347,13 @@ void MainWindow::resetPanelLayout()
 
     QDockWidget* navigationDock = dockForPanelId(QStringLiteral("navigation"));
     QDockWidget* problemsDock = dockForPanelId(QStringLiteral("problems"));
+    QDockWidget* searchDock = dockForPanelId(
+        ScopedSearchPanelCoordinator::panelId());
     QDockWidget* activityDock = dockForPanelId(QStringLiteral("activity"));
-    QDockWidget* rtlInsightsDock = dockForPanelId(QStringLiteral("rtlInsights"));
-    QDockWidget* signalKernelGraphDock =
-        dockForPanelId(QStringLiteral("signalKernelGraph"));
-    QDockWidget* wavePreviewDock = dockForPanelId(QStringLiteral("wavePreview"));
+    QDockWidget* highDiffDock = dockForPanelId(
+        RtlHighRiskEditPanelCoordinator::panelId());
+    QDockWidget* connectionsDock = dockForPanelId(
+        QStringLiteral("connections"));
     QDockWidget* settingsCenterDockWidget =
         dockForPanelId(QStringLiteral("settingsCenter"));
     QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
@@ -6544,10 +6368,10 @@ void MainWindow::resetPanelLayout()
     } else {
         QDockWidget* bottomDocks[] = {
             problemsDock,
+            searchDock,
             activityDock,
-            rtlInsightsDock,
-            signalKernelGraphDock,
-            wavePreviewDock,
+            highDiffDock,
+            connectionsDock,
             foldShelfDockWidget,
         };
         for (QDockWidget* dock : bottomDocks) {

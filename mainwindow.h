@@ -248,9 +248,6 @@ private:
     void refreshThemePresentation();
     void setupSemanticDocks();
     ScopedSearchPanelContext scopedSearchContext() const;
-    void setupInsightFocusView();
-    bool insightPanelVisibleOrFocused(
-        const QString& panelId) const;
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupGlobalControl();
@@ -395,7 +392,6 @@ private:
     void scheduleActiveEditorPassiveRefresh(
         const QString& changedFileName = QString());
     void runActiveEditorPassiveRefresh();
-    void refreshActiveEditorWavePreview();
 
 };
 

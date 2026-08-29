@@ -1,5 +1,7 @@
 #include "applicationthememanager.h"
+#include "contextdockhost.h"
 #include "contextresource.h"
+#include "contextworkspacecontroller.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsightsession.h"
@@ -7,6 +9,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QLabel>
+#include <QMainWindow>
 #include <QPushButton>
 #include <QSet>
 #include <QSignalSpy>
@@ -35,6 +38,7 @@ class LiveInsightsContextProviderTest final : public QObject
 private slots:
     void initTestCase();
     void providerResourcesAreStableAndSwitchable();
+    void legacyWaveSessionMigratesToDedicatedProvider();
     void compactViewExposesFollowPinAndFullViewSemantics();
     void inactiveCardStaysDirtyAndStatusTracksTheme();
     void followEditorFreezesAndCatchesUpPerView();
@@ -67,7 +71,8 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
         LiveInsightKind::Kernel,
         LiveInsightKind::Module,
         LiveInsightKind::State,
-        LiveInsightKind::Hotspot
+        LiveInsightKind::Hotspot,
+        LiveInsightKind::Wave
     };
     QSet<QString> stableKeys;
     for (LiveInsightKind kind : kinds) {
@@ -80,15 +85,39 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
             resource, &parsed));
         QCOMPARE(parsed, kind);
     }
-    QCOMPARE(stableKeys.size(), 4);
+    QCOMPARE(stableKeys.size(), 5);
 
     const ContextResource wave =
         LiveInsightsContextProvider::resourceForKind(
             LiveInsightKind::Wave,
             QStringLiteral("workspace-a"));
     QVERIFY(provider.canOpen(wave));
-    QCOMPARE(wave.stableKey(), activation.stableKey());
+    QCOMPARE(wave.providerId, QStringLiteral("rtlInsight.wave"));
+    QCOMPARE(wave.resourceId, QStringLiteral("wave"));
+    QVERIFY(wave.stableKey() != activation.stableKey());
     QVERIFY(LiveInsightsContextProvider::kindFromResource(wave, &parsed));
+    QCOMPARE(parsed, LiveInsightKind::Wave);
+
+    LiveInsightsContextProvider waveProvider(
+        LiveInsightKind::Wave, provider.session());
+    QCOMPARE(waveProvider.providerId(), QStringLiteral("rtlInsight.wave"));
+    QCOMPARE(waveProvider.iconKey(), QStringLiteral("rtl-insight-wave"));
+    QVERIFY(waveProvider.canOpen(wave));
+    QWidget* waveViewWidget = waveProvider.createView(wave, nullptr);
+    auto* waveView =
+        qobject_cast<LiveInsightsContextView*>(waveViewWidget);
+    QVERIFY(waveView);
+    QVERIFY(waveView->hasFixedKind());
+    QCOMPARE(waveView->selectedKind(), LiveInsightKind::Wave);
+    QVERIFY(waveView->kindButton(LiveInsightKind::Wave));
+    delete waveView;
+
+    ContextResource legacyWave = wave;
+    legacyWave.providerId = LiveInsightsContextProvider::staticProviderId();
+    legacyWave.resourceId = QStringLiteral("primary");
+    QVERIFY(provider.canOpen(legacyWave));
+    QVERIFY(LiveInsightsContextProvider::kindFromResource(
+        legacyWave, &parsed));
     QCOMPARE(parsed, LiveInsightKind::Wave);
 
     ContextResource malformed = activation;
@@ -102,6 +131,44 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
     QVERIFY(capabilities.supports(ContextPresentation::FullView));
     QVERIFY(capabilities.minimumWidth <= capabilities.preferredWidth);
     QVERIFY(capabilities.preferredWidth <= capabilities.maximumWidth);
+}
+
+void LiveInsightsContextProviderTest::
+legacyWaveSessionMigratesToDedicatedProvider()
+{
+    QMainWindow window;
+    auto* editorRegion = new QWidget(&window);
+    window.setCentralWidget(editorRegion);
+    ContextWorkspaceController controller(
+        &window, editorRegion, &window);
+    LiveInsightSession session;
+    QVERIFY(controller.registerProvider(
+        std::make_unique<LiveInsightsContextProvider>(
+            LiveInsightKind::Wave, &session)));
+    controller.setWorkspaceRoot(QStringLiteral("workspace-a"));
+
+    ContextResource legacyWave =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Wave);
+    legacyWave.providerId =
+        LiveInsightsContextProvider::staticProviderId();
+    legacyWave.resourceId = QStringLiteral("primary");
+    ContextWorkspaceState state;
+    state.valid = true;
+    state.dockVisible = true;
+    state.pinnedResources.append(legacyWave.toVariantMap());
+    state.activePinnedResourceKey = legacyWave.stableKey();
+
+    const ContextWorkspaceRestoreResult restored =
+        controller.restoreState(state);
+    const ContextResource active =
+        controller.dockHost()->currentResource();
+    QCOMPARE(restored.restoredResources, 1);
+    QCOMPARE(restored.skippedResources, 0);
+    QCOMPARE(active.providerId, QStringLiteral("rtlInsight.wave"));
+    QCOMPARE(active.resourceId, QStringLiteral("wave"));
+    QCOMPARE(controller.providerIds(),
+             QStringList{QStringLiteral("rtlInsight.wave")});
 }
 
 void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSemantics()

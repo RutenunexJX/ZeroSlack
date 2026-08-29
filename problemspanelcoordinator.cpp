@@ -421,6 +421,24 @@ void ProblemsPanelCoordinator::update()
     }
 
     if (problemsDock) {
+        const int errorCount = report.severityCounts.value(
+            SemanticDiagnostic::Error);
+        const int warningCount = report.severityCounts.value(
+            SemanticDiagnostic::Warning);
+        problemsDock->setProperty(
+            "bottomBadgeText",
+            report.totalCount > 0
+                ? QString::number(report.totalCount)
+                : QString());
+        problemsDock->setProperty(
+            "bottomBadgeTone",
+            errorCount > 0
+                ? QStringLiteral("error")
+                : warningCount > 0
+                    ? QStringLiteral("warning")
+                    : report.totalCount > 0
+                        ? QStringLiteral("info")
+                        : QString());
         problemsDock->setWindowTitle(QStringLiteral("Problems (%1)").arg(report.totalCount));
     }
 }
@@ -432,7 +450,7 @@ bool ProblemsPanelCoordinator::showsCurrentFileScope() const
 
 bool ProblemsPanelCoordinator::isVisibleToUser() const
 {
-    return problemsDock
-        && problemsDock->isVisible()
-        && !problemsDock->visibleRegion().isEmpty();
+    return problemsTree
+        && problemsTree->isVisible()
+        && !problemsTree->visibleRegion().isEmpty();
 }

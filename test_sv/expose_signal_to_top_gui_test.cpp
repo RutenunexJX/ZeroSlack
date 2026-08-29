@@ -3,6 +3,7 @@
 #include "editoractioncontextservice.h"
 #include "editorhoverpopup.h"
 #include "hierarchyservice.h"
+#include "liveinsighttoolpage.h"
 #include "semanticindex.h"
 #include <QDir>
 #include <QFileInfo>
@@ -1814,12 +1815,17 @@ void runContextActionRegistryExecutionRegression()
             editor,
             QStringLiteral("payload"),
             QStringLiteral("insight.signalKernelGraph"));
-    QDockWidget* kernelDock =
+    QDockWidget* contextDock =
+        window.findChild<QDockWidget*>(
+            QStringLiteral("contextWorkspaceDock"));
+    LiveInsightToolPage* kernelPage =
+        dynamic_cast<LiveInsightToolPage*>(
+            window.findChild<QWidget*>(
+                QStringLiteral("liveInsightToolPage.kernel")));
+    QDockWidget* legacyKernelDock =
         window.findChild<QDockWidget*>(
             QStringLiteral("signalKernelGraphDock"));
-    QLabel* kernelTitle = window.findChild<QLabel*>(
-        QStringLiteral("signalKernelGraphTitle"));
-    check("context Insight executes through Registry into its panel",
+    check("context Insight executes through Registry into Live Insights",
           insightAction.menuShown
               && insightAction.found
               && insightAction.enabled
@@ -1834,11 +1840,12 @@ void runContextActionRegistryExecutionRegression()
                      .lastActionId()
                      == QStringLiteral(
                          "insight.signalKernelGraph")
-              && kernelDock
-              && kernelDock->isVisible()
-              && kernelTitle
-              && kernelTitle->text().contains(
-                  QStringLiteral("payload")));
+              && contextDock
+              && contextDock->isVisible()
+              && kernelPage
+              && kernelPage->kind()
+                     == LiveInsightKind::Kernel
+              && legacyKernelDock == nullptr);
 
     const QString queueFile = temp.filePath(
         QStringLiteral("context_queue_execution.sv"));

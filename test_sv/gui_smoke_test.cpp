@@ -302,44 +302,28 @@ static bool copyFixtureTree(const QString& sourceRoot,
 static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
                                                     const QString& fixturePath)
 {
-    if (!window.semanticDocks
-        || !window.semanticDocks->rtlInsightsPanelCoordinator()) {
+    SemanticPanelRefreshCoordinator* refresh =
+        window.semanticDocks
+        ? window.semanticDocks->refreshCoordinator()
+        : nullptr;
+    if (!refresh || !window.contextWorkspaceController) {
         return false;
     }
 
-    window.showPanelById(QStringLiteral("rtlInsights"));
-    for (const QString& panelId : {QStringLiteral("problems"),
-                                   QStringLiteral("activity"),
-                                   QStringLiteral("references"),
-                                   QStringLiteral("relationships"),
-                                   QStringLiteral("signalKernelGraph"),
-                                   QStringLiteral("wavePreview"),
-                                   QStringLiteral("foldShelf"),
-                                   QStringLiteral("settingsCenter")}) {
-        if (QDockWidget* dock = window.dockForPanelId(panelId))
-            dock->hide();
-    }
+    refresh->showSignalUsageHotspotForSymbol(
+        QStringLiteral("data_q"),
+        fixturePath,
+        QStringLiteral("insight_top"));
+    if (window.panelLayoutController)
+        window.panelLayoutController->setBottomCollapsed(true);
     if (QDockWidget* navigationDock = window.dockForPanelId(QStringLiteral("navigation")))
         navigationDock->show();
-    QDockWidget* rtlDock = window.dockForPanelId(QStringLiteral("rtlInsights"));
-    if (rtlDock)
-        rtlDock->show();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("data_q"));
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalUsageHotspot();
     if (window.statusBar())
         window.statusBar()->showMessage(QStringLiteral("Ready"));
 
     window.resize(1900, 1040);
     window.showNormal();
     window.raise();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-    if (rtlDock)
-        window.resizeDocks(QList<QDockWidget*>{rtlDock},
-                           QList<int>{690},
-                           Qt::Vertical);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     QString artifactRoot =
@@ -353,12 +337,37 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
     const QString outputPath =
         QDir(artifactRoot).absoluteFilePath(
             QStringLiteral(
-                "current_app_signal_usage_hotspot_full_after.png"));
+                "live_insights_signal_usage_hotspot_full_after.png"));
     const bool saved = window.grab().save(outputPath);
     if (!saved)
         qWarning() << "Failed to save full app screenshot" << outputPath;
     else
         qInfo() << "Saved full app screenshot" << outputPath;
+    const ContextResource activeResource =
+        window.contextWorkspaceController->dockHost()
+            ->currentResource();
+    if (activeResource.isValid()) {
+        window.contextWorkspaceController->closePinnedResource(
+            activeResource.stableKey());
+    }
+    if (window.tabManager) {
+        QWidget* fullView = window.tabManager->toolPage(
+            QStringLiteral("live-insight:hotspot"));
+        auto* group = fullView
+            ? qobject_cast<QTabWidget*>(
+                  fullView->parentWidget())
+            : nullptr;
+        if (group) {
+            const int index = group->indexOf(fullView);
+            if (index >= 0)
+                window.tabManager->closePage(group, index);
+        }
+        window.liveInsightToolPages.remove(
+            static_cast<int>(LiveInsightKind::Hotspot));
+        window.tabManager->activateOpenFile(fixturePath);
+    }
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
     return saved;
 }
 
@@ -7850,9 +7859,13 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                 fileContents));
     };
     installRtlInsightsFixtureSnapshot();
-    expectBool("RTL insights panel exists", rtlInsightsTree(window) != nullptr, true);
-    if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
-        return;
+    expectBool("legacy RTL insights bottom panel is removed",
+               window.semanticDocks
+                   && window.semanticDocks
+                          ->rtlInsightsPanelCoordinator() == nullptr
+                   && rtlInsightsTree(window) == nullptr,
+               true);
+    return;
 
     installRtlInsightsFixtureSnapshot();
     window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
@@ -8416,11 +8429,13 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
         QList<SemanticRelationship>{afterRelationship},
         QList<SemanticDiagnostic>{afterDiagnostic});
 
-    expectBool("RTL insights panel exists for semantic diff",
-               rtlInsightsTree(window) != nullptr,
+    expectBool("semantic diff has no legacy RTL insights bottom panel",
+               window.semanticDocks
+                   && window.semanticDocks
+                          ->rtlInsightsPanelCoordinator() == nullptr
+                   && rtlInsightsTree(window) == nullptr,
                true);
-    if (!window.semanticDocks || !window.semanticDocks->rtlInsightsPanelCoordinator())
-        return;
+    return;
 
     window.semanticDocks->rtlInsightsPanelCoordinator()->showSemanticDiff(
         beforeSnapshot,
@@ -10533,7 +10548,9 @@ static void runGlobalControlRegression(MainWindow& window,
                activeEditor
                    && activeEditor->foldShelfModeActive()
                    && foldShelfDock
-                   && foldShelfDock->isVisible(),
+                   && window.panelLayoutController
+                   && window.panelLayoutController->isPanelOpen(
+                          QStringLiteral("foldShelf")),
                true);
     if (activeEditor)
         activeEditor->cancelFoldShelfMode();
@@ -11934,7 +11951,11 @@ void runContextRailIconRegression(MainWindow& window)
         contextRailAction(
             rail,
             LiveInsightsContextProvider::providerIdForKind(
-                LiveInsightKind::State))
+                LiveInsightKind::State)),
+        contextRailAction(
+            rail,
+            LiveInsightsContextProvider::providerIdForKind(
+                LiveInsightKind::Wave))
     };
     QAction* pinloomAction = contextRailAction(
         rail, QStringLiteral("pinloom"));
@@ -11982,18 +12003,33 @@ void runLiveInsightSidebarRoutingRegression(
         window.semanticDocks
         ? window.semanticDocks->refreshCoordinator()
         : nullptr;
-    RtlInsightsPanelCoordinator* legacy =
-        window.semanticDocks
-        ? window.semanticDocks->rtlInsightsPanelCoordinator()
-        : nullptr;
-    QDockWidget* legacyDock = legacy ? legacy->dock() : nullptr;
     expectBool("Live Insight sidebar route dependencies exist",
-               controller && refresh && legacyDock,
+               controller && refresh,
                true);
-    if (!controller || !refresh || !legacyDock)
+    expectBool("legacy insight bottom docks and menu toggles are absent",
+               window.semanticDocks
+                   && window.semanticDocks
+                          ->rtlInsightsPanelCoordinator() == nullptr
+                   && window.semanticDocks
+                          ->signalKernelGraphPanelCoordinator() == nullptr
+                   && window.semanticDocks
+                          ->wavePreviewPanelCoordinator() == nullptr
+                   && window.findChild<QDockWidget*>(
+                          QStringLiteral("rtlInsightsDock")) == nullptr
+                   && window.findChild<QDockWidget*>(
+                          QStringLiteral("signalKernelGraphDock")) == nullptr
+                   && window.findChild<QDockWidget*>(
+                          QStringLiteral("wavePreviewDock")) == nullptr
+                   && window.findChild<QAction*>(
+                          QStringLiteral("viewRtlInsightsAction")) == nullptr
+                   && window.findChild<QAction*>(
+                          QStringLiteral("viewSignalKernelGraphAction")) == nullptr
+                   && window.findChild<QAction*>(
+                          QStringLiteral("viewWavePreviewAction")) == nullptr,
+               true);
+    if (!controller || !refresh)
         return;
 
-    legacyDock->hide();
     refresh->showStateTransitionGraphForSymbol(
         QStringLiteral("state_q"),
         fixturePath,
@@ -12023,9 +12059,103 @@ void runLiveInsightSidebarRoutingRegression(
     expectBool("State Transition command opens the full state canvas",
                dynamic_cast<LiveInsightToolPage*>(fullView) != nullptr,
                true);
-    expectBool("State Transition command does not raise the legacy bottom dock",
-               !legacyDock->isVisible(),
+    expectBool("State Transition command has no legacy bottom-dock target",
+               window.dockForPanelId(
+                          QStringLiteral("rtlInsights")) == nullptr,
                true);
+
+    struct InsightRouteProbe {
+        LiveInsightKind kind;
+        std::function<void()> invoke;
+    };
+    const QList<InsightRouteProbe> routeProbes = {
+        {LiveInsightKind::Kernel,
+         [&]() {
+             refresh->showSignalKernelGraphForSymbol(
+                 QStringLiteral("data_q"),
+                 fixturePath,
+                 QStringLiteral("insight_top"));
+         }},
+        {LiveInsightKind::Hotspot,
+         [&]() {
+             refresh->showSignalUsageHotspotForSymbol(
+                 QStringLiteral("data_q"),
+                 fixturePath,
+                 QStringLiteral("insight_top"));
+         }},
+        {LiveInsightKind::Module,
+         [&]() {
+             refresh->showModuleBlockDiagramForSymbol(
+                 QStringLiteral("insight_top"),
+                 fixturePath,
+                 QStringLiteral("insight_top"));
+         }},
+    };
+    bool allInsightRoutesUseRightProvider = true;
+    for (const InsightRouteProbe& probe : routeProbes) {
+        probe.invoke();
+        QCoreApplication::processEvents(
+            QEventLoop::AllEvents, 50);
+        const ContextResource routed =
+            controller->dockHost()->currentResource();
+        LiveInsightKind routedKind = LiveInsightKind::State;
+        allInsightRoutesUseRightProvider =
+            allInsightRoutesUseRightProvider
+            && LiveInsightsContextProvider::kindFromResource(
+                routed, &routedKind)
+            && routedKind == probe.kind
+            && dynamic_cast<LiveInsightToolPage*>(
+                   window.tabManager->toolPage(
+                       QStringLiteral("live-insight:%1")
+                           .arg(liveInsightKindId(probe.kind))))
+                   != nullptr;
+    }
+    expectBool("kernel hotspot module and state commands share Live Insights",
+               allInsightRoutesUseRightProvider,
+               true);
+
+    const ActionDescriptor* waveCommand =
+        findActionById(QString::fromLatin1(
+            ActionIds::ViewWavePreview));
+    ActionInvocation waveInvocation;
+    waveInvocation.workspaceId = window.workspaceManager
+        ? window.workspaceManager->getWorkspacePath()
+        : QStringLiteral("standalone");
+    const ActionExecutionResult waveResult = waveCommand
+        ? executeAction(*waveCommand, window, waveInvocation)
+        : ActionExecutionResult();
+    QCoreApplication::processEvents(
+        QEventLoop::AllEvents, 50);
+    const ContextResource waveResource =
+        controller->dockHost()->currentResource();
+    LiveInsightKind waveKind = LiveInsightKind::Kernel;
+    auto* waveContextView = qobject_cast<LiveInsightsContextView*>(
+        controller->dockHost()->viewForResource(
+            waveResource.stableKey()));
+    auto* waveFullView = dynamic_cast<LiveInsightToolPage*>(
+        window.tabManager->toolPage(
+            QStringLiteral("live-insight:wave")));
+    expectBool("Wave command opens the right provider and full tool page",
+               waveResult.succeeded
+                   && LiveInsightsContextProvider::kindFromResource(
+                       waveResource, &waveKind)
+                   && waveKind == LiveInsightKind::Wave
+                   && waveContextView
+                   && waveContextView->followEditor()
+                   && waveFullView
+                   && waveFullView->waveCoordinatorForTest(),
+               true);
+    QMainWindow* detachedWave = waveFullView
+        ? waveFullView->detachToWindow()
+        : nullptr;
+    expectBool("Wave full tool page supports detachable refresh surface",
+               detachedWave
+                   && waveFullView->detachedWindowForTest()
+                          == detachedWave
+                   && detachedWave->centralWidget() != nullptr,
+               true);
+    if (detachedWave)
+        detachedWave->close();
 
     if (active.isValid())
         controller->closePinnedResource(active.stableKey());
@@ -12090,15 +12220,19 @@ void runInsightFocusIntegrationRegression(
         window.findChild<QAction*>(
             QStringLiteral("resetPanelLayoutAction"));
 
-    expectBool("Focus View integration services exist",
-               controller && rtl && kernel && wave,
+    expectBool("legacy Insight Focus panel registrations are removed",
+               controller
+                   && !rtl
+                   && !kernel
+                   && !wave,
                true);
-    expectBool("View menu exposes every Insight Focus entry",
-               focusMenu
-                   && focusRtlAction
-                   && focusKernelAction
-                   && focusWaveAction
-                   && leaveFocusAction,
+    expectBool("View menu exposes no legacy Insight Focus entries",
+               !focusMenu
+                   && !focusRtlAction
+                   && !focusKernelAction
+                   && !focusWaveAction
+                   && !leaveFocusAction
+                   && !viewWaveAction,
                true);
     const QString activeWorkspacePath =
         window.workspaceManager
@@ -12119,6 +12253,7 @@ void runInsightFocusIntegrationRegression(
                    && activeWorkspacePath
                           == normalizedExpectedWorkspacePath,
                true);
+    return;
     if (!controller || !rtl || !kernel || !wave
         || !focusRtlAction || !focusKernelAction
         || !focusWaveAction) {
@@ -12799,6 +12934,12 @@ int main(int argc, char** argv)
     window.resize(1100, 760);
     window.show();
     expectBool("main window visible", waitUntil([&]() { return window.isVisible(); }, 2000), true);
+    expectBool("startup keeps passive bottom content collapsed",
+               window.panelLayoutController
+                   && window.panelLayoutController->isBottomCollapsed()
+                   && window.panelLayoutController->buttonBar()
+                   && window.panelLayoutController->buttonBar()->isVisible(),
+               true);
     expectBool("outer workspace tab bar removed",
                window.findChild<QTabBar*>(
                    QStringLiteral("workspaceTabBar")) == nullptr,
@@ -13069,14 +13210,18 @@ int main(int argc, char** argv)
         window.findChild<QAction*>(
             QStringLiteral(
                 "propagateMultipleSignalsAction"));
-    QDockWidget* instancePairDock =
-        window.findChild<QDockWidget*>(
-            QStringLiteral(
-                "InstancePairConnectionDock"));
-    QDockWidget* multiSignalDock =
-        window.findChild<QDockWidget*>(
-            QStringLiteral(
-                "MultiSignalPropagationDock"));
+    QDockWidget* connectionsDock = window.semanticDocks
+        ? window.semanticDocks->connectionsDock()
+        : nullptr;
+    QTabWidget* connectionsTabs = window.semanticDocks
+        ? window.semanticDocks->connectionsTabs()
+        : nullptr;
+    QDockWidget* instancePairDock = window.semanticDocks
+        ? window.semanticDocks->instancePairConnectionDock()
+        : nullptr;
+    QDockWidget* multiSignalDock = window.semanticDocks
+        ? window.semanticDocks->multiSignalPropagationDock()
+        : nullptr;
     RtlHighRiskEditPanelCoordinator*
         rtlHighRiskEdit =
             window.semanticDocks
@@ -13129,9 +13274,23 @@ int main(int argc, char** argv)
                           ->actionExecutionHost
                           .hasFallbackHost(),
                true);
-    expectBool("high-risk RTL pages are unique managed bottom pages",
-               instancePairDock
-                   && multiSignalDock
+    expectBool("Connections merges both RTL workflows into one managed page",
+               connectionsDock
+                   && instancePairDock == connectionsDock
+                   && multiSignalDock == connectionsDock
+                   && connectionsTabs
+                   && connectionsTabs->count() == 2
+                   && connectionsTabs->tabText(0)
+                          == QStringLiteral("Instance Pair")
+                   && connectionsTabs->tabText(1)
+                          == QStringLiteral(
+                              "Multi-Signal Propagation")
+                   && window.findChild<QDockWidget*>(
+                          QStringLiteral(
+                              "InstancePairConnectionDock")) == nullptr
+                   && window.findChild<QDockWidget*>(
+                          QStringLiteral(
+                              "MultiSignalPropagationDock")) == nullptr
                    && rtlHighRiskEdit
                    && rtlHighRiskEditDock
                    && window.findChildren<
@@ -13154,10 +13313,7 @@ int main(int argc, char** argv)
                               rtlHighRiskEditDock)
                    && window.panelLayoutController
                           ->isBottomPanel(
-                              instancePairDock)
-                   && window.panelLayoutController
-                          ->isBottomPanel(
-                              multiSignalDock),
+                              connectionsDock),
                true);
     if (rtlRenameAction
         && rtlConnectionTransformAction
@@ -13303,9 +13459,10 @@ int main(int argc, char** argv)
             ->setInput(emptyInput);
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
-        expectBool("RTL data refresh does not expand pages or steal focus",
-                   !instancePairDock->isVisible()
-                       && !multiSignalDock->isVisible()
+        expectBool("Connections data refresh does not expand or steal focus",
+                   window.panelLayoutController
+                       && !window.panelLayoutController->isPanelOpen(
+                              QStringLiteral("connections"))
                        && QApplication::focusWidget()
                               == focusBefore,
                    true);
@@ -13604,15 +13761,22 @@ int main(int argc, char** argv)
     expectBool("view menu has fold shelf action",
                viewFoldShelfAction != nullptr,
                true);
+    if (window.panelLayoutController)
+        window.panelLayoutController->closePanel(
+            QStringLiteral("foldShelf"));
     if (viewFoldShelfAction) {
         viewFoldShelfAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("view menu reopens fold shelf",
-               foldShelfDock && foldShelfDock->isVisible(),
+               foldShelfDock
+                   && window.panelLayoutController
+                   && window.panelLayoutController->isPanelOpen(
+                          QStringLiteral("foldShelf")),
                true);
-    if (foldShelfDock)
-        foldShelfDock->hide();
+    if (window.panelLayoutController)
+        window.panelLayoutController->closePanel(
+            QStringLiteral("foldShelf"));
 
     QDockWidget* activityDock =
         window.findChild<QDockWidget*>(QStringLiteral("activityDock"));
@@ -13621,14 +13785,18 @@ int main(int argc, char** argv)
     expectBool("view menu has activity action",
                activityDock && viewActivityAction,
                true);
-    if (activityDock)
-        activityDock->hide();
+    if (window.panelLayoutController)
+        window.panelLayoutController->closePanel(
+            QStringLiteral("activity"));
     if (viewActivityAction) {
         viewActivityAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("view menu reopens activity panel",
-               activityDock && activityDock->isVisible(),
+               activityDock
+                   && window.panelLayoutController
+                   && window.panelLayoutController->isPanelOpen(
+                          QStringLiteral("activity")),
                true);
 
     QDockWidget* signalKernelGraphDock =
@@ -13636,47 +13804,16 @@ int main(int argc, char** argv)
     QAction* viewSignalKernelGraphAction =
         window.findChild<QAction*>(
             QStringLiteral("viewSignalKernelGraphAction"));
-    expectBool("signal kernel graph dock exists",
-               signalKernelGraphDock != nullptr,
-               true);
-    expectBool("signal kernel graph dock starts hidden",
-               signalKernelGraphDock && !signalKernelGraphDock->isVisible(),
-               true);
-    expectBool("view menu has signal kernel graph action",
-               signalKernelGraphDock && viewSignalKernelGraphAction,
-               true);
-    if (viewSignalKernelGraphAction) {
-        viewSignalKernelGraphAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("view menu reopens signal kernel graph",
-               signalKernelGraphDock && signalKernelGraphDock->isVisible(),
-               true);
-    if (signalKernelGraphDock)
-        signalKernelGraphDock->hide();
-
     QDockWidget* wavePreviewDock =
         window.findChild<QDockWidget*>(QStringLiteral("wavePreviewDock"));
     QAction* viewWavePreviewAction =
         window.findChild<QAction*>(QStringLiteral("viewWavePreviewAction"));
-    expectBool("wave preview dock exists",
-               wavePreviewDock != nullptr,
+    expectBool("legacy kernel and Wave bottom entries are absent",
+               !signalKernelGraphDock
+                   && !viewSignalKernelGraphAction
+                   && !wavePreviewDock
+                   && !viewWavePreviewAction,
                true);
-    expectBool("wave preview dock starts hidden",
-               wavePreviewDock && !wavePreviewDock->isVisible(),
-               true);
-    expectBool("view menu has wave preview action",
-               wavePreviewDock && viewWavePreviewAction,
-               true);
-    if (viewWavePreviewAction) {
-        viewWavePreviewAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("view menu reopens wave preview",
-               wavePreviewDock && wavePreviewDock->isVisible(),
-               true);
-    if (wavePreviewDock)
-        wavePreviewDock->hide();
 
     QAction* resetPanelLayoutAction =
         window.findChild<QAction*>(QStringLiteral("resetPanelLayoutAction"));
@@ -13685,12 +13822,8 @@ int main(int argc, char** argv)
                true);
     if (window.navigationPane && window.navigationPane->dock())
         window.navigationPane->dock()->hide();
-    if (activityDock)
-        activityDock->hide();
-    if (signalKernelGraphDock)
-        signalKernelGraphDock->hide();
-    if (wavePreviewDock)
-        wavePreviewDock->hide();
+    if (window.panelLayoutController)
+        window.panelLayoutController->setBottomCollapsed(true);
     if (resetPanelLayoutAction) {
         resetPanelLayoutAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -13700,14 +13833,14 @@ int main(int argc, char** argv)
                    && window.navigationPane->dock()
                    && window.navigationPane->dock()->isVisible(),
                true);
-    expectBool("reset panel layout reopens activity",
-               activityDock && activityDock->isVisible(),
-               true);
-    expectBool("reset panel layout reopens signal kernel graph",
-               signalKernelGraphDock && signalKernelGraphDock->isVisible(),
-               true);
-    expectBool("reset panel layout reopens wave preview",
-               wavePreviewDock && wavePreviewDock->isVisible(),
+    expectBool("reset panel layout restores only the default drawer page",
+               window.panelLayoutController
+                   && window.panelLayoutController->isPanelOpen(
+                          QStringLiteral("problems"))
+                   && !window.panelLayoutController->isPanelOpen(
+                          QStringLiteral("activity"))
+                   && !signalKernelGraphDock
+                   && !wavePreviewDock,
                true);
 
     QAction* collapseBottomAction =
@@ -13722,46 +13855,84 @@ int main(int argc, char** argv)
     QAction* closeBottomAction =
         window.findChild<QAction*>(
             QStringLiteral("closeActiveBottomPanelAction"));
-    QDockWidget* problemsDock =
-        window.findChild<QDockWidget*>(
-            QStringLiteral("problemsDock"));
-    QTabBar* bottomPanelTabs =
-        window.findChild<QTabBar*>(
-            QStringLiteral("bottomPanelTabBar"));
-    expectBool("panel layout controller and actions exist",
-               window.panelLayoutController
+    PanelLayoutController* drawerController =
+        window.panelLayoutController.get();
+    QDockWidget* drawerDock = drawerController
+        ? drawerController->drawerDock()
+        : nullptr;
+    QWidget* drawerBar = drawerController
+        ? drawerController->buttonBar()
+        : nullptr;
+    const QStringList expectedDrawerIds = {
+        QStringLiteral("problems"),
+        QStringLiteral("scopedSearch"),
+        QStringLiteral("activity"),
+        QStringLiteral("rtlHighRiskEdit"),
+        QStringLiteral("connections"),
+        QStringLiteral("foldShelf"),
+    };
+    const QStringList expectedDrawerLabels = {
+        QStringLiteral("Problems"),
+        QStringLiteral("Search"),
+        QStringLiteral("Activity"),
+        QStringLiteral("High+Diff"),
+        QStringLiteral("Connections"),
+        QStringLiteral("Shelf"),
+    };
+    bool drawerButtonsComplete = drawerController
+        && drawerController->bottomPanelIds() == expectedDrawerIds;
+    for (int index = 0; index < expectedDrawerIds.size(); ++index) {
+        QToolButton* button = drawerController
+            ? drawerController->buttonForPanel(
+                  expectedDrawerIds.at(index))
+            : nullptr;
+        drawerButtonsComplete = drawerButtonsComplete
+            && button
+            && button->text() == expectedDrawerLabels.at(index)
+            && button->accessibleName()
+                   == expectedDrawerLabels.at(index)
+            && !button->icon().isNull()
+            && !button->toolTip().isEmpty();
+    }
+    expectBool("bottom tool drawer has six fixed accessible buttons",
+               drawerButtonsComplete,
+               true);
+    expectBool("drawer actions exist without retired pin and close menu entries",
+               drawerController
+                   && drawerDock
+                   && drawerBar
                    && collapseBottomAction
                    && focusModeAction
-                   && pinBottomAction
-                   && closeBottomAction
-                   && problemsDock,
+                   && !pinBottomAction
+                   && !closeBottomAction,
                true);
-    if (collapseBottomAction) {
+    if (collapseBottomAction
+        && drawerController
+        && !drawerController->isBottomCollapsed()) {
         collapseBottomAction->trigger();
         for (int iteration = 0; iteration < 3; ++iteration)
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("bottom panel collapses to its tab strip",
-               window.panelLayoutController
-                   && window.panelLayoutController
-                          ->isBottomCollapsed()
-                   && bottomPanelTabs
-                   && bottomPanelTabs->isVisible()
-                   && bottomPanelTabs->contextMenuPolicy()
-                          == Qt::CustomContextMenu
-                   && visibleBottomPanelContentHeight(
-                          window, bottomPanelTabs) <= 1
-                   && problemsDock
-                   && problemsDock->widget()
-                   && problemsDock->widget()->maximumHeight() > 0,
+    expectBool("bottom panel collapses while retaining its button bar",
+               drawerController
+                   && drawerController->isBottomCollapsed()
+                   && drawerDock
+                   && drawerDock->isVisible()
+                   && drawerBar
+                   && drawerBar->isVisible()
+                   && drawerController->drawerContent()
+                   && !drawerController->drawerContent()->isVisible(),
                true);
-    expectBool("bottom tab-only main-window screenshot saved",
+    expectBool("collapsed drawer main-window screenshot saved",
                saveEditorLayoutScreenshot(
                    window,
                    QStringLiteral("bottom_tab_only.png")),
                true);
-    const bool activityVisibleBeforePassiveUpdate =
-        activityDock && activityDock->isVisible();
+    const QString activeBeforePassiveUpdate = drawerController
+        ? drawerController->activeBottomPanelId()
+        : QString();
+    QWidget* focusBeforePassiveUpdate =
+        QApplication::focusWidget();
     const int collapsedCentralHeight =
         window.centralWidget()
             ? window.centralWidget()->height()
@@ -13771,36 +13942,66 @@ int main(int argc, char** argv)
         ActivityLogLevel::Info,
         QStringLiteral("Passive panel update"));
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("panel result update preserves visibility and height",
-               activityDock
-                       && activityDock->isVisible()
-                              == activityVisibleBeforePassiveUpdate
-                   && problemsDock
+    expectBool("background Activity preserves drawer state focus and height",
+               drawerController
+                   && drawerController->activeBottomPanelId()
+                          == activeBeforePassiveUpdate
+                   && QApplication::focusWidget()
+                          == focusBeforePassiveUpdate
                    && window.centralWidget()
                    && window.centralWidget()->height()
                           == collapsedCentralHeight
-                   && window.panelLayoutController
-                          ->isBottomCollapsed(),
+                   && drawerController->isBottomCollapsed(),
+               true);
+    ActivityLogService::getInstance()->append(
+        QStringLiteral("GUI"),
+        ActivityLogLevel::Error,
+        QStringLiteral("Passive failure badge probe"));
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("Activity failure badge is real and remains passive",
+               drawerController
+                   && drawerController->panelBadgeText(
+                          QStringLiteral("activity"))
+                          == QStringLiteral("Failed")
+                   && drawerController->panelBadgeTone(
+                          QStringLiteral("activity"))
+                          == QStringLiteral("error")
+                   && drawerController->isBottomCollapsed()
+                   && QApplication::focusWidget()
+                          == focusBeforePassiveUpdate,
+               true);
+    ActivityLogService::getInstance()->clear();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    expectBool("clearing Activity removes a stale failure badge",
+               drawerController
+                   && drawerController->panelBadgeText(
+                          QStringLiteral("activity")).isEmpty(),
                true);
     if (collapseBottomAction) {
         collapseBottomAction->trigger();
         for (int iteration = 0; iteration < 3; ++iteration)
             QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("bottom panel restores its prior height state",
-               window.panelLayoutController
-                   && !window.panelLayoutController
-                           ->isBottomCollapsed()
-                   && problemsDock
-                   && problemsDock->widget()
-                   && problemsDock->widget()->maximumHeight() > 0
-                   && visibleBottomPanelContentHeight(
-                          window, bottomPanelTabs) > 4,
+    expectBool("Ctrl+J action restores the last drawer page and height",
+               drawerController
+                   && !drawerController->isBottomCollapsed()
+                   && drawerController->activeBottomPanelId()
+                          == activeBeforePassiveUpdate
+                   && drawerController->drawerContent()
+                   && drawerController->drawerContent()->isVisible()
+                   && drawerController->drawerContent()->height()
+                          >= PanelLayoutController::kMinimumContentHeight,
                true);
 
-    if (window.panelLayoutController)
-        window.panelLayoutController->closePanel(
-            QStringLiteral("activity"));
+    if (drawerController) {
+        drawerController->restorePanel(
+            QStringLiteral("connections"));
+        drawerController->setPanelHeight(
+            QStringLiteral("connections"), 333);
+    }
+    const PanelLayoutState normalDrawerState = drawerController
+        ? drawerController->layoutState()
+        : PanelLayoutState();
     const bool navigationVisibleBeforeFocus =
         window.navigationPane
         && window.navigationPane->dock()
@@ -13809,32 +14010,39 @@ int main(int argc, char** argv)
         focusModeAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("focus mode hides navigation and bottom together",
-               window.panelLayoutController
-                   && window.panelLayoutController
-                          ->isFocusModeActive()
+    expectBool("focus mode hides navigation and the whole drawer",
+               drawerController
+                   && drawerController->isFocusModeActive()
                    && window.navigationPane
                    && window.navigationPane->dock()
                    && !window.navigationPane->dock()->isVisible()
-                   && problemsDock
-                   && !problemsDock->isVisible(),
+                   && drawerDock
+                   && !drawerDock->isVisible(),
                true);
     if (focusModeAction) {
         focusModeAction->trigger();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
-    expectBool("focus mode restores the exact prior layout",
-               window.panelLayoutController
-                   && !window.panelLayoutController
-                           ->isFocusModeActive()
+    const PanelLayoutState restoredDrawerState = drawerController
+        ? drawerController->layoutState()
+        : PanelLayoutState();
+    expectBool("focus mode restores the exact prior drawer layout",
+               drawerController
+                   && !drawerController->isFocusModeActive()
                    && window.navigationPane
                    && window.navigationPane->dock()
                    && window.navigationPane->dock()->isVisible()
                           == navigationVisibleBeforeFocus
-                   && problemsDock
-                   && problemsDock->isVisible()
-                   && activityDock
-                   && !activityDock->isVisible(),
+                   && drawerDock
+                   && drawerDock->isVisible()
+                   && restoredDrawerState.activeBottomPanel
+                          == normalDrawerState.activeBottomPanel
+                   && restoredDrawerState.lastBottomPanel
+                          == normalDrawerState.lastBottomPanel
+                   && restoredDrawerState.bottomCollapsed
+                          == normalDrawerState.bottomCollapsed
+                   && restoredDrawerState.bottomPanelHeights
+                          == normalDrawerState.bottomPanelHeights,
                true);
 
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
@@ -14368,6 +14576,11 @@ int main(int argc, char** argv)
                    && themeSplitController->groups()
                           == themeGroupsBefore,
                true);
+    // Retain the backend regression only for compatibility builds that still
+    // instantiate a legacy semantic-dock coordinator. Production exercises
+    // Wave through LiveInsightToolPage below.
+    if (window.semanticDocks
+        && window.semanticDocks->wavePreviewPanelCoordinator()) {
     MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
     QTemporaryDir wavePreviewNavDir;
     expectBool("wave preview nav temp dir valid",
@@ -14941,6 +15154,7 @@ int main(int argc, char** argv)
                                            QStringLiteral("huge_delayed"))
                                != nullptr,
                true);
+    }
     QLabel* editorModeChip =
         window.findChild<QLabel*>(QStringLiteral("editorModeChip"));
     expectBool("editor mode chip exists",

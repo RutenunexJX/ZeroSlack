@@ -194,7 +194,35 @@ int main(int argc, char* argv[])
                semanticDocks
                    .rtlHighRiskEditPanelCoordinator()
                    ->dock()));
+    expect("Connections combines both existing RTL workflows",
+           semanticDocks.connectionsDock()
+               && semanticDocks.connectionsTabs()
+               && semanticDocks.connectionsTabs()->count() == 2
+               && semanticDocks.connectionsTabs()->tabText(0)
+                      == QStringLiteral("Instance Pair")
+               && semanticDocks.connectionsTabs()->tabText(1)
+                      == QStringLiteral("Multi-Signal Propagation")
+               && panelLayout.registerBottomPanel(
+                      QStringLiteral("connections"),
+                      semanticDocks.connectionsDock()));
+    panelLayout.registerBottomPanelAlias(
+        QStringLiteral("instancePairConnection"),
+        QStringLiteral("connections"));
+    panelLayout.registerBottomPanelAlias(
+        QStringLiteral("multiSignalPropagation"),
+        QStringLiteral("connections"));
     panelLayout.finalize();
+    expect("connection action routes select the matching internal tab",
+           semanticDocks.showConnectionPage(
+               QStringLiteral("multiSignalPropagation"))
+               && semanticDocks.connectionsTabs()->currentIndex() == 1
+               && semanticDocks.showConnectionPage(
+                   QStringLiteral("instancePairConnection"))
+               && semanticDocks.connectionsTabs()->currentIndex() == 0
+               && panelLayout.restorePanel(
+                   QStringLiteral("instancePairConnection"))
+               && panelLayout.activeBottomPanelId()
+                      == QStringLiteral("connections"));
 
     EditorActionSemanticState semanticState =
         EditorActionSemanticState::Stale;

@@ -173,6 +173,9 @@ QJsonObject sessionObject(
         state.ui.tabGroupingMode);
     QJsonObject panelLayout;
     panelLayout.insert(
+        QStringLiteral("version"),
+        PanelLayoutState::kVersion);
+    panelLayout.insert(
         QStringLiteral("order"),
         stringArray(state.ui.panelLayout.bottomPanelOrder));
     panelLayout.insert(
@@ -184,6 +187,30 @@ QJsonObject sessionObject(
     panelLayout.insert(
         QStringLiteral("active"),
         state.ui.panelLayout.activeBottomPanel);
+    panelLayout.insert(
+        QStringLiteral("last"),
+        state.ui.panelLayout.lastBottomPanel);
+    QJsonObject panelHeights;
+    for (auto iterator =
+             state.ui.panelLayout.bottomPanelHeights.cbegin();
+         iterator != state.ui.panelLayout.bottomPanelHeights.cend();
+         ++iterator) {
+        panelHeights.insert(
+            iterator.key(), qMax(64, iterator.value()));
+    }
+    panelLayout.insert(
+        QStringLiteral("heights"), panelHeights);
+    QJsonObject panelViewStates;
+    for (auto iterator =
+             state.ui.panelLayout.bottomPanelViewStates.cbegin();
+         iterator != state.ui.panelLayout.bottomPanelViewStates.cend();
+         ++iterator) {
+        panelViewStates.insert(
+            iterator.key(),
+            QJsonObject::fromVariantMap(iterator.value()));
+    }
+    panelLayout.insert(
+        QStringLiteral("viewStates"), panelViewStates);
     panelLayout.insert(
         QStringLiteral("expandedHeight"),
         qMax(64, state.ui.panelLayout.expandedBottomHeight));
@@ -391,6 +418,9 @@ void restoreUi(
     if (object.contains(QStringLiteral("panelLayout"))) {
         const QJsonObject panelLayout =
             object.value(QStringLiteral("panelLayout")).toObject();
+        ui->panelLayout.version =
+            panelLayout.value(QStringLiteral("version"))
+                .toInt(1);
         ui->panelLayout.bottomPanelOrder =
             stringList(
                 panelLayout.value(QStringLiteral("order")).toArray());
@@ -402,11 +432,31 @@ void restoreUi(
                 panelLayout.value(QStringLiteral("pinned")).toArray());
         ui->panelLayout.activeBottomPanel =
             panelLayout.value(QStringLiteral("active")).toString();
+        ui->panelLayout.lastBottomPanel =
+            panelLayout.value(QStringLiteral("last"))
+                .toString(ui->panelLayout.activeBottomPanel);
+        const QJsonObject panelHeights =
+            panelLayout.value(QStringLiteral("heights")).toObject();
+        for (auto iterator = panelHeights.begin();
+             iterator != panelHeights.end(); ++iterator) {
+            ui->panelLayout.bottomPanelHeights.insert(
+                iterator.key(), qMax(64, iterator.value().toInt()));
+        }
+        const QJsonObject panelViewStates =
+            panelLayout.value(QStringLiteral("viewStates")).toObject();
+        for (auto iterator = panelViewStates.begin();
+             iterator != panelViewStates.end(); ++iterator) {
+            if (iterator.value().isObject()) {
+                ui->panelLayout.bottomPanelViewStates.insert(
+                    iterator.key(),
+                    iterator.value().toObject().toVariantMap());
+            }
+        }
         ui->panelLayout.expandedBottomHeight =
             qMax(64,
                  panelLayout.value(
                      QStringLiteral("expandedHeight"))
-                     .toInt(240));
+                     .toInt(PanelLayoutState::kDefaultBottomHeight));
         ui->panelLayout.bottomCollapsed =
             panelLayout.value(QStringLiteral("collapsed")).toBool(false);
         ui->panelLayout.navigationVisible =

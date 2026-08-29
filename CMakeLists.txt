@@ -1273,7 +1273,7 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(panel_layout_controller_test
-        PRIVATE Qt6::Widgets)
+        PRIVATE Qt6::Widgets Qt6::Test)
 
     add_executable(editor_split_controller_test
         test_sv/editor_split_controller_test.cpp

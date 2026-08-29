@@ -11,6 +11,7 @@
 #include <QDir>
 #include <QEvent>
 #include <QFileInfo>
+#include <QHash>
 #include <QIcon>
 #include <QMainWindow>
 #include <QPainter>
@@ -76,6 +77,10 @@ QColor providerAccent(const QString& providerId, ThemeMode mode)
     if (providerId == QStringLiteral("rtlInsight.state")) {
         return QColor(dark ? QStringLiteral("#C39BFF")
                            : QStringLiteral("#7543B5"));
+    }
+    if (providerId == QStringLiteral("rtlInsight.wave")) {
+        return QColor(dark ? QStringLiteral("#5DE2A8")
+                           : QStringLiteral("#17875E"));
     }
     return QColor(dark ? QStringLiteral("#F6BE4B")
                        : QStringLiteral("#B86613"));
@@ -198,6 +203,22 @@ QPixmap providerIconPixmap(
         painter.drawLine(QPointF(18.3, 9.8), QPointF(20.2, 10.6));
         painter.drawLine(QPointF(24.0, 18.0), QPointF(22.5, 20.0));
         painter.drawLine(QPointF(13.8, 19.0), QPointF(12.0, 18.0));
+    } else if (providerId == QStringLiteral("rtlInsight.wave")) {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(outline);
+        painter.drawLine(QPointF(5.0, 25.5), QPointF(27.0, 25.5));
+        painter.drawLine(QPointF(5.0, 6.5), QPointF(5.0, 25.5));
+        QPainterPath waveform;
+        waveform.moveTo(6.5, 20.5);
+        waveform.lineTo(10.5, 20.5);
+        waveform.lineTo(10.5, 10.0);
+        waveform.lineTo(16.0, 10.0);
+        waveform.lineTo(16.0, 20.5);
+        waveform.lineTo(21.0, 20.5);
+        waveform.lineTo(21.0, 10.0);
+        waveform.lineTo(26.5, 10.0);
+        painter.setPen(accentPen);
+        painter.drawPath(waveform);
     } else if (providerId == QStringLiteral("liveInsights")) {
         painter.setBrush(Qt::NoBrush);
         painter.setPen(outline);
@@ -895,25 +916,40 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         : ContextWorkspaceState::boundedDockWidth(
               state.dockWidth);
 
+    QHash<QString, QString> restoredResourceKeys;
     for (const QVariantMap& encoded : state.pinnedResources) {
         QString failureReason;
         ContextResource persisted =
             ContextResource::fromVariantMap(encoded, &failureReason);
-        IContextContentProvider* provider =
-            providerForId(persisted.providerId);
-        if (!persisted.isValid() || !provider) {
+        if (!persisted.isValid()) {
             ++result.skippedResources;
             result.warnings.append(
                 failureReason.isEmpty()
-                    ? QStringLiteral("Context provider is unavailable: %1")
-                          .arg(persisted.providerId)
+                    ? QStringLiteral("Context resource is invalid.")
                     : failureReason);
             continue;
         }
+        const QString persistedKey = persisted.stableKey();
         persisted.workspaceId = currentWorkspaceRoot;
-        const ContextResource restored =
-            provider->resourceFromPersistence(
+        IContextContentProvider* provider =
+            providerForId(persisted.providerId);
+        ContextResource restored;
+        if (provider) {
+            restored = provider->resourceFromPersistence(
                 persisted, currentWorkspaceRoot);
+        } else {
+            for (const auto& [id, candidate] : providers) {
+                Q_UNUSED(id);
+                const ContextResource migrated =
+                    candidate->resourceFromPersistence(
+                        persisted, currentWorkspaceRoot);
+                if (!migrated.isValid())
+                    continue;
+                provider = candidate.get();
+                restored = migrated;
+                break;
+            }
+        }
         if (!restored.isValid()
             || !openResource(restored,
                              ContextOpenMode::Pinned,
@@ -926,13 +962,17 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
                     : failureReason);
             continue;
         }
+        restoredResourceKeys.insert(
+            persistedKey, restored.stableKey());
         ++result.restoredResources;
     }
 
     if (dockHostValue
         && !state.activePinnedResourceKey.isEmpty()) {
         dockHostValue->activateResource(
-            state.activePinnedResourceKey);
+            restoredResourceKeys.value(
+                state.activePinnedResourceKey,
+                state.activePinnedResourceKey));
     }
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;

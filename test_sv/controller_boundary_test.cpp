@@ -484,19 +484,23 @@ int main(int argc, char* argv[])
     check(containsAll(
               panelLayoutSource,
               {QStringLiteral(
-                   "ActionSurface::PanelContextMenu"),
+                   "bottomToolDrawerButtonBar"),
                QStringLiteral(
-                   "bottomPanelContextActions("),
+                   "bottomPanelButton_%1"),
                QStringLiteral(
-                   "requestBottomPanelAction("),
+                   "QStackedWidget"),
                QStringLiteral(
-                   "ActionIds::ViewBottomPanelPinned"),
+                   "setBottomCollapsed(true)"),
                QStringLiteral(
-                   "ActionIds::ViewBottomPanelClose"),
-               QStringLiteral(
-                   "\"actionId\", item.actionId")}),
+                   "restoreEditorFocus()")})
+              && containsNone(
+                  panelLayoutSource,
+                  {QStringLiteral(
+                       "ActionSurface::PanelContextMenu"),
+                   QStringLiteral(
+                       "\"actionId\", item.actionId")}),
           QStringLiteral(
-              "bottom-page menu materializes and requests Registry Actions"));
+              "bottom drawer uses fixed buttons without a legacy page menu"));
     check(containsAll(
               mainWindowSource,
               {QStringLiteral(

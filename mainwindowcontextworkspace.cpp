@@ -17,7 +17,6 @@
 #include "semanticindex.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
-#include "wavepreviewpanelcoordinator.h"
 #include "wavesimulationconfiguration.h"
 #include "workspacemanager.h"
 
@@ -83,11 +82,6 @@ void MainWindow::setupContextWorkspace()
                     const QString& path) {
                     controller->setWorkspaceRoot(path);
                     coordinator->setWorkspaceRoot(path);
-                    if (semanticDocks
-                        && semanticDocks->wavePreviewPanelCoordinator()) {
-                        semanticDocks->wavePreviewPanelCoordinator()
-                            ->setWorkspaceRoot(path);
-                    }
                     requestLiveInsightUpdates();
                 });
         connect(workspaceManager.get(),
@@ -98,11 +92,6 @@ void MainWindow::setupContextWorkspace()
                  coordinator = pinloomCodeLinkCoordinator.get()]() {
                     controller->setWorkspaceRoot({});
                     coordinator->setWorkspaceRoot({});
-                    if (semanticDocks
-                        && semanticDocks->wavePreviewPanelCoordinator()) {
-                        semanticDocks->wavePreviewPanelCoordinator()
-                            ->setWorkspaceRoot({});
-                    }
                     requestLiveInsightUpdates();
                 });
     }
@@ -168,18 +157,14 @@ void MainWindow::setupContextWorkspace()
             }
             refreshLiveInsightToolPages(
                 static_cast<int>(kind));
-            if (kind == LiveInsightKind::Wave
-                && insightPanelVisibleOrFocused(
-                    QStringLiteral("wavePreview"))) {
-                refreshActiveEditorWavePreview();
-            }
         });
 
     for (LiveInsightKind kind : {
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::Hotspot,
-             LiveInsightKind::State}) {
+             LiveInsightKind::State,
+             LiveInsightKind::Wave}) {
         auto provider =
             std::make_unique<LiveInsightsContextProvider>(
                 kind,
@@ -257,37 +242,6 @@ void MainWindow::setupContextWorkspace()
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));
 
-    if (semanticDocks
-        && semanticDocks->wavePreviewPanelCoordinator()) {
-        WavePreviewPanelCoordinator* wave =
-            semanticDocks->wavePreviewPanelCoordinator();
-        wave->setWaveformLibraryPath(
-            liveInsightWaveformLibraryPath());
-        wave->setWorkspaceRoot(
-            workspaceManager && workspaceManager->isWorkspaceOpen()
-                ? workspaceManager->getWorkspacePath()
-                : QString());
-        if (wave->dock() && liveInsightSession) {
-            liveInsightSession->setConsumerVisible(
-                wave->dock(),
-                LiveInsightKind::Wave,
-                wave->dock()->isVisible());
-            connect(
-                wave->dock(),
-                &QDockWidget::visibilityChanged,
-                liveInsightSession.get(),
-                [owner = QPointer<MainWindow>(this),
-                 dock = wave->dock(),
-                 session = liveInsightSession.get()](bool) {
-                    session->setConsumerVisible(
-                        dock,
-                        LiveInsightKind::Wave,
-                        owner
-                            && owner->insightPanelVisibleOrFocused(
-                                QStringLiteral("wavePreview")));
-                });
-        }
-    }
     requestLiveInsightUpdates();
 }
 
@@ -370,17 +324,6 @@ void MainWindow::requestLiveInsightUpdates()
 {
     if (!liveInsightSession || !tabManager)
         return;
-    if (semanticDocks
-        && semanticDocks->wavePreviewPanelCoordinator()
-        && semanticDocks->wavePreviewPanelCoordinator()->dock()) {
-        QDockWidget* waveDock =
-            semanticDocks->wavePreviewPanelCoordinator()->dock();
-        liveInsightSession->setConsumerVisible(
-            waveDock,
-            LiveInsightKind::Wave,
-            insightPanelVisibleOrFocused(
-                QStringLiteral("wavePreview")));
-    }
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor) {
         for (LiveInsightKind kind : {
@@ -511,7 +454,7 @@ void MainWindow::refreshLiveInsightToolPages(int kindValue)
         static_cast<LiveInsightKind>(kindValue);
     LiveInsightToolPage* page =
         liveInsightToolPages.value(kindValue).data();
-    if (!page || !page->isVisible())
+    if (!page || !page->hasVisibleSurface())
         return;
     page->setContext(activeLiveInsightToolContext());
 }
@@ -631,6 +574,15 @@ void MainWindow::openLiveInsightFullView(
                 }
             }
         });
+    page->setRefreshHandler(
+        [owner = QPointer<MainWindow>(this),
+         target = QPointer<LiveInsightToolPage>(page)]() {
+            if (!owner || !target)
+                return;
+            target->setContext(
+                owner->activeLiveInsightToolContext());
+            owner->requestLiveInsightUpdates();
+        });
     page->setContext(context);
     const QString title = kind == LiveInsightKind::Wave
         ? QStringLiteral("Symbolic Wave Preview")
@@ -645,7 +597,7 @@ void MainWindow::openLiveInsightFullView(
     liveInsightToolPages.insert(static_cast<int>(kind), page);
     if (liveInsightSession) {
         liveInsightSession->setConsumerVisible(
-            page, kind, page->isVisible());
+            page, kind, page->hasVisibleSurface());
     }
     requestLiveInsightUpdates();
 }

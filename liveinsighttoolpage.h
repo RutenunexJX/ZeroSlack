@@ -9,7 +9,6 @@
 #include <functional>
 #include <memory>
 
-class RtlInsightsPanelCoordinator;
 class RtlInsightWorkbench;
 class WavePreviewPanelCoordinator;
 class QMainWindow;
@@ -42,6 +41,7 @@ public:
     using StatusHandler =
         std::function<void(const QString&, int)>;
     using VisibilityHandler = std::function<void(bool)>;
+    using RefreshHandler = std::function<void()>;
 
     explicit LiveInsightToolPage(
         LiveInsightKind kind,
@@ -52,10 +52,11 @@ public:
     void setNavigationHandler(NavigationHandler handler);
     void setStatusHandler(StatusHandler handler);
     void setVisibilityHandler(VisibilityHandler handler);
+    void setRefreshHandler(RefreshHandler handler);
     void setWaveformLibraryPath(const QString& path);
     void setContext(const LiveInsightToolContext& context);
+    bool hasVisibleSurface() const;
 
-    RtlInsightsPanelCoordinator* rtlCoordinatorForTest() const;
     RtlInsightWorkbench* workbenchForTest() const;
     WavePreviewPanelCoordinator* waveCoordinatorForTest() const;
     QMainWindow* detachToWindow();
@@ -72,7 +73,7 @@ private:
     NavigationHandler navigationHandler;
     StatusHandler statusHandler;
     VisibilityHandler visibilityHandler;
-    std::unique_ptr<RtlInsightsPanelCoordinator> rtlCoordinator;
+    RefreshHandler refreshHandler;
     std::unique_ptr<WavePreviewPanelCoordinator> waveCoordinator;
     RtlInsightWorkbench* workbench = nullptr;
     QPointer<QMainWindow> detachedWindow;
@@ -80,6 +81,7 @@ private:
 
     void createSurface();
     void renderContext();
+    void notifyVisibility();
 };
 
 #endif // LIVEINSIGHTTOOLPAGE_H

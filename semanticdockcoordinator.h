@@ -27,6 +27,7 @@ class WorkspaceManager;
 class WorkspaceEditDocumentManager;
 class QMainWindow;
 class QDockWidget;
+class QTabWidget;
 
 class SemanticDockCoordinator
 {
@@ -59,6 +60,9 @@ public:
     rtlActionDocumentManager() const;
     QDockWidget* instancePairConnectionDock() const;
     QDockWidget* multiSignalPropagationDock() const;
+    QDockWidget* connectionsDock() const;
+    QTabWidget* connectionsTabs() const;
+    bool showConnectionPage(const QString& panelId);
     RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
     SignalKernelGraphPanelCoordinator* signalKernelGraphPanelCoordinator() const;
     WavePreviewPanelCoordinator* wavePreviewPanelCoordinator() const;
@@ -78,7 +82,6 @@ private:
                  NavigationCommandCoordinator* navigationCommandCoordinator);
         bool hasMainWindow() const;
         void addBottomDock(QDockWidget* dock) const;
-        void tabifyBottomDock(QDockWidget* first, QDockWidget* second) const;
     };
 
     struct PanelBundle {
@@ -101,13 +104,10 @@ private:
             multiSignalPlanner;
         std::unique_ptr<MultiSignalPropagationWorkflow>
             multiSignalWorkflow;
-        QDockWidget* instancePairDock = nullptr;
-        QDockWidget* multiSignalDock = nullptr;
+        QDockWidget* connectionsDock = nullptr;
+        QTabWidget* connectionsTabs = nullptr;
         MultiSignalPropagationPanel* multiSignalPanel = nullptr;
         bool rtlActionStatusConnected = false;
-        std::unique_ptr<RtlInsightsPanelCoordinator> rtlInsightsPanel;
-        std::unique_ptr<SignalKernelGraphPanelCoordinator> signalKernelGraphPanel;
-        std::unique_ptr<WavePreviewPanelCoordinator> wavePreviewPanel;
         std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
 
         void createPanels(const DockDependencies& dependencies);

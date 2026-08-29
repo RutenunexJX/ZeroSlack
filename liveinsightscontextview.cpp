@@ -32,6 +32,8 @@ LiveInsightKind kindForIndex(int index)
         return LiveInsightKind::Hotspot;
     case 3:
         return LiveInsightKind::State;
+    case 4:
+        return LiveInsightKind::Wave;
     default:
         return LiveInsightKind::Kernel;
     }
@@ -144,7 +146,7 @@ void LiveInsightsContextView::initialize()
             &LiveInsightSession::snapshotChanged,
             this,
             &LiveInsightsContextView::refreshSnapshot);
-        for (int index = 0; index < 4; ++index) {
+        for (int index = 0; index < static_cast<int>(cards.size()); ++index) {
             const LiveInsightKind kind = kindForIndex(index);
             refreshSnapshot(kind, sessionValue->snapshot(kind));
         }
@@ -359,7 +361,7 @@ int LiveInsightsContextView::indexForKind(LiveInsightKind kind)
     case LiveInsightKind::State:
         return 3;
     case LiveInsightKind::Wave:
-        return -1;
+        return 4;
     }
     return 0;
 }
@@ -413,7 +415,7 @@ void LiveInsightsContextView::buildUi()
     contentStack = new QStackedWidget(this);
     contentStack->setObjectName(
         QStringLiteral("liveInsightsContentStack"));
-    for (int index = 0; index < 4; ++index) {
+    for (int index = 0; index < static_cast<int>(cards.size()); ++index) {
         const LiveInsightKind kind = kindForIndex(index);
         const QString kindId = liveInsightKindId(kind);
         auto* card = new QFrame(this);
@@ -548,7 +550,7 @@ void LiveInsightsContextView::renderSnapshot(
 
 void LiveInsightsContextView::refreshTheme()
 {
-    for (int index = 0; index < 4; ++index) {
+    for (int index = 0; index < static_cast<int>(cards.size()); ++index) {
         const LiveInsightKind kind = kindForIndex(index);
         if (hasRenderedSnapshot.at(index)) {
             renderSnapshot(kind, renderedSnapshots.at(index));
@@ -569,7 +571,7 @@ void LiveInsightsContextView::refreshAllFromSession()
 {
     if (!sessionValue)
         return;
-    for (int index = 0; index < 4; ++index) {
+    for (int index = 0; index < static_cast<int>(cards.size()); ++index) {
         const LiveInsightKind kind = kindForIndex(index);
         const LiveInsightSnapshot snapshot = sessionValue->snapshot(kind);
         renderedSnapshots.at(index) = snapshot;

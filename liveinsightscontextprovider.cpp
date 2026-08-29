@@ -85,7 +85,8 @@ bool LiveInsightsContextProvider::isWorkbenchProviderId(
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::Hotspot,
-             LiveInsightKind::State}) {
+             LiveInsightKind::State,
+             LiveInsightKind::Wave}) {
         if (providerId == providerIdForKind(kind))
             return true;
     }
@@ -98,11 +99,8 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
     const QVariantMap& state)
 {
     ContextResource resource;
-    const bool legacyWave = kind == LiveInsightKind::Wave;
-    resource.providerId = legacyWave
-        ? staticProviderId() : providerIdForKind(kind);
-    resource.resourceId = legacyWave
-        ? kPrimaryResourceId : liveInsightKindId(kind);
+    resource.providerId = providerIdForKind(kind);
+    resource.resourceId = liveInsightKindId(kind);
     resource.uri = uriForKind(kind);
     switch (kind) {
     case LiveInsightKind::Kernel:

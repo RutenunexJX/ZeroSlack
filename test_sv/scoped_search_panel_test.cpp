@@ -440,13 +440,12 @@ int main(int argc, char* argv[])
               coordinator.dock()),
           "coordinator dock registers with panel layout");
     layoutController.finalize();
+    layoutController.setAnimationsEnabled(false);
 
     window.show();
     QApplication::processEvents();
-    window.resizeDocks(
-        {coordinator.dock()},
-        {190},
-        Qt::Vertical);
+    layoutController.setPanelHeight(
+        ScopedSearchPanelCoordinator::panelId(), 190);
     QApplication::processEvents();
 
     ScopedSearchPanel* const uniquePanel =
@@ -457,7 +456,8 @@ int main(int argc, char* argv[])
               ScopedSearchPanelCoordinator::panelId()),
           "external panel layout closes the search page");
     QApplication::processEvents();
-    const int closedHeight = uniqueDock->height();
+    const int closedHeight = layoutController.panelHeight(
+        ScopedSearchPanelCoordinator::panelId());
     editorFocus->setFocus();
     QApplication::processEvents();
     QWidget* const focusBeforeClosedRefresh =
@@ -467,7 +467,10 @@ int main(int argc, char* argv[])
     check(coordinator.panel() == uniquePanel
               && coordinator.dock() == uniqueDock
               && uniqueDock->isHidden()
-              && uniqueDock->height() == closedHeight
+              && layoutController.isBottomCollapsed()
+              && layoutController.panelHeight(
+                     ScopedSearchPanelCoordinator::panelId())
+                     == closedHeight
               && QApplication::focusWidget()
                   == focusBeforeClosedRefresh,
           "refresh reuses the hidden page without visibility, height, or focus changes");
@@ -476,12 +479,11 @@ int main(int argc, char* argv[])
               ScopedSearchPanelCoordinator::panelId()),
           "external panel layout reopens the search page");
     QApplication::processEvents();
-    window.resizeDocks(
-        {uniqueDock},
-        {205},
-        Qt::Vertical);
+    layoutController.setPanelHeight(
+        ScopedSearchPanelCoordinator::panelId(), 205);
     QApplication::processEvents();
-    const int visibleHeight = uniqueDock->height();
+    const int visibleHeight = layoutController.panelHeight(
+        ScopedSearchPanelCoordinator::panelId());
     editorFocus->setFocus();
     QApplication::processEvents();
     QWidget* const focusBeforeVisibleRefresh =
@@ -491,8 +493,12 @@ int main(int argc, char* argv[])
     check(coordinator.panel() == uniquePanel
               && window.findChildren<ScopedSearchPanel*>()
                      .size() == 1
-              && uniqueDock->isVisible()
-              && uniqueDock->height() == visibleHeight
+              && uniqueDock->isHidden()
+              && layoutController.isPanelOpen(
+                     ScopedSearchPanelCoordinator::panelId())
+              && layoutController.panelHeight(
+                     ScopedSearchPanelCoordinator::panelId())
+                     == visibleHeight
               && QApplication::focusWidget()
                   == focusBeforeVisibleRefresh,
           "visible refresh preserves the unique page, dock height, and editor focus");
@@ -547,19 +553,27 @@ int main(int argc, char* argv[])
     QDockWidget* const productionDock =
         productionWindow.findChild<QDockWidget*>(
             QStringLiteral("scopedSearchDock"));
+    QWidget* const drawerContent =
+        productionWindow.findChild<QWidget*>(
+            QStringLiteral("bottomToolDrawerContent"));
+    QWidget* const searchButton =
+        productionWindow.findChild<QWidget*>(
+            QStringLiteral("bottomPanelButton_scopedSearch"));
     check(productionPanel
               && productionDock
+              && drawerContent
+              && searchButton
               && productionWindow
                          .findChildren<ScopedSearchPanel*>()
                          .size()
                      == 1
               && productionDock
-                         ->property("bottomPanelId")
+                         ->property("bottomDrawerPanelId")
                          .toString()
                      == ScopedSearchPanelCoordinator::panelId()
-              && !productionDock
-                      ->toggleViewAction()
-                      ->isChecked(),
+              && drawerContent->isAncestorOf(productionPanel)
+              && productionDock->widget() == nullptr
+              && !searchButton->property("checked").toBool(),
           "production owns one registered scoped-search bottom page");
     check(activeEditor
               && activeDocument

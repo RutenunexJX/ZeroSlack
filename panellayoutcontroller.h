@@ -9,16 +9,17 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
-#include <QSet>
 #include <QStringList>
 #include <QVector>
 
 #include <functional>
 
-class QMainWindow;
 class QEvent;
-class QPoint;
-class QTabBar;
+class QFrame;
+class QMainWindow;
+class QPropertyAnimation;
+class QStackedWidget;
+class QToolButton;
 class QWidget;
 
 struct BottomPanelContextAction {
@@ -36,6 +37,11 @@ public:
                            const QString&,
                            QString*)>;
 
+    static constexpr int kDefaultContentHeight = 280;
+    static constexpr int kMinimumContentHeight = 160;
+    static constexpr int kMaximumHeightPercent = 55;
+    static constexpr int kAnimationDurationMs = 140;
+
     explicit PanelLayoutController(QMainWindow* mainWindow,
                                    QObject* parent = nullptr);
     ~PanelLayoutController() override;
@@ -45,6 +51,8 @@ public:
                            QDockWidget* dock);
     bool registerBottomPanel(const QString& panelId,
                              QDockWidget* dock);
+    bool registerBottomPanelAlias(const QString& alias,
+                                  const QString& panelId);
     void finalize();
 
     PanelLayoutState layoutState() const;
@@ -53,6 +61,7 @@ public:
 
     QStringList bottomPanelIds() const;
     QString activeBottomPanelId() const;
+    QString lastBottomPanelId() const;
     bool isBottomPanel(const QDockWidget* dock) const;
     QString panelIdForDock(const QDockWidget* dock) const;
     bool isPanelOpen(const QString& panelId) const;
@@ -63,18 +72,27 @@ public:
     bool setPanelPinned(const QString& panelId, bool pinned);
     bool movePanel(const QString& panelId, int destinationIndex);
     QList<BottomPanelContextAction>
-    bottomPanelContextActions(
-        const QString& panelId) const;
+    bottomPanelContextActions(const QString& panelId) const;
     void setRegisteredPanelActionRequestHandler(
         RegisteredPanelActionRequestHandler handler);
-    bool requestBottomPanelAction(
-        const QString& actionId,
-        const QString& panelId,
-        QString* failureReason = nullptr);
+    bool requestBottomPanelAction(const QString& actionId,
+                                  const QString& panelId,
+                                  QString* failureReason = nullptr);
 
     bool isBottomCollapsed() const;
     void setBottomCollapsed(bool collapsed);
     void toggleBottomCollapsed();
+
+    int panelHeight(const QString& panelId) const;
+    bool setPanelHeight(const QString& panelId, int height);
+    bool resetPanelHeight(const QString& panelId);
+    int maximumContentHeight() const;
+
+    void setPanelBadge(const QString& panelId,
+                       const QString& text,
+                       const QString& tone = QString());
+    QString panelBadgeText(const QString& panelId) const;
+    QString panelBadgeTone(const QString& panelId) const;
 
     bool isFocusModeActive() const;
     void setFocusModeActive(bool active);
@@ -82,6 +100,14 @@ public:
 
     void bindManagedTabBars();
     void setStateChangedHandler(std::function<void()> handler);
+    void setAnimationsEnabled(bool enabled);
+    bool animationsEnabled() const;
+
+    QDockWidget* drawerDock() const;
+    QWidget* drawerContent() const;
+    QWidget* resizeHandle() const;
+    QWidget* buttonBar() const;
+    QToolButton* buttonForPanel(const QString& panelId) const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -89,10 +115,15 @@ protected:
 private:
     struct PanelEntry {
         QString id;
+        QString label;
         QString initialTitle;
         QPointer<QDockWidget> dock;
         QPointer<QWidget> content;
-        QDockWidget::DockWidgetFeatures dockFeatures;
+        QPointer<QToolButton> button;
+        int height = kDefaultContentHeight;
+        QVariantMap viewState;
+        QString badgeText;
+        QString badgeTone;
     };
 
     struct SidePanelEntry {
@@ -102,51 +133,54 @@ private:
 
     QPointer<QMainWindow> window;
     QPointer<QDockWidget> navigationDock;
+    QPointer<QDockWidget> bottomDrawerDock;
+    QPointer<QWidget> bottomDrawerRoot;
+    QPointer<QWidget> bottomResizeHandle;
+    QPointer<QStackedWidget> bottomContentStack;
+    QPointer<QFrame> bottomButtonBar;
+    QPointer<QPropertyAnimation> heightAnimation;
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;
+    QHash<QString, QString> aliases;
     QStringList defaultOrder;
-    QStringList order;
-    QHash<QString, bool> panelOpen;
-    QSet<QString> pinnedPanels;
-    QList<QPointer<QTabBar>> managedTabBars;
     QString activePanel;
-    int expandedHeight = 240;
-    int expandedGeometrySamples = 0;
+    QString lastPanel;
     bool collapsed = false;
     bool applying = false;
-    bool bottomGeometrySyncPending = false;
-    bool initialBottomGeometryPending = false;
-    bool resizingBottomPanel = false;
     bool finalized = false;
     bool focusMode = false;
     bool navigationOpenBeforeFocus = false;
-    QHash<QString, bool> panelOpenBeforeFocus;
     QHash<QString, bool> sidePanelOpenBeforeFocus;
+    bool animationsEnabledValue = true;
+    bool dragging = false;
+    bool applyingDrawerGeometry = false;
+    bool applyingDrawerStyle = false;
+    int dragStartGlobalY = 0;
+    int dragStartHeight = kDefaultContentHeight;
+    QPointer<QWidget> focusBeforeDrawer;
     std::function<void()> stateChangedHandler;
     RegisteredPanelActionRequestHandler
         registeredPanelActionRequestHandler;
 
     PanelEntry* entryForId(const QString& panelId);
     const PanelEntry* entryForId(const QString& panelId) const;
-    QString idForTab(const QTabBar* bar, int index) const;
-    int currentExpandedBottomHeight() const;
-    PanelEntry* activeBottomEntry();
-    const PanelEntry* activeBottomEntry() const;
-    QTabBar* managedBottomTabBar() const;
-    int visibleBottomContentHeight() const;
-    void prepareContentForManualResize(PanelEntry& entry);
-    void scheduleBottomGeometrySync();
-    void synchronizeBottomStateFromGeometry();
-    void setBottomCollapsedState(bool shouldCollapse,
-                                 bool resizeDock,
-                                 bool notify);
-    void applyOrder();
-    void applyTabBarOrder();
-    void applyPinnedFeatures(PanelEntry& entry);
-    void applyBottomPanelGeometry(bool shouldCollapse);
-    void updateTabCloseButtons();
-    void synchronizeOrderFromTabBar(QTabBar* bar);
-    void showTabContextMenu(QTabBar* bar, const QPoint& position);
+    QString canonicalPanelId(const QString& panelId) const;
+    int boundedContentHeight(int height) const;
+    int visibleContentHeight() const;
+    void buildDrawer();
+    void buildButton(PanelEntry& entry);
+    void activatePanel(PanelEntry& entry, bool moveFocus);
+    void applyDrawerState(bool animate);
+    void animateContentHeight(int start, int end);
+    void applyContentHeight(int height);
+    void updateButtons();
+    void updateDrawerStyle();
+    void capturePanelViewState(PanelEntry& entry) const;
+    void restorePanelViewState(PanelEntry& entry);
+    QVariantMap captureWidgetState(QWidget* root) const;
+    void restoreWidgetState(QWidget* root, const QVariantMap& state);
+    void restoreEditorFocus();
+    bool focusIsInsideDrawer() const;
     void notifyStateChanged();
 };
 
