@@ -90,7 +90,6 @@ public:
         window.setCentralWidget(editor);
 
         controller = new PanelLayoutController(&window, &window);
-        controller->setAnimationsEnabled(false);
         const QList<QPair<QString, QString>> descriptors = {
             {QStringLiteral("problems"), QStringLiteral("Problems")},
             {QStringLiteral("scopedSearch"), QStringLiteral("Search")},
@@ -228,6 +227,57 @@ void verifyClickAndShortcutBehavior(DrawerHarness& harness)
               && harness.controller->activeBottomPanelId()
                      == QStringLiteral("activity"),
           "Ctrl+J restores the last used panel");
+}
+
+void verifyClickGeometryStability(DrawerHarness& harness)
+{
+    check(!harness.controller->animationsEnabled(),
+          "bottom drawer height animation is disabled by default");
+    harness.controller->restorePanel(QStringLiteral("problems"));
+    harness.controller->resetPanelHeight(QStringLiteral("problems"));
+    QApplication::processEvents();
+
+    QToolButton* problems =
+        harness.controller->buttonForPanel(QStringLiteral("problems"));
+    QWidget* content = harness.controller->drawerContent();
+    QWidget* buttonBar = harness.controller->buttonBar();
+    check(problems && content && buttonBar,
+          "click stability fixtures are available");
+    if (!problems || !content || !buttonBar)
+        return;
+
+    const QRect windowGeometry = harness.window.geometry();
+    const int buttonBarBottom =
+        buttonBar->mapToGlobal(buttonBar->rect().bottomLeft()).y();
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QApplication::processEvents();
+    check(harness.controller->isBottomCollapsed()
+              && harness.window.geometry() == windowGeometry
+              && buttonBar->mapToGlobal(
+                     buttonBar->rect().bottomLeft()).y()
+                     == buttonBarBottom,
+          "collapse click keeps the window and button bar stationary");
+
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QApplication::processEvents();
+    check(!harness.controller->isBottomCollapsed()
+              && content->height()
+                     == PanelLayoutController::kDefaultContentHeight
+              && harness.window.geometry() == windowGeometry
+              && buttonBar->mapToGlobal(
+                     buttonBar->rect().bottomLeft()).y()
+                     == buttonBarBottom,
+          "expand click restores height without moving the window or buttons");
+
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QTest::mouseClick(problems, Qt::LeftButton);
+    QApplication::processEvents();
+    check(!harness.controller->isBottomCollapsed()
+              && problems->isChecked()
+              && content->height()
+                     == PanelLayoutController::kDefaultContentHeight
+              && harness.window.geometry() == windowGeometry,
+          "rapid reverse click settles without top-level geometry jitter");
 }
 
 void verifyFocusAndEditorPreservation(DrawerHarness& harness)
@@ -450,6 +500,7 @@ int main(int argc, char* argv[])
     DrawerHarness harness;
     verifyButtonContract(harness);
     verifyClickAndShortcutBehavior(harness);
+    verifyClickGeometryStability(harness);
     verifyFocusAndEditorPreservation(harness);
     verifySizing(harness);
     verifyPersistenceAndFocusIsolation(harness);

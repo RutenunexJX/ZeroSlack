@@ -10,13 +10,13 @@
 #include <QMainWindow>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPropertyAnimation>
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolButton>
+#include <QVariantAnimation>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -168,11 +168,10 @@ PanelLayoutController::PanelLayoutController(
     : QObject(parent)
     , window(mainWindow)
 {
-    animationsEnabledValue =
-        !qEnvironmentVariableIsSet("ZEROSLACK_DISABLE_ANIMATIONS")
-        && !QApplication::platformName().contains(
-            QStringLiteral("offscreen"), Qt::CaseInsensitive)
-        && QApplication::isEffectEnabled(Qt::UI_AnimateCombo);
+    // Animating a QMainWindow dock's height moves its embedded button bar
+    // during relayout on Windows. Keep drawer transitions atomic so the
+    // controls and top-level window remain visually stationary.
+    animationsEnabledValue = false;
     buildDrawer();
     if (qApp)
         qApp->installEventFilter(this);
@@ -243,18 +242,17 @@ void PanelLayoutController::buildDrawer()
     bottomDrawerDock->setWidget(bottomDrawerRoot);
     window->addDockWidget(Qt::BottomDockWidgetArea, bottomDrawerDock);
 
-    heightAnimation = new QPropertyAnimation(
-        bottomContentStack, "maximumHeight", this);
+    heightAnimation = new QVariantAnimation(this);
     heightAnimation->setDuration(kAnimationDurationMs);
     heightAnimation->setEasingCurve(QEasingCurve::OutCubic);
     connect(heightAnimation,
-            &QPropertyAnimation::valueChanged,
+            &QVariantAnimation::valueChanged,
             this,
             [this](const QVariant& value) {
-                applyContentHeight(value.toInt());
+                applyContentHeight(value.toInt(), false);
             });
     connect(heightAnimation,
-            &QPropertyAnimation::finished,
+            &QVariantAnimation::finished,
             this,
             [this]() {
                 if (!focusMode && collapsed) {
@@ -263,6 +261,10 @@ void PanelLayoutController::buildDrawer()
                     if (bottomResizeHandle)
                         bottomResizeHandle->hide();
                     applyContentHeight(0);
+                } else if (!focusMode) {
+                    if (PanelEntry* entry = entryForId(activePanel))
+                        applyContentHeight(
+                            boundedContentHeight(entry->height));
                 }
             });
 
@@ -1104,7 +1106,9 @@ void PanelLayoutController::animateContentHeight(int start, int end)
     heightAnimation->start();
 }
 
-void PanelLayoutController::applyContentHeight(int height)
+void PanelLayoutController::applyContentHeight(
+    int height,
+    bool settleDock)
 {
     if (!bottomContentStack || !bottomDrawerDock
         || applyingDrawerGeometry)
@@ -1117,9 +1121,11 @@ void PanelLayoutController::applyContentHeight(int height)
     const int totalHeight = safeHeight + handleHeight + kButtonBarHeight;
     bottomDrawerDock->setMinimumHeight(totalHeight);
     bottomDrawerDock->setMaximumHeight(totalHeight);
-    bottomDrawerRoot->updateGeometry();
-    bottomDrawerDock->updateGeometry();
-    if (window && bottomDrawerDock->isVisible()) {
+    if (settleDock) {
+        bottomDrawerRoot->updateGeometry();
+        bottomDrawerDock->updateGeometry();
+    }
+    if (settleDock && window && bottomDrawerDock->isVisible()) {
         window->resizeDocks(
             {bottomDrawerDock}, {totalHeight}, Qt::Vertical);
     }

@@ -17,9 +17,9 @@
 class QEvent;
 class QFrame;
 class QMainWindow;
-class QPropertyAnimation;
 class QStackedWidget;
 class QToolButton;
+class QVariantAnimation;
 class QWidget;
 
 struct BottomPanelContextAction {
@@ -138,7 +138,7 @@ private:
     QPointer<QWidget> bottomResizeHandle;
     QPointer<QStackedWidget> bottomContentStack;
     QPointer<QFrame> bottomButtonBar;
-    QPointer<QPropertyAnimation> heightAnimation;
+    QPointer<QVariantAnimation> heightAnimation;
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;
     QHash<QString, QString> aliases;
@@ -172,7 +172,7 @@ private:
     void activatePanel(PanelEntry& entry, bool moveFocus);
     void applyDrawerState(bool animate);
     void animateContentHeight(int start, int end);
-    void applyContentHeight(int height);
+    void applyContentHeight(int height, bool settleDock = true);
     void updateButtons();
     void updateDrawerStyle();
     void capturePanelViewState(PanelEntry& entry) const;
