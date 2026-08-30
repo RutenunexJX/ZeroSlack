@@ -1,5 +1,7 @@
 #include "zeroslackcli.h"
 
+#include "version.h"
+
 #include <QCoreApplication>
 #include <QTextStream>
 
@@ -138,7 +140,7 @@ int main(int argc, char* argv[])
     QCoreApplication application(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("zeroslack-cli"));
     QCoreApplication::setOrganizationName(QStringLiteral("ZeroSlack"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("1"));
+    QCoreApplication::setApplicationVersion(QString::fromLatin1(APP_VERSION));
 
     QTextStream output(stdout);
     const QStringList allArguments = application.arguments().mid(1);
@@ -151,7 +153,8 @@ int main(int argc, char* argv[])
     if (allArguments.size() == 1
         && (allArguments.constFirst() == QStringLiteral("--version")
             || allArguments.constFirst() == QStringLiteral("-v"))) {
-        output << QStringLiteral("zeroslack-cli 1\n");
+        output << QStringLiteral("zeroslack-cli %1\n")
+                      .arg(QCoreApplication::applicationVersion());
         return 0;
     }
 

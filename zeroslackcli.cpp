@@ -12,6 +12,7 @@
 #include "workspaceconfigurationservice.h"
 
 #include <QCryptographicHash>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -826,6 +827,8 @@ QJsonObject errorEnvelope(const ZeroSlackCliRequest& request,
         {QStringLiteral("schema"), QString::fromLatin1(kSchema)},
         {QStringLiteral("schemaVersion"),
          ZeroSlackCliService::kSchemaVersion},
+        {QStringLiteral("appVersion"),
+         QCoreApplication::applicationVersion()},
         {QStringLiteral("command"), request.command},
         {QStringLiteral("ok"), false},
         {QStringLiteral("generatedAtUtc"),
@@ -851,6 +854,8 @@ QJsonObject successEnvelope(const ZeroSlackCliRequest& request,
         {QStringLiteral("schema"), QString::fromLatin1(kSchema)},
         {QStringLiteral("schemaVersion"),
          ZeroSlackCliService::kSchemaVersion},
+        {QStringLiteral("appVersion"),
+         QCoreApplication::applicationVersion()},
         {QStringLiteral("command"), request.command},
         {QStringLiteral("ok"), true},
         {QStringLiteral("generatedAtUtc"),
