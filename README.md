@@ -128,8 +128,9 @@ and preview-first RTL editing workflows.
 ## Suite application protocol
 
 ZeroSlack is a `suite-app/v1` provider. It resolves
-`zeroslack://source?file=...&line=...&column=...`, exposes the
-`zeroslack.source.reveal` action, and publishes the model Surface
+`zeroslack://source?file=...&line=...&column=...` and
+`zeroslack://symbol/<stable-id>?workspace=...`, exposes the
+`zeroslack.source.reveal` and `zeroslack.symbol.reveal` actions, and publishes the model Surface
 `zeroslack.source.preview`. The adapter uses the neutral `SuiteApp::suiteapp`
 SDK; it does not read another application's database or include another
 application's private headers.
@@ -139,6 +140,24 @@ or sibling `Runtime` directory, or `PATH`. If it is absent, ZeroSlack continues
 to run normally and only suite discovery is unavailable. The complete contract
 and cross-application verification record are in
 [Suite App Protocol Plan](SUITE_APP_PROTOCOL_PLAN.md).
+
+## Read-only AI CLI
+
+`zeroslack-cli.exe` reuses the Slang semantic pipeline without opening a GUI.
+It emits versioned JSON, JSONL, or Markdown for workspace summaries, source
+context, stable symbols, Pinloom code-link metadata, impact graphs, Git changes,
+and token-bounded AI bundles. Its semantic cache is stored in the user cache
+directory and never in the RTL workspace.
+
+```powershell
+zeroslack-cli scan <workspace>
+zeroslack-cli summary <workspace>
+zeroslack-cli context <workspace> --file rtl/top.sv --line 120
+zeroslack-cli bundle <workspace> --query dma --max-tokens 6000 --format markdown
+```
+
+The complete command and cache contract is documented in
+[ZeroSlack CLI Plan](ZEROSLACK_CLI_PLAN.md).
 
 ## Build, run, and test
 
@@ -150,8 +169,9 @@ generator, and initialized `thirdparty/slang`, `thirdparty/tree_sitter`, and
 ```powershell
 git submodule update --init --recursive
 cmake -S . -B build/local -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=<qt-prefix>
-cmake --build build/local --target demo
+cmake --build build/local --target demo zeroslack_cli
 build/local/demo.exe
+build/local/zeroslack-cli.exe --help
 ctest --test-dir build/local --output-on-failure -j1
 ```
 

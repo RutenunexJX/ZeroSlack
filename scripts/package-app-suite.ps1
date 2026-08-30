@@ -76,6 +76,7 @@ $toolchainSource = Resolve-RequiredDirectory $ToolchainDirectory "Wave toolchain
 $qtBin = Resolve-RequiredDirectory $QtBinDirectory "Qt bin"
 
 Assert-RequiredFile $zeroSlackSource "ZeroSlack.exe"
+Assert-RequiredFile $zeroSlackSource "zeroslack-cli.exe"
 Assert-RequiredFile $pinloomSource "pinloom_app.exe"
 Assert-RequiredFile $waveSource "wave-workbench.exe"
 Assert-RequiredFile $waveSource "wavewidgets.dll"
@@ -151,6 +152,7 @@ $components = @(
         version = Resolve-ComponentVersion `
             $ZeroSlackVersion (Join-Path $zeroSlackTarget "ZeroSlack.exe")
         executable = "Apps/ZeroSlack-win64/ZeroSlack.exe"
+        cli = "Apps/ZeroSlack-win64/zeroslack-cli.exe"
     },
     [ordered]@{
         id = "pinloom"

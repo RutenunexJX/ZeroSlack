@@ -100,10 +100,10 @@ fields are validated strictly.
 
 Resource URIs remain owner-specific:
 
-- `zeroslack://workspace/...`
-- `pinloom://entry/...`
-- `wave://project/...`
-- `regmap://project/...`
+- `zeroslack://source?...` and `zeroslack://symbol/<stable-id>`
+- `pinloom://anchor/<stable-id>` and `pinloom://clip/<stable-id>`
+- `wave://scenario/<stable-id>`
+- `regmap://register/<stable-id>`
 
 Cross-application state stores only stable URIs and explicit lightweight view
 state. Authoritative content is resolved again from the owner.
@@ -131,7 +131,7 @@ window reparenting is not part of the protocol.
 ### ZeroSlack
 
 - resource: source file/range or semantic symbol;
-- action: reveal source resource;
+- actions: reveal source resource or stable semantic symbol;
 - Surface: source preview descriptor with external application fallback.
 
 ### Pinloom

@@ -477,6 +477,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexsnapshotpublication.cpp
     semanticruntimecoordinator.cpp
     semanticruntimewiring.cpp
+    semanticstableidentity.cpp
     signaljourneyservice.cpp
     signalkernelgraphservice.cpp
     signalusagehotspotpanel.cpp
@@ -688,6 +689,7 @@ set(ZEROSLACK_CORE_SOURCES
     semanticindexmodulecontexthelpers.h
     semanticindexsnapshot.h
     semanticruntimecoordinator.h
+    semanticstableidentity.h
     signaljourneyservice.h
     signalkernelgraphservice.h
     signalusagehotspotpanel.h
@@ -805,6 +807,20 @@ target_sources(zeroslack_core PRIVATE
 
 # Main application target.
 add_executable(demo main.cpp)
+
+# Read-only machine interface for AI and automation. The support layer links
+# the existing semantic core, while the executable itself remains a console
+# application and initializes only QCoreApplication.
+add_library(zeroslack_cli_support STATIC
+    zeroslackcli.cpp
+    zeroslackcli.h)
+target_link_libraries(zeroslack_cli_support PUBLIC
+    zeroslack_core
+    Qt6::Core)
+add_executable(zeroslack_cli zeroslackclimain.cpp)
+set_target_properties(zeroslack_cli PROPERTIES
+    OUTPUT_NAME "zeroslack-cli")
+target_link_libraries(zeroslack_cli PRIVATE zeroslack_cli_support)
 
 # Build a Windows GUI app without a console window.
 if(WIN32)
@@ -1356,6 +1372,11 @@ if(BUILD_TESTING)
         test_sv/pinloom_code_link_store_test.cpp)
     target_link_libraries(pinloom_code_link_store_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(zeroslack_cli_test
+        test_sv/zeroslack_cli_test.cpp)
+    target_link_libraries(zeroslack_cli_test
+        PRIVATE zeroslack_cli_support Qt6::Test)
 
     add_executable(editor_view_local_folding_test
         test_sv/editor_view_local_folding_test.cpp)
@@ -2104,6 +2125,12 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
     )
     set_tests_properties(relationship_perf_test PROPERTIES TIMEOUT 1200)
+    add_test(NAME zeroslack_cli_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:zeroslack_cli_test>
+    )
+    set_tests_properties(zeroslack_cli_test PROPERTIES TIMEOUT 300)
     add_test(NAME legacy_field_policy_guard
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}

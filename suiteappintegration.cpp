@@ -1,7 +1,11 @@
 #include "suiteappintegration.h"
 
 #include "mainwindow.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
+#include "semanticstableidentity.h"
 #include "tabmanager.h"
+#include "workspacemanager.h"
 
 #include <suiteapp/protocol.h>
 #include <suiteapp/provider.h>
@@ -18,13 +22,19 @@
 namespace {
 
 constexpr auto kRevealAction = "zeroslack.source.reveal";
+constexpr auto kRevealSymbolAction = "zeroslack.symbol.reveal";
 constexpr auto kPreviewSurface = "zeroslack.source.preview";
 
 struct SourceTarget {
     QString uri;
+    QString kind = QStringLiteral("source");
     QString filePath;
+    QString workspaceRoot;
+    QString semanticId;
     int line = 1;
     int column = 1;
+    QString failureCode;
+    QString failureReason;
 
     bool isValid() const
     {
@@ -32,7 +42,54 @@ struct SourceTarget {
     }
 };
 
-SourceTarget sourceTarget(const QJsonObject& params)
+QString activeWorkspaceRoot(MainWindow* window)
+{
+    return window && window->workspaceManager
+        ? window->workspaceManager->getWorkspacePath()
+        : QString();
+}
+
+void resolveSymbolTarget(SourceTarget* target)
+{
+    if (!target || target->semanticId.trimmed().isEmpty())
+        return;
+    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+        SemanticIndex::getInstance()->snapshot();
+    if (!snapshot) {
+        target->failureCode = QStringLiteral("symbol_index_unavailable");
+        target->failureReason = QStringLiteral(
+            "ZeroSlack has no current semantic snapshot for this workspace.");
+        return;
+    }
+    QList<SemanticSymbolRecord> matches;
+    for (const SemanticSymbolRecord& record : snapshot->getSymbolRecords()) {
+        const SemanticStableIdentity identity =
+            semanticStableIdentity(record, target->workspaceRoot);
+        if (identity.stableId == target->semanticId
+            || identity.exactId == target->semanticId) {
+            matches.append(record);
+        }
+    }
+    if (matches.isEmpty()) {
+        target->failureCode = QStringLiteral("symbol_not_found");
+        target->failureReason = QStringLiteral(
+            "The ZeroSlack symbol ID is not present in the current snapshot.");
+        return;
+    }
+    if (matches.size() > 1) {
+        target->failureCode = QStringLiteral("symbol_ambiguous");
+        target->failureReason = QStringLiteral(
+            "The ZeroSlack symbol ID resolves to more than one declaration.");
+        return;
+    }
+    const SemanticSymbolRecord& record = matches.constFirst();
+    target->kind = QStringLiteral("symbol");
+    target->filePath = QFileInfo(record.location.fileName).absoluteFilePath();
+    target->line = qMax(1, record.location.startLine);
+    target->column = qMax(1, record.location.startColumn);
+}
+
+SourceTarget sourceTarget(const QJsonObject& params, MainWindow* window)
 {
     SourceTarget target;
     target.uri = params.value(QStringLiteral("resourceUri")).toString();
@@ -55,7 +112,28 @@ SourceTarget sourceTarget(const QJsonObject& params)
                 QStringLiteral("line")).toInt());
             target.column = qMax(1, query.queryItemValue(
                 QStringLiteral("column")).toInt());
+        } else if (url.isValid()
+                   && url.scheme().compare(QStringLiteral("zeroslack"),
+                                           Qt::CaseInsensitive) == 0
+                   && url.host().compare(QStringLiteral("symbol"),
+                                         Qt::CaseInsensitive) == 0) {
+            const QUrlQuery query(url);
+            target.kind = QStringLiteral("symbol");
+            target.semanticId = url.path().mid(1);
+            target.workspaceRoot = query.queryItemValue(
+                QStringLiteral("workspace"), QUrl::FullyDecoded);
         }
+    }
+    if (target.workspaceRoot.isEmpty())
+        target.workspaceRoot = activeWorkspaceRoot(window);
+    if (!arguments.value(QStringLiteral("workspaceRoot")).toString().isEmpty()) {
+        target.workspaceRoot = arguments.value(
+            QStringLiteral("workspaceRoot")).toString();
+    }
+    if (!arguments.value(QStringLiteral("symbolId")).toString().isEmpty()) {
+        target.kind = QStringLiteral("symbol");
+        target.semanticId = arguments.value(
+            QStringLiteral("symbolId")).toString();
     }
     if (!arguments.value(QStringLiteral("filePath")).toString().isEmpty())
         target.filePath = arguments.value(QStringLiteral("filePath")).toString();
@@ -65,6 +143,12 @@ SourceTarget sourceTarget(const QJsonObject& params)
         target.column = qMax(1, arguments.value(QStringLiteral("column")).toInt());
     if (!target.filePath.isEmpty())
         target.filePath = QFileInfo(target.filePath).absoluteFilePath();
+    if (!target.workspaceRoot.isEmpty()) {
+        target.workspaceRoot = QFileInfo(
+            target.workspaceRoot).absoluteFilePath();
+    }
+    if (!target.semanticId.isEmpty())
+        resolveSymbolTarget(&target);
     return target;
 }
 
@@ -96,7 +180,9 @@ QJsonObject resolvedSource(MainWindow* window, const SourceTarget& target)
     return {
         {QStringLiteral("appId"), QStringLiteral("zeroslack")},
         {QStringLiteral("uri"), target.uri},
-        {QStringLiteral("kind"), QStringLiteral("source")},
+        {QStringLiteral("kind"), target.kind},
+        {QStringLiteral("symbolId"), target.semanticId},
+        {QStringLiteral("workspaceRoot"), target.workspaceRoot},
         {QStringLiteral("filePath"), target.filePath},
         {QStringLiteral("title"), QFileInfo(target.filePath).fileName()},
         {QStringLiteral("line"), target.line},
@@ -162,11 +248,18 @@ QJsonObject ZeroSlackSuiteIntegration::appDescriptor(
         {QStringLiteral("resourceSchemes"),
          QJsonArray{QStringLiteral("zeroslack")}},
         {QStringLiteral("actions"),
-         QJsonArray{QJsonObject{
-             {QStringLiteral("id"), QString::fromLatin1(kRevealAction)},
-             {QStringLiteral("resourceSchemes"),
-              QJsonArray{QStringLiteral("zeroslack")}},
-             {QStringLiteral("sideEffect"), QStringLiteral("ui")}}}},
+         QJsonArray{
+             QJsonObject{
+                 {QStringLiteral("id"), QString::fromLatin1(kRevealAction)},
+                 {QStringLiteral("resourceSchemes"),
+                  QJsonArray{QStringLiteral("zeroslack")}},
+                 {QStringLiteral("sideEffect"), QStringLiteral("ui")}},
+             QJsonObject{
+                 {QStringLiteral("id"),
+                  QString::fromLatin1(kRevealSymbolAction)},
+                 {QStringLiteral("resourceSchemes"),
+                  QJsonArray{QStringLiteral("zeroslack")}},
+                 {QStringLiteral("sideEffect"), QStringLiteral("ui")}}}},
         {QStringLiteral("surfaces"),
          QJsonArray{QJsonObject{
              {QStringLiteral("id"), QString::fromLatin1(kPreviewSurface)},
@@ -187,19 +280,25 @@ QJsonObject ZeroSlackSuiteIntegration::processRequest(
     const QString method = request.value(QStringLiteral("method")).toString();
     const QJsonObject params =
         request.value(QStringLiteral("params")).toObject();
-    const SourceTarget target = sourceTarget(params);
+    const SourceTarget target = sourceTarget(params, window);
     if (!target.isValid()) {
         return SuiteApp::errorResponse(
             request,
-            QStringLiteral("invalid_resource"),
-            QStringLiteral("A zeroslack://source URI or filePath is required"));
+            target.failureCode.isEmpty()
+                ? QStringLiteral("invalid_resource") : target.failureCode,
+            target.failureReason.isEmpty()
+                ? QStringLiteral(
+                      "A zeroslack://source or zeroslack://symbol resource is required")
+                : target.failureReason);
     }
     if (method == QStringLiteral("resource.resolve"))
         return SuiteApp::successResponse(request, resolvedSource(window, target));
 
     if (method == QStringLiteral("action.invoke")) {
-        if (params.value(QStringLiteral("actionId")).toString()
-            != QString::fromLatin1(kRevealAction)) {
+        const QString actionId = params.value(
+            QStringLiteral("actionId")).toString();
+        if (actionId != QString::fromLatin1(kRevealAction)
+            && actionId != QString::fromLatin1(kRevealSymbolAction)) {
             return SuiteApp::errorResponse(
                 request, QStringLiteral("action_not_supported"),
                 QStringLiteral("Unknown ZeroSlack action"));
