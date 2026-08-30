@@ -283,7 +283,7 @@ void RtlInsightWorkbench::saveCurrentViewState()
         return;
     ViewState& state = viewStates[static_cast<int>(currentKind)];
     state.searchText = searchEdit ? searchEdit->text() : QString();
-    state.selectedSymbolIds = canvasValue->selectedSymbolIds();
+    state.selectedNodeIds = canvasValue->selectedNodeIds();
     state.zoom = canvasValue->zoomFactor();
     state.minimapVisible = canvasValue->isMinimapVisible();
     state.panMode = canvasValue->panMode();
@@ -299,7 +299,7 @@ void RtlInsightWorkbench::restoreCurrentViewState()
         searchEdit->setText(state.searchText);
     }
     canvasValue->setSearchText(state.searchText);
-    canvasValue->selectSymbolIds(state.selectedSymbolIds);
+    canvasValue->selectNodeIds(state.selectedNodeIds);
     canvasValue->setMinimapVisible(state.minimapVisible);
     canvasValue->setPanMode(state.panMode);
     if (panButton) {

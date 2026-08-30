@@ -60,7 +60,7 @@ public:
 private:
     struct ViewState {
         QString searchText;
-        QStringList selectedSymbolIds;
+        QStringList selectedNodeIds;
         qreal zoom = 1.0;
         bool minimapVisible = true;
         bool panMode = false;

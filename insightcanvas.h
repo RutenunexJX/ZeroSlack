@@ -47,8 +47,8 @@ public:
     bool isMinimapVisible() const;
     void setSearchText(const QString& text);
 
-    QStringList selectedSymbolIds() const;
-    void selectSymbolIds(const QStringList& symbolIds);
+    QStringList selectedNodeIds() const;
+    void selectNodeIds(const QStringList& nodeIds);
     QHash<QString, QPointF> nodePositions() const;
     void setSelectionChangedHandler(SelectionChangedHandler handler);
     void setActivationHandler(ActivationHandler handler);
@@ -78,7 +78,7 @@ private:
     ActivationHandler activationHandler;
 
     void clearVisuals();
-    void removeNode(const QString& symbolId);
+    void removeNode(const QString& nodeId);
     void removeEdge(const QString& edgeId);
     void addOrUpdateNode(const InsightGraphNode& node,
                          const QPointF* initialPosition = nullptr);

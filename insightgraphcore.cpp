@@ -74,8 +74,8 @@ QByteArray snapshotFingerprint(const InsightGraphSnapshot& snapshot)
     for (const QString& id : edgeIds) {
         const InsightGraphEdge& edge = snapshot.edges.value(id);
         hash.addData(id.toUtf8());
-        hash.addData(edge.fromSymbolId.toUtf8());
-        hash.addData(edge.toSymbolId.toUtf8());
+        hash.addData(edge.fromNodeId.toUtf8());
+        hash.addData(edge.toNodeId.toUtf8());
         hash.addData(edge.displayName.toUtf8());
         hash.addData(QByteArray::number(static_cast<int>(edge.domain)));
         hash.addData(QByteArray::number(edge.weight));
@@ -113,7 +113,7 @@ void incrementDomain(InsightGraphStatistics& statistics,
     }
 }
 
-QString symbolIdOrFallback(const SymbolStableKey& key,
+QString nodeIdOrFallback(const SymbolStableKey& key,
                            const QString& domain,
                            const QString& context,
                            const QString& identity)
@@ -135,7 +135,7 @@ void appendFsmGraph(InsightGraphDraft& draft,
     QHash<QString, QString> stateIds;
     for (const FsmStateRow& row : graph.stateRows) {
         InsightGraphNode node;
-        node.symbolId = symbolIdOrFallback(
+        node.nodeId = nodeIdOrFallback(
             row.stateStableKey,
             QStringLiteral("fsm-state"),
             context,
@@ -151,27 +151,27 @@ void appendFsmGraph(InsightGraphDraft& draft,
             QStringLiteral("initial"),
             row.stateDisplayName == graph.initialStateDisplayName);
         draft.nodes.append(node);
-        stateIds.insert(row.stateDisplayName, node.symbolId);
+        stateIds.insert(row.stateDisplayName, node.nodeId);
     }
     int transitionIndex = 0;
     for (const FsmTransitionRow& row : graph.transitionRows) {
         const QString fromId = stateIds.value(
             row.fromStateDisplayName,
-            symbolIdOrFallback(
+            nodeIdOrFallback(
                 row.fromStateStableKey,
                 QStringLiteral("fsm-state"),
                 context,
                 row.fromStateDisplayName));
         const QString toId = stateIds.value(
             row.toStateDisplayName,
-            symbolIdOrFallback(
+            nodeIdOrFallback(
                 row.toStateStableKey,
                 QStringLiteral("fsm-state"),
                 context,
                 row.toStateDisplayName));
         InsightGraphEdge edge;
-        edge.fromSymbolId = fromId;
-        edge.toSymbolId = toId;
+        edge.fromNodeId = fromId;
+        edge.toNodeId = toId;
         edge.displayName = row.conditionDisplayName;
         edge.domain = InsightGraphDomain::Fsm;
         edge.edgeId = InsightGraphCore::stableEdgeId(
@@ -191,14 +191,14 @@ void appendFsmGraph(InsightGraphDraft& draft,
 
 bool InsightGraphNode::isValid() const
 {
-    return !symbolId.trimmed().isEmpty();
+    return !nodeId.trimmed().isEmpty();
 }
 
 bool InsightGraphEdge::isValid() const
 {
     return !edgeId.trimmed().isEmpty()
-        && !fromSymbolId.trimmed().isEmpty()
-        && !toSymbolId.trimmed().isEmpty();
+        && !fromNodeId.trimmed().isEmpty()
+        && !toNodeId.trimmed().isEmpty();
 }
 
 bool InsightGraphSnapshot::isValid() const
@@ -234,7 +234,7 @@ bool InsightGraphDiff::topologyChanged() const
 
 bool operator==(const InsightGraphNode& lhs, const InsightGraphNode& rhs)
 {
-    return lhs.symbolId == rhs.symbolId
+    return lhs.nodeId == rhs.nodeId
         && lhs.displayName == rhs.displayName
         && lhs.detail == rhs.detail
         && lhs.sourceFile == rhs.sourceFile
@@ -252,8 +252,8 @@ bool operator!=(const InsightGraphNode& lhs, const InsightGraphNode& rhs)
 bool operator==(const InsightGraphEdge& lhs, const InsightGraphEdge& rhs)
 {
     return lhs.edgeId == rhs.edgeId
-        && lhs.fromSymbolId == rhs.fromSymbolId
-        && lhs.toSymbolId == rhs.toSymbolId
+        && lhs.fromNodeId == rhs.fromNodeId
+        && lhs.toNodeId == rhs.toNodeId
         && lhs.displayName == rhs.displayName
         && lhs.domain == rhs.domain
         && lhs.weight == rhs.weight
@@ -296,14 +296,14 @@ QString InsightGraphCore::stableSyntheticId(const QString& domain,
         {domain.trimmed().toLower(), context.trimmed(), identity.trimmed()});
 }
 
-QString InsightGraphCore::stableEdgeId(const QString& fromSymbolId,
-                                       const QString& toSymbolId,
+QString InsightGraphCore::stableEdgeId(const QString& fromNodeId,
+                                       const QString& toNodeId,
                                        const QString& relation,
                                        const QString& discriminator)
 {
     return digestId(
         QStringLiteral("edge:"),
-        {fromSymbolId, toSymbolId, relation.trimmed(), discriminator});
+        {fromNodeId, toNodeId, relation.trimmed(), discriminator});
 }
 
 InsightGraphUpdate InsightGraphCore::update(const QString& channelId,
@@ -402,15 +402,15 @@ InsightGraphSnapshot InsightGraphCore::buildSnapshot(
     QList<InsightGraphNode> nodes = draft.nodes;
     QList<InsightGraphEdge> edges = draft.edges;
     for (const InsightGraphFact& fact : draft.facts) {
-        const QString symbolId = !fact.symbolId.trimmed().isEmpty()
-            ? fact.symbolId
+        const QString nodeId = !fact.nodeId.trimmed().isEmpty()
+            ? fact.nodeId
             : stableSymbolId(fact.sourceFile,
                              fact.ownerScope,
                              static_cast<int>(fact.domain),
                              fact.symbolName);
-        if (fact.relatedSymbolId.trimmed().isEmpty()) {
+        if (fact.relatedNodeId.trimmed().isEmpty()) {
             InsightGraphNode node;
-            node.symbolId = symbolId;
+            node.nodeId = nodeId;
             node.displayName = fact.symbolName;
             node.detail = fact.detail;
             node.sourceFile = fact.sourceFile;
@@ -422,15 +422,15 @@ InsightGraphSnapshot InsightGraphCore::buildSnapshot(
             continue;
         }
         InsightGraphEdge edge;
-        edge.fromSymbolId = symbolId;
-        edge.toSymbolId = fact.relatedSymbolId;
+        edge.fromNodeId = nodeId;
+        edge.toNodeId = fact.relatedNodeId;
         edge.displayName = fact.relation;
         edge.domain = fact.domain;
         edge.weight = qMax(1, fact.weight);
         edge.attributes = fact.attributes;
         edge.edgeId = stableEdgeId(
-            edge.fromSymbolId,
-            edge.toSymbolId,
+            edge.fromNodeId,
+            edge.toNodeId,
             edge.displayName,
             fact.detail);
         edges.append(edge);
@@ -438,30 +438,30 @@ InsightGraphSnapshot InsightGraphCore::buildSnapshot(
 
     for (InsightGraphNode node : nodes) {
         if (!node.isValid()) {
-            node.symbolId = stableSyntheticId(
+            node.nodeId = stableSyntheticId(
                 QString::number(static_cast<int>(node.domain)),
                 draft.contextKey,
                 node.displayName + QLatin1Char('|') + node.detail);
         }
         if (!node.isValid())
             continue;
-        snapshot.nodes.insert(node.symbolId, node);
+        snapshot.nodes.insert(node.nodeId, node);
         incrementDomain(snapshot.statistics, node.domain);
         if (node.domain == InsightGraphDomain::Hotspot) {
             snapshot.statistics.hotspotScores.insert(
-                node.symbolId, qMax(0, node.heatScore));
+                node.nodeId, qMax(0, node.heatScore));
         }
     }
     for (InsightGraphEdge edge : edges) {
         if (edge.edgeId.trimmed().isEmpty()) {
             edge.edgeId = stableEdgeId(
-                edge.fromSymbolId,
-                edge.toSymbolId,
+                edge.fromNodeId,
+                edge.toNodeId,
                 edge.displayName);
         }
         if (!edge.isValid()
-            || !snapshot.nodes.contains(edge.fromSymbolId)
-            || !snapshot.nodes.contains(edge.toSymbolId)) {
+            || !snapshot.nodes.contains(edge.fromNodeId)
+            || !snapshot.nodes.contains(edge.toNodeId)) {
             continue;
         }
         snapshot.edges.insert(edge.edgeId, edge);
@@ -487,7 +487,7 @@ InsightGraphDraft InsightGraphCore::fromSignalKernelGraph(
     QHash<int, QString> ids;
     const auto appendNode = [&draft, &ids](const SignalKernelGraphNode& source) {
         InsightGraphNode node;
-        node.symbolId = symbolIdOrFallback(
+        node.nodeId = nodeIdOrFallback(
             source.stableKey,
             QStringLiteral("kernel-node"),
             source.moduleDisplayName,
@@ -504,7 +504,7 @@ InsightGraphDraft InsightGraphCore::fromSignalKernelGraph(
         node.attributes.insert(QStringLiteral("role"), static_cast<int>(source.role));
         node.attributes.insert(QStringLiteral("module"), source.moduleDisplayName);
         node.attributes.insert(QStringLiteral("crossModule"), source.crossModule);
-        ids.insert(source.id, node.symbolId);
+        ids.insert(source.id, node.nodeId);
         draft.nodes.append(node);
     };
     appendNode(report.kernel);
@@ -515,13 +515,13 @@ InsightGraphDraft InsightGraphCore::fromSignalKernelGraph(
     int edgeIndex = 0;
     for (const SignalKernelGraphEdge& source : report.edges) {
         InsightGraphEdge edge;
-        edge.fromSymbolId = ids.value(source.fromNodeId);
-        edge.toSymbolId = ids.value(source.toNodeId);
+        edge.fromNodeId = ids.value(source.fromNodeId);
+        edge.toNodeId = ids.value(source.toNodeId);
         edge.displayName = source.label;
         edge.domain = InsightGraphDomain::DataFlow;
         edge.edgeId = stableEdgeId(
-            edge.fromSymbolId,
-            edge.toSymbolId,
+            edge.fromNodeId,
+            edge.toNodeId,
             QStringLiteral("data-flow"),
             QString::number(edgeIndex++));
         draft.edges.append(edge);
@@ -541,7 +541,7 @@ InsightGraphDraft InsightGraphCore::fromModuleBlockDiagram(
     QHash<int, QString> ids;
     for (const ModuleBlockDiagramNode& source : report.nodes) {
         InsightGraphNode node;
-        const QString definitionSymbolId = symbolIdOrFallback(
+        const QString definitionSymbolId = nodeIdOrFallback(
             source.moduleStableKey,
             QStringLiteral("module-definition"),
             report.root.moduleDisplayName,
@@ -555,7 +555,7 @@ InsightGraphDraft InsightGraphCore::fromModuleBlockDiagram(
             source.instanceDisplayName.trimmed().isEmpty()
             ? source.moduleDisplayName
             : source.instanceDisplayName;
-        node.symbolId = stableSyntheticId(
+        node.nodeId = stableSyntheticId(
             QStringLiteral("module-instance"),
             parentInstanceId,
             QStringLiteral("%1|%2")
@@ -571,19 +571,19 @@ InsightGraphDraft InsightGraphCore::fromModuleBlockDiagram(
         node.attributes.insert(QStringLiteral("module"), source.moduleDisplayName);
         node.attributes.insert(
             QStringLiteral("definitionSymbolId"), definitionSymbolId);
-        ids.insert(source.nodeId, node.symbolId);
+        ids.insert(source.nodeId, node.nodeId);
         draft.nodes.append(node);
     }
     int edgeIndex = 0;
     for (const ModuleBlockDiagramEdge& source : report.edges) {
         InsightGraphEdge edge;
-        edge.fromSymbolId = ids.value(source.fromNodeId);
-        edge.toSymbolId = ids.value(source.toNodeId);
+        edge.fromNodeId = ids.value(source.fromNodeId);
+        edge.toNodeId = ids.value(source.toNodeId);
         edge.displayName = source.childInstanceDisplayName;
         edge.domain = InsightGraphDomain::Connection;
         edge.edgeId = stableEdgeId(
-            edge.fromSymbolId,
-            edge.toSymbolId,
+            edge.fromNodeId,
+            edge.toNodeId,
             QStringLiteral("instantiates"),
             QString::number(edgeIndex++));
         edge.attributes.insert(QStringLiteral("unresolved"), source.unresolved);
@@ -607,7 +607,7 @@ InsightGraphDraft InsightGraphCore::fromSignalUsageHotspot(
         return draft;
 
     InsightGraphNode declaration;
-    declaration.symbolId = symbolIdOrFallback(
+    declaration.nodeId = nodeIdOrFallback(
         report.declarationStableKey,
         QStringLiteral("hotspot-root"),
         report.declarationFileDisplayName,
@@ -624,9 +624,9 @@ InsightGraphDraft InsightGraphCore::fromSignalUsageHotspot(
     for (const SignalUsageHotspotItem& source : report.items) {
         const QString role = hotspotRoleName(source.role);
         InsightGraphNode evidence;
-        evidence.symbolId = stableSyntheticId(
+        evidence.nodeId = stableSyntheticId(
             QStringLiteral("hotspot-evidence"),
-            declaration.symbolId,
+            declaration.nodeId,
             QStringLiteral("%1|%2|%3|%4|%5")
                 .arg(source.fileName)
                 .arg(source.line)
@@ -645,16 +645,16 @@ InsightGraphDraft InsightGraphCore::fromSignalUsageHotspot(
         draft.nodes.append(evidence);
 
         InsightGraphEdge edge;
-        edge.fromSymbolId = source.outgoing
-            ? declaration.symbolId : evidence.symbolId;
-        edge.toSymbolId = source.outgoing
-            ? evidence.symbolId : declaration.symbolId;
+        edge.fromNodeId = source.outgoing
+            ? declaration.nodeId : evidence.nodeId;
+        edge.toNodeId = source.outgoing
+            ? evidence.nodeId : declaration.nodeId;
         edge.displayName = source.relationshipTypeDisplayName;
         edge.domain = InsightGraphDomain::Hotspot;
         edge.weight = qMax(1, source.confidence);
         edge.edgeId = stableEdgeId(
-            edge.fromSymbolId,
-            edge.toSymbolId,
+            edge.fromNodeId,
+            edge.toNodeId,
             role,
             QString::number(index++));
         draft.edges.append(edge);

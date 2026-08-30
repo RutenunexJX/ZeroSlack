@@ -31,7 +31,7 @@ InsightGraphNode makeNode(
     InsightGraphDomain domain = InsightGraphDomain::Symbol)
 {
     InsightGraphNode result;
-    result.symbolId = id;
+    result.nodeId = id;
     result.displayName = name;
     result.domain = domain;
     return result;
@@ -112,11 +112,11 @@ void RtlInsightWorkbenchTest::graphCorePublishesIncrementalDiffs()
     astFact.ownerScope = QStringLiteral("top");
     first.facts.append(astFact);
     InsightGraphEdge edge;
-    edge.fromSymbolId = first.nodes.at(0).symbolId;
-    edge.toSymbolId = QStringLiteral("sym:child");
+    edge.fromNodeId = first.nodes.at(0).nodeId;
+    edge.toNodeId = QStringLiteral("sym:child");
     edge.displayName = QStringLiteral("instantiates");
     edge.edgeId = InsightGraphCore::stableEdgeId(
-        edge.fromSymbolId, edge.toSymbolId, edge.displayName);
+        edge.fromNodeId, edge.toNodeId, edge.displayName);
     first.edges.append(edge);
 
     const InsightGraphUpdate initial =
@@ -242,17 +242,17 @@ void RtlInsightWorkbenchTest::workbenchPreservesPerViewState()
     workbench.setContext(context);
 
     workbench.canvas()->setMinimapVisible(false);
-    workbench.canvas()->selectSymbolIds(
+    workbench.canvas()->selectNodeIds(
         {QStringLiteral("sym:kernel-root")});
     workbench.canvas()->zoomIn();
     const qreal kernelZoom = workbench.canvas()->zoomFactor();
 
     QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Block));
     QVERIFY(workbench.canvas()->isMinimapVisible());
-    QVERIFY(workbench.canvas()->selectedSymbolIds().isEmpty());
+    QVERIFY(workbench.canvas()->selectedNodeIds().isEmpty());
     QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Kernel));
     QVERIFY(!workbench.canvas()->isMinimapVisible());
-    QCOMPARE(workbench.canvas()->selectedSymbolIds(),
+    QCOMPARE(workbench.canvas()->selectedNodeIds(),
              QStringList{QStringLiteral("sym:kernel-root")});
     QVERIFY(qAbs(workbench.canvas()->zoomFactor() - kernelZoom) < 0.0001);
 }
@@ -403,12 +403,12 @@ void RtlInsightWorkbenchTest::sharedCanvasExportsSvgPngAndPdf()
                                 QStringLiteral("target"),
                                 InsightGraphDomain::DataFlow));
     InsightGraphEdge edge;
-    edge.fromSymbolId = draft.nodes.at(0).symbolId;
-    edge.toSymbolId = draft.nodes.at(1).symbolId;
+    edge.fromNodeId = draft.nodes.at(0).nodeId;
+    edge.toNodeId = draft.nodes.at(1).nodeId;
     edge.displayName = QStringLiteral("drives");
     edge.domain = InsightGraphDomain::DataFlow;
     edge.edgeId = InsightGraphCore::stableEdgeId(
-        edge.fromSymbolId, edge.toSymbolId, edge.displayName);
+        edge.fromNodeId, edge.toNodeId, edge.displayName);
     draft.edges.append(edge);
     InsightCanvas canvas;
     canvas.applyUpdate(core.update(QStringLiteral("export"), draft));

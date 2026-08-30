@@ -28,7 +28,7 @@ enum class InsightGraphDomain : quint8 {
 };
 
 struct ZEROSLACK_API InsightGraphNode {
-    QString symbolId;
+    QString nodeId;
     QString displayName;
     QString detail;
     QString sourceFile;
@@ -42,8 +42,8 @@ struct ZEROSLACK_API InsightGraphNode {
 
 struct ZEROSLACK_API InsightGraphEdge {
     QString edgeId;
-    QString fromSymbolId;
-    QString toSymbolId;
+    QString fromNodeId;
+    QString toNodeId;
     QString displayName;
     InsightGraphDomain domain = InsightGraphDomain::Connection;
     int weight = 1;
@@ -54,8 +54,8 @@ struct ZEROSLACK_API InsightGraphEdge {
 
 struct ZEROSLACK_API InsightGraphFact {
     InsightGraphDomain domain = InsightGraphDomain::Symbol;
-    QString symbolId;
-    QString relatedSymbolId;
+    QString nodeId;
+    QString relatedNodeId;
     QString symbolName;
     QString detail;
     QString sourceFile;
@@ -143,8 +143,8 @@ public:
     static QString stableSyntheticId(const QString& domain,
                                      const QString& context,
                                      const QString& identity);
-    static QString stableEdgeId(const QString& fromSymbolId,
-                                const QString& toSymbolId,
+    static QString stableEdgeId(const QString& fromNodeId,
+                                const QString& toNodeId,
                                 const QString& relation,
                                 const QString& discriminator = {});
 

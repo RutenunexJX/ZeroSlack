@@ -1,15 +1,19 @@
 #include "rtlinsightspanelcoordinator.h"
 
 #include "editorlocation.h"
+#include "graphexportservice.h"
 #include "graphexportui.h"
 #include "insightgraphview.h"
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightspanelviewstate.h"
 
 #include <QAction>
+#include <QDockWidget>
 #include <QGraphicsItem>
 #include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QPushButton>
+#include <QTreeWidget>
 #include <QWidget>
 
 QAction* RtlInsightsPanelCoordinator::createGraphAction(
@@ -324,4 +328,61 @@ RtlInsightsPanelCoordinator::executeActionRoute(
     result.failureReason = QStringLiteral(
         "Action is not an RTL Insights graph-selection route.");
     return result;
+}
+
+GraphExportResult RtlInsightsPanelCoordinator::exportCurrentGraph(
+    const QString& outputPath,
+    const GraphExportOptions& options) const
+{
+    return GraphExportService::exportGraphicsScene(
+        viewState ? viewState->insightsGraphScene : nullptr,
+        outputPath,
+        options);
+}
+
+bool RtlInsightsPanelCoordinator::hasExportableGraph() const
+{
+    if (!viewState || !viewState->insightsGraphScene)
+        return false;
+    const QString mode = viewState->currentGraphMode;
+    if (mode != QStringLiteral("fsm")
+        && mode != QStringLiteral("state-transition")
+        && mode != QStringLiteral("module-block")) {
+        return false;
+    }
+    for (QGraphicsItem* item :
+         viewState->insightsGraphScene->items()) {
+        if (item && item->isVisible())
+            return true;
+    }
+    return false;
+}
+
+void RtlInsightsPanelCoordinator::
+    refreshGraphExportActionAvailability() const
+{
+    GraphExportUi::updateActionAvailability(
+        viewState ? viewState->graphExportAction : nullptr,
+        hasExportableGraph());
+}
+
+QAction* RtlInsightsPanelCoordinator::graphExportAction() const
+{
+    refreshGraphExportActionAvailability();
+    return viewState ? viewState->graphExportAction : nullptr;
+}
+
+QDockWidget* RtlInsightsPanelCoordinator::dock() const
+{
+    return viewState->insightsDock;
+}
+
+QTreeWidget* RtlInsightsPanelCoordinator::tree() const
+{
+    return viewState->insightsTree;
+}
+
+QGraphicsView* RtlInsightsPanelCoordinator::graphView() const
+{
+    return viewState->insightsGraphView;
 }

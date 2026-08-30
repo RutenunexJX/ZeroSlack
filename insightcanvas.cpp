@@ -21,7 +21,7 @@
 #include <utility>
 
 namespace {
-constexpr int kSymbolIdRole = Qt::UserRole + 210;
+constexpr int kNodeIdRole = Qt::UserRole + 210;
 constexpr qreal kNodeWidth = 188.0;
 constexpr qreal kNodeHeight = 68.0;
 constexpr qreal kHorizontalGap = 88.0;
@@ -103,11 +103,11 @@ InsightCanvas::InsightCanvas(QWidget* parent)
             for (QGraphicsItem* item : graphView->items(position)) {
                 QGraphicsItem* current = item;
                 while (current
-                       && current->data(kSymbolIdRole).toString().isEmpty()) {
+                       && current->data(kNodeIdRole).toString().isEmpty()) {
                     current = current->parentItem();
                 }
                 const QString id = current
-                    ? current->data(kSymbolIdRole).toString() : QString();
+                    ? current->data(kNodeIdRole).toString() : QString();
                 if (!id.isEmpty() && currentSnapshot.nodes.contains(id)) {
                     activationHandler(currentSnapshot.nodes.value(id));
                     return true;
@@ -136,7 +136,7 @@ InsightCanvas::InsightCanvas(QWidget* parent)
         this,
         [this]() {
             if (selectionChangedHandler)
-                selectionChangedHandler(selectedSymbolIds());
+                selectionChangedHandler(selectedNodeIds());
         });
     QObject::connect(
         &ApplicationThemeManager::instance(),
@@ -185,15 +185,15 @@ void InsightCanvas::setSnapshot(const InsightGraphSnapshot& snapshotValue,
     } else {
         for (const QString& edgeId : effectiveDiff.removedEdgeIds)
             removeEdge(edgeId);
-        for (const QString& symbolId : effectiveDiff.removedNodeIds)
-            removeNode(symbolId);
+        for (const QString& nodeId : effectiveDiff.removedNodeIds)
+            removeNode(nodeId);
         currentSnapshot = snapshotValue;
-        for (const QString& symbolId : effectiveDiff.addedNodeIds) {
-            const QPointF position = positions.value(symbolId);
-            addOrUpdateNode(snapshotValue.nodes.value(symbolId), &position);
+        for (const QString& nodeId : effectiveDiff.addedNodeIds) {
+            const QPointF position = positions.value(nodeId);
+            addOrUpdateNode(snapshotValue.nodes.value(nodeId), &position);
         }
-        for (const QString& symbolId : effectiveDiff.updatedNodeIds)
-            addOrUpdateNode(snapshotValue.nodes.value(symbolId));
+        for (const QString& nodeId : effectiveDiff.updatedNodeIds)
+            addOrUpdateNode(snapshotValue.nodes.value(nodeId));
         for (const QString& edgeId : effectiveDiff.addedEdgeIds)
             addOrUpdateEdge(snapshotValue.edges.value(edgeId));
         for (const QString& edgeId : effectiveDiff.updatedEdgeIds)
@@ -286,14 +286,14 @@ void InsightCanvas::setSearchText(const QString& text)
     applySearch();
 }
 
-QStringList InsightCanvas::selectedSymbolIds() const
+QStringList InsightCanvas::selectedNodeIds() const
 {
     QStringList result;
     if (!graphScene)
         return result;
     for (QGraphicsItem* item : graphScene->selectedItems()) {
         const QString id = item
-            ? item->data(kSymbolIdRole).toString() : QString();
+            ? item->data(kNodeIdRole).toString() : QString();
         if (!id.isEmpty() && !result.contains(id))
             result.append(id);
     }
@@ -301,9 +301,9 @@ QStringList InsightCanvas::selectedSymbolIds() const
     return result;
 }
 
-void InsightCanvas::selectSymbolIds(const QStringList& symbolIds)
+void InsightCanvas::selectNodeIds(const QStringList& nodeIds)
 {
-    const QSet<QString> selected(symbolIds.cbegin(), symbolIds.cend());
+    const QSet<QString> selected(nodeIds.cbegin(), nodeIds.cend());
     for (auto it = nodeItems.cbegin(); it != nodeItems.cend(); ++it) {
         if (it.value())
             it.value()->setSelected(selected.contains(it.key()));
@@ -357,9 +357,9 @@ void InsightCanvas::clearVisuals()
         graphScene->clear();
 }
 
-void InsightCanvas::removeNode(const QString& symbolId)
+void InsightCanvas::removeNode(const QString& nodeId)
 {
-    QGraphicsRectItem* item = nodeItems.take(symbolId);
+    QGraphicsRectItem* item = nodeItems.take(nodeId);
     if (item && graphScene) {
         graphScene->removeItem(item);
         delete item;
@@ -386,11 +386,11 @@ void InsightCanvas::addOrUpdateNode(
     if (!graphScene || !node.isValid())
         return;
     auto* item = dynamic_cast<CanvasNodeItem*>(
-        nodeItems.value(node.symbolId, nullptr));
+        nodeItems.value(node.nodeId, nullptr));
     if (!item) {
         item = new CanvasNodeItem;
         item->setRect(0.0, 0.0, kNodeWidth, kNodeHeight);
-        item->setData(kSymbolIdRole, node.symbolId);
+        item->setData(kNodeIdRole, node.nodeId);
         item->setFlags(
             QGraphicsItem::ItemIsSelectable
             | QGraphicsItem::ItemIsMovable
@@ -402,7 +402,7 @@ void InsightCanvas::addOrUpdateNode(
             updateMinimap();
         };
         graphScene->addItem(item);
-        nodeItems.insert(node.symbolId, item);
+        nodeItems.insert(node.nodeId, item);
         if (initialPosition)
             item->setPos(*initialPosition);
     }
@@ -471,8 +471,8 @@ void InsightCanvas::updateEdgePath(const QString& edgeId)
 {
     const InsightGraphEdge edge = currentSnapshot.edges.value(edgeId);
     const EdgeVisual visual = edgeItems.value(edgeId);
-    QGraphicsRectItem* from = nodeItems.value(edge.fromSymbolId, nullptr);
-    QGraphicsRectItem* to = nodeItems.value(edge.toSymbolId, nullptr);
+    QGraphicsRectItem* from = nodeItems.value(edge.fromNodeId, nullptr);
+    QGraphicsRectItem* to = nodeItems.value(edge.toNodeId, nullptr);
     if (!visual.path || !from || !to)
         return;
     const QPointF start = from->sceneBoundingRect().center();
