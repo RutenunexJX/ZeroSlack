@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "workspacehubsession.h"
 
 #include "actionregistry.h"
 #include "applicationthememanager.h"
@@ -1500,6 +1501,15 @@ void MainWindow::setupManagerConnections()
                                 && tabManager->getCurrentEditor() == editor) {
                                 refreshEditorActionContextChip();
                                 requestLiveInsightUpdates();
+                            }
+                        });
+                connect(editor,
+                        &QPlainTextEdit::selectionChanged,
+                        this,
+                        [this, editor]() {
+                            if (tabManager
+                                && tabManager->getCurrentEditor() == editor) {
+                                requestWorkspaceHubUpdate();
                             }
                         });
                 connect(editor,

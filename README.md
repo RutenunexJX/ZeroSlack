@@ -7,6 +7,18 @@ editing SystemVerilog workspaces. It combines an incremental editor syntax
 model with workspace-wide semantic analysis, relationship views, diagnostics,
 and preview-first RTL editing workflows.
 
+The Workspace Hub groups the active source context, Pinloom bindings, and
+explicit WaveWorkbench and RegMapWorkbench resources in the existing Context
+Workspace sidebar. The same versioned associations are available to automation:
+
+```powershell
+zeroslack-cli suite-context <workspace> --file rtl/top.sv --line 42 `
+  --symbol dma_ready --include pinloom,wave,regmap --max-tokens 4000
+```
+
+Wave and RegMap associations use `.zeroslack/suite-references.json`; its schema
+is `schemas/suite-references-v1.schema.json`.
+
 ## Current user capabilities
 
 - Open, switch, close, rename, and revisit multiple workspaces; configure

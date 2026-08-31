@@ -391,6 +391,14 @@ set(ZEROSLACK_CORE_SOURCES
     pinloomcodelinkcoordinator.cpp
     pinloomcontextview.cpp
     pinloomcontextprovider.cpp
+    suitecontextcatalog.cpp
+    semanticstateview.cpp
+    workspacehubtypes.cpp
+    workspacehubsession.cpp
+    workspacehubmodel.cpp
+    workspacehubview.cpp
+    workspacehubcontextprovider.cpp
+    workspacehubsuitebridge.cpp
     temporaryeditorsession.cpp
     temporaryeditorcontextview.cpp
     temporaryeditorcontextprovider.cpp
@@ -817,6 +825,11 @@ add_library(zeroslack_cli_support STATIC
 target_link_libraries(zeroslack_cli_support PUBLIC
     zeroslack_core
     Qt6::Core)
+if(SuiteApp_FOUND)
+    target_link_libraries(zeroslack_cli_support PRIVATE SuiteApp::suiteapp)
+    target_compile_definitions(zeroslack_cli_support PRIVATE
+        ZEROSLACK_CLI_HAS_SUITEAPP=1)
+endif()
 add_executable(zeroslack_cli zeroslackclimain.cpp)
 set_target_properties(zeroslack_cli PROPERTIES
     OUTPUT_NAME "zeroslack-cli")
@@ -864,6 +877,12 @@ if(ZEROSLACK_SHARED_CORE)
         "$<BUILD_INTERFACE:$<COMPILE_ONLY:slang::slang>>")
 else()
     target_link_libraries(zeroslack_core PUBLIC slang::slang)
+endif()
+
+if(SuiteApp_FOUND)
+    target_link_libraries(zeroslack_core PRIVATE SuiteApp::suiteapp)
+    target_compile_definitions(zeroslack_core PRIVATE
+        ZEROSLACK_CORE_HAS_SUITEAPP=1)
 endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
@@ -1283,6 +1302,8 @@ if(BUILD_TESTING)
     add_executable(panel_layout_controller_test
         test_sv/panel_layout_controller_test.cpp
         actionregistry.cpp
+        applicationthememanager.cpp
+        insightvisualstyle.cpp
         panellayoutcontroller.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(panel_layout_controller_test PRIVATE
@@ -1356,6 +1377,11 @@ if(BUILD_TESTING)
     add_executable(context_workspace_test
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(workspace_hub_test
+        test_sv/workspace_hub_test.cpp)
+    target_link_libraries(workspace_hub_test
         PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(temporary_editor_context_provider_test
@@ -1866,6 +1892,43 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:context_workspace_test>
     )
+    add_test(NAME workspace_hub_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_hub_test>
+    )
+    add_test(NAME workspace_hub_150pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=1.5"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_hub_test>
+    )
+    add_test(NAME workspace_hub_125pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=1.25"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_hub_test>
+    )
+    add_test(NAME workspace_hub_200pct_dpi_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_SCALE_FACTOR=2"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:workspace_hub_test>
+    )
+    set_tests_properties(
+        workspace_hub_test
+        workspace_hub_125pct_dpi_test
+        workspace_hub_150pct_dpi_test
+        workspace_hub_200pct_dpi_test
+        PROPERTIES TIMEOUT 120)
     add_test(NAME context_workspace_125pct_dpi_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

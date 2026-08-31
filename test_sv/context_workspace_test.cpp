@@ -112,6 +112,10 @@ struct ProviderCounters {
     int created = 0;
     int restored = 0;
     int saved = 0;
+    int providerStateSaved = 0;
+    int providerStateRestored = 0;
+    int providerStateCleared = 0;
+    std::function<void()> providerStateChanged;
 };
 
 class MockProvider final : public IContextContentProvider
@@ -170,6 +174,32 @@ public:
     {
         if (counters)
             ++counters->restored;
+    }
+
+    QVariantMap saveProviderState() const override
+    {
+        if (counters)
+            ++counters->providerStateSaved;
+        return {{QStringLiteral("expanded"),
+                 QStringList{QStringLiteral("source"),
+                             QStringLiteral("wave")}}};
+    }
+
+    void restoreProviderState(const QVariantMap& state) override
+    {
+        if (!counters)
+            return;
+        if (state.isEmpty())
+            ++counters->providerStateCleared;
+        else
+            ++counters->providerStateRestored;
+    }
+
+    void setProviderStateChangedHandler(
+        ProviderStateChangedHandler handler) override
+    {
+        if (counters)
+            counters->providerStateChanged = std::move(handler);
     }
 
 private:
@@ -467,9 +497,23 @@ int main(int argc, char* argv[])
               && savedState.activePinnedResourceKey
                      == original.stableKey()
               && savedState.peekWidth == retainedUserSize.width()
+              && savedState.providerStates.value(
+                     QStringLiteral("mock")).toMap().value(
+                     QStringLiteral("expanded")).toStringList()
+                     == QStringList({QStringLiteral("source"),
+                                     QStringLiteral("wave")})
               && savedState.peekHeight == retainedUserSize.height()
               && savedState.dockWidth == userDockWidth,
           "session capture preserves both Peek dimensions, actual Dock width, pinned order, and active tab");
+    QSignalSpy providerStateSignalSpy(
+        &controller, &ContextWorkspaceController::workspaceStateChanged);
+    check(static_cast<bool>(counters.providerStateChanged),
+          "providers receive a state-change bridge from the Context controller");
+    if (counters.providerStateChanged)
+        counters.providerStateChanged();
+    QApplication::processEvents();
+    check(providerStateSignalSpy.count() == 1,
+          "provider-only state changes request automatic workspace persistence");
 
     QVariantMap unavailableMap = original.toVariantMap();
     unavailableMap.insert(QStringLiteral("providerId"),
@@ -483,8 +527,17 @@ int main(int argc, char* argv[])
               && controller.dockHost()->resourceCount() == 2
               && controller.dockHost()->currentResource().stableKey()
                      == original.stableKey()
+              && counters.providerStateRestored > 0
               && !controller.peekHost()->hasResource(),
           "restore skips unavailable providers without blocking valid pinned tabs");
+
+    const int clearedBeforeInvalidRestore =
+        counters.providerStateCleared;
+    controller.restoreState(ContextWorkspaceState{});
+    check(counters.providerStateCleared
+              == clearedBeforeInvalidRestore + 1,
+          "an unsaved workspace clears retained provider state instead of inheriting another workspace");
+    controller.restoreState(savedState);
 
     window.resizeDocks(
         {controller.dockWidget()}, {350}, Qt::Horizontal);

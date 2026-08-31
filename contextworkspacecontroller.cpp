@@ -45,7 +45,8 @@ bool sameRoot(const QString& lhs, const QString& rhs)
 
 bool hasBuiltInProviderIcon(const QString& providerId)
 {
-    return providerId == QStringLiteral("temporaryEditor")
+    return providerId == QStringLiteral("workspaceHub")
+        || providerId == QStringLiteral("temporaryEditor")
         || providerId == QStringLiteral("liveInsights")
         || providerId.startsWith(QStringLiteral("rtlInsight."))
         || providerId == QStringLiteral("pinloom");
@@ -54,6 +55,10 @@ bool hasBuiltInProviderIcon(const QString& providerId)
 QColor providerAccent(const QString& providerId, ThemeMode mode)
 {
     const bool dark = mode == ThemeMode::Dark;
+    if (providerId == QStringLiteral("workspaceHub")) {
+        return QColor(dark ? QStringLiteral("#7DD3FC")
+                           : QStringLiteral("#0369A1"));
+    }
     if (providerId == QStringLiteral("temporaryEditor")) {
         return QColor(dark ? QStringLiteral("#75A7FF")
                            : QStringLiteral("#2563C9"));
@@ -129,7 +134,24 @@ QPixmap providerIconPixmap(
         Qt::RoundCap,
         Qt::RoundJoin);
 
-    if (providerId == QStringLiteral("temporaryEditor")) {
+    if (providerId == QStringLiteral("workspaceHub")) {
+        painter.setBrush(theme.panelBackground);
+        painter.setPen(outline);
+        const std::array<QRectF, 4> tiles = {
+            QRectF(5.0, 5.0, 9.0, 9.0),
+            QRectF(18.0, 5.0, 9.0, 9.0),
+            QRectF(5.0, 18.0, 9.0, 9.0),
+            QRectF(18.0, 18.0, 9.0, 9.0)};
+        for (const QRectF& tile : tiles)
+            painter.drawRoundedRect(tile, 2.0, 2.0);
+        painter.setPen(accentPen);
+        painter.drawLine(QPointF(14.0, 9.5), QPointF(18.0, 9.5));
+        painter.drawLine(QPointF(14.0, 22.5), QPointF(18.0, 22.5));
+        painter.drawLine(QPointF(9.5, 14.0), QPointF(9.5, 18.0));
+        painter.drawLine(QPointF(22.5, 14.0), QPointF(22.5, 18.0));
+        painter.setBrush(accent);
+        painter.drawEllipse(QPointF(16.0, 16.0), 2.5, 2.5);
+    } else if (providerId == QStringLiteral("temporaryEditor")) {
         QPainterPath page;
         page.moveTo(7.5, 4.5);
         page.lineTo(19.5, 4.5);
@@ -460,6 +482,10 @@ bool ContextWorkspaceController::registerProvider(
         window ? window->style() : nullptr);
     if (!railValue->addEntry(entry))
         return false;
+    provider->setProviderStateChangedHandler([this]() {
+        if (!restoringState)
+            emit workspaceStateChanged();
+    });
     providers.emplace(id, std::move(provider));
     return true;
 }
@@ -847,6 +873,13 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
             : preferredDockWidthValue);
     state.dockVisible = dockValue && dockValue->isVisible();
     state.railVisible = railValue && railValue->isVisible();
+    for (const auto& [id, provider] : providers) {
+        if (!provider)
+            continue;
+        const QVariantMap providerState = provider->saveProviderState();
+        if (!providerState.isEmpty())
+            state.providerStates.insert(id, providerState);
+    }
     if (!dockHostValue)
         return state;
 
@@ -891,6 +924,14 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     const bool previousRestoring = restoringState;
     restoringState = true;
     clearResources();
+    for (const auto& [id, provider] : providers) {
+        if (!provider)
+            continue;
+        provider->restoreProviderState(
+            state.valid
+                ? state.providerStates.value(id).toMap()
+                : QVariantMap{});
+    }
     if (!state.valid) {
         if (peekHostValue) {
             peekHostValue->setPreferredSize(

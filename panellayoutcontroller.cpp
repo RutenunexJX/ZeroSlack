@@ -1,5 +1,7 @@
 #include "panellayoutcontroller.h"
 
+#include "insightvisualstyle.h"
+
 #include <QAbstractItemView>
 #include <QAbstractScrollArea>
 #include <QApplication>
@@ -117,6 +119,13 @@ public:
         badgeText = text.trimmed();
         badgeTone = tone.trimmed().toLower();
         setProperty("hasBadge", !badgeText.isEmpty());
+        const int reserve = badgeText.isEmpty()
+            ? 0
+            : qMax(35, fontMetrics().horizontalAdvance(badgeText) + 22);
+        setProperty("badgeReserve", reserve);
+        setStyleSheet(reserve > 0
+            ? QStringLiteral("padding-right: %1px;").arg(reserve)
+            : QString());
         style()->unpolish(this);
         style()->polish(this);
         updateGeometry();
@@ -142,17 +151,23 @@ protected:
                               rect().center().y() - 9,
                               width,
                               18);
-        QColor background = palette().highlight().color();
-        if (badgeTone == QStringLiteral("error"))
-            background = QColor(196, 56, 56);
-        else if (badgeTone == QStringLiteral("warning"))
-            background = QColor(196, 126, 24);
-        else if (badgeTone == QStringLiteral("success"))
-            background = QColor(52, 132, 81);
+        const InsightTheme& theme = InsightVisualStyle::theme();
+        QColor background = theme.statusBar.infoBackground;
+        QColor foreground = theme.statusBar.infoText;
+        if (badgeTone == QStringLiteral("error")) {
+            background = theme.statusBar.errorBackground;
+            foreground = theme.statusBar.errorText;
+        } else if (badgeTone == QStringLiteral("warning")) {
+            background = theme.statusBar.warningBackground;
+            foreground = theme.statusBar.warningText;
+        } else if (badgeTone == QStringLiteral("success")) {
+            background = theme.statusBar.successBackground;
+            foreground = theme.statusBar.successText;
+        }
         painter.setPen(Qt::NoPen);
         painter.setBrush(background);
         painter.drawRoundedRect(badgeRect, 9, 9);
-        painter.setPen(Qt::white);
+        painter.setPen(foreground);
         painter.drawText(badgeRect, Qt::AlignCenter, badgeText);
     }
 
@@ -1158,15 +1173,13 @@ void PanelLayoutController::updateDrawerStyle()
     if (!bottomDrawerRoot || applyingDrawerStyle)
         return;
     applyingDrawerStyle = true;
-    const QPalette palette = bottomDrawerRoot->palette();
-    const QColor background = palette.color(QPalette::Window);
-    const QColor text = palette.color(QPalette::WindowText);
-    const QColor border = palette.color(QPalette::Mid);
-    QColor hover = palette.color(QPalette::Highlight);
-    hover.setAlpha(28);
-    QColor active = palette.color(QPalette::Highlight);
-    active.setAlpha(42);
-    const QColor accent = palette.color(QPalette::Highlight);
+    const InsightTheme& theme = InsightVisualStyle::theme();
+    const QColor background = theme.surface.panel;
+    const QColor text = theme.textPrimary;
+    const QColor border = theme.border;
+    const QColor hover = theme.button.backgroundHover;
+    const QColor active = theme.button.backgroundPressed;
+    const QColor accent = theme.focus.ring;
     bottomDrawerRoot->setStyleSheet(QStringLiteral(
         "QWidget#bottomToolDrawerRoot { background: %1; }"
         "QWidget#bottomToolDrawerResizeHandle {"
@@ -1176,20 +1189,20 @@ void PanelLayoutController::updateDrawerStyle()
         " background: %1; border-top: 1px solid %2; }"
         "QToolButton { color: %4; border: 0; border-radius: 3px;"
         " padding: 0 11px 0 9px; min-height: 30px; }"
-        "QToolButton[hasBadge=\"true\"] { padding-right: 35px; }"
         "QToolButton:hover { background: %3; }"
         "QToolButton:checked { background: %5;"
         " border-bottom: 2px solid %6; }"
         "QToolButton:focus { outline: none;"
-        " border: 1px solid %6; }"
-        "QToolButton:checked:focus { border: 1px solid %6;"
+        " border: %7px solid %6; }"
+        "QToolButton:checked:focus { border: %7px solid %6;"
         " border-bottom: 2px solid %6; }"
     ).arg(colorCss(background),
           colorCss(border),
           colorCss(hover),
           colorCss(text),
           colorCss(active),
-          colorCss(accent)));
+          colorCss(accent))
+        .arg(theme.focus.width));
     applyingDrawerStyle = false;
 }
 

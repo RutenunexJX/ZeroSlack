@@ -3,7 +3,10 @@
 #include "version.h"
 
 #include <QCoreApplication>
+#include <QSet>
 #include <QTextStream>
+
+#include <utility>
 
 namespace {
 
@@ -52,6 +55,7 @@ bool parseArguments(const QStringList& arguments,
     request->command = arguments.at(0).trimmed().toLower();
     request->workspaceRoot = arguments.at(1);
     QStringList positional;
+    bool includeSpecified = false;
     for (int index = 2; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
         if (argument == QStringLiteral("--format")) {
@@ -87,6 +91,7 @@ bool parseArguments(const QStringList& arguments,
                              failureReason)) {
                 return false;
             }
+            request->lineSpecified = true;
         } else if (argument == QStringLiteral("--depth")) {
             if (!takeInteger(arguments, &index, &request->depth,
                              failureReason)) {
@@ -95,6 +100,27 @@ bool parseArguments(const QStringList& arguments,
         } else if (argument == QStringLiteral("--max-tokens")) {
             if (!takeInteger(arguments, &index, &request->maxTokens,
                              failureReason)) {
+                return false;
+            }
+        } else if (argument == QStringLiteral("--include")) {
+            includeSpecified = true;
+            QString value;
+            if (!takeValue(arguments, &index, &value, failureReason))
+                return false;
+            const int providerCountBefore =
+                request->includedProviders.size();
+            for (const QString& provider : value.split(
+                     QLatin1Char(','), Qt::SkipEmptyParts)) {
+                const QString normalized = provider.trimmed().toLower();
+                if (!normalized.isEmpty())
+                    request->includedProviders.append(normalized);
+            }
+            if (request->includedProviders.size()
+                == providerCountBefore) {
+                if (failureReason) {
+                    *failureReason = QStringLiteral(
+                        "--include requires at least one provider.");
+                }
                 return false;
             }
         } else if (argument == QStringLiteral("--refresh")) {
@@ -118,6 +144,33 @@ bool parseArguments(const QStringList& arguments,
         && request->format != QStringLiteral("markdown")) {
         if (failureReason)
             *failureReason = QStringLiteral("Unsupported output format.");
+        return false;
+    }
+    if (!request->includedProviders.isEmpty()) {
+        const QSet<QString> allowed{
+            QStringLiteral("all"), QStringLiteral("pinloom"),
+            QStringLiteral("wave"), QStringLiteral("regmap")};
+        for (const QString& provider :
+             std::as_const(request->includedProviders)) {
+            if (!allowed.contains(provider)) {
+                if (failureReason) {
+                    *failureReason = QStringLiteral(
+                        "Unsupported --include provider: %1").arg(provider);
+                }
+                return false;
+            }
+        }
+        if (request->includedProviders.contains(QStringLiteral("all")))
+            request->includedProviders.clear();
+        else
+            request->includedProviders.removeDuplicates();
+    }
+    if (includeSpecified
+        && request->command != QStringLiteral("suite-context")) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "--include is only valid for suite-context.");
+        }
         return false;
     }
     if (request->command == QStringLiteral("symbol")

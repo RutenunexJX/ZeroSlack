@@ -1,6 +1,7 @@
 #include "pinloomcodelinkstore.h"
 #include "semanticstableidentity.h"
 #include "slangmanager.h"
+#include "suitecontextcatalog.h"
 #include "zeroslackcli.h"
 
 #include <QCryptographicHash>
@@ -8,10 +9,13 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QSaveFile>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
+
+#include <algorithm>
 
 class ZeroSlackCliTest : public QObject
 {
@@ -23,6 +27,9 @@ private:
         std::unique_ptr<QTemporaryDir> cache;
         QString topFile;
         QString childFile;
+        QString waveFile;
+        QString regMapFile;
+        QString suiteReferencesFile;
         QString originalTop;
     };
 
@@ -63,6 +70,12 @@ private:
         const QString root = fixture.workspace->path();
         fixture.topFile = QDir(root).filePath(QStringLiteral("rtl/top.sv"));
         fixture.childFile = QDir(root).filePath(QStringLiteral("rtl/child.sv"));
+        fixture.waveFile = QDir(root).filePath(
+            QStringLiteral("timing/dma.wave.json"));
+        fixture.regMapFile = QDir(root).filePath(
+            QStringLiteral("registers/dma.regmap.yaml"));
+        fixture.suiteReferencesFile = QDir(root).filePath(
+            QStringLiteral(".zeroslack/suite-references.json"));
         fixture.originalTop = QStringLiteral(
             "module top(input logic clk, input logic d, output logic q);\n"
             "  child u_child(.d(d), .q(q));\n"
@@ -72,8 +85,43 @@ private:
             "module child(input logic d, output logic q);\n"
             "  assign q = d;\n"
             "endmodule\n");
+        const QString wave = QStringLiteral(
+            "{\"schemaVersion\":1,\"projectId\":\"dma-wave\","
+            "\"name\":\"DMA timing\",\"scenarios\":[{"
+            "\"id\":\"scenario-main\",\"name\":\"Main\","
+            "\"durationTick\":\"100\",\"lanes\":[{"
+            "\"id\":\"lane-q\",\"name\":\"q\"}]}]}\n");
+        const QString regMap = QStringLiteral(
+            "schema_version: 2\n"
+            "workspace:\n"
+            "  id: dma-regmap\n"
+            "  name: DMA Registers\n"
+            "  address_spaces:\n"
+            "    - id: space-main\n"
+            "      name: CSR\n"
+            "      blocks:\n"
+            "        - id: block-control\n"
+            "          name: CONTROL\n"
+            "          registers:\n"
+            "            - id: reg-q\n"
+            "              name: q\n"
+            "              fields:\n"
+            "                - id: field-enable\n"
+            "                  name: ENABLE\n");
+        const QString suiteReferences = QStringLiteral(
+            "{\"schema\":\"zeroslack.suite-references/v1\","
+            "\"resources\":["
+            "{\"id\":\"dma-wave\",\"provider\":\"wave\","
+            "\"file\":\"timing/dma.wave.json\",\"symbols\":[\"q\"]},"
+            "{\"id\":\"dma-regmap\",\"provider\":\"regmap\","
+            "\"file\":\"registers/dma.regmap.yaml\","
+            "\"objectId\":\"reg-q\",\"symbols\":[\"q\"]}]}\n");
         if (!writeText(fixture.topFile, fixture.originalTop)
-            || !writeText(fixture.childFile, child)) {
+            || !writeText(fixture.childFile, child)
+            || !writeText(fixture.waveFile, wave)
+            || !writeText(fixture.regMapFile, regMap)
+            || !writeText(fixture.suiteReferencesFile,
+                          suiteReferences)) {
             fixture.workspace.reset();
             return fixture;
         }
@@ -279,6 +327,279 @@ private slots:
         context.line = 1;
         const ZeroSlackCliResult rejected = ZeroSlackCliService().execute(context);
         QCOMPARE(rejected.exitCode, 5);
+    }
+
+    void suiteContextAggregatesExplicitReferencesWithinBudget()
+    {
+        Fixture fixture = makeFixture();
+        QVERIFY(fixture.workspace && fixture.cache);
+        const QString waveHash = fileHash(fixture.waveFile);
+        const QString regMapHash = fileHash(fixture.regMapFile);
+        const QString referencesHash = fileHash(
+            fixture.suiteReferencesFile);
+
+        ZeroSlackCliRequest request;
+        request.command = QStringLiteral("suite-context");
+        request.workspaceRoot = fixture.workspace->path();
+        request.cacheDirectory = fixture.cache->path();
+        request.filePath = QStringLiteral("rtl/top.sv");
+        request.line = 3;
+        request.symbol = QStringLiteral("q");
+        request.maxTokens = 900;
+        const ZeroSlackCliResult result =
+            ZeroSlackCliService().execute(request);
+        QCOMPARE(result.exitCode, 0);
+        const QJsonObject data = result.envelope.value(
+            QStringLiteral("data")).toObject();
+        QCOMPARE(data.value(QStringLiteral("source")).toObject().value(
+                     QStringLiteral("symbol")).toString(),
+                 QStringLiteral("q"));
+        const QJsonObject budget = data.value(
+            QStringLiteral("budget")).toObject();
+        QVERIFY(budget.value(QStringLiteral("estimatedTokens")).toInt()
+                <= budget.value(QStringLiteral("maxTokens")).toInt());
+        const QJsonArray providers = data.value(
+            QStringLiteral("payload")).toObject().value(
+                QStringLiteral("providers")).toArray();
+        QCOMPARE(providers.size(), 3);
+        QSet<QString> providerIds;
+        int explicitItems = 0;
+        for (const QJsonValue& value : providers) {
+            const QJsonObject provider = value.toObject();
+            providerIds.insert(provider.value(
+                QStringLiteral("id")).toString());
+            for (const QJsonValue& itemValue : provider.value(
+                     QStringLiteral("items")).toArray()) {
+                const QJsonObject item = itemValue.toObject();
+                if (item.value(QStringLiteral("origin")).toString()
+                    == QStringLiteral("suite-references")) {
+                    ++explicitItems;
+                }
+                QVERIFY(!item.contains(QStringLiteral("content")));
+                QVERIFY(!item.contains(QStringLiteral("base64")));
+            }
+        }
+        QCOMPARE(providerIds,
+                 QSet<QString>({QStringLiteral("pinloom"),
+                                QStringLiteral("wave"),
+                                QStringLiteral("regmap")}));
+        QVERIFY(explicitItems >= 1);
+
+        ZeroSlackCliRequest waveOnly = request;
+        waveOnly.includedProviders = {QStringLiteral("wave")};
+        const ZeroSlackCliResult filtered =
+            ZeroSlackCliService().execute(waveOnly);
+        QCOMPARE(filtered.exitCode, 0);
+        const QJsonArray filteredProviders = filtered.envelope.value(
+            QStringLiteral("data")).toObject().value(
+                QStringLiteral("payload")).toObject().value(
+                    QStringLiteral("providers")).toArray();
+        QCOMPARE(filteredProviders.size(), 1);
+        QCOMPARE(filteredProviders.at(0).toObject().value(
+                     QStringLiteral("id")).toString(),
+                 QStringLiteral("wave"));
+
+        QCOMPARE(fileHash(fixture.waveFile), waveHash);
+        QCOMPARE(fileHash(fixture.regMapFile), regMapHash);
+        QCOMPARE(fileHash(fixture.suiteReferencesFile), referencesHash);
+    }
+
+    void suiteContextRevisionTracksSuiteFilesIndependently()
+    {
+        Fixture fixture = makeFixture();
+        QVERIFY(fixture.workspace && fixture.cache);
+        ZeroSlackCliRequest request;
+        request.command = QStringLiteral("suite-context");
+        request.workspaceRoot = fixture.workspace->path();
+        request.cacheDirectory = fixture.cache->path();
+        request.filePath = QStringLiteral("rtl/top.sv");
+        request.line = 2;
+        request.maxTokens = 900;
+
+        const ZeroSlackCliResult first =
+            ZeroSlackCliService().execute(request);
+        QCOMPARE(first.exitCode, 0);
+        const QString workspaceRevision = first.envelope.value(
+            QStringLiteral("workspaceRevision")).toString();
+        const QString firstSuiteRevision = first.envelope.value(
+            QStringLiteral("data")).toObject().value(
+                QStringLiteral("suiteRevision")).toString();
+        QVERIFY(firstSuiteRevision.startsWith(QStringLiteral("sha256:")));
+
+        QVERIFY(writeText(fixture.waveFile,
+            QStringLiteral("{\"schemaVersion\":1,\"projectId\":\"dma-wave\","
+                           "\"name\":\"DMA timing updated\","
+                           "\"scenarios\":[]}\n")));
+        const ZeroSlackCliResult second =
+            ZeroSlackCliService().execute(request);
+        QCOMPARE(second.exitCode, 0);
+        QCOMPARE(second.envelope.value(
+                     QStringLiteral("workspaceRevision")).toString(),
+                 workspaceRevision);
+        const QString secondSuiteRevision = second.envelope.value(
+            QStringLiteral("data")).toObject().value(
+                QStringLiteral("suiteRevision")).toString();
+        QVERIFY(secondSuiteRevision.startsWith(QStringLiteral("sha256:")));
+        QVERIFY(secondSuiteRevision != firstSuiteRevision);
+    }
+
+    void suiteContextCountsReferencesBeyondInspectionLimit()
+    {
+        QTemporaryDir workspace;
+        QVERIFY(workspace.isValid());
+        QJsonArray references;
+        for (int index = 0;
+             index < SuiteContextCatalog::kMaximumReferences + 1;
+             ++index) {
+            references.append(QJsonObject{
+                {QStringLiteral("id"),
+                 QStringLiteral("wave-%1").arg(index)},
+                {QStringLiteral("provider"), QStringLiteral("wave")},
+                {QStringLiteral("file"),
+                 QStringLiteral("wave/missing-%1.wave.json").arg(index)},
+            });
+        }
+        const QString manifest = QDir(workspace.path()).filePath(
+            QStringLiteral(".zeroslack/suite-references.json"));
+        QVERIFY(writeText(manifest,
+            QString::fromUtf8(QJsonDocument(QJsonObject{
+                {QStringLiteral("schema"),
+                 QStringLiteral("zeroslack.suite-references/v1")},
+                {QStringLiteral("resources"), references},
+            }).toJson(QJsonDocument::Compact))));
+
+        SuiteContextCatalogRequest request;
+        request.workspaceRoot = workspace.path();
+        request.includedProviders = {QStringLiteral("wave")};
+        request.maxItemsPerProvider = 64;
+        const SuiteContextSnapshot snapshot =
+            SuiteContextCatalog::inspect(request);
+        QCOMPARE(snapshot.discoveredCounts.value(
+                     QStringLiteral("wave")),
+                 SuiteContextCatalog::kMaximumReferences + 1);
+        QCOMPARE(snapshot.resources.size(), 64);
+        QCOMPARE(snapshot.catalogOmittedCount, 1);
+        QVERIFY(std::any_of(
+            snapshot.diagnostics.cbegin(), snapshot.diagnostics.cend(),
+            [](const SuiteContextDiagnostic& diagnostic) {
+                return diagnostic.code
+                    == QStringLiteral("reference_limit_exceeded");
+            }));
+    }
+
+    void suiteContextRevisionIncludesReferencesBeyondEmissionLimit()
+    {
+        Fixture fixture = makeFixture();
+        QVERIFY(fixture.workspace && fixture.cache);
+        QJsonArray references;
+        for (int index = 0; index < 70; ++index) {
+            references.append(QJsonObject{
+                {QStringLiteral("id"),
+                 QStringLiteral("wave-%1").arg(index)},
+                {QStringLiteral("provider"), QStringLiteral("wave")},
+                {QStringLiteral("file"),
+                 QStringLiteral("timing/revision-%1.wave.json").arg(index)},
+            });
+        }
+        QVERIFY(writeText(fixture.suiteReferencesFile,
+            QString::fromUtf8(QJsonDocument(QJsonObject{
+                {QStringLiteral("schema"),
+                 QStringLiteral("zeroslack.suite-references/v1")},
+                {QStringLiteral("resources"), references},
+            }).toJson(QJsonDocument::Compact))));
+
+        ZeroSlackCliRequest request;
+        request.command = QStringLiteral("suite-context");
+        request.workspaceRoot = fixture.workspace->path();
+        request.cacheDirectory = fixture.cache->path();
+        request.includedProviders = {QStringLiteral("wave")};
+        request.maxTokens = 4096;
+        const ZeroSlackCliResult first =
+            ZeroSlackCliService().execute(request);
+        QCOMPARE(first.exitCode, 0);
+        const QJsonObject firstData = first.envelope.value(
+            QStringLiteral("data")).toObject();
+        QVERIFY(firstData.value(QStringLiteral("budget")).toObject().value(
+            QStringLiteral("truncated")).toBool());
+        const QString firstRevision = firstData.value(
+            QStringLiteral("suiteRevision")).toString();
+
+        const QString lastFile = QDir(fixture.workspace->path()).filePath(
+            QStringLiteral("timing/revision-69.wave.json"));
+        QVERIFY(writeText(lastFile,
+            QStringLiteral("{\"schemaVersion\":1,\"projectId\":\"late\","
+                           "\"name\":\"Late reference\","
+                           "\"scenarios\":[]}\n")));
+        const ZeroSlackCliResult second =
+            ZeroSlackCliService().execute(request);
+        QCOMPARE(second.exitCode, 0);
+        const QString secondRevision = second.envelope.value(
+            QStringLiteral("data")).toObject().value(
+                QStringLiteral("suiteRevision")).toString();
+        QVERIFY(firstRevision != secondRevision);
+    }
+
+    void pinloomReferencesFollowRelativePathAfterWorkspaceMove()
+    {
+        Fixture fixture = makeFixture();
+        QVERIFY(fixture.workspace && fixture.cache);
+        const QString linksPath = QDir(fixture.workspace->path()).filePath(
+            QStringLiteral(".zeroslack/pinloom-links.json"));
+        QFile links(linksPath);
+        QVERIFY(links.open(QIODevice::ReadOnly));
+        QJsonObject root = QJsonDocument::fromJson(
+            links.readAll()).object();
+        links.close();
+        QJsonArray anchors = root.value(
+            QStringLiteral("anchors")).toArray();
+        QVERIFY(!anchors.isEmpty());
+        QJsonObject anchor = anchors.at(0).toObject();
+        QJsonObject source = anchor.value(
+            QStringLiteral("source")).toObject();
+        source.insert(QStringLiteral("workspaceRoot"),
+                      QStringLiteral("Z:/retired/workspace"));
+        source.insert(QStringLiteral("absoluteFilePath"),
+                      QStringLiteral("Z:/retired/workspace/rtl/top.sv"));
+        anchor.insert(QStringLiteral("source"), source);
+        anchors[0] = anchor;
+        root.insert(QStringLiteral("anchors"), anchors);
+        QVERIFY(writeText(linksPath, QString::fromUtf8(
+            QJsonDocument(root).toJson(QJsonDocument::Compact))));
+
+        SuiteContextCatalogRequest request;
+        request.workspaceRoot = fixture.workspace->path();
+        request.includedProviders = {QStringLiteral("pinloom")};
+        const SuiteContextSnapshot snapshot =
+            SuiteContextCatalog::inspect(request);
+        QCOMPARE(snapshot.resources.size(), 1);
+        QCOMPARE(QFileInfo(snapshot.resources.first().filePath)
+                     .canonicalFilePath(),
+                 QFileInfo(fixture.topFile).canonicalFilePath());
+    }
+
+    void suiteContextRejectsInvalidProviderAndLineScope()
+    {
+        Fixture fixture = makeFixture();
+        QVERIFY(fixture.workspace && fixture.cache);
+        ZeroSlackCliRequest request;
+        request.command = QStringLiteral("suite-context");
+        request.workspaceRoot = fixture.workspace->path();
+        request.cacheDirectory = fixture.cache->path();
+        request.includedProviders = {QStringLiteral("unknown")};
+        QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 2);
+
+        request.includedProviders.clear();
+        request.line = 3;
+        request.lineSpecified = true;
+        QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 5);
+
+        request.filePath = QStringLiteral("rtl/top.sv");
+        request.line = 999;
+        QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 5);
+
+        request.line = 1;
+        request.filePath = QStringLiteral("registers/dma.regmap.yaml");
+        QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 5);
     }
 };
 

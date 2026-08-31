@@ -125,6 +125,7 @@ public:
     void setWorkspaceRoot(const QString& workspaceRoot);
     QString workspaceRoot() const;
     QString storagePath() const;
+    QString loadFailureReason() const;
 
     bool addLink(const PinloomSourceSelection& source,
                  const QUrl& uri,
@@ -134,17 +135,20 @@ public:
     QList<ResolvedPinloomCodeLink> linksForDocument(
         const QString& filePath,
         const QString& documentText,
-        const TSDocument* syntaxDocument = nullptr) const;
+        const TSDocument* syntaxDocument = nullptr,
+        const QList<SemanticSymbolRecord>* semanticSymbols = nullptr) const;
     QList<ResolvedPinloomCodeLink> linksAtPosition(
         const QString& filePath,
         const QString& documentText,
         int position,
-        const TSDocument* syntaxDocument = nullptr) const;
+        const TSDocument* syntaxDocument = nullptr,
+        const QList<SemanticSymbolRecord>* semanticSymbols = nullptr) const;
     ResolvedPinloomCodeLink anchorByIdForDocument(
         const QString& anchorId,
         const QString& filePath,
         const QString& documentText,
-        const TSDocument* syntaxDocument = nullptr) const;
+        const TSDocument* syntaxDocument = nullptr,
+        const QList<SemanticSymbolRecord>* semanticSymbols = nullptr) const;
     QList<PinloomCodeLinkAnchorRecord> anchors() const;
     QList<PinloomCodeLinkRecord> records() const;
     void setChangedHandler(std::function<void()> handler);
@@ -153,6 +157,7 @@ private:
     QString root;
     QList<PinloomCodeLinkAnchorRecord> anchorRecords;
     std::function<void()> changedHandler;
+    QString loadFailureValue;
 
     bool load(QString* failureReason = nullptr);
     bool save(QString* failureReason = nullptr) const;

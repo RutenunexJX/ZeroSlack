@@ -134,6 +134,39 @@ struct InsightGraphTokens {
     QColor selectionBorder;
 };
 
+struct InsightSurfaceTokens {
+    QColor canvas;
+    QColor panel;
+    QColor raised;
+    QColor overlay;
+    QColor empty;
+    QColor loading;
+    QColor stale;
+};
+
+struct InsightDensityTokens {
+    int baseSpacing = 4;
+    int compactControlHeight = 28;
+    int controlHeight = 32;
+    int primaryControlHeight = 36;
+    int smallRadius = 6;
+    int radius = 8;
+    int panelHeaderPadding = 8;
+};
+
+struct InsightFocusTokens {
+    QColor ring;
+    QColor ringOnAccent;
+    int width = 2;
+};
+
+struct InsightTypographyTokens {
+    int applicationTitleWeight = 650;
+    int panelTitleWeight = 600;
+    int bodyWeight = 400;
+    int metadataWeight = 400;
+};
+
 struct InsightSyntaxTokens {
     QColor keyword;
     QColor comment;
@@ -208,6 +241,10 @@ struct InsightTheme {
     InsightInputTokens input;
     InsightTabTokens tab;
     InsightStatusTokens statusBar;
+    InsightSurfaceTokens surface;
+    InsightDensityTokens density;
+    InsightFocusTokens focus;
+    InsightTypographyTokens typography;
     InsightDockTokens dock;
     InsightItemViewTokens itemView;
     InsightGraphTokens graph;

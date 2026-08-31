@@ -1,11 +1,12 @@
 #include "actionregistry.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
 
 #include <QApplication>
 #include <QDockWidget>
 #include <QHBoxLayout>
 #include <QMainWindow>
-#include <QPalette>
 #include <QPlainTextEdit>
 #include <QScrollBar>
 #include <QStackedWidget>
@@ -227,6 +228,15 @@ void verifyClickAndShortcutBehavior(DrawerHarness& harness)
               && harness.controller->activeBottomPanelId()
                      == QStringLiteral("activity"),
           "Ctrl+J restores the last used panel");
+}
+
+QString cssColor(const QColor& color)
+{
+    return QStringLiteral("rgba(%1, %2, %3, %4)")
+        .arg(color.red())
+        .arg(color.green())
+        .arg(color.blue())
+        .arg(color.alpha());
 }
 
 void verifyClickGeometryStability(DrawerHarness& harness)
@@ -466,29 +476,50 @@ void verifyBadgesAndTheme(DrawerHarness& harness)
         harness.controller->activeBottomPanelId();
     harness.controller->setPanelBadge(
         QStringLiteral("activity"),
-        QStringLiteral("Running"),
+        QStringLiteral("Running background analysis"),
         QStringLiteral("info"));
     QApplication::processEvents();
+    QToolButton* activityButton = harness.controller->buttonForPanel(
+        QStringLiteral("activity"));
+    const int reserve = activityButton->property(
+        "badgeReserve").toInt();
     check(harness.controller->activeBottomPanelId() == activeBefore
-              && QApplication::focusWidget() == focusBeforeBadge,
-          "background Activity status neither opens the panel nor steals focus");
+              && QApplication::focusWidget() == focusBeforeBadge
+              && reserve
+                     >= activityButton->fontMetrics().horizontalAdvance(
+                            QStringLiteral("Running background analysis"))
+                            + 22
+              && activityButton->sizeHint().width()
+                     >= activityButton->fontMetrics().horizontalAdvance(
+                            activityButton->text()) + reserve,
+          "background Activity status reserves its full badge width without opening the panel or stealing focus");
     harness.controller->setPanelBadge(
         QStringLiteral("activity"), QString(), QString());
     check(harness.controller->panelBadgeText(
-              QStringLiteral("activity")).isEmpty(),
+              QStringLiteral("activity")).isEmpty()
+              && activityButton->property("badgeReserve").toInt() == 0,
           "empty Activity status produces no badge noise");
 
-    const QPalette original = QApplication::palette();
-    QPalette dark = original;
-    dark.setColor(QPalette::Window, QColor(28, 30, 34));
-    dark.setColor(QPalette::WindowText, QColor(232, 234, 238));
-    QApplication::setPalette(dark);
+    ApplicationThemeManager& themeManager =
+        ApplicationThemeManager::instance();
+    const ThemeMode originalMode = themeManager.mode();
+    themeManager.setMode(ThemeMode::Dark);
     QApplication::processEvents();
+    QWidget* drawerRoot = harness.controller->buttonBar()->parentWidget();
     check(harness.controller->buttonBar()->isVisible()
               && harness.controller->buttonForPanel(
-                     QStringLiteral("problems"))->devicePixelRatioF() > 0.0,
-          "theme and device-pixel changes keep drawer controls available");
-    QApplication::setPalette(original);
+                     QStringLiteral("problems"))->devicePixelRatioF() > 0.0
+              && drawerRoot->styleSheet().contains(
+                     cssColor(InsightVisualStyle::theme(
+                         ThemeMode::Dark).surface.panel)),
+          "actual dark-theme changes refresh and keep drawer controls available");
+    themeManager.setMode(ThemeMode::Light);
+    QApplication::processEvents();
+    check(drawerRoot->styleSheet().contains(
+              cssColor(InsightVisualStyle::theme(
+                  ThemeMode::Light).surface.panel)),
+          "light theme restores semantic drawer tokens");
+    themeManager.setMode(originalMode);
 }
 }
 

@@ -22,11 +22,56 @@
 
 namespace {
 constexpr int kContextLength = 96;
+constexpr qint64 kMaximumStoreBytes = 8 * 1024 * 1024;
+constexpr int kMaximumAnchors = 4096;
+constexpr int kMaximumLinksPerAnchor = 128;
+constexpr int kMaximumLegacyLinks = 8192;
 const QString kSchema = QStringLiteral("ZeroSlack.PinloomCodeLinks");
 
 QString normalizedPath(const QString& path)
 {
     return QDir::cleanPath(QDir::fromNativeSeparators(path.trimmed()));
+}
+
+QString canonicalOrAbsolutePath(const QString& path)
+{
+    const QFileInfo info(path);
+    QString value = info.exists()
+        ? info.canonicalFilePath() : info.absoluteFilePath();
+    if (value.isEmpty())
+        value = info.absoluteFilePath();
+    return normalizedPath(value);
+}
+
+bool pathInsideRoot(const QString& root, const QString& path)
+{
+    QString rootKey = canonicalOrAbsolutePath(root);
+    QString pathKey = canonicalOrAbsolutePath(path);
+#ifdef Q_OS_WIN
+    rootKey = rootKey.toCaseFolded();
+    pathKey = pathKey.toCaseFolded();
+#endif
+    return !rootKey.isEmpty()
+        && (pathKey == rootKey
+            || pathKey.startsWith(rootKey + QLatin1Char('/')));
+}
+
+bool storagePathIsSafe(const QString& root, const QString& path)
+{
+    if (root.isEmpty() || path.isEmpty())
+        return false;
+    QFileInfo probe(path);
+    if (probe.exists())
+        return pathInsideRoot(root, probe.canonicalFilePath());
+    QString parent = probe.absolutePath();
+    while (!parent.isEmpty() && !QFileInfo::exists(parent)) {
+        const QString next = QFileInfo(parent).absolutePath();
+        if (next == parent)
+            break;
+        parent = next;
+    }
+    return QFileInfo::exists(parent)
+        && pathInsideRoot(root, QFileInfo(parent).canonicalFilePath());
 }
 
 QString textHash(const QString& text)
@@ -832,7 +877,7 @@ void PinloomCodeLinkStore::setWorkspaceRoot(
         return;
     root = normalized;
     anchorRecords.clear();
-    load();
+    load(&loadFailureValue);
     if (changedHandler)
         changedHandler();
 }
@@ -848,6 +893,11 @@ QString PinloomCodeLinkStore::storagePath() const
         ? QString()
         : QDir(root).filePath(
               QStringLiteral(".zeroslack/pinloom-links.json"));
+}
+
+QString PinloomCodeLinkStore::loadFailureReason() const
+{
+    return loadFailureValue;
 }
 
 bool PinloomCodeLinkStore::addLink(
@@ -974,7 +1024,8 @@ bool PinloomCodeLinkStore::addLink(
 QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksForDocument(
     const QString& filePath,
     const QString& documentText,
-    const TSDocument* syntaxDocument) const
+    const TSDocument* syntaxDocument,
+    const QList<SemanticSymbolRecord>* semanticSymbols) const
 {
     QList<ResolvedPinloomCodeLink> result;
     QList<SemanticSymbolRecord> symbols;
@@ -986,9 +1037,13 @@ QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksForDocument(
                 && sourceMatchesFile(anchor.source, root, filePath);
         });
     if (needsSymbols) {
-        SemanticIndex* index = SemanticIndex::getInstance();
-        if (index->getCachedFileContent(filePath) == documentText)
-            symbols = index->getSymbolRecords(filePath);
+        if (semanticSymbols) {
+            symbols = *semanticSymbols;
+        } else {
+            SemanticIndex* index = SemanticIndex::getInstance();
+            if (index->getCachedFileContent(filePath) == documentText)
+                symbols = index->getSymbolRecords(filePath);
+        }
     }
     const bool needsSyntax = std::any_of(
         anchorRecords.cbegin(), anchorRecords.cend(),
@@ -1035,11 +1090,13 @@ QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksAtPosition(
     const QString& filePath,
     const QString& documentText,
     int position,
-    const TSDocument* syntaxDocument) const
+    const TSDocument* syntaxDocument,
+    const QList<SemanticSymbolRecord>* semanticSymbols) const
 {
     QList<ResolvedPinloomCodeLink> result;
     for (const ResolvedPinloomCodeLink& link :
-         linksForDocument(filePath, documentText, syntaxDocument)) {
+         linksForDocument(filePath, documentText, syntaxDocument,
+                          semanticSymbols)) {
         if (link.available()
             && position >= link.startPosition
             && position < link.endPosition) {
@@ -1053,10 +1110,12 @@ ResolvedPinloomCodeLink PinloomCodeLinkStore::anchorByIdForDocument(
     const QString& anchorId,
     const QString& filePath,
     const QString& documentText,
-    const TSDocument* syntaxDocument) const
+    const TSDocument* syntaxDocument,
+    const QList<SemanticSymbolRecord>* semanticSymbols) const
 {
     for (const ResolvedPinloomCodeLink& link :
-         linksForDocument(filePath, documentText, syntaxDocument)) {
+         linksForDocument(filePath, documentText, syntaxDocument,
+                          semanticSymbols)) {
         if (link.anchor.id == anchorId)
             return link;
     }
@@ -1094,10 +1153,24 @@ bool PinloomCodeLinkStore::load(QString* failureReason)
     const QString path = storagePath();
     if (path.isEmpty() || !QFileInfo::exists(path))
         return true;
+    if (!storagePathIsSafe(root, path)) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Pinloom code-link storage resolves outside the workspace.");
+        }
+        return false;
+    }
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) {
         if (failureReason)
             *failureReason = file.errorString();
+        return false;
+    }
+    if (file.size() > kMaximumStoreBytes) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Pinloom code-link storage exceeds the 8 MiB safety limit.");
+        }
         return false;
     }
     QJsonParseError parseError;
@@ -1121,10 +1194,28 @@ bool PinloomCodeLinkStore::load(QString* failureReason)
     }
     const int version = rootObject.value(QStringLiteral("version")).toInt();
     if (version == kVersion) {
-        for (const QJsonValue& value :
-             rootObject.value(QStringLiteral("anchors")).toArray()) {
+        const QJsonArray anchors = rootObject.value(
+            QStringLiteral("anchors")).toArray();
+        if (anchors.size() > kMaximumAnchors) {
+            if (failureReason) {
+                *failureReason = QStringLiteral(
+                    "Pinloom code-link storage contains too many anchors.");
+            }
+            return false;
+        }
+        for (const QJsonValue& value : anchors) {
             if (!value.isObject())
                 continue;
+            if (value.toObject().value(
+                    QStringLiteral("links")).toArray().size()
+                > kMaximumLinksPerAnchor) {
+                anchorRecords.clear();
+                if (failureReason) {
+                    *failureReason = QStringLiteral(
+                        "A Pinloom source anchor contains too many links.");
+                }
+                return false;
+            }
             const PinloomCodeLinkAnchorRecord anchor =
                 anchorFromJson(value.toObject());
             if (anchor.isValid())
@@ -1142,8 +1233,16 @@ bool PinloomCodeLinkStore::load(QString* failureReason)
 
     // v1 records are migrated in memory without rewriting the workspace file.
     // The next explicit link change writes v2, preserving every legacy URI.
-    for (const QJsonValue& value :
-         rootObject.value(QStringLiteral("links")).toArray()) {
+    const QJsonArray legacyLinks = rootObject.value(
+        QStringLiteral("links")).toArray();
+    if (legacyLinks.size() > kMaximumLegacyLinks) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Legacy Pinloom code-link storage contains too many links.");
+        }
+        return false;
+    }
+    for (const QJsonValue& value : legacyLinks) {
         if (!value.isObject())
             continue;
         const QJsonObject object = value.toObject();
@@ -1191,6 +1290,13 @@ bool PinloomCodeLinkStore::save(QString* failureReason) const
     if (path.isEmpty()) {
         if (failureReason)
             *failureReason = QStringLiteral("No workspace is active.");
+        return false;
+    }
+    if (!storagePathIsSafe(root, path)) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Pinloom code-link storage resolves outside the workspace.");
+        }
         return false;
     }
     const QFileInfo fileInfo(path);

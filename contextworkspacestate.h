@@ -9,7 +9,8 @@
 
 struct ContextWorkspaceState {
     static constexpr int kLegacyVersion = 1;
-    static constexpr int kVersion = 2;
+    static constexpr int kResizableVersion = 2;
+    static constexpr int kVersion = 3;
 
     static constexpr int kMinimumPeekWidth = 280;
     static constexpr int kMaximumPeekWidth = 920;
@@ -43,6 +44,7 @@ struct ContextWorkspaceState {
     }
 
     QList<QVariantMap> pinnedResources;
+    QVariantMap providerStates;
     QString activePinnedResourceKey;
     int peekWidth = kDefaultPeekWidth;
     int peekHeight = kDefaultPeekHeight;

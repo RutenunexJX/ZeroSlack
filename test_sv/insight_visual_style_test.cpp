@@ -113,6 +113,51 @@ int main(int argc, char** argv)
                    && contrastRatio(darkTheme.input.selectionText,
                                     darkTheme.input.selectionBackground)
                           >= 4.5);
+    expectTrue("status text remains readable in both themes",
+               contrastRatio(lightTheme.statusBar.infoText,
+                             lightTheme.statusBar.infoBackground) >= 4.5
+                   && contrastRatio(lightTheme.statusBar.successText,
+                                    lightTheme.statusBar.successBackground)
+                          >= 4.5
+                   && contrastRatio(lightTheme.statusBar.warningText,
+                                    lightTheme.statusBar.warningBackground)
+                          >= 4.5
+                   && contrastRatio(lightTheme.statusBar.errorText,
+                                    lightTheme.statusBar.errorBackground)
+                          >= 4.5
+                   && contrastRatio(darkTheme.statusBar.infoText,
+                                    darkTheme.statusBar.infoBackground) >= 4.5
+                   && contrastRatio(darkTheme.statusBar.successText,
+                                    darkTheme.statusBar.successBackground)
+                          >= 4.5
+                   && contrastRatio(darkTheme.statusBar.warningText,
+                                    darkTheme.statusBar.warningBackground)
+                          >= 4.5
+                   && contrastRatio(darkTheme.statusBar.errorText,
+                                    darkTheme.statusBar.errorBackground)
+                          >= 4.5);
+    expectTrue("checked controls retain a visible focus ring",
+               contrastRatio(lightTheme.focus.ringOnAccent,
+                             lightTheme.button.backgroundChecked) >= 3.0
+                   && contrastRatio(darkTheme.focus.ringOnAccent,
+                                    darkTheme.button.backgroundChecked) >= 3.0);
+    expectTrue("semantic warning markers remain visible",
+               contrastRatio(lightTheme.statusBar.warningText,
+                             lightTheme.surface.stale) >= 3.0
+                   && contrastRatio(lightTheme.statusBar.warningText,
+                                    lightTheme.statusBar.warningBackground)
+                          >= 3.0
+                   && contrastRatio(lightTheme.statusBar.errorText,
+                                    lightTheme.statusBar.errorBackground)
+                          >= 3.0
+                   && contrastRatio(darkTheme.statusBar.warningText,
+                                    darkTheme.surface.stale) >= 3.0
+                   && contrastRatio(darkTheme.statusBar.warningText,
+                                    darkTheme.statusBar.warningBackground)
+                          >= 3.0
+                   && contrastRatio(darkTheme.statusBar.errorText,
+                                    darkTheme.statusBar.errorBackground)
+                          >= 3.0);
     expectTrue("semantic role colors and fills are theme-specific",
                InsightVisualStyle::roleColor(
                    InsightVisualRole::Write,

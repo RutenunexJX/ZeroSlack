@@ -387,6 +387,13 @@ int main(int argc, char* argv[])
     sessionA.ui.contextWorkspace.dockWidth = 588;
     sessionA.ui.contextWorkspace.dockVisible = true;
     sessionA.ui.contextWorkspace.railVisible = true;
+    sessionA.ui.contextWorkspace.providerStates.insert(
+        QStringLiteral("workspaceHub"),
+        QVariantMap{
+            {QStringLiteral("expandedSections"),
+             QStringList{QStringLiteral("source"),
+                         QStringLiteral("wave")}},
+            {QStringLiteral("previewVisible"), false}});
     sessionA.ui.contextWorkspace.valid = true;
     sessionA.scannedFiles = {topA, helperA};
     sessionA.scanComplete = true;
@@ -463,6 +470,8 @@ int main(int argc, char* argv[])
               && loadA.state.ui.contextWorkspace.dockWidth == 588
               && loadA.state.ui.contextWorkspace.dockVisible
               && loadA.state.ui.contextWorkspace.railVisible
+              && loadA.state.ui.contextWorkspace.providerStates
+                     == sessionA.ui.contextWorkspace.providerStates
               && loadA.state.scannedFiles
                      == QStringList{
                          cleanPath(helperA),
@@ -493,7 +502,7 @@ int main(int argc, char* argv[])
                      == ContextWorkspaceState::kVersion
               && editableContext.value(QStringLiteral("peekHeight")).toInt()
                      == 477,
-          "saved Context Workspace state uses v2 and contains Peek height");
+          "saved Context Workspace state uses v3 and contains Peek height");
 
     editableContext.insert(
         QStringLiteral("version"),
@@ -512,8 +521,34 @@ int main(int argc, char* argv[])
               && legacyContextLoad.state.ui.contextWorkspace.peekWidth == 604
               && legacyContextLoad.state.ui.contextWorkspace.peekHeight
                      == ContextWorkspaceState::kDefaultPeekHeight
-              && legacyContextLoad.state.ui.contextWorkspace.dockWidth == 588,
+              && legacyContextLoad.state.ui.contextWorkspace.dockWidth == 588
+              && legacyContextLoad.state.ui.contextWorkspace.providerStates
+                     .isEmpty(),
           "v1 Context Workspace state restores with a version-compatible height default");
+
+    editableContext.insert(
+        QStringLiteral("version"),
+        ContextWorkspaceState::kResizableVersion);
+    editableContext.insert(QStringLiteral("peekHeight"), 477);
+    editableContext.insert(
+        QStringLiteral("providerStates"),
+        QJsonObject{{QStringLiteral("workspaceHub"),
+                     QJsonObject{{QStringLiteral("previewVisible"), false}}}});
+    editableUi.insert(QStringLiteral("contextWorkspace"), editableContext);
+    editableRoot.insert(QStringLiteral("ui"), editableUi);
+    rawSessionSettings.setValue(
+        workspaceAStateKey,
+        QJsonDocument(editableRoot).toJson(QJsonDocument::Compact));
+    rawSessionSettings.sync();
+    const WorkspaceSessionRestoreResult resizableContextLoad =
+        sessionService.load(workspaceA);
+    check(resizableContextLoad.loaded
+              && resizableContextLoad.state.ui.contextWorkspace.valid
+              && resizableContextLoad.state.ui.contextWorkspace.peekHeight
+                     == 477
+              && resizableContextLoad.state.ui.contextWorkspace.providerStates
+                     .isEmpty(),
+          "v2 Context Workspace state preserves resizable geometry without importing v3 provider state");
 
     editableContext.insert(
         QStringLiteral("version"),

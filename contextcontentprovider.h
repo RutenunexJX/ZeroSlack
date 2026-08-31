@@ -16,6 +16,7 @@ class IContextContentProvider
 public:
     using ResourceUpdateHandler =
         std::function<void(const ContextResource&)>;
+    using ProviderStateChangedHandler = std::function<void()>;
 
     virtual ~IContextContentProvider() = default;
 
@@ -73,6 +74,20 @@ public:
     virtual void restoreViewState(
         QWidget*,
         const QVariantMap&)
+    {
+    }
+
+    virtual QVariantMap saveProviderState() const
+    {
+        return {};
+    }
+
+    virtual void restoreProviderState(const QVariantMap&)
+    {
+    }
+
+    virtual void setProviderStateChangedHandler(
+        ProviderStateChangedHandler)
     {
     }
 

@@ -7,6 +7,23 @@ workspace. Its primary consumer is an AI agent that must inspect a large RTL
 project and its Pinloom code links without opening the GUI or loading complete
 source files into one prompt.
 
+`suite-context` extends that read-only view across the application family. It
+combines source-index counts, Pinloom code links, and explicit WaveWorkbench
+and RegMapWorkbench resources while keeping failures isolated per provider.
+
+```text
+zeroslack-cli suite-context <workspace> [--file <path>] [--line <n>]
+  [--symbol <name-or-id>] [--include pinloom,wave,regmap]
+  [--max-tokens <n>]
+```
+
+Wave and RegMap associations are declared in
+`.zeroslack/suite-references.json` with schema
+`zeroslack.suite-references/v1`. Referenced files must resolve inside the
+workspace. The command does not scan private application storage and does not
+start Suite Runtime or a GUI. An already-running public Suite provider may
+enrich the bounded local metadata through `resource.resolve`.
+
 ## Boundaries
 
 - The CLI never edits RTL, workspace configuration, `.zs`, or Pinloom links.
@@ -18,6 +35,9 @@ source files into one prompt.
 - Every response uses the versioned `zeroslack.cli/v1` envelope and carries a
   workspace revision. Symbol results expose both a semantic ID intended to
   survive line movement and an exact snapshot ID for auditability.
+- `suite-context` also returns an independent `suiteRevision` over its explicit
+  association files and referenced Wave/RegMap projects, so suite-only changes
+  do not masquerade as an unchanged semantic workspace.
 
 ## Commands
 

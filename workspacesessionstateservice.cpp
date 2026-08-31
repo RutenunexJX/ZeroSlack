@@ -67,6 +67,45 @@ QStringList stringList(const QJsonArray& array)
     return values;
 }
 
+QVariant providerStateValue(const QJsonValue& value)
+{
+    if (value.isObject()) {
+        QVariantMap result;
+        const QJsonObject object = value.toObject();
+        for (auto it = object.constBegin(); it != object.constEnd(); ++it)
+            result.insert(it.key(), providerStateValue(it.value()));
+        return result;
+    }
+    if (value.isArray()) {
+        const QJsonArray array = value.toArray();
+        const bool stringsOnly = std::all_of(
+            array.constBegin(),
+            array.constEnd(),
+            [](const QJsonValue& entry) { return entry.isString(); });
+        if (stringsOnly) {
+            QStringList result;
+            result.reserve(array.size());
+            for (const QJsonValue& entry : array)
+                result.append(entry.toString());
+            return result;
+        }
+        QVariantList result;
+        result.reserve(array.size());
+        for (const QJsonValue& entry : array)
+            result.append(providerStateValue(entry));
+        return result;
+    }
+    return value.toVariant();
+}
+
+QVariantMap providerStatesFromJson(const QJsonObject& object)
+{
+    QVariantMap result;
+    for (auto it = object.constBegin(); it != object.constEnd(); ++it)
+        result.insert(it.key(), providerStateValue(it.value()));
+    return result;
+}
+
 QJsonObject tabObject(
     const QString& root,
     const WorkspaceSessionTabState& tab)
@@ -236,6 +275,10 @@ QJsonObject sessionObject(
     }
     contextWorkspace.insert(
         QStringLiteral("pinnedResources"), pinnedResources);
+    contextWorkspace.insert(
+        QStringLiteral("providerStates"),
+        QJsonObject::fromVariantMap(
+            state.ui.contextWorkspace.providerStates));
     contextWorkspace.insert(
         QStringLiteral("activePinnedResourceKey"),
         state.ui.contextWorkspace.activePinnedResourceKey);
@@ -492,7 +535,7 @@ void restoreUi(
                             ContextWorkspaceState::
                                 kDefaultPeekWidth));
             ui->contextWorkspace.peekHeight =
-                contextVersion >= ContextWorkspaceState::kVersion
+                contextVersion >= ContextWorkspaceState::kResizableVersion
                 ? ContextWorkspaceState::boundedPeekHeight(
                       contextWorkspace.value(
                           QStringLiteral("peekHeight"))
@@ -513,6 +556,13 @@ void restoreUi(
             ui->contextWorkspace.railVisible =
                 contextWorkspace.value(
                     QStringLiteral("railVisible")).toBool(true);
+            if (contextVersion >= ContextWorkspaceState::kVersion) {
+                ui->contextWorkspace.providerStates =
+                    providerStatesFromJson(
+                        contextWorkspace.value(
+                            QStringLiteral("providerStates"))
+                            .toObject());
+            }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(
                     QStringLiteral("valid")).toBool(true);

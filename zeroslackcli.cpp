@@ -7,16 +7,20 @@
 #include "semanticstableidentity.h"
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
+#include "suitecontextcatalog.h"
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
 #include "workspaceconfigurationservice.h"
 
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QProcess>
@@ -27,6 +31,10 @@
 #include <QUrl>
 
 #include <algorithm>
+
+#ifdef ZEROSLACK_CLI_HAS_SUITEAPP
+#include <suiteapp/client.h>
+#endif
 
 namespace {
 
@@ -139,6 +147,84 @@ QString sha256(const QByteArray& bytes)
 {
     return QString::fromLatin1(QCryptographicHash::hash(
         bytes, QCryptographicHash::Sha256).toHex());
+}
+
+QByteArray fileDigest(const QString& path, qint64 maximumBytes)
+{
+    QFile file(path);
+    if (!file.exists())
+        return QByteArrayLiteral("missing");
+    const QFileInfo info(file);
+    const auto boundedState = [&info](const QByteArray& state) {
+        QCryptographicHash hash(QCryptographicHash::Sha256);
+        hash.addData(state);
+        hash.addData(QByteArrayLiteral("\0"));
+        hash.addData(QByteArray::number(info.size()));
+        hash.addData(QByteArrayLiteral("\0"));
+        hash.addData(QByteArray::number(
+            info.lastModified().toMSecsSinceEpoch()));
+        return hash.result().toHex();
+    };
+    if (maximumBytes < 0 || info.size() > maximumBytes)
+        return boundedState(QByteArrayLiteral("oversize"));
+    if (!file.open(QIODevice::ReadOnly))
+        return boundedState(QByteArrayLiteral("unreadable"));
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    qint64 remaining = maximumBytes;
+    while (!file.atEnd()) {
+        if (remaining <= 0)
+            return boundedState(QByteArrayLiteral("oversize"));
+        const qint64 amount = qMin<qint64>(256 * 1024, remaining);
+        const QByteArray chunk = file.read(amount);
+        if (chunk.isEmpty() && file.error() != QFile::NoError)
+            return boundedState(QByteArrayLiteral("unreadable"));
+        hash.addData(chunk);
+        remaining -= chunk.size();
+    }
+    return hash.result().toHex();
+}
+
+QString suiteRevision(const QString& workspaceRoot,
+                      const SuiteContextSnapshot& snapshot)
+{
+    QHash<QString, qint64> files;
+    files.insert(SuiteContextCatalog::referenceFilePath(workspaceRoot),
+                 static_cast<qint64>(
+                     SuiteContextCatalog::kMaximumManifestBytes));
+    files.insert(QDir(workspaceRoot).filePath(
+                     QStringLiteral(".zeroslack/pinloom-links.json")),
+                 static_cast<qint64>(
+                     SuiteContextCatalog::kMaximumPinloomStoreBytes));
+    for (auto it = snapshot.revisionFiles.cbegin();
+         it != snapshot.revisionFiles.cend(); ++it) {
+        files.insert(normalizedPath(it.key()), it.value());
+    }
+    for (const SuiteContextResource& resource : snapshot.resources) {
+        if (resource.provider != SuiteContextProvider::Source
+            && !resource.filePath.trimmed().isEmpty()) {
+            files.insert(normalizedPath(resource.filePath),
+                         static_cast<qint64>(
+                             SuiteContextCatalog::kMaximumProjectBytes));
+        }
+    }
+    QStringList ordered = files.keys();
+    std::sort(ordered.begin(), ordered.end(),
+              [](const QString& left, const QString& right) {
+                  return pathKey(left) < pathKey(right);
+              });
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    hash.addData(QByteArrayLiteral("ZeroSlack.SuiteContext/v1\n"));
+    for (const QString& path : ordered) {
+        const QString safePath = resolvedWorkspaceFile(workspaceRoot, path);
+        if (safePath.isEmpty())
+            continue;
+        hash.addData(relativePath(workspaceRoot, safePath).toUtf8());
+        hash.addData(QByteArrayLiteral("\0"));
+        hash.addData(fileDigest(safePath, files.value(path)));
+        hash.addData(QByteArrayLiteral("\n"));
+    }
+    return QStringLiteral("sha256:")
+        + QString::fromLatin1(hash.result().toHex());
 }
 
 bool pathIsIgnored(const QString& path, const QStringList& ignored)
@@ -1462,6 +1548,774 @@ QJsonObject bundleData(const PreparedIndex& prepared,
     };
 }
 
+QJsonValue boundedScalarValue(const QJsonValue& value,
+                              int* omittedCount = nullptr)
+{
+    if (value.isString()) {
+        const QString text = value.toString();
+        if (text.size() > 512 && omittedCount)
+            ++*omittedCount;
+        return text.size() <= 512
+            ? value
+            : QJsonValue(text.left(512) + QChar(0x2026));
+    }
+    if (value.isBool() || value.isDouble())
+        return value;
+    return QJsonValue(QJsonValue::Undefined);
+}
+
+void copyScalarField(const QJsonObject& source,
+                     QJsonObject* destination,
+                     const QString& key,
+                     int* omittedCount = nullptr)
+{
+    if (!destination || !source.contains(key))
+        return;
+    const QJsonValue value = boundedScalarValue(
+        source.value(key), omittedCount);
+    if (!value.isUndefined())
+        destination->insert(key, value);
+}
+
+QJsonArray boundedStringArray(const QJsonValue& value,
+                              int maximum = 32,
+                              int* omittedCount = nullptr)
+{
+    QJsonArray result;
+    const QJsonArray source = value.toArray();
+    for (const QJsonValue& entry : source) {
+        if (result.size() >= maximum) {
+            if (omittedCount)
+                *omittedCount += source.size() - result.size();
+            break;
+        }
+        if (entry.isString()) {
+            const QString text = entry.toString();
+            if (text.size() > 256 && omittedCount)
+                ++*omittedCount;
+            result.append(text.left(256));
+        }
+    }
+    return result;
+}
+
+QJsonObject safeCatalogMetadata(
+    const SuiteContextResource& resource,
+    int* omittedCount = nullptr)
+{
+    const QJsonObject source = QJsonObject::fromVariantMap(
+        resource.metadata);
+    QJsonObject result;
+    for (const QString& key : {
+             QStringLiteral("referenceId"),
+             QStringLiteral("relativePath"),
+             QStringLiteral("symbolMatch")}) {
+        copyScalarField(source, &result, key, omittedCount);
+    }
+    if (resource.provider == SuiteContextProvider::Pinloom) {
+        for (const QString& key : {
+                 QStringLiteral("anchorId"),
+                 QStringLiteral("linkId"),
+                 QStringLiteral("anchorKind"),
+                 QStringLiteral("module")}) {
+            copyScalarField(source, &result, key, omittedCount);
+        }
+    } else if (resource.provider == SuiteContextProvider::Wave) {
+        for (const QString& key : {
+                 QStringLiteral("projectId"),
+                 QStringLiteral("schemaVersion"),
+                 QStringLiteral("scenarioCount"),
+                 QStringLiteral("laneCount")}) {
+            copyScalarField(source, &result, key, omittedCount);
+        }
+        QJsonArray scenarios;
+        for (const QJsonValue& value : source.value(
+                 QStringLiteral("scenarios")).toArray()) {
+            if (scenarios.size() >= 24 || !value.isObject())
+                break;
+            QJsonObject safeScenario;
+            const QJsonObject scenario = value.toObject();
+            for (const QString& key : {
+                     QStringLiteral("id"), QStringLiteral("name"),
+                     QStringLiteral("laneCount"),
+                     QStringLiteral("durationTick")}) {
+                copyScalarField(scenario, &safeScenario, key,
+                                omittedCount);
+            }
+            scenarios.append(safeScenario);
+        }
+        result.insert(QStringLiteral("scenarios"), scenarios);
+    } else if (resource.provider == SuiteContextProvider::RegMap) {
+        for (const QString& key : {
+                 QStringLiteral("addressSpaceCount"),
+                 QStringLiteral("blockCount"),
+                 QStringLiteral("registerCount"),
+                 QStringLiteral("fieldCount"),
+                 QStringLiteral("enumValueCount")}) {
+            copyScalarField(source, &result, key, omittedCount);
+        }
+    }
+    return result;
+}
+
+QJsonObject safeResourceJson(const SuiteContextResource& resource,
+                             const QString& workspaceRoot,
+                             int* omittedCount = nullptr)
+{
+    QJsonArray symbols;
+    for (const QString& symbol : resource.symbols) {
+        if (symbols.size() >= 32) {
+            if (omittedCount)
+                ++*omittedCount;
+            break;
+        }
+        if (symbol.size() > 256 && omittedCount)
+            ++*omittedCount;
+        symbols.append(symbol.left(256));
+    }
+    const auto bounded = [omittedCount](const QString& value,
+                                        int maximum) {
+        if (value.size() > maximum && omittedCount)
+            ++*omittedCount;
+        return value.left(maximum);
+    };
+    QJsonObject result{
+        {QStringLiteral("id"), bounded(resource.stableId, 256)},
+        {QStringLiteral("provider"), resource.providerId()},
+        {QStringLiteral("availability"),
+         SuiteContextCatalog::availabilityId(resource.availability)},
+        {QStringLiteral("title"), bounded(resource.title, 256)},
+        {QStringLiteral("summary"), bounded(resource.summary, 512)},
+        {QStringLiteral("uri"), bounded(resource.uri.toString(
+             QUrl::FullyEncoded), 4096)},
+        {QStringLiteral("symbols"), symbols},
+        {QStringLiteral("metadata"), safeCatalogMetadata(
+             resource, omittedCount)},
+    };
+    if (!resource.filePath.isEmpty()) {
+        result.insert(QStringLiteral("file"),
+                      bounded(relativePath(workspaceRoot,
+                                           resource.filePath), 4096));
+    }
+    return result;
+}
+
+void copyNativeField(const QJsonObject& source,
+                     QJsonObject* destination,
+                     const QString& key,
+                     int* omittedCount = nullptr)
+{
+    copyScalarField(source, destination, key, omittedCount);
+}
+
+QJsonObject safeNativeModel(const QString& provider,
+                            const QJsonObject& source,
+                            int* omittedCount = nullptr)
+{
+    QJsonObject result;
+    if (provider == QStringLiteral("pinloom")) {
+        const QJsonObject entry = source.value(
+            QStringLiteral("entry")).toObject();
+        QJsonObject safeEntry;
+        for (const QString& key : {
+                 QStringLiteral("type"), QStringLiteral("title"),
+                 QStringLiteral("pinned"), QStringLiteral("deleted"),
+                 QStringLiteral("frequency"),
+                 QStringLiteral("matchedField"),
+                 QStringLiteral("usedAt")}) {
+            copyNativeField(entry, &safeEntry, key, omittedCount);
+        }
+        safeEntry.insert(QStringLiteral("aliases"),
+                         boundedStringArray(entry.value(
+                             QStringLiteral("aliases")), 32,
+                             omittedCount));
+        safeEntry.insert(QStringLiteral("tags"),
+                         boundedStringArray(entry.value(
+                             QStringLiteral("tags")), 32,
+                             omittedCount));
+        const QJsonObject identity = entry.value(
+            QStringLiteral("identity")).toObject();
+        QJsonObject safeIdentity;
+        for (const QString& key : {
+                 QStringLiteral("entryId"),
+                 QStringLiteral("resourceId"),
+                 QStringLiteral("anchorId"),
+                 QStringLiteral("clipId")}) {
+            copyNativeField(identity, &safeIdentity, key,
+                            omittedCount);
+        }
+        safeEntry.insert(QStringLiteral("identity"), safeIdentity);
+        result.insert(QStringLiteral("entry"), safeEntry);
+        return result;
+    }
+    if (provider == QStringLiteral("wave")) {
+        for (const QString& key : {
+                 QStringLiteral("appId"), QStringLiteral("uri"),
+                 QStringLiteral("kind"), QStringLiteral("projectId"),
+                 QStringLiteral("title"),
+                 QStringLiteral("schemaVersion"),
+                 QStringLiteral("traceCount")}) {
+            copyNativeField(source, &result, key, omittedCount);
+        }
+        QJsonArray scenarios;
+        const QJsonArray sourceScenarios = source.value(
+            QStringLiteral("scenarios")).toArray();
+        for (const QJsonValue& value : sourceScenarios) {
+            if (scenarios.size() >= 32) {
+                if (omittedCount)
+                    *omittedCount += sourceScenarios.size() - scenarios.size();
+                break;
+            }
+            if (!value.isObject()) {
+                if (omittedCount)
+                    ++*omittedCount;
+                continue;
+            }
+            const QJsonObject scenario = value.toObject();
+            QJsonObject safeScenario;
+            for (const QString& key : {
+                     QStringLiteral("id"), QStringLiteral("name"),
+                     QStringLiteral("duration"),
+                     QStringLiteral("laneCount")}) {
+                copyNativeField(scenario, &safeScenario, key,
+                                omittedCount);
+            }
+            scenarios.append(safeScenario);
+        }
+        result.insert(QStringLiteral("scenarios"), scenarios);
+        return result;
+    }
+    if (provider == QStringLiteral("regmap")) {
+        for (const QString& key : {
+                 QStringLiteral("appId"), QStringLiteral("uri"),
+                 QStringLiteral("kind"), QStringLiteral("title"),
+                 QStringLiteral("workspaceId"),
+                 QStringLiteral("registerId"),
+                 QStringLiteral("fieldId"), QStringLiteral("valid"),
+                 QStringLiteral("addressSpaceCount"),
+                 QStringLiteral("blockCount"),
+                 QStringLiteral("registerCount"),
+                 QStringLiteral("fieldCount")}) {
+            copyNativeField(source, &result, key, omittedCount);
+        }
+        const QJsonObject object = source.value(
+            QStringLiteral("object")).toObject();
+        QJsonObject safeObject;
+        for (const QString& key : {
+                 QStringLiteral("id"), QStringLiteral("name"),
+                 QStringLiteral("kind"), QStringLiteral("parentId")}) {
+            copyNativeField(object, &safeObject, key, omittedCount);
+        }
+        result.insert(QStringLiteral("object"), safeObject);
+        QJsonArray diagnostics;
+        const QJsonArray sourceDiagnostics = source.value(
+            QStringLiteral("diagnostics")).toArray();
+        for (const QJsonValue& value : sourceDiagnostics) {
+            if (diagnostics.size() >= 32) {
+                if (omittedCount)
+                    *omittedCount += sourceDiagnostics.size() - diagnostics.size();
+                break;
+            }
+            if (!value.isObject()) {
+                if (omittedCount)
+                    ++*omittedCount;
+                continue;
+            }
+            const QJsonObject diagnostic = value.toObject();
+            QJsonObject safeDiagnostic;
+            for (const QString& key : {
+                     QStringLiteral("code"),
+                     QStringLiteral("severity"),
+                     QStringLiteral("objectId")}) {
+                copyNativeField(diagnostic, &safeDiagnostic, key,
+                                omittedCount);
+            }
+            diagnostics.append(safeDiagnostic);
+        }
+        result.insert(QStringLiteral("diagnostics"), diagnostics);
+    }
+    return result;
+}
+
+QJsonObject suiteProviderDiagnostic(const QString& provider,
+                                    const QString& code,
+                                    const QString& message,
+                                    const QString& uri = {})
+{
+    QJsonObject result{
+        {QStringLiteral("provider"), provider},
+        {QStringLiteral("code"), code},
+        {QStringLiteral("severity"), QStringLiteral("warning")},
+        {QStringLiteral("message"), message.left(768)},
+    };
+    if (!uri.isEmpty())
+        result.insert(QStringLiteral("uri"), uri);
+    return result;
+}
+
+struct SuiteRuntimeResolver {
+    bool runtimeAvailable = false;
+    QSet<QString> providers;
+    QString failureCode;
+    QString failureMessage;
+    mutable QElapsedTimer deadline;
+    mutable int resolveAttempts = 0;
+    static constexpr int kTotalResolveMilliseconds = 3000;
+    static constexpr int kMaximumResolveAttempts = 16;
+
+    explicit SuiteRuntimeResolver(bool enabled = true)
+    {
+        deadline.start();
+        if (!enabled)
+            return;
+#ifdef ZEROSLACK_CLI_HAS_SUITEAPP
+        SuiteApp::Client client(SuiteApp::defaultRuntimeEndpoint(), 500);
+        const SuiteApp::TransportResult listed = client.listProviders();
+        if (!listed.hasResponse()) {
+            failureCode = listed.errorCode.isEmpty()
+                ? QStringLiteral("runtime_unavailable")
+                : listed.errorCode;
+            failureMessage = listed.errorMessage.isEmpty()
+                ? QStringLiteral("Suite Runtime is not running.")
+                : listed.errorMessage;
+            return;
+        }
+        const QJsonObject response = listed.response;
+        if (!response.value(QStringLiteral("ok")).toBool()) {
+            const QJsonObject error = response.value(
+                QStringLiteral("error")).toObject();
+            failureCode = error.value(QStringLiteral("code")).toString();
+            failureMessage = error.value(
+                QStringLiteral("message")).toString();
+            return;
+        }
+        runtimeAvailable = true;
+        for (const QJsonValue& value : response.value(
+                 QStringLiteral("result")).toObject().value(
+                 QStringLiteral("providers")).toArray()) {
+            const QString appId = value.toObject().value(
+                QStringLiteral("appId")).toString();
+            if (!appId.isEmpty())
+                providers.insert(appId);
+        }
+#else
+        failureCode = QStringLiteral("suiteapp_not_built");
+        failureMessage = QStringLiteral(
+            "This ZeroSlack CLI build has no SuiteApp client support.");
+#endif
+    }
+
+    QJsonObject resolve(const SuiteContextResource& resource,
+                        QJsonObject* diagnostic,
+                        int* omittedCount = nullptr) const
+    {
+        if (diagnostic)
+            *diagnostic = {};
+        const QString provider = resource.providerId();
+        if (!runtimeAvailable || !providers.contains(provider)) {
+            return {};
+        }
+        const int remaining = kTotalResolveMilliseconds
+            - static_cast<int>(deadline.elapsed());
+        if (resolveAttempts >= kMaximumResolveAttempts
+            || remaining < 100) {
+            if (diagnostic) {
+                *diagnostic = suiteProviderDiagnostic(
+                    provider,
+                    QStringLiteral("resolution_budget_exhausted"),
+                    QStringLiteral("The Suite resolution time budget was exhausted; local metadata was retained."),
+                    resource.uri.toString(QUrl::FullyEncoded));
+            }
+            return {};
+        }
+        ++resolveAttempts;
+#ifdef ZEROSLACK_CLI_HAS_SUITEAPP
+        SuiteApp::Client client(
+            SuiteApp::defaultRuntimeEndpoint(),
+            qBound(100, qMin(1200, remaining), 1200));
+        const SuiteApp::TransportResult resolved = client.resolveResource(
+            resource.uri.toString(QUrl::FullyEncoded), provider);
+        if (!resolved.hasResponse()) {
+            if (diagnostic) {
+                *diagnostic = suiteProviderDiagnostic(
+                    provider,
+                    resolved.errorCode.isEmpty()
+                        ? QStringLiteral("provider_transport_error")
+                        : resolved.errorCode,
+                    resolved.errorMessage.isEmpty()
+                        ? QStringLiteral("The provider did not return a response.")
+                        : resolved.errorMessage,
+                    resource.uri.toString(QUrl::FullyEncoded));
+            }
+            return {};
+        }
+        const QJsonObject response = resolved.response;
+        if (!response.value(QStringLiteral("ok")).toBool()) {
+            const QJsonObject error = response.value(
+                QStringLiteral("error")).toObject();
+            if (diagnostic) {
+                *diagnostic = suiteProviderDiagnostic(
+                    provider,
+                    error.value(QStringLiteral("code")).toString().isEmpty()
+                        ? QStringLiteral("provider_resource_error")
+                        : error.value(QStringLiteral("code")).toString(),
+                    error.value(QStringLiteral("message")).toString(),
+                    resource.uri.toString(QUrl::FullyEncoded));
+            }
+            return {};
+        }
+        return safeNativeModel(provider, response.value(
+            QStringLiteral("result")).toObject(), omittedCount);
+#else
+        Q_UNUSED(resource);
+        return {};
+#endif
+    }
+};
+
+int compactJsonTokens(const QJsonValue& value)
+{
+    const QByteArray bytes = value.isObject()
+        ? QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact)
+        : QJsonDocument(value.toArray()).toJson(QJsonDocument::Compact);
+    return qMax(1, (bytes.size() + 3) / 4);
+}
+
+QJsonObject suiteContextData(const PreparedIndex& prepared,
+                             const ZeroSlackCliRequest& request,
+                             QString* failureReason)
+{
+    if (failureReason)
+        failureReason->clear();
+    const int budget = qBound(1, request.maxTokens, 100000);
+    QString filePath;
+    QString documentText;
+    int cursorPosition = -1;
+    if (!request.filePath.trimmed().isEmpty()) {
+        const SourceFileState* sourceFile = findSourceFile(
+            prepared.workspace, request.filePath);
+        if (!sourceFile) {
+            if (failureReason) {
+                *failureReason = QStringLiteral(
+                    "--file must identify an indexed RTL source inside the workspace.");
+            }
+            return {};
+        }
+        filePath = sourceFile->absolutePath;
+        documentText = QString::fromUtf8(sourceFile->content);
+        if (request.lineSpecified || request.line != 0) {
+            const int lineCount = documentText.count(QLatin1Char('\n')) + 1;
+            if (request.line < 1 || request.line > lineCount) {
+                if (failureReason) {
+                    *failureReason = QStringLiteral(
+                        "--line must identify a line inside --file.");
+                }
+                return {};
+            }
+            int currentLine = 1;
+            cursorPosition = 0;
+            while (currentLine < request.line
+                   && cursorPosition < documentText.size()) {
+                const int next = documentText.indexOf(
+                    QLatin1Char('\n'), cursorPosition);
+                if (next < 0) {
+                    cursorPosition = documentText.size();
+                    break;
+                }
+                cursorPosition = next + 1;
+                ++currentLine;
+            }
+        }
+    } else if (request.lineSpecified || request.line != 0) {
+        if (failureReason)
+            *failureReason = QStringLiteral("--line requires --file.");
+        return {};
+    }
+
+    SuiteContextCatalogRequest catalogRequest;
+    catalogRequest.workspaceRoot = prepared.workspace.root;
+    catalogRequest.filePath = filePath;
+    catalogRequest.documentText = documentText;
+    catalogRequest.symbolName = request.symbol;
+    catalogRequest.cursorPosition = cursorPosition;
+    catalogRequest.maxItemsPerProvider = 64;
+    catalogRequest.includedProviders = request.includedProviders;
+    const SuiteContextSnapshot snapshot =
+        SuiteContextCatalog::inspect(catalogRequest);
+
+    const QJsonArray symbols = prepared.index.value(
+        QStringLiteral("symbols")).toArray();
+    const QJsonArray relationships = prepared.index.value(
+        QStringLiteral("relationships")).toArray();
+    const QJsonArray semanticDiagnostics = prepared.index.value(
+        QStringLiteral("diagnostics")).toArray();
+    const QJsonObject source{
+        {QStringLiteral("fileCount"), prepared.workspace.files.size()},
+        {QStringLiteral("symbolCount"), symbols.size()},
+        {QStringLiteral("relationshipCount"), relationships.size()},
+        {QStringLiteral("diagnosticCount"), semanticDiagnostics.size()},
+        {QStringLiteral("file"), filePath.isEmpty()
+             ? QString() : relativePath(prepared.workspace.root, filePath)},
+        {QStringLiteral("symbol"), request.symbol},
+    };
+
+    const QStringList providerOrder{
+        QStringLiteral("pinloom"), QStringLiteral("wave"),
+        QStringLiteral("regmap")};
+    QHash<QString, int> referenceCounts = snapshot.discoveredCounts;
+    for (const QString& provider : providerOrder) {
+        if (referenceCounts.contains(provider))
+            continue;
+        for (const SuiteContextResource& resource : snapshot.resources) {
+            if (resource.providerId() == provider)
+                referenceCounts[provider] += 1;
+        }
+    }
+    const bool hasReferences = std::any_of(
+        providerOrder.cbegin(), providerOrder.cend(),
+        [&referenceCounts](const QString& provider) {
+            return referenceCounts.value(provider) > 0;
+        });
+    SuiteRuntimeResolver resolver(hasReferences);
+    QJsonArray providerPayloads;
+    QHash<QString, int> providerIndexes;
+    for (const QString& provider : providerOrder) {
+        if (!request.includedProviders.isEmpty()
+            && !request.includedProviders.contains(provider)) {
+            continue;
+        }
+        const int referenceCount = referenceCounts.value(provider);
+        const QString availability = referenceCount == 0
+            ? QStringLiteral("empty")
+            : (!resolver.runtimeAvailable
+                   || !resolver.providers.contains(provider))
+                ? QStringLiteral("unavailable")
+                : QStringLiteral("available");
+        QJsonObject providerObject{
+            {QStringLiteral("id"), provider},
+            {QStringLiteral("availability"), availability},
+            {QStringLiteral("transport"), QStringLiteral("local-metadata")},
+            {QStringLiteral("referenceCount"), referenceCount},
+            {QStringLiteral("emittedCount"), 0},
+            {QStringLiteral("nativeResolvedCount"), 0},
+            {QStringLiteral("resolvedCount"), 0},
+            {QStringLiteral("omittedCount"), referenceCount},
+            {QStringLiteral("enrichmentOmittedCount"), 0},
+            {QStringLiteral("items"), QJsonArray{}},
+            {QStringLiteral("diagnostics"), QJsonArray{}},
+        };
+        if (referenceCount > 0
+            && availability == QStringLiteral("unavailable")) {
+            providerObject.insert(
+                QStringLiteral("availabilityCode"),
+                resolver.runtimeAvailable
+                    ? QStringLiteral("provider_unavailable")
+                    : (resolver.failureCode.isEmpty()
+                           ? QStringLiteral("runtime_unavailable")
+                           : resolver.failureCode));
+            providerObject.insert(
+                QStringLiteral("availabilityMessage"),
+                (resolver.runtimeAvailable
+                     ? QStringLiteral("The provider is not registered; local metadata was retained.")
+                     : (resolver.failureMessage.isEmpty()
+                            ? QStringLiteral("Suite Runtime is unavailable; local metadata was retained.")
+                            : resolver.failureMessage)).left(256));
+        }
+        providerIndexes.insert(provider, providerPayloads.size());
+        providerPayloads.append(providerObject);
+    }
+    QJsonObject payload{
+        {QStringLiteral("providers"), providerPayloads},
+        {QStringLiteral("diagnostics"), QJsonArray{}},
+    };
+    if (compactJsonTokens(payload) > budget) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "--max-tokens is too small for the suite-context skeleton.");
+        }
+        return {};
+    }
+
+    int diagnosticOmittedCount = 0;
+    int enrichmentOmittedCount = 0;
+    int sanitizationOmittedCount = 0;
+    for (const SuiteContextResource& resource : snapshot.resources) {
+        const QString provider = resource.providerId();
+        if (!providerIndexes.contains(provider))
+            continue;
+        QJsonObject item = safeResourceJson(
+            resource, prepared.workspace.root,
+            &sanitizationOmittedCount);
+        item.insert(QStringLiteral("origin"),
+                    provider == QStringLiteral("pinloom")
+                        ? QStringLiteral("pinloom-links")
+                        : QStringLiteral("suite-references"));
+        item.insert(QStringLiteral("state"),
+                    SuiteContextCatalog::availabilityId(
+                        resource.availability));
+        item.insert(
+            QStringLiteral("resolutionState"),
+            resolver.runtimeAvailable
+                    && resolver.providers.contains(provider)
+                ? QStringLiteral("local-metadata")
+                : QStringLiteral("provider-unavailable"));
+
+        QJsonArray providers = payload.value(
+            QStringLiteral("providers")).toArray();
+        const int providerIndex = providerIndexes.value(provider);
+        QJsonObject providerObject = providers.at(providerIndex).toObject();
+        QJsonArray items = providerObject.value(
+            QStringLiteral("items")).toArray();
+        items.append(item);
+        providerObject.insert(QStringLiteral("items"), items);
+        providerObject.insert(QStringLiteral("emittedCount"), items.size());
+        providerObject.insert(
+            QStringLiteral("omittedCount"),
+            qMax(0, providerObject.value(
+                QStringLiteral("referenceCount")).toInt() - items.size()));
+        providers[providerIndex] = providerObject;
+        QJsonObject localCandidate = payload;
+        localCandidate.insert(QStringLiteral("providers"), providers);
+        if (compactJsonTokens(localCandidate) > budget)
+            continue;
+        payload = localCandidate;
+
+        if (resource.availability == SuiteContextAvailability::Missing
+            || resource.uri.isEmpty()
+            || !resolver.runtimeAvailable
+            || !resolver.providers.contains(provider)) {
+            continue;
+        }
+        QJsonObject nativeDiagnostic;
+        const QJsonObject native = resolver.resolve(
+            resource, &nativeDiagnostic,
+            &sanitizationOmittedCount);
+        if (!native.isEmpty()) {
+            QJsonArray enrichedProviders = payload.value(
+                QStringLiteral("providers")).toArray();
+            QJsonObject enrichedProvider = enrichedProviders.at(
+                providerIndex).toObject();
+            QJsonArray enrichedItems = enrichedProvider.value(
+                QStringLiteral("items")).toArray();
+            QJsonObject enrichedItem = enrichedItems.at(
+                enrichedItems.size() - 1).toObject();
+            enrichedItem.insert(QStringLiteral("nativeModel"), native);
+            enrichedItem.insert(QStringLiteral("transport"),
+                                QStringLiteral("suite-app/v1"));
+            enrichedItem.insert(QStringLiteral("resolutionState"),
+                                QStringLiteral("resolved"));
+            enrichedItems[enrichedItems.size() - 1] = enrichedItem;
+            enrichedProvider.insert(QStringLiteral("items"), enrichedItems);
+            const int nativeCount = enrichedProvider.value(
+                QStringLiteral("nativeResolvedCount")).toInt() + 1;
+            enrichedProvider.insert(
+                QStringLiteral("nativeResolvedCount"), nativeCount);
+            enrichedProvider.insert(QStringLiteral("resolvedCount"),
+                                    nativeCount);
+            enrichedProvider.insert(QStringLiteral("transport"),
+                                    QStringLiteral("suite-app/v1"));
+            enrichedProviders[providerIndex] = enrichedProvider;
+            QJsonObject enrichedCandidate = payload;
+            enrichedCandidate.insert(QStringLiteral("providers"),
+                                     enrichedProviders);
+            if (compactJsonTokens(enrichedCandidate) <= budget) {
+                payload = enrichedCandidate;
+            } else {
+                ++enrichmentOmittedCount;
+                QJsonArray localProviders = payload.value(
+                    QStringLiteral("providers")).toArray();
+                QJsonObject localProvider = localProviders.at(
+                    providerIndex).toObject();
+                localProvider.insert(
+                    QStringLiteral("enrichmentOmittedCount"),
+                    localProvider.value(
+                        QStringLiteral("enrichmentOmittedCount")).toInt()
+                        + 1);
+                localProviders[providerIndex] = localProvider;
+                QJsonObject omittedCandidate = payload;
+                omittedCandidate.insert(QStringLiteral("providers"),
+                                        localProviders);
+                if (compactJsonTokens(omittedCandidate) <= budget)
+                    payload = omittedCandidate;
+            }
+        } else if (!nativeDiagnostic.isEmpty()) {
+            QJsonArray diagnosticProviders = payload.value(
+                QStringLiteral("providers")).toArray();
+            QJsonObject diagnosticProvider = diagnosticProviders.at(
+                providerIndex).toObject();
+            QJsonArray diagnostics = diagnosticProvider.value(
+                QStringLiteral("diagnostics")).toArray();
+            diagnostics.append(nativeDiagnostic);
+            diagnosticProvider.insert(QStringLiteral("diagnostics"),
+                                      diagnostics);
+            diagnosticProviders[providerIndex] = diagnosticProvider;
+            QJsonObject diagnosticCandidate = payload;
+            diagnosticCandidate.insert(QStringLiteral("providers"),
+                                       diagnosticProviders);
+            if (compactJsonTokens(diagnosticCandidate) <= budget)
+                payload = diagnosticCandidate;
+            else
+                ++diagnosticOmittedCount;
+        }
+    }
+
+    QJsonArray payloadDiagnostics;
+    for (const SuiteContextDiagnostic& diagnostic : snapshot.diagnostics) {
+        QJsonArray candidateDiagnostics = payloadDiagnostics;
+        QJsonObject item = diagnostic.toJson();
+        item.insert(QStringLiteral("severity"), QStringLiteral("warning"));
+        candidateDiagnostics.append(item);
+        QJsonObject candidate = payload;
+        candidate.insert(QStringLiteral("diagnostics"), candidateDiagnostics);
+        if (compactJsonTokens(candidate) <= budget) {
+            payload = candidate;
+            payloadDiagnostics = candidateDiagnostics;
+        } else {
+            ++diagnosticOmittedCount;
+        }
+    }
+
+    const int tokens = compactJsonTokens(payload);
+    bool truncated = false;
+    for (const QJsonValue& value : payload.value(
+             QStringLiteral("providers")).toArray()) {
+        if (value.toObject().value(
+                QStringLiteral("omittedCount")).toInt() > 0) {
+            truncated = true;
+            break;
+        }
+    }
+    truncated = truncated || diagnosticOmittedCount > 0
+        || enrichmentOmittedCount > 0
+        || sanitizationOmittedCount > 0
+        || snapshot.catalogOmittedCount > 0;
+    QJsonObject result{
+        {QStringLiteral("source"), source},
+        {QStringLiteral("suiteRevision"),
+         suiteRevision(prepared.workspace.root, snapshot)},
+        {QStringLiteral("budget"),
+         QJsonObject{
+             {QStringLiteral("maxTokens"), budget},
+             {QStringLiteral("estimatedTokens"), tokens},
+             {QStringLiteral("scope"), QStringLiteral("payload")},
+             {QStringLiteral("truncated"), truncated},
+             {QStringLiteral("diagnosticOmittedCount"),
+              diagnosticOmittedCount},
+             {QStringLiteral("enrichmentOmittedCount"),
+              enrichmentOmittedCount},
+             {QStringLiteral("sanitizationOmittedCount"),
+              sanitizationOmittedCount},
+             {QStringLiteral("catalogOmittedCount"),
+              snapshot.catalogOmittedCount}}},
+        {QStringLiteral("referenceFile"), relativePath(
+             prepared.workspace.root,
+             SuiteContextCatalog::referenceFilePath(
+                 prepared.workspace.root))},
+        {QStringLiteral("payload"), payload},
+    };
+    return result;
+}
+
 QByteArray jsonLine(const QJsonObject& object)
 {
     return QJsonDocument(object).toJson(QJsonDocument::Compact)
@@ -1479,12 +2333,41 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
         QStringLiteral("summary"), QStringLiteral("context"),
         QStringLiteral("symbol"), QStringLiteral("anchors"),
         QStringLiteral("impact"), QStringLiteral("changed"),
-        QStringLiteral("bundle")};
+        QStringLiteral("bundle"), QStringLiteral("suite-context")};
     if (!commands.contains(request.command)) {
         result.exitCode = 2;
         result.envelope = errorEnvelope(
             request, QStringLiteral("unknown_command"),
             QStringLiteral("Unknown command. Use --help for usage."));
+        result.rendered = render(result.envelope, request.format);
+        return result;
+    }
+    QStringList normalizedProviders;
+    const QSet<QString> allowedProviders{
+        QStringLiteral("all"), QStringLiteral("pinloom"),
+        QStringLiteral("wave"), QStringLiteral("regmap")};
+    for (const QString& provider : request.includedProviders) {
+        const QString normalized = provider.trimmed().toLower();
+        if (normalized.isEmpty() || !allowedProviders.contains(normalized)) {
+            result.exitCode = 2;
+            result.envelope = errorEnvelope(
+                request, QStringLiteral("invalid_arguments"),
+                QStringLiteral("Unsupported suite-context provider: %1")
+                    .arg(provider));
+            result.rendered = render(result.envelope, request.format);
+            return result;
+        }
+        normalizedProviders.append(normalized);
+    }
+    normalizedProviders.removeDuplicates();
+    if (normalizedProviders.contains(QStringLiteral("all")))
+        normalizedProviders.clear();
+    if (request.command != QStringLiteral("suite-context")
+        && !request.includedProviders.isEmpty()) {
+        result.exitCode = 2;
+        result.envelope = errorEnvelope(
+            request, QStringLiteral("invalid_arguments"),
+            QStringLiteral("--include is only valid for suite-context."));
         result.rendered = render(result.envelope, request.format);
         return result;
     }
@@ -1561,6 +2444,11 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
         data = changedData(prepared, request, &failure);
     else if (request.command == QStringLiteral("bundle"))
         data = bundleData(prepared, request, &failure);
+    else if (request.command == QStringLiteral("suite-context")) {
+        ZeroSlackCliRequest suiteRequest = request;
+        suiteRequest.includedProviders = normalizedProviders;
+        data = suiteContextData(prepared, suiteRequest, &failure);
+    }
 
     if (!failure.isEmpty()) {
         result.exitCode = 5;
@@ -1652,6 +2540,9 @@ QString ZeroSlackCliService::usageText()
         "  zeroslack-cli impact <workspace> --symbol <name-or-id> [--depth <n>]\n"
         "  zeroslack-cli changed <workspace> --base <git-ref>\n"
         "  zeroslack-cli bundle <workspace> --query <text> --max-tokens <n>\n\n"
+        "  zeroslack-cli suite-context <workspace> [--file <path>] [--line <n>]\n"
+        "      [--symbol <name-or-id>] [--include all|pinloom|wave|regmap]\n"
+        "      [--max-tokens <n>]\n\n"
         "Global options:\n"
         "  --cache-dir <path>   Override the user cache directory.\n"
         "  --refresh            Rebuild a current cache.\n"

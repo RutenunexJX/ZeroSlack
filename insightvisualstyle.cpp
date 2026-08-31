@@ -115,6 +115,15 @@ InsightTheme buildLightTheme()
     theme.warning = color("#b45309");
     theme.splitterHandle = color("#cbd5e1");
     theme.toolbarBackground = color("#f8fafc");
+    theme.surface.canvas = theme.canvasBackground;
+    theme.surface.panel = theme.panelBackground;
+    theme.surface.raised = color("#ffffff");
+    theme.surface.overlay = color("#f8fafc");
+    theme.surface.empty = color("#f8fafc");
+    theme.surface.loading = color("#eff6ff");
+    theme.surface.stale = color("#fffbeb");
+    theme.focus.ring = color("#2563eb");
+    theme.focus.ringOnAccent = color("#ffffff");
 
     theme.menu.background = theme.panelBackground;
     theme.menu.itemHoverBackground = color("#eef4ff");
@@ -261,6 +270,15 @@ InsightTheme buildDarkTheme()
     theme.warning = color("#fbbf24");
     theme.splitterHandle = color("#334155");
     theme.toolbarBackground = color("#0f172a");
+    theme.surface.canvas = theme.canvasBackground;
+    theme.surface.panel = theme.panelBackground;
+    theme.surface.raised = color("#172033");
+    theme.surface.overlay = color("#1e293b");
+    theme.surface.empty = color("#172033");
+    theme.surface.loading = color("#172554");
+    theme.surface.stale = color("#422006");
+    theme.focus.ring = color("#60a5fa");
+    theme.focus.ringOnAccent = color("#ffffff");
 
     theme.menu.background = theme.panelBackground;
     theme.menu.itemHoverBackground = color("#1e3a5f");
@@ -879,6 +897,16 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                        t.textPrimary.name(),
                        t.borderStrong.name(),
                        t.panelSubtle.name());
+    result += QStringLiteral(
+                  "QPushButton:focus, QToolButton:focus, QTabBar::tab:focus { "
+                  "border: %1px solid %2; }"
+                  "QPushButton:checked:focus, QToolButton:checked:focus { "
+                  "border: %1px solid %3; }"
+                  "QTreeView:focus, QListView:focus, QTableView:focus { "
+                  "border: %1px solid %2; outline: 0; }")
+                  .arg(t.focus.width)
+                  .arg(t.focus.ring.name())
+                  .arg(t.focus.ringOnAccent.name());
     return result;
 }
 

@@ -3,6 +3,7 @@
 
 #include <QJsonObject>
 #include <QString>
+#include <QStringList>
 
 struct ZeroSlackCliRequest {
     QString command;
@@ -16,6 +17,8 @@ struct ZeroSlackCliRequest {
     int line = 0;
     int depth = 1;
     int maxTokens = 4000;
+    QStringList includedProviders;
+    bool lineSpecified = false;
     bool forceRefresh = false;
     bool allowRefresh = true;
     bool requireCurrent = false;
