@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1] - 2026-09-10
+
+- Added a shared non-editor typography hierarchy for page titles, panel headings, body text, metadata and badges.
+- Refined settings groups, navigation explanations, table headers, drawer labels and Activity paragraph spacing.
+- Initialized UI fonts before creating widgets while preserving editor font settings and existing palettes.
+- Verified GUI, style, graph export and 125%/150%/200% context display scaling.
+
 ## [0.24.0] - 2026-09-10
 
 - Unified workspace, navigation and context icons with scalable rounded outlines and distinct selected states.

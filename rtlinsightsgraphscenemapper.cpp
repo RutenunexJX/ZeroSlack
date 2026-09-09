@@ -373,7 +373,6 @@ public:
         setData(kGraphFsmCanonicalNodeIdRole, canonicalNodeId);
 
         QFont titleFont = InsightVisualStyle::titleFont(font);
-        titleFont.setPointSize(qMax(8, titleFont.pointSize() + 1));
         QFont detailFont = InsightVisualStyle::compactFont(font);
 
         titleItem = new QGraphicsSimpleTextItem(
@@ -619,8 +618,8 @@ public:
 
         if (!label.isEmpty()) {
             QFont labelFont = font;
-            labelFont.setPointSize(qMax(8, labelFont.pointSize() - 1));
-            labelFont.setBold(labelBold);
+            labelFont.setPixelSize(12);
+            labelFont.setWeight(labelBold ? QFont::DemiBold : QFont::Normal);
             auto* labelItem = new QGraphicsTextItem(label, this);
             labelTextItem = labelItem;
             labelItem->setAcceptedMouseButtons(Qt::NoButton);
@@ -1284,7 +1283,6 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphLayoutScene(
     const InsightTheme theme = InsightVisualStyle::theme();
     const QFont font = readableGraphFont(state.insightsGraphView->font());
     QFont titleMeasureFont = InsightVisualStyle::titleFont(font);
-    titleMeasureFont.setPointSize(qMax(8, titleMeasureFont.pointSize() + 1));
 
     FsmLayoutOptions options;
     options.direction = FsmLayoutDirection::TopDown;
@@ -2007,7 +2005,7 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
     const QRectF rootRect = rectByNodeId.value(report.root.nodeId);
 
     QFont titleFont = InsightVisualStyle::titleFont(font);
-    titleFont.setPointSize(qMax(10, titleFont.pointSize() + 1));
+    titleFont.setPixelSize(14);
     auto* titleItem = state.insightsGraphScene->addSimpleText(
         QStringLiteral("Module Block Diagram: %1")
             .arg(report.root.moduleDisplayName),

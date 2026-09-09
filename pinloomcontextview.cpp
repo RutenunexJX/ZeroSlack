@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "pinloomcontextview.h"
 
 #include <QApplication>
@@ -579,7 +580,7 @@ void PinloomContextView::buildUi()
     linkSourceLabel = new QLabel(linkPanel);
     linkSourceLabel->setObjectName(QStringLiteral("pinloomContextLinkSource"));
     QFont linkSourceFont = linkSourceLabel->font();
-    linkSourceFont.setBold(true);
+    linkSourceFont.setWeight(QFont::DemiBold);
     linkSourceLabel->setFont(linkSourceFont);
     linkLayout->addWidget(linkSourceLabel);
     linkTitleEdit = new QLineEdit(linkPanel);
@@ -618,8 +619,7 @@ void PinloomContextView::buildUi()
     auto* titleRow = new QHBoxLayout;
     titleLabel = new QLabel(QStringLiteral("Pinloom"), preview);
     titleLabel->setObjectName(QStringLiteral("pinloomContextTitle"));
-    QFont titleFont = titleLabel->font();
-    titleFont.setBold(true);
+    QFont titleFont = UiTypography::font(UiTypography::Role::PanelTitle);
     titleLabel->setFont(titleFont);
     titleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     titleRow->addWidget(titleLabel, 1);

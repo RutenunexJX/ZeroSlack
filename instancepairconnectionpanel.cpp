@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "instancepairconnectionpanel.h"
 
 #include <QAbstractItemView>
@@ -405,8 +406,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
         this);
     heading->setObjectName(
         QStringLiteral("instancePairConnectionHeading"));
-    QFont headingFont = heading->font();
-    headingFont.setBold(true);
+    QFont headingFont = UiTypography::font(UiTypography::Role::PanelTitle);
     heading->setFont(headingFont);
     root->addWidget(heading);
 

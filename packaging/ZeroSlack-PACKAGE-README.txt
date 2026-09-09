@@ -1,4 +1,4 @@
-ZeroSlack v0.24.0
+ZeroSlack v0.24.1
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -40,3 +40,7 @@ The themed title bar stays visible in its own row without covering the editor.
 Rounded controls and graph nodes share a scalable outline icon system.
 Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
 inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
+
+Non-editor typography uses proportional text with distinct title, body, metadata
+and badge sizes. Settings groups and navigation explanations have clearer spacing.
+Editor font preferences and the existing theme palettes are preserved.

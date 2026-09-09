@@ -2,7 +2,7 @@
 
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
-#include <QFontDatabase>
+#include "uitypography.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -47,11 +47,7 @@ void ApplicationThemeManager::applyToApplication()
 
     if (!application->property("roundedControlsInstalled").toBool()) {
         application->setStyle(new RoundedIcons::Style);
-        QFont uiFont = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
-        uiFont.setFamilies({QStringLiteral("Segoe UI"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("Noto Sans")});
-        uiFont.setStyleHint(QFont::SansSerif);
-        uiFont.setFixedPitch(false);
-        application->setFont(uiFont);
+        application->setFont(UiTypography::font());
         application->setProperty("roundedControlsInstalled", true);
     }
     application->setPalette(

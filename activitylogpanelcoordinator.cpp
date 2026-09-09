@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "activitylogpanelcoordinator.h"
 
 #include "activitylogservice.h"
@@ -8,6 +9,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTextCursor>
+#include <QTextBlockFormat>
 #include <QVBoxLayout>
 
 ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
@@ -15,8 +17,8 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
 {
     auto* panel = new QWidget(parent);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(4);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(8);
 
     auto* toolbar = new QHBoxLayout;
     toolbar->setContentsMargins(0, 0, 0, 0);
@@ -29,6 +31,7 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
     outputText = new QPlainTextEdit(panel);
     outputText->setObjectName(QStringLiteral("activityOutputText"));
     outputText->setReadOnly(true);
+    UiTypography::apply(outputText, UiTypography::Role::Body);
     outputText->document()->setMaximumBlockCount(2000);
     outputText->installEventFilter(this);
     outputText->setLineWrapMode(QPlainTextEdit::NoWrap);
@@ -98,6 +101,11 @@ void ActivityLogPanelCoordinator::appendExistingEvents()
     for (const ActivityLogEvent& event : events)
         lines.append(ActivityLogService::formatEvent(event));
     outputText->setPlainText(lines.join(QLatin1Char('\n')));
+    QTextCursor spacing(outputText->document());
+    spacing.select(QTextCursor::Document);
+    QTextBlockFormat format;
+    format.setBottomMargin(4);
+    spacing.mergeBlockFormat(format);
     if (isVisibleToUser() && !events.isEmpty())
         service->markReadThrough(events.last().sequence);
 }
@@ -143,6 +151,9 @@ void ActivityLogPanelCoordinator::flushPendingEvents()
     QTextCursor cursor(outputText->document());
     cursor.movePosition(QTextCursor::End);
     cursor.beginEditBlock();
+    QTextBlockFormat format;
+    format.setBottomMargin(4);
+    cursor.mergeBlockFormat(format);
     if (!outputText->document()->isEmpty())
         cursor.insertBlock();
     cursor.insertText(text);

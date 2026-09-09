@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "navigationwidget.h"
 #include "applicationthememanager.h"
 #include "editorfileidentity.h"
@@ -361,8 +362,8 @@ void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
 void NavigationWidget::setupUI()
 {
     mainLayout = new QVBoxLayout(this);
-    mainLayout->setContentsMargins(4, 4, 4, 4);
-    mainLayout->setSpacing(4);
+    mainLayout->setContentsMargins(8, 8, 8, 8);
+    mainLayout->setSpacing(8);
 
     searchLineEdit = new QLineEdit(this);
     searchLineEdit->setObjectName(QStringLiteral("navigationSearchLineEdit"));
@@ -416,7 +417,7 @@ void NavigationWidget::setupDesignTab()
     designTab = new QWidget();
     designTabLayout = new QVBoxLayout(designTab);
     designTabLayout->setContentsMargins(2, 2, 2, 2);
-    designTabLayout->setSpacing(4);
+    designTabLayout->setSpacing(8);
 
     QHBoxLayout* topLayout = new QHBoxLayout();
     topLayout->setContentsMargins(0, 0, 0, 0);
@@ -425,7 +426,9 @@ void NavigationWidget::setupDesignTab()
     designTopLabel->setWordWrap(true);
     designClearButton = new QPushButton(QStringLiteral("Clear"), designTab);
     designRefreshButton = new QPushButton(QStringLiteral("Refresh"), designTab);
-    topLayout->addWidget(designTopLabel, 1);
+    UiTypography::apply(designTopLabel, UiTypography::Role::Metadata);
+    designTabLayout->addWidget(designTopLabel);
+    topLayout->addStretch(1);
     topLayout->addWidget(designClearButton);
     topLayout->addWidget(designRefreshButton);
     designTabLayout->addLayout(topLayout);

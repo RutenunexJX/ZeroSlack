@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "multisignalpropagationpanel.h"
 
 #include "semanticindex.h"
@@ -265,8 +266,7 @@ void MultiSignalPropagationPanel::setupUi()
         this);
     heading->setObjectName(
         QStringLiteral("multiSignalPropagationHeading"));
-    QFont headingFont = heading->font();
-    headingFont.setBold(true);
+    QFont headingFont = UiTypography::font(UiTypography::Role::PanelTitle);
     heading->setFont(headingFont);
     root->addWidget(heading);
 

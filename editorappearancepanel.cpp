@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "editorappearancepanel.h"
 
 #include "editorappearance.h"
@@ -26,13 +27,13 @@ EditorAppearancePanel::EditorAppearancePanel(
     layout->setSpacing(10);
 
     auto* title = new QLabel(tr("Editor Appearance"), this);
-    QFont titleFont = title->font();
-    titleFont.setBold(true);
-    title->setFont(titleFont);
+    UiTypography::apply(title, UiTypography::Role::PanelTitle);
     layout->addWidget(title);
 
     auto* form = new QFormLayout;
-    form->setLabelAlignment(Qt::AlignLeft);
+    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    form->setVerticalSpacing(12);
+    form->setHorizontalSpacing(16);
     form->setFormAlignment(Qt::AlignTop);
 
     fontFamilyCombo = new QComboBox(this);

@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "workspacehubview.h"
 
 #include "applicationthememanager.h"
@@ -40,11 +41,13 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     headerLayout->setSpacing(6);
     auto* title = new QLabel(QStringLiteral("Workspace Hub"), header);
     title->setObjectName(QStringLiteral("workspaceHubTitle"));
+    UiTypography::apply(title, UiTypography::Role::PanelTitle);
     title->setAccessibleName(QStringLiteral("Workspace Hub"));
     title->setMinimumWidth(70);
     title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     statusChip = new QLabel(QStringLiteral("Idle"), header);
     statusChip->setObjectName(QStringLiteral("workspaceHubStatus"));
+    UiTypography::apply(statusChip, UiTypography::Role::Badge);
     statusChip->setAccessibleName(QStringLiteral("Workspace Hub status"));
     statusChip->setTextFormat(Qt::PlainText);
     statusChip->setMaximumWidth(96);

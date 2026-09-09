@@ -437,8 +437,7 @@ void InsightCanvas::addOrUpdateNode(
         texts.append(new QGraphicsSimpleTextItem(item));
     texts.at(0)->setText(node.displayName);
     texts.at(0)->setBrush(theme.textPrimary);
-    QFont titleFont = texts.at(0)->font();
-    titleFont.setBold(true);
+    QFont titleFont = InsightVisualStyle::titleFont(texts.at(0)->font());
     texts.at(0)->setFont(titleFont);
     texts.at(0)->setPos(10.0, 8.0);
     texts.at(1)->setText(elidedDetail(node.detail));

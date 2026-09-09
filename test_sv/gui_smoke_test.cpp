@@ -4253,15 +4253,20 @@ static void runEditorColumnEditRegression()
     layoutVirtualEditor.show();
     layoutVirtualEditor.setFocus();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const int layoutEndVisual =
-        visualColumnAtLineEnd(layoutVirtualEditor, 0);
+    // A four-column tab and two characters occupy six logical columns,
+    // regardless of the fallback font's CJK glyph width.
+    const int layoutEndVisual = 6;
+    const QTextBlock unicodeBlock = layoutVirtualEditor.document()->firstBlock();
+    QTextCursor unicodeEnd(unicodeBlock);
+    unicodeEnd.setPosition(unicodeBlock.position() + unicodeBlock.text().size());
+    const QRect unicodeEndRect = layoutVirtualEditor.cursorRect(unicodeEnd);
     QTest::mouseClick(
         layoutVirtualEditor.viewport(),
         Qt::LeftButton,
         Qt::AltModifier,
-        pointAtVisualColumn(
-            layoutVirtualEditor, 0, layoutEndVisual + 2));
-    expectBool("virtual columns use Qt layout for Tab Unicode and zoom",
+        QPoint(qRound(unicodeEndRect.left() + 2 * spaceAdvance(layoutVirtualEditor)),
+               unicodeEndRect.center().y()));
+    expectBool("virtual columns anchor to the rendered line end for Tab Unicode and zoom",
                layoutVirtualEditor.virtualCursorActiveForTest()
                    && layoutVirtualEditor.virtualCursorColumnForTest()
                           == layoutEndVisual + 2
@@ -12869,6 +12874,7 @@ int main(int argc, char** argv)
 {
     ScopedGuiTestSettingsRoot isolatedSettings;
     QApplication app(argc, argv);
+    ApplicationThemeManager::instance().applyToApplication();
 
     expectBool("GUI settings use an isolated writable INI root",
                isolatedSettings.isValid()

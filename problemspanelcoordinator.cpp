@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "problemspanelcoordinator.h"
 
 #include "activitylogservice.h"
@@ -169,8 +170,8 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
 {
     auto* panel = new QWidget(parent);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(4);
+    layout->setContentsMargins(10, 8, 10, 8);
+    layout->setSpacing(8);
 
     auto* filtersLayout = new QHBoxLayout();
     filtersLayout->setContentsMargins(0, 0, 0, 0);
@@ -215,9 +216,11 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     statusLayout->setContentsMargins(0, 0, 0, 0);
     statusLayout->setSpacing(8);
     diagnosticSummaryLabel = new QLabel(panel);
+    UiTypography::apply(diagnosticSummaryLabel, UiTypography::Role::Metadata);
     diagnosticSummaryLabel->setObjectName(QStringLiteral("diagnosticSummaryLabel"));
     diagnosticSummaryLabel->setText(QStringLiteral("Current file: 0 errors, 0 warnings, 0 info"));
     diagnosticStateLabel = new QLabel(panel);
+    UiTypography::apply(diagnosticStateLabel, UiTypography::Role::Metadata);
     diagnosticStateLabel->setObjectName(QStringLiteral("diagnosticStateLabel"));
     diagnosticStateLabel->setText(QStringLiteral("Diagnostics: current"));
     statusLayout->addWidget(diagnosticSummaryLabel);

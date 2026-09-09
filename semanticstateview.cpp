@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "semanticstateview.h"
 
 #include "applicationthememanager.h"
@@ -25,14 +26,16 @@ SemanticStateView::SemanticStateView(QWidget* parent)
 
     auto* textLayout = new QVBoxLayout;
     textLayout->setContentsMargins(0, 0, 0, 0);
-    textLayout->setSpacing(3);
+    textLayout->setSpacing(6);
     titleLabel = new QLabel(this);
     titleLabel->setObjectName(QStringLiteral("semanticStateTitle"));
     titleLabel->setWordWrap(true);
+    UiTypography::apply(titleLabel, UiTypography::Role::PanelTitle);
     titleLabel->setTextFormat(Qt::PlainText);
     detailLabel = new QLabel(this);
     detailLabel->setObjectName(QStringLiteral("semanticStateDetail"));
     detailLabel->setWordWrap(true);
+    UiTypography::apply(detailLabel, UiTypography::Role::Metadata);
     detailLabel->setTextFormat(Qt::PlainText);
     action = new QPushButton(this);
     action->setObjectName(QStringLiteral("semanticStateAction"));

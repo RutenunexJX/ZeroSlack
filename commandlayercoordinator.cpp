@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "commandlayercoordinator.h"
 
 #include "columnnumbertool.h"
@@ -232,8 +233,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     outer->setSpacing(8);
 
     auto* title = new QLabel(QStringLiteral("Insert Numbers"), this);
-    QFont titleFont = title->font();
-    titleFont.setBold(true);
+    QFont titleFont = UiTypography::font(UiTypography::Role::PanelTitle);
     title->setFont(titleFont);
     outer->addWidget(title);
 

@@ -1,4 +1,5 @@
 #include "insightvisualstyle.h"
+#include "uitypography.h"
 
 #include <QLabel>
 #include <QLineEdit>
@@ -561,26 +562,19 @@ QBrush InsightVisualStyle::canvasBrush()
     return QBrush(theme().canvasBackground);
 }
 
-QFont InsightVisualStyle::titleFont(const QFont& base)
+QFont InsightVisualStyle::titleFont(const QFont&)
 {
-    QFont font = base;
-    font.setBold(true);
-    font.setPointSize(qMax(9, font.pointSize()));
-    return font;
+    return UiTypography::font(UiTypography::Role::PanelTitle);
 }
 
-QFont InsightVisualStyle::compactFont(const QFont& base)
+QFont InsightVisualStyle::compactFont(const QFont&)
 {
-    QFont font = base;
-    font.setPointSize(qMax(8, font.pointSize() - 1));
-    return font;
+    return UiTypography::font(UiTypography::Role::Metadata);
 }
 
-QFont InsightVisualStyle::labelFont(const QFont& base)
+QFont InsightVisualStyle::labelFont(const QFont&)
 {
-    QFont font = compactFont(base);
-    font.setBold(true);
-    return font;
+    return UiTypography::font(UiTypography::Role::Section);
 }
 
 QPalette InsightVisualStyle::applicationPalette()
@@ -930,6 +924,23 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         "QScrollBar::handle:vertical { min-width: 0; margin: 2px; border-radius: 3px; }"
         "QScrollBar::handle:horizontal { min-height: 0; margin: 2px; border-radius: 3px; }")
         .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(), t.textPrimary.name());
+    result += QStringLiteral(
+        "QDockWidget::title { font-size: 14px; font-weight: 600; padding: 9px 10px; }"
+        "QTabBar::tab { padding: 8px 14px; font-weight: 400; }"
+        "QTabBar::tab:selected { font-weight: 600; }"
+        "QHeaderView::section { font-size: 12px; font-weight: 600; color: %1; padding: 8px; }"
+        "QMenu::item { padding: 7px 28px 7px 14px; }"
+        "QTreeView::item, QListView::item { min-height: 24px; padding: 3px 6px; }"
+        "QGroupBox { margin-top: 14px; padding-top: 12px; }"
+        "QGroupBox::title { font-weight: 600; padding: 0 6px; }"
+        "QLabel[uiTextRole=metadata] { color: %1; padding-top: 2px; padding-bottom: 2px; }"
+        "QLabel[uiTextRole=section] { color: %1; padding-top: 4px; padding-bottom: 4px; }"
+        "QLabel[uiTextRole=pageTitle] { padding-top: 4px; padding-bottom: 8px; }"
+        "QLabel[uiTextRole=panelTitle] { padding-top: 4px; padding-bottom: 4px; }"
+        "QPlainTextEdit#activityOutputText { padding: 10px 12px; border: 0; }"
+        "QTabWidget#contextDockTabs QTabBar::tab { padding: 8px 10px; }"
+        "QLabel#contextPeekTitle { font-size: 14px; padding: 4px 0; }")
+        .arg(t.textSecondary.name());
     return result;
 }
 
@@ -943,7 +954,7 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
                "%1::tab {"
                "  background: %4;"
                "  color: %5;"
-               "  padding: 6px 13px;"
+               "  padding: 8px 14px; font-weight: 400;"
                "  border: 0; border-top-color: %6; border-bottom: 2px solid transparent;"
                "  border-top-left-radius: 8px; border-top-right-radius: 8px;"
                "  margin-right: 2px;"
@@ -952,7 +963,7 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
                "%1::tab:selected {"
                "  background: %7;"
                "  color: %8;"
-               "  border-bottom-color: %9;"
+               "  border-bottom-color: %9; font-weight: 600;"
                "}"
                "%1::tab:hover {"
                "  background: %10;"
@@ -1005,7 +1016,7 @@ QString InsightVisualStyle::labelStyleSheet(const QString& objectName,
     const InsightTheme t = theme();
     return QStringLiteral("%1 { color: %2; %3 }")
         .arg(objectSelector(QStringLiteral("QLabel"), objectName),
-             strong ? t.textPrimary.name() : t.textMuted.name(),
+             strong ? t.textPrimary.name() : t.textSecondary.name(),
              strong ? QStringLiteral("font-weight: 600;") : QString());
 }
 
@@ -1323,7 +1334,7 @@ void InsightVisualStyle::applyTitleLabel(QLabel* label)
 {
     if (!label)
         return;
-    label->setFont(titleFont(label->font()));
+    UiTypography::apply(label, UiTypography::Role::PanelTitle);
     label->setMinimumHeight(30);
     registerThemedWidget(label, QStringLiteral("title"));
 }
@@ -1332,6 +1343,7 @@ void InsightVisualStyle::applyLabel(QLabel* label, bool strong)
 {
     if (!label)
         return;
+    UiTypography::apply(label, strong ? UiTypography::Role::Section : UiTypography::Role::Metadata);
     registerThemedWidget(
         label,
         strong ? QStringLiteral("strongLabel")
@@ -1342,7 +1354,7 @@ void InsightVisualStyle::applySearchField(QLineEdit* edit)
 {
     if (!edit)
         return;
-    edit->setFont(compactFont(edit->font()));
+    edit->setFont(UiTypography::font());
     edit->setMinimumHeight(28);
     edit->setMinimumWidth(180);
     registerThemedWidget(edit, QStringLiteral("search"));

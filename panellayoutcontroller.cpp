@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "panellayoutcontroller.h"
 
 #include "insightvisualstyle.h"
@@ -27,7 +28,7 @@
 
 namespace {
 constexpr int kResizeHandleHeight = 8;
-constexpr int kButtonBarHeight = 38;
+constexpr int kButtonBarHeight = 42;
 
 QString colorCss(const QColor& color)
 {
@@ -138,9 +139,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        QFont badgeFont = font();
-        badgeFont.setBold(true);
-        badgeFont.setPointSizeF(qMax(7.0, badgeFont.pointSizeF() - 1.0));
+        QFont badgeFont = UiTypography::font(UiTypography::Role::Badge);
         painter.setFont(badgeFont);
         const int width = qMax(18,
             painter.fontMetrics().horizontalAdvance(badgeText) + 10);
@@ -1230,7 +1229,7 @@ void PanelLayoutController::updateDrawerStyle()
         "QToolButton { color: %4; border: 0; border-radius: 8px;"
         " padding: 0 11px 0 9px; min-height: 30px; }"
         "QToolButton:hover { background: %3; }"
-        "QToolButton:checked { background: %5;"
+        "QToolButton:checked { background: %5; font-weight: 600;"
         " border-bottom: 2px solid %6; }"
         "QToolButton:focus { outline: none;"
         " border: %7px solid %6; }"

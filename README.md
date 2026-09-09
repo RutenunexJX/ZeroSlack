@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.24.0`
+Current version: `v0.24.1`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -22,7 +22,8 @@ is `schemas/suite-references-v1.schema.json`.
 ## Current user capabilities
 
 - The title bar stays visible in its own row. Rounded controls, consistent scalable outline icons,
-  and rounded graph nodes share the existing Light/Dark palettes.
+  and rounded graph nodes share the existing Light/Dark palettes. Non-editor text follows the
+  [UI typography hierarchy](docs/ui-typography.md), with proportional body text and distinct headings and metadata.
 
 - Navigation and Context occupy independent full-height side columns. The bottom drawer stays beneath
   the editor. Context rail buttons open a resizable sidebar; reopening it retains its width. Chart views

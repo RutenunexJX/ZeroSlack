@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "settingscenterpanel.h"
 
 #include <QAbstractItemModel>
@@ -383,13 +384,15 @@ void SettingsCenterPanel::revertCurrentScope()
 void SettingsCenterPanel::buildUi()
 {
     auto* rootLayout = new QHBoxLayout(this);
-    rootLayout->setContentsMargins(10, 10, 10, 10);
-    rootLayout->setSpacing(12);
+    rootLayout->setContentsMargins(16, 16, 16, 16);
+    rootLayout->setSpacing(20);
 
     auto* navigationLayout = new QVBoxLayout;
     auto* scopeLabel = new QLabel(tr("Scope"), this);
     scopeLabel->setObjectName(
         QStringLiteral("settingsCenterScopeLabel"));
+    UiTypography::apply(scopeLabel, UiTypography::Role::Section);
+    navigationLayout->setSpacing(8);
     navigationLayout->addWidget(scopeLabel);
 
     scopeCombo = new QComboBox(this);
@@ -417,6 +420,8 @@ void SettingsCenterPanel::buildUi()
     scopeSummaryLabel->setObjectName(
         QStringLiteral("settingsCenterScopeSummary"));
     scopeSummaryLabel->setWordWrap(true);
+    UiTypography::apply(scopeSummaryLabel, UiTypography::Role::Metadata);
+    contentLayout->setSpacing(12);
     contentLayout->addWidget(scopeSummaryLabel);
 
     categoryStack = new QStackedWidget(this);
@@ -436,7 +441,11 @@ void SettingsCenterPanel::buildUi()
         pageContent->setObjectName(
             categoryPageObjectName(category.id));
         auto* pageLayout = new QVBoxLayout(pageContent);
-        pageLayout->setContentsMargins(4, 4, 4, 4);
+        pageLayout->setContentsMargins(8, 8, 8, 8);
+        pageLayout->setSpacing(16);
+        auto* pageTitle = new QLabel(category.title, pageContent);
+        UiTypography::apply(pageTitle, UiTypography::Role::PageTitle);
+        pageLayout->addWidget(pageTitle);
 
         auto* description = new QLabel(category.description,
                                        pageContent);
@@ -444,6 +453,7 @@ void SettingsCenterPanel::buildUi()
         description->setObjectName(
             QStringLiteral("settingsCenterCategoryDescription.%1")
                 .arg(category.id));
+        UiTypography::apply(description, UiTypography::Role::Metadata);
         pageLayout->addWidget(description);
 
         for (const SettingsCenterFieldDescriptor& descriptor :
@@ -454,6 +464,8 @@ void SettingsCenterPanel::buildUi()
                 QStringLiteral("settingsCenterFieldGroup.%1")
                     .arg(descriptor.id));
             auto* fieldLayout = new QVBoxLayout(group);
+            fieldLayout->setContentsMargins(12, 16, 12, 12);
+            fieldLayout->setSpacing(8);
 
             FieldBinding binding;
             binding.descriptor = descriptor;
@@ -480,10 +492,12 @@ void SettingsCenterPanel::buildUi()
             fieldDescription->setObjectName(
                 QStringLiteral("settingsCenterFieldDescription.%1")
                     .arg(descriptor.id));
+            UiTypography::apply(fieldDescription, UiTypography::Role::Metadata);
             fieldLayout->addWidget(fieldDescription);
 
             binding.stateLabel = new QLabel(group);
             binding.stateLabel->setWordWrap(true);
+            UiTypography::apply(binding.stateLabel, UiTypography::Role::Metadata);
             binding.stateLabel->setObjectName(
                 fieldStateObjectName(descriptor.id));
             binding.stateLabel->setFocusPolicy(Qt::NoFocus);

@@ -2,6 +2,7 @@
 #include <QApplication>
 #include <QDockWidget>
 #include "roundedicons.h"
+#include "uitypography.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -97,6 +98,7 @@ public:
         auto* row = new QHBoxLayout(title);
         row->setContentsMargins(8, 0, 2, 0);
         auto* name = new QLabel(host->windowTitle(), title);
+        UiTypography::apply(name, UiTypography::Role::Body);
         row->addWidget(name, 1);
         connect(host, &QWidget::windowTitleChanged, name, &QLabel::setText);
         for (int i = 0; i < 3; ++i) {

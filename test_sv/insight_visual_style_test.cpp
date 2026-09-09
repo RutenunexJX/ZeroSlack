@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "applicationthememanager.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
@@ -87,6 +88,18 @@ int main(int argc, char** argv)
         ApplicationThemeManager::instance();
     themeManager.setMode(ThemeMode::Light);
 
+    const QFont bodyFont = UiTypography::font();
+    const QFontMetrics bodyMetrics(bodyFont);
+    expectTrue("UI text uses a proportional face instead of the editor monospace",
+               bodyMetrics.horizontalAdvance(QStringLiteral("WWW"))
+                   > bodyMetrics.horizontalAdvance(QStringLiteral("iii")) * 1.5);
+    QLabel roleLabel;
+    UiTypography::apply(&roleLabel, UiTypography::Role::Metadata);
+    const QFont metadataFont = roleLabel.font();
+    UiTypography::apply(&roleLabel, UiTypography::Role::PanelTitle);
+    expectTrue("panel titles have stronger hierarchy than supporting text",
+               roleLabel.font().pixelSize() > metadataFont.pixelSize()
+                   && roleLabel.font().weight() > metadataFont.weight());
     const InsightTheme& lightTheme =
         InsightVisualStyle::theme(ThemeMode::Light);
     const InsightTheme& darkTheme =

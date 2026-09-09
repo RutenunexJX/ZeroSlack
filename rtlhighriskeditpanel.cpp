@@ -1,3 +1,4 @@
+#include "uitypography.h"
 #include "rtlhighriskeditpanel.h"
 
 #include "workspaceedittransactionservice.h"
@@ -106,8 +107,7 @@ void RtlHighRiskEditPanel::setupUi()
         QStringLiteral("RTL Change Preview Edit"), this);
     heading->setObjectName(
         QStringLiteral("rtlHighRiskEditHeading"));
-    QFont headingFont = heading->font();
-    headingFont.setBold(true);
+    QFont headingFont = UiTypography::font(UiTypography::Role::PanelTitle);
     heading->setFont(headingFont);
     root->addWidget(heading);
 

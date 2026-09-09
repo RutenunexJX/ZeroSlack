@@ -1,13 +1,13 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.24.0`
+Product version: `v0.24.1`
 
 ## Current baseline
 
 Workspace Hub and bounded `suite-context` are delivered, along with the Context Workspace, live insight
 providers, tool drawer and shared Wave renderer. This file lists current maintenance work, not historical steps.
 
-The rounded visual refresh and fixed title row are delivered in 0.24.0, retaining existing theme palettes.
+The rounded visual refresh, fixed title row and non-editor typography hierarchy are delivered, retaining existing theme palettes.
 
 ## Maintenance
 

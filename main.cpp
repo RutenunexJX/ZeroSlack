@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "applicationthememanager.h"
 #include "symbolrelationshipengine.h"
 #include "version.h"
 
@@ -13,6 +14,7 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    ApplicationThemeManager::instance().applyToApplication();
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack"));
     QCoreApplication::setOrganizationName(QStringLiteral("ZeroSlack"));
     QCoreApplication::setApplicationVersion(QString::fromLatin1(APP_VERSION));

@@ -547,6 +547,7 @@ set(ZEROSLACK_CORE_SOURCES
     mainwindow.h
     workspacechrome.h
     roundedicons.h
+    uitypography.h
     moduleblockdiagramservice.h
     modulebriefservice.h
     completioncommandmode.h
