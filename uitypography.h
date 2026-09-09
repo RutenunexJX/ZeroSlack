@@ -10,13 +10,13 @@ enum class Role { PageTitle, PanelTitle, Section, Body, Metadata, Badge };
 inline QFont font(Role role = Role::Body)
 {
     static const QStringList families = [] {
-        QStringList preferred { QStringLiteral("Segoe UI"), QStringLiteral("Microsoft YaHei UI"),
-            QStringLiteral("Noto Sans"), QStringLiteral("Arial") };
+        QStringList preferred { QStringLiteral("Noto Sans SC"), QStringLiteral("Microsoft YaHei UI"),
+            QStringLiteral("Noto Sans"), QStringLiteral("Segoe UI"), QStringLiteral("Arial") };
 #ifdef Q_OS_WIN
         // Offscreen Qt has no native font database; use installed system fonts for previews.
         if (QGuiApplication::platformName() == QStringLiteral("offscreen")) {
             const QDir fonts(qEnvironmentVariable("WINDIR", QStringLiteral("C:/Windows")) + QStringLiteral("/Fonts"));
-            for (const auto* file : {"cour.ttf", "courbd.ttf", "consola.ttf", "consolab.ttf", "segoeui.ttf", "seguisb.ttf", "segoeuib.ttf", "msyh.ttc"})
+            for (const auto* file : {"cour.ttf", "courbd.ttf", "consola.ttf", "consolab.ttf", "segoeui.ttf", "seguisb.ttf", "segoeuib.ttf", "msyh.ttc", "NotoSansSC-VF.ttf"})
                 QFontDatabase::addApplicationFont(fonts.filePath(QString::fromLatin1(file)));
         }
 #endif

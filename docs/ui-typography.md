@@ -1,6 +1,6 @@
 # Non-editor typography
 
-The UI uses a proportional sans-serif face (Segoe UI, Microsoft YaHei UI, Noto Sans, then the platform fallback). Code, diffs and editor-owned popups retain their editor fonts. Sizes below are logical pixels and follow display scaling.
+The UI uses a proportional sans-serif face (Noto Sans SC, Microsoft YaHei UI, Noto Sans, Segoe UI, then the platform fallback). Code, diffs and editor-owned popups retain their editor fonts. Sizes below are logical pixels and follow display scaling.
 
 | Role | Size | Weight | Use |
 | --- | --- | --- | --- |

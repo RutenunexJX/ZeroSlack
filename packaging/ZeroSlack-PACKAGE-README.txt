@@ -1,4 +1,4 @@
-ZeroSlack v0.24.1
+ZeroSlack v0.24.2
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -41,6 +41,7 @@ Rounded controls and graph nodes share a scalable outline icon system.
 Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
 inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
 
-Non-editor typography uses proportional text with distinct title, body, metadata
+Non-editor typography prefers installed Noto Sans SC with system font fallbacks,
+and uses proportional text with distinct title, body, metadata
 and badge sizes. Settings groups and navigation explanations have clearer spacing.
 Editor font preferences and the existing theme palettes are preserved.

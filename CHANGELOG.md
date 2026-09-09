@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.24.2] - 2026-09-10
+
+- Selected Noto Sans SC as the preferred non-editor UI font, with system font fallbacks.
+- Preserved the typography hierarchy, spacing, editor preferences and existing theme palettes.
+
 ## [0.24.1] - 2026-09-10
 
 - Added a shared non-editor typography hierarchy for page titles, panel headings, body text, metadata and badges.
