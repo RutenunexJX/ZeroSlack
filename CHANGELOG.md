@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.22.0] - 2026-08-31
+
+- Added Workspace Hub for Source, Pinloom, Wave and RegMap resources, with persistent state and stale-response isolation.
+- Added the read-only AI CLI and bounded `suite-context` aggregation with stable revisions and explicit references.
+- Refined the bottom tool drawer, RTL insight identity handling and semantic presentation.
+- Integrated current suite component metadata and portable CLI distribution.
+
+
 ## [0.21.0] - 2026-08-25
 
 ### Live Insights Workspace
@@ -501,6 +509,3 @@
 - Extracted four high-risk RTL action launch paths from `MainWindow` into an
   explicit coordinator that reuses the existing High+Diff, instance-pair,
   multi-signal, and shared workspace-document workflows.
-
-Detailed historical verification records are preserved in the
-[archive index](docs/archive/README.md).

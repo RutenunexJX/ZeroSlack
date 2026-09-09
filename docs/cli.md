@@ -1,4 +1,4 @@
-# ZeroSlack CLI implementation plan
+# ZeroSlack CLI
 
 ## Purpose
 

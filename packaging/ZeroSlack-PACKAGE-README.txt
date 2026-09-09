@@ -1,11 +1,10 @@
-ZeroSlack v0.21.0
+ZeroSlack v0.22.0
 
-Build date: 2026-08-23
 Build profile: Shared Release
 Qt: 6.10.2
 Compiler: MinGW 13.1.0
 slang: 10.0.14
-Suite WaveWorkbench: v0.11.1
+Suite WaveWorkbench: v0.12.0
 Bundled Wave toolchain: Verilator 5.050, MinGW 13.1.0, GNU Make
 Release root: E:\PinloomRoot\AppPackage\AppSuite
 

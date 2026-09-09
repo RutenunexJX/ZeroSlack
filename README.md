@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.21.0`
+Current version: `v0.22.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -151,7 +151,7 @@ The optional Runtime is located through `SUITEAPP_RUNTIME_EXECUTABLE`, a local
 or sibling `Runtime` directory, or `PATH`. If it is absent, ZeroSlack continues
 to run normally and only suite discovery is unavailable. The complete contract
 and cross-application verification record are in
-[Suite App Protocol Plan](SUITE_APP_PROTOCOL_PLAN.md).
+[Suite application protocol](docs/suite-app-protocol.md).
 
 ## Read-only AI CLI
 
@@ -169,7 +169,7 @@ zeroslack-cli bundle <workspace> --query dma --max-tokens 6000 --format markdown
 ```
 
 The complete command and cache contract is documented in
-[ZeroSlack CLI Plan](ZEROSLACK_CLI_PLAN.md).
+[ZeroSlack CLI](docs/cli.md).
 
 ## Build, run, and test
 
@@ -199,7 +199,8 @@ the current-document version markers.
 - [Current plan](plan.md)
 - [Current goal](goal.md)
 - [Version policy](VERSIONING.md)
-- [Historical records](docs/archive/README.md)
+- [Suite workflows](docs/suite-workflows.md)
+- [Wave simulation](docs/wave-simulation.md)
 
 Historical acceptance logs and superseded status reports are intentionally
 kept out of this current-facts document.

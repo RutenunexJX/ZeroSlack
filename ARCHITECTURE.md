@@ -136,3 +136,25 @@ alive.
   state. Do not write local tabs or layout into project configuration.
 - Add behavior-focused tests at the owning boundary and keep full-text
   document snapshots out of policy guards.
+
+
+## Context and Live Insights contract
+
+`ContextResource` carries stable provider/resource identity, a provider URI, workspace/source identity,
+title and serializable provider state. It never serializes widget pointers or domain semantic objects.
+Providers own content construction, destruction, capabilities and portable view state; hosts own geometry.
+Temporary Editor, Pinloom, Live Insights and Workspace Hub use the registered provider boundary.
+
+Peek has left, bottom and corner resize handles. Width is bounded to 280–920 px and the available editor
+width; height is bounded from 220 px to available editor height. Double-click restores provider preferences.
+Pin/Unpin transfers the live view. Native docks retain Qt geometry restoration; context state is persisted
+through the workspace session service, which imports legacy `.zs` without using it as a new authoritative store.
+
+Live Insight requests carry document/workspace generation and cancellation. Latest valid results win;
+pending or failed analysis may retain explicitly stale last-valid content. Stable node identities preserve
+compatible layout, selection and source navigation. Module, FSM and Hotspot use shared graph presentation;
+Wave preview delegates rendering to WaveWorkbench while ZeroSlack retains symbolic facts.
+
+Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
+old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.
+See [suite workflows](docs/suite-workflows.md) and [wave simulation](docs/wave-simulation.md).
