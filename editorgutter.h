@@ -12,6 +12,8 @@ class LineNumberWidget;
 class EditorGutter
 {
 public:
+    static int totalWidth(MyCodeEditor* editor);
+    static int foldLeft(MyCodeEditor* editor) { return totalWidth(editor) - 16; }
     void init(MyCodeEditor* editor);
     void destroy();
     void handleUpdateRequest(MyCodeEditor* editor, const QRect& rect, int dy) const;

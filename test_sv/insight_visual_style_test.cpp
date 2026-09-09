@@ -449,23 +449,24 @@ int main(int argc, char** argv)
         manyLines.append(QStringLiteral("line %1\n").arg(line + 1));
     codeEditor.setPlainText(manyLines);
     QApplication::processEvents();
-    expectTrue("line-number digit growth does not move the editing origin",
+    expectTrue("line-number digit growth expands only the numeric lane",
                gutter
-                   && gutter->width() == oneDigitGutterWidth
-                   && viewportLeft() == oneDigitViewportLeft
-                   && firstColumnLeft() == oneDigitFirstColumnLeft);
+                   && gutter->width() > oneDigitGutterWidth
+                   && viewportLeft() - oneDigitViewportLeft == gutter->width() - oneDigitGutterWidth
+                   && firstColumnLeft() - oneDigitFirstColumnLeft == gutter->width() - oneDigitGutterWidth);
 
+    const int fourDigitWidth = gutter->width();
+    const int fourDigitLeft = viewportLeft();
     QFont zoomed = QFontDatabase::systemFont(QFontDatabase::FixedFont);
     zoomed.setPointSize(32);
     codeEditor.setFont(zoomed);
     QApplication::processEvents();
     expectTrue("font and zoom changes do not move the editing origin",
                gutter
-                   && gutter->width() == oneDigitGutterWidth
-                   && viewportLeft() == oneDigitViewportLeft
-                   && firstColumnLeft() == oneDigitFirstColumnLeft);
+                   && gutter->width() == fourDigitWidth
+                   && viewportLeft() == fourDigitLeft);
     const int lineNumberLaneWidth = gutter
-        ? gutter->width() - 28 - 3
+        ? gutter->width() - 18 - 4 - 16
         : -1;
     const QString widestVisibleLine =
         QString::number(codeEditor.blockCount());

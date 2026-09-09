@@ -1,3 +1,5 @@
+#include "editorgutter.h"
+#include <QMenu>
 #include "editorruntime.h"
 
 #include "mycodeeditor.h"
@@ -3076,7 +3078,7 @@ bool MyCodeEditorState::handleGutterMousePress(
 
     const qreal x = event->position().x();
     if (annotationDisplayOptions.enabled
-        && x >= 29.0 && x <= 43.0) {
+        && x >= 0.0 && x < 16.0) {
         AnnotationLayerQuery query;
         query.firstVisibleLine = block.blockNumber();
         query.lastVisibleLine = block.blockNumber();
@@ -3092,8 +3094,17 @@ bool MyCodeEditorState::handleGutterMousePress(
                        == EditorAnnotationPlacement::Gutter
                 && annotation.range.firstLine
                        == block.blockNumber()) {
-                emit editor->pinloomCodeLinkActivated(
-                    annotation.semanticKey);
+                auto* menu = new QMenu(editor);
+                menu->setAttribute(Qt::WA_DeleteOnClose);
+                if (diagnosticSeverityByLine.contains(block.blockNumber())) {
+                    auto* detail = menu->addAction(diagnosticTooltipForLine(block.blockNumber()));
+                    detail->setEnabled(false);
+                }
+                auto* link = menu->addAction(QObject::tr("Open Pinloom link"));
+                QObject::connect(link, &QAction::triggered, editor, [editor, key = annotation.semanticKey]() {
+                    emit editor->pinloomCodeLinkActivated(key);
+                });
+                menu->popup(event->globalPosition().toPoint());
                 return true;
             }
         }
@@ -3102,7 +3113,7 @@ bool MyCodeEditorState::handleGutterMousePress(
     if (folding.foldRegionMarkModeActive())
         return folding.handleFoldRegionGutterLine(editor,
                                                   block.blockNumber());
-    if (event->position().x() > 14)
+    if (event->position().x() < EditorGutter::foldLeft(editor))
         return false;
     return folding.toggleFoldAtLine(editor, block.blockNumber());
 }
@@ -3145,7 +3156,7 @@ bool MyCodeEditorState::handleGutterMouseMove(
 
     const qreal x = event->position().x();
     if (annotationDisplayOptions.enabled
-        && x >= 29.0 && x <= 43.0) {
+        && x >= 0.0 && x < 16.0) {
         AnnotationLayerQuery query;
         query.firstVisibleLine = block.blockNumber();
         query.lastVisibleLine = block.blockNumber();
@@ -3164,14 +3175,14 @@ bool MyCodeEditorState::handleGutterMouseMove(
                 closeDiagnosticPeek();
                 QToolTip::showText(
                     event->globalPosition().toPoint(),
-                    annotation.detail,
+                    diagnosticTooltipForLine(block.blockNumber()) + QLatin1Char('\n') + annotation.detail,
                     editor);
                 return true;
             }
         }
     }
     if (annotationDisplayOptions.enabled
-        && x >= 14.0 && x <= 28.0
+        && x >= 0.0 && x < 16.0
         && diagnosticSeverityByLine.contains(block.blockNumber())) {
         const QString tooltip =
             diagnosticTooltipForLine(block.blockNumber());
@@ -3294,9 +3305,9 @@ void MyCodeEditorState::paintGutterDecorations(
         if (severity != visibleDiagnostics.constEnd()) {
             const int middle = top + (bottom - top) / 2;
             const QPolygon triangle{
-                QPoint(21, middle - 6),
-                QPoint(15, middle + 5),
-                QPoint(27, middle + 5)
+                QPoint(7, middle - 6),
+                QPoint(1, middle + 5),
+                QPoint(13, middle + 5)
             };
             painter.save();
             painter.setRenderHint(QPainter::Antialiasing, true);
@@ -3310,7 +3321,7 @@ void MyCodeEditorState::paintGutterDecorations(
             iconFont.setPixelSize(9);
             painter.setFont(iconFont);
             painter.drawText(
-                QRect(15, middle - 5, 12, 10),
+                QRect(1, middle - 5, 12, 10),
                 Qt::AlignCenter,
                 QStringLiteral("!"));
             painter.restore();
@@ -3319,7 +3330,8 @@ void MyCodeEditorState::paintGutterDecorations(
             visiblePinloomLinks.constFind(block.blockNumber());
         if (pinloom != visiblePinloomLinks.constEnd()) {
             const int middle = top + (bottom - top) / 2;
-            const QRect badge(30, middle - 6, 12, 12);
+            const bool diagnostic = severity != visibleDiagnostics.constEnd();
+            const QRect badge = diagnostic ? QRect(10, middle + 2, 5, 5) : QRect(1, middle - 6, 12, 12);
             painter.save();
             painter.setRenderHint(QPainter::Antialiasing, true);
             painter.setPen(Qt::NoPen);
@@ -3330,7 +3342,7 @@ void MyCodeEditorState::paintGutterDecorations(
             badgeFont.setBold(true);
             badgeFont.setPixelSize(8);
             painter.setFont(badgeFont);
-            painter.drawText(badge, Qt::AlignCenter,
+            if (!diagnostic) painter.drawText(badge, Qt::AlignCenter,
                              pinloom->text.left(2));
             painter.restore();
         }

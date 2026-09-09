@@ -95,7 +95,7 @@ public:
             {QStringLiteral("problems"), QStringLiteral("Problems")},
             {QStringLiteral("scopedSearch"), QStringLiteral("Search")},
             {QStringLiteral("activity"), QStringLiteral("Activity")},
-            {QStringLiteral("rtlHighRiskEdit"), QStringLiteral("High+Diff")},
+            {QStringLiteral("rtlHighRiskEdit"), QStringLiteral("Change Preview")},
             {QStringLiteral("connections"), QStringLiteral("Connections")},
             {QStringLiteral("foldShelf"), QStringLiteral("Fold Shelf")},
         };
@@ -172,7 +172,7 @@ void verifyButtonContract(DrawerHarness& harness)
         QStringLiteral("Problems"),
         QStringLiteral("Search"),
         QStringLiteral("Activity"),
-        QStringLiteral("High+Diff"),
+        QStringLiteral("Change Preview"),
         QStringLiteral("Connections"),
         QStringLiteral("Shelf"),
     };

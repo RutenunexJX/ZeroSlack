@@ -1,3 +1,5 @@
+#include "editorgutter.h"
+#include <QCursor>
 #include "editorfolding.h"
 
 #include "insightvisualstyle.h"
@@ -1089,6 +1091,8 @@ void EditorFoldingController::paintGutter(
     if (!editor)
         return;
 
+    painter.save();
+    painter.translate(EditorGutter::foldLeft(editor), 0);
     QTextBlock block = editor->firstVisibleBlock();
     int top = static_cast<int>(editor->blockBoundingGeometry(block)
                                    .translated(editor->contentOffset())
@@ -1140,7 +1144,8 @@ void EditorFoldingController::paintGutter(
             painter.drawLine(1, top + 1, 1, bottom - 1);
             painter.restore();
         }
-        if (hasFoldAtLine(line)) {
+        if (hasFoldAtLine(line) && (isCollapsedAtLine(line)
+            || editor->rect().contains(editor->mapFromGlobal(QCursor::pos())))) {
             const bool collapsed = isCollapsedAtLine(line);
             const int midY = top + (bottom - top) / 2;
             QPolygon triangle;
@@ -1165,6 +1170,7 @@ void EditorFoldingController::paintGutter(
         top = bottom;
         bottom = top + static_cast<int>(editor->blockBoundingRect(block).height());
     }
+    painter.restore();
 }
 
 void EditorFoldingController::paintPlaceholders(

@@ -10,6 +10,9 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDialog>
+#include <QFrame>
+#include <QCloseEvent>
+#include <QAction>
 #include <QDragEnterEvent>
 #include <QDragMoveEvent>
 #include <QDropEvent>
@@ -143,78 +146,46 @@ bool findNextInEditor(MyCodeEditor* editor,
     return false;
 }
 
-void showFindDialogFor(MyCodeEditor* editor)
-{
-    if (!editor)
-        return;
-
-    auto* dialog = new QDialog(editor);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle(QObject::tr("Find"));
-
-    auto* layout = new QVBoxLayout(dialog);
-    auto* row = new QHBoxLayout;
-    auto* label = new QLabel(QObject::tr("Find:"), dialog);
-    auto* input = new QLineEdit(dialog);
-    auto* caseSensitive = new QCheckBox(QObject::tr("Match case"), dialog);
-    auto* previous = new QPushButton(QObject::tr("Previous"), dialog);
-    auto* next = new QPushButton(QObject::tr("Next"), dialog);
-
-    row->addWidget(label);
-    row->addWidget(input, 1);
-    row->addWidget(caseSensitive);
-    row->addWidget(previous);
-    row->addWidget(next);
-    layout->addLayout(row);
-
-    const QString selectedText = editor->textCursor().selectedText();
-    if (!selectedText.isEmpty())
-        input->setText(selectedText);
-
-    auto findText = [editor, input, caseSensitive](bool backwards) {
-        const QString needle = input->text();
-        if (needle.isEmpty())
-            return;
-
-        QTextDocument::FindFlags flags;
-        if (backwards)
-            flags |= QTextDocument::FindBackward;
-        if (caseSensitive->isChecked())
-            flags |= QTextDocument::FindCaseSensitively;
-
-        if (editor->find(needle, flags))
-            return;
-
-        QTextCursor cursor = editor->textCursor();
-        cursor.movePosition(backwards ? QTextCursor::End : QTextCursor::Start);
-        editor->setTextCursor(cursor);
-        editor->find(needle, flags);
-    };
-
-    QObject::connect(next, &QPushButton::clicked, dialog, [findText]() {
-        findText(false);
-    });
-    QObject::connect(previous, &QPushButton::clicked, dialog, [findText]() {
-        findText(true);
-    });
-    QObject::connect(input, &QLineEdit::returnPressed, dialog, [findText]() {
-        findText(false);
-    });
-    QObject::connect(input, &QLineEdit::textChanged, dialog, [editor, input, caseSensitive]() {
-        editor->highlightSearchMatches(input->text(), caseSensitive->isChecked());
-    });
-    QObject::connect(caseSensitive, &QCheckBox::toggled, dialog, [editor, input](bool checked) {
-        editor->highlightSearchMatches(input->text(), checked);
-    });
-    QObject::connect(dialog, &QDialog::finished, dialog, [editor]() {
-        editor->clearSearchMatches();
-    });
-
-    dialog->resize(520, dialog->sizeHint().height());
-    dialog->show();
-    input->setFocus();
-    input->selectAll();
-    editor->highlightSearchMatches(input->text(), caseSensitive->isChecked());
+class EditorSearchBar final : public QFrame {
+public:
+    explicit EditorSearchBar(MyCodeEditor* editor) : QFrame(editor), owner(editor) {
+        setObjectName(QStringLiteral("editorFindBar"));
+        setAutoFillBackground(true);
+        setFrameShape(QFrame::StyledPanel);
+        auto* escape = new QAction(this);
+        escape->setShortcut(QKeySequence(Qt::Key_Escape));
+        escape->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        addAction(escape);
+        connect(escape, &QAction::triggered, this, &QWidget::close);
+        editor->installEventFilter(this);
+    }
+    void place() {
+        const int width = qMin(620, qMax(1, owner->width() - 8));
+        setGeometry(owner->width() - width - 4, 2, width, sizeHint().height());
+        raise();
+    }
+protected:
+    void closeEvent(QCloseEvent* event) override {
+        owner->clearSearchMatches();
+        owner->setFocus();
+        QFrame::closeEvent(event);
+    }
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Resize || event->type() == QEvent::Show) place();
+        return false;
+    }
+private:
+    MyCodeEditor* owner;
+};
+void showReplaceDialogFor(MyCodeEditor* editor);
+void showFindDialogFor(MyCodeEditor* editor) {
+    showReplaceDialogFor(editor);
+    if (!editor) return;
+    if (auto* bar = dynamic_cast<EditorSearchBar*>(editor->findChild<QWidget*>(QStringLiteral("editorFindBar")))) {
+        for (auto* widget : bar->findChildren<QWidget*>())
+            if (widget->property("replaceControl").toBool()) widget->hide();
+        bar->place();
+    }
 }
 
 void showReplaceDialogFor(MyCodeEditor* editor)
@@ -222,35 +193,65 @@ void showReplaceDialogFor(MyCodeEditor* editor)
     if (!editor)
         return;
 
-    auto* dialog = new QDialog(editor);
+    if (auto* existing = editor->findChild<QWidget*>(QStringLiteral("editorFindBar"))) {
+        for (auto* widget : existing->findChildren<QWidget*>())
+            if (widget->property("replaceControl").toBool()) widget->show();
+        existing->show();
+        static_cast<EditorSearchBar*>(existing)->place();
+        if (auto* input = existing->findChild<QLineEdit*>(QStringLiteral("editorFindInput"))) input->setFocus();
+        return;
+    }
+    auto* dialog = new EditorSearchBar(editor);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowTitle(QObject::tr("Replace"));
 
     auto* layout = new QVBoxLayout(dialog);
     auto* findRow = new QHBoxLayout;
     auto* replaceRow = new QHBoxLayout;
-    auto* buttonRow = new QHBoxLayout;
+
     auto* findLabel = new QLabel(QObject::tr("Find:"), dialog);
     auto* findInput = new QLineEdit(dialog);
+    findInput->setObjectName(QStringLiteral("editorFindInput"));
     auto* replaceLabel = new QLabel(QObject::tr("Replace:"), dialog);
     auto* replaceInput = new QLineEdit(dialog);
     auto* caseSensitive = new QCheckBox(QObject::tr("Match case"), dialog);
-    auto* findNext = new QPushButton(QObject::tr("Find Next"), dialog);
+    auto* findNext = new QPushButton(QObject::tr("Next"), dialog);
+    auto* findPrevious = new QPushButton(QObject::tr("Previous"), dialog);
     auto* replace = new QPushButton(QObject::tr("Replace"), dialog);
     auto* replaceAll = new QPushButton(QObject::tr("Replace All"), dialog);
 
+    for (QWidget* control : QList<QWidget*>{replaceInput, replace, replaceAll})
+        control->setProperty("replaceControl", true);
+    auto* close = new QPushButton(QObject::tr("Close"), dialog);
+    close->setText(QStringLiteral("×"));
+    close->setFixedWidth(26);
+    close->setToolTip(QObject::tr("Close (Esc)"));
+    QObject::connect(close, &QPushButton::clicked, dialog, &QWidget::close);
     findRow->addWidget(findLabel);
     findRow->addWidget(findInput, 1);
     findRow->addWidget(caseSensitive);
     replaceRow->addWidget(replaceLabel);
     replaceRow->addWidget(replaceInput, 1);
-    buttonRow->addStretch(1);
-    buttonRow->addWidget(findNext);
-    buttonRow->addWidget(replace);
-    buttonRow->addWidget(replaceAll);
+    findInput->setPlaceholderText(QObject::tr("Find in current file"));
+    replaceInput->setPlaceholderText(QObject::tr("Replace with"));
+    findInput->setMinimumWidth(30);
+    replaceInput->setMinimumWidth(30);
+    findLabel->hide();
+    replaceLabel->hide();
+    findPrevious->setText(QStringLiteral("<"));
+    findNext->setText(QStringLiteral(">"));
+    findPrevious->setFixedWidth(26);
+    findNext->setFixedWidth(26);
+    findPrevious->setToolTip(QObject::tr("Previous match"));
+    findNext->setToolTip(QObject::tr("Next match"));
+    findRow->addWidget(findPrevious);
+    findRow->addWidget(findNext);
+    findRow->addWidget(close);
+    replaceRow->addWidget(replace);
+    replaceRow->addWidget(replaceAll);
     layout->addLayout(findRow);
     layout->addLayout(replaceRow);
-    layout->addLayout(buttonRow);
+
 
     const QString selectedText = selectedPlainText(editor->textCursor());
     if (!selectedText.isEmpty())
@@ -269,6 +270,17 @@ void showReplaceDialogFor(MyCodeEditor* editor)
         }
     };
 
+    QObject::connect(findPrevious, &QPushButton::clicked, dialog, [editor, findInput, caseSensitive]() {
+        if (findInput->text().isEmpty()) return;
+        QTextDocument::FindFlags flags = QTextDocument::FindBackward;
+        if (caseSensitive->isChecked()) flags |= QTextDocument::FindCaseSensitively;
+        if (!editor->find(findInput->text(), flags)) {
+            QTextCursor cursor = editor->textCursor();
+            cursor.movePosition(QTextCursor::End);
+            editor->setTextCursor(cursor);
+            editor->find(findInput->text(), flags);
+        }
+    });
     QObject::connect(findNext, &QPushButton::clicked, dialog, findNextMatch);
     QObject::connect(replace, &QPushButton::clicked, dialog, [editor,
                                                               findInput,
@@ -306,12 +318,10 @@ void showReplaceDialogFor(MyCodeEditor* editor)
                      dialog, [editor, findInput](bool checked) {
         editor->highlightSearchMatches(findInput->text(), checked);
     });
-    QObject::connect(dialog, &QDialog::finished, dialog, [editor]() {
-        editor->clearSearchMatches();
-    });
 
     dialog->resize(620, dialog->sizeHint().height());
     dialog->show();
+    dialog->place();
     findInput->setFocus();
     findInput->selectAll();
     editor->highlightSearchMatches(findInput->text(),

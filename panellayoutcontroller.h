@@ -54,6 +54,7 @@ public:
     bool registerBottomPanelAlias(const QString& alias,
                                   const QString& panelId);
     void finalize();
+    void setMainAreaRequestHandler(std::function<void(QWidget*, QWidget*)> handler) { mainAreaRequest = std::move(handler); }
 
     PanelLayoutState layoutState() const;
     void restoreLayoutState(const PanelLayoutState& state);
@@ -145,6 +146,7 @@ private:
     QStringList defaultOrder;
     QString activePanel;
     QString lastPanel;
+    std::function<void(QWidget*, QWidget*)> mainAreaRequest;
     bool collapsed = false;
     bool applying = false;
     bool finalized = false;

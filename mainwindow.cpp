@@ -1,3 +1,4 @@
+#include "workspacechrome.h"
 #include "mainwindow.h"
 #include "workspacehubsession.h"
 
@@ -308,6 +309,19 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
+    new WorkspaceChrome(this, navigationPane->dock(), [this]() { showDockWidget(settingsCenterDock); });
+    for (const auto& shortcut : {QStringLiteral("Ctrl+Shift+F"), QStringLiteral("Ctrl+Shift+H")}) {
+        auto* action = new QAction(this);
+        action->setShortcut(QKeySequence(shortcut));
+        addAction(action);
+        connect(action, &QAction::triggered, this, [this, shortcut]() {
+            showPanelById(ScopedSearchPanelCoordinator::panelId());
+            auto* panel = semanticDocks->scopedSearchPanelCoordinator()->panel();
+            panel->setScope(ScopedSearchScope::Workspace);
+            if (shortcut.endsWith(QLatin1Char('H'))) panel->replacementEditor()->setFocus();
+            else panel->queryEditor()->setFocus();
+        });
+    }
 
 }
 
@@ -2381,9 +2395,11 @@ void MainWindow::setupPanelLayoutController()
 {
     panelLayoutController =
         std::make_unique<PanelLayoutController>(this, this);
-    panelLayoutController->registerSidePanel(
-        QStringLiteral("settingsCenter"),
-        findChild<QDockWidget*>(QStringLiteral("editorAppearanceDock")));
+    panelLayoutController->setMainAreaRequestHandler([this](QWidget* content, QWidget* home) {
+        const QString id = QStringLiteral("connections");
+        if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
+        else tabManager->openToolPage(new BorrowedPanelPage(content, home), id, tr("Connections"));
+    });
     panelLayoutController
         ->setRegisteredPanelActionRequestHandler(
             [this](const QString& actionId,
@@ -2501,6 +2517,12 @@ void MainWindow::setupPanelLayoutController()
             &RtlHighRiskEditPanelCoordinator::stateChanged,
             this,
             [this](const RtlHighRiskEditPanelOutcome& outcome) {
+                if (outcome.panelState == RtlHighRiskEditPanelState::Applied
+                    || outcome.panelState == RtlHighRiskEditPanelState::Cancelled
+                    || outcome.panelState == RtlHighRiskEditPanelState::Undone
+                    || outcome.panelState == RtlHighRiskEditPanelState::NoChanges
+                    || outcome.panelState == RtlHighRiskEditPanelState::DryRunComplete)
+                    panelLayoutController->closePanel(RtlHighRiskEditPanelCoordinator::panelId());
                 const bool failed =
                     outcome.panelState == RtlHighRiskEditPanelState::Rejected
                     || outcome.panelState == RtlHighRiskEditPanelState::Conflict;
@@ -5836,6 +5858,14 @@ void MainWindow::showDockWidget(QDockWidget* dock,
     if (!dock)
         return;
 
+    if (dock == settingsCenterDock) {
+        const QString id = QStringLiteral("settingsCenter");
+        if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
+        else tabManager->openToolPage(new BorrowedPanelPage(settingsCenterPanel, dock), id, tr("Settings"));
+        dock->hide();
+        return;
+    }
+
     if (insightFocusController
         && dock->property("insightFocusActive").toBool()) {
         if (centralContentStack
@@ -6069,8 +6099,7 @@ void MainWindow::resetPanelLayout()
 
     if (navigationDock)
         addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
-    if (settingsCenterDockWidget)
-        addDockWidget(Qt::RightDockWidgetArea, settingsCenterDockWidget);
+
 
     if (panelLayoutController) {
         panelLayoutController->resetLayout();
@@ -6100,7 +6129,7 @@ void MainWindow::resetPanelLayout()
             problemsDock->raise();
     }
 
-    showDockWidget(settingsCenterDockWidget);
+    if (settingsCenterDockWidget) settingsCenterDockWidget->hide();
 
     if (workspaceSessionCoordinator)
         workspaceSessionCoordinator->scheduleSessionSave();
@@ -6221,7 +6250,7 @@ void MainWindow::setupSettingsCenter()
     // Keep the dock object name so QMainWindow::restoreState continues to
     // restore layouts saved before the Settings Center migration.
     settingsCenterDock->setObjectName(
-        QStringLiteral("editorAppearanceDock"));
+        QStringLiteral("settingsContentHost"));
     settingsCenterDock->setProperty(
         "settingsCenterPanelId", QStringLiteral("settingsCenter"));
     settingsCenterDock->setProperty(
@@ -6234,7 +6263,7 @@ void MainWindow::setupSettingsCenter()
                          : QString(),
         settingsCenterDock);
     settingsCenterDock->setWidget(settingsCenterPanel);
-    addDockWidget(Qt::RightDockWidgetArea, settingsCenterDock);
+    settingsCenterDock->hide();
 
 
     connect(&ApplicationThemeManager::instance(),

@@ -236,7 +236,7 @@ public:
             title->setText(
                 active
                     ? QStringLiteral(
-                          "Release to request a High+Diff plan")
+                          "Release to request a Change Preview plan")
                     : QStringLiteral(
                           "Drop left signal on the right instance"));
         }
@@ -547,7 +547,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     root->addWidget(blockSplitter, 2);
 
     auto* previewGroup = new QGroupBox(
-        QStringLiteral("High+Diff transaction preview"),
+        QStringLiteral("Change Preview transaction preview"),
         this);
     previewGroup->setObjectName(
         QStringLiteral("instancePairTransactionPreview"));
@@ -571,7 +571,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     auto* actions = new QHBoxLayout;
     actions->addStretch(1);
     previewButton = new QPushButton(
-        QStringLiteral("Preview High+Diff"),
+        QStringLiteral("Preview Change Preview"),
         previewGroup);
     previewButton->setObjectName(
         QStringLiteral("instancePairPreviewButton"));
@@ -647,7 +647,7 @@ void InstancePairConnectionPanel::setAnalysis(
         ready
             ? QStringLiteral(
                   "Drag the selected left signal to the right "
-                  "instance, or request an explicit High+Diff preview.")
+                  "instance, or request an explicit Change Preview preview.")
             : QStringLiteral("Blocked: %1")
                   .arg(failureText(currentAnalysis)));
 }
@@ -964,10 +964,10 @@ void InstancePairConnectionPanel::renderProposal(
     stateLabel->setText(
         proposal.dryRun || proposal.transaction.dryRun
             ? QStringLiteral(
-                  "Dry-run High+Diff preview is ready; workspace "
+                  "Dry-run Change Preview preview is ready; workspace "
                   "mutation is disabled.")
             : QStringLiteral(
-                  "High+Diff preview is ready. Confirmation remains "
+                  "Change Preview preview is ready. Confirmation remains "
                   "an explicit external transaction request."));
     confirmButton->setEnabled(
         !proposal.dryRun
@@ -1094,7 +1094,7 @@ proposalMatchesCurrentContext(
         || proposal.transaction.previewConfirmed) {
         return reject(
             QStringLiteral(
-                "Only an unconfirmed High+Diff transaction may be "
+                "Only an unconfirmed Change Preview transaction may be "
                 "displayed."));
     }
 
@@ -1209,7 +1209,7 @@ proposalMatchesCurrentContext(
             != transactionCanonicalDiff) {
         return reject(
             QStringLiteral(
-                "The rendered High+Diff preview does not match the "
+                "The rendered Change Preview preview does not match the "
                 "prepared transaction."));
     }
     return true;

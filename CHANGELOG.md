@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.0] - 2026-09-10
+
+- Replaced the visible menu bar with a Project/Settings rail and a themed auto-hiding window title overlay.
+- Moved Settings and connection tools into reusable central tabs while retaining existing command access.
+- Kept only Problems and Activity permanent in the drawer; Search, Change Preview and Shelf appear on demand.
+- Unified current-file find/replace in an inline bar and added workspace search/replace shortcuts.
+- Made line-number width adaptive and combined diagnostics and Pinloom into a shared marker lane.
+
 ## [0.22.2] - 2026-09-10
 
 - Kept Navigation and Context as full-height side columns, with the bottom drawer beneath the editor only.

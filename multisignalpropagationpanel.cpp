@@ -67,7 +67,7 @@ QString failureFallback(
             "A captured source file has no usable structural syntax tree.");
     case MultiSignalPropagationFailure::TransactionPreparationFailed:
         return QStringLiteral(
-            "The atomic High+Diff transaction could not be prepared.");
+            "The atomic Change Preview transaction could not be prepared.");
     case MultiSignalPropagationFailure::InvalidRequest:
     case MultiSignalPropagationFailure::None:
         break;
@@ -349,7 +349,7 @@ void MultiSignalPropagationPanel::setupUi()
 
     auto* actionRow = new QHBoxLayout();
     previewButton = new QPushButton(
-        QStringLiteral("Preview High+Diff"),
+        QStringLiteral("Preview Change Preview"),
         inputGroup);
     previewButton->setObjectName(
         QStringLiteral("multiSignalPropagationPreviewButton"));
@@ -871,7 +871,7 @@ void MultiSignalPropagationPanel::renderProposal(
             stateLabel->setText(
                 QStringLiteral(
                     "Planner output was refused because it is not an "
-                    "internally consistent unconfirmed High+Diff "
+                    "internally consistent unconfirmed Change Preview "
                     "transaction."));
         }
         return;
@@ -1137,7 +1137,7 @@ MultiSignalPropagationWorkflow::confirm()
             MultiSignalPropagationWorkflowState::Failed,
             rtledit::TransactionStatus::InvalidPreparation,
             QStringLiteral(
-                "No current unconfirmed High+Diff plan is available."),
+                "No current unconfirmed Change Preview plan is available."),
             false);
     }
 

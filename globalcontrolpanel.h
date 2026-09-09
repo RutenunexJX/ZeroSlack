@@ -1,5 +1,6 @@
 #ifndef GLOBALCONTROLPANEL_H
 #define GLOBALCONTROLPANEL_H
+#include <QPointer>
 
 #include "globalcontrolservice.h"
 
@@ -33,8 +34,11 @@ public:
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
+    QPointer<QWidget> previousFocus;
     QLineEdit* searchEdit = nullptr;
     QTabBar* categoryTabs = nullptr;
     QListWidget* resultList = nullptr;

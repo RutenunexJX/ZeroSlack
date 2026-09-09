@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.22.2`
+Current version: `v0.23.0`
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -24,6 +24,14 @@ is `schemas/suite-references-v1.schema.json`.
 - Navigation and Context occupy independent full-height side columns. The bottom drawer stays beneath
   the editor. Context rail buttons open a resizable sidebar; reopening it retains its width. Chart views
   can open in the main area using their full-view action. Explicit Peek previews remain available.
+- The left rail contains Project and Settings only. Settings and connection tools open in central tabs.
+  The menu bar is hidden; existing commands remain in the Project context menu and keep their shortcuts.
+- The themed window title bar appears near the top edge and hides after three seconds away without moving
+  editor content. Window controls, dragging and edge resizing remain available.
+- Only Problems and Activity are permanent drawer buttons. Search, Change Preview and Shelf appear on demand.
+  Ctrl+F/H reuse an inline editor find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
+- The gutter sizes its number lane by document line count, shares a diagnostic/Pinloom marker lane, and
+  places folding beside the code. A link corner mark remains visible when a diagnostic takes priority.
 
 - Activity retains workspace scan, semantic analysis and operation messages. Its drawer button shows the
   number of unread important messages; opening Activity acknowledges them, and Clear removes the log and
@@ -102,7 +110,7 @@ is `schemas/suite-references-v1.schema.json`.
 - Preview and apply guarded RTL changes through the existing rename,
   connection, expose-to-top, scoped replace, instance-pair connection, and
   multi-signal propagation workflows. Module-port changes can be synchronized
-  across all source instances through one High+Diff transaction.
+  across all source instances through one Change Preview transaction.
 - Save and restore workspace-local tabs, layout, navigation filters, and scan
   state. Current sessions use local application storage; a workspace `.zs`
   file is accepted only as a legacy read-only import source.

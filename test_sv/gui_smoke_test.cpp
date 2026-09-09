@@ -1,3 +1,5 @@
+#include <QMenuBar>
+#include "editorgutter.h"
 // Offscreen GUI smoke test for the real MainWindow/TabManager/MyCodeEditor path.
 // It keeps the assertions coarse on purpose: this target is a repeatable guard that
 // the GUI workflow is alive, while detailed semantic behavior stays in the focused
@@ -8702,9 +8704,9 @@ static void runTreeSitterFoldingProviderRegression()
     gutterEditor.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     QMouseEvent foldClick(QEvent::MouseButtonPress,
-                          QPointF(6, 4),
-                          QPointF(6, 4),
-                          QPointF(6, 4),
+                          QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                          QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                          QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
                           Qt::LeftButton,
                           Qt::LeftButton,
                           Qt::NoModifier);
@@ -8713,9 +8715,9 @@ static void runTreeSitterFoldingProviderRegression()
         && !gutterEditor.foldLineVisibleForTest(1);
     expectBool("editor gutter click collapses fold", gutterCollapsed, true);
     QMouseEvent unfoldClick(QEvent::MouseButtonPress,
-                            QPointF(6, 4),
-                            QPointF(6, 4),
-                            QPointF(6, 4),
+                            QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                            QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                            QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
                             Qt::LeftButton,
                             Qt::LeftButton,
                             Qt::NoModifier);
@@ -8723,6 +8725,17 @@ static void runTreeSitterFoldingProviderRegression()
         gutterEditor.state->handleGutterMousePress(&gutterEditor, &unfoldClick)
         && gutterEditor.foldLineVisibleForTest(1);
     expectBool("editor gutter click expands fold", gutterExpanded, true);
+    gutterEditor.showFindDialog();
+    auto* inlineFind = gutterEditor.findChild<QWidget*>(QStringLiteral("editorFindBar"));
+    auto* inlineInput = inlineFind ? inlineFind->findChild<QLineEdit*>(QStringLiteral("editorFindInput")) : nullptr;
+    if (inlineInput) inlineInput->setText(QStringLiteral("logic"));
+    gutterEditor.showReplaceDialog();
+    expectBool("find and replace reuse an inline bar and preserve the query",
+               inlineFind && !inlineFind->isWindow() && inlineInput
+                   && inlineInput->text() == QStringLiteral("logic")
+                   && gutterEditor.findChild<QWidget*>(QStringLiteral("editorFindBar")) == inlineFind, true);
+    if (inlineFind) inlineFind->close();
+
 
     MyCodeEditor commandEditor;
     QSignalSpy commandStatusSpy(&commandEditor,
@@ -8737,9 +8750,9 @@ static void runTreeSitterFoldingProviderRegression()
                        QStringLiteral("click start line")),
                true);
     QMouseEvent markStartClick(QEvent::MouseButtonPress,
-                               QPointF(6, 4),
-                               QPointF(6, 4),
-                               QPointF(6, 4),
+                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
+                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
                                Qt::LeftButton,
                                Qt::LeftButton,
                                Qt::NoModifier);
@@ -12975,6 +12988,58 @@ int main(int argc, char** argv)
                    && window.panelLayoutController->buttonBar()
                    && window.panelLayoutController->buttonBar()->isVisible(),
                true);
+    expectBool("left rail has only Project and Settings and menus are hidden",
+               window.findChild<QToolButton*>(QStringLiteral("projectRailButton"))
+                   && window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"))
+                   && !window.menuBar()->isVisible(), true);
+    expectBool("only Problems and Activity remain permanent in the drawer",
+               window.panelLayoutController->buttonForPanel(QStringLiteral("problems"))->isVisible()
+                   && window.panelLayoutController->buttonForPanel(QStringLiteral("activity"))->isVisible()
+                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("scopedSearch"))->isVisible()
+                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))->isVisible()
+                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("connections"))->isVisible(), true);
+    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"));
+    settingsButton->click();
+    QWidget* settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
+    expectBool("Settings opens in the center and keeps the dock hidden",
+               settingsPage && settingsPage->isAncestorOf(window.settingsCenterPanel)
+                   && !window.settingsCenterDock->isVisible(), true);
+    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(settingsPage));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    settingsButton->click();
+    settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
+    expectBool("Settings content survives closing and reopening its central tab",
+               settingsPage && settingsPage->isAncestorOf(window.settingsCenterPanel), true);
+    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(settingsPage));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    window.panelLayoutController->restorePanel(QStringLiteral("connections"));
+    QWidget* connectionsPage = window.tabManager->toolPage(QStringLiteral("connections"));
+    expectBool("connection actions open in a central tab instead of the drawer",
+               connectionsPage && connectionsPage->isVisible()
+                   && !window.panelLayoutController->isPanelOpen(QStringLiteral("connections")), true);
+    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(connectionsPage));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    window.panelLayoutController->restorePanel(QStringLiteral("connections"));
+    connectionsPage = window.tabManager->toolPage(QStringLiteral("connections"));
+    expectBool("connection content survives closing and reopening the central tab",
+               connectionsPage && connectionsPage->findChild<QTabWidget*>(QStringLiteral("instancePairDiffTabs")), true);
+    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(connectionsPage));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QWidget* titleOverlay = window.findChild<QWidget*>(QStringLiteral("autoHideTitleBar"));
+    QTest::qWait(150);
+    const QRect centerBeforeTitle = window.centralWidget()->geometry();
+    const QPoint previousPointer = QCursor::pos();
+    QCursor::setPos(window.mapToGlobal(QPoint(-50, -50)));
+    QTest::qWait(3300);
+    expectBool("title overlay hides after idle without moving content",
+               titleOverlay && !titleOverlay->isVisible()
+                   && window.centralWidget()->geometry() == centerBeforeTitle, true);
+    QCursor::setPos(window.mapToGlobal(QPoint(100, 1)));
+    QTest::qWait(150);
+    expectBool("approaching the top edge reveals the title without moving content",
+               titleOverlay && titleOverlay->isVisible()
+                   && window.centralWidget()->geometry() == centerBeforeTitle, true);
+    QCursor::setPos(previousPointer);
     expectBool("outer workspace tab bar removed",
                window.findChild<QTabBar*>(
                    QStringLiteral("workspaceTabBar")) == nullptr,
@@ -13084,7 +13149,7 @@ int main(int argc, char** argv)
         true);
     QDockWidget* settingsCenterDock =
         window.findChild<QDockWidget*>(
-            QStringLiteral("editorAppearanceDock"));
+            QStringLiteral("settingsContentHost"));
     QAction* viewSettingsCenterAction =
         window.findChild<QAction*>(
             QStringLiteral("viewSettingsCenterAction"));
@@ -13906,7 +13971,7 @@ int main(int argc, char** argv)
         QStringLiteral("Problems"),
         QStringLiteral("Search"),
         QStringLiteral("Activity"),
-        QStringLiteral("High+Diff"),
+        QStringLiteral("Change Preview"),
         QStringLiteral("Connections"),
         QStringLiteral("Shelf"),
     };
@@ -13925,7 +13990,7 @@ int main(int argc, char** argv)
             && !button->icon().isNull()
             && !button->toolTip().isEmpty();
     }
-    expectBool("bottom tool drawer has six fixed accessible buttons",
+    expectBool("bottom tool drawer has registered accessible panel actions",
                drawerButtonsComplete,
                true);
     expectBool("drawer actions exist without retired pin and close menu entries",
@@ -16118,6 +16183,7 @@ int main(int argc, char** argv)
                     return nullptr;
                 }
                 window.globalControlCoordinator->panel->hide();
+                window.activateWindow();
                 editor->setFocus();
                 QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
                 window.globalControlCoordinator->open();

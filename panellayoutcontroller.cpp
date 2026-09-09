@@ -46,7 +46,7 @@ QString panelLabel(const QString& panelId)
     if (panelId == QStringLiteral("activity"))
         return QStringLiteral("Activity");
     if (panelId == QStringLiteral("rtlHighRiskEdit"))
-        return QStringLiteral("High+Diff");
+        return QStringLiteral("Change Preview");
     if (panelId == QStringLiteral("connections"))
         return QStringLiteral("Connections");
     if (panelId == QStringLiteral("foldShelf"))
@@ -566,6 +566,8 @@ void PanelLayoutController::restoreLayoutState(
 
     QString restoredActive = canonicalPanelId(
         state.activeBottomPanel);
+    if (mainAreaRequest && restoredActive == QStringLiteral("connections"))
+        restoredActive = QStringLiteral("problems");
     if (!entryForId(restoredActive))
         restoredActive = panels.constFirst().id;
     QString restoredLast = canonicalPanelId(state.lastBottomPanel);
@@ -1084,6 +1086,10 @@ void PanelLayoutController::activatePanel(
     PanelEntry& entry,
     bool moveFocus)
 {
+    if (entry.id == QStringLiteral("connections") && mainAreaRequest && entry.content) {
+        mainAreaRequest(entry.content, bottomContentStack);
+        return;
+    }
     if (PanelEntry* current = entryForId(activePanel))
         capturePanelViewState(*current);
     activePanel = entry.id;
@@ -1187,6 +1193,9 @@ void PanelLayoutController::updateButtons()
     for (PanelEntry& entry : panels) {
         if (!entry.button)
             continue;
+        entry.button->setVisible(entry.id == QStringLiteral("problems")
+            || entry.id == QStringLiteral("activity")
+            || (entry.id != QStringLiteral("connections") && expanded && entry.id == activePanel));
         entry.button->setChecked(expanded && entry.id == activePanel);
         entry.button->setProperty(
             "activePanel", expanded && entry.id == activePanel);

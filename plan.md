@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.22.2`
+Product version: `v0.23.0`
 
 ## Current baseline
 

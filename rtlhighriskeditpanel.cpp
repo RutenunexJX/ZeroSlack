@@ -58,11 +58,11 @@ QString panelStateText(RtlHighRiskEditPanelState state)
     case RtlHighRiskEditPanelState::Editing:
         return QStringLiteral("Edit the structured request, then preview.");
     case RtlHighRiskEditPanelState::Preparing:
-        return QStringLiteral("Preparing High+Diff preview.");
+        return QStringLiteral("Preparing Change Preview preview.");
     case RtlHighRiskEditPanelState::PreviewReady:
-        return QStringLiteral("High+Diff preview is ready.");
+        return QStringLiteral("Change Preview preview is ready.");
     case RtlHighRiskEditPanelState::DryRunPreviewReady:
-        return QStringLiteral("Dry-run High+Diff preview is ready.");
+        return QStringLiteral("Dry-run Change Preview preview is ready.");
     case RtlHighRiskEditPanelState::Confirming:
         return QStringLiteral("Checking conflicts and confirming.");
     case RtlHighRiskEditPanelState::Applied:
@@ -103,7 +103,7 @@ void RtlHighRiskEditPanel::setupUi()
     root->setSpacing(7);
 
     auto* heading = new QLabel(
-        QStringLiteral("RTL High+Diff Edit"), this);
+        QStringLiteral("RTL Change Preview Edit"), this);
     heading->setObjectName(
         QStringLiteral("rtlHighRiskEditHeading"));
     QFont headingFont = heading->font();
@@ -304,7 +304,7 @@ void RtlHighRiskEditPanel::setupUi()
 
     auto* actionRow = new QHBoxLayout();
     previewButton = new QPushButton(
-        QStringLiteral("Preview High+Diff"), this);
+        QStringLiteral("Preview Change Preview"), this);
     previewButton->setObjectName(
         QStringLiteral("rtlHighRiskPreviewButton"));
     confirmButton = new QPushButton(
@@ -923,7 +923,7 @@ void RtlHighRiskEditPanelCoordinator::setupUi(
     QWidget* dockParent)
 {
     dockWidget = new QDockWidget(
-        QStringLiteral("RTL High+Diff"), dockParent);
+        QStringLiteral("RTL Change Preview"), dockParent);
     dockWidget->setObjectName(
         QStringLiteral("rtlHighRiskEditDock"));
     dockWidget->setAttribute(
@@ -1049,7 +1049,7 @@ bool RtlHighRiskEditPanelCoordinator::beginRename(
             *failureReason =
                 QStringLiteral(
                     "Undo the applied RTL edit before switching "
-                    "the High+Diff page.");
+                    "the Change Preview page.");
         }
         return false;
     }
@@ -1080,7 +1080,7 @@ bool RtlHighRiskEditPanelCoordinator::beginRename(
     publishEditing(
         QStringLiteral(
             "Edit the rename request, then prepare its "
-            "High+Diff preview."));
+            "Change Preview preview."));
     return true;
 }
 
@@ -1105,7 +1105,7 @@ beginConnectionTransform(
             *failureReason =
                 QStringLiteral(
                     "Undo the applied RTL edit before switching "
-                    "the High+Diff page.");
+                    "the Change Preview page.");
         }
         return false;
     }
@@ -1140,7 +1140,7 @@ beginConnectionTransform(
     publishEditing(
         QStringLiteral(
             "Edit the connection transform request, then "
-            "prepare its High+Diff preview."));
+            "prepare its Change Preview preview."));
     return true;
 }
 
@@ -1279,7 +1279,7 @@ RtlHighRiskEditPanelCoordinator::confirm(
                     DryRunPreviewReady)) {
         return ignoredRequest(
             QStringLiteral(
-                "No current High+Diff confirmation token is "
+                "No current Change Preview confirmation token is "
                 "available."));
     }
 
@@ -1334,7 +1334,7 @@ RtlHighRiskEditPanelCoordinator::cancel(
     if (!workflow || !workflow->hasPendingPreview()) {
         return ignoredRequest(
             QStringLiteral(
-                "No pending High+Diff preview is available to "
+                "No pending Change Preview preview is available to "
                 "cancel."));
     }
 
@@ -1435,7 +1435,7 @@ void RtlHighRiskEditPanelCoordinator::draftChanged(
     cancelActivePendingPreview();
     publishEditing(
         QStringLiteral(
-            "The request changed. Prepare a new High+Diff "
+            "The request changed. Prepare a new Change Preview "
             "preview before confirmation."));
 }
 

@@ -1,4 +1,4 @@
-ZeroSlack v0.22.2
+ZeroSlack v0.23.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -32,5 +32,10 @@ viewing Activity marks displayed messages as read. Ordinary progress stays passi
 
 Navigation and Context remain full-height columns; the bottom drawer occupies
 only the area beneath the editor. Drag the sidebar divider to widen charts.
-Reopening the sidebar retains its width. Settings and Context share tabs;
+Reopening the sidebar retains its width. Settings opens in a central tab;
 supported charts can open in the main area. Explicit Peek previews remain available.
+
+The left rail contains Project and Settings. Right-click Project for commands.
+The themed title bar hides after three idle seconds; approach the top edge to show it.
+Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
+inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.

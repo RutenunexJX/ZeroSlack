@@ -1,3 +1,5 @@
+#include <QShowEvent>
+#include <QHideEvent>
 #include "globalcontrolpanel.h"
 
 #include "insightvisualstyle.h"
@@ -129,6 +131,7 @@ void GlobalControlPanel::showCentered(QWidget* anchor)
 void GlobalControlPanel::showAt(QWidget* anchor,
                                 const QPoint& globalAnchor)
 {
+    if (!isVisible()) previousFocus = QApplication::focusWidget();
     adjustSize();
     QScreen* screen = QGuiApplication::screenAt(globalAnchor);
     if (!screen && anchor)
@@ -272,5 +275,21 @@ void GlobalControlPanel::updatePlaceholder()
     case GlobalControlCategory::Commands:
         searchEdit->setPlaceholderText(QStringLiteral("Filter commands, ow, or fd"));
         break;
+    }
+}
+
+void GlobalControlPanel::showEvent(QShowEvent* event)
+{
+    QWidget* focus = QApplication::focusWidget();
+    if (focus && focus != this && !isAncestorOf(focus)) previousFocus = focus;
+    QFrame::showEvent(event);
+}
+
+void GlobalControlPanel::hideEvent(QHideEvent* event)
+{
+    QFrame::hideEvent(event);
+    if (previousFocus && previousFocus->isVisible()) {
+        previousFocus->window()->activateWindow();
+        previousFocus->setFocus(Qt::OtherFocusReason);
     }
 }

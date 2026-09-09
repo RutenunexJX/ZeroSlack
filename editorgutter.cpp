@@ -15,42 +15,14 @@
 #include <QWidget>
 
 namespace {
-constexpr int kEditorGutterWidth = 94;
-constexpr int kLineNumberLeft = 43;
-constexpr int kLineNumberRightPadding = 3;
-constexpr qreal kLineNumberPointSize = 10.0;
-constexpr qreal kMinimumLineNumberPointSize = 7.0;
-
-QFont lineNumberFont(int blockCount)
-{
-    QFont font = QFontDatabase::systemFont(
-        QFontDatabase::FixedFont);
-    font.setPointSizeF(kLineNumberPointSize);
-    font.setStretch(QFont::Unstretched);
-
-    const QString widestNumber = QString::number(qMax(1, blockCount));
-    const int availableWidth = kEditorGutterWidth
-        - kLineNumberLeft
-        - kLineNumberRightPadding;
-    while (font.pointSizeF() > kMinimumLineNumberPointSize
-           && QFontMetricsF(font).horizontalAdvance(widestNumber)
-                  > availableWidth) {
-        font.setPointSizeF(
-            qMax(kMinimumLineNumberPointSize,
-                 font.pointSizeF() - 0.5));
-    }
-    const qreal numberWidth =
-        QFontMetricsF(font).horizontalAdvance(widestNumber);
-    if (numberWidth > availableWidth) {
-        const int stretch = qBound(
-            50,
-            static_cast<int>(
-                100.0 * availableWidth / numberWidth),
-            100);
-        font.setStretch(stretch);
-    }
+constexpr int kLineNumberLeft = 18;
+constexpr int kLineNumberRightPadding = 4;
+QFont lineNumberFont(int) {
+    QFont font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    font.setPointSizeF(10.0);
     return font;
 }
+
 }
 
 class LineNumberWidget : public QWidget
@@ -128,10 +100,16 @@ void EditorGutter::destroy()
     appliedLeftMargin = -1;
 }
 
+int EditorGutter::totalWidth(MyCodeEditor* editor) {
+    const int count = editor ? editor->blockCount() : 1;
+    const int digits = qMax(3, static_cast<int>(QString::number(qMax(1, count)).size()));
+    const QFontMetricsF metrics(lineNumberFont(count));
+    return 18 + qCeil(metrics.horizontalAdvance(QString(digits, QLatin1Char('9')))) + 4 + 16;
+}
+
 int EditorGutter::widthFor(MyCodeEditor* editor) const
 {
-    Q_UNUSED(editor);
-    return kEditorGutterWidth;
+    return totalWidth(editor);
 }
 
 void EditorGutter::updateNumberFont(MyCodeEditor* editor) const
@@ -210,7 +188,7 @@ void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const
             top,
             widthFor(editor)
                 - kLineNumberLeft
-                - kLineNumberRightPadding,
+                - kLineNumberRightPadding - 16,
             bottom - top,
             Qt::AlignRight | Qt::AlignVCenter,
             QString::number(blockNumber + 1));
