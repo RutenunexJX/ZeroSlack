@@ -3,7 +3,7 @@
 `VERSION` is the single manually maintained product version source. It must
 contain exactly one SemVer value in strict `X.Y.Z` numeric form.
 
-Current controlled baseline: `v0.22.0`.
+Current controlled baseline: `v0.22.1`.
 
 ## Upgrade Rules
 
@@ -25,7 +25,7 @@ visible product version must not include dependency labels.
 3. Build and run the release verification targets.
 4. Create a signed-off release tag named `vX.Y.Z`.
 5. Publish Windows artifacts under
-   `E:\PinloomRoot\AppPackage\ZeroSlack`; the path intentionally contains no
+   `E:\PinloomRoot\AppPackage\AppSuite`; the path intentionally contains no
    spaces.
 6. Keep both the Windows package directory and archive basename fixed as
    `ZeroSlack-win64`; do not include the product version in either package

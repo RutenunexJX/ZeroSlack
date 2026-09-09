@@ -26,7 +26,6 @@
 #include <QDir>
 #include <QDockWidget>
 #include <QFileInfo>
-#include <QStatusBar>
 #include <QTextCursor>
 #include <QTextBlock>
 #include <QThreadPool>
@@ -172,8 +171,8 @@ void MainWindow::setupContextWorkspace()
             }
             const QString openKey = item.stableKey;
             if (workspaceHubOpenRequests.contains(openKey)) {
-                if (statusBar()) {
-                    statusBar()->showMessage(
+                {
+                    postActivityMessage(
                         QStringLiteral("%1 is already opening.")
                             .arg(item.title),
                         2500);
@@ -181,8 +180,8 @@ void MainWindow::setupContextWorkspace()
                 return true;
             }
             workspaceHubOpenRequests.insert(openKey);
-            if (statusBar()) {
-                statusBar()->showMessage(
+            {
+                postActivityMessage(
                     QStringLiteral("Opening %1…").arg(item.title),
                     3000);
             }
@@ -199,9 +198,7 @@ void MainWindow::setupContextWorkspace()
                         if (!owner)
                             return;
                         owner->workspaceHubOpenRequests.remove(openKey);
-                        if (!owner->statusBar())
-                            return;
-                        owner->statusBar()->showMessage(
+                        owner->postActivityMessage(
                             result.ok
                                 ? QStringLiteral("Opened %1.")
                                       .arg(item.title)
@@ -223,8 +220,7 @@ void MainWindow::setupContextWorkspace()
     });
     workspaceHubProvider->setStatusHandler(
         [this](const QString& message, int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
+                postActivityMessage(message, timeoutMs);
         });
     contextWorkspaceController->registerProvider(
         std::move(workspaceHubProvider));
@@ -697,8 +693,8 @@ bool MainWindow::openLiveInsightFromSourceAction(
             resource,
             ContextOpenMode::Pinned,
             &failureReason)) {
-        if (statusBar()) {
-            statusBar()->showMessage(
+        {
+            postActivityMessage(
                 failureReason.trimmed().isEmpty()
                     ? QStringLiteral(
                           "Live Insights sidebar is unavailable.")
@@ -746,8 +742,7 @@ void MainWindow::openLiveInsightFullView(
         });
     page->setStatusHandler(
         [this](const QString& message, int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
+                postActivityMessage(message, timeoutMs);
         });
     page->setVisibilityHandler(
         [owner = QPointer<MainWindow>(this),

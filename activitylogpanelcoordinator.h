@@ -8,12 +8,15 @@ class ActivityLogService;
 class QPlainTextEdit;
 class QPushButton;
 
-class ActivityLogPanelCoordinator
+class ActivityLogPanelCoordinator : public QObject
 {
 public:
     explicit ActivityLogPanelCoordinator(QWidget* parent);
 
     QDockWidget* dock() const { return activityDock; }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     QDockWidget* activityDock = nullptr;
@@ -23,6 +26,7 @@ private:
     QStringList pendingLines;
     bool flushQueued = false;
     bool rebuildFromService = false;
+    quint64 pendingSequence = 0;
 
     void appendExistingEvents();
     void schedulePendingFlush();

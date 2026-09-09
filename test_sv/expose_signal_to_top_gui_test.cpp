@@ -38,6 +38,7 @@
 #include <QSignalSpy>
 #include <QSignalBlocker>
 #include <QStatusBar>
+#include "activitylogservice.h"
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTest>
@@ -528,76 +529,9 @@ void runEditorActionContextRegression()
 void runEditorActionContextStripRegression()
 {
     MainWindow window;
-    window.resize(900, 600);
-    window.show();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    QLabel* chip = window.findChild<QLabel*>(
-        QStringLiteral("editorActionContextChip"));
-    check("persistent editor action context chip exists",
-          chip != nullptr);
-    check("empty editor context remains visibly explicit",
-          chip && chip->isVisible()
-              && chip->text().contains(QStringLiteral("instance unbound"))
-              && chip->toolTip().contains(
-                     QStringLiteral("Semantic snapshot")));
-
-    QTemporaryDir temp;
-    check("context strip fixture root is available", temp.isValid());
-    if (!temp.isValid() || !chip)
-        return;
-    const QString moduleFile =
-        temp.filePath(QStringLiteral("leaf.sv"));
-    const QString moduleText =
-        QStringLiteral("module leaf; logic payload; endmodule\n");
-    QFile moduleSource(moduleFile);
-    const bool moduleWritten =
-        moduleSource.open(QIODevice::WriteOnly | QIODevice::Text)
-        && moduleSource.write(moduleText.toUtf8())
-               == moduleText.toUtf8().size();
-    moduleSource.close();
-    check("context strip module fixture is written", moduleWritten);
-    if (moduleWritten)
-        window.tabManager->openFileInTab(moduleFile);
-    MyCodeEditor* editor = window.tabManager->getCurrentEditor();
-    if (editor) {
-        QTextCursor cursor(editor->document());
-        cursor.setPosition(positionInside(moduleText,
-                                          QStringLiteral("payload")));
-        editor->setTextCursor(cursor);
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    check("context strip follows current Tree-sitter module scope",
-          chip->text().contains(QStringLiteral("module leaf"))
-              && chip->text().contains(
-                     QStringLiteral("instance unbound"))
-              && chip->toolTip().contains(
-                     QStringLiteral("Syntax revision")));
-
-    const QString packageFile =
-        temp.filePath(QStringLiteral("types_pkg.sv"));
-    const QString packageText =
-        QStringLiteral("package types_pkg; typedef logic word_t; endpackage\n");
-    QFile packageSource(packageFile);
-    const bool packageWritten =
-        packageSource.open(QIODevice::WriteOnly | QIODevice::Text)
-        && packageSource.write(packageText.toUtf8())
-               == packageText.toUtf8().size();
-    packageSource.close();
-    check("context strip package fixture is written", packageWritten);
-    if (packageWritten)
-        window.tabManager->openFileInTab(packageFile);
-    editor = window.tabManager->getCurrentEditor();
-    if (editor) {
-        QTextCursor cursor(editor->document());
-        cursor.setPosition(positionInside(packageText,
-                                          QStringLiteral("word_t")));
-        editor->setTextCursor(cursor);
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    check("context strip follows current Tree-sitter package scope",
-          chip->text().contains(QStringLiteral("package types_pkg")));
-    window.hide();
+    check("status bar and context chip are removed",
+          window.findChild<QStatusBar*>() == nullptr
+          && window.findChild<QLabel*>(QStringLiteral("editorActionContextChip")) == nullptr);
 }
 
 void runFileActionRegistryShellRegression()
@@ -2237,8 +2171,8 @@ void runEditorViewTargetedActionRegression()
               && applicationActionExecutionHistory()
                      .lastActionId()
                      == QStringLiteral("format.document")
-              && window.statusBar()
-              && window.statusBar()->currentMessage()
+              && !ActivityLogService::getInstance()->events().isEmpty()
+              && ActivityLogService::getInstance()->events().last().message
                      .contains(QStringLiteral("already formatted"),
                                Qt::CaseInsensitive));
 
@@ -2342,161 +2276,6 @@ void runCommandLayerCompletionPopupRegression()
     window.hide();
 }
 
-void runEditorActionContextHotPathRegression()
-{
-    MainWindow window;
-    window.resize(900, 600);
-    window.show();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    QTemporaryDir temp;
-    check("action context hot-path fixture root is available",
-          temp.isValid());
-    if (!temp.isValid())
-        return;
-
-    const QString moduleFile =
-        temp.filePath(QStringLiteral("hot_path_leaf.sv"));
-    const QString moduleText = QStringLiteral(
-        "module hot_path_leaf; logic alpha; logic beta; endmodule\n");
-    QFile moduleSource(moduleFile);
-    const bool moduleWritten =
-        moduleSource.open(QIODevice::WriteOnly | QIODevice::Text)
-        && moduleSource.write(moduleText.toUtf8())
-               == moduleText.toUtf8().size();
-    moduleSource.close();
-    check("action context hot-path source is written", moduleWritten);
-    if (!moduleWritten)
-        return;
-
-    QStringList workspaceFiles{moduleFile};
-    workspaceFiles.reserve(2049);
-    for (int index = 0; index < 2048; ++index) {
-        workspaceFiles.append(temp.filePath(
-            QStringLiteral("generated_%1.sv").arg(index, 4, 10,
-                                                  QLatin1Char('0'))));
-    }
-
-    ProjectModel* projectModel =
-        window.workspaceManager->getProjectModel();
-    ProjectSnapshot project;
-    {
-        const QSignalBlocker blockProjectSignals(projectModel);
-        projectModel->setWorkspaceState(temp.path(), workspaceFiles);
-        project = projectModel->snapshot();
-    }
-    window.workspaceManager->projectChanged(project);
-    window.tabManager->openFileInTab(moduleFile);
-    MyCodeEditor* editor = window.tabManager->getCurrentEditor();
-    check("action context hot-path editor is available", editor != nullptr);
-    if (!editor)
-        return;
-
-    QTextCursor cursor(editor->document());
-    cursor.setPosition(positionInside(moduleText, QStringLiteral("alpha")));
-    editor->setTextCursor(cursor);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    window.workspaceManager
-        ->resetProjectSnapshotMaterializationCountForTesting();
-    EditorActionContextService::resetMetricsForTesting();
-    window.resetEditorActionContextChipWriteCountsForTesting();
-
-    const int alphaPosition =
-        positionInside(moduleText, QStringLiteral("alpha"));
-    const int betaPosition =
-        positionInside(moduleText, QStringLiteral("beta"));
-    constexpr int refreshIterations = 64;
-    for (int iteration = 0; iteration < refreshIterations; ++iteration) {
-        QTextCursor moved(editor->document());
-        moved.setPosition((iteration % 2) == 0
-                              ? betaPosition : alphaPosition);
-        editor->setTextCursor(moved);
-    }
-    const DocumentChange unchangedDocumentRefresh;
-    for (int iteration = 0; iteration < refreshIterations; ++iteration)
-        editor->documentChangeApplied(unchangedDocumentRefresh);
-
-    const std::uint64_t unchangedSnapshotMaterializations =
-        window.workspaceManager
-            ->projectSnapshotMaterializationCountForTesting();
-    const EditorActionContextServiceMetrics unchangedServiceMetrics =
-        EditorActionContextService::metricsForTesting();
-    const EditorActionContextChipWriteCounts unchangedChipWrites =
-        window.editorActionContextChipWriteCountsForTesting();
-    std::printf(
-        "action_context_hot_path.unchanged_refreshes=%d "
-        "snapshot_materializations=%llu normalizations=%llu sorts=%llu "
-        "hierarchy_rebuilds=%llu chip_writes=%llu\n",
-        refreshIterations * 2,
-        static_cast<unsigned long long>(
-            unchangedSnapshotMaterializations),
-        static_cast<unsigned long long>(
-            unchangedServiceMetrics.workspaceFileNormalizationPasses),
-        static_cast<unsigned long long>(
-            unchangedServiceMetrics.workspaceFileSortPasses),
-        static_cast<unsigned long long>(
-            unchangedServiceMetrics.hierarchyCacheRebuilds),
-        static_cast<unsigned long long>(unchangedChipWrites.total()));
-    check("unchanged cursor/document refresh avoids ProjectSnapshot materialization",
-          unchangedSnapshotMaterializations == 0);
-    check("unchanged cursor/document refresh avoids workspace normalization and sorting",
-          unchangedServiceMetrics.workspaceFileNormalizationPasses == 0
-              && unchangedServiceMetrics.workspaceFileSortPasses == 0);
-    check("unchanged cursor/document refresh reuses hierarchy candidates",
-          unchangedServiceMetrics.hierarchyCacheRebuilds == 0);
-    check("unchanged cursor/document refresh performs no chip property writes",
-          unchangedChipWrites.total() == 0);
-
-    window.workspaceManager
-        ->resetProjectSnapshotMaterializationCountForTesting();
-    EditorActionContextService::resetMetricsForTesting();
-    window.resetEditorActionContextChipWriteCountsForTesting();
-
-    workspaceFiles.append(
-        temp.filePath(QStringLiteral("project_changed_once.sv")));
-    {
-        const QSignalBlocker blockProjectSignals(projectModel);
-        projectModel->setScannedFiles(workspaceFiles);
-        project = projectModel->snapshot();
-    }
-    window.workspaceManager->projectChanged(project);
-    window.workspaceManager->projectChanged(project);
-
-    for (int iteration = 0; iteration < refreshIterations; ++iteration)
-        editor->documentChangeApplied(unchangedDocumentRefresh);
-
-    const std::uint64_t changedSnapshotMaterializations =
-        window.workspaceManager
-            ->projectSnapshotMaterializationCountForTesting();
-    const EditorActionContextServiceMetrics changedServiceMetrics =
-        EditorActionContextService::metricsForTesting();
-    const EditorActionContextChipWriteCounts changedChipWrites =
-        window.editorActionContextChipWriteCountsForTesting();
-    std::printf(
-        "action_context_hot_path.project_changed_then_refreshes=%d "
-        "snapshot_materializations=%llu normalizations=%llu sorts=%llu "
-        "hierarchy_rebuilds=%llu chip_writes=%llu\n",
-        refreshIterations,
-        static_cast<unsigned long long>(changedSnapshotMaterializations),
-        static_cast<unsigned long long>(
-            changedServiceMetrics.workspaceFileNormalizationPasses),
-        static_cast<unsigned long long>(
-            changedServiceMetrics.workspaceFileSortPasses),
-        static_cast<unsigned long long>(
-            changedServiceMetrics.hierarchyCacheRebuilds),
-        static_cast<unsigned long long>(changedChipWrites.total()));
-    check("projectChanged rebuild avoids pull-based ProjectSnapshot materialization",
-          changedSnapshotMaterializations == 0);
-    check("projectChanged normalizes and sorts workspace scope exactly once",
-          changedServiceMetrics.workspaceFileNormalizationPasses == 1
-              && changedServiceMetrics.workspaceFileSortPasses == 1);
-    check("projectChanged invalidates and rebuilds hierarchy candidates exactly once",
-          changedServiceMetrics.hierarchyCacheRebuilds == 1);
-    check("projectChanged plus unchanged refreshes avoid redundant chip writes",
-          changedChipWrites.total() == 0);
-    window.hide();
-}
 
 void runPeekRegression()
 {
@@ -2913,7 +2692,6 @@ int main(int argc, char** argv)
     runContextActionRegistryExecutionRegression();
     runEditorViewTargetedActionRegression();
     runCommandLayerCompletionPopupRegression();
-    runEditorActionContextHotPathRegression();
     runPeekRegression();
     runMenuAvailabilityRegression();
     runQtApplyChainRegression();

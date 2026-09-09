@@ -106,7 +106,6 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
-#include <QProgressBar>
 #include <QProcess>
 #include <QPointer>
 #include <QPushButton>
@@ -117,7 +116,6 @@
 #include <QSize>
 #include <QSizePolicy>
 #include <QSplitter>
-#include <QStatusBar>
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
@@ -251,14 +249,13 @@ MainWindow::MainWindow(QWidget *parent)
         if (failureReason)
             *failureReason = reason;
         if (!result.succeeded
-            && statusBar()
             && !reason.isEmpty()) {
-            statusBar()->showMessage(reason, 5000);
+            postActivityMessage(reason, 5000);
         }
         return result.succeeded;
     });
     setupEditorCentralArea();
-    setupWorkspaceProgressIndicator();
+    setupWorkspaceActivity();
     navigationManager = std::unique_ptr<NavigationManager>(new NavigationManager(this));  // NEW
     analysisScheduler = std::unique_ptr<AnalysisScheduler>(new AnalysisScheduler(this));
     analysisProgressCoordinator =
@@ -280,8 +277,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupWorkspaceMenu();
     setupViewMenu();
     setupToolsMenu();
-    setupEditorModeChip();
-    setupEditorActionContextChip();
+
     setupGlobalControl();
     setupCommandLayer();
     setupEditorCoordinator();
@@ -312,16 +308,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
-    if (statusBar()) {
-        QLabel* versionLabel = new QLabel(
-            QStringLiteral("v%1").arg(QLatin1String(APP_VERSION)), this);
-        versionLabel->setToolTip(
-            QStringLiteral("ZeroSlack v%1\nBuilt at %2")
-                .arg(QLatin1String(APP_VERSION), QLatin1String(APP_BUILD_TIME)));
-        InsightVisualStyle::applyLabel(versionLabel);
-        statusBar()->addPermanentWidget(versionLabel);
-        statusBar()->showMessage(QStringLiteral("Ready"));
-    }
+
 }
 
 NotificationCenter* MainWindow::notificationCenterForTesting() const
@@ -333,19 +320,24 @@ void MainWindow::setupNotificationCenter()
 {
     notificationCenter =
         std::make_unique<NotificationCenter>(this);
-    const auto showNonBlockingStatus =
-        [this](const NotificationItem& item) {
-            if (statusBar())
-                statusBar()->showMessage(item.message, 5000);
+    const auto recordNotification =
+        [](const NotificationItem& item) {
+            ActivityLogService::getInstance()->append(
+                item.source.isEmpty() ? QStringLiteral("Notification") : item.source,
+                item.severity == NotificationSeverity::Error || item.severity == NotificationSeverity::Critical
+                    ? ActivityLogLevel::Error
+                    : item.severity == NotificationSeverity::Warning
+                        ? ActivityLogLevel::Warning : ActivityLogLevel::Info,
+                item.message, -1, item.id, true);
         };
     connect(notificationCenter.get(),
             &NotificationCenter::notificationAdded,
             this,
-            showNonBlockingStatus);
+            recordNotification);
     connect(notificationCenter.get(),
             &NotificationCenter::notificationUpdated,
             this,
-            showNonBlockingStatus);
+            recordNotification);
 
     if (tabManager) {
         connect(tabManager.get(),
@@ -660,12 +652,12 @@ void MainWindow::refreshThemePresentation()
             InsightVisualStyle::labelStyleSheet(
                 packageToolsPackageLabel->objectName()));
     }
-    refreshEditorActionContextChip();
+
     if (tabManager && tabManager->getCurrentEditor()) {
-        updateEditorModeChip(
+        updateEditorModePresentation(
             tabManager->getCurrentEditor()->editorModeSnapshot());
     } else {
-        updateEditorModeChip(EditorModeSnapshot());
+        updateEditorModePresentation(EditorModeSnapshot());
     }
 
     const QList<MyCodeEditor*> editorViews =
@@ -1071,8 +1063,8 @@ void MainWindow::keepReviewedExternalConflict()
                 .arg(fileName));
     }
     closeExternalConflictReview();
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             QStringLiteral(
                 "Kept the local version. Saving this path will recheck the external generation."),
             5000);
@@ -1274,15 +1266,14 @@ void MainWindow::insertPackageTool(PackageToolKind kind)
     MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor()
                                       : nullptr;
     if (!editor) {
-        if (statusBar())
-            statusBar()->showMessage(QStringLiteral("No active editor"), 3000);
+            postActivityMessage(QStringLiteral("No active editor"), 3000);
         return;
     }
 
     QString message;
     const bool inserted = editor->executePackageToolInsert(kind, &message);
-    if (statusBar() && !message.isEmpty())
-        statusBar()->showMessage(message, inserted ? 3000 : 5000);
+    if (!message.isEmpty())
+        postActivityMessage(message, inserted ? 3000 : 5000);
     updatePackageTools();
 }
 
@@ -1306,57 +1297,30 @@ void MainWindow::refreshWorkspaceScope()
         tabManager->setWorkspaceScope(workspaceRoots, activeWorkspacePath);
 }
 
-void MainWindow::setupWorkspaceProgressIndicator()
+void MainWindow::setupWorkspaceActivity()
 {
-    if (!statusBar() || !workspaceManager)
+    if (!workspaceManager)
         return;
-
-    workspaceProgressBar = new QProgressBar(this);
-    workspaceProgressBar->setObjectName(QStringLiteral("workspaceProgressBar"));
-    workspaceProgressBar->setRange(0, 0);
-    workspaceProgressBar->setTextVisible(true);
-    workspaceProgressBar->setFixedWidth(180);
-    workspaceProgressBar->hide();
-    statusBar()->addPermanentWidget(workspaceProgressBar);
-
-    connect(workspaceManager.get(),
-            &WorkspaceManager::workspaceScanStarted,
-            this,
-            [this](const QString&) {
-                if (workspaceProgressBar) {
-                    workspaceProgressBar->setRange(0, 0);
-                    workspaceProgressBar->setFormat(QStringLiteral("Scanning workspace"));
-                    workspaceProgressBar->show();
-                }
-                if (statusBar())
-                    statusBar()->showMessage(QStringLiteral("Scanning workspace..."));
+    const auto lastProgressCount = std::make_shared<int>(0);
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceScanStarted,
+            this, [lastProgressCount](const QString& path) {
+                *lastProgressCount = 0;
+                ActivityLogService::getInstance()->append(QStringLiteral("Workspace"),
+                    ActivityLogLevel::Info, QStringLiteral("Scanning workspace: %1").arg(path));
             });
-    connect(workspaceManager.get(),
-            &WorkspaceManager::workspaceScanProgress,
-            this,
-            [this](const QString&, int filesFound) {
-                if (workspaceProgressBar)
-                    workspaceProgressBar->setFormat(
-                        QStringLiteral("Scanning %1 files").arg(filesFound));
-                if (statusBar()) {
-                    statusBar()->showMessage(
-                        QStringLiteral("Scanning workspace: %1 files found")
-                            .arg(filesFound),
-                        1000);
-                }
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceScanFinished,
+            this, [](const QString& path, int files, int svFiles) {
+                ActivityLogService::getInstance()->append(QStringLiteral("Workspace"),
+                    ActivityLogLevel::Info,
+                    QStringLiteral("Workspace scan complete: %1 files, %2 SystemVerilog (%3)")
+                        .arg(files).arg(svFiles).arg(path));
             });
-    connect(workspaceManager.get(),
-            &WorkspaceManager::workspaceScanFinished,
-            this,
-            [this](const QString&, int totalFiles, int systemVerilogFiles) {
-                if (workspaceProgressBar)
-                    workspaceProgressBar->hide();
-                if (statusBar()) {
-                    statusBar()->showMessage(
-                        QStringLiteral("Workspace scan complete: %1 files, %2 SystemVerilog")
-                            .arg(totalFiles)
-                            .arg(systemVerilogFiles),
-                        3000);
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceScanProgress,
+            this, [lastProgressCount](const QString&, int files) {
+                if (files - *lastProgressCount >= 1000) {
+                    *lastProgressCount = files;
+                    ActivityLogService::getInstance()->append(QStringLiteral("Workspace"),
+                        ActivityLogLevel::Info, QStringLiteral("Scanning workspace: %1 files found").arg(files));
                 }
             });
 }
@@ -1388,9 +1352,8 @@ void MainWindow::setupManagerConnections()
                    bool succeeded,
                    const QString& failureReason) {
                 if (!succeeded
-                    && statusBar()
                     && !failureReason.isEmpty()) {
-                    statusBar()->showMessage(
+                    postActivityMessage(
                         failureReason, 5000);
                 }
             });
@@ -1410,9 +1373,8 @@ void MainWindow::setupManagerConnections()
                         instancePath,
                         {},
                         {},
-                        &failureReason)
-                    && statusBar()) {
-                    statusBar()->showMessage(
+                        &failureReason)) {
+                    postActivityMessage(
                         failureReason, 10000);
                 }
             });
@@ -1429,11 +1391,6 @@ void MainWindow::setupManagerConnections()
     analysisCoordinator->setProblemsRefreshHandler(
         [this](const QString& fileName) {
             scheduleActiveEditorPassiveRefresh(fileName);
-        });
-    analysisCoordinator->setStatusMessageHandler(
-        [this](const QString& message, int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
         });
     analysisCoordinator->connectSignals();
     connect(analysisScheduler.get(),
@@ -1454,7 +1411,7 @@ void MainWindow::setupManagerConnections()
             &WorkspaceManager::workspaceOpened,
             this,
             [this](const QString&) {
-                refreshEditorActionContextChip();
+
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceClosed,
@@ -1462,7 +1419,7 @@ void MainWindow::setupManagerConnections()
             [this]() {
                 if (editorActionContextService)
                     editorActionContextService->clearWorkspaceContext();
-                refreshEditorActionContextChip();
+
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::projectChanged,
@@ -1473,7 +1430,7 @@ void MainWindow::setupManagerConnections()
                         std::make_unique<EditorActionContextService>();
                 }
                 editorActionContextService->updateWorkspaceContext(project);
-                refreshEditorActionContextChip();
+
             });
     connect(tabManager.get(),
             &TabManager::activeDocumentChanged,
@@ -1481,7 +1438,7 @@ void MainWindow::setupManagerConnections()
             [this](const DocumentSnapshot& snapshot) {
                 scheduleActiveEditorPassiveRefresh();
                 updatePackageTools();
-                refreshEditorActionContextChip();
+
                 requestLiveInsightUpdates();
                 if (analysisScheduler && !snapshot.fileName.isEmpty()) {
                     refreshDiagnosticsAnalysisState();
@@ -1499,7 +1456,7 @@ void MainWindow::setupManagerConnections()
                         [this, editor]() {
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
-                                refreshEditorActionContextChip();
+
                                 requestLiveInsightUpdates();
                             }
                         });
@@ -1518,7 +1475,7 @@ void MainWindow::setupManagerConnections()
                         [this, editor](const HierarchyInstanceContext&) {
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
-                                refreshEditorActionContextChip();
+
                             }
                         });
                 connect(editor,
@@ -1547,7 +1504,7 @@ void MainWindow::setupManagerConnections()
                         [this, editor](const DocumentChange&) {
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
-                                refreshEditorActionContextChip();
+
                                 requestLiveInsightUpdates();
                             }
                         });
@@ -1562,14 +1519,14 @@ void MainWindow::setupManagerConnections()
                     || !analysisScheduler->isSemanticAnalysisActive()) {
                     refreshTemporaryEditorSemanticCatalog();
                 }
-                refreshEditorActionContextChip();
+
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisStarted,
             this,
             [this](const ProjectSnapshot&, int) {
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisFinished,
@@ -1583,7 +1540,7 @@ void MainWindow::setupManagerConnections()
                 if (!triviaOnly)
                     refreshTemporaryEditorSemanticCatalog();
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
                 requestLiveInsightUpdates();
             });
     connect(analysisScheduler.get(),
@@ -1591,21 +1548,21 @@ void MainWindow::setupManagerConnections()
             this,
             [this](const ProjectSnapshot&, int, qint64, qint64) {
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceAnalysisRequestResolved,
             this,
             [this](const WorkspaceAnalysisRequestTelemetry&) {
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
             this,
             [this](const WorkspaceAnalysisRequestTelemetry&) {
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
             });
     connect(analysisScheduler.get(),
             &AnalysisScheduler::documentSemanticStateChanged,
@@ -1627,7 +1584,7 @@ void MainWindow::setupManagerConnections()
                     return;
                 }
                 refreshDiagnosticsAnalysisState();
-                refreshEditorActionContextChip();
+
             });
 
 }
@@ -1878,8 +1835,7 @@ void MainWindow::setupSemanticDocks()
         navigationCommandCoordinator.get());
     semanticDocks->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
+                postActivityMessage(message, timeoutMs);
         });
     semanticDocks->setup();
     if (semanticDocks->scopedSearchPanelCoordinator()) {
@@ -2127,9 +2083,8 @@ void MainWindow::setupFileCommandCoordinator()
                         *descriptor,
                         *this,
                         invocation);
-                if (!result.succeeded
-                    && statusBar()) {
-                    statusBar()->showMessage(
+                if (!result.succeeded) {
+                    postActivityMessage(
                         result.failureReason.isEmpty()
                             ? result.message
                             : result.failureReason,
@@ -2168,8 +2123,8 @@ void MainWindow::setupGlobalControl()
                     *descriptor,
                     *this,
                     invocation);
-            if (!result.succeeded && statusBar()) {
-                statusBar()->showMessage(
+            if (!result.succeeded) {
+                postActivityMessage(
                     result.failureReason.isEmpty()
                         ? result.message
                         : result.failureReason,
@@ -2276,8 +2231,8 @@ void MainWindow::setupGlobalControl()
                     }
                 }
                 if (!inserted) {
-                    if (statusBar()) {
-                        statusBar()->showMessage(
+                    {
+                        postActivityMessage(
                             failureReason.isEmpty()
                                 ? QStringLiteral(
                                       "No editable editor tab is available.")
@@ -2323,8 +2278,7 @@ void MainWindow::setupGlobalControl()
                 if (workspaceSessionCoordinator)
                     workspaceSessionCoordinator->clearSession();
             } else if (item.id == QStringLiteral("ow s")) {
-                if (statusBar())
-                    statusBar()->showMessage(
+                    postActivityMessage(
                         QStringLiteral(
                             "ow s manages local UI/session state only; "
                             "portable project settings use "
@@ -2405,9 +2359,8 @@ void MainWindow::setupFoldBlockShelf()
         if (failureReason)
             *failureReason = reason;
         if (!result.succeeded
-            && statusBar()
             && !reason.isEmpty()) {
-            statusBar()->showMessage(reason, 5000);
+            postActivityMessage(reason, 5000);
         }
         return result.succeeded;
     });
@@ -2463,9 +2416,8 @@ void MainWindow::setupPanelLayoutController()
                 if (failureReason)
                     *failureReason = reason;
                 if (!result.succeeded
-                    && statusBar()
                     && !reason.isEmpty()) {
-                    statusBar()->showMessage(
+                    postActivityMessage(
                         reason, 5000);
                 }
                 return result.succeeded;
@@ -2564,112 +2516,16 @@ void MainWindow::setupPanelLayoutController()
                             : QString());
             });
     }
-    const auto activeActivityOperations =
-        std::make_shared<int>(0);
-    const auto markActivityRunning =
-        [this, activeActivityOperations]() {
-            ++(*activeActivityOperations);
-            panelLayoutController->setPanelBadge(
-                QStringLiteral("activity"),
-                QStringLiteral("Running"),
-                QStringLiteral("info"));
-        };
-    const auto clearActivityRunning =
-        [this, activeActivityOperations]() {
-            *activeActivityOperations =
-                qMax(0, *activeActivityOperations - 1);
-            if (*activeActivityOperations == 0
-                && panelLayoutController->panelBadgeText(
-                    QStringLiteral("activity"))
-                       == QStringLiteral("Running")) {
-                panelLayoutController->setPanelBadge(
-                    QStringLiteral("activity"), QString(), QString());
-            }
-        };
-    if (analysisScheduler) {
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::fileSymbolAnalysisStarted,
-                this,
-                [markActivityRunning](const QString&) {
-                    markActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceSymbolAnalysisStarted,
-                this,
-                [markActivityRunning](const ProjectSnapshot&, int) {
-                    markActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceRelationshipAnalysisStarted,
-                this,
-                [markActivityRunning](const ProjectSnapshot&, int) {
-                    markActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::fileSymbolAnalysisFinished,
-                this,
-                [clearActivityRunning](const QString&, int) {
-                    clearActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceSymbolAnalysisFinished,
-                this,
-                [clearActivityRunning](const ProjectSnapshot&, int, int) {
-                    clearActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceRelationshipAnalysisFinished,
-                this,
-                [clearActivityRunning](const WorkspaceRelationshipAnalysisResult&) {
-                    clearActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceSymbolAnalysisCancelled,
-                this,
-                [clearActivityRunning](
-                    const WorkspaceAnalysisRequestTelemetry&) {
-                    clearActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::workspaceRelationshipAnalysisCancelled,
-                this,
-                [clearActivityRunning]() {
-                    clearActivityRunning();
-                });
-        connect(analysisScheduler.get(),
-                &AnalysisScheduler::relationshipAnalysisError,
-                this,
-                [this](const QString&, const QString&) {
-                    panelLayoutController->setPanelBadge(
-                        QStringLiteral("activity"),
-                        QStringLiteral("Failed"),
-                        QStringLiteral("error"));
-                });
-    }
-    connect(ActivityLogService::getInstance(),
-            &ActivityLogService::eventAppended,
-            this,
-            [this](const ActivityLogEvent& event) {
-                if (event.level == ActivityLogLevel::Error) {
-                    panelLayoutController->setPanelBadge(
-                        QStringLiteral("activity"),
-                        QStringLiteral("Failed"),
-                        QStringLiteral("error"));
-                }
-            });
-    connect(ActivityLogService::getInstance(),
-            &ActivityLogService::cleared,
-            this,
-            [this]() {
-                if (panelLayoutController->panelBadgeText(
-                        QStringLiteral("activity"))
-                    == QStringLiteral("Failed")) {
-                    panelLayoutController->setPanelBadge(
-                        QStringLiteral("activity"),
-                        QString(),
-                        QString());
-                }
-            });
+    const auto updateActivityBadge = [this]() {
+        const int unread = ActivityLogService::getInstance()->unreadCount();
+        panelLayoutController->setPanelBadge(QStringLiteral("activity"),
+            unread ? QString::number(unread) : QString(),
+            ActivityLogService::getInstance()->unreadLevel() == ActivityLogLevel::Error
+                ? QStringLiteral("error") : QStringLiteral("info"));
+    };
+    connect(ActivityLogService::getInstance(), &ActivityLogService::unreadChanged,
+            this, updateActivityBadge);
+    updateActivityBadge();
 
     if (insightFocusController) {
         insightFocusController->setBeforeEnterHandler(
@@ -2721,8 +2577,7 @@ void MainWindow::showFoldBlockShelf()
         foldShelfDock->show();
         foldShelfDock->raise();
     }
-    if (statusBar())
-        statusBar()->showMessage(QStringLiteral("Fold Shelf ready"), 3000);
+        postActivityMessage(QStringLiteral("Fold Shelf ready"), 3000);
 }
 
 void MainWindow::setupViewMenu()
@@ -2991,15 +2846,7 @@ void MainWindow::setupViewMenu()
                 QStringLiteral("foldShelf"));
         });
 
-    if (statusBar()) {
-        panelsStatusButton = new QToolButton(this);
-        panelsStatusButton->setObjectName(QStringLiteral("panelsStatusButton"));
-        panelsStatusButton->setText(tr("Panels"));
-        panelsStatusButton->setToolTip(tr("Open or restore ZeroSlack panels"));
-        panelsStatusButton->setPopupMode(QToolButton::InstantPopup);
-        panelsStatusButton->setMenu(viewMenu);
-        statusBar()->addPermanentWidget(panelsStatusButton);
-    }
+
 }
 
 void MainWindow::setupWorkspaceMenu()
@@ -3270,15 +3117,14 @@ void MainWindow::setupWaveSimulation()
             statusMessageRequested,
         this,
         [this](const QString& message, const int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
+                postActivityMessage(message, timeoutMs);
         });
     connect(waveSimulationCoordinator.get(),
             &WaveSimulationCoordinator::stageChanged,
             this,
             [this](WaveSimulationStage, const QString& message) {
-                if (statusBar() && !message.isEmpty())
-                    statusBar()->showMessage(message);
+                if (!message.isEmpty())
+                    postActivityMessage(message);
             });
     connect(waveSimulationCoordinator.get(),
             &WaveSimulationCoordinator::resultReady,
@@ -3290,8 +3136,8 @@ void MainWindow::setupWaveSimulation()
             [this](bool success,
                    const QString&,
                    const QString& message) {
-                if (statusBar()) {
-                    statusBar()->showMessage(
+                {
+                    postActivityMessage(
                         message,
                         success ? 5000 : 10000);
                 }
@@ -3382,8 +3228,8 @@ void MainWindow::openWaveSimulationResultTab(
                         : QString());
         }
         tabManager->openToolPage(workspace, stableId, title);
-        if (statusBar()) {
-            statusBar()->showMessage(
+        {
+            postActivityMessage(
                 QStringLiteral("Wave Simulation opened in an editor tab."),
                 5000);
         }
@@ -3560,9 +3406,8 @@ QAction* MainWindow::addRegistryMenuAction(
                     *descriptor,
                     *this,
                     invocation);
-            if (!result.succeeded
-                && statusBar()) {
-                statusBar()->showMessage(
+            if (!result.succeeded) {
+                postActivityMessage(
                     result.failureReason.isEmpty()
                         ? result.message
                         : result.failureReason,
@@ -3598,8 +3443,8 @@ ActionExecutionResult MainWindow::executeRegisteredUiAction(
         : (result.failureReason.isEmpty()
                ? result.message
                : result.failureReason);
-    if (!statusMessage.isEmpty() && statusBar()) {
-        statusBar()->showMessage(
+    if (!statusMessage.isEmpty()) {
+        postActivityMessage(
             statusMessage,
             result.succeeded ? 3000 : 5000);
     }
@@ -5352,8 +5197,8 @@ void MainWindow::applyReviewedCrashRecovery()
     reloadCrashRecoveryReview();
     refreshCrashRecoveryAvailability(
         reviewed.workspacePath);
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             tr("Recovered text was applied in memory; "
                "save explicitly after review."),
             5000);
@@ -5396,8 +5241,8 @@ void MainWindow::discardReviewedCrashRecovery()
     reloadCrashRecoveryReview();
     refreshCrashRecoveryAvailability(
         reviewed.workspacePath);
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             tr("The selected recovery snapshot was discarded."),
             5000);
     }
@@ -5467,8 +5312,8 @@ void MainWindow::openGlobalUserTemplates()
 void MainWindow::openWorkspaceUserTemplates()
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
-        if (statusBar()) {
-            statusBar()->showMessage(
+        {
+            postActivityMessage(
                 QStringLiteral("Open a workspace before opening workspace user templates"),
                 5000);
         }
@@ -5488,8 +5333,7 @@ bool MainWindow::openUserTemplateFile(const QString& filePath,
     if (!ensureUserTemplateJsonFile(filePath, &errorMessage)) {
         if (errorMessage.isEmpty())
             errorMessage = QStringLiteral("Failed to prepare user template file.");
-        if (statusBar())
-            statusBar()->showMessage(errorMessage, 5000);
+            postActivityMessage(errorMessage, 5000);
         QMessageBox::warning(this, tr("User Templates"), errorMessage);
         return false;
     }
@@ -5497,14 +5341,13 @@ bool MainWindow::openUserTemplateFile(const QString& filePath,
     if (!tabManager || !tabManager->openFileInTab(filePath)) {
         const QString message =
             QStringLiteral("Failed to open %1.").arg(label);
-        if (statusBar())
-            statusBar()->showMessage(message, 5000);
+            postActivityMessage(message, 5000);
         QMessageBox::warning(this, tr("User Templates"), message);
         return false;
     }
 
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             QStringLiteral("Opened %1").arg(label),
             3000);
     }
@@ -5562,8 +5405,7 @@ void MainWindow::reloadUserTemplates()
     const UserTemplateLoadReport report =
         UserTemplateService::getInstance()->reload();
     const QString summary = userTemplateReloadSummary(report);
-    if (statusBar())
-        statusBar()->showMessage(summary, report.issues.isEmpty() ? 3000 : 7000);
+        postActivityMessage(summary, report.issues.isEmpty() ? 3000 : 7000);
 
     if (!report.issues.isEmpty()) {
         QMessageBox::warning(this,
@@ -5612,8 +5454,7 @@ QString MainWindow::userTemplateIssueReportText(
 void MainWindow::showWorkspaceConfigurationDialog()
 {
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
-        if (statusBar())
-            statusBar()->showMessage(
+            postActivityMessage(
                 QStringLiteral("Open a workspace before configuring it"),
                 3000);
         return;
@@ -5635,8 +5476,8 @@ void MainWindow::showWorkspaceConfigurationDialog()
         return;
     }
 
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             QStringLiteral(
                 "Portable project configuration saved to %1; "
                 "analysis queued")
@@ -5724,8 +5565,7 @@ void MainWindow::setupWorkspaceSessionCoordinator()
         };
     bridge.showStatus =
         [this](const QString& message, int timeoutMs) {
-            if (statusBar())
-                statusBar()->showMessage(message, timeoutMs);
+                postActivityMessage(message, timeoutMs);
         };
 
     workspaceSessionCoordinator =
@@ -5796,8 +5636,8 @@ void MainWindow::navigateDiagnostic(bool previous)
     DiagnosticNavigationService service;
     const DiagnosticNavigationResult result = service.navigate(query);
     if (!result.found) {
-        if (statusBar()) {
-            statusBar()->showMessage(
+        {
+            postActivityMessage(
                 result.failureReason.isEmpty()
                     ? QStringLiteral("No diagnostics")
                     : result.failureReason,
@@ -5811,15 +5651,14 @@ void MainWindow::navigateDiagnostic(bool previous)
             result.diagnostic.diagnostic.fileName,
             result.diagnostic.diagnostic.line,
             result.diagnostic.diagnostic.column)) {
-        if (statusBar())
-            statusBar()->showMessage(
+            postActivityMessage(
                 QStringLiteral("Failed to open diagnostic location"),
                 4000);
         return;
     }
 
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             QStringLiteral("%1 diagnostic: %2")
                 .arg(previous ? QStringLiteral("Previous")
                               : QStringLiteral("Next"),
@@ -5839,6 +5678,9 @@ void MainWindow::setDiagnosticsAnalysisState(const QString& state)
     if (diagnosticsAnalysisState == normalizedState)
         return;
     diagnosticsAnalysisState = normalizedState;
+    ActivityLogService::getInstance()->append(QStringLiteral("Analysis"),
+        ActivityLogLevel::Info,
+        QStringLiteral("Semantic analysis: %1").arg(normalizedState));
 
     problemsPanel->setAnalysisState(normalizedState);
     problemsPanel->update();
@@ -5869,101 +5711,9 @@ void MainWindow::refreshDiagnosticsAnalysisState()
     setDiagnosticsAnalysisState(visibleState);
 }
 
-void MainWindow::setupEditorActionContextChip()
-{
-    if (!statusBar() || editorActionContextChip)
-        return;
-    if (!editorActionContextService) {
-        editorActionContextService =
-            std::make_unique<EditorActionContextService>();
-    }
 
-    editorActionContextChip = new QLabel(this);
-    editorActionContextChip->setObjectName(
-        QStringLiteral("editorActionContextChip"));
-    editorActionContextChip->setTextInteractionFlags(Qt::NoTextInteraction);
-    editorActionContextChip->setContentsMargins(8, 2, 8, 2);
-    editorActionContextChip->setAccessibleName(
-        tr("Editor action context"));
-    statusBar()->addPermanentWidget(editorActionContextChip);
-    refreshEditorActionContextChip();
-}
 
-void MainWindow::refreshEditorActionContextChip()
-{
-    if (!editorActionContextChip || !editorActionContextService)
-        return;
 
-    const EditorActionContext context =
-        resolveEditorActionContext(EditorSemanticContext());
-    const QString compactText = context.compactText();
-    const QString detailText = context.detailText();
-    const QString semanticState = context.semanticStateText();
-    const bool hierarchyBound = context.hierarchyBound();
-
-    InsightStatusTone tone = InsightStatusTone::Info;
-    if (context.semanticState == EditorActionSemanticState::Failed) {
-        tone = InsightStatusTone::Error;
-    } else if (context.semanticState == EditorActionSemanticState::Stale
-               || (context.hasEditor() && !context.hierarchyBound())) {
-        tone = InsightStatusTone::Warning;
-    } else if (context.semanticState == EditorActionSemanticState::Current
-               && hierarchyBound) {
-        tone = InsightStatusTone::Success;
-    }
-    const QString styleSheet =
-        InsightVisualStyle::statusChipStyleSheet(
-            tone, editorActionContextChip->objectName());
-
-    if (editorActionContextChip->text() != compactText) {
-        ++editorActionContextChipWriteCounts.text;
-        editorActionContextChip->setText(compactText);
-    }
-    if (editorActionContextChip->toolTip() != detailText) {
-        ++editorActionContextChipWriteCounts.toolTip;
-        editorActionContextChip->setToolTip(detailText);
-    }
-    if (editorActionContextChip->accessibleDescription()
-        != detailText) {
-        ++editorActionContextChipWriteCounts.accessibleDescription;
-        editorActionContextChip->setAccessibleDescription(detailText);
-    }
-    const QVariant semanticStateProperty =
-        editorActionContextChip->property("semanticState");
-    if (!semanticStateProperty.isValid()
-        || semanticStateProperty.toString() != semanticState) {
-        ++editorActionContextChipWriteCounts.semanticStateProperty;
-        editorActionContextChip->setProperty(
-            "semanticState", semanticState);
-    }
-    const QVariant hierarchyBoundProperty =
-        editorActionContextChip->property("hierarchyBound");
-    if (!hierarchyBoundProperty.isValid()
-        || hierarchyBoundProperty.toBool() != hierarchyBound) {
-        ++editorActionContextChipWriteCounts.hierarchyBoundProperty;
-        editorActionContextChip->setProperty(
-            "hierarchyBound", hierarchyBound);
-    }
-    if (editorActionContextChip->styleSheet() != styleSheet) {
-        ++editorActionContextChipWriteCounts.styleSheet;
-        editorActionContextChip->setStyleSheet(styleSheet);
-    }
-    if (editorActionContextChip->isHidden()) {
-        ++editorActionContextChipWriteCounts.visible;
-        editorActionContextChip->setVisible(true);
-    }
-}
-
-EditorActionContextChipWriteCounts
-MainWindow::editorActionContextChipWriteCountsForTesting() const
-{
-    return editorActionContextChipWriteCounts;
-}
-
-void MainWindow::resetEditorActionContextChipWriteCountsForTesting()
-{
-    editorActionContextChipWriteCounts = {};
-}
 
 EditorActionContextQuery MainWindow::editorActionContextQuery(
     const EditorSemanticContext& editorContext)
@@ -5999,65 +5749,11 @@ EditorActionContext MainWindow::resolveEditorActionContext(
         editorActionContextQuery(editorContext);
     return editorActionContextService->resolve(query);
 }
-void MainWindow::setupEditorModeChip()
+
+
+void MainWindow::updateEditorModePresentation(const EditorModeSnapshot& snapshot)
 {
-    if (!statusBar() || editorModeChip)
-        return;
-
-    editorModeChip = new QLabel(this);
-    editorModeChip->setObjectName(QStringLiteral("editorModeChip"));
-    editorModeChip->setVisible(false);
-    editorModeChip->setTextInteractionFlags(Qt::NoTextInteraction);
-    editorModeChip->setContentsMargins(8, 2, 8, 2);
-    statusBar()->addPermanentWidget(editorModeChip);
-}
-
-void MainWindow::updateEditorModeChip(
-    const EditorModeSnapshot& snapshot)
-{
-    if (!editorModeChip)
-        return;
-
-    if (!snapshot.hasActiveMode()) {
-        editorModeChip->clear();
-        editorModeChip->setToolTip(QString());
-        editorModeChip->setVisible(false);
-        setFoldShelfModeVisualActive(false);
-        return;
-    }
-
-    const EditorModeDescriptor* descriptor =
-        findEditorModeDescriptor(snapshot.primaryMode);
-    QString text = snapshot.displayText;
-    if (text.isEmpty() && descriptor)
-        text = descriptor->displayName;
-    QString detail = snapshot.detailText;
-    if (detail.isEmpty() && descriptor)
-        detail = descriptor->guidance;
-
-    editorModeChip->setText(
-        detail.isEmpty()
-            ? text
-            : QStringLiteral("%1 — %2").arg(text, detail));
-    editorModeChip->setToolTip(
-        descriptor
-            ? QStringLiteral("Mode: %1\nOwner: %2\n%3")
-                  .arg(descriptor->stableId)
-                  .arg(editorModeOwnerText(descriptor->owner))
-                  .arg(detail)
-            : detail);
-    const InsightStatusTone tone =
-        snapshot.primaryMode == EditorModeId::FoldShelf
-            || snapshot.primaryMode == EditorModeId::SignalSelection
-        ? InsightStatusTone::Warning
-        : InsightStatusTone::Success;
-    editorModeChip->setStyleSheet(
-        InsightVisualStyle::statusChipStyleSheet(
-            tone,
-            editorModeChip->objectName()));
-    setFoldShelfModeVisualActive(
-        snapshot.primaryMode == EditorModeId::FoldShelf);
-    editorModeChip->setVisible(true);
+    setFoldShelfModeVisualActive(snapshot.primaryMode == EditorModeId::FoldShelf);
 }
 
 void MainWindow::setFoldShelfModeVisualActive(bool active)
@@ -6144,8 +5840,8 @@ void MainWindow::showDockWidget(QDockWidget* dock,
             centralContentStack->setCurrentWidget(
                 insightFocusController->focusPage());
         }
-        if (!statusMessage.isEmpty() && statusBar())
-            statusBar()->showMessage(statusMessage, 3000);
+        if (!statusMessage.isEmpty())
+            postActivityMessage(statusMessage, 3000);
         return;
     }
 
@@ -6153,16 +5849,16 @@ void MainWindow::showDockWidget(QDockWidget* dock,
         && panelLayoutController->isBottomPanel(dock)) {
         panelLayoutController->restorePanel(
             panelLayoutController->panelIdForDock(dock));
-        if (!statusMessage.isEmpty() && statusBar())
-            statusBar()->showMessage(statusMessage, 3000);
+        if (!statusMessage.isEmpty())
+            postActivityMessage(statusMessage, 3000);
         return;
     }
 
     dock->show();
     dock->raise();
     dock->activateWindow();
-    if (!statusMessage.isEmpty() && statusBar())
-        statusBar()->showMessage(statusMessage, 3000);
+    if (!statusMessage.isEmpty())
+        postActivityMessage(statusMessage, 3000);
 }
 
 void MainWindow::showPanelById(const QString& panelId)
@@ -6405,8 +6101,7 @@ void MainWindow::resetPanelLayout()
 
     if (workspaceSessionCoordinator)
         workspaceSessionCoordinator->scheduleSessionSave();
-    if (statusBar())
-        statusBar()->showMessage(tr("Panel layout reset"), 3000);
+        postActivityMessage(tr("Panel layout reset"), 3000);
 }
 
 void MainWindow::restoreFoldShelfItem(const QString& id)
@@ -6420,8 +6115,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
             QStringLiteral("Restore failed: item unavailable"));
-        if (statusBar())
-            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: item unavailable"), 5000);
+            postActivityMessage(QStringLiteral("Fold Shelf restore failed: item unavailable"), 5000);
         return;
     }
     if (item.sourceFile.isEmpty()) {
@@ -6430,8 +6124,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
             QStringLiteral("Restore failed for \"%1\": source file unavailable").arg(item.alias));
-        if (statusBar())
-            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source file unavailable"), 5000);
+            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source file unavailable"), 5000);
         return;
     }
 
@@ -6442,8 +6135,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
             QStringLiteral("Restore failed for \"%1\": source file could not be opened").arg(item.alias));
-        if (statusBar())
-            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source file could not be opened"), 5000);
+            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source file could not be opened"), 5000);
         return;
     }
 
@@ -6454,8 +6146,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
             QStringLiteral("Fold Shelf"),
             ActivityLogLevel::Warning,
             QStringLiteral("Restore failed for \"%1\": source location unavailable").arg(item.alias));
-        if (statusBar())
-            statusBar()->showMessage(QStringLiteral("Fold Shelf restore failed: source location unavailable"), 5000);
+            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source location unavailable"), 5000);
         return;
     }
 
@@ -6464,8 +6155,7 @@ void MainWindow::restoreFoldShelfItem(const QString& id)
         QStringLiteral("Fold Shelf"),
         ActivityLogLevel::Info,
         QStringLiteral("Restored shelf item \"%1\"").arg(item.alias));
-    if (statusBar())
-        statusBar()->showMessage(QStringLiteral("Fold Shelf item restored"), 3000);
+        postActivityMessage(QStringLiteral("Fold Shelf item restored"), 3000);
 }
 
 void MainWindow::restoreFoldShelfItemToActiveEditor(const QString& id)
@@ -6490,8 +6180,8 @@ void MainWindow::restoreFoldShelfItemToActiveEditor(const QString& id)
             QStringLiteral("Cross-file restore failed for \"%1\": %2")
                 .arg(report.item.alias.isEmpty() ? id : report.item.alias,
                      report.failureReason));
-        if (statusBar()) {
-            statusBar()->showMessage(
+        {
+            postActivityMessage(
                 QStringLiteral("Fold Shelf restore failed: %1")
                     .arg(report.failureReason),
                 5000);
@@ -6504,8 +6194,8 @@ void MainWindow::restoreFoldShelfItemToActiveEditor(const QString& id)
         ActivityLogLevel::Info,
         QStringLiteral("Restored shelf item \"%1\" to active editor")
             .arg(report.item.alias));
-    if (statusBar()) {
-        statusBar()->showMessage(
+    {
+        postActivityMessage(
             QStringLiteral("Fold Shelf item restored to active editor"),
             3000);
     }
@@ -6656,8 +6346,8 @@ void MainWindow::applySettingsCenterSnapshot(
             &shortcutIssues);
     if (shortcutsApplied)
         applyRegisteredActionShortcuts();
-    else if (statusBar() && !shortcutIssues.isEmpty()) {
-        statusBar()->showMessage(
+    else if (!shortcutIssues.isEmpty()) {
+        postActivityMessage(
             shortcutIssues.constFirst(),
             5000);
     }
@@ -6714,16 +6404,14 @@ void MainWindow::setupEditorCoordinator()
             : nullptr);
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
-            if (statusBar()) {
-                if (message.isEmpty())
-                    statusBar()->clearMessage();
-                else
-                    statusBar()->showMessage(message, timeoutMs);
+            {
+                if (!message.isEmpty())
+                    postActivityMessage(message, timeoutMs);
             }
         });
     editorCoordinator->setModeStateHandler(
         [this](const EditorModeSnapshot& snapshot) {
-            updateEditorModeChip(snapshot);
+            updateEditorModePresentation(snapshot);
         });
     editorCoordinator->setActionContextService(
         editorActionContextService.get());
@@ -6738,8 +6426,8 @@ void MainWindow::setupEditorCoordinator()
                 const ActionDescriptor* descriptor =
                     findActionById(actionId);
                 if (!descriptor) {
-                    if (statusBar()) {
-                        statusBar()->showMessage(
+                    {
+                        postActivityMessage(
                             QStringLiteral(
                                 "The requested editor action "
                                 "is not registered."),
@@ -6759,7 +6447,7 @@ void MainWindow::setupEditorCoordinator()
                         *descriptor,
                         *this,
                         invocation);
-                if (statusBar()) {
+                {
                     const QString message =
                         result.succeeded
                         ? result.message
@@ -6770,7 +6458,7 @@ void MainWindow::setupEditorCoordinator()
                             : result
                                   .failureReason;
                     if (!message.isEmpty()) {
-                        statusBar()->showMessage(
+                        postActivityMessage(
                             message, 5000);
                     }
                 }
@@ -6797,4 +6485,10 @@ void MainWindow::closeEvent(QCloseEvent *event)
 void MainWindow::setupSemanticRuntime()
 {
     semanticRuntime = std::make_unique<SemanticRuntimeCoordinator>(this);
+}
+
+void MainWindow::postActivityMessage(const QString& message, int timeoutMs)
+{
+    ActivityLogService::getInstance()->append(QStringLiteral("Action"),
+        ActivityLogLevel::Info, message, -1, QString(), timeoutMs > 0);
 }

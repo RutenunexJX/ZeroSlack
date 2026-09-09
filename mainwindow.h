@@ -62,7 +62,6 @@ class QDockWidget;
 class QLabel;
 class QMenu;
 class QPlainTextEdit;
-class QProgressBar;
 class QPushButton;
 class QStackedWidget;
 class QTabBar;
@@ -86,22 +85,6 @@ struct LiveInsightToolContext;
 struct WaveSimulationObservationRequest;
 struct WaveSimulationObservationScopeRequest;
 
-struct EditorActionContextChipWriteCounts {
-    std::uint64_t text = 0;
-    std::uint64_t toolTip = 0;
-    std::uint64_t accessibleDescription = 0;
-    std::uint64_t semanticStateProperty = 0;
-    std::uint64_t hierarchyBoundProperty = 0;
-    std::uint64_t styleSheet = 0;
-    std::uint64_t visible = 0;
-
-    std::uint64_t total() const
-    {
-        return text + toolTip + accessibleDescription
-            + semanticStateProperty + hierarchyBoundProperty
-            + styleSheet + visible;
-    }
-};
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
@@ -121,9 +104,6 @@ public:
     std::unique_ptr<NavigationManager> navigationManager;
     std::unique_ptr<AnalysisScheduler> analysisScheduler;
     std::unique_ptr<AnalysisProgressCoordinator> analysisProgressCoordinator;
-    EditorActionContextChipWriteCounts
-    editorActionContextChipWriteCountsForTesting() const;
-    void resetEditorActionContextChipWriteCountsForTesting();
     NotificationCenter* notificationCenterForTesting() const;
     bool revealSuiteSource(const QString& filePath,
                            int lineNumber = 1,
@@ -220,19 +200,15 @@ private:
     std::unique_ptr<ExternalDocumentConflictReview>
         reviewedExternalConflict;
     QPointer<QWidget> externalConflictPreviousFocus;
-    QToolButton* panelsStatusButton = nullptr;
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
     QWidget* editorSplitHost = nullptr;
-    QLabel* editorModeChip = nullptr;
-    QLabel* editorActionContextChip = nullptr;
     QWidget* packageToolsBar = nullptr;
     QLabel* packageToolsPackageLabel = nullptr;
     QList<QToolButton*> packageToolButtons;
     MyCodeEditor* packageToolsStateEditor = nullptr;
     EditorPackageToolAvailability packageToolsState;
     bool packageToolsStateValid = false;
-    QProgressBar* workspaceProgressBar = nullptr;
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
     bool pendingActiveEditorPassiveRefreshAll = false;
@@ -241,12 +217,12 @@ private:
         editorAnnotationDisplayOptions;
     std::uint64_t semanticDecorationGeneration = 0;
     std::shared_ptr<std::atomic_bool> semanticDecorationCancellation;
-    EditorActionContextChipWriteCounts editorActionContextChipWriteCounts;
 
     static const int kFileChangeDebounceMs = 350;
 
     void setupNavigationPane();
     void setupNotificationCenter();
+    void postActivityMessage(const QString& message, int timeoutMs = 0);
     void applyModernShellStyle(bool applyApplicationTheme = true);
     void refreshThemePresentation();
     void setupSemanticDocks();
@@ -334,14 +310,11 @@ private:
                         const QString& statusMessage = QString());
     void showPanelById(const QString& panelId);
     void resetPanelLayout();
-    void setupEditorModeChip();
-    void setupEditorActionContextChip();
-    void refreshEditorActionContextChip();
     EditorActionContextQuery editorActionContextQuery(
         const EditorSemanticContext& editorContext);
     EditorActionContext resolveEditorActionContext(
         const EditorSemanticContext& editorContext);
-    void updateEditorModeChip(const EditorModeSnapshot& snapshot);
+    void updateEditorModePresentation(const EditorModeSnapshot& snapshot);
     void setFoldShelfModeVisualActive(bool active);
     void showRecentWorkspacesDialog();
     void showWorkspaceConfigurationDialog();
@@ -387,7 +360,7 @@ private:
     void postExternalConflictActionFailure(
         const QString& fileName,
         const QString& failureReason);
-    void setupWorkspaceProgressIndicator();
+    void setupWorkspaceActivity();
     void refreshWorkspaceScope();
     void refreshActiveEditorDiagnosticHighlights(
         const QString& changedFileName = QString());

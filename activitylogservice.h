@@ -25,6 +25,8 @@ struct ActivityLogEvent
     QString message;
     int durationMs = -1;
     QString correlationId;
+    quint64 sequence = 0;
+    bool requiresAttention = false;
 };
 
 Q_DECLARE_METATYPE(ActivityLogEvent)
@@ -40,8 +42,12 @@ public:
                 ActivityLogLevel level,
                 const QString& message,
                 int durationMs = -1,
-                const QString& correlationId = QString());
+                const QString& correlationId = QString(),
+                bool requiresAttention = false);
     void clear();
+    void markReadThrough(quint64 sequence);
+    int unreadCount() const;
+    ActivityLogLevel unreadLevel() const;
 
     QList<ActivityLogEvent> events() const;
 
@@ -51,12 +57,15 @@ public:
 signals:
     void eventAppended(const ActivityLogEvent& event);
     void cleared();
+    void unreadChanged();
 
 private:
     explicit ActivityLogService(QObject* parent = nullptr);
 
     mutable QMutex mutex;
     QList<ActivityLogEvent> eventList;
+    quint64 nextSequence = 1;
+    quint64 readThrough = 0;
 };
 
 #endif // ACTIVITYLOGSERVICE_H

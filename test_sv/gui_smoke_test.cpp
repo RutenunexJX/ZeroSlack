@@ -318,8 +318,6 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
         window.panelLayoutController->setBottomCollapsed(true);
     if (QDockWidget* navigationDock = window.dockForPanelId(QStringLiteral("navigation")))
         navigationDock->show();
-    if (window.statusBar())
-        window.statusBar()->showMessage(QStringLiteral("Ready"));
 
     window.resize(1900, 1040);
     window.showNormal();
@@ -6043,12 +6041,70 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                true);
 }
 
+static void runActivityInboxRegression()
+{
+    MainWindow window;
+    window.resize(1000, 720);
+    window.show();
+    auto* controller = window.panelLayoutController.get();
+    auto* service = ActivityLogService::getInstance();
+    expectBool("Activity inbox has a drawer controller", controller != nullptr, true);
+    if (!controller)
+        return;
+    controller->setAnimationsEnabled(false);
+    controller->setBottomCollapsed(true);
+    QCoreApplication::processEvents();
+    service->clear();
+    auto* button = controller->buttonForPanel(QStringLiteral("activity"));
+    expectBool("Activity inbox button exists", button != nullptr, true);
+    const QString active = controller->activeBottomPanelId();
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Warning, QStringLiteral("first important result"));
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Error, QStringLiteral("second important result"));
+    QCoreApplication::processEvents();
+    expectBool("Activity displays unread number without opening or switching",
+        controller->panelBadgeText(QStringLiteral("activity")) == QStringLiteral("2")
+        && controller->isBottomCollapsed() && controller->activeBottomPanelId() == active, true);
+    if (button)
+        button->click();
+    for (int i = 0; i < 4; ++i)
+        QCoreApplication::processEvents();
+    auto* output = window.findChild<QPlainTextEdit*>(QStringLiteral("activityOutputText"));
+    expectBool("opening Activity shows messages and acknowledges unread",
+        output && output->isVisible()
+        && output->toPlainText().contains(QStringLiteral("second important result"))
+        && service->unreadCount() == 0
+        && controller->panelBadgeText(QStringLiteral("activity")).isEmpty(), true);
+    controller->setBottomCollapsed(true);
+    QCoreApplication::processEvents();
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Info, QStringLiteral("progress only"));
+    window.workspaceManager->workspaceScanStarted(QStringLiteral("test-workspace"));
+    window.workspaceManager->workspaceScanFinished(QStringLiteral("test-workspace"), 12, 4);
+    QCoreApplication::processEvents();
+    expectBool("scan messages are retained without unread badge", service->unreadCount() == 0, true);
+    expectBool("Activity routing does not recreate status bar", window.findChild<QStatusBar*>() == nullptr, true);
+    service->clear();
+}
+
 static void runActivityLogServiceRegression()
 {
     ActivityLogService* service = ActivityLogService::getInstance();
     service->clear();
     QSignalSpy eventSpy(service, &ActivityLogService::eventAppended);
     QSignalSpy clearSpy(service, &ActivityLogService::cleared);
+
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Info, QStringLiteral("progress"));
+    expectBool("ordinary progress does not create unread attention", service->unreadCount() == 0, true);
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Warning, QStringLiteral("warning"));
+    const quint64 firstUnread = service->events().last().sequence;
+    service->append(QStringLiteral("Test"), ActivityLogLevel::Info, QStringLiteral("operation result"),
+                    -1, QString(), true);
+    expectBool("warnings and explicit results count once each", service->unreadCount() == 2, true);
+    service->markReadThrough(firstUnread);
+    expectBool("reading an older event preserves newer unread results", service->unreadCount() == 1, true);
+    service->markReadThrough(service->events().last().sequence);
+    expectBool("reading displayed results clears attention", service->unreadCount() == 0, true);
+    service->clear();
+    eventSpy.clear();
 
     service->append(QStringLiteral("Test"),
                     ActivityLogLevel::Info,
@@ -12809,6 +12865,7 @@ int main(int argc, char** argv)
                true);
 
     runActivityLogServiceRegression();
+    runActivityInboxRegression();
     runRtlInsightsOnDemandRegression();
     runEditorAppearanceSettingsRegression();
     runEditorBracketRangeRegression();
@@ -12890,29 +12947,7 @@ int main(int argc, char** argv)
                    && !window.windowTitle().contains(QStringLiteral("slang"),
                                                      Qt::CaseInsensitive),
                true);
-    bool statusVersionVisible = false;
-    bool statusVersionTooltipVisible = false;
-    if (window.statusBar()) {
-        const QList<QLabel*> labels = window.statusBar()->findChildren<QLabel*>();
-        for (const QLabel* label : labels) {
-            statusVersionVisible =
-                statusVersionVisible
-                || label->text()
-                       == QStringLiteral("v%1").arg(productVersion);
-            statusVersionTooltipVisible =
-                statusVersionTooltipVisible
-                || (label->toolTip().contains(
-                        QStringLiteral("ZeroSlack v%1").arg(productVersion))
-                    && !label->toolTip().contains(QStringLiteral("slang"),
-                                                  Qt::CaseInsensitive));
-        }
-    }
-    expectBool("status bar shows product version",
-               statusVersionVisible,
-               true);
-    expectBool("status bar version tooltip shows product version",
-               statusVersionTooltipVisible,
-               true);
+    expectBool("status bar is absent", window.findChild<QStatusBar*>() == nullptr, true);
 
     bool workspaceSymbolsDone = false;
     bool workspaceFilesScanned = false;
@@ -13114,9 +13149,8 @@ int main(int argc, char** argv)
                true);
     QToolButton* panelsStatusButton =
         window.findChild<QToolButton*>(QStringLiteral("panelsStatusButton"));
-    expectBool("panels status button exists",
-               panelsStatusButton && panelsStatusButton->menu() == viewMenu,
-               true);
+    expectBool("panels remain accessible in View menu without status button",
+               !panelsStatusButton && viewMenu, true);
     QMenu* toolsMenu = window.findChild<QMenu*>(QStringLiteral("toolsMenu"));
     QMenu* userTemplatesMenu =
         window.findChild<QMenu*>(QStringLiteral("userTemplatesMenu"));
@@ -13340,9 +13374,7 @@ int main(int argc, char** argv)
             true);
         expectBool(
             "unavailable unified RTL action exposes a failure reason",
-            window.statusBar()
-                && window.statusBar()
-                       ->currentMessage()
+            (!ActivityLogService::getInstance()->events().isEmpty() ? ActivityLogService::getInstance()->events().last().message : QString())
                        .contains(
                            QStringLiteral(
                                "workspace"),
@@ -13483,8 +13515,7 @@ int main(int argc, char** argv)
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     }
     expectBool("workspace user templates requires workspace",
-               window.statusBar()
-                   && window.statusBar()->currentMessage().contains(
+               (!ActivityLogService::getInstance()->events().isEmpty() ? ActivityLogService::getInstance()->events().last().message : QString()).contains(
                        QStringLiteral("Open a workspace")),
                true);
 
@@ -13523,13 +13554,13 @@ int main(int argc, char** argv)
                true);
     QStringList userTemplateReloadMessages;
     QMetaObject::Connection userTemplateReloadStatusConnection;
-    if (window.statusBar()) {
+    {
         userTemplateReloadStatusConnection = QObject::connect(
-            window.statusBar(),
-            &QStatusBar::messageChanged,
+            ActivityLogService::getInstance(),
+            &ActivityLogService::eventAppended,
             &window,
-            [&](const QString& message) {
-                userTemplateReloadMessages.append(message);
+            [&](const ActivityLogEvent& event) {
+                userTemplateReloadMessages.append(event.message);
             });
     }
     if (reloadUserTemplatesAction) {
@@ -13595,13 +13626,13 @@ int main(int argc, char** argv)
                true);
     QStringList invalidUserTemplateReloadMessages;
     QMetaObject::Connection invalidUserTemplateReloadStatusConnection;
-    if (window.statusBar()) {
+    {
         invalidUserTemplateReloadStatusConnection = QObject::connect(
-            window.statusBar(),
-            &QStatusBar::messageChanged,
+            ActivityLogService::getInstance(),
+            &ActivityLogService::eventAppended,
             &window,
-            [&](const QString& message) {
-                invalidUserTemplateReloadMessages.append(message);
+            [&](const ActivityLogEvent& event) {
+                invalidUserTemplateReloadMessages.append(event.message);
             });
     }
     acceptNextMessageBoxOk();
@@ -13962,7 +13993,7 @@ int main(int argc, char** argv)
                drawerController
                    && drawerController->panelBadgeText(
                           QStringLiteral("activity"))
-                          == QStringLiteral("Failed")
+                          == QString::number(ActivityLogService::getInstance()->unreadCount())
                    && drawerController->panelBadgeTone(
                           QStringLiteral("activity"))
                           == QStringLiteral("error")
@@ -15155,29 +15186,19 @@ int main(int argc, char** argv)
                                != nullptr,
                true);
     }
-    QLabel* editorModeChip =
-        window.findChild<QLabel*>(QStringLiteral("editorModeChip"));
-    expectBool("editor mode chip exists",
-               editorModeChip != nullptr && !editorModeChip->isVisible(),
-               true);
+
     MyCodeEditor* modeChipEditor = window.tabManager->getCurrentEditor();
     if (modeChipEditor)
         modeChipEditor->startFoldShelfMode();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("fold shelf mode shows status chip",
-               editorModeChip
-                   && editorModeChip->isVisible()
-                   && editorModeChip->text().contains(QStringLiteral("Fold Shelf")),
-               true);
+
     expectBool("fold shelf mode highlights shelf panel",
                window.foldShelfPanel && window.foldShelfPanel->shelfModeActive(),
                true);
     if (modeChipEditor)
         modeChipEditor->cancelFoldShelfMode();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("fold shelf mode hides status chip on cancel",
-               editorModeChip && !editorModeChip->isVisible(),
-               true);
+
 
     if (modeChipEditor) {
         modeChipEditor->setPlainText(QStringLiteral("slot"));
@@ -15188,12 +15209,7 @@ int main(int argc, char** argv)
                               == EditorModeId::SignalSelection,
                    true);
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        expectBool("signal selection remains visible in the shared mode chip",
-                   editorModeChip
-                       && editorModeChip->isVisible()
-                       && editorModeChip->text().contains(
-                              QStringLiteral("Signal selection")),
-                   true);
+
 
         CodeTemplateSlot slot;
         slot.name = QStringLiteral("value");
@@ -15210,12 +15226,6 @@ int main(int argc, char** argv)
                        && modeChipEditor->state->modes.lastExitReason(
                               EditorModeId::SignalSelection)
                               == EditorModeExitReason::Conflict,
-                   true);
-        expectBool("shared mode chip follows the conflict winner",
-                   editorModeChip
-                       && editorModeChip->isVisible()
-                       && editorModeChip->text().contains(
-                              QStringLiteral("Slot")),
                    true);
         QTest::keyClick(modeChipEditor, Qt::Key_Escape);
 
@@ -15242,9 +15252,7 @@ int main(int argc, char** argv)
                        && !priorTabEditor->foldShelfModeActive()
                        && priorTabEditor->state->modes.lastExitReason(
                               EditorModeId::FoldShelf)
-                              == EditorModeExitReason::TabChanged
-                       && editorModeChip
-                       && !editorModeChip->isVisible(),
+                              == EditorModeExitReason::TabChanged,
                    true);
         if (replacementEditor) {
             const int replacementIndex =

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1] - 2026-09-10
+
+- Removed the status bar and routed workspace scanning, semantic status and operation messages to Activity.
+- Added a numeric unread badge beside Activity for important messages; viewing Activity marks displayed messages as read. Ordinary progress remains passive.
+- Preserved editor modes, semantic actions and View menu panel controls after removing status widgets.
+- Added regression coverage for Activity unread counting, passive progress and the status-bar-free window.
+
 ## [0.22.0] - 2026-08-31
 
 - Added Workspace Hub for Source, Pinloom, Wave and RegMap resources, with persistent state and stale-response isolation.

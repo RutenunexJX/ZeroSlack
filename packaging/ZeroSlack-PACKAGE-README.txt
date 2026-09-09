@@ -1,4 +1,4 @@
-ZeroSlack v0.22.0
+ZeroSlack v0.22.1
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -25,3 +25,7 @@ External Verilator and compiler executables may still be selected under
 Settings > Simulation. Empty settings prefer an existing expanded portable
 toolchain, then the verified bundle cache, environment variables, and PATH.
 Legacy standalone ZeroSlack packages remain supported.
+
+Activity replaces the status bar. Scan, semantic and operation messages are
+retained in Activity. Important unread messages increment its numeric badge;
+viewing Activity marks displayed messages as read. Ordinary progress stays passive.
