@@ -328,7 +328,7 @@ void ContextPeekHost::buildUi()
     fullViewButton->setObjectName(QStringLiteral("contextPeekFullView"));
     fullViewButton->setIcon(
         style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-    fullViewButton->setToolTip(tr("Open full view"));
+    fullViewButton->setToolTip(tr("Open in main area"));
     headerLayout->addWidget(fullViewButton);
 
     closeButton = new QToolButton(header);

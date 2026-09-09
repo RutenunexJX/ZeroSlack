@@ -32,7 +32,7 @@ ContextDockHost::ContextDockHost(QWidget* parent)
         QStringLiteral("contextDockFullView"));
     fullViewButton->setIcon(
         style()->standardIcon(QStyle::SP_TitleBarMaxButton));
-    fullViewButton->setToolTip(tr("Open current tab in full view"));
+    fullViewButton->setToolTip(tr("Open current tab in main area"));
     fullViewButton->setVisible(false);
     cornerLayout->addWidget(fullViewButton);
 

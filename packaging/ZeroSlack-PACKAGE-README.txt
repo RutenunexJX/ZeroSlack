@@ -1,4 +1,4 @@
-ZeroSlack v0.22.1
+ZeroSlack v0.22.2
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -29,3 +29,8 @@ Legacy standalone ZeroSlack packages remain supported.
 Activity replaces the status bar. Scan, semantic and operation messages are
 retained in Activity. Important unread messages increment its numeric badge;
 viewing Activity marks displayed messages as read. Ordinary progress stays passive.
+
+Navigation and Context remain full-height columns; the bottom drawer occupies
+only the area beneath the editor. Drag the sidebar divider to widen charts.
+Reopening the sidebar retains its width. Settings and Context share tabs;
+supported charts can open in the main area. Explicit Peek previews remain available.

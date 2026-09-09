@@ -109,6 +109,7 @@ bool anchoredToBottomRight(const QWidget* host,
 }
 
 struct ProviderCounters {
+    ContextResource activation;
     int created = 0;
     int restored = 0;
     int saved = 0;
@@ -129,6 +130,11 @@ public:
     QString providerId() const override
     {
         return QStringLiteral("mock");
+    }
+
+    ContextResource activationResource(const QString&) const override
+    {
+        return counters ? counters->activation : ContextResource{};
     }
 
     QString displayName() const override
@@ -638,6 +644,37 @@ int main(int argc, char* argv[])
     check(lifecycleHandleGuard.isNull()
               && QWidget::mouseGrabber() == nullptr,
           "destroying a resizing host safely releases and destroys its local handles");
+
+    {
+        QMainWindow sidebarWindow;
+        sidebarWindow.resize(1400, 800);
+        auto* center = new QWidget(&sidebarWindow);
+        sidebarWindow.setCentralWidget(center);
+        sidebarWindow.show();
+        ProviderCounters sidebarCounters;
+        sidebarCounters.activation = original;
+        ContextWorkspaceController sidebar(&sidebarWindow, center, &sidebarWindow);
+        sidebar.registerProvider(std::make_unique<MockProvider>(&sidebarCounters));
+        sidebar.rail()->actions().constFirst()->trigger();
+        QApplication::processEvents();
+        check(sidebar.dockWidget()->isVisible() && !sidebar.peekHost()->hasResource(),
+              "rail opens an independent sidebar instead of an editor overlay");
+        QWidget* graphView = sidebar.dockHost()->viewForResource(original.stableKey());
+        sidebarWindow.resizeDocks({sidebar.dockWidget()}, {750}, Qt::Horizontal);
+        QApplication::processEvents();
+        const int widened = sidebar.dockWidget()->width();
+        check(widened >= 700 && center->width() >= 240,
+              "sidebar expands for charts while retaining editor space");
+        check(sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
+              "resizing preserves the chart view instance");
+        sidebar.rail()->actions().constFirst()->trigger();
+        QApplication::processEvents();
+        check(!sidebar.dockWidget()->isVisible(), "second rail click closes transient sidebar");
+        sidebar.rail()->actions().constFirst()->trigger();
+        QApplication::processEvents();
+        check(qAbs(sidebar.dockWidget()->width() - widened) <= 2,
+              "reopening sidebar preserves its resized width");
+    }
 
     if (failures == 0) {
         std::cout << "context_workspace_test: "

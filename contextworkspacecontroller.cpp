@@ -334,6 +334,11 @@ ContextWorkspaceController::ContextWorkspaceController(
                            | QDockWidget::DockWidgetFloatable);
     dockHostValue = new ContextDockHost(dockValue);
     dockValue->setWidget(dockHostValue);
+    dockHostValue->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
+    if (mainWindow->centralWidget())
+        mainWindow->centralWidget()->setMinimumWidth(240);
+    preferredDockWidthValue = qMax(
+        ContextWorkspaceState::kMinimumDockWidth, mainWindow->width() * 3 / 10);
     mainWindow->addDockWidget(Qt::RightDockWidgetArea, dockValue);
     dockValue->hide();
 
@@ -348,6 +353,13 @@ ContextWorkspaceController::ContextWorkspaceController(
                     closePeek();
                     return;
                 }
+                if (!transientDockResourceKey.isEmpty()
+                    && dockValue->isVisible()
+                    && dockHostValue->currentResource().stableKey() == transientDockResourceKey
+                    && dockHostValue->currentResource().providerId == providerId) {
+                    closePinnedResource(transientDockResourceKey);
+                    return;
+                }
                 if (activatePinnedProvider(providerId))
                     return;
                 IContextContentProvider* provider =
@@ -358,7 +370,7 @@ ContextWorkspaceController::ContextWorkspaceController(
                             currentWorkspaceRoot);
                     if (resource.isValid()
                         && openResource(resource,
-                                        ContextOpenMode::Peek)) {
+                                        ContextOpenMode::TransientDock)) {
                         return;
                     }
                 }
@@ -938,8 +950,10 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
                 QSize(ContextWorkspaceState::kDefaultPeekWidth,
                       ContextWorkspaceState::kDefaultPeekHeight));
         }
-        preferredDockWidthValue =
-            ContextWorkspaceState::kDefaultDockWidth;
+        preferredDockWidthValue = qMax(
+            ContextWorkspaceState::kMinimumDockWidth,
+            window ? window->width() * 3 / 10
+                   : ContextWorkspaceState::kDefaultDockWidth);
         restoringState = previousRestoring;
         return result;
     }

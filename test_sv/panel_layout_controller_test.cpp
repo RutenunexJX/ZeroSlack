@@ -126,6 +126,38 @@ public:
     QHash<QString, PanelFixture> fixtures;
 };
 
+void verifyIndependentSideColumns(DrawerHarness& harness)
+{
+    auto* navigation = new QDockWidget(QStringLiteral("Files"), &harness.window);
+    navigation->setWidget(new QWidget(navigation));
+    navigation->setMinimumWidth(160);
+    auto* side = new QDockWidget(QStringLiteral("Context"), &harness.window);
+    side->setWidget(new QWidget(side));
+    side->setMinimumWidth(280);
+    harness.window.addDockWidget(Qt::LeftDockWidgetArea, navigation);
+    harness.window.addDockWidget(Qt::RightDockWidgetArea, side);
+    harness.controller->setBottomCollapsed(false);
+    QApplication::processEvents();
+    const QRect expandedSide = side->geometry();
+    auto* drawer = harness.controller->buttonBar()->parentWidget();
+    const int drawerLeft = drawer->mapTo(&harness.window, QPoint()).x();
+    check(drawerLeft >= navigation->geometry().right(),
+          "bottom drawer starts after the independent file column");
+    check(drawerLeft + drawer->width() <= side->geometry().left(),
+          "bottom drawer ends before the right sidebar");
+    harness.controller->setBottomCollapsed(true);
+    QApplication::processEvents();
+    check(side->geometry().height() == expandedSide.height(),
+          "collapsing the drawer preserves sidebar height");
+    harness.controller->setBottomCollapsed(false);
+    QApplication::processEvents();
+    check(side->geometry().height() == expandedSide.height(),
+          "expanding the drawer preserves sidebar height");
+    delete side;
+    delete navigation;
+    QApplication::processEvents();
+}
+
 void verifyButtonContract(DrawerHarness& harness)
 {
     const QStringList ids = {
@@ -529,6 +561,7 @@ int main(int argc, char* argv[])
         qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
     DrawerHarness harness;
+    verifyIndependentSideColumns(harness);
     verifyButtonContract(harness);
     verifyClickAndShortcutBehavior(harness);
     verifyClickGeometryStability(harness);

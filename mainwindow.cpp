@@ -2381,6 +2381,9 @@ void MainWindow::setupPanelLayoutController()
 {
     panelLayoutController =
         std::make_unique<PanelLayoutController>(this, this);
+    panelLayoutController->registerSidePanel(
+        QStringLiteral("settingsCenter"),
+        findChild<QDockWidget*>(QStringLiteral("editorAppearanceDock")));
     panelLayoutController
         ->setRegisteredPanelActionRequestHandler(
             [this](const QString& actionId,
@@ -6232,6 +6235,7 @@ void MainWindow::setupSettingsCenter()
         settingsCenterDock);
     settingsCenterDock->setWidget(settingsCenterPanel);
     addDockWidget(Qt::RightDockWidgetArea, settingsCenterDock);
+
 
     connect(&ApplicationThemeManager::instance(),
             &ApplicationThemeManager::themeChanged,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.2] - 2026-09-10
+
+- Kept Navigation and Context as full-height side columns, with the bottom drawer beneath the editor only.
+- Changed context rail activation to a resizable sidebar with retained width; explicit Peek previews remain available.
+- Tabified Settings and Context during setup, layout restore and reset to prevent vertical splitting.
+- Clarified the main-area action for full chart views and added sidebar geometry and width-reopening regression coverage.
+
 ## [0.22.1] - 2026-09-10
 
 - Removed the status bar and routed workspace scanning, semantic status and operation messages to Activity.

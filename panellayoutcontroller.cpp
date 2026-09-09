@@ -187,6 +187,10 @@ PanelLayoutController::PanelLayoutController(
     // during relayout on Windows. Keep drawer transitions atomic so the
     // controls and top-level window remain visually stationary.
     animationsEnabledValue = false;
+    if (window) {
+        window->setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+        window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+    }
     buildDrawer();
     if (qApp)
         qApp->installEventFilter(this);
@@ -316,6 +320,13 @@ bool PanelLayoutController::registerSidePanel(
     for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
         if (entry.id == id || entry.dock == dock)
             return false;
+    }
+    if (window) {
+        for (const SidePanelEntry& entry : std::as_const(sidePanels)) {
+            if (entry.dock && !entry.dock->isFloating()
+                && window->dockWidgetArea(entry.dock) == window->dockWidgetArea(dock))
+                window->tabifyDockWidget(entry.dock, dock);
+        }
     }
     sidePanels.append({id, dock});
     return true;
@@ -497,9 +508,22 @@ PanelLayoutState PanelLayoutController::layoutState() const
 void PanelLayoutController::restoreLayoutState(
     const PanelLayoutState& state)
 {
+    if (window) {
+        window->setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
+        window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
+    }
     if (!state.valid || panels.isEmpty())
         return;
     applying = true;
+    if (window) {
+        for (int i = 1; i < sidePanels.size(); ++i) {
+            auto* first = sidePanels.at(i - 1).dock.data();
+            auto* next = sidePanels.at(i).dock.data();
+            if (first && next && !first->isFloating() && !next->isFloating()
+                && window->dockWidgetArea(first) == window->dockWidgetArea(next))
+                window->tabifyDockWidget(first, next);
+        }
+    }
     if (window && bottomDrawerDock) {
         for (const PanelEntry& entry : std::as_const(panels)) {
             if (entry.dock) {
@@ -566,6 +590,16 @@ void PanelLayoutController::restoreLayoutState(
 void PanelLayoutController::resetLayout()
 {
     applying = true;
+    if (window) {
+        for (int i = 1; i < sidePanels.size(); ++i) {
+            auto* first = sidePanels.at(i - 1).dock.data();
+            auto* next = sidePanels.at(i).dock.data();
+            if (first && next && !first->isFloating() && !next->isFloating()
+                && window->dockWidgetArea(first) == window->dockWidgetArea(next))
+                window->tabifyDockWidget(first, next);
+        }
+    }
+
     for (PanelEntry& entry : panels) {
         entry.height = kDefaultContentHeight;
         entry.viewState.clear();
