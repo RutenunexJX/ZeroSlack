@@ -11,7 +11,7 @@ ContextRail::ContextRail(QWidget* parent)
     setMovable(false);
     setFloatable(false);
     setToolButtonStyle(Qt::ToolButtonIconOnly);
-    setIconSize(QSize(18, 18));
+    setIconSize(QSize(22, 22));
     setVisible(false);
 }
 

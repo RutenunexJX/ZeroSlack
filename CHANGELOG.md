@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0] - 2026-09-10
+
+- Unified workspace, navigation and context icons with scalable rounded outlines and distinct selected states.
+- Refined control radii, spacing, tab close buttons and graph nodes while retaining existing theme palettes.
+- Replaced the auto-hiding title overlay with a fixed title row that does not cover workspace content.
+- Verified GUI, style, drawer, context, scaled display and graph export regressions.
+
 ## [0.23.0] - 2026-09-10
 
 - Replaced the visible menu bar with a Project/Settings rail and a themed auto-hiding window title overlay.

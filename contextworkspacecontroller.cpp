@@ -6,6 +6,7 @@
 #include "contextpeekhost.h"
 #include "contextrail.h"
 #include "insightvisualstyle.h"
+#include "roundedicons.h"
 
 #include <QDockWidget>
 #include <QDir>
@@ -52,237 +53,6 @@ bool hasBuiltInProviderIcon(const QString& providerId)
         || providerId == QStringLiteral("pinloom");
 }
 
-QColor providerAccent(const QString& providerId, ThemeMode mode)
-{
-    const bool dark = mode == ThemeMode::Dark;
-    if (providerId == QStringLiteral("workspaceHub")) {
-        return QColor(dark ? QStringLiteral("#7DD3FC")
-                           : QStringLiteral("#0369A1"));
-    }
-    if (providerId == QStringLiteral("temporaryEditor")) {
-        return QColor(dark ? QStringLiteral("#75A7FF")
-                           : QStringLiteral("#2563C9"));
-    }
-    if (providerId == QStringLiteral("liveInsights")) {
-        return QColor(dark ? QStringLiteral("#35D3E4")
-                           : QStringLiteral("#087F96"));
-    }
-    if (providerId == QStringLiteral("rtlInsight.kernel")) {
-        return QColor(dark ? QStringLiteral("#35D3E4")
-                           : QStringLiteral("#087F96"));
-    }
-    if (providerId == QStringLiteral("rtlInsight.block")) {
-        return QColor(dark ? QStringLiteral("#70B8FF")
-                           : QStringLiteral("#2563A8"));
-    }
-    if (providerId == QStringLiteral("rtlInsight.hotspot")) {
-        return QColor(dark ? QStringLiteral("#FFB45D")
-                           : QStringLiteral("#B85B14"));
-    }
-    if (providerId == QStringLiteral("rtlInsight.state")) {
-        return QColor(dark ? QStringLiteral("#C39BFF")
-                           : QStringLiteral("#7543B5"));
-    }
-    if (providerId == QStringLiteral("rtlInsight.wave")) {
-        return QColor(dark ? QStringLiteral("#5DE2A8")
-                           : QStringLiteral("#17875E"));
-    }
-    return QColor(dark ? QStringLiteral("#F6BE4B")
-                       : QStringLiteral("#B86613"));
-}
-
-QPixmap providerIconPixmap(
-    const QString& providerId,
-    bool checked)
-{
-    constexpr int kPhysicalExtent = 40;
-    constexpr qreal kDrawingScale = 1.25;
-    QPixmap pixmap(kPhysicalExtent, kPhysicalExtent);
-    pixmap.fill(Qt::transparent);
-
-    const ThemeMode mode =
-        ApplicationThemeManager::instance().mode();
-    const InsightTheme& theme =
-        InsightVisualStyle::theme(mode);
-    const QColor accent = providerAccent(providerId, mode);
-    const QColor foreground = checked
-        ? accent
-        : theme.textSecondary;
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.scale(kDrawingScale, kDrawingScale);
-    painter.setPen(Qt::NoPen);
-    if (checked) {
-        QColor selectedFill = accent;
-        selectedFill.setAlpha(mode == ThemeMode::Dark ? 52 : 34);
-        painter.setBrush(selectedFill);
-        painter.drawRoundedRect(
-            QRectF(1.5, 1.5, 29.0, 29.0), 6.0, 6.0);
-    }
-
-    const QPen outline(
-        foreground,
-        checked ? 2.15 : 1.85,
-        Qt::SolidLine,
-        Qt::RoundCap,
-        Qt::RoundJoin);
-    const QPen accentPen(
-        accent,
-        checked ? 2.25 : 2.0,
-        Qt::SolidLine,
-        Qt::RoundCap,
-        Qt::RoundJoin);
-
-    if (providerId == QStringLiteral("workspaceHub")) {
-        painter.setBrush(theme.panelBackground);
-        painter.setPen(outline);
-        const std::array<QRectF, 4> tiles = {
-            QRectF(5.0, 5.0, 9.0, 9.0),
-            QRectF(18.0, 5.0, 9.0, 9.0),
-            QRectF(5.0, 18.0, 9.0, 9.0),
-            QRectF(18.0, 18.0, 9.0, 9.0)};
-        for (const QRectF& tile : tiles)
-            painter.drawRoundedRect(tile, 2.0, 2.0);
-        painter.setPen(accentPen);
-        painter.drawLine(QPointF(14.0, 9.5), QPointF(18.0, 9.5));
-        painter.drawLine(QPointF(14.0, 22.5), QPointF(18.0, 22.5));
-        painter.drawLine(QPointF(9.5, 14.0), QPointF(9.5, 18.0));
-        painter.drawLine(QPointF(22.5, 14.0), QPointF(22.5, 18.0));
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(16.0, 16.0), 2.5, 2.5);
-    } else if (providerId == QStringLiteral("temporaryEditor")) {
-        QPainterPath page;
-        page.moveTo(7.5, 4.5);
-        page.lineTo(19.5, 4.5);
-        page.lineTo(24.5, 9.5);
-        page.lineTo(24.5, 27.0);
-        page.lineTo(7.5, 27.0);
-        page.closeSubpath();
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(outline);
-        painter.drawPath(page);
-        painter.drawLine(QPointF(19.5, 4.8), QPointF(19.5, 9.5));
-        painter.drawLine(QPointF(19.5, 9.5), QPointF(24.2, 9.5));
-        painter.setPen(accentPen);
-        painter.drawLine(QPointF(11.0, 22.5), QPointF(21.5, 12.0));
-        painter.drawLine(QPointF(10.2, 23.8), QPointF(12.8, 23.0));
-        painter.setPen(outline);
-        painter.drawLine(QPointF(10.5, 10.5), QPointF(16.5, 10.5));
-        painter.drawLine(QPointF(10.5, 14.5), QPointF(14.0, 14.5));
-    } else if (providerId == QStringLiteral("rtlInsight.kernel")) {
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(outline);
-        painter.drawLine(QPointF(7.0, 9.0), QPointF(15.8, 16.0));
-        painter.drawLine(QPointF(7.0, 23.0), QPointF(15.8, 16.0));
-        painter.drawLine(QPointF(15.8, 16.0), QPointF(25.0, 8.0));
-        painter.drawLine(QPointF(15.8, 16.0), QPointF(25.0, 24.0));
-        painter.setPen(accentPen);
-        painter.setBrush(accent);
-        painter.drawEllipse(QPointF(15.8, 16.0), 4.0, 4.0);
-        painter.setBrush(theme.panelBackground);
-        for (const QPointF& point : {QPointF(7.0, 9.0), QPointF(7.0, 23.0),
-                                     QPointF(25.0, 8.0), QPointF(25.0, 24.0)}) {
-            painter.drawEllipse(point, 2.3, 2.3);
-        }
-    } else if (providerId == QStringLiteral("rtlInsight.block")) {
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(outline);
-        painter.drawLine(QPointF(11.5, 9.0), QPointF(19.0, 9.0));
-        painter.drawLine(QPointF(11.5, 23.0), QPointF(19.0, 23.0));
-        painter.setBrush(theme.panelBackground);
-        painter.drawRoundedRect(QRectF(4.5, 5.0, 7.0, 8.0), 1.2, 1.2);
-        painter.drawRoundedRect(QRectF(4.5, 19.0, 7.0, 8.0), 1.2, 1.2);
-        painter.setPen(accentPen);
-        painter.drawRoundedRect(QRectF(19.0, 9.0, 8.5, 14.0), 1.5, 1.5);
-        painter.drawLine(QPointF(21.5, 13.0), QPointF(25.0, 13.0));
-        painter.drawLine(QPointF(21.5, 17.0), QPointF(25.0, 17.0));
-    } else if (providerId == QStringLiteral("rtlInsight.hotspot")) {
-        painter.setPen(outline);
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                QColor fill = column + row >= 3 ? accent : theme.panelBackground;
-                fill.setAlpha(column + row >= 3 ? 210 : 255);
-                painter.setBrush(fill);
-                painter.drawRoundedRect(
-                    QRectF(6.0 + column * 7.0, 6.0 + row * 7.0, 5.0, 5.0),
-                    1.0,
-                    1.0);
-            }
-        }
-        painter.setPen(accentPen);
-        painter.drawEllipse(QPointF(23.5, 9.0), 3.2, 3.2);
-    } else if (providerId == QStringLiteral("rtlInsight.state")) {
-        painter.setBrush(theme.panelBackground);
-        painter.setPen(outline);
-        painter.drawEllipse(QPointF(8.0, 16.0), 4.0, 4.0);
-        painter.drawEllipse(QPointF(24.0, 9.0), 4.0, 4.0);
-        painter.drawEllipse(QPointF(24.0, 24.0), 4.0, 4.0);
-        painter.setPen(accentPen);
-        painter.drawLine(QPointF(12.0, 14.5), QPointF(19.8, 10.5));
-        painter.drawLine(QPointF(24.0, 13.0), QPointF(24.0, 19.5));
-        painter.drawLine(QPointF(20.0, 23.0), QPointF(12.0, 18.0));
-        painter.drawLine(QPointF(18.3, 9.8), QPointF(20.2, 10.6));
-        painter.drawLine(QPointF(24.0, 18.0), QPointF(22.5, 20.0));
-        painter.drawLine(QPointF(13.8, 19.0), QPointF(12.0, 18.0));
-    } else if (providerId == QStringLiteral("rtlInsight.wave")) {
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(outline);
-        painter.drawLine(QPointF(5.0, 25.5), QPointF(27.0, 25.5));
-        painter.drawLine(QPointF(5.0, 6.5), QPointF(5.0, 25.5));
-        QPainterPath waveform;
-        waveform.moveTo(6.5, 20.5);
-        waveform.lineTo(10.5, 20.5);
-        waveform.lineTo(10.5, 10.0);
-        waveform.lineTo(16.0, 10.0);
-        waveform.lineTo(16.0, 20.5);
-        waveform.lineTo(21.0, 20.5);
-        waveform.lineTo(21.0, 10.0);
-        waveform.lineTo(26.5, 10.0);
-        painter.setPen(accentPen);
-        painter.drawPath(waveform);
-    } else if (providerId == QStringLiteral("liveInsights")) {
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(outline);
-        painter.drawLine(QPointF(7.5, 22.5), QPointF(15.5, 9.0));
-        painter.drawLine(QPointF(15.5, 9.0), QPointF(25.0, 20.5));
-        painter.drawLine(QPointF(7.5, 22.5), QPointF(25.0, 20.5));
-        painter.setPen(accentPen);
-        painter.drawLine(QPointF(15.5, 9.0), QPointF(24.0, 7.0));
-        const std::array<QPointF, 4> nodes = {
-            QPointF(7.5, 22.5),
-            QPointF(15.5, 9.0),
-            QPointF(25.0, 20.5),
-            QPointF(24.0, 7.0)};
-        for (int index = 0; index < 4; ++index) {
-            const bool emphasized = index == 1 || index == 3;
-            painter.setPen(emphasized ? accentPen : outline);
-            painter.setBrush(
-                emphasized ? accent : theme.panelBackground);
-            painter.drawEllipse(nodes.at(index), 2.7, 2.7);
-        }
-    } else {
-        QPainterPath bookmark;
-        bookmark.moveTo(8.5, 5.0);
-        bookmark.lineTo(23.5, 5.0);
-        bookmark.lineTo(23.5, 27.0);
-        bookmark.lineTo(16.0, 22.0);
-        bookmark.lineTo(8.5, 27.0);
-        bookmark.closeSubpath();
-        QColor bookmarkFill = accent;
-        bookmarkFill.setAlpha(mode == ThemeMode::Dark ? 34 : 24);
-        painter.setBrush(bookmarkFill);
-        painter.setPen(outline);
-        painter.drawPath(bookmark);
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(accentPen);
-        painter.drawEllipse(QRectF(11.0, 10.0, 7.5, 6.0));
-        painter.drawEllipse(QRectF(15.0, 13.0, 6.0, 5.5));
-    }
-
-    return pixmap;
-}
-
 QIcon contextProviderIcon(
     const QString& providerId,
     const QString& iconName,
@@ -297,15 +67,16 @@ QIcon contextProviderIcon(
         return icon;
     }
 
-    QIcon icon;
-    const QPixmap normal = providerIconPixmap(providerId, false);
-    const QPixmap checked = providerIconPixmap(providerId, true);
-    icon.addPixmap(normal, QIcon::Normal, QIcon::Off);
-    icon.addPixmap(normal, QIcon::Active, QIcon::Off);
-    icon.addPixmap(checked, QIcon::Normal, QIcon::On);
-    icon.addPixmap(checked, QIcon::Active, QIcon::On);
-    icon.addPixmap(checked, QIcon::Selected, QIcon::On);
-    return icon;
+    using namespace RoundedIcons;
+    if (providerId == QStringLiteral("workspaceHub")) return icon(Grid);
+    if (providerId == QStringLiteral("temporaryEditor")) return icon(File);
+    if (providerId == QStringLiteral("rtlInsight.kernel")) return icon(Module);
+    if (providerId == QStringLiteral("rtlInsight.block")) return icon(Hierarchy);
+    if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(Signals);
+    if (providerId == QStringLiteral("rtlInsight.state")) return icon(Context);
+    if (providerId == QStringLiteral("rtlInsight.wave")) return icon(Wave);
+    if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
+    return icon(Bookmark);
 }
 }
 

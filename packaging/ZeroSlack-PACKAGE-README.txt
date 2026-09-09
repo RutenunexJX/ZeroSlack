@@ -1,4 +1,4 @@
-ZeroSlack v0.23.0
+ZeroSlack v0.24.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -36,6 +36,7 @@ Reopening the sidebar retains its width. Settings opens in a central tab;
 supported charts can open in the main area. Explicit Peek previews remain available.
 
 The left rail contains Project and Settings. Right-click Project for commands.
-The themed title bar hides after three idle seconds; approach the top edge to show it.
+The themed title bar stays visible in its own row without covering the editor.
+Rounded controls and graph nodes share a scalable outline icon system.
 Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
 inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.

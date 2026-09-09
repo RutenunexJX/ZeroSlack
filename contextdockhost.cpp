@@ -1,3 +1,4 @@
+#include "roundedicons.h"
 #include "contextdockhost.h"
 
 #include <QTabBar>
@@ -31,7 +32,7 @@ ContextDockHost::ContextDockHost(QWidget* parent)
     fullViewButton->setObjectName(
         QStringLiteral("contextDockFullView"));
     fullViewButton->setIcon(
-        style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+        RoundedIcons::icon(RoundedIcons::Expand));
     fullViewButton->setToolTip(tr("Open current tab in main area"));
     fullViewButton->setVisible(false);
     cornerLayout->addWidget(fullViewButton);
@@ -40,7 +41,7 @@ ContextDockHost::ContextDockHost(QWidget* parent)
     unpinButton->setObjectName(
         QStringLiteral("contextDockUnpin"));
     unpinButton->setIcon(
-        style()->standardIcon(QStyle::SP_TitleBarNormalButton));
+        RoundedIcons::icon(RoundedIcons::Pin));
     unpinButton->setToolTip(tr("Move current tab to preview"));
     unpinButton->setEnabled(false);
     cornerLayout->addWidget(unpinButton);

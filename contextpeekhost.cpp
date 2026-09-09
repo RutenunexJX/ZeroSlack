@@ -1,3 +1,4 @@
+#include "roundedicons.h"
 #include "contextpeekhost.h"
 
 #include "contextworkspacestate.h"
@@ -320,14 +321,14 @@ void ContextPeekHost::buildUi()
     pinButton = new QToolButton(header);
     pinButton->setObjectName(QStringLiteral("contextPeekPin"));
     pinButton->setIcon(
-        style()->standardIcon(QStyle::SP_TitleBarNormalButton));
+        RoundedIcons::icon(RoundedIcons::Pin));
     pinButton->setToolTip(tr("Pin to context workspace"));
     headerLayout->addWidget(pinButton);
 
     fullViewButton = new QToolButton(header);
     fullViewButton->setObjectName(QStringLiteral("contextPeekFullView"));
     fullViewButton->setIcon(
-        style()->standardIcon(QStyle::SP_TitleBarMaxButton));
+        RoundedIcons::icon(RoundedIcons::Expand));
     fullViewButton->setToolTip(tr("Open in main area"));
     headerLayout->addWidget(fullViewButton);
 

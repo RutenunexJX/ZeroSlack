@@ -1,8 +1,7 @@
 #pragma once
 #include <QApplication>
-#include <QCursor>
 #include <QDockWidget>
-#include <QElapsedTimer>
+#include "roundedicons.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -12,11 +11,8 @@
 #include <QVBoxLayout>
 #include <QMouseEvent>
 #include <QPointer>
-#include <QPainter>
-#include <cmath>
 #include <QStackedWidget>
 #include <QStyle>
-#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QWindow>
@@ -51,7 +47,7 @@ public:
                     std::function<void()> settings)
         : QObject(host), window(host) {
         host->setWindowFlag(Qt::FramelessWindowHint);
-        host->setContentsMargins(4, 4, 4, 4);
+        host->setContentsMargins(4, 40, 4, 4);
         // Keep menu actions registered so hiding the menu does not remove shortcuts.
         auto* commands = new QMenu(host);
         for (auto* action : host->menuBar()->actions()) {
@@ -65,6 +61,7 @@ public:
         rail->setFloatable(false);
         rail->setAllowedAreas(Qt::LeftToolBarArea);
         host->addToolBar(Qt::LeftToolBarArea, rail);
+        rail->setIconSize(QSize(22, 22));
         auto* project = new QToolButton(rail);
         project->setObjectName(QStringLiteral("projectRailButton"));
         project->setIcon(host->style()->standardIcon(QStyle::SP_DirIcon));
@@ -87,13 +84,13 @@ public:
         auto* setting = new QToolButton(rail);
         settingsButton = setting;
         setting->setObjectName(QStringLiteral("settingsRailButton"));
-        updateSettingsIcon();
+        settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
         setting->setToolTip(tr("Settings"));
         setting->setAccessibleName(tr("Settings"));
         connect(setting, &QToolButton::clicked, host, std::move(settings));
         rail->addWidget(setting);
         title = new QFrame(host);
-        title->setObjectName(QStringLiteral("autoHideTitleBar"));
+        title->setObjectName(QStringLiteral("workspaceTitleBar"));
         title->setAttribute(Qt::WA_NativeWindow);
         title->setAutoFillBackground(true);
         updateTitleTheme();
@@ -105,6 +102,10 @@ public:
         for (int i = 0; i < 3; ++i) {
             auto* button = new QToolButton(title);
             button->setIcon(host->style()->standardIcon(i == 0 ? QStyle::SP_TitleBarMinButton : i == 1 ? QStyle::SP_TitleBarMaxButton : QStyle::SP_TitleBarCloseButton));
+            if (i == 1) {
+                maximizeButton = button;
+                updateMaximizeIcon();
+            }
             button->setToolTip(i == 0 ? tr("Minimize") : i == 1 ? tr("Maximize / Restore") : tr("Close"));
             if (i == 2) button->setStyleSheet(QStringLiteral("QToolButton:hover { background:#c42b1c; color:white; }"));
             row->addWidget(button);
@@ -114,27 +115,9 @@ public:
                 else host->close();
             });
         }
-        title->setGeometry(0, 0, host->width(), 32);
+        title->setGeometry(4, 4, host->width() - 8, 36);
+        title->show();
         title->raise();
-        idle.start();
-        auto* timer = new QTimer(this);
-        timer->setInterval(100);
-        connect(timer, &QTimer::timeout, this, [this]() {
-            if (!window->isVisible() || window->isMinimized()) return;
-            if (QApplication::activePopupWidget() || QApplication::activeModalWidget()) { idle.restart(); return; }
-            title->setGeometry(0, 0, window->width(), 32);
-            if (title->isVisible()) title->raise();
-            const QPoint at = window->mapFromGlobal(QCursor::pos());
-            const bool inside = window->rect().contains(at);
-            const bool near = inside && at.y() < 4;
-            const bool over = inside && title->isVisible() && at.y() < title->height();
-            if (QApplication::mouseButtons() == Qt::NoButton) systemGesture = false;
-            if (near || over || systemGesture) {
-                idle.restart();
-                if (near || over) { title->show(); title->raise(); }
-            } else if (idle.elapsed() >= 3000) title->hide();
-        });
-        timer->start();
         qApp->installEventFilter(this);
     }
     ~WorkspaceChrome() override { qApp->removeEventFilter(this); }
@@ -142,8 +125,12 @@ protected:
     bool eventFilter(QObject* target, QEvent* event) override {
         auto* widget = qobject_cast<QWidget*>(target);
         if (!widget || widget->window() != window) return false;
+        if (target == window && event->type() == QEvent::WindowStateChange)
+            updateMaximizeIcon();
+        if (target == window && event->type() == QEvent::Resize)
+            title->setGeometry(4, 4, window->width() - 8, 36);
         if (target == window && event->type() == QEvent::PaletteChange) {
-            updateSettingsIcon();
+            settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
             updateTitleTheme();
         }
         if (widget != title && !title->isAncestorOf(widget)
@@ -161,39 +148,24 @@ protected:
                 if (at.y() < 4) edges |= Qt::TopEdge;
                 if (at.y() >= window->height() - 4) edges |= Qt::BottomEdge;
             }
-            if (edges && window->windowHandle()->startSystemResize(edges)) { systemGesture = true; return true; }
-            if (title->isVisible() && at.y() < 32 && !qobject_cast<QToolButton*>(widget)) {
+            if (edges && window->windowHandle()->startSystemResize(edges)) { return true; }
+            if (title->isVisible() && title->geometry().contains(at) && !qobject_cast<QToolButton*>(widget)) {
                 if (event->type() == QEvent::MouseButtonDblClick)
                     window->isMaximized() ? window->showNormal() : window->showMaximized();
-                else systemGesture = window->windowHandle()->startSystemMove();
+                else window->windowHandle()->startSystemMove();
                 return true;
             }
         }
         return false;
     }
 private:
-    void updateTitleTheme() {
-        title->setStyleSheet(QStringLiteral("QFrame#autoHideTitleBar { background-color: %1; }")
-            .arg(window->palette().color(QPalette::Window).name()));
+    void updateMaximizeIcon() {
+        if (maximizeButton) maximizeButton->setIcon(RoundedIcons::icon(
+            window->isMaximized() ? RoundedIcons::Restore : RoundedIcons::Maximize));
     }
-    void updateSettingsIcon() {
-        if (!settingsButton) return;
-        const qreal scale = window->devicePixelRatioF();
-        QPixmap pixels(qRound(24 * scale), qRound(24 * scale));
-        pixels.setDevicePixelRatio(scale);
-        pixels.fill(Qt::transparent);
-        QPainter painter(&pixels);
-        painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(QPen(window->palette().color(QPalette::ButtonText), 1.7));
-        QPolygonF gear;
-        for (int i = 0; i < 32; ++i) {
-            const qreal angle = i * 6.283185307179586 / 32;
-            const qreal radius = (i % 4 == 0 || i % 4 == 3) ? 9.5 : 7.5;
-            gear << QPointF(12 + std::cos(angle) * radius, 12 + std::sin(angle) * radius);
-        }
-        painter.drawPolygon(gear);
-        painter.drawEllipse(QPointF(12, 12), 3, 3);
-        settingsButton->setIcon(QIcon(pixels));
+    void updateTitleTheme() {
+        title->setStyleSheet(QStringLiteral("QFrame#workspaceTitleBar { background-color: %1; }")
+            .arg(window->palette().color(QPalette::Window).name()));
     }
     void registerActions(QMenu* menu) {
         for (auto* action : menu->actions()) {
@@ -204,6 +176,5 @@ private:
     QMainWindow* window;
     QFrame* title;
     QToolButton* settingsButton = nullptr;
-    QElapsedTimer idle;
-    bool systemGesture = false;
+    QToolButton* maximizeButton = nullptr;
 };

@@ -1,3 +1,4 @@
+#include <QPainter>
 #include "insightcanvas.h"
 
 #include "applicationthememanager.h"
@@ -30,6 +31,18 @@ constexpr qreal kVerticalGap = 34.0;
 class CanvasNodeItem final : public QGraphicsRectItem
 {
 public:
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        QPen outline = pen();
+        if (isSelected()) outline = InsightVisualStyle::selectedPen();
+        painter->setPen(outline);
+        painter->setBrush(brush());
+        painter->drawRoundedRect(rect(), 8, 8);
+        painter->restore();
+    }
+
     std::function<void()> moved;
 
     QVariant itemChange(GraphicsItemChange change,

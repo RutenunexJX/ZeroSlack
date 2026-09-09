@@ -1,6 +1,7 @@
 #include "panellayoutcontroller.h"
 
 #include "insightvisualstyle.h"
+#include "roundedicons.h"
 
 #include <QAbstractItemView>
 #include <QAbstractScrollArea>
@@ -54,19 +55,15 @@ QString panelLabel(const QString& panelId)
     return panelId;
 }
 
-QStyle::StandardPixmap panelIcon(const QString& panelId)
+QIcon panelIcon(const QString& panelId)
 {
-    if (panelId == QStringLiteral("problems"))
-        return QStyle::SP_MessageBoxWarning;
-    if (panelId == QStringLiteral("scopedSearch"))
-        return QStyle::SP_FileDialogContentsView;
-    if (panelId == QStringLiteral("activity"))
-        return QStyle::SP_BrowserReload;
-    if (panelId == QStringLiteral("rtlHighRiskEdit"))
-        return QStyle::SP_DialogApplyButton;
-    if (panelId == QStringLiteral("connections"))
-        return QStyle::SP_DriveNetIcon;
-    return QStyle::SP_DirOpenIcon;
+    using namespace RoundedIcons;
+    if (panelId == QStringLiteral("problems")) return icon(Warning);
+    if (panelId == QStringLiteral("scopedSearch")) return icon(Search);
+    if (panelId == QStringLiteral("activity")) return icon(Activity);
+    if (panelId == QStringLiteral("rtlHighRiskEdit")) return icon(Change);
+    if (panelId == QStringLiteral("connections")) return icon(Connections);
+    return icon(Shelf);
 }
 
 QString modelIndexPath(const QModelIndex& index)
@@ -432,8 +429,8 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
     button->setAutoRaise(true);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setIcon(
-        window->style()->standardIcon(panelIcon(entry.id)));
-    button->setIconSize(QSize(15, 15));
+        panelIcon(entry.id));
+    button->setIconSize(QSize(20, 20));
     button->setFocusPolicy(Qt::StrongFocus);
     entry.button = button;
     layout->insertWidget(qMax(0, layout->count() - 1), button);
@@ -1221,7 +1218,7 @@ void PanelLayoutController::updateDrawerStyle()
     const QColor text = theme.textPrimary;
     const QColor border = theme.border;
     const QColor hover = theme.button.backgroundHover;
-    const QColor active = theme.button.backgroundPressed;
+    const QColor active = theme.itemView.selectedBackground;
     const QColor accent = theme.focus.ring;
     bottomDrawerRoot->setStyleSheet(QStringLiteral(
         "QWidget#bottomToolDrawerRoot { background: %1; }"
@@ -1230,7 +1227,7 @@ void PanelLayoutController::updateDrawerStyle()
         "QWidget#bottomToolDrawerResizeHandle:hover { background: %3; }"
         "QFrame#bottomToolDrawerButtonBar {"
         " background: %1; border-top: 1px solid %2; }"
-        "QToolButton { color: %4; border: 0; border-radius: 3px;"
+        "QToolButton { color: %4; border: 0; border-radius: 8px;"
         " padding: 0 11px 0 9px; min-height: 30px; }"
         "QToolButton:hover { background: %3; }"
         "QToolButton:checked { background: %5;"

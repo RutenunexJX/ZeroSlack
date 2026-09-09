@@ -1,6 +1,8 @@
 #include "applicationthememanager.h"
 
 #include "insightvisualstyle.h"
+#include "roundedicons.h"
+#include <QFontDatabase>
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -43,6 +45,15 @@ void ApplicationThemeManager::applyToApplication()
     if (!application)
         return;
 
+    if (!application->property("roundedControlsInstalled").toBool()) {
+        application->setStyle(new RoundedIcons::Style);
+        QFont uiFont = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+        uiFont.setFamilies({QStringLiteral("Segoe UI"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("Noto Sans")});
+        uiFont.setStyleHint(QFont::SansSerif);
+        uiFont.setFixedPitch(false);
+        application->setFont(uiFont);
+        application->setProperty("roundedControlsInstalled", true);
+    }
     application->setPalette(
         InsightVisualStyle::applicationPalette(currentMode));
     application->setStyleSheet(

@@ -640,8 +640,8 @@ int main(int argc, char** argv)
                        != darkInstanceIcon.cacheKey()
                    && lightInstancePixels
                           != darkInstancePixels
-                   && lightInstancePixels.pixelColor(3, 3)
-                          != darkInstancePixels.pixelColor(3, 3));
+                   && lightInstancePixels.pixelColor(6, 2)
+                          != darkInstancePixels.pixelColor(6, 2));
     themeManager.setMode(ThemeMode::Light);
     expectTrue("navigation Light-Dark-Light regenerates the original icon pixels",
                navigation.iconCacheEntryCountForTest() == 0

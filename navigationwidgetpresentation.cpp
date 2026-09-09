@@ -1,6 +1,7 @@
 #include "navigationwidget.h"
 
 #include "insightvisualstyle.h"
+#include "roundedicons.h"
 
 #include <QPainter>
 #include <QPixmap>
@@ -8,30 +9,6 @@
 #include <QTreeWidgetItem>
 
 #include "symboltaxonomy.h"
-
-namespace {
-QIcon makeInstanceIcon()
-{
-    QPixmap pixmap(16, 16);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    const InsightTheme& theme = InsightVisualStyle::theme();
-    QPen linePen(theme.graph.edge, 1.4);
-    painter.setPen(linePen);
-    painter.drawLine(QPointF(5.0, 5.0), QPointF(11.0, 11.0));
-    painter.drawLine(QPointF(5.0, 11.0), QPointF(11.0, 5.0));
-
-    painter.setPen(QPen(theme.graph.nodeBorder, 1.0));
-    painter.setBrush(theme.graph.nodeFill);
-    painter.drawRoundedRect(QRectF(2.0, 2.0, 5.0, 5.0), 1.2, 1.2);
-    painter.drawRoundedRect(QRectF(9.0, 2.0, 5.0, 5.0), 1.2, 1.2);
-    painter.drawRoundedRect(QRectF(5.5, 9.0, 5.0, 5.0), 1.2, 1.2);
-
-    return QIcon(pixmap);
-}
-}
 
 QIcon NavigationWidget::getFileIcon(const QString& filePath)
 {
@@ -46,7 +23,7 @@ QIcon NavigationWidget::getFileIcon(const QString& filePath)
     if (role == SymbolTaxonomy::SourceRole::DesignSource) {
         icon = style()->standardIcon(QStyle::SP_FileIcon);
     } else if (SymbolTaxonomy::isHeaderSourceRole(role)) {
-        icon = style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+        icon = RoundedIcons::icon(RoundedIcons::File);
     } else {
         icon = style()->standardIcon(QStyle::SP_FileIcon);
     }
@@ -65,22 +42,22 @@ QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
     QIcon icon;
     switch (iconKind) {
     case SymbolOutlineIconKind::Module:
-        icon = style()->standardIcon(QStyle::SP_ComputerIcon);
+        icon = RoundedIcons::icon(RoundedIcons::Module);
         break;
     case SymbolOutlineIconKind::Signal:
-        icon = style()->standardIcon(QStyle::SP_DialogApplyButton);
+        icon = RoundedIcons::icon(RoundedIcons::Wave);
         break;
     case SymbolOutlineIconKind::Subroutine:
-        icon = style()->standardIcon(QStyle::SP_MediaPlay);
+        icon = RoundedIcons::icon(RoundedIcons::Change);
         break;
     case SymbolOutlineIconKind::Parameter:
-        icon = style()->standardIcon(QStyle::SP_FileDialogDetailedView);
+        icon = RoundedIcons::icon(RoundedIcons::File);
         break;
     case SymbolOutlineIconKind::Port:
         icon = style()->standardIcon(QStyle::SP_ArrowRight);
         break;
     case SymbolOutlineIconKind::Instance:
-        icon = makeInstanceIcon();
+        icon = RoundedIcons::icon(RoundedIcons::Hierarchy);
         break;
     case SymbolOutlineIconKind::Type:
         icon = style()->standardIcon(QStyle::SP_FileIcon);

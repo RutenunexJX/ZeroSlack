@@ -13025,18 +13025,19 @@ int main(int argc, char** argv)
                connectionsPage && connectionsPage->findChild<QTabWidget*>(QStringLiteral("instancePairDiffTabs")), true);
     window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(connectionsPage));
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    QWidget* titleOverlay = window.findChild<QWidget*>(QStringLiteral("autoHideTitleBar"));
+    QWidget* titleOverlay = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"));
     QTest::qWait(150);
     const QRect centerBeforeTitle = window.centralWidget()->geometry();
     const QPoint previousPointer = QCursor::pos();
     QCursor::setPos(window.mapToGlobal(QPoint(-50, -50)));
     QTest::qWait(3300);
-    expectBool("title overlay hides after idle without moving content",
-               titleOverlay && !titleOverlay->isVisible()
+    expectBool("fixed title stays visible after idle without overlapping content",
+               titleOverlay && titleOverlay->isVisible()
+                   && centerBeforeTitle.top() >= titleOverlay->geometry().bottom()
                    && window.centralWidget()->geometry() == centerBeforeTitle, true);
     QCursor::setPos(window.mapToGlobal(QPoint(100, 1)));
     QTest::qWait(150);
-    expectBool("approaching the top edge reveals the title without moving content",
+    expectBool("fixed title remains visible when the pointer returns",
                titleOverlay && titleOverlay->isVisible()
                    && window.centralWidget()->geometry() == centerBeforeTitle, true);
     QCursor::setPos(previousPointer);

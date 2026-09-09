@@ -1,3 +1,4 @@
+#include <QPainter>
 #include "rtlinsightsgraphscenemapper.h"
 
 #include "fsmgraphlayout.h"
@@ -401,6 +402,18 @@ public:
                 QBrush(InsightVisualStyle::theme().textSecondary));
             detailTextItem->setPos(rect.left() + 10, rect.top() + 32);
         }
+    }
+
+    void paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*) override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        QPen outline = pen();
+        if (isSelected()) outline = InsightVisualStyle::selectedPen();
+        painter->setPen(outline);
+        painter->setBrush(brush());
+        painter->drawRoundedRect(rect(), 8, 8);
+        painter->restore();
     }
 
     NavigateHandler navigateHandler;
