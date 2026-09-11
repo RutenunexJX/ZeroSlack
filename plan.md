@@ -1,11 +1,16 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.6`
+Product version: `v0.25.7`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## Popup shadow correction — 2026-09-11 (v0.25.7)
+
+- Disabled the native Windows shadow on the transparent radial popup to remove rectangular lines along its right and bottom edges.
+- Added a native window-class regression check: it reproduced the shadow before the fix and passed after it. Menu execution and dismissal tests passed.
 
 ## Implemented context menu — 2026-09-11 (v0.25.6)
 

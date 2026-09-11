@@ -134,7 +134,7 @@ QIcon EditorRadialMenu::actionIcon(const QString& actionId) {
 }
 
 EditorRadialMenu::EditorRadialMenu(QMenu* commands)
-    : QWidget(nullptr, Qt::Popup | Qt::FramelessWindowHint) {
+    : QWidget(nullptr, Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint) {
     setObjectName(QStringLiteral("editorRadialMenu"));
     setAccessibleName(tr("Editor actions"));
     setAttribute(Qt::WA_TranslucentBackground);

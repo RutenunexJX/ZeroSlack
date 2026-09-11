@@ -10,6 +10,9 @@
 #include <QTest>
 #include <QTimer>
 #include <QToolButton>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#endif
 
 namespace {
 const QStringList ids {
@@ -46,6 +49,13 @@ private slots:
         }
         EditorRadialMenu popup(&menu);
         popup.popupAt(QPoint(300,250));QTest::qWait(20);
+#ifdef Q_OS_WIN
+        if (QGuiApplication::platformName() == QStringLiteral("windows")) {
+            const auto nativeStyle = GetClassLongPtr(reinterpret_cast<HWND>(popup.winId()), GCL_STYLE);
+            QVERIFY2(!(nativeStyle & CS_DROPSHADOW),
+                     "The transparent popup must not cast a rectangular native shadow");
+        }
+#endif
         for(int g=0;g<6;++g) {
             auto* category=popup.findChild<QToolButton*>(QStringLiteral("radialGroup.%1").arg(g));
             QVERIFY(category);category->click();

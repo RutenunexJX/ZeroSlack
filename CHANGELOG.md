@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.25.7] - 2026-09-11
+
+- Disabled the Windows native rectangular shadow around the transparent radial menu, removing stray lines along its right and bottom edges.
+
 ## [0.25.6] - 2026-09-11
 
 - Replaced the editor context-menu presentation with a compact icon-only radial launcher and rectangular floating action bars.
