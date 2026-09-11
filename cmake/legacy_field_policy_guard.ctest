@@ -3,135 +3,135 @@ if(NOT DEFINED ZEROSLACK_SOURCE_DIR)
 endif()
 
 set(PROTECTED_BOUNDARY_FILES
-    analysiscoordinator.cpp
-    analysiscoordinatordependencies.cpp
-    analysiscoordinatorwiring.cpp
-    analysiscoordinator.h
-    analysisprogresscoordinator.cpp
-    analysisprogresscoordinator.h
-    analysisscheduler.cpp
-    analysisschedulerdocuments.cpp
-    analysisschedulerrelationships.cpp
-    analysisschedulerwiring.cpp
-    analysisscheduler.h
-    diagnosticsrefreshcontroller.cpp
-    diagnosticsrefreshcontroller.h
-    editorcompletionquery.cpp
-    editorcompletionquery.h
-    editorcompletionui.cpp
-    editorcompletionui.h
-    editorcompletionworkflow.cpp
-    editorcompletionworkflow.h
-    editorcompletionworkflowkeys.cpp
-    editorcoordinator.cpp
-    editorcoordinator.h
-    editorsemanticcontextservice.cpp
-    editorsemanticcontextservice.h
-    editorsemanticruntime.cpp
-    editorsemanticruntime.h
-    mainwindow.cpp
-    mainwindow.h
-    navigationcommandcoordinator.cpp
-    navigationcommandcoordinator.h
-    navigationpanecoordinator.cpp
-    navigationpanecoordinator.h
-    navigationwidget.cpp
-    navigationwidget.h
-    navigationwidgetpresentation.cpp
-    navigationwidgettrees.cpp
-    problemspanelcoordinator.cpp
-    problemspanelcoordinator.h
-    rtlinsightspanelcoordinator.cpp
-    rtlinsightspanelcoordinator.h
-    semanticdockcoordinator.cpp
-    semanticdockcoordinator.h
-    semanticpanelrefreshcoordinator.cpp
-    semanticpanelrefreshcoordinator.h
-    semanticpanelrefreshpanels.cpp
-    semanticruntimecoordinator.cpp
-    semanticruntimecoordinator.h
-    tabdocumentqueries.cpp
-    tabdocumentqueries.h
-    tabfileio.cpp
-    tabfileio.h
-    tabmanager.cpp
-    tabmanager.h
+    src/analysis/analysiscoordinator.cpp
+    src/analysis/analysiscoordinatordependencies.cpp
+    src/analysis/analysiscoordinatorwiring.cpp
+    src/analysis/analysiscoordinator.h
+    src/analysis/analysisprogresscoordinator.cpp
+    src/analysis/analysisprogresscoordinator.h
+    src/analysis/analysisscheduler.cpp
+    src/analysis/analysisschedulerdocuments.cpp
+    src/analysis/analysisschedulerrelationships.cpp
+    src/analysis/analysisschedulerwiring.cpp
+    src/analysis/analysisscheduler.h
+    src/analysis/diagnosticsrefreshcontroller.cpp
+    src/analysis/diagnosticsrefreshcontroller.h
+    src/editor/editorcompletionquery.cpp
+    src/editor/editorcompletionquery.h
+    src/editor/editorcompletionui.cpp
+    src/editor/editorcompletionui.h
+    src/editor/editorcompletionworkflow.cpp
+    src/editor/editorcompletionworkflow.h
+    src/editor/editorcompletionworkflowkeys.cpp
+    src/editor/editorcoordinator.cpp
+    src/editor/editorcoordinator.h
+    src/editor/editorsemanticcontextservice.cpp
+    src/editor/editorsemanticcontextservice.h
+    src/editor/editorsemanticruntime.cpp
+    src/editor/editorsemanticruntime.h
+    src/app/mainwindow.cpp
+    src/app/mainwindow.h
+    src/navigation/navigationcommandcoordinator.cpp
+    src/navigation/navigationcommandcoordinator.h
+    src/ui/navigationpanecoordinator.cpp
+    src/ui/navigationpanecoordinator.h
+    src/ui/navigationwidget.cpp
+    src/ui/navigationwidget.h
+    src/ui/navigationwidgetpresentation.cpp
+    src/ui/navigationwidgettrees.cpp
+    src/ui/problemspanelcoordinator.cpp
+    src/ui/problemspanelcoordinator.h
+    src/insights/rtlinsightspanelcoordinator.cpp
+    src/insights/rtlinsightspanelcoordinator.h
+    src/semantic/semanticdockcoordinator.cpp
+    src/semantic/semanticdockcoordinator.h
+    src/semantic/semanticpanelrefreshcoordinator.cpp
+    src/semantic/semanticpanelrefreshcoordinator.h
+    src/semantic/semanticpanelrefreshpanels.cpp
+    src/semantic/semanticruntimecoordinator.cpp
+    src/semantic/semanticruntimecoordinator.h
+    src/documents/tabdocumentqueries.cpp
+    src/documents/tabdocumentqueries.h
+    src/documents/tabfileio.cpp
+    src/documents/tabfileio.h
+    src/documents/tabmanager.cpp
+    src/documents/tabmanager.h
 )
 
 set(RECORD_FIRST_METADATA_FILES
-    clockresetdomainservice.cpp
-    completionmodelupdates.cpp
-    completionservice.cpp
-    definitionnavigationservice.cpp
-    fsmgraphservice.cpp
-    modulebriefservice.cpp
-    semanticdiffservice.cpp
-    semanticindexcompletioncontext.cpp
-    semanticindexcompletiontypequeries.cpp
-    semanticindexlookup.cpp
-    semanticindexmodulecontext.cpp
-    semanticindexsnapshotqueries.cpp
-    signaljourneyservice.cpp
+    src/semantic/clockresetdomainservice.cpp
+    src/completion/completionmodelupdates.cpp
+    src/completion/completionservice.cpp
+    src/navigation/definitionnavigationservice.cpp
+    src/insights/fsmgraphservice.cpp
+    src/semantic/modulebriefservice.cpp
+    src/semantic/semanticdiffservice.cpp
+    src/semantic/semanticindexcompletioncontext.cpp
+    src/semantic/semanticindexcompletiontypequeries.cpp
+    src/semantic/semanticindexlookup.cpp
+    src/semantic/semanticindexmodulecontext.cpp
+    src/semantic/semanticindexsnapshotqueries.cpp
+    src/semantic/signaljourneyservice.cpp
 )
 
 set(STABLE_KEY_MIGRATED_SERVICE_FILES
-    clockresetdomainservice.cpp
-    hierarchyservice.cpp
-    hierarchyservicetraversal.cpp
-    modulebriefservice.cpp
-    relationshipservice.cpp
-    semanticindexmodulecontext.cpp
-    signaljourneyservice.cpp
+    src/semantic/clockresetdomainservice.cpp
+    src/semantic/hierarchyservice.cpp
+    src/semantic/hierarchyservicetraversal.cpp
+    src/semantic/modulebriefservice.cpp
+    src/semantic/relationshipservice.cpp
+    src/semantic/semanticindexmodulecontext.cpp
+    src/semantic/signaljourneyservice.cpp
 )
 
 set(RECORD_METADATA_HELPER_FILES
-    clockresetdomainservice.cpp
-    completionmodelupdates.cpp
-    completionservice.cpp
-    definitionnavigationservice.cpp
-    fsmgraphservice.cpp
-    hierarchyservice.cpp
-    modulebriefservice.cpp
-    navigationservice.cpp
-    navigationservicehierarchy.cpp
-    searchservice.cpp
-    semanticdiffservice.cpp
-    semanticindexlookuphelpers.cpp
-    semanticindexsnapshotqueries.cpp
-    signaljourneyservice.cpp
+    src/semantic/clockresetdomainservice.cpp
+    src/completion/completionmodelupdates.cpp
+    src/completion/completionservice.cpp
+    src/navigation/definitionnavigationservice.cpp
+    src/insights/fsmgraphservice.cpp
+    src/semantic/hierarchyservice.cpp
+    src/semantic/modulebriefservice.cpp
+    src/navigation/navigationservice.cpp
+    src/navigation/navigationservicehierarchy.cpp
+    src/commands/searchservice.cpp
+    src/semantic/semanticdiffservice.cpp
+    src/semantic/semanticindexlookuphelpers.cpp
+    src/semantic/semanticindexsnapshotqueries.cpp
+    src/semantic/signaljourneyservice.cpp
 )
 
 set(RECORD_NATIVE_SERVICE_FILES
-    clockresetdomainservice.cpp
-    fsmgraphservice.cpp
-    modulebriefservice.cpp
-    relationshipanalysisworker.cpp
-    semanticdiffservice.cpp
-    signaljourneyservice.cpp
-    smartrelationshipbuilder.cpp
-    smartrelationshipbuilderanalysis.cpp
-    smartrelationshipbuildercontext.cpp
-    smartrelationshipbuildertiming.cpp
+    src/semantic/clockresetdomainservice.cpp
+    src/insights/fsmgraphservice.cpp
+    src/semantic/modulebriefservice.cpp
+    src/semantic/relationshipanalysisworker.cpp
+    src/semantic/semanticdiffservice.cpp
+    src/semantic/signaljourneyservice.cpp
+    src/semantic/smartrelationshipbuilder.cpp
+    src/semantic/smartrelationshipbuilderanalysis.cpp
+    src/semantic/smartrelationshipbuildercontext.cpp
+    src/semantic/smartrelationshipbuildertiming.cpp
 )
 
 set(PHASE_I1_RECORD_NATIVE_ANALYZER_FILES
-    symbolanalyzerasync.cpp
-    symbolanalyzerslang.cpp
+    src/semantic/symbolanalyzerasync.cpp
+    src/semantic/symbolanalyzerslang.cpp
 )
 
 set(PHASE_I1_RECORD_NATIVE_COLLECTOR_FILES
-    slangsymbolcollector.cpp
-    slangsymbolcollectorhelpers.cpp
-    slangsymbolcollectorhelpers.h
+    src/semantic/slangsymbolcollector.cpp
+    src/semantic/slangsymbolcollectorhelpers.cpp
+    src/semantic/slangsymbolcollectorhelpers.h
 )
 
 set(PHASE_I1_RECORD_NATIVE_MANAGER_FILES
-    slangmanager.h
-    slangmanagersymbols.cpp
+    src/semantic/slangmanager.h
+    src/semantic/slangmanagersymbols.cpp
 )
 
 set(PHASE_I2_NATIVE_STORE_PUBLICATION_FILES
-    semanticindexsnapshotpublication.cpp
+    src/semantic/semanticindexsnapshotpublication.cpp
 )
 
 set(PHASE_I2_REMOVED_LEGACY_REFRESH_FILES
@@ -181,11 +181,11 @@ if(full_audit_sv_macro_scanner_violations)
 endif()
 
 set(FULL_AUDIT_PASSIVE_FULL_SCAN_PATTERNS
-    "semanticindexcompletiontypequeries.cpp|getSymbolRecords[ 	\r\n]*\\([ 	\r\n]*\\)"
-    "mainwindow.cpp|activeEditorPassiveRefreshTimer->start"
-    "mainwindow.cpp|kMaxPassiveSemanticDecorationCharacters"
-    "mainwindow.cpp|kMaxPassiveGhostAnnotationCharacters"
-    "editorruntime.cpp|kMaxPassiveGhostAnnotationCharacters"
+    "src/semantic/semanticindexcompletiontypequeries.cpp|getSymbolRecords[ 	\r\n]*\\([ 	\r\n]*\\)"
+    "src/app/mainwindow.cpp|activeEditorPassiveRefreshTimer->start"
+    "src/app/mainwindow.cpp|kMaxPassiveSemanticDecorationCharacters"
+    "src/app/mainwindow.cpp|kMaxPassiveGhostAnnotationCharacters"
+    "src/editor/editorruntime.cpp|kMaxPassiveGhostAnnotationCharacters"
 )
 
 set(full_audit_passive_full_scan_violations)
@@ -215,20 +215,20 @@ if(full_audit_passive_full_scan_violations)
 endif()
 
 set(FULL_AUDIT_REMOVED_TEST_ONLY_SCHEDULER_PATTERNS
-    "analysisscheduler.h|scheduleOpenFileAnalysis"
-    "analysisscheduler.h|cancelScheduledOpenFileAnalysis"
-    "analysisscheduler.h|openFileAnalysisTimers"
-    "analysisscheduler.cpp|openFileAnalysisTimers"
-    "analysisschedulerdocuments.cpp|scheduleOpenFileAnalysis"
-    "analysisschedulerdocuments.cpp|cancelScheduledOpenFileAnalysis"
-    "analysisschedulerdocuments.cpp|openFileAnalysisTimers"
+    "src/analysis/analysisscheduler.h|scheduleOpenFileAnalysis"
+    "src/analysis/analysisscheduler.h|cancelScheduledOpenFileAnalysis"
+    "src/analysis/analysisscheduler.h|openFileAnalysisTimers"
+    "src/analysis/analysisscheduler.cpp|openFileAnalysisTimers"
+    "src/analysis/analysisschedulerdocuments.cpp|scheduleOpenFileAnalysis"
+    "src/analysis/analysisschedulerdocuments.cpp|cancelScheduledOpenFileAnalysis"
+    "src/analysis/analysisschedulerdocuments.cpp|openFileAnalysisTimers"
     "test_sv/analysis_scheduler_test.cpp|runCancelledOpenFileAnalysisDoesNotFire"
 )
 
 set(FULL_AUDIT_REMOVED_BROAD_COMPILATION_UNIT_PATTERNS
-    "semanticindex.h|compilationUnitCoversWorkspace"
-    "semanticindexlookup.cpp|compilationUnitCoversWorkspace"
-    "slangmanagersymbols.cpp|compilationUnitCoversWorkspace"
+    "src/semantic/semanticindex.h|compilationUnitCoversWorkspace"
+    "src/semantic/semanticindexlookup.cpp|compilationUnitCoversWorkspace"
+    "src/semantic/slangmanagersymbols.cpp|compilationUnitCoversWorkspace"
 )
 
 foreach(entry IN LISTS FULL_AUDIT_REMOVED_BROAD_COMPILATION_UNIT_PATTERNS)
@@ -297,40 +297,40 @@ if(full_audit_relationship_perf_missing)
 endif()
 
 set(PHASE_I2_NATIVE_STORE_BRIDGE_FILES
-    semanticindexstore.cpp
+    src/semantic/semanticindexstore.cpp
 )
 
 set(PHASE_I2_NATIVE_STORE_QUERY_FILES
-    semanticindexstore.cpp
+    src/semantic/semanticindexstore.cpp
 )
 
 set(PHASE_I2_REMOVED_GENERIC_BRIDGE_FILES
-    semanticindexstore.cpp
+    src/semantic/semanticindexstore.cpp
 )
 
 set(PHASE_I3_RECORD_NATIVE_RELATIONSHIP_BUILDER_FILES
-    smartrelationshipbuilder.cpp
-    smartrelationshipbuilder.h
-    smartrelationshipbuilderanalysis.cpp
-    smartrelationshipbuildercontext.cpp
+    src/semantic/smartrelationshipbuilder.cpp
+    src/semantic/smartrelationshipbuilder.h
+    src/semantic/smartrelationshipbuilderanalysis.cpp
+    src/semantic/smartrelationshipbuildercontext.cpp
 )
 
 set(PHASE_I3_RECORD_NATIVE_RELATIONSHIP_ENGINE_FILES
-    symbolrelationshipengine.cpp
-    symbolrelationshipengine.h
+    src/semantic/symbolrelationshipengine.cpp
+    src/semantic/symbolrelationshipengine.h
 )
 
 set(PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES
-    semanticindexstore.cpp
-    semanticindexrelationships.cpp
-    semanticindexsnapshotpublication.cpp
+    src/semantic/semanticindexstore.cpp
+    src/semantic/semanticindexrelationships.cpp
+    src/semantic/semanticindexsnapshotpublication.cpp
 )
 
 set(PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES
 )
 
 set(PHASE_I3_REMOVED_LEGACY_RELATIONSHIP_MIRROR_FILES
-    semanticindexstore.cpp
+    src/semantic/semanticindexstore.cpp
 )
 
 set(PHASE_I4_REMOVED_LEGACY_COLLECTOR_ADAPTER_FILES
@@ -350,8 +350,8 @@ set(PHASE_I5_REMOVED_LEGACY_SYMINFO_FILES
 )
 
 set(PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES
-    semanticindex.cpp
-    semanticindex.h
+    src/semantic/semanticindex.cpp
+    src/semantic/semanticindex.h
 )
 
 set(PHASE_I4_REMOVED_LEGACY_SYM_STORE_FILES
@@ -364,13 +364,13 @@ set(PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES
 )
 
 set(H0_LEGACY_CORE_ALLOWLIST
-    slangmanager.h
-    slangmanagersymbols.cpp
-    slangsymbolcollector.cpp
-    slangsymbolcollector.h
-    slangsymbolcollectorhelpers.cpp
-    slangsymbolcollectorhelpers.h
-    symboltaxonomy.cpp
+    src/semantic/slangmanager.h
+    src/semantic/slangmanagersymbols.cpp
+    src/semantic/slangsymbolcollector.cpp
+    src/semantic/slangsymbolcollector.h
+    src/semantic/slangsymbolcollectorhelpers.cpp
+    src/semantic/slangsymbolcollectorhelpers.h
+    src/semantic/symboltaxonomy.cpp
 )
 
 set(H0_LEGACY_CORE_PATTERNS
@@ -429,9 +429,9 @@ set(PHASE_J_FIXTURE_CLEANUP_PATTERNS
 )
 
 set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
-    editorcompletionworkflow.cpp
-    editorcoordinator.cpp
-    foldblockshelfmodel.cpp
+    src/editor/editorcompletionworkflow.cpp
+    src/editor/editorcoordinator.cpp
+    src/editor/foldblockshelfmodel.cpp
 )
 
 set(PHASE_L_REGEX_CLEANUP_PATTERNS
@@ -446,50 +446,50 @@ set(PHASE_L_REGEX_CLEANUP_PATTERNS
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
-    "clockresetdomainservice.h|moduleSymbolId"
-    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
-    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
-    "clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "clockresetdomainservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
-    "clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "clockresetdomainservice.h|acceptsCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "clockresetdomainservice.h|isTimingCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "clockresetdomainservice.h|hasMappedTimingRelationship[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "clockresetdomainservice.h|moduleForCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "definitionnavigationservice.h|struct[ \t\r\n]+DefinitionNavigationTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "definitionnavigationservice.cpp|target\\.symbol[ \t\r\n]*="
-    "definitionservice.h|struct[ \t\r\n]+DefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "definitionservice.h|findDefinitions[ \t\r\n]*\\("
-    "definitionservice.h|isDefinition[ \t\r\n]*\\("
-    "definitionservice.cpp|result\\.symbol[ \t\r\n]*="
-    "completiontypes.h|struct[ \t\r\n]+CommandModeCompletionState[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
-    "completionservice.cpp|result\\.symbols[ \t\r\n]*="
-    "completionservice.h|findCompletionSymbols[ \t\r\n]*\\("
-    "completionservice.cpp|CompletionService::findCompletionSymbols[ \t\r\n]*\\("
-    "completionservicecommand.cpp|state\\.symbols[ \t\r\n]*="
-    "completionservice.h|findCommandCompletionSymbols[ \t\r\n]*\\("
-    "completionsemanticquery.h|commandSymbols[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|CompletionSemanticQuery::commandSymbols[ \t\r\n]*\\("
-    "completionservice.h|findScoredSymbolCompletionsByType[ \t\r\n]*\\("
-    "completionservice.cpp|CompletionService::findScoredSymbolCompletionsByType[ \t\r\n]*\\("
-    "completionservice.h|findModuleInternalSymbolInfosByType[ \t\r\n]*\\("
+    "src/semantic/clockresetdomainservice.h|moduleSymbolId"
+    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
+    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
+    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
+    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
+    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
+    "src/semantic/clockresetdomainservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "src/semantic/clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "src/semantic/clockresetdomainservice.h|acceptsCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/clockresetdomainservice.h|isTimingCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/clockresetdomainservice.h|hasMappedTimingRelationship[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/clockresetdomainservice.h|moduleForCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/navigation/definitionnavigationservice.h|struct[ \t\r\n]+DefinitionNavigationTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/navigation/definitionnavigationservice.cpp|target\\.symbol[ \t\r\n]*="
+    "src/navigation/definitionservice.h|struct[ \t\r\n]+DefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/navigation/definitionservice.h|findDefinitions[ \t\r\n]*\\("
+    "src/navigation/definitionservice.h|isDefinition[ \t\r\n]*\\("
+    "src/navigation/definitionservice.cpp|result\\.symbol[ \t\r\n]*="
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandModeCompletionState[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
+    "src/completion/completionservice.cpp|result\\.symbols[ \t\r\n]*="
+    "src/completion/completionservice.h|findCompletionSymbols[ \t\r\n]*\\("
+    "src/completion/completionservice.cpp|CompletionService::findCompletionSymbols[ \t\r\n]*\\("
+    "src/completion/completionservicecommand.cpp|state\\.symbols[ \t\r\n]*="
+    "src/completion/completionservice.h|findCommandCompletionSymbols[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.h|commandSymbols[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|CompletionSemanticQuery::commandSymbols[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findScoredSymbolCompletionsByType[ \t\r\n]*\\("
+    "src/completion/completionservice.cpp|CompletionService::findScoredSymbolCompletionsByType[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findModuleInternalSymbolInfosByType[ \t\r\n]*\\("
     "completionservicesemantic.cpp|CompletionService::findModuleInternalSymbolInfosByType[ \t\r\n]*\\("
-    "completionservice.h|findModuleContextSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findModuleContextSymbolInfosByType[ \t\r\n]*\\("
     "completionservicesemantic.cpp|CompletionService::findModuleContextSymbolInfosByType[ \t\r\n]*\\("
-    "completionservice.h|findGlobalSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findGlobalSymbolInfosByType[ \t\r\n]*\\("
     "completionservicesemantic.cpp|CompletionService::findGlobalSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|typedSymbolRecords[ \t\r\n]*\\([^\\)]*\\)[^{]*\\{[^}]*semanticSymbolRecordsForSymbols"
-    "completionsemanticquery.cpp|typedSymbolRecords[ \t\r\n]*\\([^\\)]*\\)[^{]*\\{[^}]*getTypedCompletionSymbols"
-    "completionsemanticquery.h|moduleInternalSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|CompletionSemanticQuery::moduleInternalSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.h|moduleContextSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|CompletionSemanticQuery::moduleContextSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.h|globalSymbolInfosByType[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|CompletionSemanticQuery::globalSymbolInfosByType[ \t\r\n]*\\("
-    "completioncommandkindadapter.h|rawCollectorKindForCompletionCommandKind[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|rawCollectorKindForCommandKind[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|typedSymbolRecords[ \t\r\n]*\\([^\\)]*\\)[^{]*\\{[^}]*semanticSymbolRecordsForSymbols"
+    "src/completion/completionsemanticquery.cpp|typedSymbolRecords[ \t\r\n]*\\([^\\)]*\\)[^{]*\\{[^}]*getTypedCompletionSymbols"
+    "src/completion/completionsemanticquery.h|moduleInternalSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|CompletionSemanticQuery::moduleInternalSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.h|moduleContextSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|CompletionSemanticQuery::moduleContextSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.h|globalSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|CompletionSemanticQuery::globalSymbolInfosByType[ \t\r\n]*\\("
+    "src/completion/completioncommandkindadapter.h|rawCollectorKindForCompletionCommandKind[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|rawCollectorKindForCommandKind[ \t\r\n]*\\("
     "completionsymbolquery.h|scoredTypedSymbols[ \t\r\n]*\\("
     "completionsymbolscoring.cpp|CompletionSymbolQuery::scoredTypedSymbols[ \t\r\n]*\\("
     "completionsymbolquery.h|scoredTypedSymbolNames[ \t\r\n]*\\("
@@ -504,192 +504,192 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "completionsymbolquery.cpp|CompletionSymbolQuery::taskFunctionCompletions[ \t\r\n]*\\("
     "completionsymbolquery.h|symbolNamesFromScored[ \t\r\n]*\\("
     "completionsymbolscoring.cpp|CompletionSymbolQuery::symbolNamesFromScored[ \t\r\n]*\\("
-    "completionmodel.h|struct[ \t\r\n]+CompletionItem[ \t\r\n]*\\{[^}]*sym_list::sym_type_e[ \t\r\n]+symbolType"
-    "completionservice.h|findSymbolCompletionsByType[ \t\r\n]*\\("
-    "completionservice.cpp|CompletionService::findSymbolCompletionsByType[ \t\r\n]*\\("
-    "completionservice.h|findModuleSymbolsByType[ \t\r\n]*\\("
+    "src/completion/completionmodel.h|struct[ \t\r\n]+CompletionItem[ \t\r\n]*\\{[^}]*sym_list::sym_type_e[ \t\r\n]+symbolType"
+    "src/completion/completionservice.h|findSymbolCompletionsByType[ \t\r\n]*\\("
+    "src/completion/completionservice.cpp|CompletionService::findSymbolCompletionsByType[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findModuleSymbolsByType[ \t\r\n]*\\("
     "completionservicesemantic.cpp|CompletionService::findModuleSymbolsByType[ \t\r\n]*\\("
-    "completionservice.h|findGlobalSymbolsByType[ \t\r\n]*\\("
+    "src/completion/completionservice.h|findGlobalSymbolsByType[ \t\r\n]*\\("
     "completionservicesemantic.cpp|CompletionService::findGlobalSymbolsByType[ \t\r\n]*\\("
-    "completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
+    "src/completion/completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
     "completionservicesemantic.cpp|CompletionService::symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/completion/completionservice.h|symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "completionservicesemantic.cpp|CompletionService::symbolTypeDescription[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "completionservice.h|commandSymbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "completionservicecommand.cpp|CompletionService::commandSymbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "completioncommandmode.h|symbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "completioncommandmode.cpp|CompletionCommandMode::symbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "completiontypes.h|struct[ \t\r\n]+CommandCompletionQuery[ \t\r\n]*\\{[^}]*symbolType"
-    "completiontypes.h|struct[ \t\r\n]+CommandCompletionQuery[ \t\r\n]*\\{[^}]*rawCollectorKind"
-    "completiontypes.h|struct[ \t\r\n]+CommandModeCommand[ \t\r\n]*\\{[^}]*symbolType"
-    "completiontypes.h|struct[ \t\r\n]+CommandModeCommand[ \t\r\n]*\\{[^}]*rawCollectorKind"
-    "completiontypes.h|struct[ \t\r\n]+CommandModeCompletionState[ \t\r\n]*\\{[^}]*requestedRawCollectorKind"
-    "completiontypes.h|requestedKind"
-    "completionservicecommand.cpp|command\\.symbolType"
-    "completionservicecommand.cpp|command\\.rawCollectorKind"
-    "completionservicecommand.cpp|completionQuery\\.symbolType"
-    "completionservicecommand.cpp|completionQuery\\.rawCollectorKind"
-    "completionsemanticquery.cpp|query\\.symbolType"
-    "completionsemanticquery.cpp|query\\.rawCollectorKind"
-    "editorcompletionui.cpp|requestedRawCollectorKind"
+    "src/completion/completionservice.h|commandSymbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/completion/completionservicecommand.cpp|CompletionService::commandSymbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/completion/completioncommandmode.h|symbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/completion/completioncommandmode.cpp|CompletionCommandMode::symbolCompletionItem[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandCompletionQuery[ \t\r\n]*\\{[^}]*symbolType"
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandCompletionQuery[ \t\r\n]*\\{[^}]*rawCollectorKind"
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandModeCommand[ \t\r\n]*\\{[^}]*symbolType"
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandModeCommand[ \t\r\n]*\\{[^}]*rawCollectorKind"
+    "src/completion/completiontypes.h|struct[ \t\r\n]+CommandModeCompletionState[ \t\r\n]*\\{[^}]*requestedRawCollectorKind"
+    "src/completion/completiontypes.h|requestedKind"
+    "src/completion/completionservicecommand.cpp|command\\.symbolType"
+    "src/completion/completionservicecommand.cpp|command\\.rawCollectorKind"
+    "src/completion/completionservicecommand.cpp|completionQuery\\.symbolType"
+    "src/completion/completionservicecommand.cpp|completionQuery\\.rawCollectorKind"
+    "src/completion/completionsemanticquery.cpp|query\\.symbolType"
+    "src/completion/completionsemanticquery.cpp|query\\.rawCollectorKind"
+    "src/editor/editorcompletionui.cpp|requestedRawCollectorKind"
     "test_sv/completion_test.cpp|findModuleSymbolsByType[ \t\r\n]*\\("
     "test_sv/completion_test.cpp|findGlobalSymbolsByType[ \t\r\n]*\\("
     "test_sv/completion_test.cpp|findSymbolCompletionsByType[ \t\r\n]*\\("
     "test_sv/completion_test.cpp|getGlobalSymbolsByType[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|parameterCompletion\\.rawCollectorKind"
     "test_sv/relationship_test.cpp|typedefCompletion\\.rawCollectorKind"
-    "definitionnavigationservice.h|sym_list::sym_type_e[ \t\r\n]+symbolType"
-    "definitionnavigationservice.cpp|target\\.symbolType[ \t\r\n]*="
-    "fsmgraphservice.h|moduleSymbolId"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+stateRegister"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+nextStateSignal"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+states"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<FsmTransition>[ \t\r\n]+transitions"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmStateRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+state"
-    "fsmgraphservice.h|struct[ \t\r\n]+FsmTransitionRow[ \t\r\n]*\\{[^}]*FsmTransition[ \t\r\n]+transition"
-    "fsmgraphservice.h|isInsideModule[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "fsmgraphservice.h|hasStateValuesForType[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "fsmgraphservice.h|stateDetailDisplayName[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "fsmgraphservice.h|sortSymbols[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "fsmgraphservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
-    "fsmgraphservice.cpp|moduleSymbol\\.symbolId"
-    "fsmgraphservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
-    "fsmgraphservice.cpp|symbol\\.symbolId[ \t\r\n]*=="
-    "fsmgraphservice.cpp|seen\\.contains[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
-    "fsmgraphservice.cpp|seen\\.insert[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
-    "fsmgraphservice.cpp|stateRegister\\.symbolId"
-    "fsmgraphservice.cpp|nextStateSignal\\.symbolId"
-    "fsmgraphservice.cpp|lhs\\.symbolId"
-    "fsmgraphservice.cpp|rhs\\.symbolId"
-    "hierarchyservice.h|struct[ \t\r\n]+HierarchyQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
-    "hierarchyservice.h|struct[ \t\r\n]+HierarchyNode[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "hierarchyservice.h|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int"
-    "hierarchyservice.cpp|node\\.symbol[ \t\r\n]*="
-    "hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
-    "modulebriefservice.h|moduleSymbolId"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+ports"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+parameters"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+instances"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+imports"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+peerSymbol"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+fromSymbol"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "modulebriefservice.h|struct[ \t\r\n]+ModuleBriefContextRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "modulebriefservice.h|isInsideModule[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "modulebriefservice.h|symbolDisplayName[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "modulebriefservice.h|interfaceNames[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "modulebriefservice.h|sortSymbols[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
-    "modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "modulebriefservice.cpp|moduleSymbol\\.symbolId"
-    "modulebriefservice.cpp|packageSymbol\\.symbolId"
-    "modulebriefservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
-    "modulebriefservice.cpp|lhs\\.symbolId"
-    "modulebriefservice.cpp|rhs\\.symbolId"
-    "relationshipservice.h|struct[ \t\r\n]+DirectedRelationshipResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
-    "navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "navigationservice.cpp|result\\.symbol[ \t\r\n]*="
-    "navigationservice.h|moduleSymbols[ \t\r\n]*\\("
-    "navigationservice.h|buildModuleFileGroups[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "navigationservice.h|buildModuleInstantiationHierarchy[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "navigationcommandcoordinator.h|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationcommandcoordinator.cpp|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationmanager.h|symbolNavigationRequested"
-    "navigationmanager.cpp|symbolNavigationRequested"
-    "navigationmanager.h|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationmanager.cpp|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationmanagerconnections.cpp|SIGNAL\\(symbolDoubleClicked\\(sym_list::SymbolInfo\\)\\)"
-    "navigationmanagerconnections.cpp|onSymbolTreeDoubleClicked[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationwidget.h|symbolDoubleClicked[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
-    "navigationwidget.cpp|symbolDoubleClicked[ \t\r\n]*\\("
-    "symboloutlinemodel.h|struct[ \t\r\n]+SymbolOutlineSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "symboloutlinemodel.h|symbolOutlineCompatibilitySymbolForRecord[ \t\r\n]*\\("
-    "symboloutlinemodel.h|struct[ \t\r\n]+SymbolOutlineGroup[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
-    "symboloutlinemodel.h|symbolOutlineGroupsWithRows[ \t\r\n]*\\("
+    "src/navigation/definitionnavigationservice.h|sym_list::sym_type_e[ \t\r\n]+symbolType"
+    "src/navigation/definitionnavigationservice.cpp|target\\.symbolType[ \t\r\n]*="
+    "src/insights/fsmgraphservice.h|moduleSymbolId"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+stateRegister"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+nextStateSignal"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+states"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmGraph[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<FsmTransition>[ \t\r\n]+transitions"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmStateRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+state"
+    "src/insights/fsmgraphservice.h|struct[ \t\r\n]+FsmTransitionRow[ \t\r\n]*\\{[^}]*FsmTransition[ \t\r\n]+transition"
+    "src/insights/fsmgraphservice.h|isInsideModule[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/insights/fsmgraphservice.h|hasStateValuesForType[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/insights/fsmgraphservice.h|stateDetailDisplayName[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/insights/fsmgraphservice.h|sortSymbols[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/insights/fsmgraphservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "src/insights/fsmgraphservice.cpp|moduleSymbol\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
+    "src/insights/fsmgraphservice.cpp|symbol\\.symbolId[ \t\r\n]*=="
+    "src/insights/fsmgraphservice.cpp|seen\\.contains[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|seen\\.insert[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|stateRegister\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|nextStateSignal\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|lhs\\.symbolId"
+    "src/insights/fsmgraphservice.cpp|rhs\\.symbolId"
+    "src/semantic/hierarchyservice.h|struct[ \t\r\n]+HierarchyQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
+    "src/semantic/hierarchyservice.h|struct[ \t\r\n]+HierarchyNode[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/hierarchyservice.h|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int"
+    "src/semantic/hierarchyservice.cpp|node\\.symbol[ \t\r\n]*="
+    "src/semantic/hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
+    "src/semantic/modulebriefservice.h|moduleSymbolId"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+ports"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+parameters"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+instances"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+imports"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+peerSymbol"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+fromSymbol"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefContextRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/modulebriefservice.h|isInsideModule[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/modulebriefservice.h|symbolDisplayName[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/modulebriefservice.h|interfaceNames[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/modulebriefservice.h|sortSymbols[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
+    "src/semantic/modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "src/semantic/modulebriefservice.cpp|moduleSymbol\\.symbolId"
+    "src/semantic/modulebriefservice.cpp|packageSymbol\\.symbolId"
+    "src/semantic/modulebriefservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
+    "src/semantic/modulebriefservice.cpp|lhs\\.symbolId"
+    "src/semantic/modulebriefservice.cpp|rhs\\.symbolId"
+    "src/semantic/relationshipservice.h|struct[ \t\r\n]+DirectedRelationshipResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
+    "src/navigation/navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/navigation/navigationservice.cpp|result\\.symbol[ \t\r\n]*="
+    "src/navigation/navigationservice.h|moduleSymbols[ \t\r\n]*\\("
+    "src/navigation/navigationservice.h|buildModuleFileGroups[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/navigation/navigationservice.h|buildModuleInstantiationHierarchy[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/navigation/navigationcommandcoordinator.h|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/navigation/navigationcommandcoordinator.cpp|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/navigation/navigationmanager.h|symbolNavigationRequested"
+    "src/navigation/navigationmanager.cpp|symbolNavigationRequested"
+    "src/navigation/navigationmanager.h|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/navigation/navigationmanager.cpp|navigateToSymbol[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/navigation/navigationmanagerconnections.cpp|SIGNAL\\(symbolDoubleClicked\\(sym_list::SymbolInfo\\)\\)"
+    "src/navigation/navigationmanagerconnections.cpp|onSymbolTreeDoubleClicked[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/ui/navigationwidget.h|symbolDoubleClicked[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+sym_list::SymbolInfo"
+    "src/ui/navigationwidget.cpp|symbolDoubleClicked[ \t\r\n]*\\("
+    "src/semantic/symboloutlinemodel.h|struct[ \t\r\n]+SymbolOutlineSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/symboloutlinemodel.h|symbolOutlineCompatibilitySymbolForRecord[ \t\r\n]*\\("
+    "src/semantic/symboloutlinemodel.h|struct[ \t\r\n]+SymbolOutlineGroup[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+symbols"
+    "src/semantic/symboloutlinemodel.h|symbolOutlineGroupsWithRows[ \t\r\n]*\\("
     "semanticindexcompletionrelationships.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbolId"
-    "semanticindexmodulecontext.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "relationshipservice.h|struct[ \t\r\n]+RelationshipQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId|struct[ \t\r\n]+RelationshipBrowseQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
-    "relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
-    "relationshipservice.h|hasRelationship[ \t\r\n]*\\([ \t\r\n]*int"
-    "relationshipservice.h|subjectSymbolId"
-    "relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*relationship\\.fromSymbol[ \t\r\n,\\)]"
-    "relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*relationship\\.toSymbol[ \t\r\n,\\)]"
-    "relationshipservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "relationshipservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "relationshipserviceordering.cpp|lhsSymbol[ \t\r\n]*="
-    "relationshipserviceordering.cpp|relationshipSymbolLess[ \t\r\n]*\\("
-    "relationshipserviceordering.cpp|\\.fromSymbol[^A-Za-z0-9_]"
-    "relationshipserviceordering.cpp|\\.toSymbol[^A-Za-z0-9_]"
-    "semanticindex.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
-    "semanticindex.h|getRelationshipResults[ \t\r\n]*\\([ \t\r\n]*int"
-    "semanticindex.h|findSymbolId[ \t\r\n]*\\("
-    "semanticindex.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
-    "semanticindex.h|getSymbolRecordByLocalHandle[ \t\r\n]*\\("
-    "semanticindex.h|getSymbolByStableKey[ \t\r\n]*\\("
-    "semanticindex.h|getSymbols[ \t\r\n]*\\("
-    "semanticindex.h|getSymbolsByType[ \t\r\n]*\\("
-    "semanticindex.h|getModuleCompletionSymbols[ \t\r\n]*\\("
-    "semanticindex.h|getGlobalCompletionSymbols[ \t\r\n]*\\("
-    "semanticindex.h|getCommandCompletionSymbols[ \t\r\n]*\\("
-    "semanticindex.h|getGlobalSymbolInfosByType[ \t\r\n]*\\("
-    "semanticindex.h|getTypedCompletionSymbols[ \t\r\n]*\\("
-    "semanticindex.h|getStructMembers[ \t\r\n]*\\("
-    "semanticindex.h|getModuleInternalSymbolsByType[ \t\r\n]*\\("
-    "semanticindex.h|getModuleContextSymbolsByType[ \t\r\n]*\\("
-    "semanticindex.h|getCommandCompletionSymbolRecords[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "semanticindex.h|getModuleInternalSymbolRecordsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "semanticindex.h|getModuleContextSymbolRecordsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
-    "semanticindex.h|rawCollectorKinds"
-    "semanticindexlookuphelpers.h|rawCollectorKinds"
-    "semanticindexlookuphelpers.cpp|rawCollectorKinds"
-    "semanticindexlookuphelpers.h|symbolSearchTypeMatches[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "semanticindexlookuphelpers.h|semanticDefinitionSymbolMatches[ \t\r\n]*\\("
-    "semanticindexlookuphelpers.h|semanticDefinitionTypePriority[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "semanticindexlookuphelpers.h|semanticDefinitionSkipForStructMemberType[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "semanticindex.h|findDefinitions[ \t\r\n]*\\("
-    "semanticindex.h|findDefinitionSymbols[ \t\r\n]*\\("
-    "semanticindexlookup.cpp|SemanticIndex::findDefinitionSymbols[ \t\r\n]*\\("
-    "semanticindexcompletiontypequeries.cpp|SemanticIndex::getTypedCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexmodulecontext.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "src/semantic/relationshipservice.h|struct[ \t\r\n]+RelationshipQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId|struct[ \t\r\n]+RelationshipBrowseQuery[ \t\r\n]*\\{[^}]*int[ \t\r\n]+symbolId"
+    "src/semantic/relationshipservice.h|findRelatedSymbolIds[ \t\r\n]*\\("
+    "src/semantic/relationshipservice.h|hasRelationship[ \t\r\n]*\\([ \t\r\n]*int"
+    "src/semantic/relationshipservice.h|subjectSymbolId"
+    "src/semantic/relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*relationship\\.fromSymbol[ \t\r\n,\\)]"
+    "src/semantic/relationshipservice.cpp|relationshipEndpointStableKey[ \t\r\n]*\\([^\\)]*relationship\\.toSymbol[ \t\r\n,\\)]"
+    "src/semantic/relationshipservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/relationshipservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/relationshipserviceordering.cpp|lhsSymbol[ \t\r\n]*="
+    "src/semantic/relationshipserviceordering.cpp|relationshipSymbolLess[ \t\r\n]*\\("
+    "src/semantic/relationshipserviceordering.cpp|\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/relationshipserviceordering.cpp|\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/semanticindex.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
+    "src/semantic/semanticindex.h|getRelationshipResults[ \t\r\n]*\\([ \t\r\n]*int"
+    "src/semantic/semanticindex.h|findSymbolId[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
+    "src/semantic/semanticindex.h|getSymbolRecordByLocalHandle[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getSymbolByStableKey[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getModuleCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getGlobalCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getCommandCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getGlobalSymbolInfosByType[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getTypedCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getStructMembers[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getModuleInternalSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getModuleContextSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|getCommandCompletionSymbolRecords[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
+    "src/semantic/semanticindex.h|getModuleInternalSymbolRecordsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
+    "src/semantic/semanticindex.h|getModuleContextSymbolRecordsByType[ \t\r\n]*\\([^\\)]*sym_list::sym_type_e"
+    "src/semantic/semanticindex.h|rawCollectorKinds"
+    "src/semantic/semanticindexlookuphelpers.h|rawCollectorKinds"
+    "src/semantic/semanticindexlookuphelpers.cpp|rawCollectorKinds"
+    "src/semantic/semanticindexlookuphelpers.h|symbolSearchTypeMatches[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/semanticindexlookuphelpers.h|semanticDefinitionSymbolMatches[ \t\r\n]*\\("
+    "src/semantic/semanticindexlookuphelpers.h|semanticDefinitionTypePriority[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/semanticindexlookuphelpers.h|semanticDefinitionSkipForStructMemberType[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/semanticindex.h|findDefinitions[ \t\r\n]*\\("
+    "src/semantic/semanticindex.h|findDefinitionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexlookup.cpp|SemanticIndex::findDefinitionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexcompletiontypequeries.cpp|SemanticIndex::getTypedCompletionSymbols[ \t\r\n]*\\("
     "semanticindexcompletionqueries.cpp|SemanticIndex::getModuleCompletionSymbols[ \t\r\n]*\\("
     "semanticindexcompletionqueries.cpp|SemanticIndex::getGlobalCompletionSymbols[ \t\r\n]*\\("
-    "semanticindexcompletiontypequeries.cpp|SemanticIndex::getCommandCompletionSymbols[ \t\r\n]*\\("
-    "semanticindexcompletiontypequeries.cpp|SemanticIndex::getGlobalSymbolInfosByType[ \t\r\n]*\\("
-    "semanticindexcompletioncontext.cpp|SemanticIndex::getStructMembers[ \t\r\n]*\\("
-    "semanticindexmodulecontext.cpp|SemanticIndex::getModuleInternalSymbolsByType[ \t\r\n]*\\("
-    "semanticindexcompletioncontext.cpp|getModuleInternalSymbolsByType[ \t\r\n]*\\("
-    "semanticindexmodulecontext.cpp|SemanticIndex::getModuleContextSymbolsByType[ \t\r\n]*\\("
-    "completionsemanticquery.cpp|getModuleContextSymbolsByType[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
-    "semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
-    "semanticindexsnapshot.h|getSymbolRecordByLocalHandle[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|getSymbolByStableKey[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|getSymbols[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|getSymbolsByType[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
-    "semanticindexsnapshot.cpp|SemanticIndexSnapshot::SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
-    "semanticindexsnapshot.h|findDefinitions[ \t\r\n]*\\("
-    "semanticindexsnapshot.h|QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+m_symbols"
-    "semanticindexsnapshotqueries.cpp|semanticSymbolRecordForSymbol[ \t\r\n]*\\("
-    "semanticindexsnapshotqueries.cpp|semanticSymbolRecordsForSymbols[ \t\r\n]*\\("
-    "semanticindexstore.cpp|SemanticIndex::getSymbols[ \t\r\n]*\\("
-    "semanticindexsnapshotqueries.cpp|SemanticIndexSnapshot::getSymbols[ \t\r\n]*\\("
-    "semanticindexsnapshot.cpp|snapshotSymbolById[ \t\r\n]*\\("
-    "semanticindexsnapshot.cpp|snapshotSymbolIdByStableKey[ \t\r\n]*\\("
-    "semanticindexsnapshot.cpp|reboundFromId"
-    "semanticindexsnapshot.cpp|reboundToId"
-    "semanticindexsnapshot.cpp|symbol\\.symbolId[ \t\r\n]*=="
-    "semanticindexsnapshot.cpp|symbol\\.symbolId[ \t\r\n]*<"
-    "semanticindexsnapshot.cpp|engine->getRelatedSymbols[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
-    "semanticindexsnapshot.cpp|relationship\\.fromId[ \t\r\n]*=[ \t\r\n]*symbol\\.symbolId"
-    "semanticindexsnapshot.cpp|return[ \t\r\n]+symbol\\.symbolId"
-    "semanticindexrelationships.cpp|int[ \t\r\n]+symbolId[ \t\r\n]*\\)"
-    "semanticindexrelationships.cpp|otherId"
+    "src/semantic/semanticindexcompletiontypequeries.cpp|SemanticIndex::getCommandCompletionSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexcompletiontypequeries.cpp|SemanticIndex::getGlobalSymbolInfosByType[ \t\r\n]*\\("
+    "src/semantic/semanticindexcompletioncontext.cpp|SemanticIndex::getStructMembers[ \t\r\n]*\\("
+    "src/semantic/semanticindexmodulecontext.cpp|SemanticIndex::getModuleInternalSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindexcompletioncontext.cpp|getModuleInternalSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindexmodulecontext.cpp|SemanticIndex::getModuleContextSymbolsByType[ \t\r\n]*\\("
+    "src/completion/completionsemanticquery.cpp|getModuleContextSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|getRelationships[ \t\r\n]*\\([ \t\r\n]*int"
+    "src/semantic/semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|findSymbolId[ \t\r\n]*\\([ \t\r\n]*const[ \t\r\n]+SymbolStableKey"
+    "src/semantic/semanticindexsnapshot.h|getSymbolRecordByLocalHandle[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|getSymbolByStableKey[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|getSymbolsByType[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
+    "src/semantic/semanticindexsnapshot.cpp|SemanticIndexSnapshot::SemanticIndexSnapshot[ \t\r\n]*\\([ \t\r\n]*QList[ \t\r\n]*<sym_list::SymbolInfo>"
+    "src/semantic/semanticindexsnapshot.h|findDefinitions[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.h|QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+m_symbols"
+    "src/semantic/semanticindexsnapshotqueries.cpp|semanticSymbolRecordForSymbol[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshotqueries.cpp|semanticSymbolRecordsForSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexstore.cpp|SemanticIndex::getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshotqueries.cpp|SemanticIndexSnapshot::getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.cpp|snapshotSymbolById[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.cpp|snapshotSymbolIdByStableKey[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshot.cpp|reboundFromId"
+    "src/semantic/semanticindexsnapshot.cpp|reboundToId"
+    "src/semantic/semanticindexsnapshot.cpp|symbol\\.symbolId[ \t\r\n]*=="
+    "src/semantic/semanticindexsnapshot.cpp|symbol\\.symbolId[ \t\r\n]*<"
+    "src/semantic/semanticindexsnapshot.cpp|engine->getRelatedSymbols[ \t\r\n]*\\([^\\)]*symbol\\.symbolId"
+    "src/semantic/semanticindexsnapshot.cpp|relationship\\.fromId[ \t\r\n]*=[ \t\r\n]*symbol\\.symbolId"
+    "src/semantic/semanticindexsnapshot.cpp|return[ \t\r\n]+symbol\\.symbolId"
+    "src/semantic/semanticindexrelationships.cpp|int[ \t\r\n]+symbolId[ \t\r\n]*\\)"
+    "src/semantic/semanticindexrelationships.cpp|otherId"
     "syminfo.h|getSymbolById[ \t\r\n]*\\("
     "syminfoindex.cpp|getSymbolById[ \t\r\n]*\\("
     "syminfo.h|findSymbolIdByName[ \t\r\n]*\\("
@@ -703,14 +703,14 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "semanticcollectoradapter.h|symbolInfosForSemanticRecords[ \t\r\n]*\\("
     "semanticcollectoradapter.h|semanticSymbolRecordsForDatabaseByName[ \t\r\n]*\\("
     "semanticcollectoradapter.h|symbolStableKeyForSymbol[ \t\r\n]*\\("
-    "smartrelationshipbuilderanalysis.cpp|semanticSymbolRecordsForDatabaseByName[ \t\r\n]*\\("
-    "smartrelationshipbuilder.h|findSymbolIdByName[ \t\r\n]*\\("
-    "smartrelationshipbuildertiming.cpp|findSymbolIdByName[ \t\r\n]*\\("
-    "smartrelationshipbuilder.h|currentModuleId"
-    "smartrelationshipbuilder.h|localSymbolIds"
-    "smartrelationshipbuilder.h|symbolIdToType"
-    "smartrelationshipbuilder.h|getContainingModuleId[ \t\r\n]*\\("
-    "smartrelationshipbuilder.h|getAffectedSymbolIds[ \t\r\n]*\\("
+    "src/semantic/smartrelationshipbuilderanalysis.cpp|semanticSymbolRecordsForDatabaseByName[ \t\r\n]*\\("
+    "src/semantic/smartrelationshipbuilder.h|findSymbolIdByName[ \t\r\n]*\\("
+    "src/semantic/smartrelationshipbuildertiming.cpp|findSymbolIdByName[ \t\r\n]*\\("
+    "src/semantic/smartrelationshipbuilder.h|currentModuleId"
+    "src/semantic/smartrelationshipbuilder.h|localSymbolIds"
+    "src/semantic/smartrelationshipbuilder.h|symbolIdToType"
+    "src/semantic/smartrelationshipbuilder.h|getContainingModuleId[ \t\r\n]*\\("
+    "src/semantic/smartrelationshipbuilder.h|getAffectedSymbolIds[ \t\r\n]*\\("
     "syminfo.h|findSymbolsByType[ \t\r\n]*\\("
     "syminfoindex.cpp|findSymbolsByType[ \t\r\n]*\\("
     "syminfo.h|getSymbolNamesByType[ \t\r\n]*\\("
@@ -723,85 +723,85 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "syminfoindex.cpp|hasSymbol[ \t\r\n]*\\("
     "syminfo.h|symbolTypeIndex"
     "syminfoindex.cpp|symbolTypeIndex"
-    "semanticindexsnapshotqueries.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
-    "semanticindexsnapshotqueries.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolByStableKey"
-    "semanticindexsnapshotqueries.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+fromSymbol[ \t\r\n]*=[ \t\r\n]*getSymbolByStableKey"
-    "semanticindexsnapshotqueries.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+toSymbol[ \t\r\n]*=[ \t\r\n]*getSymbolByStableKey"
-    "semanticindexsnapshotqueries.cpp|const[ \t\r\n]+int[ \t\r\n]+symbolId[ \t\r\n]*=[ \t\r\n]*outgoing"
-    "semanticindexsnapshotqueries.cpp|relationshipKey[ \t\r\n]*=[ \t\r\n]*outgoing[ \t\r\n]*\\?[ \t\r\n]*relationship\\.fromStableKey"
-    "semanticindexstore.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolByStableKey"
-    "semanticindexmodulecontext.cpp|fileModules\\.at\\(i\\)\\.symbolId"
-    "semanticindexmodulecontext.cpp|symbol\\.symbolId[ \t\r\n]*=="
-    "semanticindexmodulecontext.cpp|targetSymbol\\.symbolId"
-    "semanticindexmodulecontexthelpers.cpp|a\\.symbolId"
-    "semanticindexmodulecontexthelpers.cpp|b\\.symbolId"
-    "semanticindexcompletioncontext.cpp|a\\.symbolId"
-    "semanticindexcompletioncontext.cpp|b\\.symbolId"
-    "semanticindexcompletion.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexsnapshotqueries.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
+    "src/semantic/semanticindexsnapshotqueries.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolByStableKey"
+    "src/semantic/semanticindexsnapshotqueries.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+fromSymbol[ \t\r\n]*=[ \t\r\n]*getSymbolByStableKey"
+    "src/semantic/semanticindexsnapshotqueries.cpp|const[ \t\r\n]+sym_list::SymbolInfo[ \t\r\n]+toSymbol[ \t\r\n]*=[ \t\r\n]*getSymbolByStableKey"
+    "src/semantic/semanticindexsnapshotqueries.cpp|const[ \t\r\n]+int[ \t\r\n]+symbolId[ \t\r\n]*=[ \t\r\n]*outgoing"
+    "src/semantic/semanticindexsnapshotqueries.cpp|relationshipKey[ \t\r\n]*=[ \t\r\n]*outgoing[ \t\r\n]*\\?[ \t\r\n]*relationship\\.fromStableKey"
+    "src/semantic/semanticindexstore.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolByStableKey"
+    "src/semantic/semanticindexmodulecontext.cpp|fileModules\\.at\\(i\\)\\.symbolId"
+    "src/semantic/semanticindexmodulecontext.cpp|symbol\\.symbolId[ \t\r\n]*=="
+    "src/semantic/semanticindexmodulecontext.cpp|targetSymbol\\.symbolId"
+    "src/semantic/semanticindexmodulecontexthelpers.cpp|a\\.symbolId"
+    "src/semantic/semanticindexmodulecontexthelpers.cpp|b\\.symbolId"
+    "src/semantic/semanticindexcompletioncontext.cpp|a\\.symbolId"
+    "src/semantic/semanticindexcompletioncontext.cpp|b\\.symbolId"
+    "src/semantic/semanticindexcompletion.cpp|getSymbols[ \t\r\n]*\\("
     "semanticindexcompletionqueries.cpp|getSymbols[ \t\r\n]*\\("
     "semanticindexcompletionrelationships.cpp|getSymbols[ \t\r\n]*\\("
-    "semanticindexcompletiontypequeries.cpp|getSymbols[ \t\r\n]*\\("
-    "semanticindexlookup.cpp|getSymbols[ \t\r\n]*\\("
-    "relationshipanalysisworker.cpp|getSymbols[ \t\r\n]*\\("
-    "semanticindexrelationships.cpp|getSymbols[ \t\r\n]*\\("
-    "semanticindexmodulecontext.cpp|getSymbols[ \t\r\n]*\\("
-    "modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
-    "fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
-    "clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("
-    "signaljourneyservice.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexcompletiontypequeries.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexlookup.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/relationshipanalysisworker.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexrelationships.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/semanticindexmodulecontext.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
+    "src/insights/fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("
+    "src/semantic/signaljourneyservice.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/gui_smoke_test.cpp|getSymbols[ \t\r\n]*\\("
-    "searchservice.h|struct[ \t\r\n]+SearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*sym_list::sym_type_e"
-    "searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::sym_type_e>"
-    "searchservice.cpp|item\\.symbol[ \t\r\n]*="
-    "semanticindex.h|struct[ \t\r\n]+SemanticSymbolSearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "semanticindexlookup.cpp|item\\.symbol[ \t\r\n]*="
-    "semanticindex.h|legacyTypes"
-    "semanticindexlookup.cpp|legacyTypes"
-    "semanticindexlookuphelpers.h|legacyTypes"
-    "semanticindexlookuphelpers.cpp|legacyTypes"
-    "signaljourneyservice.h|struct[ \t\r\n]+SignalJourneyItem[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"
-    "semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
-    "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.fromId"
-    "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.toId"
-    "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.fromId"
-    "semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.toId"
-    "semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
-    "semanticindexrelationships.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
-    "semanticindex.h|struct[ \t\r\n]+SemanticRelationshipResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+fromSymbol"
-    "semanticindex.h|struct[ \t\r\n]+SemanticRelationshipResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
-    "semanticindex.h|struct[ \t\r\n]+SemanticDefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "semanticindexlookup.cpp|best\\.symbol[ \t\r\n]*="
-    "modulebriefservice.cpp|return[ \t\r\n]+definition\\.symbol"
-    "signaljourneyservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
-    "fsmgraphservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
-    "semanticindexrelationships.cpp|relationshipEndpointSymbol"
-    "semanticindexrelationships.cpp|symbolByLocalHandle"
-    "clockresetdomainservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "clockresetdomainservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "hierarchyservice.cpp|rel\\.fromSymbol[^A-Za-z0-9_]"
-    "hierarchyservice.cpp|rel\\.toSymbol[^A-Za-z0-9_]"
-    "modulebriefservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "modulebriefservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
+    "src/commands/searchservice.h|struct[ \t\r\n]+SearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/commands/searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*sym_list::sym_type_e"
+    "src/commands/searchservice.h|struct[ \t\r\n]+SearchQuery[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::sym_type_e>"
+    "src/commands/searchservice.cpp|item\\.symbol[ \t\r\n]*="
+    "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticSymbolSearchResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/semanticindexlookup.cpp|item\\.symbol[ \t\r\n]*="
+    "src/semantic/semanticindex.h|legacyTypes"
+    "src/semantic/semanticindexlookup.cpp|legacyTypes"
+    "src/semantic/semanticindexlookuphelpers.h|legacyTypes"
+    "src/semantic/semanticindexlookuphelpers.cpp|legacyTypes"
+    "src/semantic/signaljourneyservice.h|struct[ \t\r\n]+SignalJourneyItem[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
+    "src/semantic/semanticindexrelationships.cpp|getRelationships[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId|getRelationships[ \t\r\n]*\\([^\\)]*symbol\\.symbolId|getRelationshipResults[ \t\r\n]*\\([^\\)]*defs\\.first\\(\\)\\.symbolId"
+    "src/semantic/semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*getSymbolById"
+    "src/semantic/semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.fromId"
+    "src/semantic/semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*relationship\\.toId"
+    "src/semantic/semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.fromId"
+    "src/semantic/semanticindexrelationships.cpp|getSymbolById[ \t\r\n]*\\([ \t\r\n]*rel\\.toId"
+    "src/semantic/semanticindexrelationships.cpp|relationshipStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
+    "src/semantic/semanticindexrelationships.cpp|return[ \t\r\n]+semanticSymbolRecordForSymbol[ \t\r\n]*\\([ \t\r\n]*relationshipEndpointSymbol"
+    "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticRelationshipResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+fromSymbol"
+    "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticRelationshipResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
+    "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticDefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
+    "src/semantic/semanticindexlookup.cpp|best\\.symbol[ \t\r\n]*="
+    "src/semantic/modulebriefservice.cpp|return[ \t\r\n]+definition\\.symbol"
+    "src/semantic/signaljourneyservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
+    "src/insights/fsmgraphservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
+    "src/semantic/semanticindexrelationships.cpp|relationshipEndpointSymbol"
+    "src/semantic/semanticindexrelationships.cpp|symbolByLocalHandle"
+    "src/semantic/clockresetdomainservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/clockresetdomainservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/hierarchyservice.cpp|rel\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/hierarchyservice.cpp|rel\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/modulebriefservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/modulebriefservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
     "semanticindexcompletionrelationships.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
     "semanticindexcompletionrelationships.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "semanticindexmodulecontext.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "signaljourneyservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "signaljourneyservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "clockresetdomainservice.cpp|SymbolTaxonomy::semanticMetadata[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "fsmgraphservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "modulebriefservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "signaljourneyservice.cpp|isJourneyDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
+    "src/semantic/semanticindexmodulecontext.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/signaljourneyservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
+    "src/semantic/signaljourneyservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
+    "src/semantic/clockresetdomainservice.cpp|SymbolTaxonomy::semanticMetadata[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
+    "src/insights/fsmgraphservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
+    "src/semantic/modulebriefservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
+    "src/semantic/signaljourneyservice.cpp|isJourneyDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "semanticindexcompletionrelationships.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "signaljourneyservice.h|signalSymbolId"
-    "signaljourneyservice.h|isJourneyDeclaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "signaljourneyservice.h|isInterfaceConnectionPeer[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
-    "signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "signaljourneyservice.cpp|signal\\.symbolId"
-    "signaljourneyservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
+    "src/semantic/signaljourneyservice.h|signalSymbolId"
+    "src/semantic/signaljourneyservice.h|isJourneyDeclaration[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/signaljourneyservice.h|isInterfaceConnectionPeer[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
+    "src/semantic/signaljourneyservice.cpp|signalSymbolId|getSymbolById[ \t\r\n]*\\("
+    "src/semantic/signaljourneyservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
+    "src/semantic/signaljourneyservice.cpp|signal\\.symbolId"
+    "src/semantic/signaljourneyservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
 )
 
 set(missing_files)
@@ -1489,10 +1489,10 @@ if(phase_i4_legacy_taxonomy_include_violations)
         "Phase I5 removed legacy taxonomy header must not be included by tests:\n  ${phase_i4_legacy_taxonomy_include_violation_text}")
 endif()
 
-file(GLOB phase_i4_legacy_taxonomy_include_sources
+file(GLOB_RECURSE phase_i4_legacy_taxonomy_include_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-    "${ZEROSLACK_SOURCE_DIR}/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
 )
@@ -1531,11 +1531,11 @@ if(phase_j_allowlist_missing_files)
         "Phase J fixture cleanup allowlist references missing files:\n  ${phase_j_allowlist_missing_text}")
 endif()
 
-file(GLOB phase_j_repo_sources
+file(GLOB_RECURSE phase_j_repo_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
-    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-    "${ZEROSLACK_SOURCE_DIR}/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.sv"
@@ -1579,10 +1579,10 @@ if(phase_l_regex_allowlist_missing_files)
         "Phase L regex cleanup allowlist references missing files:\n  ${phase_l_regex_allowlist_missing_text}")
 endif()
 
-file(GLOB phase_l_production_sources
+file(GLOB_RECURSE phase_l_production_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-    "${ZEROSLACK_SOURCE_DIR}/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.h"
 )
 
 set(phase_l_regex_spread_violations)
@@ -1735,10 +1735,10 @@ if(h0_allowlist_missing_files)
         "Phase H0 legacy core allowlist references missing files:\n  ${h0_allowlist_missing_text}")
 endif()
 
-file(GLOB h0_first_party_sources
+file(GLOB_RECURSE h0_first_party_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-    "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-    "${ZEROSLACK_SOURCE_DIR}/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+    "${ZEROSLACK_SOURCE_DIR}/src/*.h"
 )
 
 set(h0_legacy_core_violations)
@@ -1766,11 +1766,11 @@ if(h0_legacy_core_violations)
 endif()
 
 if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
-    file(GLOB phase_j_zero_root_sources
+    file(GLOB_RECURSE phase_j_zero_root_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
         "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
-        "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-        "${ZEROSLACK_SOURCE_DIR}/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/src/*.h"
     )
     file(GLOB_RECURSE phase_j_zero_test_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
@@ -1806,10 +1806,10 @@ if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
 endif()
 
 if(ZEROSLACK_PHASE_L_ZERO_TARGET)
-    file(GLOB phase_l_zero_root_sources
+    file(GLOB_RECURSE phase_l_zero_root_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-        "${ZEROSLACK_SOURCE_DIR}/*.cpp"
-        "${ZEROSLACK_SOURCE_DIR}/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
+        "${ZEROSLACK_SOURCE_DIR}/src/*.h"
     )
     file(GLOB_RECURSE phase_l_zero_test_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"

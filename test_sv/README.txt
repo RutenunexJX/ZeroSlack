@@ -52,7 +52,7 @@ Useful focused runs:
 
 ```text
 ctest -R "completion_test|jump_test|relationship_test|gui_smoke_test" --output-on-failure
-cmake -DZEROSLACK_SOURCE_DIR=<repo> -DZEROSLACK_PHASE_J_ZERO_TARGET=ON -P <repo>/legacy_field_policy_guard.ctest
+cmake -DZEROSLACK_SOURCE_DIR=<repo> -DZEROSLACK_PHASE_J_ZERO_TARGET=ON -P <repo>/cmake/legacy_field_policy_guard.ctest
 ```
 
 Notes

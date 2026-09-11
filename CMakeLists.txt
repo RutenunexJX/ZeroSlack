@@ -229,512 +229,512 @@ find_package(SuiteApp 1 CONFIG QUIET)
 # =========================================================
 set(ZEROSLACK_CORE_SOURCES
     # --- C++ sources ---
-    actionregistry.cpp
-    annotationlayer.cpp
-    activitylogpanelcoordinator.cpp
-    activitylogservice.cpp
-    analysiscoordinator.cpp
-    analysiscoordinatordependencies.cpp
-    analysiscoordinatorwiring.cpp
-    analysisprogresscoordinator.cpp
-    analysisscheduler.cpp
-    analysisschedulerdocuments.cpp
-    analysisschedulerrelationships.cpp
-    analysisschedulerwiring.cpp
-    applicationthememanager.cpp
-    clockresetdomainservice.cpp
-    codepreviewservice.cpp
-    columnnumbertool.cpp
-    commandlayercommandregistry.cpp
-    commandlayercoordinator.cpp
-    commandlayerservice.cpp
-    codetemplatecontextanalyzer.cpp
-    codetemplateservice.cpp
-    customabbreviationservice.cpp
-    mainwindow.cpp
-    mainwindowcontextworkspace.cpp
-    rtlactioncoordinator.cpp
-    moduleblockdiagramservice.cpp
-    modulebriefservice.cpp
-    completioncommandmode.cpp
-    completioncontexthelper.cpp
-    completionmatcher.cpp
-    completionmodel.cpp
-    completionmodelupdates.cpp
-    completionsemanticquery.cpp
-    completionservicecommand.cpp
-    completionservice.cpp
-    completionservicematcher.cpp
-    definitionnavigationservice.cpp
-    definitionpreviewservice.cpp
-    definitionservice.cpp
-    declaresignalfactcollector.cpp
-    declaresignalservice.cpp
-    diagnosticnavigationservice.cpp
-    diagnosticservice.cpp
-    diagnosticsrefreshcontroller.cpp
-    documentmodel.cpp
-    documentmodelconnections.cpp
-    documentregistry.cpp
-    documentregistrycursor.cpp
-    documentregistryidentity.cpp
-    documentregistryqueries.cpp
-    documentregistryreader.cpp
-    documentregistrystate.cpp
-    shareddocument.cpp
-    crashrecoveryservice.cpp
-    externaldocumentsynccontroller.cpp
-    documentsessionqueries.cpp
-    documentsessionstate.cpp
-    documentsessionversions.cpp
-    editorappearance.cpp
-    editorappearancepanel.cpp
-    editorappearancesettings.cpp
-    editorcompletionquery.cpp
-    editorcompletionui.cpp
-    editorcompletionworkflow.cpp
-    effectivevalueservice.cpp
-      editorcompletionworkflowkeys.cpp
-      editorcoordinator.cpp
-      editorcolumnmodecontroller.cpp
-      editorcursornavigation.cpp
-      editorlexicalboundary.cpp
-      editorfileidentity.cpp
-      editorfolding.cpp
-      editorviewprojection.cpp
-      editorgeometry.cpp
-    editorgutter.cpp
-    editorhoverpopup.cpp
-    editorinsertpaletteservice.cpp
-    editorruntime.cpp
-    editorruntimeannotations.cpp
-    editorruntimecommands.cpp
-    editorruntimenavigation.cpp
-    editorruntimerename.cpp
-    editorselection.cpp
-    editordroppreviewoverlay.cpp
-    editorsplitcontroller.cpp
-    editorkeywordghostcontroller.cpp
-    editorlineoperationcontroller.cpp
-    editormulticursorcontroller.cpp
-    editorsignalselectioncontroller.cpp
-    editorstructuralinputcontroller.cpp
-    editortemplateslotcontroller.cpp
-    editoractioncontextservice.cpp
-    editorcontextmenumodel.cpp
-    editorsemanticcontextservice.cpp
-    editorsemanticruntime.cpp
-    editorsourcenavigationquery.cpp
-    editorsourcenavigation.cpp
-    editorsourcehover.cpp
-    editorsyntaxstate.cpp
-    editormodecontroller.cpp
-    filecommandcoordinator.cpp
-    foldblockshelfmodel.cpp
-    foldblockshelfpanel.cpp
-    foldshelfpersistenceservice.cpp
-    foldshelfrestoreservice.cpp
-    fsmgraphlayout.cpp
-    fsmgraphservice.cpp
-    formattercursoranchor.cpp
-    formatterservice.cpp
-    settingscenterschema.cpp
-    settingscenterpanel.cpp
-    settingscenterservice.cpp
-    structuredwhitespaceformatter.cpp
-    ghostannotationservice.cpp
-    graphexportservice.cpp
-    wavetoolchainbundleservice.cpp
-    wavesimulationconfiguration.cpp
-    wavesimulationcoordinator.cpp
-    wavesimulationresultnavigationcoordinator.cpp
-    waveembeddedworkspaceloader.cpp
-    waveformpreviewloader.cpp
-    wavesimulationmodulemanifest.cpp
-    wavesimulationmanifestservice.cpp
-    wavesimulationpreparationservice.cpp
-    wavepreviewpanelcoordinator.cpp
-    wavepreviewpayloadadapter.cpp
-    wavepreviewservice.cpp
-    workspaceconfigurationdialog.cpp
-    workspaceconfigurationservice.cpp
-    workspacesessioncoordinator.cpp
-    workspacesessionstateservice.cpp
-    globalcontrolcoordinator.cpp
-    globalcontrolpanel.cpp
-    globalcontrolservice.cpp
-    hierarchyservice.cpp
-    hierarchyservicetraversal.cpp
-    insightgraphview.cpp
-    insightgraphcore.cpp
-    insightcanvas.cpp
-    insightfocuscontroller.cpp
-    insightfocuscontrolleractions.cpp
-    insightvisualstyle.cpp
-    liveinsightsession.cpp
-    liveinsightscontextview.cpp
-    liveinsightscontextprovider.cpp
-    liveinsighttoolpage.cpp
-    rtlinsightviewplugins.cpp
-    rtlinsightworkbench.cpp
-    inlinecommandmode.cpp
-    sourcenavigationservice.cpp
-    statetransitiongraphservice.cpp
-    statetransitiontriggerservice.cpp
-    contextresource.cpp
-    contextrail.cpp
-    contextpeekhost.cpp
-    contextdockhost.cpp
-    contextworkspacecontroller.cpp
-    pinloomhostclient.cpp
-    pinloomcodelinkstore.cpp
-    pinloomcodelinkcoordinator.cpp
-    pinloomcontextview.cpp
-    pinloomcontextprovider.cpp
-    suitecontextcatalog.cpp
-    semanticstateview.cpp
-    workspacehubtypes.cpp
-    workspacehubsession.cpp
-    workspacehubmodel.cpp
-    workspacehubview.cpp
-    workspacehubcontextprovider.cpp
-    workspacehubsuitebridge.cpp
-    temporaryeditorsession.cpp
-    temporaryeditorcontextview.cpp
-    temporaryeditorcontextprovider.cpp
-    temporaryeditorsearchpopup.cpp
-    temporaryeditorsearchprovider.cpp
-    triviapositionmap.cpp
-    tsdocument.cpp
-    unsaveddocumentmanager.cpp
-    mycodeeditor.cpp
-    myhighlighter.cpp
-    navigationcommandcoordinator.cpp
-    navigationmanager.cpp
-    navigationmanagerconnections.cpp
-    navigationmanagerdata.cpp
-    navigationmanagerfileoperations.cpp
-    navigationmanagerstate.cpp
-    navigationpanecoordinator.cpp
-    panellayoutcontroller.cpp
-    packagetoolservice.cpp
-    navigationservice.cpp
-    navigationservicehierarchy.cpp
-    navigationwidgetpresentation.cpp
-    navigationwidgettrees.cpp
-    navigationwidget.cpp
-    notificationcenter.cpp
-    problemspanelcoordinator.cpp
-    projectmodel.cpp
-    relationshipservice.cpp
-    relationshipserviceordering.cpp
-    relationshipanalysisqueue.cpp
-    relationshipanalysisqueuelifecycle.cpp
-    relationshipanalysiscontroller.cpp
-    relationshipanalysiscontrollerasync.cpp
-    relationshipanalysisworker.cpp
-    relationshipresultpublisher.cpp
-    rtlinsightspanelactions.cpp
-    rtlinsightspanelcoordinator.cpp
-    rtlinsightspaneltestapi.cpp
-    rtlinsightspanelviewstate.cpp
-    rtlinsightsgraphcontroller.cpp
-    rtlinsightsgraphscenemapper.cpp
-    rtlinsightspresenter.cpp
-    rtlbatcheditservice.cpp
-    rtlconnectiontransformplanner.cpp
-    rtlconnectiontransformworkflow.cpp
-    rtlhighriskeditworkflow.cpp
-    rtlhighriskeditpanel.cpp
-    multisignalpropagationplanner.cpp
-    multisignalpropagationpanel.cpp
-    instancepairconnectionfacade.cpp
-    instancepairconnectionpanel.cpp
-    instancepairconnectionworkflow.cpp
-    rtlrenameplanner.cpp
-    rtlrenameworkflow.cpp
-    saferenameservice.cpp
-    semanticrenamesupport.cpp
-    scopedsearchpanel.cpp
-    scopedreplaceworkflow.cpp
-    searchservice.cpp
-    semanticdiffservice.cpp
-    semanticanalysisrequest.cpp
-    semanticchangeclassifier.cpp
-    semanticdependencygraph.cpp
-    incrementalanalysisplanservice.cpp
-    incrementalsemanticanalysisworker.cpp
-    semanticsourceremap.cpp
-    semanticdecorationservice.cpp
-    semanticpanelutils.cpp
-    semanticpanelrefreshpanels.cpp
-    semanticpanelrefreshcoordinator.cpp
-    semanticdockcoordinator.cpp
-    semanticindex.cpp
-    semanticindexcompletion.cpp
-    semanticindexcompletiontypequeries.cpp
-    semanticindexcompletioncontext.cpp
-    semanticindexlookup.cpp
-    semanticindexlookuphelpers.cpp
-    semanticindexmodulecontext.cpp
-    semanticindexmodulecontexthelpers.cpp
-    semanticindexrelationships.cpp
-    semanticindexstore.cpp
-    semanticindexsnapshot.cpp
-    semanticindexsnapshotqueries.cpp
-    semanticindexsnapshotpublication.cpp
-    semanticruntimecoordinator.cpp
-    semanticruntimewiring.cpp
-    semanticstableidentity.cpp
-    signaljourneyservice.cpp
-    signalkernelgraphservice.cpp
-    signalusagehotspotpanel.cpp
-    signalusagehotspotpanelactions.cpp
-    signalusagehotspotservice.cpp
-    signalkernelgraphpanelcoordinator.cpp
-    slangmanagerdiagnostics.cpp
-    slangrelationshiphelpers.cpp
-    smartrelationshipbuilderanalysis.cpp
-    smartrelationshipbuilder.cpp
-    smartrelationshipbuildercontext.cpp
-    smartrelationshipbuildertiming.cpp
-    symbolanalyzer.cpp
-    symbolanalyzerasync.cpp
-    symbolanalyzerincremental.cpp
-    symbolanalyzerpublication.cpp
-    symbolanalyzerslang.cpp
-    symbolanalyzerworkspace.cpp
-    symbolhoverservice.cpp
-    symbolpresentationservice.cpp
-    symbolrelationshipqueries.cpp
-    symbolrelationshipengine.cpp
-    symboltaxonomy.cpp
-    slangsymbolcollector.cpp
-    slangsymbolcollectorhelpers.cpp
-    slangsymbolpresentation.cpp
-    slangmanagerrelationships.cpp
-    slangmanagersymbols.cpp
-    slangpreprocessorfacts.cpp
-    tabdocumentqueries.cpp
-    tabfileio.cpp
-    tabmanager.cpp
-    workspacemanager.cpp
-    workspacefileoperationservice.cpp
-    workspaceanalysisplanservice.cpp
-    workspaceignoreservice.cpp
-    usertemplateservice.cpp
-    workspaceanalysisrequestqueue.cpp
-    workspacesymbolanalysiscontroller.cpp
-    workspacesymbolanalysiscontrollerlifecycle.cpp
-    workspaceeditdocumentmanager.cpp
-    workspaceedittransactionservice.cpp
+    src/commands/actionregistry.cpp
+    src/editor/annotationlayer.cpp
+    src/ui/activitylogpanelcoordinator.cpp
+    src/ui/activitylogservice.cpp
+    src/analysis/analysiscoordinator.cpp
+    src/analysis/analysiscoordinatordependencies.cpp
+    src/analysis/analysiscoordinatorwiring.cpp
+    src/analysis/analysisprogresscoordinator.cpp
+    src/analysis/analysisscheduler.cpp
+    src/analysis/analysisschedulerdocuments.cpp
+    src/analysis/analysisschedulerrelationships.cpp
+    src/analysis/analysisschedulerwiring.cpp
+    src/ui/applicationthememanager.cpp
+    src/semantic/clockresetdomainservice.cpp
+    src/navigation/codepreviewservice.cpp
+    src/editor/columnnumbertool.cpp
+    src/commands/commandlayercommandregistry.cpp
+    src/commands/commandlayercoordinator.cpp
+    src/commands/commandlayerservice.cpp
+    src/completion/codetemplatecontextanalyzer.cpp
+    src/completion/codetemplateservice.cpp
+    src/completion/customabbreviationservice.cpp
+    src/app/mainwindow.cpp
+    src/app/mainwindowcontextworkspace.cpp
+    src/insights/rtlactioncoordinator.cpp
+    src/insights/moduleblockdiagramservice.cpp
+    src/semantic/modulebriefservice.cpp
+    src/completion/completioncommandmode.cpp
+    src/completion/completioncontexthelper.cpp
+    src/completion/completionmatcher.cpp
+    src/completion/completionmodel.cpp
+    src/completion/completionmodelupdates.cpp
+    src/completion/completionsemanticquery.cpp
+    src/completion/completionservicecommand.cpp
+    src/completion/completionservice.cpp
+    src/completion/completionservicematcher.cpp
+    src/navigation/definitionnavigationservice.cpp
+    src/navigation/definitionpreviewservice.cpp
+    src/navigation/definitionservice.cpp
+    src/commands/declaresignalfactcollector.cpp
+    src/commands/declaresignalservice.cpp
+    src/navigation/diagnosticnavigationservice.cpp
+    src/analysis/diagnosticservice.cpp
+    src/analysis/diagnosticsrefreshcontroller.cpp
+    src/documents/documentmodel.cpp
+    src/documents/documentmodelconnections.cpp
+    src/documents/documentregistry.cpp
+    src/documents/documentregistrycursor.cpp
+    src/documents/documentregistryidentity.cpp
+    src/documents/documentregistryqueries.cpp
+    src/documents/documentregistryreader.cpp
+    src/documents/documentregistrystate.cpp
+    src/documents/shareddocument.cpp
+    src/documents/crashrecoveryservice.cpp
+    src/documents/externaldocumentsynccontroller.cpp
+    src/documents/documentsessionqueries.cpp
+    src/documents/documentsessionstate.cpp
+    src/documents/documentsessionversions.cpp
+    src/settings/editorappearance.cpp
+    src/settings/editorappearancepanel.cpp
+    src/settings/editorappearancesettings.cpp
+    src/editor/editorcompletionquery.cpp
+    src/editor/editorcompletionui.cpp
+    src/editor/editorcompletionworkflow.cpp
+    src/semantic/effectivevalueservice.cpp
+      src/editor/editorcompletionworkflowkeys.cpp
+      src/editor/editorcoordinator.cpp
+      src/editor/editorcolumnmodecontroller.cpp
+      src/editor/editorcursornavigation.cpp
+      src/editor/editorlexicalboundary.cpp
+      src/editor/editorfileidentity.cpp
+      src/editor/editorfolding.cpp
+      src/editor/editorviewprojection.cpp
+      src/editor/editorgeometry.cpp
+    src/editor/editorgutter.cpp
+    src/editor/editorhoverpopup.cpp
+    src/editor/editorinsertpaletteservice.cpp
+    src/editor/editorruntime.cpp
+    src/editor/editorruntimeannotations.cpp
+    src/editor/editorruntimecommands.cpp
+    src/editor/editorruntimenavigation.cpp
+    src/editor/editorruntimerename.cpp
+    src/editor/editorselection.cpp
+    src/editor/editordroppreviewoverlay.cpp
+    src/editor/editorsplitcontroller.cpp
+    src/editor/editorkeywordghostcontroller.cpp
+    src/editor/editorlineoperationcontroller.cpp
+    src/editor/editormulticursorcontroller.cpp
+    src/editor/editorsignalselectioncontroller.cpp
+    src/editor/editorstructuralinputcontroller.cpp
+    src/editor/editortemplateslotcontroller.cpp
+    src/editor/editoractioncontextservice.cpp
+    src/editor/editorcontextmenumodel.cpp
+    src/editor/editorsemanticcontextservice.cpp
+    src/editor/editorsemanticruntime.cpp
+    src/editor/editorsourcenavigationquery.cpp
+    src/editor/editorsourcenavigation.cpp
+    src/editor/editorsourcehover.cpp
+    src/editor/editorsyntaxstate.cpp
+    src/editor/editormodecontroller.cpp
+    src/workspace/filecommandcoordinator.cpp
+    src/editor/foldblockshelfmodel.cpp
+    src/editor/foldblockshelfpanel.cpp
+    src/editor/foldshelfpersistenceservice.cpp
+    src/editor/foldshelfrestoreservice.cpp
+    src/insights/fsmgraphlayout.cpp
+    src/insights/fsmgraphservice.cpp
+    src/editor/formattercursoranchor.cpp
+    src/editor/formatterservice.cpp
+    src/settings/settingscenterschema.cpp
+    src/settings/settingscenterpanel.cpp
+    src/settings/settingscenterservice.cpp
+    src/editor/structuredwhitespaceformatter.cpp
+    src/editor/ghostannotationservice.cpp
+    src/insights/graphexportservice.cpp
+    src/integrations/wave/wavetoolchainbundleservice.cpp
+    src/integrations/wave/wavesimulationconfiguration.cpp
+    src/integrations/wave/wavesimulationcoordinator.cpp
+    src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp
+    src/integrations/wave/waveembeddedworkspaceloader.cpp
+    src/integrations/wave/waveformpreviewloader.cpp
+    src/integrations/wave/wavesimulationmodulemanifest.cpp
+    src/integrations/wave/wavesimulationmanifestservice.cpp
+    src/integrations/wave/wavesimulationpreparationservice.cpp
+    src/integrations/wave/wavepreviewpanelcoordinator.cpp
+    src/integrations/wave/wavepreviewpayloadadapter.cpp
+    src/integrations/wave/wavepreviewservice.cpp
+    src/settings/workspaceconfigurationdialog.cpp
+    src/settings/workspaceconfigurationservice.cpp
+    src/workspace/workspacesessioncoordinator.cpp
+    src/workspace/workspacesessionstateservice.cpp
+    src/commands/globalcontrolcoordinator.cpp
+    src/ui/globalcontrolpanel.cpp
+    src/commands/globalcontrolservice.cpp
+    src/semantic/hierarchyservice.cpp
+    src/semantic/hierarchyservicetraversal.cpp
+    src/insights/insightgraphview.cpp
+    src/insights/insightgraphcore.cpp
+    src/insights/insightcanvas.cpp
+    src/insights/insightfocuscontroller.cpp
+    src/insights/insightfocuscontrolleractions.cpp
+    src/ui/insightvisualstyle.cpp
+    src/insights/liveinsightsession.cpp
+    src/insights/liveinsightscontextview.cpp
+    src/insights/liveinsightscontextprovider.cpp
+    src/insights/liveinsighttoolpage.cpp
+    src/insights/rtlinsightviewplugins.cpp
+    src/insights/rtlinsightworkbench.cpp
+    src/commands/inlinecommandmode.cpp
+    src/navigation/sourcenavigationservice.cpp
+    src/insights/statetransitiongraphservice.cpp
+    src/insights/statetransitiontriggerservice.cpp
+    src/ui/contextresource.cpp
+    src/ui/contextrail.cpp
+    src/ui/contextpeekhost.cpp
+    src/ui/contextdockhost.cpp
+    src/ui/contextworkspacecontroller.cpp
+    src/integrations/pinloom/pinloomhostclient.cpp
+    src/integrations/pinloom/pinloomcodelinkstore.cpp
+    src/integrations/pinloom/pinloomcodelinkcoordinator.cpp
+    src/integrations/pinloom/pinloomcontextview.cpp
+    src/integrations/pinloom/pinloomcontextprovider.cpp
+    src/integrations/suite/suitecontextcatalog.cpp
+    src/semantic/semanticstateview.cpp
+    src/workspace/workspacehubtypes.cpp
+    src/workspace/workspacehubsession.cpp
+    src/workspace/workspacehubmodel.cpp
+    src/workspace/workspacehubview.cpp
+    src/workspace/workspacehubcontextprovider.cpp
+    src/workspace/workspacehubsuitebridge.cpp
+    src/ui/temporaryeditorsession.cpp
+    src/ui/temporaryeditorcontextview.cpp
+    src/ui/temporaryeditorcontextprovider.cpp
+    src/ui/temporaryeditorsearchpopup.cpp
+    src/ui/temporaryeditorsearchprovider.cpp
+    src/editor/triviapositionmap.cpp
+    src/editor/tsdocument.cpp
+    src/documents/unsaveddocumentmanager.cpp
+    src/editor/mycodeeditor.cpp
+    src/editor/myhighlighter.cpp
+    src/navigation/navigationcommandcoordinator.cpp
+    src/navigation/navigationmanager.cpp
+    src/navigation/navigationmanagerconnections.cpp
+    src/navigation/navigationmanagerdata.cpp
+    src/navigation/navigationmanagerfileoperations.cpp
+    src/navigation/navigationmanagerstate.cpp
+    src/ui/navigationpanecoordinator.cpp
+    src/ui/panellayoutcontroller.cpp
+    src/commands/packagetoolservice.cpp
+    src/navigation/navigationservice.cpp
+    src/navigation/navigationservicehierarchy.cpp
+    src/ui/navigationwidgetpresentation.cpp
+    src/ui/navigationwidgettrees.cpp
+    src/ui/navigationwidget.cpp
+    src/ui/notificationcenter.cpp
+    src/ui/problemspanelcoordinator.cpp
+    src/workspace/projectmodel.cpp
+    src/semantic/relationshipservice.cpp
+    src/semantic/relationshipserviceordering.cpp
+    src/semantic/relationshipanalysisqueue.cpp
+    src/semantic/relationshipanalysisqueuelifecycle.cpp
+    src/semantic/relationshipanalysiscontroller.cpp
+    src/semantic/relationshipanalysiscontrollerasync.cpp
+    src/semantic/relationshipanalysisworker.cpp
+    src/semantic/relationshipresultpublisher.cpp
+    src/insights/rtlinsightspanelactions.cpp
+    src/insights/rtlinsightspanelcoordinator.cpp
+    src/insights/rtlinsightspaneltestapi.cpp
+    src/insights/rtlinsightspanelviewstate.cpp
+    src/insights/rtlinsightsgraphcontroller.cpp
+    src/insights/rtlinsightsgraphscenemapper.cpp
+    src/insights/rtlinsightspresenter.cpp
+    src/insights/rtlbatcheditservice.cpp
+    src/insights/rtlconnectiontransformplanner.cpp
+    src/insights/rtlconnectiontransformworkflow.cpp
+    src/insights/rtlhighriskeditworkflow.cpp
+    src/insights/rtlhighriskeditpanel.cpp
+    src/commands/multisignalpropagationplanner.cpp
+    src/commands/multisignalpropagationpanel.cpp
+    src/commands/instancepairconnectionfacade.cpp
+    src/commands/instancepairconnectionpanel.cpp
+    src/commands/instancepairconnectionworkflow.cpp
+    src/insights/rtlrenameplanner.cpp
+    src/insights/rtlrenameworkflow.cpp
+    src/commands/saferenameservice.cpp
+    src/semantic/semanticrenamesupport.cpp
+    src/commands/scopedsearchpanel.cpp
+    src/commands/scopedreplaceworkflow.cpp
+    src/commands/searchservice.cpp
+    src/semantic/semanticdiffservice.cpp
+    src/semantic/semanticanalysisrequest.cpp
+    src/semantic/semanticchangeclassifier.cpp
+    src/semantic/semanticdependencygraph.cpp
+    src/analysis/incrementalanalysisplanservice.cpp
+    src/analysis/incrementalsemanticanalysisworker.cpp
+    src/semantic/semanticsourceremap.cpp
+    src/semantic/semanticdecorationservice.cpp
+    src/semantic/semanticpanelutils.cpp
+    src/semantic/semanticpanelrefreshpanels.cpp
+    src/semantic/semanticpanelrefreshcoordinator.cpp
+    src/semantic/semanticdockcoordinator.cpp
+    src/semantic/semanticindex.cpp
+    src/semantic/semanticindexcompletion.cpp
+    src/semantic/semanticindexcompletiontypequeries.cpp
+    src/semantic/semanticindexcompletioncontext.cpp
+    src/semantic/semanticindexlookup.cpp
+    src/semantic/semanticindexlookuphelpers.cpp
+    src/semantic/semanticindexmodulecontext.cpp
+    src/semantic/semanticindexmodulecontexthelpers.cpp
+    src/semantic/semanticindexrelationships.cpp
+    src/semantic/semanticindexstore.cpp
+    src/semantic/semanticindexsnapshot.cpp
+    src/semantic/semanticindexsnapshotqueries.cpp
+    src/semantic/semanticindexsnapshotpublication.cpp
+    src/semantic/semanticruntimecoordinator.cpp
+    src/semantic/semanticruntimewiring.cpp
+    src/semantic/semanticstableidentity.cpp
+    src/semantic/signaljourneyservice.cpp
+    src/insights/signalkernelgraphservice.cpp
+    src/insights/signalusagehotspotpanel.cpp
+    src/insights/signalusagehotspotpanelactions.cpp
+    src/insights/signalusagehotspotservice.cpp
+    src/insights/signalkernelgraphpanelcoordinator.cpp
+    src/semantic/slangmanagerdiagnostics.cpp
+    src/semantic/slangrelationshiphelpers.cpp
+    src/semantic/smartrelationshipbuilderanalysis.cpp
+    src/semantic/smartrelationshipbuilder.cpp
+    src/semantic/smartrelationshipbuildercontext.cpp
+    src/semantic/smartrelationshipbuildertiming.cpp
+    src/semantic/symbolanalyzer.cpp
+    src/semantic/symbolanalyzerasync.cpp
+    src/semantic/symbolanalyzerincremental.cpp
+    src/semantic/symbolanalyzerpublication.cpp
+    src/semantic/symbolanalyzerslang.cpp
+    src/semantic/symbolanalyzerworkspace.cpp
+    src/semantic/symbolhoverservice.cpp
+    src/semantic/symbolpresentationservice.cpp
+    src/semantic/symbolrelationshipqueries.cpp
+    src/semantic/symbolrelationshipengine.cpp
+    src/semantic/symboltaxonomy.cpp
+    src/semantic/slangsymbolcollector.cpp
+    src/semantic/slangsymbolcollectorhelpers.cpp
+    src/semantic/slangsymbolpresentation.cpp
+    src/semantic/slangmanagerrelationships.cpp
+    src/semantic/slangmanagersymbols.cpp
+    src/semantic/slangpreprocessorfacts.cpp
+    src/documents/tabdocumentqueries.cpp
+    src/documents/tabfileio.cpp
+    src/documents/tabmanager.cpp
+    src/workspace/workspacemanager.cpp
+    src/workspace/workspacefileoperationservice.cpp
+    src/analysis/workspaceanalysisplanservice.cpp
+    src/workspace/workspaceignoreservice.cpp
+    src/completion/usertemplateservice.cpp
+    src/analysis/workspaceanalysisrequestqueue.cpp
+    src/analysis/workspacesymbolanalysiscontroller.cpp
+    src/analysis/workspacesymbolanalysiscontrollerlifecycle.cpp
+    src/workspace/workspaceeditdocumentmanager.cpp
+    src/workspace/workspaceedittransactionservice.cpp
 
     # --- Headers (not required by CMake, listed for IDEs) ---
-    activitylogpanelcoordinator.h
-    activitylogservice.h
-    analysiscoordinator.h
-    analysisprogresscoordinator.h
-    analysisscheduler.h
-    clockresetdomainservice.h
-    codepreviewservice.h
-    columnnumbertool.h
-    commandlayercommandregistry.h
-    commandlayercoordinator.h
-    commandlayerservice.h
-    codetemplatecontextanalyzer.h
-    codetemplateservice.h
-    customabbreviationservice.h
-    mainwindow.h
-    workspacechrome.h
-    roundedicons.h
-    uitypography.h
-    moduleblockdiagramservice.h
-    modulebriefservice.h
-    completioncommandmode.h
-    completioncommandkindadapter.h
+    src/ui/activitylogpanelcoordinator.h
+    src/ui/activitylogservice.h
+    src/analysis/analysiscoordinator.h
+    src/analysis/analysisprogresscoordinator.h
+    src/analysis/analysisscheduler.h
+    src/semantic/clockresetdomainservice.h
+    src/navigation/codepreviewservice.h
+    src/editor/columnnumbertool.h
+    src/commands/commandlayercommandregistry.h
+    src/commands/commandlayercoordinator.h
+    src/commands/commandlayerservice.h
+    src/completion/codetemplatecontextanalyzer.h
+    src/completion/codetemplateservice.h
+    src/completion/customabbreviationservice.h
+    src/app/mainwindow.h
+    src/ui/workspacechrome.h
+    src/ui/roundedicons.h
+    src/ui/uitypography.h
+    src/insights/moduleblockdiagramservice.h
+    src/semantic/modulebriefservice.h
+    src/completion/completioncommandmode.h
+    src/completion/completioncommandkindadapter.h
     version.h.in
     ${ZEROSLACK_GENERATED_INCLUDE_DIR}/version.h
-    completionmodel.h
-    completionmatcher.h
-    completioncontexthelper.h
-    completionservice.h
-    completionsemanticquery.h
-    completiontypes.h
-    definitionnavigationservice.h
-    definitionpreviewservice.h
-    definitionservice.h
-    diagnosticnavigationservice.h
-    diagnosticservice.h
-    diagnosticsrefreshcontroller.h
-    documentmodel.h
-    documentregistry.h
-    documentsnapshot.h
-    documentsessionstate.h
-    shareddocument.h
-    editorappearance.h
-    editorappearancepanel.h
-    editorappearancesettings.h
-    editorcompletionquery.h
-    editorcompletionui.h
-    editorcompletionworkflow.h
-    effectivevalueservice.h
-      editorcoordinator.h
-      editorcursornavigation.h
-      editorlexicalboundary.h
-      editorfileidentity.h
-      editorfoldviewstate.h
-      editorfolding.h
-      editorviewprojection.h
-      editorgeometry.h
-    editorgutter.h
-    editorhoverpopup.h
-    editorinsertpaletteservice.h
-    editorruntime.h
-    editorselection.h
-    editorkeywordghostcontroller.h
-    editorlineoperationcontroller.h
-    editormulticursorcontroller.h
-    editorstructuralinputcontroller.h
-    editoractioncontextservice.h
-    editorcontextmenumodel.h
-    editorsemanticcontextservice.h
-    editorsemanticruntime.h
-    editorsourcenavigationquery.h
-    editorsourcenavigation.h
-    editorsourcehover.h
-    editorsyntaxstate.h
-    editormodecontroller.h
-    filecommandcoordinator.h
-    foldblockshelfmodel.h
-    foldblockshelfpanel.h
-    foldshelfpersistenceservice.h
-    foldshelfrestoreservice.h
-    fsmgraphlayout.h
-    fsmgraphservice.h
-    formattercursoranchor.h
-    formatterservice.h
-    ghostannotationservice.h
-    wavepreviewpanelcoordinator.h
-    waveformpreviewloader.h
-    wavepreviewpayloadadapter.h
-    wavepreviewservice.h
-    workspaceconfigurationdialog.h
-    workspaceconfigurationservice.h
-    workspacesessioncoordinator.h
-    workspacesessionstateservice.h
-    workspaceeditdocumentmanager.h
-    workspaceedittransactionservice.h
-    globalcontrolcoordinator.h
-    globalcontrolpanel.h
-    globalcontrolservice.h
-    hierarchyservice.h
-    insightgraphview.h
-    insightgraphcore.h
-    insightcanvas.h
-    insightfocuscontroller.h
-    insightvisualstyle.h
-    liveinsighttypes.h
-    liveinsightsession.h
-    liveinsightscontextview.h
-    liveinsightscontextprovider.h
-    liveinsighttoolpage.h
-    rtlinsightviewplugins.h
-    rtlinsightworkbench.h
-    editorsearchcandidate.h
-    inlinecommandmode.h
-    sourcenavigationservice.h
-    statetransitiongraphservice.h
-    statetransitiontriggerservice.h
-    contextresource.h
-    contextworkspacestate.h
-    contextcontentprovider.h
-    contextrail.h
-    contextpeekhost.h
-    contextdockhost.h
-    contextworkspacecontroller.h
-    temporaryeditorsession.h
-    temporaryeditorcontextview.h
-    temporaryeditorcontextprovider.h
-    temporaryeditorsearchpopup.h
-    temporaryeditorsearchprovider.h
-    triviapositionmap.h
-    tsdocument.h
-    mycodeeditor.h
-    myhighlighter.h
-    modulehierarchymodel.h
-    navigationcommandcoordinator.h
-    navigationmanager.h
-    navigationpanecoordinator.h
-    packagetoolservice.h
-    navigationservice.h
-    navigationwidget.h
-    problemspanelcoordinator.h
-    projectmodel.h
-    relationshipservice.h
-    relationshipserviceordering.h
-    relationshipanalysisqueue.h
-    relationshipanalysiscontroller.h
-    relationshipanalysisworker.h
-    relationshipresultpublisher.h
-    rtlinsightspanelcoordinator.h
-    rtlactioncoordinator.h
-    rtlbatcheditservice.h
-    saferenameservice.h
-    scopedsearchpanel.h
-    searchservice.h
-    semanticdiffservice.h
-    semanticanalysisrequest.h
-    semanticchangeclassifier.h
-    semanticdependencygraph.h
-    incrementalanalysisplanservice.h
-    incrementalsemanticanalysisworker.h
-    semanticsourceremap.h
-    semanticdecorationservice.h
-    semanticpanelutils.h
-    semanticpanelrefreshcoordinator.h
-    semanticdockcoordinator.h
-    semanticindex.h
-    semanticsourcerange.h
-    semanticindexcompletionfilters.h
-    semanticindexlookuphelpers.h
-    semanticindexmodulecontexthelpers.h
-    semanticindexsnapshot.h
-    semanticruntimecoordinator.h
-    semanticstableidentity.h
-    signaljourneyservice.h
-    signalkernelgraphservice.h
-    signalusagehotspotpanel.h
-    signalusagehotspotservice.h
-    signalkernelgraphpanelcoordinator.h
-    slangmanager.h
-    slangpreprocessorfacts.h
-    slangparseoptions.h
-    slangrelationshiphelpers.h
-    slangsymbolcollector.h
-    slangsymbolcollectorhelpers.h
-    slangsymbolpresentation.h
-    smartrelationshipbuilder.h
-    symbolanalyzer.h
-    symbolanalyzerworkspace.h
-    symbolhoverreports.h
-    symbolhoverservice.h
-    symbolpresentationservice.h
-    symbolrelationshipengine.h
-    symboloutlinemodel.h
-    symbolsemanticmetadata.h
-    symboltaxonomy.h
-    tabdocumentqueries.h
-    tabfileio.h
-    tabmanager.h
-    workspacemanager.h
-    workspaceanalysisplanservice.h
-    workspaceignoreservice.h
-    usertemplateservice.h
-    workspaceanalysisrequestqueue.h
-    workspacesymbolanalysiscontroller.h
+    src/completion/completionmodel.h
+    src/completion/completionmatcher.h
+    src/completion/completioncontexthelper.h
+    src/completion/completionservice.h
+    src/completion/completionsemanticquery.h
+    src/completion/completiontypes.h
+    src/navigation/definitionnavigationservice.h
+    src/navigation/definitionpreviewservice.h
+    src/navigation/definitionservice.h
+    src/navigation/diagnosticnavigationservice.h
+    src/analysis/diagnosticservice.h
+    src/analysis/diagnosticsrefreshcontroller.h
+    src/documents/documentmodel.h
+    src/documents/documentregistry.h
+    src/documents/documentsnapshot.h
+    src/documents/documentsessionstate.h
+    src/documents/shareddocument.h
+    src/settings/editorappearance.h
+    src/settings/editorappearancepanel.h
+    src/settings/editorappearancesettings.h
+    src/editor/editorcompletionquery.h
+    src/editor/editorcompletionui.h
+    src/editor/editorcompletionworkflow.h
+    src/semantic/effectivevalueservice.h
+      src/editor/editorcoordinator.h
+      src/editor/editorcursornavigation.h
+      src/editor/editorlexicalboundary.h
+      src/editor/editorfileidentity.h
+      src/editor/editorfoldviewstate.h
+      src/editor/editorfolding.h
+      src/editor/editorviewprojection.h
+      src/editor/editorgeometry.h
+    src/editor/editorgutter.h
+    src/editor/editorhoverpopup.h
+    src/editor/editorinsertpaletteservice.h
+    src/editor/editorruntime.h
+    src/editor/editorselection.h
+    src/editor/editorkeywordghostcontroller.h
+    src/editor/editorlineoperationcontroller.h
+    src/editor/editormulticursorcontroller.h
+    src/editor/editorstructuralinputcontroller.h
+    src/editor/editoractioncontextservice.h
+    src/editor/editorcontextmenumodel.h
+    src/editor/editorsemanticcontextservice.h
+    src/editor/editorsemanticruntime.h
+    src/editor/editorsourcenavigationquery.h
+    src/editor/editorsourcenavigation.h
+    src/editor/editorsourcehover.h
+    src/editor/editorsyntaxstate.h
+    src/editor/editormodecontroller.h
+    src/workspace/filecommandcoordinator.h
+    src/editor/foldblockshelfmodel.h
+    src/editor/foldblockshelfpanel.h
+    src/editor/foldshelfpersistenceservice.h
+    src/editor/foldshelfrestoreservice.h
+    src/insights/fsmgraphlayout.h
+    src/insights/fsmgraphservice.h
+    src/editor/formattercursoranchor.h
+    src/editor/formatterservice.h
+    src/editor/ghostannotationservice.h
+    src/integrations/wave/wavepreviewpanelcoordinator.h
+    src/integrations/wave/waveformpreviewloader.h
+    src/integrations/wave/wavepreviewpayloadadapter.h
+    src/integrations/wave/wavepreviewservice.h
+    src/settings/workspaceconfigurationdialog.h
+    src/settings/workspaceconfigurationservice.h
+    src/workspace/workspacesessioncoordinator.h
+    src/workspace/workspacesessionstateservice.h
+    src/workspace/workspaceeditdocumentmanager.h
+    src/workspace/workspaceedittransactionservice.h
+    src/commands/globalcontrolcoordinator.h
+    src/ui/globalcontrolpanel.h
+    src/commands/globalcontrolservice.h
+    src/semantic/hierarchyservice.h
+    src/insights/insightgraphview.h
+    src/insights/insightgraphcore.h
+    src/insights/insightcanvas.h
+    src/insights/insightfocuscontroller.h
+    src/ui/insightvisualstyle.h
+    src/insights/liveinsighttypes.h
+    src/insights/liveinsightsession.h
+    src/insights/liveinsightscontextview.h
+    src/insights/liveinsightscontextprovider.h
+    src/insights/liveinsighttoolpage.h
+    src/insights/rtlinsightviewplugins.h
+    src/insights/rtlinsightworkbench.h
+    src/editor/editorsearchcandidate.h
+    src/commands/inlinecommandmode.h
+    src/navigation/sourcenavigationservice.h
+    src/insights/statetransitiongraphservice.h
+    src/insights/statetransitiontriggerservice.h
+    src/ui/contextresource.h
+    src/ui/contextworkspacestate.h
+    src/ui/contextcontentprovider.h
+    src/ui/contextrail.h
+    src/ui/contextpeekhost.h
+    src/ui/contextdockhost.h
+    src/ui/contextworkspacecontroller.h
+    src/ui/temporaryeditorsession.h
+    src/ui/temporaryeditorcontextview.h
+    src/ui/temporaryeditorcontextprovider.h
+    src/ui/temporaryeditorsearchpopup.h
+    src/ui/temporaryeditorsearchprovider.h
+    src/editor/triviapositionmap.h
+    src/editor/tsdocument.h
+    src/editor/mycodeeditor.h
+    src/editor/myhighlighter.h
+    src/semantic/modulehierarchymodel.h
+    src/navigation/navigationcommandcoordinator.h
+    src/navigation/navigationmanager.h
+    src/ui/navigationpanecoordinator.h
+    src/commands/packagetoolservice.h
+    src/navigation/navigationservice.h
+    src/ui/navigationwidget.h
+    src/ui/problemspanelcoordinator.h
+    src/workspace/projectmodel.h
+    src/semantic/relationshipservice.h
+    src/semantic/relationshipserviceordering.h
+    src/semantic/relationshipanalysisqueue.h
+    src/semantic/relationshipanalysiscontroller.h
+    src/semantic/relationshipanalysisworker.h
+    src/semantic/relationshipresultpublisher.h
+    src/insights/rtlinsightspanelcoordinator.h
+    src/insights/rtlactioncoordinator.h
+    src/insights/rtlbatcheditservice.h
+    src/commands/saferenameservice.h
+    src/commands/scopedsearchpanel.h
+    src/commands/searchservice.h
+    src/semantic/semanticdiffservice.h
+    src/semantic/semanticanalysisrequest.h
+    src/semantic/semanticchangeclassifier.h
+    src/semantic/semanticdependencygraph.h
+    src/analysis/incrementalanalysisplanservice.h
+    src/analysis/incrementalsemanticanalysisworker.h
+    src/semantic/semanticsourceremap.h
+    src/semantic/semanticdecorationservice.h
+    src/semantic/semanticpanelutils.h
+    src/semantic/semanticpanelrefreshcoordinator.h
+    src/semantic/semanticdockcoordinator.h
+    src/semantic/semanticindex.h
+    src/semantic/semanticsourcerange.h
+    src/semantic/semanticindexcompletionfilters.h
+    src/semantic/semanticindexlookuphelpers.h
+    src/semantic/semanticindexmodulecontexthelpers.h
+    src/semantic/semanticindexsnapshot.h
+    src/semantic/semanticruntimecoordinator.h
+    src/semantic/semanticstableidentity.h
+    src/semantic/signaljourneyservice.h
+    src/insights/signalkernelgraphservice.h
+    src/insights/signalusagehotspotpanel.h
+    src/insights/signalusagehotspotservice.h
+    src/insights/signalkernelgraphpanelcoordinator.h
+    src/semantic/slangmanager.h
+    src/semantic/slangpreprocessorfacts.h
+    src/semantic/slangparseoptions.h
+    src/semantic/slangrelationshiphelpers.h
+    src/semantic/slangsymbolcollector.h
+    src/semantic/slangsymbolcollectorhelpers.h
+    src/semantic/slangsymbolpresentation.h
+    src/semantic/smartrelationshipbuilder.h
+    src/semantic/symbolanalyzer.h
+    src/semantic/symbolanalyzerworkspace.h
+    src/semantic/symbolhoverreports.h
+    src/semantic/symbolhoverservice.h
+    src/semantic/symbolpresentationservice.h
+    src/semantic/symbolrelationshipengine.h
+    src/semantic/symboloutlinemodel.h
+    src/semantic/symbolsemanticmetadata.h
+    src/semantic/symboltaxonomy.h
+    src/documents/tabdocumentqueries.h
+    src/documents/tabfileio.h
+    src/documents/tabmanager.h
+    src/workspace/workspacemanager.h
+    src/analysis/workspaceanalysisplanservice.h
+    src/workspace/workspaceignoreservice.h
+    src/completion/usertemplateservice.h
+    src/analysis/workspaceanalysisrequestqueue.h
+    src/analysis/workspacesymbolanalysiscontroller.h
 
     # --- UI files ---
-    mainwindow.ui
+    src/app/mainwindow.ui
 
     # --- Resource files ---
     code.qrc
@@ -756,6 +756,8 @@ set(ZEROSLACK_CORE_LIBRARY_TYPE STATIC)
 if(ZEROSLACK_SHARED_CORE)
     set(ZEROSLACK_CORE_LIBRARY_TYPE SHARED)
 endif()
+
+include(cmake/source_layout.cmake)
 
 add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES}
@@ -812,19 +814,19 @@ message(STATUS
 add_subdirectory(components/rtleditcore)
 
 target_sources(zeroslack_core PRIVATE
-    exposesignaltotopservice.cpp
-    exposesignaltotoppreview.cpp
+    src/commands/exposesignaltotopservice.cpp
+    src/commands/exposesignaltotoppreview.cpp
 )
 
 # Main application target.
-add_executable(demo main.cpp)
+add_executable(demo src/app/main.cpp)
 
 # Read-only machine interface for AI and automation. The support layer links
 # the existing semantic core, while the executable itself remains a console
 # application and initializes only QCoreApplication.
 add_library(zeroslack_cli_support STATIC
-    zeroslackcli.cpp
-    zeroslackcli.h)
+    src/cli/zeroslackcli.cpp
+    src/cli/zeroslackcli.h)
 target_link_libraries(zeroslack_cli_support PUBLIC
     zeroslack_core
     Qt6::Core)
@@ -833,7 +835,7 @@ if(SuiteApp_FOUND)
     target_compile_definitions(zeroslack_cli_support PRIVATE
         ZEROSLACK_CLI_HAS_SUITEAPP=1)
 endif()
-add_executable(zeroslack_cli zeroslackclimain.cpp)
+add_executable(zeroslack_cli src/cli/zeroslackclimain.cpp)
 set_target_properties(zeroslack_cli PROPERTIES
     OUTPUT_NAME "zeroslack-cli")
 target_link_libraries(zeroslack_cli PRIVATE zeroslack_cli_support)
@@ -849,6 +851,7 @@ endif()
 # =========================================================
 # Project include paths.
 target_include_directories(zeroslack_core PUBLIC
+    ${ZEROSLACK_MODULE_INCLUDE_DIRS}
     ${ZEROSLACK_GENERATED_INCLUDE_DIR}
     thirdparty/tree_sitter/lib/include
     thirdparty/tree_sitter/lib/src
@@ -891,8 +894,8 @@ endif()
 target_link_libraries(demo PRIVATE zeroslack_core)
 if(SuiteApp_FOUND)
     target_sources(demo PRIVATE
-        suiteappintegration.cpp
-        suiteappintegration.h)
+        src/integrations/suite/suiteappintegration.cpp
+        src/integrations/suite/suiteappintegration.h)
     target_link_libraries(demo PRIVATE SuiteApp::suiteapp)
     target_compile_definitions(demo PRIVATE ZEROSLACK_HAS_SUITEAPP=1)
 endif()
@@ -919,8 +922,8 @@ if(BUILD_TESTING)
     if(SuiteApp_FOUND)
         add_executable(zeroslack_suiteapp_integration_test
             test_sv/suiteapp_integration_test.cpp
-            suiteappintegration.cpp
-            suiteappintegration.h)
+            src/integrations/suite/suiteappintegration.cpp
+            src/integrations/suite/suiteappintegration.h)
         target_link_libraries(zeroslack_suiteapp_integration_test
             PRIVATE zeroslack_core SuiteApp::suiteapp Qt6::Test)
     endif()
@@ -956,14 +959,14 @@ if(BUILD_TESTING)
 
     add_executable(action_registry_test
         test_sv/action_registry_test.cpp
-        actionregistry.cpp
-        codetemplateservice.cpp
-        commandlayercommandregistry.cpp
-        editorfileidentity.cpp
-        globalcontrolservice.cpp
-        inlinecommandmode.cpp
-        packagetoolservice.cpp
-        tsdocument.cpp
+        src/commands/actionregistry.cpp
+        src/completion/codetemplateservice.cpp
+        src/commands/commandlayercommandregistry.cpp
+        src/editor/editorfileidentity.cpp
+        src/commands/globalcontrolservice.cpp
+        src/commands/inlinecommandmode.cpp
+        src/commands/packagetoolservice.cpp
+        src/editor/tsdocument.cpp
         $<TARGET_OBJECTS:zeroslack_tree_sitter>)
     target_include_directories(action_registry_test PRIVATE
         thirdparty/tree_sitter/lib/include
@@ -979,7 +982,7 @@ if(BUILD_TESTING)
 
     add_executable(editor_mode_controller_test
         test_sv/editor_mode_controller_test.cpp
-        editormodecontroller.cpp)
+        src/editor/editormodecontroller.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_mode_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -988,7 +991,7 @@ if(BUILD_TESTING)
 
     add_executable(annotation_layer_test
         test_sv/annotation_layer_test.cpp
-        annotationlayer.cpp)
+        src/editor/annotationlayer.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(annotation_layer_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1012,7 +1015,7 @@ if(BUILD_TESTING)
 
     add_executable(notification_center_test
         test_sv/notification_center_test.cpp
-        notificationcenter.cpp)
+        src/ui/notificationcenter.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(notification_center_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1022,8 +1025,8 @@ if(BUILD_TESTING)
 
     add_executable(crash_recovery_service_test
         test_sv/crash_recovery_service_test.cpp
-        crashrecoveryservice.cpp
-        editorfileidentity.cpp)
+        src/documents/crashrecoveryservice.cpp
+        src/editor/editorfileidentity.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(crash_recovery_service_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1033,7 +1036,7 @@ if(BUILD_TESTING)
 
     add_executable(declare_signal_proposal_test
         test_sv/declare_signal_proposal_test.cpp
-        declaresignalservice.cpp)
+        src/commands/declaresignalservice.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(declare_signal_proposal_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1048,9 +1051,9 @@ if(BUILD_TESTING)
 
     add_executable(settings_center_test
         test_sv/settings_center_test.cpp
-        settingscenterschema.cpp
-        settingscenterservice.cpp
-        workspaceconfigurationservice.cpp)
+        src/settings/settingscenterschema.cpp
+        src/settings/settingscenterservice.cpp
+        src/settings/workspaceconfigurationservice.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(settings_center_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1065,8 +1068,8 @@ if(BUILD_TESTING)
 
     add_executable(wave_simulation_configuration_test
         test_sv/wave_simulation_configuration_test.cpp
-        wavetoolchainbundleservice.cpp
-        wavesimulationconfiguration.cpp)
+        src/integrations/wave/wavetoolchainbundleservice.cpp
+        src/integrations/wave/wavesimulationconfiguration.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(wave_simulation_configuration_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1124,7 +1127,7 @@ if(BUILD_TESTING)
 
     add_executable(graph_export_service_test
         test_sv/graph_export_service_test.cpp
-        graphexportservice.cpp)
+        src/insights/graphexportservice.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(graph_export_service_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1154,7 +1157,7 @@ if(BUILD_TESTING)
 
     add_executable(source_structural_navigation_test
         test_sv/source_structural_navigation_test.cpp
-        tsdocument.cpp
+        src/editor/tsdocument.cpp
         $<TARGET_OBJECTS:zeroslack_tree_sitter>)
     target_include_directories(source_structural_navigation_test PRIVATE
         thirdparty/tree_sitter/lib/include
@@ -1188,13 +1191,13 @@ if(BUILD_TESTING)
 
     add_executable(navigation_virtual_source_group_test
         test_sv/navigation_virtual_source_group_test.cpp
-        applicationthememanager.cpp
-        insightvisualstyle.cpp
-        navigationwidget.cpp
-        navigationwidgettrees.cpp
-        navigationwidgetpresentation.cpp
-        editorfileidentity.cpp
-        symboltaxonomy.cpp)
+        src/ui/applicationthememanager.cpp
+        src/ui/insightvisualstyle.cpp
+        src/ui/navigationwidget.cpp
+        src/ui/navigationwidgettrees.cpp
+        src/ui/navigationwidgetpresentation.cpp
+        src/editor/editorfileidentity.cpp
+        src/semantic/symboltaxonomy.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(navigation_virtual_source_group_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1204,7 +1207,7 @@ if(BUILD_TESTING)
 
     add_executable(workspace_virtual_source_group_ui_test
         test_sv/workspace_virtual_source_group_ui_test.cpp
-        workspaceconfigurationdialog.cpp)
+        src/settings/workspaceconfigurationdialog.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(workspace_virtual_source_group_ui_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1271,7 +1274,7 @@ if(BUILD_TESTING)
 
     add_executable(editor_file_identity_test
         test_sv/editor_file_identity_test.cpp
-        editorfileidentity.cpp)
+        src/editor/editorfileidentity.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_file_identity_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1281,8 +1284,8 @@ if(BUILD_TESTING)
 
     add_executable(editor_context_menu_test
         test_sv/editor_context_menu_test.cpp
-        actionregistry.cpp
-        editorcontextmenumodel.cpp)
+        src/commands/actionregistry.cpp
+        src/editor/editorcontextmenumodel.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_context_menu_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1292,9 +1295,9 @@ if(BUILD_TESTING)
 
     add_executable(insight_focus_controller_test
         test_sv/insight_focus_controller_test.cpp
-        actionregistry.cpp
-        insightfocuscontroller.cpp
-        insightfocuscontrolleractions.cpp)
+        src/commands/actionregistry.cpp
+        src/insights/insightfocuscontroller.cpp
+        src/insights/insightfocuscontrolleractions.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(insight_focus_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1304,10 +1307,10 @@ if(BUILD_TESTING)
 
     add_executable(panel_layout_controller_test
         test_sv/panel_layout_controller_test.cpp
-        actionregistry.cpp
-        applicationthememanager.cpp
-        insightvisualstyle.cpp
-        panellayoutcontroller.cpp)
+        src/commands/actionregistry.cpp
+        src/ui/applicationthememanager.cpp
+        src/ui/insightvisualstyle.cpp
+        src/ui/panellayoutcontroller.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(panel_layout_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1317,11 +1320,11 @@ if(BUILD_TESTING)
 
     add_executable(editor_split_controller_test
         test_sv/editor_split_controller_test.cpp
-        actionregistry.cpp
-        applicationthememanager.cpp
-        editordroppreviewoverlay.cpp
-        editorsplitcontroller.cpp
-        insightvisualstyle.cpp)
+        src/commands/actionregistry.cpp
+        src/ui/applicationthememanager.cpp
+        src/editor/editordroppreviewoverlay.cpp
+        src/editor/editorsplitcontroller.cpp
+        src/ui/insightvisualstyle.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_split_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1331,9 +1334,9 @@ if(BUILD_TESTING)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
-        contextresource.cpp
-        workspaceconfigurationservice.cpp
-        workspacesessionstateservice.cpp)
+        src/ui/contextresource.cpp
+        src/settings/workspaceconfigurationservice.cpp
+        src/workspace/workspacesessionstateservice.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(workspace_persistence_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1449,7 +1452,7 @@ if(BUILD_TESTING)
 
     add_executable(editor_line_operation_test
         test_sv/editor_line_operation_test.cpp
-        editorlineoperationcontroller.cpp)
+        src/editor/editorlineoperationcontroller.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(editor_line_operation_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
@@ -1474,11 +1477,11 @@ if(BUILD_TESTING)
 
     add_executable(package_header_command_test
         test_sv/package_header_command_test.cpp
-        actionregistry.cpp
-        editorfileidentity.cpp
-        inlinecommandmode.cpp
-        packagetoolservice.cpp
-        tsdocument.cpp
+        src/commands/actionregistry.cpp
+        src/editor/editorfileidentity.cpp
+        src/commands/inlinecommandmode.cpp
+        src/commands/packagetoolservice.cpp
+        src/editor/tsdocument.cpp
         $<TARGET_OBJECTS:zeroslack_tree_sitter>)
     target_include_directories(package_header_command_test PRIVATE
         thirdparty/tree_sitter/lib/include
@@ -2200,7 +2203,7 @@ if(BUILD_TESTING)
     add_test(NAME legacy_field_policy_guard
         COMMAND ${CMAKE_COMMAND}
             -DZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/legacy_field_policy_guard.ctest
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/legacy_field_policy_guard.ctest
     )
     add_test(NAME shared_core_policy_guard
         COMMAND ${CMAKE_COMMAND}

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.3] - 2026-09-11
+
+- Organized first-party sources into 16 functional directories under src, preserving source contents and existing build targets.
+- Updated CMake include paths, UI discovery and recursive source-policy guards for the new layout.
+- Removed an unused editor UI prototype, completed cleanup audit and obsolete visual concept files; consolidated repository guidance.
+- Verified GUI/CLI builds and eight regression/build-policy checks after relocation.
+
 ## [0.25.2] - 2026-09-11
 
 - Simplified double-click symbol popovers into compact summary cards with expandable details and clickable definition locations.

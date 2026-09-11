@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.25.2`
+Product version: `v0.25.3`
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic authority.
 Workspace Hub, provider-based Context Workspace, live insights, Wave simulation integration and the read-only

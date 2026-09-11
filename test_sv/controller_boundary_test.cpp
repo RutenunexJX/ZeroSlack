@@ -70,145 +70,145 @@ int main(int argc, char* argv[])
           QStringLiteral("source root argument is present"));
 
     const QString runtimeHeader =
-        readSource(root, QStringLiteral("editorruntime.h"));
+        readSource(root, QStringLiteral("src/editor/editorruntime.h"));
     const QString runtimeSource =
-        readSource(root, QStringLiteral("editorruntime.cpp"));
+        readSource(root, QStringLiteral("src/editor/editorruntime.cpp"));
     const QString runtimeCommandsSource =
         readSource(
             root,
-            QStringLiteral("editorruntimecommands.cpp"));
+            QStringLiteral("src/editor/editorruntimecommands.cpp"));
     const QString selectionSource =
         readSource(
             root,
-            QStringLiteral("editorselection.cpp"));
+            QStringLiteral("src/editor/editorselection.cpp"));
     const QString lineOperationSource =
         readSource(
             root,
             QStringLiteral(
-                "editorlineoperationcontroller.cpp"));
+                "src/editor/editorlineoperationcontroller.cpp"));
     const QString commandModeSource =
         readSource(
             root,
             QStringLiteral(
-                "commandlayercoordinator.cpp"));
+                "src/commands/commandlayercoordinator.cpp"));
     const QString mainWindowSource =
         readSource(
             root,
-            QStringLiteral("mainwindow.cpp"));
+            QStringLiteral("src/app/mainwindow.cpp"));
     const QString mainWindowHeader =
         readSource(
             root,
-            QStringLiteral("mainwindow.h"));
+            QStringLiteral("src/app/mainwindow.h"));
     const QString workspaceSessionCoordinatorHeader =
         readSource(
             root,
             QStringLiteral(
-                "workspacesessioncoordinator.h"));
+                "src/workspace/workspacesessioncoordinator.h"));
     const QString workspaceSessionCoordinatorSource =
         readSource(
             root,
             QStringLiteral(
-                "workspacesessioncoordinator.cpp"));
+                "src/workspace/workspacesessioncoordinator.cpp"));
     const QString rtlActionCoordinatorHeader =
         readSource(
             root,
             QStringLiteral(
-                "rtlactioncoordinator.h"));
+                "src/insights/rtlactioncoordinator.h"));
     const QString rtlActionCoordinatorSource =
         readSource(
             root,
             QStringLiteral(
-                "rtlactioncoordinator.cpp"));
+                "src/insights/rtlactioncoordinator.cpp"));
     const QString waveResultNavigationHeader =
         readSource(
             root,
             QStringLiteral(
-                "wavesimulationresultnavigationcoordinator.h"));
+                "src/integrations/wave/wavesimulationresultnavigationcoordinator.h"));
     const QString waveResultNavigationSource =
         readSource(
             root,
             QStringLiteral(
-                "wavesimulationresultnavigationcoordinator.cpp"));
+                "src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp"));
     const QString editorSplitSource =
         readSource(
             root,
             QStringLiteral(
-                "editorsplitcontroller.cpp"));
+                "src/editor/editorsplitcontroller.cpp"));
     const QString tabManagerSource =
         readSource(
             root,
-            QStringLiteral("tabmanager.cpp"));
+            QStringLiteral("src/documents/tabmanager.cpp"));
     const QString navigationConnectionsSource =
         readSource(
             root,
             QStringLiteral(
-                "navigationmanagerconnections.cpp"));
+                "src/navigation/navigationmanagerconnections.cpp"));
     const QString navigationFileOperationsSource =
         readSource(
             root,
             QStringLiteral(
-                "navigationmanagerfileoperations.cpp"));
+                "src/navigation/navigationmanagerfileoperations.cpp"));
     const QString panelLayoutSource =
         readSource(
             root,
             QStringLiteral(
-                "panellayoutcontroller.cpp"));
+                "src/ui/panellayoutcontroller.cpp"));
     const QString insightsHeader =
         readSource(
             root,
             QStringLiteral(
-                "rtlinsightspanelcoordinator.h"));
+                "src/insights/rtlinsightspanelcoordinator.h"));
     const QString insightsSource =
         readSource(
             root,
             QStringLiteral(
-                "rtlinsightspanelcoordinator.cpp"));
+                "src/insights/rtlinsightspanelcoordinator.cpp"));
     const QString insightsActionsSource =
         readSource(
             root,
             QStringLiteral(
-                "rtlinsightspanelactions.cpp"));
+                "src/insights/rtlinsightspanelactions.cpp"));
     const QString hotspotHeader =
         readSource(
             root,
             QStringLiteral(
-                "signalusagehotspotpanel.h"));
+                "src/insights/signalusagehotspotpanel.h"));
     const QString hotspotSource =
         readSource(
             root,
             QStringLiteral(
-                "signalusagehotspotpanel.cpp"));
+                "src/insights/signalusagehotspotpanel.cpp"));
     const QString hotspotActionsSource =
         readSource(
             root,
             QStringLiteral(
-                "signalusagehotspotpanelactions.cpp"));
+                "src/insights/signalusagehotspotpanelactions.cpp"));
     const QString focusHeader =
         readSource(
             root,
             QStringLiteral(
-                "insightfocuscontroller.h"));
+                "src/insights/insightfocuscontroller.h"));
     const QString focusSource =
         readSource(
             root,
             QStringLiteral(
-                "insightfocuscontroller.cpp"));
+                "src/insights/insightfocuscontroller.cpp"));
     const QString focusActionsSource =
         readSource(
             root,
             QStringLiteral(
-                "insightfocuscontrolleractions.cpp"));
+                "src/insights/insightfocuscontrolleractions.cpp"));
     const QString cmake =
         readSource(root, QStringLiteral("CMakeLists.txt"));
 
     const QStringList editorModules = {
-        QStringLiteral("editortemplateslotcontroller"),
-        QStringLiteral("editorcolumnmodecontroller"),
-        QStringLiteral("editorsignalselectioncontroller"),
-        QStringLiteral("editorfolding"),
-        QStringLiteral("editorsourcenavigation"),
-        QStringLiteral("editorselection"),
-        QStringLiteral("editorlineoperationcontroller"),
+        QStringLiteral("src/editor/editortemplateslotcontroller"),
+        QStringLiteral("src/editor/editorcolumnmodecontroller"),
+        QStringLiteral("src/editor/editorsignalselectioncontroller"),
+        QStringLiteral("src/editor/editorfolding"),
+        QStringLiteral("src/editor/editorsourcenavigation"),
+        QStringLiteral("src/editor/editorselection"),
+        QStringLiteral("src/editor/editorlineoperationcontroller"),
     };
     for (const QString& module : editorModules) {
         check(!readSource(root, module + QStringLiteral(".h"))
@@ -266,7 +266,7 @@ int main(int argc, char* argv[])
               "editor runtime has no migrated mode helpers"));
     check(sourceLineCount(runtimeSource) <= 5000,
           QStringLiteral(
-              "editorruntime.cpp is at most 5000 lines"));
+              "src/editor/editorruntime.cpp is at most 5000 lines"));
     check(containsNone(
               runtimeSource,
               {QStringLiteral(
@@ -354,7 +354,7 @@ int main(int argc, char* argv[])
         readSource(
             root,
             QStringLiteral(
-                "foldblockshelfpanel.cpp"));
+                "src/editor/foldblockshelfpanel.cpp"));
     check(containsNone(
               foldShelfPanelSource,
               {QStringLiteral(
@@ -518,7 +518,7 @@ int main(int argc, char* argv[])
               && !workspaceSessionCoordinatorSource.isEmpty()
               && cmake.contains(
                   QStringLiteral(
-                      "workspacesessioncoordinator.cpp")),
+                      "src/workspace/workspacesessioncoordinator.cpp")),
           QStringLiteral(
               "workspace session coordinator is an explicit build boundary"));
     check(containsAll(
@@ -564,7 +564,7 @@ int main(int argc, char* argv[])
               && !rtlActionCoordinatorSource.isEmpty()
               && cmake.contains(
                   QStringLiteral(
-                      "rtlactioncoordinator.cpp")),
+                      "src/insights/rtlactioncoordinator.cpp")),
           QStringLiteral(
               "RTL action coordinator is an explicit build boundary"));
     check(containsAll(
@@ -650,11 +650,11 @@ int main(int argc, char* argv[])
               "MainWindow only assembles and delegates owned RTL routes"));
     check(sourceLineCount(mainWindowSource) <= 7000,
           QStringLiteral(
-              "mainwindow.cpp remains below the post-extraction ownership ceiling"));
+              "src/app/mainwindow.cpp remains below the post-extraction ownership ceiling"));
     check(!waveResultNavigationHeader.isEmpty()
               && !waveResultNavigationSource.isEmpty()
               && cmake.contains(QStringLiteral(
-                  "wavesimulationresultnavigationcoordinator.cpp")),
+                  "src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp")),
           QStringLiteral(
               "Wave result navigation is an explicit build boundary"));
     check(containsAll(
@@ -673,10 +673,10 @@ int main(int argc, char* argv[])
               "Wave result navigation owns both navigation directions"));
 
     const QStringList insightModules = {
-        QStringLiteral("rtlinsightspanelviewstate"),
-        QStringLiteral("rtlinsightsgraphscenemapper"),
-        QStringLiteral("rtlinsightsgraphcontroller"),
-        QStringLiteral("rtlinsightspresenter"),
+        QStringLiteral("src/insights/rtlinsightspanelviewstate"),
+        QStringLiteral("src/insights/rtlinsightsgraphscenemapper"),
+        QStringLiteral("src/insights/rtlinsightsgraphcontroller"),
+        QStringLiteral("src/insights/rtlinsightspresenter"),
     };
     for (const QString& module : insightModules) {
         check(!readSource(root, module + QStringLiteral(".h"))
@@ -713,7 +713,7 @@ int main(int argc, char* argv[])
     check(!insightsActionsSource.isEmpty()
               && cmake.contains(
                   QStringLiteral(
-                      "rtlinsightspanelactions.cpp"))
+                      "src/insights/rtlinsightspanelactions.cpp"))
               && containsAll(
                   insightsActionsSource,
                   {QStringLiteral(
@@ -760,7 +760,7 @@ int main(int argc, char* argv[])
               "Insight shell has no scene mapping or hand-authored graph Actions"));
     check(sourceLineCount(insightsSource) <= 900,
           QStringLiteral(
-              "rtlinsightspanelcoordinator.cpp is at most 900 lines"));
+              "src/insights/rtlinsightspanelcoordinator.cpp is at most 900 lines"));
     check(containsAll(
               hotspotHeader,
               {QStringLiteral(
@@ -772,7 +772,7 @@ int main(int argc, char* argv[])
               && !hotspotActionsSource.isEmpty()
               && cmake.contains(
                   QStringLiteral(
-                      "signalusagehotspotpanelactions.cpp")),
+                      "src/insights/signalusagehotspotpanelactions.cpp")),
           QStringLiteral(
               "Usage Hotspot composes a dedicated graph-view Action host"));
     check(containsAll(
@@ -826,7 +826,7 @@ int main(int argc, char* argv[])
               && !focusActionsSource.isEmpty()
               && cmake.contains(
                   QStringLiteral(
-                      "insightfocuscontrolleractions.cpp")),
+                      "src/insights/insightfocuscontrolleractions.cpp")),
           QStringLiteral(
               "Insight Focus composes a dedicated graph-view Action host"));
     check(containsAll(

@@ -25,6 +25,7 @@ cmake_install.cmake
 CMakeLists.txt.user
 CMakeLists.txt.user.*
 *.cmake
+!cmake/source_layout.cmake
 
 *.pro.user
 *.pro.user.*
