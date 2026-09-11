@@ -73,6 +73,7 @@ void LiveInsightToolPage::setNavigationHandler(
 void LiveInsightToolPage::setStatusHandler(StatusHandler handler)
 {
     statusHandler = std::move(handler);
+    if (workbench) workbench->setStatusHandler(statusHandler);
     if (detachedPage)
         detachedPage->setStatusHandler(statusHandler);
     if (waveCoordinator)
@@ -114,6 +115,12 @@ void LiveInsightToolPage::setWaveformLibraryPath(
 void LiveInsightToolPage::setContext(
     const LiveInsightToolContext& context)
 {
+    if (context.workspaceId == currentContext.workspaceId
+        && context.documentId == currentContext.documentId
+        && context.fileName == currentContext.fileName
+        && (context.documentRevision < currentContext.documentRevision
+            || (context.documentRevision == currentContext.documentRevision
+                && context.semanticRevision < currentContext.semanticRevision))) return;
     currentContext = context;
     renderContext();
     if (detachedPage)
@@ -243,7 +250,7 @@ void LiveInsightToolPage::createSurface()
             [this]() { detachToWindow(); });
         return;
     }
-    workbench = new RtlInsightWorkbench(this);
+    workbench = new RtlInsightWorkbench(this, true);
     const InsightWorkbenchViewKind viewKind =
         insightKind == LiveInsightKind::Kernel
         ? InsightWorkbenchViewKind::Kernel

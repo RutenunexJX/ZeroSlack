@@ -1,4 +1,4 @@
-ZeroSlack v0.24.2
+ZeroSlack v0.25.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -41,7 +41,14 @@ Rounded controls and graph nodes share a scalable outline icon system.
 Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
 inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
 
-Non-editor typography prefers installed Noto Sans SC with system font fallbacks,
+Non-editor typography prefers installed Noto Sans with system font fallbacks,
 and uses proportional text with distinct title, body, metadata
 and badge sizes. Settings groups and navigation explanations have clearer spacing.
-Editor font preferences and the existing theme palettes are preserved.
+Editor font preferences are preserved. Catppuccin Latte, Frappe, Macchiato and
+Mocha are available in Settings > Appearance. Palette attribution is in catppuccin.md.
+
+Right-click the title file path to copy its absolute path or reveal it in Explorer.
+Windows maximize and keyboard snap retain native window capabilities.
+
+The unified workbench hosts dedicated graph panels, including Hotspot Track/Matrix,
+nested module blocks, Kernel filtering/fanout and State Transition controls.

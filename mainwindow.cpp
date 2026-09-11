@@ -6297,12 +6297,13 @@ void MainWindow::applySettingsCenterSnapshot(
         snapshot.value(
             QStringLiteral("appearance.theme"))
             .toString();
-    ApplicationThemeManager::instance().setMode(
-        themeName.compare(
-            QStringLiteral("Dark"),
-            Qt::CaseInsensitive) == 0
-            ? ThemeMode::Dark
-            : ThemeMode::Light);
+    ThemeMode themeMode = ThemeMode::Light;
+    if (themeName.compare(QStringLiteral("Dark"), Qt::CaseInsensitive) == 0) themeMode = ThemeMode::Dark;
+    else if (themeName == QStringLiteral("Catppuccin Latte")) themeMode = ThemeMode::CatppuccinLatte;
+    else if (themeName == QStringLiteral("Catppuccin Frappe")) themeMode = ThemeMode::CatppuccinFrappe;
+    else if (themeName == QStringLiteral("Catppuccin Macchiato")) themeMode = ThemeMode::CatppuccinMacchiato;
+    else if (themeName == QStringLiteral("Catppuccin Mocha")) themeMode = ThemeMode::CatppuccinMocha;
+    ApplicationThemeManager::instance().setMode(themeMode);
 
     if (editorAppearanceSettings) {
         EditorAppearanceOptions options;

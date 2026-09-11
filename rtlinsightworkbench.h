@@ -15,6 +15,9 @@
 #include <memory>
 
 class InsightCanvas;
+class InsightViewSurface;
+class RtlInsightsPanelCoordinator;
+class SignalKernelGraphPanelCoordinator;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -26,7 +29,7 @@ public:
     using BuildOverride = std::function<InsightViewBuildResult(
         const InsightViewContext&)>;
 
-    explicit RtlInsightWorkbench(QWidget* parent = nullptr);
+    explicit RtlInsightWorkbench(QWidget* parent = nullptr, bool specialized = false);
     ~RtlInsightWorkbench() override;
 
     bool registerPlugin(std::unique_ptr<IInsightViewPlugin> plugin);
@@ -43,6 +46,9 @@ public:
     void setNavigationHandler(
         std::function<bool(const QString&, int, int)> handler);
 
+    void setStatusHandler(std::function<void(const QString&, int)> handler);
+    RtlInsightsPanelCoordinator* rtlSurfaceForTest() const;
+    SignalKernelGraphPanelCoordinator* kernelSurfaceForTest() const;
     InsightGraphCore* graphCore();
     InsightCanvas* canvas() const;
     InsightGraphUpdate lastUpdate() const;
@@ -57,7 +63,12 @@ public:
         BuildOverride builder);
     QPushButton* detachButtonForTest() const;
 
+protected:
+    void showEvent(QShowEvent* event) override;
+
 private:
+    void fitNewSurface();
+    bool surfaceNeedsFit = true;
     struct ViewState {
         QString searchText;
         QStringList selectedNodeIds;
@@ -69,6 +80,8 @@ private:
     std::map<int, std::unique_ptr<IInsightViewPlugin>> plugins;
     QHash<int, BuildOverride> buildOverrides;
     QHash<int, ViewState> viewStates;
+    bool specializedViews = false;
+    std::unique_ptr<InsightViewSurface> surface;
     InsightGraphCore core;
     InsightCanvas* canvasValue = nullptr;
     QLabel* titleLabel = nullptr;
@@ -82,6 +95,7 @@ private:
     InsightViewContext currentContext;
     InsightGraphUpdate currentUpdate;
     std::function<bool(const QString&, int, int)> navigationHandler;
+    std::function<void(const QString&, int)> statusHandler;
 
     IInsightViewPlugin* pluginForKind(
         InsightWorkbenchViewKind kind) const;

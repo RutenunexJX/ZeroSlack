@@ -1620,6 +1620,7 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
             getDocumentForEditor(editor).fileName;
         if (QWidget* parentWidget =
                 qobject_cast<QWidget*>(parent())) {
+            parentWidget->setWindowFilePath(fileName.isEmpty() ? QString() : QFileInfo(fileName).absoluteFilePath());
             parentWidget->setWindowTitle(
                 fileName.isEmpty()
                     ? QStringLiteral("untitled")

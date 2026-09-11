@@ -159,6 +159,7 @@
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
+#include "rtlinsightworkbench.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
 
@@ -12071,6 +12072,7 @@ void runLiveInsightSidebarRoutingRegression(
     MainWindow& window,
     const QString& fixturePath)
 {
+    runRtlInsightsPanelRegression(window, fixturePath);
     ContextWorkspaceController* controller =
         window.contextWorkspaceController.get();
     SemanticPanelRefreshCoordinator* refresh =
@@ -12105,7 +12107,7 @@ void runLiveInsightSidebarRoutingRegression(
         return;
 
     refresh->showStateTransitionGraphForSymbol(
-        QStringLiteral("state_q"),
+        QStringLiteral("state_d"),
         fixturePath,
         QStringLiteral("insight_top"));
     QCoreApplication::processEvents(
@@ -12133,6 +12135,17 @@ void runLiveInsightSidebarRoutingRegression(
     expectBool("State Transition command opens the full state canvas",
                dynamic_cast<LiveInsightToolPage*>(fullView) != nullptr,
                true);
+    auto* statePage = dynamic_cast<LiveInsightToolPage*>(fullView);
+    auto* stateSurface = statePage && statePage->workbenchForTest()
+        ? statePage->workbenchForTest()->rtlSurfaceForTest() : nullptr;
+    const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+    if (!reviewDir.isEmpty() && statePage) {
+        QDir().mkpath(reviewDir);
+        statePage->grab().save(reviewDir + "/state.png");
+    }
+    expectBool("State full view uses dedicated state renderer",
+        stateSurface && stateSurface->graphModeForTest() == QStringLiteral("state-transition")
+            && stateSurface->graphNodeItemCountForTest() > 0, true);
     expectBool("State Transition command has no legacy bottom-dock target",
                window.dockForPanelId(
                           QStringLiteral("rtlInsights")) == nullptr,
@@ -12184,6 +12197,14 @@ void runLiveInsightSidebarRoutingRegression(
                            .arg(liveInsightKindId(probe.kind))))
                    != nullptr;
     }
+    auto* modulePage = dynamic_cast<LiveInsightToolPage*>(window.tabManager->toolPage(QStringLiteral("live-insight:block")));
+    auto* moduleSurface = modulePage && modulePage->workbenchForTest()
+        ? modulePage->workbenchForTest()->rtlSurfaceForTest() : nullptr;
+    if (!reviewDir.isEmpty() && modulePage) modulePage->grab().save(reviewDir + "/block.png");
+    expectBool("Module full view preserves nested dedicated scene",
+        moduleSurface && moduleSurface->graphModeForTest() == QStringLiteral("module-block")
+            && moduleSurface->graphNodeItemCountForTest() > 1
+            && moduleSurface->graphNestedNodeStackingReadableForTest(), true);
     expectBool("kernel hotspot module and state commands share Live Insights",
                allInsightRoutesUseRightProvider,
                true);

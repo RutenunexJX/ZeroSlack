@@ -11,8 +11,15 @@ struct InsightTheme;
 enum class ThemeMode {
     Light,
     Dark,
+    CatppuccinLatte,
+    CatppuccinFrappe,
+    CatppuccinMacchiato,
+    CatppuccinMocha,
 };
 
+inline bool isDarkTheme(ThemeMode mode) {
+    return mode != ThemeMode::Light && mode != ThemeMode::CatppuccinLatte;
+}
 Q_DECLARE_METATYPE(ThemeMode)
 
 class ZEROSLACK_API ApplicationThemeManager final : public QObject

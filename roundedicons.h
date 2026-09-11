@@ -104,7 +104,9 @@ public:
                 painter->setBrush(option->palette.color(QPalette::Mid));
                 painter->drawRoundedRect(area, 4, 4); painter->restore();
             }
-            icon(Close).paint(painter, area, Qt::AlignCenter,
+            const int size = qBound(12, option->fontMetrics.height(), 18);
+            const QRect glyph(area.center().x() - size / 2, area.center().y() - size / 2, size, size);
+            icon(Close).paint(painter, glyph, Qt::AlignCenter,
                 option->state & State_Enabled ? QIcon::Normal : QIcon::Disabled);
             return;
         }

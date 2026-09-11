@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.25.0] - 2026-09-11
+
+- Restored specialized Kernel, nested Block, Hotspot Track/Matrix and State Transition panels inside the unified workbench.
+- Preserved typed layouts, filters, source navigation and export; corrected initial fit, toolbar sizing and expanded fanout header placement.
+- Selected English-first Noto Sans UI typography, refined text hierarchy and reduced tab close glyphs.
+- Added title-path copy/reveal actions and native Windows maximize/snap support.
+- Added Catppuccin Latte, Frappe, Macchiato and Mocha palettes with persistent settings.
+- Verified specialized full-view routes, exports, theme/settings regressions and native Windows keyboard snapping.
+
 ## [0.24.2] - 2026-09-10
 
 - Selected Noto Sans SC as the preferred non-editor UI font, with system font fallbacks.

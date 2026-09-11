@@ -523,10 +523,11 @@ QTextCharFormat semanticFormatForRole(
     bool dark)
 {
     QTextCharFormat format;
+    const ThemeMode current = ApplicationThemeManager::instance().mode();
+    const ThemeMode paletteMode = current == ThemeMode::Light || current == ThemeMode::Dark
+        ? (dark ? ThemeMode::Dark : ThemeMode::Light) : current;
     const InsightEditorSemanticTokens& semantic =
-        InsightVisualStyle::theme(
-            dark ? ThemeMode::Dark : ThemeMode::Light)
-            .editorSemantic;
+        InsightVisualStyle::theme(paletteMode).editorSemantic;
 
     switch (role) {
     case SemanticDecorationRole::ModuleInterface:

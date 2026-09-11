@@ -65,14 +65,15 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
                   Category::Appearance,
                   QStringLiteral("Color theme"),
                   QStringLiteral(
-                      "Switch the complete application between Light and "
-                      "Dark appearance."),
+                      "Choose Light, Dark, or one of four Catppuccin palettes."),
                   Kind::String,
                   QStringLiteral("Light"),
                   {},
                   {},
                   {QStringLiteral("Light"),
-                   QStringLiteral("Dark")},
+                   QStringLiteral("Dark"), QStringLiteral("Catppuccin Latte"),
+                   QStringLiteral("Catppuccin Frappe"), QStringLiteral("Catppuccin Macchiato"),
+                   QStringLiteral("Catppuccin Mocha")},
                   true,
                   false,
                   true,

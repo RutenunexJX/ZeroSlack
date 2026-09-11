@@ -616,7 +616,7 @@ RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator()
 void RtlInsightsPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
-    viewState->sourceNavigationHandler =
+    setSourceNavigationHandler(
         [handler = std::move(handler)](
             const RtlInsightSourceLocation& location) {
             return handler
@@ -624,7 +624,7 @@ void RtlInsightsPanelCoordinator::setNavigationHandler(
                     location.fileName,
                     location.line,
                     location.column);
-        };
+        });
 }
 
 void RtlInsightsPanelCoordinator::setSourceNavigationHandler(
@@ -633,6 +633,18 @@ void RtlInsightsPanelCoordinator::setSourceNavigationHandler(
 {
     viewState->sourceNavigationHandler =
         std::move(handler);
+    if (viewState->signalUsageHotspotPanel) {
+        viewState->signalUsageHotspotPanel->setNavigationHandler(
+            [this](const QString& file, int line, int column) {
+                RtlInsightSourceLocation location;
+                location.fileName = file;
+                location.line = line;
+                location.column = column;
+                location.moduleName = viewState->currentModuleName;
+                location.symbolName = viewState->currentSignalName;
+                return viewState->sourceNavigationHandler && viewState->sourceNavigationHandler(location);
+            });
+    }
 }
 
 void RtlInsightsPanelCoordinator::setStatusMessageHandler(

@@ -1,6 +1,7 @@
 #include "rtlinsightworkbench.h"
 
 #include "graphexportui.h"
+#include "insightviewsurface.h"
 #include "insightcanvas.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
@@ -13,11 +14,14 @@
 #include <QSignalBlocker>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QTimer>
+#include <QShowEvent>
 
 #include <utility>
 
-RtlInsightWorkbench::RtlInsightWorkbench(QWidget* parent)
+RtlInsightWorkbench::RtlInsightWorkbench(QWidget* parent, bool specialized)
     : QWidget(parent)
+    , specializedViews(specialized)
 {
     setObjectName(QStringLiteral("rtlInsightWorkbench"));
     auto defaultPlugins = createDefaultInsightViewPlugins();
@@ -72,6 +76,13 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
         return false;
     if (canvasValue && currentKind != kind)
         saveCurrentViewState();
+    if (specializedViews && (!surface || currentKind != kind)) {
+        surface.reset();
+        surface = std::make_unique<InsightViewSurface>(kind, this);
+        surface->setNavigationHandler(navigationHandler);
+        surface->setStatusHandler(statusHandler);
+        static_cast<QVBoxLayout*>(layout())->addWidget(surface->widget(), 1);
+    }
     currentKind = kind;
     if (titleLabel) {
         titleLabel->setText(
@@ -100,6 +111,22 @@ QString RtlInsightWorkbench::currentPluginId() const
 
 void RtlInsightWorkbench::setContext(const InsightViewContext& contextValue)
 {
+    const bool sameDocument = currentContext.workspaceId == contextValue.workspaceId
+        && currentContext.documentId == contextValue.documentId
+        && currentContext.fileName == contextValue.fileName;
+    if (specializedViews && sameDocument) {
+        if (contextValue.documentRevision < currentContext.documentRevision
+            || (contextValue.documentRevision == currentContext.documentRevision
+                && contextValue.semanticRevision < currentContext.semanticRevision)) return;
+        if (contextValue.documentRevision == currentContext.documentRevision
+            && contextValue.semanticRevision == currentContext.semanticRevision
+            && contextValue.moduleName == currentContext.moduleName
+            && contextValue.signalName == currentContext.signalName
+            && contextValue.signalAccessPath == currentContext.signalAccessPath) return;
+    }
+    if (!sameDocument || currentContext.moduleName != contextValue.moduleName
+        || currentContext.signalName != contextValue.signalName
+        || currentContext.signalAccessPath != contextValue.signalAccessPath) surfaceNeedsFit = true;
     currentContext = contextValue;
     refresh();
 }
@@ -111,6 +138,11 @@ InsightViewContext RtlInsightWorkbench::context() const
 
 bool RtlInsightWorkbench::refresh()
 {
+    if (surface) {
+        surface->setContext(currentContext);
+        fitNewSurface();
+        return true;
+    }
     IInsightViewPlugin* plugin = pluginForKind(currentKind);
     if (!plugin || !canvasValue)
         return false;
@@ -131,6 +163,7 @@ void RtlInsightWorkbench::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
     navigationHandler = std::move(handler);
+    if (surface) surface->setNavigationHandler(navigationHandler);
 }
 
 InsightGraphCore* RtlInsightWorkbench::graphCore()
@@ -157,6 +190,7 @@ GraphExportResult RtlInsightWorkbench::exportCurrentGraph(
     const QString& outputPath,
     const GraphExportOptions& options) const
 {
+    if (surface) return surface->exportGraph(outputPath, options);
     return canvasValue
         ? canvasValue->exportGraph(outputPath, options)
         : GraphExportResult{};
@@ -233,6 +267,14 @@ void RtlInsightWorkbench::buildUi()
     toolbar->addWidget(exportButton);
     toolbar->addWidget(detachButton);
     root->addLayout(toolbar);
+    if (specializedViews) {
+        for (int i = 0; i < toolbar->count(); ++i) {
+            QWidget* control = toolbar->itemAt(i)->widget();
+            if (control && control != titleLabel && control != detachButton) control->hide();
+        }
+        return;
+    }
+
 
     statusLabel = new QLabel(this);
     statusLabel->setObjectName(QStringLiteral("rtlInsightWorkbenchStatus"));
@@ -332,4 +374,28 @@ void RtlInsightWorkbench::updatePresentation(
             result.available ? InsightStatusTone::Success
                              : InsightStatusTone::Warning,
             statusLabel->objectName()));
+}
+
+void RtlInsightWorkbench::setStatusHandler(std::function<void(const QString&, int)> handler)
+{ statusHandler = std::move(handler); if (surface) surface->setStatusHandler(statusHandler); }
+RtlInsightsPanelCoordinator* RtlInsightWorkbench::rtlSurfaceForTest() const
+{ return surface ? surface->rtl() : nullptr; }
+SignalKernelGraphPanelCoordinator* RtlInsightWorkbench::kernelSurfaceForTest() const
+{ return surface ? surface->kernel() : nullptr; }
+
+void RtlInsightWorkbench::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    fitNewSurface();
+}
+
+void RtlInsightWorkbench::fitNewSurface()
+{
+    if (!surface || !surfaceNeedsFit || !isVisible()) return;
+    QTimer::singleShot(0, this, [this] {
+        if (surface && surfaceNeedsFit && isVisible()) {
+            surface->fit();
+            surfaceNeedsFit = false;
+        }
+    });
 }

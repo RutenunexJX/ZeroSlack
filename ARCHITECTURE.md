@@ -158,3 +158,24 @@ Wave preview delegates rendering to WaveWorkbench while ZeroSlack retains symbol
 Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
 old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.
 See [suite workflows](docs/suite-workflows.md) and [wave simulation](docs/wave-simulation.md).
+
+
+## Specialized insight surfaces (local implementation, 2026-09-11)
+
+`LiveInsightToolPage` retains the shared context, navigation, status and detach lifecycle.
+Production pages request specialized surfaces from `RtlInsightWorkbench`. `InsightViewSurface`
+adapts the existing typed panels: SignalKernelGraphPanelCoordinator for Kernel and
+RtlInsightsPanelCoordinator for Block, Hotspot and State Transition. Panel-owned report
+models, nested geometry, FSM layout, Track/Matrix modes, filters, inspector and export
+remain authoritative. Embedded docks are content containers, not registered bottom docks.
+
+`InsightGraphCore` / `InsightCanvas` remain available for generic graph consumers and their
+own tests. They are not the mandatory renderer or a lossy intermediate model for specialized
+views. Do not replace a native surface until its interaction and representation parity has
+been tested through the actual tool-page route. Same-document older revision updates are
+rejected; unchanged contexts do not rebuild a specialized view. Theme refreshes stay inside
+the panel and preserve its view state.
+
+Long specialized toolbars scroll horizontally instead of imposing their width on the
+workbench. A newly selected surface fits after its visible geometry settles. Expanded
+Kernel fanout headers reserve space above their nodes and remain inside module wrappers.

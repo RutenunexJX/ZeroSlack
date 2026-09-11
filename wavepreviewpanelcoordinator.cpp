@@ -1110,7 +1110,7 @@ WavePreviewPanelCoordinator::WavePreviewPanelCoordinator(QWidget* parent)
             if (waveformPreviewLoader && waveformView) {
                 waveformPreviewLoader->setTheme(
                     waveformView.data(),
-                    mode == ThemeMode::Dark
+                    isDarkTheme(mode)
                         ? QStringLiteral("dark")
                         : QStringLiteral("light"));
             }
@@ -1231,7 +1231,7 @@ void WavePreviewPanelCoordinator::installWaveformView(
     waveformFailure.clear();
     waveformPreviewLoader->setTheme(
         waveformView.data(),
-        ApplicationThemeManager::instance().mode() == ThemeMode::Dark
+        isDarkTheme(ApplicationThemeManager::instance().mode())
             ? QStringLiteral("dark")
             : QStringLiteral("light"));
     waveformPreviewLoader->setCompact(

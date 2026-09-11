@@ -1263,28 +1263,6 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     moduleWrapperRects.insert(report.kernel.id,
                               rawNodeRects.value(report.kernel.id));
 
-    addSectionLabel(graphScene,
-                    QStringLiteral("Inputs"),
-                    -kColumnOffset,
-                    (inputLayout.bounds.isValid()
-                         ? inputLayout.bounds.top()
-                         : -kNodeHeight / 2.0)
-                        - 66,
-                    baseFont);
-    addSectionLabel(graphScene,
-                    QStringLiteral("Kernel"),
-                    0,
-                    -86,
-                    baseFont);
-    addSectionLabel(graphScene,
-                    QStringLiteral("Outputs"),
-                    kColumnOffset,
-                    (outputBounds.isValid()
-                         ? outputBounds.top()
-                         : -kNodeHeight / 2.0)
-                        - 58,
-                    baseFont);
-
     for (const InputLaneBand& band : inputLayout.bands)
         addInputLaneBand(graphScene, band, baseFont);
 
@@ -1312,10 +1290,12 @@ void SignalKernelGraphPanelCoordinator::renderReport(
             if (collapsed) {
                 itemRect = fixedFanoutCardRect(groupBounds, group.role);
             } else {
-                itemRect = QRectF(groupBounds.left(),
-                                  groupBounds.top(),
-                                  groupBounds.width(),
-                                  qMin<qreal>(52.0, groupBounds.height()));
+                constexpr qreal headerHeight = 52.0;
+                const qreal nodeTop = groupBounds.top() + 34.0;
+                itemRect = QRectF(groupBounds.left(), nodeTop - headerHeight - 8.0,
+                                  groupBounds.width(), headerHeight);
+                const int firstNode = group.nodeIds.first();
+                moduleWrapperRects[firstNode] = moduleWrapperRects.value(firstNode).united(itemRect);
             }
 
             const int matchingGroupNodeId =
@@ -1364,6 +1344,18 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         addFanoutGroupItem(group);
     for (const SignalKernelGraphFanoutGroup& group : report.outputFanoutGroups)
         addFanoutGroupItem(group);
+
+    const auto sectionTop = [&](const QList<SignalKernelGraphNode>& nodes, qreal fallback) {
+        qreal top = fallback;
+        for (const auto& node : nodes) top = qMin(top, moduleWrapperRects.value(node.id).top());
+        return top - 66.0;
+    };
+    addSectionLabel(graphScene, QStringLiteral("Inputs"), -kColumnOffset,
+        sectionTop(visibleInputs, inputLayout.bounds.isValid() ? inputLayout.bounds.top() : -kNodeHeight / 2.0), baseFont);
+    addSectionLabel(graphScene, QStringLiteral("Kernel"), 0, -86, baseFont);
+    addSectionLabel(graphScene, QStringLiteral("Outputs"), kColumnOffset,
+        sectionTop(visibleOutputs, outputBounds.isValid() ? outputBounds.top() : -kNodeHeight / 2.0), baseFont);
+
 
     auto addNode = [&](const SignalKernelGraphNode& node,
                        const QRectF& rect) {

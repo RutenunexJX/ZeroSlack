@@ -130,12 +130,14 @@ int main(int argc, char* argv[])
                      == QStringLiteral("Light")
               && themeField->choices
                      == QStringList{QStringLiteral("Light"),
-                                    QStringLiteral("Dark")}
+                                    QStringLiteral("Dark"), QStringLiteral("Catppuccin Latte"),
+                                    QStringLiteral("Catppuccin Frappe"), QStringLiteral("Catppuccin Macchiato"),
+                                    QStringLiteral("Catppuccin Mocha")}
               && themeField->globalAllowed
               && !themeField->workspaceAllowed
               && themeField->alwaysActive
               && themeField->immediateApply,
-          "appearance theme is a global immediate Light/Dark choice");
+          "appearance theme is a global immediate Light/Dark/Catppuccin choice");
     check(SettingsCenterSchema::field(
               QStringLiteral("font.sizePt"))->storageKey
               == QStringLiteral("editorAppearance/fontSizePt"),

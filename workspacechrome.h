@@ -1,5 +1,11 @@
 #pragma once
 #include <QApplication>
+#include "windowsnapchrome.h"
+#include <QClipboard>
+#include <QDesktopServices>
+#include <QFileInfo>
+#include <QProcess>
+#include <QUrl>
 #include <QDockWidget>
 #include "roundedicons.h"
 #include "uitypography.h"
@@ -92,13 +98,36 @@ public:
         rail->addWidget(setting);
         title = new QFrame(host);
         title->setObjectName(QStringLiteral("workspaceTitleBar"));
-        title->setAttribute(Qt::WA_NativeWindow);
+
         title->setAutoFillBackground(true);
         updateTitleTheme();
         auto* row = new QHBoxLayout(title);
         row->setContentsMargins(8, 0, 2, 0);
         auto* name = new QLabel(host->windowTitle(), title);
         UiTypography::apply(name, UiTypography::Role::Body);
+        name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        name->setMinimumWidth(0);
+        name->setObjectName(QStringLiteral("workspaceFilePath"));
+        name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file"));
+        name->setContextMenuPolicy(Qt::CustomContextMenu);
+        connect(name, &QWidget::customContextMenuRequested, this, [this, name](QPoint point) {
+            QMenu menu(name);
+            const QString path = window->windowFilePath();
+            auto* copy = menu.addAction(tr("Copy full path"));
+            auto* reveal = menu.addAction(tr("Reveal in Explorer"));
+            copy->setEnabled(!path.isEmpty());
+            reveal->setEnabled(QFileInfo::exists(path));
+            auto* selected = menu.exec(name->mapToGlobal(point));
+            if (selected == copy) QApplication::clipboard()->setText(QDir::toNativeSeparators(path));
+            else if (selected == reveal) {
+#ifdef Q_OS_WIN
+                QProcess::startDetached(QStringLiteral("explorer.exe"), {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});
+#else
+                QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+#endif
+            }
+        });
+        connect(host, &QWidget::windowTitleChanged, name, [host, name] { name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file")); });
         row->addWidget(name, 1);
         connect(host, &QWidget::windowTitleChanged, name, &QLabel::setText);
         for (int i = 0; i < 3; ++i) {
@@ -121,6 +150,7 @@ public:
         title->show();
         title->raise();
         qApp->installEventFilter(this);
+        new WindowSnapChrome(host, maximizeButton);
     }
     ~WorkspaceChrome() override { qApp->removeEventFilter(this); }
 protected:

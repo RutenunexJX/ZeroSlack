@@ -107,8 +107,8 @@ InsightTheme buildLightTheme()
     theme.panelSubtle = color("#f8fafc");
     theme.border = color("#d9e0ea");
     theme.borderStrong = color("#aeb8c8");
-    theme.textPrimary = color("#172033");
-    theme.textSecondary = color("#48566a");
+    theme.textPrimary = color("#242b39");
+    theme.textSecondary = color("#515d6d");
     theme.textMuted = color("#7a8797");
     theme.accent = color("#2563eb");
     theme.selected = color("#db2777");
@@ -262,8 +262,8 @@ InsightTheme buildDarkTheme()
     theme.panelSubtle = color("#172033");
     theme.border = color("#334155");
     theme.borderStrong = color("#64748b");
-    theme.textPrimary = color("#f1f5f9");
-    theme.textSecondary = color("#cbd5e1");
+    theme.textPrimary = color("#dce2ec");
+    theme.textSecondary = color("#b1bac9");
     theme.textMuted = color("#94a3b8");
     theme.accent = color("#60a5fa");
     theme.selected = color("#f472b6");
@@ -408,6 +408,183 @@ InsightTheme buildDarkTheme()
 }
 }
 
+// Catppuccin palette 1.8.0: https://github.com/catppuccin/palette (MIT).
+InsightTheme buildCatppuccinTheme(int flavor)
+{
+    const char* baseValues[] = {"#eff1f5", "#303446", "#24273a", "#1e1e2e"};
+    const QColor base = color(baseValues[flavor]);
+    const char* blueValues[] = {"#1e66f5", "#8caaee", "#8aadf4", "#89b4fa"};
+    const QColor blue = color(blueValues[flavor]);
+    const char* greenValues[] = {"#40a02b", "#a6d189", "#a6da95", "#a6e3a1"};
+    const QColor green = color(greenValues[flavor]);
+    const char* mantleValues[] = {"#e6e9ef", "#292c3c", "#1e2030", "#181825"};
+    const QColor mantle = color(mantleValues[flavor]);
+    const char* mauveValues[] = {"#8839ef", "#ca9ee6", "#c6a0f6", "#cba6f7"};
+    const QColor mauve = color(mauveValues[flavor]);
+    const char* overlay0Values[] = {"#9ca0b0", "#737994", "#6e738d", "#6c7086"};
+    const QColor overlay0 = color(overlay0Values[flavor]);
+    const char* peachValues[] = {"#fe640b", "#ef9f76", "#f5a97f", "#fab387"};
+    const QColor peach = color(peachValues[flavor]);
+    const char* redValues[] = {"#d20f39", "#e78284", "#ed8796", "#f38ba8"};
+    const QColor red = color(redValues[flavor]);
+    const char* subtext0Values[] = {"#6c6f85", "#a5adce", "#a5adcb", "#a6adc8"};
+    const QColor subtext0 = color(subtext0Values[flavor]);
+    const char* subtext1Values[] = {"#5c5f77", "#b5bfe2", "#b8c0e0", "#bac2de"};
+    const QColor subtext1 = color(subtext1Values[flavor]);
+    const char* surface0Values[] = {"#ccd0da", "#414559", "#363a4f", "#313244"};
+    const QColor surface0 = color(surface0Values[flavor]);
+    const char* surface1Values[] = {"#bcc0cc", "#51576d", "#494d64", "#45475a"};
+    const QColor surface1 = color(surface1Values[flavor]);
+    const char* surface2Values[] = {"#acb0be", "#626880", "#5b6078", "#585b70"};
+    const QColor surface2 = color(surface2Values[flavor]);
+    const char* tealValues[] = {"#179299", "#81c8be", "#8bd5ca", "#94e2d5"};
+    const QColor teal = color(tealValues[flavor]);
+    const char* textValues[] = {"#4c4f69", "#c6d0f5", "#cad3f5", "#cdd6f4"};
+    const QColor text = color(textValues[flavor]);
+    const char* yellowValues[] = {"#df8e1d", "#e5c890", "#eed49f", "#f9e2af"};
+    const QColor yellow = color(yellowValues[flavor]);
+    InsightTheme theme;
+    theme.appBackground = mantle;
+    theme.canvasBackground = base;
+    theme.panelBackground = base;
+    theme.panelSubtle = surface0;
+    theme.border = surface1;
+    theme.borderStrong = overlay0;
+    theme.textPrimary = text;
+    theme.textSecondary = subtext1;
+    theme.textMuted = subtext0;
+    theme.accent = blue;
+    theme.selected = mauve;
+    theme.hover = teal;
+    theme.warning = yellow;
+    theme.splitterHandle = surface1;
+    theme.toolbarBackground = mantle;
+    theme.surface.canvas = base;
+    theme.surface.panel = base;
+    theme.surface.raised = surface0;
+    theme.surface.overlay = base;
+    theme.surface.empty = base;
+    theme.surface.loading = mix(base, blue, 0.15);
+    theme.surface.stale = mix(base, yellow, 0.15);
+    theme.focus.ring = blue;
+    theme.focus.ringOnAccent = base;
+    theme.menu.background = base;
+    theme.menu.itemHoverBackground = surface1;
+    theme.menu.text = text;
+    theme.menu.itemHoverText = subtext1;
+    theme.menu.border = surface1;
+    theme.button.background = surface0;
+    theme.button.backgroundHover = surface1;
+    theme.button.backgroundPressed = surface2;
+    theme.button.backgroundChecked = blue;
+    theme.button.text = subtext1;
+    theme.button.textHover = text;
+    theme.button.textChecked = base;
+    theme.button.textDisabled = subtext0;
+    theme.button.border = surface1;
+    theme.button.borderHover = blue;
+    theme.button.borderChecked = blue;
+    theme.input.background = base;
+    theme.input.text = text;
+    theme.input.border = surface1;
+    theme.input.focusBorder = blue;
+    theme.input.selectionBackground = blue;
+    theme.input.selectionText = base;
+    theme.tab.barBackground = mantle;
+    theme.tab.tabBackground = surface0;
+    theme.tab.tabBackgroundHover = surface1;
+    theme.tab.tabBackgroundSelected = base;
+    theme.tab.text = subtext0;
+    theme.tab.textHover = subtext1;
+    theme.tab.textSelected = text;
+    theme.tab.border = surface1;
+    theme.tab.borderSelected = blue;
+    theme.statusBar.background = mantle;
+    theme.statusBar.text = text;
+    theme.statusBar.border = surface1;
+    theme.statusBar.infoText = blue;
+    theme.statusBar.infoBackground = mix(base, blue, 0.15);
+    theme.statusBar.infoBorder = blue;
+    theme.statusBar.successText = green;
+    theme.statusBar.successBackground = mix(base, green, 0.15);
+    theme.statusBar.successBorder = green;
+    theme.statusBar.warningText = yellow;
+    theme.statusBar.warningBackground = mix(base, yellow, 0.15);
+    theme.statusBar.warningBorder = yellow;
+    theme.statusBar.errorText = red;
+    theme.statusBar.errorBackground = mix(base, red, 0.15);
+    theme.statusBar.errorBorder = red;
+    theme.dock.background = mantle;
+    theme.dock.titleBackground = base;
+    theme.dock.border = surface1;
+    theme.dock.titleBorder = surface1;
+    theme.dock.text = text;
+    theme.itemView.background = base;
+    theme.itemView.alternateBackground = surface0;
+    theme.itemView.headerBackground = surface0;
+    theme.itemView.border = surface1;
+    theme.itemView.headerBorder = surface1;
+    theme.itemView.text = text;
+    theme.itemView.headerText = subtext1;
+    theme.itemView.selectedBackground = surface2;
+    theme.itemView.hoverBackground = surface1;
+    theme.graph.background = base;
+    theme.graph.gridLine = surface1;
+    theme.graph.nodeFill = base;
+    theme.graph.nodeBorder = overlay0;
+    theme.graph.nodeHoverFill = surface0;
+    theme.graph.nodeHoverBorder = teal;
+    theme.graph.nodeSelectedFill = mix(base, blue, 0.15);
+    theme.graph.nodeSelectedBorder = mauve;
+    theme.graph.edge = subtext0;
+    theme.graph.edgeHover = teal;
+    theme.graph.edgeSelected = mauve;
+    theme.graph.selectionFill = mix(base, blue, 0.15);
+    theme.graph.selectionBorder = blue;
+    theme.syntax.keyword = mauve;
+    theme.syntax.comment = subtext0;
+    theme.syntax.number = peach;
+    theme.syntax.string = green;
+    theme.syntax.errorUnderline = red;
+    theme.syntax.warningUnderline = yellow;
+    theme.syntax.structuralPair = yellow;
+    theme.semantic.write = peach;
+    theme.semantic.read = green;
+    theme.semantic.port = blue;
+    theme.semantic.condition = mauve;
+    theme.semantic.caseRole = mauve;
+    theme.semantic.timing = teal;
+    theme.semantic.unknown = subtext0;
+    theme.semantic.kernel = blue;
+    theme.semantic.data = green;
+    theme.semantic.writeFill = mix(base, peach, 0.16);
+    theme.semantic.readFill = mix(base, green, 0.16);
+    theme.semantic.portFill = mix(base, blue, 0.16);
+    theme.semantic.conditionFill = mix(base, mauve, 0.16);
+    theme.semantic.caseFill = mix(base, mauve, 0.16);
+    theme.semantic.timingFill = mix(base, teal, 0.16);
+    theme.semantic.unknownFill = mix(base, subtext0, 0.16);
+    theme.semantic.kernelFill = mix(base, blue, 0.16);
+    theme.semantic.dataFill = mix(base, green, 0.16);
+    theme.semantic.heatLow = surface0;
+    theme.semantic.heatMid = yellow;
+    theme.semantic.heatHigh = red;
+    theme.editorSemantic.moduleInterface = blue;
+    theme.editorSemantic.packageClassType = teal;
+    theme.editorSemantic.instanceName = yellow;
+    theme.editorSemantic.formalPort = green;
+    theme.editorSemantic.modulePort = blue;
+    theme.editorSemantic.actualSignal = peach;
+    theme.editorSemantic.parameter = red;
+    theme.editorSemantic.enumValue = yellow;
+    theme.editorSemantic.typeAlias = teal;
+    theme.editorSemantic.macro = yellow;
+    theme.editorSemantic.systemTask = teal;
+    theme.editorSemantic.inactiveText = subtext0;
+    theme.editorSemantic.inactiveBackground = surface0;
+    return theme;
+}
+
 const InsightTheme& InsightVisualStyle::theme()
 {
     return theme(ApplicationThemeManager::instance().mode());
@@ -417,7 +594,16 @@ const InsightTheme& InsightVisualStyle::theme(ThemeMode mode)
 {
     static const InsightTheme lightTheme = buildLightTheme();
     static const InsightTheme darkTheme = buildDarkTheme();
-    return mode == ThemeMode::Dark ? darkTheme : lightTheme;
+    static const InsightTheme catppuccin[] = {buildCatppuccinTheme(0), buildCatppuccinTheme(1),
+        buildCatppuccinTheme(2), buildCatppuccinTheme(3)};
+    switch (mode) {
+    case ThemeMode::CatppuccinLatte: return catppuccin[0];
+    case ThemeMode::CatppuccinFrappe: return catppuccin[1];
+    case ThemeMode::CatppuccinMacchiato: return catppuccin[2];
+    case ThemeMode::CatppuccinMocha: return catppuccin[3];
+    case ThemeMode::Dark: return darkTheme;
+    default: return lightTheme;
+    }
 }
 
 QColor InsightVisualStyle::roleColor(InsightVisualRole role)
@@ -562,19 +748,26 @@ QBrush InsightVisualStyle::canvasBrush()
     return QBrush(theme().canvasBackground);
 }
 
-QFont InsightVisualStyle::titleFont(const QFont&)
+QFont InsightVisualStyle::titleFont(const QFont& base)
 {
-    return UiTypography::font(UiTypography::Role::PanelTitle);
+    QFont font = base;
+    font.setBold(true);
+    font.setPointSize(qMax(9, font.pointSize()));
+    return font;
 }
 
-QFont InsightVisualStyle::compactFont(const QFont&)
+QFont InsightVisualStyle::compactFont(const QFont& base)
 {
-    return UiTypography::font(UiTypography::Role::Metadata);
+    QFont font = base;
+    font.setPointSize(qMax(8, font.pointSize() - 1));
+    return font;
 }
 
-QFont InsightVisualStyle::labelFont(const QFont&)
+QFont InsightVisualStyle::labelFont(const QFont& base)
 {
-    return UiTypography::font(UiTypography::Role::Section);
+    QFont font = compactFont(base);
+    font.setBold(true);
+    return font;
 }
 
 QPalette InsightVisualStyle::applicationPalette()

@@ -8,8 +8,13 @@
 #include "liveinsighttoolpage.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "rtlinsightworkbench.h"
+#include "signalkernelgraphpanelcoordinator.h"
+#include "signalusagehotspotpanel.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 #include "semanticindex.h"
 #include "wavepreviewpanelcoordinator.h"
+#include "workspacechrome.h"
 
 #include <QAction>
 #include <QApplication>
@@ -54,6 +59,90 @@ InsightGraphDraft draftFor(const QString& identity,
     return draft;
 }
 
+SignalUsageHotspotReport hotspotGraphViewFixture()
+{
+    SignalUsageHotspotItem item;
+    item.role = SignalUsageHotspotRole::Read;
+    item.moduleName = QStringLiteral("graph_view_module");
+    item.fileName = QStringLiteral("graph_view.sv");
+    item.line = 12;
+    item.column = 5;
+    item.endLine = 12;
+    item.endColumn = 16;
+    item.snippet = QStringLiteral("sample <= tracked_signal;");
+    item.roleReasonDisplayName = QStringLiteral("read");
+
+    SignalUsageHotspotTrackPosition position;
+    position.itemIndex = 0;
+    position.role = item.role;
+    position.roleDisplayName = item.roleReasonDisplayName;
+    position.line = item.line;
+    position.column = item.column;
+    position.endLine = item.endLine;
+    position.endColumn = item.endColumn;
+
+    SignalUsageHotspotTrackLane lane;
+    lane.moduleName = item.moduleName;
+    lane.fileName = item.fileName;
+    lane.startLine = 1;
+    lane.endLine = 40;
+    lane.count = 1;
+    lane.positions = {position};
+
+    SignalUsageHotspotReport report;
+    report.found = true;
+    report.declarationDisplayName =
+        QStringLiteral("tracked_signal");
+    report.items = {item};
+    report.trackLanes = {lane};
+    return report;
+}
+
+SignalKernelGraphReport signalKernelThemeFixture()
+{
+    SignalKernelGraphReport report;
+    report.found = true;
+    report.kernel.id = 0;
+    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
+    report.kernel.displayName = QStringLiteral("tracked_signal");
+    report.kernel.moduleDisplayName = QStringLiteral("graph_view_module");
+
+    SignalKernelGraphNode input;
+    input.id = 1;
+    input.role = SignalKernelGraphNodeRole::Input;
+    input.inputLane = SignalKernelGraphInputLane::Data;
+    input.displayName = QStringLiteral("source_a");
+    input.moduleDisplayName = QStringLiteral("source_module");
+    report.inputs = {input};
+
+    SignalKernelGraphNode outputA;
+    outputA.id = 2;
+    outputA.role = SignalKernelGraphNodeRole::Output;
+    outputA.displayName = QStringLiteral("sink_a");
+    outputA.moduleDisplayName = QStringLiteral("sink_module");
+    SignalKernelGraphNode outputB = outputA;
+    outputB.id = 3;
+    outputB.displayName = QStringLiteral("sink_b");
+    report.outputs = {outputA, outputB};
+    report.edges = {{1, 0, QStringLiteral("read")},
+                    {0, 2, QStringLiteral("write")},
+                    {0, 3, QStringLiteral("write")}};
+
+    SignalKernelGraphFanoutGroup group;
+    group.id = 7;
+    group.role = SignalKernelGraphNodeRole::Output;
+    group.groupKey = QStringLiteral("output:sink_module");
+    group.displayName = QStringLiteral("sink_module outputs");
+    group.moduleName = QStringLiteral("sink_module");
+    group.nodeIds = {2, 3};
+    group.nodeCount = 2;
+    group.totalRoleNodeCount = 2;
+    group.highFanout = true;
+    report.outputFanoutGroups = {group};
+    return report;
+}
+
+
 QImage iconImage(const QIcon& icon)
 {
     return icon.pixmap(QSize(32, 32), QIcon::Normal, QIcon::Off).toImage();
@@ -71,6 +160,9 @@ private slots:
     void workbenchRoutesFourPluginsIndependently();
     void workbenchPreservesPerViewState();
     void toolPagesRouteAllFourWorkbenchViews();
+    void specializedModesSurviveRouting();
+    void catppuccinPalettes();
+    void windowChromeSupportsNativeSnap();
     void sidebarRegistersFiveDistinctIconsAndResources();
     void toolPageDetachesIntoWindow();
     void sharedCanvasExportsSvgPngAndPdf();
@@ -269,10 +361,142 @@ void RtlInsightWorkbenchTest::toolPagesRouteAllFourWorkbenchViews()
         LiveInsightToolPage page(route.first);
         QVERIFY(page.workbenchForTest());
         QCOMPARE(page.workbenchForTest()->viewKind(), route.second);
+        QVERIFY(!page.workbenchForTest()->canvas());
+        if (route.first == LiveInsightKind::Kernel) QVERIFY(page.workbenchForTest()->kernelSurfaceForTest());
+        else QVERIFY(page.workbenchForTest()->rtlSurfaceForTest());
     }
     LiveInsightToolPage wavePage(LiveInsightKind::Wave);
     QVERIFY(!wavePage.workbenchForTest());
     QVERIFY(wavePage.waveCoordinatorForTest());
+}
+
+void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
+{
+    QTemporaryDir output;
+    QVERIFY(output.isValid());
+    LiveInsightToolPage hotspotPage(LiveInsightKind::Hotspot);
+    hotspotPage.resize(1120, 760);
+    hotspotPage.show();
+    auto* panel = hotspotPage.workbenchForTest()->rtlSurfaceForTest()->signalUsageHotspotPanelForTest();
+    QVERIFY(panel);
+    auto report = hotspotGraphViewFixture();
+    report.matrixCells = {{QStringLiteral("graph_view_module"), QStringLiteral("graph_view.sv"),
+        SignalUsageHotspotRole::Read, QStringLiteral("Read"), 1}};
+    panel->setReportBuilderForTest([report](const SignalUsageHotspotQuery&, std::shared_ptr<const SemanticIndexSnapshot>) { return report; });
+    LiveInsightToolContext context;
+    context.fileName = QStringLiteral("graph_view.sv");
+    context.documentId = context.fileName;
+    context.moduleName = QStringLiteral("graph_view_module");
+    context.signalName = QStringLiteral("tracked_signal");
+    context.documentRevision = 5;
+    hotspotPage.setContext(context);
+    QTRY_VERIFY(!panel->reportBuildInFlightForTest());
+    QVERIFY(panel->trackBlockCountForTest() > 0);
+    QVERIFY(panel->matrixNonEmptyCellCountForTest() > 0);
+    int navigationCount = 0;
+    hotspotPage.setNavigationHandler([&](const QString&, int, int) { ++navigationCount; return true; });
+    panel->setMatrixModeForTest(true);
+    QVERIFY(panel->matrixModeForTest());
+    const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+    if (!reviewDir.isEmpty()) {
+        QDir().mkpath(reviewDir);
+        QCoreApplication::processEvents();
+        hotspotPage.grab().save(reviewDir + "/hotspot-matrix.png");
+    }
+    QVERIFY(panel->selectMatrixCellForTest(SignalUsageHotspotRole::Read, context.moduleName, context.fileName));
+    panel->triggerFirstUsageNavigationForTest();
+    QVERIFY(navigationCount > 0);
+    QVERIFY(panel->exportGraph(SignalUsageHotspotExportSurface::Matrix, output.filePath("matrix.svg")).success);
+    panel->setMatrixModeForTest(false);
+    if (!reviewDir.isEmpty()) {
+        QCoreApplication::processEvents();
+        hotspotPage.grab().save(reviewDir + "/hotspot-track.png");
+    }
+    QVERIFY(panel->exportGraph(SignalUsageHotspotExportSurface::Track, output.filePath("track.svg")).success);
+    const auto builds = panel->reportBuildRequestCountForTest();
+    hotspotPage.setContext(context);
+    QCOMPARE(panel->reportBuildRequestCountForTest(), builds);
+    context.documentRevision = 4;
+    hotspotPage.setContext(context);
+    QCOMPARE(hotspotPage.workbenchForTest()->context().documentRevision, quint64(5));
+
+    LiveInsightToolPage kernelPage(LiveInsightKind::Kernel);
+    auto* kernel = kernelPage.workbenchForTest()->kernelSurfaceForTest();
+    QVERIFY(kernel);
+    kernel->renderReportForTest(signalKernelThemeFixture());
+    const int nodes = kernel->visibleGraphNodeCountForTest();
+    kernel->setGraphFilterForTest(false, true, false);
+    QVERIFY(kernel->visibleGraphNodeCountForTest() < nodes);
+    kernel->setGraphFilterForTest(true, true, false);
+    QVERIFY(kernel->toggleFanoutGroupForTest(QStringLiteral("output:sink_module")));
+    QVERIFY(kernelPage.workbenchForTest()->exportCurrentGraph(output.filePath("kernel.svg")).success);
+    if (!reviewDir.isEmpty()) {
+        kernelPage.resize(1120, 760); kernelPage.show();
+        QCoreApplication::processEvents(); kernel->focusFit();
+        kernelPage.grab().save(reviewDir + "/kernel.png");
+    }
+}
+
+void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
+{
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) QSKIP("Native Windows platform required");
+    QMainWindow window;
+    window.setCentralWidget(new QWidget(&window));
+    auto* navigation = new QDockWidget(&window);
+    window.addDockWidget(Qt::LeftDockWidgetArea, navigation);
+    new WorkspaceChrome(&window, navigation, [] {});
+    window.setGeometry(180, 180, 900, 600);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    const HWND handle = reinterpret_cast<HWND>(window.winId());
+    const LONG_PTR style = GetWindowLongPtr(handle, GWL_STYLE);
+    QVERIFY((style & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW);
+    QVERIFY(!(style & WS_POPUP));
+    auto buttons = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"))->findChildren<QToolButton*>();
+    QCOMPARE(buttons.size(), 3);
+    const QPoint maxPoint = buttons[1]->mapToGlobal(buttons[1]->rect().center());
+    const qreal scale = window.devicePixelRatioF();
+    const LRESULT hit = SendMessage(handle, WM_NCHITTEST, 0,
+        MAKELPARAM(qRound(maxPoint.x() * scale), qRound(maxPoint.y() * scale)));
+    QCOMPARE(hit, LRESULT(HTMAXBUTTON));
+    SendMessage(handle, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+    QTRY_VERIFY(window.isMaximized());
+    SendMessage(handle, WM_SYSCOMMAND, SC_RESTORE, 0);
+    QTRY_VERIFY(!window.isMaximized());
+    window.activateWindow();
+    SetForegroundWindow(handle);
+    QTest::qWait(100);
+    if (GetForegroundWindow() != handle) QSKIP("Foreground activation unavailable; native style and hit testing passed");
+    INPUT keys[4]{};
+    for (auto& key : keys) key.type = INPUT_KEYBOARD;
+    keys[0].ki.wVk = VK_LWIN;
+    keys[1].ki.wVk = VK_LEFT;
+    keys[2].ki.wVk = VK_LEFT; keys[2].ki.dwFlags = KEYEVENTF_KEYUP;
+    keys[3].ki.wVk = VK_LWIN; keys[3].ki.dwFlags = KEYEVENTF_KEYUP;
+    const QRect before = window.geometry();
+    QCOMPARE(SendInput(4, keys, sizeof(INPUT)), UINT(4));
+    QTRY_VERIFY_WITH_TIMEOUT(window.geometry() != before, 2000);
+    window.close();
+#else
+    QSKIP("Windows only");
+#endif
+}
+
+void RtlInsightWorkbenchTest::catppuccinPalettes()
+{
+    const QList<ThemeMode> modes = {ThemeMode::CatppuccinLatte, ThemeMode::CatppuccinFrappe,
+        ThemeMode::CatppuccinMacchiato, ThemeMode::CatppuccinMocha};
+    const QStringList bases = {"#eff1f5", "#303446", "#24273a", "#1e1e2e"};
+    for (int i = 0; i < modes.size(); ++i) {
+        ApplicationThemeManager::instance().setMode(modes[i]);
+        const auto& theme = ApplicationThemeManager::instance().theme();
+        QCOMPARE(theme.canvasBackground.name(), bases[i]);
+        QCOMPARE(theme.input.text, theme.textPrimary);
+        QVERIFY(theme.syntax.keyword != theme.syntax.comment);
+        QCOMPARE(isDarkTheme(modes[i]), i != 0);
+    }
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
 }
 
 void RtlInsightWorkbenchTest::sidebarRegistersFiveDistinctIconsAndResources()
