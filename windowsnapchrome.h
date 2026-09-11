@@ -41,8 +41,18 @@ public:
     }
     bool nativeEventFilter(const QByteArray&, void* message, qintptr* result) override {
 #ifdef Q_OS_WIN
+        if (!message) return false;
         auto* msg = static_cast<MSG*>(message);
         if (!host->internalWinId() || !maximizeButton || msg->hwnd != reinterpret_cast<HWND>(host->internalWinId())) return false;
+        // Queued mouse messages are filtered before dispatch with no result pointer.
+        if ((msg->message == WM_NCLBUTTONDOWN || msg->message == WM_NCLBUTTONUP) && msg->wParam == HTMAXBUTTON) {
+            if (msg->message == WM_NCLBUTTONUP)
+                QMetaObject::invokeMethod(maximizeButton.data(), "click", Qt::QueuedConnection);
+            if (result) *result = 0;
+            return true;
+        }
+        // Geometry replies belong to the window-procedure pass, not the queue pass.
+        if (!result) return false;
         if (msg->message == WM_NCCALCSIZE && msg->wParam) {
             auto* params = reinterpret_cast<NCCALCSIZE_PARAMS*>(msg->lParam);
             if (IsZoomed(msg->hwnd)) {
@@ -69,10 +79,6 @@ public:
                     return true;
                 }
             }
-        }
-        if ((msg->message == WM_NCLBUTTONDOWN || msg->message == WM_NCLBUTTONUP) && msg->wParam == HTMAXBUTTON) {
-            if (msg->message == WM_NCLBUTTONUP) maximizeButton->click();
-            *result = 0; return true;
         }
 #else
         Q_UNUSED(message) Q_UNUSED(result)

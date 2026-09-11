@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.25.1] - 2026-09-11
+
+- Fixed a Windows title-bar crash caused by writing through a null native-event result pointer on queued maximize-button mouse messages.
+- Deferred maximize/restore until native event handling completes; preserved Windows snapping.
+- Added null-result regression coverage and real-mouse minimize/maximize/restore tests against the application window.
+
 ## [0.25.0] - 2026-09-11
 
 - Restored specialized Kernel, nested Block, Hotspot Track/Matrix and State Transition panels inside the unified workbench.

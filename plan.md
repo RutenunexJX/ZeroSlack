@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.0`
+Product version: `v0.25.1`
 
 ## Current baseline
 
@@ -8,6 +8,13 @@ Workspace Hub and bounded `suite-context` are delivered, along with the Context 
 providers, tool drawer and shared Wave renderer. This file lists current maintenance work, not historical steps.
 
 The rounded visual refresh, fixed title row, specialized insight surfaces, English-first typography and Catppuccin themes are delivered.
+
+## 顶栏闪退修复（2026-09-11，v0.25.1）
+
+- [x] 定位真实鼠标最大化点击的访问冲突：Qt 对排队的原生消息传入空结果指针，窗口过滤器仍写入该指针。
+- [x] 允许鼠标消息使用空结果指针，将最大化／还原延迟至消息处理完成；几何消息仅在存在结果存储时应答。
+- [x] 回归覆盖空结果消息与真实主窗口鼠标操作；连续三轮最大化、还原、最小化及 Windows 贴靠测试通过。
+- v0.25.1 已构建；相关 8 项回归最终均通过（GUI 冒烟测试重编译后复核通过）。用户已明确授权本次提交、推送与正式包替换，发布时保留 v0.25.0 正式包备份。
 
 ## 本批修改（2026-09-11，已实施）
 

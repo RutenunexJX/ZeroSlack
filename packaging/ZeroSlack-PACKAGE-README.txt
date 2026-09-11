@@ -1,4 +1,4 @@
-ZeroSlack v0.25.0
+ZeroSlack v0.25.1
 
 Build profile: Shared Release
 Qt: 6.10.2

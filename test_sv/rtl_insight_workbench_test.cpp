@@ -15,6 +15,9 @@
 #include "semanticindex.h"
 #include "wavepreviewpanelcoordinator.h"
 #include "workspacechrome.h"
+#include "mainwindow.h"
+#include <QSettings>
+#include <QSignalSpy>
 
 #include <QAction>
 #include <QApplication>
@@ -163,6 +166,8 @@ private slots:
     void specializedModesSurviveRouting();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
+    void realWindowChromeButtons();
+    void queuedNativeMouseAllowsNullResult();
     void sidebarRegistersFiveDistinctIconsAndResources();
     void toolPageDetachesIntoWindow();
     void sharedCanvasExportsSvgPngAndPdf();
@@ -477,6 +482,93 @@ void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
     const QRect before = window.geometry();
     QCOMPARE(SendInput(4, keys, sizeof(INPUT)), UINT(4));
     QTRY_VERIFY_WITH_TIMEOUT(window.geometry() != before, 2000);
+    window.close();
+#else
+    QSKIP("Windows only");
+#endif
+}
+
+void RtlInsightWorkbenchTest::queuedNativeMouseAllowsNullResult()
+{
+#ifdef Q_OS_WIN
+    QMainWindow window;
+    auto* maximize = new QToolButton(&window);
+    WindowSnapChrome filter(&window, maximize);
+    QSignalSpy clicks(maximize, &QToolButton::clicked);
+    MSG message{};
+    message.hwnd = reinterpret_cast<HWND>(window.winId());
+    message.wParam = HTMAXBUTTON;
+    message.message = WM_NCLBUTTONDOWN;
+    QVERIFY(filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    message.message = WM_NCLBUTTONUP;
+    QVERIFY(filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    QCOMPARE(clicks.count(), 0);
+    QTRY_COMPARE(clicks.count(), 1);
+    message.message = WM_NCHITTEST;
+    QVERIFY(!filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    message.message = WM_NCCALCSIZE;
+    QVERIFY(!filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+#endif
+}
+
+void RtlInsightWorkbenchTest::realWindowChromeButtons()
+{
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() != QStringLiteral("windows")) QSKIP("Native Windows platform required");
+    QTemporaryDir settings;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+    ApplicationThemeManager::instance().applyToApplication();
+    MainWindow window;
+    window.resize(1120, 760);
+    window.show();
+    QVERIFY(QTest::qWaitForWindowExposed(&window));
+    auto* title = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"));
+    QVERIFY(title);
+    const auto buttons = title->findChildren<QToolButton*>();
+    QCOMPARE(buttons.size(), 3);
+    for (int i = 0; i < 3; ++i) {
+        qInfo("minimize button");
+        buttons[0]->click();
+        QTRY_VERIFY(window.isMinimized());
+        window.showNormal();
+        QTRY_VERIFY(!window.isMinimized());
+        qInfo("maximize button");
+        buttons[1]->click();
+        QTRY_VERIFY(window.isMaximized());
+        qInfo("restore button");
+        buttons[1]->click();
+        QTRY_VERIFY(!window.isMaximized());
+    }
+    auto physicalClick = [&](QToolButton* button) {
+        window.activateWindow();
+        SetForegroundWindow(reinterpret_cast<HWND>(window.internalWinId()));
+        QTest::qWait(100);
+        if (GetForegroundWindow() != reinterpret_cast<HWND>(window.internalWinId())) return false;
+        const QPoint local = button->mapTo(&window, button->rect().center());
+        const qreal scale = window.devicePixelRatioF();
+        POINT point{qRound(local.x() * scale), qRound(local.y() * scale)};
+        ClientToScreen(reinterpret_cast<HWND>(window.internalWinId()), &point);
+        SetCursorPos(point.x, point.y);
+        INPUT input[2]{};
+        input[0].type = input[1].type = INPUT_MOUSE;
+        input[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+        input[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+        return SendInput(2, input, sizeof(INPUT)) == 2;
+    };
+    for (int i = 0; i < 3; ++i) {
+        qInfo("physical maximize");
+        QVERIFY(physicalClick(buttons[1]));
+        QTRY_VERIFY(window.isMaximized());
+        qInfo("physical restore");
+        QVERIFY(physicalClick(buttons[1]));
+        QTRY_VERIFY(!window.isMaximized());
+        qInfo("physical minimize");
+        QVERIFY(physicalClick(buttons[0]));
+        QTRY_VERIFY(window.isMinimized());
+        window.showNormal();
+        QTRY_VERIFY(!window.isMinimized());
+    }
     window.close();
 #else
     QSKIP("Windows only");
