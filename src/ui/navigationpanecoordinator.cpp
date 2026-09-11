@@ -10,9 +10,8 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     navigationDock = new QDockWidget("Navigation", parent);
     navigationDock->setObjectName(QStringLiteral("navigationDock"));
     navigationDock->setWidget(navigationWidget);
-    navigationDock->setFeatures(QDockWidget::DockWidgetMovable |
-                                QDockWidget::DockWidgetFloatable |
-                                QDockWidget::DockWidgetClosable);
+    navigationDock->setFeatures(QDockWidget::DockWidgetClosable);
+    navigationDock->setAllowedAreas(Qt::LeftDockWidgetArea);
 
     navigationDock->setMinimumWidth(200);
     navigationDock->setMaximumWidth(400);

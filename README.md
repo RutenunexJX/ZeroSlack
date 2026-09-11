@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.3`
+Current version: `v0.25.4`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -30,7 +30,9 @@ is `schemas/suite-references-v1.schema.json`.
 - Navigation and Context occupy independent full-height side columns. The bottom drawer stays beneath
   the editor. Context rail buttons open a resizable sidebar; reopening it retains its width. Chart views
   can open in the main area using their full-view action. Explicit Peek previews remain available.
-- The left rail contains Project and Settings only. Settings and connection tools open in central tabs.
+- The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
+  and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
+  Settings and connection tools continue to open in central tabs.
   The menu bar is hidden; existing commands remain in the Project context menu and keep their shortcuts.
 - The themed window title bar appears near the top edge and hides after three seconds away without moving
   editor content. Window controls, dragging and edge resizing remain available.

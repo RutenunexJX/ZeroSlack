@@ -1095,14 +1095,17 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                   .arg(t.focus.ring.name())
                   .arg(t.focus.ringOnAccent.name());
     result += QStringLiteral(
-        "QToolBar#projectRail, QToolBar#contextRail { padding: 6px; spacing: 6px; }"
-        "QToolBar#projectRail QToolButton, QToolBar#contextRail QToolButton {"
+        "QToolBar#contextRail { padding: 6px; spacing: 6px; }"
+        "QFrame#projectSidebarHeader { background: transparent; border: 0; }"
+        "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
         " min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;"
         " padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; }"
-        "QToolBar#projectRail QToolButton:hover, QToolBar#contextRail QToolButton:hover { background: %1; }"
-        "QToolBar#projectRail QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
+        "QFrame#projectSidebarHeader QToolButton#projectRailButton { min-width: 0; max-width: 180px; padding: 0 10px; }"
+        "QToolButton#projectRailButton::menu-indicator { image: none; }"
+        "QFrame#projectSidebarHeader QToolButton:hover, QToolBar#contextRail QToolButton:hover { background: %1; }"
+        "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
         " background: %2; color: %3; border-color: transparent; }"
-        "QToolBar#projectRail QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %3; }"
+        "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %3; }"
         "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
         " background: transparent; border: 0; border-radius: 8px; }"
         "QFrame#workspaceTitleBar QToolButton:hover { background: %1; }"

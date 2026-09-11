@@ -458,9 +458,9 @@ void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
     const LONG_PTR style = GetWindowLongPtr(handle, GWL_STYLE);
     QVERIFY((style & WS_OVERLAPPEDWINDOW) == WS_OVERLAPPEDWINDOW);
     QVERIFY(!(style & WS_POPUP));
-    auto buttons = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"))->findChildren<QToolButton*>();
-    QCOMPARE(buttons.size(), 3);
-    const QPoint maxPoint = buttons[1]->mapToGlobal(buttons[1]->rect().center());
+    auto* maximize = window.findChild<QToolButton*>(QStringLiteral("windowMaximizeButton"));
+    QVERIFY(maximize);
+    const QPoint maxPoint = maximize->mapToGlobal(maximize->rect().center());
     const qreal scale = window.devicePixelRatioF();
     const LRESULT hit = SendMessage(handle, WM_NCHITTEST, 0,
         MAKELPARAM(qRound(maxPoint.x() * scale), qRound(maxPoint.y() * scale)));
@@ -525,8 +525,12 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     auto* title = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"));
     QVERIFY(title);
-    const auto buttons = title->findChildren<QToolButton*>();
-    QCOMPARE(buttons.size(), 3);
+    const QList<QToolButton*> buttons {
+        title->findChild<QToolButton*>(QStringLiteral("windowMinimizeButton")),
+        title->findChild<QToolButton*>(QStringLiteral("windowMaximizeButton")),
+        title->findChild<QToolButton*>(QStringLiteral("windowCloseButton"))
+    };
+    for (auto* button : buttons) QVERIFY(button);
     for (int i = 0; i < 3; ++i) {
         qInfo("minimize button");
         buttons[0]->click();

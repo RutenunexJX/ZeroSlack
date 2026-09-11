@@ -1,4 +1,5 @@
 #include <QMenuBar>
+#include <QToolBar>
 #include "editorgutter.h"
 // Offscreen GUI smoke test for the real MainWindow/TabManager/MyCodeEditor path.
 // It keeps the assertions coarse on purpose: this target is a repeatable guard that
@@ -13041,22 +13042,58 @@ int main(int argc, char** argv)
                    && window.panelLayoutController->buttonBar()
                    && window.panelLayoutController->buttonBar()->isVisible(),
                true);
-    expectBool("left rail has only Project and Settings and menus are hidden",
-               window.findChild<QToolButton*>(QStringLiteral("projectRailButton"))
-                   && window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"))
+    auto* projectSidebar = window.navigationPane->dock();
+    auto* sidebarHeader = projectSidebar->titleBarWidget();
+    auto* projectButton = window.findChild<QToolButton*>(QStringLiteral("projectRailButton"));
+    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"));
+    auto* collapseSidebar = window.findChild<QToolButton*>(QStringLiteral("collapseProjectSidebarButton"));
+    auto* expandSidebar = window.findChild<QToolButton*>(QStringLiteral("expandProjectSidebarButton"));
+    auto* fileTree = window.findChild<QTreeWidget*>(QStringLiteral("navigationFileTree"));
+    expectBool("Project and Settings share the file tree sidebar header",
+               sidebarHeader && projectButton && settingsButton && collapseSidebar && expandSidebar
+                   && sidebarHeader->isAncestorOf(projectButton)
+                   && sidebarHeader->isAncestorOf(settingsButton)
+                   && projectSidebar->isAncestorOf(fileTree)
+                   && projectButton->geometry().top() == settingsButton->geometry().top()
+                   && projectButton->menu() && !projectButton->menu()->actions().isEmpty()
+                   && !window.findChild<QToolBar*>(QStringLiteral("projectRail"))
                    && !window.menuBar()->isVisible(), true);
+    const int sidebarWidth = projectSidebar->width();
+    const int editorWidthWithSidebar = window.centralWidget()->width();
+    saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-expanded.png"));
+    collapseSidebar->click();
+    expectBool("collapsing sidebar hides its controls and file tree and expands editor",
+               waitUntil([&] {
+                   return !projectSidebar->isVisible() && !fileTree->isVisible()
+                       && !projectButton->isVisible() && !settingsButton->isVisible()
+                       && expandSidebar->isVisible()
+                       && window.centralWidget()->width() > editorWidthWithSidebar;
+               }, 2000), true);
+    saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-collapsed.png"));
+    expandSidebar->click();
+    expectBool("title button restores the complete sidebar at its previous width",
+               waitUntil([&] {
+                   return projectSidebar->isVisible() && fileTree->isVisible()
+                       && projectButton->isVisible() && settingsButton->isVisible()
+                       && !expandSidebar->isVisible() && projectSidebar->width() == sidebarWidth;
+               }, 2000), true);
+    window.navigationPane->toggleVisible();
+    expectBool("existing navigation toggle keeps the title restore entry in sync",
+               !projectSidebar->isVisible() && expandSidebar->isVisible(), true);
+    window.navigationPane->toggleVisible();
     expectBool("only Problems and Activity remain permanent in the drawer",
                window.panelLayoutController->buttonForPanel(QStringLiteral("problems"))->isVisible()
                    && window.panelLayoutController->buttonForPanel(QStringLiteral("activity"))->isVisible()
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("scopedSearch"))->isVisible()
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))->isVisible()
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("connections"))->isVisible(), true);
-    auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"));
     settingsButton->click();
     QWidget* settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
     expectBool("Settings opens in the center and keeps the dock hidden",
                settingsPage && settingsPage->isAncestorOf(window.settingsCenterPanel)
-                   && !window.settingsCenterDock->isVisible(), true);
+                   && !window.settingsCenterDock->isVisible()
+                   && fileTree->isVisible() && projectSidebar->width() == sidebarWidth, true);
+    saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-settings.png"));
     window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(settingsPage));
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     settingsButton->click();

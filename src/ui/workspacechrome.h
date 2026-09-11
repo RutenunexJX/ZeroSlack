@@ -20,7 +20,6 @@
 #include <QPointer>
 #include <QStackedWidget>
 #include <QStyle>
-#include <QToolBar>
 #include <QToolButton>
 #include <QWindow>
 #include <functional>
@@ -62,40 +61,49 @@ public:
             if (action->menu()) registerActions(action->menu());
         }
         host->menuBar()->hide();
-        auto* rail = new QToolBar(host);
-        rail->setObjectName(QStringLiteral("projectRail"));
-        rail->setMovable(false);
-        rail->setFloatable(false);
-        rail->setAllowedAreas(Qt::LeftToolBarArea);
-        host->addToolBar(Qt::LeftToolBarArea, rail);
-        rail->setIconSize(QSize(22, 22));
-        auto* project = new QToolButton(rail);
+        auto* header = new QFrame(navigation);
+        header->setObjectName(QStringLiteral("projectSidebarHeader"));
+        auto* controls = new QHBoxLayout(header);
+        controls->setContentsMargins(8, 8, 8, 8);
+        controls->setSpacing(6);
+        auto* project = new QToolButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
-        project->setIcon(host->style()->standardIcon(QStyle::SP_DirIcon));
-        project->setToolTip(tr("Project — right-click for workspace commands"));
+        project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
+        project->setIconSize(QSize(20, 20));
+        project->setText(tr("Project"));
+        project->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        UiTypography::apply(project, UiTypography::Role::Body);
+        project->setToolTip(tr("Project commands"));
         project->setAccessibleName(tr("Project"));
         project->setCheckable(true);
-        project->setChecked(navigation && navigation->isVisible());
+        project->setChecked(true);
+        project->setMenu(commands);
+        project->setPopupMode(QToolButton::InstantPopup);
         project->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(project, &QWidget::customContextMenuRequested, commands,
             [commands, project](QPoint point) { commands->popup(project->mapToGlobal(point)); });
-        connect(project, &QToolButton::clicked, host, [navigation]() {
-            if (navigation) { navigation->setVisible(!navigation->isVisible()); if (navigation->isVisible()) navigation->raise(); }
-        });
-        if (navigation) connect(navigation, &QDockWidget::visibilityChanged,
-                                project, &QToolButton::setChecked);
-        rail->addWidget(project);
-        auto* spacer = new QWidget(rail);
-        spacer->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-        rail->addWidget(spacer);
-        auto* setting = new QToolButton(rail);
+        controls->addWidget(project);
+        auto* setting = new QToolButton(header);
         settingsButton = setting;
         setting->setObjectName(QStringLiteral("settingsRailButton"));
         settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
+        setting->setIconSize(QSize(20, 20));
         setting->setToolTip(tr("Settings"));
         setting->setAccessibleName(tr("Settings"));
         connect(setting, &QToolButton::clicked, host, std::move(settings));
-        rail->addWidget(setting);
+        controls->addWidget(setting);
+        controls->addStretch();
+        auto* collapse = new QToolButton(header);
+        collapse->setObjectName(QStringLiteral("collapseProjectSidebarButton"));
+        collapse->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
+        collapse->setIconSize(QSize(20, 20));
+        collapse->setToolTip(tr("Collapse sidebar (Ctrl+1)"));
+        collapse->setAccessibleName(tr("Collapse sidebar"));
+        controls->addWidget(collapse);
+        if (navigation) {
+            navigation->setTitleBarWidget(header);
+            connect(collapse, &QToolButton::clicked, navigation, &QWidget::hide);
+        }
         title = new QFrame(host);
         title->setObjectName(QStringLiteral("workspaceTitleBar"));
 
@@ -103,6 +111,22 @@ public:
         updateTitleTheme();
         auto* row = new QHBoxLayout(title);
         row->setContentsMargins(8, 0, 2, 0);
+        auto* expand = new QToolButton(title);
+        expand->setObjectName(QStringLiteral("expandProjectSidebarButton"));
+        expand->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
+        expand->setIconSize(QSize(20, 20));
+        expand->setToolTip(tr("Expand sidebar (Ctrl+1)"));
+        expand->setAccessibleName(tr("Expand sidebar"));
+        expand->setVisible(navigation && navigation->isHidden());
+        if (navigation) {
+            connect(expand, &QToolButton::clicked, navigation, [navigation] {
+                navigation->show();
+                navigation->raise();
+            });
+            connect(navigation, &QDockWidget::visibilityChanged, expand,
+                    [expand](bool visible) { expand->setVisible(!visible); });
+        }
+        row->addWidget(expand);
         auto* name = new QLabel(host->windowTitle(), title);
         UiTypography::apply(name, UiTypography::Role::Body);
         name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
@@ -132,6 +156,8 @@ public:
         connect(host, &QWidget::windowTitleChanged, name, &QLabel::setText);
         for (int i = 0; i < 3; ++i) {
             auto* button = new QToolButton(title);
+            button->setObjectName(i == 0 ? QStringLiteral("windowMinimizeButton")
+                : i == 1 ? QStringLiteral("windowMaximizeButton") : QStringLiteral("windowCloseButton"));
             button->setIcon(host->style()->standardIcon(i == 0 ? QStyle::SP_TitleBarMinButton : i == 1 ? QStyle::SP_TitleBarMaxButton : QStyle::SP_TitleBarCloseButton));
             if (i == 1) {
                 maximizeButton = button;

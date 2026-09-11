@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.25.4] - 2026-09-11
+
+- Combined Project commands, Settings and the file tree into one left sidebar with horizontal function icons.
+- Added whole-sidebar collapse and title-bar restore controls; Settings continues to open in a central tab.
+- Verified GUI build, sidebar collapse/restore, central Settings routing and native Windows minimize/maximize mouse operations.
+
 ## [0.25.3] - 2026-09-11
 
 - Organized first-party sources into 16 functional directories under src, preserving source contents and existing build targets.

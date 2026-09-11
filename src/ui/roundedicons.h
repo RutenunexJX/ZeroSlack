@@ -11,7 +11,7 @@ namespace RoundedIcons {
 enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Shelf, Left, Right, Down, Up,
-    Expand, Collapse, Close, Minimize, Restore, Maximize, Grid };
+    Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar };
 
 class Engine final : public QIconEngine {
 public:
@@ -76,6 +76,7 @@ public:
         case Restore: box(3,8,13,13);box(8,3,13,13);break;
         case Maximize: box(4,4,16,16);break;
         case Grid: for(int x:{3,14})for(int y:{3,14})box(x,y,7,7);break;
+        case Sidebar: box(3,4,18,16);line(9,4,9,20);break;
         }
         p->restore();
     }
