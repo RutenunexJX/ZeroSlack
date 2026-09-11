@@ -1,4 +1,8 @@
 #include "actionregistry.h"
+#include "applicationthememanager.h"
+#include "uitypography.h"
+#include <QDir>
+#include <QScrollArea>
 #include "editorhoverpopup.h"
 #include "effectivevalueservice.h"
 #include "foldblockshelfmodel.h"
@@ -35,6 +39,7 @@ bool allLabelsUseFont(const EditorHoverPopup& peek,
     if (labels.isEmpty())
         return false;
     for (const QLabel* label : labels) {
+        if (!label->isVisible()) continue;
         if (label->font().family() != expected.family()
             || label->font().pointSize() != expected.pointSize()) {
             return false;
@@ -157,6 +162,105 @@ int main(int argc, char* argv[])
     expect("effective value uses the shared content model",
            peek.contentModel().kind
                == PeekContentKind::EffectiveValue);
+
+    effective.symbolName = QStringLiteral("P_CLK_PERIOD_UNIT_NS");
+    effective.valueText = QStringLiteral("8");
+    effective.ownerName = QStringLiteral("byte2uart");
+    effective.declarationText = QStringLiteral("parameter P_CLK_PERIOD_UNIT_NS = 8");
+    effective.resolvedTypeText = QStringLiteral("logic signed[31:0]");
+    effective.bitWidthText = QStringLiteral("32");
+    effective.expressionText = QStringLiteral("8");
+    effective.instancePath = QStringLiteral("byte2uart");
+    effective.valueSource = QStringLiteral("slang elaborated parameter default");
+    effective.definitionFile = QStringLiteral("rtl/byte2uart.sv");
+    effective.definitionLine = 26;
+    QString navigatedFile;
+    int navigatedLine = -1;
+    peek.setNavigationHandler([&](const QString& file, int line, int) {
+        navigatedFile = file;
+        navigatedLine = line;
+    });
+    auto showCard = [&]() {
+        peek.showHover(effective, host.mapToGlobal(QPoint(20, 20)), editorFont);
+        QApplication::processEvents();
+    };
+    auto snapshot = [&](const QString& name) {
+        const QString directory = qEnvironmentVariable("ZEROSLACK_PEEK_PREVIEW_DIR");
+        if (!directory.isEmpty()) {
+            QDir().mkpath(directory);
+            QApplication::processEvents();
+            expect("popover preview saved", host.grab(peek.geometry().adjusted(-10, -10, 10, 10).intersected(host.rect())).save(directory + QLatin1Char('/') + name + QStringLiteral(".png")));
+        }
+    };
+    ApplicationThemeManager::instance().applyToApplication();
+    showCard();
+    auto* details = peek.findChild<QWidget*>(QStringLiteral("peekDetails"));
+    auto* toggle = peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"));
+    auto* source = peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink"));
+    const int collapsedHeight = peek.height();
+    expect("symbol summary keeps secondary fields collapsed",
+           details && !details->isVisible() && toggle && !toggle->isChecked()
+           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 2
+           && collapsedHeight < 280);
+    expect("symbol title keeps code family with a separate UI label font",
+           peek.findChild<QLabel*>(QStringLiteral("peekTitle"))->font().family() == editorFont.family()
+           && peek.findChild<QLabel*>(QStringLiteral("peekFieldLabel"))->font().families() == UiTypography::font().families());
+    const auto* cardTitle = peek.findChild<QLabel*>(QStringLiteral("peekTitle"));
+    const auto* cardFooter = peek.findChild<QWidget*>(QStringLiteral("peekFooter"));
+    expect("initial layout shows complete title and footer",
+           cardTitle && cardFooter && source && cardTitle->height() >= cardTitle->fontMetrics().height()
+           && peek.rect().contains(cardFooter->geometry())
+           && peek.rect().contains(QRect(source->mapTo(&peek, QPoint()), source->size())));
+    snapshot(QStringLiteral("parameter-light"));
+    if (toggle) toggle->click();
+    QApplication::processEvents();
+    expect("details expand without leaving the editor", details && details->isVisible()
+           && peek.height() > collapsedHeight && host.rect().contains(peek.geometry()));
+    snapshot(QStringLiteral("parameter-expanded"));
+    if (toggle) toggle->click();
+    QApplication::processEvents();
+    expect("collapsing restores compact height", peek.height() == collapsedHeight);
+    if (source) source->click();
+    expect("source link routes exact definition", source && source->isEnabled()
+           && navigatedFile == effective.definitionFile && navigatedLine == 26);
+
+    effective.symbolName = QStringLiteral("byte_data");
+    effective.displayKind = QStringLiteral("input");
+    effective.parameterLike = false;
+    effective.port = true;
+    effective.resolvedTypeText = QStringLiteral("logic[7:0]");
+    effective.signednessText = QStringLiteral("unsigned");
+    effective.declarationText = QStringLiteral("input logic [7:0] byte_data");
+    effective.definitionLine = 33;
+    showCard();
+    expect("signal summary never invents a live value", peek.contentModel().rows.size() > 0
+           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).size() == 2
+           && !peek.findChild<QWidget*>(QStringLiteral("peekDetails"))->isVisible());
+    snapshot(QStringLiteral("input-light"));
+    ApplicationThemeManager::instance().setMode(ThemeMode::CatppuccinMocha);
+    QApplication::processEvents();
+    snapshot(QStringLiteral("input-dark"));
+    expect("visible popup follows dark theme", peek.styleSheet().contains(QStringLiteral("#cdd6f4")));
+    effective.effectiveValueStatus = EffectiveValueStatus::Stale;
+    showCard();
+    const auto* notice = peek.findChild<QLabel*>(QStringLiteral("peekNotice"));
+    expect("stale facts are suppressed with a visible status", notice && notice->isVisible()
+           && notice->text().contains(QStringLiteral("stale"))
+           && peek.findChildren<QLabel*>(QStringLiteral("peekFieldValue")).isEmpty());
+    effective.effectiveValueStatus = EffectiveValueStatus::Current;
+    effective.declarationText = QString(2000, QLatin1Char('x'));
+    host.resize(320, 350);
+    showCard();
+    toggle = peek.findChild<QToolButton*>(QStringLiteral("peekDetailsToggle"));
+    if (toggle) toggle->click();
+    QApplication::processEvents();
+    expect("long details scroll in a narrow editor", host.rect().contains(peek.geometry())
+           && peek.findChild<QScrollArea*>(QStringLiteral("peekSymbolScroll"))
+           && peek.findChild<QToolButton*>(QStringLiteral("peekSourceLink"))->isVisible());
+    snapshot(QStringLiteral("narrow-expanded"));
+    peek.closePopup();
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    host.resize(900, 520);
 
     peek.showDiagnosticDetail(
         QStringLiteral("Width mismatch"),

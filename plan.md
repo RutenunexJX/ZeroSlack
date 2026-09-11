@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.1`
+Product version: `v0.25.2`
 
 ## Current baseline
 
@@ -8,6 +8,15 @@ Workspace Hub and bounded `suite-context` are delivered, along with the Context 
 providers, tool drawer and shared Wave renderer. This file lists current maintenance work, not historical steps.
 
 The rounded visual refresh, fixed title row, specialized insight surfaces, English-first typography and Catppuccin themes are delivered.
+
+## 双击语义浮窗（2026-09-11，已实施）
+
+- 依据已采纳概念稿，将符号名称、类别、值／类型和源码链接保留在默认摘要中。
+- 声明、作用域、实例路径、求值来源及重复维度信息移入可展开详情；保留过期与不可用状态。
+- 使用圆角卡片、主题感知配色和区分代码／界面文字的层级；验证跳转、详情滚动和容器复用。
+- 本地实现与文档已完成；Qt 6.10.2 / MinGW Release 下，共用浮窗、GUI 冒烟、导航、信号操作和工作区文件操作 5 项回归最终通过；150%／200% 缩放检查通过。
+- 修正复核中发现的两项旧测试假设：诊断标记已迁至共享栏，查找／替换已使用内嵌栏；本批未改动这两项产品行为。
+- 用户已授权提交推送与更新正式包；本批发布版本为 v0.25.2，发布时备份 v0.25.1 正式包。
 
 ## 顶栏闪退修复（2026-09-11，v0.25.1）
 

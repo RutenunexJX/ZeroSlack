@@ -19,6 +19,7 @@ class QLabel;
 class QLineEdit;
 class QMouseEvent;
 class QToolButton;
+class QScrollArea;
 class QVBoxLayout;
 
 class ZEROSLACK_API EditorHoverPopup : public QFrame
@@ -80,6 +81,15 @@ protected:
 private:
     QVBoxLayout* layout = nullptr;
     QLabel* titleLabel = nullptr;
+    QWidget* headerHost = nullptr;
+    QLabel* symbolIcon = nullptr;
+    QLabel* categoryLabel = nullptr;
+    QPointer<QScrollArea> symbolScroll;
+    QPointer<QWidget> symbolBody;
+    QPointer<QWidget> symbolFooter;
+    QRect anchorRect;
+    QFont contentFont;
+    QString defaultStyleSheet;
     QToolButton* closeButton = nullptr;
     QPointer<QLineEdit> editControl;
     QPointer<QLabel> editMessageControl;
@@ -92,6 +102,9 @@ private:
     PeekContentModel currentContent;
 
     void resetContent();
+    void applyAppearance();
+    void buildSymbolCard();
+    void resizeSymbolCard();
     QLabel* addLabel(const QString& text,
                      PeekContentRowRole role,
                      bool wordWrap);

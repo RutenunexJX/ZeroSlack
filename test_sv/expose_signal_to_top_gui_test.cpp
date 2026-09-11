@@ -1483,19 +1483,16 @@ void runContextActionRegistryExecutionRegression()
                      .lastActionId()
                      == QStringLiteral("navigation.goLine"));
 
-    const auto visibleEditorDialog =
-        [editor](const QString& title) {
-            const QList<QDialog*> dialogs =
-                editor->findChildren<QDialog*>();
-            for (QDialog* dialog : dialogs) {
-                if (dialog
-                    && dialog->isVisible()
-                    && dialog->windowTitle() == title) {
-                    return dialog;
-                }
-            }
-            return static_cast<QDialog*>(nullptr);
-        };
+    const auto visibleSearchBar = [editor](bool replace) -> QWidget* {
+        auto* bar = editor->findChild<QWidget*>(QStringLiteral("editorFindBar"));
+        if (!bar || !bar->isVisible() || bar->isWindow()) return nullptr;
+        bool hasVisibleReplaceControl = false;
+        for (const auto* child : bar->findChildren<QWidget*>()) {
+            if (child->property("replaceControl").toBool() && child->isVisible())
+                hasVisibleReplaceControl = true;
+        }
+        return hasVisibleReplaceControl == replace ? bar : nullptr;
+    };
     editor->setFocus();
     resetApplicationActionExecutionHistory();
     QTest::keyClick(
@@ -1504,8 +1501,7 @@ void runContextActionRegistryExecutionRegression()
         Qt::ControlModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    QDialog* findDialog =
-        visibleEditorDialog(QStringLiteral("Find"));
+    QWidget* findDialog = visibleSearchBar(false);
     const bool findShortcutRouted = findDialog
         && applicationActionExecutionHistory()
                .lastActionId()
@@ -1522,8 +1518,7 @@ void runContextActionRegistryExecutionRegression()
         Qt::ControlModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    QDialog* replaceDialog =
-        visibleEditorDialog(QStringLiteral("Replace"));
+    QWidget* replaceDialog = visibleSearchBar(true);
     check("Find and Replace shortcuts execute canonical Registry Actions",
           findShortcutRouted
               && replaceDialog

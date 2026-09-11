@@ -71,6 +71,7 @@
 #include <QtTest/QTest>
 
 #include "version.h"
+#include "uitypography.h"
 
 #include <algorithm>
 #include <atomic>
@@ -412,6 +413,12 @@ static int visibleBottomPanelContentHeight(MainWindow& window,
                     - qMax(0, separatorExtent));
 }
 
+static QString peekLabelText(const QLabel* label)
+{
+    return label->objectName() == QStringLiteral("peekFieldValue")
+        ? label->accessibleName() : label->text();
+}
+
 static QString visibleEditorHoverPopupText(bool* visible = nullptr)
 {
     bool found = false;
@@ -424,7 +431,7 @@ static QString visibleEditorHoverPopupText(bool* visible = nullptr)
         found = true;
         const QList<QLabel*> labels = widget->findChildren<QLabel*>();
         for (const QLabel* label : labels)
-            text += label->text() + QLatin1Char('\n');
+            text += peekLabelText(label) + QLatin1Char('\n');
     }
     if (visible)
         *visible = found;
@@ -470,12 +477,31 @@ static bool fontMatchesEditor(const QFont& candidate,
     return true;
 }
 
-static bool popupTextUsesEditorFont(QWidget* popup,
+static bool popupTextUsesSemanticTypography(QWidget* popup,
                                     const QFont& editorFont)
 {
     if (!popup)
         return false;
     popup->ensurePolished();
+    if (popup->property("symbolInspector").toBool()) {
+        bool hasCode = false;
+        bool hasUi = false;
+        for (const auto* label : popup->findChildren<QLabel*>()) {
+            if (label->objectName() == QStringLiteral("peekSymbolIcon")) continue;
+            const bool code = label->objectName() == QStringLiteral("peekTitle")
+                || label->objectName() == QStringLiteral("peekFieldValue");
+            if (code) {
+                hasCode = true;
+                if (label->font().families() != editorFont.families()
+                    || label->font().pixelSize() < 13) return false;
+            } else {
+                hasUi = true;
+                if (label->font().families() != UiTypography::font().families()
+                    && label->font().families() != editorFont.families()) return false;
+            }
+        }
+        return hasCode && hasUi;
+    }
 
     const QList<QLabel*> labels = popup->findChildren<QLabel*>();
     if (labels.isEmpty())
@@ -5451,8 +5477,8 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
                    && !embeddedPopup->isWindow()
                    && embeddedPopup->parentWidget() == &hoverEditor,
                true);
-    expectBool("double-click popup uses one editor font",
-               popupTextUsesEditorFont(embeddedPopup,
+    expectBool("double-click popup separates symbol and UI typography",
+               popupTextUsesSemanticTypography(embeddedPopup,
                                        hoverEditor.font()),
                true);
     expectBool("double-click popup has no global top-level flags",
@@ -5516,7 +5542,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
         fontAuditPopup.findChildren<QLabel*>().size();
     const bool parameterFontsUnified =
         parameterFontLabelCount >= 12
-        && popupTextUsesEditorFont(&fontAuditPopup,
+        && popupTextUsesSemanticTypography(&fontAuditPopup,
                                   hoverEditor.font());
 
     SymbolHoverReport portFontReport = parameterFontReport;
@@ -5537,7 +5563,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     QApplication::processEvents();
     const bool portFontsUnified =
         fontAuditPopup.findChildren<QLabel*>().size() >= 12
-        && popupTextUsesEditorFont(&fontAuditPopup,
+        && popupTextUsesSemanticTypography(&fontAuditPopup,
                                   hoverEditor.font());
 
     SymbolHoverReport staleFontReport = portFontReport;
@@ -5550,9 +5576,9 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     const bool staleFontsUnified =
         visibleEditorHoverPopupText().contains(
             QStringLiteral("waiting for the current document revision"))
-        && popupTextUsesEditorFont(&fontAuditPopup,
+        && popupTextUsesSemanticTypography(&fontAuditPopup,
                                   hoverEditor.font());
-    expectBool("all double-click popup text paths share editor font",
+    expectBool("all double-click popup paths preserve semantic typography",
                parameterFontsUnified
                    && portFontsUnified
                    && staleFontsUnified,
@@ -5927,7 +5953,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     QApplication::processEvents();
     QStringList staleParameterLabels;
     for (QLabel* label : staleParameterPopup.findChildren<QLabel*>())
-        staleParameterLabels.append(label->text());
+        staleParameterLabels.append(peekLabelText(label));
     const QString staleParameterPopupText =
         staleParameterLabels.join(QLatin1Char('\n'));
     expectBool("stale hover suppresses old current/default value",
@@ -6002,7 +6028,7 @@ static void runEditorHoverPreviewRegression(const QString& workspacePath)
     QApplication::processEvents();
     QStringList packageLabels;
     for (QLabel* label : packagePopup.findChildren<QLabel*>())
-        packageLabels.append(label->text());
+        packageLabels.append(peekLabelText(label));
     const QString packagePopupText = packageLabels.join(QLatin1Char('\n'));
     expectBool("package hover never labels value as unbound default",
                packagePopupText.contains(

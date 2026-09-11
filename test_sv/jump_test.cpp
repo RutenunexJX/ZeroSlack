@@ -1113,7 +1113,7 @@ int main(int argc, char** argv) {
         const EditorBlockGeometry diagnosticGeometry =
             diagnosticEditor.blockGeometry(1);
         const QPointF localPoint(
-            21,
+            7, // Center of the shared diagnostic/Pinloom marker lane.
             diagnosticGeometry.top
                 + diagnosticGeometry.height / 2.0);
         const QPointF globalPoint(

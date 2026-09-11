@@ -29,6 +29,10 @@ struct PeekContentRow {
     QString text;
     PeekContentRowRole role = PeekContentRowRole::Body;
     bool wordWrap = false;
+    bool detail = false;
+    QString fieldLabel;
+    QString fieldValue;
+    bool prominent = false;
 };
 
 struct PeekNavigationTarget {
@@ -77,6 +81,9 @@ struct PeekContentAction {
 struct PeekContentModel {
     PeekContentKind kind = PeekContentKind::DeclarationPreview;
     QString title;
+    bool symbolCard = false;
+    QString category;
+    bool portAccent = false;
     QVector<PeekContentRow> rows;
     PeekNavigationTarget navigationTarget;
     PeekEditableTextModel editor;

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2] - 2026-09-11
+
+- Simplified double-click symbol popovers into compact summary cards with expandable details and clickable definition locations.
+- Added theme-aware rounded surfaces, subtle shadows and separate symbol/code and interface typography.
+- Preserved stale/unavailable evaluation states, source navigation and shared preview interactions; bounded long details within the editor.
+- Verified shared popovers, GUI smoke, navigation, signal actions, workspace file operations and 150%/200% display scaling.
+
 ## [0.25.1] - 2026-09-11
 
 - Fixed a Windows title-bar crash caused by writing through a null native-event result pointer on queued maximize-button mouse messages.
