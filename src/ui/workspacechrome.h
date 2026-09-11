@@ -70,13 +70,10 @@ public:
         project->setObjectName(QStringLiteral("projectRailButton"));
         project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
         project->setIconSize(QSize(20, 20));
-        project->setText(tr("Project"));
-        project->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        project->setToolButtonStyle(Qt::ToolButtonIconOnly);
         UiTypography::apply(project, UiTypography::Role::Body);
         project->setToolTip(tr("Project commands"));
         project->setAccessibleName(tr("Project"));
-        project->setCheckable(true);
-        project->setChecked(true);
         project->setMenu(commands);
         project->setPopupMode(QToolButton::InstantPopup);
         project->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -222,8 +219,17 @@ private:
             window->isMaximized() ? RoundedIcons::Restore : RoundedIcons::Maximize));
     }
     void updateTitleTheme() {
-        title->setStyleSheet(QStringLiteral("QFrame#workspaceTitleBar { background-color: %1; }")
-            .arg(window->palette().color(QPalette::Window).name()));
+        const QPalette palette = window->palette();
+        const QColor base = palette.color(QPalette::Window);
+        const QColor text = palette.color(QPalette::WindowText);
+        const QColor hover = QColor::fromRgbF(
+            base.redF() * 0.86 + text.redF() * 0.14,
+            base.greenF() * 0.86 + text.greenF() * 0.14,
+            base.blueF() * 0.86 + text.blueF() * 0.14);
+        title->setStyleSheet(QStringLiteral(
+            "QFrame#workspaceTitleBar { background-color: %1; }"
+            "QFrame#workspaceTitleBar QToolButton:hover, QFrame#workspaceTitleBar QToolButton[nativeHovered=true] { background: %2; }")
+            .arg(base.name(), hover.name()));
     }
     void registerActions(QMenu* menu) {
         for (auto* action : menu->actions()) {

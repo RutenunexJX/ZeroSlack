@@ -1,4 +1,4 @@
-ZeroSlack v0.25.4
+ZeroSlack v0.25.5
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -35,7 +35,12 @@ only the area beneath the editor. Drag the sidebar divider to widen charts.
 Reopening the sidebar retains its width. Settings opens in a central tab;
 supported charts can open in the main area. Explicit Peek previews remain available.
 
-The left rail contains Project and Settings. Right-click Project for commands.
+The left sidebar groups the file tree with Project and Settings icons at the top.
+Click Project for commands. Collapse the entire sidebar and restore it from the title bar.
+Click Settings again to close its active central tab; Context icons toggle their
+side panels while preserving view state. Files, Design and Pinloom use uniform rows
+with distinct hover and selection backgrounds. Focus Mode has been removed.
+Ctrl+Space hides F24-exclusive commands; F24 Command Mode retains those commands.
 The themed title bar stays visible in its own row without covering the editor.
 Rounded controls and graph nodes share a scalable outline icon system.
 Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the

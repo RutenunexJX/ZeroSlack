@@ -222,6 +222,19 @@ QList<GlobalControlItem> commandPaletteItems(const QString& text)
 
     for (const CommandLayerCommandMatch& match :
          commandLayerCommandMatches(queryText)) {
+        const ActionDescriptor* descriptor = findActionById(match.command.actionId);
+        if (!descriptor)
+            continue;
+        const bool sharedShortcut = !descriptor->defaultShortcut.isEmpty()
+            && !descriptor->defaultShortcut.contains(QStringLiteral("F24"), Qt::CaseInsensitive);
+        const bool sharedSurface = descriptor->hasSurface(ActionSurface::GlobalControl)
+            || descriptor->hasSurface(ActionSurface::Menu)
+            || descriptor->hasSurface(ActionSurface::ContextMenu)
+            || descriptor->hasSurface(ActionSurface::TabContextMenu)
+            || descriptor->hasSurface(ActionSurface::PanelContextMenu)
+            || descriptor->hasSurface(ActionSurface::GraphPanel);
+        if (!sharedShortcut && !sharedSurface)
+            continue;
         GlobalControlItem commandItem =
             item(GlobalControlItemKind::Command,
                  match.command.name,

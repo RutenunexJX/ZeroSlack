@@ -391,7 +391,9 @@ void NavigationWidget::setupFileTab()
     fileTreeWidget->setObjectName(
         QStringLiteral("navigationFileTree"));
     fileTreeWidget->setHeaderLabel("Files");
-    fileTreeWidget->setAlternatingRowColors(true);
+    fileTreeWidget->setAlternatingRowColors(false);
+    fileTreeWidget->setProperty("workspaceNavigationList", true);
+    fileTreeWidget->setMouseTracking(true);
     fileTreeWidget->setRootIsDecorated(true);
     fileTreeWidget->setSortingEnabled(false);
     fileTreeWidget->header()->hide();
@@ -437,7 +439,9 @@ void NavigationWidget::setupDesignTab()
     designTreeWidget->setColumnCount(2);
     designTreeWidget->setHeaderLabels({QStringLiteral("Instance"),
                                        QStringLiteral("Module")});
-    designTreeWidget->setAlternatingRowColors(true);
+    designTreeWidget->setAlternatingRowColors(false);
+    designTreeWidget->setProperty("workspaceNavigationList", true);
+    designTreeWidget->setMouseTracking(true);
     designTreeWidget->setRootIsDecorated(true);
     designTreeWidget->setSortingEnabled(false);
     designTreeWidget->header()->setStretchLastSection(true);

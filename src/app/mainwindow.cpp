@@ -309,7 +309,10 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
-    new WorkspaceChrome(this, navigationPane->dock(), [this]() { showDockWidget(settingsCenterDock); });
+    new WorkspaceChrome(this, navigationPane->dock(), [this]() {
+        if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
+            showDockWidget(settingsCenterDock);
+    });
     for (const auto& shortcut : {QStringLiteral("Ctrl+Shift+F"), QStringLiteral("Ctrl+Shift+H")}) {
         auto* action = new QAction(this);
         action->setShortcut(QKeySequence(shortcut));
@@ -2552,15 +2555,6 @@ void MainWindow::setupPanelLayoutController()
             this, updateActivityBadge);
     updateActivityBadge();
 
-    if (insightFocusController) {
-        insightFocusController->setBeforeEnterHandler(
-            [this]() {
-                if (!panelLayoutController)
-                    return;
-                if (panelLayoutController->isFocusModeActive())
-                    panelLayoutController->setFocusModeActive(false);
-            });
-    }
 }
 
 void MainWindow::setupRtlActionCoordinator()
@@ -2627,11 +2621,6 @@ void MainWindow::setupViewMenu()
     QAction* scopedSearchAction =
         addRegistryAction(
             viewMenu, ActionIds::ViewScopedSearch);
-    QAction* focusModeAction =
-        addRegistryAction(
-            viewMenu, ActionIds::ViewFocusMode);
-    if (focusModeAction)
-        focusModeAction->setCheckable(true);
 
     QMenu* editorLayoutMenu =
         viewMenu->addMenu(tr("Editor Layout"));
@@ -2752,7 +2741,6 @@ void MainWindow::setupViewMenu()
         [this,
          navigationAction,
          scopedSearchAction,
-         focusModeAction,
          splitLeftAction,
          splitRightAction,
          splitAboveAction,
@@ -2797,7 +2785,6 @@ void MainWindow::setupViewMenu()
             for (QAction* action :
                  {navigationAction,
                   scopedSearchAction,
-                  focusModeAction,
                   splitLeftAction,
                   splitRightAction,
                   splitAboveAction,
@@ -2818,12 +2805,6 @@ void MainWindow::setupViewMenu()
                 refreshAvailability(action);
             }
 
-            if (focusModeAction) {
-                focusModeAction->setChecked(
-                    panelLayoutController
-                    && panelLayoutController
-                           ->isFocusModeActive());
-            }
             if (collapseBottomAction) {
                 collapseBottomAction->setChecked(
                     panelLayoutController
@@ -4149,24 +4130,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
         if (!globalControlCoordinator)
             return fail();
         globalControlCoordinator->open();
-        return succeeded();
-    }
-
-    if (route
-        == QStringLiteral(
-            "ui.panelLayout.focusMode.toggle")) {
-        if (!panelLayoutController)
-            return fail();
-        const bool enter =
-            !panelLayoutController
-                 ->isFocusModeActive();
-        if (enter
-            && insightFocusController
-            && insightFocusController->isFocused()) {
-            insightFocusController->leaveToEditor();
-        }
-        panelLayoutController
-            ->setFocusModeActive(enter);
         return succeeded();
     }
 

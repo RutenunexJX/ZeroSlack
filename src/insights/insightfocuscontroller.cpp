@@ -210,8 +210,6 @@ bool InsightFocusController::enter(const QString& panelId)
         return true;
     }
 
-    if (beforeEnterHandler)
-        beforeEnterHandler();
 
     PanelEntry& entry = found.value();
     QDockWidget* dock = entry.dock.data();
@@ -240,12 +238,6 @@ bool InsightFocusController::enter(const QString& panelId)
     stack->setCurrentWidget(page);
     page->show();
     return true;
-}
-
-void InsightFocusController::setBeforeEnterHandler(
-    std::function<void()> handler)
-{
-    beforeEnterHandler = std::move(handler);
 }
 
 void InsightFocusController::leaveToEditor()

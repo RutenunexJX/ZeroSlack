@@ -1100,11 +1100,13 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
         " min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;"
         " padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; }"
-        "QFrame#projectSidebarHeader QToolButton#projectRailButton { min-width: 0; max-width: 180px; padding: 0 10px; }"
         "QToolButton#projectRailButton::menu-indicator { image: none; }"
-        "QFrame#projectSidebarHeader QToolButton:hover, QToolBar#contextRail QToolButton:hover { background: %1; }"
+        "QFrame#projectSidebarHeader QToolButton:hover { background: %5; }"
+        "QToolBar#contextRail QToolButton:hover { background: %1; }"
         "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
         " background: %2; color: %3; border-color: transparent; }"
+        "QFrame#projectSidebarHeader QToolButton:hover:checked { background: %5; }"
+        "QToolBar#contextRail QToolButton:hover:checked { background: %1; }"
         "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %3; }"
         "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
         " background: transparent; border: 0; border-radius: 8px; }"
@@ -1119,7 +1121,25 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         "QScrollBar:vertical { width: 10px; } QScrollBar:horizontal { height: 10px; }"
         "QScrollBar::handle:vertical { min-width: 0; margin: 2px; border-radius: 3px; }"
         "QScrollBar::handle:horizontal { min-height: 0; margin: 2px; border-radius: 3px; }")
-        .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(), t.textPrimary.name());
+        .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(), t.textPrimary.name(),
+             mix(t.dock.background, t.textPrimary, 0.12).name());
+    const QColor navigationBase = mix(t.panelBackground, t.textPrimary, 0.025);
+    const QColor navigationHover = mix(navigationBase, t.textPrimary, 0.09);
+    const QColor navigationSelected = mix(navigationBase, t.accent, 0.20);
+    result += QStringLiteral(
+        "QTreeView[workspaceNavigationList=true], QListView[workspaceNavigationList=true] {"
+        " background: %1; alternate-background-color: %1; }"
+        "QTreeView[workspaceNavigationList=true]::item, QListView[workspaceNavigationList=true]::item {"
+        " background: %1; }"
+        "QTreeView[workspaceNavigationList=true]::item:hover:!selected, QListView[workspaceNavigationList=true]::item:hover:!selected {"
+        " background: %2; }"
+        "QTreeView[workspaceNavigationList=true]::item:selected, QListView[workspaceNavigationList=true]::item:selected,"
+        "QTreeView[workspaceNavigationList=true]::item:selected:!active, QListView[workspaceNavigationList=true]::item:selected:!active {"
+        " background: %3; color: %4; }"
+        "QTreeView[workspaceNavigationList=true]::item:selected:hover, QListView[workspaceNavigationList=true]::item:selected:hover {"
+        " background: %5; color: %4; }")
+        .arg(navigationBase.name(), navigationHover.name(), navigationSelected.name(),
+             t.textPrimary.name(), mix(navigationBase, t.accent, 0.28).name());
     result += QStringLiteral(
         "QDockWidget::title { font-size: 14px; font-weight: 600; padding: 9px 10px; }"
         "QTabBar::tab { padding: 8px 14px; font-weight: 400; }"

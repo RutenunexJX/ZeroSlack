@@ -154,8 +154,6 @@ inline constexpr const char ViewCommandMode[] =
     "view.commandMode";
 inline constexpr const char ViewScopedSearch[] =
     "view.scopedSearch";
-inline constexpr const char ViewFocusMode[] =
-    "view.focusMode.toggle";
 inline constexpr const char ViewEditorSplitLeft[] =
     "view.editorSplit.left";
 inline constexpr const char ViewEditorSplitRight[] =

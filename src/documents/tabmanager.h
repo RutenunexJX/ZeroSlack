@@ -135,6 +135,7 @@ public:
                           const QString& stableId,
                           const QString& title);
     bool activateToolPage(const QString& stableId);
+    bool closeActiveToolPage(const QString& stableId);
     QString getPlainTextFromCurrentTab() const;
     QString getPlainTextFromOpenFile(const QString& fileName) const;
     QStringList getAllOpenFileNames() const;

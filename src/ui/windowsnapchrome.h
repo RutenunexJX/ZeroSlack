@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QMainWindow>
 #include <QPointer>
+#include <QStyle>
 #include <QToolButton>
 #include <QWindow>
 #ifdef Q_OS_WIN
@@ -44,6 +45,16 @@ public:
         if (!message) return false;
         auto* msg = static_cast<MSG*>(message);
         if (!host->internalWinId() || !maximizeButton || msg->hwnd != reinterpret_cast<HWND>(host->internalWinId())) return false;
+        if (msg->message == WM_NCMOUSEMOVE) {
+            const bool hovered = msg->wParam == HTMAXBUTTON;
+            setMaximizeHovered(hovered);
+            if (hovered) {
+                TRACKMOUSEEVENT track{sizeof(TRACKMOUSEEVENT), TME_LEAVE | TME_NONCLIENT, msg->hwnd, 0};
+                TrackMouseEvent(&track);
+            }
+        } else if (msg->message == WM_NCMOUSELEAVE || msg->message == WM_MOUSEMOVE) {
+            setMaximizeHovered(false);
+        }
         // Queued mouse messages are filtered before dispatch with no result pointer.
         if ((msg->message == WM_NCLBUTTONDOWN || msg->message == WM_NCLBUTTONUP) && msg->wParam == HTMAXBUTTON) {
             if (msg->message == WM_NCLBUTTONUP)
@@ -86,6 +97,13 @@ public:
         return false;
     }
 private:
+    void setMaximizeHovered(bool hovered) {
+        if (!maximizeButton || maximizeButton->property("nativeHovered").toBool() == hovered) return;
+        maximizeButton->setProperty("nativeHovered", hovered);
+        maximizeButton->style()->unpolish(maximizeButton);
+        maximizeButton->style()->polish(maximizeButton);
+        maximizeButton->update();
+    }
     QMainWindow* host;
     QPointer<QToolButton> maximizeButton;
 };

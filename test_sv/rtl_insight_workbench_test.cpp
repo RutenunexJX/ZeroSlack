@@ -498,6 +498,12 @@ void RtlInsightWorkbenchTest::queuedNativeMouseAllowsNullResult()
     MSG message{};
     message.hwnd = reinterpret_cast<HWND>(window.winId());
     message.wParam = HTMAXBUTTON;
+    message.message = WM_NCMOUSEMOVE;
+    QVERIFY(!filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    QVERIFY(maximize->property("nativeHovered").toBool());
+    message.message = WM_NCMOUSELEAVE;
+    QVERIFY(!filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
+    QVERIFY(!maximize->property("nativeHovered").toBool());
     message.message = WM_NCLBUTTONDOWN;
     QVERIFY(filter.nativeEventFilter("windows_generic_MSG", &message, nullptr));
     message.message = WM_NCLBUTTONUP;
@@ -531,6 +537,20 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
         title->findChild<QToolButton*>(QStringLiteral("windowCloseButton"))
     };
     for (auto* button : buttons) QVERIFY(button);
+    window.activateWindow();
+    SetForegroundWindow(reinterpret_cast<HWND>(window.internalWinId()));
+    const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+    if (!reviewDir.isEmpty()) QDir().mkpath(reviewDir);
+    for (auto* button : {window.findChild<QToolButton*>(QStringLiteral("projectRailButton")), buttons[0], buttons[1]}) {
+        QVERIFY(button);
+        QTest::mouseMove(title, QPoint(180, 18));
+        QTest::qWait(50);
+        const QColor rest = button->grab().toImage().pixelColor(6, 6);
+        QTest::mouseMove(button, button->rect().center());
+        QTest::qWait(100);
+        QVERIFY2(button->grab().toImage().pixelColor(6, 6) != rest, qPrintable(button->objectName()));
+        if (!reviewDir.isEmpty()) window.grab().save(reviewDir + "/" + button->objectName() + "-hover.png");
+    }
     for (int i = 0; i < 3; ++i) {
         qInfo("minimize button");
         buttons[0]->click();

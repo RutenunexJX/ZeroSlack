@@ -610,7 +610,9 @@ void PinloomContextView::buildUi()
     results = new QListWidget(splitter);
     results->setObjectName(QStringLiteral("pinloomContextResults"));
     results->setSelectionMode(QAbstractItemView::SingleSelection);
-    results->setAlternatingRowColors(true);
+    results->setAlternatingRowColors(false);
+    results->setProperty("workspaceNavigationList", true);
+    results->setMouseTracking(true);
 
     auto* preview = new QWidget(splitter);
     auto* previewLayout = new QVBoxLayout(preview);

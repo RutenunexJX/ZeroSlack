@@ -13056,6 +13056,8 @@ int main(int argc, char** argv)
                    && projectSidebar->isAncestorOf(fileTree)
                    && projectButton->geometry().top() == settingsButton->geometry().top()
                    && projectButton->menu() && !projectButton->menu()->actions().isEmpty()
+                   && projectButton->toolButtonStyle() == Qt::ToolButtonIconOnly
+                   && !fileTree->alternatingRowColors()
                    && !window.findChild<QToolBar*>(QStringLiteral("projectRail"))
                    && !window.menuBar()->isVisible(), true);
     const int sidebarWidth = projectSidebar->width();
@@ -13094,7 +13096,9 @@ int main(int argc, char** argv)
                    && !window.settingsCenterDock->isVisible()
                    && fileTree->isVisible() && projectSidebar->width() == sidebarWidth, true);
     saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-settings.png"));
-    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(settingsPage));
+    settingsButton->click();
+    expectBool("second Settings click closes its central page",
+               !window.tabManager->toolPage(QStringLiteral("settingsCenter")), true);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     settingsButton->click();
     settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
@@ -14033,9 +14037,6 @@ int main(int argc, char** argv)
     QAction* collapseBottomAction =
         window.findChild<QAction*>(
             QStringLiteral("toggleBottomPanelCollapsedAction"));
-    QAction* focusModeAction =
-        window.findChild<QAction*>(
-            QStringLiteral("toggleFocusModeAction"));
     QAction* pinBottomAction =
         window.findChild<QAction*>(
             QStringLiteral("pinActiveBottomPanelAction"));
@@ -14089,7 +14090,6 @@ int main(int argc, char** argv)
                    && drawerDock
                    && drawerBar
                    && collapseBottomAction
-                   && focusModeAction
                    && !pinBottomAction
                    && !closeBottomAction,
                true);
@@ -14186,52 +14186,6 @@ int main(int argc, char** argv)
         drawerController->setPanelHeight(
             QStringLiteral("connections"), 333);
     }
-    const PanelLayoutState normalDrawerState = drawerController
-        ? drawerController->layoutState()
-        : PanelLayoutState();
-    const bool navigationVisibleBeforeFocus =
-        window.navigationPane
-        && window.navigationPane->dock()
-        && window.navigationPane->dock()->isVisible();
-    if (focusModeAction) {
-        focusModeAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("focus mode hides navigation and the whole drawer",
-               drawerController
-                   && drawerController->isFocusModeActive()
-                   && window.navigationPane
-                   && window.navigationPane->dock()
-                   && !window.navigationPane->dock()->isVisible()
-                   && drawerDock
-                   && !drawerDock->isVisible(),
-               true);
-    if (focusModeAction) {
-        focusModeAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    const PanelLayoutState restoredDrawerState = drawerController
-        ? drawerController->layoutState()
-        : PanelLayoutState();
-    expectBool("focus mode restores the exact prior drawer layout",
-               drawerController
-                   && !drawerController->isFocusModeActive()
-                   && window.navigationPane
-                   && window.navigationPane->dock()
-                   && window.navigationPane->dock()->isVisible()
-                          == navigationVisibleBeforeFocus
-                   && drawerDock
-                   && drawerDock->isVisible()
-                   && restoredDrawerState.activeBottomPanel
-                          == normalDrawerState.activeBottomPanel
-                   && restoredDrawerState.lastBottomPanel
-                          == normalDrawerState.lastBottomPanel
-                   && restoredDrawerState.bottomCollapsed
-                          == normalDrawerState.bottomCollapsed
-                   && restoredDrawerState.bottomPanelHeights
-                          == normalDrawerState.bottomPanelHeights,
-               true);
-
     QAction* newFileAction = window.findChild<QAction*>(QStringLiteral("new_file"));
     const int editorCountBeforeNewAction = window.tabManager->editorCount();
     if (newFileAction) {

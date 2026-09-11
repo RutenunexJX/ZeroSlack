@@ -447,6 +447,15 @@ int main(int argc, char* argv[])
               && controller.dockHost()->resourceCount() == 2
               && controller.dockHost()->currentResource() == original,
           "pinned host supports multiple independent resource tabs");
+    controller.closePeek();
+    controller.rail()->actions().constFirst()->trigger();
+    QApplication::processEvents();
+    check(!controller.dockWidget()->isVisible(), "rail hides the active pinned provider");
+    controller.rail()->actions().constFirst()->trigger();
+    QApplication::processEvents();
+    check(controller.dockWidget()->isVisible()
+              && controller.dockHost()->currentResource() == original,
+          "reopening a provider preserves its active tab among multiple resources");
 
     check(controller.unpinResource(second.stableKey(), &failureReason)
               && failureReason.isEmpty()
@@ -674,6 +683,20 @@ int main(int argc, char* argv[])
         QApplication::processEvents();
         check(qAbs(sidebar.dockWidget()->width() - widened) <= 2,
               "reopening sidebar preserves its resized width");
+        check(sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
+              "sidebar toggling retains the existing view and its state");
+        check(sidebar.openResource(original, ContextOpenMode::Pinned),
+              "current sidebar resource can be pinned");
+        sidebar.rail()->actions().constFirst()->trigger();
+        QApplication::processEvents();
+        check(!sidebar.dockWidget()->isVisible()
+                  && sidebar.dockHost()->resourceCount() == 1,
+              "second click also hides pinned content without removing it");
+        sidebar.rail()->actions().constFirst()->trigger();
+        QApplication::processEvents();
+        check(sidebar.dockWidget()->isVisible()
+                  && sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
+              "pinned content reopens with its original view");
     }
 
     if (failures == 0) {

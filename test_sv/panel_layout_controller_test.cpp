@@ -415,7 +415,7 @@ PanelLayoutState preparePersistentState(DrawerHarness& harness)
     return harness.controller->layoutState();
 }
 
-void verifyPersistenceAndFocusIsolation(DrawerHarness& harness)
+void verifyPersistence(DrawerHarness& harness)
 {
     const PanelLayoutState state = preparePersistentState(harness);
     check(state.bottomPanelHeights.value(QStringLiteral("connections")) == 330
@@ -423,29 +423,6 @@ void verifyPersistenceAndFocusIsolation(DrawerHarness& harness)
                      .value(QStringLiteral("connections"))
                      .contains(QStringLiteral("tabs")),
           "workspace state captures per-panel height and internal view state");
-
-    const PanelLayoutState beforeFocus =
-        harness.controller->layoutState();
-    harness.controller->setFocusModeActive(true);
-    QApplication::processEvents();
-    const PanelLayoutState duringFocus =
-        harness.controller->layoutState();
-    check(!harness.controller->drawerDock()->isVisible()
-              && duringFocus.activeBottomPanel
-                     == beforeFocus.activeBottomPanel
-              && duringFocus.bottomCollapsed
-                     == beforeFocus.bottomCollapsed
-              && duringFocus.bottomPanelHeights
-                     == beforeFocus.bottomPanelHeights
-              && duringFocus.navigationVisible
-                     == beforeFocus.navigationVisible,
-          "Focus Mode hides the drawer without polluting normal layout state");
-    harness.controller->setFocusModeActive(false);
-    QApplication::processEvents();
-    check(harness.controller->activeBottomPanelId()
-                  == beforeFocus.activeBottomPanel
-              && !harness.controller->isBottomCollapsed(),
-          "leaving Focus Mode restores the normal drawer state");
 
     DrawerHarness restored;
     restored.controller->restoreLayoutState(state);
@@ -567,7 +544,7 @@ int main(int argc, char* argv[])
     verifyClickGeometryStability(harness);
     verifyFocusAndEditorPreservation(harness);
     verifySizing(harness);
-    verifyPersistenceAndFocusIsolation(harness);
+    verifyPersistence(harness);
     verifyBadgesAndTheme(harness);
 
     std::cout << (checks - failures) << "/" << checks

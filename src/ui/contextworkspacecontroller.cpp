@@ -124,11 +124,9 @@ ContextWorkspaceController::ContextWorkspaceController(
                     closePeek();
                     return;
                 }
-                if (!transientDockResourceKey.isEmpty()
-                    && dockValue->isVisible()
-                    && dockHostValue->currentResource().stableKey() == transientDockResourceKey
+                if (dockValue->isVisible()
                     && dockHostValue->currentResource().providerId == providerId) {
-                    closePinnedResource(transientDockResourceKey);
+                    dockValue->hide();
                     return;
                 }
                 if (activatePinnedProvider(providerId))
@@ -919,6 +917,11 @@ bool ContextWorkspaceController::activatePinnedProvider(
 {
     if (!dockHostValue)
         return false;
+    if (dockHostValue->currentResource().providerId == providerId) {
+        showDock(false);
+        updateActiveRailEntry();
+        return true;
+    }
     for (int index = 0;
          index < dockHostValue->resourceCount();
          ++index) {

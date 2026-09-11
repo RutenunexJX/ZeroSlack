@@ -1553,6 +1553,14 @@ bool TabManager::activateToolPage(const QString& stableId)
     return true;
 }
 
+bool TabManager::closeActiveToolPage(const QString& stableId)
+{
+    QWidget* page = toolPage(stableId);
+    QTabWidget* group = activeTabWidget();
+    return page && group && group->currentWidget() == page
+        && closePage(group, group->indexOf(page));
+}
+
 QString TabManager::getPlainTextFromCurrentTab() const
 {
     return documentQueries.plainTextFromCurrent(

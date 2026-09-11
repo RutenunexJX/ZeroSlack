@@ -1479,6 +1479,14 @@ int main(int argc, char** argv) {
                true);
 
     GlobalControlQueryContext paletteContext;
+    const auto exclusiveCommands = globalControlService.query(
+        GlobalControlCategory::Commands, QStringLiteral("go endmodule"));
+    expectBool("Ctrl+Space hides F24-only commands without deleting them from F24",
+               findCommandLayerCommand(QStringLiteral("go endmodule"))
+                   && std::none_of(exclusiveCommands.cbegin(), exclusiveCommands.cend(),
+                       [](const GlobalControlItem& item) {
+                           return item.actionId == QStringLiteral("navigation.goEndmodule");
+                       }), true);
     paletteContext.editorAvailable = true;
     paletteContext.fileName = path;
     paletteContext.moduleName = QStringLiteral("top");

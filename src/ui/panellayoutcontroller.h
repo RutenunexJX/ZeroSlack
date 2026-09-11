@@ -95,9 +95,6 @@ public:
     QString panelBadgeText(const QString& panelId) const;
     QString panelBadgeTone(const QString& panelId) const;
 
-    bool isFocusModeActive() const;
-    void setFocusModeActive(bool active);
-    void toggleFocusMode();
 
     void bindManagedTabBars();
     void setStateChangedHandler(std::function<void()> handler);
@@ -150,9 +147,6 @@ private:
     bool collapsed = false;
     bool applying = false;
     bool finalized = false;
-    bool focusMode = false;
-    bool navigationOpenBeforeFocus = false;
-    QHash<QString, bool> sidePanelOpenBeforeFocus;
     bool animationsEnabledValue = true;
     bool dragging = false;
     bool applyingDrawerGeometry = false;

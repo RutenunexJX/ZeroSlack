@@ -51,7 +51,6 @@ public:
     bool enter(const QString& panelId);
     void leaveToEditor();
     void returnToDock();
-    void setBeforeEnterHandler(std::function<void()> handler);
 
     bool isFocused() const;
     QString focusedPanelId() const;
@@ -101,7 +100,6 @@ private:
     QByteArray savedMainWindowState;
     QString activePanelId;
     bool syncingSearch = false;
-    std::function<void()> beforeEnterHandler;
 
     PanelEntry* activeEntry();
     const PanelEntry* activeEntry() const;

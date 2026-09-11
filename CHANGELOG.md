@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.5] - 2026-09-11
+
+- Made Project icon-only, added visible themed title-button hover feedback and native Windows maximize hover tracking.
+- Made Settings and pinned Context views toggle on repeated icon clicks; preserved Context view state while collapsed.
+- Removed alternating rows from Files, Design and Pinloom and redesigned their neutral hover and accent selection backgrounds.
+- Removed Focus Mode and its shortcuts, commands and layout state handling.
+- Filtered F24-exclusive commands from Ctrl+Space while preserving shared shortcuts/menu actions and F24 command registration.
+
 ## [0.25.4] - 2026-09-11
 
 - Combined Project commands, Settings and the file tree into one left sidebar with horizontal function icons.
