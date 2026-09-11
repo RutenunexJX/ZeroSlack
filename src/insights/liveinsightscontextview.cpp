@@ -1,4 +1,5 @@
 #include "liveinsightscontextview.h"
+#include "compactlayout.h"
 
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
@@ -374,7 +375,8 @@ void LiveInsightsContextView::buildUi()
 
     auto* titleRow = new QHBoxLayout;
     titleRow->setSpacing(6);
-    auto* title = new QLabel(QStringLiteral("RTL Insight Workbench"), this);
+    auto* title = new CompactTitleLabel(this);
+    title->setText(QStringLiteral("RTL Insight Workbench"));
     title->setObjectName(QStringLiteral("liveInsightsContextTitle"));
     InsightVisualStyle::applyTitleLabel(title);
     titleRow->addWidget(title, 1);
@@ -515,7 +517,7 @@ void LiveInsightsContextView::buildUi()
     // Peek may be clamped below a provider's preferred width in a narrow
     // editor. Keep the compact navigation surface flexible so its controls
     // remain reachable instead of forcing the host outside the editor region.
-    setMinimumWidth(240);
+    CompactFlowLayout::replaceRows(root);
     InsightVisualStyle::applyPanel(this);
 }
 

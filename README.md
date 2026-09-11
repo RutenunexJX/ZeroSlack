@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.8`
+Current version: `v0.25.9`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -34,8 +34,9 @@ is `schemas/suite-references-v1.schema.json`.
   and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
   Settings and connection tools continue to open in central tabs.
   The menu bar is hidden; existing commands remain in the Project context menu and keep their shortcuts.
-- The themed window title bar appears near the top edge and hides after three seconds away without moving
-  editor content. Window controls, dragging and edge resizing remain available.
+- Editor tabs retain a readable minimum width and scroll when crowded, including split groups.
+  Insight toolbars wrap controls in narrow containers. Context header actions remain accessible above its tabs;
+  untitled document tabs use the editor's displayed name, with the resource URI retained in the tooltip.
 - Only Problems and Activity are permanent drawer buttons. Search, Change Preview and Shelf appear on demand.
   Ctrl+F/H reuse an inline editor find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
 - The gutter sizes its number lane by document line count, shares a diagnostic/Pinloom marker lane, and

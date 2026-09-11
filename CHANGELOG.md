@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.9] - 2026-09-12
+
+- Kept editor tabs readable with overflow scrolling, including split groups and theme refreshes.
+- Wrapped narrow Context and insight toolbars, separated Context header actions from scrolling tabs, and retained access to all existing actions.
+- Used source editor tab names for untitled Context documents while preserving resource URI tooltips.
+- Added compact-layout geometry and painted-label regression coverage without changing semantic ownership or graph rendering.
+
 ## [0.25.8] - 2026-09-11
 
 - Softened fixed-panel, toolbar and table-header separators using theme-relative border colors, and simplified panel-title frames to bottom separators.

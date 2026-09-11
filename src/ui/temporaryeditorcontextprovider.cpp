@@ -4,6 +4,9 @@
 #include "shareddocument.h"
 #include "tabmanager.h"
 #include "temporaryeditorcontextview.h"
+#include "editorsplitcontroller.h"
+#include <QTabWidget>
+#include <QPointer>
 
 #include <QDir>
 #include <QFileInfo>
@@ -18,6 +21,23 @@ namespace {
 const QString kPrimaryResourceId = QStringLiteral("primary");
 const QString kWorkspaceRelativePath =
     QStringLiteral("workspaceRelativePath");
+
+QString documentTitle(TabManager* manager,const EditorLocation& location) {
+    if (manager && manager->editorSplitController()) {
+        auto editors=manager->openEditors();
+        if (auto* active=manager->getCurrentEditor()) {
+            editors.removeOne(active);
+            editors.prepend(active);
+        }
+        for (auto* editor:editors) {
+            const auto* doc=manager->sharedDocumentForEditor(editor);
+            if (!doc || doc->documentId()!=location.documentId) continue;
+            auto* group=manager->editorSplitController()->groupForPage(editor);
+            if (group) return group->tabText(group->indexOf(editor));
+        }
+    }
+    return location.filePath.isEmpty() ? QStringLiteral("untitled") : QFileInfo(location.filePath).fileName();
+}
 
 QString normalizedPath(const QString& path)
 {
@@ -68,7 +88,7 @@ ContextResource TemporaryEditorContextProvider::resourceForLocation(
     resource.resourceId = kPrimaryResourceId;
     resource.uri = QUrl(QStringLiteral(
         "zeroslack://temporary-editor/primary"));
-    resource.title = location.displayText();
+    resource.title = location.filePath.isEmpty() ? QStringLiteral("untitled") : location.displayText();
     resource.iconKey = QStringLiteral("document-edit");
     resource.workspaceId = workspaceId;
     resource.state.insert(
@@ -101,7 +121,9 @@ ContextResource TemporaryEditorContextProvider::resourceForCurrentEditor(
     location.column = block.isValid()
         ? cursor.position() - block.position() + 1
         : 1;
-    return resourceForLocation(location, workspaceId);
+    auto resource=resourceForLocation(location, workspaceId);
+    resource.title=documentTitle(tabManager,location);
+    return resource;
 }
 
 EditorLocation TemporaryEditorContextProvider::locationFromResource(
@@ -167,7 +189,9 @@ bool TemporaryEditorContextProvider::activateView(
     editorView->setProperty(
         "contextWorkspaceId", resource.workspaceId);
     editorView->setSearchProvider(searchProvider);
-    return editorView->openLocation(location);
+    const bool opened=editorView->openLocation(location);
+    editorView->setProperty("contextDisplayTitle",documentTitle(tabManagerValue,location));
+    return opened;
 }
 
 ContextViewCapabilities
@@ -195,17 +219,19 @@ void TemporaryEditorContextProvider::observeViewResourceChanges(
         qobject_cast<TemporaryEditorContextView*>(view);
     if (!editorView || !context || !handler)
         return;
+    auto announce=[editorView, manager=tabManagerValue, handler](const EditorLocation& location) {
+        auto resource=resourceForLocation(location,editorView->property("contextWorkspaceId").toString());
+        resource.title=documentTitle(manager,location);
+        editorView->setProperty("contextDisplayTitle",resource.title);
+        handler(resource);
+    };
     QObject::connect(
         editorView,
         &TemporaryEditorContextView::currentLocationChanged,
         context,
-        [editorView, handler = std::move(handler)](
-            const EditorLocation& location) {
-            handler(resourceForLocation(
-                location,
-                editorView->property("contextWorkspaceId")
-                    .toString()));
-        });
+        announce);
+    QObject::connect(tabManagerValue,&TabManager::workspaceSessionStateChanged,context,
+        [view=QPointer<TemporaryEditorContextView>(editorView),announce] { if (view) announce(view->currentLocation()); },Qt::QueuedConnection);
 }
 
 QVariantMap TemporaryEditorContextProvider::saveViewState(

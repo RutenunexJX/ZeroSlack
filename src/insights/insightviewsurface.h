@@ -4,10 +4,9 @@
 #include "signalkernelgraphpanelcoordinator.h"
 #include <memory>
 #include <QPushButton>
-#include <QScrollArea>
-#include <QScrollBar>
 #include <QVBoxLayout>
 #include "signalusagehotspotpanel.h"
+#include "compactlayout.h"
 
 // Owns a typed renderer. Reports and view-specific interaction stay inside the panel.
 class InsightViewSurface final {
@@ -26,8 +25,8 @@ public:
         }
         if (rtlValue) {
             if (auto* graph = dock->findChild<QWidget*>(QStringLiteral("rtlInsightsGraphPanel")))
-                scrollToolbar(graph);
-            scrollToolbar(rtlValue->signalUsageHotspotPanelForTest());
+                CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(graph->layout()));
+            CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(rtlValue->signalUsageHotspotPanelForTest()->layout()));
         }
         dock->setMinimumWidth(0);
         dock->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
@@ -73,26 +72,6 @@ public:
         return kernelValue ? kernelValue->exportGraph(path, options) : rtlValue->exportCurrentGraph(path, options);
     }
 private:
-    static void scrollToolbar(QWidget* panel) {
-        auto* root = panel ? qobject_cast<QVBoxLayout*>(panel->layout()) : nullptr;
-        if (!root) return;
-        int index = 0;
-        while (index < root->count() && !root->itemAt(index)->layout()) ++index;
-        if (index == root->count()) return;
-        auto* toolbar = root->takeAt(index)->layout();
-        auto* content = new QWidget(panel);
-        content->setLayout(toolbar);
-        auto* scroller = new QScrollArea(panel);
-        scroller->setObjectName(QStringLiteral("specializedToolbarScroll"));
-        scroller->setFrameShape(QFrame::NoFrame);
-        scroller->setWidgetResizable(true);
-        scroller->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        scroller->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        scroller->setWidget(content);
-        scroller->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-        scroller->setFixedHeight(content->sizeHint().height() + scroller->horizontalScrollBar()->sizeHint().height());
-        root->insertWidget(index, scroller);
-    }
     InsightWorkbenchViewKind kindValue;
     std::unique_ptr<RtlInsightsPanelCoordinator> rtlValue;
     std::unique_ptr<SignalKernelGraphPanelCoordinator> kernelValue;

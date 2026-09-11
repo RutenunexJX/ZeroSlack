@@ -1187,6 +1187,7 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
                "  border-top-left-radius: 8px; border-top-right-radius: 8px;"
                "  margin-right: 2px;"
                "  min-height: 20px;"
+               "  min-width: 108px;"
                "}"
                "%1::tab:selected {"
                "  background: %7;"

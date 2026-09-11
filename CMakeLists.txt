@@ -653,6 +653,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextrail.h
     src/ui/contextpeekhost.h
     src/ui/contextdockhost.h
+    src/ui/compactlayout.h
     src/ui/contextworkspacecontroller.h
     src/ui/temporaryeditorsession.h
     src/ui/temporaryeditorcontextview.h
@@ -1385,6 +1386,9 @@ if(BUILD_TESTING)
     target_link_libraries(temporary_editor_context_search_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(compact_layout_test test_sv/compact_layout_test.cpp)
+    target_link_libraries(compact_layout_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(context_workspace_test
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
@@ -1903,6 +1907,12 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:temporary_editor_context_search_test>
     )
+    add_test(NAME compact_layout_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:compact_layout_test>)
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

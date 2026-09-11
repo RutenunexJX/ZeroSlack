@@ -154,9 +154,9 @@ void EditorGutter::resizeTo(MyCodeEditor* editor, const QRect& contentsRect) con
     if (widget)
         widget->setGeometry(
             contentsRect.left(),
-            contentsRect.top(),
+            editor->viewport()->geometry().top(),
             widthFor(editor),
-            contentsRect.height());
+            editor->viewport()->height());
 }
 
 void EditorGutter::paint(MyCodeEditor* editor, QPaintEvent* event) const

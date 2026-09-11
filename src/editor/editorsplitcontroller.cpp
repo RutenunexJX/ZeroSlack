@@ -479,6 +479,9 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setTabsClosable(true);
     group->setMovable(true);
     group->setElideMode(Qt::ElideMiddle);
+    group->tabBar()->setExpanding(false);
+    group->tabBar()->setUsesScrollButtons(true);
+    group->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 108px; }"));
     bindGroupDropTargets(group);
     connect(group,
             &QTabWidget::currentChanged,

@@ -10,6 +10,12 @@
 
 namespace {
 const char kResourceKeyProperty[] = "contextResourceKey";
+QString displayTitle(const ContextResource& resource,QWidget* view) {
+    const QString documentTitle=view ? view->property("contextDisplayTitle").toString() : QString();
+    if (!documentTitle.isEmpty()) return documentTitle;
+    if (!resource.title.isEmpty()) return resource.title;
+    return resource.uri.scheme()==QStringLiteral("untitled") ? QStringLiteral("untitled") : resource.uri.fileName();
+}
 }
 
 ContextDockHost::ContextDockHost(QWidget* parent)
@@ -23,11 +29,15 @@ ContextDockHost::ContextDockHost(QWidget* parent)
     tabs->setObjectName(QStringLiteral("contextDockTabs"));
     tabs->setDocumentMode(true);
     tabs->setMovable(true);
-    tabs->setTabsClosable(true);
-    auto* corner = new QWidget(tabs);
+    tabs->setTabsClosable(false);
+    tabs->setElideMode(Qt::ElideRight);
+    tabs->tabBar()->setExpanding(false);
+    tabs->tabBar()->setUsesScrollButtons(true);
+    auto* corner = new QWidget(this);
     auto* cornerLayout = new QHBoxLayout(corner);
     cornerLayout->setContentsMargins(0, 0, 2, 0);
     cornerLayout->setSpacing(2);
+    cornerLayout->addStretch();
     fullViewButton = new QToolButton(corner);
     fullViewButton->setObjectName(
         QStringLiteral("contextDockFullView"));
@@ -45,7 +55,15 @@ ContextDockHost::ContextDockHost(QWidget* parent)
     unpinButton->setToolTip(tr("Move current tab to preview"));
     unpinButton->setEnabled(false);
     cornerLayout->addWidget(unpinButton);
-    tabs->setCornerWidget(corner, Qt::TopRightCorner);
+    auto* closeButton=new QToolButton(corner);
+    closeButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    closeButton->setToolTip(tr("Close current tab"));
+    cornerLayout->addWidget(closeButton);
+    connect(closeButton,&QToolButton::clicked,this,[this] {
+        const auto resource=currentResource();
+        if (resource.isValid()) emit closeResourceRequested(resource.stableKey());
+    });
+    layout->addWidget(corner);
     layout->addWidget(tabs);
 
     connect(unpinButton,
@@ -143,9 +161,7 @@ bool ContextDockHost::addResource(
     }
 
     view->setProperty(kResourceKeyProperty, key);
-    const QString title = resource.title.isEmpty()
-        ? resource.uri.fileName()
-        : resource.title;
+    const QString title = displayTitle(resource,view);
     const int index = tabs->addTab(view, title);
     tabs->setTabToolTip(index, resource.uri.toString());
     resources.insert(key, resource);
@@ -163,9 +179,7 @@ bool ContextDockHost::updateResource(
     if (!resource.isValid() || index < 0)
         return false;
     resources.insert(key, resource);
-    const QString title = resource.title.isEmpty()
-        ? resource.uri.fileName()
-        : resource.title;
+    const QString title = displayTitle(resource,tabs->widget(index));
     tabs->setTabText(index, title);
     tabs->setTabToolTip(index, resource.uri.toString());
     return true;

@@ -1,4 +1,5 @@
 #include "rtlinsightworkbench.h"
+#include "compactlayout.h"
 
 #include "graphexportui.h"
 #include "insightviewsurface.h"
@@ -228,7 +229,7 @@ void RtlInsightWorkbench::buildUi()
     auto* toolbar = new QHBoxLayout;
     toolbar->setContentsMargins(0, 0, 0, 0);
     toolbar->setSpacing(4);
-    titleLabel = new QLabel(this);
+    titleLabel = new CompactTitleLabel(this);
     titleLabel->setObjectName(QStringLiteral("rtlInsightWorkbenchTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
     toolbar->addWidget(titleLabel);
@@ -272,6 +273,7 @@ void RtlInsightWorkbench::buildUi()
             QWidget* control = toolbar->itemAt(i)->widget();
             if (control && control != titleLabel && control != detachButton) control->hide();
         }
+        CompactFlowLayout::replaceRows(root);
         return;
     }
 
@@ -316,6 +318,7 @@ void RtlInsightWorkbench::buildUi()
                          if (!path.isEmpty())
                              exportCurrentGraph(path);
                      });
+    CompactFlowLayout::replaceRows(root);
     InsightVisualStyle::applyPanel(this);
 }
 

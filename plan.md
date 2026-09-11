@@ -1,11 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.8`
+Product version: `v0.25.9`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## Compact layout — 2026-09-12 (v0.25.9)
+
+- Editor tabs stop shrinking and scroll; the rule survives MainWindow style refresh and split creation.
+- Context and specialized insight toolbars wrap at control boundaries. Header actions occupy a separate row; no dock minimum/default width is increased.
+- Temporary editor Context titles follow the source editor tab; internal identities remain in resource data and tooltips.
+- Added independent compact-layout invariants and retained the seven existing regression tests. Evidence and quantitative results: [compact-layout review](docs/compact-layout-review.md).
+- Removed only the verified superseded local release copies 0.25.2, 0.25.4, 0.25.5, 0.25.6 and 0.25.7. Current release copies, build products and historical evidence remain.
 
 ## Pending UI refinement — requirements synchronized 2026-09-11
 

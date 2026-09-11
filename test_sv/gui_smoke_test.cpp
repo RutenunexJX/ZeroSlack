@@ -328,6 +328,13 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
     window.showNormal();
     window.raise();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    QTest::qWait(300);
+    expectBool("full screenshot has an active main-window layout",
+               window.layout()->geometry() == window.contentsRect(), true);
+    auto* contextHost = window.contextWorkspaceController->dockHost();
+    const QRect contextRect(contextHost->mapTo(&window, QPoint()), contextHost->size());
+    expectBool("full screenshot center does not overlap Context",
+               window.centralWidget()->geometry().intersected(contextRect).isEmpty(), true);
 
     QString artifactRoot =
         qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
@@ -337,6 +344,16 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
     }
     if (!QDir().mkpath(artifactRoot))
         return false;
+    QFile geometryFile(QDir(artifactRoot).filePath(QStringLiteral("geometry.txt")));
+    if (geometryFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&geometryFile);
+        stream << "window " << window.width() << "x" << window.height() << " layout " << window.layout()->geometry().width() << "x" << window.layout()->geometry().height() << '\n';
+        for (QWidget* w : window.findChildren<QWidget*>()) {
+            if (!w->isVisible()) continue;
+            const QPoint at=w->mapTo(&window,QPoint());
+            stream << w->metaObject()->className() << ':' << w->objectName() << " at " << at.x() << ',' << at.y() << " size " << w->width() << 'x' << w->height() << " min " << w->minimumSizeHint().width() << " parent " << w->parentWidget()->metaObject()->className() << ':' << w->parentWidget()->objectName() << " size " << w->parentWidget()->width() << 'x' << w->parentWidget()->height() << '\n';
+        }
+    }
     const QString outputPath =
         QDir(artifactRoot).absoluteFilePath(
             QStringLiteral(
@@ -9764,6 +9781,12 @@ static void runCommandLayerRegression(MainWindow& window)
         Qt::NoModifier);
     QCoreApplication::sendEvent(commandPanel,
                                 &commandLayerMousePress);
+    // Complete the gesture: an ignored press can reach a main-window dock
+    // separator, whose pending resize otherwise freezes subsequent layouts.
+    QMouseEvent commandLayerMouseRelease(
+        QEvent::MouseButtonRelease, QPointF(2.0, 2.0), QPointF(2.0, 2.0),
+        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(commandPanel, &commandLayerMouseRelease);
     releaseF24(editor);
     expectBool("mouse input cancels empty F24 tap repeat",
                editor->toPlainText() == QStringLiteral("keep this"),

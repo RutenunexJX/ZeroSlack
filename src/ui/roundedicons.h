@@ -5,6 +5,7 @@
 #include <QPainterPath>
 #include <QProxyStyle>
 #include <QStyleOption>
+#include <QToolButton>
 #include <cmath>
 
 namespace RoundedIcons {
@@ -96,6 +97,17 @@ inline QIcon icon(Kind kind) { return QIcon(new Engine(kind)); }
 class Style final : public QProxyStyle {
 public:
     Style() : QProxyStyle(QStringLiteral("Fusion")) {}
+    int pixelMetric(PixelMetric metric, const QStyleOption* option=nullptr,
+                    const QWidget* widget=nullptr) const override {
+        if (metric == PM_TabBar_ScrollButtonOverlap) return 0;
+        int value = QProxyStyle::pixelMetric(metric, option, widget);
+        // Qt's tab arrows must accommodate the application's button padding.
+        if (metric == PM_TabBarScrollButtonWidth && widget) {
+            for (auto* button : widget->findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
+                value = qMax(value, button->minimumSizeHint().width());
+        }
+        return value;
+    }
     void drawPrimitive(PrimitiveElement element, const QStyleOption* option,
                        QPainter* painter, const QWidget* widget=nullptr) const override {
         if (element == PE_IndicatorTabClose && option) {

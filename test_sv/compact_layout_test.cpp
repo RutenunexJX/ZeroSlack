@@ -1,0 +1,234 @@
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
+#include "mainwindow.h"
+#include "contextdockhost.h"
+#include "liveinsightscontextview.h"
+#include "liveinsighttoolpage.h"
+#include "liveinsightscontextprovider.h"
+#include "rtlinsightworkbench.h"
+#include "rtlinsightspanelcoordinator.h"
+#include "signalusagehotspotpanel.h"
+#include "tabmanager.h"
+#include "temporaryeditorcontextprovider.h"
+#include <QProxyStyle>
+#include <QStyleFactory>
+#include <QStyleOptionTab>
+#include <QStackedWidget>
+#include <QTabBar>
+#include <QToolButton>
+#include <QRegularExpression>
+#include <QPaintEngine>
+#include <QVBoxLayout>
+#include <QAbstractButton>
+#include <QDockWidget>
+#include <QApplication>
+#include <QDir>
+#include <QTest>
+#include <QTemporaryDir>
+#include <QSettings>
+
+namespace {
+class TextEngine : public QPaintEngine {
+public:
+    TextEngine():QPaintEngine(QPaintEngine::AllFeatures){}
+    QStringList labels;
+    bool begin(QPaintDevice*) override { return true; }
+    bool end() override { return true; }
+    Type type() const override { return User; }
+    void updateState(const QPaintEngineState&) override {}
+    void drawPixmap(const QRectF&,const QPixmap&,const QRectF&) override {}
+    void drawImage(const QRectF&,const QImage&,const QRectF&,Qt::ImageConversionFlags) override {}
+    void drawPath(const QPainterPath&) override {}
+    void drawPolygon(const QPointF*,int,PolygonDrawMode) override {}
+    void drawTextItem(const QPointF&,const QTextItem& item) override { labels.append(item.text()); }
+};
+class TextDevice : public QPaintDevice {
+public:
+    mutable TextEngine engine;
+    QSize size;
+    explicit TextDevice(QSize size):size(size){}
+    QPaintEngine* paintEngine() const override { return &engine; }
+    int metric(PaintDeviceMetric metric) const override {
+        if (metric==PdmWidth) return size.width();
+        if (metric==PdmHeight) return size.height();
+        if (metric==PdmDepth) return 32;
+        if (metric==PdmDevicePixelRatio) return 1;
+        if (metric==PdmDevicePixelRatioScaled) return devicePixelRatioFScale();
+        return 96;
+    }
+};
+QRect globalRect(QWidget* w) { return QRect(w->mapToGlobal(QPoint()), w->size()); }
+struct Counts { int overlap=0, outside=0, clipped=0; };
+Counts audit(QWidget* root) {
+    Counts result;
+    const auto all=root->findChildren<QWidget*>();
+    for (auto* w : all) {
+        if (!w->isVisible() || w->size().isEmpty()) continue;
+        const QRect rect=globalRect(w);
+        if (auto* parent=w->parentWidget(); parent && !globalRect(parent).contains(rect)) {
+            ++result.outside; qWarning() << "I4" << w << w->geometry() << "parent" << parent << parent->size();
+        }
+        if (auto* b=qobject_cast<QAbstractButton*>(w); b && b->width()<b->minimumSizeHint().width()) {
+            ++result.clipped; qWarning() << "I5" << b << b->text() << b->size() << b->minimumSizeHint();
+        }
+        if (auto* b=qobject_cast<QAbstractButton*>(w); b && !b->text().isEmpty()) {
+            const QString text=b->text().remove('&');
+            if (b->fontMetrics().horizontalAdvance(text)>b->width()
+                && !(text.endsWith(QChar(0x2026)) && !b->toolTip().isEmpty())) ++result.clipped;
+        }
+        for (auto* other : all) {
+            if (other<=w || !other->isVisible() || other->parentWidget()!=w->parentWidget()) continue;
+            if (!rect.intersected(globalRect(other)).isEmpty()) {
+                ++result.overlap; qWarning() << "I3" << w << w->geometry() << other << other->geometry();
+            }
+        }
+    }
+    return result;
+}
+}
+class CompactLayoutTest : public QObject {
+    Q_OBJECT
+private slots:
+    void mainWindowGeometry() {
+        MainWindow window;
+        window.show(); window.resize(1160,900); QTest::qWait(100);
+        auto* context=window.findChild<ContextDockHost*>();QVERIFY(context);
+        auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
+        QVERIFY(context->addResource(resource,new LiveInsightsContextView(nullptr,LiveInsightKind::Hotspot),true));
+        auto* contextDock=qobject_cast<QDockWidget*>(context->parentWidget());QVERIFY(contextDock);contextDock->show();
+        const auto groups=window.findChildren<QTabWidget*>(QRegularExpression("editorTabGroup.*"));QVERIFY(!groups.isEmpty());
+        auto* group=groups.first();
+        group->setCurrentIndex(group->addTab(new LiveInsightToolPage(LiveInsightKind::Hotspot),"Signal Hotspot"));
+        window.resize(1900,1040); QTest::qWait(100);
+        auto* center=window.centralWidget();QVERIFY(center);
+        for (auto* dock:window.findChildren<QDockWidget*>(QString(),Qt::FindDirectChildrenOnly)) {
+            if (dock->isVisible() && !dock->isFloating())
+                QVERIFY2(globalRect(center).intersected(globalRect(dock)).isEmpty(),qPrintable(dock->objectName()));
+        }
+        qInfo()<<"main window"<<window.size()<<"center"<<center->geometry()<<"layout"<<window.layout()->geometry();
+    }
+    void editorTabs() {
+        for (bool split : {false,true}) {
+            QWidget host;
+            auto* tabs=new QTabWidget(&host);
+            auto* layout=new QVBoxLayout(&host);layout->setContentsMargins(0,0,0,0);layout->addWidget(tabs);
+            EditorSplitController controller(tabs); controller.setHost(&host);
+            auto fill=[](QTabWidget* group) {
+                for (const QString& name:{"uart_receive_controller.sv","uart_transmit_controller.sv","reset_synchronizer.sv","clock_generator.sv","axi_register_bank.sv","stream_fifo.sv","packet_decoder.sv","byte_serializer.sv"})
+                    group->addTab(new QWidget,name);
+            };
+            fill(tabs);
+            if (split) fill(controller.createSplit(tabs,EditorSplitDirection::Right));
+            for (auto* group:controller.groups()) group->show();
+            // MainWindow reapplies this style after creating groups and changing themes.
+            for (auto* group:controller.groups())
+                group->tabBar()->setStyleSheet(InsightVisualStyle::tabBarStyleSheet(group->tabBar()->objectName()));
+            host.resize(split ? 900 : 615,700);host.show();QTest::qWait(30);
+            for (auto* group:controller.groups()) {
+                auto* bar=group->tabBar();
+                QList<int> widths;
+                int shortestPaintedText=1000;
+                for (int i=0;i<bar->count();++i) {
+                    group->setCurrentIndex(i);QTest::qWait(1);
+                    widths.append(bar->tabRect(i).width());
+                    QVERIFY(bar->tabRect(i).width()>=108);
+                    TextDevice device(bar->size());bar->render(&device);
+                    QVERIFY2(!device.engine.labels.isEmpty(),"Actual tab label painting was not observed");
+                    for (QString text:device.engine.labels) {
+                        text.remove(QChar(0x2026));text.remove("...");
+                        shortestPaintedText=qMin(shortestPaintedText,int(text.trimmed().size()));
+                        QVERIFY2(text.trimmed().size()>=3,qPrintable(text));
+                    }
+                }
+                bool scrollVisible=false;
+                for (auto* button:bar->findChildren<QToolButton*>()) {
+                    scrollVisible|=button->isVisible();
+                    if (button->isVisible()) QVERIFY(button->width()>=button->minimumSizeHint().width());
+                }
+                qInfo() << "I1/I2 split=" << split << "widths=" << widths << "scroll=" << bar->usesScrollButtons() << scrollVisible;
+                qInfo()<<"Tab geometry"<<host.size()<<group->size()<<bar->size()<<bar->isVisible()<<group->parentWidget()->isVisible();
+                qInfo()<<"I2 shortest painted label excluding ellipsis"<<shortestPaintedText;
+                QVERIFY(bar->usesScrollButtons());QVERIFY(scrollVisible);
+            }
+        }
+    }
+    void untitledNames() {
+        QTabWidget editors;
+        TabManager manager(&editors);
+        manager.createNewTab();manager.createNewTab();
+        TemporaryEditorContextProvider provider(&manager);
+        const auto resource=provider.activationResource({});
+        ContextDockHost host;
+        auto* view=provider.createView(resource,&host);
+        provider.observeViewResourceChanges(view,&host,[&](const ContextResource& updated) { host.updateResource(updated); });
+        QVERIFY(provider.activateView(view,resource));
+        QVERIFY(host.addResource(resource,view));
+        host.show();QTest::qWait(30);
+        auto* contextTabs=host.findChild<QTabWidget*>();QVERIFY(contextTabs);
+        const QRegularExpression uuid("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-");
+        for (int i=0;i<contextTabs->count();++i) QVERIFY(!uuid.match(contextTabs->tabText(i)).hasMatch());
+        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
+        QCOMPARE(contextTabs->tabToolTip(0),resource.uri.toString());
+        qInfo()<<"I6 editor="<<editors.tabText(editors.currentIndex())<<"context="<<contextTabs->tabText(0);
+        QVERIFY(manager.duplicateCurrentView());QTest::qWait(30);
+        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
+        qInfo()<<"I6 duplicated editor="<<editors.tabText(editors.currentIndex())<<"context="<<contextTabs->tabText(0);
+        manager.getCurrentEditor()->insertPlainText("module test; endmodule");QTest::qWait(30);
+        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
+        QCOMPARE(contextTabs->tabToolTip(0),resource.uri.toString());
+        for (int width : {220,270,340,480}) {
+            host.setFixedWidth(width);host.resize(width,900);QTest::qWait(30);
+            const auto c=audit(&host);
+            qInfo()<<"Temporary editor"<<width<<"I3/I4/I5"<<c.overlap<<c.outside<<c.clipped;
+            QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
+        }
+    }
+    void contextWidths() {
+        for (int width : {220,270,340,480}) {
+            ContextDockHost host;
+            auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
+            auto* view=new LiveInsightsContextView(nullptr,LiveInsightKind::Hotspot);
+            QVERIFY(host.addResource(resource,view,true));
+            host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
+            auto c=audit(&host);
+            qInfo() << "Context" << width << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
+            QVERIFY(host.width()==width);
+            QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
+        }
+    }
+    void fullViewWidths() {
+        for (int width : {220,270,340,480}) {
+            ContextDockHost host;
+            auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
+            auto* page=new LiveInsightToolPage(LiveInsightKind::Hotspot);
+            auto* rtl=page->workbenchForTest()->rtlSurfaceForTest();QVERIFY(rtl);
+            auto* hotspot=rtl->signalUsageHotspotPanelForTest();
+            SignalUsageHotspotReport report;report.found=true;report.declarationDisplayName="byte_data";
+            SignalUsageHotspotItem item;item.role=SignalUsageHotspotRole::Read;item.moduleName="uart";item.fileName="uart.sv";item.line=10;item.snippet="assign out_data = byte_data;";
+            report.items.append(item);
+            SignalUsageHotspotTrackLane lane;lane.moduleName=item.moduleName;lane.fileName=item.fileName;lane.startLine=10;lane.endLine=20;lane.count=1;
+            SignalUsageHotspotTrackPosition position;position.itemIndex=0;position.role=item.role;position.line=10;lane.positions.append(position);report.trackLanes.append(lane);
+            hotspot->renderReportForTest(report);
+            rtl->stackForTest()->setCurrentWidget(hotspot);
+            QVERIFY(host.addResource(resource,page,true));
+            host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
+            auto c=audit(&host);
+            qInfo() << "Full view" << width << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
+            const QString root=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+            if (!root.isEmpty() && (width==220 || width==480)) {
+                QDir().mkpath(root);QVERIFY(host.grab().save(root+QString("/context_width_%1.png").arg(width)));
+            }
+            QVERIFY(host.width()==width);
+            QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
+        }
+    }
+};
+int main(int argc,char** argv) {
+    QApplication app(argc,argv);
+    QTemporaryDir settings;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());
+    ApplicationThemeManager::instance().applyToApplication();
+    CompactLayoutTest test; return QTest::qExec(&test,argc,argv);
+}
+#include "compact_layout_test.moc"
