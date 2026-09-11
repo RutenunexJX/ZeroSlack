@@ -2,6 +2,7 @@
 
 #include "actionregistry.h"
 #include "editorhoverpopup.h"
+#include "editorradialmenu.h"
 #include "editormodecontroller.h"
 #include "editorselection.h"
 #include "ghostannotationservice.h"
@@ -499,7 +500,8 @@ void EditorSourceNavigationUi::handleContextMenu(
         menu.get(),
         contextProvider(sourceSymbolContextPositionForMenu(editor, cursorAtPos),
                         true));
-    menu->exec(event->globalPos());
+    EditorRadialMenu::exec(menu.get(), event->globalPos());
+    event->accept();
 }
 
 EditorSourceNavigationTarget EditorSourceNavigationUi::targetAtPosition(

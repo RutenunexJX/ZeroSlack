@@ -6,6 +6,7 @@
 
 #include "actionregistry.h"
 #include "editorcontextmenumodel.h"
+#include "editorradialmenu.h"
 #include "editorhoverpopup.h"
 #include "editorlexicalboundary.h"
 #include "formattercursoranchor.h"
@@ -3477,6 +3478,7 @@ void MyCodeEditorState::handleContextMenu(
                 descriptor->executionRoute);
         }
         createQueue->setEnabled(item.enabled);
+        createQueue->setProperty("executable", item.executable);
         createQueue->setProperty(
             "visibleReason", item.visibleReason);
         if (!item.visibleReason.isEmpty())
@@ -3510,7 +3512,7 @@ void MyCodeEditorState::handleContextMenu(
                     emit editor->editorStatusMessageRequested(message);
                 }
             });
-        menu.exec(event->globalPos());
+        EditorRadialMenu::exec(&menu, event->globalPos());
         if (!actionTriggered)
             cancelSignalSelectionMode(editor);
         event->accept();

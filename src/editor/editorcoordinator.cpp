@@ -1463,8 +1463,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                    bool enterableWhenUnavailable = false) {
             EditorContextMenuCapability capability;
             capability.actionId = actionId;
-            capability.relevant = relevant;
-            capability.executable = executable;
+            capability.relevant = true;
+            capability.executable = relevant && executable;
             capability.unavailableReason = reason;
             capability.standard = standard;
             capability.enterableWhenUnavailable =

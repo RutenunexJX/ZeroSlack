@@ -11989,12 +11989,10 @@ void runEditorContextMenuGroupingRegression()
                           QStringLiteral("select.all"))
                        == nullptr,
                true);
-    expectBool("irrelevant FSM action is absent",
-               editorContextMenuActionById(
-                   &menu,
-                   QStringLiteral(
-                       "insight.stateTransitionGraph"))
-                   == nullptr,
+    QAction* unavailableStateGraph = editorContextMenuActionById(
+        &menu, QStringLiteral("insight.stateTransitionGraph"));
+    expectBool("unavailable FSM action retains its disabled radial slot",
+               unavailableStateGraph && !unavailableStateGraph->property("executable").toBool(),
                true);
     expectBool("selection-only format action is absent",
                editorContextMenuActionById(

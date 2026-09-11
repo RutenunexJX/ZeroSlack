@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.5`
+Current version: `v0.25.6`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -149,6 +149,9 @@ is `schemas/suite-references-v1.schema.json`.
   an intervening save. Navigate
   lexical and Tree-sitter structural fields with the keyboard, and align
   indexed fields without changing tokens.
+- The editor context menu uses a compact icon-only ring with rounded rectangular
+  action bars. Hover for action names and unavailable reasons; unavailable
+  actions stay gray and cannot be executed.
 - Toggle the case of a selected text range from the editor context menu. The
   context menu stays focused on selection-aware or semantic operations, while
   Replace, comment, uncomment, indent, and unindent remain shortcut Actions.

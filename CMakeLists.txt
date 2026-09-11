@@ -322,6 +322,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editortemplateslotcontroller.cpp
     src/editor/editoractioncontextservice.cpp
     src/editor/editorcontextmenumodel.cpp
+    src/editor/editorradialmenu.cpp
     src/editor/editorsemanticcontextservice.cpp
     src/editor/editorsemanticruntime.cpp
     src/editor/editorsourcenavigationquery.cpp
@@ -597,6 +598,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorstructuralinputcontroller.h
     src/editor/editoractioncontextservice.h
     src/editor/editorcontextmenumodel.h
+    src/editor/editorradialmenu.h
     src/editor/editorsemanticcontextservice.h
     src/editor/editorsemanticruntime.h
     src/editor/editorsourcenavigationquery.h
@@ -1114,6 +1116,9 @@ if(BUILD_TESTING)
         test_sv/rtl_insight_workbench_test.cpp)
     target_link_libraries(rtl_insight_workbench_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_radial_menu_test test_sv/editor_radial_menu_test.cpp)
+    target_link_libraries(editor_radial_menu_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(live_insights_ui_snapshot_test
         test_sv/live_insights_ui_snapshot_test.cpp)
@@ -1669,6 +1674,13 @@ if(BUILD_TESTING)
     )
     set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)
+    add_test(NAME editor_radial_menu_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_radial_menu_test>)
+    set_tests_properties(editor_radial_menu_test PROPERTIES TIMEOUT 60)
     set(ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS)
     if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
         list(APPEND ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS

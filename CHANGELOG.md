@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.25.6] - 2026-09-11
+
+- Replaced the editor context-menu presentation with a compact icon-only radial launcher and rectangular floating action bars.
+- Added distinct scalable icons, executable/disabled colors, hover explanations, keyboard access and screen-edge placement.
+- Kept unsupported context actions visible but disabled, preserving existing execution routes and specialized graph panels.
+
 ## [0.25.5] - 2026-09-11
 
 - Made Project icon-only, added visible themed title-button hover feedback and native Windows maximize hover tracking.

@@ -27,6 +27,7 @@
 #include <QClipboard>
 #include <QCompleter>
 #include <QContextMenuEvent>
+#include <QToolButton>
 #include <QDialog>
 #include <QDockWidget>
 #include <QFile>
@@ -185,7 +186,7 @@ MenuActionState contextMenuState(
                     &state.groupTitle);
                 state.found = expose != nullptr;
                 state.enabled = expose && expose->isEnabled();
-                menu->close();
+                if (auto* popup = QApplication::activePopupWidget()) popup->close();
                 state.visibleText = expose
                     ? expose->text() : QString();
                 state.statusTip = expose
@@ -253,7 +254,7 @@ ContextActionTriggerState triggerContextMenuAction(
                         action->trigger();
                         state.triggered = true;
                     }
-                    menu->close();
+                    if (auto* popup = QApplication::activePopupWidget()) popup->close();
                 });
         });
     QContextMenuEvent event(
@@ -284,11 +285,10 @@ ContextActionTriggerState triggerEditorOwnedContextAction(
 
     ContextActionTriggerState state;
     QTimer::singleShot(0, editor, [&]() {
-        QMenu* menu = qobject_cast<QMenu*>(
-            QApplication::activePopupWidget());
+        QWidget* menu = QApplication::activePopupWidget();
         state.menuShown = menu != nullptr;
-        QAction* action = findMenuAction(
-            menu, actionId);
+        if (menu) if (auto* group = menu->findChild<QToolButton*>(QStringLiteral("radialGroup.3"))) group->click();
+        QToolButton* action = menu ? menu->findChild<QToolButton*>(actionId) : nullptr;
         state.found = action != nullptr;
         state.enabled = action && action->isEnabled();
         state.actionId = action
@@ -299,15 +299,14 @@ ContextActionTriggerState triggerEditorOwnedContextAction(
                   .toString()
             : QString();
         if (state.enabled) {
-            action->trigger();
+            action->click();
             state.triggered = true;
         }
         if (menu)
             menu->close();
     });
     QTimer::singleShot(1000, editor, []() {
-        if (QMenu* menu = qobject_cast<QMenu*>(
-                QApplication::activePopupWidget())) {
+        if (QWidget* menu = QApplication::activePopupWidget()) {
             menu->close();
         }
     });

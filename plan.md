@@ -1,11 +1,18 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.5`
+Product version: `v0.25.6`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## Implemented context menu — 2026-09-11 (v0.25.6)
+
+- Replace the editor context menu with a compact icon-only ring and a separate rounded rectangular action bar. Keep existing semantic commands and specialized graph panels.
+- Give each action a distinct glyph; show executable actions in the theme accent color and unavailable actions in gray. Show names and unavailable reasons on hover.
+- Keep undo, redo, cut, copy, paste, select-all, go-to-definition and go-to-line outside this menu; retain their existing shortcuts.
+- Seven relevant regression checks passed. Native Windows popup tests and light/dark rendering checks at 100%, 150% and 200% scale passed.
 
 ## Implemented UI changes — 2026-09-11 (v0.25.5)
 
