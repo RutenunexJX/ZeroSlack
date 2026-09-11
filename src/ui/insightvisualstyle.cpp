@@ -829,6 +829,11 @@ QPalette InsightVisualStyle::applicationPalette(ThemeMode mode)
     return palette;
 }
 
+QColor InsightVisualStyle::subtleBorder(const QColor& surface, const QColor& foreground)
+{
+    return mix(surface, foreground, surface.lightnessF() > 0.5 ? 0.10 : 0.12);
+}
+
 QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
 {
     const InsightTheme t = theme();
@@ -850,7 +855,14 @@ QString InsightVisualStyle::applicationStyleSheet()
 
 QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
 {
-    const InsightTheme t = theme(mode);
+    InsightTheme t = theme(mode);
+    // Soften shell decoration locally; retain the shared graph and focus tokens.
+    t.border = subtleBorder(t.panelBackground, t.textPrimary);
+    t.menu.border = subtleBorder(t.menu.background, t.textPrimary);
+    t.dock.border = subtleBorder(t.dock.background, t.textPrimary);
+    t.dock.titleBorder = subtleBorder(t.dock.titleBackground, t.textPrimary);
+    t.itemView.headerBorder = subtleBorder(t.itemView.headerBackground, t.textPrimary);
+    t.splitterHandle = t.border;
     QString result = QStringLiteral(
                "QMainWindow { background: %1; }"
                "QMenuBar { background: %2; border-bottom: 1px solid %3; "
@@ -1082,7 +1094,7 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                        t.button.textChecked.name(),
                        t.panelBackground.name(),
                        t.textPrimary.name(),
-                       t.borderStrong.name(),
+                       t.border.name(),
                        t.panelSubtle.name());
     result += QStringLiteral(
                   "QPushButton:focus, QToolButton:focus, QTabBar::tab:focus { "
@@ -1187,7 +1199,7 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
                "}")
         .arg(selector,
              t.tab.barBackground.name(),
-             t.tab.border.name(),
+             subtleBorder(t.tab.barBackground, t.textPrimary).name(),
              t.tab.tabBackground.name(),
              t.tab.text.name(),
              t.tab.border.name(),
@@ -1219,7 +1231,7 @@ QString InsightVisualStyle::packageToolsBarStyleSheet(
                "QToolButton:disabled { color: %7; }")
         .arg(objectSelector(QStringLiteral("QWidget"), objectName),
              t.toolbarBackground.name(),
-             t.border.name(),
+             subtleBorder(t.toolbarBackground, t.textPrimary).name(),
              t.textPrimary.name(),
              t.graph.nodeHoverFill.name(),
              t.button.borderHover.name(),
@@ -1415,15 +1427,15 @@ QString InsightVisualStyle::titleBarStyleSheet(const QString& objectName)
                "%1 {"
                "  color: %2;"
                "  background: %3;"
-               "  border: 1px solid %4;"
-               "  border-radius: 8px;"
+               "  border: 0; border-bottom: 1px solid %4;"
+               "  border-radius: 0;"
                "  padding: 5px 8px;"
                "  font-weight: 600;"
                "}")
         .arg(objectSelector(QStringLiteral("QLabel"), objectName),
              t.textPrimary.name(),
              t.panelSubtle.name(),
-             t.border.name());
+             subtleBorder(t.panelSubtle, t.textPrimary).name());
 }
 
 QString InsightVisualStyle::compactSearchFieldStyleSheet(
@@ -1536,7 +1548,7 @@ QString InsightVisualStyle::sideInspectorStyleSheet(
                "  border-radius: 0;"
                "}")
         .arg(objectSelector(QStringLiteral("QWidget"), objectName),
-             t.border.name());
+             subtleBorder(t.panelBackground, t.textPrimary).name());
 }
 
 void InsightVisualStyle::applyPanel(QWidget* widget)

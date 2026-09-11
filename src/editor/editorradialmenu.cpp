@@ -182,7 +182,8 @@ EditorRadialMenu::EditorRadialMenu(QMenu* commands)
         "QWidget#editorRadialMenu QToolButton {border:0; background:transparent; padding:0; border-radius:6px;}"
         "QWidget#editorRadialMenu QToolButton:hover:enabled, QWidget#editorRadialMenu QToolButton:focus {background:%1;}"
         "QFrame#radialActionBar {background:%2; border:1px solid %3; border-radius:9px;}")
-        .arg(theme.itemView.selectedBackground.name(),theme.panelBackground.name(),theme.border.name()));
+        .arg(theme.itemView.selectedBackground.name(),theme.panelBackground.name(),
+             InsightVisualStyle::subtleBorder(theme.panelBackground,theme.textPrimary).name()));
 }
 
 void EditorRadialMenu::collect(QMenu* menu) {
@@ -260,14 +261,15 @@ int EditorRadialMenu::groupAt(const QPoint& point) const {
 void EditorRadialMenu::paintEvent(QPaintEvent*) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
     const auto& t=InsightVisualStyle::theme();
+    const QColor border=InsightVisualStyle::subtleBorder(t.panelBackground,t.textPrimary);
     const QRectF outer(center.x()-radius,center.y()-radius,2*radius,2*radius);
     const QRectF inner(center.x()-hole,center.y()-hole,2*hole,2*hole);
-    p.setPen(QPen(t.border,1));p.setBrush(t.panelBackground);p.drawEllipse(outer);
+    p.setPen(QPen(border,1));p.setBrush(t.panelBackground);p.drawEllipse(outer);
     if(currentGroup>=0) {
         QPainterPath wedge;wedge.moveTo(center);wedge.arcTo(outer,90-currentGroup*60,-60);wedge.closeSubpath();
         p.setPen(Qt::NoPen);p.setBrush(t.itemView.selectedBackground);p.drawPath(wedge);
     }
-    p.setPen(QPen(t.border,1));
+    p.setPen(QPen(border,1));
     for(int i=0;i<6;++i) {const double a=(-90+i*60)*pi/180;
         p.drawLine(QPointF(center)+QPointF(hole*std::cos(a),hole*std::sin(a)),
                    QPointF(center)+QPointF(radius*std::cos(a),radius*std::sin(a)));}

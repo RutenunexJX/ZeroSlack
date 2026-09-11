@@ -356,7 +356,7 @@ void EditorHoverPopup::applyAppearance()
     };
     const QColor surface = theme.panelBackground;
     const QColor headerColor = tint(surface, accent, dark ? .09 : .055);
-    const QColor border = tint(surface, accent, dark ? .3 : .25);
+    const QColor border = InsightVisualStyle::subtleBorder(surface, theme.textPrimary);
     setStyleSheet(QStringLiteral(
         "QFrame#editorHoverPopup {background:%1; border:1px solid %2; border-radius:14px;}"
         "QWidget#peekHeader {background:%3; border-top-left-radius:13px; border-top-right-radius:13px;}"

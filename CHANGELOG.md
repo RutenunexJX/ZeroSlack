@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.25.8] - 2026-09-11
+
+- Softened fixed-panel, toolbar and table-header separators using theme-relative border colors, and simplified panel-title frames to bottom separators.
+- Softened information-popup and radial-menu outlines while retaining focus indicators, graph rendering and the native-shadow fix; added no animation.
+
 ## [0.25.7] - 2026-09-11
 
 - Disabled the Windows native rectangular shadow around the transparent radial menu, removing stray lines along its right and bottom edges.

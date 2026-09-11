@@ -1,11 +1,39 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.7`
+Product version: `v0.25.8`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## Pending UI refinement — requirements synchronized 2026-09-11
+
+弱边框部分纳入 v0.25.8，见下文；其余内容仍为候选。当前不新增动效。
+
+### 弱边框与表面层级
+
+- 用轻微背景明度差区分区域：编辑区最亮，侧栏和底栏略暗；沿用现有主题、布局及各专用图表逻辑。
+- 固定面板保持连续、平坦，减少框中框和密集分隔线，仅在必要的调整尺寸边界保留弱分隔线。
+- 浮窗使用轻微描边和柔和短阴影；不得恢复圆环菜单透明窗口的 Windows 矩形阴影。
+- 选中行使用低饱和强调色，普通行保持统一背景。
+- 已查看侧对话参考图，仅采纳表面层级和弱边框方向。Project/Settings 继续遵循当前图标入口规则，图表内容仅为示意。参考图本地路径：`C:/Users/14971/.codex/generated_images/01a08fac-ef9b-7631-8600-2494f37b4d37/exec-cb77852e-9d66-4423-a56d-cc2388ebbf86.png`。
+
+### 克制的微动效
+
+以下时长为建议初值，尚非逐项确认的硬性参数。
+
+- 第一轮优先：按钮背景悬停/按下 80–120ms；Files/Design/Pinloom 条目底纹 80–100ms；信息浮窗原位淡入约 100ms、关闭约 60ms；圆环菜单及子项条淡入/底纹过渡 60–100ms。图标不缩放、不弹跳。
+- 后续候选：侧栏宽度过渡 120–160ms，先验证编辑器重排及图表性能；底栏沿用现有约 140ms；分段选中底纹 100–140ms；Activity 数字更新时背景轻微提亮一次 120–180ms；复制成功图标短暂改为勾号约 800ms。
+- 动画应可中断，菜单立即可操作；代码输入、光标、滚动、图表拖动和连续缩放保持即时响应。
+- 建议统一“减少动画”设置，优先复用 Qt Widgets、InsightVisualStyle 和 PanelLayoutController 现有主题、密度及动画基础。
+
+## Weak borders — 2026-09-11 (v0.25.8)
+
+- Fixed panel boundaries, tab/toolbar separators and table headers use subtle theme-relative border colors; panel title labels use a bottom separator instead of a surrounding box.
+- Information popups and the radial menu use neutral, low-contrast outlines. The radial popup retains its disabled Windows rectangular shadow.
+- Focus indicators, selected markers, graph internals, layout and existing animation behavior remain unchanged; no new animation is introduced.
+- Light/dark screenshot review and four relevant regression checks passed.
 
 ## Popup shadow correction — 2026-09-11 (v0.25.7)
 

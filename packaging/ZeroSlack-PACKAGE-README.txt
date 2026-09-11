@@ -1,4 +1,4 @@
-ZeroSlack v0.25.7
+ZeroSlack v0.25.8
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -43,6 +43,8 @@ with distinct hover and selection backgrounds. Focus Mode has been removed.
 Ctrl+Space hides F24-exclusive commands; F24 Command Mode retains those commands.
 The themed title bar stays visible in its own row without covering the editor.
 Rounded controls and graph nodes share a scalable outline icon system.
+Fixed-panel separators and popup outlines use subtle theme-relative borders.
+Panel titles use bottom separators; this visual update adds no animation.
 The editor context menu uses an icon-only ring and rounded rectangular action
 bars. Hover for names and unavailable reasons; gray actions cannot execute.
 Escape, the center close button, or an outside click dismisses the menu.

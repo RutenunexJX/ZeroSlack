@@ -258,6 +258,7 @@ class InsightVisualStyle
 public:
     static const InsightTheme& theme();
     static const InsightTheme& theme(ThemeMode mode);
+    static QColor subtleBorder(const QColor& surface, const QColor& foreground);
 
     static QColor roleColor(InsightVisualRole role);
     static QColor roleColor(InsightVisualRole role, ThemeMode mode);

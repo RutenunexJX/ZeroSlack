@@ -1161,7 +1161,7 @@ void PanelLayoutController::updateDrawerStyle()
     const InsightTheme& theme = InsightVisualStyle::theme();
     const QColor background = theme.surface.panel;
     const QColor text = theme.textPrimary;
-    const QColor border = theme.border;
+    const QColor border = InsightVisualStyle::subtleBorder(background, text);
     const QColor hover = theme.button.backgroundHover;
     const QColor active = theme.itemView.selectedBackground;
     const QColor accent = theme.focus.ring;

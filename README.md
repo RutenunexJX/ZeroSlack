@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.7`
+Current version: `v0.25.8`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
