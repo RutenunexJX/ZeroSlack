@@ -20,6 +20,7 @@
 #include <QSettings>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QScreen>
 #include <QSlider>
 #include <QLabel>
@@ -31,6 +32,7 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QWindow>
+#include <QMenu>
 
 #include <iostream>
 #include <limits>
@@ -251,7 +253,10 @@ bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
         && a.floatingX == b.floatingX && a.floatingY == b.floatingY
         && a.floatingWidth == b.floatingWidth && a.floatingHeight == b.floatingHeight
         && a.floatingScreenName == b.floatingScreenName
-        && a.floatingGeometryValid == b.floatingGeometryValid;
+        && a.floatingGeometryValid == b.floatingGeometryValid
+        && a.floatingInstances == b.floatingInstances && a.floatingCollapsed == b.floatingCollapsed
+        && a.documentFloatingLayouts == b.documentFloatingLayouts
+        && a.documentFloatingOrder == b.documentFloatingOrder;
 }
 
 void verifyStateCompatibility(const QStringList& arguments)
@@ -288,7 +293,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     const auto restored = controller.restoreState(initial);
     QApplication::processEvents();
     const auto captured = controller.captureState();
-    check(ContextWorkspaceState::kVersion == 4 && restored.restoredResources == 2
+    check(ContextWorkspaceState::kVersion == 5 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
           "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
 
@@ -555,7 +560,7 @@ void verifyFloatingGeometryRoundtrip()
               && saved.floatingScreenName == window->screen()->name(),
           "floating_geometry: native frame rectangle and screen name are captured");
     controller.restoreState(saved);
-    check(ContextWorkspaceState::kVersion == 4 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 5 && sameState(saved, controller.captureState()),
           "floating_geometry: all fields survive capture and restore independently of overlay size");
     controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
     QApplication::processEvents();
@@ -674,16 +679,357 @@ void verifySingleFloatingInstance()
 {
     PlacementFixture fixture;
     auto& controller = *fixture.controller;
+    int nativeCount = 0;
+    QPointer<QWidget> previousOverlay;
     for (bool detachable : {false, true, true, false}) {
-        QPointer<QWidget> previous = controller.floatingSurface()->view();
         fixture.counters.detachable = detachable;
         const auto item = resource(QString::number(fixture.counters.created));
         controller.openResource(item, floatingPlacement);
         processDeferredDeletes();
-        check(previous.isNull() && int(controller.peekHost()->hasResource()) + int(controller.floatingWindow()->hasResource()) == 1
-                  && controller.floatingSurface()->resource() == item,
-              "single_floating_instance: replacing overlay/native resources always disposes the old view");
+        if (detachable) ++nativeCount;
+        else {
+            check(previousOverlay.isNull(), "single_overlay: replacement disposes only the previous overlay view");
+            previousOverlay = controller.peekHost()->view();
+        }
+        check(controller.peekHost()->hasResource() && controller.floatingWindows().size() == nativeCount
+                  && controller.floatingSurface()->resource() == item && !previousOverlay.isNull(),
+              "multiple_floating_instances: native views coexist with one unchanged overlay");
     }
+    const auto saved = controller.captureState();
+    const QRect overlayGeometry = controller.peekHost()->geometry();
+    QSignalSpy closed(&controller, &ContextWorkspaceController::resourceClosed);
+    controller.setFloatingCollapsed(true);
+    check(!controller.peekHost()->isVisible() && controller.peekHost()->hasResource()
+              && controller.peekHost()->view() == previousOverlay && closed.isEmpty(),
+          "collapse_overlay: one toggle hides the live overlay without disposing it");
+    controller.setFloatingCollapsed(false);
+    check(controller.peekHost()->isVisible() && controller.peekHost()->geometry() == overlayGeometry
+              && sameState(saved, controller.captureState()) && closed.isEmpty(),
+          "expand_overlay: the overlay and native layouts survive the same toggle exactly");
+    controller.closeFloatingResource(controller.floatingWindows().first()->resource().stableKey());
+    controller.peekHost()->setPreferredSize(QSize(500, 550));
+    emit controller.peekHost()->preferredSizeResetRequested();
+    check(controller.peekHost()->preferredSize() == QSize(460, 510)
+              && controller.peekHost()->view() == previousOverlay,
+          "multi_overlay_reset: overlay resets its own resource size after another native surface closes");
+}
+
+void verifyMultipleFloatingWindows()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    for (const QString& id : {QStringLiteral("one"), QStringLiteral("two"), QStringLiteral("three")})
+        controller.openResource(resource(id), floatingPlacement);
+    const auto hosts = controller.floatingWindows();
+    check(hosts.size() == 3, "multi_instances: three native windows coexist for distinct resources");
+    if (hosts.size() != 3) return;
+    check(hosts[0]->isWindow() && hosts[1]->isWindow() && hosts[2]->isWindow()
+              && hosts[0]->view() != hosts[1]->view() && hosts[1]->view() != hosts[2]->view()
+              && hosts[0]->view() != hosts[2]->view()
+              && hosts[0]->frameGeometry() != hosts[1]->frameGeometry()
+              && hosts[1]->frameGeometry() != hosts[2]->frameGeometry()
+              && hosts[0]->frameGeometry() != hosts[2]->frameGeometry()
+              && hosts[1]->screen()->availableGeometry().contains(hosts[1]->frameGeometry())
+              && hosts[2]->screen()->availableGeometry().contains(hosts[2]->frameGeometry()),
+          "multi_cascade: native instances have distinct views and distinct visible rectangles");
+    QWidget* original = hosts[0]->view();
+    const int created = fixture.counters.created;
+    controller.openResource(resource("one"), floatingPlacement);
+    check(controller.floatingWindows().size() == 3 && hosts[0]->view() == original && fixture.counters.created == created,
+          "multi_unique_resource: opening an existing resource focuses without creating a view");
+    const auto saved = controller.captureState();
+    QSignalSpy closed(&controller, &ContextWorkspaceController::resourceClosed);
+    controller.setFloatingCollapsed(true);
+    check(!hosts[0]->isVisible() && !hosts[1]->isVisible() && !hosts[2]->isVisible()
+              && hosts[0]->hasResource() && hosts[1]->hasResource() && hosts[2]->hasResource() && closed.isEmpty(),
+          "multi_collapse: hiding preserves every resource and emits no close signal");
+    controller.setFloatingCollapsed(false);
+    check(hosts[0]->isVisible() && hosts[1]->isVisible() && hosts[2]->isVisible()
+              && sameState(saved, controller.captureState()) && closed.isEmpty(),
+          "multi_expand: all captured geometry fields survive hide and restore exactly");
+    QApplication::processEvents();
+    controller.focusResource(resource("two").stableKey());
+    QApplication::processEvents();
+    controller.dockWidget()->hide();
+    fixture.window.centralWidget()->setFocusPolicy(Qt::StrongFocus);
+    fixture.window.activateWindow();
+    fixture.window.centralWidget()->setFocus();
+    QApplication::processEvents();
+    controller.rail()->actions().constFirst()->trigger();
+    check(controller.floatingSurface()->view() == hosts[1]->view() && hosts[1]->isVisible() && fixture.counters.created == created,
+          "multi_rail_focus: left click selects the most recently focused instance without cycling");
+    controller.rail()->actions().constFirst()->trigger();
+    check(!hosts[1]->isVisible() && hosts[1]->hasResource() && closed.isEmpty(),
+          "multi_rail_hide: left click hides the active native instance without closing");
+    controller.rail()->actions().constFirst()->trigger();
+    check(hosts[1]->isVisible() && fixture.counters.created == created,
+          "multi_rail_restore: left click restores the same most recent native instance");
+    std::unique_ptr<QMenu> menu(controller.createRailContextMenu("mock"));
+    auto* collect = menu->findChild<QAction*>("contextCollectFloating");
+    check(collect && collect->isEnabled(), "multi_menu: controller offers collecting existing floating views");
+    if (collect) collect->trigger();
+    check(controller.floatingWindows().isEmpty() && controller.dockHost()->resourceCount() == 3
+              && controller.dockHost()->viewForResource(resource("one").stableKey()) == original && fixture.counters.created == created,
+          "multi_collect: every native view moves to the sidebar without reconstruction");
+}
+
+void verifyFloatingRestoreLimit()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    ContextWorkspaceState saved;
+    saved.valid = true;
+    saved.floatingCollapsed = true;
+    const QRect available = fixture.window.screen()->availableGeometry();
+    for (int i = 0; i < 20; ++i) {
+        ContextFloatingInstanceState instance;
+        instance.resource = resource(QString::number(i)).toVariantMap();
+        instance.x = available.x(); instance.y = available.y();
+        instance.width = ContextWorkspaceState::boundedPeekWidth(available.width() / 2);
+        instance.height = ContextWorkspaceState::boundedPeekHeight(available.height() / 2);
+        instance.geometryValid = true;
+        instance.screenName = fixture.window.screen()->name();
+        saved.floatingInstances.append(instance);
+    }
+    const auto result = controller.restoreState(saved);
+    check(controller.floatingWindows().size() == 16 && result.restoredResources == 16
+              && result.skippedResources == 4 && !result.warnings.isEmpty(),
+          "multi_restore_limit: restores exactly 16 instances and reports all four excess entries");
+    bool hidden = true;
+    for (auto* host : controller.floatingWindows()) hidden &= !host->isVisible();
+    check(hidden && controller.floatingCollapsed(), "multi_restore_collapsed: persisted collapse state keeps all restored views hidden");
+    auto* toggle = controller.rail()->findChild<QAction*>("contextFloatingCollapse");
+    check(toggle && toggle->isChecked() && toggle->text() == "Restore floating views",
+          "multi_restore_toggle: persisted collapse state restores the matching toggle label");
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("instances.ini"));
+    WorkspaceSessionState session;
+    session.workspaceRoot = controller.workspaceRoot();
+    session.ui.contextWorkspace = controller.captureState();
+    check(service.save(session).saved && sameState(session.ui.contextWorkspace, service.load(session.workspaceRoot).state.ui.contextWorkspace),
+          "v5_wire_roundtrip: all 16 resource geometries and collapsed state survive production serialization");
+    controller.setFloatingCollapsed(false);
+    auto* host = controller.floatingWindows().first();
+    const auto& first = saved.floatingInstances.first();
+    check(host->frameGeometry() == QRect(first.x, first.y, first.width, first.height),
+          "native_frame_invariant: setView returns the exact restored outer rectangle after native show");
+}
+
+void verifyV4ContextInput()
+{
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("v4.ini"));
+    WorkspaceSessionState session;
+    session.workspaceRoot = temporary.path();
+    auto& expected = session.ui.contextWorkspace;
+    expected.valid = true;
+    expected.peekWidth = 620; expected.peekHeight = 530; expected.dockWidth = 490;
+    expected.dockVisible = true; expected.railVisible = false;
+    expected.pinnedResources = {resource("v4").toVariantMap()};
+    expected.activePinnedResourceKey = "mock:v4";
+    expected.providerStates = {{"mock", QVariantMap{{"query", "v4"}}}};
+    expected.floatingX = 80; expected.floatingY = 90;
+    expected.floatingWidth = 600; expected.floatingHeight = 500;
+    expected.floatingScreenName = "saved screen"; expected.floatingGeometryValid = true;
+    service.save(session);
+    QSettings settings(temporary.filePath("v4.ini"), QSettings::IniFormat);
+    const QString key = settings.allKeys().first();
+    auto document = QJsonDocument::fromJson(settings.value(key).toByteArray()).object();
+    auto ui = document.value("ui").toObject();
+    auto context = ui.value("contextWorkspace").toObject();
+    context.insert("version", 4);
+    context.insert("floatingCollapsed", true);
+    context.insert("floatingInstances", QJsonArray{QJsonObject{{"resource", QJsonObject::fromVariantMap(resource("ignored").toVariantMap())}}});
+    ui.insert("contextWorkspace", context); document.insert("ui", ui);
+    settings.setValue(key, QJsonDocument(document).toJson(QJsonDocument::Compact)); settings.sync();
+    const auto loaded = service.load(temporary.path());
+    check(loaded.loaded && sameState(expected, loaded.state.ui.contextWorkspace)
+              && loaded.state.ui.contextWorkspace.floatingInstances.isEmpty() && !loaded.state.ui.contextWorkspace.floatingCollapsed,
+          "v4_input: every legacy field survives while v5 instance and collapse keys are ignored");
+}
+
+void verifyRailContextMenuSignal()
+{
+    ContextRail rail;
+    rail.addEntry({"provider", "Provider", {}, {}});
+    rail.resize(60, 200); rail.show(); QApplication::processEvents();
+    QSignalSpy requested(&rail, &ContextRail::entryContextMenuRequested);
+    const QPoint point = rail.actionGeometry(rail.actions().first()).center();
+    QMetaObject::invokeMethod(&rail, "customContextMenuRequested", Qt::DirectConnection, Q_ARG(QPoint, point));
+    check(requested.size() == 1 && requested.first().at(0).toString() == "provider"
+              && requested.first().at(1).toPoint() == rail.mapToGlobal(point),
+          "rail_context_menu_signal: rail translates the requested action position into id and global coordinates");
+}
+
+void verifyDocumentBindingVisibility()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    controller.setActiveDocument("rtl/a.sv");
+    const ContextPlacement bound{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound};
+    check(controller.openResource(resource("bound-a"), bound), "binding_open: native transient document binding is supported");
+    auto* host = controller.floatingWindow();
+    const auto original = host->resource();
+    QWidget* view = host->view();
+    const QRect rectangle = host->frameGeometry();
+    controller.openResource(resource("global"), floatingPlacement);
+    auto* global = controller.floatingWindow();
+    QSignalSpy closed(&controller, &ContextWorkspaceController::resourceClosed);
+    controller.setActiveDocument("rtl/b.sv");
+    check(!host->isVisible() && host->hasResource() && global->isVisible() && closed.isEmpty(),
+          "binding_visibility: switching documents hides bound views and retains global views");
+    check(host->resource() == original && host->view() == view,
+          "binding_content: changing active documents never replaces resource identity or contents");
+    controller.setActiveDocument("rtl/a.sv");
+    check(host->isVisible() && host->frameGeometry() == rectangle && host->resource() == original && host->view() == view,
+          "binding_return: switching back restores the original view and exact outer geometry");
+    controller.setFloatingCollapsed(true);
+    controller.setActiveDocument("rtl/b.sv");
+    controller.setActiveDocument("rtl/a.sv");
+    check(!host->isVisible() && !global->isVisible() && host->hasResource() && closed.isEmpty(),
+          "binding_collapse_precedence: active bound views remain hidden while all views are collapsed");
+    controller.setFloatingCollapsed(false);
+    const int created = fixture.counters.created;
+    check(controller.setResourceBinding(original.stableKey(), ContextBinding::Global)
+              && controller.boundDocument(original.stableKey()).isEmpty() && host->view() == view,
+          "binding_to_global: binding changes keep the same live QWidget");
+    controller.setActiveDocument("rtl/b.sv");
+    check(host->isVisible() && controller.setResourceBinding(original.stableKey(), ContextBinding::DocumentBound)
+              && controller.boundDocument(original.stableKey()) == "rtl/b.sv" && host->view() == view
+              && fixture.counters.created == created,
+          "binding_to_document: global to document changes preserve identity and creation count");
+    controller.setActiveDocument("rtl/a.sv");
+    check(!host->isVisible() && controller.captureState().documentFloatingLayouts.value("rtl/a.sv").isEmpty(),
+          "binding_reassignment: previous document records cannot resurrect a moved resource");
+    QString reason;
+    check(!controller.openResource(resource("docked-bound"), {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::DocumentBound}, &reason)
+              && !reason.isEmpty() && fixture.counters.created == created,
+          "binding_docked_rejected: sidebar document binding remains unsupported without creating a view");
+}
+
+void verifyNoActiveDocumentBinding()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    fixture.counters.activation = resource("menu-bound");
+    auto& controller = *fixture.controller;
+    controller.setActiveDocument("");
+    QString reason;
+    check(!controller.openResource(resource("no-document"), {ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound}, &reason)
+              && !reason.isEmpty() && fixture.counters.created == 0 && controller.floatingWindows().isEmpty(),
+          "binding_no_active_document: binding fails explicitly without falling back or constructing views");
+    std::unique_ptr<QMenu> menu(controller.createRailContextMenu("mock"));
+    auto* bound = menu->findChild<QAction*>("contextNewDocumentFloating");
+    check(bound && !bound->isEnabled() && !bound->toolTip().isEmpty(),
+          "binding_menu_disabled: no-document creation has a disabled action and explanatory tooltip");
+    controller.setActiveDocument("rtl/a.sv");
+    menu.reset(controller.createRailContextMenu("mock"));
+    bound = menu->findChild<QAction*>("contextNewDocumentFloating");
+    check(bound && bound->isEnabled(), "binding_menu_enabled: native provider can create a document-bound view");
+    if (bound) bound->trigger();
+    QWidget* view = controller.floatingWindow()->view();
+    menu.reset(controller.createRailContextMenu("mock"));
+    auto* global = menu->findChild<QAction*>("contextBindingGlobal");
+    if (global) global->trigger();
+    check(global && controller.boundDocument(resource("menu-bound").stableKey()).isEmpty()
+              && controller.floatingWindow()->view() == view && fixture.counters.created == 1,
+          "binding_menu_switch: controller-built binding actions reuse the existing native view");
+}
+
+void verifyDocumentLayoutRoundtrip()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    controller.setActiveDocument("rtl/a.sv");
+    controller.openResource(resource("a-one"), {ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound});
+    check(controller.openResource(resource("a-two"), {ContextSurface::Floating, ContextPersistence::Kept, ContextBinding::DocumentBound}),
+          "binding_kept_open: kept native document-bound placements are supported");
+    const auto saved = controller.captureState();
+    QPointer<QWidget> first = controller.floatingWindows()[0]->view();
+    QPointer<QWidget> second = controller.floatingWindows()[1]->view();
+    controller.setActiveDocument("rtl/b.sv");
+    controller.documentClosed("rtl/a.sv");
+    processDeferredDeletes();
+    check(first.isNull() && second.isNull() && controller.floatingWindows().isEmpty()
+              && controller.captureState().documentFloatingLayouts.value("rtl/a.sv") == saved.documentFloatingLayouts.value("rtl/a.sv"),
+          "document_close_archives: closing an inactive document releases views while retaining its exact layout");
+    const int created = fixture.counters.created;
+    controller.setActiveDocument("rtl/a.sv");
+    check(controller.floatingWindows().size() == 2 && fixture.counters.created == created + 2
+              && controller.captureState().documentFloatingLayouts.value("rtl/a.sv") == saved.documentFloatingLayouts.value("rtl/a.sv"),
+          "document_reopen_layout: reopening restores both resources, persistence and exact geometry fields");
+    const auto restored = controller.captureState();
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("documents.ini"));
+    WorkspaceSessionState session;
+    session.workspaceRoot = controller.workspaceRoot(); session.ui.contextWorkspace = restored;
+    check(service.save(session).saved && sameState(restored, service.load(session.workspaceRoot).state.ui.contextWorkspace),
+          "document_layout_wire: path records and explicit recent-use order survive production serialization");
+    controller.restoreState(restored);
+    check(sameState(restored, controller.captureState()) && controller.floatingWindows().size() == 2,
+          "document_layout_restore: restoring workspace state rebuilds the active document layout exactly");
+    auto* host = controller.floatingWindows().last();
+    QWidget* view = host->view();
+    check(controller.setResourceBinding(host->resource().stableKey(), ContextBinding::Global)
+              && host->view() == view && controller.captureState().floatingInstances.first().kept,
+          "binding_kept_global: changing kept binding retains persistence and the live QWidget");
+    const auto keptGlobal = controller.captureState();
+    controller.restoreState(keptGlobal);
+    check(sameState(keptGlobal, controller.captureState()),
+          "binding_kept_global_restore: changing to global leaves a supported persisted placement");
+    controller.closeFloatingResource(resource("a-one").stableKey());
+    controller.setActiveDocument("rtl/b.sv"); controller.setActiveDocument("rtl/a.sv");
+    check(controller.floatingWindows().size() == 1,
+          "document_explicit_close: closing a view removes its record so switching back does not resurrect it");
+}
+
+void verifyDocumentLayoutEviction()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    for (int i = 0; i < 33; ++i) {
+        const QString path = QStringLiteral("rtl/%1.sv").arg(i);
+        controller.setActiveDocument(path);
+        controller.openResource(resource(QString::number(i)), {ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound});
+        controller.documentClosed(path);
+    }
+    auto saved = controller.captureState();
+    check(saved.documentFloatingLayouts.size() == 32 && saved.documentFloatingOrder.size() == 32
+              && !saved.documentFloatingLayouts.contains("rtl/0.sv") && saved.documentFloatingOrder.first() == "rtl/1.sv",
+          "document_layout_limit: 33 archived documents retain 32 and evict the oldest explicit-use entry");
+    controller.setActiveDocument("rtl/1.sv"); controller.documentClosed("rtl/1.sv");
+    controller.setActiveDocument("rtl/33.sv");
+    controller.openResource(resource("33"), {ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound});
+    controller.documentClosed("rtl/33.sv");
+    saved = controller.captureState();
+    check(saved.documentFloatingLayouts.size() == 32 && saved.documentFloatingLayouts.contains("rtl/1.sv")
+              && !saved.documentFloatingLayouts.contains("rtl/2.sv") && saved.documentFloatingOrder.last() == "rtl/33.sv",
+          "document_layout_recency: revisiting an older document updates eviction order deterministically");
+    controller.restoreState(saved);
+    check(sameState(saved, controller.captureState()), "document_layout_lru_restore: all 32 archived layouts and their order restore exactly");
+}
+
+void verifyNativeFrameCorrection()
+{
+    PlacementFixture fixture;
+    ContextFloatingWindow host(&fixture.window, fixture.window.centralWidget());
+    const QRect available = fixture.window.screen()->availableGeometry();
+    ContextWorkspaceState geometry;
+    geometry.floatingGeometryValid = true;
+    geometry.floatingWidth = ContextWorkspaceState::boundedPeekWidth(available.width() / 2);
+    geometry.floatingHeight = ContextWorkspaceState::boundedPeekHeight(available.height() / 2);
+    geometry.floatingX = available.x() + (available.width() - geometry.floatingWidth) / 2;
+    geometry.floatingY = available.y() + (available.height() - geometry.floatingHeight) / 2;
+    geometry.floatingScreenName = host.screen()->name();
+    host.restoreGeometry(geometry);
+    host.setView(resource("frame"), new QLabel("frame"));
+    check(host.frameGeometry() == QRect(geometry.floatingX, geometry.floatingY, geometry.floatingWidth, geometry.floatingHeight),
+          "native_frame_immediate: setView returns the exact saved outer frame before any test event pumping");
 }
 }
 
@@ -701,6 +1047,15 @@ int main(int argc, char* argv[])
     verifyV3ContextInput();
     verifyFloatingOpacityAndSettings();
     verifySingleFloatingInstance();
+    verifyMultipleFloatingWindows();
+    verifyFloatingRestoreLimit();
+    verifyV4ContextInput();
+    verifyRailContextMenuSignal();
+    verifyDocumentBindingVisibility();
+    verifyNoActiveDocumentBinding();
+    verifyDocumentLayoutRoundtrip();
+    verifyDocumentLayoutEviction();
+    verifyNativeFrameCorrection();
 
     const ContextResource original = resource(QStringLiteral("a"));
     QString parseFailure;

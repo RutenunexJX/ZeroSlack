@@ -115,8 +115,16 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
         storedScreenName = screen ? screen->name() : QString();
     }
     applyGeometry();
+    // Ignore show-time move/resize notifications until the saved outer frame is applied.
+    const QRect requestedGeometry = storedGeometry;
+    applyingGeometry = true;
     view->show();
     show();
+    applyingGeometry = false;
+    if (frameGeometry() != requestedGeometry) {
+        storedGeometry = requestedGeometry;
+        applyGeometry();
+    }
     raise();
     activateWindow();
     rememberGeometry();

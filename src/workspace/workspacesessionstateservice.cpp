@@ -15,6 +15,39 @@
 #include <algorithm>
 
 namespace {
+QJsonArray floatingInstancesToJson(const QList<ContextFloatingInstanceState>& instances)
+{
+    QJsonArray result;
+    for (const auto& instance : instances) {
+        result.append(QJsonObject{
+            {"resource", QJsonObject::fromVariantMap(instance.resource)},
+            {"x", instance.x}, {"y", instance.y},
+            {"width", ContextWorkspaceState::boundedPeekWidth(instance.width)},
+            {"height", ContextWorkspaceState::boundedPeekHeight(instance.height)},
+            {"screenName", instance.screenName}, {"geometryValid", instance.geometryValid}, {"kept", instance.kept}});
+    }
+    return result;
+}
+
+QList<ContextFloatingInstanceState> floatingInstancesFromJson(const QJsonArray& array)
+{
+    QList<ContextFloatingInstanceState> result;
+    for (const auto& entry : array) {
+        const auto object = entry.toObject();
+        ContextFloatingInstanceState instance;
+        instance.resource = object.value("resource").toObject().toVariantMap();
+        instance.x = object.value("x").toInt();
+        instance.y = object.value("y").toInt();
+        instance.width = ContextWorkspaceState::boundedPeekWidth(object.value("width").toInt(ContextWorkspaceState::kDefaultPeekWidth));
+        instance.height = ContextWorkspaceState::boundedPeekHeight(object.value("height").toInt(ContextWorkspaceState::kDefaultPeekHeight));
+        instance.screenName = object.value("screenName").toString();
+        instance.geometryValid = object.value("geometryValid").toBool();
+        instance.kept = object.value("kept").toBool();
+        result.append(instance);
+    }
+    return result;
+}
+
 constexpr const char* kLocalSchema =
     "ZeroSlack.LocalWorkspaceSession";
 constexpr const char* kLegacySchema =
@@ -311,6 +344,13 @@ QJsonObject sessionObject(
         ContextWorkspaceState::boundedPeekHeight(state.ui.contextWorkspace.floatingHeight));
     contextWorkspace.insert(QStringLiteral("floatingScreenName"), state.ui.contextWorkspace.floatingScreenName);
     contextWorkspace.insert(QStringLiteral("floatingGeometryValid"), state.ui.contextWorkspace.floatingGeometryValid);
+    contextWorkspace.insert(QStringLiteral("floatingInstances"), floatingInstancesToJson(state.ui.contextWorkspace.floatingInstances));
+    contextWorkspace.insert(QStringLiteral("floatingCollapsed"), state.ui.contextWorkspace.floatingCollapsed);
+    QJsonObject documentLayouts;
+    for (auto it = state.ui.contextWorkspace.documentFloatingLayouts.cbegin(); it != state.ui.contextWorkspace.documentFloatingLayouts.cend(); ++it)
+        documentLayouts.insert(it.key(), floatingInstancesToJson(it.value()));
+    contextWorkspace.insert(QStringLiteral("documentFloatingLayouts"), documentLayouts);
+    contextWorkspace.insert(QStringLiteral("documentFloatingOrder"), QJsonArray::fromStringList(state.ui.contextWorkspace.documentFloatingOrder));
     ui.insert(QStringLiteral("contextWorkspace"), contextWorkspace);
     object.insert(QStringLiteral("ui"), ui);
 
@@ -581,6 +621,15 @@ void restoreUi(
                     contextWorkspace.value(QStringLiteral("floatingHeight")).toInt(ContextWorkspaceState::kDefaultPeekHeight));
                 state.floatingScreenName = contextWorkspace.value(QStringLiteral("floatingScreenName")).toString();
                 state.floatingGeometryValid = contextWorkspace.value(QStringLiteral("floatingGeometryValid")).toBool(false);
+            }
+            if (contextVersion >= ContextWorkspaceState::kFloatingInstancesVersion) {
+                ui->contextWorkspace.floatingInstances = floatingInstancesFromJson(contextWorkspace.value("floatingInstances").toArray());
+                ui->contextWorkspace.floatingCollapsed = contextWorkspace.value("floatingCollapsed").toBool();
+                const auto layouts = contextWorkspace.value("documentFloatingLayouts").toObject();
+                for (auto it = layouts.begin(); it != layouts.end(); ++it)
+                    ui->contextWorkspace.documentFloatingLayouts.insert(it.key(), floatingInstancesFromJson(it.value().toArray()));
+                for (const auto& entry : contextWorkspace.value("documentFloatingOrder").toArray())
+                    ui->contextWorkspace.documentFloatingOrder.append(entry.toString());
             }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(

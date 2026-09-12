@@ -388,6 +388,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextpeekhost.cpp
     src/ui/contextdockhost.cpp
     src/ui/contextworkspacecontroller.cpp
+    src/ui/contextworkspacefloating.cpp
+    src/ui/contextworkspacedocuments.cpp
     src/integrations/pinloom/pinloomhostclient.cpp
     src/integrations/pinloom/pinloomcodelinkstore.cpp
     src/integrations/pinloom/pinloomcodelinkcoordinator.cpp

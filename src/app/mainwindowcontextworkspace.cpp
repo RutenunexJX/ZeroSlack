@@ -118,6 +118,10 @@ void MainWindow::setupContextWorkspace()
                     const QString&,
                     const QString& path) {
                     controller->setWorkspaceRoot(path);
+                    if (tabManager) {
+                        const QString file = tabManager->getCurrentDocumentMetadata().fileName;
+                        controller->setActiveDocument(file.isEmpty() ? QString() : QDir(path).relativeFilePath(file));
+                    }
                     coordinator->setWorkspaceRoot(path);
                     requestLiveInsightUpdates();
                 });
@@ -131,6 +135,27 @@ void MainWindow::setupContextWorkspace()
                     coordinator->setWorkspaceRoot({});
                     requestLiveInsightUpdates();
                 });
+    }
+
+    if (tabManager) {
+        const auto relativeDocument = [controller = contextWorkspaceController.get()](const QString& file) {
+            if (file.isEmpty() || controller->workspaceRoot().isEmpty()) return QString();
+            return QDir(controller->workspaceRoot()).relativeFilePath(file);
+        };
+        connect(tabManager.get(), &TabManager::activeDocumentChanged, contextWorkspaceController.get(),
+                [controller = contextWorkspaceController.get(), relativeDocument](const DocumentSnapshot& snapshot) {
+                    controller->setActiveDocument(relativeDocument(snapshot.fileName));
+                });
+        connect(tabManager.get(), &TabManager::tabClosed, contextWorkspaceController.get(),
+                [this, controller = contextWorkspaceController.get(), relativeDocument](const QString& file) {
+                    for (auto* editor : tabManager->openEditors()) {
+                        auto* document = tabManager->sharedDocumentForEditor(editor);
+                        if (document && QDir::cleanPath(document->fileName()).compare(QDir::cleanPath(file), Qt::CaseInsensitive) == 0)
+                            return;
+                    }
+                    controller->documentClosed(relativeDocument(file));
+                });
+        contextWorkspaceController->setActiveDocument(relativeDocument(tabManager->getCurrentDocumentMetadata().fileName));
     }
 
     workspaceHubSession =
@@ -307,7 +332,7 @@ void MainWindow::setupContextWorkspace()
                 if (!contextWorkspaceController)
                     return;
                 if (pinned) {
-                    contextWorkspaceController->pinPeek();
+                    contextWorkspaceController->pinFloatingResource(resource.stableKey());
                 } else {
                     contextWorkspaceController->unpinResource(
                         resource.stableKey());

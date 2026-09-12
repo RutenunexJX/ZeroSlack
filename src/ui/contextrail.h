@@ -35,6 +35,7 @@ public:
 
 signals:
     void entryActivated(const QString& id);
+    void entryContextMenuRequested(const QString& id, const QPoint& globalPos);
 
 private:
     QHash<QString, QAction*> actionsById;

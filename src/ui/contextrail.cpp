@@ -13,6 +13,12 @@ ContextRail::ContextRail(QWidget* parent)
     setToolButtonStyle(Qt::ToolButtonIconOnly);
     setIconSize(QSize(22, 22));
     setVisible(false);
+    setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        QAction* action = actionAt(pos);
+        if (action && actionsById.value(action->data().toString()) == action)
+            emit entryContextMenuRequested(action->data().toString(), mapToGlobal(pos));
+    });
 }
 
 bool ContextRail::addEntry(const ContextRailEntry& entry)
@@ -21,7 +27,9 @@ bool ContextRail::addEntry(const ContextRailEntry& entry)
     if (id.isEmpty() || actionsById.contains(id))
         return false;
 
-    QAction* action = addAction(entry.icon, entry.title);
+    QAction* action = new QAction(entry.icon, entry.title, this);
+    QAction* footer = findChild<QAction*>(QStringLiteral("contextFloatingFooter"));
+    insertAction(footer, action);
     action->setObjectName(
         QStringLiteral("contextRail.%1").arg(id));
     action->setCheckable(true);

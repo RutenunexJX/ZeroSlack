@@ -1,4 +1,4 @@
-ZeroSlack v0.25.12
+ZeroSlack v0.26.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -34,6 +34,12 @@ Navigation and Context remain full-height columns; the bottom drawer occupies
 only the area beneath the editor. Drag the sidebar divider to widen charts.
 Reopening the sidebar retains its width. Settings opens in a central tab;
 supported charts can open in the main area. Explicit Peek previews remain available.
+Detachable Context resources can float in multiple native windows. Right-click a
+Context rail icon to create or focus views, collect them into the sidebar, or
+bind them to the current document. The separate rail toggle hides/restores all
+floating views without closing them. Document layouts retain up to 32 recent
+paths; source editors keep their single overlay. State v5 reads v4, but older
+builds ignore v5 Context state on downgrade.
 
 The left sidebar groups the file tree with Project and Settings icons at the top.
 Click Project for commands. Collapse the entire sidebar and restore it from the title bar.

@@ -21,6 +21,9 @@
 #include <QPixmap>
 #include <QStyle>
 #include <QWidget>
+#include <QApplication>
+#include <QAction>
+#include <QMenu>
 
 #include <array>
 
@@ -96,16 +99,33 @@ ContextWorkspaceController::ContextWorkspaceController(
     mainWindow->addToolBar(Qt::RightToolBarArea, railValue);
 
     peekHostValue = new ContextPeekHost(editorRegion);
-    floatingWindowValue = new ContextFloatingWindow(mainWindow, editorRegion);
     activeFloatingSurface = peekHostValue;
-    connect(floatingWindowValue, &ContextFloatingWindow::pinRequested, this, [this] { pinPeek(); });
-    connect(floatingWindowValue, &ContextFloatingWindow::closeRequested, this, &ContextWorkspaceController::closePeek);
-    connect(floatingWindowValue, &ContextFloatingWindow::fullViewRequested, this, [this] {
-        if (floatingSurfaceFor()->hasResource())
-            emit fullViewRequested(floatingSurfaceFor()->resource());
+    availableFloatingWindow();
+    QAction* footer = railValue->addSeparator();
+    footer->setObjectName(QStringLiteral("contextFloatingFooter"));
+    collapseFloatingAction = railValue->addAction(RoundedIcons::icon(RoundedIcons::Collapse), tr("Hide floating views"));
+    collapseFloatingAction->setObjectName(QStringLiteral("contextFloatingCollapse"));
+    collapseFloatingAction->setCheckable(true);
+    connect(collapseFloatingAction, &QAction::triggered, this, &ContextWorkspaceController::setFloatingCollapsed);
+    connect(railValue, &ContextRail::entryContextMenuRequested, this, [this](const QString& id, const QPoint& pos) {
+        QMenu* menu = createRailContextMenu(id);
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->popup(pos);
     });
-    connect(floatingWindowValue, &ContextFloatingWindow::geometryChanged,
-            this, &ContextWorkspaceController::notifyWorkspaceStateChanged);
+    connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* now) {
+        if (!now) return;
+        for (auto* surface : floatingSurfaces()) {
+            auto* host = dynamic_cast<QWidget*>(surface);
+            if (host == now || host->isAncestorOf(now)) {
+                recordFocus(surface->resource().stableKey());
+                return;
+            }
+        }
+        if (dockHostValue && dockHostValue->isAncestorOf(now))
+            recordFocus(dockHostValue->currentResource().stableKey());
+        else if (editorRegionValue && (now == editorRegionValue || editorRegionValue->isAncestorOf(now)))
+            focusedResourceKey.clear();
+    });
 
     dockValue = new QDockWidget(tr("Context"), mainWindow);
     dockValue->setObjectName(QStringLiteral("contextWorkspaceDock"));
@@ -131,17 +151,17 @@ ContextWorkspaceController::ContextWorkspaceController(
     connect(peekHostValue,
             &ContextPeekHost::pinRequested,
             this,
-            [this]() { pinPeek(); });
+            [this]() { activeFloatingSurface = peekHostValue; pinPeek(); });
     connect(peekHostValue,
             &ContextPeekHost::closeRequested,
             this,
-            &ContextWorkspaceController::closePeek);
+            [this]() { activeFloatingSurface = peekHostValue; closePeek(); });
     connect(peekHostValue,
             &ContextPeekHost::fullViewRequested,
             this,
             [this]() {
-                if (peekHostValue && floatingSurfaceFor()->hasResource())
-                    emit fullViewRequested(floatingSurfaceFor()->resource());
+                if (peekHostValue && peekHostValue->hasResource())
+                    emit fullViewRequested(peekHostValue->resource());
             });
     connect(peekHostValue,
             &ContextPeekHost::preferredSizeChanged,
@@ -172,6 +192,7 @@ ContextWorkspaceController::ContextWorkspaceController(
             &ContextDockHost::currentResourceChanged,
             this,
             [this](const ContextResource& resource) {
+                if (resource.isValid()) recordFocus(resource.stableKey());
                 updateActiveRailEntry();
                 emit activeResourceChanged(resource);
                 notifyWorkspaceStateChanged();
@@ -198,7 +219,10 @@ ContextWorkspaceController::ContextWorkspaceController(
 ContextWorkspaceController::~ContextWorkspaceController()
 {
     restoringState = true;
-    closePeek();
+    for (auto* surface : floatingSurfaces()) {
+        activeFloatingSurface = surface;
+        closePeek();
+    }
     if (dockHostValue) {
         const QStringList keys = dockHostValue->resourceKeys();
         for (const QString& key : keys)
@@ -216,21 +240,8 @@ ContextPeekHost* ContextWorkspaceController::peekHost() const
     return peekHostValue;
 }
 
-ContextFloatingSurface* ContextWorkspaceController::floatingSurfaceFor(
-    const ContextViewCapabilities* capabilities) const
-{
-    if (!capabilities)
-        return activeFloatingSurface;
-    floatingWindowValue->setInitialSize(capabilities->preferredSize());
-    return capabilities->detachable
-        ? static_cast<ContextFloatingSurface*>(floatingWindowValue.data())
-        : static_cast<ContextFloatingSurface*>(peekHostValue.data());
-}
-
 ContextFloatingSurface* ContextWorkspaceController::floatingSurface() const { return floatingSurfaceFor(); }
-ContextFloatingWindow* ContextWorkspaceController::floatingWindow() const { return floatingWindowValue; }
 QWidget* ContextWorkspaceController::floatingWidget() const { return dynamic_cast<QWidget*>(floatingSurfaceFor()); }
-void ContextWorkspaceController::setFloatingOpacity(int percentage) { floatingWindowValue->setIdleOpacity(percentage); }
 
 ContextDockHost* ContextWorkspaceController::dockHost() const
 {
@@ -278,9 +289,9 @@ bool ContextWorkspaceController::unregisterProvider(
     if (it == providers.end())
         return false;
 
-    if (peekHostValue && floatingSurfaceFor()->hasResource()
-        && floatingSurfaceFor()->resource().providerId == id) {
-        closePeek();
+    for (auto* surface : floatingSurfaces()) {
+        if (surface->resource().providerId == id)
+            closeFloatingResource(surface->resource().stableKey());
     }
     if (dockHostValue) {
         const QStringList keys = dockHostValue->resourceKeys();
@@ -337,12 +348,11 @@ bool ContextWorkspaceController::openResource(
         return false;
     }
 
-    if (placement.binding != ContextBinding::Global
-        || (placement.surface == ContextSurface::Floating
-            && placement.persistence == ContextPersistence::Kept)) {
+    if (placement.binding == ContextBinding::DocumentBound
+        && (placement.surface == ContextSurface::Docked || activeDocumentPath.isEmpty())) {
         if (failureReason) {
             *failureReason = QStringLiteral(
-                "Document-bound or floating kept placements are not available yet: %1.")
+                "A document-bound view requires an active document and a floating surface: %1.")
                 .arg(contextPlacementName(placement));
         }
         return false;
@@ -358,7 +368,7 @@ bool ContextWorkspaceController::openResource(
     }
 
     return placement.surface == ContextSurface::Floating
-        ? openInFloatingSurface(resource, *provider, capabilities, failureReason)
+        ? openInFloatingSurface(resource, placement, *provider, capabilities, failureReason)
         : openInDockedSurface(resource, placement, *provider, capabilities, failureReason);
 }
 
@@ -376,6 +386,7 @@ bool ContextWorkspaceController::activateDockedResource(
     dockHostValue->setFullViewAvailable(key, capabilities.supports(ContextPresentation::FullView));
     dockHostValue->activateResource(key);
     showDock(false);
+    recordFocus(key);
     updateActiveRailEntry();
     return true;
 }
@@ -384,6 +395,11 @@ bool ContextWorkspaceController::activateFloatingResource(
     const ContextResource& resource, IContextContentProvider& provider,
     const ContextViewCapabilities& capabilities, QString* failureReason)
 {
+    activeFloatingSurface = surfaceWithResource(resource.stableKey());
+    if (!floatingEligible(resource.stableKey())) {
+        if (failureReason) *failureReason = tr("Switch to the bound document before focusing this view.");
+        return false;
+    }
     if (!provider.activateView(floatingSurfaceFor()->view(), resource)) {
         if (failureReason)
             *failureReason = QStringLiteral("The context provider could not activate the resource.");
@@ -392,8 +408,7 @@ bool ContextWorkspaceController::activateFloatingResource(
     floatingSurfaceFor()->setActionsAvailable(capabilities.supports(ContextPresentation::Pinned),
                                        capabilities.supports(ContextPresentation::FullView));
     floatingSurfaceFor()->updateResource(resource);
-    floatingWidget()->show();
-    floatingWidget()->raise();
+    focusResource(resource.stableKey());
     updateActiveRailEntry();
     return true;
 }
@@ -432,31 +447,59 @@ QWidget* ContextWorkspaceController::createResourceView(
 void ContextWorkspaceController::announceResourceOpened(
     const ContextResource& resource, ContextPlacement placement)
 {
+    recordFocus(resource.stableKey());
     updateActiveRailEntry();
     emit resourceOpened(resource, placement);
     emit activeResourceChanged(resource);
 }
 
 bool ContextWorkspaceController::openInFloatingSurface(
-    const ContextResource& resource, IContextContentProvider& provider,
+    const ContextResource& resource, ContextPlacement placement, IContextContentProvider& provider,
     const ContextViewCapabilities& capabilities, QString* failureReason)
 {
     const QString key = resource.stableKey();
-    if (dockHostValue->containsResource(key))
+    ContextFloatingSurface* target = nullptr;
+    if (placement.binding == ContextBinding::DocumentBound || placement.persistence == ContextPersistence::Kept) {
+        target = floatingSurfaceFor(capabilities);
+        if (target == peekHostValue) {
+            if (failureReason) *failureReason = tr("The editor overlay only supports Floating/Transient/Global: %1.")
+                .arg(contextPlacementName(placement));
+            return false;
+        }
+    }
+    if (dockHostValue->containsResource(key)) {
+        if (placement.binding == ContextBinding::DocumentBound) {
+            if (failureReason) *failureReason = tr("Unpin the sidebar resource before binding it to a document.");
+            return false;
+        }
         return activateDockedResource(resource, provider, capabilities, failureReason);
-    if (floatingSurfaceFor()->hasResource() && floatingSurfaceFor()->resource().stableKey() == key)
+    }
+    if (surfaceWithResource(key)) {
+        if (placement.binding == ContextBinding::DocumentBound || !boundDocument(key).isEmpty())
+            setResourceBinding(key, placement.binding);
+        if (placement.persistence == ContextPersistence::Kept) keptFloatingKeys.insert(key);
         return activateFloatingResource(resource, provider, capabilities, failureReason);
-    ContextFloatingSurface* target = floatingSurfaceFor(&capabilities);
+    }
+    if (!target) target = floatingSurfaceFor(capabilities);
     QWidget* view = createResourceView(resource, provider, dynamic_cast<QWidget*>(target), failureReason);
     if (!view)
         return false;
-    closePeek();
+    if (target->hasResource()) closeFloatingResource(target->resource().stableKey());
     activeFloatingSurface = target;
+    if (placement.binding == ContextBinding::DocumentBound) documentBindings.insert(key, activeDocumentPath);
+    if (placement.persistence == ContextPersistence::Kept) keptFloatingKeys.insert(key);
     floatingSurfaceFor()->setActionsAvailable(capabilities.supports(ContextPresentation::Pinned),
                                        capabilities.supports(ContextPresentation::FullView));
     floatingSurfaceFor()->setView(resource, view);
-    announceResourceOpened(resource, {ContextSurface::Floating, ContextPersistence::Transient,
-                                      ContextBinding::Global});
+    if (auto* host = dynamic_cast<ContextFloatingWindow*>(target)) captureLastFloatingGeometry(host);
+    hiddenFloatingKeys.remove(key);
+    applyFloatingVisibility();
+    if (placement.binding == ContextBinding::DocumentBound) {
+        rememberDocumentLayout(activeDocumentPath);
+        touchDocumentLayout(activeDocumentPath);
+    }
+    announceResourceOpened(resource, placement);
+    notifyWorkspaceStateChanged();
     return true;
 }
 
@@ -496,7 +539,7 @@ bool ContextWorkspaceController::openInDockedSurface(
         if (dockHostValue->containsResource(key))
             return activateDockedResource(resource, provider, capabilities, failureReason);
         // Existing previews retain their surface, just as existing dock tabs do.
-        if (floatingSurfaceFor()->hasResource() && floatingSurfaceFor()->resource().stableKey() == key)
+        if (surfaceWithResource(key))
             return activateFloatingResource(resource, provider, capabilities, failureReason);
         if (!addDockedResource(resource, provider, capabilities, failureReason))
             return false;
@@ -510,8 +553,10 @@ bool ContextWorkspaceController::openInDockedSurface(
             notifyWorkspaceStateChanged();
             return true;
         }
-        if (floatingSurfaceFor()->hasResource() && floatingSurfaceFor()->resource().stableKey() == key)
+        if (auto* surface = surfaceWithResource(key)) {
+            activeFloatingSurface = surface;
             return pinPeek(failureReason);
+        }
         if (!addDockedResource(resource, provider, capabilities, failureReason))
             return false;
         announceResourceOpened(resource, placement);
@@ -560,6 +605,9 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
         return false;
     }
     showDock(dockWasEmpty && !restoringState);
+    documentBindings.remove(resource.stableKey());
+    keptFloatingKeys.remove(resource.stableKey());
+    forgetStoredResource(resource.stableKey());
     updateActiveRailEntry();
     emit resourceOpened(resource, ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global});
     emit activeResourceChanged(resource);
@@ -606,15 +654,20 @@ bool ContextWorkspaceController::unpinResource(
     }
     if (transientDockResourceKey == resourceKey)
         transientDockResourceKey.clear();
-    closePeek();
     const ContextViewCapabilities capabilities = provider->capabilities(resource);
-    activeFloatingSurface = floatingSurfaceFor(&capabilities);
+    ContextFloatingSurface* target = floatingSurfaceFor(capabilities);
+    if (target->hasResource()) closeFloatingResource(target->resource().stableKey());
+    activeFloatingSurface = target;
     floatingSurfaceFor()->setActionsAvailable(
         provider->capabilities(resource).supports(
             ContextPresentation::Pinned),
         provider->capabilities(resource).supports(
             ContextPresentation::FullView));
     floatingSurfaceFor()->setView(resource, view);
+    if (auto* host = dynamic_cast<ContextFloatingWindow*>(target)) captureLastFloatingGeometry(host);
+    hiddenFloatingKeys.remove(resourceKey);
+    applyFloatingVisibility();
+    recordFocus(resourceKey);
     if (dockHostValue->resourceCount() == 0)
         dockValue->hide();
     updateActiveRailEntry();
@@ -661,8 +714,15 @@ void ContextWorkspaceController::closePeek()
     const ContextResource resource = floatingSurfaceFor()->resource();
     QWidget* view = floatingSurfaceFor()->takeView();
     disposeView(resource, view);
+    if (!preservingDocumentLayout) forgetStoredResource(resource.stableKey());
+    documentBindings.remove(resource.stableKey());
+    keptFloatingKeys.remove(resource.stableKey());
+    hiddenFloatingKeys.remove(resource.stableKey());
+    focusOrder.removeAll(resource.stableKey());
+    if (focusedResourceKey == resource.stableKey()) focusedResourceKey.clear();
     updateActiveRailEntry();
     emit resourceClosed(resource);
+    notifyWorkspaceStateChanged();
 }
 
 QString ContextWorkspaceController::workspaceRoot() const
@@ -677,13 +737,26 @@ void ContextWorkspaceController::setWorkspaceRoot(const QString& root)
         return;
     clearResources();
     currentWorkspaceRoot = normalized;
+    activeDocumentPath.clear();
+    lastFloatingGeometry = {};
+    setFloatingCollapsed(false);
 }
 
 void ContextWorkspaceController::clearResources()
 {
     const bool previousRestoring = restoringState;
     restoringState = true;
-    closePeek();
+    for (auto* surface : floatingSurfaces()) {
+        activeFloatingSurface = surface;
+        closePeek();
+    }
+    hiddenFloatingKeys.clear();
+    focusOrder.clear();
+    focusedResourceKey.clear();
+    documentBindings.clear();
+    keptFloatingKeys.clear();
+    documentLayouts.clear();
+    documentLayoutOrder.clear();
     if (dockHostValue) {
         const QStringList keys = dockHostValue->resourceKeys();
         for (const QString& key : keys)
@@ -702,7 +775,27 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
     ContextWorkspaceState state;
     state.valid = true;
     // Remember the last native geometry even while the overlay is active.
-    floatingWindowValue->captureGeometry(state);
+    state.floatingX = lastFloatingGeometry.floatingX;
+    state.floatingY = lastFloatingGeometry.floatingY;
+    state.floatingWidth = lastFloatingGeometry.floatingWidth;
+    state.floatingHeight = lastFloatingGeometry.floatingHeight;
+    state.floatingScreenName = lastFloatingGeometry.floatingScreenName;
+    state.floatingGeometryValid = lastFloatingGeometry.floatingGeometryValid;
+    state.floatingCollapsed = floatingCollapsedValue;
+    state.documentFloatingLayouts = documentLayouts;
+    state.documentFloatingOrder = documentLayoutOrder;
+    QSet<QString> livePaths;
+    for (auto* host : floatingWindows()) {
+        const auto instance = captureFloatingInstance(host);
+        if (instance.resource.isEmpty()) continue;
+        const QString path = boundDocument(host->resource().stableKey());
+        if (path.isEmpty()) state.floatingInstances.append(instance);
+        else if (state.documentFloatingOrder.contains(path)) {
+            if (!livePaths.contains(path)) state.documentFloatingLayouts[path].clear();
+            livePaths.insert(path);
+            state.documentFloatingLayouts[path].append(instance);
+        }
+    }
     if (peekHostValue) {
         const QSize peekSize = peekHostValue->preferredSize();
         state.peekWidth =
@@ -769,7 +862,23 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     const bool previousRestoring = restoringState;
     restoringState = true;
     clearResources();
-    floatingWindowValue->restoreGeometry(state.valid ? state : ContextWorkspaceState{});
+    lastFloatingGeometry = state.valid ? state : ContextWorkspaceState{};
+    setFloatingCollapsed(state.valid && state.floatingCollapsed);
+    if (state.valid) {
+        QStringList order = state.documentFloatingOrder;
+        QStringList missingOrder;
+        for (const QString& path : state.documentFloatingLayouts.keys())
+            if (!order.contains(path)) missingOrder.append(path);
+        // Missing recency metadata is older than every recorded use; resolve ties explicitly.
+        missingOrder.sort(Qt::CaseSensitive);
+        order = missingOrder + order;
+        for (const QString& path : order) {
+            const QString normalized = normalizedDocumentPath(path);
+            if (normalized.isEmpty() || state.documentFloatingLayouts.value(path).isEmpty()) continue;
+            documentLayouts.insert(normalized, state.documentFloatingLayouts.value(path));
+            touchDocumentLayout(normalized);
+        }
+    }
     for (const auto& [id, provider] : providers) {
         if (!provider)
             continue;
@@ -856,6 +965,8 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         ++result.restoredResources;
     }
 
+    restoreFloatingInstances(state.floatingInstances, result);
+    if (!activeDocumentPath.isEmpty()) restoreDocumentLayout(activeDocumentPath, result);
     if (dockHostValue
         && !state.activePinnedResourceKey.isEmpty()) {
         dockHostValue->activateResource(
@@ -893,6 +1004,10 @@ bool ContextWorkspaceController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+    if (event && event->type() == QEvent::WindowActivate) {
+        if (auto* host = qobject_cast<ContextFloatingWindow*>(watched); host && host->hasResource())
+            recordFocus(host->resource().stableKey());
+    }
     if (watched == dockValue
         && event
         && event->type() == QEvent::Resize) {
@@ -943,8 +1058,12 @@ void ContextWorkspaceController::handleViewResourceChanged(
     if (!view || !resource.isValid())
         return;
     bool updated = false;
-    if (peekHostValue && floatingSurfaceFor()->view() == view)
-        updated = floatingSurfaceFor()->updateResource(resource);
+    for (auto* surface : floatingSurfaces()) {
+        if (surface->view() == view) {
+            updated = surface->updateResource(resource);
+            break;
+        }
+    }
     if (!updated && dockHostValue
         && dockHostValue->viewForResource(resource.stableKey()) == view) {
         updated = dockHostValue->updateResource(resource);
@@ -963,7 +1082,7 @@ void ContextWorkspaceController::updateActiveRailEntry()
 {
     if (!railValue)
         return;
-    if (peekHostValue && floatingSurfaceFor()->hasResource()) {
+    if (peekHostValue && floatingSurfaceFor()->hasResource() && floatingWidget()->isVisible()) {
         railValue->setActiveEntryId(
             floatingSurfaceFor()->resource().providerId);
         return;
@@ -987,35 +1106,26 @@ ContextPlacement ContextWorkspaceController::defaultPlacementFor(const QString& 
 void ContextWorkspaceController::activateRailProvider(
     const QString& providerId)
 {
-    if (floatingSurfaceFor()->hasResource() && floatingSurfaceFor()->resource().providerId == providerId) {
-        if (floatingWidget()->isVisible()) {
-            closePeek();
-        } else {
-            floatingWidget()->show();
-            floatingWidget()->raise();
-            updateActiveRailEntry();
+    for (const QString key : focusOrder) {
+        auto* surface = surfaceWithResource(key);
+        QWidget* widget = surface ? dynamic_cast<QWidget*>(surface) : dockValue.data();
+        ContextResource candidate = surface ? surface->resource() : ContextResource{};
+        if (!surface) {
+            for (int i = 0; i < dockHostValue->resourceCount(); ++i)
+                if (dockHostValue->resourceAt(i).stableKey() == key) candidate = dockHostValue->resourceAt(i);
         }
-        return;
-    }
-    ContextResource opened = dockHostValue->currentResource();
-    if (opened.providerId != providerId) {
-        opened = {};
-        for (int index = 0; index < dockHostValue->resourceCount(); ++index) {
-            const ContextResource candidate = dockHostValue->resourceAt(index);
-            if (candidate.providerId == providerId) {
-                opened = candidate;
-                break;
+        if (candidate.providerId != providerId || (surface && !floatingEligible(key))) continue;
+        if (focusedResourceKey == key && widget->isVisible()) {
+            if (surface == peekHostValue) {
+                closeFloatingResource(key);
+            } else {
+                widget->hide();
+                if (surface) hiddenFloatingKeys.insert(key);
             }
-        }
-    }
-    if (opened.isValid()) {
-        if (dockValue->isVisible() && dockHostValue->currentResource() == opened) {
-            dockValue->hide();
+            updateActiveRailEntry();
         } else {
-            dockHostValue->activateResource(opened.stableKey());
-            showDock(false);
+            focusResource(key);
         }
-        updateActiveRailEntry();
         return;
     }
     if (IContextContentProvider* provider = providerForId(providerId)) {
@@ -1028,15 +1138,15 @@ void ContextWorkspaceController::activateRailProvider(
 
 void ContextWorkspaceController::resetPeekToProviderPreferredSize()
 {
-    if (!peekHostValue || !floatingSurfaceFor()->hasResource())
+    if (!peekHostValue || !peekHostValue->hasResource())
         return;
     IContextContentProvider* provider =
-        providerFor(floatingSurfaceFor()->resource());
+        providerFor(peekHostValue->resource());
     if (!provider)
         return;
     const QSize previous = peekHostValue->preferredSize();
     peekHostValue->setPreferredSize(
-        provider->capabilities(floatingSurfaceFor()->resource())
+        provider->capabilities(peekHostValue->resource())
             .preferredSize());
     if (peekHostValue->preferredSize() != previous)
         notifyWorkspaceStateChanged();

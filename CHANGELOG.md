@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.0] - 2026-09-13
+
+- Added multiple native Context windows with cascading placement, resource deduplication, recent-focus rail navigation and controller-owned context menus.
+- Added a distinct hide/restore toggle that preserves floating views and geometry, plus per-provider collection into the sidebar without rebuilding views.
+- Added document-bound visibility and path-based layout restoration after closing and reopening documents, with deterministic retention of 32 recent document layouts.
+- Upgraded Context state to v5 with independent floating instances, collapse state and document layouts; restored windows are limited to 16 and v4 fields remain readable. Older builds ignore v5 Context state.
+- Corrected native outer-frame geometry after showing a window when frame margins become available, while retaining the single temporary-editor overlay.
+
 ## [0.25.12] - 2026-09-12
 
 - Detached eligible Context previews into native framed tool windows with pin/full-view actions, preserving live QWidget identity and a single floating resource.

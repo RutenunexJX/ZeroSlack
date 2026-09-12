@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.12`
+Current version: `v0.26.0`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -30,8 +30,11 @@ is `schemas/suite-references-v1.schema.json`.
 - Navigation and Context occupy independent full-height side columns. The bottom drawer stays beneath
   the editor. Context rail buttons open a resizable sidebar; reopening it retains its width. Chart views
   can open in the main area using their full-view action. Detachable Context views can float in native
-  windows, with position and size remembered per workspace. Temporary source editors retain the
-  in-editor Peek overlay. Only one floating resource is open at a time across both surfaces.
+  windows, with independent geometry and resource identity remembered per workspace. Right-click a
+  Context rail icon to create or focus floating views, move them to the sidebar, or bind them to the
+  current document. Document-bound views hide when switching away and restore their layout when
+  returning; closed documents retain up to 32 recent layouts. The rail's separate hide/restore toggle
+  preserves all floating views. Temporary source editors retain a single in-editor Peek overlay.
 - The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
   and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
   Settings and connection tools continue to open in central tabs.

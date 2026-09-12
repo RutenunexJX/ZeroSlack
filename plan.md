@@ -1,11 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.12`
+Product version: `v0.26.0`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## 浮层/侧栏 第 3 期 · 多实例与文档绑定 — 2026-09-13 (v0.26.0)
+
+- 第 1 步检查点已达标：多实例、统一收起和 rail 右键菜单，指定回归 10/10，全量 106/107 与基线一致。
+- 第 3 期两步实现及自动化验收已完成：文档绑定、关闭通知和每文档布局落地，四个 DPI 变体各 151/151，指定回归 10/10，全量 106/107 与基线一致。布局按相对路径归档，最多保留 32 个最近使用文档。
+- v5 保存实例与收起状态，恢复上限 16；保留 v4 标量几何与读取兼容，旧构建无法恢复 v5 Context 状态。
+- 原生边框增加显示后自纠正；真实跨屏与连续重启手工验证仍未测。
+- 第 4 期仍为侧栏竖栈与拖动手势，本期不实现；证据见 [floating multi review](docs/floating-multi-review.md)。
 
 ## 浮层/侧栏 第 1 期 · 地基 — 2026-09-12 (v0.25.11)
 
@@ -19,7 +27,7 @@ and completed implementation history are recorded in CHANGELOG.md and Git.
 
 - 已完成可分离 Context 的原生 Tool 窗口、失焦透明度和工作区几何记忆。
 - 修正超出 200% DPI 可用区域的测试夹具；四个 DPI 变体各 104 项通过，指定回归 10/10，全量 106/107 与基线一致。
-- 原生跨屏交互及 show 前后 frameMargins 时序未测，作为遗留风险记录；正式包尚未更新。
+- 原生跨屏交互及 show 前后 frameMargins 时序未测；0.25.12 正式包已于 2026-09-13 更新。
 - temporaryEditor 显式不可分离，继续使用原 overlay；单实例互斥和跨容器移动保持同一 view。
 - Context 状态升至 v4，完整读取 v3，旧构建不支持恢复 v4；屏幕缺失或标题栏不可达时回落主屏。
 - 第 3 期仍为多实例/绑定/每文档布局及批量操作，第 4 期仍为侧栏竖栈与拖动手势，本期不实现。

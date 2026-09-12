@@ -2,6 +2,7 @@
 #define CONTEXTWORKSPACESTATE_H
 
 #include <QList>
+#include <QMap>
 #include <QRect>
 #include <QString>
 #include <QStringList>
@@ -13,7 +14,8 @@ struct ContextWorkspaceState {
     static constexpr int kResizableVersion = 2;
     static constexpr int kProviderStateVersion = 3;
     static constexpr int kFloatingGeometryVersion = 4;
-    static constexpr int kVersion = 4;
+    static constexpr int kFloatingInstancesVersion = 5;
+    static constexpr int kVersion = 5;
 
     static constexpr int kMinimumPeekWidth = 280;
     static constexpr int kMaximumPeekWidth = 920;
@@ -91,7 +93,29 @@ struct ContextWorkspaceState {
     int floatingHeight = kDefaultPeekHeight;
     QString floatingScreenName;
     bool floatingGeometryValid = false;
+
+    struct FloatingInstance {
+        QVariantMap resource;
+        int x = 0;
+        int y = 0;
+        int width = kDefaultPeekWidth;
+        int height = kDefaultPeekHeight;
+        QString screenName;
+        bool geometryValid = false;
+        bool kept = false;
+        bool operator==(const FloatingInstance& other) const {
+            return resource == other.resource && x == other.x && y == other.y
+                && width == other.width && height == other.height
+                && screenName == other.screenName && geometryValid == other.geometryValid && kept == other.kept;
+        }
+    };
+    QList<FloatingInstance> floatingInstances;
+    bool floatingCollapsed = false;
+    QMap<QString, QList<FloatingInstance>> documentFloatingLayouts;
+    QStringList documentFloatingOrder;
 };
+
+using ContextFloatingInstanceState = ContextWorkspaceState::FloatingInstance;
 
 struct ContextWorkspaceRestoreResult {
     int restoredResources = 0;
