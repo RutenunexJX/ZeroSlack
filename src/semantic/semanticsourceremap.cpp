@@ -192,6 +192,8 @@ SemanticSourceRemapper::remapSnapshot(
     const TextLineIndex oldLineIndex(oldText);
     const TextLineIndex newLineIndex(newText);
     const TriviaPositionMap positionMap(oldText, newText, delta);
+    if (!positionMap.isCompatible())
+        return nullptr;
     QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords();
     for (SemanticSymbolRecord& record : records) {
         remapStableKey(&record.stableKey, fileMatcher, positionMap);

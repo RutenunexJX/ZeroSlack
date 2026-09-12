@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
+#include <QDirIterator>
+#include <QCryptographicHash>
 #include <QSignalSpy>
 #include <QScrollBar>
 #include <QTemporaryDir>
@@ -36,10 +38,28 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "semantic_fixture_records.h"
+#include "large_file_semantic_fixture.h"
+#include "incrementalsemanticanalysisworker.h"
+#include "semanticsourceremap.h"
+#include "editoractioncontextservice.h"
+#include "editorcontextmenumodel.h"
+#include "actionregistry.h"
 
 class AnalysisSchedulerTestAccess
 {
 public:
+    static int idleTimerCount(const AnalysisScheduler& scheduler)
+    {
+        return scheduler.editIdleTimers.size();
+    }
+
+    static bool hasPendingCleanChange(const AnalysisScheduler& scheduler,
+                                     const QString& fileName)
+    {
+        return scheduler.pendingCleanSemanticChanges.contains(
+            scheduler.normalizedFileName(fileName));
+    }
+
     static void rememberPendingCleanChange(AnalysisScheduler& scheduler,
                                            const QString& fileName,
                                            const QString& text)
@@ -3393,6 +3413,490 @@ void runFailedAnalysisRetainsLastValidSnapshot()
     scheduler.shutdown();
 }
 
+QHash<QString, QByteArray> editIdleDiskHashes(const QString& root)
+{
+    QHash<QString, QByteArray> hashes;
+    QDirIterator files(root, QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (files.hasNext()) {
+        QFile file(files.next());
+        if (file.open(QIODevice::ReadOnly))
+            hashes.insert(file.fileName(), QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256));
+    }
+    return hashes;
+}
+
+struct EditIdleFixture {
+    QTemporaryDir directory;
+    QString fileName = directory.filePath(QStringLiteral("idle.sv"));
+    QString source = QStringLiteral(
+        "module idle(input logic clk);\n"
+        "  wire [7:0] value;\n"
+        "  assign value = 8'b0;\n"
+        "endmodule\n");
+    ProjectModel project;
+    SymbolAnalyzer analyzer;
+    DocumentModel documents;
+    MyCodeEditor editor;
+    AnalysisScheduler scheduler;
+    int requests = 0;
+    int publications = 0;
+    int rejected = 0;
+    int failed = 0;
+    bool slangInvoked = false;
+    bool onlyTriggerFile = true;
+    bool ready = false;
+    qint64 workerMs = 0;
+    qint64 publicationMs = 0;
+
+    explicit EditIdleFixture(const QString& text = {}, bool seedPositionBaseline = false)
+    {
+        if (!text.isNull())
+            source = text;
+        QFile file(fileName);
+        if (!directory.isValid() || !file.open(QIODevice::WriteOnly)
+            || file.write(source.toUtf8()) != source.toUtf8().size()) {
+            expect("EditIdle fixture writes source", false);
+            return;
+        }
+        file.close();
+        SemanticIndex::getInstance()->clearSemanticState();
+        if (seedPositionBaseline) {
+            SemanticAnalysisRuntimePolicy disabled;
+            disabled.enabled = false;
+            scheduler.setSemanticAnalysisRuntimePolicy(disabled);
+            SemanticSymbolRecord record;
+            record.name = QStringLiteral("selected_signal");
+            record.declarationKind = SymbolTaxonomy::DeclarationKind::Signal;
+            record.usageRole = SymbolTaxonomy::SymbolUsageRole::Declaration;
+            const int position = source.indexOf(record.name);
+            const int line = source.left(position).count(QLatin1Char('\n')) + 1;
+            const int column = position - source.lastIndexOf(QLatin1Char('\n'), position);
+            const int length = static_cast<int>(record.name.size());
+            record.location = {fileName, line, column, line, column + length, position, length};
+            record.localHandle = 1;
+            SemanticIndex::getInstance()->installPreparedSnapshot(
+                std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
+                    {record}, {}, {}, {{fileName, source}})), {fileName});
+        }
+        scheduler.setSymbolAnalyzer(&analyzer);
+        scheduler.setDocumentModel(&documents);
+        editor.setPlainText(source);
+        documents.registerEditor(&editor, fileName);
+        project.setWorkspaceState(directory.path(), {fileName});
+        scheduler.setProjectModel(&project);
+        if (seedPositionBaseline)
+            scheduler.setSemanticAnalysisRuntimePolicy({});
+        ready = waitUntil([&]() {
+            return scheduler.semanticStatus(fileName).state == DocumentSemanticState::Current;
+        }, 30000);
+        expect("EditIdle fixture starts with a Current baseline", ready);
+        QObject::connect(&scheduler, &AnalysisScheduler::semanticAnalysisTelemetry,
+                         &scheduler, [this](const SemanticAnalysisTelemetry& telemetry) {
+            if (telemetry.reason != SemanticAnalysisReason::EditIdle)
+                return;
+            if (telemetry.stage == SemanticAnalysisStage::Scheduling) {
+                ++requests;
+                onlyTriggerFile = onlyTriggerFile
+                    && telemetry.changedFiles == QStringList{fileName};
+            }
+            if (telemetry.stage == SemanticAnalysisStage::Worker) {
+                slangInvoked = slangInvoked || telemetry.slangInvoked;
+                workerMs = telemetry.workerMs;
+            }
+            if (telemetry.stage == SemanticAnalysisStage::Publication) {
+                ++publications;
+                publicationMs = telemetry.publicationMs;
+            }
+        });
+        QObject::connect(&analyzer, &SymbolAnalyzer::semanticAnalysisDropped,
+                         &scheduler, [this](const SemanticAnalysisRequest& request,
+                                            SemanticAnalysisRequestDisposition disposition) {
+            if (request.reason == SemanticAnalysisReason::EditIdle
+                && disposition == SemanticAnalysisRequestDisposition::TriviaGateRejected)
+                ++rejected;
+        });
+        QObject::connect(&analyzer, &SymbolAnalyzer::semanticAnalysisFailed,
+                         &scheduler, [this]() { ++failed; });
+    }
+
+    ~EditIdleFixture() { scheduler.shutdown(); }
+
+    void replaceText(const QString& text)
+    {
+        QTextCursor cursor(editor.document());
+        cursor.select(QTextCursor::Document);
+        cursor.insertText(text);
+    }
+
+    void prefix(const QString& text)
+    {
+        QTextCursor cursor(editor.document());
+        cursor.insertText(text);
+    }
+
+    bool current(int timeout = 10000)
+    {
+        return waitUntil([&]() {
+            return scheduler.semanticStatus(fileName).state == DocumentSemanticState::Current
+                && SemanticIndex::getInstance()->getCachedFileContent(fileName) == editor.toPlainText();
+        }, timeout);
+    }
+
+    bool declarationMatchesText(const QString& name = QStringLiteral("value"))
+    {
+        const QString text = editor.toPlainText();
+        const int position = text.indexOf(name);
+        const int line = text.left(position).count(QLatin1Char('\n')) + 1;
+        const int column = position - text.lastIndexOf(QLatin1Char('\n'), position);
+        const auto snapshot = SemanticIndex::getInstance()->snapshot();
+        for (const auto& record : snapshot->getSymbolRecordsByName(name)) {
+            if (record.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration
+                && record.location.fileName.compare(fileName, Qt::CaseInsensitive) == 0) {
+                return record.location.startLine == line
+                    && record.location.startColumn == column
+                    && record.location.position == position;
+            }
+        }
+        return false;
+    }
+};
+
+void runEditIdleTriviaAllowsDirtyBuffer()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    const auto diskBefore = editIdleDiskHashes(fixture.directory.path());
+    fixture.prefix(QStringLiteral("// idle comment\n\n\n"));
+    expect("EditIdle trivia becomes Current while unsaved", fixture.current()
+           && fixture.documents.cachedDocumentForFile(fixture.fileName).dirty);
+    expect("EditIdle trivia publishes once without Slang", fixture.requests == 1
+           && fixture.publications == 1 && !fixture.slangInvoked && fixture.failed == 0);
+    expect("EditIdle leaves every source/cache/workspace file byte-identical",
+           editIdleDiskHashes(fixture.directory.path()) == diskBefore);
+    expect("EditIdle never records a pending clean change",
+           !AnalysisSchedulerTestAccess::hasPendingCleanChange(fixture.scheduler, fixture.fileName));
+}
+
+void runEditIdleDeclarationLineMatchesEditedText()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    fixture.prefix(QStringLiteral("// one\n// two\n// three\n"));
+    expect("EditIdle declaration line/column/offset match independent text scan",
+           fixture.current() && fixture.declarationMatchesText());
+}
+
+void runEditIdleSeparatedTriviaMapsMiddleSymbol()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    fixture.prefix(QStringLiteral("// head\n\n"));
+    QTextCursor tail(fixture.editor.document());
+    tail.movePosition(QTextCursor::End);
+    tail.insertText(QStringLiteral("\n// tail\n// tail two\n"));
+    expect("EditIdle separated trivia keeps middle declaration at actual text position",
+           fixture.current() && fixture.declarationMatchesText());
+}
+
+void runEditIdleNonTriviaRemainsDirty()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    const auto snapshot = SemanticIndex::getInstance()->snapshot();
+    const auto revision = SemanticIndex::getInstance()->snapshotRevision();
+    const QStringList edits{
+        QString(fixture.source).replace(QStringLiteral("value"), QStringLiteral("renamed")),
+        QString(fixture.source).replace(QStringLiteral("[7:0]"), QStringLiteral("[8:0]")),
+        QString(fixture.source).replace(QStringLiteral("clk)"), QStringLiteral("clk, input logic added)"))};
+    for (const auto& text : edits) {
+        const int rejectedBefore = fixture.rejected;
+        fixture.replaceText(text);
+        expect("EditIdle rejects rename/width/port without publication",
+               waitUntil([&]() { return fixture.rejected > rejectedBefore; }, 5000)
+               && fixture.scheduler.semanticStatus(fixture.fileName).state == DocumentSemanticState::Dirty
+               && SemanticIndex::getInstance()->snapshotRevision() == revision
+               && SemanticIndex::getInstance()->snapshot() == snapshot);
+    }
+    expect("EditIdle non-trivia causes no Slang/Failed", !fixture.slangInvoked && fixture.failed == 0);
+}
+
+void runEditIdleSyntaxErrorRemainsDirty()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    const auto revision = SemanticIndex::getInstance()->snapshotRevision();
+    fixture.replaceText(QString(fixture.source).replace(QStringLiteral("[7:0]"), QStringLiteral("[7:")));
+    expect("EditIdle syntax error is explicitly dropped and stays Dirty",
+           waitUntil([&]() { return fixture.rejected == 1; }, 5000)
+           && fixture.scheduler.semanticStatus(fixture.fileName).state == DocumentSemanticState::Dirty
+           && SemanticIndex::getInstance()->snapshotRevision() == revision && fixture.failed == 0);
+}
+
+void runEditIdleNoBaselineDoesNotRequest()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    SemanticIndex::getInstance()->clearSemanticState();
+    fixture.prefix(QStringLiteral("// no baseline\n"));
+    waitForDuration(400);
+    expect("EditIdle null cached text schedules zero requests", fixture.requests == 0);
+}
+
+void runEditIdleDebouncesContinuousTyping()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    for (int index = 0; index < 8; ++index) {
+        fixture.prefix(QStringLiteral("// burst\n"));
+        waitForDuration(40);
+        expect("EditIdle continuous typing schedules zero requests", fixture.requests == 0);
+    }
+    std::printf("edit_idle.continuous_typing.requests=%d\n", fixture.requests);
+    expect("EditIdle burst schedules exactly one request after idle",
+           fixture.current() && fixture.requests == 1 && fixture.publications == 1);
+}
+
+void runEditIdleGatePreservesDiagnosticsAndState()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    SemanticDiagnostic diagnostic;
+    diagnostic.fileName = fixture.fileName;
+    diagnostic.line = 2;
+    diagnostic.message = QStringLiteral("Retain the last published diagnostic");
+    diagnostic.severity = SemanticDiagnostic::Warning;
+    auto* index = SemanticIndex::getInstance();
+    index->installPreparedSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        index->snapshot()->withReplacedDiagnostics({fixture.fileName}, {diagnostic})), {fixture.fileName});
+    const auto snapshot = index->snapshot();
+    const auto diskBefore = editIdleDiskHashes(fixture.directory.path());
+    QList<DocumentSemanticState> transitions;
+    QObject::connect(&fixture.scheduler, &AnalysisScheduler::documentSemanticStateChanged,
+                     &fixture.scheduler, [&](const DocumentSemanticStatus& status) {
+        transitions.append(status.state);
+    });
+    fixture.replaceText(QString(fixture.source).replace(QStringLiteral("value"), QStringLiteral("renamed")));
+    expect("EditIdle gate rejection preserves snapshot and diagnostics",
+           waitUntil([&]() { return fixture.rejected == 1; }, 5000)
+           && index->snapshot() == snapshot
+           && index->snapshot()->getDiagnostics(fixture.fileName).size() == 1
+           && index->snapshot()->getDiagnostics(fixture.fileName).first().message == diagnostic.message);
+    expect("EditIdle gate never enters Queued/Analyzing/Failed",
+           !transitions.isEmpty() && std::all_of(transitions.cbegin(), transitions.cend(),
+               [](DocumentSemanticState state) { return state == DocumentSemanticState::Dirty; })
+           && fixture.failed == 0);
+    waitForDuration(350);
+    expect("EditIdle rejection never retries or writes disk", fixture.requests == 1
+           && editIdleDiskHashes(fixture.directory.path()) == diskBefore);
+}
+
+void runEditIdleSaveUsesExistingTabSavePath()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    fixture.documents.unregisterEditor(&fixture.editor);
+    QTabWidget widget;
+    TabManager tabs(&widget);
+    fixture.scheduler.setDocumentModel(tabs.getDocumentModel());
+    expect("EditIdle save opens actual file tab", tabs.openFileInTab(fixture.fileName));
+    auto* editor = tabs.getCurrentEditor();
+    if (!editor) return;
+    int saveRequests = 0;
+    QObject::connect(&fixture.scheduler, &AnalysisScheduler::semanticAnalysisTelemetry,
+                     &fixture.scheduler, [&](const SemanticAnalysisTelemetry& telemetry) {
+        if (telemetry.stage == SemanticAnalysisStage::Scheduling
+            && telemetry.reason == SemanticAnalysisReason::Save) ++saveRequests;
+    });
+    QTextCursor cursor(editor->document());
+    cursor.insertText(QStringLiteral("// unsaved then saved\n\n"));
+    expect("EditIdle actual tab refresh completes before save", waitUntil([&]() {
+        return fixture.scheduler.semanticStatus(fixture.fileName).state == DocumentSemanticState::Current;
+    }, 5000));
+    expect("EditIdle Ctrl+S handler writes file", tabs.saveCurrentTab());
+    QFile file(fixture.fileName);
+    expect("EditIdle saved disk text equals buffer with native line endings",
+           file.open(QIODevice::ReadOnly | QIODevice::Text)
+           && QString::fromUtf8(file.readAll()) == editor->toPlainText());
+    expect("EditIdle saved document is clean and remains Current",
+           !tabs.getDocumentModel()->cachedDocumentForFile(fixture.fileName).dirty
+           && fixture.scheduler.semanticStatus(fixture.fileName).state == DocumentSemanticState::Current);
+    expect("EditIdle clean Ctrl+S remains no-op", tabs.saveCurrentTab());
+    waitForDuration(350);
+    expect("EditIdle matching save starts no extra analysis", saveRequests == 0 && fixture.requests == 1);
+    fixture.scheduler.shutdown();
+}
+
+void runEditIdlePolicyAndCancellation()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    SemanticAnalysisRuntimePolicy policy;
+    policy.planningMode = SemanticAnalysisPlanningMode::FullWorkspace;
+    fixture.scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    const QString otherFile = fixture.directory.filePath(QStringLiteral("other.sv"));
+    QFile other(otherFile);
+    expect("EditIdle second project source writes", other.open(QIODevice::WriteOnly));
+    other.write("module other; endmodule\n");
+    other.close();
+    fixture.project.setWorkspaceState(fixture.directory.path(), {fixture.fileName, otherFile});
+    expect("EditIdle two-file project baseline completes", fixture.current()
+           && !fixture.scheduler.isSemanticAnalysisActive());
+    AnalysisSchedulerTestAccess::rememberPendingCleanChange(
+        fixture.scheduler, otherFile, QStringLiteral("module other; logic pending; endmodule\n"));
+    fixture.prefix(QStringLiteral("// full policy\n"));
+    expect("EditIdle stays single-file TriviaOnly under FullWorkspace policy",
+           fixture.current() && !fixture.slangInvoked && fixture.onlyTriggerFile);
+    expect("EditIdle does not consume another source's pending clean change",
+           AnalysisSchedulerTestAccess::hasPendingCleanChange(fixture.scheduler, otherFile));
+    fixture.prefix(QStringLiteral("// disable\n"));
+    policy.enabled = false;
+    fixture.scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    expect("EditIdle disable removes owned timers", AnalysisSchedulerTestAccess::idleTimerCount(fixture.scheduler) == 0);
+    waitForDuration(350);
+    expect("EditIdle disabled timer never fires", fixture.requests == 1);
+    policy.enabled = true;
+    fixture.scheduler.setSemanticAnalysisRuntimePolicy(policy);
+    fixture.prefix(QStringLiteral("// close\n"));
+    fixture.documents.unregisterEditor(&fixture.editor);
+    expect("EditIdle document close removes timer", AnalysisSchedulerTestAccess::idleTimerCount(fixture.scheduler) == 0);
+    fixture.documents.registerEditor(&fixture.editor, fixture.fileName);
+    fixture.prefix(QStringLiteral("// project close\n"));
+    fixture.project.closeProject();
+    expect("EditIdle project close removes timers", AnalysisSchedulerTestAccess::idleTimerCount(fixture.scheduler) == 0);
+}
+
+void runEditIdleInFlightRequestIsInvalidated()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    std::atomic_bool release{false};
+    std::atomic_int started{0};
+    fixture.analyzer.setWorkspaceWorkerStartGateForTesting(
+        [&](const std::function<bool()>& cancelled) {
+            ++started;
+            while (!release.load() && !cancelled())
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        });
+    const auto revision = SemanticIndex::getInstance()->snapshotRevision();
+    fixture.prefix(QStringLiteral("// obsolete\n"));
+    expect("EditIdle first request enters worker", waitUntil([&]() { return started.load() == 1; }, 5000));
+    for (int index = 0; index < 5; ++index) {
+        fixture.prefix(QStringLiteral("// newest\n"));
+        waitForDuration(35);
+    }
+    expect("EditIdle editing invalidates active result without a burst queue",
+           fixture.requests == 1 && SemanticIndex::getInstance()->snapshotRevision() == revision);
+    release = true;
+    expect("EditIdle only newest revision publishes", fixture.current()
+           && fixture.requests == 2 && fixture.publications == 1 && fixture.failed == 0);
+    fixture.analyzer.setWorkspaceWorkerStartGateForTesting({});
+}
+
+void runEditIdleActionAvailabilityFollowsPublishedState()
+{
+    EditIdleFixture fixture;
+    if (!fixture.ready) return;
+    EditorActionContextService contexts;
+    contexts.updateWorkspaceContext(fixture.project.snapshot());
+    auto context = [&]() {
+        EditorActionContextQuery query;
+        query.editorContext.fileName = fixture.fileName;
+        query.editorContext.moduleName = QStringLiteral("idle");
+        query.editorContext.documentRevision = fixture.documents.cachedDocumentForFile(fixture.fileName).textVersion;
+        query.semanticStatus = fixture.scheduler.semanticStatus(fixture.fileName);
+        query.semanticAnalysisActive = fixture.scheduler.isSemanticAnalysisActive();
+        return contexts.resolve(query);
+    };
+    fixture.prefix(QStringLiteral("// restore semantic actions\n\n"));
+    expect("EditIdle keeps Dirty mapped to Stale before publication",
+           context().semanticState == EditorActionSemanticState::Stale);
+    expect("EditIdle publication restores action context Current", fixture.current()
+           && context().semanticState == EditorActionSemanticState::Current);
+    const ActionDescriptor* goTo = findActionById(QStringLiteral("source.goToDefinition"));
+    ActionAvailabilityContext availability;
+    availability.editorAvailable = true;
+    availability.workspaceAvailable = true;
+    availability.symbolAvailable = true;
+    availability.semanticCurrent = context().semanticState == EditorActionSemanticState::Current;
+    expect("EditIdle restores existing Go to Definition requirement with real Current context",
+           goTo && evaluateActionAvailability(*goTo, availability).executable
+           && fixture.declarationMatchesText());
+    fixture.replaceText(QString(fixture.editor.toPlainText()).replace(QStringLiteral("value"), QStringLiteral("renamed")));
+    expect("EditIdle renamed buffer is rejected for action context", waitUntil([&]() { return fixture.rejected == 1; }, 5000));
+    availability.semanticCurrent = context().semanticState == EditorActionSemanticState::Current;
+    expect("EditIdle rename keeps Go to Definition unavailable",
+           context().semanticState == EditorActionSemanticState::Stale
+           && goTo && !evaluateActionAvailability(*goTo, availability).executable);
+    EditorContextMenuRequest request;
+    request.actionContext = context();
+    request.symbolAvailable = true;
+    for (const auto* descriptor : actionDescriptorsForSurface(ActionSurface::ContextMenu)) {
+        if (descriptor->requirementMask & ActionRequirements::SemanticCurrent)
+            request.capabilities.append({descriptor->id, true, true, {}, false});
+    }
+    const auto menu = buildEditorContextMenuModel(request);
+    int staleItems = 0;
+    for (const auto& section : menu.sections) {
+        for (const auto& item : section.items) {
+            if (!item.executable && item.visibleReason == QStringLiteral("Semantic snapshot is stale; analyze the workspace."))
+                ++staleItems;
+        }
+    }
+    expect("EditIdle context menu preserves stale reason verbatim", staleItems > 0);
+}
+
+void runEditIdleWorkerGateBoundaries()
+{
+    const QString fileName = QDir::temp().filePath(QStringLiteral("idle_gate_boundaries.sv"));
+    SemanticAnalysisRequest request;
+    request.generation = 1;
+    request.reason = SemanticAnalysisReason::EditIdle;
+    request.triviaOnlyGate = true;
+    request.impactHint = SemanticChangeImpact::TriviaOnly;
+    request.triggerFile = fileName;
+    request.changedFiles = {fileName};
+    request.project.workspaceRoot = QDir::tempPath();
+    request.project.systemVerilogFiles = {fileName};
+    const QString broken = QStringLiteral("module broken; logic [7: value; endmodule\n");
+    const QString fixed = QStringLiteral("module broken; logic [7:0] value; endmodule\n");
+    request.sourceOverrides = {{fileName, fixed}};
+    auto baseline = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords({}, {}, {}, {{fileName, broken}}));
+    const auto oldError = IncrementalSemanticAnalysisWorker::analyze(request, baseline, {}, {});
+    expect("EditIdle erroneous old baseline cannot publish even after repair",
+           oldError.disposition == SemanticAnalysisRequestDisposition::TriviaGateRejected
+           && !oldError.preparedSnapshot && !oldError.slangInvoked && oldError.error.isEmpty());
+    const auto missing = IncrementalSemanticAnalysisWorker::analyze(request, {}, {}, {});
+    expect("EditIdle missing baseline FullFallback is dropped before dependency work",
+           missing.disposition == SemanticAnalysisRequestDisposition::TriviaGateRejected
+           && missing.dependencyGraph.isEmpty() && !missing.preparedSnapshot && !missing.slangInvoked);
+    expect("Incompatible source map cannot return a publishable snapshot",
+           !SemanticSourceRemapper::remapSnapshot(baseline, fileName, broken, fixed, {}, 2));
+}
+
+void runEditIdleLargeFileMeasurement()
+{
+    QString source = LargeFileSemanticFixture::makeFixture().text;
+    // The shared completion fixture intentionally contains an incomplete keyword.
+    // Repair only that probe so this measures an accepted trivia refresh.
+    source.replace(QStringLiteral("always_comb beg\n"), QStringLiteral("always_comb begin end\n"));
+    EditIdleFixture fixture(source, true);
+    if (!fixture.ready) return;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    fixture.prefix(QStringLiteral("// large idle\n\n"));
+    const bool published = fixture.current(60000);
+    const qint64 endToEnd = elapsed.elapsed();
+    std::printf("edit_idle.large.fixture=ts_large_file_semantics_test::makeFixture repaired keyword probe; seeded one-symbol position baseline\n"
+                "edit_idle.large.characters=%lld\nedit_idle.large.end_to_end_ms=%lld\n"
+                "edit_idle.large.worker_ms=%lld\nedit_idle.large.publication_ms=%lld\n",
+                static_cast<long long>(source.size()), static_cast<long long>(endToEnd),
+                static_cast<long long>(fixture.workerMs), static_cast<long long>(fixture.publicationMs));
+    expect("EditIdle large fixture publishes without Slang and maps middle symbol",
+           published && !fixture.slangInvoked
+           && fixture.declarationMatchesText(QStringLiteral("selected_signal")));
+}
+
 void runSavedTextMatchingSnapshotSkipsAnalysis()
 {
     QTemporaryDir directory;
@@ -3442,7 +3946,30 @@ void runSavedTextMatchingSnapshotSkipsAnalysis()
 
 int main(int argc, char** argv)
 {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--edit-idle-large"))) {
+        runEditIdleLargeFileMeasurement();
+        std::printf("\n%d checks, %d failed\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
+    if (app.arguments().contains(QStringLiteral("--edit-idle-only"))) {
+        runEditIdleTriviaAllowsDirtyBuffer();
+        runEditIdleDeclarationLineMatchesEditedText();
+        runEditIdleSeparatedTriviaMapsMiddleSymbol();
+        runEditIdleNonTriviaRemainsDirty();
+        runEditIdleSyntaxErrorRemainsDirty();
+        runEditIdleNoBaselineDoesNotRequest();
+        runEditIdleDebouncesContinuousTyping();
+        runEditIdleGatePreservesDiagnosticsAndState();
+        runEditIdleSaveUsesExistingTabSavePath();
+        runEditIdlePolicyAndCancellation();
+        runEditIdleInFlightRequestIsInvalidated();
+        runEditIdleWorkerGateBoundaries();
+        runEditIdleActionAvailabilityFollowsPublishedState();
+        std::printf("\n%d checks, %d failed\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
     runAnalysisRuntimePolicyPlanning();
     runDiagnosticPublicationPolicyOrdering();
     runAnalysisRuntimeEnableDisableAndPublicationLimit();
@@ -3466,6 +3993,19 @@ int main(int argc, char** argv)
     runPreparedPublicationRetirementIsOrderedAndShutdownSafe();
     runFailedAnalysisRetainsLastValidSnapshot();
     runSavedTextMatchingSnapshotSkipsAnalysis();
+    runEditIdleTriviaAllowsDirtyBuffer();
+    runEditIdleDeclarationLineMatchesEditedText();
+    runEditIdleSeparatedTriviaMapsMiddleSymbol();
+    runEditIdleNonTriviaRemainsDirty();
+    runEditIdleSyntaxErrorRemainsDirty();
+    runEditIdleNoBaselineDoesNotRequest();
+    runEditIdleDebouncesContinuousTyping();
+    runEditIdleGatePreservesDiagnosticsAndState();
+    runEditIdleSaveUsesExistingTabSavePath();
+    runEditIdlePolicyAndCancellation();
+    runEditIdleInFlightRequestIsInvalidated();
+    runEditIdleWorkerGateBoundaries();
+    runEditIdleActionAvailabilityFollowsPublishedState();
     std::printf("\n%d checks, %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

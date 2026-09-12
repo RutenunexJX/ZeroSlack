@@ -1,6 +1,6 @@
 // Large-file performance baseline. Guards the slang16 regression class where
-// whitespace edits in a large workspace file accidentally queued semantic or
-// relationship reanalysis.
+// whitespace edits in a large workspace file accidentally queued Slang or
+// relationship reanalysis. Idle classification is allowed; escalation is not.
 #include <QApplication>
 #include <QDir>
 #include <QElapsedTimer>
@@ -738,16 +738,43 @@ int main(int argc, char** argv)
         int semanticWorkerStages = 0;
         int semanticPublications = 0;
         int hierarchyRebuilds = 0;
+        int idleRequests = 0;
+        int otherRequests = 0;
+        int idleRejections = 0;
+        bool idleRequestsStaySingleFile = true;
+        bool idleSlangInvoked = false;
+        const auto preEditSnapshot = SemanticIndex::getInstance()->snapshot();
+        const auto preEditRevision = SemanticIndex::getInstance()->snapshotRevision();
         QObject::connect(
             window.analysisScheduler.get(),
             &AnalysisScheduler::semanticAnalysisTelemetry,
             &window,
             [&](const SemanticAnalysisTelemetry& telemetry) {
+                if (telemetry.stage == SemanticAnalysisStage::Scheduling) {
+                    if (telemetry.reason == SemanticAnalysisReason::EditIdle) {
+                        ++idleRequests;
+                        idleRequestsStaySingleFile = idleRequestsStaySingleFile
+                            && telemetry.changedFiles.size() == 1
+                            && telemetry.changedFiles.contains(largeFile, Qt::CaseInsensitive);
+                    } else {
+                        ++otherRequests;
+                    }
+                }
+                if (telemetry.reason == SemanticAnalysisReason::EditIdle)
+                    idleSlangInvoked = idleSlangInvoked || telemetry.slangInvoked;
                 if (telemetry.stage == SemanticAnalysisStage::Worker)
                     ++semanticWorkerStages;
                 else if (telemetry.stage == SemanticAnalysisStage::Publication)
                     ++semanticPublications;
             });
+        QObject::connect(window.analysisScheduler->symbolAnalyzer.data(),
+                         &SymbolAnalyzer::semanticAnalysisDropped, &window,
+                         [&](const SemanticAnalysisRequest& request,
+                             SemanticAnalysisRequestDisposition disposition) {
+            if (request.reason == SemanticAnalysisReason::EditIdle
+                && disposition == SemanticAnalysisRequestDisposition::TriviaGateRejected)
+                ++idleRejections;
+        });
         QObject::connect(
             window.navigationManager.get(),
             &NavigationManager::navigationTelemetry,
@@ -783,24 +810,38 @@ int main(int argc, char** argv)
         expectBool("whitespace edit does not start relationship debounce",
                    hasActiveRelationshipDebounce(window, largeFile),
                    false);
-        expectInt("whitespace edit queues no symbol analysis",
-                  symbolAnalysisStarted.count(), 0);
+        expectInt("whitespace burst schedules exactly one idle classification",
+                  symbolAnalysisStarted.count(), 1);
+        expectInt("whitespace burst uses the EditIdle reason", idleRequests, 1);
 
-        // Ordinary source edits become stale only. Save is the semantic
-        // trigger, so neither symbols nor relationships may start here.
+        // This burst has no final newline, so it also comments out the first
+        // source line. Both it and the following identifier edit must be
+        // classified and rejected without semantic or relationship publication.
         QTest::keyClicks(editor, "x");
         waitUntil([]() { return false; }, 2200);
         expectBool("ordinary edit does not start relationship debounce",
                     hasActiveRelationshipDebounce(window, largeFile),
                     false);
-        expectInt("ordinary edit queues no symbol analysis",
-                  symbolAnalysisStarted.count(), 0);
+        expectInt("ordinary edit schedules exactly one more idle classification",
+                  symbolAnalysisStarted.count(), 2);
+        expectInt("both edit requests use the EditIdle reason", idleRequests, 2);
+        expectInt("edits trigger no save or workspace requests", otherRequests, 0);
+        expectInt("non-inert idle edits are explicitly rejected", idleRejections, 2);
+        expectBool("idle requests remain single-file", idleRequestsStaySingleFile, true);
+        expectBool("rejected idle requests invoke no Slang", idleSlangInvoked, false);
+        expectBool("rejected idle edits retain snapshot and diagnostics",
+                   SemanticIndex::getInstance()->snapshot() == preEditSnapshot
+                       && SemanticIndex::getInstance()->snapshotRevision() == preEditRevision,
+                   true);
+        expectBool("rejected idle edits remain Dirty",
+                   window.analysisScheduler->semanticStatus(largeFile).state == DocumentSemanticState::Dirty,
+                   true);
         expectInt("ordinary edits run no semantic worker stage",
                   semanticWorkerStages, 0);
         expectInt("ordinary edits publish no semantic snapshot",
                   semanticPublications, 0);
-        expectInt("ordinary edits restart no workspace analysis",
-                  workspaceAnalysisRestarted.count(), 0);
+        expectInt("executor starts only the two idle classification requests",
+                  workspaceAnalysisRestarted.count(), idleRequests);
         expectInt("ordinary edits rebuild no Design hierarchy",
                   hierarchyRebuilds, 0);
         drainRelationshipWork(window);

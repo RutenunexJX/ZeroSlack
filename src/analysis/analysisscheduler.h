@@ -124,6 +124,7 @@ private:
     std::function<QString()> currentFileProvider;
     QHash<QString, DocumentSemanticStatus> semanticStatuses;
     QHash<QString, QTimer*> externalFileTimers;
+    QHash<QString, QTimer*> editIdleTimers;
     struct SelfWriteStamp {
         qint64 size = -1;
         qint64 modifiedMs = -1;
@@ -145,6 +146,9 @@ private:
     bool shuttingDown = false;
 
     static constexpr int kOpenDocumentRelationshipAnalysisDebounceMs = 2000;
+    static constexpr int kEditIdleSemanticRefreshDebounceMs = 250;
+    void scheduleEditIdleSemanticRefresh(const QString& fileName);
+    void cancelEditIdleSemanticRefresh(const QString& fileName);
 
     void onDocumentOpened(const DocumentSnapshot& snapshot);
     void onDocumentEdited(const DocumentSnapshot& snapshot);

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.25.9`
+Current version: `v0.25.10`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -137,6 +137,9 @@ is `schemas/suite-references-v1.schema.json`.
 - Treat a clean `Ctrl+S` as a true no-op. Changed saves classify their semantic
   impact and schedule only the required file/dependency work outside the UI
   thread; trivia-only edits do not invoke Slang.
+  Unsaved comment and whitespace edits recover semantic availability after
+  250 ms of idle time when worker validation proves equivalence; source
+  positions follow the edited buffer. Other unsaved edits still require saving.
 - Use F24 as an explicit command search layer: Enter executes a fuzzy result,
   `F24+D` deletes the current selection, and an empty F24 tap repeats the last
   currently valid repeatable action.

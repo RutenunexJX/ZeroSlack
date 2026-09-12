@@ -1,11 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.9`
+Product version: `v0.25.10`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## 语义可用性 第 1 阶段 — 2026-09-12 (v0.25.10)
+
+- 编辑停止 250 ms 后，只对当前工程内、有已发布基准的 Dirty 文件提交单文件 EditIdle 请求。
+- 工作线程以分类器和 token 位置映射兼容性为门禁；仅注释与空白改动恢复 Current，继续保留未保存状态。
+- 非 trivia、错误树和不兼容映射明确丢弃；不调用 Slang、不升级分析范围、不写语义缓存，不改变 action 的 SemanticCurrent 要求。
+- 保存、关闭、工程变更、禁用策略及退出取消定时器；后续编辑沿用版本失效机制。
+- 验收与量化证据见 [edit-idle review](docs/edit-idle-review.md)。更大语义影响面的空闲分析留待后续阶段。
 
 ## Compact layout — 2026-09-12 (v0.25.9)
 

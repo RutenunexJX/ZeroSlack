@@ -69,6 +69,8 @@ void AnalysisScheduler::setDocumentModel(DocumentModel* model)
 {
     if (documentModel == model)
         return;
+    for (const QString& fileName : editIdleTimers.keys())
+        cancelEditIdleSemanticRefresh(fileName);
     if (documentModel)
         disconnect(documentModel, nullptr, this, nullptr);
 
@@ -250,13 +252,14 @@ void AnalysisScheduler::requestSemanticAnalysis(
     SemanticAnalysisRequest request;
     request.generation = ++nextSemanticGeneration;
     request.reason = reason;
+    request.triviaOnlyGate = reason == SemanticAnalysisReason::EditIdle;
     request.impactHint = impactHint;
     request.project = project;
     request.triggerFile = triggerFile;
     request.changedFiles = changedFiles.isEmpty()
         ? project.systemVerilogFiles
         : changedFiles;
-    if (pendingCleanSemanticChanges.size() == 1) {
+    if (!request.triviaOnlyGate && pendingCleanSemanticChanges.size() == 1) {
         const auto pending = pendingCleanSemanticChanges.constBegin();
         bool alreadyRequested = false;
         for (const QString& fileName : std::as_const(request.changedFiles)) {
@@ -281,7 +284,7 @@ void AnalysisScheduler::requestSemanticAnalysis(
                 request.changedFiles.append(pending->fileName);
             }
         }
-    } else if (pendingCleanSemanticChanges.size() > 1) {
+    } else if (!request.triviaOnlyGate && pendingCleanSemanticChanges.size() > 1) {
         QSet<QString> projectFiles;
         projectFiles.reserve(project.systemVerilogFiles.size());
         for (const QString& fileName : project.systemVerilogFiles)
@@ -322,7 +325,8 @@ void AnalysisScheduler::requestSemanticAnalysis(
     for (const QString& fileName : std::as_const(request.changedFiles)) {
         const auto pending = pendingCleanSemanticChanges.constFind(
             normalizedFileName(fileName));
-        if (pending != pendingCleanSemanticChanges.constEnd()) {
+        if (!request.triviaOnlyGate
+            && pending != pendingCleanSemanticChanges.constEnd()) {
             request.sourceOverrides.insert(fileName, pending->text);
         }
     }
@@ -349,8 +353,9 @@ void AnalysisScheduler::requestSemanticAnalysis(
                 continue;
             setDocumentSemanticState(
                 fileName,
-                snapshot.dirty
-                        && !requestUsesCurrentDocumentText(request, snapshot)
+                request.triviaOnlyGate
+                        || (snapshot.dirty
+                            && !requestUsesCurrentDocumentText(request, snapshot))
                     ? DocumentSemanticState::Dirty
                     : DocumentSemanticState::Queued,
                 static_cast<std::uint64_t>(snapshot.textVersion),
@@ -446,8 +451,61 @@ void AnalysisScheduler::scheduleExternalFileAnalysis(const QString& fileName,
     timer->start(qMax(0, debounceMs));
 }
 
+void AnalysisScheduler::scheduleEditIdleSemanticRefresh(const QString& fileName)
+{
+    const QString key = normalizedFileName(fileName);
+    if (key.isEmpty() || shuttingDown || !semanticRuntimePolicy.enabled) {
+        cancelEditIdleSemanticRefresh(fileName);
+        return;
+    }
+    QTimer* timer = editIdleTimers.value(key, nullptr);
+    if (!timer) {
+        timer = new QTimer(this);
+        timer->setSingleShot(true);
+        timer->setTimerType(Qt::PreciseTimer);
+        editIdleTimers.insert(key, timer);
+        connect(timer, &QTimer::timeout, this, [this, fileName, key]() {
+            if (shuttingDown || !semanticRuntimePolicy.enabled
+                || !projectModel || !projectModel->isOpen() || !documentModel)
+                return;
+            const QStringList sources = projectModel->systemVerilogFiles();
+            const bool belongsToProject = std::any_of(
+                sources.cbegin(), sources.cend(), [this, &key](const QString& source) {
+                    return normalizedFileName(source) == key;
+                });
+            if (!belongsToProject
+                || semanticStatus(fileName).state != DocumentSemanticState::Dirty)
+                return;
+            // Idle work must not supersede a save or workspace request. The
+            // executor is serialized; a later edit/save can refresh a busy file.
+            if (isSemanticAnalysisActive())
+                return;
+            const DocumentSnapshot snapshot = documentModel->cachedDocumentForFile(fileName);
+            if (snapshot.fileName.isEmpty())
+                return;
+            const QString baseline = SemanticIndex::getInstance()->getCachedFileContent(fileName);
+            if (baseline.isNull() || baseline == snapshot.text)
+                return;
+            requestSemanticAnalysis(SemanticAnalysisReason::EditIdle,
+                                    SemanticChangeImpact::TriviaOnly,
+                                    fileName, {fileName}, {},
+                                    {{fileName, snapshot.text}});
+        });
+    }
+    timer->start(kEditIdleSemanticRefreshDebounceMs);
+}
+
+void AnalysisScheduler::cancelEditIdleSemanticRefresh(const QString& fileName)
+{
+    if (QTimer* timer = editIdleTimers.take(normalizedFileName(fileName))) {
+        timer->stop();
+        timer->deleteLater();
+    }
+}
+
 void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
 {
+    cancelEditIdleSemanticRefresh(fileName);
     const QString key = normalizedFileName(fileName);
     if (QTimer* timer = externalFileTimers.take(key))
         timer->deleteLater();
@@ -527,10 +585,12 @@ void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
         snapshot.fileName,
         DocumentSemanticState::Dirty,
         static_cast<std::uint64_t>(snapshot.textVersion));
+    scheduleEditIdleSemanticRefresh(snapshot.fileName);
 }
 
 void AnalysisScheduler::onDocumentSaved(const DocumentSnapshot& snapshot)
 {
+    cancelEditIdleSemanticRefresh(snapshot.fileName);
     const QFileInfo info(snapshot.fileName);
     SelfWriteStamp stamp;
     stamp.size = info.size();
@@ -568,6 +628,8 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
     const QString signature = projectAnalysisSignature(project);
     if (signature == lastProjectSignature)
         return;
+    for (const QString& fileName : editIdleTimers.keys())
+        cancelEditIdleSemanticRefresh(fileName);
 
     const bool replacingWorkspace = lastScheduledProject.isOpen()
         && normalizedFileName(lastScheduledProject.workspaceRoot)
@@ -595,6 +657,8 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
 
 void AnalysisScheduler::onProjectClosed()
 {
+    for (const QString& fileName : editIdleTimers.keys())
+        cancelEditIdleSemanticRefresh(fileName);
     if (!lastScheduledProject.isOpen()
         && lastProjectSignature.isEmpty()
         && !workspaceInitialAnalysisScheduled) {
@@ -630,8 +694,9 @@ void AnalysisScheduler::onSemanticAnalysisStarted(
                 continue;
             setDocumentSemanticState(
                 fileName,
-                snapshot.dirty
-                        && !requestUsesCurrentDocumentText(request, snapshot)
+                request.triviaOnlyGate
+                        || (snapshot.dirty
+                            && !requestUsesCurrentDocumentText(request, snapshot))
                     ? DocumentSemanticState::Dirty
                     : DocumentSemanticState::Analyzing,
                 static_cast<std::uint64_t>(snapshot.textVersion),

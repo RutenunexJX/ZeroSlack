@@ -167,6 +167,20 @@ IncrementalAnalysisPlan IncrementalAnalysisPlanService::plan(
     const SemanticDependencyGraph& previousGraph,
     const SemanticDependencyGraph& nextGraph) const
 {
+    // A worker-proven idle remap cannot be widened into a compilation by policy.
+    if (request.triviaOnlyGate
+        && classification.impact == SemanticChangeImpact::TriviaOnly
+        && !classification.oldTreeHasErrors
+        && !classification.newTreeHasErrors) {
+        IncrementalAnalysisPlan result;
+        result.reason = request.reason;
+        result.impact = SemanticChangeImpact::TriviaOnly;
+        result.triggerFile = request.triggerFile;
+        result.changedFiles = {request.triggerFile};
+        result.affectedFiles = result.changedFiles;
+        return result;
+    }
+
     if (request.runtimePolicy.planningMode
         == SemanticAnalysisPlanningMode::FullWorkspace) {
         const bool workspaceConfiguration =

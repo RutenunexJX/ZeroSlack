@@ -943,7 +943,8 @@ if(BUILD_TESTING)
         PRIVATE zeroslack_core zeroslack_tree_sitter)
 
     add_executable(ts_large_file_semantics_test
-        test_sv/ts_large_file_semantics_test.cpp)
+        test_sv/ts_large_file_semantics_test.cpp
+        test_sv/large_file_semantic_fixture.h)
     target_link_libraries(ts_large_file_semantics_test
         PRIVATE zeroslack_core zeroslack_tree_sitter Qt6::Core)
 
@@ -1503,7 +1504,8 @@ if(BUILD_TESTING)
         PRIVATE Qt6::Core Qt6::Gui slang::slang)
 
     add_executable(analysis_scheduler_test
-        test_sv/analysis_scheduler_test.cpp)
+        test_sv/analysis_scheduler_test.cpp
+        test_sv/large_file_semantic_fixture.h)
     target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
 
     if(ZEROSLACK_SHARED_CORE)

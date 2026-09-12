@@ -17,7 +17,8 @@ enum class SemanticAnalysisReason {
     Refactor,
     ExternalFileChange,
     WorkspaceConfiguration,
-    ExplicitRequest
+    ExplicitRequest,
+    EditIdle
 };
 
 enum class SemanticChangeImpact {
@@ -83,7 +84,8 @@ enum class SemanticAnalysisRequestDisposition {
     Superseded,
     Invalidated,
     Cancelled,
-    Expired
+    Expired,
+    TriviaGateRejected
 };
 
 struct SourceTextDelta {
@@ -140,6 +142,10 @@ struct SemanticAnalysisRequest {
     std::uint64_t expectedSnapshotRevision = 0;
     std::uint64_t computationRevision = 0;
     SemanticAnalysisRuntimePolicy runtimePolicy;
+    // Only publish when the worker's own classification proves the change is
+    // semantically inert. Requests that fail the gate are dropped without any
+    // Slang work and leave the document state untouched.
+    bool triviaOnlyGate = false;
 
     bool isValid() const
     {

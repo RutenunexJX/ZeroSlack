@@ -1,4 +1,5 @@
 #include "incrementalsemanticanalysisworker.h"
+#include "triviapositionmap.h"
 
 #include "incrementalanalysisplanservice.h"
 #include "semanticchangeclassifier.h"
@@ -323,6 +324,20 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
     } else {
         classification = SemanticChangeClassifier().classify(
             classificationFile, oldText, newText);
+    }
+
+    // Reject before dependency extraction, computation registration or Slang.
+    // Even the ordinary trivia path must never publish a fallback position map.
+    if ((request.triviaOnlyGate
+         && (classification.impact != SemanticChangeImpact::TriviaOnly
+             || classification.oldTreeHasErrors
+             || classification.newTreeHasErrors))
+        || (classification.impact == SemanticChangeImpact::TriviaOnly
+            && !TriviaPositionMap(oldText, newText, classification.delta)
+                    .isCompatible())) {
+        result.disposition =
+            SemanticAnalysisRequestDisposition::TriviaGateRejected;
+        return finish();
     }
 
     QHash<QString, QString> allContents;

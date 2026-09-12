@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.25.10] - 2026-09-12
+
+- Restored semantic availability after 250 ms of editing idle time for unsaved comment and whitespace changes, using worker-verified trivia remapping without Slang or semantic cache writes.
+- Kept structural, identifier and erroneous edits dirty until normal analysis, with explicit gate rejection and revision-checked publication.
+- Added idle-refresh, source-position, debounce, cancellation, save-path and large-file regression coverage without relaxing semantic action requirements.
+
 ## [0.25.9] - 2026-09-12
 
 - Kept editor tabs readable with overflow scrolling, including split groups and theme refreshes.

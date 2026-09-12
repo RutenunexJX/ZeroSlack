@@ -82,6 +82,17 @@ void WorkspaceSymbolAnalysisController::setSymbolAnalyzer(
             this,
             &WorkspaceSymbolAnalysisController::onSemanticAnalysisFailed);
     connect(symbolAnalyzer,
+            &SymbolAnalyzer::semanticAnalysisDropped,
+            this,
+            [this](const SemanticAnalysisRequest& request,
+                   SemanticAnalysisRequestDisposition disposition) {
+                if (!workspaceAnalysisActive
+                    || activeSemanticRequest.generation != request.generation)
+                    return;
+                notifyActiveRequestDropped(disposition);
+                onWorkspaceSymbolAnalysisExpired();
+            });
+    connect(symbolAnalyzer,
             &QObject::destroyed,
             this,
             [this]() {

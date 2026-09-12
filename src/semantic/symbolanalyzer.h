@@ -15,6 +15,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include "effectivevalueservice.h"
 #include "semanticanalysisrequest.h"
 #include "semanticdependencygraph.h"
@@ -46,6 +47,7 @@ struct WorkspaceAnalysisResult {
     QHash<QString, std::uint64_t> documentRevisionsByFile;
     QHash<QString, SemanticAnalysisBandMetadata> fileAnalysisBands;
     bool cancelled = false;
+    std::optional<SemanticAnalysisRequestDisposition> disposition;
     int totalSymbols = 0;
     std::uint64_t generation = 0;
     std::uint64_t workspaceEpoch = 0;
@@ -185,6 +187,9 @@ public:
     void invalidateCache();
 
 signals:
+    void semanticAnalysisDropped(
+        const SemanticAnalysisRequest& request,
+        SemanticAnalysisRequestDisposition disposition);
     void analysisStarted(const QString& fileName);
     void analysisCompleted(const QString& fileName, int symbolsFound);
     void batchAnalysisCompleted(int filesAnalyzed, int totalSymbols);

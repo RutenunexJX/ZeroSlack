@@ -39,6 +39,8 @@ void AnalysisScheduler::shutdown()
             timer->stop();
     }
     externalFileTimers.clear();
+    for (const QString& fileName : editIdleTimers.keys())
+        cancelEditIdleSemanticRefresh(fileName);
     SymbolAnalyzer* analyzer = symbolAnalyzer.data();
     if (workspaceSymbolAnalysis) {
         workspaceSymbolAnalysis->setDocumentModel(nullptr);
@@ -82,6 +84,8 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
 {
     if (shuttingDown || projectModel == model)
         return;
+    for (const QString& fileName : editIdleTimers.keys())
+        cancelEditIdleSemanticRefresh(fileName);
     if (projectModel)
         disconnect(projectModel, nullptr, this, nullptr);
     projectModel = model;
@@ -159,6 +163,8 @@ void AnalysisScheduler::setSemanticAnalysisRuntimePolicy(
             semanticRuntimePolicy.maxDiagnostics);
     }
     if (disabling) {
+        for (const QString& fileName : editIdleTimers.keys())
+            cancelEditIdleSemanticRefresh(fileName);
         for (QTimer* timer : std::as_const(externalFileTimers)) {
             if (timer)
                 timer->stop();

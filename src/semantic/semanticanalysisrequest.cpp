@@ -17,6 +17,8 @@ QString semanticAnalysisReasonName(SemanticAnalysisReason reason)
         return QStringLiteral("WorkspaceConfiguration");
     case SemanticAnalysisReason::ExplicitRequest:
         return QStringLiteral("ExplicitRequest");
+    case SemanticAnalysisReason::EditIdle:
+        return QStringLiteral("EditIdle");
     case SemanticAnalysisReason::Unknown:
     default:
         return QStringLiteral("Unknown");

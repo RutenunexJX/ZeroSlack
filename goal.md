@@ -1,8 +1,10 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.25.9`
+Product version: `v0.25.10`
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic authority.
+Worker-verified idle trivia refresh preserves semantic availability for unsaved comments and whitespace;
+structural edits retain the existing save requirement and action safety checks.
 Compact layouts preserve readable tabs and reachable Context actions without increasing dock widths.
 Workspace Hub, provider-based Context Workspace, live insights, Wave simulation integration and the read-only
 AI CLI are implemented. Native documents and external application data remain with their owners.

@@ -144,6 +144,12 @@ void SymbolAnalyzer::startSemanticAnalysisAsync(
                     return;
                 }
 
+                if (result.disposition) {
+                    emit semanticAnalysisDropped(result.request,
+                                                 *result.disposition);
+                    return;
+                }
+
                 if (!result.error.isEmpty() || !result.preparedSnapshot) {
                     const QString error = result.error.isEmpty()
                         ? QStringLiteral("Semantic worker produced no snapshot")
