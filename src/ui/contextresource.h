@@ -18,6 +18,8 @@ Q_DECLARE_FLAGS(ContextPresentations, ContextPresentation)
 Q_DECLARE_OPERATORS_FOR_FLAGS(ContextPresentations)
 
 struct ZEROSLACK_API ContextViewCapabilities {
+    // Live source editors retain the overlay until multi-window editing is supported.
+    bool detachable = true;
     ContextPresentations presentations =
         ContextPresentation::Peek
         | ContextPresentation::Pinned;

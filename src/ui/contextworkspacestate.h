@@ -2,6 +2,7 @@
 #define CONTEXTWORKSPACESTATE_H
 
 #include <QList>
+#include <QRect>
 #include <QString>
 #include <QStringList>
 #include <QtGlobal>
@@ -10,7 +11,9 @@
 struct ContextWorkspaceState {
     static constexpr int kLegacyVersion = 1;
     static constexpr int kResizableVersion = 2;
-    static constexpr int kVersion = 3;
+    static constexpr int kProviderStateVersion = 3;
+    static constexpr int kFloatingGeometryVersion = 4;
+    static constexpr int kVersion = 4;
 
     static constexpr int kMinimumPeekWidth = 280;
     static constexpr int kMaximumPeekWidth = 920;
@@ -21,6 +24,36 @@ struct ContextWorkspaceState {
     static constexpr int kMinimumDockWidth = 280;
     static constexpr int kMaximumStoredDockWidth = 8192;
     static constexpr int kDefaultDockWidth = 520;
+    static constexpr int kFloatingTitleHeight = 32;
+
+    static QRect resolvedFloatingGeometry(
+        const QRect& saved, const QString& savedScreenName,
+        const QList<QRect>& availableScreenGeometries,
+        const QRect& primaryScreenGeometry, const QList<QString>& availableScreenNames)
+    {
+        const int width = boundedPeekWidth(saved.width());
+        const int height = boundedPeekHeight(saved.height());
+        const int index = availableScreenNames.indexOf(savedScreenName);
+        if (!savedScreenName.isEmpty() && index >= 0 && index < availableScreenGeometries.size()) {
+            const QRect screen = availableScreenGeometries.at(index);
+            const qint64 visibleWidth = qMin(qint64(saved.x()) + width, qint64(screen.x()) + screen.width())
+                - qMax(qint64(saved.x()), qint64(screen.x()));
+            const qint64 visibleTitle = qMin(qint64(saved.y()) + kFloatingTitleHeight,
+                                             qint64(screen.y()) + screen.height())
+                - qMax(qint64(saved.y()), qint64(screen.y()));
+            if (screen.isValid() && visibleWidth >= kMinimumPeekWidth / 2
+                && visibleTitle >= kFloatingTitleHeight) {
+                return QRect(saved.topLeft(), QSize(width, height));
+            }
+        }
+        const QRect primary = primaryScreenGeometry.isValid() ? primaryScreenGeometry
+            : QRect(0, 0, kDefaultPeekWidth, kDefaultPeekHeight);
+        const int fittedWidth = qMin(width, primary.width());
+        const int fittedHeight = qMin(height, primary.height());
+        return QRect(qBound(primary.x(), saved.x(), primary.x() + primary.width() - fittedWidth),
+                     qBound(primary.y(), saved.y(), primary.y() + primary.height() - fittedHeight),
+                     fittedWidth, fittedHeight);
+    }
 
     static int boundedPeekWidth(int width)
     {
@@ -52,6 +85,12 @@ struct ContextWorkspaceState {
     bool dockVisible = false;
     bool railVisible = true;
     bool valid = false;
+    int floatingX = 0;
+    int floatingY = 0;
+    int floatingWidth = kDefaultPeekWidth;
+    int floatingHeight = kDefaultPeekHeight;
+    QString floatingScreenName;
+    bool floatingGeometryValid = false;
 };
 
 struct ContextWorkspaceRestoreResult {

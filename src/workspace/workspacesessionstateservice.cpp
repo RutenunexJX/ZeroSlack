@@ -303,6 +303,14 @@ QJsonObject sessionObject(
     contextWorkspace.insert(
         QStringLiteral("valid"),
         state.ui.contextWorkspace.valid);
+    contextWorkspace.insert(QStringLiteral("floatingX"), state.ui.contextWorkspace.floatingX);
+    contextWorkspace.insert(QStringLiteral("floatingY"), state.ui.contextWorkspace.floatingY);
+    contextWorkspace.insert(QStringLiteral("floatingWidth"),
+        ContextWorkspaceState::boundedPeekWidth(state.ui.contextWorkspace.floatingWidth));
+    contextWorkspace.insert(QStringLiteral("floatingHeight"),
+        ContextWorkspaceState::boundedPeekHeight(state.ui.contextWorkspace.floatingHeight));
+    contextWorkspace.insert(QStringLiteral("floatingScreenName"), state.ui.contextWorkspace.floatingScreenName);
+    contextWorkspace.insert(QStringLiteral("floatingGeometryValid"), state.ui.contextWorkspace.floatingGeometryValid);
     ui.insert(QStringLiteral("contextWorkspace"), contextWorkspace);
     object.insert(QStringLiteral("ui"), ui);
 
@@ -556,12 +564,23 @@ void restoreUi(
             ui->contextWorkspace.railVisible =
                 contextWorkspace.value(
                     QStringLiteral("railVisible")).toBool(true);
-            if (contextVersion >= ContextWorkspaceState::kVersion) {
+            if (contextVersion >= ContextWorkspaceState::kProviderStateVersion) {
                 ui->contextWorkspace.providerStates =
                     providerStatesFromJson(
                         contextWorkspace.value(
                             QStringLiteral("providerStates"))
                             .toObject());
+            }
+            if (contextVersion >= ContextWorkspaceState::kFloatingGeometryVersion) {
+                auto& state = ui->contextWorkspace;
+                state.floatingX = contextWorkspace.value(QStringLiteral("floatingX")).toInt();
+                state.floatingY = contextWorkspace.value(QStringLiteral("floatingY")).toInt();
+                state.floatingWidth = ContextWorkspaceState::boundedPeekWidth(
+                    contextWorkspace.value(QStringLiteral("floatingWidth")).toInt(ContextWorkspaceState::kDefaultPeekWidth));
+                state.floatingHeight = ContextWorkspaceState::boundedPeekHeight(
+                    contextWorkspace.value(QStringLiteral("floatingHeight")).toInt(ContextWorkspaceState::kDefaultPeekHeight));
+                state.floatingScreenName = contextWorkspace.value(QStringLiteral("floatingScreenName")).toString();
+                state.floatingGeometryValid = contextWorkspace.value(QStringLiteral("floatingGeometryValid")).toBool(false);
             }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(

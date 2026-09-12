@@ -24,6 +24,7 @@
 #include <QSet>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QSlider>
 #include <QStackedWidget>
 #include <QStandardItem>
 #include <QStandardItemModel>
@@ -576,6 +577,13 @@ QWidget* SettingsCenterPanel::createEditor(
     case SettingsCenterValueKind::Boolean:
         return new QCheckBox(tr("Enabled"), parent);
     case SettingsCenterValueKind::Integer: {
+        if (descriptor.useSlider) {
+            auto* slider = new QSlider(Qt::Horizontal, parent);
+            slider->setRange(descriptor.minimumValue.toInt(), descriptor.maximumValue.toInt());
+            slider->setTickInterval(10);
+            slider->setTickPosition(QSlider::TicksBelow);
+            return slider;
+        }
         auto* editor = new QSpinBox(parent);
         editor->setRange(
             descriptor.minimumValue.isValid()
@@ -750,6 +758,13 @@ void SettingsCenterPanel::connectEditor(
                 });
         break;
     case SettingsCenterValueKind::Integer:
+        if (auto* slider = qobject_cast<QSlider*>(binding.editor)) {
+            connect(slider, &QSlider::valueChanged, this, [this, fieldId, slider](int value) {
+                slider->setToolTip(tr("%1%").arg(value));
+                updateDraftFromEditor(fieldId);
+            });
+            break;
+        }
         connect(qobject_cast<QSpinBox*>(binding.editor),
                 qOverload<int>(&QSpinBox::valueChanged),
                 this,
@@ -1128,6 +1143,8 @@ QVariant SettingsCenterPanel::editorValue(
         return qobject_cast<QCheckBox*>(
                    binding.editor)->isChecked();
     case SettingsCenterValueKind::Integer:
+        if (auto* slider = qobject_cast<QSlider*>(binding.editor))
+            return slider->value();
         return qobject_cast<QSpinBox*>(
                    binding.editor)->value();
     case SettingsCenterValueKind::Real:
@@ -1187,6 +1204,12 @@ void SettingsCenterPanel::setEditorValue(
         break;
     }
     case SettingsCenterValueKind::Integer: {
+        if (auto* slider = qobject_cast<QSlider*>(binding->editor)) {
+            const QSignalBlocker blocker(slider);
+            slider->setValue(value.toInt());
+            slider->setToolTip(tr("%1%").arg(value.toInt()));
+            break;
+        }
         auto* editor =
             qobject_cast<QSpinBox*>(binding->editor);
         const QSignalBlocker blocker(editor);

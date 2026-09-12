@@ -1,6 +1,7 @@
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
 #include "contextpeekhost.h"
+#include "contextfloatingwindow.h"
 #include "contextrail.h"
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
@@ -402,10 +403,14 @@ int main(int argc, char* argv[])
           "selection updates the portable Pinloom URI without duplicating content");
     check(controller.unpinResource(
               controller.dockHost()->currentResource().stableKey(), &failureReason)
-              && controller.peekHost()->view() == view,
+              && controller.floatingSurface()->view() == view,
           "explicit floating preview retains the selected Pinloom view");
-    if (controller.peekHost()->view() != view)
+    if (controller.floatingSurface()->view() != view)
         return 1;
+    check(controller.floatingWindow()->isWindow()
+              && controller.floatingWindow()->windowType() == Qt::Tool
+              && controller.floatingWindow()->view() == view && !controller.peekHost()->hasResource(),
+          "Pinloom explicit floating preview uses a native Tool window with the original view");
 
     const ContextResource linkedResource =
         PinloomContextProvider::resourceForUri(

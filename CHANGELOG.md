@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.12] - 2026-09-12
+
+- Detached eligible Context previews into native framed tool windows with pin/full-view actions, preserving live QWidget identity and a single floating resource.
+- Kept temporary source editors in the existing in-window overlay through a detachable capability opt-out.
+- Added a global 60–100% inactive-window opacity slider (90% default), with full opacity while focused or hovered.
+- Stored native window geometry and screen identity separately from overlay sizes, with accessible-screen recovery and a v4 state format that reads all v3 fields. Older builds cannot restore v4 Context state.
+
 ## [0.25.11] - 2026-09-12
 
 - Separated Context placement into surface, persistence and binding dimensions, retaining existing preview/sidebar routing, live view reuse and v3 workspace state.

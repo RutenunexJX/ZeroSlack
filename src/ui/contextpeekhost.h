@@ -2,6 +2,7 @@
 #define CONTEXTPEEKHOST_H
 
 #include "contextresource.h"
+#include "contextfloatingsurface.h"
 #include "zeroslackexport.h"
 
 #include <QPoint>
@@ -16,7 +17,7 @@ class QResizeEvent;
 class QToolButton;
 class QVBoxLayout;
 
-class ZEROSLACK_API ContextPeekHost final : public QWidget
+class ZEROSLACK_API ContextPeekHost final : public QWidget, public ContextFloatingSurface
 {
     Q_OBJECT
 
@@ -24,9 +25,9 @@ public:
     explicit ContextPeekHost(QWidget* editorRegion);
     ~ContextPeekHost() override;
 
-    bool hasResource() const;
-    ContextResource resource() const;
-    QWidget* view() const;
+    bool hasResource() const override;
+    ContextResource resource() const override;
+    QWidget* view() const override;
     QSize preferredSize() const;
     int preferredWidth() const;
     int preferredHeight() const;
@@ -35,12 +36,12 @@ public:
     void setPreferredWidth(int width);
     void setPreferredHeight(int height);
     void setActionsAvailable(bool pinAvailable,
-                             bool fullViewAvailable);
+                             bool fullViewAvailable) override;
     void setView(const ContextResource& resource,
-                 QWidget* view);
-    bool updateResource(const ContextResource& resource);
-    QWidget* takeView();
-    void clearView();
+                 QWidget* view) override;
+    bool updateResource(const ContextResource& resource) override;
+    QWidget* takeView() override;
+    void clearView() override;
 
 signals:
     void pinRequested();

@@ -383,6 +383,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/statetransitiongraphservice.cpp
     src/insights/statetransitiontriggerservice.cpp
     src/ui/contextresource.cpp
+    src/ui/contextfloatingwindow.cpp
     src/ui/contextrail.cpp
     src/ui/contextpeekhost.cpp
     src/ui/contextdockhost.cpp
@@ -649,6 +650,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/statetransitiontriggerservice.h
     src/ui/contextresource.h
     src/ui/contextplacement.h
+    src/ui/contextfloatingsurface.h
+    src/ui/contextfloatingwindow.h
     src/ui/contextworkspacestate.h
     src/ui/contextcontentprovider.h
     src/ui/contextrail.h

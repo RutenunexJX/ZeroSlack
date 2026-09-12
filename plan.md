@@ -1,6 +1,6 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.11`
+Product version: `v0.25.12`
 
 ## Current baseline
 
@@ -14,6 +14,16 @@ and completed implementation history are recorded in CHANGELOG.md and Git.
 - 未纳入版本管理的两个旧 `.zs` 样本保持缺失；相关测试不修改、不跳过，106/107 的唯一已知失败被接受。
 - 后续三期依次为：真浮层单实例 → 多实例与绑定 → 侧栏竖栈。本期不提前实现。
 - 验收证据见 [context placement review](docs/context-placement-review.md)。
+
+## 浮层/侧栏 第 2 期 · 真浮层单实例 — 2026-09-12 (v0.25.12)
+
+- 已完成可分离 Context 的原生 Tool 窗口、失焦透明度和工作区几何记忆。
+- 修正超出 200% DPI 可用区域的测试夹具；四个 DPI 变体各 104 项通过，指定回归 10/10，全量 106/107 与基线一致。
+- 原生跨屏交互及 show 前后 frameMargins 时序未测，作为遗留风险记录；正式包尚未更新。
+- temporaryEditor 显式不可分离，继续使用原 overlay；单实例互斥和跨容器移动保持同一 view。
+- Context 状态升至 v4，完整读取 v3，旧构建不支持恢复 v4；屏幕缺失或标题栏不可达时回落主屏。
+- 第 3 期仍为多实例/绑定/每文档布局及批量操作，第 4 期仍为侧栏竖栈与拖动手势，本期不实现。
+- 验收和原生桌面验证限制见 [floating context review](docs/floating-context-review.md)。
 
 ## 语义可用性 第 1 阶段 — 2026-09-12 (v0.25.10)
 

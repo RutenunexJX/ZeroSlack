@@ -272,6 +272,9 @@ MainWindow::MainWindow(QWidget *parent)
     setupFoldBlockShelf();
     setupPanelLayoutController();
     setupContextWorkspace();
+    if (contextWorkspaceController && settingsCenterPanel)
+        contextWorkspaceController->setFloatingOpacity(settingsCenterPanel->snapshot()
+            .value(QStringLiteral("appearance.floatingContextOpacity")).toInt());
     setupRtlActionCoordinator();
     setupWaveSimulation();
     setupWorkspaceSessionCoordinator();
@@ -6251,6 +6254,9 @@ void MainWindow::setupSettingsCenter()
 void MainWindow::applySettingsCenterSnapshot(
     const SettingsCenterSnapshot& snapshot)
 {
+    if (contextWorkspaceController)
+        contextWorkspaceController->setFloatingOpacity(
+            snapshot.value(QStringLiteral("appearance.floatingContextOpacity")).toInt());
     if (pinloomHostClient) {
         pinloomHostClient->setExecutablePath(
             snapshot.value(QStringLiteral(

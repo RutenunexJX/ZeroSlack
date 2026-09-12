@@ -1,9 +1,13 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.25.11`
+Product version: `v0.25.12`
+
+Phase 2 meets the automated acceptance baseline: 10/10 required regressions and 106/107 full CTest.
+Native frame-margin timing and multi-monitor interaction remain unverified; see docs/floating-context-review.md.
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic authority.
-Context placement now separates surface, persistence and binding while retaining existing behavior and v3 state compatibility.
+Detachable Context views use native floating windows with workspace geometry memory and inactive opacity.
+Temporary source editors retain their overlay; v4 Context state reads v3 but cannot be restored by older builds.
 Worker-verified idle trivia refresh preserves semantic availability for unsaved comments and whitespace;
 structural edits retain the existing save requirement and action safety checks.
 Compact layouts preserve readable tabs and reachable Context actions without increasing dock widths.

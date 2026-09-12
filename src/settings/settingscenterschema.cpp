@@ -80,6 +80,13 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
                   true),
         },
     });
+    auto opacity = field(QStringLiteral("appearance.floatingContextOpacity"),
+        QString::fromLatin1(SettingsCenterKeys::FloatingContextOpacity), Category::Appearance,
+        QStringLiteral("Inactive floating context opacity (%)"),
+        QStringLiteral("Focused or hovered windows remain fully opaque."),
+        Kind::Integer, 90, 60, 100, {}, true, false, true, true);
+    opacity.useSlider = true;
+    result.last().fields.append(opacity);
     result.append({
         Category::Font,
         QStringLiteral("font"),

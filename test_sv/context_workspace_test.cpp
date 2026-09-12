@@ -4,6 +4,11 @@
 #include "contextrail.h"
 #include "contextworkspacecontroller.h"
 #include "workspacesessionstateservice.h"
+#include "contextfloatingwindow.h"
+#include "temporaryeditorcontextprovider.h"
+#include "settingscenterkeys.h"
+#include "settingscenterpanel.h"
+#include "settingscenterservice.h"
 
 #include <QAction>
 #include <QApplication>
@@ -12,6 +17,11 @@
 #include <QEvent>
 #include <QDir>
 #include <QTemporaryDir>
+#include <QSettings>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QScreen>
+#include <QSlider>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMouseEvent>
@@ -20,6 +30,7 @@
 #include <QTest>
 #include <QToolButton>
 #include <QUrl>
+#include <QWindow>
 
 #include <iostream>
 #include <limits>
@@ -112,6 +123,7 @@ bool anchoredToBottomRight(const QWidget* host,
 }
 
 struct ProviderCounters {
+    bool detachable = false;
     ContextResource activation;
     int created = 0;
     int restored = 0;
@@ -161,6 +173,7 @@ public:
         const ContextResource&) const override
     {
         ContextViewCapabilities result;
+        result.detachable = counters && counters->detachable;
         result.presentations =
             ContextPresentation::Peek
             | ContextPresentation::Pinned
@@ -234,7 +247,11 @@ bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
         && a.activePinnedResourceKey == b.activePinnedResourceKey
         && a.peekWidth == b.peekWidth && a.peekHeight == b.peekHeight
         && a.dockWidth == b.dockWidth && a.dockVisible == b.dockVisible
-        && a.railVisible == b.railVisible && a.valid == b.valid;
+        && a.railVisible == b.railVisible && a.valid == b.valid
+        && a.floatingX == b.floatingX && a.floatingY == b.floatingY
+        && a.floatingWidth == b.floatingWidth && a.floatingHeight == b.floatingHeight
+        && a.floatingScreenName == b.floatingScreenName
+        && a.floatingGeometryValid == b.floatingGeometryValid;
 }
 
 void verifyStateCompatibility(const QStringList& arguments)
@@ -271,7 +288,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     const auto restored = controller.restoreState(initial);
     QApplication::processEvents();
     const auto captured = controller.captureState();
-    check(ContextWorkspaceState::kVersion == 3 && restored.restoredResources == 2
+    check(ContextWorkspaceState::kVersion == 4 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
           "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
 
@@ -455,6 +472,219 @@ void verifyRailFocusExisting()
               && controller.dockHost()->resourceCount() == 2 && fixture.counters.created == 2,
           "rail_focus_existing: hidden sidebar restores its active resource without creating another view");
 }
+
+void verifyDetachableRoutingAndMovement()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    const auto item = resource(QStringLiteral("movable"));
+    check(ContextViewCapabilities{}.detachable,
+          "detachable_default: providers are detachable unless explicitly opted out");
+    controller.openResource(item, floatingPlacement);
+    QWidget* original = controller.floatingSurface()->view();
+    check(original && !controller.peekHost()->isWindow()
+              && controller.peekHost()->parentWidget() == fixture.window.centralWidget()
+              && controller.peekHost()->hasResource() && !controller.floatingWindow()->hasResource(),
+          "detachable_routing: non-detachable view remains an editor-region overlay");
+    const int created = fixture.counters.created;
+    check(controller.pinPeek() && controller.dockHost()->viewForResource(item.stableKey()) == original,
+          "floating_movement: overlay to dock transports the same QWidget");
+    fixture.counters.detachable = true;
+    check(controller.unpinResource(item.stableKey())
+              && controller.floatingWindow()->view() == original
+              && controller.floatingWindow()->isWindow()
+              && controller.floatingWindow()->windowType() == Qt::Tool
+              && controller.floatingWindow()->parentWidget() == &fixture.window
+              && !(controller.floatingWindow()->windowFlags() & Qt::FramelessWindowHint)
+              && !controller.peekHost()->hasResource() && fixture.counters.created == created,
+          "floating_movement: dock to native Tool window transports without reconstruction");
+    check(controller.pinPeek() && controller.dockHost()->viewForResource(item.stableKey()) == original,
+          "floating_movement: native window to dock preserves identity");
+    fixture.counters.detachable = false;
+    check(controller.unpinResource(item.stableKey())
+              && controller.peekHost()->view() == original && !controller.floatingWindow()->hasResource()
+              && fixture.counters.created == created,
+          "floating_movement: returning to overlay keeps the original view and creation count");
+    TemporaryEditorContextProvider editorProvider(nullptr);
+    const auto capabilities = editorProvider.capabilities({});
+    check(!capabilities.detachable && capabilities.preferredSize() == QSize(580, 480)
+              && capabilities.minimumWidth == 360 && capabilities.maximumWidth == 900
+              && capabilities.minimumHeight == 260 && capabilities.maximumHeight == 920
+              && !capabilities.supports(ContextPresentation::FullView),
+          "temporary_editor_detachable: real provider opts out without changing existing capabilities");
+}
+
+void verifyFloatingGeometryRoundtrip()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
+    auto* window = controller.floatingWindow();
+    using State = ContextWorkspaceState;
+    const QRect available = window->screen()->availableGeometry();
+    std::cout << "floating_geometry screen: " << available.x() << ',' << available.y()
+              << ' ' << available.width() << 'x' << available.height()
+              << " name='" << window->screen()->name().toStdString() << "'\n";
+    if (available.width() < State::kMinimumPeekWidth || available.height() < State::kMinimumPeekHeight) {
+        std::cout << "SKIP: floating geometry roundtrip: available screen is smaller than the minimum window size\n";
+        window->close();
+        check(!controller.floatingSurface()->hasResource() && !window->isVisible(),
+              "native_close: native close action routes through controller disposal");
+        return;
+    }
+    const QSize size(State::boundedPeekWidth(available.width() / 2),
+                     State::boundedPeekHeight(available.height() / 2));
+    const QRect target(available.x() + (available.width() - size.width()) / 2,
+                       available.y() + (available.height() - size.height()) / 2,
+                       size.width(), size.height());
+    const QMargins margins = window->windowHandle()->frameMargins();
+    window->resize(target.width() - margins.left() - margins.right(),
+                   target.height() - margins.top() - margins.bottom());
+    window->move(target.topLeft());
+    QApplication::processEvents();
+    const auto saved = controller.captureState();
+    check(available.contains(target) && window->frameGeometry() == target,
+          "floating_geometry: derived outer rectangle is fully visible and applied exactly");
+    check(saved.floatingScreenName == window->screen()->name(),
+          "floating_geometry: captured screen name matches the current screen without substitution");
+    check(saved.floatingGeometryValid && saved.floatingWidth == window->frameGeometry().width()
+              && saved.floatingHeight == window->frameGeometry().height()
+              && saved.floatingX == window->frameGeometry().x()
+              && saved.floatingY == window->frameGeometry().y()
+              && saved.floatingScreenName == window->screen()->name(),
+          "floating_geometry: native frame rectangle and screen name are captured");
+    controller.restoreState(saved);
+    check(ContextWorkspaceState::kVersion == 4 && sameState(saved, controller.captureState()),
+          "floating_geometry: all fields survive capture and restore independently of overlay size");
+    controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
+    QApplication::processEvents();
+    check(sameState(saved, controller.captureState()),
+          "floating_geometry: reopening uses saved geometry rather than provider preferred size");
+    window->close();
+    check(!controller.floatingSurface()->hasResource() && !window->isVisible(),
+          "native_close: native close action routes through controller disposal");
+}
+
+void verifyFloatingScreenFallback()
+{
+    using State = ContextWorkspaceState;
+    const QRect primary(0, 0, 1920, 1040);
+    const QRect second(1920, 0, 1280, 1000);
+    const QList<QRect> screens{primary, second};
+    const QList<QString> names{QStringLiteral("primary"), QStringLiteral("second")};
+    const QRect valid(2010, 100, 500, 400);
+    check(State::resolvedFloatingGeometry(valid, "second", screens, primary, names) == valid,
+          "screen_fallback_a: existing screen and accessible title preserve geometry");
+    check(primary.contains(State::resolvedFloatingGeometry(valid, "missing", screens, primary, names)),
+          "screen_fallback_b: disconnected screen falls fully inside primary");
+    check(primary.contains(State::resolvedFloatingGeometry(QRect(3180, -390, 500, 400), "second", screens, primary, names)),
+          "screen_fallback_c: off-screen title and insufficient horizontal overlap fall back");
+    check(State::resolvedFloatingGeometry(QRect(0, 0, 10, 5), "primary", screens, primary, names).size()
+              == QSize(State::kMinimumPeekWidth, State::kMinimumPeekHeight)
+              && State::resolvedFloatingGeometry(QRect(0, 0, 40000, 40000), "primary", screens, primary, names).size()
+              == QSize(State::kMaximumPeekWidth, State::kMaximumStoredPeekHeight),
+          "screen_fallback_d: sizes are bounded by existing minimum and maximum constants");
+    const auto empty = State::resolvedFloatingGeometry(QRect(-900, -900, 8000, 8000), "second", {}, primary, {});
+    check(!empty.isEmpty() && empty.x() >= 0 && empty.y() >= 0 && primary.contains(empty),
+          "screen_fallback_e: empty screen lists still produce a visible primary rectangle");
+    const QRect partial(1920 - State::kMinimumPeekWidth / 2, 0, 500, 400);
+    check(State::resolvedFloatingGeometry(partial, "primary", screens, primary, names) == partial
+              && primary.contains(State::resolvedFloatingGeometry(partial.translated(1, 0), "primary", screens, primary, names))
+              && primary.contains(State::resolvedFloatingGeometry(QRect(100, -1, 500, 400), "primary", screens, primary, names)),
+          "screen_fallback_thresholds: horizontal boundary and entire title strip are enforced");
+    const QRect tiny(0, 0, 120, 100);
+    check(tiny.contains(State::resolvedFloatingGeometry(valid, "missing", {}, tiny, {})),
+          "screen_fallback_tiny: available screen size takes precedence over logical minima");
+}
+
+void verifyV3ContextInput()
+{
+    QTemporaryDir temporary;
+    const QString root = temporary.path();
+    const QString path = temporary.filePath(QStringLiteral("session.ini"));
+    WorkspaceSessionStateService service(path);
+    WorkspaceSessionState session;
+    session.workspaceRoot = root;
+    auto& expected = session.ui.contextWorkspace;
+    expected.valid = true;
+    expected.peekWidth = 610;
+    expected.peekHeight = 480;
+    expected.dockWidth = 410;
+    expected.dockVisible = true;
+    expected.railVisible = false;
+    expected.activePinnedResourceKey = "mock:old";
+    expected.pinnedResources = {resource("old").toVariantMap()};
+    expected.providerStates = {{"mock", QVariantMap{{"expanded", QStringList{"source"}}}}};
+    check(service.save(session).saved, "v3_input: session fixture is available");
+    QSettings settings(path, QSettings::IniFormat);
+    const QString key = settings.allKeys().constFirst();
+    QJsonObject document = QJsonDocument::fromJson(settings.value(key).toByteArray()).object();
+    QJsonObject ui = document.value("ui").toObject();
+    QJsonObject context = ui.value("contextWorkspace").toObject();
+    context.insert("version", 3);
+    context.insert("floatingX", 1234);
+    context.insert("floatingWidth", 777);
+    context.insert("floatingGeometryValid", true);
+    ui.insert("contextWorkspace", context);
+    document.insert("ui", ui);
+    settings.setValue(key, QJsonDocument(document).toJson(QJsonDocument::Compact));
+    settings.sync();
+    const auto loaded = service.load(root);
+    check(loaded.loaded && sameState(expected, loaded.state.ui.contextWorkspace)
+              && !loaded.state.ui.contextWorkspace.floatingGeometryValid
+              && loaded.state.ui.contextWorkspace.floatingWidth == ContextWorkspaceState::kDefaultPeekWidth,
+          "v3_input: all old fields survive and v4 geometry keys are ignored with defaults");
+}
+
+void verifyFloatingOpacityAndSettings()
+{
+    PlacementFixture fixture;
+    auto* window = fixture.controller->floatingWindow();
+    check(window->idleOpacity() == 90, "floating_opacity: default inactive opacity is 90 percent");
+    window->setIdleOpacity(73);
+    window->applyInteractionOpacity(false, false);
+    check(qAbs(window->windowOpacity() - 0.73) < 0.005, "floating_opacity: inactive non-hovered window uses preference");
+    window->applyInteractionOpacity(true, false);
+    check(window->windowOpacity() == 1.0, "floating_opacity: active window is fully opaque");
+    window->applyInteractionOpacity(false, true);
+    check(window->windowOpacity() == 1.0, "floating_opacity: hovered inactive window is fully opaque");
+    window->setIdleOpacity(0);
+    check(window->idleOpacity() == 60, "floating_opacity: runtime lower bound is enforced");
+    window->setIdleOpacity(101);
+    check(window->idleOpacity() == 100, "floating_opacity: runtime upper bound is enforced");
+    QTemporaryDir temporary;
+    SettingsCenterService service(temporary.filePath("settings.ini"));
+    SettingsCenterPanel panel(&service, {});
+    auto* slider = qobject_cast<QSlider*>(panel.fieldEditor("appearance.floatingContextOpacity"));
+    QObject::connect(&panel, &SettingsCenterPanel::settingsApplied, window, [&] {
+        window->setIdleOpacity(panel.snapshot().value("appearance.floatingContextOpacity").toInt());
+    });
+    check(slider && slider->minimum() == 60 && slider->maximum() == 100 && slider->value() == 90,
+          "floating_opacity_setting: Settings exposes the bounded global slider with default value");
+    if (slider) slider->setValue(81);
+    check(service.load().value("appearance.floatingContextOpacity").toInt() == 81 && window->idleOpacity() == 81
+              && !SettingsCenterSchema::field("appearance.floatingContextOpacity")->workspaceAllowed
+              && SettingsCenterSchema::field("appearance.floatingContextOpacity")->storageKey
+                     == QString::fromLatin1(SettingsCenterKeys::FloatingContextOpacity),
+          "floating_opacity_setting: slider immediately persists the global preference and updates runtime");
+}
+
+void verifySingleFloatingInstance()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    for (bool detachable : {false, true, true, false}) {
+        QPointer<QWidget> previous = controller.floatingSurface()->view();
+        fixture.counters.detachable = detachable;
+        const auto item = resource(QString::number(fixture.counters.created));
+        controller.openResource(item, floatingPlacement);
+        processDeferredDeletes();
+        check(previous.isNull() && int(controller.peekHost()->hasResource()) + int(controller.floatingWindow()->hasResource()) == 1
+                  && controller.floatingSurface()->resource() == item,
+              "single_floating_instance: replacing overlay/native resources always disposes the old view");
+    }
+}
 }
 
 int main(int argc, char* argv[])
@@ -465,6 +695,12 @@ int main(int argc, char* argv[])
     verifyUnsupportedPlacements();
     verifyRailThreeStates();
     verifyRailFocusExisting();
+    verifyDetachableRoutingAndMovement();
+    verifyFloatingGeometryRoundtrip();
+    verifyFloatingScreenFallback();
+    verifyV3ContextInput();
+    verifyFloatingOpacityAndSettings();
+    verifySingleFloatingInstance();
 
     const ContextResource original = resource(QStringLiteral("a"));
     QString parseFailure;

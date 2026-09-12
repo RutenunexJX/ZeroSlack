@@ -57,6 +57,7 @@ struct SettingsCenterFieldDescriptor {
     bool alwaysActive = false;
     bool immediateApply = false;
     bool allowEmpty = false;
+    bool useSlider = false;
 };
 
 struct SettingsCenterCategoryDescriptor {

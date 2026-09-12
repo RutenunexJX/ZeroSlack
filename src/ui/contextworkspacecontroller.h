@@ -15,6 +15,8 @@
 
 class ContextDockHost;
 class ContextPeekHost;
+class ContextFloatingSurface;
+class ContextFloatingWindow;
 class ContextRail;
 class IContextContentProvider;
 class QDockWidget;
@@ -35,6 +37,9 @@ public:
 
     ContextRail* rail() const;
     ContextPeekHost* peekHost() const;
+    ContextFloatingSurface* floatingSurface() const;
+    ContextFloatingWindow* floatingWindow() const;
+    void setFloatingOpacity(int percentage);
     ContextDockHost* dockHost() const;
     QDockWidget* dockWidget() const;
 
@@ -78,6 +83,8 @@ private:
     QPointer<QWidget> editorRegionValue;
     QPointer<ContextRail> railValue;
     QPointer<ContextPeekHost> peekHostValue;
+    QPointer<ContextFloatingWindow> floatingWindowValue;
+    ContextFloatingSurface* activeFloatingSurface = nullptr;
     QPointer<ContextDockHost> dockHostValue;
     QPointer<QDockWidget> dockValue;
     std::map<QString,
@@ -102,6 +109,8 @@ private:
     void activateRailProvider(const QString& providerId);
     static ContextPlacement defaultPlacementFor(const QString& providerId);
     static ContextPresentation presentationFor(const ContextPlacement& placement);
+    ContextFloatingSurface* floatingSurfaceFor(const ContextViewCapabilities* capabilities = nullptr) const;
+    QWidget* floatingWidget() const;
     bool openInFloatingSurface(const ContextResource& resource,
                                IContextContentProvider& provider,
                                const ContextViewCapabilities& capabilities,
