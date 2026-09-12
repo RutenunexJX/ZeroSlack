@@ -116,35 +116,7 @@ ContextWorkspaceController::ContextWorkspaceController(
     connect(railValue,
             &ContextRail::entryActivated,
             this,
-            [this](const QString& providerId) {
-                if (peekHostValue
-                    && peekHostValue->hasResource()
-                    && peekHostValue->resource().providerId
-                           == providerId) {
-                    closePeek();
-                    return;
-                }
-                if (dockValue->isVisible()
-                    && dockHostValue->currentResource().providerId == providerId) {
-                    dockValue->hide();
-                    return;
-                }
-                if (activatePinnedProvider(providerId))
-                    return;
-                IContextContentProvider* provider =
-                    providerForId(providerId);
-                if (provider) {
-                    const ContextResource resource =
-                        provider->activationResource(
-                            currentWorkspaceRoot);
-                    if (resource.isValid()
-                        && openResource(resource,
-                                        ContextOpenMode::TransientDock)) {
-                        return;
-                    }
-                }
-                emit providerActivationRequested(providerId);
-            });
+            &ContextWorkspaceController::activateRailProvider);
     connect(peekHostValue,
             &ContextPeekHost::pinRequested,
             this,
@@ -306,9 +278,16 @@ QStringList ContextWorkspaceController::providerIds() const
     return result;
 }
 
+ContextPresentation ContextWorkspaceController::presentationFor(
+    const ContextPlacement& placement)
+{
+    return placement.surface == ContextSurface::Floating
+        ? ContextPresentation::Peek : ContextPresentation::Pinned;
+}
+
 bool ContextWorkspaceController::openResource(
     const ContextResource& resource,
-    ContextOpenMode mode,
+    ContextPlacement placement,
     QString* failureReason)
 {
     if (failureReason)
@@ -331,13 +310,19 @@ bool ContextWorkspaceController::openResource(
         return false;
     }
 
-    const ContextPresentation presentation =
-        mode == ContextOpenMode::Peek
-        ? ContextPresentation::Peek
-        : ContextPresentation::Pinned;
+    if (placement.binding != ContextBinding::Global
+        || (placement.surface == ContextSurface::Floating
+            && placement.persistence == ContextPersistence::Kept)) {
+        if (failureReason) {
+            *failureReason = QStringLiteral(
+                "Document-bound or floating kept placements are not available yet: %1.")
+                .arg(contextPlacementName(placement));
+        }
+        return false;
+    }
     const ContextViewCapabilities capabilities =
         provider->capabilities(resource);
-    if (!capabilities.supports(presentation)) {
+    if (!capabilities.supports(presentationFor(placement))) {
         if (failureReason) {
             *failureReason = QStringLiteral(
                 "The context provider does not support this presentation.");
@@ -345,73 +330,60 @@ bool ContextWorkspaceController::openResource(
         return false;
     }
 
-    const QString key = resource.stableKey();
-    if (mode == ContextOpenMode::TransientDock
-        && transientDockResourceKey == key
-        && dockHostValue->containsResource(key)
-        && dockValue->isVisible()) {
-        closePinnedResource(key);
-        return true;
-    }
-    if (mode == ContextOpenMode::TransientDock
-        && !transientDockResourceKey.isEmpty()
-        && transientDockResourceKey != key) {
-        closePinnedResource(transientDockResourceKey);
-    }
-    if (dockHostValue->containsResource(key)) {
-        QWidget* view = dockHostValue->viewForResource(key);
-        if (!provider->activateView(view, resource)) {
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "The context provider could not activate the resource.");
-            }
-            return false;
-        }
-        dockHostValue->updateResource(resource);
-        dockHostValue->setFullViewAvailable(
-            key,
-            capabilities.supports(ContextPresentation::FullView));
-        dockHostValue->activateResource(key);
-        showDock(false);
-        updateActiveRailEntry();
-        if (mode == ContextOpenMode::Pinned)
-            notifyWorkspaceStateChanged();
-        return true;
-    }
-    if (peekHostValue->hasResource()
-        && peekHostValue->resource().stableKey() == key) {
-        if (mode == ContextOpenMode::Pinned)
-            return pinPeek(failureReason);
-        if (!provider->activateView(peekHostValue->view(), resource)) {
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "The context provider could not activate the resource.");
-            }
-            return false;
-        }
-        peekHostValue->setActionsAvailable(
-            capabilities.supports(ContextPresentation::Pinned),
-            capabilities.supports(ContextPresentation::FullView));
-        peekHostValue->updateResource(resource);
-        peekHostValue->show();
-        peekHostValue->raise();
-        updateActiveRailEntry();
-        return true;
-    }
+    return placement.surface == ContextSurface::Floating
+        ? openInFloatingSurface(resource, *provider, capabilities, failureReason)
+        : openInDockedSurface(resource, placement, *provider, capabilities, failureReason);
+}
 
-    QWidget* view = provider->createView(
-        resource,
-        mode == ContextOpenMode::Peek
-            ? static_cast<QWidget*>(peekHostValue)
-            : static_cast<QWidget*>(dockHostValue));
+bool ContextWorkspaceController::activateDockedResource(
+    const ContextResource& resource, IContextContentProvider& provider,
+    const ContextViewCapabilities& capabilities, QString* failureReason)
+{
+    const QString key = resource.stableKey();
+    if (!provider.activateView(dockHostValue->viewForResource(key), resource)) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The context provider could not activate the resource.");
+        return false;
+    }
+    dockHostValue->updateResource(resource);
+    dockHostValue->setFullViewAvailable(key, capabilities.supports(ContextPresentation::FullView));
+    dockHostValue->activateResource(key);
+    showDock(false);
+    updateActiveRailEntry();
+    return true;
+}
+
+bool ContextWorkspaceController::activateFloatingResource(
+    const ContextResource& resource, IContextContentProvider& provider,
+    const ContextViewCapabilities& capabilities, QString* failureReason)
+{
+    if (!provider.activateView(peekHostValue->view(), resource)) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The context provider could not activate the resource.");
+        return false;
+    }
+    peekHostValue->setActionsAvailable(capabilities.supports(ContextPresentation::Pinned),
+                                       capabilities.supports(ContextPresentation::FullView));
+    peekHostValue->updateResource(resource);
+    peekHostValue->show();
+    peekHostValue->raise();
+    updateActiveRailEntry();
+    return true;
+}
+
+QWidget* ContextWorkspaceController::createResourceView(
+    const ContextResource& resource, IContextContentProvider& provider,
+    QWidget* parent, QString* failureReason)
+{
+    QWidget* view = provider.createView(resource, parent);
     if (!view) {
         if (failureReason) {
             *failureReason = QStringLiteral(
                 "The context provider could not create its view.");
         }
-        return false;
+        return nullptr;
     }
-    provider->observeViewResourceChanges(
+    provider.observeViewResourceChanges(
         view,
         this,
         [this, guardedView = QPointer<QWidget>(view)](
@@ -419,46 +391,105 @@ bool ContextWorkspaceController::openResource(
             if (guardedView)
                 handleViewResourceChanged(guardedView, updated);
         });
-    if (!provider->activateView(view, resource)) {
+    if (!provider.activateView(view, resource)) {
         view->deleteLater();
         if (failureReason) {
             *failureReason = QStringLiteral(
                 "The context provider could not activate the resource.");
         }
+        return nullptr;
+    }
+    return view;
+}
+
+void ContextWorkspaceController::announceResourceOpened(
+    const ContextResource& resource, ContextPlacement placement)
+{
+    updateActiveRailEntry();
+    emit resourceOpened(resource, placement);
+    emit activeResourceChanged(resource);
+}
+
+bool ContextWorkspaceController::openInFloatingSurface(
+    const ContextResource& resource, IContextContentProvider& provider,
+    const ContextViewCapabilities& capabilities, QString* failureReason)
+{
+    const QString key = resource.stableKey();
+    if (dockHostValue->containsResource(key))
+        return activateDockedResource(resource, provider, capabilities, failureReason);
+    if (peekHostValue->hasResource() && peekHostValue->resource().stableKey() == key)
+        return activateFloatingResource(resource, provider, capabilities, failureReason);
+    QWidget* view = createResourceView(resource, provider, peekHostValue, failureReason);
+    if (!view)
+        return false;
+    closePeek();
+    peekHostValue->setActionsAvailable(capabilities.supports(ContextPresentation::Pinned),
+                                       capabilities.supports(ContextPresentation::FullView));
+    peekHostValue->setView(resource, view);
+    announceResourceOpened(resource, {ContextSurface::Floating, ContextPersistence::Transient,
+                                      ContextBinding::Global});
+    return true;
+}
+
+bool ContextWorkspaceController::addDockedResource(
+    const ContextResource& resource, IContextContentProvider& provider,
+    const ContextViewCapabilities& capabilities, QString* failureReason)
+{
+    QWidget* view = createResourceView(resource, provider, dockHostValue, failureReason);
+    if (!view)
+        return false;
+    const bool dockWasEmpty = dockHostValue->resourceCount() == 0;
+    if (!dockHostValue->addResource(resource, view, capabilities.supports(ContextPresentation::FullView))) {
+        view->deleteLater();
+        if (failureReason)
+            *failureReason = QStringLiteral("The context resource is already pinned.");
         return false;
     }
-
-    if (mode == ContextOpenMode::Peek) {
-        closePeek();
-        peekHostValue->setActionsAvailable(
-            capabilities.supports(ContextPresentation::Pinned),
-            capabilities.supports(ContextPresentation::FullView));
-        peekHostValue->setView(resource, view);
-    } else {
-        const bool dockWasEmpty =
-            dockHostValue->resourceCount() == 0;
-        if (!dockHostValue->addResource(
-                resource,
-                view,
-                capabilities.supports(
-                    ContextPresentation::FullView))) {
-            view->deleteLater();
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "The context resource is already pinned.");
-            }
-            return false;
-        }
-        showDock(dockWasEmpty && !restoringState);
-        if (mode == ContextOpenMode::TransientDock)
-            transientDockResourceKey = key;
-    }
-    updateActiveRailEntry();
-    emit resourceOpened(resource, mode);
-    emit activeResourceChanged(resource);
-    if (mode == ContextOpenMode::Pinned)
-        notifyWorkspaceStateChanged();
+    showDock(dockWasEmpty && !restoringState);
     return true;
+}
+
+bool ContextWorkspaceController::openInDockedSurface(
+    const ContextResource& resource, ContextPlacement placement,
+    IContextContentProvider& provider, const ContextViewCapabilities& capabilities,
+    QString* failureReason)
+{
+    const QString key = resource.stableKey();
+    switch (placement.persistence) {
+    case ContextPersistence::Transient:
+        if (transientDockResourceKey == key && dockHostValue->containsResource(key)
+            && dockValue->isVisible()) {
+            closePinnedResource(key);
+            return true;
+        }
+        if (!transientDockResourceKey.isEmpty() && transientDockResourceKey != key)
+            closePinnedResource(transientDockResourceKey);
+        if (dockHostValue->containsResource(key))
+            return activateDockedResource(resource, provider, capabilities, failureReason);
+        // Existing previews retain their surface, just as existing dock tabs do.
+        if (peekHostValue->hasResource() && peekHostValue->resource().stableKey() == key)
+            return activateFloatingResource(resource, provider, capabilities, failureReason);
+        if (!addDockedResource(resource, provider, capabilities, failureReason))
+            return false;
+        transientDockResourceKey = key;
+        announceResourceOpened(resource, placement);
+        return true;
+    case ContextPersistence::Kept:
+        if (dockHostValue->containsResource(key)) {
+            if (!activateDockedResource(resource, provider, capabilities, failureReason))
+                return false;
+            notifyWorkspaceStateChanged();
+            return true;
+        }
+        if (peekHostValue->hasResource() && peekHostValue->resource().stableKey() == key)
+            return pinPeek(failureReason);
+        if (!addDockedResource(resource, provider, capabilities, failureReason))
+            return false;
+        announceResourceOpened(resource, placement);
+        notifyWorkspaceStateChanged();
+        return true;
+    }
+    return false;
 }
 
 bool ContextWorkspaceController::pinPeek(QString* failureReason)
@@ -501,7 +532,7 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
     }
     showDock(dockWasEmpty && !restoringState);
     updateActiveRailEntry();
-    emit resourceOpened(resource, ContextOpenMode::Pinned);
+    emit resourceOpened(resource, ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global});
     emit activeResourceChanged(resource);
     notifyWorkspaceStateChanged();
     return true;
@@ -776,7 +807,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         }
         if (!restored.isValid()
             || !openResource(restored,
-                             ContextOpenMode::Pinned,
+                             ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
                              &failureReason)) {
             ++result.skippedResources;
             result.warnings.append(
@@ -912,28 +943,53 @@ void ContextWorkspaceController::updateActiveRailEntry()
     railValue->setActiveEntryId({});
 }
 
-bool ContextWorkspaceController::activatePinnedProvider(
+ContextPlacement ContextWorkspaceController::defaultPlacementFor(const QString& providerId)
+{
+    Q_UNUSED(providerId);
+    // A later phase will resolve each provider's remembered placement here.
+    return {ContextSurface::Docked, ContextPersistence::Transient, ContextBinding::Global};
+}
+
+void ContextWorkspaceController::activateRailProvider(
     const QString& providerId)
 {
-    if (!dockHostValue)
-        return false;
-    if (dockHostValue->currentResource().providerId == providerId) {
-        showDock(false);
-        updateActiveRailEntry();
-        return true;
+    if (peekHostValue->hasResource() && peekHostValue->resource().providerId == providerId) {
+        if (peekHostValue->isVisible()) {
+            closePeek();
+        } else {
+            peekHostValue->show();
+            peekHostValue->raise();
+            updateActiveRailEntry();
+        }
+        return;
     }
-    for (int index = 0;
-         index < dockHostValue->resourceCount();
-         ++index) {
-        const ContextResource resource = dockHostValue->resourceAt(index);
-        if (resource.providerId != providerId)
-            continue;
-        dockHostValue->activateResource(resource.stableKey());
-        showDock(false);
-        updateActiveRailEntry();
-        return true;
+    ContextResource opened = dockHostValue->currentResource();
+    if (opened.providerId != providerId) {
+        opened = {};
+        for (int index = 0; index < dockHostValue->resourceCount(); ++index) {
+            const ContextResource candidate = dockHostValue->resourceAt(index);
+            if (candidate.providerId == providerId) {
+                opened = candidate;
+                break;
+            }
+        }
     }
-    return false;
+    if (opened.isValid()) {
+        if (dockValue->isVisible() && dockHostValue->currentResource() == opened) {
+            dockValue->hide();
+        } else {
+            dockHostValue->activateResource(opened.stableKey());
+            showDock(false);
+        }
+        updateActiveRailEntry();
+        return;
+    }
+    if (IContextContentProvider* provider = providerForId(providerId)) {
+        const ContextResource resource = provider->activationResource(currentWorkspaceRoot);
+        if (resource.isValid() && openResource(resource, defaultPlacementFor(providerId)))
+            return;
+    }
+    emit providerActivationRequested(providerId);
 }
 
 void ContextWorkspaceController::resetPeekToProviderPreferredSize()

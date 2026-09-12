@@ -1,11 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.25.10`
+Product version: `v0.25.11`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## 浮层/侧栏 第 1 期 · 地基 — 2026-09-12 (v0.25.11)
+
+- 将 Context 放置拆分为 surface、persistence、binding 三个维度；本期只支持原有三种组合，不含新功能。
+- 集中能力映射与 rail 切换规则，保持视图复用、宽度/尺寸记忆以及 v3 工作区状态双向兼容。
+- 未纳入版本管理的两个旧 `.zs` 样本保持缺失；相关测试不修改、不跳过，106/107 的唯一已知失败被接受。
+- 后续三期依次为：真浮层单实例 → 多实例与绑定 → 侧栏竖栈。本期不提前实现。
+- 验收证据见 [context placement review](docs/context-placement-review.md)。
 
 ## 语义可用性 第 1 阶段 — 2026-09-12 (v0.25.10)
 

@@ -648,6 +648,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/statetransitiongraphservice.h
     src/insights/statetransitiontriggerservice.h
     src/ui/contextresource.h
+    src/ui/contextplacement.h
     src/ui/contextworkspacestate.h
     src/ui/contextcontentprovider.h
     src/ui/contextrail.h

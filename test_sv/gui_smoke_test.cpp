@@ -14548,7 +14548,7 @@ int main(int argc, char** argv)
         themeContextController
         && themeContextController->openResource(
             themeContextResource,
-            ContextOpenMode::Peek);
+            ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global});
     for (int iteration = 0; iteration < 3; ++iteration) {
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);

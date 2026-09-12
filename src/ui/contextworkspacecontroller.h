@@ -2,6 +2,7 @@
 #define CONTEXTWORKSPACECONTROLLER_H
 
 #include "contextresource.h"
+#include "contextplacement.h"
 #include "contextworkspacestate.h"
 #include "zeroslackexport.h"
 
@@ -20,12 +21,6 @@ class QDockWidget;
 class QEvent;
 class QMainWindow;
 class QWidget;
-
-enum class ContextOpenMode {
-    Peek,
-    Pinned,
-    TransientDock
-};
 
 class ZEROSLACK_API ContextWorkspaceController final : public QObject
 {
@@ -50,7 +45,7 @@ public:
 
     bool openResource(
         const ContextResource& resource,
-        ContextOpenMode mode = ContextOpenMode::Peek,
+        ContextPlacement placement = {},
         QString* failureReason = nullptr);
     bool pinPeek(QString* failureReason = nullptr);
     bool unpinResource(const QString& resourceKey,
@@ -69,7 +64,7 @@ public:
 signals:
     void providerActivationRequested(const QString& providerId);
     void resourceOpened(const ContextResource& resource,
-                        ContextOpenMode mode);
+                        ContextPlacement placement);
     void resourceClosed(const ContextResource& resource);
     void activeResourceChanged(const ContextResource& resource);
     void fullViewRequested(const ContextResource& resource);
@@ -104,14 +99,39 @@ private:
         QWidget* view,
         const ContextResource& resource);
     void updateActiveRailEntry();
-    bool activatePinnedProvider(const QString& providerId);
+    void activateRailProvider(const QString& providerId);
+    static ContextPlacement defaultPlacementFor(const QString& providerId);
+    static ContextPresentation presentationFor(const ContextPlacement& placement);
+    bool openInFloatingSurface(const ContextResource& resource,
+                               IContextContentProvider& provider,
+                               const ContextViewCapabilities& capabilities,
+                               QString* failureReason);
+    bool openInDockedSurface(const ContextResource& resource,
+                             ContextPlacement placement,
+                             IContextContentProvider& provider,
+                             const ContextViewCapabilities& capabilities,
+                             QString* failureReason);
+    bool activateDockedResource(const ContextResource& resource,
+                                IContextContentProvider& provider,
+                                const ContextViewCapabilities& capabilities,
+                                QString* failureReason);
+    bool activateFloatingResource(const ContextResource& resource,
+                                  IContextContentProvider& provider,
+                                  const ContextViewCapabilities& capabilities,
+                                  QString* failureReason);
+    QWidget* createResourceView(const ContextResource& resource,
+                                IContextContentProvider& provider,
+                                QWidget* parent, QString* failureReason);
+    bool addDockedResource(const ContextResource& resource,
+                          IContextContentProvider& provider,
+                          const ContextViewCapabilities& capabilities,
+                          QString* failureReason);
+    void announceResourceOpened(const ContextResource& resource, ContextPlacement placement);
     void resetPeekToProviderPreferredSize();
     void refreshProviderIcons();
     int boundedDockWidthForWindow(int width) const;
     void showDock(bool applyPreferredWidth);
     void notifyWorkspaceStateChanged();
 };
-
-Q_DECLARE_METATYPE(ContextOpenMode)
 
 #endif // CONTEXTWORKSPACECONTROLLER_H

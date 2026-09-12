@@ -159,7 +159,7 @@ void MainWindow::setupContextWorkspace()
                 return contextWorkspaceController
                     && contextWorkspaceController->openResource(
                         item.contextResource,
-                        ContextOpenMode::Peek,
+                        ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
                         failureReason);
             }
             if (!item.suiteUri.isValid()) {
@@ -687,11 +687,11 @@ bool MainWindow::openLiveInsightFromSourceAction(
     QString failureReason;
     if (!contextWorkspaceController->openResource(
             resource,
-            ContextOpenMode::Peek,
+            ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
             &failureReason)
         || !contextWorkspaceController->openResource(
             resource,
-            ContextOpenMode::Pinned,
+            ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
             &failureReason)) {
         {
             postActivityMessage(

@@ -113,7 +113,7 @@ int main(int argc, char* argv[])
         TemporaryEditorContextProvider::resourceForLocation(
             first, temporaryDirectory.path());
     check(controller.openResource(
-              firstResource, ContextOpenMode::Peek),
+              firstResource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global}),
           "temporary editor opens in Peek");
 
     auto* contextView = qobject_cast<TemporaryEditorContextView*>(
@@ -149,17 +149,27 @@ int main(int argc, char* argv[])
             second, temporaryDirectory.path());
     QPointer<TemporaryEditorContextView> originalView = contextView;
     check(controller.openResource(
-              secondResource, ContextOpenMode::Peek)
+              secondResource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global})
               && controller.peekHost()->view() == originalView
               && contextView->historyCount() == 2
               && contextView->canGoBack(),
           "same stable resource reuses its view and appends history");
+    int backNotifications = 0;
+    QObject::connect(contextView, &TemporaryEditorContextView::currentLocationChanged,
+                     &window, [&backNotifications](const EditorLocation&) { ++backNotifications; });
     contextView->backButton()->click();
     check(contextView->currentLocation().refersToSameDocument(first)
               && contextView->currentLocation().line == first.line
               && controller.peekHost()->resource().title
-                     == contextView->currentLocation().displayText(),
+                     == TemporaryEditorContextProvider::resourceForCurrentEditor(
+                         &tabManager, temporaryDirectory.path()).title,
           "Back navigation updates both the view and common Peek title");
+    check(backNotifications == 1
+              && contextView->currentLocation().equivalentTo(first)
+              && controller.peekHost()->resource().stableKey() == firstResource.stableKey()
+              && TemporaryEditorContextProvider::locationFromResource(
+                     controller.peekHost()->resource()).equivalentTo(first),
+          "Back notification preserves identity and updates the common resource location");
 
     check(controller.pinPeek()
               && controller.dockHost()->resourceCount() == 1

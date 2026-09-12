@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.11] - 2026-09-12
+
+- Separated Context placement into surface, persistence and binding dimensions, retaining existing preview/sidebar routing, live view reuse and v3 workspace state.
+- Centralized rail activation and capability mapping, with explicit rejection of unsupported placements before any view or state changes.
+- Corrected the temporary-editor Back title assertion to match source tabs and the Pinloom rail test to match documented sidebar behavior, with null guards and stronger identity checks.
+- Added placement, rail and cross-build state compatibility coverage; the two missing, unversioned legacy fixture checks remain an accepted limitation of workspace_persistence_test.
+
 ## [0.25.10] - 2026-09-12
 
 - Restored semantic availability after 250 ms of editing idle time for unsaved comment and whitespace changes, using worker-verified trivia remapping without Slang or semantic cache writes.

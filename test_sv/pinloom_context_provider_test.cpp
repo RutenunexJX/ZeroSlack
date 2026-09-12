@@ -363,13 +363,29 @@ int main(int argc, char* argv[])
     if (pinloomAction)
         pinloomAction->trigger();
     QApplication::processEvents();
-    check(pinloomAction && controller.peekHost()->hasResource(),
-          "Pinloom rail activation opens its provider resource in Peek");
+    check(pinloomAction && controller.dockWidget()->isVisible()
+              && controller.dockHost()->resourceCount() == 1
+              && !controller.peekHost()->hasResource()
+              && controller.captureState().pinnedResources.isEmpty(),
+          "Pinloom rail activation opens one transient sidebar resource without Peek");
     auto* view = qobject_cast<PinloomContextView*>(
-        controller.peekHost()->view());
+        controller.dockHost()->viewForResource(
+            controller.dockHost()->currentResource().stableKey()));
     check(view && searchRequests == 1
               && view->resultList()->count() == 1,
           "opening Pinloom performs unified search through the host bridge");
+    if (!pinloomAction || !view)
+        return 1;
+    pinloomAction->trigger();
+    check(!controller.dockWidget()->isVisible(),
+          "second Pinloom rail click collapses the sidebar");
+    pinloomAction->trigger();
+    check(controller.dockWidget()->isVisible()
+              && controller.dockHost()->resourceCount() == 1
+              && controller.dockHost()->viewForResource(
+                  controller.dockHost()->currentResource().stableKey()) == view
+              && searchRequests == 1,
+          "third Pinloom rail click reuses the same view without another search");
 
     view->resultList()->setCurrentRow(0);
     QApplication::processEvents();
@@ -379,11 +395,17 @@ int main(int argc, char* argv[])
               && view->previewEditor()->toPlainText().contains(
                      QStringLiteral("synchronized")),
           "selecting a result resolves authoritative Pinloom content");
-    check(controller.peekHost()->resource().resourceId
+    check(controller.dockHost()->currentResource().resourceId
               == QStringLiteral("library")
-              && controller.peekHost()->resource().uri.scheme()
+              && controller.dockHost()->currentResource().uri.scheme()
                      == QStringLiteral("pinloom"),
           "selection updates the portable Pinloom URI without duplicating content");
+    check(controller.unpinResource(
+              controller.dockHost()->currentResource().stableKey(), &failureReason)
+              && controller.peekHost()->view() == view,
+          "explicit floating preview retains the selected Pinloom view");
+    if (controller.peekHost()->view() != view)
+        return 1;
 
     const ContextResource linkedResource =
         PinloomContextProvider::resourceForUri(
@@ -733,7 +755,7 @@ int main(int argc, char* argv[])
           "one code anchor produces a grouped multi-target resource");
     check(controller.openResource(
               bindingsResource,
-              ContextOpenMode::TransientDock,
+              ContextPlacement{ContextSurface::Docked, ContextPersistence::Transient, ContextBinding::Global},
               &failureReason),
           "a binding marker opens grouped Pinloom content in the real side dock");
     auto* boundView = qobject_cast<PinloomContextView*>(
@@ -747,7 +769,7 @@ int main(int argc, char* argv[])
           "transient binding content is excluded from workspace persistence");
     check(controller.openResource(
               bindingsResource,
-              ContextOpenMode::TransientDock,
+              ContextPlacement{ContextSurface::Docked, ContextPersistence::Transient, ContextBinding::Global},
               &failureReason)
               && !controller.dockHost()->containsResource(
                   bindingsResource.stableKey()),
@@ -769,6 +791,8 @@ int main(int argc, char* argv[])
         QStringLiteral("pinloomContextAttachEntry"));
     check(attachButton && attachButton->isEnabled(),
           "link mode can attach the selected existing Pinloom entry");
+    if (!attachButton)
+        return 1;
     attachButton->click();
     check(linkCalls == 1 && !view->linkModeActive(),
           "attaching an existing entry persists the code link and closes link mode");
@@ -782,6 +806,8 @@ int main(int argc, char* argv[])
         QStringLiteral("pinloomContextCreateAnchor"));
     check(createButton && createButton->isEnabled(),
           "link mode exposes source-anchor creation");
+    if (!createButton)
+        return 1;
     createButton->click();
     check(createRequests == 1 && linkCalls == 2
               && !view->linkModeActive(),

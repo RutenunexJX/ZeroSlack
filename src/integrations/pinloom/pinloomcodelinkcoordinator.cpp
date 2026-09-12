@@ -127,8 +127,8 @@ ActionExecutionResult PinloomCodeLinkCoordinator::execute(
     if (!contextWorkspace->openResource(
             resource,
             descriptor.executionRoute == kLinkSelectionRoute
-                ? ContextOpenMode::Peek
-                : ContextOpenMode::TransientDock,
+                ? ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global}
+                : ContextPlacement{ContextSurface::Docked, ContextPersistence::Transient, ContextBinding::Global},
             &failureReason)) {
         return fail(failureReason);
     }

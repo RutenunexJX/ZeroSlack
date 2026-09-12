@@ -1359,7 +1359,7 @@ void MainWindow::setupManagerConnections()
                                       ->getWorkspacePath()
                                 : QString());
                 return contextWorkspaceController->openResource(
-                    resource, ContextOpenMode::Peek);
+                    resource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global});
             });
         connect(
             navigationManager.get(),
@@ -4286,7 +4286,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     ? workspaceManager->getWorkspacePath()
                     : QString());
         if (!contextWorkspaceController->openResource(
-                contextResource, ContextOpenMode::Peek)) {
+                contextResource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global})) {
             return fail(QStringLiteral(
                 "The temporary editor could not open the target."));
         }

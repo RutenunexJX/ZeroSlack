@@ -3,12 +3,15 @@
 #include "contextpeekhost.h"
 #include "contextrail.h"
 #include "contextworkspacecontroller.h"
+#include "workspacesessionstateservice.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDockWidget>
 #include <QEvent>
+#include <QDir>
+#include <QTemporaryDir>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMouseEvent>
@@ -223,11 +226,245 @@ ContextResource resource(const QString& id)
     result.state.insert(QStringLiteral("cursor"), 7);
     return result;
 }
+
+bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
+{
+    return a.pinnedResources == b.pinnedResources
+        && a.providerStates == b.providerStates
+        && a.activePinnedResourceKey == b.activePinnedResourceKey
+        && a.peekWidth == b.peekWidth && a.peekHeight == b.peekHeight
+        && a.dockWidth == b.dockWidth && a.dockVisible == b.dockVisible
+        && a.railVisible == b.railVisible && a.valid == b.valid;
+}
+
+void verifyStateCompatibility(const QStringList& arguments)
+{
+    QTemporaryDir temporary;
+    QMainWindow window;
+    window.resize(1400, 900);
+    auto* region = new QWidget(&window);
+    window.setCentralWidget(region);
+    window.show();
+    QApplication::processEvents();
+    ProviderCounters counters;
+    ContextWorkspaceController controller(&window, region, &window);
+    controller.registerProvider(std::make_unique<MockProvider>(&counters));
+    const QString root = QDir::current().absoluteFilePath(QStringLiteral("compatibility-workspace"));
+    controller.setWorkspaceRoot(root);
+    ContextWorkspaceState initial;
+    initial.valid = true;
+    initial.peekWidth = 610;
+    initial.peekHeight = 470;
+    initial.dockWidth = 430;
+    initial.dockVisible = true;
+    initial.railVisible = false;
+    initial.providerStates.insert(QStringLiteral("mock"),
+        QVariantMap{{QStringLiteral("expanded"),
+                    QStringList{QStringLiteral("source"), QStringLiteral("wave")}}});
+    for (const QString& id : {QStringLiteral("compat-a"), QStringLiteral("compat-b")}) {
+        auto item = resource(id);
+        item.workspaceId.clear();
+        item.state = {{QStringLiteral("saved"), true}};
+        initial.pinnedResources.append(item.toVariantMap());
+    }
+    initial.activePinnedResourceKey = QStringLiteral("mock:compat-a");
+    const auto restored = controller.restoreState(initial);
+    QApplication::processEvents();
+    const auto captured = controller.captureState();
+    check(ContextWorkspaceState::kVersion == 3 && restored.restoredResources == 2
+              && restored.skippedResources == 0 && sameState(initial, captured),
+          "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
+
+    const bool importing = arguments.size() == 4 && arguments.at(1) == QStringLiteral("--state-import");
+    const bool exporting = arguments.size() == 3 && arguments.at(1) == QStringLiteral("--state-export");
+    const QString storage = importing || exporting ? arguments.at(2) : temporary.filePath("state.ini");
+    WorkspaceSessionStateService service(storage);
+    if (importing) {
+        const auto loaded = service.load(root);
+        check(loaded.loaded && sameState(initial, loaded.state.ui.contextWorkspace),
+              "cross_build_import: every serialized context field matches the old/new fixture");
+        controller.restoreState(loaded.state.ui.contextWorkspace);
+        QApplication::processEvents();
+        check(sameState(initial, controller.captureState()),
+              "cross_build_restore: imported state restores to identical live context state");
+    }
+    WorkspaceSessionState session;
+    session.workspaceRoot = root;
+    session.ui.contextWorkspace = controller.captureState();
+    WorkspaceSessionStateService output(importing ? arguments.at(3) : storage);
+    check(output.save(session).saved
+              && sameState(session.ui.contextWorkspace, output.load(root).state.ui.contextWorkspace),
+          "state_wire_roundtrip: production session serializer preserves every context field");
+}
+
+struct PlacementFixture {
+    QMainWindow window;
+    ProviderCounters counters;
+    std::unique_ptr<ContextWorkspaceController> controller;
+
+    PlacementFixture()
+    {
+        window.resize(1200, 800);
+        auto* region = new QWidget(&window);
+        window.setCentralWidget(region);
+        window.show();
+        QApplication::processEvents();
+        controller = std::make_unique<ContextWorkspaceController>(&window, region, &window);
+        controller->setWorkspaceRoot(QStringLiteral("workspace-a"));
+        controller->registerProvider(std::make_unique<MockProvider>(&counters));
+    }
+};
+
+constexpr ContextPlacement floatingPlacement{
+    ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global};
+constexpr ContextPlacement keptPlacement{
+    ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global};
+
+void verifyPlacementMapping()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    const auto floating = resource(QStringLiteral("floating"));
+    const auto transient = resource(QStringLiteral("transient"));
+    const auto kept = resource(QStringLiteral("kept"));
+    check(controller.openResource(floating, floatingPlacement)
+              && controller.peekHost()->resource() == floating
+              && controller.dockHost()->resourceCount() == 0
+              && controller.captureState().pinnedResources.isEmpty(),
+          "placement_mapping: floating transient opens only a non-persisted preview");
+    check(controller.openResource(transient)
+              && controller.dockHost()->currentResource() == transient
+              && controller.dockWidget()->isVisible()
+              && controller.peekHost()->resource() == floating
+              && controller.captureState().pinnedResources.isEmpty(),
+          "placement_mapping: default docked transient coexists with a non-persisted preview");
+    check(controller.openResource(kept, keptPlacement)
+              && controller.dockHost()->resourceCount() == 2
+              && controller.dockHost()->currentResource() == kept
+              && controller.captureState().pinnedResources.size() == 1
+              && ContextResource::fromVariantMap(controller.captureState().pinnedResources.first())
+                     .stableKey() == kept.stableKey(),
+          "placement_mapping: only the kept resource is captured among all three placements");
+    QWidget* keptView = controller.dockHost()->viewForResource(kept.stableKey());
+    QWidget* floatingView = controller.peekHost()->view();
+    check(controller.openResource(kept, floatingPlacement)
+              && controller.dockHost()->viewForResource(kept.stableKey()) == keptView
+              && controller.peekHost()->view() == floatingView,
+          "placement_reuse: floating requests retain an already docked instance");
+    check(controller.openResource(floating)
+              && controller.peekHost()->view() == floatingView
+              && controller.dockHost()->resourceCount() == 1,
+          "placement_reuse: transient dock requests retain an existing preview and replace the old transient tab");
+    check(controller.openResource(floating, keptPlacement)
+              && !controller.peekHost()->hasResource()
+              && controller.dockHost()->viewForResource(floating.stableKey()) == floatingView
+              && controller.captureState().pinnedResources.size() == 2,
+          "placement_reuse: keeping a preview moves the live view and persists it");
+    check(ContextPlacement{} == ContextPlacement{ContextSurface::Docked,
+              ContextPersistence::Transient, ContextBinding::Global}
+              && floatingPlacement != keptPlacement
+              && contextPlacementName(floatingPlacement) == QStringLiteral("Floating/Transient/Global")
+              && contextPlacementName(keptPlacement) == QStringLiteral("Docked/Kept/Global"),
+          "placement_value: defaults, equality and diagnostic names preserve the three dimensions");
+}
+
+void verifyUnsupportedPlacements()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    controller.openResource(resource(QStringLiteral("floating")), floatingPlacement);
+    controller.openResource(resource(QStringLiteral("kept")), keptPlacement);
+    controller.openResource(resource(QStringLiteral("transient")));
+    const ContextPlacement unsupported[] = {
+        {ContextSurface::Floating, ContextPersistence::Kept, ContextBinding::Global},
+        {ContextSurface::Floating, ContextPersistence::Kept, ContextBinding::DocumentBound},
+        {ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::DocumentBound},
+        {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::DocumentBound},
+        {ContextSurface::Docked, ContextPersistence::Transient, ContextBinding::DocumentBound}
+    };
+    const auto before = controller.captureState();
+    const auto floatingBefore = controller.peekHost()->resource();
+    QWidget* viewBefore = controller.peekHost()->view();
+    const int createdBefore = fixture.counters.created;
+    const int activatedBefore = fixture.counters.restored;
+    QSignalSpy opened(&controller, &ContextWorkspaceController::resourceOpened);
+    QSignalSpy closed(&controller, &ContextWorkspaceController::resourceClosed);
+    QSignalSpy changed(&controller, &ContextWorkspaceController::workspaceStateChanged);
+    QSignalSpy active(&controller, &ContextWorkspaceController::activeResourceChanged);
+    for (const auto placement : unsupported) {
+        QString reason;
+        check(!controller.openResource(resource(QStringLiteral("unsupported")), placement, &reason)
+                  && !reason.isEmpty() && reason.contains(contextPlacementName(placement))
+                  && controller.peekHost()->hasResource()
+                  && controller.peekHost()->resource() == floatingBefore
+                  && controller.peekHost()->view() == viewBefore
+                  && controller.dockHost()->resourceCount() == 2
+                  && sameState(before, controller.captureState())
+                  && fixture.counters.created == createdBefore
+                  && fixture.counters.restored == activatedBefore
+                  && opened.isEmpty() && closed.isEmpty() && changed.isEmpty() && active.isEmpty(),
+              "unsupported_placements: rejected combination creates, activates, closes and persists nothing");
+    }
+}
+
+void verifyRailThreeStates()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    fixture.counters.activation = resource(QStringLiteral("rail"));
+    QAction* action = controller.rail()->actions().constFirst();
+    action->trigger();
+    QWidget* firstView = controller.dockHost()->viewForResource(fixture.counters.activation.stableKey());
+    check(firstView && controller.dockWidget()->isVisible()
+              && controller.dockHost()->resourceCount() == 1
+              && !controller.peekHost()->hasResource(),
+          "rail_three_states: first click opens a transient dock instance");
+    action->trigger();
+    check(!controller.dockWidget()->isVisible() && controller.dockHost()->resourceCount() == 1,
+          "rail_three_states: second click collapses without disposing the view");
+    action->trigger();
+    check(controller.dockWidget()->isVisible()
+              && controller.dockHost()->viewForResource(fixture.counters.activation.stableKey()) == firstView
+              && fixture.counters.created == 1 && controller.captureState().pinnedResources.isEmpty(),
+          "rail_three_states: third click reopens the same transient view");
+    controller.clearResources();
+    controller.openResource(fixture.counters.activation, floatingPlacement);
+    QPointer<QWidget> preview = controller.peekHost()->view();
+    action->trigger();
+    processDeferredDeletes();
+    check(!controller.peekHost()->hasResource() && preview.isNull(),
+          "rail_three_states: an active floating instance retains close-and-dispose behavior");
+}
+
+void verifyRailFocusExisting()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    const auto first = resource(QStringLiteral("first"));
+    const auto second = resource(QStringLiteral("second"));
+    fixture.counters.activation = resource(QStringLiteral("must-not-create"));
+    controller.openResource(first, keptPlacement);
+    controller.openResource(second, keptPlacement);
+    controller.dockHost()->activateResource(first.stableKey());
+    QWidget* firstView = controller.dockHost()->viewForResource(first.stableKey());
+    controller.dockWidget()->hide();
+    controller.rail()->actions().constFirst()->trigger();
+    check(controller.dockWidget()->isVisible()
+              && controller.dockHost()->currentResource() == first
+              && controller.dockHost()->viewForResource(first.stableKey()) == firstView
+              && controller.dockHost()->resourceCount() == 2 && fixture.counters.created == 2,
+          "rail_focus_existing: hidden sidebar restores its active resource without creating another view");
+}
 }
 
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    verifyStateCompatibility(app.arguments());
+    verifyPlacementMapping();
+    verifyUnsupportedPlacements();
+    verifyRailThreeStates();
+    verifyRailFocusExisting();
 
     const ContextResource original = resource(QStringLiteral("a"));
     QString parseFailure;
@@ -292,7 +529,7 @@ int main(int argc, char* argv[])
 
     QString failureReason;
     check(controller.openResource(original,
-                                  ContextOpenMode::Peek,
+                                  ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
                                   &failureReason)
               && failureReason.isEmpty()
               && controller.peekHost()->hasResource()
@@ -410,7 +647,7 @@ int main(int argc, char* argv[])
 
     const ContextResource second = resource(QStringLiteral("b"));
     check(controller.openResource(second,
-                                  ContextOpenMode::Peek,
+                                  ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
                                   &failureReason)
               && controller.peekHost()->resource() == second
               && controller.peekHost()->preferredSize()
@@ -442,7 +679,7 @@ int main(int argc, char* argv[])
           "Pinned host reuses the same provider full-view action");
 
     check(controller.openResource(original,
-                                  ContextOpenMode::Pinned,
+                                  ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
                                   &failureReason)
               && controller.dockHost()->resourceCount() == 2
               && controller.dockHost()->currentResource() == original,
@@ -478,7 +715,7 @@ int main(int argc, char* argv[])
     ContextResource unavailable = original;
     unavailable.providerId = QStringLiteral("missing");
     check(!controller.openResource(unavailable,
-                                   ContextOpenMode::Peek,
+                                   ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
                                    &failureReason)
               && !failureReason.isEmpty(),
           "unavailable providers fail without creating fallback content");
@@ -490,10 +727,10 @@ int main(int argc, char* argv[])
 
     controller.setWorkspaceRoot(QStringLiteral("workspace-a"));
     check(controller.openResource(original,
-                                  ContextOpenMode::Pinned,
+                                  ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
                                   &failureReason)
               && controller.openResource(second,
-                                         ContextOpenMode::Pinned,
+                                         ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
                                          &failureReason),
           "workspace-scoped resources can be pinned before capture");
     window.resizeDocks(
@@ -503,7 +740,7 @@ int main(int argc, char* argv[])
     controller.dockHost()->activateResource(original.stableKey());
     const ContextResource transient = resource(QStringLiteral("transient"));
     check(controller.openResource(transient,
-                                  ContextOpenMode::Peek,
+                                  ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
                                   &failureReason),
           "a transient preview can coexist with pinned resources");
     ContextWorkspaceState savedState = controller.captureState();
@@ -579,7 +816,7 @@ int main(int argc, char* argv[])
     ContextResource foreign = resource(QStringLiteral("foreign"));
     foreign.workspaceId = QStringLiteral("workspace-b");
     check(!controller.openResource(foreign,
-                                   ContextOpenMode::Pinned,
+                                   ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
                                    &failureReason)
               && failureReason.contains(QStringLiteral("another workspace")),
           "resources from another workspace cannot leak into the active context");
@@ -685,7 +922,7 @@ int main(int argc, char* argv[])
               "reopening sidebar preserves its resized width");
         check(sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
               "sidebar toggling retains the existing view and its state");
-        check(sidebar.openResource(original, ContextOpenMode::Pinned),
+        check(sidebar.openResource(original, ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}),
               "current sidebar resource can be pinned");
         sidebar.rail()->actions().constFirst()->trigger();
         QApplication::processEvents();
