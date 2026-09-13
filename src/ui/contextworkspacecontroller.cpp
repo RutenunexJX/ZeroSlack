@@ -174,6 +174,14 @@ ContextWorkspaceController::ContextWorkspaceController(
             this,
             &ContextWorkspaceController::
                 resetPeekToProviderPreferredSize);
+    connect(dockHostValue, &ContextDockHost::sectionLayoutChanged, this,
+            &ContextWorkspaceController::notifyWorkspaceStateChanged);
+    connect(dockHostValue, &ContextDockHost::dragOutRequested, this, [this](const QString& key, const QPoint& position) {
+        dragOutResource(key, position);
+    });
+    connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index) {
+        if (pinFloatingResource(key)) dockHostValue->moveResource(key, index);
+    });
     connect(dockHostValue,
             &ContextDockHost::closeResourceRequested,
             this,
@@ -384,6 +392,7 @@ bool ContextWorkspaceController::activateDockedResource(
     }
     dockHostValue->updateResource(resource);
     dockHostValue->setFullViewAvailable(key, capabilities.supports(ContextPresentation::FullView));
+    dockHostValue->setSectionDetachable(key, capabilities.detachable);
     dockHostValue->activateResource(key);
     showDock(false);
     recordFocus(key);
@@ -517,6 +526,7 @@ bool ContextWorkspaceController::addDockedResource(
             *failureReason = QStringLiteral("The context resource is already pinned.");
         return false;
     }
+    dockHostValue->setSectionDetachable(resource.stableKey(), capabilities.detachable);
     showDock(dockWasEmpty && !restoringState);
     return true;
 }
@@ -604,6 +614,7 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
         }
         return false;
     }
+    dockHostValue->setSectionDetachable(resource.stableKey(), provider->capabilities(resource).detachable);
     showDock(dockWasEmpty && !restoringState);
     documentBindings.remove(resource.stableKey());
     keptFloatingKeys.remove(resource.stableKey());
@@ -846,6 +857,8 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
             continue;
         persisted.workspaceId.clear();
         state.pinnedResources.append(persisted.toVariantMap());
+        state.dockSections.append({persisted.stableKey(), dockHostValue->isSectionCollapsed(resource.stableKey()),
+                                   dockHostValue->sectionHeight(resource.stableKey())});
     }
     return state;
 }
@@ -973,6 +986,11 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
             restoredResourceKeys.value(
                 state.activePinnedResourceKey,
                 state.activePinnedResourceKey));
+    }
+    for (const auto& section : state.dockSections) {
+        const QString key = restoredResourceKeys.value(section.resourceKey, section.resourceKey);
+        dockHostValue->setSectionHeight(key, section.height);
+        dockHostValue->setSectionCollapsed(key, section.collapsed);
     }
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;
@@ -1115,9 +1133,12 @@ void ContextWorkspaceController::activateRailProvider(
                 if (dockHostValue->resourceAt(i).stableKey() == key) candidate = dockHostValue->resourceAt(i);
         }
         if (candidate.providerId != providerId || (surface && !floatingEligible(key))) continue;
-        if (focusedResourceKey == key && widget->isVisible()) {
+        if (focusedResourceKey == key && widget->isVisible()
+            && (surface || !dockHostValue->isSectionCollapsed(key))) {
             if (surface == peekHostValue) {
                 closeFloatingResource(key);
+            } else if (!surface) {
+                dockHostValue->setSectionCollapsed(key, true);
             } else {
                 widget->hide();
                 if (surface) hiddenFloatingKeys.insert(key);

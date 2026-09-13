@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.27.0] - 2026-09-13
+
+- Replaced Context tabs with collapsible sidebar sections inside the existing dock, supporting simultaneous views, independent heights, title-drag ordering and focus-prioritized compression.
+- Changed repeated rail activation to collapse the selected sidebar section while keeping other sections visible; whole-sidebar hiding remains available.
+- Added section drag-out to native floating windows and client-area drag handles for returning views to a chosen sidebar position without rebuilding them.
+- Kept non-detachable source editors out of native drag-out and retained pin actions and provider-wide collection from the rail menu.
+- Upgraded Context state to v6 with separate section layout records; v5 migration expands only the former active section. Older builds ignore v6 Context state on downgrade.
+
 ## [0.26.0] - 2026-09-13
 
 - Added multiple native Context windows with cascading placement, resource deduplication, recent-focus rail navigation and controller-owned context menus.

@@ -1,11 +1,19 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.26.0`
+Product version: `v0.27.0`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## 浮层/侧栏 第 4 期 · 可折叠竖栈与拖动 — 2026-09-13 (v0.27.0)
+
+- 四期功能实现已完成：放置维度、原生浮层、多实例/文档绑定、单 dock 内的竖栈与跨 surface 拖动。
+- 第 1 步检查点：完整构建，指定回归 10/10，加窄布局共 11/11，四个 DPI 变体各 163/163，全量 106/107。
+- 第 2 步已完成：客户区拖回手柄、插入位置指示与不可分离资源限制落地；最终四缩放各 175/175，指定回归加窄布局 11/11，实际 v5 导入 177/177，全量 106/107 与基线一致。
+- v6 保留资源列表，独立保存 section 折叠和高度；v5 迁移仅展开原活动项。旧读端忽略 v6 Context 状态。
+- 原生桌面观感、拖放手感、多显示器与连续重启实测仍未测；见 [验收记录](docs/sidebar-stack-review.md)。
 
 ## 浮层/侧栏 第 3 期 · 多实例与文档绑定 — 2026-09-13 (v0.26.0)
 
@@ -13,7 +21,7 @@ and completed implementation history are recorded in CHANGELOG.md and Git.
 - 第 3 期两步实现及自动化验收已完成：文档绑定、关闭通知和每文档布局落地，四个 DPI 变体各 151/151，指定回归 10/10，全量 106/107 与基线一致。布局按相对路径归档，最多保留 32 个最近使用文档。
 - v5 保存实例与收起状态，恢复上限 16；保留 v4 标量几何与读取兼容，旧构建无法恢复 v5 Context 状态。
 - 原生边框增加显示后自纠正；真实跨屏与连续重启手工验证仍未测。
-- 第 4 期仍为侧栏竖栈与拖动手势，本期不实现；证据见 [floating multi review](docs/floating-multi-review.md)。
+- 此阶段未包含竖栈与拖动，现已由第 4 期接续；证据见 [floating multi review](docs/floating-multi-review.md)。
 
 ## 浮层/侧栏 第 1 期 · 地基 — 2026-09-12 (v0.25.11)
 

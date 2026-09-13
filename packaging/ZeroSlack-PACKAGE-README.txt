@@ -1,4 +1,4 @@
-ZeroSlack v0.26.0
+ZeroSlack v0.27.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -38,13 +38,17 @@ Detachable Context resources can float in multiple native windows. Right-click a
 Context rail icon to create or focus views, collect them into the sidebar, or
 bind them to the current document. The separate rail toggle hides/restores all
 floating views without closing them. Document layouts retain up to 32 recent
-paths; source editors keep their single overlay. State v5 reads v4, but older
-builds ignore v5 Context state on downgrade.
+paths; source editors keep their single overlay. Context sections can be shown
+together, collapsed, resized and reordered inside one sidebar. Drag an eligible
+section outside to float it; use a floating window's client-area handle to drag
+it back to an indicated position. Source editors do not support native drag-out.
+State v6 reads v5 with only the old active section expanded; older builds ignore
+v6 Context state on downgrade.
 
 The left sidebar groups the file tree with Project and Settings icons at the top.
 Click Project for commands. Collapse the entire sidebar and restore it from the title bar.
-Click Settings again to close its active central tab; Context icons toggle their
-side panels while preserving view state. Files, Design and Pinloom use uniform rows
+Click Settings again to close its active central tab; Context icons collapse or
+expand their selected sections while preserving view state. Files, Design and Pinloom use uniform rows
 with distinct hover and selection backgrounds. Focus Mode has been removed.
 Ctrl+Space hides F24-exclusive commands; F24 Command Mode retains those commands.
 The themed title bar stays visible in its own row without covering the editor.

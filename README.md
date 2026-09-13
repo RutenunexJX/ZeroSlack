@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.26.0`
+Current version: `v0.27.0`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -35,12 +35,15 @@ is `schemas/suite-references-v1.schema.json`.
   current document. Document-bound views hide when switching away and restore their layout when
   returning; closed documents retain up to 32 recent layouts. The rail's separate hide/restore toggle
   preserves all floating views. Temporary source editors retain a single in-editor Peek overlay.
+  The Context sidebar stacks collapsible sections so multiple panels can remain visible. Resize their
+  boundaries or drag headers to reorder; drag an eligible section outside to float it. Drag a floating
+  window's client-area handle back to the sidebar to insert it at the indicated position.
 - The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
   and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
   Settings and connection tools continue to open in central tabs.
   The menu bar is hidden; existing commands remain in the Project context menu and keep their shortcuts.
 - Editor tabs retain a readable minimum width and scroll when crowded, including split groups.
-  Insight toolbars wrap controls in narrow containers. Context header actions remain accessible above its tabs;
+  Insight toolbars wrap controls in narrow containers. Context actions remain accessible in each section header;
   untitled document tabs use the editor's displayed name, with the resource URI retained in the tooltip.
 - Only Problems and Activity are permanent drawer buttons. Search, Change Preview and Shelf appear on demand.
   Ctrl+F/H reuse an inline editor find/replace bar; Ctrl+Shift+F/H open workspace search/replace.

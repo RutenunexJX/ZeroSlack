@@ -378,8 +378,8 @@ int main(int argc, char* argv[])
     if (!pinloomAction || !view)
         return 1;
     pinloomAction->trigger();
-    check(!controller.dockWidget()->isVisible(),
-          "second Pinloom rail click collapses the sidebar");
+    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()),
+          "second Pinloom rail click collapses its section while keeping the sidebar visible");
     pinloomAction->trigger();
     check(controller.dockWidget()->isVisible()
               && controller.dockHost()->resourceCount() == 1

@@ -1,13 +1,15 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.26.0`
+Product version: `v0.27.0`
 
-Phase 3 adds multiple floating views, a hide/restore toggle, rail context menus and document layouts.
-Native frame correction is implemented; real multi-monitor interaction remains unverified. See docs/floating-multi-review.md.
+The four Context phases now include placement dimensions, native floating windows, multiple document-bound
+views and a collapsible sidebar stack with drag between surfaces. Real desktop drag interaction and native
+multi-monitor/restart frame measurements remain unverified. See docs/sidebar-stack-review.md.
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic authority.
 Detachable Context views use native floating windows with workspace geometry memory and inactive opacity.
-Temporary source editors retain their overlay; v5 Context state reads v4 but cannot be restored by older builds.
+Temporary source editors retain their overlay; v6 Context state reads v5 with only the old active section expanded.
+Older builds cannot restore v6 Context state.
 Worker-verified idle trivia refresh preserves semantic availability for unsaved comments and whitespace;
 structural edits retain the existing save requirement and action safety checks.
 Compact layouts preserve readable tabs and reachable Context actions without increasing dock widths.

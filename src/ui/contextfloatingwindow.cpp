@@ -1,5 +1,6 @@
 #include "contextfloatingwindow.h"
 #include "roundedicons.h"
+#include "contextdockhost.h"
 
 #include <QCloseEvent>
 #include <QCursor>
@@ -12,6 +13,10 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QApplication>
+#include <QDrag>
+#include <QMimeData>
+#include <QMouseEvent>
 
 namespace {
 QRect resolve(const QRect& saved, const QString& screenName, QScreen* primary)
@@ -36,6 +41,13 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     root->setSizeConstraint(QLayout::SetNoConstraint);
     root->setContentsMargins(8, 6, 8, 8);
     auto* actions = new QHBoxLayout;
+    dragButton = new QToolButton(this);
+    dragButton->setObjectName(QStringLiteral("contextFloatingDrag"));
+    dragButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
+    dragButton->setToolTip(tr("Drag this handle into the sidebar"));
+    dragButton->setCursor(Qt::OpenHandCursor);
+    dragButton->installEventFilter(this);
+    actions->addWidget(dragButton);
     actions->addStretch();
     pinButton = new QToolButton(this);
     pinButton->setObjectName(QStringLiteral("contextFloatingPin"));
@@ -91,10 +103,39 @@ void ContextFloatingWindow::applyInteractionOpacity(bool active, bool hovered)
 
 void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullViewAvailable)
 {
+    dragButton->setEnabled(pinAvailable);
     pinButton->setVisible(pinAvailable);
     pinButton->setEnabled(pinAvailable);
     fullViewButton->setVisible(fullViewAvailable);
     fullViewButton->setEnabled(fullViewAvailable);
+}
+
+QWidget* ContextFloatingWindow::sidebarDragHandle() const { return dragButton; }
+bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == dragButton && dragButton->isEnabled() && hasResource()) {
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            if (mouse->button() == Qt::LeftButton) dragStart = mouse->position().toPoint();
+        } else if (event->type() == QEvent::MouseMove) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            if ((mouse->buttons() & Qt::LeftButton)
+                && (mouse->position().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
+                QPointer<ContextFloatingWindow> owner(this);
+                QPointer<QDrag> drag = new QDrag(this);
+                auto* mime = new QMimeData;
+                mime->setData(ContextDockHost::resourceMimeType(), resource().stableKey().toUtf8());
+                drag->setMimeData(mime);
+                emit sidebarDragStarted();
+                if (!owner || !drag) return true;
+                const bool accepted = drag->exec(Qt::MoveAction) == Qt::MoveAction;
+                if (owner) emit sidebarDragFinished(accepted);
+                if (drag) drag->deleteLater();
+                return true;
+            }
+        }
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* view)

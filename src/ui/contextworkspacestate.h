@@ -15,7 +15,8 @@ struct ContextWorkspaceState {
     static constexpr int kProviderStateVersion = 3;
     static constexpr int kFloatingGeometryVersion = 4;
     static constexpr int kFloatingInstancesVersion = 5;
-    static constexpr int kVersion = 5;
+    static constexpr int kDockSectionsVersion = 6;
+    static constexpr int kVersion = 6;
 
     static constexpr int kMinimumPeekWidth = 280;
     static constexpr int kMaximumPeekWidth = 920;
@@ -113,9 +114,19 @@ struct ContextWorkspaceState {
     bool floatingCollapsed = false;
     QMap<QString, QList<FloatingInstance>> documentFloatingLayouts;
     QStringList documentFloatingOrder;
+    struct DockSection {
+        QString resourceKey;
+        bool collapsed = false;
+        int height = 0;
+        bool operator==(const DockSection& other) const {
+            return resourceKey == other.resourceKey && collapsed == other.collapsed && height == other.height;
+        }
+    };
+    QList<DockSection> dockSections;
 };
 
 using ContextFloatingInstanceState = ContextWorkspaceState::FloatingInstance;
+using ContextDockSectionState = ContextWorkspaceState::DockSection;
 
 struct ContextWorkspaceRestoreResult {
     int restoredResources = 0;

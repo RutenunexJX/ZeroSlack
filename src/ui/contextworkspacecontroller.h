@@ -47,6 +47,7 @@ public:
     bool focusResource(const QString& resourceKey);
     bool closeFloatingResource(const QString& resourceKey);
     bool pinFloatingResource(const QString& resourceKey);
+    bool dragOutResource(const QString& resourceKey, const QPoint& globalPosition, QString* failureReason = nullptr);
     void setFloatingCollapsed(bool collapsed);
     bool floatingCollapsed() const;
     QMenu* createRailContextMenu(const QString& providerId);

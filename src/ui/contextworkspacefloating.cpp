@@ -11,6 +11,7 @@
 #include <QMainWindow>
 #include <QMenu>
 #include <QScreen>
+#include <QGuiApplication>
 
 ContextFloatingSurface* ContextWorkspaceController::floatingSurfaceFor() const
 {
@@ -67,6 +68,13 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     connect(host, &ContextFloatingWindow::geometryChanged, this, [this, host] {
         captureLastFloatingGeometry(host);
         notifyWorkspaceStateChanged();
+    });
+    connect(host, &ContextFloatingWindow::sidebarDragStarted, this, [this, host] {
+        host->setProperty("contextDockWasVisible", dockValue->isVisible());
+        showDock(false);
+    });
+    connect(host, &ContextFloatingWindow::sidebarDragFinished, this, [this, host](bool accepted) {
+        if (!accepted && !host->property("contextDockWasVisible").toBool()) dockValue->hide();
     });
     return host;
 }
@@ -148,6 +156,36 @@ bool ContextWorkspaceController::pinFloatingResource(const QString& key)
     const bool pinned = pinPeek();
     if (pinned) hiddenFloatingKeys.remove(key);
     return pinned;
+}
+
+bool ContextWorkspaceController::dragOutResource(const QString& key, const QPoint& globalPosition, QString* failureReason)
+{
+    if (failureReason) failureReason->clear();
+    ContextResource resource;
+    for (int i = 0; i < dockHostValue->resourceCount(); ++i)
+        if (dockHostValue->resourceAt(i).stableKey() == key) resource = dockHostValue->resourceAt(i);
+    auto* provider = providerFor(resource);
+    if (!provider || !provider->capabilities(resource).detachable) {
+        if (failureReason) *failureReason = tr("This resource does not support native floating windows.");
+        return false;
+    }
+    if (!unpinResource(key, failureReason)) return false;
+    auto* host = dynamic_cast<ContextFloatingWindow*>(surfaceWithResource(key));
+    if (!host) return false;
+    QScreen* screen = QGuiApplication::screenAt(globalPosition);
+    if (!screen) screen = window->screen();
+    const QRect available = screen->availableGeometry();
+    const QRect rect = ContextWorkspaceState::resolvedFloatingGeometry(
+        QRect(globalPosition, host->frameGeometry().size()), {}, {}, available, {});
+    ContextWorkspaceState geometry;
+    geometry.floatingGeometryValid = true;
+    geometry.floatingX = rect.x(); geometry.floatingY = rect.y();
+    geometry.floatingWidth = rect.width(); geometry.floatingHeight = rect.height();
+    geometry.floatingScreenName = screen->name();
+    host->restoreGeometry(geometry);
+    captureLastFloatingGeometry(host);
+    notifyWorkspaceStateChanged();
+    return true;
 }
 
 void ContextWorkspaceController::setFloatingOpacity(int percentage)

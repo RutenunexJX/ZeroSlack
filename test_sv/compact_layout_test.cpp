@@ -26,6 +26,7 @@
 #include <QTest>
 #include <QTemporaryDir>
 #include <QSettings>
+#include <QLabel>
 
 namespace {
 class TextEngine : public QPaintEngine {
@@ -164,18 +165,19 @@ private slots:
         QVERIFY(provider.activateView(view,resource));
         QVERIFY(host.addResource(resource,view));
         host.show();QTest::qWait(30);
-        auto* contextTabs=host.findChild<QTabWidget*>();QVERIFY(contextTabs);
+        auto* header=host.sectionHeader(resource.stableKey());QVERIFY(header);
+        auto* title=header->findChild<QLabel*>("contextSectionTitle");QVERIFY(title);
         const QRegularExpression uuid("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-");
-        for (int i=0;i<contextTabs->count();++i) QVERIFY(!uuid.match(contextTabs->tabText(i)).hasMatch());
-        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
-        QCOMPARE(contextTabs->tabToolTip(0),resource.uri.toString());
-        qInfo()<<"I6 editor="<<editors.tabText(editors.currentIndex())<<"context="<<contextTabs->tabText(0);
+        for (const auto& key:host.resourceKeys()) QVERIFY(!uuid.match(host.sectionHeader(key)->findChild<QLabel*>("contextSectionTitle")->text()).hasMatch());
+        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
+        QCOMPARE(header->toolTip(),resource.uri.toString());
+        qInfo()<<"I6 editor="<<editors.tabText(editors.currentIndex())<<"context="<<title->text();
         QVERIFY(manager.duplicateCurrentView());QTest::qWait(30);
-        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
-        qInfo()<<"I6 duplicated editor="<<editors.tabText(editors.currentIndex())<<"context="<<contextTabs->tabText(0);
+        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
+        qInfo()<<"I6 duplicated editor="<<editors.tabText(editors.currentIndex())<<"context="<<title->text();
         manager.getCurrentEditor()->insertPlainText("module test; endmodule");QTest::qWait(30);
-        QCOMPARE(contextTabs->tabText(0),editors.tabText(editors.currentIndex()));
-        QCOMPARE(contextTabs->tabToolTip(0),resource.uri.toString());
+        QCOMPARE(title->text(),editors.tabText(editors.currentIndex()));
+        QCOMPARE(header->toolTip(),resource.uri.toString());
         for (int width : {220,270,340,480}) {
             host.setFixedWidth(width);host.resize(width,900);QTest::qWait(30);
             const auto c=audit(&host);

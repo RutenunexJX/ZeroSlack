@@ -1,4 +1,5 @@
 #include "workspacesessionstateservice.h"
+#include "contextresource.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -344,6 +345,10 @@ QJsonObject sessionObject(
         ContextWorkspaceState::boundedPeekHeight(state.ui.contextWorkspace.floatingHeight));
     contextWorkspace.insert(QStringLiteral("floatingScreenName"), state.ui.contextWorkspace.floatingScreenName);
     contextWorkspace.insert(QStringLiteral("floatingGeometryValid"), state.ui.contextWorkspace.floatingGeometryValid);
+    QJsonArray dockSections;
+    for (const auto& section : state.ui.contextWorkspace.dockSections)
+        dockSections.append(QJsonObject{{"resourceKey", section.resourceKey}, {"collapsed", section.collapsed}, {"height", section.height}});
+    contextWorkspace.insert(QStringLiteral("dockSections"), dockSections);
     contextWorkspace.insert(QStringLiteral("floatingInstances"), floatingInstancesToJson(state.ui.contextWorkspace.floatingInstances));
     contextWorkspace.insert(QStringLiteral("floatingCollapsed"), state.ui.contextWorkspace.floatingCollapsed);
     QJsonObject documentLayouts;
@@ -630,6 +635,18 @@ void restoreUi(
                     ui->contextWorkspace.documentFloatingLayouts.insert(it.key(), floatingInstancesFromJson(it.value().toArray()));
                 for (const auto& entry : contextWorkspace.value("documentFloatingOrder").toArray())
                     ui->contextWorkspace.documentFloatingOrder.append(entry.toString());
+            }
+            if (contextVersion >= ContextWorkspaceState::kDockSectionsVersion) {
+                for (const auto& entry : contextWorkspace.value("dockSections").toArray()) {
+                    const auto section = entry.toObject();
+                    ui->contextWorkspace.dockSections.append({section.value("resourceKey").toString(),
+                        section.value("collapsed").toBool(), qBound(0, section.value("height").toInt(), 8192)});
+                }
+            } else {
+                for (const auto& encoded : ui->contextWorkspace.pinnedResources) {
+                    const QString key = ContextResource::fromVariantMap(encoded).stableKey();
+                    ui->contextWorkspace.dockSections.append({key, key != ui->contextWorkspace.activePinnedResourceKey, 0});
+                }
             }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(

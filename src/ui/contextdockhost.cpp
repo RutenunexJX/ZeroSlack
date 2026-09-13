@@ -1,259 +1,432 @@
 #include "roundedicons.h"
 #include "contextdockhost.h"
-
-#include <QTabBar>
-#include <QTabWidget>
+#include "contextfloatingwindow.h"
+#include <QApplication>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QScrollArea>
 #include <QStyle>
 #include <QToolButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QTimer>
+#include <QMimeData>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDragLeaveEvent>
+#include <QDropEvent>
 
 namespace {
-const char kResourceKeyProperty[] = "contextResourceKey";
-QString displayTitle(const ContextResource& resource,QWidget* view) {
-    const QString documentTitle=view ? view->property("contextDisplayTitle").toString() : QString();
-    if (!documentTitle.isEmpty()) return documentTitle;
+constexpr int headerHeight = 28;
+constexpr int resizeHeight = 5;
+QString displayTitle(const ContextResource& resource, QWidget* view)
+{
+    const QString title = view ? view->property("contextDisplayTitle").toString() : QString();
+    if (!title.isEmpty()) return title;
     if (!resource.title.isEmpty()) return resource.title;
-    return resource.uri.scheme()==QStringLiteral("untitled") ? QStringLiteral("untitled") : resource.uri.fileName();
+    return resource.uri.scheme() == "untitled" ? QStringLiteral("untitled") : resource.uri.fileName();
 }
 }
+struct ContextDockHost::Section {
+    QWidget* frame;
+    QWidget* header;
+    QWidget* view;
+    QWidget* resize;
+    QLabel* title;
+    QToolButton* toggle;
+    QToolButton* fullView;
+    QToolButton* drag;
+    bool detachable = false;
+    bool collapsed = false;
+    int height = 0;
+    int retainedHeight = 0;
+};
 
-ContextDockHost::ContextDockHost(QWidget* parent)
-    : QWidget(parent)
+ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("contextDockHost"));
+    setAcceptDrops(true);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    tabs = new QTabWidget(this);
-    tabs->setObjectName(QStringLiteral("contextDockTabs"));
-    tabs->setDocumentMode(true);
-    tabs->setMovable(true);
-    tabs->setTabsClosable(false);
-    tabs->setElideMode(Qt::ElideRight);
-    tabs->tabBar()->setExpanding(false);
-    tabs->tabBar()->setUsesScrollButtons(true);
-    auto* corner = new QWidget(this);
-    auto* cornerLayout = new QHBoxLayout(corner);
-    cornerLayout->setContentsMargins(0, 0, 2, 0);
-    cornerLayout->setSpacing(2);
-    cornerLayout->addStretch();
-    fullViewButton = new QToolButton(corner);
-    fullViewButton->setObjectName(
-        QStringLiteral("contextDockFullView"));
-    fullViewButton->setIcon(
-        RoundedIcons::icon(RoundedIcons::Expand));
-    fullViewButton->setToolTip(tr("Open current tab in main area"));
-    fullViewButton->setVisible(false);
-    cornerLayout->addWidget(fullViewButton);
-
-    unpinButton = new QToolButton(corner);
-    unpinButton->setObjectName(
-        QStringLiteral("contextDockUnpin"));
-    unpinButton->setIcon(
-        RoundedIcons::icon(RoundedIcons::Pin));
-    unpinButton->setToolTip(tr("Move current tab to preview"));
-    unpinButton->setEnabled(false);
-    cornerLayout->addWidget(unpinButton);
-    auto* closeButton=new QToolButton(corner);
-    closeButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
-    closeButton->setToolTip(tr("Close current tab"));
-    cornerLayout->addWidget(closeButton);
-    connect(closeButton,&QToolButton::clicked,this,[this] {
-        const auto resource=currentResource();
-        if (resource.isValid()) emit closeResourceRequested(resource.stableKey());
+    scroll = new QScrollArea(this);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(false);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    stack = new QWidget;
+    scroll->setWidget(stack);
+    scroll->viewport()->installEventFilter(this);
+    layout->addWidget(scroll);
+    insertionMarker = new QWidget(stack);
+    insertionMarker->setObjectName(QStringLiteral("contextSectionInsertion"));
+    insertionMarker->setAutoFillBackground(true);
+    QPalette markerPalette = palette();
+    markerPalette.setColor(QPalette::Window, palette().color(QPalette::Highlight));
+    insertionMarker->setPalette(markerPalette);
+    insertionMarker->hide();
+    connect(qApp, &QApplication::focusChanged, this, [this](QWidget*, QWidget* now) {
+        for (const QString& key : order) {
+            auto* section = sections.value(key);
+            if (now && (section->frame == now || section->frame->isAncestorOf(now))) {
+                focusSection(key);
+                break;
+            }
+        }
     });
-    layout->addWidget(corner);
-    layout->addWidget(tabs);
-
-    connect(unpinButton,
-            &QToolButton::clicked,
-            this,
-            [this]() {
-                const ContextResource resource = currentResource();
-                if (resource.isValid()) {
-                    emit unpinResourceRequested(
-                        resource.stableKey());
-                }
-            });
-    connect(fullViewButton,
-            &QToolButton::clicked,
-            this,
-            [this]() {
-                const ContextResource resource = currentResource();
-                if (resource.isValid())
-                    emit fullViewResourceRequested(resource);
-            });
-
-    connect(tabs,
-            &QTabWidget::tabCloseRequested,
-            this,
-            [this](int index) {
-                const ContextResource resource = resourceAt(index);
-                if (resource.isValid())
-                    emit closeResourceRequested(resource.stableKey());
-            });
-    connect(tabs,
-            &QTabWidget::currentChanged,
-            this,
-            [this](int index) {
-                updateCurrentActions();
-                emit currentResourceChanged(resourceAt(index));
-            });
-    connect(tabs->tabBar(),
-            &QTabBar::tabMoved,
-            this,
-            [this](int, int) { emit resourceOrderChanged(); });
 }
-
-int ContextDockHost::resourceCount() const
-{
-    return tabs->count();
-}
-
-QStringList ContextDockHost::resourceKeys() const
-{
-    QStringList result;
-    for (int index = 0; index < tabs->count(); ++index) {
-        if (QWidget* page = tabs->widget(index))
-            result.append(page->property(kResourceKeyProperty).toString());
-    }
-    return result;
-}
-
-bool ContextDockHost::containsResource(const QString& key) const
-{
-    return indexOfResource(key) >= 0;
-}
-
-ContextResource ContextDockHost::resourceAt(int index) const
-{
-    QWidget* page = tabs->widget(index);
-    if (!page)
-        return {};
-    return resources.value(
-        page->property(kResourceKeyProperty).toString());
-}
-
-ContextResource ContextDockHost::currentResource() const
-{
-    return resourceAt(tabs->currentIndex());
-}
-
+ContextDockHost::~ContextDockHost() { disconnect(qApp, nullptr, this, nullptr); qDeleteAll(sections); }
+int ContextDockHost::resourceCount() const { return order.size(); }
+QStringList ContextDockHost::resourceKeys() const { return order; }
+bool ContextDockHost::containsResource(const QString& key) const { return indexOfResource(key) >= 0; }
+ContextResource ContextDockHost::resourceAt(int index) const { return resources.value(order.value(index)); }
+ContextResource ContextDockHost::currentResource() const { return resources.value(focusedKey); }
 QWidget* ContextDockHost::viewForResource(const QString& key) const
-{
-    const int index = indexOfResource(key);
-    return index >= 0 ? tabs->widget(index) : nullptr;
-}
+{ auto* section = sections.value(key); return section ? section->view : nullptr; }
+QWidget* ContextDockHost::sectionWidget(const QString& key) const
+{ auto* section = sections.value(key); return section ? section->frame : nullptr; }
+QWidget* ContextDockHost::sectionHeader(const QString& key) const
+{ auto* section = sections.value(key); return section ? section->header : nullptr; }
 
-bool ContextDockHost::addResource(
-    const ContextResource& resource,
-    QWidget* view,
-    bool fullViewAvailable)
+bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view, bool fullViewAvailable)
 {
     const QString key = resource.stableKey();
-    if (!resource.isValid() || key.isEmpty() || !view)
-        return false;
-    const int existing = indexOfResource(key);
-    if (existing >= 0) {
-        tabs->setCurrentIndex(existing);
-        return false;
-    }
-
-    view->setProperty(kResourceKeyProperty, key);
-    const QString title = displayTitle(resource,view);
-    const int index = tabs->addTab(view, title);
-    tabs->setTabToolTip(index, resource.uri.toString());
+    if (!resource.isValid() || key.isEmpty() || !view) return false;
+    if (containsResource(key)) { activateResource(key); return false; }
+    auto* section = new Section;
+    section->frame = new QWidget(stack);
+    section->frame->setObjectName(QStringLiteral("contextDockSection"));
+    section->header = new QWidget(section->frame);
+    section->header->setObjectName(QStringLiteral("contextSectionHeader"));
+    section->header->setToolTip(resource.uri.toString());
+    section->header->setFocusPolicy(Qt::StrongFocus);
+    section->header->setProperty("contextResourceKey", key);
+    section->header->installEventFilter(this);
+    auto* row = new QHBoxLayout(section->header);
+    row->setContentsMargins(4, 0, 4, 0);
+    row->setSpacing(2);
+    section->toggle = new QToolButton(section->header);
+    section->toggle->setArrowType(Qt::DownArrow);
+    section->toggle->setToolTip(tr("Collapse or expand section"));
+    row->addWidget(section->toggle);
+    section->drag = new QToolButton(section->header);
+    section->drag->setObjectName(QStringLiteral("contextSectionDrag"));
+    section->drag->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
+    section->drag->setCursor(Qt::OpenHandCursor);
+    section->drag->setProperty("contextResourceKey", key);
+    section->drag->installEventFilter(this);
+    row->addWidget(section->drag);
+    section->title = new QLabel(displayTitle(resource, view), section->header);
+    section->title->setObjectName(QStringLiteral("contextSectionTitle"));
+    section->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    section->title->setAttribute(Qt::WA_TransparentForMouseEvents);
+    row->addWidget(section->title, 1);
+    section->fullView = new QToolButton(section->header);
+    section->fullView->setObjectName(QStringLiteral("contextDockFullView"));
+    section->fullView->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
+    section->fullView->setToolTip(tr("Open in main area"));
+    section->fullView->setVisible(fullViewAvailable);
+    row->addWidget(section->fullView);
+    auto* unpin = new QToolButton(section->header);
+    unpin->setObjectName(QStringLiteral("contextDockUnpin"));
+    unpin->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
+    unpin->setToolTip(tr("Move to preview"));
+    row->addWidget(unpin);
+    auto* close = new QToolButton(section->header);
+    close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    close->setToolTip(tr("Close section"));
+    row->addWidget(close);
+    connect(section->toggle, &QToolButton::clicked, this, [this, key] { setSectionCollapsed(key, !isSectionCollapsed(key)); });
+    connect(unpin, &QToolButton::clicked, this, [this, key] { emit unpinResourceRequested(key); });
+    connect(close, &QToolButton::clicked, this, [this, key] { emit closeResourceRequested(key); });
+    connect(section->fullView, &QToolButton::clicked, this, [this, key] { emit fullViewResourceRequested(resources.value(key)); });
+    view->setParent(section->frame);
+    view->setProperty("contextResourceKey", key);
+    section->view = view;
+    section->resize = new QWidget(section->frame);
+    section->resize->setObjectName(QStringLiteral("contextSectionResize"));
+    section->resize->setCursor(Qt::SizeVerCursor);
+    section->resize->setProperty("contextResourceKey", key);
+    section->resize->installEventFilter(this);
+    auto* column = new QVBoxLayout(section->frame);
+    column->setContentsMargins(0, 0, 0, 0);
+    column->setSpacing(0);
+    column->setSizeConstraint(QLayout::SetNoConstraint);
+    section->header->setFixedHeight(headerHeight);
+    section->resize->setFixedHeight(resizeHeight);
+    column->addWidget(section->header);
+    column->addWidget(view, 1);
+    column->addWidget(section->resize);
+    sections.insert(key, section);
+    setSectionDetachable(key, false);
     resources.insert(key, resource);
-    fullViewAvailability.insert(key, fullViewAvailable);
-    tabs->setCurrentIndex(index);
-    updateCurrentActions();
+    order.append(key);
+    section->frame->show();
+    section->header->show();
+    view->show();
+    section->resize->show();
+    activateResource(key);
     return true;
 }
-
-bool ContextDockHost::updateResource(
-    const ContextResource& resource)
+bool ContextDockHost::updateResource(const ContextResource& resource)
 {
-    const QString key = resource.stableKey();
-    const int index = indexOfResource(key);
-    if (!resource.isValid() || index < 0)
-        return false;
-    resources.insert(key, resource);
-    const QString title = displayTitle(resource,tabs->widget(index));
-    tabs->setTabText(index, title);
-    tabs->setTabToolTip(index, resource.uri.toString());
+    auto* section = sections.value(resource.stableKey());
+    if (!resource.isValid() || !section) return false;
+    resources.insert(resource.stableKey(), resource);
+    section->title->setText(displayTitle(resource, section->view));
+    section->header->setToolTip(resource.uri.toString());
     return true;
 }
-
-bool ContextDockHost::setFullViewAvailable(
-    const QString& key,
-    bool available)
+bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
 {
-    if (indexOfResource(key) < 0)
-        return false;
-    fullViewAvailability.insert(key, available);
-    updateCurrentActions();
+    auto* section = sections.value(key);
+    if (!section) return false;
+    section->fullView->setVisible(available);
     return true;
 }
-
+void ContextDockHost::focusSection(const QString& key)
+{
+    if (!sections.contains(key) || focusedKey == key) return;
+    focusedKey = key;
+    arrangeSections();
+    emit currentResourceChanged(resources.value(key));
+}
 bool ContextDockHost::activateResource(const QString& key)
 {
-    const int index = indexOfResource(key);
-    if (index < 0)
-        return false;
-    tabs->setCurrentIndex(index);
+    if (!sections.contains(key)) return false;
+    setSectionCollapsed(key, false);
+    focusSection(key);
+    arrangeSections();
+    scroll->ensureWidgetVisible(sections.value(key)->header);
+    sections.value(key)->header->setFocus(Qt::OtherFocusReason);
     return true;
 }
-
 QWidget* ContextDockHost::takeResource(const QString& key)
 {
-    const int index = indexOfResource(key);
-    if (index < 0)
-        return nullptr;
-    QWidget* page = tabs->widget(index);
-    tabs->removeTab(index);
-    resources.remove(key);
-    fullViewAvailability.remove(key);
-    if (page) {
-        page->setProperty(kResourceKeyProperty, QVariant());
-        page->hide();
-        page->setParent(nullptr);
+    for (const QString& other : order) {
+        auto* section = sections.value(other);
+        if (other != key && !section->collapsed) section->retainedHeight = section->frame->height();
     }
-    return page;
+    auto* section = sections.take(key);
+    if (!section) return nullptr;
+    QWidget* view = section->view;
+    view->hide();
+    view->setProperty("contextResourceKey", QVariant());
+    view->setParent(nullptr);
+    order.removeAll(key);
+    resources.remove(key);
+    section->frame->hide();
+    section->frame->deleteLater();
+    delete section;
+    if (focusedKey == key) {
+        focusedKey = order.value(0);
+        emit currentResourceChanged(currentResource());
+    }
+    arrangeSections();
+    return view;
 }
-
 bool ContextDockHost::removeResource(const QString& key)
+{ auto* view = takeResource(key); if (!view) return false; view->deleteLater(); return true; }
+int ContextDockHost::indexOfResource(const QString& key) const { return order.indexOf(key.trimmed()); }
+bool ContextDockHost::isSectionCollapsed(const QString& key) const
+{ auto* section = sections.value(key); return section && section->collapsed; }
+int ContextDockHost::sectionHeight(const QString& key) const
+{ auto* section = sections.value(key); return section ? section->height : 0; }
+bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed)
 {
-    QWidget* page = takeResource(key);
-    if (!page)
-        return false;
-    page->deleteLater();
+    auto* section = sections.value(key);
+    if (!section) return false;
+    if (section->collapsed == collapsed) return true;
+    for (auto* other : sections) other->retainedHeight = 0;
+    section->collapsed = collapsed;
+    section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
+    arrangeSections();
+    emit sectionLayoutChanged();
     return true;
 }
-
-int ContextDockHost::indexOfResource(const QString& key) const
+int ContextDockHost::minimumSectionHeight(const Section* section) const
+{ return headerHeight + resizeHeight + qMax(48, section->view->minimumHeight()); }
+bool ContextDockHost::setSectionHeight(const QString& key, int height)
 {
-    const QString normalized = key.trimmed();
-    if (normalized.isEmpty())
-        return -1;
-    for (int index = 0; index < tabs->count(); ++index) {
-        QWidget* page = tabs->widget(index);
-        if (page
-            && page->property(kResourceKeyProperty).toString()
-                   == normalized) {
-            return index;
+    auto* section = sections.value(key);
+    if (!section) return false;
+    const int bounded = height <= 0 ? 0 : qBound(minimumSectionHeight(section), height, 8192);
+    if (section->height == bounded) return true;
+    for (auto* other : sections) other->retainedHeight = 0;
+    section->height = bounded;
+    arrangeSections();
+    emit sectionLayoutChanged();
+    return true;
+}
+bool ContextDockHost::moveResource(const QString& key, int index)
+{
+    const int old = order.indexOf(key);
+    if (old < 0) return false;
+    index = qBound(0, index, int(order.size()) - 1);
+    if (old == index) return true;
+    order.move(old, index);
+    arrangeSections();
+    emit resourceOrderChanged();
+    return true;
+}
+void ContextDockHost::arrangeSections()
+{
+    if (arranging) return;
+    arranging = true;
+    QHash<QString, int> heights;
+    int total = 0;
+    int expanded = 0;
+    for (const QString& key : order) if (!sections.value(key)->collapsed) ++expanded;
+    const int defaultHeight = expanded ? qMax(0, scroll->viewport()->height() - (order.size() - expanded) * headerHeight) / expanded : 0;
+    for (const QString& key : order) {
+        auto* section = sections.value(key);
+        const int requested = section->retainedHeight > 0 ? section->retainedHeight : (section->height > 0 ? section->height : defaultHeight);
+        const int desired = section->collapsed ? headerHeight : qMax(minimumSectionHeight(section), requested);
+        heights.insert(key, desired);
+        total += desired;
+    }
+    int deficit = qMax(0, total - scroll->viewport()->height());
+    QStringList compression = order;
+    compression.removeAll(focusedKey);
+    if (sections.contains(focusedKey)) compression.append(focusedKey);
+    for (const QString& key : compression) {
+        auto* section = sections.value(key);
+        const int minimum = section->collapsed ? headerHeight : minimumSectionHeight(section);
+        const int reduction = qMin(deficit, heights.value(key) - minimum);
+        heights[key] -= reduction;
+        deficit -= reduction;
+    }
+    int y = 0;
+    const int width = scroll->viewport()->width();
+    for (const QString& key : order) {
+        auto* section = sections.value(key);
+        const int height = heights.value(key);
+        section->frame->setGeometry(0, y, width, height);
+        section->view->setVisible(!section->collapsed);
+        section->resize->setVisible(!section->collapsed);
+        section->frame->layout()->setGeometry(section->frame->rect());
+        y += height;
+    }
+    stack->resize(width, qMax(y, scroll->viewport()->height()));
+    arranging = false;
+}
+void ContextDockHost::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    for (auto* section : sections) section->retainedHeight = 0;
+    arrangeSections();
+    QTimer::singleShot(0, this, [this] {
+        for (const QString& key : order) {
+            auto* view = sections.value(key)->view;
+            const auto layouts = view->findChildren<QLayout*>();
+            for (auto* layout : layouts) { layout->invalidate(); layout->activate(); }
+        }
+        arrangeSections();
+    });
+}
+int ContextDockHost::insertionIndex(const QPoint& globalPosition) const
+{
+    const int y = stack->mapFromGlobal(globalPosition).y();
+    for (int i = 0; i < order.size(); ++i) {
+        const QRect bounds = sections.value(order[i])->frame->geometry();
+        if (y < bounds.center().y()) return i;
+        if (y <= bounds.bottom()) return i + 1;
+    }
+    return order.size();
+}
+void ContextDockHost::showInsertion(const QPoint& globalPosition)
+{
+    const int index = insertionIndex(globalPosition);
+    const int y = index < order.size() ? sections.value(order[index])->frame->y()
+        : (order.isEmpty() ? 0 : sections.value(order.last())->frame->geometry().bottom());
+    insertionMarker->setGeometry(0, y, stack->width(), 3);
+    insertionMarker->show();
+    insertionMarker->raise();
+}
+bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == scroll->viewport() && event->type() == QEvent::Resize) arrangeSections();
+    const QString key = watched->property("contextResourceKey").toString();
+    if (sections.contains(key)) {
+        auto* section = sections.value(key);
+        if (event->type() == QEvent::MouseButtonPress) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            if (mouse->button() == Qt::LeftButton) {
+                focusSection(key);
+                draggedKey = key;
+                dragStart = mouse->globalPosition().toPoint();
+                resizingSection = watched == section->resize;
+                resizeStartHeight = section->frame->height();
+                return true;
+            }
+        } else if (event->type() == QEvent::MouseMove && draggedKey == key) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            if (resizingSection) setSectionHeight(key, resizeStartHeight + mouse->globalPosition().toPoint().y() - dragStart.y());
+            else if ((mouse->globalPosition().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance())
+                showInsertion(mouse->globalPosition().toPoint());
+            return true;
+        } else if (event->type() == QEvent::MouseButtonRelease && draggedKey == key) {
+            auto* mouse = static_cast<QMouseEvent*>(event);
+            const QPoint position = mouse->globalPosition().toPoint();
+            if (!resizingSection && (position - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
+                if (rect().contains(mapFromGlobal(position))) {
+                    int index = insertionIndex(position);
+                    if (index > order.indexOf(key)) --index;
+                    moveResource(key, index);
+                } else if (section->detachable) {
+                    emit dragOutRequested(key, position);
+                }
+            }
+            draggedKey.clear();
+            insertionMarker->hide();
+            return true;
         }
     }
-    return -1;
+    return QWidget::eventFilter(watched, event);
 }
 
-void ContextDockHost::updateCurrentActions()
+bool ContextDockHost::setSectionDetachable(const QString& key, bool detachable)
 {
-    const ContextResource resource = currentResource();
-    const bool hasResource = resource.isValid();
-    unpinButton->setEnabled(hasResource);
-    const bool fullViewAvailable = hasResource
-        && fullViewAvailability.value(resource.stableKey(), false);
-    fullViewButton->setVisible(fullViewAvailable);
-    fullViewButton->setEnabled(fullViewAvailable);
+    auto* section = sections.value(key);
+    if (!section) return false;
+    section->detachable = detachable;
+    section->drag->setEnabled(detachable);
+    section->drag->setToolTip(detachable ? tr("Drag outside the sidebar to float; drag within to reorder")
+        : tr("This view cannot leave the sidebar by dragging. Use its preview action for the editor overlay."));
+    return true;
+}
+QWidget* ContextDockHost::sectionDragHandle(const QString& key) const
+{ auto* section = sections.value(key); return section ? section->drag : nullptr; }
+bool ContextDockHost::validFloatingSource(QObject* source, const QMimeData* mime) const
+{
+    auto* floating = qobject_cast<ContextFloatingWindow*>(source);
+    return floating && floating->parentWidget() && floating->parentWidget()->isAncestorOf(this) && floating->hasResource()
+        && mime && mime->hasFormat(resourceMimeType())
+        && floating->resource().stableKey() == QString::fromUtf8(mime->data(resourceMimeType()));
+}
+bool ContextDockHost::acceptFloatingDrop(ContextFloatingWindow* source, const QString& key, const QPoint& globalPosition)
+{
+    QMimeData mime; mime.setData(resourceMimeType(), key.toUtf8());
+    if (!validFloatingSource(source, &mime) || !rect().contains(mapFromGlobal(globalPosition))) return false;
+    emit floatingDropRequested(key, insertionIndex(globalPosition));
+    return containsResource(key) && !source->hasResource();
+}
+void ContextDockHost::dragEnterEvent(QDragEnterEvent* event)
+{
+    if (validFloatingSource(event->source(), event->mimeData())) event->acceptProposedAction();
+}
+void ContextDockHost::dragMoveEvent(QDragMoveEvent* event)
+{
+    if (!validFloatingSource(event->source(), event->mimeData())) { event->ignore(); return; }
+    showInsertion(mapToGlobal(event->position().toPoint()));
+    event->acceptProposedAction();
+}
+void ContextDockHost::dragLeaveEvent(QDragLeaveEvent* event) { insertionMarker->hide(); event->accept(); }
+void ContextDockHost::dropEvent(QDropEvent* event)
+{
+    insertionMarker->hide();
+    if (validFloatingSource(event->source(), event->mimeData())
+        && acceptFloatingDrop(qobject_cast<ContextFloatingWindow*>(event->source()),
+            QString::fromUtf8(event->mimeData()->data(resourceMimeType())), mapToGlobal(event->position().toPoint()))) {
+        event->setDropAction(Qt::MoveAction);
+        event->accept();
+    } else event->ignore();
 }

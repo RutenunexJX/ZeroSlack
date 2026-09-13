@@ -30,18 +30,22 @@ public:
     void applyInteractionOpacity(bool active, bool hovered);
     void captureGeometry(ContextWorkspaceState& state) const;
     void restoreGeometry(const ContextWorkspaceState& state);
+    QWidget* sidebarDragHandle() const;
 
 signals:
     void pinRequested();
     void closeRequested();
     void fullViewRequested();
     void geometryChanged();
+    void sidebarDragStarted();
+    void sidebarDragFinished(bool accepted);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
     void moveEvent(QMoveEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     bool event(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     QPointer<QWidget> editorRegion;
@@ -50,6 +54,8 @@ private:
     QVBoxLayout* contentLayout = nullptr;
     QToolButton* pinButton = nullptr;
     QToolButton* fullViewButton = nullptr;
+    QToolButton* dragButton = nullptr;
+    QPoint dragStart;
     QTimer* hoverTimer = nullptr;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};

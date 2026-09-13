@@ -256,7 +256,7 @@ bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
         && a.floatingGeometryValid == b.floatingGeometryValid
         && a.floatingInstances == b.floatingInstances && a.floatingCollapsed == b.floatingCollapsed
         && a.documentFloatingLayouts == b.documentFloatingLayouts
-        && a.documentFloatingOrder == b.documentFloatingOrder;
+        && a.documentFloatingOrder == b.documentFloatingOrder && a.dockSections == b.dockSections;
 }
 
 void verifyStateCompatibility(const QStringList& arguments)
@@ -288,12 +288,13 @@ void verifyStateCompatibility(const QStringList& arguments)
         item.workspaceId.clear();
         item.state = {{QStringLiteral("saved"), true}};
         initial.pinnedResources.append(item.toVariantMap());
+        initial.dockSections.append({item.stableKey(), id != "compat-a", 0});
     }
     initial.activePinnedResourceKey = QStringLiteral("mock:compat-a");
     const auto restored = controller.restoreState(initial);
     QApplication::processEvents();
     const auto captured = controller.captureState();
-    check(ContextWorkspaceState::kVersion == 5 && restored.restoredResources == 2
+    check(ContextWorkspaceState::kVersion == 6 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
           "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
 
@@ -442,7 +443,7 @@ void verifyRailThreeStates()
               && !controller.peekHost()->hasResource(),
           "rail_three_states: first click opens a transient dock instance");
     action->trigger();
-    check(!controller.dockWidget()->isVisible() && controller.dockHost()->resourceCount() == 1,
+    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()) && controller.dockHost()->resourceCount() == 1,
           "rail_three_states: second click collapses without disposing the view");
     action->trigger();
     check(controller.dockWidget()->isVisible()
@@ -560,7 +561,7 @@ void verifyFloatingGeometryRoundtrip()
               && saved.floatingScreenName == window->screen()->name(),
           "floating_geometry: native frame rectangle and screen name are captured");
     controller.restoreState(saved);
-    check(ContextWorkspaceState::kVersion == 5 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 6 && sameState(saved, controller.captureState()),
           "floating_geometry: all fields survive capture and restore independently of overlay size");
     controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
     QApplication::processEvents();
@@ -620,6 +621,7 @@ void verifyV3ContextInput()
     expected.railVisible = false;
     expected.activePinnedResourceKey = "mock:old";
     expected.pinnedResources = {resource("old").toVariantMap()};
+    expected.dockSections = {{"mock:old", false, 0}};
     expected.providerStates = {{"mock", QVariantMap{{"expanded", QStringList{"source"}}}}};
     check(service.save(session).saved, "v3_input: session fixture is available");
     QSettings settings(path, QSettings::IniFormat);
@@ -829,6 +831,7 @@ void verifyV4ContextInput()
     expected.dockVisible = true; expected.railVisible = false;
     expected.pinnedResources = {resource("v4").toVariantMap()};
     expected.activePinnedResourceKey = "mock:v4";
+    expected.dockSections = {{"mock:v4", false, 0}};
     expected.providerStates = {{"mock", QVariantMap{{"query", "v4"}}}};
     expected.floatingX = 80; expected.floatingY = 90;
     expected.floatingWidth = 600; expected.floatingHeight = 500;
@@ -1014,6 +1017,224 @@ void verifyDocumentLayoutEviction()
     check(sameState(saved, controller.captureState()), "document_layout_lru_restore: all 32 archived layouts and their order restore exactly");
 }
 
+void verifySidebarStack()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    auto* host = controller.dockHost();
+    for (const auto& id : {"stack-a", "stack-b", "stack-c"}) controller.openResource(resource(id), keptPlacement);
+    QApplication::processEvents();
+    const auto keys = host->resourceKeys();
+    bool visible = keys.size() == 3;
+    for (const auto& key : keys)
+        visible &= host->viewForResource(key)->isVisible() && host->sectionWidget(key)->height() > host->sectionHeader(key)->height();
+    check(visible && host->viewForResource(keys[0]) != host->viewForResource(keys[1])
+              && host->viewForResource(keys[1]) != host->viewForResource(keys[2])
+              && host->viewForResource(keys[0]) != host->viewForResource(keys[2]),
+          "stack_visible: three distinct content views are visible in one dock");
+    QWidget* middle = host->viewForResource(keys[1]);
+    const int created = fixture.counters.created;
+    const QRect geometry = host->sectionWidget(keys[1])->geometry();
+    host->setSectionCollapsed(keys[1], true);
+    check(!middle->isVisible() && host->viewForResource(keys[1]) == middle && fixture.counters.created == created,
+          "stack_collapse: hiding the middle content retains the view");
+    host->setSectionCollapsed(keys[1], false);
+    check(host->sectionWidget(keys[1])->geometry() == geometry && middle->isVisible(),
+          "stack_expand: expanded geometry returns exactly");
+    for (const auto& key : keys) host->setSectionCollapsed(key, true);
+    check(controller.dockWidget()->isVisible() && host->resourceCount() == 3,
+          "stack_all_collapsed: the dock remains a visible column of headers");
+    for (const auto& key : keys) host->setSectionCollapsed(key, false);
+    QSignalSpy reordered(host, &ContextDockHost::resourceOrderChanged);
+    const QPoint start = host->sectionHeader(keys[2])->mapToGlobal(QPoint(80, 10));
+    const QPoint end = host->sectionHeader(keys[0])->mapToGlobal(QPoint(80, 1));
+    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseMove, end, Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(host->sectionHeader(keys[2]), QEvent::MouseButtonRelease, end, Qt::LeftButton, Qt::NoButton);
+    check(reordered.count() == 1 && host->resourceKeys().first() == keys[2]
+              && ContextResource::fromVariantMap(controller.captureState().pinnedResources.first()).stableKey() == keys[2],
+          "stack_reorder: title drag changes order, emits signal and persists resource order");
+    controller.focusResource(keys[1]);
+    fixture.window.activateWindow();
+    fixture.window.centralWidget()->setFocusPolicy(Qt::StrongFocus);
+    fixture.window.centralWidget()->setFocus();
+    QApplication::processEvents();
+    controller.rail()->actions().first()->trigger();
+    controller.rail()->actions().first()->trigger();
+    check(host->isSectionCollapsed(keys[1]) && !host->isSectionCollapsed(keys[0]) && controller.dockWidget()->isVisible(),
+          "stack_rail: two clicks focus then collapse only the MRU section");
+    host->setSectionHeight(keys[0], fixture.window.screen()->availableGeometry().height() / 3);
+    const auto saved = controller.captureState();
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("v6.ini"));
+    WorkspaceSessionState session; session.workspaceRoot = controller.workspaceRoot(); session.ui.contextWorkspace = saved;
+    service.save(session);
+    controller.restoreState(service.load(session.workspaceRoot).state.ui.contextWorkspace);
+    check(ContextWorkspaceState::kVersion == 6 && sameState(saved, controller.captureState()),
+          "stack_v6_roundtrip: order, collapsed states and requested heights survive the production serializer");
+    controller.dockWidget()->toggleViewAction()->trigger();
+    check(!controller.dockWidget()->isVisible(), "stack_hide_whole: the dock toggle still hides the entire sidebar");
+}
+
+void verifySidebarCompression()
+{
+    ContextDockHost host;
+    const QRect available = QGuiApplication::primaryScreen()->availableGeometry();
+    host.resize(available.width() / 2, available.height() / 2);
+    for (const auto& id : {"compress-a", "compress-b", "compress-c"}) host.addResource(resource(id), new QLabel(id));
+    host.show(); QApplication::processEvents();
+    const auto keys = host.resourceKeys();
+    const int desired = available.height() / 3;
+    for (const auto& key : keys) host.setSectionHeight(key, desired);
+    host.activateResource(keys[1]);
+    host.resize(host.width(), qMax(260, available.height() * 3 / 5));
+    QApplication::processEvents();
+    check(host.sectionWidget(keys[0])->height() <= host.sectionWidget(keys[1])->height()
+              && host.sectionWidget(keys[2])->height() <= host.sectionWidget(keys[1])->height()
+              && host.sectionWidget(keys[0])->height() < host.sectionHeight(keys[0]),
+          "stack_compression: nonfocused sections compress before the focused section");
+    auto* handle = host.sectionWidget(keys[1])->findChild<QWidget*>("contextSectionResize");
+    const int before = host.sectionHeight(keys[1]);
+    dragHandle(handle, QPoint(0, available.height() / 10));
+    check(host.sectionHeight(keys[1]) != before, "stack_resize: the section boundary changes its persisted height");
+}
+
+void verifyV5SidebarMigration()
+{
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("v5.ini"));
+    WorkspaceSessionState session; session.workspaceRoot = temporary.path();
+    auto& expected = session.ui.contextWorkspace;
+    expected.valid = true; expected.dockVisible = true;
+    expected.activePinnedResourceKey = resource("migration-b").stableKey();
+    const QRect available = QGuiApplication::primaryScreen()->availableGeometry();
+    expected.floatingX = available.left() + available.width() / 20;
+    expected.floatingY = available.top() + available.height() / 20;
+    expected.floatingCollapsed = true;
+    expected.floatingWidth = ContextWorkspaceState::boundedPeekWidth(available.width() / 2);
+    expected.floatingHeight = ContextWorkspaceState::boundedPeekHeight(available.height() / 2);
+    expected.floatingScreenName = "v5 screen"; expected.floatingGeometryValid = true;
+    expected.providerStates = {{"mock", QVariantMap{{"v5-query", "saved"}}}};
+    ContextFloatingInstanceState global;
+    global.resource = resource("migration-global").toVariantMap();
+    global.x = expected.floatingX; global.y = expected.floatingY;
+    global.width = expected.floatingWidth; global.height = expected.floatingHeight;
+    global.screenName = "v5 instance screen"; global.geometryValid = true; global.kept = true;
+    expected.floatingInstances.append(global);
+    auto bound = global; bound.resource = resource("migration-bound").toVariantMap();
+    expected.documentFloatingLayouts.insert("rtl/archived.sv", {bound});
+    expected.documentFloatingOrder = {"rtl/archived.sv"};
+    for (const auto& id : {"migration-a", "migration-b", "migration-c"}) expected.pinnedResources.append(resource(id).toVariantMap());
+    service.save(session);
+    QSettings settings(temporary.filePath("v5.ini"), QSettings::IniFormat);
+    const QString storageKey = settings.allKeys().first();
+    auto json = QJsonDocument::fromJson(settings.value(storageKey).toByteArray()).object();
+    auto ui = json.value("ui").toObject(); auto context = ui.value("contextWorkspace").toObject();
+    context.insert("version", 5); context.remove("dockSections");
+    ui.insert("contextWorkspace", context); json.insert("ui", ui);
+    settings.setValue(storageKey, QJsonDocument(json).toJson(QJsonDocument::Compact)); settings.sync();
+    for (const auto& id : {"migration-a", "migration-b", "migration-c"})
+        expected.dockSections.append({resource(id).stableKey(), QString(id) != "migration-b", 0});
+    const auto loaded = service.load(session.workspaceRoot);
+    check(loaded.loaded && sameState(expected, loaded.state.ui.contextWorkspace),
+          "stack_v5_migration: every v5 field survives with only the former active section expanded");
+    PlacementFixture fixture;
+    fixture.controller->restoreState(loaded.state.ui.contextWorkspace);
+    auto* host = fixture.controller->dockHost();
+    check(host->isSectionCollapsed("mock:migration-a") && !host->isSectionCollapsed("mock:migration-b")
+              && host->isSectionCollapsed("mock:migration-c"), "stack_v5_live: migrated collapse states apply to all three sections");
+}
+
+void verifySidebarDragOut()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    auto* host = controller.dockHost();
+    for (const auto& id : {"drag-a", "drag-b", "drag-c"}) controller.openResource(resource(id), keptPlacement);
+    QApplication::processEvents();
+    const auto keys = host->resourceKeys();
+    host->setSectionCollapsed(keys[1], true);
+    QWidget* view = host->viewForResource(keys[2]);
+    const int created = fixture.counters.created;
+    const int previousHeight = host->sectionHeight(keys[0]);
+    const QSize previousSize = host->sectionWidget(keys[0])->size();
+    const QRect available = fixture.window.screen()->availableGeometry();
+    const QPoint destination(available.left() - available.width(), available.bottom() + available.height() / 4);
+    QWidget* handle = host->sectionDragHandle(keys[2]);
+    check(handle && handle->isEnabled(), "stack_drag_handle: detachable section has an enabled explicit grip");
+    const QPoint start = handle->mapToGlobal(handle->rect().center());
+    sendMouseEvent(handle, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
+    sendMouseEvent(handle, QEvent::MouseMove, destination, Qt::NoButton, Qt::LeftButton);
+    sendMouseEvent(handle, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+    auto* floating = controller.floatingWindow();
+    check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
+              && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->size() == previousSize
+              && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: title gesture transports the view and preserves neighboring sections");
+    check(floating->hasResource() && available.contains(floating->frameGeometry()),
+          "stack_drag_out_geometry: outside-screen drop resolves to a fully visible native rectangle");
+    fixture.counters.detachable = false;
+    const auto blocked = resource("drag-blocked");
+    controller.openResource(blocked, keptPlacement);
+    QString reason;
+    check(!host->sectionDragHandle(blocked.stableKey())->isEnabled()
+              && !host->sectionDragHandle(blocked.stableKey())->toolTip().isEmpty()
+              && !controller.dragOutResource(blocked.stableKey(), destination, &reason) && !reason.isEmpty()
+              && controller.floatingWindows().size() == 1 && host->containsResource(blocked.stableKey()),
+          "stack_drag_opt_out: non-detachable grip is disabled and forced detach is rejected without moving the resource");
+}
+
+void verifySidebarDragBack()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    auto* host = controller.dockHost();
+    for (const auto& id : {"drop-a", "drop-b", "drop-c"}) controller.openResource(resource(id), keptPlacement);
+    const auto floatingResource = resource("drop-floating");
+    controller.openResource(floatingResource, floatingPlacement);
+    auto* floating = controller.floatingWindow();
+    QWidget* original = floating->view();
+    const int created = fixture.counters.created;
+    check(floating->sidebarDragHandle() && floating->sidebarDragHandle()->isEnabled()
+              && floating->sidebarDragHandle()->parentWidget() == floating,
+          "stack_drag_client_handle: drag back begins inside the native window client area");
+    QApplication::processEvents();
+    for (const auto& key : host->resourceKeys()) host->setSectionCollapsed(key, true);
+    QWidget* second = host->sectionWidget("mock:drop-b");
+    const QPoint upper = second->mapToGlobal(QPoint(second->width() / 2, second->height() / 4));
+    check(host->acceptFloatingDrop(floating, floatingResource.stableKey(), upper)
+              && host->resourceKeys().indexOf(floatingResource.stableKey()) == 1,
+          "stack_drop_upper: upper half inserts before the second section");
+    check(host->viewForResource(floatingResource.stableKey()) == original && fixture.counters.created == created
+              && !floating->isVisible() && !floating->hasResource() && controller.floatingWindows().isEmpty(),
+          "stack_drop_identity: drag back retains QWidget and closes the empty native surface with no duplicate resource");
+    controller.unpinResource(floatingResource.stableKey()); floating = controller.floatingWindow();
+    second = host->sectionWidget("mock:drop-b");
+    const QPoint lower = second->mapToGlobal(QPoint(second->width() / 2, second->height() * 3 / 4));
+    check(host->acceptFloatingDrop(floating, floatingResource.stableKey(), lower)
+              && host->resourceKeys().indexOf(floatingResource.stableKey()) == 2,
+          "stack_drop_lower: lower half inserts after the second section");
+    controller.unpinResource(floatingResource.stableKey()); floating = controller.floatingWindow();
+    const QPoint blank = host->mapToGlobal(QPoint(host->width() / 2, host->height() - 5));
+    check(host->acceptFloatingDrop(floating, floatingResource.stableKey(), blank)
+              && host->resourceKeys().last() == floatingResource.stableKey()
+              && host->viewForResource(floatingResource.stableKey()) == original && fixture.counters.created == created,
+          "stack_drop_blank: empty area appends without reconstructing the view");
+    PlacementFixture foreign;
+    foreign.counters.detachable = true;
+    foreign.controller->openResource(resource("foreign"), floatingPlacement);
+    check(!host->acceptFloatingDrop(foreign.controller->floatingWindow(), "mock:foreign", blank)
+              && foreign.controller->floatingWindow()->hasResource(), "stack_drop_scope: another workspace window cannot donate a resource");
+    for (const auto& key : host->resourceKeys()) controller.closePinnedResource(key);
+    controller.openResource(resource("empty-target"), floatingPlacement);
+    floating = controller.floatingWindow();
+    emit floating->sidebarDragStarted();
+    check(controller.dockWidget()->isVisible(), "stack_drop_empty_target: a drag exposes even an empty hidden sidebar");
+    emit floating->sidebarDragFinished(false);
+    check(!controller.dockWidget()->isVisible() && floating->hasResource(), "stack_drop_cancel: canceled drag restores the previous sidebar visibility");
+}
+
 void verifyNativeFrameCorrection()
 {
     PlacementFixture fixture;
@@ -1056,6 +1277,11 @@ int main(int argc, char* argv[])
     verifyDocumentLayoutRoundtrip();
     verifyDocumentLayoutEviction();
     verifyNativeFrameCorrection();
+    verifySidebarStack();
+    verifySidebarCompression();
+    verifyV5SidebarMigration();
+    verifySidebarDragOut();
+    verifySidebarDragBack();
 
     const ContextResource original = resource(QStringLiteral("a"));
     QString parseFailure;
@@ -1278,7 +1504,7 @@ int main(int argc, char* argv[])
     controller.closePeek();
     controller.rail()->actions().constFirst()->trigger();
     QApplication::processEvents();
-    check(!controller.dockWidget()->isVisible(), "rail hides the active pinned provider");
+    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()), "rail collapses the active pinned section while retaining the sidebar");
     controller.rail()->actions().constFirst()->trigger();
     QApplication::processEvents();
     check(controller.dockWidget()->isVisible()
@@ -1506,7 +1732,7 @@ int main(int argc, char* argv[])
               "resizing preserves the chart view instance");
         sidebar.rail()->actions().constFirst()->trigger();
         QApplication::processEvents();
-        check(!sidebar.dockWidget()->isVisible(), "second rail click closes transient sidebar");
+        check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey()), "second rail click collapses transient section");
         sidebar.rail()->actions().constFirst()->trigger();
         QApplication::processEvents();
         check(qAbs(sidebar.dockWidget()->width() - widened) <= 2,
@@ -1517,7 +1743,7 @@ int main(int argc, char* argv[])
               "current sidebar resource can be pinned");
         sidebar.rail()->actions().constFirst()->trigger();
         QApplication::processEvents();
-        check(!sidebar.dockWidget()->isVisible()
+        check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey())
                   && sidebar.dockHost()->resourceCount() == 1,
               "second click also hides pinned content without removing it");
         sidebar.rail()->actions().constFirst()->trigger();
