@@ -1081,9 +1081,9 @@ void verifySidebarVisibilityToggle()
     PlacementFixture fixture;
     auto& controller = *fixture.controller;
     QString reason;
-    check(!controller.dockVisible() && !controller.canShowDock()
+    check(!controller.dockVisible() && controller.canShowDock()
               && !controller.setDockVisible(true, &reason) && !reason.isEmpty(),
-          "sidebar_visibility_empty: showing an empty sidebar is refused with a reason");
+          "sidebar_visibility_no_activation: a provider without an activation resource fails with a reason");
     const ContextResource item = resource(QStringLiteral("visibility-a"));
     const QString key = item.stableKey();
     check(controller.openResource(item, keptPlacement) && controller.dockVisible()
@@ -1106,11 +1106,28 @@ void verifySidebarVisibilityToggle()
               && fixture.counters.created == created
               && qAbs(controller.dockWidget()->width() - width) <= 2,
           "sidebar_visibility_show: showing again reuses the view and its width");
+    controller.rail()->hide();
+    check(controller.setDockVisible(false) && !controller.rail()->isVisible()
+              && controller.dockHost()->resourceCount() == 1,
+          "sidebar_visibility_hide_keeps_rail_state: hiding the sidebar does not touch the rail");
+    check(controller.setDockVisible(true, &reason) && controller.dockVisible()
+              && controller.rail()->isVisible()
+              && controller.captureState().railVisible,
+          "sidebar_visibility_restores_rail: showing the sidebar restores a hidden rail");
     check(controller.closePinnedResource(key) && !controller.dockVisible()
-              && !controller.canShowDock(),
-          "sidebar_visibility_last_close: closing the last section hides the sidebar again");
+              && controller.canShowDock(),
+          "sidebar_visibility_last_close: closing the last section hides the sidebar but keeps it reachable");
+    fixture.counters.activation = resource(QStringLiteral("visibility-default"));
+    controller.rail()->hide();
+    const int createdBeforeRecovery = fixture.counters.created;
+    check(controller.setDockVisible(true, &reason) && controller.dockVisible()
+              && controller.rail()->isVisible()
+              && controller.dockHost()->resourceCount() == 1
+              && controller.dockHost()->resourceAt(0).stableKey()
+                     == resource(QStringLiteral("visibility-default")).stableKey()
+              && fixture.counters.created == createdBeforeRecovery + 1,
+          "sidebar_visibility_recovers_empty: an empty sidebar opens the first rail provider instead of refusing");
 }
-
 void verifySidebarCompression()
 {
     ContextDockHost host;

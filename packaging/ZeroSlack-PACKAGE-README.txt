@@ -1,4 +1,4 @@
-ZeroSlack v0.28.0
+ZeroSlack v0.28.1
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -34,7 +34,8 @@ Navigation and Context remain full-height columns; the bottom drawer occupies
 only the area beneath the editor. Drag the sidebar divider to widen charts.
 Reopening the sidebar retains its width. Settings opens in a central tab.
 Ctrl+2 or View > Context Sidebar toggles the entire Context sidebar without
-closing its sections. Open a Context view from the rail first when it is empty.
+closing its sections. Showing an empty sidebar opens the first rail provider's
+default view and restores a hidden rail.
 Supported charts can open in the main area. Explicit Peek previews remain available.
 Detachable Context resources can float in multiple native windows. Right-click a
 Context rail icon to create or focus views, collect them into the sidebar, or

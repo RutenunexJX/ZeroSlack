@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.28.1] - 2026-09-13
+
+- Corrected `View > Context Sidebar` so an empty sidebar opens the first rail provider's default view instead of refusing, and a hidden rail is restored with it; workspaces whose stored state hid the rail and held no section are reachable again.
+
 ## [0.28.0] - 2026-09-13
 
 - Added a registry-owned `View > Context Sidebar` toggle (`Ctrl+2`) that shows or hides the whole Context sidebar while keeping every section, view instance, order and width intact.

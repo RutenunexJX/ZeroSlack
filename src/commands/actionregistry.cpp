@@ -1555,7 +1555,7 @@ void appendApplicationMenuActions(
          ActionCategory::Workspace,
          ActionScope::Application,
          0,
-         "Open a Context view from the rail before showing the sidebar.",
+         "No Context provider is registered.",
          "Ctrl+2"},
         {ActionIds::ViewScopedSearch,
          "Search and Replace",

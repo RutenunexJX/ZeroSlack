@@ -268,8 +268,10 @@ bool ContextWorkspaceController::dockVisible() const
 
 bool ContextWorkspaceController::canShowDock() const
 {
-    return dockValue && dockHostValue
-        && dockHostValue->resourceCount() > 0;
+    if (!dockValue || !dockHostValue)
+        return false;
+    return dockHostValue->resourceCount() > 0
+        || (railValue && !railValue->entryIds().isEmpty());
 }
 
 bool ContextWorkspaceController::setDockVisible(
@@ -285,18 +287,49 @@ bool ContextWorkspaceController::setDockVisible(
         return fail(QStringLiteral(
             "The Context sidebar is unavailable."));
     }
-    if (visible == dockValue->isVisible())
-        return true;
     if (!visible) {
-        dockValue->hide();
+        if (dockValue->isVisible())
+            dockValue->hide();
         return true;
     }
-    if (!canShowDock()) {
-        return fail(QStringLiteral(
-            "Open a Context view from the rail before "
-            "showing the sidebar."));
+    // The rail is the sidebar's entry point, so a hidden rail is restored
+    // together with the sidebar instead of leaving Context unreachable.
+    if (railValue && !railValue->isVisible()
+        && !railValue->entryIds().isEmpty()) {
+        railValue->show();
+        notifyWorkspaceStateChanged();
     }
-    showDock(false);
+    if (dockValue->isVisible())
+        return true;
+    if (dockHostValue->resourceCount() > 0) {
+        showDock(false);
+        return true;
+    }
+    const QStringList entries =
+        railValue ? railValue->entryIds() : QStringList();
+    if (entries.isEmpty()) {
+        return fail(QStringLiteral(
+            "No Context provider is registered."));
+    }
+    const QString providerId = entries.constFirst();
+    IContextContentProvider* provider =
+        providerForId(providerId);
+    const ContextResource activation =
+        provider
+        ? provider->activationResource(currentWorkspaceRoot)
+        : ContextResource{};
+    QString openFailure;
+    if (!activation.isValid()
+        || !openResource(activation,
+                         defaultPlacementFor(providerId),
+                         &openFailure)
+        || !dockValue->isVisible()) {
+        return fail(openFailure.isEmpty()
+                        ? QStringLiteral(
+                              "The Context provider could not open "
+                              "a sidebar view.")
+                        : openFailure);
+    }
     return true;
 }
 

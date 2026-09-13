@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.28.0`
+Current version: `v0.28.1`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -39,7 +39,7 @@ is `schemas/suite-references-v1.schema.json`.
   boundaries or drag headers to reorder; drag an eligible section outside to float it. Drag a floating
   window's client-area handle back to the sidebar to insert it at the indicated position.
   `Ctrl+2` or `View > Context Sidebar` hides/restores the entire sidebar while preserving its sections;
-  open a Context resource from the rail first when the sidebar is empty.
+  showing an empty sidebar opens the first rail provider's default view and restores a hidden rail.
 - The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
   and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
   Settings and connection tools continue to open in central tabs.

@@ -1,16 +1,16 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.28.0`
+Product version: `v0.28.1`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
 
-## Context 整侧栏开关 — 2026-09-13 (v0.28.0)
+## Context 整侧栏开关 — 2026-09-13 (v0.28.1)
 
 - 新增注册表管理的 `View > Context Sidebar` / `Ctrl+2`，统一显示或隐藏整个 Context 侧栏，保留 section、视图、顺序与宽度。
-- 侧栏为空时禁用显示入口，命令返回明确原因；通过 rail 打开内容后可用。
+- 侧栏为空时打开 rail 第一个功能的默认视图，并恢复被隐藏的 rail；没有 Context 功能注册时禁用显示入口。
 
 ## 浮层/侧栏 第 4 期 · 可折叠竖栈与拖动 — 2026-09-13 (v0.27.0)
 
