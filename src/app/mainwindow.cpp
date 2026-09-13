@@ -2621,6 +2621,11 @@ void MainWindow::setupViewMenu()
             viewMenu, ActionIds::ViewNavigation);
     if (navigationAction)
         navigationAction->setCheckable(true);
+    QAction* contextSidebarAction =
+        addRegistryAction(
+            viewMenu, ActionIds::ViewContextSidebar);
+    if (contextSidebarAction)
+        contextSidebarAction->setCheckable(true);
     QAction* scopedSearchAction =
         addRegistryAction(
             viewMenu, ActionIds::ViewScopedSearch);
@@ -2743,6 +2748,7 @@ void MainWindow::setupViewMenu()
         this,
         [this,
          navigationAction,
+         contextSidebarAction,
          scopedSearchAction,
          splitLeftAction,
          splitRightAction,
@@ -2787,6 +2793,7 @@ void MainWindow::setupViewMenu()
                 };
             for (QAction* action :
                  {navigationAction,
+                  contextSidebarAction,
                   scopedSearchAction,
                   splitLeftAction,
                   splitRightAction,
@@ -2808,6 +2815,17 @@ void MainWindow::setupViewMenu()
                 refreshAvailability(action);
             }
 
+            if (contextSidebarAction) {
+                const bool contextVisible =
+                    contextWorkspaceController
+                    && contextWorkspaceController->dockVisible();
+                contextSidebarAction->setChecked(contextVisible);
+                contextSidebarAction->setEnabled(
+                    contextVisible
+                    || (contextWorkspaceController
+                        && contextWorkspaceController
+                               ->canShowDock()));
+            }
             if (collapseBottomAction) {
                 collapseBottomAction->setChecked(
                     panelLayoutController
@@ -4125,6 +4143,20 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return fail();
         }
         navigationPane->toggleVisible();
+        return succeeded();
+    }
+
+    if (route
+        == QStringLiteral(
+            "ui.panel.contextSidebar.toggle")) {
+        if (!contextWorkspaceController)
+            return fail();
+        QString failureReason;
+        if (!contextWorkspaceController->setDockVisible(
+                !contextWorkspaceController->dockVisible(),
+                &failureReason)) {
+            return fail(failureReason);
+        }
         return succeeded();
     }
 

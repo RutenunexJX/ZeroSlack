@@ -1,7 +1,8 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.27.0`
+Product version: `v0.28.0`
 
+The Context sidebar supports a registry-owned whole-sidebar toggle through Ctrl+2 and the View menu.
 The four Context phases now include placement dimensions, native floating windows, multiple document-bound
 views and a collapsible sidebar stack with drag between surfaces. Real desktop drag interaction and native
 multi-monitor/restart frame measurements remain unverified. See docs/sidebar-stack-review.md.

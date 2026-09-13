@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.28.0] - 2026-09-13
+
+- Added a registry-owned `View > Context Sidebar` toggle (`Ctrl+2`) that shows or hides the whole Context sidebar while keeping every section, view instance, order and width intact.
+- Kept the toggle disabled and the command refused with a reason while the sidebar holds no section, so the rail stays the single entry point for opening Context content.
+
 ## [0.27.0] - 2026-09-13
 
 - Replaced Context tabs with collapsible sidebar sections inside the existing dock, supporting simultaneous views, independent heights, title-drag ordering and focus-prioritized compression.

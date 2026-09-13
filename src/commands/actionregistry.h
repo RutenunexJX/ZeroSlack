@@ -148,6 +148,8 @@ inline constexpr const char ViewSettingsCenter[] =
     "view.settingsCenter";
 inline constexpr const char ViewNavigation[] =
     "view.navigation.toggle";
+inline constexpr const char ViewContextSidebar[] =
+    "view.contextSidebar.toggle";
 inline constexpr const char ViewGlobalControl[] =
     "view.globalControl";
 inline constexpr const char ViewCommandMode[] =

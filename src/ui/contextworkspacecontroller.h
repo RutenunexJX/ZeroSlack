@@ -58,6 +58,9 @@ public:
     void setFloatingOpacity(int percentage);
     ContextDockHost* dockHost() const;
     QDockWidget* dockWidget() const;
+    bool dockVisible() const;
+    bool canShowDock() const;
+    bool setDockVisible(bool visible, QString* failureReason = nullptr);
 
     bool registerProvider(
         std::unique_ptr<IContextContentProvider> provider);

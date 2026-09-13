@@ -261,6 +261,45 @@ QDockWidget* ContextWorkspaceController::dockWidget() const
     return dockValue;
 }
 
+bool ContextWorkspaceController::dockVisible() const
+{
+    return dockValue && dockValue->isVisible();
+}
+
+bool ContextWorkspaceController::canShowDock() const
+{
+    return dockValue && dockHostValue
+        && dockHostValue->resourceCount() > 0;
+}
+
+bool ContextWorkspaceController::setDockVisible(
+    bool visible,
+    QString* failureReason)
+{
+    const auto fail = [failureReason](const QString& reason) {
+        if (failureReason)
+            *failureReason = reason;
+        return false;
+    };
+    if (!dockValue || !dockHostValue) {
+        return fail(QStringLiteral(
+            "The Context sidebar is unavailable."));
+    }
+    if (visible == dockValue->isVisible())
+        return true;
+    if (!visible) {
+        dockValue->hide();
+        return true;
+    }
+    if (!canShowDock()) {
+        return fail(QStringLiteral(
+            "Open a Context view from the rail before "
+            "showing the sidebar."));
+    }
+    showDock(false);
+    return true;
+}
+
 bool ContextWorkspaceController::registerProvider(
     std::unique_ptr<IContextContentProvider> provider)
 {

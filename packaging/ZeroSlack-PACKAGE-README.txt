@@ -1,4 +1,4 @@
-ZeroSlack v0.27.0
+ZeroSlack v0.28.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -32,8 +32,10 @@ viewing Activity marks displayed messages as read. Ordinary progress stays passi
 
 Navigation and Context remain full-height columns; the bottom drawer occupies
 only the area beneath the editor. Drag the sidebar divider to widen charts.
-Reopening the sidebar retains its width. Settings opens in a central tab;
-supported charts can open in the main area. Explicit Peek previews remain available.
+Reopening the sidebar retains its width. Settings opens in a central tab.
+Ctrl+2 or View > Context Sidebar toggles the entire Context sidebar without
+closing its sections. Open a Context view from the rail first when it is empty.
+Supported charts can open in the main area. Explicit Peek previews remain available.
 Detachable Context resources can float in multiple native windows. Right-click a
 Context rail icon to create or focus views, collect them into the sidebar, or
 bind them to the current document. The separate rail toggle hides/restores all

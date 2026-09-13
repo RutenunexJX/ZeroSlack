@@ -1076,6 +1076,41 @@ void verifySidebarStack()
     check(!controller.dockWidget()->isVisible(), "stack_hide_whole: the dock toggle still hides the entire sidebar");
 }
 
+void verifySidebarVisibilityToggle()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    QString reason;
+    check(!controller.dockVisible() && !controller.canShowDock()
+              && !controller.setDockVisible(true, &reason) && !reason.isEmpty(),
+          "sidebar_visibility_empty: showing an empty sidebar is refused with a reason");
+    const ContextResource item = resource(QStringLiteral("visibility-a"));
+    const QString key = item.stableKey();
+    check(controller.openResource(item, keptPlacement) && controller.dockVisible()
+              && controller.canShowDock(),
+          "sidebar_visibility_open: opening a kept resource shows the sidebar");
+    QApplication::processEvents();
+    fixture.window.resizeDocks({controller.dockWidget()}, {520}, Qt::Horizontal);
+    QApplication::processEvents();
+    const int width = controller.dockWidget()->width();
+    QWidget* view = controller.dockHost()->viewForResource(key);
+    const int created = fixture.counters.created;
+    check(controller.setDockVisible(false) && !controller.dockVisible()
+              && controller.dockHost()->resourceCount() == 1
+              && !controller.captureState().dockVisible,
+          "sidebar_visibility_hide: hiding keeps the section and persists the hidden state");
+    check(controller.setDockVisible(false) && !controller.dockVisible(),
+          "sidebar_visibility_idempotent: hiding an already hidden sidebar succeeds");
+    check(controller.setDockVisible(true, &reason) && controller.dockVisible()
+              && controller.dockHost()->viewForResource(key) == view
+              && fixture.counters.created == created
+              && qAbs(controller.dockWidget()->width() - width) <= 2,
+          "sidebar_visibility_show: showing again reuses the view and its width");
+    check(controller.closePinnedResource(key) && !controller.dockVisible()
+              && !controller.canShowDock(),
+          "sidebar_visibility_last_close: closing the last section hides the sidebar again");
+}
+
 void verifySidebarCompression()
 {
     ContextDockHost host;
@@ -1279,6 +1314,7 @@ int main(int argc, char* argv[])
     verifyNativeFrameCorrection();
     verifySidebarStack();
     verifySidebarCompression();
+    verifySidebarVisibilityToggle();
     verifyV5SidebarMigration();
     verifySidebarDragOut();
     verifySidebarDragBack();
