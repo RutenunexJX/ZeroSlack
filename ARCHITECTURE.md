@@ -223,7 +223,7 @@ build targets and unique quoted header names; they do not create new runtime lay
 | `test_sv/` | Regression tests and referenced HDL fixtures |
 | `cmake/` | Build helpers, source-module include paths and policy guards |
 | `resources/`, `images/`, `config/` | Fonts, licenses, platform assets and editor resources |
-| `schemas/` | Current and compatibility-tested wire-format schemas |
+| `schemas/` | Current wire-format schemas; superseded manifest versions stay in Git history |
 | `scripts/`, `packaging/` | Reproducible packaging tools and portable-toolchain patches |
 | `docs/` | Current technical and maintenance documentation |
 | `build/`, `artifacts/`, `.toolchain-build/` | Ignored local outputs and reproducible caches |

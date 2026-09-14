@@ -1,7 +1,4 @@
 <RCC>
-    <qresource prefix="/config">
-        <file>config/keywords.txt</file>
-    </qresource>
     <qresource prefix="/fonts">
         <file>resources/fonts/maple-mono/MapleMono-Regular.ttf</file>
         <file>resources/fonts/maple-mono/MapleMono-Bold.ttf</file>

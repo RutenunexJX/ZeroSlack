@@ -851,6 +851,26 @@ int main(int argc, char* argv[])
                   {QStringLiteral("insightFocusActive")}),
           QStringLiteral(
               "Insight panels no longer branch on the retired focus property"));
+    // Every declared resource must have a reader. The keyword list was
+    // superseded by the Slang keyword table and the three toolbar bitmaps by
+    // the scalable icon set, so neither may return to a .qrc unread.
+    const QString codeResources =
+        readSource(root, QStringLiteral("code.qrc"));
+    const QString imageResources =
+        readSource(root, QStringLiteral("images.qrc"));
+    check(!codeResources.isEmpty()
+              && !imageResources.isEmpty()
+              && containsNone(
+                  codeResources,
+                  {QStringLiteral("config/keywords.txt"),
+                   QStringLiteral("prefix=\"/config\"")})
+              && containsNone(
+                  imageResources,
+                  {QStringLiteral("images/workspace.png"),
+                   QStringLiteral("images/open_file.png"),
+                   QStringLiteral("images/new_file.png")}),
+          QStringLiteral(
+              "Superseded keyword and toolbar bitmap resources stay out of the .qrc files"));
 
     std::cout << (checks - failures)
               << "/" << checks
