@@ -370,8 +370,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/insightgraphview.cpp
     src/insights/insightgraphcore.cpp
     src/insights/insightcanvas.cpp
-    src/insights/insightfocuscontroller.cpp
-    src/insights/insightfocuscontrolleractions.cpp
     src/ui/insightvisualstyle.cpp
     src/insights/liveinsightsession.cpp
     src/insights/liveinsightscontextview.cpp
@@ -637,7 +635,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/insightgraphview.h
     src/insights/insightgraphcore.h
     src/insights/insightcanvas.h
-    src/insights/insightfocuscontroller.h
     src/ui/insightvisualstyle.h
     src/insights/liveinsighttypes.h
     src/insights/liveinsightsession.h
@@ -1307,18 +1304,6 @@ if(BUILD_TESTING)
     target_link_libraries(editor_context_menu_test
         PRIVATE Qt6::Core Qt6::Gui)
 
-    add_executable(insight_focus_controller_test
-        test_sv/insight_focus_controller_test.cpp
-        src/commands/actionregistry.cpp
-        src/insights/insightfocuscontroller.cpp
-        src/insights/insightfocuscontrolleractions.cpp)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(insight_focus_controller_test PRIVATE
-            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
-    endif()
-    target_link_libraries(insight_focus_controller_test
-        PRIVATE Qt6::Widgets)
-
     add_executable(panel_layout_controller_test
         test_sv/panel_layout_controller_test.cpp
         src/commands/actionregistry.cpp
@@ -1892,13 +1877,6 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:editor_context_menu_test>
-    )
-    add_test(NAME insight_focus_controller_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:insight_focus_controller_test>
     )
     add_test(NAME panel_layout_controller_test
         COMMAND ${CMAKE_COMMAND} -E env

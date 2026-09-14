@@ -115,7 +115,6 @@
 #include "globalcontrolpanel.h"
 #include "globalcontrolservice.h"
 #include "hierarchyservice.h"
-#include "insightfocuscontroller.h"
 #include "liveinsightsession.h"
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
@@ -12416,8 +12415,12 @@ void runInsightFocusIntegrationRegression(
     const QString& fixturePath,
     const QString& expectedWorkspacePath)
 {
-    InsightFocusController* controller =
-        window.insightFocusController.get();
+    // Insight Focus is retired. This is the runtime half of that retirement:
+    // action_registry_test asserts its descriptors are absent and
+    // controller_boundary_test asserts its implementation is gone, while this
+    // checks that a running window exposes no focus panel, no focus entry and
+    // no focus page in the central stack.
+    Q_UNUSED(fixturePath)
     RtlInsightsPanelCoordinator* rtl =
         window.semanticDocks
         ? window.semanticDocks->rtlInsightsPanelCoordinator()
@@ -12451,13 +12454,9 @@ void runInsightFocusIntegrationRegression(
     QAction* viewWaveAction =
         window.findChild<QAction*>(
             QStringLiteral("viewWavePreviewAction"));
-    QAction* resetLayoutAction =
-        window.findChild<QAction*>(
-            QStringLiteral("resetPanelLayoutAction"));
 
     expectBool("legacy Insight Focus panel registrations are removed",
-               controller
-                   && !rtl
+               !rtl
                    && !kernel
                    && !wave,
                true);
@@ -12469,6 +12468,25 @@ void runInsightFocusIntegrationRegression(
                    && !leaveFocusAction
                    && !viewWaveAction,
                true);
+    // Stronger than the retired controller pointer check it replaces: the
+    // focus shell used to add its own page to the central stack, so a stack
+    // holding exactly the editor page proves no focus page was ever built.
+    expectBool("central stack holds only the editor page",
+               window.centralContentStack
+                   && window.centralContentStack->count() == 1
+                   && window.centralContentStack->widget(0)
+                          == window.editorCentralPage
+                   && window.centralContentStack->currentWidget()
+                          == window.editorCentralPage,
+               true);
+    expectBool("no residual Insight Focus widget remains in the window",
+               window.findChild<QWidget*>(
+                   QStringLiteral("insightFocusPage")) == nullptr
+                   && window.findChild<QPushButton*>(
+                          QStringLiteral("insightFocusBackButton"))
+                          == nullptr,
+               true);
+
     const QString activeWorkspacePath =
         window.workspaceManager
         ? QDir::cleanPath(
@@ -12488,547 +12506,6 @@ void runInsightFocusIntegrationRegression(
                    && activeWorkspacePath
                           == normalizedExpectedWorkspacePath,
                true);
-    return;
-    if (!controller || !rtl || !kernel || !wave
-        || !focusRtlAction || !focusKernelAction
-        || !focusWaveAction) {
-        return;
-    }
-
-    QWidget* focusPage = controller->focusPage();
-    QPushButton* backButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusBackButton"))
-        : nullptr;
-    QPushButton* returnDockButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusReturnDockButton"))
-        : nullptr;
-    QPushButton* fitButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusFitButton"))
-        : nullptr;
-    QPushButton* zoomInButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusZoomInButton"))
-        : nullptr;
-    QPushButton* zoomOutButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusZoomOutButton"))
-        : nullptr;
-    QPushButton* inspectorButton =
-        focusPage
-        ? focusPage->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusInspectorButton"))
-        : nullptr;
-    QLineEdit* searchEdit =
-        focusPage
-        ? focusPage->findChild<QLineEdit*>(
-              QStringLiteral(
-                  "insightFocusSearchEdit"))
-        : nullptr;
-    expectBool("Focus View shell has complete controls",
-               focusPage
-                   && backButton
-                   && returnDockButton
-                   && fitButton
-                   && zoomInButton
-                   && zoomOutButton
-                   && inspectorButton
-                   && searchEdit,
-               true);
-    if (!focusPage || !backButton || !returnDockButton
-        || !fitButton || !zoomInButton || !zoomOutButton
-        || !inspectorButton || !searchEdit) {
-        return;
-    }
-
-    const auto focusedGeometryReadable =
-        [controller]() {
-            QWidget* panel =
-                controller->focusedPanelWidget();
-            return panel
-                && panel->width() >= 640
-                && panel->height() >= 360;
-        };
-
-    QDockWidget* rtlDock = rtl->dock();
-    QWidget* rtlPanel =
-        rtlDock ? rtlDock->widget() : nullptr;
-    QPushButton* rtlEnterButton =
-        rtlPanel
-        ? rtlPanel->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusEnter.rtlInsights"))
-        : nullptr;
-    expectBool("RTL Insights exposes panel-local Focus View",
-               rtlDock && rtlPanel && rtlEnterButton,
-               true);
-
-    rtl->showModuleInsights(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("state_q"));
-    rtl->showModuleBlockDiagramForModule(
-        fixturePath,
-        QStringLiteral("insight_top"));
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("module block graph is populated before Focus View",
-               rtl->graphNodeItemCountForTest() > 0
-                   && rtl->graphItemsReadableForTest(),
-               true);
-    if (window.panelLayoutController)
-        window.panelLayoutController->setBottomCollapsed(true);
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const PanelLayoutState panelLayoutBeforeRtlFocus =
-        window.panelLayoutController
-        ? window.panelLayoutController->layoutState()
-        : PanelLayoutState();
-    const int rtlDockHeightBeforeFocus =
-        rtlDock ? rtlDock->height() : -1;
-    const bool rtlDockVisibleBeforeFocus =
-        rtlDock && rtlDock->isVisible();
-    focusRtlAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("RTL Focus View moves the exact panel",
-               controller->isFocused()
-                   && controller->focusedPanelId()
-                          == QStringLiteral(
-                              "rtlInsights")
-                   && controller->focusedPanelWidget()
-                          == rtlPanel
-                   && rtlDock
-                   && rtlDock->widget() == nullptr
-                   && window.centralContentStack
-                   && window.centralContentStack
-                          ->currentWidget()
-                          == focusPage,
-               true);
-    expectBool("module block Focus View is readable at 1100x760",
-               focusedGeometryReadable()
-                   && window.panelLayoutController
-                   && window.panelLayoutController
-                          ->isBottomCollapsed(),
-               true);
-
-    fitButton->click();
-    searchEdit->setText(QStringLiteral("insight_top"));
-    zoomInButton->click();
-    inspectorButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const bool fsmSelectionMade =
-        rtl->selectGraphItemForTest(
-            QStringLiteral("module"),
-            QStringLiteral("insight_top"));
-    const qreal fsmScaleBeforeReturn =
-        rtl->graphView()
-        ? rtl->graphView()->transform().m11()
-        : 0.0;
-    const int fsmSelectionBeforeReturn =
-        rtl->graphSelectedItemCountForTest();
-    backButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Back to Editor restores the RTL Insights panel",
-               !controller->isFocused()
-                   && rtlDock
-                   && rtlDock->widget() == rtlPanel
-                   && rtlDock->isVisible()
-                          == rtlDockVisibleBeforeFocus
-                   && window.centralContentStack
-                   && window.centralContentStack
-                          ->currentWidget()
-                          == window.editorCentralPage,
-               true);
-    expectBool("module block search zoom and selection survive Back",
-               fsmSelectionMade
-                   && fsmSelectionBeforeReturn > 0
-                   && rtl->focusSearchText()
-                          == QStringLiteral("insight_top")
-                   && rtl->graphView()
-                   && qAbs(
-                          rtl->graphView()
-                                  ->transform()
-                                  .m11()
-                              - fsmScaleBeforeReturn)
-                          < 0.0001
-                   && rtl->graphSelectedItemCountForTest()
-                          == fsmSelectionBeforeReturn,
-               true);
-    const PanelLayoutState panelLayoutAfterRtlFocus =
-        window.panelLayoutController
-        ? window.panelLayoutController->layoutState()
-        : PanelLayoutState();
-    expectBool("RTL Focus exit restores exact bottom layout",
-               window.panelLayoutController
-                   && panelLayoutAfterRtlFocus.bottomPanelOrder
-                          == panelLayoutBeforeRtlFocus.bottomPanelOrder
-                   && panelLayoutAfterRtlFocus.closedBottomPanels
-                          == panelLayoutBeforeRtlFocus.closedBottomPanels
-                   && panelLayoutAfterRtlFocus.pinnedBottomPanels
-                          == panelLayoutBeforeRtlFocus.pinnedBottomPanels
-                   && panelLayoutAfterRtlFocus.activeBottomPanel
-                          == panelLayoutBeforeRtlFocus.activeBottomPanel
-                   && panelLayoutAfterRtlFocus.expandedBottomHeight
-                          == panelLayoutBeforeRtlFocus
-                                 .expandedBottomHeight
-                   && panelLayoutAfterRtlFocus.bottomCollapsed
-                   && rtlDock->height()
-                          == rtlDockHeightBeforeFocus
-                   && rtlPanel->maximumHeight() > 0
-                   && visibleBottomPanelContentHeight(
-                          window,
-                          window.findChild<QTabBar*>(
-                              QStringLiteral(
-                                  "bottomPanelTabBar"))) <= 1,
-               true);
-    focusRtlAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("module block re-entry restores shared Focus state",
-               controller->focusedPanelWidget()
-                       == rtlPanel
-                   && searchEdit->text()
-                          == QStringLiteral("insight_top")
-                   && rtl->graphSelectedItemCountForTest()
-                          == fsmSelectionBeforeReturn,
-               true);
-    returnDockButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-
-    rtl->setFocusSearchText(QString());
-    rtl->showModuleBlockDiagramForModule(
-        fixturePath,
-        QStringLiteral("insight_top"));
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("module block diagram is populated",
-               rtl->graphNodeItemCountForTest() > 0
-                   && rtl->graphItemsReadableForTest(),
-               true);
-    if (rtlEnterButton)
-        rtlEnterButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("module block Focus View uses same readable panel",
-               controller->focusedPanelWidget()
-                       == rtlPanel
-                   && focusedGeometryReadable()
-                   && rtl->graphNodeItemCountForTest()
-                          > 0,
-               true);
-    returnDockButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-
-    rtl->showSignalUsageHotspotForSignal(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("data_q"));
-    SignalUsageHotspotPanel* hotspot =
-        rtl->signalUsageHotspotPanelForTest();
-    expectBool("usage hotspot finishes its fixture report",
-               hotspot
-                   && waitUntil(
-                          [hotspot]() {
-                              return !hotspot
-                                          ->reportBuildInFlightForTest();
-                          },
-                          2000),
-               true);
-    focusRtlAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("usage hotspot Focus View is readable",
-               hotspot
-                   && rtl->stackForTest()
-                   && rtl->stackForTest()
-                          ->currentWidget()
-                          == hotspot
-                   && controller->focusedPanelWidget()
-                          == rtlPanel
-                   && focusedGeometryReadable(),
-               true);
-    searchEdit->setText(QStringLiteral("data_q"));
-    zoomInButton->click();
-    inspectorButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const double hotspotZoomBeforeReturn =
-        hotspot ? hotspot->trackZoomFactor : 0.0;
-    backButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("usage hotspot state survives Back",
-               hotspot
-                   && hotspot->focusSearchText()
-                          == QStringLiteral("data_q")
-                   && qAbs(
-                          hotspot->trackZoomFactor
-                              - hotspotZoomBeforeReturn)
-                          < 0.0001,
-               true);
-    focusRtlAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("usage hotspot re-entry restores search",
-               searchEdit->text()
-                       == QStringLiteral("data_q")
-                   && controller->focusedPanelWidget()
-                          == rtlPanel,
-               true);
-    returnDockButton->click();
-    if (hotspot) {
-        hotspot->setFocusSearchText(QString());
-        hotspot->focusFit();
-    }
-
-    SignalKernelGraphReport kernelReport;
-    kernelReport.found = true;
-    kernelReport.kernelModuleName =
-        QStringLiteral("focus_top");
-    kernelReport.kernel.id = 40;
-    kernelReport.kernel.role =
-        SignalKernelGraphNodeRole::Kernel;
-    kernelReport.kernel.displayName =
-        QStringLiteral("kernel_q");
-    kernelReport.kernel.moduleDisplayName =
-        QStringLiteral("focus_top");
-    kernelReport.kernel.typeDisplayName =
-        QStringLiteral("logic");
-    SignalKernelGraphNode kernelInput;
-    kernelInput.id = 41;
-    kernelInput.role =
-        SignalKernelGraphNodeRole::Input;
-    kernelInput.inputLane =
-        SignalKernelGraphInputLane::Data;
-    kernelInput.displayName =
-        QStringLiteral("kernel_in");
-    kernelInput.moduleDisplayName =
-        QStringLiteral("focus_top");
-    kernelInput.typeDisplayName =
-        QStringLiteral("logic");
-    kernelReport.inputs.append(kernelInput);
-    SignalKernelGraphNode kernelOutput;
-    kernelOutput.id = 42;
-    kernelOutput.role =
-        SignalKernelGraphNodeRole::Output;
-    kernelOutput.displayName =
-        QStringLiteral("kernel_out");
-    kernelOutput.moduleDisplayName =
-        QStringLiteral("focus_top");
-    kernelOutput.typeDisplayName =
-        QStringLiteral("logic");
-    kernelReport.outputs.append(kernelOutput);
-    kernelReport.edges.append(
-        {kernelInput.id,
-         kernelReport.kernel.id,
-         QString()});
-    kernelReport.edges.append(
-        {kernelReport.kernel.id,
-         kernelOutput.id,
-         QString()});
-    kernel->renderReportForTest(kernelReport);
-    QDockWidget* kernelDock = kernel->dock();
-    QWidget* kernelPanel =
-        kernelDock ? kernelDock->widget() : nullptr;
-    QPushButton* kernelEnterButton =
-        kernelPanel
-        ? kernelPanel->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusEnter.signalKernelGraph"))
-        : nullptr;
-    expectBool("Signal Kernel exposes panel-local Focus View",
-               kernelDock
-                   && kernelPanel
-                   && kernelEnterButton,
-               true);
-    focusKernelAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Signal Kernel Focus View moves exact panel",
-               controller->focusedPanelWidget()
-                       == kernelPanel
-                   && kernelDock
-                   && kernelDock->widget() == nullptr
-                   && focusedGeometryReadable(),
-               true);
-    searchEdit->setText(
-        QStringLiteral("kernel_out"));
-    fitButton->click();
-    zoomInButton->click();
-    inspectorButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const qreal kernelScaleBeforeReturn =
-        kernel->view()
-        ? kernel->view()->transform().m11()
-        : 0.0;
-    const int kernelFocusedNodeBeforeReturn =
-        kernel->focusedSearchNodeIdForTest();
-    window.showPanelById(
-        QStringLiteral("signalKernelGraph"));
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("opening an already focused panel keeps Focus View",
-               controller->focusedPanelWidget()
-                       == kernelPanel
-                   && kernelDock
-                   && !kernelDock->isVisible()
-                   && kernelDock->widget() == nullptr
-                   && window.centralContentStack
-                   && window.centralContentStack
-                          ->currentWidget()
-                          == focusPage,
-               true);
-    backButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Signal Kernel state survives Back",
-               kernelDock
-                   && kernelDock->widget()
-                          == kernelPanel
-                   && kernel->focusSearchText()
-                          == QStringLiteral(
-                              "kernel_out")
-                   && kernel->searchMatchCountForTest()
-                          == 1
-                   && kernelFocusedNodeBeforeReturn
-                          == kernelOutput.id
-                   && kernel->view()
-                   && qAbs(
-                          kernel->view()
-                                  ->transform()
-                                  .m11()
-                              - kernelScaleBeforeReturn)
-                          < 0.0001,
-               true);
-    focusKernelAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Signal Kernel re-entry restores search",
-               searchEdit->text()
-                       == QStringLiteral("kernel_out")
-                   && controller->focusedPanelWidget()
-                          == kernelPanel,
-               true);
-    returnDockButton->click();
-    kernel->setFocusSearchText(QString());
-    kernel->focusFit();
-
-    wave->refreshFromDocument(
-        fixturePath,
-        QStringLiteral(
-            "module wave_focus(input logic clk, input logic a);\n"
-            "  logic q;\n"
-            "  always_ff @(posedge clk) q <= a;\n"
-            "endmodule\n"),
-        true);
-    QDockWidget* waveDock = wave->dock();
-    QWidget* wavePanel =
-        waveDock ? waveDock->widget() : nullptr;
-    QPushButton* waveEnterButton =
-        wavePanel
-        ? wavePanel->findChild<QPushButton*>(
-              QStringLiteral(
-                  "insightFocusEnter.wavePreview"))
-        : nullptr;
-    expectBool("Wave Preview exposes panel-local Focus View",
-               waveDock
-                   && wavePanel
-                   && waveEnterButton,
-               true);
-    focusWaveAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Wave Focus View moves exact readable panel",
-               controller->focusedPanelWidget()
-                       == wavePanel
-                   && waveDock
-                   && waveDock->widget() == nullptr
-                   && focusedGeometryReadable(),
-               true);
-    searchEdit->setText(QStringLiteral("q"));
-    zoomInButton->click();
-    inspectorButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const qreal waveZoomBeforeReturn =
-        wave->focusZoomFactorForTest();
-    backButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Wave search zoom and Inspector state survive Back",
-               waveDock
-                   && waveDock->widget() == wavePanel
-                   && wave->focusSearchText()
-                          == QStringLiteral("q")
-                   && qAbs(
-                          wave->focusZoomFactorForTest()
-                              - waveZoomBeforeReturn)
-                          < 0.0001
-                   && wave->tree()
-                   && wave->tree()->currentItem(),
-               true);
-    if (waveEnterButton)
-        waveEnterButton->click();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Wave panel-local entry restores shared state",
-               controller->focusedPanelWidget()
-                       == wavePanel
-                   && searchEdit->text()
-                          == QStringLiteral("q"),
-               true);
-    if (viewWaveAction)
-        viewWaveAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Dock toggle cannot reveal an empty focused Dock",
-               controller->focusedPanelWidget()
-                       == wavePanel
-                   && controller->isFocused()
-                   && waveDock
-                   && !waveDock->isVisible()
-                   && waveDock->widget() == nullptr
-                   && window.centralContentStack
-                   && window.centralContentStack
-                          ->currentWidget()
-                          == controller->focusPage(),
-               true);
-    if (resetLayoutAction)
-        resetLayoutAction->trigger();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    expectBool("Reset layout safely returns Focus panel to Dock",
-               resetLayoutAction
-                   && !controller->isFocused()
-                   && waveDock
-                   && waveDock->widget() == wavePanel
-                   && waveDock->isVisible()
-                   && window.centralContentStack
-                   && window.centralContentStack
-                          ->currentWidget()
-                          == window.editorCentralPage,
-               true);
-    wave->setFocusSearchText(QString());
-    wave->focusFit();
 }
 
 int main(int argc, char** argv)

@@ -43,7 +43,6 @@ class PinloomCodeLinkCoordinator;
 class PinloomHostClient;
 class EditorCoordinator;
 class EditorActionContextService;
-class InsightFocusController;
 class FileCommandCoordinator;
 class FoldBlockShelfModel;
 class FoldBlockShelfPanel;
@@ -140,7 +139,6 @@ private:
     std::unique_ptr<TemporaryEditorSearchProvider>
         temporaryEditorSearchProvider;
     std::unique_ptr<EditorActionContextService> editorActionContextService;
-    std::unique_ptr<InsightFocusController> insightFocusController;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<WorkspaceSessionCoordinator>
         workspaceSessionCoordinator;

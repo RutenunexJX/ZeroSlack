@@ -1077,11 +1077,8 @@ void RtlInsightsPresenter::showModuleBlockDiagram()
         state.insightsDock->setWindowTitle(
             QStringLiteral("RTL Insights: Module Block Diagram %1")
                 .arg(state.currentModuleName));
-        if (!state.insightsDock->property(
-                 "insightFocusActive").toBool()) {
-            state.insightsDock->show();
-            state.insightsDock->raise();
-        }
+        state.insightsDock->show();
+        state.insightsDock->raise();
     }
     if (state.statusMessageHandler) {
         state.statusMessageHandler(
@@ -1293,11 +1290,8 @@ void RtlInsightsPresenter::showModuleInsights(
     setContextDirect(fileName, moduleName, signalName);
     renderActionList();
     if (state.insightsDock) {
-        if (!state.insightsDock->property(
-                 "insightFocusActive").toBool()) {
-            state.insightsDock->show();
-            state.insightsDock->raise();
-        }
+        state.insightsDock->show();
+        state.insightsDock->raise();
     }
 }
 
@@ -1342,11 +1336,8 @@ void RtlInsightsPresenter::showStateTransitionGraphForSignal(
         state.insightsDock->setWindowTitle(
             QStringLiteral("RTL Insights: State Transition Graph %1")
                 .arg(signalName.isEmpty() ? moduleName : signalName));
-        if (!state.insightsDock->property(
-                 "insightFocusActive").toBool()) {
-            state.insightsDock->show();
-            state.insightsDock->raise();
-        }
+        state.insightsDock->show();
+        state.insightsDock->raise();
     }
     if (state.statusMessageHandler) {
         state.statusMessageHandler(
@@ -1376,11 +1367,8 @@ void RtlInsightsPresenter::showSignalUsageHotspotForSignal(
             QStringLiteral("RTL Insights: Signal Usage Hotspot %1")
                 .arg(signalAccessPath.isEmpty() ? signalName
                                                 : signalAccessPath));
-        if (!state.insightsDock->property(
-                 "insightFocusActive").toBool()) {
-            state.insightsDock->show();
-            state.insightsDock->raise();
-        }
+        state.insightsDock->show();
+        state.insightsDock->raise();
     }
     state.signalUsageHotspotPanel->showHotspotForSymbol(signalName,
                                                   fileName,
@@ -1449,11 +1437,8 @@ void RtlInsightsPresenter::showSemanticDiff(
             ? QStringLiteral("RTL Insights: Semantic Diff")
             : QStringLiteral("RTL Insights: Semantic Diff %1").arg(moduleName);
         state.insightsDock->setWindowTitle(title);
-        if (!state.insightsDock->property(
-                 "insightFocusActive").toBool()) {
-            state.insightsDock->show();
-            state.insightsDock->raise();
-        }
+        state.insightsDock->show();
+        state.insightsDock->raise();
     }
     if (state.statusMessageHandler) {
         state.statusMessageHandler(QStringLiteral("Rendered semantic diff (%1 changes)")

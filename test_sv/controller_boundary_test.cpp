@@ -198,6 +198,16 @@ int main(int argc, char* argv[])
             root,
             QStringLiteral(
                 "src/insights/insightfocuscontrolleractions.cpp"));
+    const QString rtlInsightsPresenterSource =
+        readSource(
+            root,
+            QStringLiteral(
+                "src/insights/rtlinsightspresenter.cpp"));
+    const QString signalKernelGraphPanelSource =
+        readSource(
+            root,
+            QStringLiteral(
+                "src/insights/signalkernelgraphpanelcoordinator.cpp"));
     const QString cmake =
         readSource(root, QStringLiteral("CMakeLists.txt"));
 
@@ -815,48 +825,32 @@ int main(int argc, char* argv[])
                    "menu.addAction(QStringLiteral(\"Reset Layout\"))")}),
           QStringLiteral(
               "Usage Hotspot has no hand-authored graph context actions"));
-    check(containsAll(
-              focusHeader,
-              {QStringLiteral(
-                   "public ActionExecutionHost"),
-               QStringLiteral(
-                   "requestGraphViewAction("),
-               QStringLiteral(
-                   "executeActionRoute(")})
-              && !focusActionsSource.isEmpty()
-              && cmake.contains(
-                  QStringLiteral(
-                      "src/insights/insightfocuscontrolleractions.cpp")),
+    // Insight Focus was retired: its descriptors are asserted absent by
+    // action_registry_test, and no production caller ever registered a panel
+    // with it. These checks replace the three that described the retired
+    // implementation, and fail if any part of it returns.
+    check(focusHeader.isEmpty()
+              && focusSource.isEmpty()
+              && focusActionsSource.isEmpty()
+              && !cmake.contains(
+                  QStringLiteral("insightfocuscontroller"))
+              && containsNone(
+                  mainWindowHeader,
+                  {QStringLiteral("InsightFocusController")})
+              && containsNone(
+                  mainWindowSource,
+                  {QStringLiteral("InsightFocusController"),
+                   QStringLiteral("insightFocusController")}),
           QStringLiteral(
-              "Insight Focus composes a dedicated graph-view Action host"));
-    check(containsAll(
-              focusSource,
-              {QStringLiteral(
-                   "bindGraphViewButton(fitButton, fitAction)"),
-               QStringLiteral(
-                   "refreshGraphViewActionAvailability(&entry)")})
-              && containsAll(
-                  focusActionsSource,
-                  {QStringLiteral(
-                       "ActionIds::GraphViewFit"),
-                   QStringLiteral(
-                       "ActionIds::GraphViewZoomIn"),
-                   QStringLiteral(
-                       "ActionIds::GraphViewZoomOut"),
-                   QStringLiteral(
-                       "executeAction(*descriptor, *this)")}),
-          QStringLiteral(
-              "Insight Focus Fit and zoom buttons share Registry execution"));
+              "Retired Insight Focus implementation is absent from sources and CMake"));
     check(containsNone(
-              focusSource,
-              {QStringLiteral(
-                   "entry->registration.fit();"),
-               QStringLiteral(
-                   "entry->registration.zoomIn();"),
-               QStringLiteral(
-                   "entry->registration.zoomOut();")}),
+              rtlInsightsPresenterSource,
+              {QStringLiteral("insightFocusActive")})
+              && containsNone(
+                  signalKernelGraphPanelSource,
+                  {QStringLiteral("insightFocusActive")}),
           QStringLiteral(
-              "Insight Focus shell has no direct Fit or zoom callbacks"));
+              "Insight panels no longer branch on the retired focus property"));
 
     std::cout << (checks - failures)
               << "/" << checks

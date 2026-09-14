@@ -41,7 +41,6 @@
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolservice.h"
-#include "insightfocuscontroller.h"
 #include "insightvisualstyle.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightsession.h"
@@ -791,11 +790,6 @@ void MainWindow::setupEditorCentralArea()
         QStringLiteral("centralContentStack"));
     centralContentStack->addWidget(editorCentralPage);
     setCentralWidget(centralContentStack);
-    insightFocusController =
-        std::make_unique<InsightFocusController>(
-            centralContentStack,
-            editorCentralPage,
-            this);
 
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
@@ -3513,15 +3507,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
                 return panelLayoutController->restorePanel(panelId);
             }
 
-            const bool focused =
-                insightFocusController
-                && insightFocusController->isFocused()
-                && insightFocusController
-                       ->focusedPanelId()
-                       == panelId;
-            if (focused)
-                return true;
-
             const bool visible = dock->isVisible();
             if (visible) {
                 dock->hide();
@@ -3529,13 +3514,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
             }
 
             showPanelById(panelId);
-            return dock->isVisible()
-                || (insightFocusController
-                    && insightFocusController
-                           ->isFocused()
-                    && insightFocusController
-                           ->focusedPanelId()
-                           == panelId);
+            return dock->isVisible();
         };
 
     if (RtlActionCoordinator::handlesRoute(route)) {
@@ -5864,18 +5843,6 @@ void MainWindow::showDockWidget(QDockWidget* dock,
         return;
     }
 
-    if (insightFocusController
-        && dock->property("insightFocusActive").toBool()) {
-        if (centralContentStack
-            && insightFocusController->focusPage()) {
-            centralContentStack->setCurrentWidget(
-                insightFocusController->focusPage());
-        }
-        if (!statusMessage.isEmpty())
-            postActivityMessage(statusMessage, 3000);
-        return;
-    }
-
     if (panelLayoutController
         && panelLayoutController->isBottomPanel(dock)) {
         panelLayoutController->restorePanel(
@@ -5925,12 +5892,6 @@ void MainWindow::showPanelById(const QString& panelId)
     if (panelId == QStringLiteral("foldShelf")) {
         showFoldBlockShelf();
         return;
-    }
-    if (insightFocusController
-        && insightFocusController->isFocused()
-        && insightFocusController->focusedPanelId()
-               != panelId) {
-        insightFocusController->leaveToEditor();
     }
     QDockWidget* dock = dockForPanelId(resolvedPanelId);
     showDockWidget(dock);
@@ -6077,11 +6038,6 @@ void MainWindow::showRecentWorkspacesDialog()
 
 void MainWindow::resetPanelLayout()
 {
-    if (insightFocusController
-        && insightFocusController->isFocused()) {
-        insightFocusController->returnToDock();
-    }
-
     QDockWidget* navigationDock = dockForPanelId(QStringLiteral("navigation"));
     QDockWidget* problemsDock = dockForPanelId(QStringLiteral("problems"));
     QDockWidget* searchDock = dockForPanelId(

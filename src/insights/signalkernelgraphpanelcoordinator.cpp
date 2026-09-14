@@ -1776,10 +1776,6 @@ void SignalKernelGraphPanelCoordinator::showDock()
 {
     if (!graphDock)
         return;
-    if (graphDock->property(
-            "insightFocusActive").toBool()) {
-        return;
-    }
     graphDock->show();
     graphDock->raise();
 }
