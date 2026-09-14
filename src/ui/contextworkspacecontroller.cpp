@@ -266,6 +266,22 @@ bool ContextWorkspaceController::dockVisible() const
     return dockValue && dockValue->isVisible();
 }
 
+QWidget* ContextWorkspaceController::viewForResource(
+    const QString& resourceKey) const
+{
+    if (dockHostValue && dockHostValue->containsResource(resourceKey)) {
+        if (QWidget* view = dockHostValue->viewForResource(resourceKey))
+            return view;
+    }
+    for (auto* surface : floatingSurfaces()) {
+        if (surface && surface->hasResource()
+            && surface->resource().stableKey() == resourceKey) {
+            return surface->view();
+        }
+    }
+    return nullptr;
+}
+
 bool ContextWorkspaceController::canShowDock() const
 {
     if (!dockValue || !dockHostValue)
@@ -599,6 +615,13 @@ bool ContextWorkspaceController::addDockedResource(
         return false;
     }
     dockHostValue->setSectionDetachable(resource.stableKey(), capabilities.detachable);
+    // A provider that knows its view needs room says so once, when the section
+    // is created. Sections whose provider stays at 0 keep the dock's own
+    // viewport split, and a height the user drags afterwards wins from then on.
+    if (capabilities.preferredSectionHeight > 0) {
+        dockHostValue->setSectionHeight(
+            resource.stableKey(), capabilities.preferredSectionHeight);
+    }
     showDock(dockWasEmpty && !restoringState);
     return true;
 }
@@ -1061,7 +1084,11 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     }
     for (const auto& section : state.dockSections) {
         const QString key = restoredResourceKeys.value(section.resourceKey, section.resourceKey);
-        dockHostValue->setSectionHeight(key, section.height);
+        // Only a height the user actually chose overrides the provider's
+        // suggested one. State written before section heights were suggested
+        // stores 0, which would otherwise reset the section to the split share.
+        if (section.height > 0)
+            dockHostValue->setSectionHeight(key, section.height);
         dockHostValue->setSectionCollapsed(key, section.collapsed);
     }
     if (dockValue && dockHostValue) {

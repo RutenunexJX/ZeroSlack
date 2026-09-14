@@ -24,6 +24,7 @@ enum class EditorModeId
     FoldRegion,
     FoldShelf,
     SourceNavigation,
+    InsightTargetPick,
 };
 
 enum class EditorModeOwner
@@ -39,6 +40,7 @@ enum class EditorModeOwner
     MultiCursor,
     Folding,
     SourceNavigation,
+    InsightTargeting,
 };
 
 enum class EditorModeInput : quint32

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.28.1`
+Current version: `v0.29.0`
 
 Repository navigation: [source and file categories](docs/repository-layout.md).
 
@@ -40,6 +40,9 @@ is `schemas/suite-references-v1.schema.json`.
   window's client-area handle back to the sidebar to insert it at the indicated position.
   `Ctrl+2` or `View > Context Sidebar` hides/restores the entire sidebar while preserving its sections;
   showing an empty sidebar opens the first rail provider's default view and restores a hidden rail.
+  Source insight Actions and the Wave command retarget and pin the matching section instead of opening
+  a central tab; the full view stays on the section header. Each insight section renders that insight's real view through the same surface the full view uses;
+  section height and sidebar width stay manual, and Follow Editor freezes a section on its current result.
 - The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
   and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
   Settings and connection tools continue to open in central tabs.

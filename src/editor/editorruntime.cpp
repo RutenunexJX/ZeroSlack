@@ -1210,6 +1210,7 @@ void MyCodeEditorState::shutdown(MyCodeEditor* editor)
             keywordGhost.shutdown(nullptr);
             multiCursor.shutdown(nullptr);
             signalSelection.shutdown(nullptr);
+            insightTargetPick.shutdown(nullptr);
             columnMode.shutdown(nullptr);
             sourceNavigation.shutdown();
         }
@@ -1233,6 +1234,7 @@ void MyCodeEditorState::shutdown(MyCodeEditor* editor)
     cancelSignalDefinitionEditor();
     cancelSemanticRenameEditor();
     signalSelection.shutdown(nullptr);
+    insightTargetPick.shutdown(nullptr);
     columnMode.shutdown(nullptr);
     sourceNavigation.shutdown();
     annotationLayer.clear();
@@ -1258,6 +1260,15 @@ void MyCodeEditorState::bindEditorModes(MyCodeEditor* editor)
             return resolveSignalSelectionCandidate(
                 target,
                 cursorPosition);
+        });
+    insightTargetPick.bind(
+        &modes,
+        &annotationLayer,
+        editor,
+        [this]() { return syntax.tsDocument(); });
+    insightTargetPick.setNameSetResolver(
+        [this](EditorInsightTargetClass targetClass) {
+            return insightTargetNameSet(targetClass);
         });
     columnMode.bind(&modes, &annotationLayer, editor);
     sourceNavigation.bindModeController(
@@ -2097,6 +2108,9 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         case EditorModeId::TemplateSlots:
             handleTemplateSlotKeyPress(editor, event);
             return true;
+        case EditorModeId::InsightTargetPick:
+            insightTargetPick.handleKeyPress(editor, event);
+            return true;
         case EditorModeId::VirtualCursor:
             clearVirtualCursor(editor);
             break;
@@ -2130,6 +2144,14 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     // physical Shift+Tab event and make it advance instead of moving back.
     if (templateSlots.active()
         && handleTemplateSlotKeyPress(editor, event)) {
+        return true;
+    }
+
+    // Target picking owns Tab, Enter and Esc for the same reason slot mode
+    // does: a completion or navigation overlay must not consume the key that
+    // moves between blinking candidates.
+    if (insightTargetPick.active()
+        && insightTargetPick.handleKeyPress(editor, event)) {
         return true;
     }
 
@@ -4461,6 +4483,9 @@ bool MyCodeEditorState::handleMousePress(
             event)) {
         return true;
     }
+
+    if (insightTargetPick.handleMousePress(editor, event))
+        return true;
 
     if (templateSlotModeActive() && editor && event) {
         const QTextCursor targetCursor =

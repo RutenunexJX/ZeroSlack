@@ -1,6 +1,10 @@
 #include "editorruntime.h"
 
 #include "formattercursoranchor.h"
+#include "editorfileidentity.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
+#include "symboltaxonomy.h"
 #include "formatterservice.h"
 #include "mycodeeditor.h"
 #include "tsdocument.h"
@@ -9,6 +13,7 @@
 #include <QClipboard>
 #include <QKeyEvent>
 #include <QPlainTextEdit>
+#include <QSet>
 #include <QTextCursor>
 
 #include <utility>
@@ -1185,4 +1190,109 @@ void MyCodeEditorState::applyLineNavigationTarget(
 {
     cursorNavigation.applyLineTarget(editor, target);
     selections.flashLine(editor);
+}
+
+// Insight target picking: the mode wrappers and the one semantic query that
+// decides which names may blink.
+bool MyCodeEditorState::startInsightTargetPickMode(
+    MyCodeEditor* editor,
+    EditorInsightTargetClass targetClass,
+    EditorInsightTargetPickController::Validator validator,
+    EditorInsightTargetPickController::PickedHandler handler,
+    QString* message)
+{
+    cancelSignalDefinitionEditor();
+    insightTargetNameCacheValid = false;
+    return insightTargetPick.start(
+        editor,
+        targetClass,
+        std::move(validator),
+        std::move(handler),
+        message);
+}
+
+void MyCodeEditorState::cancelInsightTargetPickMode(
+    MyCodeEditor* editor)
+{
+    insightTargetPick.clear(editor);
+}
+
+bool MyCodeEditorState::insightTargetPickModeActive() const
+{
+    return insightTargetPick.active();
+}
+
+QList<EditorInsightTargetCandidate>
+MyCodeEditorState::insightTargetCandidates() const
+{
+    return insightTargetPick.candidates();
+}
+
+QList<QString> MyCodeEditorState::insightTargetNameSet(
+    EditorInsightTargetClass targetClass) const
+{
+    // Scope targets come from the syntax tree, not from symbol records.
+    if (targetClass == EditorInsightTargetClass::Scope)
+        return {};
+
+    SemanticIndex* index = SemanticIndex::getInstance();
+    if (!index)
+        return {};
+    const QString fileName = identity.current();
+    const std::uint64_t revision = index->snapshotToken().revision;
+    if (insightTargetNameCacheValid
+        && insightTargetNameCacheClass == static_cast<int>(targetClass)
+        && insightTargetNameCacheFile == fileName
+        && insightTargetNameCacheRevision == revision) {
+        return insightTargetNameCache;
+    }
+
+    QSet<QString> names;
+    if (targetClass == EditorInsightTargetClass::Module) {
+        // A module name is also what an instance names as its type, so one
+        // set covers declarations and instantiations alike.
+        const QList<SemanticSymbolRecord> modules =
+            index->getSymbolRecordsByDeclarationKind(
+                SymbolTaxonomy::DeclarationKind::Module);
+        for (const SemanticSymbolRecord& record : modules) {
+            if (!record.name.trimmed().isEmpty())
+                names.insert(record.name);
+        }
+    } else {
+        // getSymbolRecords keys on the exact file-name string, and the editor's
+        // identity and the record's location can spell the same file
+        // differently; EditorFileIdentity::same is the codebase's own answer to
+        // that, so the file filter goes through it.
+        QList<SemanticSymbolRecord> records = index->getSymbolRecords(fileName);
+        if (records.isEmpty()) {
+            const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
+                index->snapshot();
+            const QList<SemanticSymbolRecord>& all = snapshot
+                ? snapshot->symbolRecordsView()
+                : records;
+            for (const SemanticSymbolRecord& record : all) {
+                if (EditorFileIdentity::same(record.location.fileName,
+                                             fileName)) {
+                    records.append(record);
+                }
+            }
+        }
+        for (const SemanticSymbolRecord& record : records) {
+            const SymbolTaxonomy::SemanticMetadata metadata =
+                semanticMetadataForSymbolRecord(record);
+            if (!SymbolTaxonomy::isSignalDeclaration(metadata)
+                && !SymbolTaxonomy::isPortDeclaration(metadata)) {
+                continue;
+            }
+            if (!record.name.trimmed().isEmpty())
+                names.insert(record.name);
+        }
+    }
+
+    insightTargetNameCache = QList<QString>(names.cbegin(), names.cend());
+    insightTargetNameCacheClass = static_cast<int>(targetClass);
+    insightTargetNameCacheFile = fileName;
+    insightTargetNameCacheRevision = revision;
+    insightTargetNameCacheValid = true;
+    return insightTargetNameCache;
 }

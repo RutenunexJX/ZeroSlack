@@ -29,8 +29,12 @@ public:
             CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(rtlValue->signalUsageHotspotPanelForTest()->layout()));
         }
         dock->setMinimumWidth(0);
-        dock->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
-        if (rtlValue) rtlValue->stackForTest()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+        dock->setMinimumHeight(0);
+        // Hidden stack pages keep the wrapped toolbar height they were last
+        // measured at, so an ignored vertical policy stops a page nobody is
+        // looking at from dictating the surface minimum height.
+        dock->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+        if (rtlValue) rtlValue->stackForTest()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
         dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
         auto* title = new QWidget(dock);
         title->setFixedHeight(0);

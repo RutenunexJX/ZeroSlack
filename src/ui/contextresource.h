@@ -29,6 +29,13 @@ struct ZEROSLACK_API ContextViewCapabilities {
     int minimumHeight = 220;
     int preferredHeight = 440;
     int maximumHeight = 920;
+    // Initial height of this resource's sidebar section. 0 keeps the dock's
+    // own behaviour of splitting the viewport between expanded sections; a
+    // positive value is a suggested starting height, never a floor: the user
+    // can still drag the section smaller and that height is what persists.
+    // Deliberately separate from preferredHeight, which sizes the preview
+    // overlay and floating windows through preferredSize().
+    int preferredSectionHeight = 0;
 
     QSize preferredSize() const
     {

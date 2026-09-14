@@ -1,4 +1,4 @@
-ZeroSlack v0.28.1
+ZeroSlack v0.29.0
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -35,7 +35,11 @@ only the area beneath the editor. Drag the sidebar divider to widen charts.
 Reopening the sidebar retains its width. Settings opens in a central tab.
 Ctrl+2 or View > Context Sidebar toggles the entire Context sidebar without
 closing its sections. Showing an empty sidebar opens the first rail provider's
-default view and restores a hidden rail.
+default view and restores a hidden rail. Each insight section renders that
+insight's real view instead of a text summary; drag the section boundary or the
+sidebar divider to size it, and Follow Editor freezes it on the current result.
+Source insight commands and the Wave command retarget and pin the matching
+section rather than opening a central tab; the full view stays on the header.
 Supported charts can open in the main area. Explicit Peek previews remain available.
 Detachable Context resources can float in multiple native windows. Right-click a
 Context rail icon to create or focus views, collect them into the sidebar, or

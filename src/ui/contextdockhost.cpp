@@ -2,10 +2,12 @@
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
 #include <QApplication>
+#include <QEvent>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QScrollArea>
 #include <QStyle>
+#include <QAbstractButton>
 #include <QToolButton>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -33,6 +35,8 @@ struct ContextDockHost::Section {
     QWidget* view;
     QWidget* resize;
     QLabel* title;
+    QLabel* status;
+    QToolButton* scope;
     QToolButton* toggle;
     QToolButton* fullView;
     QToolButton* drag;
@@ -83,6 +87,16 @@ QWidget* ContextDockHost::viewForResource(const QString& key) const
 { auto* section = sections.value(key); return section ? section->view : nullptr; }
 QWidget* ContextDockHost::sectionWidget(const QString& key) const
 { auto* section = sections.value(key); return section ? section->frame : nullptr; }
+QLabel* ContextDockHost::sectionStatus(const QString& key) const
+{
+    auto* section = sections.value(key);
+    return section ? section->status : nullptr;
+}
+QAbstractButton* ContextDockHost::sectionScope(const QString& key) const
+{
+    auto* section = sections.value(key);
+    return section ? static_cast<QAbstractButton*>(section->scope) : nullptr;
+}
 QWidget* ContextDockHost::sectionHeader(const QString& key) const
 { auto* section = sections.value(key); return section ? section->header : nullptr; }
 
@@ -119,6 +133,28 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     section->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     section->title->setAttribute(Qt::WA_TransparentForMouseEvents);
     row->addWidget(section->title, 1);
+    // Freshness belongs on the title bar so the body can stay content.
+    // A view publishes it through the contextStatus* properties; sections
+    // whose view publishes nothing keep the header as it was.
+    section->status = new QLabel(section->header);
+    section->status->setObjectName(QStringLiteral("contextSectionStatus"));
+    section->status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    section->status->setAttribute(Qt::WA_TransparentForMouseEvents);
+    section->status->hide();
+    row->addWidget(section->status);
+    // Same property channel as the status chip, one step further: a view that
+    // names its current scope gets a clickable chip for choosing another. The
+    // host stays generic — it just invokes the view's own slot.
+    section->scope = new QToolButton(section->header);
+    section->scope->setObjectName(QStringLiteral("contextSectionScope"));
+    section->scope->setCursor(Qt::PointingHandCursor);
+    section->scope->hide();
+    connect(section->scope, &QToolButton::clicked, this, [this, key] {
+        auto* target = sections.value(key);
+        if (target && target->view)
+            QMetaObject::invokeMethod(target->view, "requestScopePick");
+    });
+    row->addWidget(section->scope);
     section->fullView = new QToolButton(section->header);
     section->fullView->setObjectName(QStringLiteral("contextDockFullView"));
     section->fullView->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
@@ -140,6 +176,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     connect(section->fullView, &QToolButton::clicked, this, [this, key] { emit fullViewResourceRequested(resources.value(key)); });
     view->setParent(section->frame);
     view->setProperty("contextResourceKey", key);
+    view->installEventFilter(this);
     section->view = view;
     section->resize = new QWidget(section->frame);
     section->resize->setObjectName(QStringLiteral("contextSectionResize"));
@@ -159,6 +196,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     setSectionDetachable(key, false);
     resources.insert(key, resource);
     order.append(key);
+    refreshSectionStatus(key);
     section->frame->show();
     section->header->show();
     view->show();
@@ -173,7 +211,22 @@ bool ContextDockHost::updateResource(const ContextResource& resource)
     resources.insert(resource.stableKey(), resource);
     section->title->setText(displayTitle(resource, section->view));
     section->header->setToolTip(resource.uri.toString());
+    refreshSectionStatus(resource.stableKey());
     return true;
+}
+
+void ContextDockHost::refreshSectionStatus(const QString& key)
+{
+    auto* section = sections.value(key);
+    if (!section || !section->view) return;
+    const QString text = section->view->property("contextStatusText").toString().trimmed();
+    section->status->setText(text);
+    section->status->setToolTip(section->view->property("contextStatusTooltip").toString());
+    section->status->setVisible(!text.isEmpty());
+    const QString scope = section->view->property("contextScopeText").toString().trimmed();
+    section->scope->setText(scope);
+    section->scope->setToolTip(section->view->property("contextScopeTooltip").toString());
+    section->scope->setVisible(!scope.isEmpty());
 }
 bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
 {
@@ -347,6 +400,13 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
     const QString key = watched->property("contextResourceKey").toString();
     if (sections.contains(key)) {
         auto* section = sections.value(key);
+        if (watched == section->view && event->type() == QEvent::DynamicPropertyChange) {
+            const QByteArray name = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
+            if (name == "contextStatusText" || name == "contextStatusTooltip"
+                || name == "contextScopeText" || name == "contextScopeTooltip") refreshSectionStatus(key);
+            else if (name == "contextDisplayTitle") section->title->setText(displayTitle(resources.value(key), section->view));
+            return false;
+        }
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton) {

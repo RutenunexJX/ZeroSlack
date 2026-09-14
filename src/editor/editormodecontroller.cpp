@@ -161,6 +161,19 @@ const QList<EditorModeDescriptor>& descriptors()
             EditorModeEscapeBehavior::Close,
         },
         {
+            EditorModeId::InsightTargetPick,
+            EditorModeOwner::InsightTargeting,
+            QStringLiteral("insight-target-pick"),
+            QStringLiteral("Insight target"),
+            QStringLiteral(
+                "Tab/Shift+Tab moves between blinking targets; Enter or click "
+                "selects; Esc cancels"),
+            92,
+            Input::Escape | Input::Tab | Input::Backtab
+                | Input::Enter | Input::Navigation | Input::Mouse,
+            EditorModeEscapeBehavior::Cancel,
+        },
+        {
             EditorModeId::SourceNavigation,
             EditorModeOwner::SourceNavigation,
             QStringLiteral("source-navigation"),
@@ -277,6 +290,8 @@ QString editorModeOwnerText(EditorModeOwner owner)
         return QStringLiteral("folding");
     case EditorModeOwner::SourceNavigation:
         return QStringLiteral("source navigation");
+    case EditorModeOwner::InsightTargeting:
+        return QStringLiteral("insight targeting");
     }
     return QStringLiteral("unknown");
 }

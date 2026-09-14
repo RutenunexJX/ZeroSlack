@@ -15,7 +15,8 @@ enum class EditorAnnotationKind {
     EffectiveValue,
     TemplateSlot,
     KeywordGhost,
-    ColumnCaret
+    ColumnCaret,
+    InsightTarget
 };
 
 enum class EditorAnnotationPlacement {

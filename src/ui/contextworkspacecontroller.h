@@ -60,6 +60,9 @@ public:
     QDockWidget* dockWidget() const;
     bool dockVisible() const;
     bool canShowDock() const;
+    // The live view for a resource, wherever it currently lives: a sidebar
+    // section or a floating window.
+    QWidget* viewForResource(const QString& resourceKey) const;
     bool setDockVisible(bool visible, QString* failureReason = nullptr);
 
     bool registerProvider(

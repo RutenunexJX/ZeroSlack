@@ -2,6 +2,7 @@
 #define LIVEINSIGHTSCONTEXTPROVIDER_H
 
 #include "contextcontentprovider.h"
+#include "liveinsightscontextview.h"
 #include "liveinsighttypes.h"
 #include "zeroslackexport.h"
 
@@ -45,10 +46,24 @@ public:
     static bool kindFromResource(
         const ContextResource& resource,
         LiveInsightKind* kind);
+    // Suggested initial height of an insight section, published through
+    // ContextViewCapabilities::preferredSectionHeight. Measured, not guessed:
+    // see compact_layout_test::insightSectionHeights.
+    static int suggestedSectionHeight();
 
     LiveInsightSession* session() const;
     void setFullViewHandler(FullViewHandler handler);
     void setPinRequestHandler(PinRequestHandler handler);
+    // Installed by the host that can build an editor context. Views created
+    // by this provider then render the real insight surface instead of the
+    // compact summary card.
+    void setToolContextSource(
+        LiveInsightsContextView::ToolContextSource source);
+    void setWaveformLibraryPathSource(
+        LiveInsightsContextView::WaveformLibraryPathSource source);
+    // Runs the editor-side target picker for a section of this kind.
+    void setTargetPickRequest(
+        LiveInsightsContextView::TargetPickRequest request);
 
     QString providerId() const override;
     QString displayName() const override;
@@ -88,6 +103,10 @@ private:
     bool fixedKindEnabled = false;
     FullViewHandler fullViewHandler;
     PinRequestHandler pinRequestHandler;
+    LiveInsightsContextView::ToolContextSource toolContextSource;
+    LiveInsightsContextView::TargetPickRequest targetPickRequest;
+    LiveInsightsContextView::WaveformLibraryPathSource
+        waveformLibraryPathSource;
 
     ContextResource resourceForView(
         const LiveInsightsContextView* view) const;

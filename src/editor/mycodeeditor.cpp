@@ -1749,6 +1749,66 @@ bool MyCodeEditor::signalSelectionModeActiveForTest() const
     return state->signalSelectionModeActive();
 }
 
+bool MyCodeEditor::startInsightTargetPickMode(
+    EditorInsightTargetClass targetClass,
+    EditorInsightTargetPickController::Validator validator,
+    EditorInsightTargetPickController::PickedHandler handler,
+    QString* message)
+{
+    return state->startInsightTargetPickMode(
+        this,
+        targetClass,
+        std::move(validator),
+        std::move(handler),
+        message);
+}
+
+void MyCodeEditor::cancelInsightTargetPickMode()
+{
+    state->cancelInsightTargetPickMode(this);
+}
+
+bool MyCodeEditor::insightTargetPickModeActive() const
+{
+    return state->insightTargetPickModeActive();
+}
+
+QList<EditorInsightTargetCandidate>
+MyCodeEditor::insightTargetCandidatesForTest() const
+{
+    return state->insightTargetCandidates();
+}
+
+int MyCodeEditor::insightTargetActiveIndexForTest() const
+{
+    return state->insightTargetPick.activeIndex();
+}
+
+bool MyCodeEditor::insightTargetBlinkOnForTest() const
+{
+    return state->insightTargetPick.blinkOn();
+}
+
+QPair<int, int>
+MyCodeEditor::insightTargetEnumeratedLineRangeForTest() const
+{
+    return state->insightTargetPick.lastEnumeratedLineRangeForTest();
+}
+
+QList<QString> MyCodeEditor::insightTargetNameSetForTest(
+    EditorInsightTargetClass targetClass) const
+{
+    return state->insightTargetNameSet(targetClass);
+}
+
+void MyCodeEditor::publishInsightTargetAnnotationsForTest(
+    int firstVisibleLine,
+    int lastVisibleLine)
+{
+    state->insightTargetPick.publishVisibleAnnotations(
+        this, firstVisibleLine, lastVisibleLine);
+}
+
 QStringList MyCodeEditor::selectedSignalNames() const
 {
     return state->selectedSignalNames();

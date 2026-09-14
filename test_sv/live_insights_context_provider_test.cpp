@@ -42,6 +42,10 @@ private slots:
     void compactViewExposesFollowPinAndFullViewSemantics();
     void inactiveCardStaysDirtyAndStatusTracksTheme();
     void followEditorFreezesAndCatchesUpPerView();
+    void fixedKindSectionRendersRealSurface();
+    void fixedKindSectionPublishesStatusAndTrimsChrome();
+    void emptyFixedKindSectionOffersReachableTargets();
+    void pickedTargetReachesTheSurfaceAndTheSectionHeader();
 };
 
 void LiveInsightsContextProviderTest::initTestCase()
@@ -410,6 +414,306 @@ void LiveInsightsContextProviderTest::followEditorFreezesAndCatchesUpPerView()
         view->kindSummaryLabel(LiveInsightKind::Module)->text(),
         QStringLiteral("revision 10"));
     delete view;
+}
+
+void LiveInsightsContextProviderTest::fixedKindSectionRendersRealSurface()
+{
+    LiveInsightSession session;
+    QList<LiveInsightSession::Task> tasks;
+    session.setTaskExecutor(
+        [&tasks](LiveInsightSession::Task task) {
+            tasks.append(std::move(task));
+        });
+    session.setBuilder(
+        LiveInsightKind::Kernel,
+        [](const LiveInsightBuildRequest& request,
+           const LiveInsightCancellationToken&) {
+            return LiveInsightBuildResult::success(
+                request,
+                {{QStringLiteral("summary"),
+                  request.input.value(QStringLiteral("summary"))}});
+        });
+    const ContextResource resource =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Kernel,
+            QStringLiteral("workspace-a"));
+
+    // Without a host that can build an editor context the section keeps the
+    // compact summary card.
+    LiveInsightsContextProvider bare(LiveInsightKind::Kernel, &session);
+    auto* bareView = qobject_cast<LiveInsightsContextView*>(
+        bare.createView(resource, nullptr));
+    QVERIFY(bareView);
+    bareView->show();
+    QCoreApplication::processEvents();
+    QVERIFY(!bareView->surfaceForTest());
+    QVERIFY(bareView->kindSummaryLabel(LiveInsightKind::Kernel)
+                ->isVisibleTo(bareView));
+    delete bareView;
+
+    LiveInsightsContextProvider provider(LiveInsightKind::Kernel, &session);
+    int contextRequests = 0;
+    provider.setToolContextSource(
+        [&contextRequests]() {
+            ++contextRequests;
+            LiveInsightToolContext context;
+            context.workspaceId = QStringLiteral("workspace-a");
+            context.documentId = QStringLiteral("document-a");
+            context.fileName = QStringLiteral("uart.sv");
+            context.moduleName = QStringLiteral("uart");
+            context.signalName = QStringLiteral("byte_data");
+            context.documentRevision = 9;
+            context.semanticRevision = 7;
+            return context;
+        });
+    auto* view = qobject_cast<LiveInsightsContextView*>(
+        provider.createView(resource, nullptr));
+    QVERIFY(view);
+    QVERIFY(provider.activateView(view, resource));
+    view->show();
+    QCoreApplication::processEvents();
+
+    LiveInsightToolPage* surface = view->surfaceForTest();
+    QVERIFY(surface);
+    QCOMPARE(surface->kind(), LiveInsightKind::Kernel);
+    QVERIFY(surface->workbenchForTest());
+    QVERIFY(!view->kindSummaryLabel(LiveInsightKind::Kernel)
+                 ->isVisibleTo(view));
+    const int afterCreate = contextRequests;
+    QVERIFY(afterCreate > 0);
+
+    session.requestUpdate(
+        requestKey(LiveInsightKind::Kernel),
+        {{QStringLiteral("summary"), QStringLiteral("revision 9")}});
+    session.flushPending(LiveInsightKind::Kernel);
+    QCOMPARE(tasks.size(), 1);
+    tasks.takeFirst()();
+    QTRY_VERIFY(contextRequests > afterCreate);
+    QCOMPARE(view->surfaceForTest(), surface);
+
+    // Freezing the card freezes the surface with it.
+    view->setFollowEditor(false);
+    const int frozen = contextRequests;
+    LiveInsightRequestKey newer = requestKey(LiveInsightKind::Kernel);
+    newer.documentRevision = 10;
+    session.requestUpdate(
+        newer,
+        {{QStringLiteral("summary"), QStringLiteral("revision 10")}});
+    session.flushPending(LiveInsightKind::Kernel);
+    QCOMPARE(contextRequests, frozen);
+    QCOMPARE(view->surfaceForTest(), surface);
+    delete view;
+}
+
+namespace {
+LiveInsightToolContext stubContext(
+    const QString& moduleName,
+    const QString& signalName)
+{
+    LiveInsightToolContext context;
+    context.workspaceId = QStringLiteral("workspace-a");
+    context.documentId = QStringLiteral("document-a");
+    context.fileName = QStringLiteral("uart.sv");
+    context.moduleName = moduleName;
+    context.signalName = signalName;
+    context.documentRevision = 9;
+    context.semanticRevision = 7;
+    return context;
+}
+}
+
+void LiveInsightsContextProviderTest::
+    fixedKindSectionPublishesStatusAndTrimsChrome()
+{
+    LiveInsightSession session;
+    QList<LiveInsightSession::Task> tasks;
+    session.setTaskExecutor(
+        [&tasks](LiveInsightSession::Task task) {
+            tasks.append(std::move(task));
+        });
+    session.setBuilder(
+        LiveInsightKind::Wave,
+        [](const LiveInsightBuildRequest& request,
+           const LiveInsightCancellationToken&) {
+            return LiveInsightBuildResult::success(
+                request,
+                {{QStringLiteral("summary"), QStringLiteral("scope summary")},
+                 {QStringLiteral("provenance"),
+                  QStringLiteral("Symbolic Preview")}});
+        });
+    LiveInsightsContextProvider provider(LiveInsightKind::Wave, &session);
+    provider.setToolContextSource(
+        []() { return stubContext(QStringLiteral("uart"), QString()); });
+    const ContextResource resource =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Wave, QStringLiteral("workspace-a"));
+    auto* view = qobject_cast<LiveInsightsContextView*>(
+        provider.createView(resource, nullptr));
+    QVERIFY(view);
+    view->show();
+    QCoreApplication::processEvents();
+
+    // The section header owns the name, the full-view entry and freshness, so
+    // the body drops its copies and keeps only what the header has no room for.
+    QVERIFY(!view->kindButton(LiveInsightKind::Wave)->isVisibleTo(view));
+    QVERIFY(!view->kindStatusLabel(LiveInsightKind::Wave)->isVisibleTo(view));
+    QVERIFY(!view->openFullViewButton()->isVisibleTo(view));
+    QVERIFY(view->followEditorCheckBox()->isVisibleTo(view));
+    QVERIFY(view->pinButton()->isVisibleTo(view));
+
+    session.requestUpdate(
+        requestKey(LiveInsightKind::Wave),
+        {{QStringLiteral("summary"), QStringLiteral("scope summary")}});
+    session.flushPending(LiveInsightKind::Wave);
+    QCOMPARE(tasks.size(), 1);
+    tasks.takeFirst()();
+    QTRY_VERIFY(view->property("contextStatusTooltip").toString()
+                    .contains(QStringLiteral("Symbolic Preview")));
+    QVERIFY(!view->property("contextStatusText").toString().isEmpty());
+    delete view;
+}
+
+void LiveInsightsContextProviderTest::
+    emptyFixedKindSectionOffersReachableTargets()
+{
+    LiveInsightSession session;
+    LiveInsightsContextProvider provider(LiveInsightKind::Kernel, &session);
+    QString editorSignal = QStringLiteral("byte_data");
+    provider.setToolContextSource(
+        [&editorSignal]() {
+            return stubContext(QStringLiteral("uart"), editorSignal);
+        });
+    const ContextResource resource =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Kernel, QStringLiteral("workspace-a"));
+    auto* view = qobject_cast<LiveInsightsContextView*>(
+        provider.createView(resource, nullptr));
+    QVERIFY(view);
+    view->show();
+    QCoreApplication::processEvents();
+    QVERIFY(view->surfaceForTest());
+    QVERIFY(!view->emptyStateForTest()
+            || !view->emptyStateForTest()->isVisibleTo(view));
+
+    // The editor loses its signal: the section says what it can still reach
+    // instead of leaving an empty frame behind.
+    editorSignal.clear();
+    view->setFollowEditor(false);
+    view->setFollowEditor(true);
+    QCoreApplication::processEvents();
+    QWidget* empty = view->emptyStateForTest();
+    QVERIFY(empty);
+    QVERIFY(empty->isVisibleTo(view));
+    QVERIFY(!view->surfaceForTest()->isVisibleTo(view));
+    const auto candidates = view->candidateTargets();
+    QCOMPARE(candidates.size(), 1);
+    QCOMPARE(candidates.constFirst().label, QStringLiteral("byte_data"));
+    QCOMPARE(empty->findChildren<QPushButton*>(
+                 QStringLiteral("liveInsightCandidate")).size(), 1);
+
+    // Choosing a target pins the section to it instead of subscribing to the
+    // cursor, so a later editor move cannot silently replace it.
+    QVERIFY(view->applyTargetCandidate(candidates.constFirst()));
+    QCoreApplication::processEvents();
+    QVERIFY(!view->followEditor());
+    QVERIFY(view->surfaceForTest()->isVisibleTo(view));
+    QVERIFY(!view->emptyStateForTest()->isVisibleTo(view));
+    delete view;
+}
+
+void LiveInsightsContextProviderTest::
+    pickedTargetReachesTheSurfaceAndTheSectionHeader()
+{
+    LiveInsightSession session;
+    LiveInsightsContextProvider provider(LiveInsightKind::Wave, &session);
+    provider.setToolContextSource([]() {
+        LiveInsightToolContext context =
+            stubContext(QStringLiteral("uart"), QString());
+        context.scopeLabel = QStringLiteral("always_ff @(posedge clk)");
+        context.scopeStartPosition = 10;
+        context.scopeEndPosition = 40;
+        return context;
+    });
+
+    // Stands in for the host: records the request and replies with the target
+    // an editor pick would have produced.
+    int pickRequests = 0;
+    LiveInsightKind requestedKind = LiveInsightKind::Kernel;
+    std::function<void(const LiveInsightsContextView::TargetCandidate&)> reply;
+    provider.setTargetPickRequest(
+        [&](LiveInsightKind kind,
+            std::function<void(const LiveInsightsContextView::TargetCandidate&)>
+                picked) {
+            ++pickRequests;
+            requestedKind = kind;
+            reply = std::move(picked);
+            return true;
+        });
+
+    ContextDockHost host;
+    const ContextResource resource =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Wave, QStringLiteral("workspace-a"));
+    auto* view = qobject_cast<LiveInsightsContextView*>(
+        provider.createView(resource, nullptr));
+    QVERIFY(view);
+    QVERIFY(host.addResource(resource, view, true));
+    host.resize(520, 600);
+    host.show();
+    QCoreApplication::processEvents();
+
+    const QString key = resource.stableKey();
+    QAbstractButton* chip = host.sectionScope(key);
+    QVERIFY(chip);
+    QVERIFY(chip->isVisible());
+    QCOMPARE(chip->text(), QStringLiteral("always_ff @(posedge clk)"));
+
+    // The header chip is generic: it invokes the view's own slot.
+    chip->click();
+    QCoreApplication::processEvents();
+    QCOMPARE(pickRequests, 1);
+    QCOMPARE(requestedKind, LiveInsightKind::Wave);
+    QVERIFY(reply);
+
+    LiveInsightsContextView::TargetCandidate picked;
+    picked.label = QStringLiteral("always_comb");
+    picked.moduleName = QStringLiteral("uart");
+    picked.scopeLabel = QStringLiteral("always_comb");
+    picked.scopeStartPosition = 120;
+    picked.scopeEndPosition = 180;
+    picked.scopeStartLineZeroBased = 12;
+    reply(picked);
+    QCoreApplication::processEvents();
+
+    // A picked scope has to reach the surface: accepting it and rendering the
+    // previous scope would be a silent no-op.
+    auto* surface = view->surfaceForTest();
+    QVERIFY(surface);
+    const LiveInsightToolContext rendered = surface->contextForTest();
+    QCOMPARE(rendered.scopeLabel, QStringLiteral("always_comb"));
+    QCOMPARE(rendered.scopeStartPosition, 120);
+    QCOMPARE(rendered.scopeEndPosition, 180);
+    QCOMPARE(rendered.scopeStartLineZeroBased, 12);
+    QVERIFY(!view->followEditor());
+    QCOMPARE(host.sectionScope(key)->text(), QStringLiteral("always_comb"));
+
+    // A section whose host cannot pick shows no chip at all, so providers
+    // without an editor behind them keep the header they had.
+    LiveInsightsContextProvider hostless(LiveInsightKind::Wave, &session);
+    hostless.setToolContextSource(
+        []() { return stubContext(QStringLiteral("uart"), QString()); });
+    ContextDockHost plainHost;
+    const ContextResource plainResource =
+        LiveInsightsContextProvider::resourceForKind(
+            LiveInsightKind::Wave, QStringLiteral("workspace-b"));
+    auto* plainView = qobject_cast<LiveInsightsContextView*>(
+        hostless.createView(plainResource, nullptr));
+    QVERIFY(plainView);
+    QVERIFY(plainHost.addResource(plainResource, plainView, true));
+    plainHost.resize(520, 600);
+    plainHost.show();
+    QCoreApplication::processEvents();
+    QVERIFY(!plainHost.sectionScope(plainResource.stableKey())->isVisible());
 }
 
 QTEST_MAIN(LiveInsightsContextProviderTest)

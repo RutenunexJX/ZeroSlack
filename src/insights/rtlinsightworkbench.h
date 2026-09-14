@@ -62,6 +62,9 @@ public:
         InsightWorkbenchViewKind kind,
         BuildOverride builder);
     QPushButton* detachButtonForTest() const;
+    // Hides the chrome a host already provides around the workbench (its own
+    // title line and detach entry), for embedding in a titled container.
+    void setCompactChrome(bool compact);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -90,6 +93,7 @@ private:
     QToolButton* panButton = nullptr;
     QToolButton* minimapButton = nullptr;
     QPushButton* detachButton = nullptr;
+    bool compactChrome = false;
     InsightWorkbenchViewKind currentKind =
         InsightWorkbenchViewKind::Kernel;
     InsightViewContext currentContext;

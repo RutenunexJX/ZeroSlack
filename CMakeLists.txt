@@ -317,6 +317,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorkeywordghostcontroller.cpp
     src/editor/editorlineoperationcontroller.cpp
     src/editor/editormulticursorcontroller.cpp
+    src/editor/editorinsighttargetpickcontroller.cpp
     src/editor/editorsignalselectioncontroller.cpp
     src/editor/editorstructuralinputcontroller.cpp
     src/editor/editortemplateslotcontroller.cpp
@@ -1491,6 +1492,11 @@ if(BUILD_TESTING)
     target_link_libraries(editor_template_slot_controller_test
         PRIVATE zeroslack_core)
 
+    add_executable(editor_insight_target_pick_test
+        test_sv/editor_insight_target_pick_test.cpp)
+    target_link_libraries(editor_insight_target_pick_test
+        PRIVATE zeroslack_core)
+
     add_executable(package_header_command_test
         test_sv/package_header_command_test.cpp
         src/commands/actionregistry.cpp
@@ -2195,6 +2201,13 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_template_slot_controller_test>
+    )
+    add_test(NAME editor_insight_target_pick_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_insight_target_pick_test>
     )
     add_test(NAME package_header_command_test
         COMMAND ${CMAKE_COMMAND} -E env

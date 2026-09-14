@@ -24,6 +24,7 @@
 #include "editormulticursorcontroller.h"
 #include "packagetoolservice.h"
 #include "editorselection.h"
+#include "editorinsighttargetpickcontroller.h"
 #include "editorsignalselectioncontroller.h"
 #include "editorsemanticcontextservice.h"
 #include "editorsemanticruntime.h"
@@ -167,6 +168,7 @@ struct MyCodeEditorState
     EditorMultiCursorController multiCursor;
     EditorColumnModeController columnMode;
     EditorSignalSelectionController signalSelection;
+    EditorInsightTargetPickController insightTargetPick;
     EditorFoldingController folding;
     EditorViewProjection projection;
     EditorCursorNavigation cursorNavigation;
@@ -214,6 +216,13 @@ struct MyCodeEditorState
     EditorPackageToolAvailability lastPackageToolAvailability;
     bool packageToolAvailabilityInitialized = false;
     QString lastWavePreviewScopeKey;
+    // One semantic query per publish is the budget for blinking targets, so
+    // the answer is kept until the snapshot or the file actually changes.
+    mutable QList<QString> insightTargetNameCache;
+    mutable QString insightTargetNameCacheFile;
+    mutable std::uint64_t insightTargetNameCacheRevision = 0;
+    mutable int insightTargetNameCacheClass = -1;
+    mutable bool insightTargetNameCacheValid = false;
     bool suppressNextCursorPresentation = false;
     bool editorPresentationPending = false;
     bool ghostPresentationPending = false;
@@ -438,6 +447,17 @@ struct MyCodeEditorState
                                   QString* message = nullptr);
     void cancelSignalSelectionMode(MyCodeEditor* editor);
     bool signalSelectionModeActive() const;
+    bool startInsightTargetPickMode(
+        MyCodeEditor* editor,
+        EditorInsightTargetClass targetClass,
+        EditorInsightTargetPickController::Validator validator,
+        EditorInsightTargetPickController::PickedHandler handler,
+        QString* message = nullptr);
+    void cancelInsightTargetPickMode(MyCodeEditor* editor);
+    bool insightTargetPickModeActive() const;
+    QList<EditorInsightTargetCandidate> insightTargetCandidates() const;
+    QList<QString> insightTargetNameSet(
+        EditorInsightTargetClass targetClass) const;
     QStringList selectedSignalNames() const;
     bool toggleSignalSelectionAt(MyCodeEditor* editor,
                                  int cursorPosition,

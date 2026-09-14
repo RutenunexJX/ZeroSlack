@@ -112,6 +112,17 @@ void LiveInsightToolPage::setWaveformLibraryPath(
         waveCoordinator->setWaveformLibraryPath(path);
 }
 
+void LiveInsightToolPage::setCompactChrome(bool compact)
+{
+    compactChromeValue = compact;
+    if (workbench)
+        workbench->setCompactChrome(compact);
+    if (auto* detach = findChild<QPushButton*>(
+            QStringLiteral("liveInsightWaveDetach"))) {
+        detach->setVisible(!compact);
+    }
+}
+
 void LiveInsightToolPage::setContext(
     const LiveInsightToolContext& context)
 {

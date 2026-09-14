@@ -14,6 +14,7 @@
 #include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
+#include "statetransitiongraphservice.h"
 #include "semanticindex.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
@@ -327,6 +328,21 @@ void MainWindow::setupContextWorkspace()
             [this](const ContextResource& resource) {
                 openLiveInsightFullView(resource);
             });
+        provider->setToolContextSource(
+            [this]() {
+                return activeLiveInsightToolContext();
+            });
+        provider->setWaveformLibraryPathSource(
+            [this]() {
+                return liveInsightWaveformLibraryPath();
+            });
+        provider->setTargetPickRequest(
+            [this](LiveInsightKind kind,
+                   std::function<void(
+                       const LiveInsightsContextView::TargetCandidate&)>
+                       picked) {
+                return beginLiveInsightTargetPick(kind, std::move(picked));
+            });
         provider->setPinRequestHandler(
             [this](bool pinned, const ContextResource& resource) {
                 if (!contextWorkspaceController)
@@ -465,6 +481,120 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext() const
         }
     }
     return context;
+}
+
+bool MainWindow::beginLiveInsightTargetPick(
+    LiveInsightKind kind,
+    std::function<void(const LiveInsightsContextView::TargetCandidate&)>
+        picked)
+{
+    MyCodeEditor* editor =
+        tabManager ? tabManager->getCurrentEditor() : nullptr;
+    if (!editor) {
+        postActivityMessage(
+            QStringLiteral(
+                "Open the source file that holds the target before picking one."),
+            5000);
+        return false;
+    }
+
+    EditorInsightTargetClass targetClass = EditorInsightTargetClass::Signal;
+    switch (kind) {
+    case LiveInsightKind::Kernel:
+    case LiveInsightKind::Hotspot:
+    case LiveInsightKind::State:
+        targetClass = EditorInsightTargetClass::Signal;
+        break;
+    case LiveInsightKind::Module:
+        targetClass = EditorInsightTargetClass::Module;
+        break;
+    case LiveInsightKind::Wave:
+        targetClass = EditorInsightTargetClass::Scope;
+        break;
+    }
+
+    const LiveInsightToolContext context = activeLiveInsightToolContext();
+    const QString fileName = context.fileName;
+    const QString moduleName = context.moduleName;
+
+    EditorInsightTargetPickController::Validator validator;
+    if (kind == LiveInsightKind::State) {
+        // Only the graph service knows whether a register actually drives an
+        // FSM, so that answer is fetched once, for the chosen candidate.
+        validator = [fileName, moduleName](
+                        const EditorInsightTargetCandidate& candidate,
+                        QString* reason) {
+            StateTransitionGraphQuery query;
+            query.symbolName = candidate.name;
+            query.fileName = fileName;
+            query.moduleName = moduleName;
+            const StateTransitionGraphReport report =
+                StateTransitionGraphService::getInstance()
+                    ->buildStateTransitionGraph(query);
+            if (report.found)
+                return true;
+            if (reason) {
+                const QString detail =
+                    report.notFoundReasonDisplayName.trimmed();
+                *reason = detail.isEmpty()
+                    ? QStringLiteral(
+                          "%1 has no state transition graph.").arg(candidate.name)
+                    : QStringLiteral("%1: %2").arg(candidate.name, detail);
+            }
+            return false;
+        };
+    }
+    // Kernel, Hotspot, Module and Wave have no second stage of their own: the
+    // syntax and taxonomy filter is the whole test for them today.
+
+    auto handler = [this, kind, moduleName, picked = std::move(picked)](
+                       const EditorInsightTargetCandidate& candidate) {
+        LiveInsightsContextView::TargetCandidate target;
+        switch (kind) {
+        case LiveInsightKind::Kernel:
+        case LiveInsightKind::Hotspot:
+        case LiveInsightKind::State:
+            target.moduleName = moduleName;
+            target.signalName = candidate.name;
+            target.signalAccessPath = candidate.name;
+            target.label = candidate.name;
+            break;
+        case LiveInsightKind::Module:
+            target.moduleName = candidate.name;
+            target.label = candidate.name;
+            break;
+        case LiveInsightKind::Wave:
+            target.moduleName = moduleName;
+            target.scopeLabel = candidate.scopeLabel;
+            target.scopeStartPosition = candidate.scopeStartChar;
+            target.scopeEndPosition = candidate.scopeEndChar;
+            target.scopeStartLineZeroBased = candidate.startLine;
+            target.label = candidate.scopeLabel.trimmed().isEmpty()
+                ? candidate.name
+                : candidate.scopeLabel;
+            break;
+        }
+        if (picked)
+            picked(target);
+        requestLiveInsightUpdates();
+    };
+
+    QString message;
+    if (!editor->startInsightTargetPickMode(
+            targetClass, std::move(validator), std::move(handler), &message)) {
+        postActivityMessage(
+            message.trimmed().isEmpty()
+                ? QStringLiteral("The editor cannot pick a target right now.")
+                : message,
+            5000);
+        return false;
+    }
+    postActivityMessage(
+        QStringLiteral(
+            "Pick a target: Tab moves between blinking targets, Enter or click "
+            "selects, Esc cancels."),
+        5000);
+    return true;
 }
 
 QString MainWindow::liveInsightWaveformLibraryPath() const
@@ -702,7 +832,9 @@ bool MainWindow::openLiveInsightFromSourceAction(
     }
 
     QVariantMap state;
-    state.insert(QStringLiteral("followEditor"), true);
+    // A symbol picked from the source is a target, not a subscription: the
+    // section pins to it instead of following the cursor away from it.
+    state.insert(QStringLiteral("followEditor"), false);
     state.insert(QStringLiteral("pinned"), true);
     const ContextResource resource =
         LiveInsightsContextProvider::resourceForKind(
@@ -712,25 +844,44 @@ bool MainWindow::openLiveInsightFromSourceAction(
     QString failureReason;
     if (!contextWorkspaceController->openResource(
             resource,
-            ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
-            &failureReason)
-        || !contextWorkspaceController->openResource(
-            resource,
             ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global},
             &failureReason)) {
-        {
-            postActivityMessage(
-                failureReason.trimmed().isEmpty()
-                    ? QStringLiteral(
-                          "Live Insights sidebar is unavailable.")
-                    : failureReason,
-                5000);
-        }
+        postActivityMessage(
+            failureReason.trimmed().isEmpty()
+                ? QStringLiteral(
+                      "Live Insights sidebar is unavailable.")
+                : failureReason,
+            5000);
+        return false;
+    }
+    contextWorkspaceController->setDockVisible(true);
+    contextWorkspaceController->focusResource(resource.stableKey());
+
+    auto* view = qobject_cast<LiveInsightsContextView*>(
+        contextWorkspaceController->viewForResource(
+            resource.stableKey()));
+    if (!view) {
+        postActivityMessage(
+            QStringLiteral("The Live Insights section is unavailable."),
+            5000);
+        return false;
+    }
+    LiveInsightsContextView::TargetCandidate target;
+    target.moduleName = context.moduleName;
+    target.signalName = context.signalName;
+    target.signalAccessPath = context.signalAccessPath;
+    target.label = target.signalName.trimmed().isEmpty()
+        ? target.moduleName
+        : target.signalName;
+    if (!view->applyTargetCandidate(target)) {
+        postActivityMessage(
+            QStringLiteral(
+                "The selected symbol is not a target for this insight."),
+            5000);
         return false;
     }
 
     requestLiveInsightUpdates();
-    openLiveInsightFullView(resource, &context);
     return true;
 }
 

@@ -23,10 +23,12 @@
 #include <QDockWidget>
 #include <QApplication>
 #include <QDir>
+#include <QFile>
 #include <QTest>
 #include <QTemporaryDir>
 #include <QSettings>
 #include <QLabel>
+#include <QScreen>
 
 namespace {
 class TextEngine : public QPaintEngine {
@@ -59,7 +61,7 @@ public:
     }
 };
 QRect globalRect(QWidget* w) { return QRect(w->mapToGlobal(QPoint()), w->size()); }
-struct Counts { int overlap=0, outside=0, clipped=0; };
+struct Counts { int overlap=0, outside=0, clipped=0; QList<QWidget*> outsideWidgets; };
 Counts audit(QWidget* root) {
     Counts result;
     const auto all=root->findChildren<QWidget*>();
@@ -67,7 +69,7 @@ Counts audit(QWidget* root) {
         if (!w->isVisible() || w->size().isEmpty()) continue;
         const QRect rect=globalRect(w);
         if (auto* parent=w->parentWidget(); parent && !globalRect(parent).contains(rect)) {
-            ++result.outside; qWarning() << "I4" << w << w->geometry() << "parent" << parent << parent->size();
+            ++result.outside; result.outsideWidgets.append(w); qWarning() << "I4" << w << w->geometry() << "parent" << parent << parent->size();
         }
         if (auto* b=qobject_cast<QAbstractButton*>(w); b && b->width()<b->minimumSizeHint().width()) {
             ++result.clipped; qWarning() << "I5" << b << b->text() << b->size() << b->minimumSizeHint();
@@ -185,17 +187,129 @@ private slots:
             QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
         }
     }
+    void insightSectionHeights() {
+        // Three insight sections in one dock is the case that squeezed the
+        // graph to nothing: split evenly, a section has no room left after the
+        // workbench chrome. Heights are derived from the screen because the
+        // offscreen platform is only 400x400 logical pixels at 200%.
+        const QRect available=QApplication::primaryScreen()->availableGeometry();
+        const int hostHeight=available.height();
+        const int width=qMin(480,available.width());
+        const QList<LiveInsightKind> kinds={LiveInsightKind::Module,LiveInsightKind::Kernel,LiveInsightKind::State};
+        struct Sample { int content=0; int canvas=0; int sectionHeight=0; };
+        auto measure=[&](int suggested)->Sample {
+            ContextDockHost host;
+            QStringList keys;
+            for (LiveInsightKind kind : kinds) {
+                auto resource=LiveInsightsContextProvider::resourceForKind(kind,{});
+                auto* view=new LiveInsightsContextView(nullptr,kind);
+                view->setToolContextSource([]{
+                    LiveInsightToolContext context;
+                    context.workspaceId="workspace-a";
+                    context.documentId="document-a";
+                    context.fileName="uart.sv";
+                    context.moduleName="uart";
+                    context.signalName="byte_data";
+                    return context;
+                });
+                QTest::qVerify(host.addResource(resource,view,true),"addResource","",__FILE__,__LINE__);
+                keys.append(resource.stableKey());
+            }
+            host.setFixedWidth(width); host.resize(width,hostHeight); host.show(); QTest::qWait(30);
+            if (suggested>0) { for (const QString& key : keys) host.setSectionHeight(key,suggested); }
+            QTest::qWait(30);
+            const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+            if (!artifacts.isEmpty()) {
+                QDir().mkpath(artifacts);
+                host.grab().save(artifacts+QString("/insight_sections_%1.png")
+                                     .arg(suggested>0 ? "suggested" : "split"));
+            }
+            const QString focused=keys.last();
+            Sample sample;
+            sample.sectionHeight=host.sectionHeight(focused);
+            QWidget* view=host.viewForResource(focused);
+            sample.content=view ? view->height() : 0;
+            for (const char* name : {"rtlInsightsGraphView","insightCanvasView"}) {
+                if (auto* canvas=view ? view->findChild<QWidget*>(QString::fromLatin1(name)) : nullptr) {
+                    if (canvas->isVisible() && canvas->height()>sample.canvas) sample.canvas=canvas->height();
+                }
+            }
+            return sample;
+        };
+        const Sample split=measure(0);
+        const Sample suggested=measure(LiveInsightsContextProvider::suggestedSectionHeight());
+        const QString report=QString("host %1x%2 scale %3 | split section/content/canvas %4/%5/%6 | "
+                                     "suggested section/content/canvas %7/%8/%9 | canvas share %10%")
+            .arg(width).arg(hostHeight)
+            .arg(qEnvironmentVariable("QT_SCALE_FACTOR","1"))
+            .arg(split.sectionHeight).arg(split.content).arg(split.canvas)
+            .arg(suggested.sectionHeight).arg(suggested.content).arg(suggested.canvas)
+            .arg(suggested.content>0 ? suggested.canvas*100/suggested.content : 0);
+        qInfo().noquote()<<report;
+        // This binary produces no console output under the test harness, so the
+        // measurement the suggested height is chosen from is written out.
+        if (const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");!artifacts.isEmpty()) {
+            QDir().mkpath(artifacts);
+            QFile file(artifacts+"/insight_section_heights.txt");
+            if (file.open(QIODevice::Append|QIODevice::Text))
+                file.write(report.toUtf8()+"\n");
+        }
+        // Holds at every scale: the graph is both visible and larger than the
+        // even split gives it.
+        QVERIFY(suggested.canvas>split.canvas);
+        QVERIFY(suggested.canvas>0 && suggested.content>0);
+        // The share target applies where a whole suggested section fits on
+        // screen. At 200% the entire screen is 400 logical pixels tall — less
+        // than one section — so the fixed chrome, not the suggestion, is what
+        // bounds the canvas there; asserting 40% would be asserting that the
+        // screen is bigger than it is. That case is still covered by the two
+        // checks above, and its measured share is in the report.
+        if (hostHeight>=LiveInsightsContextProvider::suggestedSectionHeight())
+            QVERIFY(suggested.canvas*10>=suggested.content*4);
+    }
     void contextWidths() {
+        // withSurface repeats the audit for the product path, where the
+        // section hosts the real insight surface instead of the summary card.
+        for (bool withSurface : {false,true}) {
         for (int width : {220,270,340,480}) {
             ContextDockHost host;
             auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
             auto* view=new LiveInsightsContextView(nullptr,LiveInsightKind::Hotspot);
+            if (withSurface) {
+                view->setToolContextSource([]{
+                    LiveInsightToolContext context;
+                    context.workspaceId="workspace-a";
+                    context.documentId="document-a";
+                    context.fileName="uart.sv";
+                    context.moduleName="uart";
+                    context.signalName="byte_data";
+                    return context;
+                });
+            }
             QVERIFY(host.addResource(resource,view,true));
             host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
+            QVERIFY(withSurface ? view->surfaceForTest()!=nullptr : view->surfaceForTest()==nullptr);
             auto c=audit(&host);
-            qInfo() << "Context" << width << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
+            const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+            if (withSurface && !artifacts.isEmpty() && (width==340 || width==480)) {
+                QDir().mkpath(artifacts);
+                QVERIFY(host.grab().save(artifacts+QString("/context_section_surface_%1.png").arg(width)));
+            }
+            qInfo() << "Context" << width << "surface" << withSurface << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
+            if (!artifacts.isEmpty()) {
+                // This binary has no console under the harness; the audit
+                // numbers are written out so they can be quoted.
+                QDir().mkpath(artifacts);
+                QFile file(artifacts+"/context_widths.txt");
+                if (file.open(QIODevice::Append|QIODevice::Text)) {
+                    file.write(QString("width %1 surface %2 | overlap/outside/clipped %3/%4/%5\n")
+                                   .arg(width).arg(withSurface ? "yes" : "no")
+                                   .arg(c.overlap).arg(c.outside).arg(c.clipped).toUtf8());
+                }
+            }
             QVERIFY(host.width()==width);
             QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
+        }
         }
     }
     void fullViewWidths() {

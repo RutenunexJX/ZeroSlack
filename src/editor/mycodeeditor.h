@@ -14,6 +14,7 @@
 #include "includeheaderworkflowtypes.h"
 #include "completiontypes.h"
 #include "documentchange.h"
+#include "editorinsighttargetpickcontroller.h"
 #include "editormodecontroller.h"
 #include "packagetoolservice.h"
 #include "symbolpresentationservice.h"
@@ -314,6 +315,25 @@ public:
         QString* failureReason = nullptr);
     bool startSignalSelectionMode(QString* message = nullptr);
     bool signalSelectionModeActiveForTest() const;
+    // Blinks every target of the requested class in the visible region and
+    // reports the one the user picks. The validator is the caller's second
+    // stage: rejecting a candidate keeps the mode running with its reason.
+    bool startInsightTargetPickMode(
+        EditorInsightTargetClass targetClass,
+        EditorInsightTargetPickController::Validator validator,
+        EditorInsightTargetPickController::PickedHandler handler,
+        QString* message = nullptr);
+    void cancelInsightTargetPickMode();
+    bool insightTargetPickModeActive() const;
+    QList<EditorInsightTargetCandidate>
+        insightTargetCandidatesForTest() const;
+    int insightTargetActiveIndexForTest() const;
+    bool insightTargetBlinkOnForTest() const;
+    QPair<int, int> insightTargetEnumeratedLineRangeForTest() const;
+    QList<QString> insightTargetNameSetForTest(
+        EditorInsightTargetClass targetClass) const;
+    void publishInsightTargetAnnotationsForTest(int firstVisibleLine,
+                                                int lastVisibleLine);
     QStringList selectedSignalNames() const;
     QStringList selectedSignalNamesForTest() const;
     bool toggleSignalSelectionAtForTest(int cursorPosition);

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.29.0] - 2026-09-13
+
+- Replaced the summary card in each Context insight section with the insight's real view, rendered by the same surface the full view uses and following the same editor context; sections without a host that can supply that context keep the compact card.
+- Stopped a hidden insight stack page from dictating the workbench minimum height, so an embedded surface fits the section it is given instead of overflowing it by the wrapped toolbar height it was last measured at.
+- Kept section sizing manual: section height and sidebar width stay under the existing drag handles, and Follow Editor still freezes a section on its current result.
+- Moved insight freshness onto the section header, which any view can now publish through its `contextStatusText` / `contextStatusTooltip` properties, and dropped the body copies of the section name, the full-view entry, the single-kind card and the workbench's own title and detach controls.
+- Replaced the empty-section sentence with the targets that section can still reach — the editor target it is not following plus its three most recent ones — and pinned the section to a chosen target instead of leaving it subscribed to the cursor.
+- Landed the four source insight Actions and the Wave command in the sidebar section for their kind, pinned to the chosen symbol and its member access path, instead of opening a central tool tab; the full view stays one click away on the section header.
+- Added an editor mode for choosing an insight's target: every target the section can render blinks in the visible region, Tab and Shift+Tab move between them, Enter or a click selects, and Esc cancels. Candidates come from the visible lines only and follow the viewport as it scrolls.
+- Reported the real reason when a chosen target cannot be rendered — a register with no state transition graph names what is missing — and kept the picker running on the remaining candidates instead of dropping the choice.
+- Named each insight section's current target on its header, where clicking it starts the picker; an empty section offers the same entry beside its reachable targets.
+- Started insight sections at a height that leaves the graph most of the section instead of an even split that left room for nothing but the toolbar. The height stays a starting point: dragging a section smaller still works and is what persists.
+
 ## [0.28.1] - 2026-09-13
 
 - Corrected `View > Context Sidebar` so an empty sidebar opens the first rail provider's default view instead of refusing, and a hidden rail is restored with it; workspaces whose stored state hid the rail and held no section are reachable again.

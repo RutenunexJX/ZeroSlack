@@ -173,6 +173,24 @@ void LiveInsightsContextProvider::setPinRequestHandler(
     pinRequestHandler = std::move(handler);
 }
 
+void LiveInsightsContextProvider::setToolContextSource(
+    LiveInsightsContextView::ToolContextSource source)
+{
+    toolContextSource = std::move(source);
+}
+
+void LiveInsightsContextProvider::setWaveformLibraryPathSource(
+    LiveInsightsContextView::WaveformLibraryPathSource source)
+{
+    waveformLibraryPathSource = std::move(source);
+}
+
+void LiveInsightsContextProvider::setTargetPickRequest(
+    LiveInsightsContextView::TargetPickRequest request)
+{
+    targetPickRequest = std::move(request);
+}
+
 QString LiveInsightsContextProvider::providerId() const
 {
     return fixedKindEnabled
@@ -228,6 +246,12 @@ QWidget* LiveInsightsContextProvider::createView(
         ? new LiveInsightsContextView(sessionValue, fixedKind, parent)
         : new LiveInsightsContextView(sessionValue, parent);
     Q_UNUSED(hasResourceKind)
+    if (waveformLibraryPathSource)
+        view->setWaveformLibraryPathSource(waveformLibraryPathSource);
+    if (toolContextSource)
+        view->setToolContextSource(toolContextSource);
+    if (targetPickRequest)
+        view->setTargetPickRequest(targetPickRequest);
     connect(
         view,
         &LiveInsightsContextView::openFullViewRequested,
@@ -276,7 +300,18 @@ ContextViewCapabilities LiveInsightsContextProvider::capabilities(
     result.minimumWidth = 320;
     result.preferredWidth = 520;
     result.maximumWidth = 960;
+    result.preferredSectionHeight = suggestedSectionHeight();
     return result;
+}
+
+int LiveInsightsContextProvider::suggestedSectionHeight()
+{
+    // The workbench chrome (toolbar rows, mode controls, status strip) plus
+    // the section header and resize grip take the first ~300 px; below that
+    // the graph canvas is a sliver. Measured in
+    // compact_layout_test::insightSectionHeights, which fails if this stops
+    // leaving the canvas at least 40% of the section body.
+    return 560;
 }
 
 void LiveInsightsContextProvider::observeViewResourceChanges(

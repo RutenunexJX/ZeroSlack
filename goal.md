@@ -1,6 +1,6 @@
 # ZeroSlack Current Goal
 
-Product version: `v0.28.1`
+Product version: `v0.29.0`
 
 The Context sidebar supports a registry-owned whole-sidebar toggle through Ctrl+2 and the View menu.
 Showing an empty sidebar opens the first rail provider's default view and restores a hidden rail.

@@ -16,6 +16,7 @@
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <QStackedWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -258,6 +259,375 @@ void LiveInsightsContextView::setFullViewHandler(
     fullViewHandler = std::move(handler);
 }
 
+void LiveInsightsContextView::setToolContextSource(
+    ToolContextSource source)
+{
+    toolContextSource = std::move(source);
+    // renderSurface builds the surface only once the section is actually
+    // visible, so installing a source on a collapsed section stays cheap.
+    renderSurface();
+}
+
+void LiveInsightsContextView::setWaveformLibraryPathSource(
+    WaveformLibraryPathSource source)
+{
+    waveformLibraryPathSource = std::move(source);
+    if (surfaceValue && waveformLibraryPathSource) {
+        surfaceValue->setWaveformLibraryPath(
+            waveformLibraryPathSource());
+    }
+}
+
+LiveInsightToolPage* LiveInsightsContextView::surfaceForTest() const
+{
+    return surfaceValue;
+}
+
+bool LiveInsightsContextView::surfaceEnabled() const
+{
+    // Only a fixed-kind section owns one insight, so only it can be replaced
+    // by that insight's real surface. The multi-kind view stays a compact
+    // board over all five and keeps its summaries.
+    return fixedKindValue && static_cast<bool>(toolContextSource);
+}
+
+void LiveInsightsContextView::ensureSurface()
+{
+    if (surfaceValue || !surfaceEnabled() || !contentStack)
+        return;
+    const int index = indexForKind(selected);
+    auto* page = contentStack->widget(index);
+    if (!page || !page->layout())
+        return;
+    surfaceValue = new LiveInsightToolPage(selected, page);
+    surfaceValue->setObjectName(
+        QStringLiteral("liveInsightSurface_%1")
+            .arg(liveInsightKindId(selected)));
+    surfaceValue->setCompactChrome(true);
+    if (waveformLibraryPathSource) {
+        surfaceValue->setWaveformLibraryPath(
+            waveformLibraryPathSource());
+    }
+    if (QLabel* summary = cards.at(index).summary)
+        summary->hide();
+    page->layout()->addWidget(surfaceValue);
+    // The surface nests its own main-window layout. Inserting it after the
+    // section already has a size leaves that nested layout on the geometry it
+    // was built with, so re-activate it once this event round settles.
+    QTimer::singleShot(0, this, [this]() {
+        if (!surfaceValue)
+            return;
+        const auto layouts = surfaceValue->findChildren<QLayout*>();
+        for (auto* nested : layouts) {
+            nested->invalidate();
+            nested->activate();
+        }
+        if (QLayout* own = layout()) {
+            own->invalidate();
+            own->activate();
+        }
+        updateGeometry();
+    });
+}
+
+LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
+{
+    LiveInsightToolContext context =
+        toolContextSource ? toolContextSource() : LiveInsightToolContext{};
+    if (targetOverrideActive) {
+        if (!targetOverride.moduleName.trimmed().isEmpty())
+            context.moduleName = targetOverride.moduleName;
+        context.signalName = targetOverride.signalName;
+        context.signalAccessPath = targetOverride.signalAccessPath;
+        // A picked scope has to reach the surface, or Wave would report a
+        // target it is not actually rendering.
+        if (targetOverride.scopeStartPosition >= 0
+            && targetOverride.scopeEndPosition
+                   > targetOverride.scopeStartPosition) {
+            context.scopeLabel = targetOverride.scopeLabel;
+            context.scopeStartPosition = targetOverride.scopeStartPosition;
+            context.scopeEndPosition = targetOverride.scopeEndPosition;
+            context.scopeStartLineZeroBased =
+                targetOverride.scopeStartLineZeroBased;
+        }
+    }
+    return context;
+}
+
+bool LiveInsightsContextView::contextHasTarget(
+    const LiveInsightToolContext& context) const
+{
+    switch (selected) {
+    case LiveInsightKind::Kernel:
+    case LiveInsightKind::Hotspot:
+        return !context.signalName.trimmed().isEmpty();
+    case LiveInsightKind::Module:
+    case LiveInsightKind::State:
+        return !context.moduleName.trimmed().isEmpty();
+    case LiveInsightKind::Wave:
+        return !context.fileName.trimmed().isEmpty();
+    }
+    return false;
+}
+
+void LiveInsightsContextView::rememberTarget(
+    const LiveInsightToolContext& context)
+{
+    TargetCandidate candidate;
+    candidate.moduleName = context.moduleName.trimmed();
+    candidate.signalName = context.signalName.trimmed();
+    candidate.signalAccessPath = context.signalAccessPath.trimmed();
+    switch (selected) {
+    case LiveInsightKind::Kernel:
+    case LiveInsightKind::Hotspot:
+        candidate.label = candidate.signalName;
+        break;
+    case LiveInsightKind::Module:
+    case LiveInsightKind::State:
+        candidate.label = candidate.moduleName;
+        break;
+    case LiveInsightKind::Wave:
+        candidate.label = context.scopeLabel.trimmed().isEmpty()
+            ? context.fileName.trimmed()
+            : context.scopeLabel.trimmed();
+        candidate.scopeLabel = context.scopeLabel.trimmed();
+        candidate.scopeStartPosition = context.scopeStartPosition;
+        candidate.scopeEndPosition = context.scopeEndPosition;
+        candidate.scopeStartLineZeroBased = context.scopeStartLineZeroBased;
+        break;
+    }
+    if (candidate.label.isEmpty())
+        return;
+    recentTargets.removeAll(candidate);
+    recentTargets.prepend(candidate);
+    while (recentTargets.size() > 3)
+        recentTargets.removeLast();
+}
+
+QList<LiveInsightsContextView::TargetCandidate>
+LiveInsightsContextView::candidateTargets() const
+{
+    QList<TargetCandidate> candidates;
+    const LiveInsightToolContext current = effectiveContext();
+    // The editor context is a candidate exactly when the section is not
+    // already showing it: frozen by Follow Editor, or pinned elsewhere.
+    if (toolContextSource) {
+        const LiveInsightToolContext editorContext = toolContextSource();
+        if (contextHasTarget(editorContext)) {
+            TargetCandidate candidate;
+            candidate.moduleName = editorContext.moduleName.trimmed();
+            candidate.signalName = editorContext.signalName.trimmed();
+            candidate.signalAccessPath =
+                editorContext.signalAccessPath.trimmed();
+            candidate.label = candidate.signalName.isEmpty()
+                ? candidate.moduleName
+                : candidate.signalName;
+            if (!candidate.label.isEmpty()
+                && !(candidate.moduleName == current.moduleName.trimmed()
+                     && candidate.signalName == current.signalName.trimmed())) {
+                candidates.append(candidate);
+            }
+        }
+    }
+    for (const TargetCandidate& candidate : recentTargets) {
+        if (candidates.contains(candidate))
+            continue;
+        if (candidate.moduleName == current.moduleName.trimmed()
+            && candidate.signalName == current.signalName.trimmed()) {
+            continue;
+        }
+        candidates.append(candidate);
+    }
+    return candidates;
+}
+
+bool LiveInsightsContextView::applyTargetCandidate(
+    const TargetCandidate& candidate)
+{
+    if (candidate.label.trimmed().isEmpty())
+        return false;
+    targetOverride = candidate;
+    targetOverrideActive = true;
+    // A chosen target is a target, not a subscription: stop following the
+    // cursor so the choice survives the next editor move.
+    setFollowEditor(false);
+    renderSurface();
+    publishSectionScope();
+    return true;
+}
+
+void LiveInsightsContextView::setTargetPickRequest(
+    TargetPickRequest request)
+{
+    targetPickRequest = std::move(request);
+    publishSectionScope();
+}
+
+bool LiveInsightsContextView::requestScopePick()
+{
+    if (!targetPickRequest)
+        return false;
+    const QPointer<LiveInsightsContextView> guard(this);
+    return targetPickRequest(
+        selected,
+        [guard](const TargetCandidate& candidate) {
+            // The section that asked may have been closed while the user was
+            // picking; a stale reply must not resurrect it.
+            if (guard)
+                guard->applyTargetCandidate(candidate);
+        });
+}
+
+void LiveInsightsContextView::publishSectionScope()
+{
+    // Only a fixed-kind section has one target to re-pick, and only a host
+    // that can run the picker should show the chip at all.
+    if (!fixedKindValue || !targetPickRequest) {
+        setProperty("contextScopeText", QString());
+        setProperty("contextScopeTooltip", QString());
+        return;
+    }
+    const LiveInsightToolContext context = effectiveContext();
+    QString label;
+    switch (selected) {
+    case LiveInsightKind::Kernel:
+    case LiveInsightKind::Hotspot:
+        label = context.signalName.trimmed();
+        break;
+    case LiveInsightKind::Module:
+    case LiveInsightKind::State:
+        label = context.moduleName.trimmed();
+        break;
+    case LiveInsightKind::Wave:
+        label = context.scopeLabel.trimmed();
+        break;
+    }
+    setProperty("contextScopeText",
+                label.isEmpty() ? QStringLiteral("Pick target") : label);
+    setProperty(
+        "contextScopeTooltip",
+        label.isEmpty()
+            ? QStringLiteral("Pick this insight's target in the editor")
+            : QStringLiteral("Target: %1 — click to pick another in the editor")
+                  .arg(label));
+}
+
+QWidget* LiveInsightsContextView::emptyStateForTest() const
+{
+    return emptyStateValue;
+}
+
+void LiveInsightsContextView::refreshEmptyState(
+    const LiveInsightToolContext& context)
+{
+    const bool hasTarget = contextHasTarget(context);
+    if (hasTarget && !emptyStateValue)
+        return;
+    if (!emptyStateValue) {
+        auto* page = contentStack
+            ? contentStack->widget(indexForKind(selected))
+            : nullptr;
+        auto* column = page
+            ? qobject_cast<QVBoxLayout*>(page->layout())
+            : nullptr;
+        if (!column)
+            return;
+        emptyStateValue = new QWidget(page);
+        emptyStateValue->setObjectName(
+            QStringLiteral("liveInsightEmptyState_%1")
+                .arg(liveInsightKindId(selected)));
+        auto* rows = new QVBoxLayout(emptyStateValue);
+        rows->setContentsMargins(0, 0, 0, 0);
+        rows->setSpacing(4);
+        emptyStateList = rows;
+        column->insertWidget(0, emptyStateValue);
+    }
+    emptyStateValue->setVisible(!hasTarget);
+    if (surfaceValue)
+        surfaceValue->setVisible(hasTarget);
+    if (hasTarget || !emptyStateList)
+        return;
+
+    while (QLayoutItem* item = emptyStateList->takeAt(0)) {
+        if (QWidget* widget = item->widget()) {
+            // Detach before scheduling deletion: a rebuild triggered from a
+            // candidate's own click must not leave the clicked button both
+            // alive and findable as a child.
+            widget->hide();
+            widget->setParent(nullptr);
+            widget->deleteLater();
+        }
+        delete item;
+    }
+    const QList<TargetCandidate> candidates = candidateTargets();
+    for (const TargetCandidate& candidate : candidates) {
+        auto* row = new QPushButton(candidate.label, emptyStateValue);
+        row->setObjectName(QStringLiteral("liveInsightCandidate"));
+        row->setToolTip(
+            candidate.moduleName.isEmpty()
+                ? candidate.label
+                : QStringLiteral("%1 · %2")
+                      .arg(candidate.moduleName, candidate.label));
+        InsightVisualStyle::applyToolbarButton(row);
+        connect(row, &QPushButton::clicked, this,
+                [this, candidate]() { applyTargetCandidate(candidate); });
+        emptyStateList->addWidget(row);
+    }
+    if (targetPickRequest) {
+        // The header chip is the usual entry; this one also covers a section
+        // dragged out into a floating window, which has no section header.
+        auto* pick = new QPushButton(
+            QStringLiteral("Pick in editor…"), emptyStateValue);
+        pick->setObjectName(QStringLiteral("liveInsightPickTarget"));
+        pick->setToolTip(
+            QStringLiteral("Blink the targets this insight can render"));
+        InsightVisualStyle::applyToolbarButton(pick);
+        connect(pick, &QPushButton::clicked, this,
+                [this]() { requestScopePick(); });
+        emptyStateList->addWidget(pick);
+    }
+    auto* hint = new QLabel(emptyStateValue);
+    hint->setObjectName(QStringLiteral("liveInsightEmptyHint"));
+    hint->setWordWrap(true);
+    hint->setText(candidates.isEmpty()
+                      ? QStringLiteral(
+                            "Select a target in the editor to populate this insight.")
+                      : QStringLiteral("Or select a target in the editor."));
+    InsightVisualStyle::applyLabel(hint);
+    emptyStateList->addWidget(hint);
+}
+
+void LiveInsightsContextView::renderSurface()
+{
+    if (!surfaceEnabled())
+        return;
+    if (!isVisible()) {
+        // Building a workbench for a collapsed or hidden section wastes the
+        // work; remember that it owes a render instead.
+        surfaceRenderPending = true;
+        return;
+    }
+    const LiveInsightToolContext context = effectiveContext();
+    if (!contextHasTarget(context)) {
+        // Nothing to render: offer the targets this section can reach instead
+        // of building a workbench that would only draw an empty frame.
+        surfaceRenderPending = false;
+        refreshEmptyState(context);
+        return;
+    }
+    ensureSurface();
+    if (!surfaceValue)
+        return;
+    surfaceRenderPending = false;
+    refreshEmptyState(context);
+    if (waveformLibraryPathSource) {
+        surfaceValue->setWaveformLibraryPath(
+            waveformLibraryPathSource());
+    }
+    surfaceValue->setContext(context);
+    rememberTarget(context);
+}
+
 QVariantMap LiveInsightsContextView::saveState() const
 {
     return {
@@ -339,6 +709,8 @@ void LiveInsightsContextView::showEvent(QShowEvent* event)
         sessionValue->setConsumerVisible(
             this, selected, followEditor());
     }
+    if (surfaceRenderPending || (surfaceEnabled() && !surfaceValue))
+        renderSurface();
 }
 
 void LiveInsightsContextView::hideEvent(QHideEvent* event)
@@ -514,6 +886,21 @@ void LiveInsightsContextView::buildUi()
             emit openFullViewRequested(selected);
         });
 
+    if (fixedKindValue) {
+        // A fixed-kind section is named by its own section header, which also
+        // carries the full-view entry and the freshness chip. Repeating them
+        // in the body only pushes the real content down.
+        title->hide();
+        fullViewButton->hide();
+        // Two remaining controls do not deserve two rows.
+        root->removeWidget(followCheck);
+        titleRow->insertWidget(0, followCheck);
+        for (const CardWidgets& card : cards) {
+            if (card.button && card.button->parentWidget())
+                card.button->parentWidget()->hide();
+        }
+    }
+
     // Peek may be clamped below a provider's preferred width in a narrow
     // editor. Keep the compact navigation surface flexible so its controls
     // remain reachable instead of forcing the host outside the editor region.
@@ -533,6 +920,8 @@ void LiveInsightsContextView::refreshSnapshot(
     renderedSnapshots.at(index) = snapshot;
     hasRenderedSnapshot.at(index) = true;
     renderSnapshot(kind, snapshot);
+    if (kind == selected)
+        renderSurface();
 }
 
 void LiveInsightsContextView::renderSnapshot(
@@ -548,6 +937,27 @@ void LiveInsightsContextView::renderSnapshot(
         InsightVisualStyle::statusChipStyleSheet(
             phaseTone(snapshot), card.status->objectName()));
     card.summary->setText(summaryText(snapshot));
+    if (fixedKindValue && kind == selected) {
+        publishSectionStatus(snapshot);
+        publishSectionScope();
+    }
+}
+
+void LiveInsightsContextView::publishSectionStatus(
+    const LiveInsightSnapshot& snapshot)
+{
+    // The section header renders these; a host that does not read them simply
+    // shows no chip.
+    QStringList tooltip;
+    const QString provenance =
+        snapshot.payload.value(QStringLiteral("provenance")).toString().trimmed();
+    if (!provenance.isEmpty())
+        tooltip.append(provenance);
+    const QString summary = summaryText(snapshot).trimmed();
+    if (!summary.isEmpty())
+        tooltip.append(summary);
+    setProperty("contextStatusText", phaseText(snapshot));
+    setProperty("contextStatusTooltip", tooltip.join(QStringLiteral("\n")));
 }
 
 void LiveInsightsContextView::refreshTheme()
@@ -580,6 +990,7 @@ void LiveInsightsContextView::refreshAllFromSession()
         hasRenderedSnapshot.at(index) = true;
         renderSnapshot(kind, snapshot);
     }
+    renderSurface();
 }
 
 void LiveInsightsContextView::updateSessionVisibility(

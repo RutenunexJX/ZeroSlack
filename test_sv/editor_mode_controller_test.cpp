@@ -35,6 +35,7 @@ int main()
         EditorModeId::FoldRegion,
         EditorModeId::FoldShelf,
         EditorModeId::SourceNavigation,
+        EditorModeId::InsightTargetPick,
     };
 
     bool completeDescriptors =

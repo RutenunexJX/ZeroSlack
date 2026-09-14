@@ -54,8 +54,16 @@ public:
     void setVisibilityHandler(VisibilityHandler handler);
     void setRefreshHandler(RefreshHandler handler);
     void setWaveformLibraryPath(const QString& path);
+    // Drops the chrome a titled host already provides (workbench title line,
+    // detach entry). The Wave refresh entry stays: nothing else offers it.
+    void setCompactChrome(bool compact);
     void setContext(const LiveInsightToolContext& context);
     bool hasVisibleSurface() const;
+    // The context this page last rendered from.
+    const LiveInsightToolContext& contextForTest() const
+    {
+        return currentContext;
+    }
 
     RtlInsightWorkbench* workbenchForTest() const;
     WavePreviewPanelCoordinator* waveCoordinatorForTest() const;
@@ -70,6 +78,7 @@ private:
     LiveInsightKind insightKind;
     LiveInsightToolContext currentContext;
     QString waveformLibraryPath;
+    bool compactChromeValue = false;
     NavigationHandler navigationHandler;
     StatusHandler statusHandler;
     VisibilityHandler visibilityHandler;

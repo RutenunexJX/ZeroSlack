@@ -9,8 +9,10 @@
 #include <QWidget>
 
 class QScrollArea;
+class QLabel;
 class QMimeData;
 class ContextFloatingWindow;
+class QAbstractButton;
 class QToolButton;
 
 class ZEROSLACK_API ContextDockHost final : public QWidget
@@ -44,6 +46,8 @@ public:
     bool moveResource(const QString& key, int index);
     QWidget* sectionWidget(const QString& key) const;
     QWidget* sectionHeader(const QString& key) const;
+    QLabel* sectionStatus(const QString& key) const;
+    QAbstractButton* sectionScope(const QString& key) const;
     int insertionIndex(const QPoint& globalPosition) const;
     bool setSectionDetachable(const QString& key, bool detachable);
     QWidget* sectionDragHandle(const QString& key) const;
@@ -85,6 +89,7 @@ private:
     QHash<QString, ContextResource> resources;
 
     int indexOfResource(const QString& key) const;
+    void refreshSectionStatus(const QString& key);
     void arrangeSections();
     void focusSection(const QString& key);
     int minimumSectionHeight(const Section* section) const;

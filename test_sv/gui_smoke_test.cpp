@@ -12180,10 +12180,16 @@ void runLiveInsightSidebarRoutingRegression(
                    && compactView->selectedKind()
                           == LiveInsightKind::State,
                true);
-    expectBool("State Transition command opens the full state canvas",
-               dynamic_cast<LiveInsightToolPage*>(fullView) != nullptr,
+    // A symbol picked in the source now lands in the sidebar section, pinned
+    // to that symbol, and opens no central tab. The full view stays reachable
+    // through the section header entry, exercised further down.
+    expectBool("State Transition command pins the section and opens no tab",
+               compactView
+                   && !compactView->followEditor()
+                   && compactView->surfaceForTest() != nullptr
+                   && fullView == nullptr,
                true);
-    auto* statePage = dynamic_cast<LiveInsightToolPage*>(fullView);
+    auto* statePage = compactView ? compactView->surfaceForTest() : nullptr;
     auto* stateSurface = statePage && statePage->workbenchForTest()
         ? statePage->workbenchForTest()->rtlSurfaceForTest() : nullptr;
     const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
@@ -12191,9 +12197,66 @@ void runLiveInsightSidebarRoutingRegression(
         QDir().mkpath(reviewDir);
         statePage->grab().save(reviewDir + "/state.png");
     }
-    expectBool("State full view uses dedicated state renderer",
+    expectBool("State section renders the dedicated state graph",
         stateSurface && stateSurface->graphModeForTest() == QStringLiteral("state-transition")
             && stateSurface->graphNodeItemCountForTest() > 0, true);
+
+    // The section header names its target and re-picking runs in the editor:
+    // this is the only place that exercises the whole chain through MainWindow.
+    QAbstractButton* scopeChip =
+        controller->dockHost()->sectionScope(active.stableKey());
+    MyCodeEditor* pickEditor = window.tabManager
+        ? window.tabManager->getCurrentEditor()
+        : nullptr;
+    expectBool("State section header names the pinned target",
+               scopeChip != nullptr && scopeChip->isVisible()
+                   && !scopeChip->text().trimmed().isEmpty()
+                   && scopeChip->text() != QStringLiteral("Pick target"),
+               true);
+    if (scopeChip && pickEditor) {
+        // Put a declaration on screen first: candidates come from the visible
+        // region, and this editor opens on a comment header that holds none.
+        const QRegularExpression declarationPattern(
+            QStringLiteral("\\n\\s*(logic|reg|wire)\\s"));
+        const int declaration = pickEditor->toPlainText().indexOf(
+            declarationPattern);
+        if (declaration >= 0) {
+            QTextCursor cursor = pickEditor->textCursor();
+            cursor.setPosition(declaration);
+            pickEditor->setTextCursor(cursor);
+            pickEditor->centerCursor();
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        }
+        scopeChip->click();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("Scope chip starts the editor target picker",
+                   pickEditor->insightTargetPickModeActive(),
+                   true);
+        const QPair<int, int> pickRange =
+            pickEditor->insightTargetEnumeratedLineRangeForTest();
+        // Which symbols blink depends on the semantic records for the open
+        // document, which this fixture does not analyse; the candidate set
+        // itself is covered by editor_insight_target_pick_test against a known
+        // snapshot. What this asserts is that the mode reads the region the
+        // editor is actually showing.
+        const int firstVisibleLine =
+            pickEditor->cursorForPosition(QPoint(0, 0)).blockNumber();
+        expectBool("Picker enumerates the editor visible region",
+                   declaration >= 0
+                       && pickRange.first == firstVisibleLine
+                       && pickRange.second >= pickRange.first
+                       && pickRange.second < pickEditor->blockCount(),
+                   true);
+        if (!reviewDir.isEmpty()) {
+            QDir().mkpath(reviewDir);
+            pickEditor->grab().save(reviewDir + "/pick_mode.png");
+        }
+        pickEditor->cancelInsightTargetPickMode();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        expectBool("Canceling the picker leaves no mode behind",
+                   !pickEditor->insightTargetPickModeActive(),
+                   true);
+    }
     expectBool("State Transition command has no legacy bottom-dock target",
                window.dockForPanelId(
                           QStringLiteral("rtlInsights")) == nullptr,
@@ -12227,6 +12290,7 @@ void runLiveInsightSidebarRoutingRegression(
          }},
     };
     bool allInsightRoutesUseRightProvider = true;
+    LiveInsightToolPage* moduleSectionPage = nullptr;
     for (const InsightRouteProbe& probe : routeProbes) {
         probe.invoke();
         QCoreApplication::processEvents(
@@ -12234,22 +12298,29 @@ void runLiveInsightSidebarRoutingRegression(
         const ContextResource routed =
             controller->dockHost()->currentResource();
         LiveInsightKind routedKind = LiveInsightKind::State;
+        auto* routedView = qobject_cast<LiveInsightsContextView*>(
+            controller->dockHost()->viewForResource(routed.stableKey()));
+        // Each route retargets its own section and still opens no tab.
         allInsightRoutesUseRightProvider =
             allInsightRoutesUseRightProvider
             && LiveInsightsContextProvider::kindFromResource(
                 routed, &routedKind)
             && routedKind == probe.kind
-            && dynamic_cast<LiveInsightToolPage*>(
-                   window.tabManager->toolPage(
-                       QStringLiteral("live-insight:%1")
-                           .arg(liveInsightKindId(probe.kind))))
-                   != nullptr;
+            && routedView
+            && !routedView->followEditor()
+            && routedView->surfaceForTest() != nullptr
+            && window.tabManager->toolPage(
+                   QStringLiteral("live-insight:%1")
+                       .arg(liveInsightKindId(probe.kind)))
+                   == nullptr;
+        if (probe.kind == LiveInsightKind::Module && routedView)
+            moduleSectionPage = routedView->surfaceForTest();
     }
-    auto* modulePage = dynamic_cast<LiveInsightToolPage*>(window.tabManager->toolPage(QStringLiteral("live-insight:block")));
+    LiveInsightToolPage* modulePage = moduleSectionPage;
     auto* moduleSurface = modulePage && modulePage->workbenchForTest()
         ? modulePage->workbenchForTest()->rtlSurfaceForTest() : nullptr;
     if (!reviewDir.isEmpty() && modulePage) modulePage->grab().save(reviewDir + "/block.png");
-    expectBool("Module full view preserves nested dedicated scene",
+    expectBool("Module section preserves nested dedicated scene",
         moduleSurface && moduleSurface->graphModeForTest() == QStringLiteral("module-block")
             && moduleSurface->graphNodeItemCountForTest() > 1
             && moduleSurface->graphNestedNodeStackingReadableForTest(), true);
@@ -12275,17 +12346,38 @@ void runLiveInsightSidebarRoutingRegression(
     auto* waveContextView = qobject_cast<LiveInsightsContextView*>(
         controller->dockHost()->viewForResource(
             waveResource.stableKey()));
-    auto* waveFullView = dynamic_cast<LiveInsightToolPage*>(
-        window.tabManager->toolPage(
-            QStringLiteral("live-insight:wave")));
-    expectBool("Wave command opens the right provider and full tool page",
+    auto* waveSectionPage = waveContextView
+        ? waveContextView->surfaceForTest()
+        : nullptr;
+    expectBool("Wave command opens the right provider in a pinned section",
                waveResult.succeeded
                    && LiveInsightsContextProvider::kindFromResource(
                        waveResource, &waveKind)
                    && waveKind == LiveInsightKind::Wave
                    && waveContextView
-                   && waveContextView->followEditor()
-                   && waveFullView
+                   && !waveContextView->followEditor()
+                   && waveSectionPage
+                   && waveSectionPage->waveCoordinatorForTest()
+                   && window.tabManager->toolPage(
+                          QStringLiteral("live-insight:wave")) == nullptr,
+               true);
+
+    // The full view is now reached from the section header, and only there;
+    // that page is still the detachable one.
+    QWidget* waveHeader = controller->dockHost()->sectionHeader(
+        waveResource.stableKey());
+    auto* waveFullViewButton = waveHeader
+        ? waveHeader->findChild<QToolButton*>(
+              QStringLiteral("contextDockFullView"))
+        : nullptr;
+    if (waveFullViewButton)
+        waveFullViewButton->click();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    auto* waveFullView = dynamic_cast<LiveInsightToolPage*>(
+        window.tabManager->toolPage(
+            QStringLiteral("live-insight:wave")));
+    expectBool("Section header still opens the full Wave tool page",
+               waveFullViewButton && waveFullView
                    && waveFullView->waveCoordinatorForTest(),
                true);
     QMainWindow* detachedWave = waveFullView

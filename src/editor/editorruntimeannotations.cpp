@@ -104,6 +104,83 @@ int annotationXForVisualColumn(
         editor, block, visualColumn, boundary);
 }
 
+// Geometry of a single-line overlay span, shared by the blinking overlays.
+QRect overlayHighlightRect(
+    MyCodeEditor* editor,
+    const ResolvedEditorAnnotation& resolved)
+{
+    const EditorAnnotation& annotation = resolved.annotation;
+    const int documentEnd =
+        qMax(0, editor->document()->characterCount() - 1);
+    const int startPosition =
+        qBound(0, annotation.range.startPosition, documentEnd);
+    const int endPosition =
+        qBound(startPosition, annotation.range.endPosition, documentEnd);
+    const QTextBlock block =
+        editor->document()->findBlock(startPosition);
+    if (!block.isValid()
+        || !editor->sourceLineVisible(block.blockNumber())) {
+        return {};
+    }
+
+    QTextCursor startCursor(editor->document());
+    startCursor.setPosition(startPosition);
+    QTextCursor endCursor(editor->document());
+    endCursor.setPosition(endPosition);
+    const QRect startRect = editor->cursorRect(startCursor);
+    const QRect endRect = editor->cursorRect(endCursor);
+    const int left = qMin(startRect.left(), endRect.left());
+    int right = qMax(startRect.left(), endRect.left());
+    if (endPosition <= startPosition || right <= left) {
+        right = left
+            + qMax(1, qRound(annotationSpaceAdvance(editor)));
+    }
+    const int laneOffset =
+        qMin(qMax(0, resolved.lane) * 2,
+             qMax(0, startRect.height() - 3));
+    return QRect(left,
+                 startRect.top() + laneOffset,
+                 qMax(1, right - left),
+                 qMax(2, startRect.height() - laneOffset));
+}
+
+void paintInsightTargetAnnotation(
+    MyCodeEditor* editor,
+    QPainter& painter,
+    QPaintEvent* event,
+    const ResolvedEditorAnnotation& resolved)
+{
+    if (!editor || !editor->document() || !event)
+        return;
+    const EditorAnnotation& annotation = resolved.annotation;
+    const QRect highlight = overlayHighlightRect(editor, resolved);
+    if (highlight.isNull() || !event->rect().intersects(highlight))
+        return;
+
+    // Deliberately not the slot-mode colours: two blinking overlays that look
+    // alike would read as one mode.
+    const InsightTheme& theme = InsightVisualStyle::theme();
+    QColor background = annotation.active
+        ? theme.semantic.kernel
+        : theme.semantic.port;
+    background.setAlpha(
+        annotation.active
+            ? (annotation.phaseVisible ? 126 : 54)
+            : (annotation.phaseVisible ? 74 : 26));
+    painter.fillRect(highlight, background);
+
+    QPen outline(annotation.active
+                     ? theme.semantic.kernel
+                     : theme.semantic.port);
+    outline.setStyle(Qt::SolidLine);
+    outline.setWidth(annotation.active ? 2 : 1);
+    painter.setPen(outline);
+    painter.drawLine(highlight.left(),
+                     highlight.bottom(),
+                     highlight.right(),
+                     highlight.bottom());
+}
+
 void paintTemplateSlotAnnotation(
     MyCodeEditor* editor,
     QPainter& painter,
@@ -886,6 +963,12 @@ void MyCodeEditorState::paintGhostAnnotations(
         editor,
         query.firstVisibleLine,
         query.lastVisibleLine);
+    // Candidates follow the viewport: the same visible range that drives the
+    // other overlays is the only range they are enumerated from.
+    insightTargetPick.publishVisibleAnnotations(
+        editor,
+        query.firstVisibleLine,
+        query.lastVisibleLine);
 
     const AnnotationLayerReport report =
         annotationLayer.resolve(query);
@@ -905,6 +988,15 @@ void MyCodeEditorState::paintGhostAnnotations(
         if (annotation.kind
             == EditorAnnotationKind::ColumnCaret) {
             paintColumnCaretAnnotation(
+                editor,
+                painter,
+                event,
+                resolved);
+            continue;
+        }
+        if (annotation.kind
+            == EditorAnnotationKind::InsightTarget) {
+            paintInsightTargetAnnotation(
                 editor,
                 painter,
                 event,

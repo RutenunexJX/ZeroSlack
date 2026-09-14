@@ -126,6 +126,9 @@ bool anchoredToBottomRight(const QWidget* host,
 
 struct ProviderCounters {
     bool detachable = false;
+    // 0 keeps the dock's own viewport split; a provider opts into a suggested
+    // section height by publishing a positive value.
+    int preferredSectionHeight = 0;
     ContextResource activation;
     int created = 0;
     int restored = 0;
@@ -182,6 +185,8 @@ public:
             | ContextPresentation::FullView;
         result.preferredWidth = 460;
         result.preferredHeight = 510;
+        result.preferredSectionHeight =
+            counters ? counters->preferredSectionHeight : 0;
         return result;
     }
 
@@ -1076,6 +1081,108 @@ void verifySidebarStack()
     check(!controller.dockWidget()->isVisible(), "stack_hide_whole: the dock toggle still hides the entire sidebar");
 }
 
+void verifySectionPreferredHeight()
+{
+    // Heights are derived from the screen: the offscreen platform reports only
+    // 400x400 logical pixels at 200%, where any hard-coded height would lie.
+    const int available =
+        QApplication::primaryScreen()->availableGeometry().height();
+    const int suggested = available / 2;
+    {
+        PlacementFixture fixture;
+        auto& controller = *fixture.controller;
+        const ContextResource item = resource(QStringLiteral("height-default"));
+        check(controller.openResource(item, keptPlacement),
+              "section_height_default_open: kept resource opens");
+        QApplication::processEvents();
+        check(controller.dockHost()->sectionHeight(item.stableKey()) == 0,
+              "section_height_default: a provider suggesting nothing leaves the "
+              "section on the dock's own split");
+    }
+    {
+        PlacementFixture fixture;
+        fixture.counters.preferredSectionHeight = suggested;
+        auto& controller = *fixture.controller;
+        auto* host = controller.dockHost();
+        const ContextResource item =
+            resource(QStringLiteral("height-suggested"));
+        const QString key = item.stableKey();
+        check(controller.openResource(item, keptPlacement),
+              "section_height_suggested_open: kept resource opens");
+        QApplication::processEvents();
+        check(host->sectionHeight(key) == suggested,
+              "section_height_suggested: the section starts at the height its "
+              "provider suggested");
+        // The suggestion is a starting point, not a floor.
+        const int dragged = suggested / 2;
+        check(host->setSectionHeight(key, dragged)
+                  && host->sectionHeight(key) == dragged,
+              "section_height_draggable: the user can still drag the section "
+              "below the suggested height");
+        const ContextWorkspaceState saved = controller.captureState();
+        bool persisted = false;
+        for (const auto& section : saved.dockSections) {
+            if (section.resourceKey == key && section.height == dragged)
+                persisted = true;
+        }
+        check(persisted,
+              "section_height_persisted: the dragged height is what state "
+              "capture records");
+        controller.restoreState(saved);
+        QApplication::processEvents();
+        check(controller.dockHost()->sectionHeight(key) == dragged,
+              "section_height_restore_user: a stored height the user chose wins "
+              "over the suggestion");
+    }
+    {
+        // State written before section heights were suggested stores 0, which
+        // must not reset the section the provider just sized.
+        PlacementFixture fixture;
+        fixture.counters.preferredSectionHeight = suggested;
+        auto& controller = *fixture.controller;
+        const ContextResource item = resource(QStringLiteral("height-legacy"));
+        const QString key = item.stableKey();
+        check(controller.openResource(item, keptPlacement),
+              "section_height_legacy_open: kept resource opens");
+        QApplication::processEvents();
+        ContextWorkspaceState state = controller.captureState();
+        for (auto& section : state.dockSections) {
+            if (section.resourceKey == key)
+                section.height = 0;
+        }
+        controller.restoreState(state);
+        QApplication::processEvents();
+        check(controller.dockHost()->sectionHeight(key) == suggested,
+              "section_height_restore_legacy: a stored height of zero keeps the "
+              "suggested height instead of clearing it");
+    }
+}
+
+void verifySectionStatusFromView()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    const ContextResource item = resource(QStringLiteral("status-a"));
+    const QString key = item.stableKey();
+    check(controller.openResource(item, keptPlacement), "section_status_open: kept resource opens");
+    QApplication::processEvents();
+    auto* host = controller.dockHost();
+    QLabel* status = host->sectionStatus(key);
+    check(status && !status->isVisible(),
+          "section_status_absent: a view publishing no status leaves the header unchanged");
+    QWidget* view = host->viewForResource(key);
+    view->setProperty("contextStatusText", QStringLiteral("Stale"));
+    view->setProperty("contextStatusTooltip", QStringLiteral("last valid result"));
+    QApplication::processEvents();
+    check(status->isVisible() && status->text() == QStringLiteral("Stale")
+              && status->toolTip() == QStringLiteral("last valid result"),
+          "section_status_published: the header shows status published by the view");
+    view->setProperty("contextStatusText", QString());
+    QApplication::processEvents();
+    check(!status->isVisible(),
+          "section_status_cleared: clearing the property hides the header chip");
+}
+
 void verifySidebarVisibilityToggle()
 {
     PlacementFixture fixture;
@@ -1332,6 +1439,8 @@ int main(int argc, char* argv[])
     verifySidebarStack();
     verifySidebarCompression();
     verifySidebarVisibilityToggle();
+    verifySectionPreferredHeight();
+    verifySectionStatusFromView();
     verifyV5SidebarMigration();
     verifySidebarDragOut();
     verifySidebarDragBack();

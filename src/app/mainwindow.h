@@ -6,6 +6,7 @@
 #include <QMainWindow>
 #include "actionregistry.h"
 #include "annotationlayer.h"
+#include "liveinsightscontextview.h"
 #include <QHash>
 #include <QList>
 #include <QPointer>
@@ -253,6 +254,12 @@ private:
         const QString& moduleName,
         const QString& signalAccessPath);
     LiveInsightToolContext activeLiveInsightToolContext() const;
+    // Runs the editor-side target picker for one insight kind and hands the
+    // chosen target back to the section that asked.
+    bool beginLiveInsightTargetPick(
+        LiveInsightKind kind,
+        std::function<void(const LiveInsightsContextView::TargetCandidate&)>
+            picked);
     QString liveInsightWaveformLibraryPath() const;
     void setupViewMenu();
     void setupWorkspaceMenu();

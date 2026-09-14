@@ -1,11 +1,49 @@
 # ZeroSlack Current Plan
 
-Product version: `v0.28.1`
+Product version: `v0.29.0`
 
 ## Current baseline
 
 Current behavior is documented in the README and user manual. Released changes
 and completed implementation history are recorded in CHANGELOG.md and Git.
+
+## Insight 侧栏交互 — 五条全部实施 (v0.29.0，未提交)
+
+- 【已实施】section 渲染真正的图组件，窄宽度不降级成列表，尺寸由用户拖 section 边界与 dock 分隔线自行调整。
+  实施中发现并修掉一个既有缺陷：隐藏的 insight stack page 会用它上次测量到的换行工具栏高度（934 px）
+  决定整个 workbench 的最小高度，任何侧栏高度都装不下；改为 `InsightViewSurface` 忽略纵向尺寸提示后，
+  surface 最小高度从 1022 降到 103。
+- rail 保持 5 个 insight 入口不变。
+- 【已实施】重选目标用 slot mode 式闪动拾取：新编辑器模式 `EditorModeId::InsightTargetPick` +
+  `EditorAnnotationKind::InsightTarget` 闪动 overlay（500 ms 相位翻转，与 slot mode 同一套但不同色），
+  候选只在可见区枚举（标识符走 `identifiersInRange`，Wave 的 scope 头走 `alwaysScopeTarget`/
+  `moduleScopeTarget`）并随滚动跟随；一级判定每次发布最多查一次 `SemanticIndex` 并按快照 revision 缓存，
+  不对每个标识符跑语义服务；二级判定只对选中的候选跑真服务（State 调 `buildStateTransitionGraph`），
+  被拒时显示服务给的原因且模式不退出。入口：section 标题条上的 scope chip（走既有动态属性通道，
+  host 侧 `QMetaObject::invokeMethod` 调 view 的 `requestScopePick`）与空态里的「Pick in editor…」。
+  落点复用 `applyTargetCandidate`；`TargetCandidate` 补了 scope 字段，否则 Wave 的拾取结果会被
+  `effectiveContext()` 静默丢弃。边界：浮层里没有 section 标题条，因此只有空态按钮与右键两个入口；
+  跨文件仍走右键或 Full View。
+- 【已实施】给 insight section 一个更大的默认高度：**不是**设计文件原来写的 `preferredHeight`——
+  那个字段早就存在且已被 peek/浮窗尺寸占用；新增的是显式 opt-in 的 `preferredSectionHeight`
+  （默认 0 = 保持既有均分行为，只有 insight provider 声明 560）。值由
+  `compact_layout_test::insightSectionHeights` 测出：100% 下画布 80 → 374 px（占正文 70%），
+  四个缩放的数字见 docs/insight-surface-design.md。恢复状态时只有 >0 的持久化高度才覆盖建议值，
+  否则 0.28.x 存下的 0 会把它抹掉。
+- 【已实施】四条 `insight.*` 右键 action 与 Wave 命令改为重定向并钉住对应 section（带 member access path），
+  不再另开中央标签页；完整视图仍在 section 标题条上一键可达。gui_smoke_test 中"打开中央标签页"的断言
+  按本期语义替换为"钉住 section 且不开标签页"，并把原来只验证标签页存在的渲染断言改为直接验证
+  **侧栏 surface** 的图（state 图节点数 > 0、module 图节点数 > 1 且嵌套可读），比原断言更强。
+- 【已实施】状态 chip 移到标题条（view 用 `contextStatusText`/`contextStatusTooltip` 属性发布，ContextDockHost
+  读取），正文始终显示 last-valid；空态列出可点候选目标（未跟随的编辑器目标 + 该 section 最近三个），
+  点选即钉住并关闭 Follow；Wave provenance 进标题条 tooltip；正文去掉重复的 section 名、完整视图入口、
+  单 kind 卡片，以及 workbench 自带标题与 Detach。
+  边界：候选来源目前只有"编辑器目标 + 本 section 历史"，设计里写的"当前模块的 FSM"需要语义枚举，
+  与第 3 步的两级候选判定一起做，不在本步单独实现。
+- 实施顺序 1 → 5 → 4 → 3，全部完成。收尾基线：全量 CTest 107/108（新增 1 个测试目标，唯一失败仍是既知的
+  `workspace_persistence_test` 两条 fixture 断言），`context_workspace_test` 四缩放各 197 checks，
+  `compact_layout_test::contextWidths` 八组全 0/0/0，新测试 `editor_insight_target_pick_test` 17/17。
+  详见 docs/insight-surface-design.md。
 
 ## Context 整侧栏开关 — 2026-09-13 (v0.28.1)
 

@@ -213,6 +213,15 @@ QPushButton* RtlInsightWorkbench::detachButtonForTest() const
     return detachButton;
 }
 
+void RtlInsightWorkbench::setCompactChrome(bool compact)
+{
+    compactChrome = compact;
+    if (titleLabel)
+        titleLabel->setVisible(!compact);
+    if (detachButton)
+        detachButton->setVisible(!compact);
+}
+
 IInsightViewPlugin* RtlInsightWorkbench::pluginForKind(
     InsightWorkbenchViewKind kind) const
 {

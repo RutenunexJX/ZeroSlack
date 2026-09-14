@@ -3,6 +3,7 @@
 #include "editoractioncontextservice.h"
 #include "editorhoverpopup.h"
 #include "hierarchyservice.h"
+#include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
 #include "semanticindex.h"
 #include <QDir>
@@ -1746,10 +1747,25 @@ void runContextActionRegistryExecutionRegression()
     QDockWidget* contextDock =
         window.findChild<QDockWidget*>(
             QStringLiteral("contextWorkspaceDock"));
-    LiveInsightToolPage* kernelPage =
+    // 0.29.0 lands source insight Actions in the sidebar section instead of a
+    // central tool tab, so the surface to find is the section's own.
+    LiveInsightToolPage* kernelSurface =
+        dynamic_cast<LiveInsightToolPage*>(
+            window.findChild<QWidget*>(
+                QStringLiteral("liveInsightSurface_kernel")));
+    LiveInsightToolPage* kernelTab =
         dynamic_cast<LiveInsightToolPage*>(
             window.findChild<QWidget*>(
                 QStringLiteral("liveInsightToolPage.kernel")));
+    LiveInsightsContextView* kernelSection = nullptr;
+    for (QWidget* parent = kernelSurface ? kernelSurface->parentWidget() : nullptr;
+         parent;
+         parent = parent->parentWidget()) {
+        if (auto* section = qobject_cast<LiveInsightsContextView*>(parent)) {
+            kernelSection = section;
+            break;
+        }
+    }
     QDockWidget* legacyKernelDock =
         window.findChild<QDockWidget*>(
             QStringLiteral("signalKernelGraphDock"));
@@ -1770,9 +1786,12 @@ void runContextActionRegistryExecutionRegression()
                          "insight.signalKernelGraph")
               && contextDock
               && contextDock->isVisible()
-              && kernelPage
-              && kernelPage->kind()
+              && kernelSurface
+              && kernelSurface->kind()
                      == LiveInsightKind::Kernel
+              && kernelTab == nullptr
+              && kernelSection
+              && !kernelSection->followEditor()
               && legacyKernelDock == nullptr);
 
     const QString queueFile = temp.filePath(
