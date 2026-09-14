@@ -35,33 +35,25 @@ assert_version_marker(
     "Current version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
     "README")
 assert_version_marker(
-    "CHANGELOG.md"
-    "##[ \\t]+\\[([0-9]+\\.[0-9]+\\.[0-9]+)\\]"
-    "CHANGELOG")
-assert_version_marker(
-    "plan.md"
-    "Product version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
-    "plan")
-assert_version_marker(
-    "goal.md"
-    "Product version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
-    "goal")
-assert_version_marker(
-    "VERSIONING.md"
+    "README.md"
     "Current controlled baseline:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
-    "VERSIONING")
+    "README release baseline")
 assert_version_marker(
     "packaging/ZeroSlack-PACKAGE-README.txt"
     "ZeroSlack[ \\t]+v?([0-9]+\\.[0-9]+\\.[0-9]+)"
     "package README")
+assert_version_marker(
+    "用户手册.md"
+    "Current version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
+    "user manual")
 
-file(READ "${ZEROSLACK_SOURCE_DIR}/VERSIONING.md" versioning_policy)
+file(READ "${ZEROSLACK_SOURCE_DIR}/README.md" versioning_policy)
 if(NOT versioning_policy MATCHES "ZeroSlack-win64")
     message(FATAL_ERROR
-        "VERSIONING.md must preserve the fixed ZeroSlack-win64 package basename")
+        "README.md must preserve the fixed ZeroSlack-win64 package basename")
 endif()
 foreach(current_document
-        README.md CHANGELOG.md plan.md goal.md VERSIONING.md)
+        README.md 用户手册.md ARCHITECTURE.md)
     file(READ "${ZEROSLACK_SOURCE_DIR}/${current_document}" current_content)
     if(current_content MATCHES "ZeroSlack-(X\\.Y\\.Z|v?[0-9]+\\.[0-9]+\\.[0-9]+)-win64")
         message(FATAL_ERROR

@@ -1,6 +1,11 @@
-# ZeroSlack CLI
+# ZeroSlack integrations
 
-## Purpose
+Two integration surfaces that ZeroSlack owns and versions itself: the read-only CLI and the
+Wave simulation boundary. The cross-application family contract is in [AppSuite integration](suite.md).
+
+## Read-only CLI
+
+### Purpose
 
 `zeroslack-cli.exe` provides a read-only, machine-oriented view of a ZeroSlack
 workspace. Its primary consumer is an AI agent that must inspect a large RTL
@@ -24,7 +29,7 @@ workspace. The command does not scan private application storage and does not
 start Suite Runtime or a GUI. An already-running public Suite provider may
 enrich the bounded local metadata through `resource.resolve`.
 
-## Boundaries
+### Boundaries
 
 - The CLI never edits RTL, workspace configuration, `.zs`, or Pinloom links.
 - Semantic cache files live under the operating-system user cache directory,
@@ -39,7 +44,7 @@ enrich the bounded local metadata through `resource.resolve`.
   association files and referenced Wave/RegMap projects, so suite-only changes
   do not masquerade as an unchanged semantic workspace.
 
-## Commands
+### Commands
 
 ```text
 zeroslack-cli scan <workspace>
@@ -57,7 +62,7 @@ Global output formats are `json` (default), `jsonl`, and `markdown`. Queries
 refresh a stale cache unless `--no-refresh` is supplied. `scan` always rebuilds
 the cache, while `status` only inspects it.
 
-## Cache and identity
+### Cache and identity
 
 The workspace revision hashes normalized project configuration, the ordered
 relative source paths, and SHA-256 for every RTL source. Cache writes use an
@@ -67,10 +72,47 @@ exists. Anonymous process-like records also include declaration identity. The
 exact ID hashes the full existing `SymbolStableKey`, including its current
 source position.
 
-## Verification
+### Verification
 
 Tests cover cache placement and invalidation, versioned output, stable IDs
 across line movement, source context, anchor metadata without eager content,
 relationship impact, token-bounded bundles, stale status, and read-only
 workspace hashes. The release package must include `zeroslack-cli.exe` beside
 `ZeroSlack.exe`.
+
+## Wave simulation
+
+ZeroSlack owns Slang-derived RTL facts, selected-module manifests, source snapshots and source navigation.
+WaveWorkbench owns Scenario editing, simulation execution, trace reading, comparison and shared waveform rendering.
+Symbolic Preview and Simulated Result remain explicitly labeled; editing a symbolic preview does not run simulation.
+
+### Data and runtime boundaries
+
+- Module Manifest v5 carries stable module/symbol identities, parameters, ports, dependencies and source/driver links.
+  Instance parameters use their effective values. Unresolved dependencies fail by default; explicitly selected
+  passive input-only stubs permit compilation without claiming to simulate dependency behavior.
+- Stimulus Scenario v5 and simulation session v2 preserve stable Scenario and target identity. WaveWorkbench
+  validates stimulus and executes the existing runner. Explicit interfaces and structured port support remain
+  bounded by the Wave manifest and simulation contracts; unsupported types fail rather than being guessed.
+- Unsaved RTL is captured through the existing source-snapshot preparation path. Requests carry workspace,
+  revision and generation identity. Late results cannot replace a newer selection or workspace.
+- Actual VCD/FST traces and expected stimulus are separate facts. Internal trace-to-source navigation requires
+  an unambiguous manifest mapping; missing identities do not trigger source guesses.
+- Multi-scenario runs are serial, retain per-item results, continue after an item failure, and support stopping
+  the active item and remaining queue. They reuse valid build cache entries.
+
+### Toolchain and presentation
+
+The portable toolchain contains Verilator 5.050, MinGW 13.1.0 and GNU Make. Discovery respects explicit external
+configuration and the bundled sibling Toolchain directory. No system installation or environment-variable
+rewrite is required. The bundle service prepares the toolchain lazily; missing tools produce actionable state.
+Historic missing-Verilator fixture runs are not the current deployment contract.
+
+`wave::WaveformView` renders symbolic payloads through `wave-preview/v1`; the complete Wave Simulation Workspace
+has its own versioned ABI. Capability discovery, payload limits, generation rejection and host destruction are
+part of the integration boundary. ZeroSlack does not keep a second waveform renderer.
+
+Authoritative field-level contracts are maintained in the sibling WaveWorkbench repository:
+`docs/integration-contracts.md`, `docs/simulation-runner.md`, `docs/project-format.md`,
+`docs/fst-reader.md`, and `docs/wave-preview-v1.md`. Source schemas and existing integration tests govern
+compatibility; a version change must update the contract and both consumers.

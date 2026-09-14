@@ -157,10 +157,10 @@ Wave preview delegates rendering to WaveWorkbench while ZeroSlack retains symbol
 
 Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
 old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.
-See [suite workflows](docs/suite-workflows.md) and [wave simulation](docs/wave-simulation.md).
+See [AppSuite integration](docs/suite.md) and [integrations](docs/integrations.md).
 
 
-## Specialized insight surfaces (local implementation, 2026-09-11)
+## Specialized insight surfaces
 
 `LiveInsightToolPage` retains the shared context, navigation, status and detach lifecycle.
 Production pages request specialized surfaces from `RtlInsightWorkbench`. `InsightViewSurface`
@@ -169,6 +169,23 @@ RtlInsightsPanelCoordinator for Block, Hotspot and State Transition. Panel-owned
 models, nested geometry, FSM layout, Track/Matrix modes, filters, inspector and export
 remain authoritative. Embedded docks are content containers, not registered bottom docks.
 
+A sidebar section renders that same surface rather than a summary of it, so the section and the
+full view are one implementation at two sizes. `InsightViewSurface` ignores both size-hint
+directions: a hidden stack page keeps the wrapped toolbar height it was last measured at, and an
+honored vertical hint would let a page nobody is looking at dictate the workbench minimum height.
+Section height and sidebar width stay under the user's drag handles. `ContextViewCapabilities`
+carries an opt-in `preferredSectionHeight`; it defaults to 0, which keeps the existing even split,
+and only a stored height above zero overrides a provider's suggestion. A view publishes its own
+freshness through `contextStatusText` / `contextStatusTooltip` properties, which the host reads
+onto the section header; the host never reaches into the view's own chrome.
+
+The source insight Actions and the Wave command retarget and pin the section for their kind
+instead of opening a central tool tab, carrying the chosen symbol's member access path. Choosing a
+target in the editor is an editor mode, not a dialog: candidates are enumerated from the visible
+region only, the first-level decision queries `SemanticIndex` at most once per publication and
+caches by snapshot revision, and only the chosen candidate runs the real service. A target that
+cannot be rendered reports the service's own reason and leaves the mode running.
+
 `InsightGraphCore` / `InsightCanvas` remain available for generic graph consumers and their
 own tests. They are not the mandatory renderer or a lossy intermediate model for specialized
 views. Do not replace a native surface until its interaction and representation parity has
@@ -176,6 +193,100 @@ been tested through the actual tool-page route. Same-document older revision upd
 rejected; unchanged contexts do not rebuild a specialized view. Theme refreshes stay inside
 the panel and preserve its view state.
 
-Long specialized toolbars scroll horizontally instead of imposing their width on the
-workbench. A newly selected surface fits after its visible geometry settles. Expanded
-Kernel fanout headers reserve space above their nodes and remain inside module wrappers.
+Long specialized toolbars wrap at control boundaries through `CompactFlowLayout` instead of
+imposing their width on the workbench or shrinking button labels. A newly selected surface fits
+after its visible geometry settles. Expanded Kernel fanout headers reserve space above their nodes
+and remain inside module wrappers.
+
+## Repository layout
+
+Source layout established from `743c1417` (0.25.2). File moves preserve the existing
+build targets and unique quoted header names; they do not create new runtime layers.
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/app/` | Application entry point, main window and export declarations |
+| `src/analysis/` | Analysis scheduling, workers and diagnostic publication |
+| `src/semantic/` | Slang collection, semantic index, symbol and relationship services |
+| `src/editor/` | Editor interaction, rendering, folding, formatting and popovers |
+| `src/completion/` | Completion, snippets and templates |
+| `src/commands/` | Command registry, search, rename and RTL editing workflows |
+| `src/documents/` | Documents, tabs, file synchronization and recovery |
+| `src/workspace/` | Workspace lifecycle, projects, transactions and Workspace Hub |
+| `src/navigation/` | Source navigation, definition previews and navigation management |
+| `src/insights/` | Specialized graph services, panels, workbench and export |
+| `src/ui/` | Shared shell, context surfaces, icons, typography and notifications |
+| `src/settings/` | Settings and appearance/configuration UI |
+| `src/integrations/{pinloom,wave,suite}/` | External application adapters |
+| `src/cli/` | Read-only CLI implementation and entry point |
+| `components/` | Independently scoped reusable libraries |
+| `test_sv/` | Regression tests and referenced HDL fixtures |
+| `cmake/` | Build helpers, source-module include paths and policy guards |
+| `resources/`, `images/`, `config/` | Fonts, licenses, platform assets and editor resources |
+| `schemas/` | Current and compatibility-tested wire-format schemas |
+| `scripts/`, `packaging/` | Reproducible packaging tools and portable-toolchain patches |
+| `docs/` | Current technical and maintenance documentation |
+| `build/`, `artifacts/`, `.toolchain-build/` | Ignored local outputs and reproducible caches |
+
+Root files are limited to CMake/resource manifests, version metadata and the main
+README, architecture, manual and maintenance entry points. Released change history is
+kept in the Git history rather than in a root document. Qt resource manifests stay at the
+root to preserve their existing resource URLs.
+
+Add new application sources to the appropriate `src/` module and explicitly list
+them in `CMakeLists.txt`. A new module must also be listed in
+`cmake/source_layout.cmake`. Avoid duplicate header basenames while modules share
+quoted include names. Source-policy guards recursively inspect `src/`.
+
+Keep fixtures used by CTest even when their filenames look experimental. Do not
+store logs, screenshots, generated executables or package staging copies beside
+source files. Retain the active build, the latest release evidence and toolchain
+inputs; remove superseded builds and staging copies after release verification.
+Historical plans and concept boards are recoverable from Git rather than copied
+into additional archive directories.
+## Visual system
+
+### Non-editor typography
+
+The UI uses a proportional sans-serif face (Noto Sans, Segoe UI, Noto Sans SC, Microsoft YaHei UI, then the platform fallback). Code and diffs retain their editor fonts. Symbol popovers use the editor font for names and code types, and proportional UI fonts for labels and actions. Sizes below are logical pixels and follow display scaling.
+
+| Role | Size | Weight | Use |
+| --- | --- | --- | --- |
+| Page title | 18 | 600 | Settings category title |
+| Panel title | 14 | 600 | Dock titles and context headings |
+| Body | 13 | 400 | File names, controls, values, menu items, Activity |
+| Section | 12 | 600 | Table headers and form/navigation group labels |
+| Metadata | 12 | 400 | Descriptions, scope summaries, diagnostic counts |
+| Badge | 11 | 400 | Compact unread counters |
+
+Selected tabs use weight 600; unselected tabs and ordinary values remain 400. Supporting text uses the existing secondary text color rather than the disabled color. Light/Dark use softer primary text and distinct secondary text; Catppuccin provides Latte, Frappe, Macchiato and Mocha palettes. Do not add arbitrary letter spacing to file names or Chinese text.
+
+Use `UiTypography::apply` for explicit widget roles and the shared InsightVisualStyle helpers for themed labels. Graph font helpers preserve their supplied graph font and are separate from these UI roles. Reapplying a role is idempotent: metadata must not get progressively smaller on theme changes. Avoid global font QSS rules that override editor-owned popup and code fonts.
+
+Spacing follows a 4 px rhythm: 8 px between related controls, 12–16 px within forms, and 16–20 px between major groups. Tree rows reserve 24 px plus vertical padding; tabs use 8 px vertical and 14 px horizontal padding. Activity paragraphs have 4 px bottom spacing. Navigation explanations occupy a full row above their actions to remain readable in a narrow sidebar.
+
+Validate Light/Dark transitions, proportional glyph metrics, editor font isolation, narrow sidebars, and 125%/150%/200% display scaling. Offscreen Windows previews load installed system UI fonts because the offscreen Qt platform does not provide the native font database; these font files are not bundled or redistributed.
+
+
+The fixed title row exposes a right-click menu on the file path: Copy full path and
+Reveal in Explorer. Display width does not constrain the copied absolute path.
+Tab close glyphs are centered within the original hit area and capped at the text scale.
+Windows chrome retains native overlapped-window capabilities and exposes HTMAXBUTTON
+for the system snap menu while drawing the themed title row.
+### Color themes
+
+Settings → Appearance → Color theme includes Catppuccin Latte (light), Frappe,
+Macchiato and Mocha (dark), in addition to Light and Dark. The selection uses the
+existing settings persistence and live theme-change mechanism.
+
+Colors are from the [official Catppuccin palette 1.8.0](https://github.com/catppuccin/palette)
+(MIT). Base/mantle/surface colors define the background hierarchy; text/subtext define
+readable primary and secondary text. Blue identifies active controls and focus; red,
+yellow and green identify error, warning and success. Semantic and syntax colors use
+mauve, peach, green, blue and teal. Graph fills mix the corresponding semantic accent
+into the base color. Checked controls use base-colored text over a blue background.
+
+The embedded Wave renderer receives the matching light/dark mode; its external renderer
+currently does not accept the full Catppuccin palette.
+Palette attribution and the full MIT license text are kept with the other third-party
+license files, in `resources/catppuccin/LICENSE.txt`.

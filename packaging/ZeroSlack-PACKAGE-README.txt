@@ -72,7 +72,8 @@ Non-editor typography prefers installed Noto Sans with system font fallbacks,
 and uses proportional text with distinct title, body, metadata
 and badge sizes. Settings groups and navigation explanations have clearer spacing.
 Editor font preferences are preserved. Catppuccin Latte, Frappe, Macchiato and
-Mocha are available in Settings > Appearance. Palette attribution is in catppuccin.md.
+Mocha are available in Settings > Appearance. Palette attribution and its MIT license
+are in resources/catppuccin/LICENSE.txt.
 
 Right-click the title file path to copy its absolute path or reveal it in Explorer.
 Windows maximize and keyboard snap retain native window capabilities.

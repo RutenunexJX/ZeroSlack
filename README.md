@@ -2,7 +2,7 @@
 
 Current version: `v0.29.0`
 
-Repository navigation: [source and file categories](docs/repository-layout.md).
+Repository navigation: [source and file categories](ARCHITECTURE.md).
 
 ZeroSlack is a Qt 6 desktop environment for navigating, understanding, and
 editing SystemVerilog workspaces. It combines an incremental editor syntax
@@ -21,166 +21,43 @@ zeroslack-cli suite-context <workspace> --file rtl/top.sv --line 42 `
 Wave and RegMap associations use `.zeroslack/suite-references.json`; its schema
 is `schemas/suite-references-v1.schema.json`.
 
-## Current user capabilities
+## Capabilities
 
-- The title bar stays visible in its own row. Rounded controls, consistent scalable outline icons,
-  and rounded graph nodes share the existing Light/Dark palettes. Non-editor text follows the
-  [UI typography hierarchy](docs/ui-typography.md), with proportional body text and distinct headings and metadata.
+This section is an index. Each row states what ZeroSlack does in one line; the detail,
+including every shortcut and edge case, lives in the linked chapter or contract document.
 
-- Navigation and Context occupy independent full-height side columns. The bottom drawer stays beneath
-  the editor. Context rail buttons open a resizable sidebar; reopening it retains its width. Chart views
-  can open in the main area using their full-view action. Detachable Context views can float in native
-  windows, with independent geometry and resource identity remembered per workspace. Right-click a
-  Context rail icon to create or focus floating views, move them to the sidebar, or bind them to the
-  current document. Document-bound views hide when switching away and restore their layout when
-  returning; closed documents retain up to 32 recent layouts. The rail's separate hide/restore toggle
-  preserves all floating views. Temporary source editors retain a single in-editor Peek overlay.
-  The Context sidebar stacks collapsible sections so multiple panels can remain visible. Resize their
-  boundaries or drag headers to reorder; drag an eligible section outside to float it. Drag a floating
-  window's client-area handle back to the sidebar to insert it at the indicated position.
-  `Ctrl+2` or `View > Context Sidebar` hides/restores the entire sidebar while preserving its sections;
-  showing an empty sidebar opens the first rail provider's default view and restores a hidden rail.
-  Source insight Actions and the Wave command retarget and pin the matching section instead of opening
-  a central tab; the full view stays on the section header. Each insight section renders that insight's real view through the same surface the full view uses;
-  section height and sidebar width stay manual, and Follow Editor freezes a section on its current result.
-- The left sidebar groups Project commands, Settings and the file tree. Its top row holds the two function icons
-  and a collapse button; collapsing hides the entire sidebar, with a restore button in the title bar.
-  Settings and connection tools continue to open in central tabs.
-  The menu bar is hidden; existing commands remain in the Project context menu and keep their shortcuts.
-- Editor tabs retain a readable minimum width and scroll when crowded, including split groups.
-  Insight toolbars wrap controls in narrow containers. Context actions remain accessible in each section header;
-  untitled document tabs use the editor's displayed name, with the resource URI retained in the tooltip.
-- Only Problems and Activity are permanent drawer buttons. Search, Change Preview and Shelf appear on demand.
-  Ctrl+F/H reuse an inline editor find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
-- The gutter sizes its number lane by document line count, shares a diagnostic/Pinloom marker lane, and
-  places folding beside the code. A link corner mark remains visible when a diagnostic takes priority.
+| Area | Capability | Detail |
+| --- | --- | --- |
+| Shell | Independent full-height Navigation and Context columns, a drawer under the editor, a persistent title-bar row, and no status bar; the menu bar is hidden and its commands live in the Project context menu. | [manual §3](用户手册.md) |
+| Shell | Non-editor text follows a proportional typography hierarchy with distinct headings and metadata. | [architecture, visual system](ARCHITECTURE.md) |
+| Drawer | Problems and Activity are permanent; Search, Change Preview, Connections and Fold Shelf appear on demand. Activity counts unread important messages and clears on open. | [manual §3.3](用户手册.md) |
+| Gutter | The number lane sizes itself by line count, diagnostics and Pinloom links share one marker lane, and folding sits beside the code. | [manual §3](用户手册.md) |
+| Workspaces | Open, switch, close, rename and revisit multiple workspaces; configure include dirs, defines, ignored dirs, source extensions and the active top module. | [manual §4](用户手册.md) |
+| Workspaces | Cached files appear immediately and are reconciled with the directory in the background, so changes made while a workspace was inactive are found without re-analyzing unchanged files. | [manual §4.1](用户手册.md) |
+| Sessions | Tabs, layout, navigation filters and scan state restore from local application storage; a workspace `.zs` file is only a read-only legacy import source. | [manual §4.3](用户手册.md) |
+| Editing | Incremental highlighting, folding, structural navigation, formatter, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
+| Editing | The editor context menu is a compact icon-only ring; unavailable actions stay gray and explain why on hover. | [manual §6.1](用户手册.md) |
+| Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), templates and application commands, with horizontal category switching and `m <filter>` module lookup. | [manual §7](用户手册.md) |
+| Command layer | `F24` is an explicit command search layer: Enter runs a fuzzy result, `F24+D` deletes the selection, and an empty tap repeats the last valid repeatable action. | [manual §8](用户手册.md) |
+| Semantics | Slang-backed symbols, diagnostics, definitions, references, relationships, hierarchy, hover and effective compile-time values from the current workspace snapshot. | [manual §10–§11](用户手册.md) |
+| Semantics | A clean `Ctrl+S` is a true no-op; changed saves classify their impact and schedule only the needed work off the UI thread, and trivia-only edits never invoke Slang. | [manual §20](用户手册.md) |
+| Semantics | Unsaved comment and whitespace edits recover semantic availability after 250 ms of idle time when worker validation proves equivalence; other unsaved edits still require saving. | [manual §20](用户手册.md) |
+| Search | `Ctrl+F` / `Ctrl+H` use an inline editor bar; `Ctrl+Shift+F` / `Ctrl+Shift+H` open workspace search and guarded replace. | [manual §12](用户手册.md) |
+| Context | The right-side rail opens a resizable sidebar of collapsible sections that can be resized, reordered, floated into native windows, bound to a document, or hidden as a whole with `Ctrl+2`. | [manual §5.4](用户手册.md) |
+| Context | Temporary source editing uses one in-editor Peek that pins into the sidebar without losing the live editor, undo state, search history or restore identity. | [manual §5.4](用户手册.md) |
+| Insights | Problems, Design, RTL Insights, state-transition and FSM views, module block diagrams, signal journeys, signal-kernel graphs, usage hotspots and symbolic wave previews. | [manual §16](用户手册.md) |
+| Insights | Each insight section renders the real view through the same surface the full view uses; source Actions and the Wave command retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
+| RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
+| Wave | Simulation runs from the current module, an enclosing `always` block, a selected signal or an exact Design instance. ZeroSlack owns the module manifest, stimulus preparation, unsaved-buffer capture, the portable toolchain and result-to-source navigation; WaveWorkbench owns scenario editing, execution, trace reading and waveform rendering. | [integrations, Wave simulation](docs/integrations.md), [manual §16.9](用户手册.md) |
+| Wave | The Windows release carries Verilator 5.050, MinGW 13.1 and GNU Make as a verified sibling bundle that is extracted into the local cache on first use; explicit paths stay configurable under `Settings > Simulation`. | [integrations, Wave simulation](docs/integrations.md) |
+| Suite | Workspace Hub groups source, Pinloom, Wave and RegMap resources, and the same versioned associations are available to automation. | [AppSuite integration](docs/suite.md), [manual §21](用户手册.md) |
+| Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, simulation, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
-- Activity retains workspace scan, semantic analysis and operation messages. Its drawer button shows the
-  number of unread important messages; opening Activity acknowledges them, and Clear removes the log and
-  count. Ordinary progress does not increment the badge or open the drawer. The window has no status bar;
-  panel controls remain available through the View menu and drawer buttons.
-
-- Open, switch, close, rename, and revisit multiple workspaces; configure
-  include directories, defines, ignored directories, source extensions, and
-  the active top module.
-- Edit SystemVerilog with incremental highlighting, folding, structural
-  navigation, formatter support, multi-cursor and column operations, split
-  views, templates, and an explicit `Ctrl+Space` palette for scoped symbols,
-  templates, and application commands. The palette opens at the active caret
-  and supports horizontal category switching without leaving its filter.
-  Triple-clicking selects a complete logical line, including its line break
-  when one exists.
-- Open contextual content through the right-side Context Rail. Temporary source
-  editing appears in one transient Peek and can be pinned into the native
-  tabbed Context Dock without losing the live editor, undo state, search
-  history, or workspace-relative restore identity.
-- Query Slang-backed symbols, diagnostics, definitions, references,
-  relationships, hierarchy, hover information, and effective compile-time
-  values from the current workspace snapshot.
-- Inspect RTL through Problems, Design, RTL Insights, state-transition and FSM
-  views, module block diagrams, signal journeys, signal-kernel graphs, usage
-  hotspots, and symbolic wave previews.
-- Run the formal Wave Simulation workflow from the current module, an enclosing
-  `always` block, a selected source signal, or an exact Design instance. The
-  run captures unsaved workspace buffers, restores saved scenarios, reuses the
-  compiled model when only stimulus changes, and opens the complete shared
-  WaveWorkbench workspace in an editor-area Wave tab. Structured build/run
-  diagnostics still map back to source; the standalone application remains an
-  explicit recovery path when the shared widget cannot be loaded. The Actual
-  result area includes a searchable instance/signal hierarchy with scope and
-  leaf checkboxes, so internal signals can be added without predeclaring every
-  observation. Multiple semantic clock candidates become independent clock
-  domains; the result toolbar edits each domain and switches between its clock
-  grid and exact 1-tick asynchronous input events. Packed structs, fixed
-  unpacked arrays, and explicit-modport interface inputs are edited as grouped
-  Slang semantic leaves; the runner wrapper reconstructs the original ports,
-  and structured scenarios survive safe root-port renames. Output watch lanes
-  can carry independent expected ranges; Compare checks only those outputs
-  against the current trace, highlights mismatches in both waveforms, and
-  navigates each difference without driving expected values into the DUT.
-  Review also supports persisted value-at-time, stable-range, and edge-response
-  check definitions. Their results are derived only from the current Actual
-  trace, become stale with scenario or trace changes, and navigate to the
-  involved signal and tick without becoming a second waveform fact source.
-  Standard FST results use the adjacent Wellen reader: hierarchy metadata is
-  available immediately, while transitions are decoded only for mapped or
-  checked signals. The shared workspace advertises this optional capability
-  only when its helper deployment is complete; VCD/CSV remain independent.
-  Module Manifest v5 also records unresolved module instances in the selected
-  dependency closure. Simulation refuses them by default; the shared `Stubs`
-  menu can explicitly enable supported input-only passive stubs without
-  representing dependency behavior. `Run all (N)` executes every stored
-  scenario sequentially, continues after individual failures, shares the
-  compiled-model cache, and presents per-scenario status, diagnostics, cache
-  provenance, duration, and selectable Actual waveforms in the Batch review
-  page. Stop cancels the current item and the remaining queue.
-  Mapped Actual signals now retain portable declaration and Slang driver links:
-  the result toolbar returns to either source location, while an editor signal
-  can reveal its corresponding row in an already open result. Stable semantic
-  identities are preferred over source-location fallback; ambiguous, unmapped,
-  cross-workspace, and non-portable paths are rejected rather than guessed.
-  The Windows release keeps its self-contained Verilator 5.050, MinGW 13.1,
-  and GNU Make toolchain in one stable sibling ZIP plus a SHA-256 manifest.
-  The first simulation verifies and extracts it asynchronously into the local
-  application-data cache; later releases and runs reuse that cache instead of
-  synchronizing or unpacking nearly 19000 small files. Existing expanded
-  `WaveWorkbench/toolchain` layouts remain supported. Explicit paths can still
-  be selected under `Settings > Simulation`; empty fields prefer expanded or
-  cached bundled tools, then environment variables and `PATH`. Child build and
-  simulator processes receive the complete portable runtime environment, and
-  a failed probe reports each unavailable tool separately.
-- Preview and apply guarded RTL changes through the existing rename,
-  connection, expose-to-top, scoped replace, instance-pair connection, and
-  multi-signal propagation workflows. Module-port changes can be synchronized
-  across all source instances through one Change Preview transaction.
-- Save and restore workspace-local tabs, layout, navigation filters, and scan
-  state. Current sessions use local application storage; a workspace `.zs`
-  file is accepted only as a legacy read-only import source.
-- Open contextual content through the right-side Context Rail. A transient
-  Peek overlays the editor without changing its split model; Pin moves the
-  exact live view into a native tabbed Context Dock. Temporary editing shares
-  the authoritative document, undo state, search catalog, and navigation
-  history with ordinary editor views. Pinned resources, order, active tab, and
-  portable provider state restore with the workspace, including after its root
-  directory is moved.
-- Restore cached workspace files immediately, then reconcile them with the
-  directory in the background so files added, removed, or renamed while the
-  workspace was inactive are discovered without forcing unchanged semantic
-  analysis.
-- Treat a clean `Ctrl+S` as a true no-op. Changed saves classify their semantic
-  impact and schedule only the required file/dependency work outside the UI
-  thread; trivia-only edits do not invoke Slang.
-  Unsaved comment and whitespace edits recover semantic availability after
-  250 ms of idle time when worker validation proves equivalence; source
-  positions follow the edited buffer. Other unsaved edits still require saving.
-- Use F24 as an explicit command search layer: Enter executes a fuzzy result,
-  `F24+D` deletes the current selection, and an empty F24 tap repeats the last
-  currently valid repeatable action.
-- Search every insertable symbol visible in the current scope from the default
-  `Ctrl+Space` Symbols view, including enum values, then optionally narrow the
-  results by semantic kind. Explicit `m <filter>` performs workspace-module
-  lookup, while member and expected-enum contexts receive prioritized results.
-- Rename supported semantic symbols from the compact `Ctrl+R` popup; Enter
-  applies the validated transaction across affected document buffers and
-  refreshes their in-memory semantic state, so another rename does not require
-  an intervening save. Navigate
-  lexical and Tree-sitter structural fields with the keyboard, and align
-  indexed fields without changing tokens.
-- The editor context menu uses a compact icon-only ring with rounded rectangular
-  action bars. Hover for action names and unavailable reasons; unavailable
-  actions stay gray and cannot be executed.
-- Toggle the case of a selected text range from the editor context menu. The
-  context menu stays focused on selection-aware or semantic operations, while
-  Replace, comment, uncomment, indent, and unindent remain shortcut Actions.
-- Replace an ordinary multiline or rectangular column selection with an equal
-  amount of whitespace while preserving line structure and one-step undo.
-  Organize complete top-level signal declarations in the current module through
-  a Tree-sitter-backed context action that preserves dependency declarations,
-  module-level macro definitions, comments, declaration order, and procedural
-  locals, and refuses unsafe moves.
-- Hold `Alt+Up` or `Alt+Down` to move logical lines continuously while the
-  caret follows the moved text; once column selection is active,
-  `Shift+Left` / `Shift+Right` extends or contracts its column span.
+Ownership boundary: native documents and external application data stay with their owners.
+ZeroSlack loads the shared WaveWorkbench workspace through a versioned ABI and does not keep a
+second waveform renderer, read another application's database, or include its private headers.
+Checks that have never been run on a real desktop are listed in
+[unverified manual checks](docs/unverified-manual-checks.md).
 
 ## Suite application protocol
 
@@ -196,7 +73,7 @@ The optional Runtime is located through `SUITEAPP_RUNTIME_EXECUTABLE`, a local
 or sibling `Runtime` directory, or `PATH`. If it is absent, ZeroSlack continues
 to run normally and only suite discovery is unavailable. The complete contract
 and cross-application verification record are in
-[Suite application protocol](docs/suite-app-protocol.md).
+[AppSuite integration](docs/suite.md).
 
 ## Read-only AI CLI
 
@@ -214,7 +91,7 @@ zeroslack-cli bundle <workspace> --query dma --max-tokens 6000 --format markdown
 ```
 
 The complete command and cache contract is documented in
-[ZeroSlack CLI](docs/cli.md).
+[integrations](docs/integrations.md).
 
 ## Build, run, and test
 
@@ -232,20 +109,95 @@ build/local/zeroslack-cli.exe --help
 ctest --test-dir build/local --output-on-failure -j1
 ```
 
-`VERSION` is the single manually maintained product version. CMake generates
-`generated/version.h`, which supplies the application title/status version and
-the GUI tests. `version_documentation_guard` checks the generated header and
-the current-document version markers.
+## Versioning and release
+
+`VERSION` is the single manually maintained product version source and must contain exactly
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.0`.
+CMake generates `generated/version.h`, which supplies the application title/status version and
+the GUI tests. `version_documentation_guard` checks the generated header and the version
+markers in this README, the user manual and the package README.
+
+- Every accepted code delivery increments the product version before it is pushed or packaged;
+  use at least a `PATCH` increment even for a defect-only delivery.
+- `PATCH`: defect fixes and quality improvements to existing behavior.
+- `MINOR`: complete new user features or user workflow extensions.
+- `MAJOR`: stable compatibility commitments. Before `1.0.0`, ZeroSlack stays in the `0.x` line.
+- Dependency versions are tracked separately; the user-visible product version carries no
+  dependency labels.
+
+Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
+build and run the release verification targets; create a signed-off release tag named `vX.Y.Z`;
+publish Windows artifacts under `E:\PinloomRoot\AppPackage\AppSuite`, a path that intentionally
+contains no spaces. The Windows package directory and archive basename stay fixed as
+`ZeroSlack-win64` — never put the product version in either package filename, so existing
+shortcuts remain valid. The product version is recorded only in `VERSION`, the application
+display, the guarded document markers, and the release tag.
+
+## Current goal and open work
+
+Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic
+authority. Workspace Hub, provider-based Context Workspace, live insights, Wave simulation
+integration and the read-only AI CLI are implemented. Native documents and external application
+data remain with their owners. Context content is placed by the user: sections stack in the
+sidebar, detachable views open in native floating windows with workspace geometry memory, and
+temporary source editors keep their in-editor overlay. Insight sections render the same view
+their full view uses and stay pinned to the target the user chose.
+
+Future usability work addresses one concrete workflow at a time. No whole-window redesign is
+scheduled. Released changes and their acceptance results live in the Git history alone.
+
+### Pending UI refinement — requirements synchronized 2026-09-11
+
+弱边框部分已在 v0.25.8 实施（见该版本的提交）；其余内容仍为候选。当前不新增动效。
+
+**弱边框与表面层级**
+
+- 用轻微背景明度差区分区域：编辑区最亮，侧栏和底栏略暗；沿用现有主题、布局及各专用图表逻辑。
+- 固定面板保持连续、平坦，减少框中框和密集分隔线，仅在必要的调整尺寸边界保留弱分隔线。
+- 浮窗使用轻微描边和柔和短阴影；不得恢复圆环菜单透明窗口的 Windows 矩形阴影。
+- 选中行使用低饱和强调色，普通行保持统一背景。
+- 已查看侧对话参考图，仅采纳表面层级和弱边框方向。Project/Settings 继续遵循当前图标入口规则，图表内容仅为示意。参考图本地路径：`C:/Users/14971/.codex/generated_images/01a08fac-ef9b-7631-8600-2494f37b4d37/exec-cb77852e-9d66-4423-a56d-cc2388ebbf86.png`。
+
+**克制的微动效**（时长为建议初值，尚非逐项确认的硬性参数）
+
+- 第一轮优先：按钮背景悬停/按下 80–120ms；Files/Design/Pinloom 条目底纹 80–100ms；信息浮窗原位淡入约 100ms、关闭约 60ms；圆环菜单及子项条淡入/底纹过渡 60–100ms。图标不缩放、不弹跳。
+- 后续候选：侧栏宽度过渡 120–160ms，先验证编辑器重排及图表性能；底栏沿用现有约 140ms；分段选中底纹 100–140ms；Activity 数字更新时背景轻微提亮一次 120–180ms；复制成功图标短暂改为勾号约 800ms。
+- 动画应可中断，菜单立即可操作；代码输入、光标、滚动、图表拖动和连续缩放保持即时响应。
+- 建议统一“减少动画”设置，优先复用 Qt Widgets、InsightVisualStyle 和 PanelLayoutController 现有主题、密度及动画基础。
+
+### Remaining validation
+
+Every check that has never been run on a real desktop is tracked in
+[unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,
+multi-monitor and cross-screen dragging, consecutive restarts, the sidebar stack gestures,
+document-bound tab interaction, the temporary editor comparison, and the two
+semantic-availability checks. Windows edge dragging and mixed-DPI multi-monitor behavior remain
+the oldest open items; keyboard snapping and title-bar mouse operations already have regression
+coverage.
+
+### Maintenance rules
+
+- Select one specific usability issue before starting another implementation slice.
+- Keep this README, the manual and package metadata aligned with `VERSION`.
+- Classify first-party sources under `src/` and keep CMake and source-policy checks aligned.
+- Remove superseded local build/package outputs; keep the active Release build, current release
+  evidence, toolchain inputs and referenced test fixtures.
+- Preserve semantic ownership, generation checks and read-only CLI boundaries.
+- Run tests relevant to changed behavior; record the configuration and date.
 
 ## Documentation
 
-- [Architecture](ARCHITECTURE.md)
-- [Changelog](CHANGELOG.md)
-- [Current plan](plan.md)
-- [Current goal](goal.md)
-- [Version policy](VERSIONING.md)
-- [Suite workflows](docs/suite-workflows.md)
-- [Wave simulation](docs/wave-simulation.md)
+The repository keeps six documents. This README is the entry point; the other five are:
+
+| Document | Holds |
+| --- | --- |
+| [用户手册](用户手册.md) | Every user-facing interaction, shortcut and edge case (Chinese) |
+| [Architecture](ARCHITECTURE.md) | Ownership, threading, extension constraints, repository layout, visual system |
+| [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, cross-application workflows, shared visual contract |
+| [Integrations](docs/integrations.md) | Read-only CLI contract and the Wave simulation boundary |
+| [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
 
 Historical acceptance logs and superseded status reports are intentionally
-kept out of this current-facts document.
+kept out of this current-facts document. Released changes are recorded in the Git history:
+`git log` for the change itself and `git show <tag-or-commit>` for the acceptance results
+recorded with each release.
