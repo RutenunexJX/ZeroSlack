@@ -4,6 +4,12 @@ cmake-build-*/
 artifacts/
 .toolchain-build/
 
+# The two real-workspace HDL fixtures are kept local only; the regression
+# sources themselves stay tracked. CMake reports at configure time which tests
+# cannot pass without them.
+test_sv/new/
+test_sv/huge_prj/
+
 # Explicit local overrides for experimental wave simulation artifacts.
 wave-simulation-cache/
 .wave-simulation-cache/

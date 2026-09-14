@@ -923,6 +923,25 @@ endif()
 # =========================================================
 # 8. Regression Tests
 # =========================================================
+# The regression sources are tracked, but the two real-workspace HDL fixtures
+# test_sv/new and test_sv/huge_prj are kept local only. Tests that need them
+# stay registered and fail loudly rather than being skipped; say so here so a
+# clone knows why, instead of reading the failures as a regression.
+if(BUILD_TESTING)
+    set(ZEROSLACK_MISSING_FIXTURES "")
+    foreach(fixture_dir new huge_prj)
+        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_sv/${fixture_dir}")
+            list(APPEND ZEROSLACK_MISSING_FIXTURES "test_sv/${fixture_dir}")
+        endif()
+    endforeach()
+    if(ZEROSLACK_MISSING_FIXTURES)
+        message(STATUS
+            "ZeroSlack: real-workspace fixtures are absent "
+            "(${ZEROSLACK_MISSING_FIXTURES}). Tests that open them will fail; "
+            "they are excluded from version control and must be supplied locally.")
+    endif()
+endif()
+
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
