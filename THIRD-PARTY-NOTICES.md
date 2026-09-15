@@ -12,24 +12,31 @@ source tree, not against memory.
 | --- | --- | --- | --- |
 | [slang](https://github.com/MikePopoloski/slang) | 10.0.14 | MIT | `thirdparty/slang/LICENSE` (submodule) |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) | vendored | MIT, © 2018 Max Brunsfeld | `thirdparty/tree_sitter/LICENSE` |
-| tree-sitter-systemverilog grammar | vendored | **unresolved — see below** | none in this repository |
+| [tree-sitter-systemverilog](https://github.com/gmlarumbe/tree-sitter-systemverilog) | vendored, see note | MIT, © 2024-2025 Gonzalo M. Larumbe | `thirdparty/tree_sitter_systemverilog/LICENSE` |
 | ICU Unicode tables used by tree-sitter | ICU 58+ | Unicode/ICU license | `thirdparty/tree_sitter/lib/src/unicode/LICENSE` |
-| Qt 6 (Core, Gui, Widgets, Concurrent, Svg, Test) | 6.10.2 | see note below | Qt installation |
+| Qt 6 (Core, Gui, Widgets, Concurrent, Svg, Test) | 6.10.2 | LGPLv3, see note below | `E:/QT6/Licenses/` in the build environment |
 
-**Unresolved: the SystemVerilog grammar.** `thirdparty/tree_sitter_systemverilog`
-was vendored as plain files with no license text, no upstream URL and no version
-recorded, so this repository cannot state its license. The most likely upstream is
-[gmlarumbe/tree-sitter-systemverilog](https://github.com/gmlarumbe/tree-sitter-systemverilog)
-(MIT, © 2024-2025 Gonzalo M. Larumbe), but that has not been confirmed against the
-vendored files. Confirm the origin and add its license text before distributing
-this repository publicly.
+**Grammar provenance.** `thirdparty/tree_sitter_systemverilog` was vendored as
+plain files, without a license text, an upstream URL or a version. The origin was
+established by comparing the vendored grammar against the candidate upstream:
+both declare the grammar name `systemverilog`, and of 814 vendored rule names 813
+are also present upstream — a 99.6% match, with the only difference being one rule
+renamed (`text_macro_identifier` against the upstream `_text_macro_identifier`).
+The vendored copy therefore predates the current upstream by a small number of
+revisions. Its license text is now kept beside the sources.
 
-**Qt note.** ZeroSlack links Qt 6 dynamically. Binary distributions built against
-an open-source (LGPLv3) Qt carry that license's obligations — keeping the linkage
-dynamic so Qt can be replaced, passing on the license text, and stating that Qt is
-used. Builds against a commercial Qt license follow that agreement instead. Which
-one applies depends on the Qt installation used for the build, not on this
-repository.
+**Qt note.** ZeroSlack links Qt 6 dynamically. The build environment used for
+releases carries Qt 6.10.2 installed under the **open-source (LGPLv3)** terms:
+`licenseInfo.txt` in the Qt installation records `License type [Opensource]`, the
+installation ships the LGPL, GPL3-exception and FDL texts, and it contains none of
+the `licheck` binaries a commercial or evaluation installation would carry.
+
+Distributing a binary built that way carries LGPLv3 obligations. ZeroSlack already
+satisfies the structural one: Qt is linked dynamically and shipped as replaceable
+DLLs beside the executable, so a recipient can substitute their own Qt build. The
+package must also pass on the LGPL text and state that Qt is used; see
+`packaging/ZeroSlack-PACKAGE-README.txt`. A build made against a commercial Qt
+license would follow that agreement instead, and this note would no longer apply.
 
 ## Embedded resources
 

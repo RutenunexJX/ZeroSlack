@@ -80,3 +80,21 @@ Windows maximize and keyboard snap retain native window capabilities.
 
 The unified workbench hosts dedicated graph panels, including Hotspot Track/Matrix,
 nested module blocks, Kernel filtering/fanout and State Transition controls.
+
+Licensing
+---------
+
+ZeroSlack is licensed under Apache License 2.0. A full list of third-party
+components and their licenses is in THIRD-PARTY-NOTICES.md.
+
+This package uses Qt 6.10.2 under the GNU Lesser General Public License v3
+(LGPLv3). Qt is not modified and is linked dynamically: its DLLs sit beside
+ZeroSlack.exe and may be replaced with your own compatible Qt 6 build, which is
+the right LGPLv3 reserves for you. The LGPLv3 text ships with the Qt runtime
+files in this package; Qt sources are available from https://download.qt.io.
+
+The bundled Wave simulation toolchain contains Verilator 5.050 (LGPLv3 or
+Artistic License 2.0), the MinGW-w64 GCC 13.1.0 runtime (GPLv3 with the GCC
+Runtime Library Exception) and GNU Make (GPLv3). They run as separate programs
+and are not linked into ZeroSlack. Each keeps its own license files inside the
+toolchain directory.
