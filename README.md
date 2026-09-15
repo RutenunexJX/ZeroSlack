@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.4`
+Current version: `v0.29.5`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -35,7 +35,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Workspaces | Open, switch, close, rename and revisit multiple workspaces; configure include dirs, defines, ignored dirs, source extensions and the active top module. | [manual §4](用户手册.md) |
 | Workspaces | Cached files appear immediately and are reconciled with the directory in the background, so changes made while a workspace was inactive are found without re-analyzing unchanged files. | [manual §4.1](用户手册.md) |
 | Sessions | Tabs, layout, navigation filters and scan state restore from local application storage; a workspace `.zs` file is only a read-only legacy import source. | [manual §4.3](用户手册.md) |
-| Editing | Incremental highlighting, folding, structural navigation, formatter, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
+| Editing | Incremental highlighting, folding, structural navigation, formatter with ordinary and type-parameter alignment, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
 | Editing | The editor context menu is a compact icon-only ring; unavailable actions stay gray and explain why on hover. | [manual §6.1](用户手册.md) |
 | Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), templates and application commands, with horizontal category switching and `m <filter>` module lookup. | [manual §7](用户手册.md) |
 | Command layer | `F24` is an explicit command search layer: Enter runs a fuzzy result, `F24+D` deletes the selection, and an empty tap repeats the last valid repeatable action. | [manual §8](用户手册.md) |
@@ -112,7 +112,7 @@ ctest --test-dir build/local --output-on-failure -j1
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.4`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.5`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

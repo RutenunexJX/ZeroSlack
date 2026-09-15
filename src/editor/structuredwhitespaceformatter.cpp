@@ -158,6 +158,8 @@ bool isCommentNode(TSNode node)
 QList<TSNode> directNamedChildren(TSNode node, const char* type = nullptr)
 {
     QList<TSNode> result;
+    if (ts_node_is_null(node))
+        return result;
     const uint32_t count = ts_node_named_child_count(node);
     result.reserve(static_cast<int>(count));
     for (uint32_t index = 0; index < count; ++index) {
@@ -1910,10 +1912,18 @@ private:
         item.keyword.width = keyword.text.size();
         item.keyword.leaves = {keyword};
 
-        const TSNode assignments = firstDescendant(
+        TSNode assignments = firstDescendant(
             declaration, "list_of_param_assignments");
+        const char* assignmentType = "param_assignment";
+        if (ts_node_is_null(assignments)) {
+            assignments = firstDescendant(
+                declaration, "list_of_type_assignments");
+            assignmentType = "type_assignment";
+        }
+        if (ts_node_is_null(assignments))
+            return {};
         const QList<TSNode> assignmentNodes =
-            directNamedChildren(assignments, "param_assignment");
+            directNamedChildren(assignments, assignmentType);
         if (assignmentNodes.size() != 1)
             return {};
         const TSNode assignment = assignmentNodes.first();

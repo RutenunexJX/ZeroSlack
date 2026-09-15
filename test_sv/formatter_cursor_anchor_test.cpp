@@ -478,6 +478,46 @@ int main(int argc, char* argv[])
                editor.toPlainText() == source);
     }
 
+    {
+        const QString source = QStringLiteral(
+            "`timescale 1ns / 1ps\r\n"
+            "\r\n"
+            "module uart_engine\r\n"
+            "#(\r\n"
+            "    parameter P_UPSTREAM_AW = 32 ,\r\n"
+            "    parameter P_UPSTREAM_DW = 32 ,\r\n"
+            "    parameter type P_STATUS_T = axi_bram_ts_status_e\r\n"
+            ")(\r\n"
+            "    input  logic                       clk               ,\r\n"
+            "    input  logic                       rst               ,\r\n"
+            "\r\n"
+            "    input  logic [P_UPSTREAM_AW - 1:0] upstream_rd_addr  ,\r\n"
+            "    input  logic [P_UPSTREAM_DW - 1:0] upstream_rd_data  ,\r\n"
+            "    input  logic                       upstream_rd_valid ,\r\n"
+            "    output  P_STATUS_T            upstream_rd_ready ,\r\n"
+            "\r\n"
+            "    output logic [7:0]                 phy_data          ,\r\n"
+            "    output logic                       phy_valid         ,\r\n"
+            "    input  logic                       phy_ready         ,\r\n"
+            "    output logic                       phy_pkg_end\r\n"
+            ");\r\n"
+            "\r\n"
+            "\r\n"
+            "\r\n"
+            "\r\n"
+            "endmodule\r\n");
+        MyCodeEditor editor;
+        editor.setPlainText(source);
+        const FormatterReport report = editor.formatDocument();
+        expect("Format Document handles uart_engine typed parameter and mixed port declarations",
+               report.accepted()
+                   && StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                       source, editor.toPlainText()));
+        const FormatterReport stable = editor.formatDocument();
+        expect("uart_engine formatting is idempotent",
+               stable.accepted() && !stable.changed);
+    }
+
     std::printf("%d checks, %d failed\n",
                 checks,
                 failures);
