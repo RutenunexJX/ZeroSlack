@@ -1,3 +1,4 @@
+#include "fixture_names.h"
 #include "projectmodel.h"
 #include "navigationservice.h"
 #include "relationshipanalysisworker.h"
@@ -498,8 +499,8 @@ int main(int argc, char** argv)
 
     RelationshipService relationshipService(semanticIndex);
     const QList<SemanticSymbolRecord> ctlDefs =
-        semanticIndex->findDefinitionRecords(QStringLiteral("vendor_ip_ctl"));
-    requirePositiveMetric("vendor_ip_ctl definitions", ctlDefs.size());
+        semanticIndex->findDefinitionRecords(QStringLiteral(ZS_FIXTURE_TOP_CTL));
+    requirePositiveMetric("vendor ctl definitions", ctlDefs.size());
     if (!ctlDefs.isEmpty()) {
         RelationshipQuery ctlIncomingQuery;
         ctlIncomingQuery.symbolStableKey = ctlDefs.first().stableKey;
@@ -542,11 +543,11 @@ int main(int argc, char** argv)
     printMetric(QStringLiteral("design_unresolved_modules"),
                 designReport.unresolvedModules.size());
     const DesignHierarchyReport ctlReport =
-        navigationService.findDesignHierarchy(QStringLiteral("vendor_ip_ctl"));
+        navigationService.findDesignHierarchy(QStringLiteral(ZS_FIXTURE_TOP_CTL));
     printMetric(QStringLiteral("design_ctl_nodes"), ctlReport.nodes.size());
     printMetric(QStringLiteral("design_ctl_files"), ctlReport.participatingFiles.size());
     const DesignHierarchyReport gphyReport =
-        navigationService.findDesignHierarchy(QStringLiteral("vendor_ip_gphy"));
+        navigationService.findDesignHierarchy(QStringLiteral(ZS_FIXTURE_GPHY));
     printMetric(QStringLiteral("design_gphy_nodes"), gphyReport.nodes.size());
     printMetric(QStringLiteral("design_gphy_files"), gphyReport.participatingFiles.size());
 
@@ -554,9 +555,9 @@ int main(int argc, char** argv)
                           designReport.nodes.size());
     requirePositiveMetric("inferred design hierarchy files",
                           designReport.participatingFiles.size());
-    requirePositiveMetric("vendor_ip_ctl hierarchy nodes",
+    requirePositiveMetric("vendor ctl hierarchy nodes",
                           ctlReport.nodes.size());
-    requirePositiveMetric("vendor_ip_ctl hierarchy files",
+    requirePositiveMetric("vendor ctl hierarchy files",
                           ctlReport.participatingFiles.size());
 
     if (relationship_validation_failures != 0) {

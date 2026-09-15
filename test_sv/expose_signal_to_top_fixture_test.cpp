@@ -1,4 +1,5 @@
 #include "exposesignaltotopservice.h"
+#include "fixture_names.h"
 #include "formatterservice.h"
 #include "hierarchyservice.h"
 #include "semanticindexsnapshot.h"
@@ -955,17 +956,15 @@ int main(int argc, char** argv)
         QStringLiteral("test_sv/huge_prj"),
         norm(QString::fromLocal8Bit(argv[2])),
         QStringLiteral("axi_bridge"),
-        QStringLiteral("vendor_ip_axi_gm"),
+        QStringLiteral(ZS_FIXTURE_AXI_GM),
         {
-            QStringLiteral("Axi/vendor_ip_axi_gm.sv"),
-            QStringLiteral(
-                "Bridge/inbound/vendor_ip_bridge_ib.sv"),
+            QStringLiteral(ZS_FIXTURE_AXI_GM_FILE),
+            QStringLiteral(ZS_FIXTURE_BRIDGE_IB_FILE),
             QStringLiteral("Axi/axi_bridge.sv")
         },
         {
-            QStringLiteral("Axi/vendor_ip_axi_gm.sv"),
-            QStringLiteral(
-                "Bridge/inbound/vendor_ip_bridge_ib.sv"),
+            QStringLiteral(ZS_FIXTURE_AXI_GM_FILE),
+            QStringLiteral(ZS_FIXTURE_BRIDGE_IB_FILE),
             QStringLiteral("Axi/axi_bridge.sv")
         }};
     runFixture(hugeFixture,

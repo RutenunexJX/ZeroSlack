@@ -1,4 +1,5 @@
 #include "fsmgraphservice.h"
+#include "fixture_names.h"
 #include "fsmgraphlayout.h"
 #include "projectmodel.h"
 #include "rtlinsightspanelcoordinator.h"
@@ -470,9 +471,9 @@ int main(int argc, char** argv)
             QStringLiteral("elec_phy_import/ctrl/chl_ctrl.sv")));
     const QString vendorCtxFsmPath = normalizedPath(
         QDir(sourceRoot).filePath(
-            QStringLiteral("test_sv/huge_prj/Edma/vendor_ip_edma_ctx_fsm.sv")));
+            QStringLiteral("test_sv/huge_prj/" ZS_FIXTURE_CTX_FSM_FILE)));
     expect(QFileInfo(chlCtrlPath).isFile(), "chl_ctrl fixture exists");
-    expect(QFileInfo(vendorCtxFsmPath).isFile(), "VENDOR ctx fsm fixture exists");
+    expect(QFileInfo(vendorCtxFsmPath).isFile(), "vendor ctx fsm fixture exists");
     if (!QFileInfo(chlCtrlPath).isFile() || !QFileInfo(vendorCtxFsmPath).isFile())
         return 1;
 
@@ -539,14 +540,14 @@ int main(int argc, char** argv)
            "phy_pass_thrg_cfg_ns layout metric found");
 
     FsmGraphQuery vendorQuery;
-    vendorQuery.moduleName = QStringLiteral("vendor_ip_edma_ctx_fsm");
+    vendorQuery.moduleName = QStringLiteral(ZS_FIXTURE_CTX_FSM);
     vendorQuery.fileName = vendorCtxFsmPath;
     const FsmGraphReport vendorReport = fsmService.buildFsmGraph(vendorQuery);
-    expect(vendorReport.found, "VENDOR ctx fsm graph found");
+    expect(vendorReport.found, "vendor ctx fsm graph found");
     expect(printLayoutMetricForSignal(vendorReport,
                                       QStringLiteral("fsm_state_nxt"),
-                                      QStringLiteral("vendor_ip_edma_ctx")),
-           "VENDOR ctx layout metric found");
+                                      QStringLiteral(ZS_FIXTURE_CTX_SIGNAL)),
+           "vendor ctx layout metric found");
 
     QString selectedFrom;
     QString selectedTo;
@@ -714,10 +715,10 @@ int main(int argc, char** argv)
         selectedConditions);
     renderSignalSnapshot(index,
                          vendorCtxFsmPath,
-                         QStringLiteral("vendor_ip_edma_ctx_fsm"),
+                         QStringLiteral(ZS_FIXTURE_CTX_FSM),
                          QStringLiteral("fsm_state_nxt"),
                          QDir(outputDir).filePath(
-                             QStringLiteral("fsm_vendor_ip_edma_ctx.png")));
+                             QStringLiteral(ZS_FIXTURE_CTX_FSM_SNAPSHOT)));
 
     FsmGraphService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
     StateTransitionGraphService::getInstance()->setSemanticIndex(

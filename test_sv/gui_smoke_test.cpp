@@ -1,6 +1,7 @@
 #include <QMenuBar>
 #include <QToolBar>
 #include "editorgutter.h"
+#include "fixture_names.h"
 // Offscreen GUI smoke test for the real MainWindow/TabManager/MyCodeEditor path.
 // It keeps the assertions coarse on purpose: this target is a repeatable guard that
 // the GUI workflow is alive, while detailed semantic behavior stays in the focused
@@ -4954,9 +4955,10 @@ static void runEditorLineActionRegression()
 static void runEditorCtrlClickNavigationRegression()
 {
     const QString path =
-        sourceFixturePath(QStringLiteral("test_sv/huge_prj/vendor_ip_ctl.sv"));
+        sourceFixturePath(
+            QStringLiteral("test_sv/huge_prj/" ZS_FIXTURE_TOP_CTL_FILE));
     QFile file(path);
-    expectBool("VENDOR ctrl-click fixture opens",
+    expectBool("vendor ctrl-click fixture opens",
                file.open(QIODevice::ReadOnly | QIODevice::Text),
                true);
     if (!file.isOpen())
@@ -4975,10 +4977,10 @@ static void runEditorCtrlClickNavigationRegression()
         editor.document()->findBlockByNumber(1659);
     const QTextBlock definitionBlock =
         editor.document()->findBlockByNumber(339);
-    expectBool("VENDOR ctrl-click use line exists",
+    expectBool("vendor ctrl-click use line exists",
                useBlock.isValid() && useBlock.text().contains(symbol),
                true);
-    expectBool("VENDOR ctrl-click definition line exists",
+    expectBool("vendor ctrl-click definition line exists",
                definitionBlock.isValid()
                    && definitionBlock.text().contains(symbol),
                true);
@@ -5036,13 +5038,13 @@ static void runEditorCtrlClickNavigationRegression()
                         clickPoint);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    expectBool("VENDOR ctrl-click requested parameter navigation",
+    expectBool("vendor ctrl-click requested parameter navigation",
                navigationRequested,
                true);
-    expectBool("VENDOR ctrl-click lands on parameter definition",
+    expectBool("vendor ctrl-click lands on parameter definition",
                editor.textCursor().blockNumber() == 339,
                true);
-    expectBool("VENDOR ctrl-click does not extend selection",
+    expectBool("vendor ctrl-click does not extend selection",
                !editor.textCursor().hasSelection(),
                true);
 }

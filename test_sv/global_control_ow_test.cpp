@@ -23,6 +23,7 @@
 #include <memory>
 
 #define private public
+#include "fixture_names.h"
 #include "mainwindow.h"
 #include "workspacesessioncoordinator.h"
 #include "analysisscheduler.h"
@@ -943,7 +944,7 @@ int main(int argc, char** argv)
     openAndAwaitAnalysis(hugeWorkspace,
                          840000,
                          "huge",
-                         QStringLiteral("vendor_ip_ctl"));
+                         QStringLiteral(ZS_FIXTURE_TOP_CTL));
 
     ++workspaceAttempt;
     expectedWorkspaceRoot = normalizedPath(hugeWorkspace);
