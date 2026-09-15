@@ -187,6 +187,9 @@ coverage.
 
 ## Documentation
 
+ZeroSlack is licensed under [Apache License 2.0](LICENSE). Third-party components
+and their licenses are recorded in [third-party notices](THIRD-PARTY-NOTICES.md).
+
 The repository keeps six documents. This README is the entry point; the other five are:
 
 | Document | Holds |
