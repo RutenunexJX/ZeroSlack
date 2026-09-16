@@ -77,7 +77,6 @@ struct EditorHotPathMetrics {
     std::uint64_t editorInputDerivedStateNanoseconds = 0;
     std::uint64_t editorDerivedKeywordGhostNanoseconds = 0;
     std::uint64_t editorDerivedKeywordPairNanoseconds = 0;
-    std::uint64_t editorDerivedPackageToolNanoseconds = 0;
     std::uint64_t editorDerivedWaveScopeNanoseconds = 0;
     std::uint64_t editorInputSemanticDecorationNanoseconds = 0;
     std::uint64_t editorInputHighlightNanoseconds = 0;

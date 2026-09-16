@@ -22,7 +22,6 @@
 #include "editorlineoperationcontroller.h"
 #include "editormodecontroller.h"
 #include "editormulticursorcontroller.h"
-#include "packagetoolservice.h"
 #include "editorselection.h"
 #include "editorinsighttargetpickcontroller.h"
 #include "editorsignalselectioncontroller.h"
@@ -213,8 +212,6 @@ struct MyCodeEditorState
     QList<QPointer<QObject>> ghostQueryWatchers;
     EditorHotPathMetrics hotPathMetrics;
     bool hotPathTimingEnabled = false;
-    EditorPackageToolAvailability lastPackageToolAvailability;
-    bool packageToolAvailabilityInitialized = false;
     QString lastWavePreviewScopeKey;
     // One semantic query per publish is the budget for blinking targets, so
     // the answer is kept until the snapshot or the file actually changes.
@@ -303,11 +300,6 @@ struct MyCodeEditorState
     EditorModuleScopeTarget currentModuleScopeTarget(
         const MyCodeEditor* editor) const;
     bool goToFinalEndmodule(MyCodeEditor* editor, QString* message);
-    EditorPackageToolAvailability currentPackageToolAvailability(
-        const MyCodeEditor* editor) const;
-    bool executePackageToolInsert(MyCodeEditor* editor,
-                                  PackageToolKind kind,
-                                  QString* message);
     bool selectInsideBeginEnd(MyCodeEditor* editor, QString* message);
     void startTemplateSlotMode(MyCodeEditor* editor,
                                int insertionStart,

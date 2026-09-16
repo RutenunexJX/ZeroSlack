@@ -16,7 +16,6 @@
 #include "documentchange.h"
 #include "editorinsighttargetpickcontroller.h"
 #include "editormodecontroller.h"
-#include "packagetoolservice.h"
 #include "symbolpresentationservice.h"
 
 #include <QList>
@@ -223,9 +222,6 @@ public:
     EditorAlwaysScopeTarget alwaysScopeTargetAt(int cursorPosition) const;
     EditorModuleScopeTarget currentModuleScopeTarget() const;
     bool goToFinalEndmodule(QString* message = nullptr);
-    EditorPackageToolAvailability currentPackageToolAvailability() const;
-    bool executePackageToolInsert(PackageToolKind kind,
-                                  QString* message = nullptr);
     bool selectInsideBeginEnd(QString* message = nullptr);
     void startTemplateSlotMode(int insertionStart,
                                int insertedLength,
@@ -445,8 +441,6 @@ signals:
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);
     void pinloomCodeLinkActivated(const QString& anchorId);
-    void packageToolAvailabilityChanged(
-        const EditorPackageToolAvailability& availability);
     void wavePreviewScopeChanged();
 };
 

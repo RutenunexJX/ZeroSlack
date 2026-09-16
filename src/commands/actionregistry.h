@@ -30,7 +30,6 @@ enum class ActionScope {
     Workspace,
     Editor,
     Module,
-    Package,
     Symbol,
     Hierarchy
 };
@@ -41,7 +40,6 @@ enum class ActionParameterKind {
     TextQuery,
     TemplateSeed,
     HierarchySelection,
-    PackageTool,
     FilePath
 };
 
@@ -51,7 +49,6 @@ enum class ActionSurface {
     InlineSemantic,
     InlineTemplate,
     GlobalControl,
-    PackageTools,
     ContextMenu,
     TabContextMenu,
     PanelContextMenu,
@@ -84,7 +81,6 @@ inline constexpr quint32 Editor = 1u << 0;
 inline constexpr quint32 Workspace = 1u << 1;
 inline constexpr quint32 SemanticCurrent = 1u << 2;
 inline constexpr quint32 Symbol = 1u << 3;
-inline constexpr quint32 Package = 1u << 4;
 inline constexpr quint32 Hierarchy = 1u << 5;
 inline constexpr quint32 GraphContent = 1u << 6;
 }
@@ -375,7 +371,6 @@ struct ActionAvailabilityContext {
     bool workspaceAvailable = false;
     bool semanticCurrent = false;
     bool symbolAvailable = false;
-    bool packageAvailable = false;
     bool hierarchyBound = false;
     bool graphContentAvailable = false;
 };

@@ -16,7 +16,6 @@
 #include <cstdint>
 #include <memory>
 
-#include "packagetoolservice.h"
 
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
@@ -65,7 +64,6 @@ class QPlainTextEdit;
 class QPushButton;
 class QStackedWidget;
 class QTabBar;
-class QToolButton;
 class QTreeWidget;
 class QVBoxLayout;
 class QWidget;
@@ -202,12 +200,6 @@ private:
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
     QWidget* editorSplitHost = nullptr;
-    QWidget* packageToolsBar = nullptr;
-    QLabel* packageToolsPackageLabel = nullptr;
-    QList<QToolButton*> packageToolButtons;
-    MyCodeEditor* packageToolsStateEditor = nullptr;
-    EditorPackageToolAvailability packageToolsState;
-    bool packageToolsStateValid = false;
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
     bool pendingActiveEditorPassiveRefreshAll = false;
@@ -230,12 +222,6 @@ private:
     void setupFileCommandCoordinator();
     void setupGlobalControl();
     void setupCommandLayer();
-    void setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent);
-    void updatePackageTools();
-    void updatePackageToolsForEditor(
-        MyCodeEditor* editor,
-        const EditorPackageToolAvailability& availability);
-    void insertPackageTool(PackageToolKind kind);
     void setupFoldBlockShelf();
     void setupPanelLayoutController();
     void setupContextWorkspace();

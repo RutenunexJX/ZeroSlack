@@ -733,11 +733,6 @@ void printTypingCoreMetrics(const char* fixture,
                 static_cast<unsigned long long>(
                     meanMicroseconds(
                         metrics.editorDerivedKeywordPairNanoseconds)));
-    std::printf("perf.typing.%s.derived.package_tool.mean_us=%llu\n",
-                fixture,
-                static_cast<unsigned long long>(
-                    meanMicroseconds(
-                        metrics.editorDerivedPackageToolNanoseconds)));
     std::printf("perf.typing.%s.derived.wave_scope.mean_us=%llu\n",
                 fixture,
                 static_cast<unsigned long long>(
@@ -1566,20 +1561,10 @@ void exercisePassiveUiSignals()
         QStringLiteral("value")));
     editor.setTextCursor(cursor);
 
-    int packageUpdates = 0;
-    QObject::connect(
-        &editor,
-        &MyCodeEditor::packageToolAvailabilityChanged,
-        &editor,
-        [&packageUpdates](const EditorPackageToolAvailability&) {
-            ++packageUpdates;
-        });
     QSignalSpy waveSpy(&editor, &MyCodeEditor::wavePreviewScopeChanged);
     QSignalSpy documentChangeSpy(&editor,
                                  &MyCodeEditor::documentChangeApplied);
     QTest::keyClick(&editor, Qt::Key_X);
-    expect("unchanged package availability emits no UI update",
-           packageUpdates == 0);
     expect("ordinary text input exposes exactly one Wave document delta",
            documentChangeSpy.size() == 1 && waveSpy.isEmpty());
 }

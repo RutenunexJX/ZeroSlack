@@ -513,10 +513,6 @@ int main(int argc, char** argv)
                InsightVisualStyle::tabBarStyleSheet(
                    QStringLiteral("mainEditorTabBar"))
                    .contains(QStringLiteral("QTabBar#mainEditorTabBar")));
-    expectTrue("package tools qss is scoped",
-               InsightVisualStyle::packageToolsBarStyleSheet(
-                   QStringLiteral("packageToolsBar"))
-                   .contains(QStringLiteral("QWidget#packageToolsBar")));
     expectTrue("status chip qss is scoped",
                InsightVisualStyle::statusChipStyleSheet(
                    InsightStatusTone::Warning,

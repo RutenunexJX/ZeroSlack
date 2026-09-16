@@ -3,7 +3,6 @@
 #include "commandlayercommandregistry.h"
 #include "globalcontrolservice.h"
 #include "inlinecommandmode.h"
-#include "packagetoolservice.h"
 
 #include <QList>
 #include <QHash>
@@ -228,7 +227,7 @@ int main()
         }
     }
     expect("parameterized adapters explicitly declare shared routes",
-           sharedRouteGroups == 3
+           sharedRouteGroups == 2
                && sharedRoutesAreExplicit);
 
     expect("unified catalog covers all trigger families",
@@ -241,8 +240,6 @@ int main()
                        ActionSurface::InlineTemplate).isEmpty()
                && !actionDescriptorsForSurface(
                        ActionSurface::GlobalControl).isEmpty()
-               && !actionDescriptorsForSurface(
-                       ActionSurface::PackageTools).isEmpty()
                && !actionDescriptorsForSurface(
                        ActionSurface::ContextMenu).isEmpty()
                && actionDescriptorsForSurface(
@@ -1936,29 +1933,6 @@ int main()
                && combinationalAlwaysTemplate.templateSlots.first().length == 0
                && combinationalAlwaysTemplate.templateSlots.first()
                       .visibleWhenEmpty);
-
-    const PackageToolService packageTools;
-    bool packageToolsUseRegistry = true;
-    for (const PackageToolKind kind : PackageToolService::toolOrder()) {
-        const QString actionId =
-            PackageToolService::actionIdForKind(kind);
-        const ActionDescriptor* descriptor =
-            findActionById(actionId);
-        const CodeTemplateItem item =
-            packageTools.templateForKind(kind);
-        packageToolsUseRegistry =
-            packageToolsUseRegistry
-            && descriptor
-            && item.actionId == actionId
-            && item.executionRoute == descriptor->executionRoute
-            && descriptorHasAlias(
-                *descriptor,
-                ActionSurface::PackageTools,
-                PackageToolService::idForKind(kind));
-    }
-    expect("all Package Tools are registry adapters",
-           PackageToolService::toolOrder().size() == 6
-               && packageToolsUseRegistry);
 
     const QStringList sourceActionIds = {
         QStringLiteral("insight.signalKernelGraph"),

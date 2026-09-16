@@ -43,8 +43,6 @@ ActionAvailabilityContext availabilityContext(
         request.actionContext.semanticState
         == EditorActionSemanticState::Current;
     context.symbolAvailable = request.symbolAvailable;
-    context.packageAvailable =
-        !request.actionContext.packageName.trimmed().isEmpty();
     context.hierarchyBound =
         !request.actionContext.resolvedHierarchy.instancePath
              .trimmed()

@@ -1211,34 +1211,6 @@ QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
              t.tab.textHover.name());
 }
 
-QString InsightVisualStyle::packageToolsBarStyleSheet(
-    const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 {"
-               "  background: %2;"
-               "  border-bottom: 1px solid %3;"
-               "}"
-               "QToolButton {"
-               "  color: %4;"
-               "  padding: 3px 6px;"
-               "  border: 1px solid transparent;"
-               "}"
-               "QToolButton:hover {"
-               "  background: %5;"
-               "  border-color: %6;"
-               "}"
-               "QToolButton:disabled { color: %7; }")
-        .arg(objectSelector(QStringLiteral("QWidget"), objectName),
-             t.toolbarBackground.name(),
-             subtleBorder(t.toolbarBackground, t.textPrimary).name(),
-             t.textPrimary.name(),
-             t.graph.nodeHoverFill.name(),
-             t.button.borderHover.name(),
-             t.button.textDisabled.name());
-}
-
 QString InsightVisualStyle::labelStyleSheet(const QString& objectName,
                                             bool strong)
 {

@@ -237,13 +237,6 @@ TSParameterInsertTarget EditorSyntaxState::parameterInsertTargetAt(
     return document->parameterInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
-TSPackageToolInsertTarget EditorSyntaxState::packageToolInsertTargetAt(
-    int charPos,
-    PackageToolKind kind) const
-{
-    return document->packageToolInsertTarget(charPos < 0 ? 0 : charPos, kind);
-}
-
 TSModuleEndNavigationTarget EditorSyntaxState::moduleEndNavigationTargetAt(
     int charPos) const
 {

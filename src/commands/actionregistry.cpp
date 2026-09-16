@@ -1184,52 +1184,6 @@ void appendEditorContextMenuActions(QList<ActionDescriptor>* out)
     }
 }
 
-void appendPackageActions(QList<ActionDescriptor>* out)
-{
-    struct Spec {
-        const char* suffix;
-        const char* token;
-        const char* label;
-        const char* description;
-    };
-    const QList<Spec> specs = {
-        {"parameter", "parameter", "parameter", "package parameter declaration"},
-        {"localparam", "localparam", "localparam", "package localparam declaration"},
-        {"typedefEnum", "typedef_enum", "typedef enum", "package typedef enum"},
-        {"typedefStruct", "typedef_struct", "typedef struct", "package typedef struct"},
-        {"typedefStructPacked", "typedef_struct_packed", "typedef struct packed", "package typedef struct packed"},
-        {"function", "function", "function", "package function declaration"},
-    };
-    for (const Spec& spec : specs) {
-        ActionDescriptor descriptor =
-            makeAction(QStringLiteral("package.insert.%1")
-                           .arg(QString::fromLatin1(spec.suffix)),
-                       QStringLiteral("Insert %1 in Package")
-                           .arg(QString::fromLatin1(spec.label)),
-                       QString::fromLatin1(spec.description),
-                       ActionCategory::Insert,
-                       ActionScope::Package,
-                       QStringLiteral("editor.packageToolInsert"),
-                       ActionRequirements::Editor
-                           | ActionRequirements::Package,
-                       QStringLiteral(
-                           "Place the cursor in a syntactically valid package."),
-                       ActionRecoveryPolicy::Explain,
-                       ActionParameterKind::PackageTool,
-                       QStringLiteral("kind"));
-        descriptor.aliases.append(
-            alias(ActionSurface::PackageTools,
-                  QString::fromLatin1(spec.token),
-                  QString::fromLatin1(spec.label),
-                  QString::fromLatin1(spec.description),
-                  QString(),
-                  QString::fromLatin1(spec.suffix),
-                  QStringLiteral("packageTool")));
-        descriptor.sharedExecutionRoute = true;
-        out->append(descriptor);
-    }
-}
-
 void appendWorkspaceFileActions(QList<ActionDescriptor>* out)
 {
     struct Spec {
@@ -2953,7 +2907,6 @@ const QList<ActionDescriptor>& actionRegistry()
         appendInlineActions(&result);
         appendSourceActions(&result);
         appendEditorContextMenuActions(&result);
-        appendPackageActions(&result);
         appendWorkspaceFileActions(&result);
         appendNavigationContextActions(&result);
         appendWaveSimulationActions(&result);
@@ -3279,10 +3232,6 @@ ActionAvailabilityState evaluateActionAvailability(
         && !context.symbolAvailable) {
         missing |= ActionRequirements::Symbol;
     }
-    if ((descriptor.requirementMask & ActionRequirements::Package)
-        && !context.packageAvailable) {
-        missing |= ActionRequirements::Package;
-    }
     if ((descriptor.requirementMask & ActionRequirements::Hierarchy)
         && !context.hierarchyBound) {
         missing |= ActionRequirements::Hierarchy;
@@ -3378,8 +3327,6 @@ QString actionScopeText(ActionScope scope)
         return QStringLiteral("Editor");
     case ActionScope::Module:
         return QStringLiteral("Module");
-    case ActionScope::Package:
-        return QStringLiteral("Package");
     case ActionScope::Symbol:
         return QStringLiteral("Symbol");
     case ActionScope::Hierarchy:
@@ -3401,8 +3348,6 @@ QString actionSurfaceText(ActionSurface surface)
         return QStringLiteral("Inline template command");
     case ActionSurface::GlobalControl:
         return QStringLiteral("Global Control");
-    case ActionSurface::PackageTools:
-        return QStringLiteral("Package Tools");
     case ActionSurface::ContextMenu:
         return QStringLiteral("Context menu");
     case ActionSurface::TabContextMenu:

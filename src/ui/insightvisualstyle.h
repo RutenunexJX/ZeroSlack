@@ -285,7 +285,6 @@ public:
     static QString applicationStyleSheet();
     static QString applicationStyleSheet(ThemeMode mode);
     static QString tabBarStyleSheet(const QString& objectName = {});
-    static QString packageToolsBarStyleSheet(const QString& objectName = {});
     static QString labelStyleSheet(const QString& objectName = {},
                                    bool strong = false);
     static QString statusChipStyleSheet(

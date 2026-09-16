@@ -270,14 +270,6 @@ QString insertedDocumentText(QTextDocument* document,
     return text;
 }
 
-bool samePackageAvailability(const EditorPackageToolAvailability& left,
-                             const EditorPackageToolAvailability& right)
-{
-    return left.available == right.available
-        && left.packageName == right.packageName
-        && left.failureMessage == right.failureMessage;
-}
-
 QString wavePreviewScopeKey(const MyCodeEditorState& state,
                             const MyCodeEditor* editor)
 {
@@ -2043,19 +2035,6 @@ void MyCodeEditorState::refreshDerivedEditorState(
         syntax.matchingKeywordPairAt(
             editor->textCursor().position()));
     hotPathMetrics.editorDerivedKeywordPairNanoseconds +=
-        static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
-
-    derivedTimer.restart();
-    const EditorPackageToolAvailability availability =
-        currentPackageToolAvailability(editor);
-    if (!packageToolAvailabilityInitialized
-        || !samePackageAvailability(availability,
-                                    lastPackageToolAvailability)) {
-        lastPackageToolAvailability = availability;
-        packageToolAvailabilityInitialized = true;
-        emit editor->packageToolAvailabilityChanged(availability);
-    }
-    hotPathMetrics.editorDerivedPackageToolNanoseconds +=
         static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
 
     derivedTimer.restart();

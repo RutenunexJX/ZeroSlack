@@ -16,11 +16,9 @@ class QTextDocument;
 class TSDocument;
 class TSUTF16Text;
 struct TSChangedRange;
-enum class PackageToolKind;
 struct TSPortAppendTarget;
 struct TSSignalInsertTarget;
 struct TSParameterInsertTarget;
-struct TSPackageToolInsertTarget;
 struct TSModuleEndNavigationTarget;
 struct TSAlwaysScopeTarget;
 struct TSModuleScopeTarget;
@@ -87,9 +85,6 @@ public:
     TSSignalInsertTarget blockSignalInsertTargetAt(
         int charPos) const;
     TSParameterInsertTarget parameterInsertTargetAt(int charPos) const;
-    TSPackageToolInsertTarget packageToolInsertTargetAt(
-        int charPos,
-        PackageToolKind kind) const;
     TSModuleEndNavigationTarget moduleEndNavigationTargetAt(
         int charPos) const;
     TSAlwaysScopeTarget alwaysScopeTargetAt(

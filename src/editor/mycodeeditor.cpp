@@ -997,19 +997,6 @@ bool MyCodeEditor::goToFinalEndmodule(QString* message)
     return state->goToFinalEndmodule(this, message);
 }
 
-EditorPackageToolAvailability MyCodeEditor::currentPackageToolAvailability()
-    const
-{
-    return state->currentPackageToolAvailability(this);
-}
-
-bool MyCodeEditor::executePackageToolInsert(PackageToolKind kind,
-                                            QString* message)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->executePackageToolInsert(this, kind, message);
-}
-
 bool MyCodeEditor::selectInsideBeginEnd(QString* message)
 {
     return state->selectInsideBeginEnd(this, message);

@@ -119,7 +119,6 @@
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
-#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -661,17 +660,6 @@ void MainWindow::refreshThemePresentation()
     // widget during graph-specific refresh callbacks and shift viewports.
     applyModernShellStyle(false);
 
-    if (packageToolsBar) {
-        packageToolsBar->setStyleSheet(
-            InsightVisualStyle::packageToolsBarStyleSheet(
-                packageToolsBar->objectName()));
-    }
-    if (packageToolsPackageLabel) {
-        packageToolsPackageLabel->setStyleSheet(
-            InsightVisualStyle::labelStyleSheet(
-                packageToolsPackageLabel->objectName()));
-    }
-
     if (tabManager && tabManager->getCurrentEditor()) {
         updateEditorModePresentation(
             tabManager->getCurrentEditor()->editorModeSnapshot());
@@ -727,7 +715,6 @@ void MainWindow::setupEditorCentralArea()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    setupPackageTools(layout, editorContainer);
     editorSplitHost = new QWidget(editorContainer);
     editorSplitHost->setObjectName(
         QStringLiteral("editorSplitHost"));
@@ -1175,122 +1162,6 @@ void MainWindow::postExternalConflictActionFailure(
         fileName);
 }
 
-void MainWindow::setupPackageTools(QVBoxLayout* editorLayout, QWidget* parent)
-{
-    if (!editorLayout)
-        return;
-
-    packageToolsBar = new QWidget(parent ? parent : this);
-    packageToolsBar->setObjectName(QStringLiteral("packageToolsBar"));
-    auto* layout = new QHBoxLayout(packageToolsBar);
-    layout->setContentsMargins(8, 4, 8, 4);
-    layout->setSpacing(6);
-
-    QLabel* title =
-        new QLabel(QStringLiteral("Package Tools"), packageToolsBar);
-    title->setObjectName(QStringLiteral("packageToolsTitle"));
-    InsightVisualStyle::applyLabel(title, true);
-    layout->addWidget(title);
-
-    packageToolsPackageLabel = new QLabel(packageToolsBar);
-    packageToolsPackageLabel->setObjectName(
-        QStringLiteral("packageToolsPackageLabel"));
-    InsightVisualStyle::applyLabel(packageToolsPackageLabel);
-    layout->addWidget(packageToolsPackageLabel);
-
-    const PackageToolService service;
-    for (PackageToolKind kind : PackageToolService::toolOrder()) {
-        auto* button = new QToolButton(packageToolsBar);
-        button->setObjectName(
-            QStringLiteral("packageToolButton_%1")
-                .arg(PackageToolService::idForKind(kind)));
-        button->setText(PackageToolService::labelForKind(kind));
-        button->setAutoRaise(true);
-        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
-        button->setToolTip(
-            QStringLiteral("Insert %1").arg(service.labelForKind(kind)));
-        connect(button,
-                &QToolButton::clicked,
-                this,
-                [this, kind]() { insertPackageTool(kind); });
-        packageToolButtons.append(button);
-        layout->addWidget(button);
-    }
-
-    layout->addStretch(1);
-    packageToolsBar->setStyleSheet(
-        InsightVisualStyle::packageToolsBarStyleSheet(
-            packageToolsBar->objectName()));
-    packageToolsBar->hide();
-    editorLayout->addWidget(packageToolsBar);
-}
-
-void MainWindow::updatePackageTools()
-{
-    if (!packageToolsBar)
-        return;
-
-    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor()
-                                      : nullptr;
-    const EditorPackageToolAvailability availability =
-        editor ? editor->currentPackageToolAvailability()
-               : EditorPackageToolAvailability();
-    updatePackageToolsForEditor(editor, availability);
-}
-
-void MainWindow::updatePackageToolsForEditor(
-    MyCodeEditor* editor,
-    const EditorPackageToolAvailability& availability)
-{
-    if (!packageToolsBar)
-        return;
-    if (packageToolsStateValid && packageToolsStateEditor == editor
-        && packageToolsState.available == availability.available
-        && packageToolsState.packageName == availability.packageName
-        && packageToolsState.failureMessage == availability.failureMessage) {
-        return;
-    }
-    packageToolsStateEditor = editor;
-    packageToolsState = availability;
-    packageToolsStateValid = true;
-    packageToolsBar->setVisible(availability.available);
-
-    const QString packageText =
-        availability.packageName.isEmpty()
-            ? QStringLiteral("package")
-            : QStringLiteral("package %1").arg(availability.packageName);
-    if (packageToolsPackageLabel)
-        packageToolsPackageLabel->setText(packageText);
-
-    const QString tooltip =
-        availability.available
-            ? QStringLiteral("Insert definition in %1").arg(packageText)
-            : availability.failureMessage;
-    for (QToolButton* button : std::as_const(packageToolButtons)) {
-        if (!button)
-            continue;
-        button->setEnabled(availability.available);
-        if (!tooltip.isEmpty())
-            button->setToolTip(tooltip);
-    }
-}
-
-void MainWindow::insertPackageTool(PackageToolKind kind)
-{
-    MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor()
-                                      : nullptr;
-    if (!editor) {
-            postActivityMessage(QStringLiteral("No active editor"), 3000);
-        return;
-    }
-
-    QString message;
-    const bool inserted = editor->executePackageToolInsert(kind, &message);
-    if (!message.isEmpty())
-        postActivityMessage(message, inserted ? 3000 : 5000);
-    updatePackageTools();
-}
-
 void MainWindow::refreshWorkspaceScope()
 {
     if (!workspaceManager)
@@ -1451,7 +1322,6 @@ void MainWindow::setupManagerConnections()
             this,
             [this](const DocumentSnapshot& snapshot) {
                 scheduleActiveEditorPassiveRefresh();
-                updatePackageTools();
 
                 requestLiveInsightUpdates();
                 if (analysisScheduler && !snapshot.fileName.isEmpty()) {
@@ -1490,17 +1360,6 @@ void MainWindow::setupManagerConnections()
                             if (tabManager
                                 && tabManager->getCurrentEditor() == editor) {
 
-                            }
-                        });
-                connect(editor,
-                        &MyCodeEditor::packageToolAvailabilityChanged,
-                        this,
-                        [this, editor](
-                            const EditorPackageToolAvailability& availability) {
-                            if (tabManager
-                                && tabManager->getCurrentEditor() == editor) {
-                                updatePackageToolsForEditor(editor,
-                                                            availability);
                             }
                         });
                 connect(editor,

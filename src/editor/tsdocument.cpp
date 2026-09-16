@@ -3566,45 +3566,6 @@ bool isParameterLikeDeclaration(TSNode node)
         || nodeTypeIs(node, "local_parameter_declaration");
 }
 
-bool isPackageToolTypeDeclaration(PackageToolKind kind, TSNode node)
-{
-    if (!nodeTypeIs(node, "type_declaration"))
-        return false;
-
-    switch (kind) {
-    case PackageToolKind::TypedefEnum:
-        return descendantNodeTypeIs(node, "enum_name_declaration");
-    case PackageToolKind::TypedefStruct:
-        return descendantNodeTypeIs(node, "struct_union")
-            && !descendantNodeTypeIs(node, "packed");
-    case PackageToolKind::TypedefStructPacked:
-        return descendantNodeTypeIs(node, "struct_union")
-            && descendantNodeTypeIs(node, "packed");
-    case PackageToolKind::Parameter:
-    case PackageToolKind::Localparam:
-    case PackageToolKind::Function:
-        return false;
-    }
-    return false;
-}
-
-bool isPackageToolSameKind(PackageToolKind kind, TSNode node)
-{
-    switch (kind) {
-    case PackageToolKind::Parameter:
-        return nodeTypeIs(node, "parameter_declaration");
-    case PackageToolKind::Localparam:
-        return nodeTypeIs(node, "local_parameter_declaration");
-    case PackageToolKind::TypedefEnum:
-    case PackageToolKind::TypedefStruct:
-    case PackageToolKind::TypedefStructPacked:
-        return isPackageToolTypeDeclaration(kind, node);
-    case PackageToolKind::Function:
-        return nodeTypeIs(node, "function_declaration");
-    }
-    return false;
-}
-
 bool isModuleBodyBoundaryNode(TSNode node)
 {
     return nodeTypeIs(node, "always_construct")
@@ -4923,86 +4884,6 @@ TSParameterInsertTarget TSDocument::parameterInsertTarget(int charOffset) const
         return target;
 
     return targetAfterAnchor(anchorAfterNode(m_text, lastPackageParameter));
-}
-
-TSPackageToolInsertTarget TSDocument::packageToolInsertTarget(
-    int charOffset,
-    PackageToolKind kind) const
-{
-    TSPackageToolInsertTarget target;
-
-    const int textSize = m_text.size();
-    if (textSize <= 0) {
-        target.status = TSPackageToolInsertStatus::NoCurrentPackage;
-        return target;
-    }
-
-    const int boundedCharOffset = qBound(0, charOffset, textSize - 1);
-    TSNode node = namedNodeAtChar(m_tree, boundedCharOffset, textSize);
-
-    if (!ts_node_is_null(rtlContainerAncestor(node))) {
-        target.status = TSPackageToolInsertStatus::InsideRtlScope;
-        return target;
-    }
-
-    TSNode package = ancestorOfType(node, "package_declaration");
-    if (ts_node_is_null(package)) {
-        target.status = TSPackageToolInsertStatus::NoCurrentPackage;
-        return target;
-    }
-    if (ts_node_has_error(package)) {
-        target.status = TSPackageToolInsertStatus::PackageHasSyntaxError;
-        return target;
-    }
-
-    const int packageStartLine =
-        static_cast<int>(ts_node_start_point(package).row);
-    const int endLine = endpackageLine(package, m_text);
-    if (endLine < 0) {
-        target.status = TSPackageToolInsertStatus::NoEndpackage;
-        return target;
-    }
-    if (endLine <= packageStartLine)
-        return target;
-
-    const int endpackageStart = lineStartChar(m_text, endLine);
-    TSNode lastSameKind{};
-    const uint32_t childCount = ts_node_named_child_count(package);
-    for (uint32_t i = 0; i < childCount; ++i) {
-        TSNode rawChild = ts_node_named_child(package, i);
-        TSNode child = effectivePackageItemNode(rawChild);
-        if (nodeStartChar(child) >= endpackageStart)
-            break;
-        if (ts_node_has_error(child))
-            continue;
-        if (isPackageToolSameKind(kind, child))
-            lastSameKind = child;
-    }
-
-    target.status = TSPackageToolInsertStatus::Ok;
-    target.packageName = declarationName(m_text, package);
-
-    if (!ts_node_is_null(lastSameKind)) {
-        const SignalInsertAnchor anchor = anchorAfterNode(m_text, lastSameKind);
-        if (!anchor.valid || anchor.line < 0 || anchor.line >= endLine) {
-            target.status =
-                TSPackageToolInsertStatus::NoClearPackageInsertPoint;
-            return target;
-        }
-        target.insertAfterLine = true;
-        target.insertChar = lineEndChar(m_text, anchor.line);
-        target.lineIndent = anchor.indent;
-        return target;
-    }
-
-    const int previousLine = previousNonBlankLine(m_text, endLine - 1);
-    target.insertAfterLine = false;
-    target.insertChar = endpackageStart;
-    target.lineIndent =
-        previousLine > packageStartLine
-            ? lineIndentAt(m_text, previousLine)
-            : lineIndentAt(m_text, endLine) + QStringLiteral("    ");
-    return target;
 }
 
 TSModuleEndNavigationTarget TSDocument::moduleEndNavigationTarget(
