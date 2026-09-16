@@ -12,7 +12,8 @@ namespace RoundedIcons {
 enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Shelf, Left, Right, Down, Up,
-    Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar };
+    Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
+    OpenProject };
 
 class Engine final : public QIconEngine {
 public:
@@ -78,6 +79,28 @@ public:
         case Maximize: box(4,4,16,16);break;
         case Grid: for(int x:{3,14})for(int y:{3,14})box(x,y,7,7);break;
         case Sidebar: box(3,4,18,16);line(9,4,9,20);break;
+        case OpenProject: {
+            p->setPen(QPen(QColor(35, 50, 86), 2.7,
+                            Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            QPainterPath eyebrow;
+            eyebrow.moveTo(5.5, 7.8);
+            eyebrow.cubicTo(9, 5.1, 13.5, 4.1, 18.3, 4);
+            p->drawPath(eyebrow);
+            p->setBrush(QColor(35, 50, 86));
+            p->setPen(Qt::NoPen);
+            p->drawEllipse(QPointF(7.2, 10.5), 1.2, 1.2);
+            p->setBrush(Qt::NoBrush);
+            p->setPen(QPen(QColor(39, 105, 239), 2.8,
+                            Qt::SolidLine, Qt::RoundCap));
+            line(18.3, 10.5, 5.7, 17.7);
+            p->setPen(QPen(QColor(35, 50, 86), 2.7,
+                            Qt::SolidLine, Qt::RoundCap));
+            QPainterPath smile;
+            smile.moveTo(5.3, 21);
+            smile.cubicTo(10, 23.1, 15.8, 23.2, 19, 19.2);
+            p->drawPath(smile);
+            break;
+        }
         }
         p->restore();
     }

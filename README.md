@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.8`
+Current version: `v0.29.9`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -28,7 +28,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 
 | Area | Capability | Detail |
 | --- | --- | --- |
-| Shell | Independent full-height Navigation and Context columns, a drawer under the editor, a persistent title-bar row, and no status bar; the menu bar is hidden and its commands live in the Project context menu. | [manual §3](用户手册.md) |
+| Shell | An empty workspace opens to a compact start page with the Open Project icon and recent project paths; Navigation and Context use full-height columns when editing, with a drawer under the editor and no status bar. | [manual §3](用户手册.md) |
 | Shell | Non-editor text follows a proportional typography hierarchy with distinct headings and metadata. | [architecture, visual system](ARCHITECTURE.md) |
 | Drawer | Problems and Activity are permanent; Search, Change Preview, Connections and Fold Shelf appear on demand. Activity counts unread important messages and clears on open. | [manual §3.3](用户手册.md) |
 | Gutter | The number lane sizes itself by line count, diagnostics and Pinloom links share one marker lane, and folding sits beside the code. | [manual §3](用户手册.md) |
@@ -112,7 +112,7 @@ ctest --test-dir build/local --output-on-failure -j1
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.8`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.9`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

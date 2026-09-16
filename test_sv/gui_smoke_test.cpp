@@ -843,6 +843,11 @@ static void runEditorAppearanceCoordinatorRegression()
     expectBool("appearance coordinator applies new editor",
                newEditor && newEditor->font().pointSize() == options.fontSizePt,
                true);
+    expectBool("appearance shared document uses editor font",
+               newEditor
+                   && newEditor->document()->defaultFont().pointSize()
+                          == newEditor->font().pointSize(),
+               true);
     if (newEditor) {
         QStringList scrollLines;
         for (int i = 0; i < 200; ++i)
@@ -12372,14 +12377,13 @@ void runInsightFocusIntegrationRegression(
                    && !leaveFocusAction
                    && !viewWaveAction,
                true);
-    // Stronger than the retired controller pointer check it replaces: the
-    // focus shell used to add its own page to the central stack, so a stack
-    // holding exactly the editor page proves no focus page was ever built.
-    expectBool("central stack holds only the editor page",
+    expectBool("central stack holds editor and welcome pages",
                window.centralContentStack
-                   && window.centralContentStack->count() == 1
+                   && window.centralContentStack->count() == 2
                    && window.centralContentStack->widget(0)
                           == window.editorCentralPage
+                   && window.centralContentStack->widget(1)
+                          == window.welcomePage
                    && window.centralContentStack->currentWidget()
                           == window.editorCentralPage,
                true);
@@ -12543,6 +12547,17 @@ int main(int argc, char** argv)
     auto* collapseSidebar = window.findChild<QToolButton*>(QStringLiteral("collapseProjectSidebarButton"));
     auto* expandSidebar = window.findChild<QToolButton*>(QStringLiteral("expandProjectSidebarButton"));
     auto* fileTree = window.findChild<QTreeWidget*>(QStringLiteral("navigationFileTree"));
+    expectBool("startup uses the compact welcome page and selected project icon",
+               window.centralContentStack->currentWidget() == window.welcomePage
+                   && window.findChild<QToolButton*>(
+                          QStringLiteral("welcomeOpenProjectButton"))
+                   && !projectSidebar->isVisible()
+                   && expandSidebar->isVisible(), true);
+    saveEditorLayoutScreenshot(window, QStringLiteral("welcome-page.png"));
+    expandSidebar->click();
+    expectBool("startup sidebar remains available on demand",
+               waitUntil([&] { return projectSidebar->isVisible(); }, 2000),
+               true);
     expectBool("Project and Settings share the file tree sidebar header",
                sidebarHeader && projectButton && settingsButton && collapseSidebar && expandSidebar
                    && sidebarHeader->isAncestorOf(projectButton)

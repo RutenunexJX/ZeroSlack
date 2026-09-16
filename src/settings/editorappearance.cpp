@@ -221,6 +221,12 @@ void EditorAppearance::apply(
     font.setFixedPitch(true);
     setLigatureFeatures(font, options.ligaturesEnabled);
     editor->setFont(font);
+    // A shared QTextDocument is bound before the coordinator applies the
+    // editor appearance. QPlainTextEdit::setFont does not update that
+    // document's default font, so text layout and painted annotations can
+    // otherwise use different metrics.
+    if (editor->document())
+        editor->document()->setDefaultFont(font);
     applyLineHeight(editor, qBound(1.0, options.lineHeight, 2.0));
 
     const int tabWidth =

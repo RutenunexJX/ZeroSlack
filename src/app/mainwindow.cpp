@@ -93,6 +93,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFrame>
 #include <QFutureWatcher>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -119,6 +120,8 @@
 #include <QStackedWidget>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTimer>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -314,6 +317,30 @@ MainWindow::MainWindow(QWidget *parent)
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
     });
+    connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
+            this, [this](bool visible) {
+                if (visible)
+                    navigationHiddenForWelcome = false;
+            });
+    connect(workspaceManager.get(),
+            &WorkspaceManager::workspaceListChanged,
+            this, &MainWindow::refreshWelcomePage);
+    connect(tabManager.get(), &TabManager::tabCreated,
+            this, [this]() { refreshWelcomePage(); });
+    connect(ui->tabWidget, &QTabWidget::currentChanged,
+            this, [this](int) {
+                if (centralContentStack->currentWidget() == welcomePage)
+                    refreshWelcomePage();
+            });
+    connect(tabManager.get(), &TabManager::tabClosed,
+            this, [this]() {
+                QTimer::singleShot(0, this, &MainWindow::refreshWelcomePage);
+            });
+    connect(tabManager.get(), &TabManager::toolPageClosed,
+            this, [this]() {
+                QTimer::singleShot(0, this, &MainWindow::refreshWelcomePage);
+            });
+    refreshWelcomePage();
     for (const auto& shortcut : {QStringLiteral("Ctrl+Shift+F"), QStringLiteral("Ctrl+Shift+H")}) {
         auto* action = new QAction(this);
         action->setShortcut(QKeySequence(shortcut));
@@ -776,6 +803,7 @@ void MainWindow::setupEditorCentralArea()
     centralContentStack->setObjectName(
         QStringLiteral("centralContentStack"));
     centralContentStack->addWidget(editorCentralPage);
+    setupWelcomePage();
     setCentralWidget(centralContentStack);
 
     connect(workspaceManager.get(),
@@ -812,6 +840,147 @@ void MainWindow::setupEditorCentralArea()
                     refreshSettingsCenterWorkspace(QString());
                 refreshWorkspaceScope();
     });
+}
+
+void MainWindow::setupWelcomePage()
+{
+    welcomePage = new QWidget(centralContentStack);
+    welcomePage->setObjectName(QStringLiteral("welcomePage"));
+    auto* pageLayout = new QHBoxLayout(welcomePage);
+    pageLayout->setContentsMargins(0, 0, 0, 0);
+    pageLayout->setSpacing(0);
+
+    auto* rail = new QFrame(welcomePage);
+    rail->setObjectName(QStringLiteral("welcomeRail"));
+    rail->setFixedWidth(56);
+    auto* railLayout = new QVBoxLayout(rail);
+    railLayout->setContentsMargins(8, 12, 8, 8);
+    railLayout->setSpacing(8);
+    auto* project = new QToolButton(rail);
+    project->setObjectName(QStringLiteral("welcomeProjectButton"));
+    project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
+    project->setIconSize(QSize(20, 20));
+    project->setToolTip(tr("Open a project"));
+    project->setAccessibleName(tr("Open a project"));
+    project->setFixedSize(40, 40);
+    connect(project, &QToolButton::clicked, this, [this]() {
+        if (fileCommandCoordinator)
+            fileCommandCoordinator->openDirectoryAsWorkspace();
+    });
+    railLayout->addWidget(project);
+    auto* settings = new QToolButton(rail);
+    settings->setObjectName(QStringLiteral("welcomeSettingsButton"));
+    settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
+    settings->setIconSize(QSize(20, 20));
+    settings->setToolTip(tr("Settings"));
+    settings->setAccessibleName(tr("Settings"));
+    settings->setFixedSize(40, 40);
+    connect(settings, &QToolButton::clicked, this, [this]() {
+        if (settingsCenterDock)
+            showDockWidget(settingsCenterDock);
+    });
+    railLayout->addWidget(settings);
+    railLayout->addStretch();
+    pageLayout->addWidget(rail);
+
+    auto* center = new QWidget(welcomePage);
+    auto* centerLayout = new QVBoxLayout(center);
+    centerLayout->setContentsMargins(24, 32, 24, 32);
+    centerLayout->setSpacing(0);
+    centerLayout->addStretch(2);
+    auto* content = new QWidget(center);
+    content->setMaximumWidth(420);
+    auto* contentLayout = new QVBoxLayout(content);
+    contentLayout->setContentsMargins(0, 0, 0, 0);
+    contentLayout->setSpacing(12);
+    auto* open = new QToolButton(content);
+    open->setObjectName(QStringLiteral("welcomeOpenProjectButton"));
+    open->setIcon(RoundedIcons::icon(RoundedIcons::OpenProject));
+    open->setIconSize(QSize(68, 68));
+    open->setFixedSize(88, 88);
+    open->setToolTip(tr("Open a project"));
+    open->setAccessibleName(tr("Open a project"));
+    connect(open, &QToolButton::clicked, this, [this]() {
+        if (fileCommandCoordinator)
+            fileCommandCoordinator->openDirectoryAsWorkspace();
+    });
+    contentLayout->addWidget(open, 0, Qt::AlignHCenter);
+    contentLayout->addSpacing(28);
+    auto* recentTitle = new QLabel(tr("Recent projects"), content);
+    recentTitle->setObjectName(QStringLiteral("welcomeRecentTitle"));
+    UiTypography::apply(recentTitle, UiTypography::Role::PanelTitle);
+    contentLayout->addWidget(recentTitle);
+    recentProjectsLayout = new QVBoxLayout;
+    recentProjectsLayout->setSpacing(4);
+    contentLayout->addLayout(recentProjectsLayout);
+    centerLayout->addWidget(content, 0, Qt::AlignHCenter);
+    centerLayout->addStretch(3);
+    pageLayout->addWidget(center, 1);
+    centralContentStack->addWidget(welcomePage);
+}
+
+void MainWindow::refreshWelcomePage()
+{
+    if (!welcomePage || !recentProjectsLayout || !centralContentStack)
+        return;
+    while (QLayoutItem* item = recentProjectsLayout->takeAt(0)) {
+        delete item->widget();
+        delete item;
+    }
+    if (workspaceManager) {
+        const auto recent = workspaceManager->recentWorkspaceEntries();
+        if (auto* title = welcomePage->findChild<QLabel*>(
+                QStringLiteral("welcomeRecentTitle")))
+            title->setVisible(!recent.isEmpty());
+        for (int index = 0; index < qMin(recent.size(), 5); ++index) {
+            const auto& entry = recent.at(index);
+            auto* row = new QToolButton(welcomePage);
+            row->setObjectName(QStringLiteral("welcomeRecentProject"));
+            auto* rowLayout = new QVBoxLayout(row);
+            rowLayout->setContentsMargins(12, 7, 12, 7);
+            rowLayout->setSpacing(2);
+            auto* name = new QLabel(entry.alias, row);
+            name->setAttribute(Qt::WA_TransparentForMouseEvents);
+            UiTypography::apply(name, UiTypography::Role::Body);
+            rowLayout->addWidget(name);
+            auto* path = new QLabel(
+                QDir::toNativeSeparators(entry.path), row);
+            path->setObjectName(QStringLiteral("welcomeRecentPath"));
+            path->setAttribute(Qt::WA_TransparentForMouseEvents);
+            path->setWordWrap(true);
+            UiTypography::apply(path, UiTypography::Role::Metadata);
+            path->setForegroundRole(QPalette::PlaceholderText);
+            rowLayout->addWidget(path);
+            row->setToolTip(QDir::toNativeSeparators(entry.path));
+            row->setAccessibleName(entry.alias + QLatin1Char(' ')
+                                   + entry.path);
+            row->setMinimumHeight(58);
+            row->setStyleSheet(QStringLiteral(
+                "QToolButton { border: 0; border-radius: 8px; }"
+                "QToolButton:hover { background: palette(midlight); }"));
+            connect(row, &QToolButton::clicked, this,
+                    [this, path = entry.path]() {
+                        if (workspaceSessionCoordinator)
+                            workspaceSessionCoordinator->openWorkspace(path);
+                    });
+            recentProjectsLayout->addWidget(row);
+        }
+    }
+    const bool showWelcome = workspaceManager
+        && !workspaceManager->isWorkspaceOpen()
+        && tabManager && tabManager->openEditors().isEmpty()
+        && ui->tabWidget->count() == 0;
+    centralContentStack->setCurrentWidget(
+        showWelcome ? welcomePage : editorCentralPage);
+    if (!navigationPane || !navigationPane->dock())
+        return;
+    if (showWelcome && !navigationPane->dock()->isHidden()) {
+        navigationHiddenForWelcome = true;
+        navigationPane->dock()->hide();
+    } else if (!showWelcome && navigationHiddenForWelcome) {
+        navigationHiddenForWelcome = false;
+        navigationPane->dock()->show();
+    }
 }
 
 void MainWindow::setupExternalConflictReviewUi(

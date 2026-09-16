@@ -412,6 +412,12 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
                       QString::fromLatin1(spec.token),
                       QString::fromLatin1(spec.token)));
         }
+        if (descriptor.id == QStringLiteral("navigation.goLine")) {
+            descriptor.aliases.append(
+                alias(ActionSurface::GlobalControl,
+                      QStringLiteral("go <num>"),
+                      QStringLiteral("go <num>")));
+        }
         if (spec.shortcut && *spec.shortcut) {
             descriptor.aliases.append(
                 alias(ActionSurface::Shortcut,
@@ -2039,6 +2045,10 @@ void appendApplicationMenuActions(
             false,
             true),
     };
+    columnNumbers.aliases.append(
+        alias(ActionSurface::GlobalControl,
+              QStringLiteral("column number"),
+              QStringLiteral("column number")));
     out->append(columnNumbers);
 
     ActionDescriptor deleteShelfItem =
@@ -2273,6 +2283,10 @@ void appendRtlEditMenuActions(
             rename.canonicalName,
             rename.description),
     };
+    rename.aliases.append(
+        alias(ActionSurface::GlobalControl,
+              QStringLiteral("rename rtl symbol"),
+              QStringLiteral("rename rtl symbol")));
     out->append(rename);
 
     ActionDescriptor connectionTransform =
@@ -2325,6 +2339,10 @@ void appendRtlEditMenuActions(
             connectionTransform.canonicalName,
             connectionTransform.description),
     };
+    connectionTransform.aliases.append(
+        alias(ActionSurface::GlobalControl,
+              QStringLiteral("synchronize instance connections"),
+              QStringLiteral("synchronize instance connections")));
     out->append(connectionTransform);
 
     for (const Spec& spec : specs) {
@@ -2377,6 +2395,12 @@ void appendRtlEditMenuActions(
                 descriptor.canonicalName,
                 descriptor.description),
         };
+        const QString commandToken =
+            descriptor.aliasForSurface(ActionSurface::CommandLayer).token;
+        descriptor.aliases.append(
+            alias(ActionSurface::GlobalControl,
+                  commandToken,
+                  commandToken));
         out->append(descriptor);
     }
 }

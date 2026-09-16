@@ -200,6 +200,11 @@ private:
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
     QWidget* editorSplitHost = nullptr;
+    QWidget* welcomePage = nullptr;
+    QVBoxLayout* recentProjectsLayout = nullptr;
+    bool navigationHiddenForWelcome = false;
+    void setupWelcomePage();
+    void refreshWelcomePage();
     QString pendingActiveEditorPassiveRefreshFile;
     QString diagnosticsAnalysisState;
     bool pendingActiveEditorPassiveRefreshAll = false;

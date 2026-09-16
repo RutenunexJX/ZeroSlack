@@ -37,7 +37,7 @@ GlobalControlItem actionItem(
              token,
              subtitleOverride);
     if (!descriptor)
-        return result;
+        return {};
 
     const ActionAliasDescriptor* actionAlias =
         findActionAlias(*descriptor,
@@ -51,6 +51,36 @@ GlobalControlItem actionItem(
     }
     result.actionId = descriptor->id;
     result.executionRoute = descriptor->executionRoute;
+    return result;
+}
+
+bool isAdmittedGlobalControlItem(const GlobalControlItem& entry)
+{
+    if (entry.kind == GlobalControlItemKind::Domain) {
+        return entry.actionId.isEmpty()
+            && (entry.id == QStringLiteral("ow")
+                || entry.id == QStringLiteral("fd")
+                || entry.id == QStringLiteral("ow s"));
+    }
+    if (entry.kind != GlobalControlItemKind::Command
+        || entry.actionId.isEmpty()) {
+        return false;
+    }
+
+    const ActionDescriptor* descriptor = findActionById(entry.actionId);
+    const ActionDescriptor* aliased =
+        findActionByAlias(ActionSurface::GlobalControl, entry.id);
+    return descriptor && aliased && aliased->id == entry.actionId;
+}
+
+QList<GlobalControlItem> admittedGlobalControlItems(
+    const QList<GlobalControlItem>& items)
+{
+    QList<GlobalControlItem> result;
+    for (const GlobalControlItem& entry : items) {
+        if (isAdmittedGlobalControlItem(entry))
+            result.append(entry);
+    }
     return result;
 }
 
@@ -187,66 +217,47 @@ QList<GlobalControlItem> workspaceDomainItems(const QString& query)
 QList<GlobalControlItem> commandPaletteItems(const QString& text)
 {
     const QString queryText = normalizedQuery(text);
+    QList<GlobalControlItem> result;
     if (queryText == QStringLiteral("fd")
         || queryText.startsWith(QStringLiteral("fd "))) {
-        return foldDomainItems(queryText);
-    }
-    if (queryText == QStringLiteral("ow")
-        || queryText.startsWith(QStringLiteral("ow "))) {
-        return workspaceDomainItems(queryText);
-    }
+        result = foldDomainItems(queryText);
+    } else if (queryText == QStringLiteral("ow")
+               || queryText.startsWith(QStringLiteral("ow "))) {
+        result = workspaceDomainItems(queryText);
+    } else {
+        appendFiltered(&result, rootDomainItems(), queryText);
 
-    QList<GlobalControlItem> result;
-    appendFiltered(&result, rootDomainItems(), queryText);
-
-    const CommandLayerLineParseResult lineQuery =
-        parseCommandLayerLineQuery(queryText);
-    if (lineQuery.state == CommandLayerLineParseState::Valid) {
-        if (const CommandLayerCommandMetadata* command =
-                findCommandLayerCommand(QStringLiteral("go <number>"))) {
-            GlobalControlItem lineItem =
-                item(GlobalControlItemKind::Command,
-                     QStringLiteral("go %1").arg(lineQuery.line),
-                     QStringLiteral("Go to line %1").arg(lineQuery.line),
-                     command->description);
-            lineItem.actionId = command->actionId;
-            lineItem.executionRoute = command->executionRoute;
-            lineItem.parameters.insert(QStringLiteral("line"),
-                                       lineQuery.line);
-            result.prepend(lineItem);
+        const CommandLayerLineParseResult lineQuery =
+            parseCommandLayerLineQuery(queryText);
+        if (lineQuery.state == CommandLayerLineParseState::Valid) {
+            if (const CommandLayerCommandMetadata* command =
+                    findCommandLayerCommand(QStringLiteral("go <number>"))) {
+                GlobalControlItem lineItem =
+                    item(GlobalControlItemKind::Command,
+                         QStringLiteral("go %1").arg(lineQuery.line),
+                         QStringLiteral("Go to line %1").arg(lineQuery.line),
+                         command->description);
+                lineItem.actionId = command->actionId;
+                lineItem.executionRoute = command->executionRoute;
+                lineItem.parameters.insert(QStringLiteral("line"),
+                                           lineQuery.line);
+                result.prepend(lineItem);
+            }
+        } else if (lineQuery.state != CommandLayerLineParseState::Invalid) {
+            for (const CommandLayerCommandMatch& match :
+                 commandLayerCommandMatches(queryText)) {
+                GlobalControlItem commandItem =
+                    item(GlobalControlItemKind::Command,
+                         match.command.name,
+                         match.command.name,
+                         match.command.description);
+                commandItem.actionId = match.command.actionId;
+                commandItem.executionRoute = match.command.executionRoute;
+                result.append(commandItem);
+            }
         }
-        return result.mid(0, 80);
     }
-    if (lineQuery.state == CommandLayerLineParseState::Invalid)
-        return result;
-
-    for (const CommandLayerCommandMatch& match :
-         commandLayerCommandMatches(queryText)) {
-        const ActionDescriptor* descriptor = findActionById(match.command.actionId);
-        if (!descriptor)
-            continue;
-        const bool sharedShortcut = !descriptor->defaultShortcut.isEmpty()
-            && !descriptor->defaultShortcut.contains(QStringLiteral("F24"), Qt::CaseInsensitive);
-        const bool sharedSurface = descriptor->hasSurface(ActionSurface::GlobalControl)
-            || descriptor->hasSurface(ActionSurface::Menu)
-            || descriptor->hasSurface(ActionSurface::ContextMenu)
-            || descriptor->hasSurface(ActionSurface::TabContextMenu)
-            || descriptor->hasSurface(ActionSurface::PanelContextMenu)
-            || descriptor->hasSurface(ActionSurface::GraphPanel);
-        if (!sharedShortcut && !sharedSurface)
-            continue;
-        GlobalControlItem commandItem =
-            item(GlobalControlItemKind::Command,
-                 match.command.name,
-                 match.command.name,
-                 match.command.description);
-        commandItem.actionId = match.command.actionId;
-        commandItem.executionRoute = match.command.executionRoute;
-        result.append(commandItem);
-        if (result.size() >= 80)
-            break;
-    }
-    return result.mid(0, 80);
+    return admittedGlobalControlItems(result).mid(0, 80);
 }
 
 }
@@ -272,19 +283,16 @@ QList<GlobalControlItem> GlobalControlService::query(
     const QString& text) const
 {
     const QString queryText = normalizedQuery(text);
-    if (queryText.isEmpty())
-        return rootDomainItems();
-
-    if (queryText == QStringLiteral("fd")
-        || queryText.startsWith(QStringLiteral("fd "))) {
-        return foldDomainItems(queryText);
-    }
-    if (queryText == QStringLiteral("ow")
-        || queryText.startsWith(QStringLiteral("ow "))) {
-        return workspaceDomainItems(queryText);
-    }
-
     QList<GlobalControlItem> result;
-    appendFiltered(&result, rootDomainItems(), queryText);
-    return result.mid(0, 80);
+    if (queryText.isEmpty())
+        result = rootDomainItems();
+    else if (queryText == QStringLiteral("fd")
+             || queryText.startsWith(QStringLiteral("fd ")))
+        result = foldDomainItems(queryText);
+    else if (queryText == QStringLiteral("ow")
+             || queryText.startsWith(QStringLiteral("ow ")))
+        result = workspaceDomainItems(queryText);
+    else
+        appendFiltered(&result, rootDomainItems(), queryText);
+    return admittedGlobalControlItems(result).mid(0, 80);
 }

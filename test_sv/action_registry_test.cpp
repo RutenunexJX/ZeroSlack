@@ -6,6 +6,7 @@
 
 #include <QList>
 #include <QHash>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -2191,6 +2192,121 @@ int main()
     }
     expect("static Global Control commands use registry metadata",
            globalControlUsesRegistry);
+
+    const QStringList paletteQueries = {
+        QString(), QStringLiteral("fd"), QStringLiteral("ow"),
+        QStringLiteral("ow s"), QStringLiteral("ow 3"),
+        QStringLiteral("go 42"), QStringLiteral("rename"),
+        QStringLiteral("connect"), QStringLiteral("column"),
+        QStringLiteral("close tab"), QStringLiteral("split left"),
+        QStringLiteral("join lines"), QStringLiteral("fold")};
+    const auto admittedItem = [](const GlobalControlItem& entry) {
+        if (entry.kind == GlobalControlItemKind::Domain) {
+            return entry.actionId.isEmpty()
+                && (entry.id == QStringLiteral("ow")
+                    || entry.id == QStringLiteral("fd")
+                    || entry.id == QStringLiteral("ow s"));
+        }
+        if (entry.kind != GlobalControlItemKind::Command
+            || entry.actionId.isEmpty()) {
+            return false;
+        }
+        const ActionDescriptor* descriptor = findActionById(entry.actionId);
+        const ActionDescriptor* byAlias =
+            findActionByAlias(ActionSurface::GlobalControl, entry.id);
+        return descriptor && byAlias && descriptor == byAlias;
+    };
+    bool paletteWhitelisted = true;
+    for (const QString& query : paletteQueries) {
+        for (const GlobalControlItem& entry : globalControl.query(
+                 GlobalControlCategory::Commands, query, {})) {
+            paletteWhitelisted = paletteWhitelisted && admittedItem(entry);
+        }
+        for (const GlobalControlItem& entry : globalControl.query(query))
+            paletteWhitelisted = paletteWhitelisted && admittedItem(entry);
+    }
+    expect("global control commands are whitelisted", paletteWhitelisted);
+
+    QSet<QString> commandLayerGlobalControlIds;
+    for (const CommandLayerCommandMetadata& command :
+         commandLayerCommandRegistry()) {
+        const ActionDescriptor* descriptor = findActionById(command.actionId);
+        if (descriptor && descriptor->hasSurface(ActionSurface::GlobalControl))
+            commandLayerGlobalControlIds.insert(command.actionId);
+    }
+    const QSet<QString> expectedGlobalControlIds = {
+        QStringLiteral("rtl.rename"),
+        QStringLiteral("rtl.connection.transform"),
+        QStringLiteral("signal.connectInstancePair"),
+        QStringLiteral("signal.propagateBatch"),
+        QStringLiteral("insert.columnNumbers"),
+        QStringLiteral("navigation.goLine")};
+    expect("F24 vocabulary is unchanged by palette scoping",
+           commandLayerCommandRegistry().size() == 38
+               && commandLayerGlobalControlIds == expectedGlobalControlIds);
+
+    struct CommandColumnCase {
+        QString query;
+        QStringList expectedIds;
+    };
+    const QList<CommandColumnCase> commandColumnCases = {
+        {QString(), {QStringLiteral("domain:ow"), QStringLiteral("domain:fd"),
+                     QStringLiteral("rename rtl symbol"),
+                     QStringLiteral("synchronize instance connections"),
+                     QStringLiteral("connect instance pair"),
+                     QStringLiteral("propagate selected signals"),
+                     QStringLiteral("column number")}},
+        {QStringLiteral("fd"), {QStringLiteral("fd r"), QStringLiteral("fd s")}},
+        {QStringLiteral("ow"), {QStringLiteral("ow 1"), QStringLiteral("ow 2"),
+                                QStringLiteral("ow r"), QStringLiteral("domain:ow s")}},
+        {QStringLiteral("ow s"), {QStringLiteral("ow s save"),
+                                  QStringLiteral("ow s restore"),
+                                  QStringLiteral("ow s clean")}},
+        {QStringLiteral("ow 3"), {QStringLiteral("ow 3")}},
+        {QStringLiteral("go 42"), {QStringLiteral("go 42")}},
+        {QStringLiteral("rename"), {QStringLiteral("rename rtl symbol")}},
+        {QStringLiteral("connect"), {QStringLiteral("connect instance pair")}},
+        {QStringLiteral("column"), {QStringLiteral("column number")}},
+        {QStringLiteral("fold"), {QStringLiteral("domain:fd")}},
+        {QStringLiteral("close tab"), {}},
+        {QStringLiteral("split left"), {}},
+        {QStringLiteral("join lines"), {}},
+        {QStringLiteral("move lines up"), {}},
+        {QStringLiteral("expand selection"), {}},
+        {QStringLiteral("duplicate"), {}},
+        {QStringLiteral("reopen"), {}},
+        {QStringLiteral("toggle"), {}}};
+    bool exactCommandColumn = true;
+    for (const CommandColumnCase& testCase : commandColumnCases) {
+        const QList<GlobalControlItem> entries = globalControl.query(
+            GlobalControlCategory::Commands, testCase.query, {});
+        QStringList actualIds;
+        for (const GlobalControlItem& entry : entries) {
+            actualIds.append(entry.kind == GlobalControlItemKind::Domain
+                                 ? QStringLiteral("domain:") + entry.id
+                                 : entry.id);
+        }
+        QStringList expectedIds = testCase.expectedIds;
+        actualIds.sort();
+        expectedIds.sort();
+        const bool caseMatches = actualIds == expectedIds
+            && (testCase.query != QStringLiteral("ow 3")
+                || (!entries.isEmpty() && entries.first().actionId
+                    == QStringLiteral("workspace.openCount")))
+            && (testCase.query != QStringLiteral("go 42")
+                || (!entries.isEmpty() && entries.first().title
+                    == QStringLiteral("Go to line 42")
+                    && entries.first().actionId
+                        == QStringLiteral("navigation.goLine")));
+        exactCommandColumn = exactCommandColumn && caseMatches;
+        const QByteArray label = testCase.query.isEmpty()
+            ? QByteArray("<empty>") : testCase.query.toUtf8();
+        const QByteArray contents = actualIds.join(QLatin1Char('|')).toUtf8();
+        std::printf("Commands [%s]: %d [%s]%s\n", label.constData(),
+                    entries.size(), contents.constData(),
+                    caseMatches ? "" : " MISMATCH");
+    }
+    expect("commands column exact contents", exactCommandColumn);
 
     CommandLayerActionExecutionHost repeatRoutingHost;
     repeatRoutingHost.setFallbackHost(&actionHost);

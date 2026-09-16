@@ -1466,8 +1466,10 @@ int main(int argc, char** argv) {
         globalControlService.query(
             GlobalControlCategory::Commands,
             QStringLiteral("duplicate"));
-    expectBool("Ctrl+Space command category uses Action registry",
-               std::any_of(
+    expectBool("Ctrl+Space command category excludes F24-only duplicate",
+               findCommandLayerCommand(
+                   QStringLiteral("duplicate selection or line"))
+                   && std::none_of(
                    paletteCommands.cbegin(),
                    paletteCommands.cend(),
                    [](const GlobalControlItem& item) {
