@@ -2856,6 +2856,27 @@ private:
                        1)) {
             return fail("module prefix edit");
         }
+        const auto setNameToListGap = [&](int listStart,
+                                          int spaces) {
+            const QList<TSNode> imports =
+                directNamedChildren(
+                    header, "package_import_declaration");
+            if (imports.isEmpty())
+                return setGap(nodeEnd(nameNode), listStart, spaces);
+            int cursor = nodeEnd(nameNode);
+            for (const TSNode import : imports) {
+                const int start = nodeStart(import);
+                const int end = nodeEnd(import);
+                if (start < cursor || end > listStart
+                    || !allWhitespace(QStringView(m_source).mid(
+                        cursor, start - cursor))) {
+                    return false;
+                }
+                cursor = end;
+            }
+            return allWhitespace(QStringView(m_source).mid(
+                cursor, listStart - cursor));
+        };
         if (!ts_node_is_null(parameterList)) {
             const QList<LeafToken> parameterLeaves =
                 leavesOf(parameterList, m_source);
@@ -2877,7 +2898,7 @@ private:
                     return fail(ts_node_type(child));
                 }
             }
-            if (!setGap(nodeEnd(nameNode), hash.start, 1)
+            if (!setNameToListGap(hash.start, 1)
                 || !setGap(hash.end, opening.start, 0)
                 || !setGap(closing.end, portOpening.start, 0)
                 || !formatParameterItems(parameterList,
@@ -2888,7 +2909,7 @@ private:
                 return fail("parameter item format");
             }
         } else {
-            if (!setGap(nodeEnd(nameNode), portOpening.start, 0))
+            if (!setNameToListGap(portOpening.start, 0))
                 return fail("name to port gap");
         }
 

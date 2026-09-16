@@ -518,6 +518,53 @@ int main(int argc, char* argv[])
                stable.accepted() && !stable.changed);
     }
 
+    {
+        const QString source = QStringLiteral(
+            "module axi_lite_adaptor\n"
+            "import common_package::*;\n"
+            "#(\n"
+            "    parameter P_AW = 32\n"
+            ")(\n"
+            "    input logic clk,\n"
+            "    input logic [P_AW - 1:0] s_axil_awaddr,\n"
+            "    input axi_lite_status_e downstream_wr_status,\n"
+            "    output logic downstream_rd_ready\n"
+            ");\n"
+            "endmodule\n");
+        const FormatterReport report =
+            FormatterService::getInstance()->formatDocument(source);
+        expect("package-import module ports align",
+               report.accepted() && report.changed
+                   && report.formattedText.contains(
+                       QStringLiteral("import common_package::*;"))
+                   && report.formattedText.contains(
+                       QStringLiteral("input  logic"))
+                   && StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                       source, report.formattedText));
+        const FormatterReport stable = FormatterService::getInstance()
+                                           ->formatDocument(report.formattedText);
+        expect("package-import module formatting is idempotent",
+               stable.accepted() && !stable.changed);
+    }
+
+    {
+        const QString source = QStringLiteral(
+            "module imported_ports\n"
+            "import common_package::*;\n"
+            "(input logic clk, output logic ready);\n"
+            "endmodule\n");
+        const FormatterReport report =
+            FormatterService::getInstance()->formatDocument(source);
+        expect("package-import module without parameters formats ports",
+               report.accepted() && report.changed
+                   && report.formattedText.contains(
+                       QStringLiteral("import common_package::*;"))
+                   && report.formattedText.contains(
+                       QStringLiteral("output logic ready"))
+                   && StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
+                       source, report.formattedText));
+    }
+
     std::printf("%d checks, %d failed\n",
                 checks,
                 failures);
