@@ -581,6 +581,66 @@ void exerciseDrawerHistoryRestoresPerEntryFolds()
                && drawerEditor->foldCollapsedAtLineForTest(2)
                && !drawerEditor->foldCollapsedAtLineForTest(7));
 }
+
+void exerciseShiftWheelHorizontalScroll()
+{
+    ProjectionTestEditor editor;
+    editor.setLineWrapMode(QPlainTextEdit::NoWrap);
+    editor.resize(320, 180);
+    editor.setPlainText(QStringLiteral("module wide;\n")
+                        + QString(300, QLatin1Char('x'))
+                        + QStringLiteral("\nendmodule\n")
+                        + QString(40, QLatin1Char('\n')));
+    editor.show();
+    pumpEvents();
+
+    QScrollBar* horizontal = editor.horizontalScrollBar();
+    QScrollBar* vertical = editor.verticalScrollBar();
+    expect("unwrapped fixture supports both scroll directions",
+           horizontal->maximum() > 0 && vertical->maximum() > 0);
+    const int verticalBefore = vertical->value();
+    QWheelEvent shiftWheel(QPointF(12, 12),
+                           editor.mapToGlobal(QPoint(12, 12)),
+                           QPoint(), QPoint(0, -120), Qt::NoButton,
+                           Qt::ShiftModifier, Qt::NoScrollPhase, false);
+    editor.wheelEvent(&shiftWheel);
+    expect("Shift and wheel scroll horizontally without changing the row",
+           shiftWheel.isAccepted() && horizontal->value() > 0
+               && vertical->value() == verticalBefore);
+
+    QWheelEvent shiftPixelWheel(QPointF(12, 12),
+                                editor.mapToGlobal(QPoint(12, 12)),
+                                QPoint(0, -20), QPoint(), Qt::NoButton,
+                                Qt::ShiftModifier, Qt::NoScrollPhase, false);
+    const int angleScroll = horizontal->value();
+    editor.wheelEvent(&shiftPixelWheel);
+    expect("Shift and precision wheel use horizontal pixel delta",
+           horizontal->value() == angleScroll + 20
+               && vertical->value() == verticalBefore);
+
+    int zoomRequests = 0;
+    QObject::connect(&editor, &MyCodeEditor::fontZoomRequested,
+                     &editor, [&](int) { ++zoomRequests; });
+    const int beforeZoom = horizontal->value();
+    QWheelEvent zoomWheel(QPointF(12, 12),
+                          editor.mapToGlobal(QPoint(12, 12)),
+                          QPoint(), QPoint(0, 120), Qt::NoButton,
+                          Qt::ControlModifier | Qt::ShiftModifier,
+                          Qt::NoScrollPhase, false);
+    editor.wheelEvent(&zoomWheel);
+    expect("Ctrl Shift wheel preserves font zoom",
+           zoomRequests == 1 && horizontal->value() == beforeZoom);
+
+    const int horizontalBefore = horizontal->value();
+    QWheelEvent normalWheel(QPointF(12, 12),
+                            editor.mapToGlobal(QPoint(12, 12)),
+                            QPoint(), QPoint(0, -120), Qt::NoButton,
+                            Qt::NoModifier, Qt::NoScrollPhase, false);
+    editor.wheelEvent(&normalWheel);
+    expect("unmodified wheel keeps vertical scrolling",
+           vertical->value() > verticalBefore
+               && horizontal->value() == horizontalBefore);
+}
 }
 
 int main(int argc, char** argv)
@@ -591,6 +651,7 @@ int main(int argc, char** argv)
     exerciseFoldAnchorBoundariesAndFindReveal();
     exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection();
     exerciseDrawerHistoryRestoresPerEntryFolds();
+    exerciseShiftWheelHorizontalScroll();
     std::printf("Checks: %d, Failures: %d\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

@@ -224,6 +224,27 @@ void EditorGutter::handleMouseMove(MyCodeEditor* editor, QMouseEvent* event) con
 void EditorGutter::handleWheel(MyCodeEditor* editor, QWheelEvent* event) const
 {
     const QPoint angle = event->angleDelta();
+    if (event->modifiers().testFlag(Qt::ShiftModifier)
+        && !event->modifiers().testFlag(Qt::ControlModifier)) {
+        QScrollBar* bar = editor->horizontalScrollBar();
+        const QPoint pixels = event->pixelDelta();
+        if (!pixels.isNull()) {
+            const int delta = pixels.y() != 0 ? pixels.y() : pixels.x();
+            bar->setValue(bar->value() - delta);
+        } else {
+            const int delta = angle.y() != 0 ? angle.y() : angle.x();
+            if (delta != 0) {
+                const int steps = qMax(1, qAbs(delta) / 120);
+                const int scrollStep = qMax(
+                    24, editor->fontMetrics().horizontalAdvance(QLatin1Char('M')) * 6);
+                bar->setValue(bar->value()
+                              - (delta > 0 ? steps : -steps)
+                                    * scrollStep);
+            }
+        }
+        event->accept();
+        return;
+    }
     if (!angle.isNull()) {
         const int dy = angle.y();
         const int dx = angle.x();

@@ -91,6 +91,36 @@ bool handleControlWheelFastScroll(MyCodeEditor* editor, QWheelEvent* event)
     return true;
 }
 
+bool handleShiftWheelHorizontalScroll(MyCodeEditor* editor, QWheelEvent* event)
+{
+    if (!editor || !event)
+        return false;
+
+    QScrollBar* bar = editor->horizontalScrollBar();
+    if (!bar)
+        return false;
+
+    const QPoint pixels = event->pixelDelta();
+    if (!pixels.isNull()) {
+        const int delta = pixels.y() != 0 ? pixels.y() : pixels.x();
+        bar->setValue(bar->value() - delta);
+        event->accept();
+        return true;
+    }
+
+    const QPoint angle = event->angleDelta();
+    const int delta = angle.y() != 0 ? angle.y() : angle.x();
+    if (delta == 0)
+        return false;
+    const int steps = qMax(1, qAbs(delta) / 120);
+    const int scrollStep = qMax(
+        24, editor->fontMetrics().horizontalAdvance(QLatin1Char('M')) * 6);
+    bar->setValue(bar->value()
+                  - (delta > 0 ? steps : -steps) * scrollStep);
+    event->accept();
+    return true;
+}
+
 QString selectedPlainText(const QTextCursor& cursor)
 {
     QString text = cursor.selectedText();
@@ -2386,6 +2416,12 @@ void MyCodeEditor::wheelEvent(QWheelEvent* event)
     if (event
         && event->modifiers().testFlag(Qt::ControlModifier)
         && handleControlWheelFastScroll(this, event)) {
+        return;
+    }
+
+    if (event
+        && event->modifiers().testFlag(Qt::ShiftModifier)
+        && handleShiftWheelHorizontalScroll(this, event)) {
         return;
     }
 

@@ -12007,6 +12007,51 @@ int main(int argc, char** argv) {
                    && slangDiagnosticCancelChecks >= 5,
                true);
 
+    const QString mixedTimeScaleSource = QStringLiteral(
+        "package no_time_pkg;\n"
+        "endpackage\n"
+        "module no_time_module;\n"
+        "endmodule\n"
+        "module timed_top;\n"
+        "    timeunit 1ns;\n"
+        "    no_time_module instance();\n"
+        "endmodule\n");
+    QTemporaryDir timeScaleWorkspace;
+    const QString timeScaleFile =
+        QDir(timeScaleWorkspace.path()).absoluteFilePath(
+            QStringLiteral("mixed_time_scale.sv"));
+    expectBool("Mixed time scale diagnostic fixture is created",
+               timeScaleWorkspace.isValid()
+                   && writeTextFile(timeScaleFile, mixedTimeScaleSource),
+               true);
+    const auto onlyUntimedModuleIsReported = [](const QList<SemanticDiagnostic>& diagnostics) {
+        int missingTimeScaleCount = 0;
+        bool moduleReported = false;
+        bool packageReported = false;
+        for (const SemanticDiagnostic& diagnostic : diagnostics) {
+            if (diagnostic.codeName != QStringLiteral("MissingTimeScale"))
+                continue;
+            ++missingTimeScaleCount;
+            moduleReported |= diagnostic.line == 3;
+            packageReported |= diagnostic.line == 1;
+        }
+        return missingTimeScaleCount == 1 && moduleReported && !packageReported;
+    };
+    SlangManager timeScaleSlang;
+    expectBool("Single-file diagnostics omit package-only MissingTimeScale",
+               onlyUntimedModuleIsReported(timeScaleSlang.extractDiagnostics(
+                   timeScaleFile, mixedTimeScaleSource)),
+               true);
+    expectBool("Workspace diagnostics omit package-only MissingTimeScale",
+               onlyUntimedModuleIsReported(
+                   timeScaleSlang.extractWorkspaceDiagnostics({timeScaleFile})),
+               true);
+    expectBool("Overlay diagnostics omit package-only MissingTimeScale",
+               onlyUntimedModuleIsReported(
+                   timeScaleSlang.extractOverlayWorkspaceDiagnostics(
+                       {{timeScaleFile, mixedTimeScaleSource}})),
+               true);
+
     printf("\n%d checks, %d failed\n", g_checks, g_fails);
     return g_fails == 0 ? 0 : 1;
 }

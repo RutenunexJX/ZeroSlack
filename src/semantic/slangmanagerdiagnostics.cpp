@@ -3,6 +3,8 @@
 #include "slangsymbolcollectorhelpers.h"
 
 #include <slang/ast/Compilation.h>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
+#include <slang/diagnostics/CompilationDiags.h>
 #include <slang/diagnostics/DiagnosticEngine.h>
 #include <slang/diagnostics/Diagnostics.h>
 #include <slang/syntax/SyntaxTree.h>
@@ -14,8 +16,10 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
+#include <algorithm>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -60,7 +64,8 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
                        const slang::Diagnostics& diagnostics,
                        QList<SemanticDiagnostic>* result,
                        QSet<QString>* seen,
-                       const std::function<bool()>& isCancelled = nullptr)
+                       const std::function<bool()>& isCancelled = nullptr,
+                       std::span<const slang::SourceLocation> packageLocations = {})
 {
     if (!result || !seen)
         return true;
@@ -69,6 +74,11 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
     for (const slang::Diagnostic& diagnostic : diagnostics) {
         if (isCancelled && isCancelled())
             return false;
+        if (diagnostic.code == slang::diag::MissingTimeScale
+            && std::find(packageLocations.begin(), packageLocations.end(),
+                         diagnostic.location) != packageLocations.end()) {
+            continue;
+        }
         const slang::DiagnosticSeverity severity =
             engine.getSeverity(diagnostic.code, diagnostic.location);
         if (severity == slang::DiagnosticSeverity::Ignored)
@@ -165,6 +175,17 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
     return true;
 }
 
+std::vector<slang::SourceLocation> packageDeclarationLocations(
+    const Compilation& compilation)
+{
+    std::vector<slang::SourceLocation> locations;
+    for (const PackageSymbol* package : compilation.getPackages()) {
+        if (package && package->location.valid())
+            locations.push_back(package->location);
+    }
+    return locations;
+}
+
 } // namespace
 
 QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileName,
@@ -210,7 +231,8 @@ QList<SemanticDiagnostic> SlangManager::extractDiagnostics(const QString& fileNa
         (void)compilation.getRoot();
         const slang::SourceManager* sm = compilation.getSourceManager();
         if (sm)
-            appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen);
+            appendDiagnostics(*sm, compilation.getAllDiagnostics(), &result, &seen,
+                              nullptr, packageDeclarationLocations(compilation));
     } catch (const std::exception&) {
         result.clear();
     } catch (...) {
@@ -304,7 +326,8 @@ QList<SemanticDiagnostic> SlangManager::extractWorkspaceDiagnostics(
                                   compilation.getAllDiagnostics(),
                                   &result,
                                   &seen,
-                                  isCancelled)) {
+                                  isCancelled,
+                                  packageDeclarationLocations(compilation))) {
             result.clear();
             return result;
         }
@@ -442,7 +465,8 @@ QList<SemanticDiagnostic> SlangManager::extractOverlayWorkspaceDiagnostics(
                                   compilation.getAllDiagnostics(),
                                   &result,
                                   &seen,
-                                  isCancelled)) {
+                                  isCancelled,
+                                  packageDeclarationLocations(compilation))) {
             return {};
         }
         if (cancelled())
