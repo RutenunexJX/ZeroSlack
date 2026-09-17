@@ -93,6 +93,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QFrame>
 #include <QFutureWatcher>
 #include <QGroupBox>
@@ -889,6 +890,7 @@ void MainWindow::setupWelcomePage()
     centerLayout->setSpacing(0);
     centerLayout->addStretch(2);
     auto* content = new QWidget(center);
+    content->setMinimumWidth(360);
     content->setMaximumWidth(420);
     auto* contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(0, 0, 0, 0);
@@ -905,13 +907,13 @@ void MainWindow::setupWelcomePage()
             fileCommandCoordinator->openDirectoryAsWorkspace();
     });
     contentLayout->addWidget(open, 0, Qt::AlignHCenter);
-    contentLayout->addSpacing(28);
+    contentLayout->addSpacing(18);
     auto* recentTitle = new QLabel(tr("Recent projects"), content);
     recentTitle->setObjectName(QStringLiteral("welcomeRecentTitle"));
     UiTypography::apply(recentTitle, UiTypography::Role::PanelTitle);
-    contentLayout->addWidget(recentTitle);
+    contentLayout->addWidget(recentTitle, 0, Qt::AlignHCenter);
     recentProjectsLayout = new QVBoxLayout;
-    recentProjectsLayout->setSpacing(4);
+    recentProjectsLayout->setSpacing(8);
     contentLayout->addLayout(recentProjectsLayout);
     centerLayout->addWidget(content, 0, Qt::AlignHCenter);
     centerLayout->addStretch(3);
@@ -936,27 +938,35 @@ void MainWindow::refreshWelcomePage()
             const auto& entry = recent.at(index);
             auto* row = new QToolButton(welcomePage);
             row->setObjectName(QStringLiteral("welcomeRecentProject"));
+            row->setSizePolicy(QSizePolicy::Expanding,
+                               QSizePolicy::Preferred);
             auto* rowLayout = new QVBoxLayout(row);
-            rowLayout->setContentsMargins(12, 7, 12, 7);
-            rowLayout->setSpacing(2);
+            rowLayout->setContentsMargins(14, 9, 14, 9);
+            rowLayout->setSpacing(3);
             auto* name = new QLabel(entry.alias, row);
             name->setAttribute(Qt::WA_TransparentForMouseEvents);
             UiTypography::apply(name, UiTypography::Role::Body);
+            QFont nameFont = name->font();
+            nameFont.setWeight(QFont::DemiBold);
+            name->setFont(nameFont);
             rowLayout->addWidget(name);
-            auto* path = new QLabel(
-                QDir::toNativeSeparators(entry.path), row);
+            const QString fullPath = QDir::toNativeSeparators(entry.path);
+            auto* path = new QLabel(row);
             path->setObjectName(QStringLiteral("welcomeRecentPath"));
             path->setAttribute(Qt::WA_TransparentForMouseEvents);
-            path->setWordWrap(true);
             UiTypography::apply(path, UiTypography::Role::Metadata);
             path->setForegroundRole(QPalette::PlaceholderText);
+            path->setProperty("fullPath", fullPath);
+            path->setText(path->fontMetrics().elidedText(
+                fullPath, Qt::ElideMiddle, 328));
             rowLayout->addWidget(path);
             row->setToolTip(QDir::toNativeSeparators(entry.path));
             row->setAccessibleName(entry.alias + QLatin1Char(' ')
                                    + entry.path);
-            row->setMinimumHeight(58);
+            row->setMinimumHeight(60);
             row->setStyleSheet(QStringLiteral(
-                "QToolButton { border: 0; border-radius: 8px; }"
+                "QToolButton { background: palette(base); "
+                "border: 1px solid palette(midlight); border-radius: 9px; }"
                 "QToolButton:hover { background: palette(midlight); }"));
             connect(row, &QToolButton::clicked, this,
                     [this, path = entry.path]() {

@@ -12554,6 +12554,38 @@ int main(int argc, char** argv)
                    && !projectSidebar->isVisible()
                    && expandSidebar->isVisible(), true);
     saveEditorLayoutScreenshot(window, QStringLiteral("welcome-page.png"));
+    {
+        QTemporaryDir recentWorkspace;
+        MainWindow recentWindow;
+        recentWindow.workspaceManager
+            ->setRecentWorkspacePersistenceEnabledForTesting(false);
+        const bool openedRecent = recentWorkspace.isValid()
+            && recentWindow.workspaceManager->openWorkspace(
+                recentWorkspace.path());
+        expectBool("welcome recent project fixture opens",
+                   openedRecent, true);
+        if (openedRecent)
+            recentWindow.workspaceManager->closeWorkspace();
+        recentWindow.resize(800, 600);
+        recentWindow.show();
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        auto* recentRow = recentWindow.findChild<QToolButton*>(
+            QStringLiteral("welcomeRecentProject"));
+        auto* recentPath = recentWindow.findChild<QLabel*>(
+            QStringLiteral("welcomeRecentPath"));
+        expectBool("welcome recent project has readable row width",
+                   recentRow && recentRow->width() >= 340
+                       && recentPath && recentPath->width() >= 300,
+                   true);
+        expectBool("welcome recent project retains its full path",
+                   recentPath
+                       && recentPath->property("fullPath").toString()
+                              == QDir::toNativeSeparators(
+                                  recentWorkspace.path()),
+                   true);
+        saveEditorLayoutScreenshot(
+            recentWindow, QStringLiteral("welcome-recent-projects.png"));
+    }
     expandSidebar->click();
     expectBool("startup sidebar remains available on demand",
                waitUntil([&] { return projectSidebar->isVisible(); }, 2000),
