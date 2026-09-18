@@ -6,6 +6,11 @@ beside, and where each component's own license text lives. Every statement below
 was checked against the license file in this repository or in the component's own
 source tree, not against memory.
 
+The ElaWidgetTools branch's portable package includes this notice, ZeroSlack's
+`LICENSE`, dependency texts in `licenses/`, and the ElaWidgetTools and Font
+Awesome license files beside `ZeroSlack.exe`. The paths in the tables below
+identify the corresponding source-tree copies.
+
 ## Built into the application
 
 | Component | Version | License | License text |

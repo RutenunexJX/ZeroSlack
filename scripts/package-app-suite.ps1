@@ -87,6 +87,23 @@ Assert-RequiredFile $zeroSlackSource "zeroslack-cli.exe"
 Assert-RequiredFile $zeroSlackSource "ElaWidgetTools.dll"
 Assert-RequiredFile $zeroSlackSource "ElaWidgetTools-LICENSE.txt"
 Assert-RequiredFile $zeroSlackSource "FontAwesome-LICENSE.txt"
+foreach ($notice in @(
+        "LICENSE",
+        "THIRD-PARTY-NOTICES.md",
+        "licenses\Qt-LGPLv3.txt",
+        "licenses\slang-MIT.txt",
+        "licenses\tree-sitter-MIT.txt",
+        "licenses\tree-sitter-systemverilog-MIT.txt",
+        "licenses\tree-sitter-ICU.txt",
+        "licenses\0xProto-OFL.txt",
+        "licenses\GeistMono-OFL.txt",
+        "licenses\IntelOneMono-OFL.txt",
+        "licenses\Iosevka-OFL.txt",
+        "licenses\MapleMono-OFL.txt",
+        "licenses\MonaspaceNeon-OFL.txt",
+        "licenses\Catppuccin-MIT.txt")) {
+    Assert-RequiredFile $zeroSlackSource $notice
+}
 Assert-RequiredFile $pinloomSource "pinloom_app.exe"
 Assert-RequiredFile $waveSource "wave-workbench.exe"
 Assert-RequiredFile $waveSource "wavewidgets.dll"
