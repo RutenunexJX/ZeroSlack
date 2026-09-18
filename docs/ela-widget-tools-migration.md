@@ -2,6 +2,11 @@
 
 This document tracks the `codex/ela-widget-tools` branch. The branch is isolated from `main`; creating it does not change the released application.
 
+The branch's formal package destination is
+`E:/PinloomRoot/AppPackage/AppSuite-ElaWidgetTools`. Its packaging script
+rejects the main branch's `AppSuite` package name, including when replacement
+is requested. The first milestone has not been packaged yet.
+
 ## First migration milestone
 
 The fixed upstream library revision now builds as part of ZeroSlack. The

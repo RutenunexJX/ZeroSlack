@@ -20,7 +20,7 @@ param(
 
     [string]$QtBinDirectory = "E:\QT6\6.10.2\mingw_64\bin",
     [string]$OutputRoot = "E:\PinloomRoot\AppPackage",
-    [string]$SuiteName = "AppSuite",
+    [string]$SuiteName = "AppSuite-ElaWidgetTools",
     [string]$ZeroSlackVersion = "",
     [string]$PinloomVersion = "",
     [string]$WaveWorkbenchVersion = "",
@@ -30,6 +30,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not [string]::Equals(
+        $SuiteName,
+        "AppSuite-ElaWidgetTools",
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "This branch packages only AppSuite-ElaWidgetTools; the main AppSuite destination is reserved for the main branch."
+}
 
 function Resolve-RequiredDirectory([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {

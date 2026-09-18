@@ -127,8 +127,10 @@ markers in this README, the user manual and the package README.
 
 Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
 build and run the release verification targets; create a signed-off release tag named `vX.Y.Z`;
-publish Windows artifacts under `E:\PinloomRoot\AppPackage\AppSuite`, a path that intentionally
-contains no spaces. The Windows package directory and archive basename stay fixed as
+publish Windows artifacts from this branch under
+`E:\PinloomRoot\AppPackage\AppSuite-ElaWidgetTools`; the main branch retains
+`E:\PinloomRoot\AppPackage\AppSuite`. Both paths intentionally contain no spaces.
+The Windows application directory and archive basename stay fixed as
 `ZeroSlack-win64` — never put the product version in either package filename, so existing
 shortcuts remain valid. The product version is recorded only in `VERSION`, the application
 display, the guarded document markers, and the release tag.

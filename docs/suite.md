@@ -166,7 +166,10 @@ the family package is an additional distribution form.
 
 
 
-The formal package is `E:/PinloomRoot/AppPackage/AppSuite`. Its manifest records component versions;
+The formal package for this branch is
+`E:/PinloomRoot/AppPackage/AppSuite-ElaWidgetTools`. The main branch retains
+`E:/PinloomRoot/AppPackage/AppSuite`; the two destinations are independent.
+The manifest records component versions;
 `SHA256SUMS.txt` records file hashes, not a digital signature. The assembly script
 `../scripts/package-app-suite.ps1` consumes prebuilt portable inputs and does not compile applications.
 `ReplaceExisting` removes the old destination and moves staging; replacement is not transactional.
