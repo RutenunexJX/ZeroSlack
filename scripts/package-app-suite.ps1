@@ -147,6 +147,13 @@ $toolchainTarget = Join-Path $appsDirectory "Toolchain"
 Copy-DirectoryContents $zeroSlackSource $zeroSlackTarget
 $duplicateWave = Join-Path $zeroSlackTarget "WaveWorkbench"
 if (Test-Path -LiteralPath $duplicateWave -PathType Container) {
+    $stagingRoot = [System.IO.Path]::GetFullPath($stagingDirectory).TrimEnd('\') + '\'
+    $fullDuplicate = [System.IO.Path]::GetFullPath($duplicateWave)
+    if (-not $fullDuplicate.StartsWith(
+            $stagingRoot,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Duplicate WaveWorkbench path is outside staging: $fullDuplicate"
+    }
     Remove-Item -LiteralPath $duplicateWave -Recurse -Force
 }
 Copy-DirectoryContents $pinloomSource $pinloomTarget
