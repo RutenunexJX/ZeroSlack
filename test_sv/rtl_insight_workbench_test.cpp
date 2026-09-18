@@ -448,9 +448,9 @@ void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
     if (QGuiApplication::platformName() != QStringLiteral("windows")) QSKIP("Native Windows platform required");
     QMainWindow window;
     window.setCentralWidget(new QWidget(&window));
-    auto* navigation = new QDockWidget(&window);
-    window.addDockWidget(Qt::LeftDockWidgetArea, navigation);
-    new WorkspaceChrome(&window, navigation, [] {});
+    auto* navigationPane = new NavigationPaneCoordinator(&window);
+    window.addDockWidget(Qt::LeftDockWidgetArea, navigationPane->dock());
+    new WorkspaceChrome(&window, navigationPane, [] {});
     window.setGeometry(180, 180, 900, 600);
     window.show();
     QVERIFY(QTest::qWaitForWindowExposed(&window));
