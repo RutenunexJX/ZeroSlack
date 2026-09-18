@@ -1,6 +1,7 @@
 #pragma once
 #include <QApplication>
 #include "windowsnapchrome.h"
+#include "navigationpanecoordinator.h"
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -49,9 +50,11 @@ private:
 
 class WorkspaceChrome final : public QObject {
 public:
-    WorkspaceChrome(QMainWindow* host, QDockWidget* navigation,
+    WorkspaceChrome(QMainWindow* host, NavigationPaneCoordinator* navigationPane,
                     std::function<void()> settings)
         : QObject(host), window(host) {
+        QDockWidget* navigation = navigationPane
+            ? navigationPane->dock() : nullptr;
         host->setWindowFlag(Qt::FramelessWindowHint);
         host->setContentsMargins(4, 40, 4, 4);
         // Keep menu actions registered so hiding the menu does not remove shortcuts.
@@ -98,8 +101,11 @@ public:
         collapse->setAccessibleName(tr("Collapse sidebar"));
         controls->addWidget(collapse);
         if (navigation) {
-            navigation->setTitleBarWidget(header);
-            connect(collapse, &QToolButton::clicked, navigation, &QWidget::hide);
+            navigationPane->setHeaderWidget(header);
+            connect(collapse, &QToolButton::clicked, navigationPane,
+                    [navigationPane]() {
+                        navigationPane->setExpanded(false);
+                    });
         }
         title = new QFrame(host);
         title->setObjectName(QStringLiteral("workspaceTitleBar"));
@@ -116,9 +122,9 @@ public:
         expand->setAccessibleName(tr("Expand sidebar"));
         expand->setVisible(navigation && navigation->isHidden());
         if (navigation) {
-            connect(expand, &QToolButton::clicked, navigation, [navigation] {
-                navigation->show();
-                navigation->raise();
+            connect(expand, &QToolButton::clicked, navigationPane,
+                    [navigationPane]() {
+                navigationPane->setExpanded(true);
             });
             connect(navigation, &QDockWidget::visibilityChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });

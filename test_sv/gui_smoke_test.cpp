@@ -12541,7 +12541,8 @@ int main(int argc, char** argv)
                    && window.panelLayoutController->buttonBar()->isVisible(),
                true);
     auto* projectSidebar = window.navigationPane->dock();
-    auto* sidebarHeader = projectSidebar->titleBarWidget();
+    auto* sidebarHeader = window.findChild<QFrame*>(
+        QStringLiteral("projectSidebarHeader"));
     auto* projectButton = window.findChild<QToolButton*>(QStringLiteral("projectRailButton"));
     auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"));
     auto* collapseSidebar = window.findChild<QToolButton*>(QStringLiteral("collapseProjectSidebarButton"));
@@ -12588,7 +12589,11 @@ int main(int argc, char** argv)
     }
     expandSidebar->click();
     expectBool("startup sidebar remains available on demand",
-               waitUntil([&] { return projectSidebar->isVisible(); }, 2000),
+               waitUntil([&] {
+                   return projectSidebar->isVisible()
+                       && !window.navigationPane->isAnimating()
+                       && projectSidebar->width() >= 200;
+               }, 2000),
                true);
     expectBool("Project and Settings share the file tree sidebar header",
                sidebarHeader && projectButton && settingsButton && collapseSidebar && expandSidebar
@@ -12605,6 +12610,13 @@ int main(int argc, char** argv)
     const int editorWidthWithSidebar = window.centralWidget()->width();
     saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-expanded.png"));
     collapseSidebar->click();
+    expectBool("sidebar closing passes through an intermediate width",
+               waitUntil([&] {
+                   return projectSidebar->width() >= sidebarWidth / 4
+                       && projectSidebar->width() <= sidebarWidth * 3 / 4;
+               }, 500), true);
+    saveEditorLayoutScreenshot(
+        window, QStringLiteral("project-sidebar-transition.png"));
     expectBool("collapsing sidebar hides its controls and file tree and expands editor",
                waitUntil([&] {
                    return !projectSidebar->isVisible() && !fileTree->isVisible()
@@ -12616,14 +12628,56 @@ int main(int argc, char** argv)
     expandSidebar->click();
     expectBool("title button restores the complete sidebar at its previous width",
                waitUntil([&] {
-                   return projectSidebar->isVisible() && fileTree->isVisible()
+                   return projectSidebar->isVisible()
+                       && !window.navigationPane->isAnimating()
+                       && fileTree->isVisible()
                        && projectButton->isVisible() && settingsButton->isVisible()
                        && !expandSidebar->isVisible() && projectSidebar->width() == sidebarWidth;
                }, 2000), true);
+    window.resizeDocks({projectSidebar}, {340}, Qt::Horizontal);
+    const bool resizedSidebar = waitUntil([&] {
+        return projectSidebar->width() >= 320;
+    }, 1000);
+    const int resizedSidebarWidth = projectSidebar->width();
+    collapseSidebar->click();
+    const bool resizedSidebarClosed = waitUntil([&] {
+        return !projectSidebar->isVisible();
+    }, 2000);
+    expandSidebar->click();
+    expectBool("manually resized sidebar width survives collapse and expansion",
+               resizedSidebar && resizedSidebarClosed
+                   && waitUntil([&] {
+                       return projectSidebar->isVisible()
+                           && !window.navigationPane->isAnimating()
+                           && projectSidebar->width() == resizedSidebarWidth;
+                   }, 2000), true);
+    window.resizeDocks({projectSidebar}, {sidebarWidth}, Qt::Horizontal);
+    waitUntil([&] { return projectSidebar->width() == sidebarWidth; }, 1000);
+    window.navigationPane->toggleVisible();
+    const bool startedClosing = waitUntil([&] {
+        return window.navigationPane->isAnimating()
+            && projectSidebar->width() < sidebarWidth * 3 / 4;
+    }, 500);
+    window.navigationPane->toggleVisible();
+    expectBool("sidebar motion reverses without losing its width",
+               startedClosing && waitUntil([&] {
+                   return projectSidebar->isVisible()
+                       && !window.navigationPane->isAnimating()
+                       && projectSidebar->width() == sidebarWidth;
+               }, 2000), true);
     window.navigationPane->toggleVisible();
     expectBool("existing navigation toggle keeps the title restore entry in sync",
-               !projectSidebar->isVisible() && expandSidebar->isVisible(), true);
+               waitUntil([&] {
+                   return !projectSidebar->isVisible()
+                       && expandSidebar->isVisible();
+               }, 2000), true);
     window.navigationPane->toggleVisible();
+    expectBool("navigation toggle restores the complete sidebar",
+               waitUntil([&] {
+                   return projectSidebar->isVisible()
+                       && !window.navigationPane->isAnimating()
+                       && projectSidebar->width() == sidebarWidth;
+               }, 2000), true);
     expectBool("only Problems and Activity remain permanent in the drawer",
                window.panelLayoutController->buttonForPanel(QStringLiteral("problems"))->isVisible()
                    && window.panelLayoutController->buttonForPanel(QStringLiteral("activity"))->isVisible()

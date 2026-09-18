@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.10`
+Current version: `v0.29.11`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -112,7 +112,7 @@ ctest --test-dir build/local --output-on-failure -j1
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.10`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.11`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

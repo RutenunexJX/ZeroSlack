@@ -267,6 +267,8 @@ Spacing follows a 4 px rhythm: 8 px between related controls, 12–16 px within 
 
 Validate Light/Dark transitions, proportional glyph metrics, editor font isolation, narrow sidebars, and 125%/150%/200% display scaling. Offscreen Windows previews load installed system UI fonts because the offscreen Qt platform does not provide the native font database; these font files are not bundled or redistributed.
 
+The left Navigation dock keeps its `QMainWindow` docking role so the bottom drawer remains aligned with the editor. Its body and header live in a fixed-width, clipped viewport owned by `NavigationPaneCoordinator`. User-triggered collapse and expansion animate the dock's width and slide that content horizontally; session restore and the welcome-page transition apply visibility immediately. Keep the viewport's minimum width at zero and preserve the last manually resized expanded width, or the dock layout will jump at the end of the transition.
+
 
 The fixed title row exposes a right-click menu on the file path: Copy full path and
 Reveal in Explorer. Display width does not constrain the copied absolute path.

@@ -314,7 +314,7 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
-    new WorkspaceChrome(this, navigationPane->dock(), [this]() {
+    new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
     });
