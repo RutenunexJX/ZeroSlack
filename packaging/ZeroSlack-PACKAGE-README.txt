@@ -86,6 +86,10 @@ Licensing
 
 ZeroSlack is licensed under Apache License 2.0. A full list of third-party
 components and their licenses is in THIRD-PARTY-NOTICES.md.
+ElaWidgetTools is included under the MIT license; its copyright and full
+license text are provided in ElaWidgetTools-LICENSE.txt beside ZeroSlack.exe.
+Its icon font is Font Awesome Free Solid 6.7.2 under SIL OFL 1.1. The
+font license text is provided in FontAwesome-LICENSE.txt beside ZeroSlack.exe.
 
 This package uses Qt 6.10.2 under the GNU Lesser General Public License v3
 (LGPLv3). Qt is not modified and is linked dynamically: its DLLs sit beside

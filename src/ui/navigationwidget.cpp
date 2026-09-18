@@ -2,6 +2,9 @@
 #include "navigationwidget.h"
 #include "applicationthememanager.h"
 #include "editorfileidentity.h"
+#include "ElaCheckBox.h"
+#include "ElaLineEdit.h"
+#include "ElaPushButton.h"
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QMenu>
@@ -365,7 +368,7 @@ void NavigationWidget::setupUI()
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(8);
 
-    searchLineEdit = new QLineEdit(this);
+    searchLineEdit = new ElaLineEdit(this);
     searchLineEdit->setObjectName(QStringLiteral("navigationSearchLineEdit"));
     searchLineEdit->setPlaceholderText("Search files or paths...");
     searchLineEdit->setClearButtonEnabled(true);
@@ -405,7 +408,7 @@ void NavigationWidget::setupFileTab()
             this,
             &NavigationWidget::processFileTreePopulationChunk);
 
-    hideUnrelatedFilesCheckBox = new QCheckBox(QStringLiteral("Hide unrelated"), fileTab);
+    hideUnrelatedFilesCheckBox = new ElaCheckBox(QStringLiteral("Hide unrelated"), fileTab);
     hideUnrelatedFilesCheckBox->setChecked(false);
     fileTabLayout->addWidget(hideUnrelatedFilesCheckBox);
     fileTabLayout->addWidget(fileTreeWidget);
@@ -426,8 +429,8 @@ void NavigationWidget::setupDesignTab()
     topLayout->setSpacing(4);
     designTopLabel = new QLabel(designTab);
     designTopLabel->setWordWrap(true);
-    designClearButton = new QPushButton(QStringLiteral("Clear"), designTab);
-    designRefreshButton = new QPushButton(QStringLiteral("Refresh"), designTab);
+    designClearButton = new ElaPushButton(QStringLiteral("Clear"), designTab);
+    designRefreshButton = new ElaPushButton(QStringLiteral("Refresh"), designTab);
     UiTypography::apply(designTopLabel, UiTypography::Role::Metadata);
     designTabLayout->addWidget(designTopLabel);
     topLayout->addStretch(1);

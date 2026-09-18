@@ -74,6 +74,7 @@
 
 #include "version.h"
 #include "uitypography.h"
+#include "ElaApplication.h"
 
 #include <algorithm>
 #include <atomic>
@@ -12420,7 +12421,30 @@ int main(int argc, char** argv)
 {
     ScopedGuiTestSettingsRoot isolatedSettings;
     QApplication app(argc, argv);
+    eApp->init();
     ApplicationThemeManager::instance().applyToApplication();
+    const QStringList iconFamilies = QFontDatabase::families().filter(
+        QStringLiteral("Font Awesome"), Qt::CaseInsensitive);
+    if (iconFamilies.isEmpty()) {
+        std::cerr << "Font Awesome families: none; resource="
+                  << QFile::exists(QStringLiteral(
+                         ":/include/Font/FontAwesomeFreeSolid.ttf"))
+                  << '\n';
+    }
+    expectBool("Ela icon font initializes from the bundled resource",
+               !iconFamilies.isEmpty(), true);
+    const QString resolvedIconFamily = QFontInfo(QFont(
+        QStringLiteral("Font Awesome 6 Free"))).family();
+    if (!resolvedIconFamily.contains(QStringLiteral("Font Awesome"),
+                                     Qt::CaseInsensitive)) {
+        std::cerr << "Font Awesome registered families: "
+                  << iconFamilies.join(QStringLiteral(", ")).toStdString()
+                  << "; resolved: " << resolvedIconFamily.toStdString() << '\n';
+    }
+    expectBool("Ela icon font resolves without fallback",
+               resolvedIconFamily.contains(
+                   QStringLiteral("Font Awesome"), Qt::CaseInsensitive),
+               true);
 
     expectBool("GUI settings use an isolated writable INI root",
                isolatedSettings.isValid()

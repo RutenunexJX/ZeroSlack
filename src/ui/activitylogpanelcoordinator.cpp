@@ -2,6 +2,7 @@
 #include "activitylogpanelcoordinator.h"
 
 #include "activitylogservice.h"
+#include "ElaPushButton.h"
 
 #include <QHBoxLayout>
 #include <QEvent>
@@ -23,7 +24,7 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
     auto* toolbar = new QHBoxLayout;
     toolbar->setContentsMargins(0, 0, 0, 0);
     toolbar->addStretch(1);
-    clearButton = new QPushButton(QObject::tr("Clear"), panel);
+    clearButton = new ElaPushButton(QObject::tr("Clear"), panel);
     clearButton->setObjectName(QStringLiteral("activityLogClearButton"));
     toolbar->addWidget(clearButton);
     layout->addLayout(toolbar);

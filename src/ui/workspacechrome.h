@@ -10,6 +10,7 @@
 #include <QDockWidget>
 #include "roundedicons.h"
 #include "uitypography.h"
+#include "ElaToolButton.h"
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -69,7 +70,7 @@ public:
         auto* controls = new QHBoxLayout(header);
         controls->setContentsMargins(8, 8, 8, 8);
         controls->setSpacing(6);
-        auto* project = new QToolButton(header);
+        auto* project = new ElaToolButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
         project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
         project->setIconSize(QSize(20, 20));
@@ -77,13 +78,13 @@ public:
         UiTypography::apply(project, UiTypography::Role::Body);
         project->setToolTip(tr("Project commands"));
         project->setAccessibleName(tr("Project"));
-        project->setMenu(commands);
+        project->QToolButton::setMenu(commands);
         project->setPopupMode(QToolButton::InstantPopup);
         project->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(project, &QWidget::customContextMenuRequested, commands,
             [commands, project](QPoint point) { commands->popup(project->mapToGlobal(point)); });
         controls->addWidget(project);
-        auto* setting = new QToolButton(header);
+        auto* setting = new ElaToolButton(header);
         settingsButton = setting;
         setting->setObjectName(QStringLiteral("settingsRailButton"));
         settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
@@ -93,7 +94,7 @@ public:
         connect(setting, &QToolButton::clicked, host, std::move(settings));
         controls->addWidget(setting);
         controls->addStretch();
-        auto* collapse = new QToolButton(header);
+        auto* collapse = new ElaToolButton(header);
         collapse->setObjectName(QStringLiteral("collapseProjectSidebarButton"));
         collapse->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
         collapse->setIconSize(QSize(20, 20));
@@ -114,7 +115,7 @@ public:
         updateTitleTheme();
         auto* row = new QHBoxLayout(title);
         row->setContentsMargins(8, 0, 2, 0);
-        auto* expand = new QToolButton(title);
+        auto* expand = new ElaToolButton(title);
         expand->setObjectName(QStringLiteral("expandProjectSidebarButton"));
         expand->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
         expand->setIconSize(QSize(20, 20));

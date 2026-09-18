@@ -1,5 +1,14 @@
 #include "uitypography.h"
 #include "settingscenterpanel.h"
+#include "ElaCheckBox.h"
+#include "ElaComboBox.h"
+#include "ElaDoubleSpinBox.h"
+#include "ElaLineEdit.h"
+#include "ElaPushButton.h"
+#include "ElaScrollArea.h"
+#include "ElaSlider.h"
+#include "ElaSpinBox.h"
+#include "ElaTableView.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -396,7 +405,7 @@ void SettingsCenterPanel::buildUi()
     navigationLayout->setSpacing(8);
     navigationLayout->addWidget(scopeLabel);
 
-    scopeCombo = new QComboBox(this);
+    scopeCombo = new ElaComboBox(this);
     scopeCombo->setObjectName(
         QStringLiteral("settingsCenterScopeCombo"));
     scopeCombo->addItem(tr("Global"),
@@ -471,7 +480,7 @@ void SettingsCenterPanel::buildUi()
             FieldBinding binding;
             binding.descriptor = descriptor;
 
-            binding.overrideCheck = new QCheckBox(group);
+            binding.overrideCheck = new ElaCheckBox(group);
             binding.overrideCheck->setObjectName(
                 fieldOverrideObjectName(descriptor.id));
             binding.overrideCheck->setVisible(
@@ -510,7 +519,7 @@ void SettingsCenterPanel::buildUi()
         }
         pageLayout->addStretch(1);
 
-        auto* scroll = new QScrollArea(this);
+        auto* scroll = new ElaScrollArea(this);
         scroll->setObjectName(
             QStringLiteral("settingsCenterCategoryScroll.%1")
                 .arg(category.id));
@@ -530,11 +539,11 @@ void SettingsCenterPanel::buildUi()
 
     auto* buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch(1);
-    revertButton = new QPushButton(tr("Revert"), this);
+    revertButton = new ElaPushButton(tr("Revert"), this);
     revertButton->setObjectName(
         QStringLiteral("settingsCenterRevertButton"));
     buttonLayout->addWidget(revertButton);
-    applyButton = new QPushButton(tr("Apply"), this);
+    applyButton = new ElaPushButton(tr("Apply"), this);
     applyButton->setObjectName(
         QStringLiteral("settingsCenterApplyButton"));
     buttonLayout->addWidget(applyButton);
@@ -575,16 +584,16 @@ QWidget* SettingsCenterPanel::createEditor(
 {
     switch (descriptor.valueKind) {
     case SettingsCenterValueKind::Boolean:
-        return new QCheckBox(tr("Enabled"), parent);
+        return new ElaCheckBox(tr("Enabled"), parent);
     case SettingsCenterValueKind::Integer: {
         if (descriptor.useSlider) {
-            auto* slider = new QSlider(Qt::Horizontal, parent);
+            auto* slider = new ElaSlider(Qt::Horizontal, parent);
             slider->setRange(descriptor.minimumValue.toInt(), descriptor.maximumValue.toInt());
             slider->setTickInterval(10);
             slider->setTickPosition(QSlider::TicksBelow);
             return slider;
         }
-        auto* editor = new QSpinBox(parent);
+        auto* editor = new ElaSpinBox(parent);
         editor->setRange(
             descriptor.minimumValue.isValid()
                 ? descriptor.minimumValue.toInt()
@@ -595,7 +604,7 @@ QWidget* SettingsCenterPanel::createEditor(
         return editor;
     }
     case SettingsCenterValueKind::Real: {
-        auto* editor = new QDoubleSpinBox(parent);
+        auto* editor = new ElaDoubleSpinBox(parent);
         editor->setDecimals(3);
         editor->setSingleStep(0.05);
         editor->setRange(
@@ -609,24 +618,24 @@ QWidget* SettingsCenterPanel::createEditor(
     }
     case SettingsCenterValueKind::String:
         if (!descriptor.choices.isEmpty()) {
-            auto* editor = new QComboBox(parent);
+            auto* editor = new ElaComboBox(parent);
             editor->addItems(descriptor.choices);
             return editor;
         }
-        return new QLineEdit(parent);
+        return new ElaLineEdit(parent);
     case SettingsCenterValueKind::FilePath: {
         auto* container = new QWidget(parent);
         auto* layout = new QHBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
 
-        auto* editor = new QLineEdit(container);
+        auto* editor = new ElaLineEdit(container);
         editor->setObjectName(
             QStringLiteral("settingsCenterFilePathEdit.%1")
                 .arg(descriptor.id));
         editor->setPlaceholderText(tr("Automatic discovery"));
         layout->addWidget(editor, 1);
 
-        auto* browseButton = new QPushButton(tr("Browse..."), container);
+        auto* browseButton = new ElaPushButton(tr("Browse..."), container);
         browseButton->setObjectName(
             QStringLiteral("settingsCenterFilePathBrowse.%1")
                 .arg(descriptor.id));
@@ -663,7 +672,7 @@ QWidget* SettingsCenterPanel::createEditor(
         auto* layout = new QVBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
 
-        auto* table = new QTableView(container);
+        auto* table = new ElaTableView(container);
         table->setObjectName(
             QStringLiteral("settingsCenterStringMapView.%1")
                 .arg(descriptor.id));
@@ -688,12 +697,12 @@ QWidget* SettingsCenterPanel::createEditor(
         container->setFocusProxy(table);
 
         auto* buttons = new QHBoxLayout;
-        auto* addButton = new QPushButton(tr("Add"), container);
+        auto* addButton = new ElaPushButton(tr("Add"), container);
         addButton->setObjectName(
             QStringLiteral("settingsCenterStringMapAdd.%1")
                 .arg(descriptor.id));
         auto* removeButton =
-            new QPushButton(tr("Remove"), container);
+            new ElaPushButton(tr("Remove"), container);
         removeButton->setObjectName(
             QStringLiteral("settingsCenterStringMapRemove.%1")
                 .arg(descriptor.id));
@@ -729,7 +738,7 @@ QWidget* SettingsCenterPanel::createEditor(
         return container;
     }
     }
-    return new QLineEdit(parent);
+    return new ElaLineEdit(parent);
 }
 
 void SettingsCenterPanel::connectEditor(

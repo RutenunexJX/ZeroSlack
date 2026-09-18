@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "symbolrelationshipengine.h"
 #include "version.h"
+#include "ElaApplication.h"
 
 #ifdef ZEROSLACK_HAS_SUITEAPP
 #include "suiteappintegration.h"
@@ -14,6 +15,7 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    eApp->init();
     ApplicationThemeManager::instance().applyToApplication();
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack"));
     QCoreApplication::setOrganizationName(QStringLiteral("ZeroSlack"));

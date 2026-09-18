@@ -221,8 +221,15 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Required Qt modules.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets WidgetsPrivate Concurrent Svg Network)
 find_package(SuiteApp 1 CONFIG QUIET)
+
+# ElaWidgetTools is vendored at a fixed upstream revision. Build its library
+# directly: the upstream top-level project forces a different Qt SDK and rejects
+# the Qt 6.10 toolchain used by ZeroSlack.
+add_subdirectory(thirdparty/ElaWidgetTools)
+set_target_properties(ElaWidgetTools PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
 # =========================================================
 # 4. Sources and Resources
@@ -883,6 +890,7 @@ target_link_libraries(zeroslack_core PUBLIC
     rtledit::core
 )
 target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
+target_link_libraries(zeroslack_core PRIVATE Ela::WidgetTools)
 
 if(ZEROSLACK_SHARED_CORE)
     target_link_libraries(zeroslack_core PRIVATE slang::slang)
@@ -898,7 +906,15 @@ if(SuiteApp_FOUND)
         ZEROSLACK_CORE_HAS_SUITEAPP=1)
 endif()
 
-target_link_libraries(demo PRIVATE zeroslack_core)
+target_link_libraries(demo PRIVATE zeroslack_core Ela::WidgetTools)
+add_custom_command(TARGET demo POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ElaWidgetTools/LICENSE"
+        "$<TARGET_FILE_DIR:demo>/ElaWidgetTools-LICENSE.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/ElaWidgetTools/Font/FontAwesome-LICENSE.txt"
+        "$<TARGET_FILE_DIR:demo>/FontAwesome-LICENSE.txt"
+    VERBATIM)
 if(SuiteApp_FOUND)
     target_sources(demo PRIVATE
         src/integrations/suite/suiteappintegration.cpp
@@ -1390,7 +1406,8 @@ if(BUILD_TESTING)
     target_link_libraries(fsm_ui_snapshot_test PRIVATE zeroslack_core)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
-    target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+    target_link_libraries(gui_smoke_test PRIVATE
+        zeroslack_core Ela::WidgetTools Qt6::Test)
     add_dependencies(gui_smoke_test wavewidgets_fixture)
 
     add_executable(temporary_editor_context_search_test

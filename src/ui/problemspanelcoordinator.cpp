@@ -4,6 +4,7 @@
 #include "activitylogservice.h"
 #include "diagnosticservice.h"
 #include "semanticpanelutils.h"
+#include "ElaComboBox.h"
 
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -177,7 +178,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     filtersLayout->setContentsMargins(0, 0, 0, 0);
     filtersLayout->setSpacing(6);
 
-    problemsScopeCombo = new QComboBox(panel);
+    problemsScopeCombo = new ElaComboBox(panel);
     problemsScopeCombo->setObjectName(QStringLiteral("problemsScopeCombo"));
     problemsScopeCombo->addItem(QStringLiteral("Current File"), 0);
     problemsScopeCombo->addItem(QStringLiteral("Workspace Files"), 1);
@@ -185,7 +186,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsScopeCombo->setToolTip(QStringLiteral("Problem scope"));
     filtersLayout->addWidget(problemsScopeCombo);
 
-    problemsSeverityCombo = new QComboBox(panel);
+    problemsSeverityCombo = new ElaComboBox(panel);
     problemsSeverityCombo->setObjectName(QStringLiteral("problemsSeverityCombo"));
     problemsSeverityCombo->addItem(QStringLiteral("All Severities"), 0);
     problemsSeverityCombo->addItem(QStringLiteral("Errors"), 1);
@@ -194,7 +195,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     problemsSeverityCombo->setToolTip(QStringLiteral("Severity filter"));
     filtersLayout->addWidget(problemsSeverityCombo);
 
-    problemsBandCombo = new QComboBox(panel);
+    problemsBandCombo = new ElaComboBox(panel);
     problemsBandCombo->setObjectName(QStringLiteral("problemsBandCombo"));
     problemsBandCombo->addItem(QStringLiteral("All Bands"), QString());
     problemsBandCombo->addItem(QStringLiteral("Current"), QStringLiteral("current"));

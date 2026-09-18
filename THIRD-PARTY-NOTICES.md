@@ -11,6 +11,8 @@ source tree, not against memory.
 | Component | Version | License | License text |
 | --- | --- | --- | --- |
 | [slang](https://github.com/MikePopoloski/slang) | 10.0.14 | MIT | `thirdparty/slang/LICENSE` (submodule) |
+| [ElaWidgetTools](https://github.com/Liniyous/ElaWidgetTools) | `454cac2d57a47d3cc28577dc817793aec1881ca7`, with Qt 6.10 compatibility changes | MIT, © 2024 Liniyous | `thirdparty/ElaWidgetTools/LICENSE` |
+| [Font Awesome Free Solid](https://github.com/FortAwesome/Font-Awesome/tree/6.7.2) | 6.7.2, replacing Ela's generated icon font | SIL OFL 1.1, © Fonticons, Inc. | `thirdparty/ElaWidgetTools/Font/FontAwesome-LICENSE.txt` |
 | [tree-sitter](https://github.com/tree-sitter/tree-sitter) | vendored | MIT, © 2018 Max Brunsfeld | `thirdparty/tree_sitter/LICENSE` |
 | [tree-sitter-systemverilog](https://github.com/gmlarumbe/tree-sitter-systemverilog) | vendored, see note | MIT, © 2024-2025 Gonzalo M. Larumbe | `thirdparty/tree_sitter_systemverilog/LICENSE` |
 | ICU Unicode tables used by tree-sitter | ICU 58+ | Unicode/ICU license | `thirdparty/tree_sitter/lib/src/unicode/LICENSE` |

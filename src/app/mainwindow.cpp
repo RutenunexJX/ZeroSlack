@@ -75,6 +75,7 @@
 #include "workspacesessioncoordinator.h"
 #include "tsdocument.h"
 #include "version.h"
+#include "ElaToolButton.h"
 #include <QAction>
 #include <QActionGroup>
 #include <QAbstractItemView>
@@ -857,7 +858,7 @@ void MainWindow::setupWelcomePage()
     auto* railLayout = new QVBoxLayout(rail);
     railLayout->setContentsMargins(8, 12, 8, 8);
     railLayout->setSpacing(8);
-    auto* project = new QToolButton(rail);
+    auto* project = new ElaToolButton(rail);
     project->setObjectName(QStringLiteral("welcomeProjectButton"));
     project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
     project->setIconSize(QSize(20, 20));
@@ -869,7 +870,7 @@ void MainWindow::setupWelcomePage()
             fileCommandCoordinator->openDirectoryAsWorkspace();
     });
     railLayout->addWidget(project);
-    auto* settings = new QToolButton(rail);
+    auto* settings = new ElaToolButton(rail);
     settings->setObjectName(QStringLiteral("welcomeSettingsButton"));
     settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
     settings->setIconSize(QSize(20, 20));

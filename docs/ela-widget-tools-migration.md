@@ -2,11 +2,37 @@
 
 This document tracks the `codex/ela-widget-tools` branch. The branch is isolated from `main`; creating it does not change the released application.
 
+## First migration milestone
+
+The fixed upstream library revision now builds as part of ZeroSlack. The
+navigation rail and selected controls in Files, Design, Settings, Problems,
+Activity, and scoped search use Ela widgets. Existing editor, graph views,
+keyboard shortcuts, settings keys, and native window controls remain in place.
+ZeroSlack's light, dark, and Catppuccin theme tokens are passed to Ela's theme
+manager. The vendored icon font is registered before the main window is built.
+
+The Qt 6.10.2 Release build of `demo` and five relevant GUI tests pass in the
+offscreen test environment. GUI smoke screenshots were inspected for the
+welcome page and settings page. Native desktop checks for snap, maximize,
+hover, focus, animation, and high-DPI rendering remain necessary before a
+release build is packaged.
+
 ## Compatibility gate
 
-ZeroSlack's current Windows build uses Qt 6.10.2 (`build/Desktop_Qt_6_10_2_MinGW_64_bit-Release/CMakeCache.txt`). The upstream ElaWidgetTools `main` CMake configuration rejects Qt versions above 6.7.0 and forces its own Qt SDK path. The isolated library build at upstream revision `454cac2d57a47d3cc28577dc817793aec1881ca7` succeeded against Qt 6.10.2 after explicit `QChar` conversions for `ElaIconType::IconName` values. This establishes source-level build compatibility for that revision, not runtime compatibility or application integration. The library also links against `Qt6::WidgetsPrivate`, so its build must match the deployed Qt version exactly.
+ZeroSlack's current Windows build uses Qt 6.10.2 (`build/Desktop_Qt_6_10_2_MinGW_64_bit-Release/CMakeCache.txt`). The upstream ElaWidgetTools `main` CMake configuration rejects Qt versions above 6.7.0 and forces its own Qt SDK path. The isolated library build at upstream revision `454cac2d57a47d3cc28577dc817793aec1881ca7` succeeded against Qt 6.10.2 after explicit `QChar` conversions for `ElaIconType::IconName` values. Application integration also builds and passes the GUI tests listed above, but native desktop checks are pending. The library links against `Qt6::WidgetsPrivate`, so its build must match the deployed Qt version exactly.
 
 ElaWidgetTools is MIT-licensed. A distribution that includes its code or binaries must retain its license notice.
+
+The upstream `ElaAwesome.ttf` icon font identifies its creators only as
+"original authors @ fluttericon.com, fontello.com". Fontello states that
+generated fonts retain their source icon licenses, but this ElaWidgetTools
+revision does not contain the generated font's per-icon license manifest.
+The vendored copy therefore replaces it with the unmodified Font Awesome
+Free Solid 6.7.2 font under SIL OFL 1.1. Its license text is retained beside
+the font and copied beside the application at build time. Ela's internally
+referenced icons are remapped to the corresponding Free Solid glyphs; eleven
+icons absent from Free Solid use documented free alternatives. The upstream
+demo images were excluded from the vendored resource bundle.
 
 ## Migration boundaries
 
@@ -24,6 +50,7 @@ ElaWidgetTools is MIT-licensed. A distribution that includes its code or binarie
 - Light, dark, and Catppuccin themes retain readable contrast in all migrated controls.
 - File tree, editor tabs, settings, Problems, Activity, dialogs, and context menus remain usable with mouse and keyboard.
 - Formatting, diagnostics, navigation, and specialized graph views retain their existing behavior.
-- The installed Windows package includes any required ElaWidgetTools binaries and license notice.
+- The installed Windows package includes any required ElaWidgetTools binaries
+  and both ElaWidgetTools and Font Awesome license notices.
 
 Upstream references: <https://github.com/Liniyous/ElaWidgetTools> and <https://github.com/Liniyous/ElaWidgetTools/blob/main/CMakeLists.txt>.

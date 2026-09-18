@@ -1,6 +1,10 @@
 #include "scopedsearchpanel.h"
 
 #include "scopedreplaceworkflow.h"
+#include "ElaCheckBox.h"
+#include "ElaComboBox.h"
+#include "ElaLineEdit.h"
+#include "ElaPushButton.h"
 
 #include <rtledit/edit_plan.h>
 
@@ -402,7 +406,7 @@ void ScopedSearchPanel::buildUi()
     searchControls->setContentsMargins(0, 0, 0, 0);
     searchControls->setSpacing(6);
 
-    queryEdit = new QLineEdit(this);
+    queryEdit = new ElaLineEdit(this);
     queryEdit->setObjectName(
         QStringLiteral("scopedSearchQueryEdit"));
     queryEdit->setPlaceholderText(
@@ -410,7 +414,7 @@ void ScopedSearchPanel::buildUi()
     queryEdit->setClearButtonEnabled(true);
     searchControls->addWidget(queryEdit, 1);
 
-    scopeCombo = new QComboBox(this);
+    scopeCombo = new ElaComboBox(this);
     scopeCombo->setObjectName(
         QStringLiteral("scopedSearchScopeCombo"));
     scopeCombo->addItem(
@@ -431,26 +435,26 @@ void ScopedSearchPanel::buildUi()
             ScopedSearchScope::Workspace));
     searchControls->addWidget(scopeCombo);
 
-    caseSensitiveCheck = new QCheckBox(
+    caseSensitiveCheck = new ElaCheckBox(
         QStringLiteral("Case sensitive"), this);
     caseSensitiveCheck->setObjectName(
         QStringLiteral("scopedSearchCaseSensitiveCheck"));
     searchControls->addWidget(caseSensitiveCheck);
 
-    wholeWordCheck = new QCheckBox(
+    wholeWordCheck = new ElaCheckBox(
         QStringLiteral("Whole word"), this);
     wholeWordCheck->setObjectName(
         QStringLiteral("scopedSearchWholeWordCheck"));
     searchControls->addWidget(wholeWordCheck);
 
-    semanticCheck = new QCheckBox(
+    semanticCheck = new ElaCheckBox(
         QStringLiteral("Semantic"), this);
     semanticCheck->setObjectName(
         QStringLiteral("scopedSearchSemanticCheck"));
     semanticCheck->setChecked(true);
     searchControls->addWidget(semanticCheck);
 
-    searchButton = new QPushButton(
+    searchButton = new ElaPushButton(
         QStringLiteral("Search"), this);
     searchButton->setObjectName(
         QStringLiteral("scopedSearchButton"));
@@ -504,12 +508,12 @@ void ScopedSearchPanel::buildUi()
     auto* replaceLabel = new QLabel(
         QStringLiteral("Replace with:"), replaceGroup);
     replaceControls->addWidget(replaceLabel);
-    replacementEdit = new QLineEdit(replaceGroup);
+    replacementEdit = new ElaLineEdit(replaceGroup);
     replacementEdit->setObjectName(
         QStringLiteral("scopedSearchReplacementEdit"));
     replacementEdit->setClearButtonEnabled(true);
     replaceControls->addWidget(replacementEdit, 1);
-    buildPreviewButton = new QPushButton(
+    buildPreviewButton = new ElaPushButton(
         QStringLiteral("Build Diff Preview"),
         replaceGroup);
     buildPreviewButton->setObjectName(
@@ -517,7 +521,7 @@ void ScopedSearchPanel::buildUi()
             "scopedSearchBuildReplacePreviewButton"));
     buildPreviewButton->setEnabled(false);
     replaceControls->addWidget(buildPreviewButton);
-    dryRunCheck = new QCheckBox(
+    dryRunCheck = new ElaCheckBox(
         QStringLiteral("Dry run"), replaceGroup);
     dryRunCheck->setObjectName(
         QStringLiteral("scopedSearchReplaceDryRunCheck"));
@@ -565,21 +569,21 @@ void ScopedSearchPanel::buildUi()
     transactionControls->setContentsMargins(0, 0, 0, 0);
     transactionControls->setSpacing(6);
     transactionControls->addStretch(1);
-    applyReplaceButton = new QPushButton(
+    applyReplaceButton = new ElaPushButton(
         QStringLiteral("Apply Confirmed Diff"),
         replaceGroup);
     applyReplaceButton->setObjectName(
         QStringLiteral("scopedSearchApplyReplaceButton"));
     applyReplaceButton->setEnabled(false);
     transactionControls->addWidget(applyReplaceButton);
-    cancelReplaceButton = new QPushButton(
+    cancelReplaceButton = new ElaPushButton(
         QStringLiteral("Cancel Preview"),
         replaceGroup);
     cancelReplaceButton->setObjectName(
         QStringLiteral("scopedSearchCancelReplaceButton"));
     cancelReplaceButton->setEnabled(false);
     transactionControls->addWidget(cancelReplaceButton);
-    undoReplaceButton = new QPushButton(
+    undoReplaceButton = new ElaPushButton(
         QStringLiteral("Undo Replace"),
         replaceGroup);
     undoReplaceButton->setObjectName(
