@@ -77,6 +77,23 @@ $qtBin = Resolve-RequiredDirectory $QtBinDirectory "Qt bin"
 
 Assert-RequiredFile $zeroSlackSource "ZeroSlack.exe"
 Assert-RequiredFile $zeroSlackSource "zeroslack-cli.exe"
+foreach ($notice in @(
+        "LICENSE",
+        "THIRD-PARTY-NOTICES.md",
+        "licenses\Qt-LGPLv3.txt",
+        "licenses\slang-MIT.txt",
+        "licenses\tree-sitter-MIT.txt",
+        "licenses\tree-sitter-systemverilog-MIT.txt",
+        "licenses\tree-sitter-ICU.txt",
+        "licenses\0xProto-OFL.txt",
+        "licenses\GeistMono-OFL.txt",
+        "licenses\IntelOneMono-OFL.txt",
+        "licenses\Iosevka-OFL.txt",
+        "licenses\MapleMono-OFL.txt",
+        "licenses\MonaspaceNeon-OFL.txt",
+        "licenses\Catppuccin-MIT.txt")) {
+    Assert-RequiredFile $zeroSlackSource $notice
+}
 Assert-RequiredFile $pinloomSource "pinloom_app.exe"
 Assert-RequiredFile $waveSource "wave-workbench.exe"
 Assert-RequiredFile $waveSource "wavewidgets.dll"
@@ -120,6 +137,13 @@ $toolchainTarget = Join-Path $appsDirectory "Toolchain"
 Copy-DirectoryContents $zeroSlackSource $zeroSlackTarget
 $duplicateWave = Join-Path $zeroSlackTarget "WaveWorkbench"
 if (Test-Path -LiteralPath $duplicateWave -PathType Container) {
+    $stagingRoot = [System.IO.Path]::GetFullPath($stagingDirectory).TrimEnd('\') + '\'
+    $fullDuplicate = [System.IO.Path]::GetFullPath($duplicateWave)
+    if (-not $fullDuplicate.StartsWith(
+            $stagingRoot,
+            [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Duplicate WaveWorkbench path is outside staging: $fullDuplicate"
+    }
     Remove-Item -LiteralPath $duplicateWave -Recurse -Force
 }
 Copy-DirectoryContents $pinloomSource $pinloomTarget

@@ -6,6 +6,10 @@ beside, and where each component's own license text lives. Every statement below
 was checked against the license file in this repository or in the component's own
 source tree, not against memory.
 
+The Windows portable package includes this notice, ZeroSlack's `LICENSE`, and
+copies of the dependency license texts in `licenses/` beside `ZeroSlack.exe`.
+The paths in the tables below identify the corresponding source-tree copies.
+
 ## Built into the application
 
 | Component | Version | License | License text |

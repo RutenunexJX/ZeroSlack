@@ -1,4 +1,4 @@
-ZeroSlack v0.29.11
+ZeroSlack v0.29.13
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -86,6 +86,8 @@ Licensing
 
 ZeroSlack is licensed under Apache License 2.0. A full list of third-party
 components and their licenses is in THIRD-PARTY-NOTICES.md.
+ZeroSlack's license is in LICENSE; the Qt, embedded font, and other dependency
+license texts are in the licenses directory beside ZeroSlack.exe.
 
 This package uses Qt 6.10.2 under the GNU Lesser General Public License v3
 (LGPLv3). Qt is not modified and is linked dynamically: its DLLs sit beside
