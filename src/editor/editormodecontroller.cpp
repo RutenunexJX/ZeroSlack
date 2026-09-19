@@ -135,19 +135,6 @@ const QList<EditorModeDescriptor>& descriptors()
             EditorModeEscapeBehavior::Cancel,
         },
         {
-            EditorModeId::FoldRegion,
-            EditorModeOwner::Folding,
-            QStringLiteral("fold-region"),
-            QStringLiteral("Fold region"),
-            QStringLiteral(
-                "Select the start and end lines; Esc cancels"),
-            95,
-            Input::Escape | Input::Tab | Input::Backtab
-                | Input::Enter | Input::Text | Input::Backspace
-                | Input::Navigation | Input::Mouse,
-            EditorModeEscapeBehavior::Cancel,
-        },
-        {
             EditorModeId::InsightTargetPick,
             EditorModeOwner::InsightTargeting,
             QStringLiteral("insight-target-pick"),
@@ -273,8 +260,6 @@ QString editorModeOwnerText(EditorModeOwner owner)
         return QStringLiteral("virtual cursor");
     case EditorModeOwner::MultiCursor:
         return QStringLiteral("multi cursor");
-    case EditorModeOwner::Folding:
-        return QStringLiteral("folding");
     case EditorModeOwner::SourceNavigation:
         return QStringLiteral("source navigation");
     case EditorModeOwner::InsightTargeting:

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.14`
+Current version: `v0.29.15`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -113,13 +113,13 @@ Settings, Search / Replace, Change Preview and Connections construct their heavy
 on first use. Settings values and workspace context remain available before opening Settings.
 Hidden drawer state is retained until its page exists; closing and reopening reuses that page.
 Problems and Activity retain their lightweight models and badge updates. Specialized insight
-surfaces remain provider-created on demand. Fold Shelf, static Wave Preview and Wave Simulation are removed;
-ordinary/custom folding and the four specialized diagrams remain available.
+surfaces remain provider-created on demand. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed;
+syntax folding and the four specialized diagrams remain available.
 
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.14`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.15`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

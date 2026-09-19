@@ -2040,42 +2040,6 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
     }
 }
 
-void MyCodeEditor::startFoldRegionMarkMode()
-{
-    state->folding.startFoldRegionMarkMode(this);
-    state->gutter.handleUpdateRequest(
-        this,
-        viewport()->rect(),
-        0);
-}
-
-void MyCodeEditor::cancelFoldRegionMarkMode()
-{
-    state->folding.cancelFoldRegionMarkMode(this);
-    state->gutter.handleUpdateRequest(
-        this,
-        viewport()->rect(),
-        0);
-}
-
-bool MyCodeEditor::foldRegionMarkModeActive() const
-{
-    return state->folding.foldRegionMarkModeActive();
-}
-
-bool MyCodeEditor::insertCustomFoldMarkersForTest(
-    int startLine,
-    int endLine,
-    const QString& alias)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->folding.insertCustomFoldMarkers(
-        this,
-        startLine,
-        endLine,
-        alias);
-}
-
 bool MyCodeEditor::toggleFoldAtLineForTest(int line)
 {
     state->clearPendingColumnAnchor();
@@ -2151,14 +2115,6 @@ EditorLargeFileSyntaxSnapshot
 MyCodeEditor::largeFileSyntaxSnapshotForTest() const
 {
     return state->largeFileSyntaxSnapshotForTest();
-}
-
-bool MyCodeEditor::deleteCustomFoldAtLineForTest(int line)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->folding.deleteCustomFoldAtLine(
-        this,
-        line);
 }
 
 void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)

@@ -2279,11 +2279,6 @@ void MainWindow::setupGlobalControl()
                     for (int i = 0; i < count; ++i)
                         fileCommandCoordinator->openDirectoryAsWorkspace();
                 }
-            } else if (executionRoute
-                       == QStringLiteral(
-                           "globalControl.foldRegion")) {
-                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
-                    editor->startFoldRegionMarkMode();
             }
         });
     globalControlCoordinator->install();

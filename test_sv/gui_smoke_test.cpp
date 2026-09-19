@@ -8504,49 +8504,26 @@ static void runTreeSitterFoldingProviderRegression()
     bool hasNestedFold = false;
     for (const TSFoldRange& range : syntaxRanges) {
         hasModuleFold = hasModuleFold
-            || (range.kind == TSFoldRangeKind::Syntax
-                && range.startLine == 0
+            || (range.startLine == 0
                 && range.endLine >= 7);
         hasNestedFold = hasNestedFold
-            || (range.kind == TSFoldRangeKind::Syntax
-                && range.startLine > 0
+            || (range.startLine > 0
                 && range.endLine > range.startLine);
     }
     expectBool("folding provider finds module range", hasModuleFold, true);
     expectBool("folding provider finds nested syntax range", hasNestedFold, true);
 
-    TSDocument customDocument;
-    customDocument.setText(QStringLiteral(
-        "module fold_top;\n"
-        "// fold clock   reset path\n"
-        "logic clk;\n"
-        "logic rst_n;\n"
-        "// endfold\n"
-        "endmodule\n"));
-    const QList<TSFoldRange> customRanges = customDocument.foldingRanges();
-    bool hasCustomFold = false;
-    for (const TSFoldRange& range : customRanges) {
-        hasCustomFold = hasCustomFold
-            || (range.kind == TSFoldRangeKind::Custom
-                && range.startLine == 1
-                && range.endLine == 4
-                && range.label == QStringLiteral("clock   reset path"));
-    }
-    expectBool("custom fold marker creates range", hasCustomFold, true);
-
-    TSDocument malformedDocument;
-    malformedDocument.setText(QStringLiteral(
-        "// endfold\n"
-        "module fold_top;\n"
-        "// fold never closed\n"
-        "endmodule\n"));
-    const QList<TSFoldRange> malformedRanges = malformedDocument.foldingRanges();
-    bool hasMalformedCustom = false;
-    for (const TSFoldRange& range : malformedRanges)
-        hasMalformedCustom = hasMalformedCustom || range.kind == TSFoldRangeKind::Custom;
-    expectBool("malformed custom fold markers do not create range",
-               hasMalformedCustom,
-               false);
+    TSDocument retiredMarkerDocument;
+    retiredMarkerDocument.setText(QStringLiteral(
+        "// fold line marker\nlogic a;\n// endfold\n"
+        "/* fold block marker */\nlogic b;\n/* endfold */\n"
+        "module syntax_kept;\n  logic c;\nendmodule\n"));
+    const QList<TSFoldRange> retiredMarkerRanges = retiredMarkerDocument.foldingRanges();
+    bool onlySyntaxRanges = !retiredMarkerRanges.isEmpty();
+    for (const TSFoldRange& range : retiredMarkerRanges)
+        onlySyntaxRanges = onlySyntaxRanges && range.startLine >= 6;
+    expectBool("line and block comment markers no longer create fold ranges",
+               onlySyntaxRanges, true);
 
     MyCodeEditor editor;
     editor.setPlainText(QStringLiteral(
@@ -8609,70 +8586,6 @@ static void runTreeSitterFoldingProviderRegression()
                    && gutterEditor.findChild<QWidget*>(QStringLiteral("editorFindBar")) == inlineFind, true);
     if (inlineFind) inlineFind->close();
 
-
-    MyCodeEditor commandEditor;
-    QSignalSpy commandStatusSpy(&commandEditor,
-                                &MyCodeEditor::editorStatusMessageRequested);
-    commandEditor.startFoldRegionMarkMode();
-    expectBool("fold region action enters mark mode",
-               commandEditor.foldRegionMarkModeActive(),
-               true);
-    expectBool("fold region action emits start-line mode status",
-               commandStatusSpy.count() > 0
-                   && commandStatusSpy.last().at(0).toString().contains(
-                       QStringLiteral("click start line")),
-               true);
-    QMouseEvent markStartClick(QEvent::MouseButtonPress,
-                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
-                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
-                               QPointF(EditorGutter::foldLeft(&gutterEditor) + 6, 4),
-                               Qt::LeftButton,
-                               Qt::LeftButton,
-                               Qt::NoModifier);
-    const bool startLineSelected =
-        commandEditor.state->handleGutterMousePress(&commandEditor, &markStartClick);
-    expectBool("fold region gutter start selects next stage",
-               startLineSelected
-                   && commandStatusSpy.count() > 0
-                   && commandStatusSpy.last().at(0).toString().contains(
-                       QStringLiteral("click end line")),
-               true);
-    QKeyEvent blockedText(QEvent::KeyPress,
-                          Qt::Key_A,
-                          Qt::NoModifier,
-                          QStringLiteral("a"));
-    QApplication::sendEvent(&commandEditor, &blockedText);
-    expectBool("fold region mode blocks text input",
-               commandEditor.toPlainText().isEmpty(),
-               true);
-    QKeyEvent cancelFold(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-    QApplication::sendEvent(&commandEditor, &cancelFold);
-    expectBool("Esc cancels fold region mark mode",
-               !commandEditor.foldRegionMarkModeActive(),
-               true);
-
-    MyCodeEditor markerEditor;
-    const QString markerOriginal = QStringLiteral(
-        "module fold_top;\n"
-        "  logic clk;\n"
-        "  logic rst_n;\n"
-        "endmodule\n");
-    markerEditor.setPlainText(markerOriginal);
-    const bool markersInserted =
-        markerEditor.insertCustomFoldMarkersForTest(
-            1,
-            2,
-            QStringLiteral("clock   reset path"));
-    const QString markerText = markerEditor.toPlainText();
-    expectBool("fold marker insertion adds alias",
-               markersInserted
-                   && markerText.contains(QStringLiteral("// fold clock   reset path"))
-                   && markerText.contains(QStringLiteral("// endfold")),
-               true);
-    markerEditor.undo();
-    expectBool("fold marker insertion is one undo block",
-               markerEditor.toPlainText() == markerOriginal,
-               true);
 
 }
 
@@ -9384,8 +9297,6 @@ static void runCommandLayerRegression(MainWindow& window)
         sendKeyEvent(target, QEvent::KeyRelease, Qt::Key_F24);
     };
 
-    editor->cancelFoldRegionMarkMode();
-    editor->cancelFoldRegionMarkMode();
     if (QCompleter* completer = editor->findChild<QCompleter*>())
         completer->popup()->hide();
     editor->setFocus();
@@ -9966,7 +9877,6 @@ static void runGlobalControlRegression(MainWindow& window,
     expectBool("global control root shows command domains",
                rootDomainIds == QSet<QString>({
                    QStringLiteral("ow"),
-                   QStringLiteral("fd"),
                }),
                true);
     expectBool("global control root hides direct commands",
@@ -10095,35 +10005,11 @@ static void runGlobalControlRegression(MainWindow& window,
                           .id == QStringLiteral("ow s clean"),
                true);
 
-    const QList<GlobalControlItem> foldActionMatches =
-        service.query(QStringLiteral("fd"));
-    bool foundFoldRegionAction = false;
-    bool foundFoldShelfAction = false;
-    bool foldActionsExplainBehavior = false;
-    bool foundDeprecatedFoldAction = false;
-    for (const GlobalControlItem& item : foldActionMatches) {
-        if (item.id == QStringLiteral("fd r")) {
-            foundFoldRegionAction = item.title == QStringLiteral("fd r")
-                && item.subtitle.contains(QStringLiteral("Fold Region"));
-        }
-        if (item.id == QStringLiteral("fd s")) {
-            foundFoldShelfAction = item.title == QStringLiteral("fd s")
-                && item.subtitle.contains(QStringLiteral("Fold Shelf"));
-        }
-        if (item.id == QStringLiteral("fd")
-            || item.id == QStringLiteral("fds"))
-            foundDeprecatedFoldAction = true;
-    }
-    foldActionsExplainBehavior = foundFoldRegionAction && !foundFoldShelfAction;
-    expectBool("global control fd domain finds fold subcommands",
-               foundFoldRegionAction && !foundFoldShelfAction,
+    expectBool("global control omits the retired fold domain and commands",
+               service.query(QStringLiteral("fd")).isEmpty()
+                   && service.query(QStringLiteral("fd r")).isEmpty()
+                   && service.query(QStringLiteral("fd s")).isEmpty(),
                true);
-    expectBool("global control fold actions include explanations",
-               foldActionsExplainBehavior,
-               true);
-    expectBool("global control fd domain hides deprecated commands",
-               foundDeprecatedFoldAction,
-               false);
 
     expectBool("global control omits workspace files",
                service.query(QStringLiteral("SVH_interface")).isEmpty(),
@@ -10244,7 +10130,7 @@ static void runGlobalControlRegression(MainWindow& window,
                 panelShowsRootCommand = true;
         }
         expectBool("Ctrl+Space command category combines domains and actions",
-                   panelShowsWorkspaceDomain && panelShowsFoldDomain
+                   panelShowsWorkspaceDomain && !panelShowsFoldDomain
                        && panelShowsRootCommand
                        && window.globalControlCoordinator->panel->category()
                               == GlobalControlCategory::Commands,
@@ -10253,40 +10139,10 @@ static void runGlobalControlRegression(MainWindow& window,
         window.globalControlCoordinator->panel->searchEdit->setText(
             QStringLiteral("fd"));
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-        bool panelShowsFoldRegion = false;
-        bool panelShowsFoldShelf = false;
-        for (const GlobalControlItem& item :
-             window.globalControlCoordinator->panel->currentItems) {
-            if (item.id == QStringLiteral("fd r")
-                && item.subtitle.contains(QStringLiteral("Fold Region"))) {
-                panelShowsFoldRegion = true;
-            }
-            if (item.id == QStringLiteral("fd s")
-                && item.subtitle.contains(QStringLiteral("Fold Shelf"))) {
-                panelShowsFoldShelf = true;
-            }
-        }
-        expectBool("global control fd query retains fd r and omits fd s",
-                   panelShowsFoldRegion && !panelShowsFoldShelf,
-                   true);
+        expectBool("global control panel omits the retired fold commands",
+                   window.globalControlCoordinator->panel->currentItems.isEmpty(), true);
         window.globalControlCoordinator->panel->hide();
     }
-
-    MyCodeEditor* activeEditor = window.tabManager
-        ? window.tabManager->getCurrentEditor()
-        : nullptr;
-    if (activeEditor)
-        activeEditor->cancelFoldRegionMarkMode();
-    window.globalControlCoordinator->dispatch(
-        GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("fd r"),
-                          QStringLiteral("fd r"),
-                          QStringLiteral("Fold Region")});
-    expectBool("global control fd r starts fold region mode",
-               activeEditor && activeEditor->foldRegionMarkModeActive(),
-               true);
-    if (activeEditor)
-        activeEditor->cancelFoldRegionMarkMode();
 
 }
 
@@ -13940,7 +13796,7 @@ int main(int argc, char** argv)
                    true);
         QTest::keyClick(modeChipEditor, Qt::Key_Escape);
 
-        modeChipEditor->startFoldRegionMarkMode();
+        modeChipEditor->startSignalSelectionMode(&modeReason);
         MyCodeEditor* priorTabEditor = modeChipEditor;
         window.tabManager->createNewTab();
         MyCodeEditor* replacementEditor =
@@ -13949,9 +13805,9 @@ int main(int argc, char** argv)
         expectBool("tab switch exits every stale editor mode",
                    replacementEditor
                        && replacementEditor != priorTabEditor
-                       && !priorTabEditor->foldRegionMarkModeActive()
+                       && !priorTabEditor->signalSelectionModeActiveForTest()
                        && priorTabEditor->state->modes.lastExitReason(
-                              EditorModeId::FoldRegion)
+                              EditorModeId::SignalSelection)
                               == EditorModeExitReason::TabChanged,
                    true);
         if (replacementEditor) {
@@ -13963,15 +13819,15 @@ int main(int argc, char** argv)
         modeChipEditor = window.tabManager->getCurrentEditor();
 
         if (modeChipEditor && window.globalControlCoordinator) {
-            modeChipEditor->startFoldRegionMarkMode();
+            modeChipEditor->startSignalSelectionMode(&modeReason);
             window.globalControlCoordinator->open();
             QCoreApplication::processEvents(
                 QEventLoop::AllEvents, 50);
             expectBool("Global Control exits the active editor mode",
-                       !modeChipEditor->foldRegionMarkModeActive()
+                       !modeChipEditor->signalSelectionModeActiveForTest()
                            && modeChipEditor->state->modes
                                   .lastExitReason(
-                                      EditorModeId::FoldRegion)
+                                      EditorModeId::SignalSelection)
                                   == EditorModeExitReason::ExternalControl,
                        true);
             if (window.globalControlCoordinator->panel)

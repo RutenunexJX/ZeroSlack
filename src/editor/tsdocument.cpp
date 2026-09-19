@@ -3759,129 +3759,6 @@ SignalInsertAnchor anchorBeforeLine(const Text& text,
     return anchor;
 }
 
-QString commentPayload(const QString& commentText)
-{
-    QString payload = commentText;
-    if (payload.startsWith(QStringLiteral("//"))) {
-        payload = payload.mid(2);
-    } else if (payload.startsWith(QStringLiteral("/*"))) {
-        payload = payload.mid(2);
-        if (payload.endsWith(QStringLiteral("*/")))
-            payload.chop(2);
-    }
-    return payload.trimmed();
-}
-
-QString firstToken(const QString& payload, int* tokenEnd)
-{
-    int end = 0;
-    while (end < payload.size() && !payload.at(end).isSpace())
-        ++end;
-    if (tokenEnd)
-        *tokenEnd = end;
-    return payload.left(end);
-}
-
-template <typename Text>
-bool customFoldMarkerForNode(const Text& text,
-                             TSNode node,
-                             TSCustomFoldMarker* marker)
-{
-    if (!marker)
-        return false;
-    const char* type = ts_node_type(node);
-    if (!type || (std::strcmp(type, "one_line_comment") != 0
-                  && std::strcmp(type, "block_comment") != 0)) {
-        return false;
-    }
-
-    const QString payload = commentPayload(nodeText(text, node));
-    int tokenEnd = 0;
-    const QString token = firstToken(payload, &tokenEnd);
-    if (token != QStringLiteral("fold")
-        && token != QStringLiteral("endfold")) {
-        return false;
-    }
-
-    const TSPoint point = ts_node_start_point(node);
-    marker->line = static_cast<int>(point.row);
-    marker->column = static_cast<int>(point.column / 2u);
-    marker->startsRange = token == QStringLiteral("fold");
-    marker->label = marker->startsRange
-        ? payload.mid(tokenEnd).trimmed()
-        : QString();
-    return true;
-}
-
-template <typename Text>
-void collectCustomFoldMarkers(const Text& text,
-                              TSNode node,
-                              QList<TSCustomFoldMarker>& markers)
-{
-    if (ts_node_is_null(node))
-        return;
-    TSCustomFoldMarker marker;
-    if (customFoldMarkerForNode(text, node, &marker))
-        markers.append(marker);
-
-    const uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t index = 0; index < childCount; ++index) {
-        collectCustomFoldMarkers(text,
-                                 ts_node_child(node, index),
-                                 markers);
-    }
-}
-
-template <typename Text>
-void collectFoldNodes(const Text& text,
-                      TSNode node,
-                      QList<TSFoldRange>& syntaxRanges,
-                      QList<TSFoldRange>& customRanges,
-                      QList<QPair<int, QString>>& customStack)
-{
-    const char* type = ts_node_type(node);
-    TSCustomFoldMarker marker;
-    if (customFoldMarkerForNode(text, node, &marker)) {
-        if (marker.startsRange) {
-            customStack.append({marker.line, marker.label});
-        } else {
-            if (!customStack.isEmpty()) {
-                const QPair<int, QString> start = customStack.takeLast();
-                const int endLine = marker.line;
-                if (endLine > start.first) {
-                    TSFoldRange range;
-                    range.startLine = start.first;
-                    range.endLine = endLine;
-                    range.kind = TSFoldRangeKind::Custom;
-                    range.label = start.second;
-                    customRanges.append(range);
-                }
-            }
-        }
-    }
-
-    if (isFoldableSyntaxNode(type)) {
-        const int startLine = static_cast<int>(ts_node_start_point(node).row);
-        const int endLine = static_cast<int>(ts_node_end_point(node).row);
-        if (endLine > startLine) {
-            TSFoldRange range;
-            range.startLine = startLine;
-            range.endLine = endLine;
-            range.kind = TSFoldRangeKind::Syntax;
-            range.label = foldSyntaxLabel(type);
-            syntaxRanges.append(range);
-        }
-    }
-
-    const uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t i = 0; i < childCount; ++i)
-        collectFoldNodes(text,
-                         ts_node_child(node, i),
-                         syntaxRanges,
-                         customRanges,
-                         customStack);
-}
-
 void appendSyntaxFoldNode(TSNode node,
                           QList<TSFoldRange>& ranges,
                           QSet<QString>& seen)
@@ -3902,7 +3779,6 @@ void appendSyntaxFoldNode(TSNode node,
         TSFoldRange range;
         range.startLine = nodeStart;
         range.endLine = nodeEnd;
-        range.kind = TSFoldRangeKind::Syntax;
         range.label = foldSyntaxLabel(type);
         ranges.append(range);
     }
@@ -5893,36 +5769,15 @@ int TSDocument::blockEndCommentState(int blockStartChar, int blockLenChar) const
 
 QList<TSFoldRange> TSDocument::foldingRanges() const
 {
-    QList<TSFoldRange> syntaxRanges;
-    QList<TSFoldRange> customRanges;
-    QList<QPair<int, QString>> customStack;
-    collectFoldNodes(m_text,
-                     ts_tree_root_node(m_tree),
-                     syntaxRanges,
-                     customRanges,
-                     customStack);
-
-    QSet<QString> customExtents;
-    for (const TSFoldRange& range : std::as_const(customRanges)) {
-        customExtents.insert(QStringLiteral("%1:%2")
-                                 .arg(range.startLine)
-                                 .arg(range.endLine));
-    }
-
-    QList<TSFoldRange> result = customRanges;
-    for (const TSFoldRange& range : std::as_const(syntaxRanges)) {
-        const QString extent = QStringLiteral("%1:%2")
-            .arg(range.startLine)
-            .arg(range.endLine);
-        if (!customExtents.contains(extent))
-            result.append(range);
-    }
+    QList<TSFoldRange> result;
+    if (!m_tree)
+        return result;
+    QSet<QString> seen;
+    collectSyntaxFoldSubtree(ts_tree_root_node(m_tree), result, seen);
     std::sort(result.begin(), result.end(), [](const TSFoldRange& lhs,
                                                const TSFoldRange& rhs) {
         if (lhs.startLine != rhs.startLine)
             return lhs.startLine < rhs.startLine;
-        if (lhs.kind != rhs.kind)
-            return lhs.kind == TSFoldRangeKind::Custom;
         return lhs.endLine < rhs.endLine;
     });
     return result;
@@ -5961,71 +5816,5 @@ QList<TSFoldRange> TSDocument::syntaxFoldingRangesForChanges(
             return left.startLine < right.startLine;
         return left.endLine < right.endLine;
     });
-    return result;
-}
-
-QList<TSCustomFoldMarker> TSDocument::customFoldMarkers() const
-{
-    QList<TSCustomFoldMarker> result;
-    if (!m_tree)
-        return result;
-    collectCustomFoldMarkers(m_text, ts_tree_root_node(m_tree), result);
-    std::sort(result.begin(), result.end(),
-              [](const TSCustomFoldMarker& left,
-                 const TSCustomFoldMarker& right) {
-                  if (left.line != right.line)
-                      return left.line < right.line;
-                  return left.column < right.column;
-              });
-    return result;
-}
-
-QList<TSCustomFoldMarker> TSDocument::customFoldMarkersForChanges(
-    const QList<TSChangedRange>& changedRanges) const
-{
-    QList<TSCustomFoldMarker> result;
-    if (!m_tree || changedRanges.isEmpty())
-        return result;
-
-    QSet<QString> seen;
-    const TSNode root = ts_tree_root_node(m_tree);
-    const uint32_t documentBytes = static_cast<uint32_t>(m_text.size()) * 2u;
-    for (const TSChangedRange& range : changedRanges) {
-        uint32_t startByte = static_cast<uint32_t>(
-            qBound(0, range.startChar, m_text.size())) * 2u;
-        uint32_t endByte = static_cast<uint32_t>(
-            qBound(0, range.endChar, m_text.size())) * 2u;
-        if (documentBytes > 0) {
-            startByte = qMin(startByte, documentBytes - 1u);
-            endByte = qMin(qMax(startByte, endByte), documentBytes - 1u);
-        }
-        TSNode scope = ts_node_named_descendant_for_byte_range(
-            root, startByte, endByte);
-        if (ts_node_is_null(scope)) {
-            scope = ts_node_descendant_for_byte_range(root,
-                                                      startByte,
-                                                      endByte);
-        }
-
-        QList<TSCustomFoldMarker> local;
-        collectCustomFoldMarkers(m_text, scope, local);
-        for (const TSCustomFoldMarker& marker : std::as_const(local)) {
-            const QString key = QStringLiteral("%1:%2:%3")
-                .arg(marker.line)
-                .arg(marker.column)
-                .arg(marker.startsRange ? 1 : 0);
-            if (!seen.contains(key)) {
-                seen.insert(key);
-                result.append(marker);
-            }
-        }
-    }
-    std::sort(result.begin(), result.end(),
-              [](const TSCustomFoldMarker& left,
-                 const TSCustomFoldMarker& right) {
-                  if (left.line != right.line)
-                      return left.line < right.line;
-                  return left.column < right.column;
-              });
     return result;
 }

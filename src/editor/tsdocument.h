@@ -150,22 +150,9 @@ struct HlSpan {
     HlCategory category;
 };
 
-enum class TSFoldRangeKind {
-    Syntax,
-    Custom
-};
-
 struct TSFoldRange {
     int startLine = -1; // 0-based QTextBlock line
     int endLine = -1;   // 0-based inclusive
-    TSFoldRangeKind kind = TSFoldRangeKind::Syntax;
-    QString label;
-};
-
-struct TSCustomFoldMarker {
-    int line = -1;
-    int column = 0;
-    bool startsRange = false;
     QString label;
 };
 
@@ -864,13 +851,9 @@ public:
     // continues onto the next block (so the following block must be re-highlighted), else 0.
     int blockEndCommentState(int blockStartChar, int blockLenChar) const;
 
-    // Tree-sitter based folding ranges. Custom fold markers are extracted from
-    // Tree-sitter comment nodes rather than regular expressions.
+    // Folding follows Tree-sitter syntax nodes.
     QList<TSFoldRange> foldingRanges() const;
     QList<TSFoldRange> syntaxFoldingRangesForChanges(
-        const QList<TSChangedRange>& changedRanges) const;
-    QList<TSCustomFoldMarker> customFoldMarkers() const;
-    QList<TSCustomFoldMarker> customFoldMarkersForChanges(
         const QList<TSChangedRange>& changedRanges) const;
 
 private:

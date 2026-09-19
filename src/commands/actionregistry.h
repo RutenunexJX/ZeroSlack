@@ -20,7 +20,6 @@ enum class ActionCategory {
     Insert,
     Select,
     Workspace,
-    Fold,
     Help
 };
 

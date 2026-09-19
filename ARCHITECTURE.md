@@ -153,7 +153,8 @@ through the workspace session service, which imports legacy `.zs` without using 
 Live Insight requests carry document/workspace generation and cancellation. Latest valid results win;
 pending or failed analysis may retain explicitly stale last-valid content. Stable node identities preserve
 compatible layout, selection and source navigation. Kernel, Module, Hotspot and State retain their
-specialized surfaces. Fold Shelf, static Wave Preview and Wave Simulation are no longer compiled or registered.
+specialized surfaces. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are no longer compiled or registered.
+Editor folding is derived only from Tree-sitter syntax nodes; comments do not define custom fold ranges.
 
 Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
 old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.

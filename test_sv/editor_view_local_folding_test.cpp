@@ -61,17 +61,17 @@ QString foldingFixture(const QString& moduleName,
         text += QStringLiteral("// leading %1\n").arg(index);
     text += QStringLiteral(
                 "module %1;\n"
-                "// fold %2\n"
+                "initial begin : %2\n"
                 "  logic first_a;\n"
                 "  logic first_b;\n"
-                "// endfold\n"
+                "end\n"
                 "  logic between;\n"
-                "// fold %3\n"
+                "initial begin : %3\n"
                 "  logic second_a;\n"
                 "  logic second_b;\n"
                 "  logic second_c;\n"
                 "  logic second_d;\n"
-                "// endfold\n"
+                "end\n"
                 "endmodule\n")
                 .arg(moduleName, firstLabel, secondLabel);
     for (int index = 0; index < 80; ++index)
@@ -452,11 +452,11 @@ void exerciseFoldAnchorBoundariesAndFindReveal()
 void exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection()
 {
     QString text = QStringLiteral(
-        "module huge;\n// fold huge\n/* projection fixture\n");
+        "module huge;\ninitial begin : huge\n/* projection fixture\n");
     text.reserve(1700000);
     for (int line = 0; line < 100000; ++line)
         text += QStringLiteral("folded body %1\n").arg(line);
-    text += QStringLiteral("*/\n// endfold\nendmodule\n");
+    text += QStringLiteral("*/\nend\nendmodule\n");
 
     ProjectionTestEditor editor;
     editor.resize(720, 420);

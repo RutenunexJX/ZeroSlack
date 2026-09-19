@@ -1267,7 +1267,6 @@ void MyCodeEditorState::bindEditorModes(MyCodeEditor* editor)
         &modes,
         editor,
         &selections);
-    folding.bindModeController(&modes, editor);
 }
 
 EditorModeSnapshot MyCodeEditorState::modeSnapshot() const
@@ -2078,9 +2077,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             emit editor->editorStatusMessageRequested(
                 QStringLiteral("Signal selection canceled"));
             break;
-        case EditorModeId::FoldRegion:
-            folding.cancelFoldRegionMarkMode(editor);
-            break;
         case EditorModeId::TemplateSlots:
             handleTemplateSlotKeyPress(editor, event);
             return true;
@@ -2202,10 +2198,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
     if (primaryMode == EditorModeId::SignalSelection) {
-        event->accept();
-        return true;
-    }
-    if (primaryMode == EditorModeId::FoldRegion) {
         event->accept();
         return true;
     }
@@ -3082,9 +3074,6 @@ bool MyCodeEditorState::handleGutterMousePress(
         }
     }
 
-    if (folding.foldRegionMarkModeActive())
-        return folding.handleFoldRegionGutterLine(editor,
-                                                  block.blockNumber());
     if (event->position().x() < EditorGutter::foldLeft(editor))
         return false;
     return folding.toggleFoldAtLine(editor, block.blockNumber());
@@ -3206,11 +3195,7 @@ bool MyCodeEditorState::handleGutterMouseMove(
     }
     closeDiagnosticPeek();
 
-    const bool handled =
-        folding.handleFoldRegionHoverLine(editor, block.blockNumber());
-    if (handled)
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-    return handled;
+    return false;
 }
 
 void MyCodeEditorState::paintGutterDecorations(
@@ -4593,10 +4578,6 @@ bool MyCodeEditorState::handleMouseMove(
 
     if (columnMode.updateSelectionDrag(editor, event))
         return true;
-
-    if (folding.handleFoldRegionMouseMove(editor, event))
-        gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
-
 
     if (sourceNavigation.handleMouseMove(
         editor,

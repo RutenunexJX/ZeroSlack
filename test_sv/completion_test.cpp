@@ -828,9 +828,9 @@ int main(int argc, char** argv) {
         if (item.kind == GlobalControlItemKind::Command)
             globalRootHasCommands = true;
     }
-    expectBool("GlobalControl root shows only domains",
+    expectBool("GlobalControl root shows only the workspace domain",
                globalRootHasWorkspaceDomain
-                   && globalRootHasFoldDomain
+                   && !globalRootHasFoldDomain
                    && !globalRootHasCommands,
                true);
     const QList<GlobalControlItem> globalWorkspaceItems =

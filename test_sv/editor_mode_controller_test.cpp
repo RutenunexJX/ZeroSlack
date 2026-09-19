@@ -32,7 +32,6 @@ int main()
         EditorModeId::VirtualCursor,
         EditorModeId::MultiCursor,
         EditorModeId::KeywordGhost,
-        EditorModeId::FoldRegion,
         EditorModeId::SourceNavigation,
         EditorModeId::InsightTargetPick,
     };

@@ -346,12 +346,6 @@ public:
     void flashLine(int lineNumber);
     void flashRange(int startChar, int endChar);
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
-    void startFoldRegionMarkMode();
-    void cancelFoldRegionMarkMode();
-    bool foldRegionMarkModeActive() const;
-    bool insertCustomFoldMarkersForTest(int startLine,
-                                        int endLine,
-                                        const QString& alias = QString());
     bool toggleFoldAtLineForTest(int line);
     bool foldCollapsedAtLineForTest(int line) const;
     bool foldLineVisibleForTest(int line) const;
@@ -366,7 +360,6 @@ public:
         const AnnotationLayerQuery& query = {}) const;
     QString syntaxTextForTest() const;
     EditorLargeFileSyntaxSnapshot largeFileSyntaxSnapshotForTest() const;
-    bool deleteCustomFoldAtLineForTest(int line);
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;

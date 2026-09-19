@@ -21,7 +21,6 @@ enum class EditorModeId
     VirtualCursor,
     MultiCursor,
     KeywordGhost,
-    FoldRegion,
     SourceNavigation,
     InsightTargetPick,
 };
@@ -37,7 +36,6 @@ enum class EditorModeOwner
     ColumnEditing,
     VirtualCursor,
     MultiCursor,
-    Folding,
     SourceNavigation,
     InsightTargeting,
 };

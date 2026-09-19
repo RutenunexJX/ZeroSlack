@@ -1823,7 +1823,7 @@ void appendApplicationMenuActions(
                 ActionIds::ViewGlobalControl),
             QStringLiteral("Global Control"),
             QStringLiteral(
-                "Open the workspace and fold command palette."),
+                "Open the application command palette."),
             ActionCategory::Navigate,
             ActionScope::Application,
             QStringLiteral("ui.globalControl.show"));
@@ -2234,23 +2234,6 @@ void appendRtlEditMenuActions(
 
 void appendGlobalControlActions(QList<ActionDescriptor>* out)
 {
-    ActionDescriptor foldRegion =
-        makeAction(QStringLiteral("fold.region"),
-                   QStringLiteral("Fold Region"),
-                   QStringLiteral(
-                       "Fold Region - mark a custom fold block in the active editor"),
-                   ActionCategory::Fold,
-                   ActionScope::Editor,
-                   QStringLiteral("globalControl.foldRegion"),
-                   ActionRequirements::Editor,
-                   QStringLiteral("Open an editor tab."),
-                   ActionRecoveryPolicy::Explain);
-    foldRegion.aliases.append(
-        alias(ActionSurface::GlobalControl,
-              QStringLiteral("fd r"),
-              QStringLiteral("fd r")));
-    out->append(foldRegion);
-
     ActionDescriptor openWorkspace =
         makeAction(QStringLiteral("workspace.openCount"),
                    QStringLiteral("Open Workspaces"),
@@ -3129,8 +3112,6 @@ QString actionCategoryText(ActionCategory category)
         return QStringLiteral("Select");
     case ActionCategory::Workspace:
         return QStringLiteral("Workspace");
-    case ActionCategory::Fold:
-        return QStringLiteral("Fold");
     case ActionCategory::Help:
         return QStringLiteral("Help");
     case ActionCategory::Unknown:

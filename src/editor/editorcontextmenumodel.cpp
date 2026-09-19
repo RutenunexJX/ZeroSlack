@@ -22,7 +22,6 @@ EditorContextMenuSection sectionFor(
     case ActionCategory::Refactor:
     case ActionCategory::Insert:
     case ActionCategory::Select:
-    case ActionCategory::Fold:
     case ActionCategory::Workspace:
     case ActionCategory::Help:
     case ActionCategory::Unknown:

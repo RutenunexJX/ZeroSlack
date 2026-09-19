@@ -815,8 +815,9 @@ int main()
     }
     expect("retired bottom and Insight Focus descriptors are absent",
            retiredInsightDescriptorsAreAbsent);
-    expect("removed Shelf and symbolic Wave actions are absent",
-           !findActionById(QStringLiteral("fold.shelf"))
+    expect("removed custom folding and symbolic Wave actions are absent",
+           !findActionById(QStringLiteral("fold.region"))
+               && !findActionById(QStringLiteral("fold.shelf"))
                && !findActionById(QStringLiteral("view.foldShelf.toggle"))
                && !findActionById(QStringLiteral("view.wavePreview.toggle"))
                && !findActionById(QStringLiteral("graph.export.wavePreview")));
@@ -2137,7 +2138,6 @@ int main()
         if (entry.kind == GlobalControlItemKind::Domain) {
             return entry.actionId.isEmpty()
                 && (entry.id == QStringLiteral("ow")
-                    || entry.id == QStringLiteral("fd")
                     || entry.id == QStringLiteral("ow s"));
         }
         if (entry.kind != GlobalControlItemKind::Command
@@ -2183,13 +2183,15 @@ int main()
         QStringList expectedIds;
     };
     const QList<CommandColumnCase> commandColumnCases = {
-        {QString(), {QStringLiteral("domain:ow"), QStringLiteral("domain:fd"),
+        {QString(), {QStringLiteral("domain:ow"),
                      QStringLiteral("rename rtl symbol"),
                      QStringLiteral("synchronize instance connections"),
                      QStringLiteral("connect instance pair"),
                      QStringLiteral("propagate selected signals"),
                      QStringLiteral("column number")}},
-        {QStringLiteral("fd"), {QStringLiteral("fd r")}},
+        {QStringLiteral("fd"), {}},
+        {QStringLiteral("fd r"), {}},
+        {QStringLiteral("fd s"), {}},
         {QStringLiteral("ow"), {QStringLiteral("ow 1"), QStringLiteral("ow 2"),
                                 QStringLiteral("ow r"), QStringLiteral("domain:ow s")}},
         {QStringLiteral("ow s"), {QStringLiteral("ow s save"),
@@ -2200,7 +2202,7 @@ int main()
         {QStringLiteral("rename"), {QStringLiteral("rename rtl symbol")}},
         {QStringLiteral("connect"), {QStringLiteral("connect instance pair")}},
         {QStringLiteral("column"), {QStringLiteral("column number")}},
-        {QStringLiteral("fold"), {QStringLiteral("domain:fd")}},
+        {QStringLiteral("fold"), {}},
         {QStringLiteral("close tab"), {}},
         {QStringLiteral("split left"), {}},
         {QStringLiteral("join lines"), {}},

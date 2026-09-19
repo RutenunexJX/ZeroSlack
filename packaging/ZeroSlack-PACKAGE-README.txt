@@ -1,4 +1,4 @@
-ZeroSlack v0.29.14
+ZeroSlack v0.29.15
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -13,8 +13,8 @@ ZeroSlack no longer runs simulation, loads wavewidgets.dll, or unpacks a Wave to
 The fixed ZeroSlack-win64 directory and executable names preserve existing shortcuts.
 
 Settings, Search / Replace, Change Preview and Connections create their pages on first use.
-Reopening retains their state. Fold Shelf, static Wave Preview and Wave Simulation are removed.
-The four specialized diagrams and ordinary/custom folding remain available.
+Reopening retains their state. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed.
+The four specialized diagrams and syntax folding remain available.
 
 Activity replaces the status bar. Scan, semantic and operation messages are
 retained in Activity. Important unread messages increment its numeric badge;

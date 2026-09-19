@@ -59,7 +59,6 @@ bool isAdmittedGlobalControlItem(const GlobalControlItem& entry)
     if (entry.kind == GlobalControlItemKind::Domain) {
         return entry.actionId.isEmpty()
             && (entry.id == QStringLiteral("ow")
-                || entry.id == QStringLiteral("fd")
                 || entry.id == QStringLiteral("ow s"));
     }
     if (entry.kind != GlobalControlItemKind::Command
@@ -111,22 +110,7 @@ QList<GlobalControlItem> rootDomainItems()
              QStringLiteral("ow"),
              QStringLiteral("ow"),
              QStringLiteral("Workspace")),
-        item(GlobalControlItemKind::Domain,
-             QStringLiteral("fd"),
-             QStringLiteral("fd"),
-             QStringLiteral("Fold")),
     };
-}
-
-QList<GlobalControlItem> foldDomainItems(const QString& filter)
-{
-    QList<GlobalControlItem> items = {
-        actionItem(QStringLiteral("fd r")),
-        actionItem(QStringLiteral("fd s")),
-    };
-    QList<GlobalControlItem> result;
-    appendFiltered(&result, items, filter);
-    return result;
 }
 
 QList<GlobalControlItem> workspaceSessionDomainItems(const QString& query)
@@ -218,11 +202,8 @@ QList<GlobalControlItem> commandPaletteItems(const QString& text)
 {
     const QString queryText = normalizedQuery(text);
     QList<GlobalControlItem> result;
-    if (queryText == QStringLiteral("fd")
-        || queryText.startsWith(QStringLiteral("fd "))) {
-        result = foldDomainItems(queryText);
-    } else if (queryText == QStringLiteral("ow")
-               || queryText.startsWith(QStringLiteral("ow "))) {
+    if (queryText == QStringLiteral("ow")
+        || queryText.startsWith(QStringLiteral("ow "))) {
         result = workspaceDomainItems(queryText);
     } else {
         appendFiltered(&result, rootDomainItems(), queryText);
@@ -286,9 +267,6 @@ QList<GlobalControlItem> GlobalControlService::query(
     QList<GlobalControlItem> result;
     if (queryText.isEmpty())
         result = rootDomainItems();
-    else if (queryText == QStringLiteral("fd")
-             || queryText.startsWith(QStringLiteral("fd ")))
-        result = foldDomainItems(queryText);
     else if (queryText == QStringLiteral("ow")
              || queryText.startsWith(QStringLiteral("ow ")))
         result = workspaceDomainItems(queryText);

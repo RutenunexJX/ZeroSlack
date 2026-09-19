@@ -959,39 +959,30 @@ void exerciseFoldGhostAndSlotState()
     expect("fold edits stay incremental",
            foldingEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
 
-    MyCodeEditor customFoldEditor;
-    customFoldEditor.setPlainText(QStringLiteral(
-        "logic a;\nlogic b;\nlogic c;\nlogic d;\n"));
-    customFoldEditor.acceptLoadedTextAsSemanticBaseline();
-    expect("custom fold markers insert",
-           customFoldEditor.insertCustomFoldMarkersForTest(
-               0, 2, QStringLiteral("kept")));
-    expect("custom fold can collapse",
-           customFoldEditor.toggleFoldAtLineForTest(0));
-    customFoldEditor.resetHotPathMetricsForTest();
-    QTextCursor customBody(customFoldEditor.document());
-    customBody.setPosition(
-        customFoldEditor.document()->findBlockByNumber(2).position() + 2);
-    customBody.insertText(QStringLiteral("x"));
-    expect("ordinary edit preserves collapsed custom fold",
-           customFoldEditor.foldCollapsedAtLineForTest(0)
-               && !customFoldEditor.foldLineVisibleForTest(2));
-    expect("custom fold ordinary edit stays local",
-           customFoldEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
-
-    const int markerLastChar = customFoldEditor.cachedDocumentText().indexOf(
-        QStringLiteral("// fold kept")) + 6;
-    QTextCursor markerEdit(customFoldEditor.document());
-    markerEdit.setPosition(markerLastChar);
+    MyCodeEditor retiredMarkerEditor;
+    const QString markedText = QStringLiteral(
+        "// fold retired\nlogic a;\nlogic b;\n// endfold\n"
+        "module syntax_kept;\n  logic c;\nendmodule\n");
+    retiredMarkerEditor.setPlainText(markedText);
+    retiredMarkerEditor.acceptLoadedTextAsSemanticBaseline();
+    expect("retired markers do not create a fold or change source text",
+           !retiredMarkerEditor.toggleFoldAtLineForTest(0)
+               && retiredMarkerEditor.foldLineVisibleForTest(1)
+               && retiredMarkerEditor.cachedDocumentText() == markedText);
+    expect("syntax folding beside retired markers remains available",
+           retiredMarkerEditor.toggleFoldAtLineForTest(4)
+               && !retiredMarkerEditor.foldLineVisibleForTest(5));
+    retiredMarkerEditor.resetHotPathMetricsForTest();
+    QTextCursor markerEdit(retiredMarkerEditor.document());
+    markerEdit.setPosition(markedText.indexOf(QStringLiteral("fold")) + 3);
     markerEdit.deleteChar();
-    expect("character edit invalidates only the affected custom marker",
-           !customFoldEditor.toggleFoldAtLineForTest(0)
-               && customFoldEditor.foldLineVisibleForTest(2));
-    customFoldEditor.undo();
-    expect("undo restores a locally parsed custom fold",
-           customFoldEditor.toggleFoldAtLineForTest(0));
-    expect("custom marker edits never rebuild all folds",
-           customFoldEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
+    retiredMarkerEditor.undo();
+    expect("editing and undoing retired markers keeps syntax folds incremental",
+           !retiredMarkerEditor.toggleFoldAtLineForTest(0)
+               && retiredMarkerEditor.foldCollapsedAtLineForTest(4)
+               && !retiredMarkerEditor.foldLineVisibleForTest(5)
+               && retiredMarkerEditor.cachedDocumentText() == markedText
+               && retiredMarkerEditor.hotPathMetricsForTest().fullFoldingRebuilds == 0);
 
     MyCodeEditor deletedSyntaxFoldEditor;
     deletedSyntaxFoldEditor.setPlainText(QStringLiteral(
@@ -1031,46 +1022,6 @@ void exerciseFoldGhostAndSlotState()
     expect("redo of complete fold deletion stays free of stale state",
            !deletedSyntaxFoldEditor.foldCollapsedAtLineForTest(3)
                && deletedSyntaxFoldEditor.foldLineVisibleForTest(4));
-
-    MyCodeEditor deletedCustomFoldEditor;
-    deletedCustomFoldEditor.setPlainText(QStringLiteral(
-        "logic before_custom;\n"
-        "logic custom_a;\n"
-        "logic custom_b;\n"
-        "logic after_custom;\n"));
-    deletedCustomFoldEditor.acceptLoadedTextAsSemanticBaseline();
-    expect("complete custom fold markers insert",
-           deletedCustomFoldEditor.insertCustomFoldMarkersForTest(
-               1, 2, QStringLiteral("deleted_custom")));
-    expect("complete custom fold can collapse before deletion",
-           deletedCustomFoldEditor.toggleFoldAtLineForTest(1));
-    const int customStartPosition =
-        deletedCustomFoldEditor.cachedDocumentText().indexOf(
-            QStringLiteral("// fold deleted_custom"));
-    const int customEndPosition =
-        deletedCustomFoldEditor.cachedDocumentText().indexOf(
-            QStringLiteral("// endfold"), customStartPosition);
-    QTextBlock blockAfterCustom =
-        deletedCustomFoldEditor.document()
-            ->findBlock(customEndPosition)
-            .next();
-    QTextCursor deletedCustomFold(deletedCustomFoldEditor.document());
-    deletedCustomFold.setPosition(customStartPosition);
-    deletedCustomFold.setPosition(
-        blockAfterCustom.isValid()
-            ? blockAfterCustom.position()
-            : deletedCustomFoldEditor.cachedDocumentText().size(),
-        QTextCursor::KeepAnchor);
-    deletedCustomFold.removeSelectedText();
-    expect("deleting complete custom fold removes collapsed state",
-           !deletedCustomFoldEditor.foldCollapsedAtLineForTest(1));
-    expect("deleting complete custom markers leaves no custom fold",
-           !deletedCustomFoldEditor.toggleFoldAtLineForTest(1)
-               && deletedCustomFoldEditor.document()
-                      ->findBlockByNumber(1)
-                      .text()
-                      .contains(QStringLiteral("after_custom"))
-               && deletedCustomFoldEditor.foldLineVisibleForTest(1));
 
     MyCodeEditor pastedBeforeFoldEditor;
     pastedBeforeFoldEditor.setPlainText(QStringLiteral(
@@ -1364,23 +1315,21 @@ void exerciseSynchronousEditTransactions()
                && !afterKeyboard.cursorPresentationSuppressed);
 
     before = afterKeyboard;
-    expect("public fold edit succeeds inside synchronous transaction",
-           editor.insertCustomFoldMarkersForTest(
-               1, 2, QStringLiteral("transaction")));
-    const EditorSynchronousEditState afterFold =
+    editor.insertPlainText(QStringLiteral("// public edit\n"));
+    const EditorSynchronousEditState afterPublicEdit =
         editor.synchronousEditStateForTest();
-    expect("public fold edit commits and clears presentation state",
-           afterFold.completedTransactionCount
+    expect("public text insertion commits and clears presentation state",
+           afterPublicEdit.completedTransactionCount
                    == before.completedTransactionCount + 1
-               && afterFold.transactionDepth == 0
-               && !afterFold.presentationPending
-               && !afterFold.cursorPresentationSuppressed);
+               && afterPublicEdit.transactionDepth == 0
+               && !afterPublicEdit.presentationPending
+               && !afterPublicEdit.cursorPresentationSuppressed);
 
     const int lastBlock = editor.document()->blockCount() - 1;
     QTextCursor realCursor(editor.document()->findBlockByNumber(lastBlock));
     editor.QPlainTextEdit::setTextCursor(realCursor);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-    expect("first cursor move after public fold edit is presented",
+    expect("first cursor move after public text insertion is presented",
            currentLinePresentationAt(editor, lastBlock)
                && !editor.synchronousEditStateForTest()
                        .cursorPresentationSuppressed);
