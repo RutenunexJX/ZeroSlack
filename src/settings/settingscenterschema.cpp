@@ -225,52 +225,6 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         },
     });
     result.append({
-        Category::Simulation,
-        QStringLiteral("simulation"),
-        QStringLiteral("Simulation"),
-        QStringLiteral(
-            "External toolchain used by Wave Simulation. Empty paths use "
-            "portable-directory, environment and PATH discovery."),
-        {
-            field(QStringLiteral("simulation.verilatorPath"),
-                  QString::fromLatin1(
-                      SettingsCenterKeys::SimulationVerilatorPath),
-                  Category::Simulation,
-                  QStringLiteral("Verilator executable"),
-                  QStringLiteral(
-                      "Optional Verilator executable path. Leave empty for "
-                      "automatic discovery."),
-                  Kind::FilePath,
-                  QString(),
-                  {},
-                  {},
-                  {},
-                  true,
-                  false,
-                  true,
-                  false,
-                  true),
-            field(QStringLiteral("simulation.cxxCompilerPath"),
-                  QString::fromLatin1(
-                      SettingsCenterKeys::SimulationCxxCompilerPath),
-                  Category::Simulation,
-                  QStringLiteral("C++ compiler executable"),
-                  QStringLiteral(
-                      "Optional g++, clang++ or cl executable path. Leave "
-                      "empty for automatic discovery."),
-                  Kind::FilePath,
-                  QString(),
-                  {},
-                  {},
-                  {},
-                  true,
-                  false,
-                  true,
-                  false,
-                  true),
-        },
-    });
-    result.append({
         Category::Integration,
         QStringLiteral("integration"),
         QStringLiteral("Integration"),

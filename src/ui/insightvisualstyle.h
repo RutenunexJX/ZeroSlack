@@ -297,8 +297,6 @@ public:
         const QString& objectName = {});
     static QString sideInspectorStyleSheet(
         const QString& objectName = {});
-    static QString foldShelfActiveStyleSheet(
-        const QString& objectName = {});
     static QString graphViewStyleSheet(const QString& objectName = {});
     static QString titleBarStyleSheet(const QString& objectName = {});
     static QString compactSearchFieldStyleSheet(

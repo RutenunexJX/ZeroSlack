@@ -54,29 +54,13 @@ license would follow that agreement instead, and this note would no longer apply
 | Monaspace Neon | SIL Open Font License | `resources/fonts/monaspace-neon/LICENSE.txt` |
 | Catppuccin palette | MIT | `resources/catppuccin/LICENSE.txt` |
 
-## Shipped beside the application, not linked into it
-
-The Windows package carries a portable Wave simulation toolchain as separate
-executables. They are invoked as child processes and are not linked into
-ZeroSlack.
-
-| Component | Version | License |
-| --- | --- | --- |
-| Verilator | 5.050 | LGPLv3 or Artistic License 2.0 |
-| MinGW-w64 GCC runtime | 13.1.0 | GPLv3 with the GCC Runtime Library Exception |
-| GNU Make | bundled | GPLv3 |
-
-Each component keeps its own license files inside the toolchain bundle.
-`scripts/build-portable-verilator.ps1` and `scripts/package-wave-toolchain.ps1`
-assemble that bundle from upstream releases; they do not modify the components
-beyond the patch in `packaging/verilator-v5.050-windows-portable.patch`.
-
 ## Sibling applications
 
 WaveWorkbench, Pinloom and RegMapWorkbench are separate products with their own
-repositories and licenses. ZeroSlack talks to them across versioned IPC and ABI
+repositories and licenses. ZeroSlack talks to them across versioned IPC
 boundaries and contains none of their source. See
-[AppSuite integration](docs/suite.md).
+[AppSuite integration](docs/suite.md). WaveWorkbench and its toolchain retain their
+own license files when distributed in AppSuite; ZeroSlack no longer bundles or executes a simulator.
 
 ## Test fixtures
 

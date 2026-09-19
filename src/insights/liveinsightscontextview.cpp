@@ -34,8 +34,6 @@ LiveInsightKind kindForIndex(int index)
         return LiveInsightKind::Hotspot;
     case 3:
         return LiveInsightKind::State;
-    case 4:
-        return LiveInsightKind::Wave;
     default:
         return LiveInsightKind::Kernel;
     }
@@ -268,16 +266,6 @@ void LiveInsightsContextView::setToolContextSource(
     renderSurface();
 }
 
-void LiveInsightsContextView::setWaveformLibraryPathSource(
-    WaveformLibraryPathSource source)
-{
-    waveformLibraryPathSource = std::move(source);
-    if (surfaceValue && waveformLibraryPathSource) {
-        surfaceValue->setWaveformLibraryPath(
-            waveformLibraryPathSource());
-    }
-}
-
 LiveInsightToolPage* LiveInsightsContextView::surfaceForTest() const
 {
     return surfaceValue;
@@ -287,7 +275,7 @@ bool LiveInsightsContextView::surfaceEnabled() const
 {
     // Only a fixed-kind section owns one insight, so only it can be replaced
     // by that insight's real surface. The multi-kind view stays a compact
-    // board over all five and keeps its summaries.
+    // board over all four and keeps its summaries.
     return fixedKindValue && static_cast<bool>(toolContextSource);
 }
 
@@ -304,10 +292,6 @@ void LiveInsightsContextView::ensureSurface()
         QStringLiteral("liveInsightSurface_%1")
             .arg(liveInsightKindId(selected)));
     surfaceValue->setCompactChrome(true);
-    if (waveformLibraryPathSource) {
-        surfaceValue->setWaveformLibraryPath(
-            waveformLibraryPathSource());
-    }
     if (QLabel* summary = cards.at(index).summary)
         summary->hide();
     page->layout()->addWidget(surfaceValue);
@@ -339,8 +323,7 @@ LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
             context.moduleName = targetOverride.moduleName;
         context.signalName = targetOverride.signalName;
         context.signalAccessPath = targetOverride.signalAccessPath;
-        // A picked scope has to reach the surface, or Wave would report a
-        // target it is not actually rendering.
+        // Keep the selected scope with the pinned target context.
         if (targetOverride.scopeStartPosition >= 0
             && targetOverride.scopeEndPosition
                    > targetOverride.scopeStartPosition) {
@@ -364,8 +347,6 @@ bool LiveInsightsContextView::contextHasTarget(
     case LiveInsightKind::Module:
     case LiveInsightKind::State:
         return !context.moduleName.trimmed().isEmpty();
-    case LiveInsightKind::Wave:
-        return !context.fileName.trimmed().isEmpty();
     }
     return false;
 }
@@ -385,15 +366,6 @@ void LiveInsightsContextView::rememberTarget(
     case LiveInsightKind::Module:
     case LiveInsightKind::State:
         candidate.label = candidate.moduleName;
-        break;
-    case LiveInsightKind::Wave:
-        candidate.label = context.scopeLabel.trimmed().isEmpty()
-            ? context.fileName.trimmed()
-            : context.scopeLabel.trimmed();
-        candidate.scopeLabel = context.scopeLabel.trimmed();
-        candidate.scopeStartPosition = context.scopeStartPosition;
-        candidate.scopeEndPosition = context.scopeEndPosition;
-        candidate.scopeStartLineZeroBased = context.scopeStartLineZeroBased;
         break;
     }
     if (candidate.label.isEmpty())
@@ -497,9 +469,6 @@ void LiveInsightsContextView::publishSectionScope()
     case LiveInsightKind::Module:
     case LiveInsightKind::State:
         label = context.moduleName.trimmed();
-        break;
-    case LiveInsightKind::Wave:
-        label = context.scopeLabel.trimmed();
         break;
     }
     setProperty("contextScopeText",
@@ -620,10 +589,6 @@ void LiveInsightsContextView::renderSurface()
         return;
     surfaceRenderPending = false;
     refreshEmptyState(context);
-    if (waveformLibraryPathSource) {
-        surfaceValue->setWaveformLibraryPath(
-            waveformLibraryPathSource());
-    }
     surfaceValue->setContext(context);
     rememberTarget(context);
 }
@@ -733,8 +698,6 @@ int LiveInsightsContextView::indexForKind(LiveInsightKind kind)
         return 2;
     case LiveInsightKind::State:
         return 3;
-    case LiveInsightKind::Wave:
-        return 4;
     }
     return 0;
 }

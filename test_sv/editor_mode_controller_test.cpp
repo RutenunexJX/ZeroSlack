@@ -33,7 +33,6 @@ int main()
         EditorModeId::MultiCursor,
         EditorModeId::KeywordGhost,
         EditorModeId::FoldRegion,
-        EditorModeId::FoldShelf,
         EditorModeId::SourceNavigation,
         EditorModeId::InsightTargetPick,
     };

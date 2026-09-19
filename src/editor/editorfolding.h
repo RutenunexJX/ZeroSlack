@@ -1,21 +1,16 @@
 #ifndef EDITORFOLDING_H
 #define EDITORFOLDING_H
 
-#include "foldblockshelfmodel.h"
 #include "documentchange.h"
 #include "editorfoldviewstate.h"
 #include "editormodecontroller.h"
 #include "tsdocument.h"
 
 #include <QList>
-#include <QPoint>
 #include <QSet>
 #include <QString>
 
 class MyCodeEditor;
-class QDragEnterEvent;
-class QDragMoveEvent;
-class QDropEvent;
 class QMouseEvent;
 class QPainter;
 class QRect;
@@ -35,28 +30,13 @@ public:
     void startFoldRegionMarkMode(MyCodeEditor* editor);
     void cancelFoldRegionMarkMode(MyCodeEditor* editor);
     bool foldRegionMarkModeActive() const;
-    void startFoldShelfMode(MyCodeEditor* editor);
-    void cancelFoldShelfMode(MyCodeEditor* editor);
-    bool foldShelfModeActive() const;
-    bool handleFoldShelfMousePress(MyCodeEditor* editor, QMouseEvent* event);
-    bool handleFoldShelfMouseMove(MyCodeEditor* editor, QMouseEvent* event);
-    void handleFoldShelfHover(MyCodeEditor* editor, QMouseEvent* event);
     bool handleFoldRegionHoverLine(MyCodeEditor* editor, int line);
     bool handleFoldRegionMouseMove(MyCodeEditor* editor, QMouseEvent* event);
-    bool handleFoldShelfDragEnter(MyCodeEditor* editor, QDragEnterEvent* event) const;
-    bool handleFoldShelfDragMove(MyCodeEditor* editor, QDragMoveEvent* event) const;
-    bool handleFoldShelfDrop(MyCodeEditor* editor, QDropEvent* event);
-    bool insertShelfItemAtLine(MyCodeEditor* editor,
-                               const FoldShelfItem& item,
-                               int line);
     bool handleFoldRegionGutterLine(MyCodeEditor* editor, int line);
     bool insertCustomFoldMarkers(MyCodeEditor* editor,
                                  int startLine,
                                  int endLine,
                                  const QString& alias = QString());
-    FoldShelfItem foldShelfItemAtLine(MyCodeEditor* editor,
-                                      int line,
-                                      FoldShelfOriginKind origin) const;
     bool deleteCustomFoldAtLine(MyCodeEditor* editor, int line);
     bool hasFoldAtLine(int line) const;
     bool isCollapsedAtLine(int line) const;
@@ -87,13 +67,9 @@ private:
     int pendingStartLine = -1;
     int foldRegionHoverLine = -1;
     int defaultAliasCounter = 0;
-    TSFoldRange hoveredShelfRange;
-    TSFoldRange dragShelfRange;
-    QPoint dragStartPosition;
     EditorModeController* modeController = nullptr;
 
     void resetFoldRegionMode(MyCodeEditor* editor);
-    void resetFoldShelfMode(MyCodeEditor* editor);
     void applyVisibility(MyCodeEditor* editor);
     void applyVisibilityForLines(MyCodeEditor* editor,
                                  int startLine,
@@ -107,7 +83,6 @@ private:
     bool deleteRange(MyCodeEditor* editor, const TSFoldRange& range);
     void paintCustomFoldBackgrounds(MyCodeEditor* editor, QPainter& painter) const;
     void paintFoldRegionPreview(MyCodeEditor* editor, QPainter& painter) const;
-    void paintFoldShelfHighlight(MyCodeEditor* editor, QPainter& painter) const;
 };
 
 #endif // EDITORFOLDING_H

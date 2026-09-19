@@ -339,7 +339,6 @@ int main(int argc, char* argv[])
         QStringLiteral("activity"),
         QStringLiteral("rtlHighRiskEdit"),
         QStringLiteral("connections"),
-        QStringLiteral("foldShelf"),
     };
     sessionA.ui.panelLayout.activeBottomPanel =
         QStringLiteral("problems");
@@ -837,56 +836,6 @@ int main(int argc, char* argv[])
               && sessionService.sessionExists(
                   legacyRoot),
           "legacy import creates separated project and local state");
-
-    bool realLegacyFixturesReadOnly = argc == 3;
-    bool realLegacyFixturesImported = argc == 3;
-    for (int argumentIndex = 1;
-         argumentIndex < argc;
-         ++argumentIndex) {
-        const QString fixtureRoot =
-            cleanPath(QString::fromLocal8Bit(
-                argv[argumentIndex]));
-        const QString fixturePath =
-            WorkspaceSessionStateService::
-                legacySessionFilePath(fixtureRoot);
-        const QFileInfo beforeInfo(fixturePath);
-        const QByteArray beforeDigest =
-            fileDigest(fixturePath);
-        const qint64 beforeSize = beforeInfo.size();
-        const QDateTime beforeTimestamp =
-            beforeInfo.lastModified();
-
-        const WorkspaceConfigurationLoadResult
-            fixtureConfiguration =
-                projectService.loadWithResult(
-                    fixtureRoot);
-        const WorkspaceLegacyImportResult
-            fixtureSession =
-                sessionService.loadLegacy(
-                    fixtureRoot);
-
-        const QFileInfo afterInfo(fixturePath);
-        realLegacyFixturesImported =
-            realLegacyFixturesImported
-            && beforeInfo.isFile()
-            && fixtureConfiguration.loaded
-            && fixtureConfiguration.source
-                   == WorkspaceConfigurationSource::
-                          LegacySession
-            && fixtureSession.loaded;
-        realLegacyFixturesReadOnly =
-            realLegacyFixturesReadOnly
-            && afterInfo.isFile()
-            && afterInfo.size() == beforeSize
-            && afterInfo.lastModified()
-                   == beforeTimestamp
-            && fileDigest(fixturePath)
-                   == beforeDigest;
-    }
-    check(realLegacyFixturesImported,
-          "real new and huge_prj legacy fixtures import");
-    check(realLegacyFixturesReadOnly,
-          "real legacy fixtures remain byte and timestamp identical");
 
     std::cout << (checks - failures) << "/"
               << checks

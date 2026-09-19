@@ -83,7 +83,7 @@ private slots:
         QCOMPARE(snapshot.sections.at(1).id, QStringLiteral("pinloom"));
         QCOMPARE(snapshot.sections.at(2).id, QStringLiteral("wave"));
         QCOMPARE(snapshot.sections.at(3).id, QStringLiteral("regmap"));
-        QVERIFY(snapshot.sections.at(0).items.size() >= 6);
+        QVERIFY(snapshot.sections.at(0).items.size() == 5);
         QCOMPARE(snapshot.sections.at(2).items.size(), 1);
         QCOMPARE(snapshot.sections.at(3).items.size(), 1);
     }

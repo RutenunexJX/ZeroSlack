@@ -1363,119 +1363,6 @@ void appendNavigationContextActions(
     }
 }
 
-void appendWaveSimulationActions(QList<ActionDescriptor>* out)
-{
-    struct Spec {
-        const char* id;
-        const char* canonicalName;
-        const char* description;
-        const char* route;
-        const char* contextLabel;
-        const char* contextAdapterKey;
-        const char* menuAdapterKey;
-        ActionScope scope;
-        quint32 requirements;
-        bool menu;
-    };
-    const Spec specs[] = {
-        {ActionIds::WaveSimulationRunCurrentContext,
-         "Run Wave Simulation",
-         "Compile and simulate the current module; an enclosing always block narrows the initial observation scope.",
-         "waveSimulation.runCurrentContext",
-         "Run Wave Simulation",
-         "runWaveSimulationContextAction",
-         "runWaveSimulationAction",
-         ActionScope::Module,
-         ActionRequirements::Workspace
-             | ActionRequirements::Editor
-             | ActionRequirements::SemanticCurrent,
-         true},
-        {ActionIds::WaveSimulationObserveSignal,
-         "Observe Signal in Wave Simulation",
-         "Compile the current module and add the selected signal to the initial observation set.",
-         "waveSimulation.observeSignal",
-         "Observe Signal in Wave Simulation",
-         "observeSignalInWaveSimulationAction",
-         "",
-         ActionScope::Symbol,
-         ActionRequirements::Workspace
-             | ActionRequirements::Editor
-             | ActionRequirements::SemanticCurrent
-             | ActionRequirements::Symbol,
-         false},
-        {ActionIds::WaveSimulationRevealSignalInResult,
-         "Reveal Signal in Wave Result",
-         "Locate the selected semantic signal in an open Wave Simulation result.",
-         "waveSimulation.revealSignalInResult",
-         "Reveal Signal in Wave Result",
-         "revealSignalInWaveSimulationResultAction",
-         "",
-         ActionScope::Symbol,
-         ActionRequirements::Workspace
-             | ActionRequirements::Editor
-             | ActionRequirements::SemanticCurrent
-             | ActionRequirements::Symbol,
-         false},
-        {ActionIds::WaveSimulationRunDesignInstance,
-         "Run Instance in Wave Simulation",
-         "Compile and simulate the module represented by the selected design-hierarchy instance.",
-         "waveSimulation.runDesignInstance",
-         "Run Instance in Wave Simulation",
-         "runDesignInstanceInWaveSimulationAction",
-         "",
-         ActionScope::Hierarchy,
-         ActionRequirements::Workspace
-             | ActionRequirements::SemanticCurrent
-             | ActionRequirements::Hierarchy,
-         false},
-    };
-
-    for (const Spec& spec : specs) {
-        ActionDescriptor descriptor =
-            makeAction(QString::fromLatin1(spec.id),
-                       QString::fromLatin1(spec.canonicalName),
-                       QString::fromLatin1(spec.description),
-                       ActionCategory::Inspect,
-                       spec.scope,
-                       QString::fromLatin1(spec.route),
-                       spec.requirements,
-                       QStringLiteral(
-                           "Open an analyzed SystemVerilog workspace and select a compatible context."),
-                       ActionRecoveryPolicy::Analyze);
-        descriptor.repeatable = false;
-        descriptor.rememberParameters = false;
-        descriptor.aliases = {
-            alias(ActionSurface::ContextMenu,
-                  descriptor.id,
-                  QString::fromLatin1(spec.contextLabel),
-                  descriptor.description,
-                  QString(),
-                  QString::fromLatin1(
-                      spec.contextAdapterKey)),
-            alias(ActionSurface::ActionCatalog,
-                  descriptor.id,
-                  descriptor.canonicalName,
-                  descriptor.description,
-                  QString(),
-                  QString(),
-                  QString(),
-                  false,
-                  true),
-        };
-        if (spec.menu) {
-            descriptor.aliases.append(
-                alias(ActionSurface::Menu,
-                      descriptor.id,
-                      descriptor.canonicalName,
-                      descriptor.description,
-                      QString(),
-                      QString::fromLatin1(
-                          spec.menuAdapterKey)));
-        }
-        out->append(descriptor);
-    }
-}
-
 void appendApplicationMenuActions(
     QList<ActionDescriptor>* out)
 {
@@ -1659,16 +1546,6 @@ void appendApplicationMenuActions(
          ActionScope::Application,
          0,
          "The Activity / Output panel is unavailable."},
-        {ActionIds::ViewWavePreview,
-         "Open Wave in Live Insights",
-         "Open the Wave provider in the right-side Live Insights workspace.",
-         "ui.panel.wavePreview.toggle",
-         "Wave in Live Insights",
-         "viewWavePreviewAction",
-         ActionCategory::Workspace,
-         ActionScope::Application,
-         0,
-         "The Live Insights Wave provider is unavailable."},
         {ActionIds::ViewBottomPanelCollapsed,
          "Toggle Bottom Panel Collapse",
          "Collapse or restore the bottom panel area.",
@@ -1700,16 +1577,6 @@ void appendApplicationMenuActions(
          ActionScope::Application,
          0,
          "No closable bottom page is active."},
-        {ActionIds::ViewFoldShelf,
-         "Toggle Fold Shelf",
-         "Show or hide the Fold Shelf.",
-         "ui.panel.foldShelf.toggle",
-         "Fold Shelf",
-         "viewFoldShelfAction",
-         ActionCategory::Fold,
-         ActionScope::Workspace,
-         0,
-         "The Fold Shelf is unavailable."},
         {ActionIds::ViewSettingsCenter,
          "Settings",
          "Open the unified global and workspace Settings Center.",
@@ -1849,9 +1716,6 @@ void appendApplicationMenuActions(
         };
         const bool hasVisibleMenuEntry =
             descriptor.id
-                    != QString::fromLatin1(
-                        ActionIds::ViewWavePreview)
-            && descriptor.id
                     != QString::fromLatin1(
                         ActionIds::ViewBottomPanelPinned)
             && descriptor.id
@@ -2050,43 +1914,6 @@ void appendApplicationMenuActions(
               QStringLiteral("column number"),
               QStringLiteral("column number")));
     out->append(columnNumbers);
-
-    ActionDescriptor deleteShelfItem =
-        makeAction(
-            QString::fromLatin1(
-                ActionIds::FoldShelfDeleteSelected),
-            QStringLiteral("Delete Selected Fold Shelf Item"),
-            QStringLiteral(
-                "Delete the selected Fold Shelf item after applying moved-block safeguards."),
-            ActionCategory::Fold,
-            ActionScope::Workspace,
-            QStringLiteral("ui.foldShelf.deleteSelected"),
-            ActionRequirements::Workspace,
-            QStringLiteral(
-                "Open a workspace and select a Fold Shelf item before deleting it."),
-            ActionRecoveryPolicy::Explain);
-    deleteShelfItem.defaultShortcut =
-        QStringLiteral("Delete");
-    deleteShelfItem.repeatable = false;
-    deleteShelfItem.aliases = {
-        alias(
-            ActionSurface::CommandLayer,
-            QStringLiteral("fold shelf delete"),
-            QStringLiteral("Delete Selected Fold Shelf Item"),
-            deleteShelfItem.description),
-        alias(
-            ActionSurface::ActionCatalog,
-            QString::fromLatin1(
-                ActionIds::FoldShelfDeleteSelected),
-            QStringLiteral("Delete Selected Fold Shelf Item"),
-            deleteShelfItem.description,
-            QString(),
-            QString(),
-            QString(),
-            false,
-            true),
-    };
-    out->append(deleteShelfItem);
 
     struct TabActionSpec {
         const char* id;
@@ -2424,23 +2251,6 @@ void appendGlobalControlActions(QList<ActionDescriptor>* out)
               QStringLiteral("fd r")));
     out->append(foldRegion);
 
-    ActionDescriptor foldShelf =
-        makeAction(QStringLiteral("fold.shelf"),
-                   QStringLiteral("Fold Shelf"),
-                   QStringLiteral(
-                       "Fold Shelf - drag custom fold blocks to or from the shelf"),
-                   ActionCategory::Fold,
-                   ActionScope::Workspace,
-                   QStringLiteral("globalControl.foldShelf"),
-                   ActionRequirements::Workspace,
-                   QStringLiteral("Open a workspace first."),
-                   ActionRecoveryPolicy::Explain);
-    foldShelf.aliases.append(
-        alias(ActionSurface::GlobalControl,
-              QStringLiteral("fd s"),
-              QStringLiteral("fd s")));
-    out->append(foldShelf);
-
     ActionDescriptor openWorkspace =
         makeAction(QStringLiteral("workspace.openCount"),
                    QStringLiteral("Open Workspaces"),
@@ -2748,16 +2558,6 @@ void appendGraphExportActions(QList<ActionDescriptor>* out)
          "signalUsageHotspotExportMatrixAction",
          "Render a signal usage hotspot before exporting its matrix graph.",
          ActionScope::Symbol},
-        {ActionIds::GraphExportWavePreview,
-         "Export Wave Preview",
-         "Export the current wave preview as SVG, PDF, "
-         "or high-resolution PNG.",
-         "graphExport.wavePreview",
-         "Export Preview...",
-         "wave-preview",
-         "wavePreviewExportAction",
-         "Render a wave preview before exporting.",
-         ActionScope::Editor},
     };
 
     for (const Spec& spec : specs) {
@@ -2933,7 +2733,6 @@ const QList<ActionDescriptor>& actionRegistry()
         appendEditorContextMenuActions(&result);
         appendWorkspaceFileActions(&result);
         appendNavigationContextActions(&result);
-        appendWaveSimulationActions(&result);
         appendApplicationMenuActions(&result);
         appendRtlEditMenuActions(&result);
         appendGraphViewActions(&result);

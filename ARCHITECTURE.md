@@ -152,13 +152,23 @@ through the workspace session service, which imports legacy `.zs` without using 
 
 Live Insight requests carry document/workspace generation and cancellation. Latest valid results win;
 pending or failed analysis may retain explicitly stale last-valid content. Stable node identities preserve
-compatible layout, selection and source navigation. Module, FSM and Hotspot use shared graph presentation;
-Wave preview delegates rendering to WaveWorkbench while ZeroSlack retains symbolic facts.
+compatible layout, selection and source navigation. Kernel, Module, Hotspot and State retain their
+specialized surfaces. Fold Shelf, static Wave Preview and Wave Simulation are no longer compiled or registered.
 
 Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
 old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.
 See [AppSuite integration](docs/suite.md) and [integrations](docs/integrations.md).
 
+
+## Deferred panel construction
+
+`DeferredPanel` keeps a stable layout host and creates its content on first show or explicit
+workflow access. Search caches its context/service bindings; Change Preview delays its widget;
+Connections constructs its two tabs and workflow objects together. Settings loads effective values
+through `SettingsCenterService` before constructing its central settings page on first access.
+Factories are cancelled with their owner. Reopening reuses the page and its signal connections.
+`PanelLayoutController` retains unmaterialized view state and applies it after content creation.
+Problems and Activity keep their startup models so diagnostics and unread badges remain live.
 
 ## Specialized insight surfaces
 
@@ -179,7 +189,7 @@ and only a stored height above zero overrides a provider's suggestion. A view pu
 freshness through `contextStatusText` / `contextStatusTooltip` properties, which the host reads
 onto the section header; the host never reaches into the view's own chrome.
 
-The source insight Actions and the Wave command retarget and pin the section for their kind
+The source insight Actions retarget and pin the section for their kind
 instead of opening a central tool tab, carrying the chosen symbol's member access path. Choosing a
 target in the editor is an editor mode, not a dialog: candidates are enumerated from the visible
 region only, the first-level decision queries `SemanticIndex` at most once per publication and
@@ -217,14 +227,14 @@ build targets and unique quoted header names; they do not create new runtime lay
 | `src/insights/` | Specialized graph services, panels, workbench and export |
 | `src/ui/` | Shared shell, context surfaces, icons, typography and notifications |
 | `src/settings/` | Settings and appearance/configuration UI |
-| `src/integrations/{pinloom,wave,suite}/` | External application adapters |
+| `src/integrations/{pinloom,suite}/` | External application adapters |
 | `src/cli/` | Read-only CLI implementation and entry point |
 | `components/` | Independently scoped reusable libraries |
 | `test_sv/` | Regression tests and referenced HDL fixtures |
 | `cmake/` | Build helpers, source-module include paths and policy guards |
 | `resources/`, `images/`, `config/` | Fonts, licenses, platform assets and editor resources |
 | `schemas/` | Current wire-format schemas; superseded manifest versions stay in Git history |
-| `scripts/`, `packaging/` | Reproducible packaging tools and portable-toolchain patches |
+| `scripts/`, `packaging/` | Reproducible application and suite packaging tools |
 | `docs/` | Current technical and maintenance documentation |
 | `build/`, `artifacts/`, `.toolchain-build/` | Ignored local outputs and reproducible caches |
 
@@ -288,7 +298,5 @@ yellow and green identify error, warning and success. Semantic and syntax colors
 mauve, peach, green, blue and teal. Graph fills mix the corresponding semantic accent
 into the base color. Checked controls use base-colored text over a blue background.
 
-The embedded Wave renderer receives the matching light/dark mode; its external renderer
-currently does not accept the full Catppuccin palette.
 Palette attribution and the full MIT license text are kept with the other third-party
 license files, in `resources/catppuccin/LICENSE.txt`.

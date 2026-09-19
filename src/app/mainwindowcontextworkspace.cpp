@@ -9,7 +9,7 @@
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "pinloomhostclient.h"
-#include "settingscenterpanel.h"
+#include "settingscenterservice.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
@@ -18,7 +18,6 @@
 #include "semanticindex.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
-#include "wavesimulationconfiguration.h"
 #include "workspacehubcontextprovider.h"
 #include "workspacehubsession.h"
 #include "workspacehubsuitebridge.h"
@@ -294,8 +293,7 @@ void MainWindow::setupContextWorkspace()
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::State,
-             LiveInsightKind::Hotspot,
-             LiveInsightKind::Wave}) {
+             LiveInsightKind::Hotspot}) {
         liveInsightSession->setBuilder(kind, summaryBuilder);
     }
     connect(
@@ -318,8 +316,7 @@ void MainWindow::setupContextWorkspace()
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::Hotspot,
-             LiveInsightKind::State,
-             LiveInsightKind::Wave}) {
+             LiveInsightKind::State}) {
         auto provider =
             std::make_unique<LiveInsightsContextProvider>(
                 kind,
@@ -331,10 +328,6 @@ void MainWindow::setupContextWorkspace()
         provider->setToolContextSource(
             [this]() {
                 return activeLiveInsightToolContext();
-            });
-        provider->setWaveformLibraryPathSource(
-            [this]() {
-                return liveInsightWaveformLibraryPath();
             });
         provider->setTargetPickRequest(
             [this](LiveInsightKind kind,
@@ -385,9 +378,9 @@ void MainWindow::setupContextWorkspace()
         });
 
     pinloomHostClient = std::make_unique<PinloomHostClient>(this);
-    if (settingsCenterPanel) {
+    if (settingsCenterService) {
         pinloomHostClient->setExecutablePath(
-            settingsCenterPanel->snapshot()
+            settingsCenterService->load(workspaceManager->getWorkspacePath())
                 .value(QStringLiteral(
                     "integration.pinloomExecutablePath"))
                 .toString());
@@ -508,9 +501,6 @@ bool MainWindow::beginLiveInsightTargetPick(
     case LiveInsightKind::Module:
         targetClass = EditorInsightTargetClass::Module;
         break;
-    case LiveInsightKind::Wave:
-        targetClass = EditorInsightTargetClass::Scope;
-        break;
     }
 
     const LiveInsightToolContext context = activeLiveInsightToolContext();
@@ -544,7 +534,7 @@ bool MainWindow::beginLiveInsightTargetPick(
             return false;
         };
     }
-    // Kernel, Hotspot, Module and Wave have no second stage of their own: the
+    // Kernel, Hotspot and Module have no second stage of their own: the
     // syntax and taxonomy filter is the whole test for them today.
 
     auto handler = [this, kind, moduleName, picked = std::move(picked)](
@@ -562,16 +552,6 @@ bool MainWindow::beginLiveInsightTargetPick(
         case LiveInsightKind::Module:
             target.moduleName = candidate.name;
             target.label = candidate.name;
-            break;
-        case LiveInsightKind::Wave:
-            target.moduleName = moduleName;
-            target.scopeLabel = candidate.scopeLabel;
-            target.scopeStartPosition = candidate.scopeStartChar;
-            target.scopeEndPosition = candidate.scopeEndChar;
-            target.scopeStartLineZeroBased = candidate.startLine;
-            target.label = candidate.scopeLabel.trimmed().isEmpty()
-                ? candidate.name
-                : candidate.scopeLabel;
             break;
         }
         if (picked)
@@ -597,19 +577,6 @@ bool MainWindow::beginLiveInsightTargetPick(
     return true;
 }
 
-QString MainWindow::liveInsightWaveformLibraryPath() const
-{
-    const QString explicitPath =
-        qEnvironmentVariable("ZEROSLACK_WAVEWIDGETS_LIBRARY");
-    if (QFileInfo(explicitPath).isFile())
-        return QFileInfo(explicitPath).absoluteFilePath();
-    const QString configured =
-        WaveSimulationConfiguration().toolPaths().widgetLibrary;
-    return QFileInfo(configured).isFile()
-        ? QFileInfo(configured).absoluteFilePath()
-        : QString();
-}
-
 void MainWindow::requestLiveInsightUpdates()
 {
     requestWorkspaceHubUpdate();
@@ -621,8 +588,7 @@ void MainWindow::requestLiveInsightUpdates()
                  LiveInsightKind::Kernel,
                  LiveInsightKind::Module,
                  LiveInsightKind::State,
-                 LiveInsightKind::Hotspot,
-                 LiveInsightKind::Wave}) {
+                 LiveInsightKind::Hotspot}) {
             liveInsightSession->clear(kind);
         }
         return;
@@ -663,8 +629,7 @@ void MainWindow::requestLiveInsightUpdates()
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::State,
-             LiveInsightKind::Hotspot,
-             LiveInsightKind::Wave}) {
+             LiveInsightKind::Hotspot}) {
         LiveInsightRequestKey key;
         key.kind = kind;
         key.workspaceId = workspaceId;
@@ -720,19 +685,6 @@ void MainWindow::requestLiveInsightUpdates()
                     ? QStringLiteral("Select a signal to rank its evidence.")
                     : QStringLiteral("%1 · Track / Matrix evidence")
                           .arg(context.signalName));
-            break;
-        case LiveInsightKind::Wave:
-            input.insert(QStringLiteral("title"),
-                         QStringLiteral("Symbolic Preview"));
-            input.insert(
-                QStringLiteral("summary"),
-                QStringLiteral("%1\nRTL-derived symbolic values; not a simulation result.")
-                    .arg(context.scopeLabel.trimmed().isEmpty()
-                             ? QStringLiteral("Current RTL scope")
-                             : context.scopeLabel));
-            input.insert(
-                QStringLiteral("provenance"),
-                QStringLiteral("Symbolic Preview"));
             break;
         }
         liveInsightSession->requestUpdate(key, input);
@@ -910,8 +862,6 @@ void MainWindow::openLiveInsightFullView(
     }
 
     auto* page = new LiveInsightToolPage(kind);
-    page->setWaveformLibraryPath(
-        liveInsightWaveformLibraryPath());
     page->setNavigationHandler(
         [this](const QString& fileName, int line, int column) {
             return revealSuiteSource(fileName, line, column);
@@ -940,19 +890,8 @@ void MainWindow::openLiveInsightFullView(
                 }
             }
         });
-    page->setRefreshHandler(
-        [owner = QPointer<MainWindow>(this),
-         target = QPointer<LiveInsightToolPage>(page)]() {
-            if (!owner || !target)
-                return;
-            target->setContext(
-                owner->activeLiveInsightToolContext());
-            owner->requestLiveInsightUpdates();
-        });
     page->setContext(context);
-    const QString title = kind == LiveInsightKind::Wave
-        ? QStringLiteral("Symbolic Wave Preview")
-        : kind == LiveInsightKind::Kernel
+    const QString title = kind == LiveInsightKind::Kernel
             ? QStringLiteral("Signal Kernel Graph")
             : kind == LiveInsightKind::Module
                 ? QStringLiteral("Module Block Diagram")

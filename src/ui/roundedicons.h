@@ -11,7 +11,7 @@
 namespace RoundedIcons {
 enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
-    Activity, Error, Info, Success, Change, Shelf, Left, Right, Down, Up,
+    Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
     OpenProject };
 
@@ -66,7 +66,6 @@ public:
         case Info: circle(12,12,9);line(12,11,12,17);circle(12,7,.4);break;
         case Success: circle(12,12,9);path({{7,12},{10,15},{17,8}});break;
         case Change: box(2,4,8,16);box(14,4,8,16);path({{16,12},{20,12},{18,10}});break;
-        case Shelf: path({{3,13},{7,5},{17,5},{21,13},{21,20},{3,20}},true);line(3,13,21,13);break;
         case Left: path({{15,5},{8,12},{15,19}});break;
         case Right: path({{9,5},{16,12},{9,19}});break;
         case Down: path({{5,9},{12,16},{19,9}});break;

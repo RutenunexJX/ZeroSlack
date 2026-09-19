@@ -5,7 +5,6 @@
 #include "rtlinsightspanelcoordinator.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "signalusagehotspotpanel.h"
-#include "wavepreviewpanelcoordinator.h"
 
 #include <QAction>
 #include <QApplication>
@@ -687,19 +686,6 @@ int main(int argc, char** argv)
                 SignalUsageHotspotExportSurface::Matrix,
                 path,
                 options);
-        },
-        temporary);
-
-    WavePreviewPanelCoordinator wavePreview(&host);
-    wavePreview.canvas()->resize(720, 240);
-    verifyFormats(
-        QStringLiteral("wave-preview"),
-        wavePreview.previewExportAction(),
-        QString::fromLatin1(
-            ActionIds::GraphExportWavePreview),
-        [&wavePreview](const QString& path,
-                       const GraphExportOptions& options) {
-            return wavePreview.exportPreview(path, options);
         },
         temporary);
 

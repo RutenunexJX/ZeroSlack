@@ -22,7 +22,6 @@ enum class EditorModeId
     MultiCursor,
     KeywordGhost,
     FoldRegion,
-    FoldShelf,
     SourceNavigation,
     InsightTargetPick,
 };

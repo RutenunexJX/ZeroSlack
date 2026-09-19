@@ -6,7 +6,6 @@
 #include "mycodeeditor.h"
 #include "tabmanager.h"
 #include "tsdocument.h"
-#include "wavepreviewpanelcoordinator.h"
 
 #include <QApplication>
 #include <QCoreApplication>
@@ -247,22 +246,6 @@ TypingReport measureTyping(const QString& fileName)
     return report;
 }
 
-struct VisibleWaveTypingReport {
-    LatencySummary latency;
-    LatencySummary synchronousKeyLatency;
-    LatencySummary eventProcessingLatency;
-    EditorHotPathMetrics editorMetrics;
-    TSTextStorageMetrics textStorageMetrics;
-    DocumentTextCopyMetrics textCopyMetrics;
-    WavePreviewRefreshMetrics waveMetrics;
-    std::uint64_t metadataNanoseconds = 0;
-    std::uint64_t scopeRegistryNanoseconds = 0;
-    std::uint64_t coordinatorNanoseconds = 0;
-    qsizetype documentCharacterCount = 0;
-    bool metadataTextStayedEmpty = false;
-    bool initialScopeValid = false;
-};
-
 bool isOccurrenceIdentifierStartForTest(QChar ch)
 {
     return ch.isLetter() || ch == QLatin1Char('_');
@@ -399,146 +382,6 @@ void expectLargeFileSyntaxMatchesDocument(
                           editor.document(),
                           suffixStart,
                           boundaryLength));
-}
-
-VisibleWaveTypingReport measureVisibleWaveTyping(const QString& fileName)
-{
-    const QString localScope = QStringLiteral(
-        "module wave_perf;\n"
-        "  logic clk, d, q;\n"
-        "  always_ff @(posedge clk) begin\n"
-        "    q <= d;\n"
-        "  end\n"
-        "endmodule\n");
-
-    MyCodeEditor editor;
-    editor.resize(960, 640);
-    editor.setDocumentFileName(fileName);
-    editor.setPlainText(localScope + readText(fileName));
-    editor.acceptLoadedTextAsSemanticBaseline();
-
-    DocumentModel documents;
-    documents.registerEditor(&editor, fileName);
-    QTextCursor cursor(editor.document());
-    cursor.setPosition(editor.cachedDocumentText().indexOf(
-                           QStringLiteral("q <= d"))
-                       + QStringLiteral("q <= d").size());
-    editor.setTextCursor(cursor);
-    editor.show();
-
-    QWidget waveHost;
-    WavePreviewPanelCoordinator coordinator(&waveHost);
-    waveHost.show();
-    coordinator.dock()->show();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
-
-    const EditorAlwaysScopeTarget initialScope =
-        editor.currentAlwaysScopeTarget();
-    const DocumentSnapshot initialMetadata =
-        documents.documentMetadataForEditor(&editor);
-    coordinator.refreshFromDocument(initialMetadata.fileName,
-                                    editor.cachedDocumentText(),
-                                    initialMetadata.dirty,
-                                    initialScope.startPosition,
-                                    initialScope.endPosition,
-                                    initialScope.label,
-                                    initialScope.startLine);
-
-    std::uint64_t metadataNanoseconds = 0;
-    std::uint64_t scopeRegistryNanoseconds = 0;
-    std::uint64_t coordinatorNanoseconds = 0;
-    bool metadataTextStayedEmpty = initialMetadata.text.isEmpty();
-    QObject::connect(
-        &editor,
-        &MyCodeEditor::documentChangeApplied,
-        &waveHost,
-        [&](const DocumentChange& change) {
-            QElapsedTimer stageTimer;
-            stageTimer.start();
-            const DocumentSnapshot metadata =
-                documents.documentMetadataForEditor(&editor);
-            metadataNanoseconds +=
-                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
-            metadataTextStayedEmpty = metadataTextStayedEmpty
-                && metadata.text.isEmpty() && metadata.dirty;
-            stageTimer.restart();
-            const EditorAlwaysScopeTarget scope =
-                editor.currentAlwaysScopeTarget();
-            scopeRegistryNanoseconds +=
-                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
-            stageTimer.restart();
-            coordinator.applyDocumentChange(
-                metadata.fileName,
-                change,
-                editor.cachedDocumentLength(),
-                [&editor](int position, int length) {
-                    return editor.cachedDocumentSlice(position, length);
-                },
-                metadata.dirty,
-                scope.startPosition,
-                scope.endPosition,
-                scope.label,
-                scope.startLine);
-            coordinatorNanoseconds +=
-                static_cast<std::uint64_t>(stageTimer.nsecsElapsed());
-        });
-
-    editor.resetHotPathMetricsForTest();
-    if (const TSDocument* syntax = editor.syntaxDocument())
-        syntax->resetTextStorageMetricsForTest();
-    resetDocumentTextCopyMetricsForTest();
-    coordinator.resetRefreshMetricsForTest();
-
-    QList<qint64> samples;
-    QList<qint64> synchronousKeySamples;
-    QList<qint64> eventProcessingSamples;
-    constexpr int warmupCount = 4;
-    constexpr int sampleCount = 40;
-    samples.reserve(sampleCount);
-    synchronousKeySamples.reserve(sampleCount);
-    eventProcessingSamples.reserve(sampleCount);
-    for (int index = 0; index < warmupCount + sampleCount; ++index) {
-        QElapsedTimer timer;
-        timer.start();
-        QElapsedTimer synchronousKeyTimer;
-        synchronousKeyTimer.start();
-        QTest::keyClick(&editor,
-                        index % 2 == 0 ? Qt::Key_X
-                                       : Qt::Key_Backspace);
-        const qint64 synchronousKeyUs =
-            synchronousKeyTimer.nsecsElapsed() / 1000;
-        QElapsedTimer eventProcessingTimer;
-        eventProcessingTimer.start();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
-        const qint64 eventProcessingUs =
-            eventProcessingTimer.nsecsElapsed() / 1000;
-        const qint64 elapsedUs = timer.nsecsElapsed() / 1000;
-        if (index >= warmupCount) {
-            samples.append(elapsedUs);
-            synchronousKeySamples.append(synchronousKeyUs);
-            eventProcessingSamples.append(eventProcessingUs);
-        }
-    }
-
-    VisibleWaveTypingReport report;
-    report.latency = summarizeLatency(samples);
-    report.synchronousKeyLatency =
-        summarizeLatency(synchronousKeySamples);
-    report.eventProcessingLatency =
-        summarizeLatency(eventProcessingSamples);
-    report.editorMetrics = editor.hotPathMetricsForTest();
-    if (const TSDocument* syntax = editor.syntaxDocument())
-        report.textStorageMetrics =
-            syntax->textStorageMetricsForTest();
-    report.textCopyMetrics = documentTextCopyMetricsForTest();
-    report.waveMetrics = coordinator.refreshMetricsForTest();
-    report.metadataNanoseconds = metadataNanoseconds;
-    report.scopeRegistryNanoseconds = scopeRegistryNanoseconds;
-    report.coordinatorNanoseconds = coordinatorNanoseconds;
-    report.documentCharacterCount = editor.cachedDocumentText().size();
-    report.metadataTextStayedEmpty = metadataTextStayedEmpty;
-    report.initialScopeValid = initialScope.ok();
-    return report;
 }
 
 void printLatency(const char* fixture, const LatencySummary& summary)
@@ -737,7 +580,7 @@ void printTypingCoreMetrics(const char* fixture,
                 fixture,
                 static_cast<unsigned long long>(
                     meanMicroseconds(
-                        metrics.editorDerivedWaveScopeNanoseconds)));
+                        metrics.editorDerivedScopeNanoseconds)));
     std::printf("perf.typing.%s.finish.semantic.mean_us=%llu\n",
                 fixture,
                 static_cast<unsigned long long>(
@@ -748,16 +591,6 @@ void printTypingCoreMetrics(const char* fixture,
                 static_cast<unsigned long long>(
                     meanMicroseconds(
                         metrics.editorInputHighlightNanoseconds)));
-}
-
-void printVisibleWaveLatency(const LatencySummary& summary)
-{
-    std::printf("perf.visible_wave.huge_after.p50_us=%lld\n",
-                static_cast<long long>(summary.p50Us));
-    std::printf("perf.visible_wave.huge_after.p95_us=%lld\n",
-                static_cast<long long>(summary.p95Us));
-    std::printf("perf.visible_wave.huge_after.max_us=%lld\n",
-                static_cast<long long>(summary.maxUs));
 }
 
 void printLatencySegment(const char* name,
@@ -772,82 +605,6 @@ void printLatencySegment(const char* name,
     std::printf("perf.visible_wave.%s.max_us=%lld\n",
                 name,
                 static_cast<long long>(summary.maxUs));
-}
-
-void printVisibleWaveMetrics(const VisibleWaveTypingReport& report)
-{
-    printLatencySegment("synchronous_key",
-                        report.synchronousKeyLatency);
-    printLatencySegment("event_processing",
-                        report.eventProcessingLatency);
-    const auto meanMicroseconds = [](std::uint64_t nanoseconds,
-                                    std::uint64_t count) {
-        return count == 0
-            ? std::uint64_t{0}
-            : nanoseconds / count / 1000;
-    };
-    const std::uint64_t changeCount =
-        report.editorMetrics.documentChanges;
-    std::printf("perf.visible_wave.document_changes=%llu\n",
-                static_cast<unsigned long long>(
-                    report.editorMetrics.documentChanges));
-    std::printf("perf.visible_wave.render_count=%d\n",
-                report.waveMetrics.renderCount);
-    std::printf("perf.visible_wave.delta_render_count=%d\n",
-                report.waveMetrics.documentChangeRenderCount);
-    std::printf("perf.visible_wave.scope_delta_count=%d\n",
-                report.waveMetrics.scopeDeltaUpdateCount);
-    std::printf("perf.visible_wave.scope_rebuild_count=%d\n",
-                report.waveMetrics.scopeRebuildCount);
-    std::printf("perf.visible_wave.last_parsed_chars=%lld\n",
-                static_cast<long long>(
-                    report.waveMetrics.lastParsedCharacterCount));
-    std::printf("perf.visible_wave.segment.editor_core.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(
-                        report.editorMetrics.documentChangeCoreNanoseconds,
-                        changeCount)));
-    std::printf("perf.visible_wave.segment.delta_dispatch.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(
-                        report.editorMetrics.documentChangeDispatchNanoseconds,
-                        changeCount)));
-    std::printf("perf.visible_wave.segment.metadata.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.metadataNanoseconds,
-                                     changeCount)));
-    std::printf("perf.visible_wave.segment.scope_registry.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.scopeRegistryNanoseconds,
-                                     changeCount)));
-    std::printf("perf.visible_wave.segment.coordinator.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.coordinatorNanoseconds,
-                                     changeCount)));
-    std::printf("perf.visible_wave.segment.scope_cache.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(
-                        report.waveMetrics.scopeCacheUpdateNanoseconds,
-                        changeCount)));
-    std::printf("perf.visible_wave.segment.wave_service.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.waveMetrics.waveServiceNanoseconds,
-                                     changeCount)));
-    std::printf("perf.visible_wave.segment.model_scene.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(
-                        report.waveMetrics.modelSceneRebuildNanoseconds,
-                        changeCount)));
-    std::printf("perf.visible_wave.segment.canvas_update.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.waveMetrics.canvasUpdateNanoseconds,
-                                     changeCount)));
-    std::printf("perf.visible_wave.segment.canvas_paint.mean_us=%llu\n",
-                static_cast<unsigned long long>(
-                    meanMicroseconds(report.waveMetrics.canvasPaintNanoseconds,
-                                     report.waveMetrics.canvasPaintCount)));
-    std::printf("perf.visible_wave.segment.canvas_paint.count=%d\n",
-                report.waveMetrics.canvasPaintCount);
 }
 
 void verifyIncrementalCaches(const QString& label,
@@ -1561,7 +1318,7 @@ void exercisePassiveUiSignals()
         QStringLiteral("value")));
     editor.setTextCursor(cursor);
 
-    QSignalSpy waveSpy(&editor, &MyCodeEditor::wavePreviewScopeChanged);
+    QSignalSpy waveSpy(&editor, &MyCodeEditor::insightScopeChanged);
     QSignalSpy documentChangeSpy(&editor,
                                  &MyCodeEditor::documentChangeApplied);
     QTest::keyClick(&editor, Qt::Key_X);
@@ -2041,46 +1798,6 @@ int main(int argc, char** argv)
                    && report.textStorageMetrics.inputReadCount == 0
                    && report.textStorageMetrics.movedCharacterCount
                           <= 128);
-
-        const VisibleWaveTypingReport waveReport =
-            measureVisibleWaveTyping(hugeFile);
-        printVisibleWaveLatency(waveReport.latency);
-        printVisibleWaveMetrics(waveReport);
-        printTextStorageMetrics("visible_wave",
-                                waveReport.textStorageMetrics);
-        expect("visible Wave consumes exactly one scoped delta per key",
-               waveReport.initialScopeValid
-                   && waveReport.editorMetrics.documentChanges == 44
-                   && waveReport.waveMetrics.documentChangeRenderCount == 44
-                   && waveReport.waveMetrics.renderCount == 44
-                   && waveReport.waveMetrics.scopeDeltaUpdateCount == 44
-                   && waveReport.waveMetrics.scopeRebuildCount == 0);
-        expect("visible Wave parses a small scope rather than the huge file",
-               waveReport.waveMetrics.lastParsedCharacterCount > 0
-                   && waveReport.waveMetrics.lastParsedCharacterCount * 100
-                          < waveReport.documentCharacterCount);
-        expect("visible Wave delta path keeps metadata text empty",
-               waveReport.metadataTextStayedEmpty);
-        expect("visible Wave delta path performs zero registry text copies",
-               waveReport.textCopyMetrics.fullTextCopyCount == 0
-                   && waveReport.textCopyMetrics.copiedCharacterCount == 0
-                   && waveReport.editorMetrics.fullTextMaterializations == 0);
-        expect("visible Wave syntax edits preserve identifier structure",
-               waveReport.textStorageMetrics.editCount == 44
-                   && waveReport.textStorageMetrics
-                          .materializationCount == 0
-                   && waveReport.textStorageMetrics
-                          .structurePreservingEditCount == 44
-                   && waveReport.textStorageMetrics
-                          .deferredSyntaxEditCount == 0
-                   && waveReport.textStorageMetrics.syntaxParseCount == 0
-                   && waveReport.textStorageMetrics.inputReadCount == 0
-                   && waveReport.textStorageMetrics.movedCharacterCount
-                          <= 256);
-        expect("visible Wave huge-file typing p95 stays below 6 ms",
-               waveReport.latency.p95Us < 6000);
-        expect("visible Wave huge-file typing max stays below 12 ms",
-               waveReport.latency.maxUs < 12000);
 
     }
 

@@ -520,16 +520,12 @@ int main(int argc, char** argv)
                    .contains(QStringLiteral("QLabel#editorModeChip")));
     expectTrue("dock attention qss is scoped",
                InsightVisualStyle::dockAttentionStyleSheet(
-                   QStringLiteral("FoldShelfDock"))
-                   .contains(QStringLiteral("QDockWidget#FoldShelfDock")));
+                   QStringLiteral("ExampleDock"))
+                   .contains(QStringLiteral("QDockWidget#ExampleDock")));
     expectTrue("global control qss is scoped",
                InsightVisualStyle::globalControlPanelStyleSheet(
                    QStringLiteral("globalControlPanel"))
                    .contains(QStringLiteral("QFrame#globalControlPanel")));
-    expectTrue("fold shelf active qss is scoped",
-               InsightVisualStyle::foldShelfActiveStyleSheet(
-                   QStringLiteral("foldBlockShelfPanel"))
-                   .contains(QStringLiteral("QWidget#foldBlockShelfPanel")));
     expectTrue("graph view qss is scoped",
                InsightVisualStyle::graphViewStyleSheet(
                    QStringLiteral("signalKernelGraphView"))

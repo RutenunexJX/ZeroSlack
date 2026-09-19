@@ -78,7 +78,6 @@ QIcon contextProviderIcon(
     if (providerId == QStringLiteral("rtlInsight.block")) return icon(Hierarchy);
     if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(Signals);
     if (providerId == QStringLiteral("rtlInsight.state")) return icon(Context);
-    if (providerId == QStringLiteral("rtlInsight.wave")) return icon(Wave);
     if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
     return icon(Bookmark);
 }

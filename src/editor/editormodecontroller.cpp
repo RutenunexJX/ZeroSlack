@@ -148,19 +148,6 @@ const QList<EditorModeDescriptor>& descriptors()
             EditorModeEscapeBehavior::Cancel,
         },
         {
-            EditorModeId::FoldShelf,
-            EditorModeOwner::Folding,
-            QStringLiteral("fold-shelf"),
-            QStringLiteral("Fold shelf"),
-            QStringLiteral(
-                "Type a shelf key to recall; Esc closes"),
-            90,
-            Input::Escape | Input::Enter | Input::Text
-                | Input::Backspace | Input::Navigation
-                | Input::Mouse,
-            EditorModeEscapeBehavior::Close,
-        },
-        {
             EditorModeId::InsightTargetPick,
             EditorModeOwner::InsightTargeting,
             QStringLiteral("insight-target-pick"),

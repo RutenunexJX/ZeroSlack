@@ -27,6 +27,7 @@ class QPushButton;
 class QStackedWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
+class DeferredPanel;
 
 enum class RtlHighRiskEditKind {
     None,
@@ -270,6 +271,7 @@ signals:
 
 private:
     QPointer<QDockWidget> dockWidget;
+    QPointer<DeferredPanel> deferredPanel;
     QPointer<RtlHighRiskEditPanel> panelWidget;
     std::unique_ptr<WorkspaceEditTransactionService>
         ownedTransactionService;

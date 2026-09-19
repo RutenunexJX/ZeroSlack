@@ -3,7 +3,6 @@
 #include "liveinsightscontextview.h"
 #include "liveinsightsession.h"
 #include "liveinsighttoolpage.h"
-#include "wavepreviewpanelcoordinator.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -160,8 +159,6 @@ public:
             &hotspotConsumer, LiveInsightKind::Hotspot, true);
         sessionValue.setConsumerVisible(
             &kernelConsumer, LiveInsightKind::Kernel, true);
-        sessionValue.setConsumerVisible(
-            &waveConsumer, LiveInsightKind::Wave, true);
 
         bool ready = publishReady(
             LiveInsightKind::Module,
@@ -186,13 +183,6 @@ public:
                     QStringLiteral(
                         "Signal Kernel Graph\nStable data-flow inputs and outputs."))
             && ready;
-        ready = publishReady(
-                    LiveInsightKind::Wave,
-                    35,
-                    QStringLiteral(
-                        "Symbolic Wave Preview\nCurrent RTL scope"))
-            && ready;
-
         sessionValue.setConsumerVisible(
             &hotspotConsumer, LiveInsightKind::Hotspot, false);
         sessionValue.requestUpdate(
@@ -213,12 +203,11 @@ public:
 
     bool verifyAndSelectKernel(const QString& scenario)
     {
-        const std::array<LiveInsightKind, 5> kinds = {
+        const std::array<LiveInsightKind, 4> kinds = {
             LiveInsightKind::Module,
             LiveInsightKind::State,
             LiveInsightKind::Hotspot,
             LiveInsightKind::Kernel,
-            LiveInsightKind::Wave
         };
         for (LiveInsightKind kind : kinds) {
             QPushButton* button = insightsView->kindButton(kind);
@@ -256,10 +245,6 @@ public:
                    LiveInsightKind::Kernel)->text()
                    == QStringLiteral("Current"),
                scenario + QStringLiteral(" shows Kernel freshness"));
-        expect(insightsView->kindStatusLabel(
-                   LiveInsightKind::Wave)->text()
-                   == QStringLiteral("Current"),
-               scenario + QStringLiteral(" shows Wave freshness"));
         expect(insightsView->kindSummaryLabel(
                    LiveInsightKind::Kernel)->text()
                    .contains(QStringLiteral("Signal Kernel Graph"))
@@ -547,7 +532,6 @@ private:
         sessionValue.setBuilder(LiveInsightKind::State, builder);
         sessionValue.setBuilder(LiveInsightKind::Hotspot, builder);
         sessionValue.setBuilder(LiveInsightKind::Kernel, builder);
-        sessionValue.setBuilder(LiveInsightKind::Wave, builder);
     }
 
     bool publishReady(LiveInsightKind kind,
@@ -580,12 +564,11 @@ private:
         expect(fullyVisibleTo(contextPanelValue, symbolicPreviewLabel),
                scenario + QStringLiteral(" keeps Workbench notice visible"));
 
-        const std::array<LiveInsightKind, 5> kinds = {
+        const std::array<LiveInsightKind, 4> kinds = {
             LiveInsightKind::Kernel,
             LiveInsightKind::Module,
             LiveInsightKind::State,
             LiveInsightKind::Hotspot,
-            LiveInsightKind::Wave
         };
         for (LiveInsightKind kind : kinds) {
             QPushButton* button = insightsView->kindButton(kind);
@@ -623,7 +606,6 @@ private:
     QObject stateConsumer;
     QObject hotspotConsumer;
     QObject kernelConsumer;
-    QObject waveConsumer;
     QList<LiveInsightSession::Task> pendingTasks;
     LiveInsightsContextView* insightsView = nullptr;
     QFrame* contextPanelValue = nullptr;
@@ -652,254 +634,7 @@ bool renderScenario(const QSize& size,
     return window.saveSnapshot(outputPath, scenario);
 }
 
-bool waveformImageLooksRendered(QWidget* waveformView)
-{
-    if (!waveformView)
-        return false;
-    const QImage image = waveformView->grab().toImage();
-    if (image.width() < 600 || image.height() < 120)
-        return false;
 
-    QSet<QRgb> colors;
-    int horizontalTransitions = 0;
-    const int stepX = qMax(1, image.width() / 240);
-    const int stepY = qMax(1, image.height() / 100);
-    for (int y = 0; y < image.height(); y += stepY) {
-        QRgb previous = 0;
-        bool hasPrevious = false;
-        for (int x = 0; x < image.width(); x += stepX) {
-            const QRgb pixel = image.pixel(x, y);
-            colors.insert(pixel);
-            if (hasPrevious && pixel != previous)
-                ++horizontalTransitions;
-            previous = pixel;
-            hasPrevious = true;
-        }
-    }
-    return colors.size() > 24 && horizontalTransitions > 180;
-}
-
-QString stableWaveSource()
-{
-    return QStringLiteral(
-        "module traffic_controller;\n"
-        "  localparam logic [1:0] IDLE = 2'd0;\n"
-        "  localparam logic [1:0] ARBITRATE = 2'd1;\n"
-        "  localparam logic [1:0] RUN = 2'd2;\n"
-        "  localparam logic [1:0] ERROR = 2'd3;\n"
-        "  logic clk = 1'b0;\n"
-        "  logic rst_n = 1'b1;\n"
-        "  logic request = 1'b1;\n"
-        "  logic [7:0] payload = 8'h3c;\n"
-        "  logic [7:0] accepted = 8'h00;\n"
-        "  logic [1:0] phase;\n"
-        "  logic [1:0] state_q = IDLE;\n"
-        "  logic [1:0] state_d = IDLE;\n"
-        "  logic busy;\n"
-        "  assign busy = request && (payload != 8'h00);\n"
-        "  always_ff @(posedge clk or negedge rst_n) begin\n"
-        "    if (!rst_n) begin\n"
-        "      state_q <= IDLE;\n"
-        "      accepted <= 8'h00;\n"
-        "    end else begin\n"
-        "      state_q <= state_d;\n"
-        "      if (state_q == RUN) accepted <= payload;\n"
-        "    end\n"
-        "  end\n"
-        "  always_comb begin\n"
-        "    state_d = state_q;\n"
-        "    unique case (state_q)\n"
-        "      IDLE:      if (request) state_d = ARBITRATE;\n"
-        "      ARBITRATE: if (busy)    state_d = RUN;\n"
-        "      RUN:       if (!request) state_d = IDLE;\n"
-        "      default:                state_d = ERROR;\n"
-        "    endcase\n"
-        "    phase = state_d;\n"
-        "  end\n"
-        "endmodule\n");
-}
-
-bool renderReadyWaveScenario(const QString& libraryPath,
-                             const QString& outputDirectory)
-{
-    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
-    const QSize targetSize(1440, 900);
-
-    QWidget window;
-    window.setObjectName(QStringLiteral("liveInsightsWaveReadyWindow"));
-    window.setWindowTitle(
-        QStringLiteral("ZeroSlack Live Insights - Wave Ready"));
-    window.setAttribute(Qt::WA_DontShowOnScreen, true);
-    window.setFixedSize(targetSize);
-    auto* root = new QVBoxLayout(&window);
-    root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(0);
-
-    auto* header = new QFrame(&window);
-    header->setObjectName(QStringLiteral("waveReadySnapshotHeader"));
-    header->setFixedHeight(52);
-    InsightVisualStyle::applyPanel(header);
-    auto* headerLayout = new QHBoxLayout(header);
-    headerLayout->setContentsMargins(14, 7, 14, 7);
-    headerLayout->setSpacing(10);
-    auto* title = new QLabel(
-        QStringLiteral("LIVE INSIGHTS  /  WAVE"), header);
-    InsightVisualStyle::applyTitleLabel(title);
-    headerLayout->addWidget(title);
-    headerLayout->addStretch();
-    auto* contract = new QLabel(
-        QStringLiteral(
-            "READY  ·  WaveWorkbench wave::WaveformView  ·  waveform-view/v1"),
-        header);
-    contract->setObjectName(QStringLiteral("waveReadyContractBadge"));
-    contract->setStyleSheet(
-        InsightVisualStyle::statusChipStyleSheet(
-            InsightStatusTone::Success,
-            contract->objectName()));
-    headerLayout->addWidget(contract);
-    root->addWidget(header);
-
-    auto* page = new LiveInsightToolPage(
-        LiveInsightKind::Wave, &window);
-    page->setObjectName(QStringLiteral("waveReadyLiveInsightPage"));
-    root->addWidget(page, 1);
-
-    auto* provenance = new QLabel(
-        QStringLiteral(
-            "SYMBOLIC PREVIEW  ·  derived from the live RTL buffer  ·  not a simulation result"),
-        &window);
-    provenance->setObjectName(QStringLiteral("waveReadyProvenance"));
-    provenance->setFixedHeight(34);
-    provenance->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
-    provenance->setStyleSheet(
-        InsightVisualStyle::statusChipStyleSheet(
-            InsightStatusTone::Warning,
-            provenance->objectName()));
-    root->addWidget(provenance);
-
-    page->setWaveformLibraryPath(libraryPath);
-    LiveInsightToolContext context;
-    context.workspaceRoot = QDir(outputDirectory).absolutePath();
-    context.fileName = QDir(context.workspaceRoot).filePath(
-        QStringLiteral("rtl/traffic_controller.sv"));
-    context.documentText = stableWaveSource();
-    context.moduleName = QStringLiteral("traffic_controller");
-    context.scopeLabel = QStringLiteral("traffic_controller");
-    context.dirty = true;
-    page->setContext(context);
-
-    window.show();
-    const bool ready = pumpUntil(
-        [page]() {
-            const auto* coordinator = page->waveCoordinatorForTest();
-            const QWidget* view = coordinator
-                ? coordinator->waveformViewForTest() : nullptr;
-            return view
-                && view->property("presentationState").toString()
-                       == QStringLiteral("ready");
-        },
-        3000);
-    QApplication::processEvents();
-
-    WavePreviewPanelCoordinator* coordinator =
-        page->waveCoordinatorForTest();
-    QWidget* waveformView = coordinator
-        ? coordinator->waveformViewForTest() : nullptr;
-    const QString scenario = QStringLiteral("1440x900 dark Wave ready");
-    expect(ready,
-           scenario + QStringLiteral(" reaches stable ready state"));
-    expect(waveformView
-               && waveformView->objectName()
-                      == QStringLiteral("WaveformView")
-               && QString::fromLatin1(
-                      waveformView->metaObject()->className())
-                      == QStringLiteral("wave::WaveformView"),
-           scenario + QStringLiteral(" hosts real wave::WaveformView"));
-    expect(waveformView
-               && waveformView->property("wavewidgets.contract").toString()
-                      == QStringLiteral(
-                          "wave-workbench.waveform-view/v1")
-               && waveformView->property(
-                      "wavewidgets.previewContract").toString()
-                      == QStringLiteral("wave-preview/v1"),
-           scenario + QStringLiteral(" verifies shared contracts"));
-    const QStringList capabilities = waveformView
-        ? waveformView->property("wavewidgets.capabilities").toStringList()
-        : QStringList();
-    expect(capabilities.contains(QStringLiteral("wave-preview/v1"))
-               && capabilities.contains(
-                   QStringLiteral("generation-replace/v1"))
-               && capabilities.contains(
-                   QStringLiteral("source-navigation/v1")),
-           scenario + QStringLiteral(" verifies required capabilities"));
-    expect(waveformView
-               && waveformView->property("previewMode").toString()
-                      == QStringLiteral("symbolic")
-               && waveformView->property(
-                      "previewGeneration").toULongLong() > 0,
-           scenario + QStringLiteral(" publishes generation-tagged symbolic payload"));
-    expect(coordinator
-               && coordinator->reportForTest().trace.isValid()
-               && coordinator->reportForTest().trace.traceSignals.size() >= 5,
-           scenario + QStringLiteral(" derives visible symbolic signal lanes"));
-    expect(waveformView
-               && waveformView->accessibleDescription().contains(
-                   QStringLiteral("symbolic waveform"),
-                   Qt::CaseInsensitive)
-               && waveformView->accessibleDescription().contains(
-                   QStringLiteral("lanes"),
-                   Qt::CaseInsensitive),
-           scenario + QStringLiteral(" exposes rendered lane summary"));
-    expect(waveformView
-               && waveformView->isVisibleTo(page)
-               && waveformView->width() >= 900
-               && waveformView->height() >= 120,
-           scenario + QStringLiteral(" keeps shared view visible and unclipped"));
-    const bool waveformRendered =
-        waveformImageLooksRendered(waveformView);
-    expect(waveformRendered,
-           scenario + QStringLiteral(" waveform canvas has rendered pixel structure"));
-
-    const QLabel* waveTitle = page->findChild<QLabel*>(
-        QStringLiteral("wavePreviewTitle"));
-    const QLabel* waveSummary = page->findChild<QLabel*>(
-        QStringLiteral("wavePreviewSummary"));
-    expect(waveTitle
-               && waveTitle->text().contains(
-                   QStringLiteral("Symbolic Preview")),
-           scenario + QStringLiteral(" labels symbolic provenance"));
-    expect(waveSummary
-               && waveSummary->text().contains(
-                   QStringLiteral("symbolic preview"),
-                   Qt::CaseInsensitive)
-               && waveSummary->text().contains(
-                   QStringLiteral("no testbench"),
-                   Qt::CaseInsensitive),
-           scenario + QStringLiteral(" does not imply simulation"));
-
-    const QImage image = window.grab().toImage();
-    const QString outputPath = QDir(outputDirectory).filePath(
-        QStringLiteral("live_insights_wave_ready_1440x900_dark.png"));
-    const bool saved = image.save(outputPath, "PNG");
-    const QImage reloaded(outputPath);
-    expect(saved && reloaded.size() == targetSize,
-           scenario + QStringLiteral(" saves exact-size PNG"));
-    expect(imageLooksNonBlank(reloaded),
-           scenario + QStringLiteral(" stable screenshot is nonblank"));
-    std::printf(
-        "ready_wave_snapshot %s class=%s lanes=%d generation=%llu\n",
-        QFileInfo(outputPath).absoluteFilePath().toUtf8().constData(),
-        waveformView
-            ? waveformView->metaObject()->className() : "<missing>",
-        coordinator
-            ? coordinator->reportForTest().trace.traceSignals.size() : 0,
-        waveformView
-            ? waveformView->property(
-                  "previewGeneration").toULongLong() : 0);
-    window.hide();
-    QApplication::processEvents();
-    return saved && ready && waveformRendered && gFailures == 0;
-}
 }
 
 int main(int argc, char** argv)
@@ -929,12 +664,6 @@ int main(int argc, char** argv)
         QStringLiteral("Directory for generated PNG files."),
         QStringLiteral("directory"));
     parser.addOption(outputOption);
-    const QCommandLineOption waveLibraryOption(
-        QStringLiteral("wave-library"),
-        QStringLiteral(
-            "WaveWorkbench wavewidgets library used for the ready-state snapshot."),
-        QStringLiteral("file"));
-    parser.addOption(waveLibraryOption);
     parser.addPositionalArgument(
         QStringLiteral("output-dir"),
         QStringLiteral("Optional output directory when --output-dir is omitted."),
@@ -970,22 +699,6 @@ int main(int argc, char** argv)
     for (const QSize& size : sizes) {
         for (ThemeMode mode : modes)
             savedAll = renderScenario(size, mode, outputDirectory) && savedAll;
-    }
-
-    const QString waveLibraryPath =
-        parser.value(waveLibraryOption).trimmed();
-    if (!waveLibraryPath.isEmpty()) {
-        expect(QFileInfo(waveLibraryPath).isFile(),
-               QStringLiteral("WaveWorkbench validation library exists"));
-        if (QFileInfo(waveLibraryPath).isFile()) {
-            savedAll = renderReadyWaveScenario(
-                           QFileInfo(waveLibraryPath).absoluteFilePath(),
-                           outputDirectory)
-                && savedAll;
-        }
-    } else {
-        std::printf(
-            "ready_wave_snapshot skipped: --wave-library was not provided\n");
     }
 
     std::printf("output_dir %s\n",

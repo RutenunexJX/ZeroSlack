@@ -119,16 +119,6 @@ int main(int argc, char* argv[])
             root,
             QStringLiteral(
                 "src/insights/rtlactioncoordinator.cpp"));
-    const QString waveResultNavigationHeader =
-        readSource(
-            root,
-            QStringLiteral(
-                "src/integrations/wave/wavesimulationresultnavigationcoordinator.h"));
-    const QString waveResultNavigationSource =
-        readSource(
-            root,
-            QStringLiteral(
-                "src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp"));
     const QString editorSplitSource =
         readSource(
             root,
@@ -359,36 +349,6 @@ int main(int argc, char* argv[])
                    "matchesColumnNumberShortcut")}),
           QStringLiteral(
               "Column Number Tool resolves and executes its Registry Action"));
-
-    const QString foldShelfPanelSource =
-        readSource(
-            root,
-            QStringLiteral(
-                "src/editor/foldblockshelfpanel.cpp"));
-    check(containsNone(
-              foldShelfPanelSource,
-              {QStringLiteral(
-                   "event->key() == Qt::Key_Delete")}),
-          QStringLiteral(
-              "Fold Shelf has no physical Delete ownership branch"));
-    check(containsAll(
-              foldShelfPanelSource,
-              {QStringLiteral(
-                   "ActionIds::FoldShelfDeleteSelected"),
-               QStringLiteral(
-                   "effectiveActionShortcut("),
-               QStringLiteral(
-                   "actionRequestHandler(")}),
-          QStringLiteral(
-              "Fold Shelf resolves and requests its Registry Action"));
-    check(containsAll(
-              mainWindowSource,
-              {QStringLiteral(
-                   "ui.foldShelf.deleteSelected"),
-               QStringLiteral(
-                   "foldShelfPanel->deleteSelectedItem(")}),
-          QStringLiteral(
-              "MainWindow owns the Fold Shelf Delete execution route"));
 
     check(containsNone(
               editorSplitSource,
@@ -661,27 +621,6 @@ int main(int argc, char* argv[])
     check(sourceLineCount(mainWindowSource) <= 7000,
           QStringLiteral(
               "src/app/mainwindow.cpp remains below the post-extraction ownership ceiling"));
-    check(!waveResultNavigationHeader.isEmpty()
-              && !waveResultNavigationSource.isEmpty()
-              && cmake.contains(QStringLiteral(
-                  "src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp")),
-          QStringLiteral(
-              "Wave result navigation is an explicit build boundary"));
-    check(containsAll(
-              waveResultNavigationSource,
-              {QStringLiteral("canRevealSourceObject"),
-               QStringLiteral("revealSourceObject"),
-               QStringLiteral("sourceNavigationRequested"),
-               QStringLiteral("navigateToFileAndLineAndFlash")})
-              && containsNone(
-                  mainWindowSource,
-                  {QStringLiteral("canRevealSourceObject"),
-                   QStringLiteral("revealSourceObject"),
-                   QStringLiteral(
-                       "handleWaveSourceNavigationRequest")}),
-          QStringLiteral(
-              "Wave result navigation owns both navigation directions"));
-
     const QStringList insightModules = {
         QStringLiteral("src/insights/rtlinsightspanelviewstate"),
         QStringLiteral("src/insights/rtlinsightsgraphscenemapper"),

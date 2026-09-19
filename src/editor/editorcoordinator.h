@@ -65,7 +65,6 @@ public:
     void togglePinloomCodeLinkMarkers();
     bool pinloomCodeLinkMarkersVisible() const;
     void refreshPinloomCodeLinkMarkers();
-    void setFoldShelfItemConsumedHandler(std::function<void(const QString&)> handler);
 
     void connectSignals();
     void attachEditor(MyCodeEditor* editor);
@@ -194,7 +193,6 @@ private:
         registeredActionRequestHandler;
     PinloomCodeLinkStore* pinloomCodeLinkStore = nullptr;
     bool pinloomMarkersVisible = true;
-    std::function<void(const QString&)> foldShelfItemConsumedHandler;
     bool signalsConnected = false;
 };
 

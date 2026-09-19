@@ -172,7 +172,7 @@ void exerciseVisibleEditorPresentation()
     QSignalSpy documentChanges(
         &editor, &MyCodeEditor::documentChangeApplied);
     QSignalSpy waveScopeChanges(
-        &editor, &MyCodeEditor::wavePreviewScopeChanged);
+        &editor, &MyCodeEditor::insightScopeChanged);
     editor.resetHotPathMetricsForTest();
 
     QScrollBar* scrollBar = editor.verticalScrollBar();

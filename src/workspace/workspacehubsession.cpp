@@ -49,8 +49,6 @@ QString insightTitle(LiveInsightKind kind)
         return QStringLiteral("Signal Hotspot");
     case LiveInsightKind::State:
         return QStringLiteral("State Transition Graph");
-    case LiveInsightKind::Wave:
-        return QStringLiteral("Symbolic Wave Preview");
     }
     return {};
 }
@@ -400,8 +398,7 @@ WorkspaceHubSnapshot WorkspaceHubSession::buildDefaultSnapshot(
 
         for (LiveInsightKind kind : {
                  LiveInsightKind::Kernel, LiveInsightKind::Module,
-                 LiveInsightKind::State, LiveInsightKind::Hotspot,
-                 LiveInsightKind::Wave}) {
+                 LiveInsightKind::State, LiveInsightKind::Hotspot}) {
             WorkspaceHubItem insight;
             insight.stableKey = QStringLiteral("insight:%1")
                 .arg(liveInsightKindId(kind));

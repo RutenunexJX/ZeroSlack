@@ -128,20 +128,20 @@ void LiveInsightSessionTest::idempotentVisibilityDoesNotRepublish()
         &session, &LiveInsightSession::snapshotChanged);
 
     session.setConsumerVisible(
-        &primaryHost, LiveInsightKind::Wave, true);
+        &primaryHost, LiveInsightKind::Kernel, true);
     QCOMPARE(snapshots.size(), 1);
     snapshots.clear();
 
     session.setConsumerVisible(
-        &primaryHost, LiveInsightKind::Wave, true);
+        &primaryHost, LiveInsightKind::Kernel, true);
     session.setConsumerVisible(
-        &secondaryHost, LiveInsightKind::Wave, true);
+        &secondaryHost, LiveInsightKind::Kernel, true);
     session.setConsumerVisible(
-        &primaryHost, LiveInsightKind::Wave, false);
+        &primaryHost, LiveInsightKind::Kernel, false);
     QCOMPARE(snapshots.size(), 0);
 
     session.setConsumerVisible(
-        &secondaryHost, LiveInsightKind::Wave, false);
+        &secondaryHost, LiveInsightKind::Kernel, false);
     QCOMPARE(snapshots.size(), 1);
 }
 
@@ -249,7 +249,7 @@ void LiveInsightSessionTest::lastValidResultSurvivesFailureAndMalformedPayload()
     LiveInsightSession session;
     QObject visibleHost;
     session.setConsumerVisible(
-        &visibleHost, LiveInsightKind::Wave, true);
+        &visibleHost, LiveInsightKind::Kernel, true);
     QList<LiveInsightSession::Task> tasks;
     session.setTaskExecutor(
         [&tasks](LiveInsightSession::Task task) {
@@ -257,54 +257,54 @@ void LiveInsightSessionTest::lastValidResultSurvivesFailureAndMalformedPayload()
         });
 
     session.setBuilder(
-        LiveInsightKind::Wave,
+        LiveInsightKind::Kernel,
         [](const LiveInsightBuildRequest& request,
            const LiveInsightCancellationToken&) {
             return LiveInsightBuildResult::success(
                 request,
                 {{QStringLiteral("summary"), QStringLiteral("last valid")}});
         });
-    session.requestUpdate(requestKey(LiveInsightKind::Wave, 1, 1));
-    session.flushPending(LiveInsightKind::Wave);
+    session.requestUpdate(requestKey(LiveInsightKind::Kernel, 1, 1));
+    session.flushPending(LiveInsightKind::Kernel);
     runTask(tasks.takeFirst());
-    QTRY_COMPARE(session.snapshot(LiveInsightKind::Wave).phase,
+    QTRY_COMPARE(session.snapshot(LiveInsightKind::Kernel).phase,
                  LiveInsightPhase::Ready);
 
     session.setBuilder(
-        LiveInsightKind::Wave,
+        LiveInsightKind::Kernel,
         [](const LiveInsightBuildRequest& request,
            const LiveInsightCancellationToken&) {
             return LiveInsightBuildResult::failure(
                 request, QStringLiteral("syntax is incomplete"));
         });
-    session.requestUpdate(requestKey(LiveInsightKind::Wave, 2, 2));
-    session.flushPending(LiveInsightKind::Wave);
+    session.requestUpdate(requestKey(LiveInsightKind::Kernel, 2, 2));
+    session.flushPending(LiveInsightKind::Kernel);
     runTask(tasks.takeFirst());
-    QTRY_COMPARE(session.snapshot(LiveInsightKind::Wave).phase,
+    QTRY_COMPARE(session.snapshot(LiveInsightKind::Kernel).phase,
                  LiveInsightPhase::Error);
-    QVERIFY(session.snapshot(LiveInsightKind::Wave).stale);
-    QVERIFY(session.snapshot(LiveInsightKind::Wave).hasLastValid);
-    QCOMPARE(session.snapshot(LiveInsightKind::Wave)
+    QVERIFY(session.snapshot(LiveInsightKind::Kernel).stale);
+    QVERIFY(session.snapshot(LiveInsightKind::Kernel).hasLastValid);
+    QCOMPARE(session.snapshot(LiveInsightKind::Kernel)
                  .payload.value(QStringLiteral("summary")).toString(),
              QStringLiteral("last valid"));
-    QCOMPARE(session.snapshot(LiveInsightKind::Wave).errorText,
+    QCOMPARE(session.snapshot(LiveInsightKind::Kernel).errorText,
              QStringLiteral("syntax is incomplete"));
 
     session.setBuilder(
-        LiveInsightKind::Wave,
+        LiveInsightKind::Kernel,
         [](const LiveInsightBuildRequest&,
            const LiveInsightCancellationToken&) {
             return LiveInsightBuildResult{};
         });
-    session.requestUpdate(requestKey(LiveInsightKind::Wave, 3, 3));
-    session.flushPending(LiveInsightKind::Wave);
+    session.requestUpdate(requestKey(LiveInsightKind::Kernel, 3, 3));
+    session.flushPending(LiveInsightKind::Kernel);
     runTask(tasks.takeFirst());
-    QTRY_COMPARE(session.snapshot(LiveInsightKind::Wave).phase,
+    QTRY_COMPARE(session.snapshot(LiveInsightKind::Kernel).phase,
                  LiveInsightPhase::Error);
-    QVERIFY(session.snapshot(LiveInsightKind::Wave).stale);
-    QVERIFY(session.snapshot(LiveInsightKind::Wave)
+    QVERIFY(session.snapshot(LiveInsightKind::Kernel).stale);
+    QVERIFY(session.snapshot(LiveInsightKind::Kernel)
                 .errorText.contains(QStringLiteral("malformed")));
-    QCOMPARE(session.snapshot(LiveInsightKind::Wave)
+    QCOMPARE(session.snapshot(LiveInsightKind::Kernel)
                  .payload.value(QStringLiteral("summary")).toString(),
              QStringLiteral("last valid"));
 }

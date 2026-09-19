@@ -38,14 +38,14 @@ class LiveInsightsContextProviderTest final : public QObject
 private slots:
     void initTestCase();
     void providerResourcesAreStableAndSwitchable();
-    void legacyWaveSessionMigratesToDedicatedProvider();
+    void legacyHotspotSessionMigratesToDedicatedProvider();
+    void retiredWaveResourceIsSkippedDuringRestore();
     void compactViewExposesFollowPinAndFullViewSemantics();
     void inactiveCardStaysDirtyAndStatusTracksTheme();
     void followEditorFreezesAndCatchesUpPerView();
     void fixedKindSectionRendersRealSurface();
     void fixedKindSectionPublishesStatusAndTrimsChrome();
     void emptyFixedKindSectionOffersReachableTargets();
-    void pickedTargetReachesTheSurfaceAndTheSectionHeader();
 };
 
 void LiveInsightsContextProviderTest::initTestCase()
@@ -66,7 +66,7 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
     QVERIFY(activation.isValid());
     QCOMPARE(activation.workspaceId, QStringLiteral("workspace-a"));
     QCOMPARE(activation.resourceId, QStringLiteral("primary"));
-    LiveInsightKind parsed = LiveInsightKind::Wave;
+    LiveInsightKind parsed = LiveInsightKind::Hotspot;
     QVERIFY(LiveInsightsContextProvider::kindFromResource(
         activation, &parsed));
     QCOMPARE(parsed, LiveInsightKind::Kernel);
@@ -76,7 +76,6 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
         LiveInsightKind::Module,
         LiveInsightKind::State,
         LiveInsightKind::Hotspot,
-        LiveInsightKind::Wave
     };
     QSet<QString> stableKeys;
     for (LiveInsightKind kind : kinds) {
@@ -89,40 +88,40 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
             resource, &parsed));
         QCOMPARE(parsed, kind);
     }
-    QCOMPARE(stableKeys.size(), 5);
+    QCOMPARE(stableKeys.size(), 4);
 
-    const ContextResource wave =
+    const ContextResource hotspot =
         LiveInsightsContextProvider::resourceForKind(
-            LiveInsightKind::Wave,
+            LiveInsightKind::Hotspot,
             QStringLiteral("workspace-a"));
-    QVERIFY(provider.canOpen(wave));
-    QCOMPARE(wave.providerId, QStringLiteral("rtlInsight.wave"));
-    QCOMPARE(wave.resourceId, QStringLiteral("wave"));
-    QVERIFY(wave.stableKey() != activation.stableKey());
-    QVERIFY(LiveInsightsContextProvider::kindFromResource(wave, &parsed));
-    QCOMPARE(parsed, LiveInsightKind::Wave);
+    QVERIFY(provider.canOpen(hotspot));
+    QCOMPARE(hotspot.providerId, QStringLiteral("rtlInsight.hotspot"));
+    QCOMPARE(hotspot.resourceId, QStringLiteral("hotspot"));
+    QVERIFY(hotspot.stableKey() != activation.stableKey());
+    QVERIFY(LiveInsightsContextProvider::kindFromResource(hotspot, &parsed));
+    QCOMPARE(parsed, LiveInsightKind::Hotspot);
 
-    LiveInsightsContextProvider waveProvider(
-        LiveInsightKind::Wave, provider.session());
-    QCOMPARE(waveProvider.providerId(), QStringLiteral("rtlInsight.wave"));
-    QCOMPARE(waveProvider.iconKey(), QStringLiteral("rtl-insight-wave"));
-    QVERIFY(waveProvider.canOpen(wave));
-    QWidget* waveViewWidget = waveProvider.createView(wave, nullptr);
-    auto* waveView =
-        qobject_cast<LiveInsightsContextView*>(waveViewWidget);
-    QVERIFY(waveView);
-    QVERIFY(waveView->hasFixedKind());
-    QCOMPARE(waveView->selectedKind(), LiveInsightKind::Wave);
-    QVERIFY(waveView->kindButton(LiveInsightKind::Wave));
-    delete waveView;
+    LiveInsightsContextProvider hotspotProvider(
+        LiveInsightKind::Hotspot, provider.session());
+    QCOMPARE(hotspotProvider.providerId(), QStringLiteral("rtlInsight.hotspot"));
+    QCOMPARE(hotspotProvider.iconKey(), QStringLiteral("rtl-insight-hotspot"));
+    QVERIFY(hotspotProvider.canOpen(hotspot));
+    QWidget* hotspotViewWidget = hotspotProvider.createView(hotspot, nullptr);
+    auto* hotspotView =
+        qobject_cast<LiveInsightsContextView*>(hotspotViewWidget);
+    QVERIFY(hotspotView);
+    QVERIFY(hotspotView->hasFixedKind());
+    QCOMPARE(hotspotView->selectedKind(), LiveInsightKind::Hotspot);
+    QVERIFY(hotspotView->kindButton(LiveInsightKind::Hotspot));
+    delete hotspotView;
 
-    ContextResource legacyWave = wave;
-    legacyWave.providerId = LiveInsightsContextProvider::staticProviderId();
-    legacyWave.resourceId = QStringLiteral("primary");
-    QVERIFY(provider.canOpen(legacyWave));
+    ContextResource legacyHotspot = hotspot;
+    legacyHotspot.providerId = LiveInsightsContextProvider::staticProviderId();
+    legacyHotspot.resourceId = QStringLiteral("primary");
+    QVERIFY(provider.canOpen(legacyHotspot));
     QVERIFY(LiveInsightsContextProvider::kindFromResource(
-        legacyWave, &parsed));
-    QCOMPARE(parsed, LiveInsightKind::Wave);
+        legacyHotspot, &parsed));
+    QCOMPARE(parsed, LiveInsightKind::Hotspot);
 
     ContextResource malformed = activation;
     malformed.uri = QUrl(
@@ -138,7 +137,7 @@ void LiveInsightsContextProviderTest::providerResourcesAreStableAndSwitchable()
 }
 
 void LiveInsightsContextProviderTest::
-legacyWaveSessionMigratesToDedicatedProvider()
+legacyHotspotSessionMigratesToDedicatedProvider()
 {
     QMainWindow window;
     auto* editorRegion = new QWidget(&window);
@@ -148,20 +147,20 @@ legacyWaveSessionMigratesToDedicatedProvider()
     LiveInsightSession session;
     QVERIFY(controller.registerProvider(
         std::make_unique<LiveInsightsContextProvider>(
-            LiveInsightKind::Wave, &session)));
+            LiveInsightKind::Hotspot, &session)));
     controller.setWorkspaceRoot(QStringLiteral("workspace-a"));
 
-    ContextResource legacyWave =
+    ContextResource legacyHotspot =
         LiveInsightsContextProvider::resourceForKind(
-            LiveInsightKind::Wave);
-    legacyWave.providerId =
+            LiveInsightKind::Hotspot);
+    legacyHotspot.providerId =
         LiveInsightsContextProvider::staticProviderId();
-    legacyWave.resourceId = QStringLiteral("primary");
+    legacyHotspot.resourceId = QStringLiteral("primary");
     ContextWorkspaceState state;
     state.valid = true;
     state.dockVisible = true;
-    state.pinnedResources.append(legacyWave.toVariantMap());
-    state.activePinnedResourceKey = legacyWave.stableKey();
+    state.pinnedResources.append(legacyHotspot.toVariantMap());
+    state.activePinnedResourceKey = legacyHotspot.stableKey();
 
     const ContextWorkspaceRestoreResult restored =
         controller.restoreState(state);
@@ -169,10 +168,44 @@ legacyWaveSessionMigratesToDedicatedProvider()
         controller.dockHost()->currentResource();
     QCOMPARE(restored.restoredResources, 1);
     QCOMPARE(restored.skippedResources, 0);
-    QCOMPARE(active.providerId, QStringLiteral("rtlInsight.wave"));
-    QCOMPARE(active.resourceId, QStringLiteral("wave"));
+    QCOMPARE(active.providerId, QStringLiteral("rtlInsight.hotspot"));
+    QCOMPARE(active.resourceId, QStringLiteral("hotspot"));
     QCOMPARE(controller.providerIds(),
-             QStringList{QStringLiteral("rtlInsight.wave")});
+             QStringList{QStringLiteral("rtlInsight.hotspot")});
+}
+
+void LiveInsightsContextProviderTest::retiredWaveResourceIsSkippedDuringRestore()
+{
+    QMainWindow window;
+    auto* editor = new QWidget(&window);
+    window.setCentralWidget(editor);
+    ContextWorkspaceController controller(&window, editor, &window);
+    LiveInsightSession session;
+    QVERIFY(controller.registerProvider(
+        std::make_unique<LiveInsightsContextProvider>(LiveInsightKind::Kernel, &session)));
+    controller.setWorkspaceRoot(QStringLiteral("workspace-a"));
+    ContextResource retired = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Kernel);
+    retired.providerId = QStringLiteral("rtlInsight.wave");
+    retired.resourceId = QStringLiteral("wave");
+    retired.uri = QUrl(QStringLiteral("zeroslack://live-insights/wave"));
+    retired.state.insert(QStringLiteral("kind"), QStringLiteral("wave"));
+    LiveInsightKind kind = LiveInsightKind::Kernel;
+    QVERIFY(!LiveInsightsContextProvider::kindFromResource(retired, &kind));
+    ContextWorkspaceState state;
+    state.valid = true;
+    state.dockVisible = true;
+    state.pinnedResources = {
+        retired.toVariantMap(),
+        LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Kernel).toVariantMap()};
+    state.activePinnedResourceKey = retired.stableKey();
+    const auto result = controller.restoreState(state);
+    QCOMPARE(result.skippedResources, 1);
+    QCOMPARE(result.restoredResources, 1);
+    QCOMPARE(controller.dockHost()->currentResource().providerId,
+             QStringLiteral("rtlInsight.kernel"));
+    retired.providerId = LiveInsightsContextProvider::staticProviderId();
+    retired.resourceId = QStringLiteral("primary");
+    QVERIFY(!LiveInsightsContextProvider::kindFromResource(retired, &kind));
 }
 
 void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSemantics()
@@ -532,21 +565,21 @@ void LiveInsightsContextProviderTest::
             tasks.append(std::move(task));
         });
     session.setBuilder(
-        LiveInsightKind::Wave,
+        LiveInsightKind::Hotspot,
         [](const LiveInsightBuildRequest& request,
            const LiveInsightCancellationToken&) {
             return LiveInsightBuildResult::success(
                 request,
                 {{QStringLiteral("summary"), QStringLiteral("scope summary")},
                  {QStringLiteral("provenance"),
-                  QStringLiteral("Symbolic Preview")}});
+                  QStringLiteral("Semantic usage")}});
         });
-    LiveInsightsContextProvider provider(LiveInsightKind::Wave, &session);
+    LiveInsightsContextProvider provider(LiveInsightKind::Hotspot, &session);
     provider.setToolContextSource(
-        []() { return stubContext(QStringLiteral("uart"), QString()); });
+        []() { return stubContext(QStringLiteral("uart"), QStringLiteral("byte_data")); });
     const ContextResource resource =
         LiveInsightsContextProvider::resourceForKind(
-            LiveInsightKind::Wave, QStringLiteral("workspace-a"));
+            LiveInsightKind::Hotspot, QStringLiteral("workspace-a"));
     auto* view = qobject_cast<LiveInsightsContextView*>(
         provider.createView(resource, nullptr));
     QVERIFY(view);
@@ -555,20 +588,20 @@ void LiveInsightsContextProviderTest::
 
     // The section header owns the name, the full-view entry and freshness, so
     // the body drops its copies and keeps only what the header has no room for.
-    QVERIFY(!view->kindButton(LiveInsightKind::Wave)->isVisibleTo(view));
-    QVERIFY(!view->kindStatusLabel(LiveInsightKind::Wave)->isVisibleTo(view));
+    QVERIFY(!view->kindButton(LiveInsightKind::Hotspot)->isVisibleTo(view));
+    QVERIFY(!view->kindStatusLabel(LiveInsightKind::Hotspot)->isVisibleTo(view));
     QVERIFY(!view->openFullViewButton()->isVisibleTo(view));
     QVERIFY(view->followEditorCheckBox()->isVisibleTo(view));
     QVERIFY(view->pinButton()->isVisibleTo(view));
 
     session.requestUpdate(
-        requestKey(LiveInsightKind::Wave),
+        requestKey(LiveInsightKind::Hotspot),
         {{QStringLiteral("summary"), QStringLiteral("scope summary")}});
-    session.flushPending(LiveInsightKind::Wave);
+    session.flushPending(LiveInsightKind::Hotspot);
     QCOMPARE(tasks.size(), 1);
     tasks.takeFirst()();
     QTRY_VERIFY(view->property("contextStatusTooltip").toString()
-                    .contains(QStringLiteral("Symbolic Preview")));
+                    .contains(QStringLiteral("Semantic usage")));
     QVERIFY(!view->property("contextStatusText").toString().isEmpty());
     delete view;
 }
@@ -619,101 +652,6 @@ void LiveInsightsContextProviderTest::
     QVERIFY(view->surfaceForTest()->isVisibleTo(view));
     QVERIFY(!view->emptyStateForTest()->isVisibleTo(view));
     delete view;
-}
-
-void LiveInsightsContextProviderTest::
-    pickedTargetReachesTheSurfaceAndTheSectionHeader()
-{
-    LiveInsightSession session;
-    LiveInsightsContextProvider provider(LiveInsightKind::Wave, &session);
-    provider.setToolContextSource([]() {
-        LiveInsightToolContext context =
-            stubContext(QStringLiteral("uart"), QString());
-        context.scopeLabel = QStringLiteral("always_ff @(posedge clk)");
-        context.scopeStartPosition = 10;
-        context.scopeEndPosition = 40;
-        return context;
-    });
-
-    // Stands in for the host: records the request and replies with the target
-    // an editor pick would have produced.
-    int pickRequests = 0;
-    LiveInsightKind requestedKind = LiveInsightKind::Kernel;
-    std::function<void(const LiveInsightsContextView::TargetCandidate&)> reply;
-    provider.setTargetPickRequest(
-        [&](LiveInsightKind kind,
-            std::function<void(const LiveInsightsContextView::TargetCandidate&)>
-                picked) {
-            ++pickRequests;
-            requestedKind = kind;
-            reply = std::move(picked);
-            return true;
-        });
-
-    ContextDockHost host;
-    const ContextResource resource =
-        LiveInsightsContextProvider::resourceForKind(
-            LiveInsightKind::Wave, QStringLiteral("workspace-a"));
-    auto* view = qobject_cast<LiveInsightsContextView*>(
-        provider.createView(resource, nullptr));
-    QVERIFY(view);
-    QVERIFY(host.addResource(resource, view, true));
-    host.resize(520, 600);
-    host.show();
-    QCoreApplication::processEvents();
-
-    const QString key = resource.stableKey();
-    QAbstractButton* chip = host.sectionScope(key);
-    QVERIFY(chip);
-    QVERIFY(chip->isVisible());
-    QCOMPARE(chip->text(), QStringLiteral("always_ff @(posedge clk)"));
-
-    // The header chip is generic: it invokes the view's own slot.
-    chip->click();
-    QCoreApplication::processEvents();
-    QCOMPARE(pickRequests, 1);
-    QCOMPARE(requestedKind, LiveInsightKind::Wave);
-    QVERIFY(reply);
-
-    LiveInsightsContextView::TargetCandidate picked;
-    picked.label = QStringLiteral("always_comb");
-    picked.moduleName = QStringLiteral("uart");
-    picked.scopeLabel = QStringLiteral("always_comb");
-    picked.scopeStartPosition = 120;
-    picked.scopeEndPosition = 180;
-    picked.scopeStartLineZeroBased = 12;
-    reply(picked);
-    QCoreApplication::processEvents();
-
-    // A picked scope has to reach the surface: accepting it and rendering the
-    // previous scope would be a silent no-op.
-    auto* surface = view->surfaceForTest();
-    QVERIFY(surface);
-    const LiveInsightToolContext rendered = surface->contextForTest();
-    QCOMPARE(rendered.scopeLabel, QStringLiteral("always_comb"));
-    QCOMPARE(rendered.scopeStartPosition, 120);
-    QCOMPARE(rendered.scopeEndPosition, 180);
-    QCOMPARE(rendered.scopeStartLineZeroBased, 12);
-    QVERIFY(!view->followEditor());
-    QCOMPARE(host.sectionScope(key)->text(), QStringLiteral("always_comb"));
-
-    // A section whose host cannot pick shows no chip at all, so providers
-    // without an editor behind them keep the header they had.
-    LiveInsightsContextProvider hostless(LiveInsightKind::Wave, &session);
-    hostless.setToolContextSource(
-        []() { return stubContext(QStringLiteral("uart"), QString()); });
-    ContextDockHost plainHost;
-    const ContextResource plainResource =
-        LiveInsightsContextProvider::resourceForKind(
-            LiveInsightKind::Wave, QStringLiteral("workspace-b"));
-    auto* plainView = qobject_cast<LiveInsightsContextView*>(
-        hostless.createView(plainResource, nullptr));
-    QVERIFY(plainView);
-    QVERIFY(plainHost.addResource(plainResource, plainView, true));
-    plainHost.resize(520, 600);
-    plainHost.show();
-    QCoreApplication::processEvents();
-    QVERIFY(!plainHost.sectionScope(plainResource.stableKey())->isVisible());
 }
 
 QTEST_MAIN(LiveInsightsContextProviderTest)

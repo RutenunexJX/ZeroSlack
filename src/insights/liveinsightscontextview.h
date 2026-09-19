@@ -33,8 +33,6 @@ public:
     // without one it keeps the compact summary card.
     using ToolContextSource =
         std::function<LiveInsightToolContext()>;
-    using WaveformLibraryPathSource =
-        std::function<QString()>;
     // One target a section can render. Candidates come from this section's own
     // history, from the editor context it is not currently following, and from
     // the editor-side picker.
@@ -88,8 +86,6 @@ public:
     void setWorkspaceId(const QString& workspaceId);
     void setFullViewHandler(FullViewHandler handler);
     void setToolContextSource(ToolContextSource source);
-    void setWaveformLibraryPathSource(
-        WaveformLibraryPathSource source);
     void setTargetPickRequest(TargetPickRequest request);
     // Invoked by the section header's scope chip through the generic property
     // channel; also reachable from the empty state.
@@ -129,9 +125,9 @@ private:
     };
 
     QPointer<LiveInsightSession> sessionValue;
-    std::array<CardWidgets, 5> cards;
-    std::array<LiveInsightSnapshot, 5> renderedSnapshots;
-    std::array<bool, 5> hasRenderedSnapshot{};
+    std::array<CardWidgets, 4> cards;
+    std::array<LiveInsightSnapshot, 4> renderedSnapshots;
+    std::array<bool, 4> hasRenderedSnapshot{};
     QStackedWidget* contentStack = nullptr;
     QCheckBox* followCheck = nullptr;
     QPushButton* pinToggle = nullptr;
@@ -141,7 +137,6 @@ private:
     QString workspaceIdValue;
     FullViewHandler fullViewHandler;
     ToolContextSource toolContextSource;
-    WaveformLibraryPathSource waveformLibraryPathSource;
     TargetPickRequest targetPickRequest;
     QPointer<LiveInsightToolPage> surfaceValue;
     QPointer<QWidget> emptyStateValue;

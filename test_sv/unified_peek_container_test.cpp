@@ -5,8 +5,6 @@
 #include <QScrollArea>
 #include "editorhoverpopup.h"
 #include "effectivevalueservice.h"
-#include "foldblockshelfmodel.h"
-#include "foldblockshelfpanel.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -352,129 +350,6 @@ int main(int argc, char* argv[])
     QApplication::processEvents();
     expect("shared close control hides the container",
            !peek.isVisible());
-
-    FoldBlockShelfModel shelfModel;
-    FoldShelfItem shelfItem;
-    shelfItem.alias = QStringLiteral("counter update");
-    shelfItem.text = QStringLiteral(
-        "always_ff @(posedge clk) begin\n"
-        "  counter_q <= counter_d;\n"
-        "end\n");
-    shelfItem.sourceFile = QStringLiteral("rtl/top.sv");
-    shelfItem.sourceModule = QStringLiteral("top");
-    shelfItem.sourceStartLine = 41;
-    shelfItem.sourceEndLine = 43;
-    shelfItem.originKind = FoldShelfOriginKind::Moved;
-    shelfModel.addItem(shelfItem);
-
-    FoldBlockShelfPanel shelfPanel;
-    shelfPanel.resize(900, 520);
-    shelfPanel.setModel(&shelfModel);
-    shelfPanel.show();
-    QApplication::processEvents();
-    QListWidget* shelfList = shelfPanel.findChild<QListWidget*>(
-        QStringLiteral("foldShelfListWidget"));
-    if (shelfList && shelfList->count() > 0) {
-        shelfList->setCurrentRow(0);
-        shelfList->itemDoubleClicked(shelfList->item(0));
-    }
-    QApplication::processEvents();
-
-    EditorHoverPopup* shelfPeek =
-        shelfPanel.findChild<EditorHoverPopup*>(
-            QString(), Qt::FindDirectChildrenOnly);
-    QPlainTextEdit* shelfText = shelfPeek
-        ? shelfPeek->findChild<QPlainTextEdit*>(
-              QStringLiteral("foldShelfPreviewText"))
-        : nullptr;
-    expect("Fold Shelf preview uses the embedded Peek container",
-           shelfPeek
-               && shelfPeek->isVisible()
-               && !shelfPeek->isWindow()
-               && shelfPeek->parentWidget() == &shelfPanel
-               && shelfPeek->contentModel().kind
-                      == PeekContentKind::FoldShelfPreview
-               && shelfPeek->contentModel().title
-                      == QStringLiteral("Fold Block: counter update")
-               && shelfPanel.findChildren<QDialog*>().isEmpty());
-    expect("Fold Shelf Peek preserves complete scrollable source text",
-           shelfText
-               && shelfText->isReadOnly()
-               && shelfText->toPlainText() == shelfItem.text
-               && shelfText->font().family()
-                      == shelfPanel.font().family()
-               && !shelfText->hasFocus()
-               && shelfPeek->contentModel().readOnlyText.text
-                      == shelfItem.text);
-    expect("Fold Shelf Peek exposes source and state metadata",
-           shelfPeek
-               && shelfPeek->contentModel().rows.size() == 3
-               && shelfPeek->contentModel().rows.at(0).text
-                      == QStringLiteral("%1:41-43").arg(
-                          shelfModel.items().constFirst().sourceFile)
-               && shelfPeek->contentModel().rows.at(1).text
-                      == QStringLiteral("module: top")
-               && shelfPeek->contentModel().rows.at(2).text
-                      == QStringLiteral("3 lines · moved"));
-
-    FoldShelfItem deleteItem;
-    deleteItem.alias = QStringLiteral("delete candidate");
-    deleteItem.text = QStringLiteral("logic delete_candidate;\n");
-    deleteItem.sourceFile = QStringLiteral("rtl/delete.sv");
-    deleteItem.sourceModule = QStringLiteral("delete_fixture");
-    deleteItem.sourceStartLine = 8;
-    deleteItem.sourceEndLine = 8;
-    deleteItem.originKind = FoldShelfOriginKind::Copied;
-    shelfModel.addItem(deleteItem);
-    QApplication::processEvents();
-    if (shelfList && shelfList->count() > 0)
-        shelfList->setCurrentRow(shelfList->count() - 1);
-
-    QString requestedShelfAction;
-    shelfPanel.setActionRequestHandler(
-        [&](const QString& actionId,
-            QString* failureReason) {
-        requestedShelfAction = actionId;
-        return shelfPanel.deleteSelectedItem(
-            failureReason);
-    });
-    QVariantMap shortcutOverrides;
-    shortcutOverrides.insert(
-        QString::fromLatin1(
-            ActionIds::FoldShelfDeleteSelected),
-        QStringLiteral("Ctrl+Delete"));
-    QStringList shortcutIssues;
-    const bool shortcutOverrideAccepted =
-        configureActionShortcutOverrides(
-            shortcutOverrides,
-            &shortcutIssues);
-    const int itemsBeforeDelete =
-        shelfModel.items().size();
-    QKeyEvent oldDelete(
-        QEvent::KeyPress,
-        Qt::Key_Delete,
-        Qt::NoModifier);
-    QApplication::sendEvent(shelfList, &oldDelete);
-    const bool oldDeleteInactive =
-        requestedShelfAction.isEmpty()
-        && shelfModel.items().size()
-               == itemsBeforeDelete;
-    QKeyEvent remappedDelete(
-        QEvent::KeyPress,
-        Qt::Key_Delete,
-        Qt::ControlModifier);
-    QApplication::sendEvent(
-        shelfList, &remappedDelete);
-    configureActionShortcutOverrides({});
-    expect("Fold Shelf Delete consumes its Registry shortcut override",
-           shortcutOverrideAccepted
-               && shortcutIssues.isEmpty()
-               && oldDeleteInactive
-               && requestedShelfAction
-                      == QString::fromLatin1(
-                          ActionIds::FoldShelfDeleteSelected)
-               && shelfModel.items().size()
-                      == itemsBeforeDelete - 1);
 
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

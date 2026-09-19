@@ -13,7 +13,6 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
-#include "wavepreviewpanelcoordinator.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
 #include <QSettings>
@@ -168,7 +167,7 @@ private slots:
     void windowChromeSupportsNativeSnap();
     void realWindowChromeButtons();
     void queuedNativeMouseAllowsNullResult();
-    void sidebarRegistersFiveDistinctIconsAndResources();
+    void sidebarRegistersFourDistinctIconsAndResources();
     void toolPageDetachesIntoWindow();
     void sharedCanvasExportsSvgPngAndPdf();
     void legacyBottomDockDoesNotCarryStateWhenDisabled();
@@ -370,9 +369,6 @@ void RtlInsightWorkbenchTest::toolPagesRouteAllFourWorkbenchViews()
         if (route.first == LiveInsightKind::Kernel) QVERIFY(page.workbenchForTest()->kernelSurfaceForTest());
         else QVERIFY(page.workbenchForTest()->rtlSurfaceForTest());
     }
-    LiveInsightToolPage wavePage(LiveInsightKind::Wave);
-    QVERIFY(!wavePage.workbenchForTest());
-    QVERIFY(wavePage.waveCoordinatorForTest());
 }
 
 void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
@@ -615,7 +611,7 @@ void RtlInsightWorkbenchTest::catppuccinPalettes()
     ApplicationThemeManager::instance().setMode(ThemeMode::Light);
 }
 
-void RtlInsightWorkbenchTest::sidebarRegistersFiveDistinctIconsAndResources()
+void RtlInsightWorkbenchTest::sidebarRegistersFourDistinctIconsAndResources()
 {
     QMainWindow window;
     auto* editorRegion = new QWidget(&window);
@@ -627,7 +623,6 @@ void RtlInsightWorkbenchTest::sidebarRegistersFiveDistinctIconsAndResources()
         LiveInsightKind::Module,
         LiveInsightKind::Hotspot,
         LiveInsightKind::State,
-        LiveInsightKind::Wave
     };
     QSet<QString> stableKeys;
     for (LiveInsightKind kind : kinds) {
@@ -638,8 +633,8 @@ void RtlInsightWorkbenchTest::sidebarRegistersFiveDistinctIconsAndResources()
         QVERIFY(controller.registerProvider(
             std::make_unique<LiveInsightsContextProvider>(kind, &session)));
     }
-    QCOMPARE(stableKeys.size(), 5);
-    QCOMPARE(controller.rail()->entryIds().size(), 5);
+    QCOMPARE(stableKeys.size(), 4);
+    QCOMPARE(controller.rail()->entryIds().size(), 4);
 
     QList<QImage> images;
     for (LiveInsightKind kind : kinds) {
@@ -694,45 +689,6 @@ void RtlInsightWorkbenchTest::toolPageDetachesIntoWindow()
     detached->close();
     QCoreApplication::processEvents();
 
-    LiveInsightToolPage wavePage(LiveInsightKind::Wave);
-    auto* waveRefresh = wavePage.findChild<QPushButton*>(
-        QStringLiteral("liveInsightWaveRefresh"));
-    auto* waveDetach = wavePage.findChild<QPushButton*>(
-        QStringLiteral("liveInsightWaveDetach"));
-    QVERIFY(waveRefresh);
-    QVERIFY(waveDetach);
-    LiveInsightToolContext waveContext;
-    waveContext.workspaceRoot = QStringLiteral("workspace");
-    waveContext.fileName = QStringLiteral("rtl/wave.sv");
-    waveContext.documentText = QStringLiteral(
-        "module wave(input logic clk, input logic d);\n"
-        "logic q; always_ff @(posedge clk) q <= d;\n"
-        "endmodule\n");
-    wavePage.setContext(waveContext);
-    int waveRefreshRequests = 0;
-    wavePage.setRefreshHandler(
-        [&wavePage, &waveContext, &waveRefreshRequests]() {
-            ++waveRefreshRequests;
-            wavePage.setContext(waveContext);
-        });
-    wavePage.waveCoordinatorForTest()->resetRefreshMetricsForTest();
-    waveRefresh->click();
-    QCOMPARE(waveRefreshRequests, 1);
-    QVERIFY(wavePage.waveCoordinatorForTest()
-                ->refreshMetricsForTest().renderCount > 0);
-    waveDetach->click();
-    QMainWindow* detachedWave =
-        wavePage.detachedWindowForTest();
-    QVERIFY(detachedWave);
-    auto* detachedWavePage = dynamic_cast<LiveInsightToolPage*>(
-        detachedWave->centralWidget());
-    QVERIFY(detachedWavePage);
-    QCOMPARE(detachedWavePage->kind(), LiveInsightKind::Wave);
-    QVERIFY(detachedWavePage->waveCoordinatorForTest());
-    QVERIFY(wavePage.hasVisibleSurface());
-    detachedWave->close();
-    QCoreApplication::processEvents();
-    QTRY_VERIFY(!wavePage.hasVisibleSurface());
 }
 
 void RtlInsightWorkbenchTest::sharedCanvasExportsSvgPngAndPdf()

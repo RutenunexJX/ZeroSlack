@@ -22,29 +22,26 @@ constexpr int radius = 84;
 constexpr int hole = 28;
 constexpr int cell = 28;
 constexpr double pi = 3.141592653589793;
-enum Glyph { Block, Hotspot, Kernel, State, Run, Observe, Reveal, Link, OpenLink,
+enum Glyph { Block, Hotspot, Kernel, State, Link, OpenLink,
     Markers, Organize, CreateSignal, Ports, Expose, Queue, Case, Spaces, Temporary,
-    GraphGroup, WaveGroup, PinloomGroup, RefactorGroup, TextGroup, TemporaryGroup, Close };
+    GraphGroup, PinloomGroup, RefactorGroup, TextGroup, TemporaryGroup, Close };
 struct Entry { const char* id; int group; Glyph glyph; };
 constexpr Entry entries[] = {
     {"insight.moduleBlockDiagram", 0, Block},
     {"insight.signalUsageHotspot", 0, Hotspot},
     {"insight.signalKernelGraph", 0, Kernel},
     {"insight.stateTransitionGraph", 0, State},
-    {"waveSimulation.runCurrentContext", 1, Run},
-    {"waveSimulation.observeSignal", 1, Observe},
-    {"waveSimulation.revealSignalInResult", 1, Reveal},
-    {"pinloom.linkSelection", 2, Link},
-    {"pinloom.openLinkedContent", 2, OpenLink},
-    {"pinloom.toggleBindingMarkers", 2, Markers},
-    {"refactor.organizeSignalDeclarations", 3, Organize},
-    {"refactor.createSignalDefinition", 3, CreateSignal},
-    {"refactor.editInstanceSlots", 3, Ports},
-    {"refactor.exposeSignalToTop", 3, Expose},
-    {"refactor.createAssignmentQueue", 3, Queue},
-    {"edit.toggleSelectionCase", 4, Case},
-    {"edit.replaceSelectionWithSpaces", 4, Spaces},
-    {"view.temporaryEditor.open", 5, Temporary},
+    {"pinloom.linkSelection", 1, Link},
+    {"pinloom.openLinkedContent", 1, OpenLink},
+    {"pinloom.toggleBindingMarkers", 1, Markers},
+    {"refactor.organizeSignalDeclarations", 2, Organize},
+    {"refactor.createSignalDefinition", 2, CreateSignal},
+    {"refactor.editInstanceSlots", 2, Ports},
+    {"refactor.exposeSignalToTop", 2, Expose},
+    {"refactor.createAssignmentQueue", 2, Queue},
+    {"edit.toggleSelectionCase", 3, Case},
+    {"edit.replaceSelectionWithSpaces", 3, Spaces},
+    {"view.temporaryEditor.open", 4, Temporary},
 };
 const Entry* entryFor(const QString& id) {
     for (const auto& entry : entries) if (id == QLatin1String(entry.id)) return &entry;
@@ -101,9 +98,6 @@ public:
             circle(12+9*std::cos(a),12+9*std::sin(a),1); } break;
         case State: circle(12,4,2.5); circle(4,18,2.5); circle(20,18,2.5);
             path({{8,7},{4,12},{3,10}}); path({{8,19},{15,19},{13,17}}); path({{20,13},{16,7},{19,8}}); break;
-        case Run: wave(); path({{17,5},{23,11},{17,17},{17,5}}); break;
-        case Observe: wave(); eye(); break;
-        case Reveal: wave(); circle(18,10,4); line(18,3,18,7); line(18,13,18,17); line(11,10,15,10); line(21,10,24,10); break;
         case Link: bookmark(); path({{16,10},{19,7},{22,7},{23,10},{20,13}}); path({{21,13},{18,16},{15,16},{14,13},{17,10}}); break;
         case OpenLink: bookmark(); path({{16,4},{22,4},{22,10}}); line(15,11,22,4); break;
         case Markers: bookmark(); eye(); break;
@@ -116,7 +110,6 @@ public:
         case Spaces: box(2,7,5,8);box(17,7,5,8);path({{9,11},{15,11},{13,9}});break;
         case Temporary: case TemporaryGroup: box(2,3,17,17);line(2,7,19,7);pencil();break;
         case GraphGroup: circle(12,4,3);circle(4,19,3);circle(20,19,3);line(10,7,5,16);line(14,7,19,16);break;
-        case WaveGroup: path({{2,17},{6,17},{6,5},{12,5},{12,17},{18,17},{18,5},{22,5}});break;
         case PinloomGroup: bookmark();line(16,8,22,8);line(16,12,20,12);break;
         case RefactorGroup: path({{13,4},{13,9},{18,9},{21,6},{21,12},{17,16},{13,16},{6,23},{2,19},{9,12},{9,8},{13,4}});break;
         case Close: line(7,7,17,17);line(17,7,7,17);break;
@@ -145,9 +138,9 @@ EditorRadialMenu::EditorRadialMenu(QMenu* commands)
     resize(392, 284);
     center = QPoint(width()/2, height()/2);
     collect(commands);
-    const QStringList titles {tr("Graphs"),tr("Wave simulation"),tr("Pinloom"),tr("Refactor"),tr("Text"),tr("Temporary editor")};
-    const Glyph glyphs[] {GraphGroup,WaveGroup,PinloomGroup,RefactorGroup,TextGroup,TemporaryGroup};
-    for (int i=0;i<6;++i) {
+    const QStringList titles {tr("Graphs"),tr("Pinloom"),tr("Refactor"),tr("Text"),tr("Temporary editor")};
+    const Glyph glyphs[] {GraphGroup,PinloomGroup,RefactorGroup,TextGroup,TemporaryGroup};
+    for (int i=0;i<kGroupCount;++i) {
         auto* button = new QToolButton(this);
         groupButtons[i]=button;
         button->setObjectName(QStringLiteral("radialGroup.%1").arg(i));
@@ -162,7 +155,7 @@ EditorRadialMenu::EditorRadialMenu(QMenu* commands)
             button->setIcon(gray);
         }
         button->setIconSize(QSize(16,16));
-        const double angle=(-60+i*60)*pi/180;
+        const double angle=(-90+(i+0.5)*kSectorAngle)*pi/180;
         const QPoint at=center+QPoint(qRound(56*std::cos(angle)),qRound(56*std::sin(angle)));
         button->setGeometry(QRect(at-QPoint(14,14),QSize(cell,cell)));
         button->installEventFilter(this);
@@ -203,14 +196,14 @@ QRect EditorRadialMenu::barGeometry(int group,int count) const {
     const int columns=count<=4 ? qMax(1,count) : 3;
     const QSize size(columns*cell+12, ((count+columns-1)/columns)*cell+12);
     // Rectangular bars align to the selected category without wrapping around the ring.
-    const int x=(group<3) ? center.x()+radius+6 : center.x()-radius-6-size.width();
-    const int y=group==0 || group==5 ? center.y()-radius-size.height()/2
-        : group==2 || group==3 ? center.y()+radius-size.height()/2 : center.y()-size.height()/2;
+    const double angle=(-90+(group+0.5)*kSectorAngle)*pi/180;
+    const int x=std::cos(angle)>=0 ? center.x()+radius+6 : center.x()-radius-6-size.width();
+    const int y=center.y()+qRound(radius*std::sin(angle))-size.height()/2;
     return QRect(QPoint(qBound(2,x,width()-size.width()-2),qBound(2,y,height()-size.height()-2)),size);
 }
 
 void EditorRadialMenu::selectGroup(int index,bool focusFirst) {
-    if (index<0 || index>=6) return;
+    if (index<0 || index>=kGroupCount) return;
     if (index!=currentGroup) {
         currentGroup=index;
         delete bar;
@@ -256,7 +249,7 @@ int EditorRadialMenu::groupAt(const QPoint& point) const {
     if(r<hole || r>radius) return -1;
     double angle=std::atan2(d.y(),d.x())*180/pi+90;
     if(angle<0)angle+=360;
-    return int(angle/60)%6;
+    return int(angle/kSectorAngle)%kGroupCount;
 }
 void EditorRadialMenu::paintEvent(QPaintEvent*) {
     QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
@@ -266,11 +259,11 @@ void EditorRadialMenu::paintEvent(QPaintEvent*) {
     const QRectF inner(center.x()-hole,center.y()-hole,2*hole,2*hole);
     p.setPen(QPen(border,1));p.setBrush(t.panelBackground);p.drawEllipse(outer);
     if(currentGroup>=0) {
-        QPainterPath wedge;wedge.moveTo(center);wedge.arcTo(outer,90-currentGroup*60,-60);wedge.closeSubpath();
+        QPainterPath wedge;wedge.moveTo(center);wedge.arcTo(outer,90-currentGroup*kSectorAngle,-kSectorAngle);wedge.closeSubpath();
         p.setPen(Qt::NoPen);p.setBrush(t.itemView.selectedBackground);p.drawPath(wedge);
     }
     p.setPen(QPen(border,1));
-    for(int i=0;i<6;++i) {const double a=(-90+i*60)*pi/180;
+    for(int i=0;i<kGroupCount;++i) {const double a=(-90+i*kSectorAngle)*pi/180;
         p.drawLine(QPointF(center)+QPointF(hole*std::cos(a),hole*std::sin(a)),
                    QPointF(center)+QPointF(radius*std::cos(a),radius*std::sin(a)));}
     p.setBrush(t.panelBackground);p.drawEllipse(inner);
@@ -283,7 +276,7 @@ void EditorRadialMenu::mousePressEvent(QMouseEvent* e) {
 void EditorRadialMenu::keyPressEvent(QKeyEvent* e) {
     if(e->key()==Qt::Key_Escape) {close();return;}
     if(e->key()==Qt::Key_Left || e->key()==Qt::Key_Right) {
-        const int next=(qMax(0,currentGroup)+(e->key()==Qt::Key_Right?1:5))%6;
+        const int next=(qMax(0,currentGroup)+(e->key()==Qt::Key_Right?1:kGroupCount-1))%kGroupCount;
         selectGroup(next);groupButtons[next]->setFocus();return;
     }
     QWidget::keyPressEvent(e);
@@ -297,7 +290,7 @@ bool EditorRadialMenu::eventFilter(QObject* watched,QEvent* e) {
         }
     }
     if(e->type()==QEvent::Enter || e->type()==QEvent::FocusIn) {
-        for(int i=0;i<6;++i) if(watched==groupButtons[i]) {selectGroup(i);break;}
+        for(int i=0;i<kGroupCount;++i) if(watched==groupButtons[i]) {selectGroup(i);break;}
     }
     return QWidget::eventFilter(watched,e);
 }

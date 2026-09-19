@@ -212,7 +212,7 @@ struct MyCodeEditorState
     QList<QPointer<QObject>> ghostQueryWatchers;
     EditorHotPathMetrics hotPathMetrics;
     bool hotPathTimingEnabled = false;
-    QString lastWavePreviewScopeKey;
+    QString lastInsightScopeKey;
     // One semantic query per publish is the budget for blinking targets, so
     // the answer is kept until the snapshot or the file actually changes.
     mutable QList<QString> insightTargetNameCache;
@@ -380,9 +380,6 @@ struct MyCodeEditorState
     EditorSynchronousEditState synchronousEditStateForTest() const;
     void finishEditorInput(MyCodeEditor* editor);
     bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
-    bool handleDragEnter(MyCodeEditor* editor, QDragEnterEvent* event);
-    bool handleDragMove(MyCodeEditor* editor, QDragMoveEvent* event);
-    bool handleDrop(MyCodeEditor* editor, QDropEvent* event);
     void handleResize(MyCodeEditor* editor);
     bool handleGutterMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleGutterMouseMove(MyCodeEditor* editor, QMouseEvent* event);
@@ -563,7 +560,7 @@ struct MyCodeEditorState
     void refreshDiagnosticPresentation(MyCodeEditor* editor);
     void refreshSemanticDecorationPresentation(MyCodeEditor* editor);
     void refreshDerivedEditorState(MyCodeEditor* editor,
-                                   bool allowWavePreviewSignal);
+                                   bool allowInsightScopeSignal);
     void highlightSearchMatches(MyCodeEditor* editor,
                                 const QString& text,
                                 bool caseSensitive);

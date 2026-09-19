@@ -101,10 +101,6 @@ signals:
         const QString& filePath,
         int lineNumber,
         const HierarchyInstanceContext& instanceContext);
-    void waveSimulationRequested(
-        const QString& filePath,
-        const QString& moduleName,
-        const QString& instancePath);
     void dataRefreshed(NavigationView view);
     void navigationTelemetry(const SemanticAnalysisTelemetry& telemetry);
     void workspaceFileOperationCompleted(

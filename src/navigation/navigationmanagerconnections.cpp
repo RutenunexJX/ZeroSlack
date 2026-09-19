@@ -157,11 +157,6 @@ NavigationManager::designNodeContextActions(
          !node.definitionFile.isEmpty()
              || !node.instanceFile.isEmpty(),
          false},
-        {ActionIds::WaveSimulationRunDesignInstance,
-         !node.definitionFile.isEmpty()
-             && !node.moduleType.isEmpty()
-             && !node.instancePath.isEmpty(),
-         true},
         {ActionIds::NavigationDesignSetTop,
          !node.moduleType.isEmpty(),
          false},
@@ -296,15 +291,6 @@ NavigationManager::requestDesignNodeAction(
         invocation.parameters.insert(
             QStringLiteral("sourceLinkId"),
             node.id);
-    } else if (actionId
-               == QString::fromLatin1(
-                   ActionIds::WaveSimulationRunDesignInstance)) {
-        invocation.parameters.insert(
-            QStringLiteral("path"),
-            node.definitionFile);
-        invocation.parameters.insert(
-            QStringLiteral("line"),
-            node.definitionLine);
     }
     return executeAction(
         *descriptor, *this, invocation);

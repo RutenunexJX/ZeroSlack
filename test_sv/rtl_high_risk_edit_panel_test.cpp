@@ -361,6 +361,11 @@ int main(int argc, char* argv[])
         &dockParent,
         std::move(renameWorkflow),
         std::move(connectionWorkflow));
+    expect("hidden change panel is not constructed by its coordinator",
+           !dockParent.findChild<RtlHighRiskEditPanel*>());
+    coordinator.resetForWorkspaceClose();
+    expect("workspace close leaves an unused change panel unconstructed",
+           !dockParent.findChild<RtlHighRiskEditPanel*>());
     RtlHighRiskEditPanel* panel =
         coordinator.panel();
 
@@ -374,7 +379,7 @@ int main(int argc, char* argv[])
             && panel->objectName()
                 == QStringLiteral(
                     "rtlHighRiskEditPanel")
-            && coordinator.dock()->widget() == panel);
+            && coordinator.dock()->widget()->isAncestorOf(panel));
 
     QString failureReason;
     expect(
@@ -489,7 +494,7 @@ int main(int argc, char* argv[])
             connectionSession(token, true),
             &failureReason)
             && coordinator.panel() == panel
-            && coordinator.dock()->widget() == panel);
+            && coordinator.dock()->widget()->isAncestorOf(panel));
     const std::uint64_t connectionDryRunSession =
         coordinator.activeSessionId();
     const int writesBeforeDryRun =

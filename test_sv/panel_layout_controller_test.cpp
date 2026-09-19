@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
+#include "deferredpanel.h"
 
 #include <QApplication>
 #include <QDockWidget>
@@ -97,7 +98,6 @@ public:
             {QStringLiteral("activity"), QStringLiteral("Activity")},
             {QStringLiteral("rtlHighRiskEdit"), QStringLiteral("Change Preview")},
             {QStringLiteral("connections"), QStringLiteral("Connections")},
-            {QStringLiteral("foldShelf"), QStringLiteral("Fold Shelf")},
         };
         for (const auto& descriptor : descriptors) {
             PanelFixture fixture = createPanel(
@@ -166,7 +166,6 @@ void verifyButtonContract(DrawerHarness& harness)
         QStringLiteral("activity"),
         QStringLiteral("rtlHighRiskEdit"),
         QStringLiteral("connections"),
-        QStringLiteral("foldShelf"),
     };
     const QStringList labels = {
         QStringLiteral("Problems"),
@@ -174,10 +173,9 @@ void verifyButtonContract(DrawerHarness& harness)
         QStringLiteral("Activity"),
         QStringLiteral("Change Preview"),
         QStringLiteral("Connections"),
-        QStringLiteral("Shelf"),
     };
     check(harness.controller->bottomPanelIds() == ids,
-          "six bottom buttons keep the fixed product order");
+          "five bottom buttons keep the fixed product order");
     for (int index = 0; index < ids.size(); ++index) {
         QToolButton* button =
             harness.controller->buttonForPanel(ids.at(index));
@@ -453,6 +451,79 @@ void verifyPersistence(DrawerHarness& harness)
           "legacy connection panel state migrates into Connections");
 }
 
+void verifyDeferredPersistence()
+{
+    QMainWindow window;
+    window.resize(1080, 760);
+    window.setCentralWidget(new QPlainTextEdit(&window));
+    PanelLayoutController controller(&window, &window);
+    auto eager = createPanel(&window, QStringLiteral("problems"),
+                             QStringLiteral("Problems"));
+    controller.registerBottomPanel(QStringLiteral("problems"), eager.dock);
+    auto* dock = new QDockWidget(QStringLiteral("Connections"), &window);
+    int creations = 0;
+    QTabWidget* tabs = nullptr;
+    QTreeWidget* tree = nullptr;
+    auto* host = new DeferredPanel(dock, &window,
+        [&](QWidget* parent) -> QWidget* {
+            ++creations;
+            tabs = new QTabWidget(parent);
+            tabs->setObjectName(QStringLiteral("deferredTabs"));
+            tabs->addTab(new QWidget(tabs), QStringLiteral("First"));
+            tree = new QTreeWidget(tabs);
+            tree->setObjectName(QStringLiteral("deferredTree"));
+            for (int index = 0; index < 100; ++index)
+                new QTreeWidgetItem(tree, {QString::number(index)});
+            tabs->addTab(tree, QStringLiteral("Second"));
+            return tabs;
+        });
+    dock->setWidget(host);
+    window.addDockWidget(Qt::BottomDockWidgetArea, dock);
+    controller.registerBottomPanel(QStringLiteral("connections"), dock);
+    controller.finalize();
+    PanelLayoutState state = controller.layoutState();
+    state.valid = true;
+    state.bottomCollapsed = true;
+    const QVariantMap viewState = {
+        {QStringLiteral("tabs"), QVariantMap{{QStringLiteral("deferredTabs"), 1}}},
+        {QStringLiteral("selections"), QVariantMap{
+            {QStringLiteral("deferredTree"), QVariantMap{
+                {QStringLiteral("path"), QStringLiteral("73")},
+                {QStringLiteral("column"), 0}}}}}
+    };
+    state.bottomPanelViewStates.insert(QStringLiteral("connections"), viewState);
+    controller.restoreLayoutState(state);
+    window.show();
+    QApplication::processEvents();
+    check(creations == 0 && !host->isCreated(),
+          "hidden panel stays unconstructed through layout restore and startup");
+    check(controller.layoutState().bottomPanelViewStates.value(
+              QStringLiteral("connections")) == viewState,
+          "saving before first open preserves deferred view state");
+    controller.restorePanel(QStringLiteral("connections"));
+    QApplication::processEvents();
+    check(creations == 1 && tabs && tabs->currentIndex() == 1
+              && tree->currentItem() == tree->topLevelItem(73)
+              && tree->verticalScrollBar()->value() > 0,
+          "first open creates content and restores its tab selection and scroll");
+    tree->setCurrentItem(tree->topLevelItem(80));
+    for (int index = 0; index < 3; ++index) {
+        controller.closePanel(QStringLiteral("connections"));
+        controller.restorePanel(QStringLiteral("connections"));
+        QApplication::processEvents();
+    }
+    check(creations == 1 && tree->currentItem() == tree->topLevelItem(80),
+          "reopening reuses content and retains its changed state");
+
+    QObject* owner = new QObject;
+    DeferredPanel cancelled(nullptr, owner,
+        [&](QWidget*) -> QWidget* { ++creations; return nullptr; });
+    delete owner;
+    cancelled.ensureCreated();
+    check(creations == 1,
+          "destroyed coordinator cancels an unopened panel factory");
+}
+
 void verifyBadgesAndTheme(DrawerHarness& harness)
 {
     harness.controller->restorePanel(QStringLiteral("problems"));
@@ -545,6 +616,7 @@ int main(int argc, char* argv[])
     verifyFocusAndEditorPreservation(harness);
     verifySizing(harness);
     verifyPersistence(harness);
+    verifyDeferredPersistence();
     verifyBadgesAndTheme(harness);
 
     std::cout << (checks - failures) << "/" << checks

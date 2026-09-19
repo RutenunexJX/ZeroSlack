@@ -10,7 +10,6 @@
 #include <memory>
 
 class RtlInsightWorkbench;
-class WavePreviewPanelCoordinator;
 class QMainWindow;
 class QHideEvent;
 class QShowEvent;
@@ -41,7 +40,6 @@ public:
     using StatusHandler =
         std::function<void(const QString&, int)>;
     using VisibilityHandler = std::function<void(bool)>;
-    using RefreshHandler = std::function<void()>;
 
     explicit LiveInsightToolPage(
         LiveInsightKind kind,
@@ -52,10 +50,8 @@ public:
     void setNavigationHandler(NavigationHandler handler);
     void setStatusHandler(StatusHandler handler);
     void setVisibilityHandler(VisibilityHandler handler);
-    void setRefreshHandler(RefreshHandler handler);
-    void setWaveformLibraryPath(const QString& path);
     // Drops the chrome a titled host already provides (workbench title line,
-    // detach entry). The Wave refresh entry stays: nothing else offers it.
+    // detach entry).
     void setCompactChrome(bool compact);
     void setContext(const LiveInsightToolContext& context);
     bool hasVisibleSurface() const;
@@ -66,7 +62,6 @@ public:
     }
 
     RtlInsightWorkbench* workbenchForTest() const;
-    WavePreviewPanelCoordinator* waveCoordinatorForTest() const;
     QMainWindow* detachToWindow();
     QMainWindow* detachedWindowForTest() const;
 
@@ -77,13 +72,9 @@ protected:
 private:
     LiveInsightKind insightKind;
     LiveInsightToolContext currentContext;
-    QString waveformLibraryPath;
-    bool compactChromeValue = false;
     NavigationHandler navigationHandler;
     StatusHandler statusHandler;
     VisibilityHandler visibilityHandler;
-    RefreshHandler refreshHandler;
-    std::unique_ptr<WavePreviewPanelCoordinator> waveCoordinator;
     RtlInsightWorkbench* workbench = nullptr;
     QPointer<QMainWindow> detachedWindow;
     QPointer<LiveInsightToolPage> detachedPage;

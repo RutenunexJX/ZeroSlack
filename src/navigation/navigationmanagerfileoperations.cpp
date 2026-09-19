@@ -559,37 +559,6 @@ NavigationManager::executeActionRoute(
             location, true, QString());
         return actionResult;
     }
-    if (route
-        == QStringLiteral(
-            "waveSimulation.runDesignInstance")) {
-        const QString path = invocation.parameters
-                                 .value(QStringLiteral("path"))
-                                 .toString();
-        const QString moduleName = invocation.parameters
-                                       .value(QStringLiteral("moduleType"))
-                                       .toString()
-                                       .trimmed();
-        const QString instancePath = invocation.parameters
-                                         .value(QStringLiteral("instancePath"))
-                                         .toString()
-                                         .trimmed();
-        if (path.isEmpty() || moduleName.isEmpty()
-            || instancePath.isEmpty()) {
-            actionResult.failureReason = QStringLiteral(
-                "The selected hierarchy instance is incomplete.");
-            return actionResult;
-        }
-        emit waveSimulationRequested(
-            path, moduleName, instancePath);
-        actionResult.output.insert(
-            QStringLiteral("path"), path);
-        actionResult.output.insert(
-            QStringLiteral("moduleName"), moduleName);
-        actionResult.output.insert(
-            QStringLiteral("instancePath"), instancePath);
-        actionResult.succeeded = true;
-        return actionResult;
-    }
     if (!fileOperationService) {
         actionResult.failureReason = QStringLiteral(
             "The workspace file operation service is unavailable.");

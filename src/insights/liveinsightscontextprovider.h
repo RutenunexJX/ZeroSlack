@@ -59,8 +59,6 @@ public:
     // compact summary card.
     void setToolContextSource(
         LiveInsightsContextView::ToolContextSource source);
-    void setWaveformLibraryPathSource(
-        LiveInsightsContextView::WaveformLibraryPathSource source);
     // Runs the editor-side target picker for a section of this kind.
     void setTargetPickRequest(
         LiveInsightsContextView::TargetPickRequest request);
@@ -105,8 +103,6 @@ private:
     PinRequestHandler pinRequestHandler;
     LiveInsightsContextView::ToolContextSource toolContextSource;
     LiveInsightsContextView::TargetPickRequest targetPickRequest;
-    LiveInsightsContextView::WaveformLibraryPathSource
-        waveformLibraryPathSource;
 
     ContextResource resourceForView(
         const LiveInsightsContextView* view) const;

@@ -20,11 +20,6 @@ list(GET ZEROSLACK_VERSION_PARTS 2 ZEROSLACK_VERSION_PATCH)
 # Project target. C is enabled because tree-sitter includes .c sources.
 project(ZeroSlack VERSION ${ZEROSLACK_VERSION} LANGUAGES C CXX)
 
-set(ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY "" CACHE FILEPATH
-    "Optional wavewidgets library used for the real waveform-preview ABI CTest")
-set(ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}" CACHE PATH
-    "Read-only source tree containing the legacy .zs compatibility fixtures")
-
 string(TIMESTAMP ZEROSLACK_BUILD_TIME "%Y-%m-%dT%H:%M:%SZ" UTC)
 set(ZEROSLACK_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 configure_file(
@@ -332,10 +327,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorsyntaxstate.cpp
     src/editor/editormodecontroller.cpp
     src/workspace/filecommandcoordinator.cpp
-    src/editor/foldblockshelfmodel.cpp
-    src/editor/foldblockshelfpanel.cpp
-    src/editor/foldshelfpersistenceservice.cpp
-    src/editor/foldshelfrestoreservice.cpp
     src/insights/fsmgraphlayout.cpp
     src/insights/fsmgraphservice.cpp
     src/editor/formattercursoranchor.cpp
@@ -346,18 +337,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/structuredwhitespaceformatter.cpp
     src/editor/ghostannotationservice.cpp
     src/insights/graphexportservice.cpp
-    src/integrations/wave/wavetoolchainbundleservice.cpp
-    src/integrations/wave/wavesimulationconfiguration.cpp
-    src/integrations/wave/wavesimulationcoordinator.cpp
-    src/integrations/wave/wavesimulationresultnavigationcoordinator.cpp
-    src/integrations/wave/waveembeddedworkspaceloader.cpp
-    src/integrations/wave/waveformpreviewloader.cpp
-    src/integrations/wave/wavesimulationmodulemanifest.cpp
-    src/integrations/wave/wavesimulationmanifestservice.cpp
-    src/integrations/wave/wavesimulationpreparationservice.cpp
-    src/integrations/wave/wavepreviewpanelcoordinator.cpp
-    src/integrations/wave/wavepreviewpayloadadapter.cpp
-    src/integrations/wave/wavepreviewservice.cpp
     src/settings/workspaceconfigurationdialog.cpp
     src/settings/workspaceconfigurationservice.cpp
     src/workspace/workspacesessioncoordinator.cpp
@@ -609,19 +588,11 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorsyntaxstate.h
     src/editor/editormodecontroller.h
     src/workspace/filecommandcoordinator.h
-    src/editor/foldblockshelfmodel.h
-    src/editor/foldblockshelfpanel.h
-    src/editor/foldshelfpersistenceservice.h
-    src/editor/foldshelfrestoreservice.h
     src/insights/fsmgraphlayout.h
     src/insights/fsmgraphservice.h
     src/editor/formattercursoranchor.h
     src/editor/formatterservice.h
     src/editor/ghostannotationservice.h
-    src/integrations/wave/wavepreviewpanelcoordinator.h
-    src/integrations/wave/waveformpreviewloader.h
-    src/integrations/wave/wavepreviewpayloadadapter.h
-    src/integrations/wave/wavepreviewservice.h
     src/settings/workspaceconfigurationdialog.h
     src/settings/workspaceconfigurationservice.h
     src/workspace/workspacesessioncoordinator.h
@@ -658,6 +629,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextpeekhost.h
     src/ui/contextdockhost.h
     src/ui/compactlayout.h
+    src/ui/deferredpanel.h
     src/ui/contextworkspacecontroller.h
     src/ui/temporaryeditorsession.h
     src/ui/temporaryeditorcontextview.h
@@ -1093,40 +1065,6 @@ if(BUILD_TESTING)
     target_link_libraries(settings_center_panel_test
         PRIVATE zeroslack_core Qt6::Test)
 
-    add_executable(wave_simulation_configuration_test
-        test_sv/wave_simulation_configuration_test.cpp
-        src/integrations/wave/wavetoolchainbundleservice.cpp
-        src/integrations/wave/wavesimulationconfiguration.cpp)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(wave_simulation_configuration_test PRIVATE
-            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
-    endif()
-    target_link_libraries(wave_simulation_configuration_test
-        PRIVATE Qt6::Core)
-
-    add_executable(wave_simulation_manifest_test
-        test_sv/wave_simulation_manifest_test.cpp)
-    target_link_libraries(wave_simulation_manifest_test
-        PRIVATE zeroslack_core Qt6::Core)
-    add_executable(wave_simulation_runtime_test
-        test_sv/wave_simulation_runtime_test.cpp)
-    target_link_libraries(wave_simulation_runtime_test
-        PRIVATE zeroslack_core Qt6::Core)
-
-    add_library(wavewidgets_fixture SHARED
-        test_sv/wavewidgets_fixture.cpp)
-    target_link_libraries(wavewidgets_fixture
-        PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
-    set_target_properties(wavewidgets_fixture PROPERTIES
-        PREFIX "")
-
-    add_executable(wave_embedded_workspace_test
-        test_sv/wave_embedded_workspace_test.cpp)
-    target_link_libraries(wave_embedded_workspace_test
-        PRIVATE zeroslack_core Qt6::Widgets)
-    add_dependencies(wave_embedded_workspace_test
-        wavewidgets_fixture)
-
     add_executable(live_insight_session_test
         test_sv/live_insight_session_test.cpp)
     target_link_libraries(live_insight_session_test
@@ -1391,7 +1329,6 @@ if(BUILD_TESTING)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
-    add_dependencies(gui_smoke_test wavewidgets_fixture)
 
     add_executable(temporary_editor_context_search_test
         test_sv/temporary_editor_context_search_test.cpp)
@@ -1633,44 +1570,6 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:settings_center_panel_test>
     )
-    add_test(NAME wave_simulation_configuration_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            $<TARGET_FILE:wave_simulation_configuration_test>
-    )
-    add_test(NAME wave_simulation_manifest_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-            $<TARGET_FILE:wave_simulation_manifest_test>
-    )
-    add_test(NAME wave_simulation_runtime_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-            $<TARGET_FILE:wave_simulation_runtime_test>
-    )
-    add_test(NAME wave_embedded_workspace_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:wave_embedded_workspace_test>
-            $<TARGET_FILE:wavewidgets_fixture>
-    )
-    if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
-        add_test(NAME waveform_preview_real_library_test
-            COMMAND ${CMAKE_COMMAND} -E env
-                "PATH=${ZEROSLACK_TEST_PATH}"
-                "QT_QPA_PLATFORM=offscreen"
-                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                $<TARGET_FILE:wave_embedded_workspace_test>
-                "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}"
-                --waveform-only
-        )
-        set_tests_properties(waveform_preview_real_library_test
-            PROPERTIES TIMEOUT 120)
-    endif()
     add_test(NAME live_insight_session_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1703,12 +1602,6 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_radial_menu_test>)
     set_tests_properties(editor_radial_menu_test PROPERTIES TIMEOUT 60)
-    set(ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS)
-    if(EXISTS "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
-        list(APPEND ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS
-            --wave-library
-            "${ZEROSLACK_WAVEWIDGETS_VALIDATION_LIBRARY}")
-    endif()
     add_test(NAME live_insights_ui_snapshot_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1717,7 +1610,6 @@ if(BUILD_TESTING)
             $<TARGET_FILE:live_insights_ui_snapshot_test>
             --output-dir
             "${CMAKE_CURRENT_BINARY_DIR}/artifacts/ui/live-insights"
-            ${ZEROSLACK_LIVE_INSIGHTS_SNAPSHOT_WAVE_ARGS}
     )
     set_tests_properties(live_insights_ui_snapshot_test
         PROPERTIES TIMEOUT 120)
@@ -2038,8 +1930,6 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:workspace_persistence_test>
-            ${ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR}/test_sv/new
-            ${ZEROSLACK_LEGACY_FIXTURE_SOURCE_DIR}/test_sv/huge_prj
     )
     add_test(NAME workspace_session_coordinator_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -2091,7 +1981,6 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             "ZEROSLACK_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
-            "ZEROSLACK_WAVEWIDGETS_LIBRARY=$<TARGET_FILE:wavewidgets_fixture>"
             $<TARGET_FILE:gui_smoke_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv

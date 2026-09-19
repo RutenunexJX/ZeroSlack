@@ -7,7 +7,6 @@
 #include "semanticindex.h"
 #include "semanticdecorationservice.h"
 #include "ghostannotationservice.h"
-#include "foldblockshelfmodel.h"
 #include "formatterservice.h"
 #include "editorfoldviewstate.h"
 #include "editorviewprojection.h"
@@ -350,9 +349,6 @@ public:
     void startFoldRegionMarkMode();
     void cancelFoldRegionMarkMode();
     bool foldRegionMarkModeActive() const;
-    void startFoldShelfMode();
-    void cancelFoldShelfMode();
-    bool foldShelfModeActive() const;
     bool insertCustomFoldMarkersForTest(int startLine,
                                         int endLine,
                                         const QString& alias = QString());
@@ -370,11 +366,7 @@ public:
         const AnnotationLayerQuery& query = {}) const;
     QString syntaxTextForTest() const;
     EditorLargeFileSyntaxSnapshot largeFileSyntaxSnapshotForTest() const;
-    FoldShelfItem foldShelfItemAtLineForTest(
-        int line,
-        FoldShelfOriginKind origin = FoldShelfOriginKind::Copied) const;
     bool deleteCustomFoldAtLineForTest(int line);
-    bool insertFoldShelfItemAtLineForTest(const FoldShelfItem& item, int line);
     EditorSemanticContext editorSemanticContextForPosition(
         int cursorPosition = -1,
         bool includeDocumentText = false) const;
@@ -390,8 +382,6 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     void keyReleaseEvent(QKeyEvent *event) override;
-    void dragEnterEvent(QDragEnterEvent* event) override;
-    void dragMoveEvent(QDragMoveEvent* event) override;
     void dropEvent(QDropEvent* event) override;
 
     void mousePressEvent(QMouseEvent *event) override;
@@ -437,11 +427,10 @@ signals:
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
     void editorModeStateChanged(const EditorModeSnapshot& snapshot);
-    void foldShelfItemConsumed(const QString& id);
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);
     void pinloomCodeLinkActivated(const QString& anchorId);
-    void wavePreviewScopeChanged();
+    void insightScopeChanged();
 };
 
 #endif // MYCODEEDITOR_H

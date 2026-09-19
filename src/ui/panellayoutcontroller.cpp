@@ -1,5 +1,6 @@
 #include "uitypography.h"
 #include "panellayoutcontroller.h"
+#include "deferredpanel.h"
 
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
@@ -51,8 +52,6 @@ QString panelLabel(const QString& panelId)
         return QStringLiteral("Change Preview");
     if (panelId == QStringLiteral("connections"))
         return QStringLiteral("Connections");
-    if (panelId == QStringLiteral("foldShelf"))
-        return QStringLiteral("Shelf");
     return panelId;
 }
 
@@ -64,7 +63,7 @@ QIcon panelIcon(const QString& panelId)
     if (panelId == QStringLiteral("activity")) return icon(Activity);
     if (panelId == QStringLiteral("rtlHighRiskEdit")) return icon(Change);
     if (panelId == QStringLiteral("connections")) return icon(Connections);
-    return icon(Shelf);
+    return icon(Info);
 }
 
 QString modelIndexPath(const QModelIndex& index)
@@ -554,6 +553,10 @@ void PanelLayoutController::restoreLayoutState(
                     QStringLiteral("multiSignalPropagation"));
             }
         }
+        if (auto* deferred = dynamic_cast<DeferredPanel*>(entry.content.data());
+            deferred && !deferred->isCreated()) {
+            restoreWidgetState(deferred, entry.viewState);
+        }
     }
 
     QString restoredActive = canonicalPanelId(
@@ -597,6 +600,10 @@ void PanelLayoutController::resetLayout()
     for (PanelEntry& entry : panels) {
         entry.height = kDefaultContentHeight;
         entry.viewState.clear();
+        if (auto* deferred = dynamic_cast<DeferredPanel*>(entry.content.data());
+            deferred && !deferred->isCreated()) {
+            restoreWidgetState(deferred, {});
+        }
     }
     activePanel = panels.isEmpty()
         ? QString() : panels.constFirst().id;
@@ -1210,6 +1217,10 @@ QVariantMap PanelLayoutController::captureWidgetState(
     QVariantMap state;
     if (!root)
         return state;
+    if (auto* deferred = dynamic_cast<DeferredPanel*>(root);
+        deferred && !deferred->isCreated()) {
+        return root->property("pendingPanelViewState").toMap();
+    }
 
     QVariantMap tabs;
     QList<QTabWidget*> tabWidgets = root->findChildren<QTabWidget*>();
@@ -1267,6 +1278,19 @@ void PanelLayoutController::restoreWidgetState(
 {
     if (!root)
         return;
+    if (auto* deferred = dynamic_cast<DeferredPanel*>(root);
+        deferred && !deferred->isCreated()) {
+        root->setProperty("pendingPanelViewState", state);
+        deferred->afterCreated([owner = QPointer<PanelLayoutController>(this),
+                                target = QPointer<QWidget>(root)] {
+            if (owner && target) {
+                owner->restoreWidgetState(
+                    target, target->property("pendingPanelViewState").toMap());
+                target->setProperty("pendingPanelViewState", QVariant());
+            }
+        });
+        return;
+    }
     const QVariantMap tabs = state.value(QStringLiteral("tabs")).toMap();
     for (auto iterator = tabs.cbegin(); iterator != tabs.cend(); ++iterator) {
         QTabWidget* widget = root->objectName() == iterator.key()

@@ -190,23 +190,8 @@ int main(int argc, char* argv[])
               && themeOverride->isHidden(),
           "Appearance exposes an always-active Light/Dark selector");
 
-    QWidget* verilatorEditor = panel.fieldEditor(
-        QStringLiteral("simulation.verilatorPath"));
-    auto* verilatorPathEdit = verilatorEditor
-        ? verilatorEditor->findChild<QLineEdit*>(
-              QStringLiteral(
-                  "settingsCenterFilePathEdit.simulation.verilatorPath"))
-        : nullptr;
-    auto* verilatorBrowse = verilatorEditor
-        ? verilatorEditor->findChild<QPushButton*>(
-              QStringLiteral(
-                  "settingsCenterFilePathBrowse.simulation.verilatorPath"))
-        : nullptr;
-    check(verilatorEditor && verilatorPathEdit && verilatorBrowse
-              && verilatorPathEdit->text().isEmpty()
-              && !verilatorPathEdit->placeholderText().isEmpty(),
-          "Simulation executable settings expose an optional path editor and browse command");
-
+    check(!panel.fieldEditor(QStringLiteral("simulation.verilatorPath")),
+          "Settings has no retired simulation page");
     auto* sizeEditor = qobject_cast<QSpinBox*>(
         panel.fieldEditor(QStringLiteral("font.sizePt")));
     auto* sizeOverride =

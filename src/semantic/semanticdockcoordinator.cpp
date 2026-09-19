@@ -1,4 +1,5 @@
 #include "semanticdockcoordinator.h"
+#include "deferredpanel.h"
 
 #include "activitylogpanelcoordinator.h"
 #include "instancepairconnectionfacade.h"
@@ -40,7 +41,11 @@ SemanticDockCoordinator::SemanticDockCoordinator(
 
 SemanticDockCoordinator::~SemanticDockCoordinator() = default;
 
-SemanticDockCoordinator::PanelBundle::~PanelBundle() = default;
+SemanticDockCoordinator::PanelBundle::~PanelBundle()
+{
+    if (connectionsContent)
+        connectionsContent->cancelCreation();
+}
 
 void SemanticDockCoordinator::DockDependencies::set(
     QMainWindow* newMainWindow,
@@ -97,55 +102,70 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         QStringLiteral("ConnectionsDock"));
     connectionsDock->setAllowedAreas(
         Qt::BottomDockWidgetArea);
-    connectionsTabs = new QTabWidget(connectionsDock);
-    connectionsTabs->setObjectName(
-        QStringLiteral("connectionsWorkflowTabs"));
-    connectionsTabs->setAccessibleName(
-        QStringLiteral("Connection workflows"));
-    auto* instancePairStack =
-        new QStackedWidget(connectionsTabs);
-    instancePairStack->setObjectName(
-        QStringLiteral("instancePairConnectionStack"));
-    instancePairFacade =
-        std::make_unique<InstancePairConnectionFacade>();
-    instancePairCoordinator =
-        std::make_unique<
-            InstancePairConnectionCoordinator>(
-            instancePairStack);
-    instancePairWorkflow =
-        std::make_unique<
-            InstancePairConnectionWorkflow>(
-            instancePairFacade.get(),
-            instancePairCoordinator.get(),
-            SemanticIndex::getInstance(),
-            rtlActionDocuments.get(),
-            WorkspaceEditTransactionService::getInstance());
+    connectionsContent = new DeferredPanel(connectionsDock, nullptr,
+        [this](QWidget* parent) -> QWidget* {
+            connectionsTabs = new QTabWidget(parent);
+            connectionsTabs->setObjectName(
+                QStringLiteral("connectionsWorkflowTabs"));
+            connectionsTabs->setAccessibleName(
+                QStringLiteral("Connection workflows"));
+            auto* instancePairStack =
+                new QStackedWidget(connectionsTabs);
+            instancePairStack->setObjectName(
+                QStringLiteral("instancePairConnectionStack"));
+            instancePairFacade =
+                std::make_unique<InstancePairConnectionFacade>();
+            instancePairCoordinator =
+                std::make_unique<
+                    InstancePairConnectionCoordinator>(
+                    instancePairStack);
+            instancePairWorkflow =
+                std::make_unique<
+                    InstancePairConnectionWorkflow>(
+                    instancePairFacade.get(),
+                    instancePairCoordinator.get(),
+                    SemanticIndex::getInstance(),
+                    rtlActionDocuments.get(),
+                    WorkspaceEditTransactionService::getInstance());
 
-    multiSignalPlanner =
-        std::make_unique<MultiSignalPropagationPlanner>();
-    multiSignalPanel =
-        new MultiSignalPropagationPanel(
-            *multiSignalPlanner,
-            *rtlActionDocuments,
-            connectionsTabs);
-    multiSignalWorkflow =
-        std::make_unique<MultiSignalPropagationWorkflow>(
-            multiSignalPanel,
-            SemanticIndex::getInstance(),
-            rtlActionDocuments.get(),
-            WorkspaceEditTransactionService::getInstance());
+            multiSignalPlanner =
+                std::make_unique<MultiSignalPropagationPlanner>();
+            multiSignalPanel =
+                new MultiSignalPropagationPanel(
+                    *multiSignalPlanner,
+                    *rtlActionDocuments,
+                    connectionsTabs);
+            multiSignalWorkflow =
+                std::make_unique<MultiSignalPropagationWorkflow>(
+                    multiSignalPanel,
+                    SemanticIndex::getInstance(),
+                    rtlActionDocuments.get(),
+                    WorkspaceEditTransactionService::getInstance());
 
-    connectionsTabs->addTab(
-        instancePairStack,
-        QStringLiteral("Instance Pair"));
-    connectionsTabs->addTab(
-        multiSignalPanel,
-        QStringLiteral("Multi-Signal Propagation"));
-    connectionsTabs->setTabToolTip(
-        0, QStringLiteral("Connect signals between two hierarchy instances"));
-    connectionsTabs->setTabToolTip(
-        1, QStringLiteral("Propagate multiple signals through hierarchy boundaries"));
-    connectionsDock->setWidget(connectionsTabs);
+            connectionsTabs->addTab(
+                instancePairStack,
+                QStringLiteral("Instance Pair"));
+            connectionsTabs->addTab(
+                multiSignalPanel,
+                QStringLiteral("Multi-Signal Propagation"));
+            connectionsTabs->setTabToolTip(
+                0, QStringLiteral("Connect signals between two hierarchy instances"));
+            connectionsTabs->setTabToolTip(
+                1, QStringLiteral("Propagate multiple signals through hierarchy boundaries"));
+            QObject::connect(instancePairWorkflow.get(), &InstancePairConnectionWorkflow::stateChanged,
+                instancePairWorkflow.get(), [this](const InstancePairConnectionWorkflowResult& result) {
+                    if (connectionStatusHandler && !result.message.isEmpty())
+                        connectionStatusHandler(result.message, 5000);
+                });
+            QObject::connect(multiSignalWorkflow.get(), &MultiSignalPropagationWorkflow::stateChanged,
+                multiSignalWorkflow.get(), [this](const MultiSignalPropagationWorkflowResult& result) {
+                    if (connectionStatusHandler && !result.message.isEmpty())
+                        connectionStatusHandler(result.message, 5000);
+                });
+            return connectionsTabs;
+        });
+    connectionsContent->setObjectName(QStringLiteral("deferredConnectionsPanel"));
+    connectionsDock->setWidget(connectionsContent);
 
     dependencies.addBottomDock(problemsPanel->dock());
     dependencies.addBottomDock(activityLogPanel->dock());
@@ -197,40 +217,9 @@ void SemanticDockCoordinator::PanelBundle::setStatusMessageHandler(
 {
     if (semanticPanelRefresh)
         semanticPanelRefresh->setStatusMessageHandler(statusMessageHandler);
+    connectionStatusHandler = statusMessageHandler;
     if (!rtlActionStatusConnected) {
         bool connected = false;
-        if (instancePairWorkflow) {
-            QObject::connect(
-                instancePairWorkflow.get(),
-                &InstancePairConnectionWorkflow::stateChanged,
-                instancePairWorkflow.get(),
-                [handler = statusMessageHandler](
-                    const InstancePairConnectionWorkflowResult&
-                        result) {
-                    if (!result.message.isEmpty()
-                        && handler) {
-                        handler(
-                            result.message, 5000);
-                    }
-                });
-            connected = true;
-        }
-        if (multiSignalWorkflow) {
-            QObject::connect(
-                multiSignalWorkflow.get(),
-                &MultiSignalPropagationWorkflow::stateChanged,
-                multiSignalWorkflow.get(),
-                [handler = statusMessageHandler](
-                    const MultiSignalPropagationWorkflowResult&
-                        result) {
-                    if (!result.message.isEmpty()
-                        && handler) {
-                        handler(
-                            result.message, 5000);
-                    }
-                });
-            connected = true;
-        }
         if (rtlHighRiskEditPanel) {
             QObject::connect(
                 rtlHighRiskEditPanel.get(),
@@ -296,6 +285,8 @@ InstancePairConnectionCoordinator*
 SemanticDockCoordinator::
 instancePairConnectionCoordinator() const
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     return panels.instancePairCoordinator.get();
 }
 
@@ -303,6 +294,8 @@ InstancePairConnectionWorkflow*
 SemanticDockCoordinator::
 instancePairConnectionWorkflow() const
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     return panels.instancePairWorkflow.get();
 }
 
@@ -310,6 +303,8 @@ MultiSignalPropagationPanel*
 SemanticDockCoordinator::
 multiSignalPropagationPanel() const
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     return panels.multiSignalPanel;
 }
 
@@ -317,6 +312,8 @@ MultiSignalPropagationWorkflow*
 SemanticDockCoordinator::
 multiSignalPropagationWorkflow() const
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     return panels.multiSignalWorkflow.get();
 }
 
@@ -353,12 +350,16 @@ QDockWidget* SemanticDockCoordinator::connectionsDock() const
 
 QTabWidget* SemanticDockCoordinator::connectionsTabs() const
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     return panels.connectionsTabs;
 }
 
 bool SemanticDockCoordinator::showConnectionPage(
     const QString& panelId)
 {
+    if (panels.connectionsContent)
+        panels.connectionsContent->ensureCreated();
     if (!panels.connectionsTabs)
         return false;
     if (panelId == InstancePairConnectionCoordinator::panelId()) {
@@ -379,12 +380,6 @@ RtlInsightsPanelCoordinator* SemanticDockCoordinator::rtlInsightsPanelCoordinato
 
 SignalKernelGraphPanelCoordinator*
 SemanticDockCoordinator::signalKernelGraphPanelCoordinator() const
-{
-    return nullptr;
-}
-
-WavePreviewPanelCoordinator*
-SemanticDockCoordinator::wavePreviewPanelCoordinator() const
 {
     return nullptr;
 }

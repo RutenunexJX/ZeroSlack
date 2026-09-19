@@ -1353,32 +1353,6 @@ QString InsightVisualStyle::globalControlPanelStyleSheet(
              t.itemView.selectedBackground.name());
 }
 
-QString InsightVisualStyle::foldShelfActiveStyleSheet(
-    const QString& objectName)
-{
-    const InsightTheme t = theme();
-    QColor background = t.statusBar.warningBackground;
-    QColor border = t.statusBar.warningBorder;
-    background.setAlpha(64);
-    border.setAlpha(180);
-    const QString selector =
-        objectSelector(QStringLiteral("QWidget"), objectName);
-    return QStringLiteral(
-               "%1 {"
-               "  border: 2px solid %2;"
-               "  background: %3;"
-               "}"
-               "%1 QListWidget#foldShelfListWidget {"
-               "  border: 1px solid %4;"
-               "  selection-background-color: %5;"
-               "}")
-        .arg(selector,
-             t.statusBar.warningBorder.name(),
-             background.name(QColor::HexArgb),
-             border.name(QColor::HexArgb),
-             t.statusBar.warningBorder.name());
-}
-
 QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName)
 {
     const InsightTheme t = theme();

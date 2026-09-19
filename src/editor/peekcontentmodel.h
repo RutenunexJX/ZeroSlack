@@ -12,7 +12,6 @@ enum class PeekContentKind {
     DiagnosticDetail,
     DeclarationPreview,
     CodePreview,
-    FoldShelfPreview,
     ActionPlanPreview
 };
 

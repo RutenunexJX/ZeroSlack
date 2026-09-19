@@ -4,21 +4,14 @@
 
 #include "insightvisualstyle.h"
 
-#include "activitylogservice.h"
 #include "mycodeeditor.h"
 
 #include <QApplication>
-#include <QDrag>
-#include <QDragEnterEvent>
-#include <QDragMoveEvent>
-#include <QDropEvent>
-#include <QMimeData>
 #include <QPainter>
 #include <QPointer>
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QFontMetrics>
-#include <QPixmap>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -39,42 +32,6 @@ bool betterFoldForLine(const TSFoldRange& candidate, const TSFoldRange& current)
     if (candidate.kind != current.kind)
         return candidate.kind == TSFoldRangeKind::Custom;
     return candidate.endLine > current.endLine;
-}
-
-Qt::DropAction shelfDropAction(Qt::KeyboardModifiers modifiers)
-{
-    return modifiers.testFlag(Qt::ControlModifier)
-        ? Qt::CopyAction
-        : Qt::MoveAction;
-}
-
-QPixmap foldDragPixmap(const FoldShelfItem& item, const QFont& font)
-{
-    const QSize size(168, 72);
-    QPixmap pixmap(size);
-    pixmap.fill(Qt::transparent);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-    const InsightTheme& theme = InsightVisualStyle::theme();
-    painter.setPen(QPen(alphaColor(theme.accent, 180), 2));
-    painter.setBrush(alphaColor(theme.semantic.portFill, 235));
-    painter.drawRoundedRect(QRectF(1, 1, size.width() - 2, size.height() - 2), 6, 6);
-
-    QFont labelFont(font);
-    labelFont.setBold(true);
-    painter.setFont(labelFont);
-    painter.setPen(theme.accent);
-    painter.drawText(QRect(12, 10, size.width() - 24, 22),
-                     Qt::AlignLeft | Qt::AlignVCenter,
-                     item.alias.isEmpty() ? QStringLiteral("fold block") : item.alias);
-
-    painter.setFont(font);
-    painter.setPen(theme.textSecondary);
-    painter.drawText(QRect(12, 36, size.width() - 24, 22),
-                     Qt::AlignLeft | Qt::AlignVCenter,
-                     QStringLiteral("%1 lines").arg(item.lineCount));
-    return pixmap;
 }
 
 struct FoldLineMapping {
@@ -579,9 +536,7 @@ bool EditorFoldingController::hasPaintOverlay() const
     return !collapsedStartLines.isEmpty()
         || !customMarkers.isEmpty()
         || (foldRegionMarkModeActive()
-            && (foldRegionHoverLine >= 0 || pendingStartLine >= 0))
-        || (foldShelfModeActive()
-            && hoveredShelfRange.startLine >= 0);
+            && (foldRegionHoverLine >= 0 || pendingStartLine >= 0));
 }
 
 void EditorFoldingController::rebuildCollapsedRangesCache()
@@ -664,11 +619,6 @@ void EditorFoldingController::bindModeController(
         [this, target](EditorModeExitReason) {
             resetFoldRegionMode(target);
         });
-    modeController->setExitHandler(
-        EditorModeId::FoldShelf,
-        [this, target](EditorModeExitReason) {
-            resetFoldShelfMode(target);
-        });
 }
 
 void EditorFoldingController::startFoldRegionMarkMode(MyCodeEditor* editor)
@@ -715,48 +665,6 @@ bool EditorFoldingController::foldRegionMarkModeActive() const
         : markMode != FoldRegionMarkMode::Inactive;
 }
 
-void EditorFoldingController::startFoldShelfMode(MyCodeEditor* editor)
-{
-    if (modeController
-        && !modeController->enter(
-            EditorModeId::FoldShelf,
-            EditorModeEntryReason::UserAction)) {
-        return;
-    }
-    hoveredShelfRange = {};
-    dragShelfRange = {};
-    updateStatus(editor, QStringLiteral("Fold Shelf: drag custom fold blocks"));
-    if (editor)
-        editor->viewport()->update();
-}
-
-void EditorFoldingController::cancelFoldShelfMode(MyCodeEditor* editor)
-{
-    if (modeController
-        && modeController->isActive(EditorModeId::FoldShelf)) {
-        modeController->exit(EditorModeId::FoldShelf,
-                             EditorModeExitReason::Canceled);
-        return;
-    }
-    resetFoldShelfMode(editor);
-}
-
-void EditorFoldingController::resetFoldShelfMode(MyCodeEditor* editor)
-{
-    hoveredShelfRange = {};
-    dragShelfRange = {};
-    updateStatus(editor, QString());
-    if (editor)
-        editor->viewport()->update();
-}
-
-bool EditorFoldingController::foldShelfModeActive() const
-{
-    return modeController
-        ? modeController->isActive(EditorModeId::FoldShelf)
-        : false;
-}
-
 bool EditorFoldingController::handleFoldRegionHoverLine(
     MyCodeEditor* editor,
     int line)
@@ -783,147 +691,6 @@ bool EditorFoldingController::handleFoldRegionMouseMove(
     const int line =
         editor->cursorForPosition(event->position().toPoint()).blockNumber();
     return handleFoldRegionHoverLine(editor, line);
-}
-
-void EditorFoldingController::handleFoldShelfHover(
-    MyCodeEditor* editor,
-    QMouseEvent* event)
-{
-    if (!foldShelfModeActive() || !editor || !event)
-        return;
-
-    const int line =
-        editor->cursorForPosition(event->position().toPoint()).blockNumber();
-    const TSFoldRange range = customFoldContainingLine(line);
-    if (range.startLine == hoveredShelfRange.startLine
-        && range.endLine == hoveredShelfRange.endLine) {
-        return;
-    }
-    hoveredShelfRange = range;
-    editor->viewport()->update();
-}
-
-bool EditorFoldingController::handleFoldShelfMousePress(
-    MyCodeEditor* editor,
-    QMouseEvent* event)
-{
-    if (!foldShelfModeActive() || !editor || !event
-        || event->button() != Qt::LeftButton)
-        return false;
-
-    const int line =
-        editor->cursorForPosition(event->position().toPoint()).blockNumber();
-    dragShelfRange = customFoldContainingLine(line);
-    dragStartPosition = event->position().toPoint();
-    return dragShelfRange.startLine >= 0;
-}
-
-bool EditorFoldingController::handleFoldShelfMouseMove(
-    MyCodeEditor* editor,
-    QMouseEvent* event)
-{
-    if (!foldShelfModeActive() || !editor || !event
-        || dragShelfRange.startLine < 0)
-        return false;
-    if (!(event->buttons() & Qt::LeftButton))
-        return false;
-    if ((event->position().toPoint() - dragStartPosition).manhattanLength()
-        < QApplication::startDragDistance()) {
-        return true;
-    }
-
-    const Qt::DropAction defaultAction = shelfDropAction(event->modifiers());
-    FoldShelfItem item = foldShelfItemAtLine(
-        editor,
-        dragShelfRange.startLine,
-        defaultAction == Qt::MoveAction
-            ? FoldShelfOriginKind::Moved
-            : FoldShelfOriginKind::Copied);
-    if (item.text.isEmpty())
-        return false;
-
-    auto* drag = new QDrag(editor);
-    auto* mime = new QMimeData;
-    mime->setData(foldShelfBlockMimeType(), encodeFoldShelfItem(item));
-    mime->setText(item.text);
-    drag->setMimeData(mime);
-    drag->setPixmap(foldDragPixmap(item, editor->font()));
-    drag->setHotSpot(QPoint(18, 18));
-
-    const Qt::DropAction result =
-        drag->exec(Qt::MoveAction | Qt::CopyAction, defaultAction);
-    if (result == Qt::MoveAction)
-        deleteRange(editor, dragShelfRange);
-    if (result == Qt::MoveAction || result == Qt::CopyAction) {
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Info,
-            QStringLiteral("%1 fold block \"%2\" from editor")
-                .arg(result == Qt::MoveAction
-                         ? QStringLiteral("Moved")
-                         : QStringLiteral("Copied"),
-                     item.alias));
-    }
-    dragShelfRange = {};
-    return true;
-}
-
-bool EditorFoldingController::handleFoldShelfDragEnter(
-    MyCodeEditor*,
-    QDragEnterEvent* event) const
-{
-    if (!event || !event->mimeData()->hasFormat(foldShelfItemMimeType()))
-        return false;
-    event->setDropAction(shelfDropAction(event->modifiers()));
-    event->accept();
-    return true;
-}
-
-bool EditorFoldingController::handleFoldShelfDragMove(
-    MyCodeEditor*,
-    QDragMoveEvent* event) const
-{
-    if (!event || !event->mimeData()->hasFormat(foldShelfItemMimeType()))
-        return false;
-    event->setDropAction(shelfDropAction(event->modifiers()));
-    event->accept();
-    return true;
-}
-
-bool EditorFoldingController::handleFoldShelfDrop(
-    MyCodeEditor* editor,
-    QDropEvent* event)
-{
-    if (!editor
-        || !event
-        || !event->mimeData()->hasFormat(foldShelfItemMimeType())) {
-        return false;
-    }
-
-    const FoldShelfItem item = decodeFoldShelfItem(
-        event->mimeData()->data(foldShelfItemMimeType()));
-    if (item.text.isEmpty())
-        return false;
-
-    const int line =
-        editor->cursorForPosition(event->position().toPoint()).blockNumber();
-    if (!insertShelfItemAtLine(editor, item, line))
-        return false;
-
-    const Qt::DropAction action = shelfDropAction(event->modifiers());
-    event->setDropAction(action);
-    event->accept();
-    if (action == Qt::MoveAction && !item.id.isEmpty())
-        emit editor->foldShelfItemConsumed(item.id);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Fold Shelf"),
-        ActivityLogLevel::Info,
-        QStringLiteral("%1 shelf item \"%2\" into editor")
-            .arg(action == Qt::MoveAction
-                     ? QStringLiteral("Consumed")
-                     : QStringLiteral("Copied"),
-                 item.alias));
-    return true;
 }
 
 bool EditorFoldingController::handleFoldRegionGutterLine(
@@ -1007,60 +774,11 @@ bool EditorFoldingController::insertCustomFoldMarkers(
     return true;
 }
 
-FoldShelfItem EditorFoldingController::foldShelfItemAtLine(
-    MyCodeEditor* editor,
-    int line,
-    FoldShelfOriginKind origin) const
-{
-    FoldShelfItem item;
-    const TSFoldRange range = customFoldContainingLine(line);
-    if (!editor || range.startLine < 0)
-        return item;
-
-    item.alias = range.label.isEmpty()
-        ? QStringLiteral("fold block")
-        : range.label;
-    item.text = rangeText(editor, range);
-    item.sourceFile = editor->documentFileName();
-    item.sourceModule = editor->currentModuleName();
-    item.sourceStartLine = range.startLine;
-    item.sourceEndLine = range.endLine;
-    item.originKind = origin;
-    item.lineCount = qMax(0, range.endLine - range.startLine + 1);
-    return item;
-}
-
 bool EditorFoldingController::deleteCustomFoldAtLine(
     MyCodeEditor* editor,
     int line)
 {
     return deleteRange(editor, customFoldContainingLine(line));
-}
-
-bool EditorFoldingController::insertShelfItemAtLine(
-    MyCodeEditor* editor,
-    const FoldShelfItem& item,
-    int line)
-{
-    if (!editor || item.text.isEmpty() || line < 0)
-        return false;
-
-    QTextBlock block = editor->document()->findBlockByNumber(line);
-    if (!block.isValid())
-        block = editor->document()->lastBlock();
-    if (!block.isValid())
-        return false;
-
-    QString text = item.text;
-    if (!text.endsWith(QLatin1Char('\n')))
-        text.append(QLatin1Char('\n'));
-
-    QTextCursor cursor(editor->document());
-    cursor.beginEditBlock();
-    cursor.setPosition(block.position());
-    cursor.insertText(text);
-    cursor.endEditBlock();
-    return true;
 }
 
 void EditorFoldingController::applyVisibility(MyCodeEditor* editor)
@@ -1134,16 +852,6 @@ void EditorFoldingController::paintGutter(
             painter.drawText(badgeRect, Qt::AlignCenter, badge);
             painter.restore();
         }
-        if (foldShelfModeActive()
-            && hoveredShelfRange.startLine >= 0
-            && (line == hoveredShelfRange.startLine
-                || line == hoveredShelfRange.endLine)) {
-            painter.save();
-            painter.setPen(QPen(
-                InsightVisualStyle::theme().warning, 2));
-            painter.drawLine(1, top + 1, 1, bottom - 1);
-            painter.restore();
-        }
         if (hasFoldAtLine(line) && (isCollapsedAtLine(line)
             || editor->rect().contains(editor->mapFromGlobal(QCursor::pos())))) {
             const bool collapsed = isCollapsedAtLine(line);
@@ -1186,14 +894,12 @@ void EditorFoldingController::paintPlaceholders(
     if (collapsedStartLines.isEmpty()) {
         paintCustomFoldBackgrounds(editor, painter);
         paintFoldRegionPreview(editor, painter);
-        paintFoldShelfHighlight(editor, painter);
         return;
     }
 
     painter.save();
     paintCustomFoldBackgrounds(editor, painter);
     paintFoldRegionPreview(editor, painter);
-    paintFoldShelfHighlight(editor, painter);
     painter.setPen(InsightVisualStyle::theme().textMuted);
     const QFontMetrics metrics(editor->font());
     for (int startLine : collapsedStartLines) {
@@ -1351,13 +1057,6 @@ void EditorFoldingController::updateStatus(
             message,
             QStringLiteral("Click gutter lines to define the region; "
                            "Esc cancels"));
-    } else if (modeController
-               && modeController->isActive(EditorModeId::FoldShelf)
-               && !message.isEmpty()) {
-        modeController->updatePresentation(
-            EditorModeId::FoldShelf,
-            message,
-            QStringLiteral("Drag custom fold blocks; Esc closes"));
     }
     if (editor)
         emit editor->editorStatusMessageRequested(message);
@@ -1435,45 +1134,4 @@ bool EditorFoldingController::deleteRange(
     cursor.removeSelectedText();
     cursor.endEditBlock();
     return true;
-}
-
-void EditorFoldingController::paintFoldShelfHighlight(
-    MyCodeEditor* editor,
-    QPainter& painter) const
-{
-    if (!editor || !foldShelfModeActive()
-        || hoveredShelfRange.startLine < 0)
-        return;
-
-    painter.save();
-    painter.setPen(Qt::NoPen);
-    painter.setBrush(alphaColor(
-        InsightVisualStyle::theme().accent, 28));
-    QRectF bottomRect;
-    for (int line = hoveredShelfRange.startLine;
-         line <= hoveredShelfRange.endLine;
-         ++line) {
-        QTextBlock block = editor->document()->findBlockByNumber(line);
-        if (!block.isValid()
-            || !editor->sourceLineVisible(block.blockNumber()))
-            continue;
-        const QRectF rect =
-            editor->blockBoundingGeometry(block).translated(editor->contentOffset());
-        if (rect.bottom() < 0 || rect.top() > editor->viewport()->height())
-            continue;
-        painter.drawRect(QRectF(0, rect.top(), editor->viewport()->width(), rect.height()));
-        if (line == hoveredShelfRange.endLine)
-            bottomRect = rect;
-    }
-    if (bottomRect.isValid()) {
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(alphaColor(
-            InsightVisualStyle::theme().accent, 150), 2));
-        const qreal y = qBound<qreal>(0,
-                                      bottomRect.bottom() - 1,
-                                      editor->viewport()->height() - 1);
-        painter.drawLine(QPointF(0, y),
-                         QPointF(editor->viewport()->width(), y));
-    }
-    painter.restore();
 }

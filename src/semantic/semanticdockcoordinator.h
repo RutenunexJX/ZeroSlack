@@ -2,6 +2,7 @@
 #define SEMANTICDOCKCOORDINATOR_H
 
 #include <QString>
+#include <QPointer>
 
 #include <functional>
 #include <memory>
@@ -22,12 +23,12 @@ class ScopedSearchPanelCoordinator;
 class SemanticPanelRefreshCoordinator;
 class SignalKernelGraphPanelCoordinator;
 class TabManager;
-class WavePreviewPanelCoordinator;
 class WorkspaceManager;
 class WorkspaceEditDocumentManager;
 class QMainWindow;
 class QDockWidget;
 class QTabWidget;
+class DeferredPanel;
 
 class SemanticDockCoordinator
 {
@@ -65,7 +66,6 @@ public:
     bool showConnectionPage(const QString& panelId);
     RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
     SignalKernelGraphPanelCoordinator* signalKernelGraphPanelCoordinator() const;
-    WavePreviewPanelCoordinator* wavePreviewPanelCoordinator() const;
 
 private:
     struct DockDependencies {
@@ -105,9 +105,11 @@ private:
         std::unique_ptr<MultiSignalPropagationWorkflow>
             multiSignalWorkflow;
         QDockWidget* connectionsDock = nullptr;
+        QPointer<DeferredPanel> connectionsContent;
         QTabWidget* connectionsTabs = nullptr;
         MultiSignalPropagationPanel* multiSignalPanel = nullptr;
         bool rtlActionStatusConnected = false;
+        std::function<void(const QString&, int)> connectionStatusHandler;
         std::unique_ptr<SemanticPanelRefreshCoordinator> semanticPanelRefresh;
 
         void createPanels(const DockDependencies& dependencies);

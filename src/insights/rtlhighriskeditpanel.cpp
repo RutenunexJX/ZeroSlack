@@ -1,5 +1,6 @@
 #include "uitypography.h"
 #include "rtlhighriskeditpanel.h"
+#include "deferredpanel.h"
 
 #include "workspaceedittransactionservice.h"
 
@@ -934,9 +935,14 @@ void RtlHighRiskEditPanelCoordinator::setupUi(
         QDockWidget::DockWidgetMovable
         | QDockWidget::DockWidgetFloatable
         | QDockWidget::DockWidgetClosable);
-    panelWidget =
-        new RtlHighRiskEditPanel(dockWidget);
-    dockWidget->setWidget(panelWidget);
+    deferredPanel = new DeferredPanel(dockWidget, this,
+        [this](QWidget* parent) -> QWidget* {
+            panelWidget = new RtlHighRiskEditPanel(parent);
+            wirePanel();
+            return panelWidget;
+        });
+    deferredPanel->setObjectName(QStringLiteral("deferredRtlChangePanel"));
+    dockWidget->setWidget(deferredPanel);
 }
 
 void RtlHighRiskEditPanelCoordinator::wirePanel()
@@ -989,6 +995,8 @@ RtlHighRiskEditPanelCoordinator::dock() const
 RtlHighRiskEditPanel*
 RtlHighRiskEditPanelCoordinator::panel() const
 {
+    if (deferredPanel)
+        deferredPanel->ensureCreated();
     return panelWidget;
 }
 
@@ -1071,7 +1079,7 @@ bool RtlHighRiskEditPanelCoordinator::beginRename(
     renameSession = std::move(session);
     connectionSession.reset();
     pendingConfirmationToken.clear();
-    panelWidget->beginRename(
+    panel()->beginRename(
         currentSessionId,
         renameSession->subjectLabel,
         renameSession->oldName,
@@ -1132,7 +1140,7 @@ beginConnectionTransform(
     connectionSession = std::move(session);
     renameSession.reset();
     pendingConfirmationToken.clear();
-    panelWidget->beginConnectionTransform(
+    panel()->beginConnectionTransform(
         currentSessionId,
         connectionSession->instanceLabel,
         connectionSession->baseRequest,

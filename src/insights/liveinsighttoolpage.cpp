@@ -1,7 +1,6 @@
 #include "liveinsighttoolpage.h"
 
 #include "rtlinsightworkbench.h"
-#include "wavepreviewpanelcoordinator.h"
 
 #include <QDockWidget>
 #include <QHideEvent>
@@ -13,24 +12,6 @@
 #include <QVBoxLayout>
 
 #include <utility>
-
-namespace {
-void embedDock(QDockWidget* dock, QVBoxLayout* layout)
-{
-    if (!dock || !layout)
-        return;
-    dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-    auto* emptyTitleBar = new QWidget(dock);
-    emptyTitleBar->setObjectName(
-        QStringLiteral("liveInsightEmbeddedDockTitleBar"));
-    emptyTitleBar->setFixedHeight(0);
-    dock->setTitleBarWidget(emptyTitleBar);
-    dock->setSizePolicy(
-        QSizePolicy::Expanding, QSizePolicy::Expanding);
-    layout->addWidget(dock, 1);
-    dock->show();
-}
-}
 
 LiveInsightToolPage::LiveInsightToolPage(
     LiveInsightKind kind,
@@ -60,14 +41,6 @@ void LiveInsightToolPage::setNavigationHandler(
         detachedPage->setNavigationHandler(navigationHandler);
     if (workbench)
         workbench->setNavigationHandler(navigationHandler);
-    if (waveCoordinator) {
-        waveCoordinator->setNavigationHandler(
-            [handler = navigationHandler](
-                const QString& fileName, int line, int column) {
-                if (handler)
-                    handler(fileName, line, column);
-            });
-    }
 }
 
 void LiveInsightToolPage::setStatusHandler(StatusHandler handler)
@@ -76,8 +49,6 @@ void LiveInsightToolPage::setStatusHandler(StatusHandler handler)
     if (workbench) workbench->setStatusHandler(statusHandler);
     if (detachedPage)
         detachedPage->setStatusHandler(statusHandler);
-    if (waveCoordinator)
-        waveCoordinator->setStatusMessageHandler(statusHandler);
 }
 
 void LiveInsightToolPage::setVisibilityHandler(
@@ -94,33 +65,10 @@ void LiveInsightToolPage::setVisibilityHandler(
     notifyVisibility();
 }
 
-void LiveInsightToolPage::setRefreshHandler(
-    RefreshHandler handler)
-{
-    refreshHandler = std::move(handler);
-    if (detachedPage)
-        detachedPage->setRefreshHandler(refreshHandler);
-}
-
-void LiveInsightToolPage::setWaveformLibraryPath(
-    const QString& path)
-{
-    waveformLibraryPath = path;
-    if (detachedPage)
-        detachedPage->setWaveformLibraryPath(path);
-    if (waveCoordinator)
-        waveCoordinator->setWaveformLibraryPath(path);
-}
-
 void LiveInsightToolPage::setCompactChrome(bool compact)
 {
-    compactChromeValue = compact;
     if (workbench)
         workbench->setCompactChrome(compact);
-    if (auto* detach = findChild<QPushButton*>(
-            QStringLiteral("liveInsightWaveDetach"))) {
-        detach->setVisible(!compact);
-    }
 }
 
 void LiveInsightToolPage::setContext(
@@ -149,12 +97,6 @@ RtlInsightWorkbench* LiveInsightToolPage::workbenchForTest() const
     return workbench;
 }
 
-WavePreviewPanelCoordinator*
-LiveInsightToolPage::waveCoordinatorForTest() const
-{
-    return waveCoordinator.get();
-}
-
 QMainWindow* LiveInsightToolPage::detachToWindow()
 {
     if (detachedWindow) {
@@ -173,10 +115,8 @@ QMainWindow* LiveInsightToolPage::detachToWindow()
             .arg(liveInsightKindDisplayName(insightKind)));
     auto* page = new LiveInsightToolPage(insightKind, window);
     detachedPage = page;
-    page->setWaveformLibraryPath(waveformLibraryPath);
     page->setNavigationHandler(navigationHandler);
     page->setStatusHandler(statusHandler);
-    page->setRefreshHandler(refreshHandler);
     page->setVisibilityHandler(
         [owner = QPointer<LiveInsightToolPage>(this)](bool) {
             if (owner)
@@ -221,46 +161,6 @@ void LiveInsightToolPage::createSurface()
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    if (insightKind == LiveInsightKind::Wave) {
-        auto* toolbar = new QHBoxLayout;
-        toolbar->setContentsMargins(8, 6, 8, 0);
-        toolbar->setSpacing(6);
-        toolbar->addStretch(1);
-        auto* refreshButton = new QPushButton(
-            QStringLiteral("Refresh"), this);
-        refreshButton->setObjectName(
-            QStringLiteral("liveInsightWaveRefresh"));
-        refreshButton->setToolTip(
-            QStringLiteral("Refresh from the current editor context"));
-        auto* detachButton = new QPushButton(
-            QStringLiteral("Detach"), this);
-        detachButton->setObjectName(
-            QStringLiteral("liveInsightWaveDetach"));
-        detachButton->setToolTip(
-            QStringLiteral("Open this Wave view in a separate window"));
-        toolbar->addWidget(refreshButton);
-        toolbar->addWidget(detachButton);
-        layout->addLayout(toolbar);
-        waveCoordinator =
-            std::make_unique<WavePreviewPanelCoordinator>(this);
-        embedDock(waveCoordinator->dock(), layout);
-        QObject::connect(
-            refreshButton,
-            &QPushButton::clicked,
-            this,
-            [this]() {
-                if (refreshHandler)
-                    refreshHandler();
-                else
-                    renderContext();
-            });
-        QObject::connect(
-            detachButton,
-            &QPushButton::clicked,
-            this,
-            [this]() { detachToWindow(); });
-        return;
-    }
     workbench = new RtlInsightWorkbench(this, true);
     const InsightWorkbenchViewKind viewKind =
         insightKind == LiveInsightKind::Kernel
@@ -283,27 +183,6 @@ void LiveInsightToolPage::createSurface()
 
 void LiveInsightToolPage::renderContext()
 {
-    if (waveCoordinator) {
-        waveCoordinator->setWorkspaceRoot(currentContext.workspaceRoot);
-        if (!waveformLibraryPath.trimmed().isEmpty()) {
-            waveCoordinator->setWaveformLibraryPath(
-                waveformLibraryPath);
-        }
-        if (currentContext.fileName.trimmed().isEmpty()) {
-            waveCoordinator->renderUnavailable(
-                QStringLiteral("No document selected."));
-            return;
-        }
-        waveCoordinator->refreshFromDocument(
-            currentContext.fileName,
-            currentContext.documentText,
-            currentContext.dirty,
-            currentContext.scopeStartPosition,
-            currentContext.scopeEndPosition,
-            currentContext.scopeLabel,
-            currentContext.scopeStartLineZeroBased);
-        return;
-    }
 
     if (workbench) {
         InsightViewContext context;

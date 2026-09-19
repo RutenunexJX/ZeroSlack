@@ -822,7 +822,7 @@ public:
     TSModuleEndNavigationTarget moduleEndNavigationTarget(
         int charOffset) const;
 
-    // Current/selected always block range for scoped Wave Preview.
+    // Current/selected always block range for contextual analysis.
     TSAlwaysScopeTarget alwaysScopeTarget(int cursorChar,
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;
@@ -836,7 +836,7 @@ public:
         int selectionEndChar = -1) const;
     QList<TSBindableCodeAnchor> bindableCodeAnchors() const;
 
-    // Current/selected module/interface/program range for scoped Wave Preview.
+    // Current/selected module/interface/program range for contextual analysis.
     TSModuleScopeTarget moduleScopeTarget(int cursorChar,
                                           int selectionStartChar = -1,
                                           int selectionEndChar = -1) const;

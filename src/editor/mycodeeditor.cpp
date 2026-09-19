@@ -399,7 +399,7 @@ void MyCodeEditor::setPlainText(const QString& text)
         auto edit = beginSynchronousEditTransaction();
         QPlainTextEdit::setPlainText(text);
     }
-    emit wavePreviewScopeChanged();
+    emit insightScopeChanged();
 }
 
 void MyCodeEditor::insertPlainText(const QString& text)
@@ -2063,29 +2063,6 @@ bool MyCodeEditor::foldRegionMarkModeActive() const
     return state->folding.foldRegionMarkModeActive();
 }
 
-void MyCodeEditor::startFoldShelfMode()
-{
-    state->folding.startFoldShelfMode(this);
-    state->gutter.handleUpdateRequest(
-        this,
-        viewport()->rect(),
-        0);
-}
-
-void MyCodeEditor::cancelFoldShelfMode()
-{
-    state->folding.cancelFoldShelfMode(this);
-    state->gutter.handleUpdateRequest(
-        this,
-        viewport()->rect(),
-        0);
-}
-
-bool MyCodeEditor::foldShelfModeActive() const
-{
-    return state->folding.foldShelfModeActive();
-}
-
 bool MyCodeEditor::insertCustomFoldMarkersForTest(
     int startLine,
     int endLine,
@@ -2176,32 +2153,11 @@ MyCodeEditor::largeFileSyntaxSnapshotForTest() const
     return state->largeFileSyntaxSnapshotForTest();
 }
 
-FoldShelfItem MyCodeEditor::foldShelfItemAtLineForTest(
-    int line,
-    FoldShelfOriginKind origin) const
-{
-    return state->folding.foldShelfItemAtLine(
-        const_cast<MyCodeEditor*>(this),
-        line,
-        origin);
-}
-
 bool MyCodeEditor::deleteCustomFoldAtLineForTest(int line)
 {
     auto edit = beginSynchronousEditTransaction();
     return state->folding.deleteCustomFoldAtLine(
         this,
-        line);
-}
-
-bool MyCodeEditor::insertFoldShelfItemAtLineForTest(
-    const FoldShelfItem& item,
-    int line)
-{
-    auto edit = beginSynchronousEditTransaction();
-    return state->folding.insertShelfItemAtLine(
-        this,
-        item,
         line);
 }
 
@@ -2213,28 +2169,9 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
     QPlainTextEdit::keyReleaseEvent(event);
 }
 
-void MyCodeEditor::dragEnterEvent(QDragEnterEvent* event)
-{
-    if (state->handleDragEnter(this, event))
-        return;
-
-    QPlainTextEdit::dragEnterEvent(event);
-}
-
-void MyCodeEditor::dragMoveEvent(QDragMoveEvent* event)
-{
-    if (state->handleDragMove(this, event))
-        return;
-
-    QPlainTextEdit::dragMoveEvent(event);
-}
-
 void MyCodeEditor::dropEvent(QDropEvent* event)
 {
     auto edit = beginSynchronousEditTransaction();
-    if (state->handleDrop(this, event))
-        return;
-
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     if (state->projection.active()
         && event

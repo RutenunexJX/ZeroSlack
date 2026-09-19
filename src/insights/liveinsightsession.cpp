@@ -12,7 +12,7 @@
 #include <utility>
 
 namespace {
-constexpr int kKindCount = 5;
+constexpr int kKindCount = 4;
 
 int kindIndex(LiveInsightKind kind)
 {
@@ -23,10 +23,8 @@ int kindIndex(LiveInsightKind kind)
         return 1;
     case LiveInsightKind::Hotspot:
         return 2;
-    case LiveInsightKind::Wave:
-        return 3;
     case LiveInsightKind::Kernel:
-        return 4;
+        return 3;
     }
     return 0;
 }
@@ -39,8 +37,6 @@ LiveInsightKind kindAt(int index)
     case 2:
         return LiveInsightKind::Hotspot;
     case 3:
-        return LiveInsightKind::Wave;
-    case 4:
         return LiveInsightKind::Kernel;
     default:
         return LiveInsightKind::Module;

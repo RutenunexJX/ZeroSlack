@@ -103,8 +103,6 @@
 #include "editorsemanticcontextservice.h"
 #include "effectivevalueservice.h"
 #include "filecommandcoordinator.h"
-#include "foldblockshelfmodel.h"
-#include "foldblockshelfpanel.h"
 #include "columnnumbertool.h"
 #include "commandlayercommandregistry.h"
 #include "commandlayercoordinator.h"
@@ -135,6 +133,7 @@
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticdockcoordinator.h"
+#include "scopedsearchpanel.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "settingscenterpanel.h"
@@ -145,8 +144,6 @@
 #include "tabmanager.h"
 #include "tsdocument.h"
 #include "usertemplateservice.h"
-#include "wavepreviewpanelcoordinator.h"
-#include "wavesimulationcoordinator.h"
 #include "workspaceanalysisplanservice.h"
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
@@ -6943,163 +6940,6 @@ static QTreeWidgetItem* findItemByText(
     return nullptr;
 }
 
-static void runWavePersistentTreeStateRegression()
-{
-    QWidget owner;
-    WavePreviewPanelCoordinator coordinator(&owner);
-    QTreeWidget* tree = coordinator.tree();
-    const QString fileName =
-        QDir::cleanPath(QStringLiteral("C:/fixtures/wave_tree_state.sv"));
-    const QString scopeLabel = QStringLiteral("module wave_tree_state");
-    const QString initialText =
-        QStringLiteral("module wave_tree_state;\n"
-                       "logic a;\n"
-                       "logic stale;\n"
-                       "logic q;\n"
-                       "logic fresh;\n"
-                       "always_comb begin\n"
-                       "    stale = a;\n"
-                       "    q = a;\n"
-                       "end\n"
-                       "endmodule\n");
-
-    auto laneItem = [tree](const QString& signalName) {
-        if (!tree)
-            return static_cast<QTreeWidgetItem*>(nullptr);
-        for (int index = 0;
-             index < tree->topLevelItemCount();
-             ++index) {
-            QTreeWidgetItem* item = tree->topLevelItem(index);
-            if (item && item->text(0) == signalName
-                && item->childCount() > 0) {
-                return item;
-            }
-        }
-        return static_cast<QTreeWidgetItem*>(nullptr);
-    };
-    auto documentChange = [](const QString& before,
-                             int position,
-                             const QString& removed,
-                             const QString& inserted,
-                             std::uint64_t revision) {
-        DocumentChange change;
-        change.position = position;
-        change.removedLength = removed.size();
-        change.removedText = removed;
-        change.insertedText = inserted;
-        change.oldLength = before.size();
-        change.newLength =
-            before.size() - removed.size() + inserted.size();
-        change.startLine =
-            before.left(position).count(QLatin1Char('\n'));
-        change.startColumn =
-            position
-            - before.lastIndexOf(QLatin1Char('\n'), position - 1)
-            - 1;
-        change.oldEndLine =
-            change.startLine + removed.count(QLatin1Char('\n'));
-        change.newEndLine =
-            change.startLine + inserted.count(QLatin1Char('\n'));
-        change.lineDelta =
-            inserted.count(QLatin1Char('\n'))
-            - removed.count(QLatin1Char('\n'));
-        change.revision = revision;
-        return change;
-    };
-
-    coordinator.refreshFromDocument(fileName,
-                                    initialText,
-                                    true,
-                                    0,
-                                    initialText.size(),
-                                    scopeLabel,
-                                    0);
-    QTreeWidgetItem* originalQ = laneItem(QStringLiteral("q"));
-    QTreeWidgetItem* originalStale = laneItem(QStringLiteral("stale"));
-    expectBool("Wave persistent tree fixture exposes lane nodes",
-               originalQ && originalStale
-                   && originalQ->isExpanded(),
-               true);
-    if (originalQ)
-        originalQ->setExpanded(false);
-
-    const QString staleLine = QStringLiteral("    stale = a;\n");
-    const int stalePosition = initialText.indexOf(staleLine);
-    QString textWithoutStale = initialText;
-    if (stalePosition >= 0)
-        textWithoutStale.remove(stalePosition, staleLine.size());
-    const DocumentChange removeStale =
-        documentChange(initialText,
-                       stalePosition,
-                       staleLine,
-                       QString(),
-                       1);
-    coordinator.applyDocumentChange(fileName,
-                                    removeStale,
-                                    textWithoutStale,
-                                    true,
-                                    0,
-                                    textWithoutStale.size(),
-                                    scopeLabel,
-                                    0);
-
-    QTreeWidgetItem* updatedQ = laneItem(QStringLiteral("q"));
-    QString navigatedFile;
-    int navigatedLine = 0;
-    int navigatedColumn = 0;
-    coordinator.setNavigationHandler(
-        [&](const QString& file, int line, int column) {
-            navigatedFile = file;
-            navigatedLine = line;
-            navigatedColumn = column;
-        });
-    if (updatedQ && updatedQ->childCount() > 0)
-        coordinator.navigateItem(updatedQ->child(0));
-    const int expectedQLine =
-        textWithoutStale
-            .left(textWithoutStale.indexOf(QStringLiteral("q = a")))
-            .count(QLatin1Char('\n'))
-        + 1;
-    expectBool("Wave document delta preserves collapsed existing lane",
-               updatedQ == originalQ && updatedQ
-                   && !updatedQ->isExpanded(),
-               true);
-    expectBool("Wave document delta removes stale lane",
-               laneItem(QStringLiteral("stale")) == nullptr,
-               true);
-    expectBool("Wave document delta refreshes navigation data",
-               navigatedFile == fileName
-                   && navigatedLine == expectedQLine
-                   && navigatedColumn > 0,
-               true);
-
-    const QString freshLine = QStringLiteral("    fresh = a;\n");
-    const int freshPosition =
-        textWithoutStale.indexOf(QStringLiteral("end\nendmodule"));
-    QString textWithFresh = textWithoutStale;
-    if (freshPosition >= 0)
-        textWithFresh.insert(freshPosition, freshLine);
-    const DocumentChange addFresh =
-        documentChange(textWithoutStale,
-                       freshPosition,
-                       QString(),
-                       freshLine,
-                       2);
-    coordinator.applyDocumentChange(fileName,
-                                    addFresh,
-                                    textWithFresh,
-                                    true,
-                                    0,
-                                    textWithFresh.size(),
-                                    scopeLabel,
-                                    0);
-    QTreeWidgetItem* fresh = laneItem(QStringLiteral("fresh"));
-    expectBool("Wave new lane uses staging expanded default",
-               fresh && fresh->isExpanded()
-                   && updatedQ && !updatedQ->isExpanded(),
-               true);
-}
-
 static int navigableItemCount(QTreeWidgetItem* item)
 {
     if (!item)
@@ -7239,28 +7079,6 @@ static QTreeWidget* rtlInsightsTree(MainWindow& window)
     return window.semanticDocks && window.semanticDocks->rtlInsightsPanelCoordinator()
         ? window.semanticDocks->rtlInsightsPanelCoordinator()->tree()
         : nullptr;
-}
-
-static QTreeWidget* wavePreviewTree(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->wavePreviewPanelCoordinator()
-        ? window.semanticDocks->wavePreviewPanelCoordinator()->tree()
-        : nullptr;
-}
-
-static QWidget* wavePreviewCanvas(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->wavePreviewPanelCoordinator()
-        ? window.semanticDocks->wavePreviewPanelCoordinator()->canvas()
-        : nullptr;
-}
-
-static QLabel* wavePreviewSummaryLabel(MainWindow& window)
-{
-    QDockWidget* dock =
-        window.findChild<QDockWidget*>(QStringLiteral("wavePreviewDock"));
-    return dock ? dock->findChild<QLabel*>(QStringLiteral("wavePreviewSummary"))
-                : nullptr;
 }
 
 static bool renderedWidgetHasColorVariation(QWidget* widget)
@@ -8856,106 +8674,6 @@ static void runTreeSitterFoldingProviderRegression()
                markerEditor.toPlainText() == markerOriginal,
                true);
 
-    FoldBlockShelfModel shelfModel;
-    FoldShelfItem shelfItem;
-    shelfItem.alias = QStringLiteral("clock reset");
-    shelfItem.text = QStringLiteral("// fold clock reset\nlogic clk;\n// endfold\n");
-    shelfItem.sourceFile = QStringLiteral("C:/fixture/fold_top.sv");
-    shelfItem.sourceStartLine = 2;
-    shelfItem.sourceEndLine = 4;
-    shelfItem.originKind = FoldShelfOriginKind::Moved;
-    const QString shelfId = shelfModel.addItem(shelfItem);
-    expectBool("fold shelf model stores item",
-               !shelfId.isEmpty()
-                   && shelfModel.items().size() == 1
-                   && shelfModel.item(shelfId).lineCount == 3,
-               true);
-    expectBool("fold shelf model consumes item",
-               shelfModel.consumeItem(shelfId)
-                   && shelfModel.item(shelfId).consumed,
-               true);
-    expectBool("fold shelf model removes item",
-               shelfModel.removeItem(shelfId)
-                   && shelfModel.items().isEmpty(),
-               true);
-    const QByteArray encodedShelfItem = encodeFoldShelfItem(shelfItem);
-    const FoldShelfItem decodedShelfItem = decodeFoldShelfItem(encodedShelfItem);
-    expectBool("fold shelf item mime round-trips",
-               decodedShelfItem.alias == shelfItem.alias
-                   && decodedShelfItem.text == shelfItem.text
-                   && decodedShelfItem.sourceFile == shelfItem.sourceFile
-                   && decodedShelfItem.originKind == FoldShelfOriginKind::Moved,
-               true);
-
-    MyCodeEditor shelfEditor;
-    shelfEditor.setDocumentFileName(QStringLiteral("C:/fixture/fold_top.sv"));
-    shelfEditor.setPlainText(QStringLiteral(
-        "module fold_top;\n"
-        "// fold reusable block\n"
-        "  logic clk;\n"
-        "  logic rst_n;\n"
-        "// endfold\n"
-        "endmodule\n"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const FoldShelfItem extractedShelfItem =
-        shelfEditor.foldShelfItemAtLineForTest(2, FoldShelfOriginKind::Moved);
-    expectBool("fold shelf extracts custom fold block",
-               extractedShelfItem.alias == QStringLiteral("reusable block")
-                   && extractedShelfItem.text.contains(QStringLiteral("logic clk"))
-                   && extractedShelfItem.sourceStartLine == 1
-                   && extractedShelfItem.sourceEndLine == 4
-                   && extractedShelfItem.originKind == FoldShelfOriginKind::Moved,
-               true);
-    const bool deletedFoldBlock = shelfEditor.deleteCustomFoldAtLineForTest(2);
-    expectBool("fold shelf move deletes source block",
-               deletedFoldBlock
-                   && !shelfEditor.toPlainText().contains(QStringLiteral("logic clk")),
-               true);
-    shelfEditor.undo();
-    expectBool("fold shelf move delete is one undo block",
-               shelfEditor.toPlainText().contains(QStringLiteral("logic clk")),
-               true);
-
-    MyCodeEditor insertShelfEditor;
-    insertShelfEditor.setPlainText(QStringLiteral("module fold_top;\nendmodule\n"));
-    const bool insertedShelfItem =
-        insertShelfEditor.insertFoldShelfItemAtLineForTest(extractedShelfItem, 1);
-    expectBool("fold shelf inserts item at line boundary",
-               insertedShelfItem
-                   && insertShelfEditor.toPlainText().contains(QStringLiteral("// fold reusable block"))
-                   && insertShelfEditor.toPlainText().contains(QStringLiteral("// endfold")),
-               true);
-    insertShelfEditor.undo();
-    expectBool("fold shelf insert is one undo block",
-               insertShelfEditor.toPlainText() == QStringLiteral("module fold_top;\nendmodule\n"),
-               true);
-
-    MyCodeEditor shelfCommandEditor;
-    QSignalSpy shelfStatusSpy(&shelfCommandEditor,
-                              &MyCodeEditor::editorStatusMessageRequested);
-    shelfCommandEditor.startFoldShelfMode();
-    expectBool("fold shelf action enters shelf mode",
-               shelfCommandEditor.foldShelfModeActive(),
-               true);
-    expectBool("fold shelf action emits shelf mode status",
-               shelfStatusSpy.count() > 0
-                   && shelfStatusSpy.last().at(0).toString().contains(
-                       QStringLiteral("Fold Shelf")),
-               true);
-    QKeyEvent blockedShelfText(QEvent::KeyPress,
-                               Qt::Key_X,
-                               Qt::NoModifier,
-                               QStringLiteral("x"));
-    QApplication::sendEvent(&shelfCommandEditor, &blockedShelfText);
-    expectBool("fold shelf mode blocks text input",
-               shelfCommandEditor.toPlainText().isEmpty()
-                   && shelfCommandEditor.foldShelfModeActive(),
-               true);
-    QKeyEvent cancelShelf(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
-    QApplication::sendEvent(&shelfCommandEditor, &cancelShelf);
-    expectBool("Esc cancels fold shelf mode",
-               !shelfCommandEditor.foldShelfModeActive(),
-               true);
 }
 
 static void runNavigationHierarchyModelRegression()
@@ -9667,7 +9385,7 @@ static void runCommandLayerRegression(MainWindow& window)
     };
 
     editor->cancelFoldRegionMarkMode();
-    editor->cancelFoldShelfMode();
+    editor->cancelFoldRegionMarkMode();
     if (QCompleter* completer = editor->findChild<QCompleter*>())
         completer->popup()->hide();
     editor->setFocus();
@@ -10396,9 +10114,9 @@ static void runGlobalControlRegression(MainWindow& window,
             || item.id == QStringLiteral("fds"))
             foundDeprecatedFoldAction = true;
     }
-    foldActionsExplainBehavior = foundFoldRegionAction && foundFoldShelfAction;
+    foldActionsExplainBehavior = foundFoldRegionAction && !foundFoldShelfAction;
     expectBool("global control fd domain finds fold subcommands",
-               foundFoldRegionAction && foundFoldShelfAction,
+               foundFoldRegionAction && !foundFoldShelfAction,
                true);
     expectBool("global control fold actions include explanations",
                foldActionsExplainBehavior,
@@ -10548,8 +10266,8 @@ static void runGlobalControlRegression(MainWindow& window,
                 panelShowsFoldShelf = true;
             }
         }
-        expectBool("global control fd query shows fd r and fd s",
-                   panelShowsFoldRegion && panelShowsFoldShelf,
+        expectBool("global control fd query retains fd r and omits fd s",
+                   panelShowsFoldRegion && !panelShowsFoldShelf,
                    true);
         window.globalControlCoordinator->panel->hide();
     }
@@ -10558,7 +10276,7 @@ static void runGlobalControlRegression(MainWindow& window,
         ? window.tabManager->getCurrentEditor()
         : nullptr;
     if (activeEditor)
-        activeEditor->cancelFoldShelfMode();
+        activeEditor->cancelFoldRegionMarkMode();
     window.globalControlCoordinator->dispatch(
         GlobalControlItem{GlobalControlItemKind::Command,
                           QStringLiteral("fd r"),
@@ -10570,25 +10288,6 @@ static void runGlobalControlRegression(MainWindow& window,
     if (activeEditor)
         activeEditor->cancelFoldRegionMarkMode();
 
-    window.globalControlCoordinator->dispatch(
-        GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("fd s"),
-                          QStringLiteral("fd s"),
-                          QStringLiteral("Fold Shelf")});
-    QDockWidget* foldShelfDock =
-        window.findChild<QDockWidget*>(QStringLiteral("FoldShelfDock"));
-    expectBool("global control fd s starts fold shelf mode",
-               activeEditor
-                   && activeEditor->foldShelfModeActive()
-                   && foldShelfDock
-                   && window.panelLayoutController
-                   && window.panelLayoutController->isPanelOpen(
-                          QStringLiteral("foldShelf")),
-               true);
-    if (activeEditor)
-        activeEditor->cancelFoldShelfMode();
-    if (foldShelfDock)
-        foldShelfDock->hide();
 }
 
 static void runStructuralEditingRegression()
@@ -11983,10 +11682,6 @@ void runContextRailIconRegression(MainWindow& window)
             rail,
             LiveInsightsContextProvider::providerIdForKind(
                 LiveInsightKind::State)),
-        contextRailAction(
-            rail,
-            LiveInsightsContextProvider::providerIdForKind(
-                LiveInsightKind::Wave))
     };
     QAction* pinloomAction = contextRailAction(
         rail, QStringLiteral("pinloom"));
@@ -12044,8 +11739,6 @@ void runLiveInsightSidebarRoutingRegression(
                           ->rtlInsightsPanelCoordinator() == nullptr
                    && window.semanticDocks
                           ->signalKernelGraphPanelCoordinator() == nullptr
-                   && window.semanticDocks
-                          ->wavePreviewPanelCoordinator() == nullptr
                    && window.findChild<QDockWidget*>(
                           QStringLiteral("rtlInsightsDock")) == nullptr
                    && window.findChild<QDockWidget*>(
@@ -12236,70 +11929,6 @@ void runLiveInsightSidebarRoutingRegression(
                allInsightRoutesUseRightProvider,
                true);
 
-    const ActionDescriptor* waveCommand =
-        findActionById(QString::fromLatin1(
-            ActionIds::ViewWavePreview));
-    ActionInvocation waveInvocation;
-    waveInvocation.workspaceId = window.workspaceManager
-        ? window.workspaceManager->getWorkspacePath()
-        : QStringLiteral("standalone");
-    const ActionExecutionResult waveResult = waveCommand
-        ? executeAction(*waveCommand, window, waveInvocation)
-        : ActionExecutionResult();
-    QCoreApplication::processEvents(
-        QEventLoop::AllEvents, 50);
-    const ContextResource waveResource =
-        controller->dockHost()->currentResource();
-    LiveInsightKind waveKind = LiveInsightKind::Kernel;
-    auto* waveContextView = qobject_cast<LiveInsightsContextView*>(
-        controller->dockHost()->viewForResource(
-            waveResource.stableKey()));
-    auto* waveSectionPage = waveContextView
-        ? waveContextView->surfaceForTest()
-        : nullptr;
-    expectBool("Wave command opens the right provider in a pinned section",
-               waveResult.succeeded
-                   && LiveInsightsContextProvider::kindFromResource(
-                       waveResource, &waveKind)
-                   && waveKind == LiveInsightKind::Wave
-                   && waveContextView
-                   && !waveContextView->followEditor()
-                   && waveSectionPage
-                   && waveSectionPage->waveCoordinatorForTest()
-                   && window.tabManager->toolPage(
-                          QStringLiteral("live-insight:wave")) == nullptr,
-               true);
-
-    // The full view is now reached from the section header, and only there;
-    // that page is still the detachable one.
-    QWidget* waveHeader = controller->dockHost()->sectionHeader(
-        waveResource.stableKey());
-    auto* waveFullViewButton = waveHeader
-        ? waveHeader->findChild<QToolButton*>(
-              QStringLiteral("contextDockFullView"))
-        : nullptr;
-    if (waveFullViewButton)
-        waveFullViewButton->click();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    auto* waveFullView = dynamic_cast<LiveInsightToolPage*>(
-        window.tabManager->toolPage(
-            QStringLiteral("live-insight:wave")));
-    expectBool("Section header still opens the full Wave tool page",
-               waveFullViewButton && waveFullView
-                   && waveFullView->waveCoordinatorForTest(),
-               true);
-    QMainWindow* detachedWave = waveFullView
-        ? waveFullView->detachToWindow()
-        : nullptr;
-    expectBool("Wave full tool page supports detachable refresh surface",
-               detachedWave
-                   && waveFullView->detachedWindowForTest()
-                          == detachedWave
-                   && detachedWave->centralWidget() != nullptr,
-               true);
-    if (detachedWave)
-        detachedWave->close();
-
     if (active.isValid())
         controller->closePinnedResource(active.stableKey());
     if (fullView) {
@@ -12339,10 +11968,6 @@ void runInsightFocusIntegrationRegression(
         ? window.semanticDocks
               ->signalKernelGraphPanelCoordinator()
         : nullptr;
-    WavePreviewPanelCoordinator* wave =
-        window.semanticDocks
-        ? window.semanticDocks->wavePreviewPanelCoordinator()
-        : nullptr;
 
     QMenu* focusMenu =
         window.findChild<QMenu*>(
@@ -12366,8 +11991,7 @@ void runInsightFocusIntegrationRegression(
 
     expectBool("legacy Insight Focus panel registrations are removed",
                !rtl
-                   && !kernel
-                   && !wave,
+                   && !kernel,
                true);
     expectBool("View menu exposes no legacy Insight Focus entries",
                !focusMenu
@@ -12461,7 +12085,6 @@ int main(int argc, char** argv)
     runNavigationDesignCacheWorkspaceActivationRegression();
     runNavigationHierarchyModelRegression();
     runSemanticStateUiRegression();
-    runWavePersistentTreeStateRegression();
     runEditorContextMenuGroupingRegression();
 
     const QString workspaceFixturePath = (argc > 1)
@@ -12539,6 +12162,13 @@ int main(int argc, char** argv)
                    && window.panelLayoutController->isBottomCollapsed()
                    && window.panelLayoutController->buttonBar()
                    && window.panelLayoutController->buttonBar()->isVisible(),
+               true);
+    expectBool("startup does not create hidden Settings Search Change Preview or Connections pages",
+               !window.settingsCenterPanel
+                   && !window.findChild<ScopedSearchPanel*>()
+                   && !window.findChild<RtlHighRiskEditPanel*>()
+                   && !window.findChild<QTabWidget*>(
+                          QStringLiteral("connectionsWorkflowTabs")),
                true);
     auto* projectSidebar = window.navigationPane->dock();
     auto* sidebarHeader = window.findChild<QFrame*>(
@@ -12682,7 +12312,7 @@ int main(int argc, char** argv)
                window.panelLayoutController->buttonForPanel(QStringLiteral("problems"))->isVisible()
                    && window.panelLayoutController->buttonForPanel(QStringLiteral("activity"))->isVisible()
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("scopedSearch"))->isVisible()
-                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))->isVisible()
+                   && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("connections"))->isVisible(), true);
     settingsButton->click();
     QWidget* settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
@@ -12738,14 +12368,56 @@ int main(int argc, char** argv)
                window.findChild<QPlainTextEdit*>(
                    QStringLiteral("activityOutputText")) != nullptr,
                true);
-    QDockWidget* foldShelfDock =
-        window.findChild<QDockWidget*>(QStringLiteral("FoldShelfDock"));
-    expectBool("fold shelf dock exists",
-               foldShelfDock != nullptr,
-               true);
-    expectBool("fold shelf dock starts hidden",
-               foldShelfDock && !foldShelfDock->isVisible(),
-               true);
+    {
+        auto* search = window.semanticDocks->scopedSearchPanelCoordinator();
+        window.panelLayoutController->restorePanel(QStringLiteral("scopedSearch"));
+        QCoreApplication::processEvents();
+        auto* page = search->panel();
+        page->setQueryText(QStringLiteral("deferred_draft"));
+        QSignalSpy completed(search, &ScopedSearchPanelCoordinator::resultCountChanged);
+        for (int index = 0; index < 3; ++index) {
+            window.panelLayoutController->closePanel(QStringLiteral("scopedSearch"));
+            window.panelLayoutController->restorePanel(QStringLiteral("scopedSearch"));
+            QCoreApplication::processEvents();
+        }
+        search->refresh();
+        expectBool("Search reopen retains the draft and a single result notification connection",
+                   search->panel() == page
+                       && page->queryText() == QStringLiteral("deferred_draft")
+                       && completed.count() == 1
+                       && window.findChildren<ScopedSearchPanel*>().size() == 1,
+                   true);
+        page->setQueryText(QString());
+        window.panelLayoutController->closePanel(QStringLiteral("scopedSearch"));
+        window.panelLayoutController->restorePanel(QStringLiteral("connections"));
+        QCoreApplication::processEvents();
+        auto* tabs = window.findChild<QTabWidget*>(
+            QStringLiteral("connectionsWorkflowTabs"));
+        expectBool("Connections first open creates both workflow tabs",
+                   tabs && tabs->count() == 2, true);
+        if (tabs)
+            tabs->setCurrentIndex(1);
+        window.panelLayoutController->closePanel(QStringLiteral("connections"));
+        window.panelLayoutController->restorePanel(QStringLiteral("connections"));
+        QCoreApplication::processEvents();
+        expectBool("Connections reopen reuses its workflows and selected tab",
+                   tabs && tabs->currentIndex() == 1
+                       && window.findChildren<QTabWidget*>(
+                              QStringLiteral("connectionsWorkflowTabs")).size() == 1,
+                   true);
+        window.panelLayoutController->closePanel(QStringLiteral("connections"));
+        window.panelLayoutController->restorePanel(QStringLiteral("rtlHighRiskEdit"));
+        QCoreApplication::processEvents();
+        auto* change = window.findChild<RtlHighRiskEditPanel*>();
+        window.panelLayoutController->closePanel(QStringLiteral("rtlHighRiskEdit"));
+        window.panelLayoutController->restorePanel(QStringLiteral("rtlHighRiskEdit"));
+        QCoreApplication::processEvents();
+        expectBool("Change Preview first open and reopen share one page",
+                   change && window.findChild<RtlHighRiskEditPanel*>() == change
+                       && window.findChildren<RtlHighRiskEditPanel*>().size() == 1,
+                   true);
+        window.panelLayoutController->closePanel(QStringLiteral("rtlHighRiskEdit"));
+    }
     NavigationWidget* railNavigationWidget =
         window.navigationPane ? window.navigationPane->navigationWidget : nullptr;
     QDockWidget* navigationDock =
@@ -12874,7 +12546,8 @@ int main(int argc, char** argv)
     expectBool("Settings Center has one View entry",
                viewSettingsCenterAction
                    && settingsCenterDock
-                   && settingsCenterDock->isVisible()
+                   && window.tabManager->toolPage(QStringLiteral("settingsCenter"))
+                   && !settingsCenterDock->isVisible()
                    && window.findChild<QAction*>(
                           QStringLiteral(
                               "viewEditorAppearanceAction")) == nullptr,
@@ -12919,59 +12592,8 @@ int main(int argc, char** argv)
         window.findChild<QAction*>(
             QStringLiteral("reloadUserTemplatesAction"));
     expectBool("tools menu exists", toolsMenu != nullptr, true);
-    QAction* runWaveSimulationAction =
-        window.findChild<QAction*>(
-            QStringLiteral("runWaveSimulationAction"));
-    expectBool("Wave Simulation is a formal registry-backed Tools Action",
-               window.waveSimulationCoordinator
-                   && runWaveSimulationAction
-                   && runWaveSimulationAction
-                          ->property("actionId").toString()
-                          == QString::fromLatin1(
-                              ActionIds::
-                                  WaveSimulationRunCurrentContext)
-                   && !runWaveSimulationAction->text().contains(
-                       QStringLiteral("Experimental"),
-                       Qt::CaseInsensitive),
-               true);
-    if (window.waveSimulationCoordinator
-        && window.notificationCenter
-        && window.tabManager
-        && window.tabManager->getCurrentEditor()) {
-        WaveSimulationDiagnostic diagnostic;
-        diagnostic.sourceFile =
-            window.tabManager->getCurrentEditor()
-                ->documentFileName();
-        diagnostic.line = 1;
-        diagnostic.column = 1;
-        diagnostic.severity = QStringLiteral("error");
-        diagnostic.stage = QStringLiteral("compile");
-        diagnostic.code = QStringLiteral("fixture");
-        diagnostic.message =
-            QStringLiteral("Wave Simulation fixture diagnostic");
-        emit window.waveSimulationCoordinator
-            ->diagnosticAvailable(diagnostic);
-        NotificationItem item;
-        const bool notificationPublished =
-            window.notificationCenter->notificationByKey(
-                QStringLiteral("wave-simulation:%1:1:1")
-                    .arg(diagnostic.sourceFile),
-                &item);
-        expectBool("Wave Simulation diagnostic exposes source navigation",
-                   notificationPublished
-                       && item.actions.size() == 1
-                       && item.actions.constFirst().id
-                              == QStringLiteral(
-                                  "waveSimulation.goToSource")
-                       && window.waveSimulationNotificationLocations
-                              .contains(item.id)
-                       && window.notificationCenter->requestAction(
-                           item.id,
-                           QStringLiteral(
-                               "waveSimulation.goToSource")),
-                   true);
-        window.notificationCenter->dismiss(item.id);
-    }
+    expectBool("Tools no longer exposes Wave Simulation",
+               !window.findChild<QAction*>(QStringLiteral("runWaveSimulationAction")), true);
     expectBool("user templates menu exists",
                userTemplatesMenu != nullptr,
                true);
@@ -13542,28 +13164,6 @@ int main(int argc, char** argv)
     workspaceFilesScanned = false;
     workspaceSymbolsDone = false;
 
-    QAction* viewFoldShelfAction =
-        window.findChild<QAction*>(QStringLiteral("viewFoldShelfAction"));
-    expectBool("view menu has fold shelf action",
-               viewFoldShelfAction != nullptr,
-               true);
-    if (window.panelLayoutController)
-        window.panelLayoutController->closePanel(
-            QStringLiteral("foldShelf"));
-    if (viewFoldShelfAction) {
-        viewFoldShelfAction->trigger();
-        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    }
-    expectBool("view menu reopens fold shelf",
-               foldShelfDock
-                   && window.panelLayoutController
-                   && window.panelLayoutController->isPanelOpen(
-                          QStringLiteral("foldShelf")),
-               true);
-    if (window.panelLayoutController)
-        window.panelLayoutController->closePanel(
-            QStringLiteral("foldShelf"));
-
     QDockWidget* activityDock =
         window.findChild<QDockWidget*>(QStringLiteral("activityDock"));
     QAction* viewActivityAction =
@@ -13652,7 +13252,6 @@ int main(int argc, char** argv)
         QStringLiteral("activity"),
         QStringLiteral("rtlHighRiskEdit"),
         QStringLiteral("connections"),
-        QStringLiteral("foldShelf"),
     };
     const QStringList expectedDrawerLabels = {
         QStringLiteral("Problems"),
@@ -13660,7 +13259,6 @@ int main(int argc, char** argv)
         QStringLiteral("Activity"),
         QStringLiteral("Change Preview"),
         QStringLiteral("Connections"),
-        QStringLiteral("Shelf"),
     };
     bool drawerButtonsComplete = drawerController
         && drawerController->bottomPanelIds() == expectedDrawerIds;
@@ -14312,599 +13910,7 @@ int main(int argc, char** argv)
                    && themeSplitController->groups()
                           == themeGroupsBefore,
                true);
-    // Retain the backend regression only for compatibility builds that still
-    // instantiate a legacy semantic-dock coordinator. Production exercises
-    // Wave through LiveInsightToolPage below.
-    if (window.semanticDocks
-        && window.semanticDocks->wavePreviewPanelCoordinator()) {
-    MyCodeEditor* waveEditor = window.tabManager->getCurrentEditor();
-    QTemporaryDir wavePreviewNavDir;
-    expectBool("wave preview nav temp dir valid",
-               wavePreviewNavDir.isValid(),
-               true);
-    const QString wavePreviewNavPath =
-        wavePreviewNavDir.isValid()
-            ? QDir::toNativeSeparators(
-                  wavePreviewNavDir.filePath(QStringLiteral("wave_ui.sv")))
-            : QString();
-    if (waveEditor && window.tabManager->getDocumentModel()
-        && !wavePreviewNavPath.isEmpty()) {
-        window.tabManager->getDocumentModel()->setDocumentFileName(
-            waveEditor,
-            wavePreviewNavPath);
-    }
-    if (waveEditor) {
-        waveEditor->setPlainText(
-            QStringLiteral("module wave_ui;\n"
-                           "logic clk;\n"
-                           "input logic [7:0] data;\n"
-                           "logic [7:0] q;\n"
-                           "logic [7:0] loop_q;\n"
-                           "logic [7:0] out;\n"
-                           "assign out = q + data;\n"
-                           "always_ff @(posedge clk) begin\n"
-                           "    if (data[0]) q <= data;\n"
-                           "end\n"
-                           "always_comb begin\n"
-                           "    for (int i = 0; i < 2; i++) begin\n"
-                           "        loop_q = data;\n"
-                           "    end\n"
-                           "end\n"
-                           "endmodule\n"));
-    }
-    if (wavePreviewDock && !wavePreviewDock->isVisible()
-        && viewWavePreviewAction) {
-        viewWavePreviewAction->trigger();
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    WavePreviewPanelCoordinator* waveCoordinator =
-        window.semanticDocks
-            ? window.semanticDocks->wavePreviewPanelCoordinator()
-            : nullptr;
-    QTreeWidget* waveTree = wavePreviewTree(window);
-    bool sawWaveQ = false;
-    bool sawWaveOut = false;
-    bool sawWaveClockReset = false;
-    bool sawWaveGuard = false;
-    bool sawWaveLoopGuard = false;
-    bool sawWaveContext = false;
-    bool sawWaveLaneGuardSummary = false;
-    bool sawWaveLaneSummary = false;
-    bool sawWaveActivityMix = false;
-    bool sawWaveformTrace = false;
-    QTreeWidgetItem* waveQEventItem = nullptr;
-    QTreeWidgetItem* waveQLaneItem = nullptr;
-    if (waveTree) {
-        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* laneItem = waveTree->topLevelItem(i);
-            const QString name = laneItem->text(0);
-            sawWaveQ = sawWaveQ || name == QStringLiteral("q");
-            sawWaveOut = sawWaveOut || name == QStringLiteral("out");
-            sawWaveClockReset = sawWaveClockReset
-                || name == QStringLiteral("Clock/Reset Groups");
-            if (name == QStringLiteral("Activity Mix")) {
-                sawWaveActivityMix = laneItem->text(1).contains(
-                                         QStringLiteral("3 events"))
-                    && laneItem->text(4)
-                        == QStringLiteral("assign 1/comb 1/seq 1")
-                    && laneItem->toolTip(0).contains(
-                        QStringLiteral("activity: assign 1/comb 1/seq 1"));
-            }
-            if (name == QStringLiteral("Symbolic Waveform Preview"))
-                sawWaveformTrace = true;
-            if (name == QStringLiteral("q")) {
-                waveQLaneItem = laneItem;
-                sawWaveLaneSummary = sawWaveLaneSummary
-                    || (laneItem->text(1).contains(QStringLiteral("1 event"))
-                        && laneItem->text(1).contains(QStringLiteral("1 src"))
-                        && laneItem->text(1).contains(QStringLiteral("max t+1"))
-                        && laneItem->text(1).contains(QStringLiteral("1 block"))
-                        && laneItem->text(1).contains(QStringLiteral("seq 1"))
-                        && laneItem->text(4) == QStringLiteral("seq 1"));
-                sawWaveContext = sawWaveContext
-                    || laneItem->text(5) == QStringLiteral("internal logic [7:0]");
-                sawWaveLaneGuardSummary = sawWaveLaneGuardSummary
-                    || (laneItem->text(3) == QStringLiteral("if data[0]")
-                        && laneItem->toolTip(0).contains(
-                            QStringLiteral("guards: if data[0]")));
-                for (int child = 0; child < laneItem->childCount(); ++child) {
-                    sawWaveClockReset = sawWaveClockReset
-                        || laneItem->child(child)->text(2)
-                            == QStringLiteral("clk posedge clk");
-                    sawWaveGuard = sawWaveGuard
-                        || laneItem->child(child)->text(3)
-                            == QStringLiteral("if data[0]");
-                    sawWaveContext = sawWaveContext
-                        || laneItem->child(child)->text(5)
-                            == QStringLiteral("internal logic [7:0]");
-                    if (laneItem->child(child)->text(0).contains(
-                            QStringLiteral("q = data"))) {
-                        waveQEventItem = laneItem->child(child);
-                    }
-                }
-            }
-            if (name == QStringLiteral("loop_q")) {
-                for (int child = 0; child < laneItem->childCount(); ++child) {
-                    sawWaveLoopGuard = sawWaveLoopGuard
-                        || laneItem->child(child)->text(3)
-                            == QStringLiteral("for int i = 0; i < 2; i++");
-                }
-            }
-        }
-    }
-    expectBool("wave preview renders active editor lanes",
-               waveTree && sawWaveQ && sawWaveOut,
-               true);
-    expectBool("wave preview renders clock/reset groups",
-               waveTree && sawWaveClockReset,
-               true);
-    expectBool("wave preview renders guard labels",
-               waveTree && sawWaveGuard,
-               true);
-    expectBool("wave preview renders lane guard summaries",
-               waveTree && sawWaveLaneGuardSummary,
-               true);
-    expectBool("wave preview renders loop guard labels",
-               waveTree && sawWaveLoopGuard,
-               true);
-    expectBool("wave preview renders declaration context",
-               waveTree && sawWaveContext,
-               true);
-    expectBool("wave preview renders lane summary",
-               waveTree && sawWaveLaneSummary,
-               true);
-    expectBool("wave preview renders activity mix summary",
-               waveTree && sawWaveActivityMix,
-               true);
-    expectBool("wave preview renders symbolic waveform preview",
-               waveTree && sawWaveformTrace,
-               true);
-    const QString waveQLaneTooltip =
-        waveQLaneItem ? waveQLaneItem->toolTip(0) : QString();
-    expectBool("wave preview lane tooltip has summary",
-               waveQLaneTooltip.contains(QStringLiteral("summary: 1 event"))
-                   && waveQLaneTooltip.contains(QStringLiteral("activity: seq 1")),
-               true);
-    const QString waveQTooltip =
-        waveQEventItem ? waveQEventItem->toolTip(0) : QString();
-    expectBool("wave preview event tooltip has source target details",
-               waveQTooltip.contains(QStringLiteral("target: q"))
-                   && waveQTooltip.contains(QStringLiteral("expression: data"))
-                   && waveQTooltip.contains(QStringLiteral("sources: data"))
-                   && waveQTooltip.contains(QStringLiteral("timing: t+1 cycle"))
-                   && waveQTooltip.contains(QStringLiteral("clock/reset: clk posedge clk"))
-                   && waveQTooltip.contains(QStringLiteral("target context: internal logic [7:0]"))
-                   && waveQTooltip.contains(QStringLiteral("source context: data: input logic [7:0]"))
-                   && waveQTooltip.contains(QStringLiteral("location:")),
-               true);
-    QLabel* waveSummary = wavePreviewSummaryLabel(window);
-    expectBool("wave preview report summary shows activity mix",
-               waveSummary
-                   && waveSummary->text().contains(
-                       QStringLiteral("activity assign 1/comb 1/seq 1")),
-               true);
-    QWidget* waveCanvas = wavePreviewCanvas(window);
-    QWidget* sharedWaveformView = waveCoordinator
-        ? waveCoordinator->waveformViewForTest()
-        : nullptr;
-    expectBool("wave preview canvas exists",
-               waveCanvas != nullptr,
-               true);
-    expectBool("wave preview canvas hosts shared waveform view",
-               waveCanvas && sharedWaveformView
-                   && sharedWaveformView->parentWidget() == waveCanvas
-                   && sharedWaveformView->isVisible(),
-               true);
-    const QStringList waveformCapabilities = sharedWaveformView
-        ? sharedWaveformView->property(
-              "wavewidgets.capabilities").toStringList()
-        : QStringList();
-    expectBool("shared waveform view accepts symbolic payload",
-               sharedWaveformView
-                   && sharedWaveformView->property(
-                          "wavewidgets.contract").toString()
-                          == QStringLiteral(
-                              "wave-workbench.waveform-view/v1")
-                   && sharedWaveformView->property(
-                          "wavewidgets.previewContract").toString()
-                          == QStringLiteral("wave-preview/v1")
-                   && sharedWaveformView->property(
-                          "previewMode").toString()
-                          == QStringLiteral("symbolic")
-                   && sharedWaveformView->property(
-                          "previewGeneration").toULongLong() > 0,
-               true);
-    expectBool("shared waveform view exposes interaction capabilities",
-               waveformCapabilities.contains(
-                   QStringLiteral("generation-replace/v1"))
-                   && waveformCapabilities.contains(
-                       QStringLiteral("waveform-theme/v1"))
-                   && waveformCapabilities.contains(
-                       QStringLiteral("source-navigation/v1")),
-               true);
-    if (waveEditor) {
-        const QString waveSelectionText = waveEditor->toPlainText();
-        const int combStart =
-            waveSelectionText.indexOf(QStringLiteral("always_comb"));
-        const int combEnd =
-            combStart >= 0
-                ? waveSelectionText.indexOf(QStringLiteral("endmodule"),
-                                            combStart)
-                : -1;
-        if (combStart >= 0 && combEnd > combStart) {
-            QTextCursor scopeCursor(waveEditor->document());
-            scopeCursor.setPosition(combStart);
-            scopeCursor.setPosition(combEnd, QTextCursor::KeepAnchor);
-            waveEditor->setTextCursor(scopeCursor);
-        }
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    bool sawScopedLoopQ = false;
-    bool sawScopedQ = false;
-    bool sawScopedOut = false;
-    if (waveTree) {
-        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
-            const QString name = waveTree->topLevelItem(i)->text(0);
-            sawScopedLoopQ = sawScopedLoopQ
-                || name == QStringLiteral("loop_q");
-            sawScopedQ = sawScopedQ || name == QStringLiteral("q");
-            sawScopedOut = sawScopedOut || name == QStringLiteral("out");
-        }
-    }
-    expectBool("wave preview selected scope filters lanes",
-               waveTree
-                   && sawScopedLoopQ
-                   && !sawScopedQ
-                   && !sawScopedOut
-                   && waveSummary
-                   && waveSummary->text().contains(
-                       QStringLiteral("always_comb lines"))
-                   && waveSummary->text().contains(
-                       QStringLiteral("symbolic preview")),
-               true);
-    if (waveEditor) {
-        QTextCursor clearScopeCursor(waveEditor->document());
-        clearScopeCursor.movePosition(QTextCursor::Start);
-        waveEditor->setTextCursor(clearScopeCursor);
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    bool sawRestoredQ = false;
-    bool sawRestoredOut = false;
-    if (waveTree) {
-        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
-            const QString name = waveTree->topLevelItem(i)->text(0);
-            sawRestoredQ = sawRestoredQ || name == QStringLiteral("q");
-            sawRestoredOut = sawRestoredOut || name == QStringLiteral("out");
-        }
-    }
-    expectBool("wave preview clearing selection restores full file",
-               waveTree && sawRestoredQ && sawRestoredOut,
-               true);
-    if (waveEditor) {
-        waveEditor->setPlainText(
-            QStringLiteral("module wave_warning_ui;\n"
-                           "logic clk;\n"
-                           "logic a;\n"
-                           "logic q;\n"
-                           "assign q = a;\n"
-                           "always_ff @(posedge clk) q <= a;\n"
-                           "always_comb q = a;\n"
-                           "endmodule\n"));
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    bool sawWaveWarnings = false;
-    bool sawWaveMixedWarning = false;
-    bool sawWaveMultiBlockWarning = false;
-    bool sawWaveWarningLane = false;
-    if (waveTree) {
-        for (int i = 0; i < waveTree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* root = waveTree->topLevelItem(i);
-            if (root && root->text(0) == QStringLiteral("q")) {
-                sawWaveWarningLane =
-                    root->text(1).contains(QStringLiteral("2 warnings"))
-                    && root->toolTip(0).contains(
-                        QStringLiteral("warnings: signal q mixes assign/comb/seq activity"))
-                    && root->toolTip(0).contains(
-                        QStringLiteral("assigned from 2 procedural blocks"));
-            }
-            if (!root || root->text(0) != QStringLiteral("Warnings"))
-                continue;
-            sawWaveWarnings =
-                root->text(1) == QStringLiteral("2 warnings")
-                && root->toolTip(0).contains(
-                    QStringLiteral("signal q mixes assign/comb/seq activity"));
-            for (int child = 0; child < root->childCount(); ++child) {
-                QTreeWidgetItem* row = root->child(child);
-                sawWaveMixedWarning = sawWaveMixedWarning
-                    || (row && row->text(0).contains(
-                            QStringLiteral(
-                                "Wave Preview does not resolve writer priority")));
-                sawWaveMultiBlockWarning = sawWaveMultiBlockWarning
-                    || (row && row->text(0).contains(
-                            QStringLiteral(
-                                "assigned from 2 procedural blocks")));
-            }
-        }
-    }
-    expectBool("wave preview renders lane warnings",
-               waveTree
-                   && sawWaveWarnings
-                   && sawWaveMixedWarning
-                   && sawWaveMultiBlockWarning
-                   && sawWaveWarningLane,
-               true);
-    expectBool("wave preview summary shows warnings",
-               waveSummary
-                   && waveSummary->text().contains(QStringLiteral("2 warnings")),
-               true);
-    if (waveEditor) {
-        waveEditor->setPlainText(
-            QStringLiteral("module wave_ui;\n"
-                           "logic clk;\n"
-                           "logic [7:0] q;\n"
-                           "logic [7:0] z;\n"
-                           "assign z = q;\n"
-                           "always_ff @(posedge clk) begin\n"
-                           "    q <= z;\n"
-                           "end\n"
-                           "always_comb begin\n"
-                           "    z = q;\n"
-                           "end\n"
-                           "endmodule\n"));
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    bool sawWaveZ = false;
-    if (waveTree) {
-        for (int i = 0; i < waveTree->topLevelItemCount(); ++i)
-            sawWaveZ = sawWaveZ
-                || waveTree->topLevelItem(i)->text(0) == QStringLiteral("z");
-    }
-    expectBool("wave preview refreshes dirty editor text",
-               waveTree && sawWaveZ,
-               true);
-    auto currentWaveAssignmentExpression = [waveEditor]() {
-        if (!waveEditor)
-            return QString();
-        const QString text = waveEditor->cachedDocumentText();
-        const int prefix = text.indexOf(QStringLiteral("q <= "));
-        if (prefix < 0)
-            return QString();
-        const int start = prefix + QStringLiteral("q <= ").size();
-        const int end = text.indexOf(QLatin1Char(';'), start);
-        return end > start ? text.mid(start, end - start).trimmed()
-                           : QString();
-    };
-    if (waveEditor) {
-        const QString waveText = waveEditor->cachedDocumentText();
-        const int assignment = waveText.indexOf(QStringLiteral("q <= z"));
-        if (assignment >= 0) {
-            QTextCursor editCursor(waveEditor->document());
-            editCursor.setPosition(
-                assignment + QStringLiteral("q <= ").size());
-            waveEditor->setTextCursor(editCursor);
-        }
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    if (waveCoordinator)
-        waveCoordinator->resetRefreshMetricsForTest();
-    if (waveEditor)
-        QTest::keyClick(waveEditor, Qt::Key_X);
-    QTest::qWait(420);
-    const QString visibleExpectedExpression =
-        currentWaveAssignmentExpression();
-    const WavePreviewRefreshMetrics visibleWaveMetrics =
-        waveCoordinator
-            ? waveCoordinator->refreshMetricsForTest()
-            : WavePreviewRefreshMetrics();
-    bool visibleWaveConsumedLatestText = false;
-    if (waveCoordinator) {
-        for (const WavePreviewLane& lane :
-             waveCoordinator->reportForTest().lanes) {
-            for (const WavePreviewAssignment& assignment : lane.assignments) {
-                visibleWaveConsumedLatestText =
-                    visibleWaveConsumedLatestText
-                    || (lane.signalName == QStringLiteral("q")
-                        && assignment.expression.trimmed()
-                               == visibleExpectedExpression);
-            }
-        }
-    }
-    const bool visibleWaveRenderedLatest =
-        waveEditor && waveCoordinator
-        && visibleWaveMetrics.renderCount == 1
-        && visibleWaveMetrics.documentChangeRenderCount == 0
-        && visibleWaveMetrics.scopeDeltaUpdateCount == 0
-        && visibleWaveMetrics.scopeRebuildCount == 1;
-    const bool visibleWaveParsedLatest =
-        waveEditor && visibleWaveConsumedLatestText
-        && visibleWaveMetrics.lastParsedCharacterCount
-               < waveEditor->cachedDocumentText().size();
-    if (!visibleWaveRenderedLatest || !visibleWaveParsedLatest) {
-        const LiveInsightSnapshot liveWaveSnapshot =
-            window.liveInsightSession
-                ? window.liveInsightSession->snapshot(
-                      LiveInsightKind::Wave)
-                : LiveInsightSnapshot();
-        std::cerr << "wave latest snapshot metrics: render="
-                  << visibleWaveMetrics.renderCount
-                  << " documentDelta="
-                  << visibleWaveMetrics.documentChangeRenderCount
-                  << " scopeDelta="
-                  << visibleWaveMetrics.scopeDeltaUpdateCount
-                  << " scopeRebuild="
-                  << visibleWaveMetrics.scopeRebuildCount
-                  << " parsedChars="
-                  << visibleWaveMetrics.lastParsedCharacterCount
-                  << " documentChars="
-                  << (waveEditor
-                          ? waveEditor->cachedDocumentText().size()
-                          : -1)
-                  << " expected="
-                  << visibleExpectedExpression.toStdString()
-                  << " consumed="
-                  << (visibleWaveConsumedLatestText ? "true" : "false")
-                  << " dockVisible="
-                  << (wavePreviewDock && wavePreviewDock->isVisible()
-                          ? "true" : "false")
-                  << " sessionVisible="
-                  << (liveWaveSnapshot.visible ? "true" : "false")
-                  << " phase="
-                  << static_cast<int>(liveWaveSnapshot.phase)
-                  << " requested="
-                  << liveWaveSnapshot.requestedGeneration
-                  << " published="
-                  << liveWaveSnapshot.publishedGeneration
-                  << " stale="
-                  << (liveWaveSnapshot.stale ? "true" : "false")
-                  << '\n';
-    }
-    expectBool("visible wave preview renders one debounced latest snapshot",
-               visibleWaveRenderedLatest,
-               true);
-    expectBool("visible wave preview consumes latest scoped text",
-               visibleWaveParsedLatest,
-               true);
-
-    if (waveCoordinator)
-        waveCoordinator->resetRefreshMetricsForTest();
-    if (waveEditor) {
-        const int sameScopePosition =
-            waveEditor->cachedDocumentText().indexOf(
-                QStringLiteral("q <="));
-        if (sameScopePosition >= 0) {
-            QTextCursor sameScopeCursor(waveEditor->document());
-            sameScopeCursor.setPosition(sameScopePosition + 1);
-            waveEditor->setTextCursor(sameScopeCursor);
-        }
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    const WavePreviewRefreshMetrics sameScopeCursorMetrics =
-        waveCoordinator
-            ? waveCoordinator->refreshMetricsForTest()
-            : WavePreviewRefreshMetrics();
-    expectBool("cursor move after edit in same Wave scope does not rerender",
-               sameScopeCursorMetrics.renderCount == 0
-                   && sameScopeCursorMetrics.documentChangeRenderCount == 0,
-               true);
-
-    if (waveCoordinator)
-        waveCoordinator->resetRefreshMetricsForTest();
-    if (waveEditor) {
-        const int otherScopePosition =
-            waveEditor->cachedDocumentText().indexOf(
-                QStringLiteral("z = q"));
-        if (otherScopePosition >= 0) {
-            QTextCursor otherScopeCursor(waveEditor->document());
-            otherScopeCursor.setPosition(otherScopePosition);
-            waveEditor->setTextCursor(otherScopeCursor);
-        }
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    const WavePreviewRefreshMetrics crossScopeCursorMetrics =
-        waveCoordinator
-            ? waveCoordinator->refreshMetricsForTest()
-            : WavePreviewRefreshMetrics();
-    bool crossScopeConsumedLatestText = false;
-    if (waveCoordinator) {
-        for (const WavePreviewLane& lane :
-             waveCoordinator->reportForTest().lanes) {
-            crossScopeConsumedLatestText =
-                crossScopeConsumedLatestText
-                || (lane.signalName == QStringLiteral("z")
-                    && !lane.assignments.isEmpty()
-                    && lane.assignments.first().expression.trimmed()
-                           == QStringLiteral("q"));
-        }
-    }
-    expectBool("cursor crossing Wave scopes refreshes exactly once",
-               crossScopeCursorMetrics.renderCount == 1
-                   && crossScopeCursorMetrics.documentChangeRenderCount == 0
-                   && crossScopeCursorMetrics.scopeRebuildCount == 1
-                   && crossScopeConsumedLatestText,
-               true);
-
-    if (waveEditor) {
-        const int originalScopePosition =
-            waveEditor->cachedDocumentText().indexOf(
-                QStringLiteral("q <="));
-        if (originalScopePosition >= 0) {
-            QTextCursor originalScopeCursor(waveEditor->document());
-            originalScopeCursor.setPosition(
-                originalScopePosition + QStringLiteral("q <= ").size());
-            waveEditor->setTextCursor(originalScopeCursor);
-        }
-    }
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-
-    if (wavePreviewDock)
-        wavePreviewDock->hide();
-    if (waveCoordinator)
-        waveCoordinator->resetRefreshMetricsForTest();
-    if (waveEditor)
-        QTest::keyClick(waveEditor, Qt::Key_Y);
-    const WavePreviewRefreshMetrics hiddenWaveMetrics =
-        waveCoordinator
-            ? waveCoordinator->refreshMetricsForTest()
-            : WavePreviewRefreshMetrics();
-    expectBool("hidden wave preview skips expensive document rendering",
-               hiddenWaveMetrics.documentChangeRenderCount == 0
-                   && hiddenWaveMetrics.renderCount == 0,
-               true);
-    window.showPanelById(QStringLiteral("wavePreview"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
-    const QString reopenedExpectedExpression =
-        currentWaveAssignmentExpression();
-    bool reopenedWaveConsumedLatestText = false;
-    if (waveCoordinator) {
-        for (const WavePreviewLane& lane :
-             waveCoordinator->reportForTest().lanes) {
-            for (const WavePreviewAssignment& assignment : lane.assignments) {
-                reopenedWaveConsumedLatestText =
-                    reopenedWaveConsumedLatestText
-                    || (lane.signalName == QStringLiteral("q")
-                        && assignment.expression.trimmed()
-                               == reopenedExpectedExpression);
-            }
-        }
-    }
-    expectBool("reopened wave preview catches up synchronously",
-               reopenedWaveConsumedLatestText,
-               true);
-    if (waveEditor) {
-        QString largeWaveText;
-        largeWaveText.reserve(150 * 1024);
-        largeWaveText += QStringLiteral("module wave_large;\n"
-                                        "logic clk;\n"
-                                        "logic [7:0] source;\n"
-                                        "logic [7:0] huge_delayed;\n");
-        for (int i = 0; i < 5000; ++i)
-            largeWaveText += QStringLiteral("logic [7:0] filler_%1;\n").arg(i);
-        largeWaveText += QStringLiteral("always_ff @(posedge clk) begin\n"
-                                        "    huge_delayed <= source;\n"
-                                        "end\n"
-                                        "endmodule\n");
-        waveEditor->setPlainText(largeWaveText);
-    }
-    expectBool("wave preview refreshes large dirty scope synchronously",
-               waveTree && findItemByText(waveTree,
-                                           QStringLiteral("huge_delayed"))
-                               != nullptr,
-               true);
-    }
-
     MyCodeEditor* modeChipEditor = window.tabManager->getCurrentEditor();
-    if (modeChipEditor)
-        modeChipEditor->startFoldShelfMode();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    expectBool("fold shelf mode highlights shelf panel",
-               window.foldShelfPanel && window.foldShelfPanel->shelfModeActive(),
-               true);
-    if (modeChipEditor)
-        modeChipEditor->cancelFoldShelfMode();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-
     if (modeChipEditor) {
         modeChipEditor->setPlainText(QStringLiteral("slot"));
         QString modeReason;
@@ -14935,17 +13941,6 @@ int main(int argc, char** argv)
         QTest::keyClick(modeChipEditor, Qt::Key_Escape);
 
         modeChipEditor->startFoldRegionMarkMode();
-        modeChipEditor->startFoldShelfMode();
-        expectBool("Fold Shelf conflicts through the same mode matrix",
-                   !modeChipEditor->foldRegionMarkModeActive()
-                       && modeChipEditor->foldShelfModeActive()
-                       && modeChipEditor->state->modes.lastExitReason(
-                              EditorModeId::FoldRegion)
-                              == EditorModeExitReason::Conflict,
-                   true);
-        modeChipEditor->cancelFoldShelfMode();
-
-        modeChipEditor->startFoldShelfMode();
         MyCodeEditor* priorTabEditor = modeChipEditor;
         window.tabManager->createNewTab();
         MyCodeEditor* replacementEditor =
@@ -14954,9 +13949,9 @@ int main(int argc, char** argv)
         expectBool("tab switch exits every stale editor mode",
                    replacementEditor
                        && replacementEditor != priorTabEditor
-                       && !priorTabEditor->foldShelfModeActive()
+                       && !priorTabEditor->foldRegionMarkModeActive()
                        && priorTabEditor->state->modes.lastExitReason(
-                              EditorModeId::FoldShelf)
+                              EditorModeId::FoldRegion)
                               == EditorModeExitReason::TabChanged,
                    true);
         if (replacementEditor) {
@@ -14968,15 +13963,15 @@ int main(int argc, char** argv)
         modeChipEditor = window.tabManager->getCurrentEditor();
 
         if (modeChipEditor && window.globalControlCoordinator) {
-            modeChipEditor->startFoldShelfMode();
+            modeChipEditor->startFoldRegionMarkMode();
             window.globalControlCoordinator->open();
             QCoreApplication::processEvents(
                 QEventLoop::AllEvents, 50);
             expectBool("Global Control exits the active editor mode",
-                       !modeChipEditor->foldShelfModeActive()
+                       !modeChipEditor->foldRegionMarkModeActive()
                            && modeChipEditor->state->modes
                                   .lastExitReason(
-                                      EditorModeId::FoldShelf)
+                                      EditorModeId::FoldRegion)
                                   == EditorModeExitReason::ExternalControl,
                        true);
             if (window.globalControlCoordinator->panel)

@@ -108,14 +108,6 @@ inline constexpr const char NavigationDesignGoDefinition[] =
     "navigation.design.goDefinition";
 inline constexpr const char NavigationDesignSetTop[] =
     "navigation.design.setTop";
-inline constexpr const char WaveSimulationRunCurrentContext[] =
-    "waveSimulation.runCurrentContext";
-inline constexpr const char WaveSimulationObserveSignal[] =
-    "waveSimulation.observeSignal";
-inline constexpr const char WaveSimulationRevealSignalInResult[] =
-    "waveSimulation.revealSignalInResult";
-inline constexpr const char WaveSimulationRunDesignInstance[] =
-    "waveSimulation.runDesignInstance";
 inline constexpr const char EditDuplicateLines[] =
     "edit.duplicateLines";
 inline constexpr const char EditMoveLinesUp[] =
@@ -138,8 +130,6 @@ inline constexpr const char PinloomToggleBindingMarkers[] =
     "pinloom.toggleBindingMarkers";
 inline constexpr const char InsertColumnNumbers[] =
     "insert.columnNumbers";
-inline constexpr const char FoldShelfDeleteSelected[] =
-    "fold.shelf.deleteSelected";
 inline constexpr const char ViewSettingsCenter[] =
     "view.settingsCenter";
 inline constexpr const char ViewNavigation[] =
@@ -196,8 +186,6 @@ inline constexpr const char ViewRtlInsights[] =
     "view.rtlInsights.toggle";
 inline constexpr const char ViewSignalKernelGraph[] =
     "view.signalKernelGraph.toggle";
-inline constexpr const char ViewWavePreview[] =
-    "view.wavePreview.toggle";
 inline constexpr const char ViewBottomPanelCollapsed[] =
     "view.bottomPanel.toggleCollapsed";
 inline constexpr const char ViewBottomPanelPinned[] =
@@ -208,12 +196,8 @@ inline constexpr const char ViewFocusRtlInsights[] =
     "view.insightFocus.rtlInsights";
 inline constexpr const char ViewFocusSignalKernelGraph[] =
     "view.insightFocus.signalKernelGraph";
-inline constexpr const char ViewFocusWavePreview[] =
-    "view.insightFocus.wavePreview";
 inline constexpr const char ViewLeaveInsightFocus[] =
     "view.insightFocus.leave";
-inline constexpr const char ViewFoldShelf[] =
-    "view.foldShelf.toggle";
 inline constexpr const char ViewResetPanelLayout[] =
     "view.panelLayout.reset";
 inline constexpr const char WorkspaceCloseActive[] =
@@ -278,8 +262,6 @@ inline constexpr const char GraphExportUsageHotspotTrack[] =
     "graph.export.usageHotspotTrack";
 inline constexpr const char GraphExportUsageHotspotMatrix[] =
     "graph.export.usageHotspotMatrix";
-inline constexpr const char GraphExportWavePreview[] =
-    "graph.export.wavePreview";
 }
 
 struct ActionParameterModel {

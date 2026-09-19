@@ -1,30 +1,20 @@
-ZeroSlack v0.29.13
+ZeroSlack v0.29.14
 
 Build profile: Shared Release
 Qt: 6.10.2
 Compiler: MinGW 13.1.0
 slang: 10.0.14
 Suite WaveWorkbench: v0.12.0
-Bundled Wave toolchain: Verilator 5.050, MinGW 13.1.0, GNU Make
 Release root: E:\PinloomRoot\AppPackage\AppSuite
 
-Run ZeroSlack.exe. Keep the Runtime, WaveWorkbench, and Toolchain directories
-beside the ZeroSlack-win64 directory under AppSuite\Apps. Runtime provides the
-shared SuiteApp broker; WaveWorkbench provides waveform views and simulation;
-Toolchain contains wave-toolchain-v1.zip and wave-toolchain-bundle.json. The
-first simulation verifies and extracts this bundle into the local
-application-data cache; later runs reuse it. The target computer does not need
-a separate Verilator or C++ compiler installation or system PATH changes.
+Run ZeroSlack.exe. Runtime provides the optional shared SuiteApp broker.
+WaveWorkbench remains a separate sibling application for simulation and waveform viewing.
+ZeroSlack no longer runs simulation, loads wavewidgets.dll, or unpacks a Wave toolchain.
+The fixed ZeroSlack-win64 directory and executable names preserve existing shortcuts.
 
-The package directory and executable names remain fixed so existing Windows
-shortcuts continue to work across upgrades. Package, toolchain, build-cache,
-staging, and Verilator object directory names supplied by this release contain
-no spaces. User source paths remain supported through quoted process arguments.
-
-External Verilator and compiler executables may still be selected under
-Settings > Simulation. Empty settings prefer an existing expanded portable
-toolchain, then the verified bundle cache, environment variables, and PATH.
-Legacy standalone ZeroSlack packages remain supported.
+Settings, Search / Replace, Change Preview and Connections create their pages on first use.
+Reopening retains their state. Fold Shelf, static Wave Preview and Wave Simulation are removed.
+The four specialized diagrams and ordinary/custom folding remain available.
 
 Activity replaces the status bar. Scan, semantic and operation messages are
 retained in Activity. Important unread messages increment its numeric badge;
@@ -38,7 +28,7 @@ closing its sections. Showing an empty sidebar opens the first rail provider's
 default view and restores a hidden rail. Each insight section renders that
 insight's real view instead of a text summary; drag the section boundary or the
 sidebar divider to size it, and Follow Editor freezes it on the current result.
-Source insight commands and the Wave command retarget and pin the matching
+Source insight commands retarget and pin the matching
 section rather than opening a central tab; the full view stays on the header.
 Supported charts can open in the main area. Explicit Peek previews remain available.
 Detachable Context resources can float in multiple native windows. Right-click a
@@ -95,8 +85,5 @@ ZeroSlack.exe and may be replaced with your own compatible Qt 6 build, which is
 the right LGPLv3 reserves for you. The LGPLv3 text ships with the Qt runtime
 files in this package; Qt sources are available from https://download.qt.io.
 
-The bundled Wave simulation toolchain contains Verilator 5.050 (LGPLv3 or
-Artistic License 2.0), the MinGW-w64 GCC 13.1.0 runtime (GPLv3 with the GCC
-Runtime Library Exception) and GNU Make (GPLv3). They run as separate programs
-and are not linked into ZeroSlack. Each keeps its own license files inside the
-toolchain directory.
+Sibling applications and their toolchains retain their own license notices. They are not
+linked into ZeroSlack or required for its editing and analysis features.

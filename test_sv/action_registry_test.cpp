@@ -245,36 +245,12 @@ int main()
                        ActionSurface::ContextMenu).isEmpty()
                && actionDescriptorsForSurface(
                       ActionSurface::GraphPanel).size()
-                      == 13);
-    const ActionDescriptor* runWave = findActionById(
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRunCurrentContext));
-    const ActionDescriptor* observeWave = findActionById(
-        QString::fromLatin1(
-            ActionIds::WaveSimulationObserveSignal));
-    const ActionDescriptor* revealWave = findActionById(
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRevealSignalInResult));
-    const ActionDescriptor* runWaveInstance = findActionById(
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRunDesignInstance));
-    expect("Wave Simulation exposes formal registry-owned entry points",
-           runWave
-               && runWave->canonicalName
-                      == QStringLiteral("Run Wave Simulation")
-               && runWave->hasSurface(ActionSurface::Menu)
-               && runWave->hasSurface(ActionSurface::ContextMenu)
-               && !runWave->canonicalName.contains(
-                      QStringLiteral("Experimental"))
-               && observeWave
-               && observeWave->scope == ActionScope::Symbol
-               && observeWave->hasSurface(ActionSurface::ContextMenu)
-               && revealWave
-               && revealWave->scope == ActionScope::Symbol
-               && revealWave->hasSurface(ActionSurface::ContextMenu)
-               && runWaveInstance
-               && runWaveInstance->scope == ActionScope::Hierarchy
-               && runWaveInstance->hasSurface(ActionSurface::ContextMenu));
+                      == 12);
+    expect("Wave Simulation command routes are removed",
+           !findActionById(QStringLiteral("waveSimulation.runCurrentContext"))
+               && !findActionById(QStringLiteral("waveSimulation.observeSignal"))
+               && !findActionById(QStringLiteral("waveSimulation.revealSignalInResult"))
+               && !findActionById(QStringLiteral("waveSimulation.runDesignInstance")));
     const QStringList graphViewActionIds = {
         QString::fromLatin1(ActionIds::GraphViewFit),
         QString::fromLatin1(ActionIds::GraphViewZoomIn),
@@ -375,8 +351,6 @@ int main()
             ActionIds::GraphExportUsageHotspotTrack),
         QString::fromLatin1(
             ActionIds::GraphExportUsageHotspotMatrix),
-        QString::fromLatin1(
-            ActionIds::GraphExportWavePreview),
     };
     bool graphExportDescriptorsComplete = true;
     for (const QString& id : graphExportActionIds) {
@@ -664,11 +638,6 @@ int main()
          "ui.bottomPanel.collapsed.toggle",
          0,
          "Ctrl+J"},
-        {ActionIds::ViewFoldShelf,
-         "viewFoldShelfAction",
-         "ui.panel.foldShelf.toggle",
-         0,
-         ""},
         {ActionIds::ViewSettingsCenter,
          "viewSettingsCenterAction",
          "ui.settingsCenter.show",
@@ -754,13 +723,6 @@ int main()
              | ActionRequirements::Symbol
              | ActionRequirements::Hierarchy,
          ""},
-        {ActionIds::WaveSimulationRunCurrentContext,
-         "runWaveSimulationAction",
-         "waveSimulation.runCurrentContext",
-         ActionRequirements::Workspace
-             | ActionRequirements::Editor
-             | ActionRequirements::SemanticCurrent,
-         ""},
     };
     bool stableMenuCatalogComplete = true;
     for (const MenuActionExpectation& expected :
@@ -845,7 +807,7 @@ int main()
              ActionIds::ViewSignalKernelGraph,
              ActionIds::ViewFocusRtlInsights,
              ActionIds::ViewFocusSignalKernelGraph,
-             ActionIds::ViewFocusWavePreview,
+             "view.insightFocus.wavePreview",
              ActionIds::ViewLeaveInsightFocus}) {
         retiredInsightDescriptorsAreAbsent =
             retiredInsightDescriptorsAreAbsent
@@ -853,16 +815,12 @@ int main()
     }
     expect("retired bottom and Insight Focus descriptors are absent",
            retiredInsightDescriptorsAreAbsent);
-    const ActionDescriptor* waveLiveInsightAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::ViewWavePreview));
-    bool retainedBottomCommandsAreCatalogOnly =
-        waveLiveInsightAction
-        && waveLiveInsightAction->canonicalName
-               == QStringLiteral("Open Wave in Live Insights")
-        && !waveLiveInsightAction->hasSurface(ActionSurface::Menu)
-        && waveLiveInsightAction->hasSurface(
-            ActionSurface::ActionCatalog);
+    expect("removed Shelf and symbolic Wave actions are absent",
+           !findActionById(QStringLiteral("fold.shelf"))
+               && !findActionById(QStringLiteral("view.foldShelf.toggle"))
+               && !findActionById(QStringLiteral("view.wavePreview.toggle"))
+               && !findActionById(QStringLiteral("graph.export.wavePreview")));
+    bool retainedBottomCommandsAreCatalogOnly = true;
     for (const char* id : {
              ActionIds::ViewBottomPanelPinned,
              ActionIds::ViewBottomPanelClose}) {
@@ -874,7 +832,7 @@ int main()
             && !descriptor->hasSurface(ActionSurface::Menu)
             && descriptor->hasSurface(ActionSurface::ActionCatalog);
     }
-    expect("Wave uses Live Insights and retained bottom commands avoid menus",
+    expect("retained bottom commands avoid menus",
            retainedBottomCommandsAreCatalogOnly);
     const ActionDescriptor* globalControlAction =
         findActionById(QString::fromLatin1(
@@ -945,31 +903,6 @@ int main()
                       ActionSurface::CommandLayer,
                       QStringLiteral("column number"))
                       == columnNumbersAction);
-
-    const ActionDescriptor* foldShelfDeleteAction =
-        findActionById(QString::fromLatin1(
-            ActionIds::FoldShelfDeleteSelected));
-    expect("Fold Shelf Delete is a Registry-owned contextual Action",
-           foldShelfDeleteAction
-               && foldShelfDeleteAction->executionRoute
-                      == QStringLiteral(
-                          "ui.foldShelf.deleteSelected")
-               && foldShelfDeleteAction->defaultShortcut
-                      == QStringLiteral("Delete")
-               && foldShelfDeleteAction->hasSurface(
-                      ActionSurface::Shortcut)
-               && foldShelfDeleteAction->hasSurface(
-                      ActionSurface::CommandLayer)
-               && foldShelfDeleteAction->hasSurface(
-                      ActionSurface::ActionCatalog)
-               && !foldShelfDeleteAction->hasSurface(
-                      ActionSurface::Menu)
-               && !foldShelfDeleteAction->repeatable
-               && findActionByAlias(
-                      ActionSurface::CommandLayer,
-                      QStringLiteral(
-                          "fold shelf delete"))
-                      == foldShelfDeleteAction);
 
     struct TabContextExpectation {
         const char* id;
@@ -2241,8 +2174,8 @@ int main()
         QStringLiteral("signal.propagateBatch"),
         QStringLiteral("insert.columnNumbers"),
         QStringLiteral("navigation.goLine")};
-    expect("F24 vocabulary is unchanged by palette scoping",
-           commandLayerCommandRegistry().size() == 38
+    expect("F24 vocabulary retains the surviving commands after Shelf removal",
+           commandLayerCommandRegistry().size() == 37
                && commandLayerGlobalControlIds == expectedGlobalControlIds);
 
     struct CommandColumnCase {
@@ -2256,7 +2189,7 @@ int main()
                      QStringLiteral("connect instance pair"),
                      QStringLiteral("propagate selected signals"),
                      QStringLiteral("column number")}},
-        {QStringLiteral("fd"), {QStringLiteral("fd r"), QStringLiteral("fd s")}},
+        {QStringLiteral("fd"), {QStringLiteral("fd r")}},
         {QStringLiteral("ow"), {QStringLiteral("ow 1"), QStringLiteral("ow 2"),
                                 QStringLiteral("ow r"), QStringLiteral("domain:ow s")}},
         {QStringLiteral("ow s"), {QStringLiteral("ow s save"),

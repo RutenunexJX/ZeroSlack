@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.13`
+Current version: `v0.29.14`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -30,7 +30,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | --- | --- | --- |
 | Shell | An empty workspace opens to a compact start page with the Open Project icon and recent project paths; Navigation and Context use full-height columns when editing, with a drawer under the editor and no status bar. | [manual §3](用户手册.md) |
 | Shell | Non-editor text follows a proportional typography hierarchy with distinct headings and metadata. | [architecture, visual system](ARCHITECTURE.md) |
-| Drawer | Problems and Activity are permanent; Search, Change Preview, Connections and Fold Shelf appear on demand. Activity counts unread important messages and clears on open. | [manual §3.3](用户手册.md) |
+| Panels | Problems and Activity are permanent; Search and Change Preview use the drawer, while Connections opens in a central tab. The optional pages are created on first use and retain their state on reopen. Activity counts unread important messages and clears on open. | [manual §3.3](用户手册.md) |
 | Gutter | The number lane sizes itself by line count, diagnostics and Pinloom links share one marker lane, and folding sits beside the code. | [manual §3](用户手册.md) |
 | Workspaces | Open, switch, close, rename and revisit multiple workspaces; configure include dirs, defines, ignored dirs, source extensions and the active top module. | [manual §4](用户手册.md) |
 | Workspaces | Cached files appear immediately and are reconciled with the directory in the background, so changes made while a workspace was inactive are found without re-analyzing unchanged files. | [manual §4.1](用户手册.md) |
@@ -45,17 +45,15 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Search | `Ctrl+F` / `Ctrl+H` use an inline editor bar; `Ctrl+Shift+F` / `Ctrl+Shift+H` open workspace search and guarded replace. | [manual §12](用户手册.md) |
 | Context | The right-side rail opens a resizable sidebar of collapsible sections that can be resized, reordered, floated into native windows, bound to a document, or hidden as a whole with `Ctrl+2`. | [manual §5.4](用户手册.md) |
 | Context | Temporary source editing uses one in-editor Peek that pins into the sidebar without losing the live editor, undo state, search history or restore identity. | [manual §5.4](用户手册.md) |
-| Insights | Problems, Design, RTL Insights, state-transition and FSM views, module block diagrams, signal journeys, signal-kernel graphs, usage hotspots and symbolic wave previews. | [manual §16](用户手册.md) |
-| Insights | Each insight section renders the real view through the same surface the full view uses; source Actions and the Wave command retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
+| Insights | Problems, Design, RTL Insights, state-transition and FSM views, module block diagrams, signal journeys, signal-kernel graphs, usage hotspots. | [manual §16](用户手册.md) |
+| Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
 | RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
-| Wave | Simulation runs from the current module, an enclosing `always` block, a selected signal or an exact Design instance. ZeroSlack owns the module manifest, stimulus preparation, unsaved-buffer capture, the portable toolchain and result-to-source navigation; WaveWorkbench owns scenario editing, execution, trace reading and waveform rendering. | [integrations, Wave simulation](docs/integrations.md), [manual §16.9](用户手册.md) |
-| Wave | The Windows release carries Verilator 5.050, MinGW 13.1 and GNU Make as a verified sibling bundle that is extracted into the local cache on first use; explicit paths stay configurable under `Settings > Simulation`. | [integrations, Wave simulation](docs/integrations.md) |
 | Suite | Workspace Hub groups source, Pinloom, Wave and RegMap resources, and the same versioned associations are available to automation. | [AppSuite integration](docs/suite.md), [manual §21](用户手册.md) |
-| Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, simulation, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
+| Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
 Ownership boundary: native documents and external application data stay with their owners.
-ZeroSlack loads the shared WaveWorkbench workspace through a versioned ABI and does not keep a
-second waveform renderer, read another application's database, or include its private headers.
+External application resources use the Suite integration boundary. ZeroSlack does not run simulation,
+load waveform-rendering libraries, read another application's database, or include its private headers.
 Checks that have never been run on a real desktop are listed in
 [unverified manual checks](docs/unverified-manual-checks.md).
 
@@ -109,10 +107,19 @@ build/local/zeroslack-cli.exe --help
 ctest --test-dir build/local --output-on-failure -j1
 ```
 
+## Panel lifecycle
+
+Settings, Search / Replace, Change Preview and Connections construct their heavy widgets only
+on first use. Settings values and workspace context remain available before opening Settings.
+Hidden drawer state is retained until its page exists; closing and reopening reuses that page.
+Problems and Activity retain their lightweight models and badge updates. Specialized insight
+surfaces remain provider-created on demand. Fold Shelf, static Wave Preview and Wave Simulation are removed;
+ordinary/custom folding and the four specialized diagrams remain available.
+
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.13`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.14`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -136,8 +143,8 @@ display, the guarded document markers, and the release tag.
 ## Current goal and open work
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic
-authority. Workspace Hub, provider-based Context Workspace, live insights, Wave simulation
-integration and the read-only AI CLI are implemented. Native documents and external application
+authority. Workspace Hub, provider-based Context Workspace, live insights
+and the read-only AI CLI are implemented. Native documents and external application
 data remain with their owners. Context content is placed by the user: sections stack in the
 sidebar, detachable views open in native floating windows with workspace geometry memory, and
 temporary source editors keep their in-editor overlay. Insight sections render the same view
@@ -197,7 +204,7 @@ The repository keeps six documents. This README is the entry point; the other fi
 | [用户手册](用户手册.md) | Every user-facing interaction, shortcut and edge case (Chinese) |
 | [Architecture](ARCHITECTURE.md) | Ownership, threading, extension constraints, repository layout, visual system |
 | [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, cross-application workflows, shared visual contract |
-| [Integrations](docs/integrations.md) | Read-only CLI contract and the Wave simulation boundary |
+| [Integrations](docs/integrations.md) | Read-only CLI and external application boundaries |
 | [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
 
 Historical acceptance logs and superseded status reports are intentionally

@@ -26,6 +26,7 @@ class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 class ScopedReplaceWorkflow;
+class DeferredPanel;
 struct ScopedReplaceWorkflowResult;
 
 struct ScopedSearchPanelContext {
@@ -171,7 +172,7 @@ private:
     int renderedReplaceMatchCount = 0;
 };
 
-// Owns one dock and one page for its complete lifetime. It deliberately has
+// Owns a stable dock host and creates its page on first use. It deliberately has
 // no open/close API: the registered PanelLayoutController remains the sole
 // owner of visibility, tab selection, and restored height.
 class ZEROSLACK_API ScopedSearchPanelCoordinator : public QObject
@@ -219,10 +220,17 @@ signals:
         const EditorLocation& location,
         bool succeeded,
         const QString& failureReason);
+    void resultCountChanged(int count);
     void replacePreviewReady(
         const ReplacePreviewPlan& preview);
 
 private:
+    void createPanel(QWidget* parent);
+    QPointer<DeferredPanel> deferredPanel;
+    const SearchService* pendingService = nullptr;
+    ScopedSearchPanel::ContextProvider pendingContextProvider;
+    ScopedSearchPanelContext pendingContext;
+    QPointer<ScopedReplaceWorkflow> pendingReplaceWorkflow;
     QPointer<QDockWidget> searchDock;
     QPointer<ScopedSearchPanel> searchPanel;
     NavigationHandler navigationHandler;

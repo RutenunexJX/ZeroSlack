@@ -431,7 +431,6 @@ set(PHASE_J_FIXTURE_CLEANUP_PATTERNS
 set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
     src/editor/editorcompletionworkflow.cpp
     src/editor/editorcoordinator.cpp
-    src/editor/foldblockshelfmodel.cpp
 )
 
 set(PHASE_L_REGEX_CLEANUP_PATTERNS

@@ -1,4 +1,5 @@
 #include "scopedsearchpanel.h"
+#include "deferredpanel.h"
 
 #include "scopedreplaceworkflow.h"
 
@@ -1098,6 +1099,7 @@ ScopedSearchPanelCoordinator(
     const SearchService* service,
     QObject* parent)
     : QObject(parent ? parent : dockParent)
+    , pendingService(service)
 {
     searchDock = new QDockWidget(
         QStringLiteral("Search / Replace"),
@@ -1110,9 +1112,23 @@ ScopedSearchPanelCoordinator(
         | QDockWidget::DockWidgetFloatable
         | QDockWidget::DockWidgetClosable);
 
-    searchPanel =
-        new ScopedSearchPanel(service, searchDock);
-    searchDock->setWidget(searchPanel);
+    deferredPanel = new DeferredPanel(searchDock, this,
+        [this](QWidget* parent) -> QWidget* {
+            createPanel(parent);
+            return searchPanel;
+        });
+    deferredPanel->setObjectName(QStringLiteral("deferredSearchPanel"));
+    searchDock->setWidget(deferredPanel);
+}
+
+void ScopedSearchPanelCoordinator::createPanel(QWidget* parent)
+{
+    searchPanel = new ScopedSearchPanel(pendingService, parent);
+    searchPanel->setSearchContext(pendingContext);
+    searchPanel->setContextProvider(pendingContextProvider);
+    searchPanel->setReplaceWorkflow(pendingReplaceWorkflow);
+    connect(searchPanel, &ScopedSearchPanel::searchCompleted, this,
+            [this] { emit resultCountChanged(searchPanel->displayedResultCount()); });
 
     connect(searchPanel.data(),
             &ScopedSearchPanel::navigationRequested,
@@ -1153,20 +1169,23 @@ QDockWidget* ScopedSearchPanelCoordinator::dock() const
 ScopedSearchPanel*
 ScopedSearchPanelCoordinator::panel() const
 {
+    if (deferredPanel)
+        deferredPanel->ensureCreated();
     return searchPanel.data();
 }
 
 void ScopedSearchPanelCoordinator::setContextProvider(
     ScopedSearchPanel::ContextProvider provider)
 {
+    pendingContextProvider = std::move(provider);
     if (searchPanel)
-        searchPanel->setContextProvider(
-            std::move(provider));
+        searchPanel->setContextProvider(pendingContextProvider);
 }
 
 void ScopedSearchPanelCoordinator::setSearchContext(
     const ScopedSearchPanelContext& context)
 {
+    pendingContext = context;
     if (searchPanel)
         searchPanel->setSearchContext(context);
 }
@@ -1216,20 +1235,22 @@ ScopedSearchPanelCoordinator::requestTemporaryEditorOpen(
 void ScopedSearchPanelCoordinator::setReplaceWorkflow(
     ScopedReplaceWorkflow* workflow)
 {
+    pendingReplaceWorkflow = workflow;
     if (searchPanel)
         searchPanel->setReplaceWorkflow(workflow);
 }
 
 void ScopedSearchPanelCoordinator::refresh()
 {
-    if (searchPanel)
-        searchPanel->refresh();
+    if (auto* page = panel())
+        page->refresh();
 }
 
 ReplacePreviewPlan
 ScopedSearchPanelCoordinator::buildReplacePreview()
 {
-    return searchPanel
-        ? searchPanel->buildReplacePreview()
+    auto* page = panel();
+    return page
+        ? page->buildReplacePreview()
         : ReplacePreviewPlan{};
 }

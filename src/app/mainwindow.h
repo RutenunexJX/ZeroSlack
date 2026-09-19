@@ -43,17 +43,12 @@ class PinloomHostClient;
 class EditorCoordinator;
 class EditorActionContextService;
 class FileCommandCoordinator;
-class FoldBlockShelfModel;
-class FoldBlockShelfPanel;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
 class TemporaryEditorSearchProvider;
 class ScopedReplaceWorkflow;
 class WorkspaceEditDocumentManager;
-class WaveSimulationCoordinator;
-class WaveSimulationResultNavigationCoordinator;
-class WaveEmbeddedWorkspaceLoader;
 enum class LiveInsightKind : quint8;
 class QAction;
 class QDialog;
@@ -73,15 +68,12 @@ struct DocumentChange;
 struct EditorActionContext;
 struct EditorActionContextQuery;
 struct EditorSemanticContext;
-struct EditorModeSnapshot;
 struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
 struct SettingsCenterSnapshot;
 struct ScopedSearchPanelContext;
 struct ContextResource;
 struct LiveInsightToolContext;
-struct WaveSimulationObservationRequest;
-struct WaveSimulationObservationScopeRequest;
 
 
 QT_BEGIN_NAMESPACE
@@ -140,21 +132,12 @@ private:
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<WorkspaceSessionCoordinator>
         workspaceSessionCoordinator;
-    std::unique_ptr<FoldBlockShelfModel> foldShelfModel;
-    FoldBlockShelfPanel* foldShelfPanel = nullptr;
-    QDockWidget* foldShelfDock = nullptr;
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
     std::unique_ptr<RtlActionCoordinator> rtlActionCoordinator;
     std::unique_ptr<WorkspaceEditDocumentManager>
         scopedReplaceDocuments;
-    std::unique_ptr<WaveSimulationCoordinator>
-        waveSimulationCoordinator;
-    std::unique_ptr<WaveSimulationResultNavigationCoordinator>
-        waveSimulationResultNavigationCoordinator;
-    std::unique_ptr<WaveEmbeddedWorkspaceLoader>
-        waveEmbeddedWorkspaceLoader;
     std::unique_ptr<ScopedReplaceWorkflow>
         scopedReplaceWorkflow;
     std::unique_ptr<SettingsCenterService> settingsCenterService;
@@ -180,8 +163,6 @@ private:
         crashRecoveryNotificationWorkspaces;
     QHash<QString, QString>
         externalConflictNotificationFiles;
-    QHash<QString, QVariantMap>
-        waveSimulationNotificationLocations;
     QHash<QString, int>
         crashRecoveryIsolatedRecordCounts;
     QSet<QString> handledCrashRecoveryCandidates;
@@ -227,7 +208,6 @@ private:
     void setupFileCommandCoordinator();
     void setupGlobalControl();
     void setupCommandLayer();
-    void setupFoldBlockShelf();
     void setupPanelLayoutController();
     void setupContextWorkspace();
     void requestLiveInsightUpdates();
@@ -249,25 +229,12 @@ private:
         LiveInsightKind kind,
         std::function<void(const LiveInsightsContextView::TargetCandidate&)>
             picked);
-    QString liveInsightWaveformLibraryPath() const;
     void setupViewMenu();
     void setupWorkspaceMenu();
     void refreshWorkspaceMenuEntries();
     void activateWorkspace(int index);
     void closeActiveWorkspace();
     void setupToolsMenu();
-    void setupWaveSimulation();
-    void openWaveSimulationResultTab(
-        const QString& resultProjectPath,
-        const QString& widgetLibraryPath,
-        const QString& applicationPath);
-    bool startWaveSimulation(
-        const QString& targetFile,
-        const QString& moduleName,
-        const QString& instancePath,
-        const WaveSimulationObservationScopeRequest& observationScope,
-        const QList<WaveSimulationObservationRequest>& observations,
-        QString* failureReason);
     void setupCrashRecoveryReviewUi();
     void notifyCrashRecoveryCandidates(
         const QString& workspaceRoot,
@@ -310,17 +277,13 @@ private:
         const EditorSemanticContext& editorContext);
     EditorActionContext resolveEditorActionContext(
         const EditorSemanticContext& editorContext);
-    void updateEditorModePresentation(const EditorModeSnapshot& snapshot);
-    void setFoldShelfModeVisualActive(bool active);
     void showRecentWorkspacesDialog();
     void showWorkspaceConfigurationDialog();
     void navigateDiagnostic(bool previous);
     void setDiagnosticsAnalysisState(const QString& state);
     void refreshDiagnosticsAnalysisState();
-    void showFoldBlockShelf();
-    void restoreFoldShelfItem(const QString& id);
-    void restoreFoldShelfItemToActiveEditor(const QString& id);
     void setupSettingsCenter();
+    void ensureSettingsCenterPanel();
     void applySettingsCenterSnapshot(
         const SettingsCenterSnapshot& snapshot);
     void applyRegisteredActionShortcuts();

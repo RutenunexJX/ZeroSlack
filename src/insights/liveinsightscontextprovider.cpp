@@ -70,8 +70,6 @@ QString LiveInsightsContextProvider::iconKeyForKind(
         return QStringLiteral("rtl-insight-hotspot");
     case LiveInsightKind::State:
         return QStringLiteral("rtl-insight-state");
-    case LiveInsightKind::Wave:
-        return QStringLiteral("rtl-insight-wave");
     }
     return {};
 }
@@ -85,8 +83,7 @@ bool LiveInsightsContextProvider::isWorkbenchProviderId(
              LiveInsightKind::Kernel,
              LiveInsightKind::Module,
              LiveInsightKind::Hotspot,
-             LiveInsightKind::State,
-             LiveInsightKind::Wave}) {
+             LiveInsightKind::State}) {
         if (providerId == providerIdForKind(kind))
             return true;
     }
@@ -114,9 +111,6 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
         break;
     case LiveInsightKind::State:
         resource.title = QStringLiteral("State Transition Graph");
-        break;
-    case LiveInsightKind::Wave:
-        resource.title = QStringLiteral("Symbolic Wave Preview");
         break;
     }
     resource.iconKey = iconKeyForKind(kind);
@@ -177,12 +171,6 @@ void LiveInsightsContextProvider::setToolContextSource(
     LiveInsightsContextView::ToolContextSource source)
 {
     toolContextSource = std::move(source);
-}
-
-void LiveInsightsContextProvider::setWaveformLibraryPathSource(
-    LiveInsightsContextView::WaveformLibraryPathSource source)
-{
-    waveformLibraryPathSource = std::move(source);
 }
 
 void LiveInsightsContextProvider::setTargetPickRequest(
@@ -246,8 +234,6 @@ QWidget* LiveInsightsContextProvider::createView(
         ? new LiveInsightsContextView(sessionValue, fixedKind, parent)
         : new LiveInsightsContextView(sessionValue, parent);
     Q_UNUSED(hasResourceKind)
-    if (waveformLibraryPathSource)
-        view->setWaveformLibraryPathSource(waveformLibraryPathSource);
     if (toolContextSource)
         view->setToolContextSource(toolContextSource);
     if (targetPickRequest)

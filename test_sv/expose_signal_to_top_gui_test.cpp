@@ -288,7 +288,7 @@ ContextActionTriggerState triggerEditorOwnedContextAction(
     QTimer::singleShot(0, editor, [&]() {
         QWidget* menu = QApplication::activePopupWidget();
         state.menuShown = menu != nullptr;
-        if (menu) if (auto* group = menu->findChild<QToolButton*>(QStringLiteral("radialGroup.3"))) group->click();
+        if (menu) if (auto* group = menu->findChild<QToolButton*>(QStringLiteral("radialGroup.2"))) group->click();
         QToolButton* action = menu ? menu->findChild<QToolButton*>(actionId) : nullptr;
         state.found = action != nullptr;
         state.enabled = action && action->isEnabled();

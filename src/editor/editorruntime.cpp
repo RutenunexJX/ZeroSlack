@@ -270,7 +270,7 @@ QString insertedDocumentText(QTextDocument* document,
     return text;
 }
 
-QString wavePreviewScopeKey(const MyCodeEditorState& state,
+QString insightScopeKey(const MyCodeEditorState& state,
                             const MyCodeEditor* editor)
 {
     const EditorAlwaysScopeTarget always =
@@ -1525,7 +1525,7 @@ void MyCodeEditorState::rebindDocument(
     selections.highlightCurrentLine(editor);
     folding.refresh(editor, syntax.tsDocument());
     ++hotPathMetrics.fullFoldingRebuilds;
-    lastWavePreviewScopeKey.clear();
+    lastInsightScopeKey.clear();
     suppressNextCursorPresentation = false;
     editorPresentationPending = false;
     ghostPresentationPending = false;
@@ -1533,7 +1533,7 @@ void MyCodeEditorState::rebindDocument(
     gutter.updateViewportMargins(editor);
     handleResize(editor);
     editor->viewport()->update();
-    emit editor->wavePreviewScopeChanged();
+    emit editor->insightScopeChanged();
 }
 
 void MyCodeEditorState::handleDocumentContentsChange(
@@ -2019,7 +2019,7 @@ void MyCodeEditorState::refreshSemanticDecorationPresentation(
 
 void MyCodeEditorState::refreshDerivedEditorState(
     MyCodeEditor* editor,
-    bool allowWavePreviewSignal)
+    bool allowInsightScopeSignal)
 {
     if (!editor)
         return;
@@ -2038,20 +2038,20 @@ void MyCodeEditorState::refreshDerivedEditorState(
         static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
 
     derivedTimer.restart();
-    const QString scopeKey = wavePreviewScopeKey(*this, editor);
-    hotPathMetrics.editorDerivedWaveScopeNanoseconds +=
+    const QString scopeKey = insightScopeKey(*this, editor);
+    hotPathMetrics.editorDerivedScopeNanoseconds +=
         static_cast<std::uint64_t>(derivedTimer.nsecsElapsed());
-    if (!allowWavePreviewSignal) {
-        lastWavePreviewScopeKey = scopeKey;
+    if (!allowInsightScopeSignal) {
+        lastInsightScopeKey = scopeKey;
         return;
     }
 
-    if (lastWavePreviewScopeKey.isEmpty()) {
-        lastWavePreviewScopeKey = scopeKey;
-        emit editor->wavePreviewScopeChanged();
-    } else if (scopeKey != lastWavePreviewScopeKey) {
-        lastWavePreviewScopeKey = scopeKey;
-        emit editor->wavePreviewScopeChanged();
+    if (lastInsightScopeKey.isEmpty()) {
+        lastInsightScopeKey = scopeKey;
+        emit editor->insightScopeChanged();
+    } else if (scopeKey != lastInsightScopeKey) {
+        lastInsightScopeKey = scopeKey;
+        emit editor->insightScopeChanged();
     }
 }
 
@@ -2080,9 +2080,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
             break;
         case EditorModeId::FoldRegion:
             folding.cancelFoldRegionMarkMode(editor);
-            break;
-        case EditorModeId::FoldShelf:
-            folding.cancelFoldShelfMode(editor);
             break;
         case EditorModeId::TemplateSlots:
             handleTemplateSlotKeyPress(editor, event);
@@ -2209,14 +2206,6 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
         return true;
     }
     if (primaryMode == EditorModeId::FoldRegion) {
-        event->accept();
-        return true;
-    }
-    if (primaryMode == EditorModeId::FoldShelf
-        && !event->text().isEmpty()
-        && !event->modifiers().testFlag(Qt::ControlModifier)) {
-        emit editor->editorStatusMessageRequested(
-            QStringLiteral("Fold Shelf: drag custom fold blocks"));
         event->accept();
         return true;
     }
@@ -3027,25 +3016,6 @@ void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
         static_cast<std::uint64_t>(phaseTimer.nsecsElapsed());
     lifecycleTrace("finish.highlights");
     editorPresentationPending = false;
-}
-
-bool MyCodeEditorState::handleDragEnter(
-    MyCodeEditor* editor,
-    QDragEnterEvent* event)
-{
-    return folding.handleFoldShelfDragEnter(editor, event);
-}
-
-bool MyCodeEditorState::handleDragMove(
-    MyCodeEditor* editor,
-    QDragMoveEvent* event)
-{
-    return folding.handleFoldShelfDragMove(editor, event);
-}
-
-bool MyCodeEditorState::handleDrop(MyCodeEditor* editor, QDropEvent* event)
-{
-    return folding.handleFoldShelfDrop(editor, event);
 }
 
 void MyCodeEditorState::handleResize(MyCodeEditor* editor)
@@ -4475,10 +4445,6 @@ bool MyCodeEditorState::handleMousePress(
         }
     }
 
-    if (folding.handleFoldShelfMousePress(editor, event)) {
-        columnMode.clearPendingColumnAnchor();
-        return true;
-    }
 
     if (columnMode.beginSelection(editor, event))
         return true;
@@ -4631,9 +4597,6 @@ bool MyCodeEditorState::handleMouseMove(
     if (folding.handleFoldRegionMouseMove(editor, event))
         gutter.handleUpdateRequest(editor, editor->viewport()->rect(), 0);
 
-    folding.handleFoldShelfHover(editor, event);
-    if (folding.handleFoldShelfMouseMove(editor, event))
-        return true;
 
     if (sourceNavigation.handleMouseMove(
         editor,

@@ -85,12 +85,6 @@ int main(int argc, char* argv[])
         capability(QStringLiteral("navigation.goLine")),
         capability(QString::fromLatin1(
             ActionIds::ViewTemporaryEditorOpen)),
-        capability(QString::fromLatin1(
-            ActionIds::WaveSimulationRunCurrentContext)),
-        capability(QString::fromLatin1(
-            ActionIds::WaveSimulationObserveSignal)),
-        capability(QString::fromLatin1(
-            ActionIds::WaveSimulationRevealSignalInResult)),
         capability(QStringLiteral("source.goToDefinition")),
         capability(QStringLiteral("source.findReferences")),
         capability(QStringLiteral("source.showRelationships")),
@@ -167,24 +161,6 @@ int main(int argc, char* argv[])
               && temporaryEditor->section
                      == EditorContextMenuSection::Navigate,
           "current editor exposes the unified temporary-editor navigation Action");
-    const EditorContextMenuItem* runWave = findItem(
-        model,
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRunCurrentContext));
-    const EditorContextMenuItem* observeWave = findItem(
-        model,
-        QString::fromLatin1(
-            ActionIds::WaveSimulationObserveSignal));
-    const EditorContextMenuItem* revealWave = findItem(
-        model,
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRevealSignalInResult));
-    check(runWave && runWave->enabled && runWave->executable
-              && observeWave && observeWave->enabled
-              && observeWave->executable
-              && revealWave && revealWave->enabled
-              && revealWave->executable,
-          "current semantic symbol context exposes formal Wave Simulation Actions");
     const EditorContextMenuItem* linkPinloom = findItem(
         model,
         QString::fromLatin1(ActionIds::PinloomLinkSelection));
@@ -218,12 +194,6 @@ int main(int argc, char* argv[])
         QStringLiteral("refactor.editInstanceSlots"),
         QStringLiteral("refactor.createAssignmentQueue"),
         QStringLiteral("refactor.exposeSignalToTop"),
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRunCurrentContext),
-        QString::fromLatin1(
-            ActionIds::WaveSimulationObserveSignal),
-        QString::fromLatin1(
-            ActionIds::WaveSimulationRevealSignalInResult),
         QString::fromLatin1(
             ActionIds::EditToggleSelectionCase),
         QString::fromLatin1(

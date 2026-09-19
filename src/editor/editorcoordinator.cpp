@@ -401,12 +401,6 @@ void EditorCoordinator::refreshPinloomCodeLinkMarkers()
     refreshPinloomCodeLinksForOpenEditors();
 }
 
-void EditorCoordinator::setFoldShelfItemConsumedHandler(
-    std::function<void(const QString&)> handler)
-{
-    foldShelfItemConsumedHandler = std::move(handler);
-}
-
 void EditorCoordinator::connectSignals()
 {
     if (signalsConnected || !tabManager)
@@ -528,11 +522,6 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     appearanceSettings->options();
                 appearanceSettings->setFontSizePt(
                     options.fontSizePt + steps);
-            });
-    connect(editor, &MyCodeEditor::foldShelfItemConsumed,
-            this, [this](const QString& id) {
-                if (foldShelfItemConsumedHandler)
-                    foldShelfItemConsumedHandler(id);
             });
     connect(editor,
             &MyCodeEditor::pinloomCodeLinkActivated,
@@ -1530,21 +1519,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     append(QString::fromLatin1(
         ActionIds::ViewTemporaryEditorOpen));
     append(QString::fromLatin1(
-               ActionIds::WaveSimulationRunCurrentContext),
-           !context.moduleName.trimmed().isEmpty(),
-           !context.moduleName.trimmed().isEmpty(),
-           QStringLiteral("Place the cursor inside a module."));
-    append(QString::fromLatin1(
-               ActionIds::WaveSimulationObserveSignal),
-           symbolAvailable,
-           symbolAvailable,
-           QStringLiteral("Select a signal to observe."));
-    append(QString::fromLatin1(
-               ActionIds::WaveSimulationRevealSignalInResult),
-           symbolAvailable,
-           symbolAvailable,
-           QStringLiteral("Select a signal to reveal in an open Wave result."));
-    append(QString::fromLatin1(
                ActionIds::EditToggleSelectionCase),
            hasSelection,
            editable && hasSelection,
@@ -1649,9 +1623,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                     QStringLiteral("insight."))
                 || actionId
                        == QStringLiteral(
-                           "refactor.exposeSignalToTop")
-                || actionId.startsWith(
-                    QStringLiteral("waveSimulation."));
+                           "refactor.exposeSignalToTop");
             if (registeredEditorAction
                 && registeredActionRequestHandler) {
                 QVariantMap parameters;
@@ -1692,35 +1664,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                     parameters.insert(
                         QStringLiteral("pinloomAnchorId"),
                         pinloomAnchorId);
-                } else if (actionId.startsWith(
-                               QStringLiteral("waveSimulation."))) {
-                    parameters.insert(
-                        QStringLiteral("fileName"),
-                        context.fileName);
-                    parameters.insert(
-                        QStringLiteral("moduleName"),
-                        context.moduleName);
-                    parameters.insert(
-                        QStringLiteral("line"),
-                        context.cursorLine + 1);
-                    parameters.insert(
-                        QStringLiteral("column"),
-                        context.column + 1);
-                    if (actionId
-                            == QString::fromLatin1(
-                                ActionIds::WaveSimulationObserveSignal)
-                        || actionId
-                            == QString::fromLatin1(
-                                ActionIds::WaveSimulationRevealSignalInResult)) {
-                        parameters.insert(
-                            QStringLiteral("symbolName"),
-                            sourceContext.symbolName);
-                        parameters.insert(
-                            QStringLiteral("signalAccessPath"),
-                            sourceContext.memberAccessPath.isEmpty()
-                                ? sourceContext.symbolName
-                                : sourceContext.memberAccessPath);
-                    }
                 }
                 registeredActionRequestHandler(
                     actionId, parameters);

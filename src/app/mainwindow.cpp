@@ -33,10 +33,6 @@
 #include "diagnosticnavigationservice.h"
 #include "diagnosticservice.h"
 #include "editorappearancesettings.h"
-#include "foldblockshelfmodel.h"
-#include "foldblockshelfpanel.h"
-#include "foldshelfpersistenceservice.h"
-#include "foldshelfrestoreservice.h"
 #include "ghostannotationservice.h"
 #include "semanticdecorationservice.h"
 #include "globalcontrolcoordinator.h"
@@ -66,10 +62,6 @@
 #include "problemspanelcoordinator.h"
 #include "rtlhighriskeditpanel.h"
 #include "rtlactioncoordinator.h"
-#include "wavesimulationconfiguration.h"
-#include "wavesimulationcoordinator.h"
-#include "wavesimulationresultnavigationcoordinator.h"
-#include "waveembeddedworkspaceloader.h"
 #include "workspaceconfigurationdialog.h"
 #include "workspaceeditdocumentmanager.h"
 #include "workspacesessioncoordinator.h"
@@ -271,14 +263,12 @@ MainWindow::MainWindow(QWidget *parent)
     setupSemanticDocks();
     setupSettingsCenter();
     setupFileCommandCoordinator();
-    setupFoldBlockShelf();
     setupPanelLayoutController();
     setupContextWorkspace();
-    if (contextWorkspaceController && settingsCenterPanel)
-        contextWorkspaceController->setFloatingOpacity(settingsCenterPanel->snapshot()
+    if (contextWorkspaceController && settingsCenterService)
+        contextWorkspaceController->setFloatingOpacity(settingsCenterService->load(workspaceManager->getWorkspacePath())
             .value(QStringLiteral("appearance.floatingContextOpacity")).toInt());
     setupRtlActionCoordinator();
-    setupWaveSimulation();
     setupWorkspaceSessionCoordinator();
     setupWorkspaceMenu();
     setupViewMenu();
@@ -526,28 +516,6 @@ void MainWindow::setupNotificationCenter()
             this,
             [this](const QString& notificationId,
                    const QString& actionId) {
-                if (actionId
-                    == QStringLiteral(
-                        "waveSimulation.goToSource")) {
-                    const QVariantMap location =
-                        waveSimulationNotificationLocations
-                            .value(notificationId);
-                    if (!location.isEmpty()
-                        && navigationCommandCoordinator) {
-                        navigationCommandCoordinator
-                            ->navigateToFileAndLineAndFlash(
-                                location.value(
-                                    QStringLiteral("fileName"))
-                                    .toString(),
-                                location.value(
-                                    QStringLiteral("line"))
-                                    .toInt(),
-                                location.value(
-                                    QStringLiteral("column"))
-                                    .toInt());
-                    }
-                    return;
-                }
                 const QString conflictFile =
                     externalConflictNotificationFiles
                         .value(notificationId);
@@ -609,8 +577,6 @@ void MainWindow::setupNotificationCenter()
                 crashRecoveryNotificationWorkspaces
                     .remove(item.id);
                 externalConflictNotificationFiles
-                    .remove(item.id);
-                waveSimulationNotificationLocations
                     .remove(item.id);
             });
     if (analysisScheduler) {
@@ -687,13 +653,6 @@ void MainWindow::refreshThemePresentation()
     // before emitting themeChanged. Re-applying it here would re-polish every
     // widget during graph-specific refresh callbacks and shift viewports.
     applyModernShellStyle(false);
-
-    if (tabManager && tabManager->getCurrentEditor()) {
-        updateEditorModePresentation(
-            tabManager->getCurrentEditor()->editorModeSnapshot());
-    } else {
-        updateEditorModePresentation(EditorModeSnapshot());
-    }
 
     const QList<MyCodeEditor*> editorViews =
         findChildren<MyCodeEditor*>();
@@ -820,8 +779,6 @@ void MainWindow::setupEditorCentralArea()
             [this](int, const QString&, const QString& path) {
                 UserTemplateService::getInstance()->setWorkspaceRoot(path);
                 UserTemplateService::getInstance()->reload();
-                if (foldShelfModel)
-                    foldShelfModel->setWorkspaceRoot(path);
                 refreshSettingsCenterWorkspace(path);
                 refreshWorkspaceScope();
                 refreshWorkspaceMenuEntries();
@@ -835,8 +792,6 @@ void MainWindow::setupEditorCentralArea()
                                      : QString();
                 UserTemplateService::getInstance()->setWorkspaceRoot(activePath);
                 UserTemplateService::getInstance()->reload();
-                if (foldShelfModel)
-                    foldShelfModel->setWorkspaceRoot(activePath);
                 if (activePath.isEmpty())
                     refreshSettingsCenterWorkspace(QString());
                 refreshWorkspaceScope();
@@ -1422,27 +1377,6 @@ void MainWindow::setupManagerConnections()
                 }
             });
     }
-    if (navigationManager) {
-        connect(
-            navigationManager.get(),
-            &NavigationManager::waveSimulationRequested,
-            this,
-            [this](const QString& filePath,
-                   const QString& moduleName,
-                   const QString& instancePath) {
-                QString failureReason;
-                if (!startWaveSimulation(
-                        filePath,
-                        moduleName,
-                        instancePath,
-                        {},
-                        {},
-                        &failureReason)) {
-                    postActivityMessage(
-                        failureReason, 10000);
-                }
-            });
-    }
     analysisCoordinator = std::make_unique<AnalysisCoordinator>(
         analysisScheduler.get(),
         analysisProgressCoordinator.get(),
@@ -1542,7 +1476,7 @@ void MainWindow::setupManagerConnections()
                             }
                         });
                 connect(editor,
-                        &MyCodeEditor::wavePreviewScopeChanged,
+                        &MyCodeEditor::insightScopeChanged,
                         this,
                         [this, editor]() {
                             if (tabManager
@@ -2350,12 +2284,6 @@ void MainWindow::setupGlobalControl()
                            "globalControl.foldRegion")) {
                 if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
                     editor->startFoldRegionMarkMode();
-            } else if (executionRoute
-                       == QStringLiteral(
-                           "globalControl.foldShelf")) {
-                showFoldBlockShelf();
-                if (MyCodeEditor* editor = tabManager ? tabManager->getCurrentEditor() : nullptr)
-                    editor->startFoldShelfMode();
             }
         });
     globalControlCoordinator->install();
@@ -2372,61 +2300,6 @@ void MainWindow::setupCommandLayer()
         this,
         static_cast<ActionExecutionHost*>(this));
     commandLayerCoordinator->connectSignals();
-}
-
-void MainWindow::setupFoldBlockShelf()
-{
-    foldShelfModel = std::make_unique<FoldBlockShelfModel>(this);
-    foldShelfModel->setPersistenceService(
-        FoldShelfPersistenceService::getInstance());
-    if (workspaceManager)
-        foldShelfModel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
-    foldShelfDock = new QDockWidget(QStringLiteral("Fold Shelf"), this);
-    foldShelfDock->setObjectName(QStringLiteral("FoldShelfDock"));
-    foldShelfPanel = new FoldBlockShelfPanel(foldShelfDock);
-    foldShelfPanel->setModel(foldShelfModel.get());
-    foldShelfPanel->setActionRequestHandler(
-        [this](const QString& actionId,
-               QString* failureReason) {
-        const ActionDescriptor* descriptor =
-            findActionById(actionId);
-        if (!descriptor) {
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "Fold Shelf Action is unavailable");
-            }
-            return false;
-        }
-        ActionInvocation invocation;
-        invocation.workspaceId = workspaceManager
-            ? workspaceManager->getWorkspacePath()
-            : QString();
-        const ActionExecutionResult result =
-            executeAction(
-                *descriptor, *this, invocation);
-        const QString reason =
-            result.failureReason.isEmpty()
-            ? result.message
-            : result.failureReason;
-        if (failureReason)
-            *failureReason = reason;
-        if (!result.succeeded
-            && !reason.isEmpty()) {
-            postActivityMessage(reason, 5000);
-        }
-        return result.succeeded;
-    });
-    connect(foldShelfPanel,
-            &FoldBlockShelfPanel::restoreItemRequested,
-            this,
-            &MainWindow::restoreFoldShelfItem);
-    connect(foldShelfPanel,
-            &FoldBlockShelfPanel::restoreToActiveEditorRequested,
-            this,
-            &MainWindow::restoreFoldShelfItemToActiveEditor);
-    foldShelfDock->setWidget(foldShelfPanel);
-    addDockWidget(Qt::BottomDockWidgetArea, foldShelfDock);
-    foldShelfDock->hide();
 }
 
 void MainWindow::setupPanelLayoutController()
@@ -2517,7 +2390,6 @@ void MainWindow::setupPanelLayoutController()
         semanticDocks
             ? semanticDocks->connectionsDock()
             : nullptr);
-    registerPanel(QStringLiteral("foldShelf"), foldShelfDock);
     panelLayoutController->registerBottomPanelAlias(
         InstancePairConnectionCoordinator::panelId(),
         QStringLiteral("connections"));
@@ -2532,16 +2404,10 @@ void MainWindow::setupPanelLayoutController()
     panelLayoutController->setAnimationsEnabled(
         drawerAnimationsEnabled);
 
-    if (semanticDocks
-        && semanticDocks->scopedSearchPanelCoordinator()
-        && semanticDocks->scopedSearchPanelCoordinator()->panel()) {
-        ScopedSearchPanel* searchPanel =
-            semanticDocks->scopedSearchPanelCoordinator()->panel();
-        connect(searchPanel,
-                &ScopedSearchPanel::searchCompleted,
-                this,
-                [this, searchPanel](const ScopedSearchResponse&) {
-                    const int count = searchPanel->displayedResultCount();
+    if (semanticDocks && semanticDocks->scopedSearchPanelCoordinator()) {
+        connect(semanticDocks->scopedSearchPanelCoordinator(),
+                &ScopedSearchPanelCoordinator::resultCountChanged, this,
+                [this](int count) {
                     panelLayoutController->setPanelBadge(
                         ScopedSearchPanelCoordinator::panelId(),
                         count > 0 ? QString::number(count) : QString(),
@@ -2619,19 +2485,6 @@ void MainWindow::setupRtlActionCoordinator()
             std::move(callbacks),
             notificationCenter.get(),
             this);
-}
-
-void MainWindow::showFoldBlockShelf()
-{
-    if (!foldShelfDock)
-        return;
-    if (panelLayoutController)
-        panelLayoutController->restorePanel(QStringLiteral("foldShelf"));
-    else {
-        foldShelfDock->show();
-        foldShelfDock->raise();
-    }
-        postActivityMessage(QStringLiteral("Fold Shelf ready"), 3000);
 }
 
 void MainWindow::setupViewMenu()
@@ -2745,11 +2598,6 @@ void MainWindow::setupViewMenu()
             ActionIds::ViewBottomPanelCollapsed);
     if (collapseBottomAction)
         collapseBottomAction->setCheckable(true);
-    QAction* foldShelfAction =
-        addRegistryAction(
-            viewMenu, ActionIds::ViewFoldShelf);
-    if (foldShelfAction)
-        foldShelfAction->setCheckable(true);
     viewMenu->addSeparator();
     QAction* settingsAction =
         addRegistryAction(
@@ -2796,7 +2644,6 @@ void MainWindow::setupViewMenu()
          problemsAction,
          activityAction,
          collapseBottomAction,
-         foldShelfAction,
          settingsAction,
          resetLayoutAction,
          setPanelChecked]() {
@@ -2841,7 +2688,6 @@ void MainWindow::setupViewMenu()
                   problemsAction,
                   activityAction,
                   collapseBottomAction,
-                  foldShelfAction,
                   settingsAction,
                   resetLayoutAction}) {
                 refreshAvailability(action);
@@ -2900,9 +2746,6 @@ void MainWindow::setupViewMenu()
             setPanelChecked(
                 activityAction,
                 QStringLiteral("activity"));
-            setPanelChecked(
-                foldShelfAction,
-                QStringLiteral("foldShelf"));
         });
 
 
@@ -3111,13 +2954,6 @@ void MainWindow::setupToolsMenu()
     }
 
     toolsMenu->addSeparator();
-    QAction* runWaveSimulationAction =
-        addRegistryMenuAction(
-            toolsMenu,
-            QString::fromLatin1(
-                ActionIds::WaveSimulationRunCurrentContext));
-
-    toolsMenu->addSeparator();
     QAction* crashRecoveryAction =
         addRegistryMenuAction(
         toolsMenu,
@@ -3131,8 +2967,7 @@ void MainWindow::setupToolsMenu()
          openGlobalAction,
          openWorkspaceAction,
          reloadAction,
-         crashRecoveryAction,
-         runWaveSimulationAction]() {
+         crashRecoveryAction]() {
             const bool workspaceAvailable =
                 workspaceManager
                 && workspaceManager->isWorkspaceOpen();
@@ -3146,270 +2981,7 @@ void MainWindow::setupToolsMenu()
                 reloadAction->setEnabled(true);
             if (crashRecoveryAction)
                 crashRecoveryAction->setEnabled(true);
-            if (runWaveSimulationAction) {
-                runWaveSimulationAction->setEnabled(
-                    workspaceAvailable
-                    && tabManager
-                    && tabManager->getCurrentEditor()
-                    && waveSimulationCoordinator
-                    && !waveSimulationCoordinator->isRunning());
-            }
         });
-}
-
-void MainWindow::setupWaveSimulation()
-{
-    waveEmbeddedWorkspaceLoader =
-        std::make_unique<WaveEmbeddedWorkspaceLoader>();
-    waveSimulationCoordinator =
-        std::make_unique<WaveSimulationCoordinator>(this);
-    waveSimulationResultNavigationCoordinator =
-        std::make_unique<
-            WaveSimulationResultNavigationCoordinator>(
-                tabManager.get(),
-                workspaceManager.get(),
-                navigationCommandCoordinator.get(),
-                this);
-    connect(
-        waveSimulationResultNavigationCoordinator.get(),
-        &WaveSimulationResultNavigationCoordinator::
-            statusMessageRequested,
-        this,
-        [this](const QString& message, const int timeoutMs) {
-                postActivityMessage(message, timeoutMs);
-        });
-    connect(waveSimulationCoordinator.get(),
-            &WaveSimulationCoordinator::stageChanged,
-            this,
-            [this](WaveSimulationStage, const QString& message) {
-                if (!message.isEmpty())
-                    postActivityMessage(message);
-            });
-    connect(waveSimulationCoordinator.get(),
-            &WaveSimulationCoordinator::resultReady,
-            this,
-            &MainWindow::openWaveSimulationResultTab);
-    connect(waveSimulationCoordinator.get(),
-            &WaveSimulationCoordinator::finished,
-            this,
-            [this](bool success,
-                   const QString&,
-                   const QString& message) {
-                {
-                    postActivityMessage(
-                        message,
-                        success ? 5000 : 10000);
-                }
-            });
-    connect(waveSimulationCoordinator.get(),
-            &WaveSimulationCoordinator::diagnosticAvailable,
-            this,
-            [this](const WaveSimulationDiagnostic& diagnostic) {
-                if (!notificationCenter || !diagnostic.isValid())
-                    return;
-                NotificationDraft draft;
-                draft.key = QStringLiteral(
-                    "wave-simulation:%1:%2:%3")
-                                .arg(diagnostic.sourceFile)
-                                .arg(diagnostic.line)
-                                .arg(diagnostic.column);
-                draft.topic = NotificationTopic::Analysis;
-                draft.severity = diagnostic.severity.compare(
-                                     QStringLiteral("warning"),
-                                     Qt::CaseInsensitive)
-                                     == 0
-                    ? NotificationSeverity::Warning
-                    : NotificationSeverity::Error;
-                draft.source = QStringLiteral("Wave Simulation");
-                const QString detail =
-                    diagnostic.code.trimmed().isEmpty()
-                    ? diagnostic.stage
-                    : QStringLiteral("%1/%2")
-                          .arg(diagnostic.stage, diagnostic.code);
-                draft.message = detail.trimmed().isEmpty()
-                    ? diagnostic.message
-                    : QStringLiteral("%1: %2")
-                          .arg(detail, diagnostic.message);
-                draft.actions = {
-                    {QStringLiteral("waveSimulation.goToSource"),
-                     QStringLiteral("Go to Source")}};
-                const NotificationPostResult posted =
-                    notificationCenter->post(draft);
-                QVariantMap location;
-                location.insert(QStringLiteral("fileName"),
-                                diagnostic.sourceFile);
-                location.insert(QStringLiteral("line"),
-                                diagnostic.line);
-                location.insert(QStringLiteral("column"),
-                                diagnostic.column);
-                waveSimulationNotificationLocations.insert(
-                    posted.id, location);
-            });
-}
-
-void MainWindow::openWaveSimulationResultTab(
-    const QString& resultProjectPath,
-    const QString& widgetLibraryPath,
-    const QString& applicationPath)
-{
-    if (!tabManager || !waveEmbeddedWorkspaceLoader)
-        return;
-    const QString absoluteProject =
-        QFileInfo(resultProjectPath).absoluteFilePath();
-    const QString stableId =
-        QStringLiteral("wave-result:%1")
-            .arg(QDir::cleanPath(absoluteProject));
-    if (tabManager->activateToolPage(stableId))
-        return;
-
-    QString failureReason;
-    QWidget* workspace =
-        waveEmbeddedWorkspaceLoader->createWorkspace(
-            widgetLibraryPath,
-            absoluteProject,
-            nullptr,
-            &failureReason);
-    const QString title = QStringLiteral("Wave: %1")
-        .arg(QFileInfo(absoluteProject).completeBaseName());
-    if (workspace) {
-        workspace->setObjectName(
-            QStringLiteral("EmbeddedWaveSimulationWorkspace"));
-        workspace->setSizePolicy(
-            QSizePolicy::Expanding,
-            QSizePolicy::Expanding);
-        if (waveSimulationResultNavigationCoordinator) {
-            waveSimulationResultNavigationCoordinator
-                ->registerWorkspace(
-                    workspace,
-                    stableId,
-                    workspaceManager
-                        ? workspaceManager->getWorkspacePath()
-                        : QString());
-        }
-        tabManager->openToolPage(workspace, stableId, title);
-        {
-            postActivityMessage(
-                QStringLiteral("Wave Simulation opened in an editor tab."),
-                5000);
-        }
-        return;
-    }
-
-    auto* fallback = new QWidget;
-    fallback->setObjectName(
-        QStringLiteral("WaveSimulationLoadFailurePage"));
-    auto* layout = new QVBoxLayout(fallback);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->setSpacing(12);
-    auto* heading = new QLabel(
-        QStringLiteral("The embedded Wave workspace could not be loaded."),
-        fallback);
-    QFont headingFont = heading->font();
-    headingFont.setBold(true);
-    heading->setFont(headingFont);
-    auto* detail = new QLabel(failureReason, fallback);
-    detail->setWordWrap(true);
-    auto* openExternal = new QPushButton(
-        QStringLiteral("Open in WaveWorkbench"),
-        fallback);
-    openExternal->setEnabled(
-        QFileInfo::exists(applicationPath));
-    layout->addWidget(heading);
-    layout->addWidget(detail);
-    layout->addWidget(openExternal, 0, Qt::AlignLeft);
-    layout->addStretch(1);
-    connect(openExternal,
-            &QPushButton::clicked,
-            fallback,
-            [applicationPath, absoluteProject, fallback] {
-                qint64 processId = 0;
-                if (!QProcess::startDetached(
-                        applicationPath,
-                        {QStringLiteral("--load-first-trace"),
-                         absoluteProject},
-                        QFileInfo(absoluteProject).absolutePath(),
-                        &processId)) {
-                    if (auto* label = fallback->findChild<QLabel*>()) {
-                        label->setToolTip(QStringLiteral(
-                            "WaveWorkbench could not be started."));
-                    }
-                }
-            });
-    tabManager->openToolPage(fallback, stableId, title);
-}
-
-bool MainWindow::startWaveSimulation(
-    const QString& targetFile,
-    const QString& moduleName,
-    const QString& instancePath,
-    const WaveSimulationObservationScopeRequest& observationScope,
-    const QList<WaveSimulationObservationRequest>& observations,
-    QString* failureReason)
-{
-    const auto fail = [failureReason](const QString& message) {
-        if (failureReason)
-            *failureReason = message;
-        return false;
-    };
-    if (!waveSimulationCoordinator || !workspaceManager || !tabManager)
-        return fail(QStringLiteral("Wave Simulation is unavailable."));
-    if (waveSimulationCoordinator->isRunning()) {
-        return fail(QStringLiteral(
-            "A Wave Simulation run is already active."));
-    }
-    const ProjectSnapshot project = workspaceManager->projectSnapshot();
-    if (!project.isOpen())
-        return fail(QStringLiteral("Open a workspace first."));
-    if (targetFile.trimmed().isEmpty()
-        || moduleName.trimmed().isEmpty()) {
-        return fail(QStringLiteral(
-            "Place the cursor inside a module in the active workspace."));
-    }
-
-    WaveSimulationRunRequest request;
-    request.preparation.project = project;
-    request.preparation.target.fileName = targetFile;
-    request.preparation.target.moduleName = moduleName;
-    request.preparation.target.instancePath = instancePath;
-    request.preparation.observationScope = observationScope;
-    request.preparation.explicitObservations = observations;
-
-    QSet<QString> capturedFiles;
-    const QList<MyCodeEditor*> editors =
-        tabManager->openEditors() + tabManager->auxiliaryViews();
-    for (MyCodeEditor* openEditor : editors) {
-        SharedDocument* document =
-            tabManager->sharedDocumentForEditor(openEditor);
-        if (!document || document->fileName().isEmpty()
-            || !document->textDocument()) {
-            continue;
-        }
-        const QString key = workspaceSessionRootKey(
-            document->fileName());
-        if (key.isEmpty() || capturedFiles.contains(key))
-            continue;
-        bool projectFile = false;
-        for (const QString& fileName : project.systemVerilogFiles) {
-            if (workspaceSessionRootKey(fileName) == key) {
-                projectFile = true;
-                break;
-            }
-        }
-        if (!projectFile)
-            continue;
-        capturedFiles.insert(key);
-        WaveSimulationSourceOverride source;
-        source.fileName = document->fileName();
-        source.content = document->textDocument()->toPlainText();
-        source.revision = document->textRevision();
-        request.preparation.sourceOverrides.append(std::move(source));
-    }
-
-    const WaveSimulationConfiguration configuration;
-    request.preparation.cachePaths = configuration.cachePaths();
-    request.tools = configuration.toolPaths();
-    return waveSimulationCoordinator->start(
-        request, failureReason);
 }
 
 QAction* MainWindow::addRegistryMenuAction(
@@ -3594,128 +3166,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return pinloomCodeLinkCoordinator->execute(
             descriptor, invocation);
     }
-    if (route
-        == QStringLiteral(
-            "waveSimulation.revealSignalInResult")) {
-        QString failureReason;
-        if (!waveSimulationResultNavigationCoordinator) {
-            return fail(QStringLiteral(
-                "Wave result navigation is unavailable."));
-        }
-        if (!waveSimulationResultNavigationCoordinator
-                 ->revealSignalInResult(
-                     invocation, &failureReason))
-            return fail(failureReason);
-        result.message = QStringLiteral(
-            "Signal revealed in Wave Simulation result.");
-        return succeeded();
-    }
-    if (route
-        == QStringLiteral(
-            "waveSimulation.runCurrentContext")
-        || route
-               == QStringLiteral(
-                   "waveSimulation.observeSignal")) {
-        const QString preferredViewId =
-            invocation.parameters
-                .value(QStringLiteral("editorViewId"))
-                .toString();
-        MyCodeEditor* editor = tabManager
-            ? tabManager->editorActionTarget(
-                  preferredViewId)
-            : nullptr;
-        if (!editor)
-            return fail(QStringLiteral("No editor tab is available."));
-
-        const int cursorPosition =
-            invocation.parameters
-                .value(QStringLiteral("cursorPosition"), -1)
-                .toInt();
-        const EditorSemanticContext context =
-            editor->editorSemanticContextForPosition(
-                cursorPosition, false);
-        const QString targetFile =
-            invocation.parameters
-                .value(QStringLiteral("fileName"),
-                       context.fileName)
-                .toString();
-        const QString moduleName =
-            invocation.parameters
-                .value(QStringLiteral("moduleName"),
-                       context.moduleName)
-                .toString();
-        QString instancePath;
-        const ProjectSnapshot project = workspaceManager
-            ? workspaceManager->projectSnapshot()
-            : ProjectSnapshot();
-        if (context.hierarchyInstance.isBound()
-            && workspaceSessionRootKey(
-                   context.hierarchyInstance.workspacePath)
-                   == workspaceSessionRootKey(
-                       project.workspaceRoot)) {
-            instancePath =
-                context.hierarchyInstance.instancePath;
-        }
-
-        WaveSimulationObservationScopeRequest scope;
-        const EditorAlwaysScopeTarget alwaysScope =
-            cursorPosition >= 0
-            ? editor->alwaysScopeTargetAt(cursorPosition)
-            : editor->currentAlwaysScopeTarget();
-        if (alwaysScope.ok()) {
-            scope.mode = QStringLiteral("always");
-            scope.label = alwaysScope.label;
-            scope.fileName = targetFile;
-            scope.startLine = alwaysScope.startLine + 1;
-            scope.endLine = alwaysScope.endLine + 1;
-        }
-
-        QList<WaveSimulationObservationRequest> observations;
-        if (route
-            == QStringLiteral(
-                "waveSimulation.observeSignal")) {
-            WaveSimulationObservationRequest observation;
-            observation.name =
-                invocation.parameters
-                    .value(QStringLiteral("symbolName"))
-                    .toString();
-            observation.accessPath =
-                invocation.parameters
-                    .value(QStringLiteral("signalAccessPath"))
-                    .toString();
-            observation.fileName = targetFile;
-            observation.line =
-                invocation.parameters
-                    .value(QStringLiteral("line"),
-                           context.cursorLine + 1)
-                    .toInt();
-            observation.column =
-                invocation.parameters
-                    .value(QStringLiteral("column"),
-                           context.column + 1)
-                    .toInt();
-            if (observation.name.trimmed().isEmpty()) {
-                return fail(QStringLiteral(
-                    "Select a signal to observe."));
-            }
-            observations.append(observation);
-        }
-
-        QString failureReason;
-        if (!startWaveSimulation(
-                targetFile,
-                moduleName,
-                instancePath,
-                scope,
-                observations,
-                &failureReason)) {
-            return fail(failureReason);
-        }
-        result.message = QStringLiteral(
-            "Wave Simulation started.");
-        return succeeded();
-    }
-
     if (route.startsWith(QStringLiteral("ui.file."))
         || route == QStringLiteral("ui.workspace.open")) {
         if (!fileCommandCoordinator)
@@ -4469,26 +3919,11 @@ ActionExecutionResult MainWindow::executeActionRoute(
         return succeeded();
     }
 
-    if (route
-        == QStringLiteral(
-            "ui.foldShelf.deleteSelected")) {
-        if (!foldShelfPanel)
-            return fail();
-        QString failureReason;
-        if (!foldShelfPanel->deleteSelectedItem(
-                &failureReason)) {
-            return fail(failureReason);
-        }
-        return succeeded();
-    }
-
     const QHash<QString, QString> panelIdsByRoute = {
         {QStringLiteral("ui.panel.problems.toggle"),
          QStringLiteral("problems")},
         {QStringLiteral("ui.panel.activity.toggle"),
          QStringLiteral("activity")},
-        {QStringLiteral("ui.panel.foldShelf.toggle"),
-         QStringLiteral("foldShelf")},
     };
     const auto panelRoute =
         panelIdsByRoute.constFind(route);
@@ -4496,26 +3931,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
         if (!togglePanel(panelRoute.value()))
             return fail();
         return succeeded();
-    }
-
-    const QHash<QString, LiveInsightKind> liveInsightKindsByRoute = {
-        {QStringLiteral("ui.panel.wavePreview.toggle"),
-         LiveInsightKind::Wave},
-    };
-    const auto liveInsightRoute =
-        liveInsightKindsByRoute.constFind(route);
-    if (liveInsightRoute != liveInsightKindsByRoute.constEnd()) {
-        const LiveInsightToolContext context =
-            activeLiveInsightToolContext();
-        const bool opened = openLiveInsightFromSourceAction(
-            liveInsightRoute.value(),
-            liveInsightRoute.value() == LiveInsightKind::Module
-                ? context.moduleName
-                : context.signalName,
-            context.fileName,
-            context.moduleName,
-            context.signalAccessPath);
-        return opened ? succeeded() : fail();
     }
 
     if (route
@@ -4658,8 +4073,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     "Settings Center is unavailable.");
             return result;
         }
-        settingsCenterDock->show();
-        settingsCenterDock->raise();
+        showDockWidget(settingsCenterDock);
         result.succeeded = true;
         return result;
     }
@@ -5635,9 +5049,9 @@ void MainWindow::setupWorkspaceSessionCoordinator()
             });
     }
 
-    if (settingsCenterPanel) {
+    if (settingsCenterService) {
         const SettingsCenterSnapshot snapshot =
-            settingsCenterPanel->snapshot();
+            settingsCenterService->load(workspaceManager->getWorkspacePath());
         workspaceSessionCoordinator->setRestoreOnActivation(
             snapshot.value(
                 QStringLiteral(
@@ -5791,26 +5205,6 @@ EditorActionContext MainWindow::resolveEditorActionContext(
 }
 
 
-void MainWindow::updateEditorModePresentation(const EditorModeSnapshot& snapshot)
-{
-    setFoldShelfModeVisualActive(snapshot.primaryMode == EditorModeId::FoldShelf);
-}
-
-void MainWindow::setFoldShelfModeVisualActive(bool active)
-{
-    if (foldShelfPanel)
-        foldShelfPanel->setShelfModeActive(active);
-    if (!foldShelfDock)
-        return;
-
-    foldShelfDock->setProperty("foldShelfModeActive", active);
-    foldShelfDock->setStyleSheet(
-        active ? InsightVisualStyle::dockAttentionStyleSheet(
-                     foldShelfDock->objectName(),
-                     InsightStatusTone::Warning)
-               : QString());
-}
-
 QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
 {
     if (panelId == QStringLiteral("navigation"))
@@ -5858,8 +5252,6 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
     }
     if (panelId == QStringLiteral("connections"))
         return semanticDocks ? semanticDocks->connectionsDock() : nullptr;
-    if (panelId == QStringLiteral("foldShelf"))
-        return foldShelfDock;
     if (panelId == QStringLiteral("settingsCenter")
         || panelId == QStringLiteral("editorAppearance")) {
         return settingsCenterDock;
@@ -5874,6 +5266,7 @@ void MainWindow::showDockWidget(QDockWidget* dock,
         return;
 
     if (dock == settingsCenterDock) {
+        ensureSettingsCenterPanel();
         const QString id = QStringLiteral("settingsCenter");
         if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
         else tabManager->openToolPage(new BorrowedPanelPage(settingsCenterPanel, dock), id, tr("Settings"));
@@ -5900,14 +5293,11 @@ void MainWindow::showDockWidget(QDockWidget* dock,
 void MainWindow::showPanelById(const QString& panelId)
 {
     if (panelId == QStringLiteral("rtlInsights")
-        || panelId == QStringLiteral("signalKernelGraph")
-        || panelId == QStringLiteral("wavePreview")) {
+        || panelId == QStringLiteral("signalKernelGraph")) {
         const LiveInsightKind kind =
             panelId == QStringLiteral("signalKernelGraph")
             ? LiveInsightKind::Kernel
-            : panelId == QStringLiteral("wavePreview")
-                ? LiveInsightKind::Wave
-                : LiveInsightKind::Module;
+            : LiveInsightKind::Module;
         const LiveInsightToolContext context =
             activeLiveInsightToolContext();
         openLiveInsightFromSourceAction(
@@ -5926,10 +5316,6 @@ void MainWindow::showPanelById(const QString& panelId)
         if (semanticDocks)
             semanticDocks->showConnectionPage(panelId);
         resolvedPanelId = QStringLiteral("connections");
-    }
-    if (panelId == QStringLiteral("foldShelf")) {
-        showFoldBlockShelf();
-        return;
     }
     QDockWidget* dock = dockForPanelId(resolvedPanelId);
     showDockWidget(dock);
@@ -6087,7 +5473,6 @@ void MainWindow::resetPanelLayout()
         QStringLiteral("connections"));
     QDockWidget* settingsCenterDockWidget =
         dockForPanelId(QStringLiteral("settingsCenter"));
-    QDockWidget* foldShelfDockWidget = dockForPanelId(QStringLiteral("foldShelf"));
 
     if (navigationDock)
         addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
@@ -6102,7 +5487,6 @@ void MainWindow::resetPanelLayout()
             activityDock,
             highDiffDock,
             connectionsDock,
-            foldShelfDockWidget,
         };
         for (QDockWidget* dock : bottomDocks) {
             if (dock)
@@ -6126,103 +5510,6 @@ void MainWindow::resetPanelLayout()
     if (workspaceSessionCoordinator)
         workspaceSessionCoordinator->scheduleSessionSave();
         postActivityMessage(tr("Panel layout reset"), 3000);
-}
-
-void MainWindow::restoreFoldShelfItem(const QString& id)
-{
-    if (!foldShelfModel || !tabManager)
-        return;
-
-    const FoldShelfItem item = foldShelfModel->item(id);
-    if (item.id.isEmpty() || item.text.isEmpty()) {
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Warning,
-            QStringLiteral("Restore failed: item unavailable"));
-            postActivityMessage(QStringLiteral("Fold Shelf restore failed: item unavailable"), 5000);
-        return;
-    }
-    if (item.sourceFile.isEmpty()) {
-        foldShelfModel->markItemStale(id);
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Warning,
-            QStringLiteral("Restore failed for \"%1\": source file unavailable").arg(item.alias));
-            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source file unavailable"), 5000);
-        return;
-    }
-
-    if (!tabManager->activateOpenFile(item.sourceFile)
-        && !tabManager->openFileInTab(item.sourceFile)) {
-        foldShelfModel->markItemStale(id);
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Warning,
-            QStringLiteral("Restore failed for \"%1\": source file could not be opened").arg(item.alias));
-            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source file could not be opened"), 5000);
-        return;
-    }
-
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor || !editor->insertFoldShelfItemAtLineForTest(item, item.sourceStartLine)) {
-        foldShelfModel->markItemStale(id);
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Warning,
-            QStringLiteral("Restore failed for \"%1\": source location unavailable").arg(item.alias));
-            postActivityMessage(QStringLiteral("Fold Shelf restore failed: source location unavailable"), 5000);
-        return;
-    }
-
-    foldShelfModel->removeItem(id);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Fold Shelf"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Restored shelf item \"%1\"").arg(item.alias));
-        postActivityMessage(QStringLiteral("Fold Shelf item restored"), 3000);
-}
-
-void MainWindow::restoreFoldShelfItemToActiveEditor(const QString& id)
-{
-    if (!foldShelfModel || !tabManager)
-        return;
-
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    const int targetLine = editor ? editor->textCursor().blockNumber() : -1;
-    const FoldShelfRestoreReport report =
-        FoldShelfRestoreService::restoreIntoEditor(
-            foldShelfModel.get(),
-            editor,
-            id,
-            targetLine,
-            FoldShelfRestoreCompletion::ConsumeItem);
-
-    if (!report.success) {
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("Fold Shelf"),
-            ActivityLogLevel::Warning,
-            QStringLiteral("Cross-file restore failed for \"%1\": %2")
-                .arg(report.item.alias.isEmpty() ? id : report.item.alias,
-                     report.failureReason));
-        {
-            postActivityMessage(
-                QStringLiteral("Fold Shelf restore failed: %1")
-                    .arg(report.failureReason),
-                5000);
-        }
-        return;
-    }
-
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Fold Shelf"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Restored shelf item \"%1\" to active editor")
-            .arg(report.item.alias));
-    {
-        postActivityMessage(
-            QStringLiteral("Fold Shelf item restored to active editor"),
-            3000);
-    }
 }
 
 void MainWindow::setupSettingsCenter()
@@ -6249,12 +5536,6 @@ void MainWindow::setupSettingsCenter()
         "legacyPanelId", QStringLiteral("editorAppearance"));
     settingsCenterDock->setAllowedAreas(
         Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    settingsCenterPanel = new SettingsCenterPanel(
-        settingsCenterService.get(),
-        workspaceManager ? workspaceManager->getWorkspacePath()
-                         : QString(),
-        settingsCenterDock);
-    settingsCenterDock->setWidget(settingsCenterPanel);
     settingsCenterDock->hide();
 
 
@@ -6265,16 +5546,24 @@ void MainWindow::setupSettingsCenter()
                 refreshThemePresentation();
             });
 
-    connect(settingsCenterPanel,
-            &SettingsCenterPanel::settingsApplied,
-            this,
+    applySettingsCenterSnapshot(settingsCenterService->load(
+        workspaceManager ? workspaceManager->getWorkspacePath() : QString()));
+}
+
+void MainWindow::ensureSettingsCenterPanel()
+{
+    if (settingsCenterPanel)
+        return;
+    settingsCenterPanel = new SettingsCenterPanel(
+        settingsCenterService.get(),
+        workspaceManager ? workspaceManager->getWorkspacePath()
+                         : QString(),
+        settingsCenterDock);
+    settingsCenterDock->setWidget(settingsCenterPanel);
+    connect(settingsCenterPanel, &SettingsCenterPanel::settingsApplied, this,
             [this](SettingsCenterScope) {
-                if (settingsCenterPanel) {
-                    applySettingsCenterSnapshot(
-                        settingsCenterPanel->snapshot());
-                }
+                applySettingsCenterSnapshot(settingsCenterPanel->snapshot());
             });
-    applySettingsCenterSnapshot(settingsCenterPanel->snapshot());
 }
 
 void MainWindow::applySettingsCenterSnapshot(
@@ -6406,8 +5695,11 @@ void MainWindow::applyRegisteredActionShortcuts()
 void MainWindow::refreshSettingsCenterWorkspace(
     const QString& workspaceRoot)
 {
-    if (!settingsCenterPanel)
+    if (!settingsCenterPanel) {
+        if (settingsCenterService)
+            applySettingsCenterSnapshot(settingsCenterService->load(workspaceRoot));
         return;
+    }
     if (settingsCenterPanel->workspaceRoot() == workspaceRoot)
         settingsCenterPanel->reload();
     else
@@ -6437,10 +5729,6 @@ void MainWindow::setupEditorCoordinator()
                 if (!message.isEmpty())
                     postActivityMessage(message, timeoutMs);
             }
-        });
-    editorCoordinator->setModeStateHandler(
-        [this](const EditorModeSnapshot& snapshot) {
-            updateEditorModePresentation(snapshot);
         });
     editorCoordinator->setActionContextService(
         editorActionContextService.get());
@@ -6492,10 +5780,6 @@ void MainWindow::setupEditorCoordinator()
                     }
                 }
             });
-    editorCoordinator->setFoldShelfItemConsumedHandler([this](const QString& id) {
-        if (foldShelfModel)
-            foldShelfModel->consumeItem(id);
-    });
     editorCoordinator->connectSignals();
 }
 

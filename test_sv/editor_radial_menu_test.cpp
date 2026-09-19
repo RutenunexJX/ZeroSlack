@@ -17,7 +17,6 @@
 namespace {
 const QStringList ids {
     "insight.moduleBlockDiagram", "insight.signalUsageHotspot", "insight.signalKernelGraph", "insight.stateTransitionGraph",
-    "waveSimulation.runCurrentContext", "waveSimulation.observeSignal", "waveSimulation.revealSignalInResult",
     "pinloom.linkSelection", "pinloom.openLinkedContent", "pinloom.toggleBindingMarkers",
     "refactor.organizeSignalDeclarations", "refactor.createSignalDefinition", "refactor.editInstanceSlots", "refactor.exposeSignalToTop",
     "refactor.createAssignmentQueue", "edit.toggleSelectionCase", "edit.replaceSelectionWithSpaces", "view.temporaryEditor.open"
@@ -56,7 +55,7 @@ private slots:
                      "The transparent popup must not cast a rectangular native shadow");
         }
 #endif
-        for(int g=0;g<6;++g) {
+        for(int g=0;g<5;++g) {
             auto* category=popup.findChild<QToolButton*>(QStringLiteral("radialGroup.%1").arg(g));
             QVERIFY(category);category->click();
             auto* bar=popup.findChild<QFrame*>("radialActionBar");QVERIFY(bar);
@@ -77,7 +76,7 @@ private slots:
                 QTest::mouseMove(&popup,bar->geometry().bottomLeft()+QPoint(1,3));
                 QVERIFY(bar->isVisible());
             }
-            if(g==3) {
+            if(g==2) {
                 QSet<int> rows;for(auto* button : bar->findChildren<QToolButton*>())rows.insert(button->y());
                 QCOMPARE(rows.size(),2);
             }

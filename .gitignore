@@ -12,7 +12,7 @@ test_sv/huge_prj/
 # Real module/signal names inside those fixtures; see test_sv/fixture_names.h.
 test_sv/local_fixture_names.h
 
-# Explicit local overrides for experimental wave simulation artifacts.
+# Retired Wave simulation caches remain local during upgrades.
 wave-simulation-cache/
 .wave-simulation-cache/
 

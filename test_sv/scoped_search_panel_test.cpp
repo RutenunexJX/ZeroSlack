@@ -13,6 +13,7 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QAction>
 #include <QDockWidget>
 #include <QFile>
 #include <QLineEdit>
@@ -547,6 +548,16 @@ int main(int argc, char* argv[])
         productionWindow.tabManager
             ->duplicateCurrentView();
     QApplication::processEvents();
+    check(!productionWindow.findChild<ScopedSearchPanel*>(),
+          "opening workspace files leaves hidden Search unconstructed");
+    productionWindow.show();
+    QApplication::processEvents();
+    auto* openSearch = productionWindow.findChild<QAction*>(
+        QStringLiteral("viewScopedSearchAction"));
+    check(openSearch != nullptr, "Search retains its explicit menu action");
+    if (openSearch)
+        openSearch->trigger();
+    QApplication::processEvents();
     ScopedSearchPanel* const productionPanel =
         productionWindow.findChild<ScopedSearchPanel*>(
             QStringLiteral("scopedSearchPanel"));
@@ -572,8 +583,7 @@ int main(int argc, char* argv[])
                          .toString()
                      == ScopedSearchPanelCoordinator::panelId()
               && drawerContent->isAncestorOf(productionPanel)
-              && productionDock->widget() == nullptr
-              && !searchButton->property("checked").toBool(),
+              && productionDock->widget() == nullptr,
           "production owns one registered scoped-search bottom page");
     check(activeEditor
               && activeDocument

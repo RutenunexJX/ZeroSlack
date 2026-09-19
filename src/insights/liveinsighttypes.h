@@ -9,7 +9,6 @@ enum class LiveInsightKind : quint8 {
     Module = 0,
     State = 1,
     Hotspot = 2,
-    Wave = 3,
     Kernel = 4
 };
 
@@ -33,8 +32,6 @@ inline QString liveInsightKindId(LiveInsightKind kind)
         return QStringLiteral("state");
     case LiveInsightKind::Hotspot:
         return QStringLiteral("hotspot");
-    case LiveInsightKind::Wave:
-        return QStringLiteral("wave");
     }
     return {};
 }
@@ -50,8 +47,6 @@ inline QString liveInsightKindDisplayName(LiveInsightKind kind)
         return QStringLiteral("State");
     case LiveInsightKind::Hotspot:
         return QStringLiteral("Hotspot");
-    case LiveInsightKind::Wave:
-        return QStringLiteral("Wave");
     }
     return {};
 }
@@ -70,8 +65,6 @@ inline bool liveInsightKindFromId(const QString& id,
         parsed = LiveInsightKind::State;
     else if (normalized == QStringLiteral("hotspot"))
         parsed = LiveInsightKind::Hotspot;
-    else if (normalized == QStringLiteral("wave"))
-        parsed = LiveInsightKind::Wave;
     else
         return false;
     if (kind)

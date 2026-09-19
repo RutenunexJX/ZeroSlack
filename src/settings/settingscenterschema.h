@@ -18,7 +18,6 @@ enum class SettingsCenterCategory {
     Shortcut,
     Annotation,
     Analysis,
-    Simulation,
     Integration,
     Layout,
 };

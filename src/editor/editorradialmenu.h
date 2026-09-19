@@ -29,8 +29,10 @@ private:
     int groupAt(const QPoint& point) const;
     QRect barGeometry(int group, int count) const;
     void collect(QMenu* menu);
-    std::array<QList<QPointer<QAction>>, 6> groups;
-    std::array<QToolButton*, 6> groupButtons{};
+    static constexpr int kGroupCount = 5;
+    static constexpr double kSectorAngle = 360.0 / kGroupCount;
+    std::array<QList<QPointer<QAction>>, kGroupCount> groups;
+    std::array<QToolButton*, kGroupCount> groupButtons{};
     QFrame* bar = nullptr;
     QToolButton* closeButton = nullptr;
     QPointer<QAction> chosen;
