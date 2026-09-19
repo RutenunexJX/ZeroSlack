@@ -1,14 +1,12 @@
 #include "semanticruntimecoordinator.h"
 
 #include "analysisscheduler.h"
-#include "clockresetdomainservice.h"
 #include "completionservice.h"
 #include "definitionnavigationservice.h"
 #include "definitionservice.h"
 #include "diagnosticservice.h"
 #include "fsmgraphservice.h"
 #include "hierarchyservice.h"
-#include "modulebriefservice.h"
 #include "navigationservice.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
@@ -40,9 +38,7 @@ void SemanticRuntimeCoordinator::configureQueryServices(
     HierarchyService::getInstance()->setSemanticIndex(semanticIndex);
     SearchService::getInstance()->setSemanticIndex(semanticIndex);
     NavigationService::getInstance()->setSemanticIndex(semanticIndex);
-    ModuleBriefService::getInstance()->setSemanticIndex(semanticIndex);
     SignalJourneyService::getInstance()->setSemanticIndex(semanticIndex);
-    ClockResetDomainService::getInstance()->setSemanticIndex(semanticIndex);
     FsmGraphService::getInstance()->setSemanticIndex(semanticIndex);
     SemanticDiffService::getInstance()->setSemanticIndex(semanticIndex);
 }

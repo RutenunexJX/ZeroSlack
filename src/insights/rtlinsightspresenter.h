@@ -54,10 +54,7 @@ public:
     void refresh();
     void renderNoContext();
     void renderActionList();
-    void showModuleBrief();
-    void showSignalJourney();
     void showSignalUsageHotspot();
-    void showClockResetDomainMap();
     void showFsmGraph();
     void showModuleBlockDiagram();
     void updateActionState();

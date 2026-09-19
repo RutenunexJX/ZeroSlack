@@ -237,7 +237,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/analysisschedulerrelationships.cpp
     src/analysis/analysisschedulerwiring.cpp
     src/ui/applicationthememanager.cpp
-    src/semantic/clockresetdomainservice.cpp
     src/navigation/codepreviewservice.cpp
     src/editor/columnnumbertool.cpp
     src/commands/commandlayercommandregistry.cpp
@@ -250,7 +249,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/app/mainwindowcontextworkspace.cpp
     src/insights/rtlactioncoordinator.cpp
     src/insights/moduleblockdiagramservice.cpp
-    src/semantic/modulebriefservice.cpp
     src/completion/completioncommandmode.cpp
     src/completion/completioncontexthelper.cpp
     src/completion/completionmatcher.cpp
@@ -517,7 +515,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/analysiscoordinator.h
     src/analysis/analysisprogresscoordinator.h
     src/analysis/analysisscheduler.h
-    src/semantic/clockresetdomainservice.h
     src/navigation/codepreviewservice.h
     src/editor/columnnumbertool.h
     src/commands/commandlayercommandregistry.h
@@ -531,7 +528,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/roundedicons.h
     src/ui/uitypography.h
     src/insights/moduleblockdiagramservice.h
-    src/semantic/modulebriefservice.h
     src/completion/completioncommandmode.h
     src/completion/completioncommandkindadapter.h
     version.h.in

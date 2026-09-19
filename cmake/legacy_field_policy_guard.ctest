@@ -59,12 +59,10 @@ set(PROTECTED_BOUNDARY_FILES
 )
 
 set(RECORD_FIRST_METADATA_FILES
-    src/semantic/clockresetdomainservice.cpp
     src/completion/completionmodelupdates.cpp
     src/completion/completionservice.cpp
     src/navigation/definitionnavigationservice.cpp
     src/insights/fsmgraphservice.cpp
-    src/semantic/modulebriefservice.cpp
     src/semantic/semanticdiffservice.cpp
     src/semantic/semanticindexcompletioncontext.cpp
     src/semantic/semanticindexcompletiontypequeries.cpp
@@ -75,23 +73,19 @@ set(RECORD_FIRST_METADATA_FILES
 )
 
 set(STABLE_KEY_MIGRATED_SERVICE_FILES
-    src/semantic/clockresetdomainservice.cpp
     src/semantic/hierarchyservice.cpp
     src/semantic/hierarchyservicetraversal.cpp
-    src/semantic/modulebriefservice.cpp
     src/semantic/relationshipservice.cpp
     src/semantic/semanticindexmodulecontext.cpp
     src/semantic/signaljourneyservice.cpp
 )
 
 set(RECORD_METADATA_HELPER_FILES
-    src/semantic/clockresetdomainservice.cpp
     src/completion/completionmodelupdates.cpp
     src/completion/completionservice.cpp
     src/navigation/definitionnavigationservice.cpp
     src/insights/fsmgraphservice.cpp
     src/semantic/hierarchyservice.cpp
-    src/semantic/modulebriefservice.cpp
     src/navigation/navigationservice.cpp
     src/navigation/navigationservicehierarchy.cpp
     src/commands/searchservice.cpp
@@ -102,9 +96,7 @@ set(RECORD_METADATA_HELPER_FILES
 )
 
 set(RECORD_NATIVE_SERVICE_FILES
-    src/semantic/clockresetdomainservice.cpp
     src/insights/fsmgraphservice.cpp
-    src/semantic/modulebriefservice.cpp
     src/semantic/relationshipanalysisworker.cpp
     src/semantic/semanticdiffservice.cpp
     src/semantic/signaljourneyservice.cpp
@@ -445,18 +437,6 @@ set(PHASE_L_REGEX_CLEANUP_PATTERNS
 )
 
 set(F3_REMOVED_COMPATIBILITY_PATTERNS
-    "src/semantic/clockresetdomainservice.h|moduleSymbolId"
-    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEntry[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
-    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainMember[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+domainSignal"
-    "src/semantic/clockresetdomainservice.h|struct[ \t\r\n]+ClockResetDomainEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "src/semantic/clockresetdomainservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
-    "src/semantic/clockresetdomainservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "src/semantic/clockresetdomainservice.h|acceptsCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/clockresetdomainservice.h|isTimingCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/clockresetdomainservice.h|hasMappedTimingRelationship[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/clockresetdomainservice.h|moduleForCandidate[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
     "src/navigation/definitionnavigationservice.h|struct[ \t\r\n]+DefinitionNavigationTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "src/navigation/definitionnavigationservice.cpp|target\\.symbol[ \t\r\n]*="
     "src/navigation/definitionservice.h|struct[ \t\r\n]+DefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
@@ -566,29 +546,6 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "src/semantic/hierarchyservice.h|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int"
     "src/semantic/hierarchyservice.cpp|node\\.symbol[ \t\r\n]*="
     "src/semantic/hierarchyservice.cpp|moduleInstantiationChildren[ \t\r\n]*\\([ \t\r\n]*int|moduleSymbolId"
-    "src/semantic/modulebriefservice.h|moduleSymbolId"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+moduleSymbol"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+ports"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+parameters"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+instances"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefReport[ \t\r\n]*\\{[^}]*QList[ \t\r\n]*<sym_list::SymbolInfo>[ \t\r\n]+imports"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*SemanticRelationshipResult[ \t\r\n]+relationship"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+peerSymbol"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+fromSymbol"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefRelationshipEvidenceRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefSymbolRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "src/semantic/modulebriefservice.h|struct[ \t\r\n]+ModuleBriefContextRow[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
-    "src/semantic/modulebriefservice.h|isInsideModule[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/modulebriefservice.h|symbolDisplayName[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/modulebriefservice.h|interfaceNames[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/modulebriefservice.h|sortSymbols[ \t\r\n]*\\([^\\)]*sym_list::SymbolInfo"
-    "src/semantic/modulebriefservice.cpp|moduleSymbolId|getSymbolById[ \t\r\n]*\\("
-    "src/semantic/modulebriefservice.cpp|getRelationshipResults[ \t\r\n]*\\([^\\)]*symbolId"
-    "src/semantic/modulebriefservice.cpp|moduleSymbol\\.symbolId"
-    "src/semantic/modulebriefservice.cpp|packageSymbol\\.symbolId"
-    "src/semantic/modulebriefservice.cpp|symbol\\.symbolId[ \t\r\n]*<"
-    "src/semantic/modulebriefservice.cpp|lhs\\.symbolId"
-    "src/semantic/modulebriefservice.cpp|rhs\\.symbolId"
     "src/semantic/relationshipservice.h|struct[ \t\r\n]+DirectedRelationshipResult[ \t\r\n]*\\{[^}]*RelationshipResult[ \t\r\n]+relationship"
     "src/navigation/navigationservice.h|struct[ \t\r\n]+NavigationModuleTarget[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "src/navigation/navigationservice.cpp|result\\.symbol[ \t\r\n]*="
@@ -744,9 +701,7 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "src/semantic/relationshipanalysisworker.cpp|getSymbols[ \t\r\n]*\\("
     "src/semantic/semanticindexrelationships.cpp|getSymbols[ \t\r\n]*\\("
     "src/semantic/semanticindexmodulecontext.cpp|getSymbols[ \t\r\n]*\\("
-    "src/semantic/modulebriefservice.cpp|getSymbols[ \t\r\n]*\\("
     "src/insights/fsmgraphservice.cpp|getSymbols[ \t\r\n]*\\("
-    "src/semantic/clockresetdomainservice.cpp|getSymbols[ \t\r\n]*\\("
     "src/semantic/signaljourneyservice.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/relationship_test.cpp|getSymbols[ \t\r\n]*\\("
     "test_sv/gui_smoke_test.cpp|getSymbols[ \t\r\n]*\\("
@@ -773,25 +728,18 @@ set(F3_REMOVED_COMPATIBILITY_PATTERNS
     "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticRelationshipResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+toSymbol"
     "src/semantic/semanticindex.h|struct[ \t\r\n]+SemanticDefinitionResult[ \t\r\n]*\\{[^}]*sym_list::SymbolInfo[ \t\r\n]+symbol"
     "src/semantic/semanticindexlookup.cpp|best\\.symbol[ \t\r\n]*="
-    "src/semantic/modulebriefservice.cpp|return[ \t\r\n]+definition\\.symbol"
     "src/semantic/signaljourneyservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
     "src/insights/fsmgraphservice.cpp|definition\\.symbol[^A-Za-z0-9_]"
     "src/semantic/semanticindexrelationships.cpp|relationshipEndpointSymbol"
     "src/semantic/semanticindexrelationships.cpp|symbolByLocalHandle"
-    "src/semantic/clockresetdomainservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "src/semantic/clockresetdomainservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
     "src/semantic/hierarchyservice.cpp|rel\\.fromSymbol[^A-Za-z0-9_]"
     "src/semantic/hierarchyservice.cpp|rel\\.toSymbol[^A-Za-z0-9_]"
-    "src/semantic/modulebriefservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
-    "src/semantic/modulebriefservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
     "semanticindexcompletionrelationships.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
     "semanticindexcompletionrelationships.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
     "src/semantic/semanticindexmodulecontext.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
     "src/semantic/signaljourneyservice.cpp|relationship\\.fromSymbol[^A-Za-z0-9_]"
     "src/semantic/signaljourneyservice.cpp|relationship\\.toSymbol[^A-Za-z0-9_]"
-    "src/semantic/clockresetdomainservice.cpp|SymbolTaxonomy::semanticMetadata[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "src/insights/fsmgraphservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
-    "src/semantic/modulebriefservice.cpp|SymbolTaxonomy::isModuleDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "src/semantic/signaljourneyservice.cpp|isJourneyDeclaration[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "semanticindexcompletionrelationships.cpp|symbolStableKeyForSymbol[ \t\r\n]*\\([ \t\r\n]*definition\\.symbol[ \t\r\n,\\)]"
     "src/semantic/signaljourneyservice.h|signalSymbolId"

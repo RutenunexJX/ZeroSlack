@@ -50,6 +50,7 @@ public:
                               const QString& fileName,
                               const QString& moduleName,
                               const QString& signalAccessPath = {});
+    void refreshReport();
     void setCurrentEditorLocation(const QString& fileName, int line);
     void focusFit();
     void focusZoomIn();

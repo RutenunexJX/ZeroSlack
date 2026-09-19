@@ -37,10 +37,7 @@ struct RtlInsightsPanelViewState
     QTableWidget* graphTable = nullptr;
     SignalUsageHotspotPanel* signalUsageHotspotPanel =
         nullptr;
-    QPushButton* moduleBriefButton = nullptr;
-    QPushButton* signalJourneyButton = nullptr;
     QPushButton* signalUsageHotspotButton = nullptr;
-    QPushButton* clockResetButton = nullptr;
     QPushButton* fsmGraphButton = nullptr;
     QPushButton* moduleBlockDiagramButton = nullptr;
     QPushButton* graphZoomOutButton = nullptr;

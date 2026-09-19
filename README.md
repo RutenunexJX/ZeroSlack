@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.15`
+Current version: `v0.29.16`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -45,7 +45,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Search | `Ctrl+F` / `Ctrl+H` use an inline editor bar; `Ctrl+Shift+F` / `Ctrl+Shift+H` open workspace search and guarded replace. | [manual §12](用户手册.md) |
 | Context | The right-side rail opens a resizable sidebar of collapsible sections that can be resized, reordered, floated into native windows, bound to a document, or hidden as a whole with `Ctrl+2`. | [manual §5.4](用户手册.md) |
 | Context | Temporary source editing uses one in-editor Peek that pins into the sidebar without losing the live editor, undo state, search history or restore identity. | [manual §5.4](用户手册.md) |
-| Insights | Problems, Design, RTL Insights, state-transition and FSM views, module block diagrams, signal journeys, signal-kernel graphs, usage hotspots. | [manual §16](用户手册.md) |
+| Insights | State-transition and FSM views, nested module block diagrams, signal-kernel graphs, and usage hotspots with Track/Matrix views. | [manual §15](用户手册.md) |
 | Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
 | RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
 | Suite | Workspace Hub groups source, Pinloom, Wave and RegMap resources, and the same versioned associations are available to automation. | [AppSuite integration](docs/suite.md), [manual §21](用户手册.md) |
@@ -116,10 +116,13 @@ Problems and Activity retain their lightweight models and badge updates. Special
 surfaces remain provider-created on demand. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed;
 syntax folding and the four specialized diagrams remain available.
 
+The retired Module Brief, Signal Journey and Clock/Reset Map report pages are removed.
+Shared signal-relationship analysis, clock/reset facts and semantic Diff rendering remain available.
+
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.15`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.16`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

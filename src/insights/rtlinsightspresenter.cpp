@@ -1,15 +1,12 @@
 #include "rtlinsightspresenter.h"
 
 #include "activitylogservice.h"
-#include "clockresetdomainservice.h"
 #include "fsmgraphservice.h"
 #include "moduleblockdiagramservice.h"
-#include "modulebriefservice.h"
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightspanelviewstate.h"
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
-#include "signaljourneyservice.h"
 #include "signalusagehotspotpanel.h"
 #include "statetransitiongraphservice.h"
 
@@ -22,6 +19,7 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
+#include <QStackedWidget>
 #include <QToolButton>
 #include <QTreeWidget>
 
@@ -65,537 +63,6 @@ QTreeWidgetItem* createChildItem(QTreeWidgetItem* parent,
     item->setData(0, Qt::UserRole + 1, line);
     item->setData(0, Qt::UserRole + 2, column);
     return item;
-}
-
-void appendSymbolGroup(QTreeWidget* tree,
-                       const QString& title,
-                       const QList<ModuleBriefSymbolRow>& rows)
-{
-    QTreeWidgetItem* group = createGroupItem(tree, title, rows.size());
-    for (const ModuleBriefSymbolRow& row : rows) {
-        createChildItem(group,
-                        row.sectionDisplayName,
-                        row.symbolDisplayName,
-                        row.detailDisplayName,
-                        row.codeLink.fileName,
-                        row.codeLink.line,
-                        row.codeLink.column,
-                        row.codeLink.fileDisplayName,
-                        row.codeLink.lineDisplayName);
-    }
-}
-
-void appendDiagnostics(QTreeWidget* tree,
-                       const QList<ModuleBriefDiagnosticRow>& diagnostics)
-{
-    QTreeWidgetItem* group = createGroupItem(tree,
-                                            QStringLiteral("Diagnostics"),
-                                            diagnostics.size());
-    for (const ModuleBriefDiagnosticRow& row : diagnostics) {
-        const SemanticDiagnostic& diagnostic = row.diagnostic;
-        QTreeWidgetItem* diagnosticItem =
-            createChildItem(group,
-                            row.severityDisplayName,
-                            diagnostic.message,
-                            row.detailDisplayName,
-                            row.codeLink.fileName,
-                            row.codeLink.line,
-                            row.codeLink.column,
-                            row.codeLink.fileDisplayName,
-                            row.codeLink.lineDisplayName);
-        createChildItem(diagnosticItem,
-                        QStringLiteral("Source Role"),
-                        row.sourceRoleDisplayName,
-                        row.severityDisplayName,
-                        row.codeLink.fileName,
-                        row.codeLink.line,
-                        row.codeLink.column,
-                        row.codeLink.fileDisplayName,
-                        row.codeLink.lineDisplayName);
-    }
-}
-
-void appendContextRows(QTreeWidget* tree,
-                       const QList<ModuleBriefContextRow>& rows)
-{
-    QTreeWidgetItem* group = createGroupItem(tree,
-                                            QStringLiteral("Context"),
-                                            rows.size());
-    for (const ModuleBriefContextRow& row : rows) {
-        QTreeWidgetItem* context =
-            createChildItem(group,
-                            row.sectionDisplayName,
-                            row.symbolDisplayName,
-                            row.detailDisplayName,
-                            row.codeLink.fileName,
-                            row.codeLink.line,
-                            row.codeLink.column,
-                            row.codeLink.fileDisplayName,
-                            row.codeLink.lineDisplayName);
-        createChildItem(context,
-                        QStringLiteral("Kind"),
-                        row.contextKindDisplayName,
-                        row.sectionDisplayName,
-                        row.codeLink.fileName,
-                        row.codeLink.line,
-                        row.codeLink.column,
-                        row.codeLink.fileDisplayName,
-                        row.codeLink.lineDisplayName);
-        createChildItem(context,
-                        QStringLiteral("Type"),
-                        row.symbolTypeDisplayName,
-                        row.detailDisplayName,
-                        row.codeLink.fileName,
-                        row.codeLink.line,
-                        row.codeLink.column,
-                        row.codeLink.fileDisplayName,
-                        row.codeLink.lineDisplayName);
-        createChildItem(context,
-                        QStringLiteral("Source Role"),
-                        row.sourceRoleDisplayName,
-                        row.sectionDisplayName,
-                        row.codeLink.fileName,
-                        row.codeLink.line,
-                        row.codeLink.column,
-                        row.codeLink.fileDisplayName,
-                        row.codeLink.lineDisplayName);
-    }
-}
-
-void appendRelationshipSummary(
-    QTreeWidget* tree,
-    const ModuleBriefRelationshipSummary& summary,
-    const QList<ModuleBriefRelationshipEvidenceRow>& evidenceRows)
-{
-    QTreeWidgetItem* group = createGroupItem(tree,
-                                            QStringLiteral("Relationships"),
-                                            summary.totalCount);
-    for (const ModuleBriefRelationshipEvidenceRow& row : evidenceRows) {
-        QTreeWidgetItem* relationship =
-            createChildItem(group,
-                            row.directionDisplayName,
-                            row.peerDisplayName,
-                            row.detailDisplayName,
-                            row.peerCodeLink.fileName,
-                            row.peerCodeLink.line,
-                            row.peerCodeLink.column,
-                            row.peerCodeLink.fileDisplayName,
-                            row.peerCodeLink.lineDisplayName);
-        createChildItem(relationship,
-                        QStringLiteral("From"),
-                        row.fromSymbolDisplayName,
-                        row.typeDisplayName,
-                        row.fromCodeLink.fileName,
-                        row.fromCodeLink.line,
-                        row.fromCodeLink.column,
-                        row.fromCodeLink.fileDisplayName,
-                        row.fromCodeLink.lineDisplayName);
-        createChildItem(relationship,
-                        QStringLiteral("To"),
-                        row.toSymbolDisplayName,
-                        row.typeDisplayName,
-                        row.toCodeLink.fileName,
-                        row.toCodeLink.line,
-                        row.toCodeLink.column,
-                        row.toCodeLink.fileDisplayName,
-                        row.toCodeLink.lineDisplayName);
-    }
-    for (const ModuleBriefRelationshipRow& row : summary.rows) {
-        createChildItem(group,
-                        row.directionDisplayName,
-                        row.typeDisplayName,
-                        row.detailDisplayName,
-                        QString(),
-                        0,
-                        0);
-    }
-}
-
-void appendClockResetDomains(QTreeWidget* tree,
-                             const ClockResetDomainReport& report)
-{
-    QTreeWidgetItem* clocks = createGroupItem(tree,
-                                             report.clockGroupDisplayName.isEmpty()
-                                                 ? QStringLiteral("Clock Domains")
-                                                 : report.clockGroupDisplayName,
-                                             report.clockRelationshipCount);
-    for (const ClockResetDomainEntry& domain : report.clockDomains) {
-        QTreeWidgetItem* signal = createChildItem(clocks,
-                                                  domain.sectionDisplayName.isEmpty()
-                                                      ? QStringLiteral("Clock")
-                                                      : domain.sectionDisplayName,
-                                                  domain.domainSignalDisplayName,
-                                                  domain.detailDisplayName.isEmpty()
-                                                      ? QStringLiteral("drives %1 modules")
-                                                            .arg(domain.modules.size())
-                                                      : domain.detailDisplayName,
-                                                  domain.domainSignalCodeLink.fileName,
-                                                  domain.domainSignalCodeLink.line,
-                                                  domain.domainSignalCodeLink.column,
-                                                  domain.domainSignalCodeLink.fileDisplayName,
-                                                  domain.domainSignalCodeLink.lineDisplayName);
-        for (const ClockResetDomainMember& member : domain.modules) {
-            QTreeWidgetItem* module =
-                createChildItem(signal,
-                                member.sectionDisplayName.isEmpty()
-                                    ? QStringLiteral("Module")
-                                    : member.sectionDisplayName,
-                                member.moduleDisplayName.isEmpty()
-                                    ? QStringLiteral("<unnamed>")
-                                    : member.moduleDisplayName,
-                                member.detailDisplayName.isEmpty()
-                                    ? QStringLiteral("clocked")
-                                    : member.detailDisplayName,
-                                member.moduleCodeLink.fileName,
-                                member.moduleCodeLink.line,
-                                member.moduleCodeLink.column,
-                                member.moduleCodeLink.fileDisplayName,
-                                member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Relationship Type"),
-                            member.relationshipTypeDisplayName,
-                            member.moduleDisplayName,
-                            member.moduleCodeLink.fileName,
-                            member.moduleCodeLink.line,
-                            member.moduleCodeLink.column,
-                            member.moduleCodeLink.fileDisplayName,
-                            member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Source Role"),
-                            member.sourceRoleDisplayName,
-                            member.moduleDisplayName,
-                            member.moduleCodeLink.fileName,
-                            member.moduleCodeLink.line,
-                            member.moduleCodeLink.column,
-                            member.moduleCodeLink.fileDisplayName,
-                            member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Domain Signal"),
-                            domain.domainSignalDisplayName,
-                            domain.sectionDisplayName,
-                            domain.domainSignalCodeLink.fileName,
-                            domain.domainSignalCodeLink.line,
-                            domain.domainSignalCodeLink.column,
-                            domain.domainSignalCodeLink.fileDisplayName,
-                            domain.domainSignalCodeLink.lineDisplayName);
-        }
-    }
-
-    QTreeWidgetItem* resets = createGroupItem(tree,
-                                             report.resetGroupDisplayName.isEmpty()
-                                                 ? QStringLiteral("Reset Domains")
-                                                 : report.resetGroupDisplayName,
-                                             report.resetRelationshipCount);
-    for (const ClockResetDomainEntry& domain : report.resetDomains) {
-        QTreeWidgetItem* signal = createChildItem(resets,
-                                                  domain.sectionDisplayName.isEmpty()
-                                                      ? QStringLiteral("Reset")
-                                                      : domain.sectionDisplayName,
-                                                  domain.domainSignalDisplayName,
-                                                  domain.detailDisplayName.isEmpty()
-                                                      ? QStringLiteral("resets %1 modules")
-                                                            .arg(domain.modules.size())
-                                                      : domain.detailDisplayName,
-                                                  domain.domainSignalCodeLink.fileName,
-                                                  domain.domainSignalCodeLink.line,
-                                                  domain.domainSignalCodeLink.column,
-                                                  domain.domainSignalCodeLink.fileDisplayName,
-                                                  domain.domainSignalCodeLink.lineDisplayName);
-        for (const ClockResetDomainMember& member : domain.modules) {
-            QTreeWidgetItem* module =
-                createChildItem(signal,
-                                member.sectionDisplayName.isEmpty()
-                                    ? QStringLiteral("Module")
-                                    : member.sectionDisplayName,
-                                member.moduleDisplayName.isEmpty()
-                                    ? QStringLiteral("<unnamed>")
-                                    : member.moduleDisplayName,
-                                member.detailDisplayName.isEmpty()
-                                    ? QStringLiteral("reset")
-                                    : member.detailDisplayName,
-                                member.moduleCodeLink.fileName,
-                                member.moduleCodeLink.line,
-                                member.moduleCodeLink.column,
-                                member.moduleCodeLink.fileDisplayName,
-                                member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Relationship Type"),
-                            member.relationshipTypeDisplayName,
-                            member.moduleDisplayName,
-                            member.moduleCodeLink.fileName,
-                            member.moduleCodeLink.line,
-                            member.moduleCodeLink.column,
-                            member.moduleCodeLink.fileDisplayName,
-                            member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Source Role"),
-                            member.sourceRoleDisplayName,
-                            member.moduleDisplayName,
-                            member.moduleCodeLink.fileName,
-                            member.moduleCodeLink.line,
-                            member.moduleCodeLink.column,
-                            member.moduleCodeLink.fileDisplayName,
-                            member.moduleCodeLink.lineDisplayName);
-            createChildItem(module,
-                            QStringLiteral("Domain Signal"),
-                            domain.domainSignalDisplayName,
-                            domain.sectionDisplayName,
-                            domain.domainSignalCodeLink.fileName,
-                            domain.domainSignalCodeLink.line,
-                            domain.domainSignalCodeLink.column,
-                            domain.domainSignalCodeLink.fileDisplayName,
-                            domain.domainSignalCodeLink.lineDisplayName);
-        }
-    }
-}
-
-void appendClockResetEvidenceRows(
-    QTreeWidget* tree,
-    const QString& groupDisplayName,
-    const QList<ClockResetDomainEvidenceRow>& rows)
-{
-    QTreeWidgetItem* group = createGroupItem(tree,
-                                            groupDisplayName,
-                                            rows.size());
-    for (const ClockResetDomainEvidenceRow& row : rows) {
-        QTreeWidgetItem* evidence =
-            createChildItem(group,
-                            row.sectionDisplayName,
-                            row.signalDisplayName,
-                            row.detailDisplayName,
-                            row.signalCodeLink.fileName,
-                            row.signalCodeLink.line,
-                            row.signalCodeLink.column,
-                            row.signalCodeLink.fileDisplayName,
-                            row.signalCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Signal"),
-                        row.signalDisplayName,
-                        row.sectionDisplayName,
-                        row.signalCodeLink.fileName,
-                        row.signalCodeLink.line,
-                        row.signalCodeLink.column,
-                        row.signalCodeLink.fileDisplayName,
-                        row.signalCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Module"),
-                        row.moduleDisplayName,
-                        row.sectionDisplayName,
-                        row.moduleCodeLink.fileName,
-                        row.moduleCodeLink.line,
-                        row.moduleCodeLink.column,
-                        row.moduleCodeLink.fileDisplayName,
-                        row.moduleCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Relationship Type"),
-                        row.relationshipTypeDisplayName,
-                        row.sectionDisplayName,
-                        row.signalCodeLink.fileName,
-                        row.signalCodeLink.line,
-                        row.signalCodeLink.column,
-                        row.signalCodeLink.fileDisplayName,
-                        row.signalCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Category"),
-                        row.categoryDisplayName,
-                        row.sectionDisplayName,
-                        row.signalCodeLink.fileName,
-                        row.signalCodeLink.line,
-                        row.signalCodeLink.column,
-                        row.signalCodeLink.fileDisplayName,
-                        row.signalCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Reason"),
-                        row.evidenceReasonDisplayName,
-                        row.detailDisplayName,
-                        row.signalCodeLink.fileName,
-                        row.signalCodeLink.line,
-                        row.signalCodeLink.column,
-                        row.signalCodeLink.fileDisplayName,
-                        row.signalCodeLink.lineDisplayName);
-        createChildItem(evidence,
-                        QStringLiteral("Source Role"),
-                        row.sourceRoleDisplayName,
-                        row.sectionDisplayName,
-                        row.signalCodeLink.fileName,
-                        row.signalCodeLink.line,
-                        row.signalCodeLink.column,
-                        row.signalCodeLink.fileDisplayName,
-                        row.signalCodeLink.lineDisplayName);
-    }
-}
-
-void appendSignalJourneyItems(QTreeWidgetItem* parent,
-                              const QString& section,
-                              const QList<SignalJourneyItem>& items)
-{
-    QTreeWidgetItem* group = new QTreeWidgetItem(parent);
-    group->setText(0, SemanticPanelUtils::countLabel(section, items.size()));
-    for (const SignalJourneyItem& item : items) {
-        QTreeWidgetItem* relationship =
-            createChildItem(group,
-                            section,
-                            item.peerSymbolDisplayName,
-                            item.detailDisplayName,
-                            item.peerCodeLink.fileName,
-                            item.peerCodeLink.line,
-                            item.peerCodeLink.column,
-                            item.peerCodeLink.fileDisplayName,
-                            item.peerCodeLink.lineDisplayName);
-        QTreeWidgetItem* fromItem =
-            createChildItem(relationship,
-                            QStringLiteral("From"),
-                            item.fromSymbolDisplayName,
-                            item.relationshipTypeDisplayName,
-                            item.fromCodeLink.fileName,
-                            item.fromCodeLink.line,
-                            item.fromCodeLink.column,
-                            item.fromCodeLink.fileDisplayName,
-                            item.fromCodeLink.lineDisplayName);
-        createChildItem(fromItem,
-                        QStringLiteral("Type"),
-                        item.fromTypeDisplayName,
-                        item.fromSymbolDisplayName,
-                        item.fromCodeLink.fileName,
-                        item.fromCodeLink.line,
-                        item.fromCodeLink.column,
-                        item.fromCodeLink.fileDisplayName,
-                        item.fromCodeLink.lineDisplayName);
-        createChildItem(fromItem,
-                        QStringLiteral("Source Role"),
-                        item.fromSourceRoleDisplayName,
-                        item.fromSymbolDisplayName,
-                        item.fromCodeLink.fileName,
-                        item.fromCodeLink.line,
-                        item.fromCodeLink.column,
-                        item.fromCodeLink.fileDisplayName,
-                        item.fromCodeLink.lineDisplayName);
-        QTreeWidgetItem* toItem =
-            createChildItem(relationship,
-                            QStringLiteral("To"),
-                            item.toSymbolDisplayName,
-                            item.relationshipTypeDisplayName,
-                            item.toCodeLink.fileName,
-                            item.toCodeLink.line,
-                            item.toCodeLink.column,
-                            item.toCodeLink.fileDisplayName,
-                            item.toCodeLink.lineDisplayName);
-        createChildItem(toItem,
-                        QStringLiteral("Type"),
-                        item.toTypeDisplayName,
-                        item.toSymbolDisplayName,
-                        item.toCodeLink.fileName,
-                        item.toCodeLink.line,
-                        item.toCodeLink.column,
-                        item.toCodeLink.fileDisplayName,
-                        item.toCodeLink.lineDisplayName);
-        createChildItem(toItem,
-                        QStringLiteral("Source Role"),
-                        item.toSourceRoleDisplayName,
-                        item.toSymbolDisplayName,
-                        item.toCodeLink.fileName,
-                        item.toCodeLink.line,
-                        item.toCodeLink.column,
-                        item.toCodeLink.fileDisplayName,
-                        item.toCodeLink.lineDisplayName);
-        createChildItem(relationship,
-                        QStringLiteral("Connection"),
-                        item.connectionKindDisplayName,
-                        item.detailDisplayName,
-                        item.peerCodeLink.fileName,
-                        item.peerCodeLink.line,
-                        item.peerCodeLink.column,
-                        item.peerCodeLink.fileDisplayName,
-                        item.peerCodeLink.lineDisplayName);
-        createChildItem(relationship,
-                        QStringLiteral("Peer Type"),
-                        item.peerTypeDisplayName,
-                        item.relationshipTypeDisplayName,
-                        item.peerCodeLink.fileName,
-                        item.peerCodeLink.line,
-                        item.peerCodeLink.column,
-                        item.peerCodeLink.fileDisplayName,
-                        item.peerCodeLink.lineDisplayName);
-        if (!item.interfaceBaseDisplayName.isEmpty()) {
-            createChildItem(relationship,
-                            QStringLiteral("Interface"),
-                            item.interfaceBaseDisplayName,
-                            item.connectionKindDisplayName,
-                            item.peerCodeLink.fileName,
-                            item.peerCodeLink.line,
-                            item.peerCodeLink.column,
-                            item.peerCodeLink.fileDisplayName,
-                            item.peerCodeLink.lineDisplayName);
-        }
-        createChildItem(relationship,
-                        QStringLiteral("Source Role"),
-                        item.peerSourceRoleDisplayName,
-                        item.peerSymbolDisplayName,
-                        item.peerCodeLink.fileName,
-                        item.peerCodeLink.line,
-                        item.peerCodeLink.column,
-                        item.peerCodeLink.fileDisplayName,
-                        item.peerCodeLink.lineDisplayName);
-    }
-}
-
-void appendSignalJourney(QTreeWidget* tree,
-                         const QString& fileName,
-                         const QString& moduleName,
-                         const QString& signalName)
-{
-    if (signalName.isEmpty())
-        return;
-
-    SignalJourneyQuery query;
-    query.fileName = fileName;
-    query.moduleName = moduleName;
-    query.signalName = signalName;
-    const SignalJourneyReport report =
-        SignalJourneyService::getInstance()->buildSignalJourney(query);
-    if (!report.found)
-        return;
-
-    const int totalItems = 1
-        + report.assignments.size()
-        + report.reads.size()
-        + report.portConnections.size()
-        + report.interfaceConnections.size()
-        + report.timingConnections.size();
-    QTreeWidgetItem* group = createGroupItem(tree,
-                                            QStringLiteral("Signal Journey: %1")
-                                                .arg(report.declarationDisplayName),
-                                            totalItems);
-    QTreeWidgetItem* declaration =
-        createChildItem(group,
-                        QStringLiteral("Declaration"),
-                        report.declarationDisplayName,
-                        report.declarationTypeDisplayName,
-                        report.declarationCodeLink.fileName,
-                        report.declarationCodeLink.line,
-                        report.declarationCodeLink.column,
-                        report.declarationCodeLink.fileDisplayName,
-                        report.declarationCodeLink.lineDisplayName);
-    createChildItem(declaration,
-                    QStringLiteral("Source Role"),
-                    report.declarationSourceRoleDisplayName,
-                    report.declarationDisplayName,
-                    report.declarationCodeLink.fileName,
-                    report.declarationCodeLink.line,
-                    report.declarationCodeLink.column,
-                    report.declarationCodeLink.fileDisplayName,
-                    report.declarationCodeLink.lineDisplayName);
-    appendSignalJourneyItems(group, QStringLiteral("Assignments"), report.assignments);
-    appendSignalJourneyItems(group, QStringLiteral("Reads"), report.reads);
-    appendSignalJourneyItems(group,
-                             QStringLiteral("Port Connections"),
-                             report.portConnections);
-    appendSignalJourneyItems(group,
-                             QStringLiteral("Interface Connections"),
-                             report.interfaceConnections);
-    appendSignalJourneyItems(group,
-                             QStringLiteral("Timing Connections"),
-                             report.timingConnections);
 }
 
 void appendSemanticDiff(QTreeWidget* tree, const SemanticDiffReport& report)
@@ -749,6 +216,11 @@ RtlInsightsPresenter::RtlInsightsPresenter(
 }
 void RtlInsightsPresenter::refresh()
 {
+    if (state.insightsStack && state.signalUsageHotspotPanel
+        && state.insightsStack->currentWidget() == state.signalUsageHotspotPanel) {
+        state.signalUsageHotspotPanel->refreshReport();
+        return;
+    }
     if (state.currentGraphMode
             == QStringLiteral("state-transition")) {
         showStateTransitionGraphForSignal(
@@ -767,7 +239,8 @@ void RtlInsightsPresenter::refresh()
         showModuleBlockDiagram();
         return;
     }
-    showModuleBrief();
+    // Ready/empty content follows context changes; semantic diffs retain their snapshots.
+    updateActionState();
 }
 
 void RtlInsightsPresenter::renderNoContext()
@@ -798,11 +271,11 @@ void RtlInsightsPresenter::renderActionList()
     createGroupItem(
         state.insightsTree,
         QStringLiteral("Ready: %1").arg(state.currentModuleName),
-        5);
+        3);
     createGroupItem(
         state.insightsTree,
         state.currentSignalName.isEmpty()
-            ? QStringLiteral("Select a signal or click Module Brief / Clock/Reset / FSM / Module Block Diagram")
+            ? QStringLiteral("Select a signal for Usage Hotspot or State Transition Graph, or open Module Block Diagram")
             : QStringLiteral("Current signal: %1").arg(state.currentSignalName),
         0);
     if (state.insightsDock)
@@ -811,191 +284,11 @@ void RtlInsightsPresenter::renderActionList()
     updateActionState();
 }
 
-void RtlInsightsPresenter::showModuleBrief()
-{
-    if (!state.insightsTree)
-        return;
-    graphController.showTreeSurface();
-
-    const bool hadExpandableItems =
-        SemanticPanelUtils::treeHasExpandableItems(state.insightsTree);
-    const QSet<QString> expandedKeys =
-        SemanticPanelUtils::collectExpandedKeys(state.insightsTree);
-    state.insightsTree->clear();
-
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("Module Brief"));
-
-    ModuleBriefQuery moduleQuery;
-    moduleQuery.fileName = state.currentFileName;
-    moduleQuery.moduleName = state.currentModuleName;
-    ModuleBriefReport moduleReport;
-    try {
-        moduleReport =
-            ModuleBriefService::getInstance()->buildModuleBrief(moduleQuery);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("Module Brief"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("Module Brief"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-
-    if (!moduleReport.found) {
-        createGroupItem(state.insightsTree,
-                        QStringLiteral("Module not found: %1").arg(state.currentModuleName),
-                        0);
-        if (state.insightsDock)
-            state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1")
-                                             .arg(state.currentModuleName));
-        logReportDone(QStringLiteral("Module Brief"),
-                      static_cast<int>(timer.elapsed()));
-        return;
-    }
-
-    appendSymbolGroup(state.insightsTree,
-                      QStringLiteral("Ports"),
-                      moduleReport.portRows);
-    appendSymbolGroup(state.insightsTree,
-                      QStringLiteral("Parameters"),
-                      moduleReport.parameterRows);
-    appendSymbolGroup(state.insightsTree,
-                      QStringLiteral("Instances"),
-                      moduleReport.instanceRows);
-    appendSymbolGroup(state.insightsTree,
-                      QStringLiteral("Imports"),
-                      moduleReport.importRows);
-    appendContextRows(state.insightsTree, moduleReport.contextRows);
-    appendDiagnostics(state.insightsTree, moduleReport.diagnosticRows);
-    appendRelationshipSummary(state.insightsTree,
-                              moduleReport.relationshipSummary,
-                              moduleReport.relationshipEvidenceRows);
-    SemanticPanelUtils::restoreTreeExpansion(state.insightsTree,
-                                             hadExpandableItems,
-                                             expandedKeys);
-
-    if (state.insightsDock) {
-        state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1")
-                                         .arg(moduleReport.moduleDisplayName));
-    }
-    if (state.statusMessageHandler) {
-        state.statusMessageHandler(QStringLiteral("Updated RTL insights for %1")
-                                 .arg(moduleReport.moduleDisplayName),
-                             1500);
-    }
-    logReportDone(QStringLiteral("Module Brief"),
-                  static_cast<int>(timer.elapsed()));
-}
-
-void RtlInsightsPresenter::showSignalJourney()
-{
-    if (!state.insightsTree)
-        return;
-    graphController.showTreeSurface();
-
-    state.insightsTree->clear();
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("Signal Journey"));
-    try {
-        appendSignalJourney(state.insightsTree,
-                            state.currentFileName,
-                            state.currentModuleName,
-                            state.currentSignalName);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("Signal Journey"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("Signal Journey"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-    if (state.insightsDock)
-        state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: Signal Journey %1")
-                                         .arg(state.currentSignalName));
-    if (state.statusMessageHandler)
-        state.statusMessageHandler(QStringLiteral("Rendered signal journey"), 1500);
-    logReportDone(QStringLiteral("Signal Journey"),
-                  static_cast<int>(timer.elapsed()));
-}
-
 void RtlInsightsPresenter::showSignalUsageHotspot()
 {
     showSignalUsageHotspotForSignal(state.currentFileName,
                                     state.currentModuleName,
                                     state.currentSignalName);
-}
-
-void RtlInsightsPresenter::showClockResetDomainMap()
-{
-    if (!state.insightsTree)
-        return;
-    graphController.showTreeSurface();
-
-    state.insightsTree->clear();
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("Clock/Reset Domain Map"));
-    ClockResetDomainReport report;
-    try {
-        ClockResetDomainQuery query;
-        query.fileName = state.currentFileName;
-        query.moduleName = state.currentModuleName;
-        report = ClockResetDomainService::getInstance()->buildClockResetDomainMap(query);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("Clock/Reset Domain Map"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("Clock/Reset Domain Map"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-    appendClockResetDomains(state.insightsTree, report);
-    appendClockResetEvidenceRows(
-        state.insightsTree,
-        report.evidenceGroupDisplayName.isEmpty()
-            ? QStringLiteral("Domain Evidence")
-            : report.evidenceGroupDisplayName,
-        report.evidenceRows);
-    appendClockResetEvidenceRows(
-        state.insightsTree,
-        report.ambiguityGroupDisplayName.isEmpty()
-            ? QStringLiteral("Ambiguity")
-            : report.ambiguityGroupDisplayName,
-        report.ambiguityRows);
-    appendClockResetEvidenceRows(
-        state.insightsTree,
-        report.unmappedGroupDisplayName.isEmpty()
-            ? QStringLiteral("Unmapped Timing Signals")
-            : report.unmappedGroupDisplayName,
-        report.unmappedRows);
-    if (state.insightsDock)
-        state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: Clock/Reset Map %1")
-                                         .arg(state.currentModuleName));
-    if (state.statusMessageHandler)
-        state.statusMessageHandler(QStringLiteral("Rendered clock/reset domain map"), 1500);
-    logReportDone(QStringLiteral("Clock/Reset Domain Map"),
-                  static_cast<int>(timer.elapsed()));
 }
 
 void RtlInsightsPresenter::showFsmGraph()
@@ -1095,14 +388,8 @@ void RtlInsightsPresenter::showModuleBlockDiagram()
 void RtlInsightsPresenter::updateActionState()
 {
     const bool hasModule = !state.currentFileName.isEmpty() && !state.currentModuleName.isEmpty();
-    if (state.moduleBriefButton)
-        state.moduleBriefButton->setEnabled(hasModule);
-    if (state.signalJourneyButton)
-        state.signalJourneyButton->setEnabled(hasModule);
     if (state.signalUsageHotspotButton)
         state.signalUsageHotspotButton->setEnabled(hasModule);
-    if (state.clockResetButton)
-        state.clockResetButton->setEnabled(hasModule);
     if (state.fsmGraphButton)
         state.fsmGraphButton->setEnabled(hasModule);
     if (state.moduleBlockDiagramButton)

@@ -180,6 +180,14 @@ RtlInsightsPanelCoordinator for Block, Hotspot and State Transition. Panel-owned
 models, nested geometry, FSM layout, Track/Matrix modes, filters, inspector and export
 remain authoritative. Embedded docks are content containers, not registered bottom docks.
 
+Module Brief, Signal Journey and Clock/Reset Map report pages and their controls are removed.
+The ModuleBriefService and ClockResetDomainService report aggregators are removed as well.
+SignalJourneyService remains the data source for SignalKernelGraphService; clock/reset relation
+extraction and semantic query services remain shared infrastructure. The tree surface and its
+navigation still serve semantic Diff and empty/ready states. Refresh dispatches to the selected
+specialized view, preserves hotspot access paths and Track/Matrix mode, and retains immutable
+semantic Diff comparisons instead of falling back to a retired report.
+
 A sidebar section renders that same surface rather than a summary of it, so the section and the
 full view are one implementation at two sizes. `InsightViewSurface` ignores both size-hint
 directions: a hidden stack page keeps the wrapped toolbar height it was last measured at, and an

@@ -714,6 +714,7 @@ void RtlInsightsGraphController::showHotspotSurface()
 {
     if (state.insightsStack && state.signalUsageHotspotPanel)
         state.insightsStack->setCurrentWidget(state.signalUsageHotspotPanel);
+    state.currentGraphMode.clear();
 }
 
 void RtlInsightsGraphController::renderUnavailable(

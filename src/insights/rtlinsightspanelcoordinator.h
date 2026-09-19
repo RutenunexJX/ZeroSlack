@@ -86,10 +86,7 @@ public:
         const QString& afterFileName = QString());
     void refresh();
     void refreshThemePresentation();
-    void showModuleBrief();
-    void showSignalJourney();
     void showSignalUsageHotspot();
-    void showClockResetDomainMap();
     void showFsmGraph();
     void showModuleBlockDiagram();
 

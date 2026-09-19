@@ -6864,15 +6864,27 @@ static void runRtlInsightsOnDemandRegression()
                        QStringLiteral("Ready")),
                true);
 
-    panel.showModuleBrief();
-    bool sawModuleBriefLog = false;
+    for (const char* name : {"rtlModuleBriefButton", "rtlSignalJourneyButton",
+                             "rtlClockResetButton"}) {
+        expectBool("retired report button is absent",
+                   panel.dock()->findChild<QWidget*>(QString::fromLatin1(name)) == nullptr,
+                   true);
+    }
+    panel.refresh();
+    expectBool("ready view refresh does not build retired reports",
+               service->events().isEmpty()
+                   && panel.tree()->topLevelItem(0)->text(0).contains(QStringLiteral("Ready")),
+               true);
+
+    panel.showModuleBlockDiagram();
+    bool sawGraphLog = false;
     for (const ActivityLogEvent& event : service->events()) {
-        sawModuleBriefLog = sawModuleBriefLog
+        sawGraphLog = sawGraphLog
             || (event.source == QStringLiteral("RTL Insights")
-                && event.message.contains(QStringLiteral("Module Brief")));
+                && event.message.contains(QStringLiteral("Module Block Diagram")));
     }
     expectBool("RTL insights report logs on demand",
-               sawModuleBriefLog,
+               sawGraphLog,
                true);
     service->clear();
 }
@@ -7796,454 +7808,89 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                           ->rtlInsightsPanelCoordinator() == nullptr
                    && rtlInsightsTree(window) == nullptr,
                true);
-    return;
 
-    installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("data_q"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("RTL insights defaults to on-demand actions",
-               rtlInsightsTree(window)
-                   && rtlInsightsTree(window)->topLevelItemCount() > 0
-                   && rtlInsightsTree(window)->topLevelItem(0)->text(0).contains(
-                       QStringLiteral("Ready")),
+    RtlInsightsPanelCoordinator panel(nullptr);
+    panel.showModuleInsights(fixturePath, QStringLiteral("insight_top"),
+                             QStringLiteral("data_q"));
+    panel.showModuleBlockDiagram();
+    expectBool("retained block diagram renders module nodes",
+               panel.graphModeForTest() == QStringLiteral("module-block")
+                   && panel.graphNodeItemCountForTest() > 0,
                true);
-
-    bool sawPort = false;
-    bool sawClock = false;
-    bool sawRelationshipEvidence = false;
-    bool sawRelationshipFromEndpoint = false;
-    bool sawRelationshipToEndpoint = false;
-    bool sawContextKind = false;
-    bool sawContextType = false;
-    bool sawContextSourceRole = false;
-    bool sawPackageMemberContext = false;
-    bool sawPackageMemberKind = false;
-    bool sawPackageMemberType = false;
-    bool sawModuleBriefDiagnostic = false;
-    bool sawModuleBriefDiagnosticSourceRole = false;
-    bool sawClockSignalEndpoint = false;
-    bool sawClockModuleEndpoint = false;
-    bool sawClockRelationshipType = false;
-    bool sawClockCategory = false;
-    bool sawClockEvidenceReason = false;
-    bool sawClockSourceRole = false;
-    bool sawClockDomainMemberType = false;
-    bool sawClockDomainMemberSourceRole = false;
-    bool sawClockDomainMemberSignal = false;
-    bool sawResetDomainMemberType = false;
-    bool sawResetDomainMemberSignal = false;
-    bool sawUnmappedClock = false;
-    bool sawUnmappedClockCategory = false;
-    bool sawTransition = false;
-    bool sawFsmStateType = false;
-    bool sawFsmStateSourceRole = false;
-    bool sawFsmStateModule = false;
-    bool sawFsmRegisterType = false;
-    bool sawFsmRegisterSourceRole = false;
-    bool sawFsmNextStateSignal = false;
-    bool sawFsmNextStateSourceRole = false;
-    bool sawFsmFromStateEndpoint = false;
-    bool sawFsmToStateEndpoint = false;
-    bool sawFsmTransitionSourceRole = false;
-    bool sawSignalJourney = false;
-    bool sawSignalJourneyDeclarationSourceRole = false;
-    bool sawSignalJourneyFromEndpoint = false;
-    bool sawSignalJourneyToEndpoint = false;
-    bool sawSignalJourneyFromEndpointType = false;
-    bool sawSignalJourneyFromEndpointSourceRole = false;
-    bool sawSignalJourneyToEndpointType = false;
-    bool sawSignalJourneyToEndpointSourceRole = false;
-    bool sawSignalJourneyInterfaceConnection = false;
-    bool sawSignalJourneyInterfaceKind = false;
-    bool sawSignalJourneyInterfaceBase = false;
-    bool sawSignalJourneyInterfacePeerType = false;
-    bool sawSignalJourneyInterfaceSourceRole = false;
-    auto scanRtlInsightItems = [&]() {
-        const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
-        for (QTreeWidgetItem* item : items) {
-        sawPort = sawPort
-            || (item->text(0) == QStringLiteral("Port")
-                && item->text(1) == QStringLiteral("clk"));
-        sawClock = sawClock
-            || (item->text(0) == QStringLiteral("Clock")
-                && item->text(1) == QStringLiteral("clk"));
-        sawRelationshipEvidence = sawRelationshipEvidence
-            || (item->text(0) == QStringLiteral("Outgoing")
-                && item->text(1) == QStringLiteral("u_stage")
-                && item->text(2) == QStringLiteral("Outgoing Instantiates"));
-        sawRelationshipFromEndpoint = sawRelationshipFromEndpoint
-            || (item->text(0) == QStringLiteral("From")
-                && item->text(1) == QStringLiteral("insight_top")
-                && item->text(2) == QStringLiteral("Instantiates"));
-        sawRelationshipToEndpoint = sawRelationshipToEndpoint
-            || (item->text(0) == QStringLiteral("To")
-                && item->text(1) == QStringLiteral("u_stage")
-                && item->text(2) == QStringLiteral("Instantiates"));
-        sawContextKind = sawContextKind
-            || (item->text(0) == QStringLiteral("Kind")
-                && item->text(1) == QStringLiteral("package import")
-                && item->text(2) == QStringLiteral("Package"));
-        sawContextType = sawContextType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("package")
-                && item->text(2) == QStringLiteral("package import"));
-        sawContextSourceRole = sawContextSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("Package"));
-        sawPackageMemberContext = sawPackageMemberContext
-            || (item->text(0) == QStringLiteral("Package Member")
-                && item->text(1) == QStringLiteral("PKG_DEPTH")
-                && item->text(2) == QStringLiteral("package parameter"));
-        sawPackageMemberKind = sawPackageMemberKind
-            || (item->text(0) == QStringLiteral("Kind")
-                && item->text(1) == QStringLiteral("package parameter")
-                && item->text(2) == QStringLiteral("Package Member"));
-        sawPackageMemberType = sawPackageMemberType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("parameter")
-                && item->text(2) == QStringLiteral("package parameter"));
-        sawModuleBriefDiagnostic = sawModuleBriefDiagnostic
-            || (item->text(0) == QStringLiteral("Warning")
-                && item->text(1) == QStringLiteral("insight warning")
-                && item->text(2) == QStringLiteral("diagnostic"));
-        sawModuleBriefDiagnosticSourceRole =
-            sawModuleBriefDiagnosticSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("Warning"));
-        sawClockSignalEndpoint = sawClockSignalEndpoint
-            || (item->text(0) == QStringLiteral("Signal")
-                && item->text(1) == QStringLiteral("clk")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawClockModuleEndpoint = sawClockModuleEndpoint
-            || (item->text(0) == QStringLiteral("Module")
-                && item->text(1) == QStringLiteral("insight_top")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawClockRelationshipType = sawClockRelationshipType
-            || (item->text(0) == QStringLiteral("Relationship Type")
-                && item->text(1) == QStringLiteral("Clock")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawClockCategory = sawClockCategory
-            || (item->text(0) == QStringLiteral("Category")
-                && item->text(1) == QStringLiteral("mapped domain")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawClockEvidenceReason = sawClockEvidenceReason
-            || (item->text(0) == QStringLiteral("Reason")
-                && item->text(1) == QStringLiteral("relationship")
-                && item->text(2) == QStringLiteral("clk clocks insight_top"));
-        sawClockSourceRole = sawClockSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawClockDomainMemberType = sawClockDomainMemberType
-            || (item->text(0) == QStringLiteral("Relationship Type")
-                && item->text(1) == QStringLiteral("Clock")
-                && item->text(2) == QStringLiteral("insight_top"));
-        sawClockDomainMemberSourceRole = sawClockDomainMemberSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("insight_top"));
-        sawClockDomainMemberSignal = sawClockDomainMemberSignal
-            || (item->text(0) == QStringLiteral("Domain Signal")
-                && item->text(1) == QStringLiteral("clk")
-                && item->text(2) == QStringLiteral("Clock"));
-        sawResetDomainMemberType = sawResetDomainMemberType
-            || (item->text(0) == QStringLiteral("Relationship Type")
-                && item->text(1) == QStringLiteral("Reset")
-                && item->text(2) == QStringLiteral("insight_top"));
-        sawResetDomainMemberSignal = sawResetDomainMemberSignal
-            || (item->text(0) == QStringLiteral("Domain Signal")
-                && item->text(1) == QStringLiteral("rst_n")
-                && item->text(2) == QStringLiteral("Reset"));
-        sawUnmappedClock = sawUnmappedClock
-            || (item->text(0) == QStringLiteral("Unmapped Clock")
-                && item->text(1) == QStringLiteral("scan_clk")
-                && item->text(2).contains(
-                    QStringLiteral("no clock domain relationship")));
-        sawUnmappedClockCategory = sawUnmappedClockCategory
-            || (item->text(0) == QStringLiteral("Category")
-                && item->text(1) == QStringLiteral("unmapped timing")
-                && item->text(2) == QStringLiteral("Unmapped Clock"));
-        sawTransition = sawTransition
-            || (item->text(0) == QStringLiteral("IDLE")
-                && item->text(1) == QStringLiteral("RUN"));
-        sawFsmStateType = sawFsmStateType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("enum value")
-                && item->text(2) == QStringLiteral("IDLE"));
-        sawFsmStateSourceRole = sawFsmStateSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("IDLE"));
-        sawFsmStateModule = sawFsmStateModule
-            || (item->text(0) == QStringLiteral("Module")
-                && item->text(1) == QStringLiteral("insight_top")
-                && item->text(2) == QStringLiteral("IDLE"));
-        sawFsmRegisterType = sawFsmRegisterType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("enum")
-                && item->text(2) == QStringLiteral("state_q"));
-        sawFsmRegisterSourceRole = sawFsmRegisterSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("state_q"));
-        sawFsmNextStateSignal = sawFsmNextStateSignal
-            || (item->text(0) == QStringLiteral("Next State Signal")
-                && item->text(1) == QStringLiteral("state_d")
-                && item->text(2) == QStringLiteral("enum"));
-        sawFsmNextStateSourceRole = sawFsmNextStateSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("state_d"));
-        sawFsmFromStateEndpoint = sawFsmFromStateEndpoint
-            || (item->text(0) == QStringLiteral("From State")
-                && item->text(1) == QStringLiteral("IDLE")
-                && item->text(2) == QStringLiteral("unconditional"));
-        sawFsmToStateEndpoint = sawFsmToStateEndpoint
-            || (item->text(0) == QStringLiteral("To State")
-                && item->text(1) == QStringLiteral("RUN")
-                && item->text(2) == QStringLiteral("unconditional"));
-        sawFsmTransitionSourceRole = sawFsmTransitionSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2).startsWith(QStringLiteral("line ")));
-        sawSignalJourney = sawSignalJourney
-            || (item->text(0) == QStringLiteral("Assignments")
-                && item->text(1) == QStringLiteral("next_data"));
-        sawSignalJourneyDeclarationSourceRole =
-            sawSignalJourneyDeclarationSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("data_q"));
-        sawSignalJourneyFromEndpoint = sawSignalJourneyFromEndpoint
-            || (item->text(0) == QStringLiteral("From")
-                && item->text(1) == QStringLiteral("next_data")
-                && item->text(2) == QStringLiteral("Assigns To"));
-        sawSignalJourneyToEndpoint = sawSignalJourneyToEndpoint
-            || (item->text(0) == QStringLiteral("To")
-                && item->text(1) == QStringLiteral("data_q")
-                && item->text(2) == QStringLiteral("Assigns To"));
-        sawSignalJourneyFromEndpointType = sawSignalJourneyFromEndpointType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("logic")
-                && item->text(2) == QStringLiteral("next_data"));
-        sawSignalJourneyFromEndpointSourceRole =
-            sawSignalJourneyFromEndpointSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("next_data"));
-        sawSignalJourneyToEndpointType = sawSignalJourneyToEndpointType
-            || (item->text(0) == QStringLiteral("Type")
-                && item->text(1) == QStringLiteral("logic")
-                && item->text(2) == QStringLiteral("data_q"));
-        sawSignalJourneyToEndpointSourceRole =
-            sawSignalJourneyToEndpointSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("data_q"));
-        sawSignalJourneyInterfaceConnection =
-            sawSignalJourneyInterfaceConnection
-            || (item->text(0) == QStringLiteral("Interface Connections")
-                && item->text(1) == QStringLiteral("if_bus")
-                && item->text(2) == QStringLiteral("interface incoming References"));
-        sawSignalJourneyInterfaceKind = sawSignalJourneyInterfaceKind
-            || (item->text(0) == QStringLiteral("Connection")
-                && item->text(1) == QStringLiteral("interface instance")
-                && item->text(2) == QStringLiteral("interface incoming References"));
-        sawSignalJourneyInterfaceBase = sawSignalJourneyInterfaceBase
-            || (item->text(0) == QStringLiteral("Interface")
-                && item->text(1) == QStringLiteral("insight_if")
-                && item->text(2) == QStringLiteral("interface instance"));
-        sawSignalJourneyInterfacePeerType = sawSignalJourneyInterfacePeerType
-            || (item->text(0) == QStringLiteral("Peer Type")
-                && item->text(1) == QStringLiteral("instance")
-                && item->text(2) == QStringLiteral("References"));
-        sawSignalJourneyInterfaceSourceRole = sawSignalJourneyInterfaceSourceRole
-            || (item->text(0) == QStringLiteral("Source Role")
-                && item->text(1) == QStringLiteral("design source")
-                && item->text(2) == QStringLiteral("if_bus"));
-        }
-    };
-
-    installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleBrief();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    scanRtlInsightItems();
-    installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showClockResetDomainMap();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    scanRtlInsightItems();
-    installRtlInsightsFixtureSnapshot();
-    RtlInsightsPanelCoordinator* mainRtlInsights =
-        window.semanticDocks->rtlInsightsPanelCoordinator();
-    const QString graphModeBeforeDisabledState =
-        mainRtlInsights->graphModeForTest();
-    mainRtlInsights->showFsmGraph();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    const QString graphModeAfterDisabledState =
-        mainRtlInsights->graphModeForTest();
-    installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->updateModuleContext(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("data_q"));
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    scanRtlInsightItems();
-
-    expectBool("RTL insights renders module port", sawPort, true);
-    expectBool("RTL insights renders clock domain", sawClock, true);
-    expectBool("RTL insights renders relationship evidence",
-               sawRelationshipEvidence,
-               true);
-    expectBool("RTL insights renders relationship from endpoint",
-               sawRelationshipFromEndpoint,
-               true);
-    expectBool("RTL insights renders relationship to endpoint",
-               sawRelationshipToEndpoint,
-               true);
-    expectBool("RTL insights renders context kind",
-               sawContextKind,
-               true);
-    expectBool("RTL insights renders context type",
-               sawContextType,
-               true);
-    expectBool("RTL insights renders context source role",
-               sawContextSourceRole,
-               true);
-    expectBool("RTL insights renders package member context",
-               sawPackageMemberContext,
-               true);
-    expectBool("RTL insights renders package member kind",
-               sawPackageMemberKind,
-               true);
-    expectBool("RTL insights renders package member type",
-               sawPackageMemberType,
-               true);
-    expectBool("RTL insights renders module brief diagnostic",
-               sawModuleBriefDiagnostic,
-               true);
-    expectBool("RTL insights renders module brief diagnostic source role",
-               sawModuleBriefDiagnosticSourceRole,
-               true);
-    expectBool("RTL insights renders clock signal endpoint",
-               sawClockSignalEndpoint,
-               true);
-    expectBool("RTL insights renders clock module endpoint",
-               sawClockModuleEndpoint,
-               true);
-    expectBool("RTL insights renders clock relationship type",
-               sawClockRelationshipType,
-               true);
-    expectBool("RTL insights renders clock category",
-               sawClockCategory,
-               true);
-    expectBool("RTL insights renders clock evidence reason",
-               sawClockEvidenceReason,
-               true);
-    expectBool("RTL insights renders clock source role",
-               sawClockSourceRole,
-               true);
-    expectBool("RTL insights renders clock domain member type",
-               sawClockDomainMemberType,
-               true);
-    expectBool("RTL insights renders clock domain member source role",
-               sawClockDomainMemberSourceRole,
-               true);
-    expectBool("RTL insights renders clock domain member signal",
-               sawClockDomainMemberSignal,
-               true);
-    expectBool("RTL insights renders reset domain member type",
-               sawResetDomainMemberType,
-               true);
-    expectBool("RTL insights renders reset domain member signal",
-               sawResetDomainMemberSignal,
-               true);
-    expectBool("RTL insights renders unmapped clock", sawUnmappedClock, true);
-    expectBool("RTL insights renders unmapped clock category",
-               sawUnmappedClockCategory,
-               true);
-    expectBool("RTL insights bottom dock disables State views",
-               !mainRtlInsights->stateViewEnabledForTest(),
-               true);
-    expectBool("disabled State command preserves bottom dock graph mode",
-               graphModeAfterDisabledState
-                   == graphModeBeforeDisabledState,
-               true);
-    expectBool("RTL insights bottom dock does not carry State",
-               mainRtlInsights->dock()
-                   && !mainRtlInsights->dock()
-                           ->property("carriesStateInsight")
-                           .toBool(),
-               true);
-    expectBool("RTL insights renders signal journey", sawSignalJourney, true);
-    expectBool("RTL insights renders signal journey declaration source role",
-               sawSignalJourneyDeclarationSourceRole,
-               true);
-    expectBool("RTL insights renders signal journey from endpoint",
-               sawSignalJourneyFromEndpoint,
-               true);
-    expectBool("RTL insights renders signal journey to endpoint",
-               sawSignalJourneyToEndpoint,
-               true);
-    expectBool("RTL insights renders signal journey from endpoint type",
-               sawSignalJourneyFromEndpointType,
-               true);
-    expectBool("RTL insights renders signal journey from endpoint source role",
-               sawSignalJourneyFromEndpointSourceRole,
-               true);
-    expectBool("RTL insights renders signal journey to endpoint type",
-               sawSignalJourneyToEndpointType,
-               true);
-    expectBool("RTL insights renders signal journey to endpoint source role",
-               sawSignalJourneyToEndpointSourceRole,
-               true);
-    expectBool("RTL insights renders signal journey interface connection",
-               sawSignalJourneyInterfaceConnection,
-               true);
-    expectBool("RTL insights renders signal journey interface kind",
-               sawSignalJourneyInterfaceKind,
-               true);
-    expectBool("RTL insights renders signal journey interface base",
-               sawSignalJourneyInterfaceBase,
-               true);
-    expectBool("RTL insights renders signal journey interface peer type",
-               sawSignalJourneyInterfacePeerType,
-               true);
-    expectBool("RTL insights renders signal journey interface source role",
-               sawSignalJourneyInterfaceSourceRole,
+    quint64 builds = panel.graphBuildRequestCountForTest();
+    panel.refresh();
+    expectBool("block refresh remains on the block diagram",
+               panel.graphModeForTest() == QStringLiteral("module-block")
+                   && panel.graphBuildRequestCountForTest() == builds + 1,
                true);
 
     installRtlInsightsFixtureSnapshot();
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showModuleInsights(
-        fixturePath,
-        QStringLiteral("insight_top"),
-        QStringLiteral("clk"));
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showSignalJourney();
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    panel.showFsmGraph();
+    expectBool("retained FSM view renders states",
+               panel.graphModeForTest() == QStringLiteral("fsm")
+                   && panel.graphNodeItemCountForTest() > 0,
+               true);
+    builds = panel.graphBuildRequestCountForTest();
+    panel.refresh();
+    expectBool("FSM refresh remains on the FSM view",
+               panel.graphModeForTest() == QStringLiteral("fsm")
+                   && panel.graphBuildRequestCountForTest() == builds + 1,
+               true);
+    panel.setStateViewEnabled(false);
+    expectBool("disabled state view falls back to retained actions",
+               panel.graphModeForTest().isEmpty()
+                   && panel.tree()->topLevelItem(0)->text(0).contains(QStringLiteral("Ready")),
+               true);
+    panel.setStateViewEnabled(true);
 
-    expectBool("RTL insights renders timing signal journey",
-               waitUntil(
-                   [&]() {
-                       const QList<QTreeWidgetItem*> timingItems =
-                           navigableItems(rtlInsightsTree(window));
-                       for (QTreeWidgetItem* item : timingItems) {
-                           const QString section = item->text(0);
-                           const QString symbol = item->text(1);
-                           const QString detail = item->text(2);
-                           if (section == QStringLiteral("Timing Connections")
-                               && symbol == QStringLiteral("insight_top")
-                               && detail == QStringLiteral("timing outgoing Clocks")) {
-                               return true;
-                           }
-                       }
-                       return false;
-                   },
-                   500),
+    installRtlInsightsFixtureSnapshot();
+    panel.showStateTransitionGraphForSignal(
+        fixturePath, QStringLiteral("insight_top"), QStringLiteral("state_d"));
+    builds = panel.graphBuildRequestCountForTest();
+    panel.refresh();
+    expectBool("state transition refresh remains on the state view",
+               panel.graphModeForTest() == QStringLiteral("state-transition")
+                   && panel.graphBuildRequestCountForTest() == builds + 1,
+               true);
+
+    auto* hotspot = panel.signalUsageHotspotPanelForTest();
+    QList<SignalUsageHotspotQuery> hotspotRequests;
+    hotspot->setReportBuilderForTest(
+        [&hotspotRequests](const SignalUsageHotspotQuery& query,
+                           std::shared_ptr<const SemanticIndexSnapshot>) {
+            hotspotRequests.append(query);
+            SignalUsageHotspotReport report;
+            report.notFoundReasonDisplayName = QStringLiteral("No matching usage");
+            return report;
+        });
+    panel.showSignalUsageHotspotForSignal(
+        fixturePath, QStringLiteral("insight_top"), QStringLiteral("data_q"),
+        QStringLiteral("data_q[0]"));
+    expectBool("hotspot request completes", waitUntil([&]() {
+        return !hotspot->reportBuildInFlightForTest();
+    }, 2000), true);
+    hotspot->setMatrixModeForTest(true);
+    panel.refresh();
+    expectBool("hotspot refresh completes", waitUntil([&]() {
+        return !hotspot->reportBuildInFlightForTest();
+    }, 2000), true);
+    expectBool("hotspot refresh retains its page, matrix mode and access path",
+               panel.stackForTest()->currentWidget() == hotspot
+                   && hotspot->matrixModeForTest()
+                   && hotspotRequests.size() == 2
+                   && hotspotRequests.last().signalAccessPath == QStringLiteral("data_q[0]")
+                   && hotspotRequests.last().moduleName == QStringLiteral("insight_top"),
+               true);
+    panel.setStateViewEnabled(false);
+    expectBool("disabling state view preserves the selected hotspot page",
+               panel.stackForTest()->currentWidget() == hotspot, true);
+    hotspot->setReportBuilderForTest({});
+
+    panel.updateModuleContext({}, {});
+    panel.refresh();
+    expectBool("empty context remains usable without retired reports",
+               panel.stackForTest()->currentWidget() == panel.tree()
+                   && panel.tree()->topLevelItem(0)->text(0).contains(QStringLiteral("No module context")),
                true);
 }
 
@@ -8366,9 +8013,8 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
                           ->rtlInsightsPanelCoordinator() == nullptr
                    && rtlInsightsTree(window) == nullptr,
                true);
-    return;
-
-    window.semanticDocks->rtlInsightsPanelCoordinator()->showSemanticDiff(
+    RtlInsightsPanelCoordinator panel(nullptr);
+    panel.showSemanticDiff(
         beforeSnapshot,
         afterSnapshot,
         QStringLiteral("diff_top"),
@@ -8390,7 +8036,13 @@ static void runRtlInsightsSemanticDiffRegression(MainWindow& window,
     bool sawAddedDiagnostic = false;
     bool sawAddedDiagnosticSourceRole = false;
     bool sawRemovedDiagnostic = false;
-    const QList<QTreeWidgetItem*> items = navigableItems(rtlInsightsTree(window));
+    QTreeWidgetItem* firstDiffRow = panel.tree()->topLevelItem(0);
+    panel.refresh();
+    expectBool("semantic diff refresh preserves the snapshot comparison",
+               panel.stackForTest()->currentWidget() == panel.tree()
+                   && panel.tree()->topLevelItem(0) == firstDiffRow,
+               true);
+    const QList<QTreeWidgetItem*> items = navigableItems(panel.tree());
     for (QTreeWidgetItem* item : items) {
         sawModifiedPort = sawModifiedPort
             || (item->text(0) == QStringLiteral("Modified Ports")

@@ -1052,6 +1052,13 @@ void SignalUsageHotspotPanel::resizeEvent(QResizeEvent* event)
     });
 }
 
+void SignalUsageHotspotPanel::refreshReport()
+{
+    const SignalUsageHotspotQuery query = currentQuery;
+    showHotspotForSymbol(query.signalName, query.fileName,
+                         query.moduleName, query.signalAccessPath);
+}
+
 void SignalUsageHotspotPanel::showHotspotForSymbol(
     const QString& symbolName,
     const QString& fileName,

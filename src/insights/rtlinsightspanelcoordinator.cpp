@@ -81,16 +81,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     auto* actionLayout = new QHBoxLayout;
     actionLayout->setContentsMargins(0, 0, 0, 0);
     actionLayout->setSpacing(4);
-    viewState->moduleBriefButton = new QPushButton(QStringLiteral("Module Brief"), panel);
-    viewState->moduleBriefButton->setObjectName(QStringLiteral("rtlModuleBriefButton"));
-    viewState->signalJourneyButton = new QPushButton(QStringLiteral("Signal Journey"), panel);
-    viewState->signalJourneyButton->setObjectName(QStringLiteral("rtlSignalJourneyButton"));
     viewState->signalUsageHotspotButton =
         new QPushButton(QStringLiteral("Usage Hotspot"), panel);
     viewState->signalUsageHotspotButton->setObjectName(
         QStringLiteral("rtlSignalUsageHotspotButton"));
-    viewState->clockResetButton = new QPushButton(QStringLiteral("Clock/Reset Map"), panel);
-    viewState->clockResetButton->setObjectName(QStringLiteral("rtlClockResetButton"));
     viewState->fsmGraphButton = new QPushButton(QStringLiteral("FSM Graph"), panel);
     viewState->fsmGraphButton->setObjectName(QStringLiteral("rtlFsmGraphButton"));
     viewState->moduleBlockDiagramButton =
@@ -227,10 +221,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         });
     viewState->graphMoreButton->setMenu(graphMoreMenu);
     for (QPushButton* button :
-         {viewState->moduleBriefButton,
-          viewState->signalJourneyButton,
-          viewState->signalUsageHotspotButton,
-          viewState->clockResetButton,
+         {viewState->signalUsageHotspotButton,
           viewState->fsmGraphButton,
           viewState->moduleBlockDiagramButton,
           viewState->moduleBlockSetSelectionButton,
@@ -247,10 +238,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
           viewState->stateTransitionUnreachableCheck}) {
         InsightVisualStyle::applySegmentedCheckBox(checkBox);
     }
-    actionLayout->addWidget(viewState->moduleBriefButton);
-    actionLayout->addWidget(viewState->signalJourneyButton);
     actionLayout->addWidget(viewState->signalUsageHotspotButton);
-    actionLayout->addWidget(viewState->clockResetButton);
     actionLayout->addWidget(viewState->fsmGraphButton);
     actionLayout->addWidget(viewState->moduleBlockDiagramButton);
     actionLayout->addStretch(1);
@@ -474,20 +462,14 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                                  4000);
                          }
                      });
-    QObject::connect(viewState->moduleBriefButton, &QPushButton::clicked,
-                     viewState->insightsDock, [this]() { presenter->showModuleBrief(); });
     QObject::connect(viewState->pinButton,
                      &QToolButton::toggled,
                      viewState->insightsDock,
                      [this](bool pinned) {
                          presenter->setPinned(pinned);
                      });
-    QObject::connect(viewState->signalJourneyButton, &QPushButton::clicked,
-                     viewState->insightsDock, [this]() { presenter->showSignalJourney(); });
     QObject::connect(viewState->signalUsageHotspotButton, &QPushButton::clicked,
                      viewState->insightsDock, [this]() { presenter->showSignalUsageHotspot(); });
-    QObject::connect(viewState->clockResetButton, &QPushButton::clicked,
-                     viewState->insightsDock, [this]() { presenter->showClockResetDomainMap(); });
     QObject::connect(viewState->fsmGraphButton, &QPushButton::clicked,
                      viewState->insightsDock, [this]() { presenter->showFsmGraph(); });
     QObject::connect(viewState->moduleBlockDiagramButton, &QPushButton::clicked,
@@ -716,7 +698,7 @@ void RtlInsightsPanelCoordinator::setStateViewEnabled(bool enabled)
         && (viewState->currentGraphMode == QStringLiteral("fsm")
             || viewState->currentGraphMode
                    == QStringLiteral("state-transition"))) {
-        presenter->showModuleBrief();
+        presenter->renderActionList();
     }
 }
 
@@ -803,24 +785,9 @@ void RtlInsightsPanelCoordinator::refreshThemePresentation()
     refreshGraphExportActionAvailability();
 }
 
-void RtlInsightsPanelCoordinator::showModuleBrief()
-{
-    presenter->showModuleBrief();
-}
-
-void RtlInsightsPanelCoordinator::showSignalJourney()
-{
-    presenter->showSignalJourney();
-}
-
 void RtlInsightsPanelCoordinator::showSignalUsageHotspot()
 {
     presenter->showSignalUsageHotspot();
-}
-
-void RtlInsightsPanelCoordinator::showClockResetDomainMap()
-{
-    presenter->showClockResetDomainMap();
 }
 
 void RtlInsightsPanelCoordinator::showFsmGraph()

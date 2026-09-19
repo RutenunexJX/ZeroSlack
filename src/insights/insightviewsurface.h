@@ -18,8 +18,7 @@ public:
         auto* dock = widget();
         dock->setObjectName(QStringLiteral("insightWorkbenchSurface.%1").arg(static_cast<int>(kind)));
         if (rtlValue) {
-            for (const char* name : {"rtlModuleBriefButton", "rtlSignalJourneyButton", "rtlSignalUsageHotspotButton",
-                    "rtlClockResetButton", "rtlFsmGraphButton", "rtlModuleBlockDiagramButton", "rtlInsightsTitle", "rtlInsightsPinButton"}) {
+            for (const char* name : {"rtlSignalUsageHotspotButton", "rtlFsmGraphButton", "rtlModuleBlockDiagramButton", "rtlInsightsTitle", "rtlInsightsPinButton"}) {
                 if (auto* control = dock->findChild<QWidget*>(QString::fromLatin1(name))) control->hide();
             }
         }

@@ -1,4 +1,4 @@
-ZeroSlack v0.29.15
+ZeroSlack v0.29.16
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -15,6 +15,8 @@ The fixed ZeroSlack-win64 directory and executable names preserve existing short
 Settings, Search / Replace, Change Preview and Connections create their pages on first use.
 Reopening retains their state. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed.
 The four specialized diagrams and syntax folding remain available.
+The old Module Brief, Signal Journey and Clock/Reset Map report pages are removed.
+Shared signal relationships, clock/reset analysis and semantic Diff remain available.
 
 Activity replaces the status bar. Scan, semantic and operation messages are
 retained in Activity. Important unread messages increment its numeric badge;
