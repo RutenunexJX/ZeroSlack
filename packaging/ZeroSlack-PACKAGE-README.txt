@@ -1,4 +1,4 @@
-ZeroSlack v0.29.16
+ZeroSlack v0.29.17
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -43,6 +43,11 @@ section outside to float it; use a floating window's client-area handle to drag
 it back to an indicated position. Source editors do not support native drag-out.
 State v6 reads v5 with only the old active section expanded; older builds ignore
 v6 Context state on downgrade.
+
+Native floating windows use Desktop Acrylic on supported Windows 11 systems.
+Appearance > Floating background opacity adjusts only the background tint;
+text, icons and graph content stay opaque. Unsupported systems, disabled
+transparency, high contrast and battery saver use the theme's solid background.
 
 The left sidebar groups the file tree with Project and Settings icons at the top.
 Click Project for commands. Collapse the entire sidebar and restore it from the title bar.

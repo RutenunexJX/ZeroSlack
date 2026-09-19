@@ -9,6 +9,8 @@
 #include "settingscenterkeys.h"
 #include "settingscenterpanel.h"
 #include "settingscenterservice.h"
+#include "applicationthememanager.h"
+#include "insightvisualstyle.h"
 
 #include <QAction>
 #include <QApplication>
@@ -33,6 +35,8 @@
 #include <QUrl>
 #include <QWindow>
 #include <QMenu>
+#include <QPainter>
+#include <QImage>
 
 #include <iostream>
 #include <limits>
@@ -651,31 +655,57 @@ void verifyV3ContextInput()
 
 void verifyFloatingOpacityAndSettings()
 {
+    ApplicationThemeManager::instance().applyToApplication();
     PlacementFixture fixture;
     auto* window = fixture.controller->floatingWindow();
-    check(window->idleOpacity() == 90, "floating_opacity: default inactive opacity is 90 percent");
-    window->setIdleOpacity(73);
-    window->applyInteractionOpacity(false, false);
-    check(qAbs(window->windowOpacity() - 0.73) < 0.005, "floating_opacity: inactive non-hovered window uses preference");
-    window->applyInteractionOpacity(true, false);
-    check(window->windowOpacity() == 1.0, "floating_opacity: active window is fully opaque");
-    window->applyInteractionOpacity(false, true);
-    check(window->windowOpacity() == 1.0, "floating_opacity: hovered inactive window is fully opaque");
-    window->setIdleOpacity(0);
-    check(window->idleOpacity() == 60, "floating_opacity: runtime lower bound is enforced");
-    window->setIdleOpacity(101);
-    check(window->idleOpacity() == 100, "floating_opacity: runtime upper bound is enforced");
+    window->setView(resource("acrylic"), new QLabel(QStringLiteral("Opaque content")));
+    QApplication::processEvents();
+    check(window->backgroundOpacity() == 90, "floating_opacity: default background opacity is 90 percent");
+    window->setBackgroundOpacity(73);
+    for (const auto type : {QEvent::WindowDeactivate, QEvent::WindowActivate, QEvent::Leave}) {
+        QEvent event(type);
+        QApplication::sendEvent(window, &event);
+        check(window->windowOpacity() == 1.0,
+              "floating_opacity: focus and hover never fade text or icons");
+    }
+    if (QGuiApplication::platformName() != QStringLiteral("windows"))
+        check(!window->hasAcrylicBackdrop(), "floating_acrylic: unsupported platforms use the solid fallback");
+    const auto initialTheme = ApplicationThemeManager::instance().mode();
+    const auto initialFlags = window->windowFlags();
+    const auto initialHandle = window->winId();
+    const QRect initialGeometry = window->geometry();
+    for (const auto mode : {ThemeMode::Light, ThemeMode::Dark, ThemeMode::CatppuccinMocha}) {
+        ApplicationThemeManager::instance().setMode(mode);
+        if (!window->hasAcrylicBackdrop()) {
+            QImage image(window->size(), QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            window->render(&painter);
+            painter.end();
+            const QColor pixel = image.pixelColor(2, 2);
+            check(pixel == InsightVisualStyle::theme().panelBackground && pixel.alpha() == 255,
+                  "floating_acrylic_fallback: unsupported composition paints an opaque themed background");
+        }
+        check(window->windowFlags() == initialFlags && window->winId() == initialHandle
+                  && window->geometry() == initialGeometry,
+              "floating_acrylic_theme: theme refresh preserves native identity and geometry");
+    }
+    ApplicationThemeManager::instance().setMode(initialTheme);
+    window->setBackgroundOpacity(0);
+    check(window->backgroundOpacity() == 60, "floating_opacity: runtime lower bound is enforced");
+    window->setBackgroundOpacity(101);
+    check(window->backgroundOpacity() == 100, "floating_opacity: runtime upper bound is enforced");
     QTemporaryDir temporary;
     SettingsCenterService service(temporary.filePath("settings.ini"));
     SettingsCenterPanel panel(&service, {});
     auto* slider = qobject_cast<QSlider*>(panel.fieldEditor("appearance.floatingContextOpacity"));
     QObject::connect(&panel, &SettingsCenterPanel::settingsApplied, window, [&] {
-        window->setIdleOpacity(panel.snapshot().value("appearance.floatingContextOpacity").toInt());
+        window->setBackgroundOpacity(panel.snapshot().value("appearance.floatingContextOpacity").toInt());
     });
     check(slider && slider->minimum() == 60 && slider->maximum() == 100 && slider->value() == 90,
           "floating_opacity_setting: Settings exposes the bounded global slider with default value");
     if (slider) slider->setValue(81);
-    check(service.load().value("appearance.floatingContextOpacity").toInt() == 81 && window->idleOpacity() == 81
+    check(service.load().value("appearance.floatingContextOpacity").toInt() == 81 && window->backgroundOpacity() == 81
               && !SettingsCenterSchema::field("appearance.floatingContextOpacity")->workspaceAllowed
               && SettingsCenterSchema::field("appearance.floatingContextOpacity")->storageKey
                      == QString::fromLatin1(SettingsCenterKeys::FloatingContextOpacity),

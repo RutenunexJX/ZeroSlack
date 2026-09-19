@@ -9,7 +9,6 @@
 
 class QToolButton;
 class QVBoxLayout;
-class QTimer;
 class QScreen;
 
 class ZEROSLACK_API ContextFloatingWindow final : public QWidget, public ContextFloatingSurface {
@@ -25,9 +24,9 @@ public:
     bool updateResource(const ContextResource& resource) override;
     void setActionsAvailable(bool pinAvailable, bool fullViewAvailable) override;
     void setInitialSize(const QSize& size);
-    void setIdleOpacity(int percentage);
-    int idleOpacity() const;
-    void applyInteractionOpacity(bool active, bool hovered);
+    void setBackgroundOpacity(int percentage);
+    int backgroundOpacity() const;
+    bool hasAcrylicBackdrop() const;
     void captureGeometry(ContextWorkspaceState& state) const;
     void restoreGeometry(const ContextWorkspaceState& state);
     QWidget* sidebarDragHandle() const;
@@ -46,6 +45,8 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
     bool event(QEvent* event) override;
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void paintEvent(QPaintEvent* event) override;
+    bool nativeEvent(const QByteArray& eventType, void* message, qintptr* result) override;
 
 private:
     QPointer<QWidget> editorRegion;
@@ -56,14 +57,18 @@ private:
     QToolButton* fullViewButton = nullptr;
     QToolButton* dragButton = nullptr;
     QPoint dragStart;
-    QTimer* hoverTimer = nullptr;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};
     QString storedScreenName;
     bool geometryValid = false;
     bool applyingGeometry = false;
     int opacityPercentage = 90;
+    bool backdropReady = false;
+    bool acrylicBackdrop = false;
+    bool backdropUpdatePending = false;
 
+    void refreshBackdrop();
+    void scheduleBackdropRefresh();
     void rememberGeometry();
     void applyGeometry();
     void watchScreen(QScreen* screen);

@@ -851,6 +851,9 @@ target_link_libraries(zeroslack_core PUBLIC
     rtledit::core
 )
 target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
+if(WIN32)
+    target_link_libraries(zeroslack_core PRIVATE dwmapi)
+endif()
 
 if(ZEROSLACK_SHARED_CORE)
     target_link_libraries(zeroslack_core PRIVATE slang::slang)
@@ -1338,6 +1341,9 @@ if(BUILD_TESTING)
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
         PRIVATE zeroslack_core Qt6::Test)
+    add_executable(context_floating_preview
+        test_sv/context_floating_preview.cpp)
+    target_link_libraries(context_floating_preview PRIVATE zeroslack_core)
 
     add_executable(workspace_hub_test
         test_sv/workspace_hub_test.cpp)

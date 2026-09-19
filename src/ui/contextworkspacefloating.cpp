@@ -54,7 +54,7 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     }
     auto* host = new ContextFloatingWindow(window, editorRegionValue);
     floatingWindowValues.append(host);
-    host->setIdleOpacity(floatingOpacity);
+    host->setBackgroundOpacity(floatingOpacity);
     host->installEventFilter(this);
     connect(host, &ContextFloatingWindow::pinRequested, this, [this, host] {
         pinFloatingResource(host->resource().stableKey());
@@ -192,7 +192,7 @@ void ContextWorkspaceController::setFloatingOpacity(int percentage)
 {
     floatingOpacity = qBound(60, percentage, 100);
     for (const auto& host : floatingWindowValues)
-        if (host) host->setIdleOpacity(floatingOpacity);
+        if (host) host->setBackgroundOpacity(floatingOpacity);
 }
 
 bool ContextWorkspaceController::floatingCollapsed() const { return floatingCollapsedValue; }

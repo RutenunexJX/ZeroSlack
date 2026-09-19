@@ -161,6 +161,18 @@ old replies cannot cross workspace/selection generations. Hub selection, groups 
 See [AppSuite integration](docs/suite.md) and [integrations](docs/integrations.md).
 
 
+## Floating window material
+
+`ContextFloatingWindow` retains its native `Qt::Tool` frame and extends the DWM frame into an
+alpha backing store. Windows 11 build 22621+ can provide `DWMSBT_TRANSIENTWINDOW` (Desktop
+Acrylic); failed/disabled composition uses an opaque themed paint path. Background tint is
+painted separately from content, and the existing floating opacity preference now controls that
+tint rather than whole-window alpha. No polling timer or focus-dependent whole-window fade is
+used. Theme/system changes refresh the backdrop without replacing the HWND or hosted view.
+Transparent dock/toolbar container styling is scoped to the floating host; specialized graph and
+editor content keep their own rendering. `context_floating_preview` is a native desktop fixture,
+not an offscreen proof of DWM appearance.
+
 ## Deferred panel construction
 
 `DeferredPanel` keeps a stable layout host and creates its content on first show or explicit

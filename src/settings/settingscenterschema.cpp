@@ -82,8 +82,8 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
     });
     auto opacity = field(QStringLiteral("appearance.floatingContextOpacity"),
         QString::fromLatin1(SettingsCenterKeys::FloatingContextOpacity), Category::Appearance,
-        QStringLiteral("Inactive floating context opacity (%)"),
-        QStringLiteral("Focused or hovered windows remain fully opaque."),
+        QStringLiteral("Floating background opacity (%)"),
+        QStringLiteral("Adjust the Acrylic background tint. Text and icons stay opaque; unsupported systems use a solid background."),
         Kind::Integer, 90, 60, 100, {}, true, false, true, true);
     opacity.useSlider = true;
     result.last().fields.append(opacity);
