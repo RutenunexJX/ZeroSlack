@@ -169,9 +169,15 @@ Acrylic); failed/disabled composition uses an opaque themed paint path. Backgrou
 painted separately from content, and the existing floating opacity preference now controls that
 tint rather than whole-window alpha. No polling timer or focus-dependent whole-window fade is
 used. Theme/system changes refresh the backdrop without replacing the HWND or hosted view.
-Transparent dock/toolbar container styling is scoped to the floating host; specialized graph and
-editor content keep their own rendering. `context_floating_preview` is a native desktop fixture,
-not an offscreen proof of DWM appearance.
+Transparent surface styling is scoped to the floating host, including dock/toolbars, lists,
+tables, text previews and scroll content. Local panel/title/search/graph styles include the same
+ancestor rule so they cannot mask the host with a solid fill. `InsightGraphView` skips only its
+canvas background while hosted there; scene items, heat colors, grid and export retain their
+rendering. Reparenting restores ordinary surfaces without saving or overwriting view styles.
+`context_floating_background_test` verifies composition over a two-color backdrop, late-created
+content, theme changes and restoration on docking. `context_floating_preview` provides populated
+Hotspot Track/Matrix and Kernel panels plus document controls for native desktop verification;
+offscreen tests do not prove DWM appearance.
 
 ## Deferred panel construction
 

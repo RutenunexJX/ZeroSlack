@@ -80,11 +80,21 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
         setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
-    // Scope transparent container backgrounds to this host. Reparenting a view
-    // back into the sidebar restores its normal style without altering the view.
+    // Content surfaces share this host's backdrop. Local theme helpers carry
+    // the same ancestor rule so their own styles cannot cover it again.
     setStyleSheet(QStringLiteral(
         "#contextFloatingWindow QDockWidget, "
-        "#contextFloatingWindow QToolBar { background: transparent; }"));
+        "#contextFloatingWindow QToolBar, "
+        "#contextFloatingWindow QAbstractScrollArea, "
+        "#contextFloatingWindow QLineEdit, "
+        "#contextFloatingWindow QComboBox, "
+        "#contextFloatingWindow QAbstractSpinBox, "
+        "#contextFloatingWindow QTabBar, "
+        "#contextFloatingWindow QHeaderView { background: transparent; }"
+        "#contextFloatingWindow QScrollArea > QWidget > QWidget { background: transparent; }"
+        "#contextFloatingWindow QAbstractItemView { alternate-background-color: transparent; }"
+        "#contextFloatingWindow QTabWidget::pane, "
+        "#contextFloatingWindow QHeaderView::section { background: transparent; }"));
     auto* root = new QVBoxLayout(this);
     root->setSizeConstraint(QLayout::SetNoConstraint);
     root->setContentsMargins(8, 6, 8, 8);

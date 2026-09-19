@@ -153,7 +153,10 @@ void InsightGraphView::centerOnPoint(const QPointF& point)
 
 void InsightGraphView::drawBackground(QPainter* painter, const QRectF& rect)
 {
-    QGraphicsView::drawBackground(painter, rect);
+    // A floating host supplies the material underneath the canvas. Keep scene
+    // items and grid intact, and keep the normal brush for docking and export.
+    if (window()->objectName() != QStringLiteral("contextFloatingWindow"))
+        QGraphicsView::drawBackground(painter, rect);
     if (!gridVisible || !painter)
         return;
 

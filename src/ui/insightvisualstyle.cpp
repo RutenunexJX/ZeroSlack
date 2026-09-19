@@ -30,6 +30,14 @@ QString objectSelector(const QString& typeName, const QString& objectName)
     return QStringLiteral("%1#%2").arg(typeName, objectName);
 }
 
+QString floatingBackgroundRule(const QString& typeName, const QString& objectName)
+{
+    // Keep this rule in local styles too: a child's stylesheet takes precedence
+    // over its host. Ancestry lets docking restore the normal surface directly.
+    return QStringLiteral("#contextFloatingWindow %1 { background: transparent; }")
+        .arg(objectSelector(typeName, objectName));
+}
+
 constexpr const char* kThemeHelperProperty =
     "_zeroslackInsightThemeHelper";
 constexpr const char* kThemeHelperConnectedProperty =
@@ -844,7 +852,8 @@ QString InsightVisualStyle::panelStyleSheet(const QString& objectName)
                "}")
         .arg(objectSelector(QStringLiteral("QWidget"), objectName),
              t.panelBackground.name(),
-             t.textPrimary.name());
+             t.textPrimary.name())
+        + floatingBackgroundRule(QStringLiteral("QWidget"), objectName);
 }
 
 QString InsightVisualStyle::applicationStyleSheet()
@@ -1364,7 +1373,8 @@ QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName)
                "}")
         .arg(objectSelector(QStringLiteral("QGraphicsView"), objectName),
              t.graph.background.name(),
-             t.border.name());
+             t.border.name())
+        + floatingBackgroundRule(QStringLiteral("QGraphicsView"), objectName);
 }
 
 QString InsightVisualStyle::titleBarStyleSheet(const QString& objectName)
@@ -1382,7 +1392,8 @@ QString InsightVisualStyle::titleBarStyleSheet(const QString& objectName)
         .arg(objectSelector(QStringLiteral("QLabel"), objectName),
              t.textPrimary.name(),
              t.panelSubtle.name(),
-             subtleBorder(t.panelSubtle, t.textPrimary).name());
+             subtleBorder(t.panelSubtle, t.textPrimary).name())
+        + floatingBackgroundRule(QStringLiteral("QLabel"), objectName);
 }
 
 QString InsightVisualStyle::compactSearchFieldStyleSheet(
@@ -1405,7 +1416,8 @@ QString InsightVisualStyle::compactSearchFieldStyleSheet(
              t.panelBackground.name(),
              t.textPrimary.name(),
              t.border.name(),
-             t.accent.name());
+             t.accent.name())
+        + floatingBackgroundRule(QStringLiteral("QLineEdit"), objectName);
 }
 
 QString InsightVisualStyle::segmentedCheckBoxStyleSheet(

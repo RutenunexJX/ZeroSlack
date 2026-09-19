@@ -1,4 +1,4 @@
-ZeroSlack v0.29.17
+ZeroSlack v0.29.18
 
 Build profile: Shared Release
 Qt: 6.10.2
@@ -46,8 +46,10 @@ v6 Context state on downgrade.
 
 Native floating windows use Desktop Acrylic on supported Windows 11 systems.
 Appearance > Floating background opacity adjusts only the background tint;
-text, icons and graph content stay opaque. Unsupported systems, disabled
-transparency, high contrast and battery saver use the theme's solid background.
+panels, lists, text previews and graph canvas backgrounds share the material.
+Text, icons, graph nodes and edges stay opaque; docking restores ordinary backgrounds.
+Unsupported systems, disabled transparency, high contrast and battery saver
+use the theme's solid background.
 
 The left sidebar groups the file tree with Project and Settings icons at the top.
 Click Project for commands. Collapse the entire sidebar and restore it from the title bar.

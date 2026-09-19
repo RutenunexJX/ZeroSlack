@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.17`
+Current version: `v0.29.18`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.17`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.18`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -156,6 +156,8 @@ their full view uses and stay pinned to the target the user chose.
 Native context floating windows request Windows 11 Desktop Acrylic. Their background opacity
 setting changes the tint only, leaving text and icons opaque. Unsupported systems, disabled
 transparency, high contrast and battery saver use the theme's solid background.
+Floating panels, lists, text previews and graph canvas backgrounds share that surface; docking
+restores ordinary backgrounds while retaining graph content and selection.
 
 Future usability work addresses one concrete workflow at a time. No whole-window redesign is
 scheduled. Released changes and their acceptance results live in the Git history alone.

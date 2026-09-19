@@ -1341,6 +1341,9 @@ if(BUILD_TESTING)
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
         PRIVATE zeroslack_core Qt6::Test)
+    add_executable(context_floating_background_test
+        test_sv/context_floating_background_test.cpp)
+    target_link_libraries(context_floating_background_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(context_floating_preview
         test_sv/context_floating_preview.cpp)
     target_link_libraries(context_floating_preview PRIVATE zeroslack_core)
@@ -1825,6 +1828,12 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:context_workspace_test>
     )
+    add_test(NAME context_floating_background_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:context_floating_background_test>)
     add_test(NAME workspace_hub_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
