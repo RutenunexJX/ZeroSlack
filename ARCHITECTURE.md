@@ -285,8 +285,7 @@ into additional archive directories.
 
 ### Button and checkbox ownership
 
-The standard backend is SuiteUi as of 0.29.23; classic remains a startup fallback.
-The ownership details below also describe that fallback. Optional builds with
+The following describes the default classic backend. Optional builds with
 `ZEROSLACK_ENABLE_QLEMENTINE=ON` also provide a startup-only Qlementine backend and
 an isolated preview executable. `ApplicationThemeManager` selects the backend;
 the public interface exposes no Qlementine types. The preview keeps the existing
@@ -296,16 +295,15 @@ use the classic style on every descendant, including children created later or
 reparented between containers. See [preview validation](docs/control-style-consolidation.md)
 for ownership exceptions, profile isolation, the upstream patch and native limits.
 
-`ZEROSLACK_ENABLE_SUITEUI=ON` is the default, mutually exclusive backend that consumes
+`ZEROSLACK_ENABLE_SUITEUI=ON` is a mutually exclusive optional backend that consumes
 the independently installed `SuiteUi 0.1.0` static package. Its Qt-only public API
 contains control-state colors, a primary-button role and `ControlStyle`.
 `suiteuibackend.cpp` maps application roles and colors; Qlementine types remain
 inside the SDK. The SDK delegates all controls except QPushButton, QToolButton
 and QCheckBox to the application's `RoundedIcons::Style` fallback. It never owns
 application theme selection, fonts, data models, shell layouts or professional
-renderers. The CLI retains its existing core boundary and indirectly carries the
-SDK through `zeroslack_core`; it is not UI-dependency-free. The SuiteApp protocol
-SDK remains separate. See [SuiteUi integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入).
+renderers. The CLI retains its existing core boundary; this change does not move
+UI dependencies into the SuiteApp protocol SDK. See [SuiteUi integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入).
 
 `InsightControlStyle` defines the normal, hover, pressed, checked, focus and disabled
 states for application push buttons, tool buttons and checkboxes. Application QSS owns

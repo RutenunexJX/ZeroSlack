@@ -5,7 +5,13 @@ the single ZeroSlack-side record of that family contract: the transport protocol
 implemented cross-application workflows, and the shared visual and interaction language.
 Application state always stays with its owner.
 
-Current release decision (2026-09-21): the user authorized switching the formal
+Current release decision (2026-09-21, superseded for ZeroSlack): ZeroSlack 0.29.24
+reverts the formal default to classic because real desktop use judged the SuiteUi
+control path unacceptably sluggish; the cause is not yet diagnosed and the SDK
+integration stays as a default-off option. RegMapWorkbench 0.3.2 and Pinloom 0.4.2
+have not been reverted yet and still default to SuiteUi.
+
+The earlier decision it supersedes: the user authorized switching the formal
 packages of ZeroSlack 0.29.23, RegMapWorkbench 0.3.2 and Pinloom 0.4.2 to SuiteUi.
 Their SDK build options now default to ON, and normal startup selects the SDK
 controls. ZeroSlack/RegMap keep the verified 0.1.0 SDK; Pinloom keeps 0.1.1.
@@ -790,7 +796,8 @@ Lucide 的 ISC 与衍生自 Feather 部分的 MIT 声明；所分发图标需保
 
 ## 正式默认样式决策材料（2026-09-20，一页）
 
-**历史决策材料，已由 2026-09-21 用户“切换”指令作出默认启用决定**。
+**历史决策材料。** 2026-09-21 用户“切换”指令曾据此把正式包默认改为 SuiteUi，
+随后因真机卡顿不可接受，ZeroSlack 0.29.24 已把默认退回 classic（卡顿原因未定位）。
 以下保留切换前的证据、成本和未验项；当前发布范围与回退入口见本文开头。
 
 | 方面 | 可核实证据与限制 |

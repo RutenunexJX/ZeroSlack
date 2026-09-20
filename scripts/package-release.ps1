@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$BuildDirectory = 'build/Desktop_Qt_6_10_2_MinGW_64_bit-Release',
     [Parameter(Mandatory = $true)][string]$OutputDirectory,
@@ -13,16 +13,9 @@ $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputRoot) { throw 'Stage into a new directory before replacing a verified formal package.' }
 $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt')
-if ($cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=ON' -or
+if ($cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=OFF' -or
     $cache -notcontains 'ZEROSLACK_ENABLE_QLEMENTINE:BOOL=OFF') {
-    throw 'The formal release requires SuiteUi ON and the direct preview backend OFF.'
-}
-$entry = $cache | Where-Object { $_ -match '^ZEROSLACK_SUITEUI_NOTICES_DIR:INTERNAL=(.+)$' } | Select-Object -First 1
-if (-not $entry) { throw 'Missing SDK notice directory; reconfigure the build.' }
-$sdkNotices = $entry.Substring($entry.IndexOf('=') + 1)
-foreach ($name in @('NOTICE.txt', 'SuiteUi-Apache-2.0.txt', 'Qlementine-MIT.txt', 'Inter-OFL.txt',
-                   'RobotoMono-Apache-2.0.txt', 'UPSTREAM.md', 'font-metadata.json', 'stop-all.patch', 'build-info.json')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $sdkNotices $name) -PathType Leaf)) { throw "Missing SDK notice: $name" }
+    throw 'The formal release requires the classic backend: SuiteUi OFF and the direct preview backend OFF.'
 }
 foreach ($name in @('demo.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll')) {
     if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name) -PathType Leaf)) { throw "Missing build output: $name" }
@@ -40,9 +33,7 @@ foreach ($name in @('用户手册.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md')) {
     (Join-Path $outputRoot 'ZeroSlack.exe') (Join-Path $outputRoot 'zeroslack-cli.exe') (Join-Path $outputRoot 'libzeroslack_core.dll')
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
 $licenseRoot = Join-Path $outputRoot 'licenses'
-$sdkLicenseRoot = Join-Path $licenseRoot 'SuiteUi'
-New-Item -ItemType Directory -Path $sdkLicenseRoot -Force | Out-Null
-Get-ChildItem -LiteralPath $sdkNotices -File | Copy-Item -Destination $sdkLicenseRoot
+New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
 $licenses = [ordered]@{
     'slang-MIT.txt' = 'thirdparty/slang/LICENSE'
     'tree-sitter-MIT.txt' = 'thirdparty/tree_sitter/LICENSE'
@@ -65,4 +56,4 @@ foreach ($name in @('COPYING3', 'COPYING3.LIB', 'COPYING.RUNTIME')) {
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/gcc/COPYING3.LIB') -Destination (Join-Path $licenseRoot 'Qt-LGPLv3.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/winpthreads/COPYING') -Destination (Join-Path $licenseRoot 'winpthreads-COPYING.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/mingw-w64/COPYING.MinGW-w64.txt') -Destination (Join-Path $licenseRoot 'MinGW-w64-COPYING.txt')
-Write-Output "Staged SuiteUi formal release: $outputRoot"
+Write-Output "Staged classic formal release: $outputRoot"

@@ -1,17 +1,17 @@
-ZeroSlack v0.29.23
+ZeroSlack v0.29.24
 
 Build profile: Shared Release
 Qt: 6.10.2
 Compiler: MinGW 13.1.0
-Default UI: SuiteUi 0.1.0 (Qlementine control renderer)
+Default UI: classic controls (SuiteUi is a default-off optional backend, not in this package)
 slang: 10.0.14
 Suite WaveWorkbench: v0.12.0
 Release root: E:\PinloomRoot\AppPackage\AppSuite
 
 Run ZeroSlack.exe. Runtime provides the optional shared SuiteApp broker.
 Existing ZeroSlack settings and workspace profiles are retained.
-Use --ui-style=classic for the original controls, or --no-ui-animations to disable control transitions.
-Keep licenses/SuiteUi with the package. zeroslack-cli shares the core DLL and its UI dependencies.
+0.29.23 shipped SuiteUi as the default; 0.29.24 reverted it to classic after real
+desktop use showed unacceptable control sluggishness. The cause is not yet diagnosed.
 WaveWorkbench remains a separate sibling application for simulation and waveform viewing.
 ZeroSlack no longer runs simulation, loads wavewidgets.dll, or unpacks a Wave toolchain.
 The fixed ZeroSlack-win64 directory and executable names preserve existing shortcuts.

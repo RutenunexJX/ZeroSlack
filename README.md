@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.23`
+Current version: `v0.29.24`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.23`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.24`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -192,19 +192,20 @@ profile and `ZeroSlack-Qlementine-Preview.exe`; the formal package remains separ
 Build, packaging, native validation results and remaining limitations are recorded
 in [control style validation](docs/control-style-consolidation.md).
 
-Since 0.29.23, `ZEROSLACK_ENABLE_SUITEUI` defaults to ON and consumes an installed
+The separate default-off `ZEROSLACK_ENABLE_SUITEUI` option consumes an installed
 `SuiteUi 0.1.0` package with exact version matching. It is mutually exclusive with
-the vendored preview option. The standard executable selects this backend at startup
-and retains the existing ZeroSlack settings and workspace profile. Only push buttons, tool buttons and checkboxes use
+the vendored preview option. Only push buttons, tool buttons and checkboxes use
 the shared renderer; application fonts, palettes, other controls and professional
 views retain their existing ownership. See [SDK integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入)
-for build switches, deployment, rollback and validation limits. Pass `--ui-style=classic`
-for a startup-only fallback or configure `-DZEROSLACK_ENABLE_SUITEUI=OFF` to build
-without the SDK. Existing CMake caches must explicitly set ON for the release switch.
-Set `SuiteUi_DIR` to the installed 0.1.0 SDK's `lib/cmake/SuiteUi` directory.
-`scripts/package-release.ps1` stages the standard executable and the complete SDK
-notices. The CLI shares `zeroslack_core` and therefore also carries its UI dependencies.
-For the direct vendored preview, explicitly set SuiteUi OFF and Qlementine ON.
+for build switches, deployment, rollback and validation limits.
+Set `SuiteUi_DIR` to the installed SDK's `lib/cmake/SuiteUi` directory when enabling it.
+`scripts/package-release.ps1` stages the classic formal package and refuses any
+configuration that enables an optional backend.
+
+0.29.23 shipped SuiteUi as the formal default; 0.29.24 reverts that default to
+classic because the SDK control path was judged unacceptably sluggish in real
+desktop use. The cause is not yet diagnosed, so the SDK integration is kept as a
+default-off option rather than removed.
 
 Every check that has never been run on a real desktop is tracked in
 [unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,
