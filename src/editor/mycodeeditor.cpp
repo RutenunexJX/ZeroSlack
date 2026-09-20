@@ -1,4 +1,5 @@
 #include "mycodeeditor.h"
+#include "applicationthememanager.h"
 #include "actionregistry.h"
 #include "editorruntime.h"
 #include "editorlexicalboundary.h"
@@ -365,6 +366,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
 {
     setProperty("codeEditorSurface", true);
     state->attachToEditor(this);
+    ApplicationThemeManager::instance().preserveClassicSurface(this);
 }
 
 MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.21`
+Current version: `v0.29.22`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.21`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.22`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -174,14 +174,30 @@ scheduled. Released changes and their acceptance results live in the Git history
 - 选中行使用低饱和强调色，普通行保持统一背景。
 - 已查看侧对话参考图，仅采纳表面层级和弱边框方向。Project/Settings 继续遵循当前图标入口规则，图表内容仅为示意。参考图本地路径：`C:/Users/14971/.codex/generated_images/01a08fac-ef9b-7631-8600-2494f37b4d37/exec-cb77852e-9d66-4423-a56d-cc2388ebbf86.png`。
 
-**克制的微动效**（时长为建议初值，尚非逐项确认的硬性参数）
+**动效按场景管理**
 
-- 第一轮优先：按钮背景悬停/按下 80–120ms；Files/Design/Pinloom 条目底纹 80–100ms；信息浮窗原位淡入约 100ms、关闭约 60ms；圆环菜单及子项条淡入/底纹过渡 60–100ms。图标不缩放、不弹跳。
-- 后续候选：侧栏宽度过渡 120–160ms，先验证编辑器重排及图表性能；底栏沿用现有约 140ms；分段选中底纹 100–140ms；Activity 数字更新时背景轻微提亮一次 120–180ms；复制成功图标短暂改为勾号约 800ms。
-- 动画应可中断，菜单立即可操作；代码输入、光标、滚动、图表拖动和连续缩放保持即时响应。
-- 建议统一“减少动画”设置，优先复用 Qt Widgets、InsightVisualStyle 和 PanelLayoutController 现有主题、密度及动画基础。
+时长、曲线、中断方式、减少动画规则和验证状态统一维护在
+[动效场景规格](docs/control-style-consolidation.md#动效场景规格2026-09-20)。
+原先的建议时长不再作为另一套规格。默认 classic 的控件即时反馈与底栏立即展开保持不变；
+SDK 控件动画、导航栏宽度动画和未来浮窗淡入分别记录。图标不缩放、不弹跳；
+代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
+ZeroSlack 的 `--no-ui-animations` 只控制可选后端控件，不等同于全应用减少动画，
+也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。
 
 ### Remaining validation
+
+An optional Qlementine product preview is available behind the default-off
+`ZEROSLACK_ENABLE_QLEMENTINE` CMake option. It uses an independent application
+profile and `ZeroSlack-Qlementine-Preview.exe`; the formal package remains separate.
+Build, packaging, native validation results and remaining limitations are recorded
+in [control style validation](docs/control-style-consolidation.md).
+
+The separate default-off `ZEROSLACK_ENABLE_SUITEUI` option consumes an installed
+`SuiteUi 0.1.0` package with exact version matching. It is mutually exclusive with
+the vendored preview option. Only push buttons, tool buttons and checkboxes use
+the shared renderer; application fonts, palettes, other controls and professional
+views retain their existing ownership. See [SDK integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入)
+for build switches, deployment, rollback and validation limits.
 
 Every check that has never been run on a real desktop is tracked in
 [unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,
@@ -213,11 +229,11 @@ The repository keeps eight documents. This README is the entry point; the other 
 | --- | --- |
 | [用户手册](用户手册.md) | Every user-facing interaction, shortcut and edge case (Chinese) |
 | [Architecture](ARCHITECTURE.md) | Ownership, threading, extension constraints, repository layout, visual system |
-| [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, cross-application workflows, shared visual contract |
+| [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, visual contract, dual-application validation and the minimal SuiteUi extraction decision |
 | [Integrations](docs/integrations.md) | Read-only CLI and external application boundaries |
 | [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
 | [Kernel view continuity](docs/kernel-view-continuity-implementation.md) | Baseline, implementation scope and validation of the 0.29.19 view-state work |
-| [Control style consolidation](docs/control-style-consolidation.md) | Button/checkbox ownership, full-window A/C comparison, DPI, animation and protected-view validation |
+| [Control style consolidation](docs/control-style-consolidation.md) | Button/checkbox ownership, A/C comparison, optional Qlementine preview, native checks and protected-view validation |
 
 Historical acceptance logs and superseded status reports are intentionally
 kept out of this current-facts document. Released changes are recorded in the Git history:

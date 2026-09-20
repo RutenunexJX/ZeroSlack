@@ -1,0 +1,8 @@
+set(STAGE3_PROTOTYPE "${CMAKE_CURRENT_LIST_DIR}")
+function(stage3_zeroslack)
+    get_target_property(sources zeroslack_core SOURCES)
+    list(REMOVE_ITEM sources src/ui/qlementinebackend.cpp src/ui/insightvisualstyle.cpp)
+    list(APPEND sources "${STAGE3_PROTOTYPE}/zeroslack_backend.cpp" "${STAGE3_PROTOTYPE}/zeroslack_visual.cpp")
+    set_property(TARGET zeroslack_core PROPERTY SOURCES "${sources}")
+endfunction()
+cmake_language(DEFER CALL stage3_zeroslack)

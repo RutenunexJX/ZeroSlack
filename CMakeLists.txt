@@ -795,6 +795,37 @@ target_sources(zeroslack_core PRIVATE
 )
 
 # Main application target.
+option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
+option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
+set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
+if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
+    message(FATAL_ERROR "Choose either the standalone SuiteUi SDK or the vendored Qlementine preview.")
+endif()
+if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
+    if(ZEROSLACK_ENABLE_SUITEUI)
+        find_package(SuiteUi 0.1.0 EXACT CONFIG REQUIRED)
+        set(ZEROSLACK_SUITEUI_NOTICES_DIR "${SuiteUi_NOTICES_DIR}" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
+        target_sources(zeroslack_core PRIVATE src/ui/suiteuibackend.cpp)
+        target_link_libraries(zeroslack_core PRIVATE SuiteUi::Controls)
+    else()
+        set(QLEMENTINE_BUILD_STATIC ON CACHE BOOL "" FORCE)
+        set(QLEMENTINE_SANDBOX OFF CACHE BOOL "" FORCE)
+        set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "" FORCE)
+        add_subdirectory(thirdparty/qlementine EXCLUDE_FROM_ALL)
+        target_sources(zeroslack_core PRIVATE src/ui/qlementinebackend.cpp)
+        target_link_libraries(zeroslack_core PRIVATE qlementine::qlementine)
+    endif()
+    target_compile_definitions(zeroslack_core PRIVATE ZEROSLACK_ENABLE_QLEMENTINE=1)
+    add_executable(zeroslack_preview src/app/main.cpp)
+    target_compile_definitions(zeroslack_preview PRIVATE ZEROSLACK_PREVIEW_BUILD=1)
+    target_link_libraries(zeroslack_preview PRIVATE zeroslack_core)
+    set_target_properties(zeroslack_preview PROPERTIES OUTPUT_NAME "ZeroSlack-Qlementine-Preview")
+    if(WIN32)
+        target_sources(zeroslack_preview PRIVATE resources/windows/zeroslack.rc)
+        set_target_properties(zeroslack_preview PROPERTIES WIN32_EXECUTABLE ON)
+    endif()
+endif()
+
 add_executable(demo src/app/main.cpp)
 
 # Read-only machine interface for AI and automation. The support layer links
@@ -1348,6 +1379,10 @@ if(BUILD_TESTING)
 
     add_executable(control_style_interaction_test test_sv/control_style_interaction_test.cpp)
     target_link_libraries(control_style_interaction_test PRIVATE zeroslack_core Qt6::Test)
+    if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
+        add_executable(qlementine_lifecycle_test test_sv/qlementine_lifecycle_test.cpp)
+        target_link_libraries(qlementine_lifecycle_test PRIVATE zeroslack_core Qt6::Test)
+    endif()
 
     add_executable(context_workspace_test
         test_sv/context_workspace_test.cpp)
@@ -1861,6 +1896,21 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:control_style_interaction_test> -o -,txt)
         set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 90)
+        if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
+            add_test(NAME qlementine_controls_${HIGH_DPI_SCALE}_test
+                COMMAND ${CMAKE_COMMAND} -E env
+                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                    "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                    "ZEROSLACK_TEST_UI_STYLE=qlementine"
+                    $<TARGET_FILE:control_style_interaction_test> -o -,txt)
+            add_test(NAME qlementine_lifecycle_${HIGH_DPI_SCALE}_test
+                COMMAND ${CMAKE_COMMAND} -E env
+                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                    "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                    $<TARGET_FILE:qlementine_lifecycle_test> -o -,txt)
+            set_tests_properties(qlementine_controls_${HIGH_DPI_SCALE}_test
+                qlementine_lifecycle_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
+        endif()
     endforeach()
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env

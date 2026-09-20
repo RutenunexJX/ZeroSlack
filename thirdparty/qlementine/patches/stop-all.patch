@@ -1,0 +1,17 @@
+--- a/lib/src/animation/WidgetAnimationManager.cpp
++++ b/lib/src/animation/WidgetAnimationManager.cpp
+@@ -72,10 +72,10 @@
+ }
+ 
+ void WidgetAnimationManager::stopAll() {
+-  forEarch([this](const QWidget* w, WidgetAnimator*) {
+-    // Stop all animations happening on the widget.
+-    removeWidget(w);
+-  });
++  // ZeroSlack: removeWidget erases the current map entry.
++  while (!_map.empty()) {
++    removeWidget(_map.begin()->first);
++  }
+ }
+ 
+ void WidgetAnimationManager::initializeEasingCurves() {

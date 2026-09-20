@@ -1,0 +1,350 @@
+[
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/Inter-Bold.ttf",
+    "sha256": "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter"
+      ],
+      "2": [
+        "Bold"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/Inter-BoldItalic.ttf",
+    "sha256": "948405a16cdc62701da5f4005ed068ca5f4d27061d98f7974ccfc37831d9581d",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter"
+      ],
+      "2": [
+        "Bold Italic"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/Inter-Italic.ttf",
+    "sha256": "bbc051dd204b5019a1aa0bc0ae2aa8a05ab13e7a3f979fa357631dc7feb6833a",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter"
+      ],
+      "2": [
+        "Italic"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/Inter-Regular.ttf",
+    "sha256": "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter"
+      ],
+      "2": [
+        "Regular"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/InterDisplay-Bold.ttf",
+    "sha256": "b74c8e0dd744b3347faca4c96bc7b2e32f7d6f62300a79b1d1a99331e44a5bc4",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter Display"
+      ],
+      "2": [
+        "Bold"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/InterDisplay-BoldItalic.ttf",
+    "sha256": "71e7d3709238b1c21b107ba6433d3a87c6377041a507afd9cf7de3c36ab585f2",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter Display"
+      ],
+      "2": [
+        "Bold Italic"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/InterDisplay-Italic.ttf",
+    "sha256": "20cf47556669f80d12966d2f5eac5054b7486ce5d076feb744dbe24842e2593b",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter Display"
+      ],
+      "2": [
+        "Italic"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/inter/InterDisplay-Regular.ttf",
+    "sha256": "99614bda7ff423aaf470990692dd93613a5971ab4446e4a6d5a83b3d74865074",
+    "nameRecords": {
+      "0": [
+        "Copyright 2016 The Inter Project Authors"
+      ],
+      "1": [
+        "Inter Display"
+      ],
+      "2": [
+        "Regular"
+      ],
+      "5": [
+        "Version 4.001;git-9221beed3"
+      ],
+      "8": [
+        "rsms"
+      ],
+      "9": [
+        "Rasmus Andersson"
+      ],
+      "13": [
+        "This Font Software is licensed under the SIL Open Font License, Version 1.1. This license is available with a FAQ at: http://scripts.sil.org/OFL"
+      ],
+      "14": [
+        "http://scripts.sil.org/OFL"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/roboto-mono/RobotoMono-Bold.ttf",
+    "sha256": "44f1d7d596d51c9e0a57805d4bfa7698e74184b3f96e9f95284c84a2ee3727d7",
+    "nameRecords": {
+      "0": [
+        "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)"
+      ],
+      "1": [
+        "Roboto Mono"
+      ],
+      "2": [
+        "Bold"
+      ],
+      "5": [
+        "Version 3.000"
+      ],
+      "9": [
+        "Google"
+      ],
+      "13": [
+        "Licensed under the Apache License, Version 2.0"
+      ],
+      "14": [
+        "http://www.apache.org/licenses/LICENSE-2.0"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/roboto-mono/RobotoMono-BoldItalic.ttf",
+    "sha256": "32537bf2ef74e97013baa0c384f5aa520b99ab4470e8f0f9d69242445273d7b7",
+    "nameRecords": {
+      "0": [
+        "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)"
+      ],
+      "1": [
+        "Roboto Mono"
+      ],
+      "2": [
+        "Bold Italic"
+      ],
+      "5": [
+        "Version 3.000"
+      ],
+      "9": [
+        "Google"
+      ],
+      "13": [
+        "Licensed under the Apache License, Version 2.0"
+      ],
+      "14": [
+        "http://www.apache.org/licenses/LICENSE-2.0"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/roboto-mono/RobotoMono-Italic.ttf",
+    "sha256": "ef6c7057ce4f07e73b5ddce94b3bf09e7582ee0e5dddf5cba76aa6cfb966712c",
+    "nameRecords": {
+      "0": [
+        "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)"
+      ],
+      "1": [
+        "Roboto Mono"
+      ],
+      "2": [
+        "Italic"
+      ],
+      "5": [
+        "Version 3.000"
+      ],
+      "9": [
+        "Google"
+      ],
+      "13": [
+        "Licensed under the Apache License, Version 2.0"
+      ],
+      "14": [
+        "http://www.apache.org/licenses/LICENSE-2.0"
+      ]
+    }
+  },
+  {
+    "file": "lib/qlementine/lib/resources/fonts/roboto-mono/RobotoMono-Regular.ttf",
+    "sha256": "a12917d2df0631d68bfb3217048dbfab217fc9421cdaa8154b86bea0fbd87376",
+    "nameRecords": {
+      "0": [
+        "Copyright 2015 The Roboto Mono Project Authors (https://github.com/googlefonts/robotomono)"
+      ],
+      "1": [
+        "Roboto Mono"
+      ],
+      "2": [
+        "Regular"
+      ],
+      "5": [
+        "Version 3.000"
+      ],
+      "9": [
+        "Google"
+      ],
+      "13": [
+        "Licensed under the Apache License, Version 2.0"
+      ],
+      "14": [
+        "http://www.apache.org/licenses/LICENSE-2.0"
+      ]
+    }
+  }
+]

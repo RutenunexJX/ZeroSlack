@@ -285,6 +285,26 @@ into additional archive directories.
 
 ### Button and checkbox ownership
 
+The following describes the default classic backend. Optional builds with
+`ZEROSLACK_ENABLE_QLEMENTINE=ON` also provide a startup-only Qlementine backend and
+an isolated preview executable. `ApplicationThemeManager` selects the backend;
+the public interface exposes no Qlementine types. The preview keeps the existing
+Qt controls and typography, moves standard control drawing to the adapter and
+retains explicit shell QSS. Editor, radial-menu and specialized graph-view trees
+use the classic style on every descendant, including children created later or
+reparented between containers. See [preview validation](docs/control-style-consolidation.md)
+for ownership exceptions, profile isolation, the upstream patch and native limits.
+
+`ZEROSLACK_ENABLE_SUITEUI=ON` is a mutually exclusive optional backend that consumes
+the independently installed `SuiteUi 0.1.0` static package. Its Qt-only public API
+contains control-state colors, a primary-button role and `ControlStyle`.
+`suiteuibackend.cpp` maps application roles and colors; Qlementine types remain
+inside the SDK. The SDK delegates all controls except QPushButton, QToolButton
+and QCheckBox to the application's `RoundedIcons::Style` fallback. It never owns
+application theme selection, fonts, data models, shell layouts or professional
+renderers. The CLI retains its existing core boundary; this change does not move
+UI dependencies into the SuiteApp protocol SDK. See [SuiteUi integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入).
+
 `InsightControlStyle` defines the normal, hover, pressed, checked, focus and disabled
 states for application push buttons, tool buttons and checkboxes. Application QSS owns
 their surfaces and spacing. `RoundedIcons::Style` paints only the checkbox indicator,

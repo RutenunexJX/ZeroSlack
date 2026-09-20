@@ -1163,8 +1163,64 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
     return result;
 }
 
+QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode)
+{
+    const auto& t = theme(mode);
+    const auto border = subtleBorder(t.panelBackground, t.textPrimary).name();
+    // This is an explicit ownership list. No runtime QSS parsing or broad
+    // QWidget color rule: either would override QStyle's state-dependent ink.
+    return QStringLiteral(
+        "QMainWindow, QDialog, QMessageBox { background: %1; color: %2; }"
+        "QToolTip { background: %3; color: %2; border: 1px solid %4; padding: 4px 6px; }"
+        "QLabel:disabled { color: %5; }"
+        "QMenu { background: %3; color: %2; border: 1px solid %4; padding: 5px; }"
+        "QMenu::item { padding: 7px 28px 7px 14px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %6; }"
+        "QMenu::item:disabled { color: %5; }"
+        "QMenu::separator { background: %4; height: 1px; margin: 4px 8px; }"
+        "QDockWidget { background: %3; color: %2; border: 0; titlebar-close-icon: url(none); }"
+        "QDockWidget::title { background: %7; padding: 9px 10px; font-size: 14px; font-weight: 600; }"
+        "QToolBar { background: %7; border: 0; spacing: 4px; padding: 3px; }"
+        "QToolBar::separator { background: %4; width: 1px; margin: 4px; }"
+        "QSplitter::handle { background: %4; }"
+        "QSplitter::handle:hover { background: %8; }"
+        "QScrollArea, QStackedWidget { background: %3; }"
+        "QScrollArea > QWidget > QWidget { background: %3; }"
+        "QGraphicsView { background: %9; color: %2; }"
+        "QWidget#contextPeekHost { background: %3; color: %2; border-left: 1px solid %4; }"
+        "QWidget#contextPeekHeader { background: %7; border-bottom: 1px solid %4; }"
+        "QWidget#contextPeekContent, QWidget#temporaryEditorContextView,"
+        " QWidget#temporaryEditorContextContent { background: %3; }"
+        "QWidget#temporaryEditorContextSearchBar { background: %7; border-bottom: 1px solid %4; }"
+        "QToolBar#contextRail { background: %7; border-left: 1px solid %4; padding: 6px; spacing: 6px; }"
+        "QFrame#projectSidebarHeader { background: transparent; border: 0; }"
+        "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
+        " min-width: 36px; min-height: 36px; padding: 0; border: 1px solid transparent;"
+        " border-radius: 8px; background: transparent; }"
+        "QToolButton#projectRailButton::menu-indicator { image: none; }"
+        "QFrame#projectSidebarHeader QToolButton:hover { background: %10; }"
+        "QToolBar#contextRail QToolButton:hover { background: %11; }"
+        "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
+        " background: %6; color: %12; }"
+        "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %12; }"
+        "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
+        " background: transparent; border: 0; border-radius: 8px; }"
+        "QFrame#workspaceTitleBar QToolButton:hover { background: %11; }"
+        "QLabel[uiTextRole=metadata] { color: %13; padding-top: 2px; padding-bottom: 2px; }"
+        "QLabel[uiTextRole=section] { color: %13; padding-top: 4px; padding-bottom: 4px; }"
+        "QLabel[uiTextRole=pageTitle] { padding-top: 4px; padding-bottom: 8px; }"
+        "QLabel[uiTextRole=panelTitle] { padding-top: 4px; padding-bottom: 4px; }"
+        "QLabel#contextPeekTitle { color: %2; font-size: 14px; font-weight: 600; padding: 4px 0; }")
+        .arg(t.appBackground.name(), t.textPrimary.name(), t.panelBackground.name(), border,
+             t.button.textDisabled.name(), t.itemView.selectedBackground.name(), t.toolbarBackground.name(),
+             t.borderStrong.name(), t.canvasBackground.name(), mix(t.dock.background, t.textPrimary, 0.12).name(),
+             t.hover.name(), t.accent.name(), t.textSecondary.name());
+}
+
 QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
 {
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine)
+        return {};
     const InsightTheme t = theme();
     const QString selector =
         objectSelector(QStringLiteral("QTabBar"), objectName);
@@ -1292,6 +1348,12 @@ QString InsightVisualStyle::globalControlPanelStyleSheet(
     const InsightTheme t = theme();
     const QString selector =
         objectSelector(QStringLiteral("QFrame"), objectName);
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine) {
+        return QStringLiteral(
+            "%1 { background: %2; border: 1px solid %3; border-radius: 8px; }"
+            "%1 QLabel { color: %4; font-weight: 600; padding: 10px 12px 2px; }")
+            .arg(selector, t.panelBackground.name(), t.borderStrong.name(), t.textSecondary.name());
+    }
     return QStringLiteral(
                "%1 {"
                "  background: %2;"
@@ -1381,6 +1443,8 @@ QString InsightVisualStyle::titleBarStyleSheet(const QString& objectName)
 QString InsightVisualStyle::compactSearchFieldStyleSheet(
     const QString& objectName)
 {
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine)
+        return floatingBackgroundRule(QStringLiteral("QLineEdit"), objectName);
     const InsightTheme t = theme();
     return QStringLiteral(
                "%1 {"

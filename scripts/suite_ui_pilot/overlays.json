@@ -1,0 +1,223 @@
+{
+  "purpose": "Stage 3 isolated experiment; no production source is overwritten",
+  "regmap_commit": "1847c817a1ba000cbba949ab85ef1428500a22f4",
+  "zeroslack_commit": "e40938374939f9cd24ff2d6d4612b0524ee1a2fe",
+  "zeroslack_worktree": "Includes the uncommitted Qlementine preview; source hashes are authoritative",
+  "overlays": [
+    {
+      "repository": "zeroslack",
+      "source": "src/ui/qlementinebackend.cpp",
+      "output": "zeroslack_backend.cpp",
+      "source_sha256": "5ce8dc956d9d77fa8f8ccaba3cd49accbde64e2751b6c61de2bc2912325d7848",
+      "output_sha256": "5160dc377125c43701f1c88c3008f57e2678361f90982244d5b38f3c02a3aac7",
+      "edits": [
+        {
+          "start": 89,
+          "end": 89,
+          "replacement": "#include \"pilot_style.h\"\n#include \"pilot_tokens.h\"\n"
+        },
+        {
+          "start": 304,
+          "end": 3633,
+          "replacement": "class ProductStyle final : public Pilot::Style {\n    bool primary(const QWidget* widget) const override {\n        return widget && widget->property(\"_zeroslackInsightThemeHelper\").toString() == \"primaryButton\";\n"
+        },
+        {
+          "start": 4132,
+          "end": 4320,
+          "replacement": "    Pilot::applyControls(q, {\n        {t.button.background, t.button.backgroundHover, t.button.backgroundPressed, t.panelSubtle},\n        {t.button.text, t.button.textHover, t.textPrimary, t.button.textDisabled},\n        {t.accent, t.accent.lighter(110), t.accent.darker(110), t.panelSubtle},\n        {t.button.textChecked, t.button.textChecked, t.button.textChecked, t.button.textDisabled},\n        {t.border, t.borderStrong, t.accent, t.panelSubtle}, t.focus.ring});\n"
+        },
+        {
+          "start": 4412,
+          "end": 4807,
+          "replacement": ""
+        },
+        {
+          "start": 5060,
+          "end": 5239,
+          "replacement": ""
+        },
+        {
+          "start": 5667,
+          "end": 5845,
+          "replacement": ""
+        }
+      ]
+    },
+    {
+      "repository": "zeroslack",
+      "source": "src/ui/insightvisualstyle.cpp",
+      "output": "zeroslack_visual.cpp",
+      "source_sha256": "63c9d5e24d5d59dbf35e0d879a1d0b58c4214d783820376cb6c36e0bc86a0c88",
+      "output_sha256": "58bc001de35bf3b7863338c9dd3356b6dc6689ee6d869a1ea1fd8a5575bcd76c",
+      "edits": [
+        {
+          "start": 32,
+          "end": 32,
+          "replacement": "#include \"pilot_tokens.h\"\n"
+        },
+        {
+          "start": 59853,
+          "end": 60357,
+          "replacement": "    background.setAlpha(68);\n    border.setAlpha(180);\n    return Pilot::badgeRule(objectSelector(QStringLiteral(\"QLabel\"), objectName),\n                            {text, background, border});\n"
+        }
+      ]
+    },
+    {
+      "repository": "regmap",
+      "source": "src/app/workbench_theme.cpp",
+      "output": "workbench_theme.cpp",
+      "source_sha256": "b97152046a450d391f318f2143827dd414dbae8d8ff815d14db48ea8ec80a260",
+      "output_sha256": "955543d92fe3154af88f13249a04a27382b32f4f25d30b34fea798dc15d471c8",
+      "edits": [
+        {
+          "start": 31,
+          "end": 31,
+          "replacement": "#include \"regmap_pilot.h\"\n#include \"pilot_tokens.h\"\n"
+        },
+        {
+          "start": 5549,
+          "end": 5585,
+          "replacement": "static QString styleSheetImpl(const Mode mode, bool pilot)\n"
+        },
+        {
+          "start": 5627,
+          "end": 6943,
+          "replacement": "    // These two explicit rule groups are owned by the trial QStyle. All page,\n    // table/delegate, feedback, navigation and editor rules remain unchanged.\n    const QString headerButtons = pilot ? QString() : QStringLiteral(R\"QSS(\n"
+        },
+        {
+          "start": 7545,
+          "end": 7545,
+          "replacement": ")QSS\");\n    const QString controls = pilot ? QString() : QStringLiteral(R\"QSS(\nQPushButton, QToolButton {\n    min-height: {{standard}}px;\n    background: {{panel}};\n    color: {{text}};\n    border: 1px solid {{border}};\n    border-radius: {{radiusSmall}}px;\n    padding: 0 {{space2}}px;\n}\nQPushButton:hover, QToolButton:hover { background: {{selection}}; border-color: {{focus}}; }\nQPushButton:pressed, QToolButton:pressed { background: {{divider}}; }\nQPushButton:checked, QToolButton:checked { background: {{selection}}; border-color: {{accent}}; }\nQPushButton:disabled, QToolButton:disabled { color: {{muted}}; background: {{panel}}; border-color: {{divider}}; }\nQPushButton:focus, QToolButton:focus, QComboBox:focus { border: 2px solid {{focus}}; }\n)QSS\");\n    QString sheet = QStringLiteral(R\"QSS(\nQMainWindow, QDialog { background: {{application}}; color: {{text}}; }\nQWidget#workbenchCanvas { background: {{application}}; }\nQWidget#pageHeader {\n    background: {{raised}};\n    border: 1px solid {{border}};\n    border-radius: {{radiusLarge}}px;\n}\nQLabel#projectTitleLabel { color: {{text}}; font-size: 14px; font-weight: 600; }\nQLabel#projectPathLabel, QLabel#selectedFieldSummaryLabel { color: {{muted}}; }\nQLabel#recoveryStateBadge,\nQLabel#registerSelectionLabel, QLabel#fieldSelectionLabel {\n    color: {{info}};\n    background: {{selection}};\n    border: 1px solid {{border}};\n    border-radius: {{radiusLarge}}px;\n    padding: {{space}}px {{space2}}px;\n    font-weight: 600;\n}\nQLabel#recoveryStateBadge[state=\"saved\"] { color: {{success}}; }\nQLabel#recoveryStateBadge[state=\"failed\"] { color: {{error}}; }\n{{headerButtons}}\n"
+        },
+        {
+          "start": 13547,
+          "end": 14220,
+          "replacement": "{{controls}}\n"
+        },
+        {
+          "start": 14817,
+          "end": 14817,
+          "replacement": "    sheet.replace(QStringLiteral(\"{{headerButtons}}\"), headerButtons);\n    sheet.replace(QStringLiteral(\"{{controls}}\"), controls);\n"
+        },
+        {
+          "start": 17206,
+          "end": 17206,
+          "replacement": "    {\n        // Application maps state properties to tones; the helper only renders.\n        const auto badge = [&](const QString& selector, const QColor& color) {\n            return Pilot::badgeRule(selector, {color, token.selection, token.border,\n                densityMetrics.largeRadius, densityMetrics.baseSpacing,\n                densityMetrics.baseSpacing * 2, 600});\n        };\n        sheet += badge(QStringLiteral(\"QLabel#fileStateBadge, QLabel#syncStateBadge\"), token.diagnosticInfo);\n        sheet += badge(QStringLiteral(\"QLabel#fileStateBadge[state=\\\"saved\\\"], QLabel#syncStateBadge[state=\\\"synced\\\"]\"), token.success);\n        sheet += badge(QStringLiteral(\"QLabel#fileStateBadge[state=\\\"dirty\\\"], QLabel#fileStateBadge[state=\\\"loading\\\"], QLabel#syncStateBadge[state=\\\"dirty\\\"], QLabel#syncStateBadge[state=\\\"busy\\\"]\"), token.warning);\n        sheet += badge(QStringLiteral(\"QLabel#fileStateBadge[state=\\\"failed\\\"], QLabel#syncStateBadge[state=\\\"blocked\\\"], QLabel#syncStateBadge[state=\\\"conflict\\\"], QLabel#syncStateBadge[state=\\\"partial\\\"]\"), token.error);\n    }\n"
+        },
+        {
+          "start": 17226,
+          "end": 17226,
+          "replacement": "\nQString styleSheet(const Mode mode) { return styleSheetImpl(mode, false); }\n"
+        },
+        {
+          "start": 18962,
+          "end": 19004,
+          "replacement": "    const QFont applicationFont = application.font();\n    QStyle* backend = nullptr;\n    if (RegMapPilot::enabled()) {\n        backend = RegMapPilot::install(application);\n    } else if (application.style() == nullptr ||\n"
+        },
+        {
+          "start": 19328,
+          "end": 19365,
+          "replacement": "    QFont font = applicationFont;\n"
+        },
+        {
+          "start": 21093,
+          "end": 21142,
+          "replacement": "    if (backend) RegMapPilot::update(backend, mode, font, palette);\n    application.setStyleSheet(styleSheetImpl(mode, backend != nullptr));\n"
+        }
+      ]
+    },
+    {
+      "repository": "regmap",
+      "source": "src/app/main_window.cpp",
+      "output": "regmap_main_window.cpp",
+      "source_sha256": "fe9b285c11f727f865cacb0f3220735dcd8fc9311236a7b43f98540bdb311c4c",
+      "output_sha256": "96fd275b10ab384157268c99081e50e470ceb5cc385d3ef2668ddac60153f3ad",
+      "edits": [
+        {
+          "start": 191218,
+          "end": 191218,
+          "replacement": "    fileStateLabel_->setWordWrap(true);\n"
+        },
+        {
+          "start": 191739,
+          "end": 191739,
+          "replacement": "    syncStateLabel_->setWordWrap(true);\n"
+        }
+      ]
+    },
+    {
+      "repository": "regmap",
+      "source": "tests/gui_smoke_tests.cpp",
+      "output": "gui_smoke_tests.cpp",
+      "source_sha256": "faf34a40bf1ea50d56b6970f2328ff3a1f188bae4de0a9f9ba01ba103e0fd920",
+      "output_sha256": "15c8b8debcadb4b60c4e9c39cda6c84ee398b6191c62db71eb09a070ada5f3be",
+      "edits": [
+        {
+          "start": 42194,
+          "end": 42446,
+          "replacement": "    // QSS min-height excludes the border; verify the rendered control bounds.\n    QVERIFY(generate->height() >= density.standardControlHeight);\n    QVERIFY(synchronize->height() >= density.primaryControlHeight);\n    QVERIFY(save->height() >= density.primaryControlHeight);\n    for (auto* button : {generate, synchronize, save}) {\n        QVERIFY(button->height() >= button->minimumSizeHint().height());\n        QVERIFY(button->width() >= button->minimumSizeHint().width());\n        QVERIFY(pageHeader->rect().contains(QRect(button->mapTo(pageHeader, QPoint()), button->size())));\n    }\n"
+        },
+        {
+          "start": 61251,
+          "end": 61302,
+          "replacement": "                \"Register Map Workbench \" REGMAP_EXPECTED_VERSION)));\n"
+        },
+        {
+          "start": 242743,
+          "end": 242944,
+          "replacement": "    for (auto* button : {preview, accept}) {\n        QVERIFY(button->minimumHeight() >= WorkbenchTheme::metrics().compactControlHeight);\n        if (button->isVisible()) {\n            QVERIFY(button->height() >= button->minimumSizeHint().height());\n            QVERIFY(button->width() >= button->minimumSizeHint().width());\n        }\n    }\n"
+        },
+        {
+          "start": 605451,
+          "end": 605640,
+          "replacement": "    QCOMPARE(registers->model()->index(3, 0).data().toString(), QStringLiteral(\"+\"));\n\n    // beginRegisterRename queues editor creation; wait before changing the fixture.\n    const auto renameEditor = [registers]() -> QLineEdit* {\n        for (auto* editor : registers->findChildren<QLineEdit*>()) {\n            if (editor->isVisible()) return editor;\n        }\n        return nullptr;\n    };\n    QTRY_VERIFY_WITH_TIMEOUT(renameEditor() != nullptr, 1000);\n    QTest::keyClick(renameEditor(), Qt::Key_Escape);\n    QTRY_VERIFY_WITH_TIMEOUT(renameEditor() == nullptr, 1000);\n    QVERIFY(controller->editWorkspace(\n        QStringLiteral(\"Make room for another insertion\"),\n"
+        },
+        {
+          "start": 605974,
+          "end": 606129,
+          "replacement": "    const QModelIndex shiftedControl = registers->model()->index(2, 0);\n    registers->scrollTo(shiftedControl, QAbstractItemView::EnsureVisible);\n    QCoreApplication::processEvents();\n    const QRect shiftedControlRectangle = registers->visualRect(shiftedControl);\n"
+        },
+        {
+          "start": 606308,
+          "end": 606552,
+          "replacement": "    const QPoint secondInsertionPoint(18, shiftedControlRectangle.top());\n    QVERIFY(registers->viewport()->rect().contains(secondInsertionPoint));\n    QTest::mouseMove(registers->viewport(), secondInsertionPoint);\n    QTest::qWait(20);\n    QCOMPARE(registers->viewport()->cursor().shape(), Qt::PointingHandCursor);\n    QTest::mouseClick(registers->viewport(), Qt::LeftButton, Qt::NoModifier,\n"
+        },
+        {
+          "start": 607222,
+          "end": 607549,
+          "replacement": "    QTRY_VERIFY_WITH_TIMEOUT(renameEditor() != nullptr, 1000);\n    QTest::keyClick(renameEditor(), Qt::Key_Escape);\n    QTRY_VERIFY_WITH_TIMEOUT(renameEditor() == nullptr, 1000);\n    QVERIFY(controller->editWorkspace(\n        QStringLiteral(\n            \"Fix following Register\"),\n"
+        },
+        {
+          "start": 608082,
+          "end": 608162,
+          "replacement": "    const QModelIndex fixedControl =\n        registers->model()->index(3, 0);\n    registers->scrollTo(fixedControl, QAbstractItemView::EnsureVisible);\n    QCoreApplication::processEvents();\n"
+        },
+        {
+          "start": 608486,
+          "end": 608570,
+          "replacement": "    const QPoint blockedInsertionPoint(\n        18, fixedControlRectangle.top());\n    QVERIFY(registers->viewport()->rect().contains(blockedInsertionPoint));\n"
+        },
+        {
+          "start": 608625,
+          "end": 608681,
+          "replacement": "        blockedInsertionPoint);\n    QTest::qWait(20);\n    QCOMPARE(registers->viewport()->cursor().shape(), Qt::PointingHandCursor);\n"
+        },
+        {
+          "start": 609960,
+          "end": 610041,
+          "replacement": "    const QModelIndex gappedControl =\n        registers->model()->index(3, 0);\n    registers->scrollTo(gappedControl, QAbstractItemView::EnsureVisible);\n    QCoreApplication::processEvents();\n"
+        },
+        {
+          "start": 610368,
+          "end": 610449,
+          "replacement": "    const QPoint gapInsertionPoint(\n        18, gappedControlRectangle.top());\n    QVERIFY(registers->viewport()->rect().contains(gapInsertionPoint));\n"
+        },
+        {
+          "start": 610504,
+          "end": 610556,
+          "replacement": "        gapInsertionPoint);\n    QTest::qWait(20);\n    QCOMPARE(registers->viewport()->cursor().shape(), Qt::PointingHandCursor);\n"
+        }
+      ]
+    }
+  ]
+}

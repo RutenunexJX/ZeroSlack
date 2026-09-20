@@ -27,6 +27,7 @@ InsightGraphView::InsightGraphView(QGraphicsScene* scene, QWidget* parent)
 
 void InsightGraphView::initializeThemeConnection()
 {
+    ApplicationThemeManager::instance().preserveClassicSurface(this);
     QObject::connect(
         &ApplicationThemeManager::instance(),
         &ApplicationThemeManager::themeChanged,

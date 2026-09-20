@@ -21,7 +21,8 @@ std::unique_ptr<QSettings> makeSettings(const QString& settingsFilePath)
 {
     if (!settingsFilePath.isEmpty())
         return std::make_unique<QSettings>(settingsFilePath, QSettings::IniFormat);
-    return std::make_unique<QSettings>(QStringLiteral("ZeroSlack"),
+    return std::make_unique<QSettings>(QSettings::defaultFormat(), QSettings::UserScope,
+                                       QStringLiteral("ZeroSlack"),
                                        QStringLiteral("ZeroSlack"));
 }
 

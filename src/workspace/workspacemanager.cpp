@@ -1194,7 +1194,8 @@ void WorkspaceManager::loadRecentWorkspaces()
 {
     recentWorkspaces.clear();
 
-    QSettings settings(QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
     settings.beginGroup(QString::fromLatin1(kRecentWorkspaceGroup));
     const int count = settings.beginReadArray(
         QString::fromLatin1(kRecentWorkspaceItems));
@@ -1232,7 +1233,8 @@ void WorkspaceManager::saveRecentWorkspaces() const
     if (!recentWorkspacePersistenceEnabled)
         return;
 
-    QSettings settings(QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
     settings.beginGroup(QString::fromLatin1(kRecentWorkspaceGroup));
     settings.remove(QString());
     settings.beginWriteArray(QString::fromLatin1(kRecentWorkspaceItems));

@@ -24,6 +24,7 @@ bool sameOptions(const EditorAppearanceOptions& lhs,
 EditorAppearanceSettings::EditorAppearanceSettings(QObject* parent)
     : EditorAppearanceSettings(
           std::make_unique<QSettings>(
+              QSettings::defaultFormat(), QSettings::UserScope,
               QStringLiteral("ZeroSlack"),
               QStringLiteral("ZeroSlack")),
           parent)

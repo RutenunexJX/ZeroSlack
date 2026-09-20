@@ -12,6 +12,30 @@ The paths in the tables below identify the corresponding source-tree copies.
 
 ## Built into the application
 
+Optional Qlementine previews additionally contain Qlementine 1.5.0.0 at
+`209e549c415f1d828883f9f21a633eb535f9d67d` (MIT, © 2022 Olivier Cléro),
+with one local animation-map cleanup correction. See
+`thirdparty/qlementine/UPSTREAM.md` and its recorded patch. The default build
+does not include it. Preview packages include `licenses/Qlementine-MIT.txt`,
+`licenses/Qlementine-UPSTREAM.md`, `licenses/Inter-OFL.txt` and
+`licenses/RobotoMono-Apache-2.0.txt`.
+
+The embedded, unmodified Inter / Inter Display 4.001 fonts are Copyright 2016
+The Inter Project Authors (https://github.com/rsms/inter), SIL OFL 1.1.
+Embedded Roboto Mono 3.000 is Copyright 2015 The Roboto Mono Project Authors
+(https://github.com/googlefonts/robotomono); these binaries declare Apache 2.0.
+Their per-file attribution and hash records are in
+`thirdparty/qlementine/font-metadata.json`, also included with preview licenses.
+
+Alternatively, `ZEROSLACK_ENABLE_SUITEUI=ON` links the separately installed
+SuiteUi 0.1.0 static control SDK (Apache-2.0) and its private Qlementine backend.
+The two preview build options are mutually exclusive. In this configuration,
+packaging copies the installed SDK's complete notice directory to
+`licenses/SuiteUi/`, including `SuiteUi-Apache-2.0.txt`, `Qlementine-MIT.txt`, both
+font licenses, `font-metadata.json`, `UPSTREAM.md`, `stop-all.patch`, `NOTICE.txt`
+and `build-info.json`. The pinned backend and embedded fonts are the same as
+above. No SDK DLL or external font directory is required at runtime.
+
 | Component | Version | License | License text |
 | --- | --- | --- | --- |
 | [slang](https://github.com/MikePopoloski/slang) | 10.0.14 | MIT | `thirdparty/slang/LICENSE` (submodule) |

@@ -493,7 +493,8 @@ ColumnNumberConfig ColumnNumberToolPanel::loadConfig(
     if (rememberedConfig.has_value())
         return *rememberedConfig;
 
-    QSettings settings(QStringLiteral("ZeroSlack"),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"),
                        QStringLiteral("ZeroSlack"));
     settings.beginGroup(QStringLiteral("columnNumberTool/v1"));
     if (!settings.contains(QStringLiteral("start")))
@@ -527,7 +528,8 @@ void ColumnNumberToolPanel::saveConfig(
     const ColumnNumberConfig& config)
 {
     rememberedConfig = config;
-    QSettings settings(QStringLiteral("ZeroSlack"),
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"),
                        QStringLiteral("ZeroSlack"));
     settings.beginGroup(QStringLiteral("columnNumberTool/v1"));
     settings.setValue(QStringLiteral("start"), config.start);

@@ -28,6 +28,14 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 
 void settle() { QApplication::processEvents(); QTest::qWait(10); }
 
+void moveMouse(QWidget* widget, const QPoint& position)
+{
+    // QWindow coordinates are logical at every DPI; the QWidget QtTest helper
+    // goes through the offscreen platform's synthetic global cursor instead.
+    auto* window = widget->window();
+    QTest::mouseMove(window->windowHandle(), widget->mapTo(window, position));
+}
+
 void capture(QWidget* widget, const QString& name)
 {
     const QString root = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
@@ -98,9 +106,9 @@ private slots:
             const QSize hint = button->sizeHint();
             const QSize size = button->size();
             button->clearFocus();
-            QTest::mouseMove(&host, QPoint(host.width() - 1, host.height() - 1)); settle();
+            moveMouse(&host, QPoint(host.width() - 1, host.height() - 1)); settle();
             const QImage ordinary = button->grab().toImage();
-            QTest::mouseMove(button, button->rect().center()); settle();
+            moveMouse(button, button->rect().center()); settle();
             const QImage hover = button->grab().toImage();
             QVERIFY(hover != ordinary);
             QTest::mousePress(button, Qt::LeftButton); settle();
@@ -110,11 +118,11 @@ private slots:
             QCOMPARE(button->sizeHint(), hint);
             QCOMPARE(button->size(), size);
             // Drag outside cancels activation; there must be no delayed click.
-            QTest::mouseMove(button, QPoint(-8, -8));
+            moveMouse(button, QPoint(-8, -8));
             QTest::mouseRelease(button, Qt::LeftButton, Qt::NoModifier, QPoint(-8, -8));
             QCOMPARE(clicked.count(), 0);
             QVERIFY(!button->isDown());
-            QTest::mouseMove(&host, QPoint(host.width() - 1, host.height() - 1));
+            moveMouse(&host, QPoint(host.width() - 1, host.height() - 1));
             button->setFocus(Qt::TabFocusReason); settle();
             QVERIFY(button->hasFocus());
             QVERIFY(button->grab().toImage() != ordinary);
@@ -248,6 +256,10 @@ int main(int argc, char** argv)
     if (!settings.isValid()) return 2;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "qlementine") {
+        if (!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Qlementine)) return 3;
+        ApplicationThemeManager::instance().setAnimationsEnabled(false);
+    }
     ApplicationThemeManager::instance().applyToApplication();
     ControlStyleInteractionTest test;
     return QTest::qExec(&test, argc, argv);
