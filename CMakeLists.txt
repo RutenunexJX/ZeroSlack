@@ -796,7 +796,7 @@ target_sources(zeroslack_core PRIVATE
 
 # Main application target.
 option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
-option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
+option(ZEROSLACK_ENABLE_SUITEUI "Build default controls from the pinned standalone SuiteUi SDK" ON)
 set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
 if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
     message(FATAL_ERROR "Choose either the standalone SuiteUi SDK or the vendored Qlementine preview.")

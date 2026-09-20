@@ -5,6 +5,20 @@ the single ZeroSlack-side record of that family contract: the transport protocol
 implemented cross-application workflows, and the shared visual and interaction language.
 Application state always stays with its owner.
 
+Current release decision (2026-09-21): the user authorized switching the formal
+packages of ZeroSlack 0.29.23, RegMapWorkbench 0.3.2 and Pinloom 0.4.2 to SuiteUi.
+Their SDK build options now default to ON, and normal startup selects the SDK
+controls. ZeroSlack/RegMap keep the verified 0.1.0 SDK; Pinloom keeps 0.1.1.
+Existing profiles remain in place. The classic startup overrides and explicit
+OFF builds remain available. WaveWorkbench retains its existing configuration.
+Formal packages include the installed SDK notice directory. ZeroSlack CLI shares
+the UI-linked core DLL. Native validation gaps below remain open; the default
+switch does not change those evidence boundaries. Earlier default-OFF statements
+describe the historical implementation stages.
+RegMap/Pinloom's existing MSVC CI jobs explicitly build the classic fallback:
+the installed release SDK requires MinGW 13.1 and cannot be linked by MSVC.
+The SuiteUi release path is validated by the local full regression runs.
+
 Protocol integration baseline: ZeroSlack 0.22.0, Pinloom 0.4.0, WaveWorkbench 0.12.0,
 RegMapWorkbench 0.3.0. Each application remains an independent repository.
 
@@ -776,8 +790,8 @@ Lucide 的 ISC 与衍生自 Feather 部分的 MIT 声明；所分发图标需保
 
 ## 正式默认样式决策材料（2026-09-20，一页）
 
-**待用户决定**。本轮不改变 classic 默认值，不更新应用版本或正式包。以下证据支持
-评估可选 SDK，不能自动推出默认切换。
+**历史决策材料，已由 2026-09-21 用户“切换”指令作出默认启用决定**。
+以下保留切换前的证据、成本和未验项；当前发布范围与回退入口见本文开头。
 
 | 方面 | 可核实证据与限制 |
 | --- | --- |

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.22`
+Current version: `v0.29.23`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.22`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.23`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -178,26 +178,33 @@ scheduled. Released changes and their acceptance results live in the Git history
 
 时长、曲线、中断方式、减少动画规则和验证状态统一维护在
 [动效场景规格](docs/control-style-consolidation.md#动效场景规格2026-09-20)。
-原先的建议时长不再作为另一套规格。默认 classic 的控件即时反馈与底栏立即展开保持不变；
-SDK 控件动画、导航栏宽度动画和未来浮窗淡入分别记录。图标不缩放、不弹跳；
+原先的建议时长不再作为另一套规格。正式包默认启用 SuiteUi 控件状态过渡；classic 回退仍即时反馈。
+底栏立即展开、导航栏宽度动画和未来浮窗淡入分别记录。图标不缩放、不弹跳；
 代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
-ZeroSlack 的 `--no-ui-animations` 只控制可选后端控件，不等同于全应用减少动画，
+ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等同于全应用减少动画，
 也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。
 
 ### Remaining validation
 
-An optional Qlementine product preview is available behind the default-off
+An isolated Qlementine product preview is available behind the default-off
 `ZEROSLACK_ENABLE_QLEMENTINE` CMake option. It uses an independent application
 profile and `ZeroSlack-Qlementine-Preview.exe`; the formal package remains separate.
 Build, packaging, native validation results and remaining limitations are recorded
 in [control style validation](docs/control-style-consolidation.md).
 
-The separate default-off `ZEROSLACK_ENABLE_SUITEUI` option consumes an installed
+Since 0.29.23, `ZEROSLACK_ENABLE_SUITEUI` defaults to ON and consumes an installed
 `SuiteUi 0.1.0` package with exact version matching. It is mutually exclusive with
-the vendored preview option. Only push buttons, tool buttons and checkboxes use
+the vendored preview option. The standard executable selects this backend at startup
+and retains the existing ZeroSlack settings and workspace profile. Only push buttons, tool buttons and checkboxes use
 the shared renderer; application fonts, palettes, other controls and professional
 views retain their existing ownership. See [SDK integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入)
-for build switches, deployment, rollback and validation limits.
+for build switches, deployment, rollback and validation limits. Pass `--ui-style=classic`
+for a startup-only fallback or configure `-DZEROSLACK_ENABLE_SUITEUI=OFF` to build
+without the SDK. Existing CMake caches must explicitly set ON for the release switch.
+Set `SuiteUi_DIR` to the installed 0.1.0 SDK's `lib/cmake/SuiteUi` directory.
+`scripts/package-release.ps1` stages the standard executable and the complete SDK
+notices. The CLI shares `zeroslack_core` and therefore also carries its UI dependencies.
+For the direct vendored preview, explicitly set SuiteUi OFF and Qlementine ON.
 
 Every check that has never been run on a real desktop is tracked in
 [unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,

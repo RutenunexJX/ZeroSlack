@@ -29,11 +29,13 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
+    const QString defaultStyle = ApplicationThemeManager::qlementineAvailable()
+        ? QStringLiteral("qlementine") : QStringLiteral("classic");
     const QCommandLineOption styleOption(QStringLiteral("ui-style"),
-        QStringLiteral("Widget style: classic or qlementine (requires an optional build)."),
-        QStringLiteral("style"),
+        QStringLiteral("Widget style: classic or qlementine (default: %1). Qlementine uses SuiteUi in the standard build.")
+            .arg(defaultStyle),
+        QStringLiteral("style"), defaultStyle);
 #ifdef ZEROSLACK_PREVIEW_BUILD
-        QStringLiteral("qlementine"));
     // All legacy explicit ZeroSlack QSettings constructors also use this INI root.
     QSettings::setDefaultFormat(QSettings::IniFormat);
     const QString previewSettings = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
@@ -41,8 +43,6 @@ int main(int argc, char *argv[])
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, previewSettings + QStringLiteral("/system"));
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH",
             (previewSettings + QStringLiteral("/workspace-sessions.ini")).toUtf8());
-#else
-        QStringLiteral("classic"));
 #endif
     parser.addOption(styleOption);
     parser.addOption({QStringLiteral("no-ui-animations"), QStringLiteral("Disable Qlementine control animations.")});

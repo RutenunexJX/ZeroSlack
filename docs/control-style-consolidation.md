@@ -1,7 +1,10 @@
 # 按钮与复选框样式整合及 A/C 复核
 
 日期：2026-09-20。实施基线：`main` / `d7ae782` / `v0.29.20`，既有回归 112 项。
-对应 `E:/ZeroSlack/AppSuite-UI-现代化方案.md` 的 A1 及后续 A/C 对照。A1 与独立实验结果保留在前文；最新工作区已加入默认关闭的 Qlementine 产品入口与独立预览包，见末节。正式包仍使用 classic，SuiteUi 尚未提取。
+对应 `E:/ZeroSlack/AppSuite-UI-现代化方案.md` 的 A1 及后续 A/C 对照。下文保留各阶段历史结果。
+当前状态（2026-09-21）：SuiteUi 已独立提取，用户已授权三个应用的正式包默认启用；
+ZeroSlack 从 0.29.23 起使用 SuiteUi 控件，`--ui-style=classic` 保留回退，
+`--no-ui-animations` 关闭控件过渡。具体范围见 [SuiteUi 发布决定](suite.md)。
 
 ## 实施结果
 
@@ -102,7 +105,7 @@ Qlementine 的 MIT 原文随实验保留；旧证据中的字体元数据仍适�
 - 预览使用独立应用名称、INI 设置路径和工作区会话文件，不注册 SuiteRuntime。
   选择打开的源文件及工作区 `.zeroslack` 仍属于该工程，不能把配置隔离理解为源文件沙盒。
 
-构建时为既有 Release 配置增加 `-DZEROSLACK_ENABLE_QLEMENTINE=ON`，随后正常执行
+直接 vendored 预览构建需要 `-DZEROSLACK_ENABLE_QLEMENTINE=ON -DZEROSLACK_ENABLE_SUITEUI=OFF`，随后正常执行
 `cmake --build` 和 CTest。打包脚本：`scripts/package-qlementine-preview.ps1`。
 默认输出 `build/previews/ZeroSlack-Qlementine-0.29.21/`；更新现有预览必须加 `-UpdatePreview`，
 并且目录中的预览标记必须匹配。脚本只复制明确的应用/DLL、Qt 插件及许可，不更新正式包。
