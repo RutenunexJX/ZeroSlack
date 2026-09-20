@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QProcess>
@@ -18,6 +19,7 @@
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QTextStream>
+#include <QThread>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -38,19 +40,57 @@ void expect(const char* name, bool value)
                 name);
 }
 
+// QSaveFile commits by renaming over the target. On Windows a scanner or
+// indexer can hold that target briefly; that is an environment race, not
+// product behaviour under test. Retry within a deadline and report the real
+// error if it never succeeds -- a replacement that cannot complete still fails.
 bool replaceFile(const QString& fileName,
                  const QString& text)
 {
-    QSaveFile file(fileName);
-    if (!file.open(QIODevice::WriteOnly
-                   | QIODevice::Text)) {
-        return false;
+    QString lastError;
+    QElapsedTimer timer;
+    timer.start();
+    for (;;) {
+        {
+            QSaveFile file(fileName);
+            if (file.open(QIODevice::WriteOnly
+                          | QIODevice::Text)) {
+                QTextStream stream(&file);
+                stream << text;
+                if (stream.status() == QTextStream::Ok
+                    && file.commit()) {
+                    return true;
+                }
+            }
+            lastError = file.errorString();
+        }
+        if (timer.elapsed() >= 5000) {
+            std::printf("[INFO] replaceFile(%s) failed: %s\n",
+                        qPrintable(fileName),
+                        qPrintable(lastError));
+            return false;
+        }
+        QThread::msleep(20);
     }
-    QTextStream stream(&file);
-    stream << text;
-    if (stream.status() != QTextStream::Ok)
-        return false;
-    return file.commit();
+}
+
+// Same transient-lock race as replaceFile.
+bool removeFile(const QString& fileName)
+{
+    QElapsedTimer timer;
+    timer.start();
+    for (;;) {
+        QFile file(fileName);
+        if (file.remove() || !QFileInfo::exists(fileName))
+            return true;
+        if (timer.elapsed() >= 5000) {
+            std::printf("[INFO] removeFile(%s) failed: %s\n",
+                        qPrintable(fileName),
+                        qPrintable(file.errorString()));
+            return false;
+        }
+        QThread::msleep(20);
+    }
 }
 
 QString readFile(const QString& fileName)
@@ -523,7 +563,7 @@ int main(int argc, char** argv)
                               .absoluteFilePath()));
 
     expect("external deletion is reported without clearing text",
-           QFile::remove(saveAsFileName));
+           removeFile(saveAsFileName));
     const QString beforeMissing = left->toPlainText();
     const ExternalDocumentSyncResult missing =
         sync->processFileChange(saveAsFileName);
@@ -559,7 +599,7 @@ int main(int argc, char** argv)
     const QString unavailableLocalText =
         left->toPlainText();
     expect("dirty source can become unavailable",
-           QFile::remove(saveAsFileName)
+           removeFile(saveAsFileName)
                && sync->processFileChange(
                       saveAsFileName).outcome
                       == ExternalDocumentSyncOutcome::
