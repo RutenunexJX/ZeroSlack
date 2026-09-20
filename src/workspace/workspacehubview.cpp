@@ -3,6 +3,7 @@
 
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
+#include "roundedicons.h"
 #include "semanticstateview.h"
 #include "workspacehubmodel.h"
 
@@ -54,20 +55,24 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     statusChip->setAlignment(Qt::AlignCenter);
     previewButton = new QToolButton(header);
     previewButton->setObjectName(QStringLiteral("workspaceHubPreviewToggle"));
-    previewButton->setText(QStringLiteral("◫"));
+    previewButton->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
+    previewButton->setIconSize(QSize(16, 16));
     previewButton->setToolTip(QStringLiteral("Show or hide item preview"));
     previewButton->setAccessibleName(QStringLiteral("Toggle item preview"));
     previewButton->setCheckable(true);
     previewButton->setChecked(true);
     previewButton->setFocusPolicy(Qt::StrongFocus);
-    previewButton->setFixedWidth(32);
+    previewButton->setMinimumWidth(32);
+    previewButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     refreshButton = new QToolButton(header);
     refreshButton->setObjectName(QStringLiteral("workspaceHubRefresh"));
-    refreshButton->setText(QStringLiteral("↻"));
+    refreshButton->setIcon(RoundedIcons::icon(RoundedIcons::Refresh));
+    refreshButton->setIconSize(QSize(16, 16));
     refreshButton->setToolTip(QStringLiteral("Refresh Workspace Hub"));
     refreshButton->setAccessibleName(QStringLiteral("Refresh Workspace Hub"));
     refreshButton->setFocusPolicy(Qt::StrongFocus);
-    refreshButton->setFixedWidth(32);
+    refreshButton->setMinimumWidth(32);
+    refreshButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
     headerLayout->addWidget(title, 1);
     headerLayout->addWidget(statusChip);
     headerLayout->addWidget(previewButton);

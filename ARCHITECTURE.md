@@ -283,6 +283,23 @@ Historical plans and concept boards are recoverable from Git rather than copied
 into additional archive directories.
 ## Visual system
 
+### Button and checkbox ownership
+
+`InsightControlStyle` defines the normal, hover, pressed, checked, focus and disabled
+states for application push buttons, tool buttons and checkboxes. Application QSS owns
+their surfaces and spacing. `RoundedIcons::Style` paints only the checkbox indicator,
+including ticks and indeterminate marks; item-view check indicators keep their existing
+delegate/style behavior. Neither layer replaces QWidget input or accessibility behavior.
+
+`applyToolbarButton`, `applyPrimaryButton` and `applySegmentedCheckBox` assign roles and
+font/style-derived minimum sizes. They do not install local QSS or theme subscriptions.
+Settings Apply uses the primary role. Explicit shell controls (title bar and rails) retain
+their scoped rules. A constant border width prevents focus transitions from moving content.
+State changes are immediate; this consolidation does not introduce animation.
+
+See [control style validation](docs/control-style-consolidation.md) for the application and
+floating-host coverage, the six-theme/four-DPI matrix, and the remaining native checks.
+
 ### Non-editor typography
 
 The UI uses a proportional sans-serif face (Noto Sans, Segoe UI, Noto Sans SC, Microsoft YaHei UI, then the platform fallback). Code and diffs retain their editor fonts. Symbol popovers use the editor font for names and code types, and proportional UI fonts for labels and actions. Sizes below are logical pixels and follow display scaling.

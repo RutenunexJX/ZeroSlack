@@ -301,16 +301,13 @@ public:
     static QString titleBarStyleSheet(const QString& objectName = {});
     static QString compactSearchFieldStyleSheet(
         const QString& objectName = {});
-    static QString toolbarButtonStyleSheet(
-        const QString& objectName = {});
-    static QString segmentedCheckBoxStyleSheet(
-        const QString& objectName = {});
 
     static void applyPanel(QWidget* widget);
     static void applyTitleLabel(QLabel* label);
     static void applyLabel(QLabel* label, bool strong = false);
     static void applySearchField(QLineEdit* edit);
     static void applyToolbarButton(QPushButton* button);
+    static void applyPrimaryButton(QPushButton* button);
     static void applySegmentedCheckBox(QWidget* checkBox);
     static void applyGlobalControlPanel(QWidget* widget);
     static void applySideInspector(QWidget* widget);

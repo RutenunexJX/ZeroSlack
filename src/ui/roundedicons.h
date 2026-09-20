@@ -1,5 +1,7 @@
 #pragma once
+#include "insightcontrolstyle.h"
 #include <QApplication>
+#include <QCheckBox>
 #include <QIconEngine>
 #include <QPainter>
 #include <QPainterPath>
@@ -132,6 +134,10 @@ public:
     }
     void drawPrimitive(PrimitiveElement element, const QStyleOption* option,
                        QPainter* painter, const QWidget* widget=nullptr) const override {
+        if (element == PE_IndicatorCheckBox && option && qobject_cast<const QCheckBox*>(widget)) {
+            InsightControlStyle::drawCheckBoxIndicator(*option, *painter);
+            return;
+        }
         if (element == PE_IndicatorTabClose && option) {
             const QRect area = option->rect;
             if (option->state & State_MouseOver) {

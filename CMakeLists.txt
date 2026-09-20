@@ -526,6 +526,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/app/mainwindow.h
     src/ui/workspacechrome.h
     src/ui/roundedicons.h
+    src/ui/insightcontrolstyle.h
     src/ui/uitypography.h
     src/insights/moduleblockdiagramservice.h
     src/completion/completioncommandmode.h
@@ -1345,6 +1346,9 @@ if(BUILD_TESTING)
     add_executable(high_dpi_layout_test test_sv/high_dpi_layout_test.cpp)
     target_link_libraries(high_dpi_layout_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(control_style_interaction_test test_sv/control_style_interaction_test.cpp)
+    target_link_libraries(control_style_interaction_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(context_workspace_test
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
@@ -1849,6 +1853,14 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:high_dpi_layout_test>)
         set_tests_properties(high_dpi_layout_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 60)
+        add_test(NAME control_style_interaction_${HIGH_DPI_SCALE}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:control_style_interaction_test> -o -,txt)
+        set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 90)
     endforeach()
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env

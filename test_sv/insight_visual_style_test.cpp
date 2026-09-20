@@ -356,8 +356,14 @@ int main(int argc, char** argv)
     InsightVisualStyle::applyToolbarButton(&toolbarButton);
     expectTrue("toolbar button helper sets stable height",
                toolbarButton.minimumHeight() >= 28);
-    expectTrue("toolbar button helper styles checked state",
-               toolbarButton.styleSheet().contains(QStringLiteral(":checked")));
+    toolbarButton.setText(QStringLiteral("Inspect"));
+    toolbarButton.resize(toolbarButton.sizeHint());
+    toolbarButton.setCheckable(true);
+    const QImage uncheckedToolbar = toolbarButton.grab().toImage();
+    toolbarButton.setChecked(true);
+    expectTrue("toolbar role uses application states without local qss",
+               toolbarButton.styleSheet().isEmpty()
+                   && toolbarButton.grab().toImage() != uncheckedToolbar);
 
     QLabel secondaryLabel;
     secondaryLabel.setObjectName(QStringLiteral("secondaryLabelProbe"));
@@ -371,7 +377,7 @@ int main(int argc, char** argv)
 
     const QString lightTitleStyle = title.styleSheet();
     const QString lightSearchStyle = search.styleSheet();
-    const QString lightToolbarStyle = toolbarButton.styleSheet();
+    const QImage lightToolbarPixels = toolbarButton.grab().toImage();
     const QString lightLabelStyle = secondaryLabel.styleSheet();
     const QString lightGlobalControlStyle = globalControl.styleSheet();
     const QString lightSideInspectorStyle = sideInspector.styleSheet();
@@ -379,7 +385,7 @@ int main(int argc, char** argv)
     expectTrue("registered local style helpers refresh for dark theme",
                title.styleSheet() != lightTitleStyle
                    && search.styleSheet() != lightSearchStyle
-                   && toolbarButton.styleSheet() != lightToolbarStyle
+                   && toolbarButton.grab().toImage() != lightToolbarPixels
                    && secondaryLabel.styleSheet() != lightLabelStyle
                    && globalControl.styleSheet()
                           != lightGlobalControlStyle
@@ -391,7 +397,7 @@ int main(int argc, char** argv)
     expectTrue("registered local style helpers restore light theme",
                title.styleSheet() == lightTitleStyle
                    && search.styleSheet() == lightSearchStyle
-                   && toolbarButton.styleSheet() == lightToolbarStyle
+                   && toolbarButton.grab().toImage() == lightToolbarPixels
                    && secondaryLabel.styleSheet() == lightLabelStyle
                    && globalControl.styleSheet()
                           == lightGlobalControlStyle
@@ -612,17 +618,19 @@ int main(int argc, char** argv)
     InsightVisualStyle::applySegmentedCheckBox(&segment);
     expectTrue("segmented helper sets stable height",
                segment.minimumHeight() >= 28);
-    expectTrue("segmented helper styles indicator",
-               segment.styleSheet().contains(QStringLiteral("::indicator")));
-    const QString lightSegmentStyle = segment.styleSheet();
+    segment.setText(QStringLiteral("Inputs"));
+    segment.resize(segment.sizeHint());
+    const QImage uncheckedSegment = segment.grab().toImage();
+    segment.setChecked(true);
+    const QImage lightSegmentPixels = segment.grab().toImage();
+    expectTrue("segmented role has visible checked state without local qss",
+               segment.styleSheet().isEmpty() && lightSegmentPixels != uncheckedSegment);
     themeManager.setMode(ThemeMode::Dark);
     expectTrue("segmented helper refreshes for dark theme",
-               segment.styleSheet() != lightSegmentStyle
-                   && segment.styleSheet().contains(
-                       darkTheme.itemView.hoverBackground.name()));
+               segment.grab().toImage() != lightSegmentPixels);
     themeManager.setMode(ThemeMode::Light);
     expectTrue("segmented helper restores light theme",
-               segment.styleSheet() == lightSegmentStyle);
+               segment.grab().toImage() == lightSegmentPixels);
 
     NavigationWidget navigation;
     const QIcon lightInstanceIcon =

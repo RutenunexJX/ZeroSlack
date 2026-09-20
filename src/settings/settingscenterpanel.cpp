@@ -1,5 +1,6 @@
 #include "uitypography.h"
 #include "settingscenterpanel.h"
+#include "insightvisualstyle.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -541,6 +542,7 @@ void SettingsCenterPanel::buildUi()
     applyButton = new QPushButton(tr("Apply"), this);
     applyButton->setObjectName(
         QStringLiteral("settingsCenterApplyButton"));
+    InsightVisualStyle::applyPrimaryButton(applyButton);
     buttonLayout->addWidget(applyButton);
     contentLayout->addLayout(buttonLayout);
     rootLayout->addLayout(contentLayout, 1);

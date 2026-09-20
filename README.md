@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.20`
+Current version: `v0.29.21`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.20`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.21`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -186,8 +186,9 @@ scheduled. Released changes and their acceptance results live in the Git history
 Every check that has never been run on a real desktop is tracked in
 [unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,
 multi-monitor and cross-screen dragging, consecutive restarts, the sidebar stack gestures,
-document-bound tab interaction, the temporary editor comparison, and the two
-semantic-availability checks. Windows edge dragging and mixed-DPI multi-monitor behavior remain
+document-bound tab interaction, the temporary editor comparison, the two
+semantic-availability checks, and native appearance of the consolidated button/checkbox states.
+Windows edge dragging and mixed-DPI multi-monitor behavior remain
 the oldest open items; keyboard snapping and title-bar mouse operations already have regression
 coverage.
 
@@ -206,7 +207,7 @@ coverage.
 ZeroSlack is licensed under [Apache License 2.0](LICENSE). Third-party components
 and their licenses are recorded in [third-party notices](THIRD-PARTY-NOTICES.md).
 
-The repository keeps seven documents. This README is the entry point; the other six are:
+The repository keeps eight documents. This README is the entry point; the other seven are:
 
 | Document | Holds |
 | --- | --- |
@@ -216,6 +217,7 @@ The repository keeps seven documents. This README is the entry point; the other 
 | [Integrations](docs/integrations.md) | Read-only CLI and external application boundaries |
 | [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
 | [Kernel view continuity](docs/kernel-view-continuity-implementation.md) | Baseline, implementation scope and validation of the 0.29.19 view-state work |
+| [Control style consolidation](docs/control-style-consolidation.md) | Button/checkbox ownership, full-window A/C comparison, DPI, animation and protected-view validation |
 
 Historical acceptance logs and superseded status reports are intentionally
 kept out of this current-facts document. Released changes are recorded in the Git history:

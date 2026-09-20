@@ -1,4 +1,5 @@
 #include "insightvisualstyle.h"
+#include "insightcontrolstyle.h"
 #include "uitypography.h"
 
 #include <QLabel>
@@ -74,14 +75,6 @@ void refreshRegisteredWidget(QWidget* widget)
         widget->setStyleSheet(
             InsightVisualStyle::compactSearchFieldStyleSheet(
                 widget->objectName()));
-    } else if (helper == QStringLiteral("toolbarButton")) {
-        widget->setStyleSheet(
-            InsightVisualStyle::toolbarButtonStyleSheet(
-                widget->objectName()));
-    } else if (helper == QStringLiteral("segmentedCheckBox")) {
-        widget->setStyleSheet(
-            InsightVisualStyle::segmentedCheckBoxStyleSheet(
-                widget->objectName()));
     } else if (helper == QStringLiteral("globalControlPanel")) {
         widget->setStyleSheet(
             InsightVisualStyle::globalControlPanelStyleSheet(
@@ -110,6 +103,18 @@ void registerThemedWidget(QWidget* widget, const QString& helper)
             });
     }
     refreshRegisteredWidget(widget);
+}
+
+void applyControlRole(QWidget* widget, const QString& role)
+{
+    if (!widget)
+        return;
+    widget->setProperty(kThemeHelperProperty, role);
+    widget->style()->unpolish(widget);
+    widget->style()->polish(widget);
+    widget->setMinimumHeight(minimumControlHeight(widget));
+    widget->updateGeometry();
+    widget->update();
 }
 }
 
@@ -942,29 +947,19 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                "background: %35; }"
                "QTableWidget::item:selected, QTableView::item:selected { "
                "background: %36; color: %34; }"
-               "QPushButton, QToolButton { background: %40; color: %41; "
-               "border: 1px solid %42; border-radius: 8px; "
-               "padding: 5px 9px; }"
-               "QPushButton:hover, QToolButton:hover { background: %43; "
-               "border-color: %44; color: %45; }"
-               "QPushButton:pressed, QToolButton:pressed { "
-               "background: %46; }"
-               "QPushButton:checked, QToolButton:checked { "
-               "background: %47; border-color: %48; color: %49; }"
-               "QPushButton:disabled, QToolButton:disabled { color: %50; }"
-               "QToolBar { background: %52; border: 0; spacing: 4px; "
+               "QToolBar { background: %41; border: 0; spacing: 4px; "
                "padding: 3px; }"
-               "QToolBar::separator { background: %51; width: 1px; "
+               "QToolBar::separator { background: %40; width: 1px; "
                "margin: 4px; }"
-               "QSplitter::handle { background: %51; }"
-               "QSplitter::handle:hover { background: %53; }"
+               "QSplitter::handle { background: %40; }"
+               "QSplitter::handle:hover { background: %42; }"
                "QScrollBar:vertical, QScrollBar:horizontal { "
-               "background: %54; border: 0; margin: 0; }"
+               "background: %43; border: 0; margin: 0; }"
                "QScrollBar::handle:vertical, QScrollBar::handle:horizontal { "
-               "background: %51; border-radius: 4px; min-height: 24px; "
+               "background: %40; border-radius: 4px; min-height: 24px; "
                "min-width: 24px; }"
                "QScrollBar::handle:vertical:hover, "
-               "QScrollBar::handle:horizontal:hover { background: %53; }"
+               "QScrollBar::handle:horizontal:hover { background: %42; }"
                "QScrollBar::add-line, QScrollBar::sub-line, "
                "QScrollBar::add-page, QScrollBar::sub-page { "
                "background: transparent; border: 0; width: 0; height: 0; }")
@@ -1007,17 +1002,6 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
              t.itemView.headerBackground.name(),
              t.itemView.headerBorder.name(),
              t.itemView.headerText.name(),
-             t.button.background.name(),
-             t.button.text.name(),
-             t.button.border.name(),
-             t.button.backgroundHover.name(),
-             t.button.borderHover.name(),
-             t.button.textHover.name(),
-             t.button.backgroundPressed.name(),
-             t.button.backgroundChecked.name(),
-             t.button.borderChecked.name(),
-             t.button.textChecked.name(),
-             t.button.textDisabled.name(),
              t.splitterHandle.name(),
              t.toolbarBackground.name(),
              t.borderStrong.name(),
@@ -1043,11 +1027,11 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                   "QAbstractItemView:disabled { background: %6; color: %5; }"
                   "QTreeView::item:selected:!active, QListView::item:selected:!active, "
                   "QTableView::item:selected:!active { background: %9; color: %1; }"
-                  "QCheckBox, QRadioButton { color: %1; spacing: 6px; "
+                  "QRadioButton { color: %1; spacing: 6px; "
                   "padding: 2px; }"
-                  "QCheckBox:hover, QRadioButton:hover { background: %10; "
+                  "QRadioButton:hover { background: %10; "
                   "border-radius: 4px; }"
-                  "QCheckBox:disabled, QRadioButton:disabled { color: %5; }"
+                  "QRadioButton:disabled { color: %5; }"
                   "QGroupBox { color: %1; border: 1px solid %4; "
                   "border-radius: 6px; margin-top: 10px; padding-top: 8px; }"
                   "QGroupBox::title { subcontrol-origin: margin; left: 8px; "
@@ -1061,8 +1045,6 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                   "QProgressBar { background: %6; color: %1; "
                   "border: 1px solid %4; border-radius: 4px; text-align: center; }"
                   "QProgressBar::chunk { background: %13; border-radius: 3px; }"
-                  "QPushButton:disabled, QToolButton:disabled { "
-                  "background: %6; color: %5; border-color: %4; }"
                   "QStatusBar::item { border: 0; }"
                   "QToolBar:disabled { color: %5; }")
                   .arg(t.textPrimary.name(),
@@ -1078,12 +1060,10 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                        t.textSecondary.name(),
                        t.canvasBackground.name(),
                        t.accent.name());
+    result += InsightControlStyle::styleSheet(t);
     result += QStringLiteral(
                   "QToolBar#contextRail { background: %1; "
                   "border-left: 1px solid %2; padding: 4px; spacing: 3px; }"
-                  "QToolBar#contextRail QToolButton { min-width: 30px; "
-                  "max-width: 30px; min-height: 30px; max-height: 30px; "
-                  "padding: 0; border-color: transparent; }"
                   "QToolBar#contextRail QToolButton:checked { "
                   "background: %3; border-color: %4; color: %5; }"
                   "QWidget#contextPeekHost { background: %6; color: %7; "
@@ -1114,27 +1094,24 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
                        t.border.name(),
                        t.panelSubtle.name());
     result += QStringLiteral(
-                  "QPushButton:focus, QToolButton:focus, QTabBar::tab:focus { "
+                  "QTabBar::tab:focus { "
                   "border: %1px solid %2; }"
-                  "QPushButton:checked:focus, QToolButton:checked:focus { "
-                  "border: %1px solid %3; }"
                   "QTreeView:focus, QListView:focus, QTableView:focus { "
                   "border: %1px solid %2; outline: 0; }")
                   .arg(t.focus.width)
-                  .arg(t.focus.ring.name())
-                  .arg(t.focus.ringOnAccent.name());
+                  .arg(t.focus.ring.name());
     result += QStringLiteral(
         "QToolBar#contextRail { padding: 6px; spacing: 6px; }"
         "QFrame#projectSidebarHeader { background: transparent; border: 0; }"
         "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
-        " min-width: 36px; max-width: 36px; min-height: 36px; max-height: 36px;"
+        " min-width: 36px; min-height: 36px;"
         " padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; }"
         "QToolButton#projectRailButton::menu-indicator { image: none; }"
-        "QFrame#projectSidebarHeader QToolButton:hover { background: %5; }"
+        "QFrame#projectSidebarHeader QToolButton:hover { background: %4; }"
         "QToolBar#contextRail QToolButton:hover { background: %1; }"
         "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
         " background: %2; color: %3; border-color: transparent; }"
-        "QFrame#projectSidebarHeader QToolButton:hover:checked { background: %5; }"
+        "QFrame#projectSidebarHeader QToolButton:hover:checked { background: %4; }"
         "QToolBar#contextRail QToolButton:hover:checked { background: %1; }"
         "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %3; }"
         "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
@@ -1144,13 +1121,10 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
         "QTreeView::item, QListView::item { padding: 3px 4px; min-height: 22px; border-radius: 6px; }"
         "QTreeView:focus, QListView:focus, QTableView:focus { border: 0; outline: 0; }"
         "QHeaderView::section { padding: 7px 8px; }"
-        "QToolButton { background: transparent; border-color: transparent; }"
-        "QToolButton:checked { background: %2; color: %4; border-color: transparent; }"
-        "QToolButton:focus { border: 1px solid %3; }"
         "QScrollBar:vertical { width: 10px; } QScrollBar:horizontal { height: 10px; }"
         "QScrollBar::handle:vertical { min-width: 0; margin: 2px; border-radius: 3px; }"
         "QScrollBar::handle:horizontal { min-height: 0; margin: 2px; border-radius: 3px; }")
-        .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(), t.textPrimary.name(),
+        .arg(t.hover.name(), t.itemView.selectedBackground.name(), t.accent.name(),
              mix(t.dock.background, t.textPrimary, 0.12).name());
     const QColor navigationBase = mix(t.panelBackground, t.textPrimary, 0.025);
     const QColor navigationHover = mix(navigationBase, t.textPrimary, 0.09);
@@ -1428,81 +1402,6 @@ QString InsightVisualStyle::compactSearchFieldStyleSheet(
         + floatingBackgroundRule(QStringLiteral("QLineEdit"), objectName);
 }
 
-QString InsightVisualStyle::segmentedCheckBoxStyleSheet(
-    const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 {"
-               "  color: %2;"
-               "  spacing: 4px;"
-               "  padding: 3px 7px;"
-               "  min-height: 22px;"
-               "}"
-               "%1:hover {"
-               "  background: %3;"
-               "  border-radius: 8px;"
-               "}"
-               "%1::indicator {"
-               "  width: 14px;"
-               "  height: 14px;"
-               "}"
-               "%1::indicator:unchecked {"
-               "  border: 1px solid %4;"
-               "  background: %5;"
-               "  border-radius: 4px;"
-               "}"
-               "%1::indicator:checked {"
-               "  border: 1px solid %6;"
-               "  background: %6;"
-               "  border-radius: 4px;"
-               "}")
-        .arg(objectSelector(QStringLiteral("QCheckBox"), objectName),
-             t.textSecondary.name(),
-             t.itemView.hoverBackground.name(),
-             t.borderStrong.name(),
-             t.panelBackground.name(),
-             t.accent.name());
-}
-
-QString InsightVisualStyle::toolbarButtonStyleSheet(const QString& objectName)
-{
-    const InsightTheme t = theme();
-    return QStringLiteral(
-               "%1 {"
-               "  background: %2;"
-               "  color: %3;"
-               "  border: 1px solid %4;"
-               "  border-radius: 8px;"
-               "  padding: 4px 9px;"
-               "  min-height: 22px;"
-               "}"
-               "%1:hover {"
-               "  background: %5;"
-               "  border-color: %6;"
-               "}"
-               "%1:pressed, %1:checked {"
-               "  background: %7;"
-               "  color: %10;"
-               "  border-color: %7;"
-               "}"
-               "%1:disabled {"
-               "  background: %8;"
-               "  color: %9;"
-               "  border-color: %4;"
-               "}")
-        .arg(objectSelector(QStringLiteral("QPushButton"), objectName),
-             t.panelBackground.name(),
-             t.textSecondary.name(),
-             t.border.name(),
-             t.panelSubtle.name(),
-             t.borderStrong.name(),
-             t.accent.name(),
-             t.panelSubtle.name(),
-             t.textMuted.name(),
-             t.button.textChecked.name());
-}
-
 QString InsightVisualStyle::sideInspectorStyleSheet(
     const QString& objectName)
 {
@@ -1560,19 +1459,17 @@ void InsightVisualStyle::applySearchField(QLineEdit* edit)
 
 void InsightVisualStyle::applyToolbarButton(QPushButton* button)
 {
-    if (!button)
-        return;
-    registerThemedWidget(button, QStringLiteral("toolbarButton"));
-    button->setMinimumHeight(minimumControlHeight(button));
+    applyControlRole(button, QStringLiteral("toolbarButton"));
+}
+
+void InsightVisualStyle::applyPrimaryButton(QPushButton* button)
+{
+    applyControlRole(button, QStringLiteral("primaryButton"));
 }
 
 void InsightVisualStyle::applySegmentedCheckBox(QWidget* checkBox)
 {
-    if (!checkBox)
-        return;
-    registerThemedWidget(checkBox,
-                         QStringLiteral("segmentedCheckBox"));
-    checkBox->setMinimumHeight(minimumControlHeight(checkBox));
+    applyControlRole(checkBox, QStringLiteral("segmentedCheckBox"));
 }
 
 void InsightVisualStyle::applyGlobalControlPanel(QWidget* widget)
