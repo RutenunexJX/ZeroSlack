@@ -115,6 +115,8 @@ void RtlInsightWorkbench::setContext(const InsightViewContext& contextValue)
     const bool sameDocument = currentContext.workspaceId == contextValue.workspaceId
         && currentContext.documentId == contextValue.documentId
         && currentContext.fileName == contextValue.fileName;
+    if (!sameDocument && surface && surface->kernel())
+        surface->kernel()->resetViewState();
     if (specializedViews && sameDocument) {
         if (contextValue.documentRevision < currentContext.documentRevision
             || (contextValue.documentRevision == currentContext.documentRevision
@@ -403,9 +405,12 @@ void RtlInsightWorkbench::showEvent(QShowEvent* event)
 
 void RtlInsightWorkbench::fitNewSurface()
 {
+    // Kernel owns first-visible fitting and cancels it on user interaction.
+    // A host timer must not overwrite the panel's restored or newly panned view.
+    if (surface && surface->kernel()) return;
     if (!surface || !surfaceNeedsFit || !isVisible()) return;
     QTimer::singleShot(0, this, [this] {
-        if (surface && surfaceNeedsFit && isVisible()) {
+        if (surface && !surface->kernel() && surfaceNeedsFit && isVisible()) {
             surface->fit();
             surfaceNeedsFit = false;
         }

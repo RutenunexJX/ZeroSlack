@@ -7,6 +7,7 @@
 #include <QDockWidget>
 #include <QMetaObject>
 #include <QPointF>
+#include <QPointer>
 #include <QRectF>
 #include <QSet>
 #include <QString>
@@ -41,6 +42,7 @@ public:
                                         const QString& signalAccessPath = {});
     void refresh();
     void refreshThemePresentation();
+    void resetViewState();
     void focusFit();
     void focusZoomIn();
     void focusZoomOut();
@@ -70,18 +72,16 @@ public:
     quint64 graphBuildRequestCountForTest() const;
 
 private:
-    struct ThemePresentationState {
+    struct PresentationState {
         bool valid = false;
         bool hasCenter = false;
         QTransform transform;
         QPointF center;
-        QSet<int> selectedNodeIds;
+        QSet<QString> selectedNodeKeys;
         QSet<QString> selectedGroupKeys;
-        QString searchText;
-        QSet<QString> collapsedGroupKeys;
     };
 
-    QDockWidget* graphDock = nullptr;
+    QPointer<QDockWidget> graphDock;
     QLabel* titleLabel = nullptr;
     QLineEdit* graphSearchEdit = nullptr;
     QCheckBox* showInputsCheck = nullptr;
@@ -92,6 +92,10 @@ private:
     QGraphicsScene* graphScene = nullptr;
     EditorHoverPopup* hoverPopup = nullptr;
     QTimer* hoverCloseTimer = nullptr;
+    QTimer* initialFitTimer = nullptr;
+    bool needsInitialFit = true;
+    QString currentTargetKey;
+    QRectF searchFocusRect;
     QString currentHoverNodeKey;
     SignalKernelGraphQuery currentQuery;
     SignalKernelGraphReport currentReport;
@@ -108,14 +112,20 @@ private:
     int lastFocusedSearchNodeId = -1;
     quint64 graphBuildRequestCount = 0;
     QMetaObject::Connection themeAboutToChangeConnection;
-    ThemePresentationState pendingThemePresentationState;
+    PresentationState pendingThemePresentationState;
+    PresentationState retainedPresentationState;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
 
     void renderReport(const SignalKernelGraphReport& report,
-                      bool announce = true);
-    ThemePresentationState captureThemePresentationState() const;
+                      bool announce = true,
+                      const PresentationState* stateOverride = nullptr);
+    PresentationState capturePresentationState() const;
+    void restorePresentationState(const PresentationState& state);
+    void setTargetKey(const QString& key);
+    void scheduleInitialFit();
+    void cancelInitialFit();
     void renderUnavailable(const QString& message);
     bool nodePassesGraphFilter(const SignalKernelGraphNode& node) const;
     bool nodeMatchesGraphSearch(const SignalKernelGraphNode& node) const;

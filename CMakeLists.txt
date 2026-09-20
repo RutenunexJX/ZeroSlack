@@ -1079,6 +1079,11 @@ if(BUILD_TESTING)
     target_link_libraries(rtl_insight_workbench_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(kernel_view_continuity_test
+        test_sv/kernel_view_continuity_test.cpp)
+    target_link_libraries(kernel_view_continuity_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(editor_radial_menu_test test_sv/editor_radial_menu_test.cpp)
     target_link_libraries(editor_radial_menu_test PRIVATE zeroslack_core Qt6::Test)
 
@@ -1600,6 +1605,17 @@ if(BUILD_TESTING)
     )
     set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)
+    foreach(kernel_scale IN ITEMS 1 1.25 1.5 2)
+        add_test(NAME kernel_view_continuity_${kernel_scale}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                "QT_SCALE_FACTOR=${kernel_scale}"
+                $<TARGET_FILE:kernel_view_continuity_test>)
+        set_tests_properties(kernel_view_continuity_${kernel_scale}_test
+            PROPERTIES TIMEOUT 120)
+    endforeach()
     add_test(NAME editor_radial_menu_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

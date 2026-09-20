@@ -12,6 +12,7 @@
 #include <QBrush>
 #include <QCheckBox>
 #include <QColor>
+#include <QDir>
 #include <QFileInfo>
 #include <QFont>
 #include <QFontMetrics>
@@ -26,16 +27,24 @@
 #include <QGraphicsTextItem>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QKeyEvent>
 #include <QLineEdit>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QPoint>
 #include <QPolygonF>
 #include <QSignalBlocker>
+#include <QScrollBar>
+#include <QShowEvent>
+#include <QResizeEvent>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QWheelEvent>
 
 #include <cmath>
 #include <utility>
@@ -48,6 +57,96 @@ constexpr qreal kVerticalSpacing = 92.0;
 constexpr qreal kFanoutGroupCardWidth = 244.0;
 constexpr qreal kFanoutGroupCardHeight = 58.0;
 constexpr double kPi = 3.14159265358979323846;
+
+QString identityKey(const QStringList& parts)
+{
+    return QString::fromUtf8(QJsonDocument(QJsonArray::fromStringList(parts))
+                                 .toJson(QJsonDocument::Compact));
+}
+
+QString fileIdentity(const QString& path)
+{
+    if (path.isEmpty())
+        return {};
+    QString result = QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+#ifdef Q_OS_WIN
+    result = result.toCaseFolded();
+#endif
+    return result;
+}
+
+QString selectionKey(const SignalKernelGraphNode& node)
+{
+    QStringList parts{QString::number(static_cast<int>(node.role))};
+    if (node.stableKey.isValid()) {
+        parts.append(node.stableKey.toString());
+    } else {
+        parts.append({node.displayName, node.moduleDisplayName,
+                      fileIdentity(node.declarationCodeLink.fileName),
+                      QString::number(node.declarationCodeLink.line),
+                      QString::number(node.declarationCodeLink.column)});
+    }
+    if (node.role != SignalKernelGraphNodeRole::Kernel && node.preciseEvidence) {
+        parts.append({fileIdentity(node.evidenceRange.fileName),
+                      QString::number(node.evidenceRange.line),
+                      QString::number(node.evidenceRange.column),
+                      QString::number(node.evidenceRange.endLine),
+                      QString::number(node.evidenceRange.endColumn)});
+    }
+    return identityKey(parts);
+}
+
+void restoreCenter(QGraphicsView* view, const QPointF& center)
+{
+    view->centerOn(center);
+    // centerOn uses the geometric viewport center; capture uses the integer
+    // pixel at rect().center(). Correct that offset to avoid repeated drift.
+    const QPointF offset = view->viewportTransform().map(center)
+        - QPointF(view->viewport()->rect().center());
+    auto* horizontal = view->horizontalScrollBar();
+    auto* vertical = view->verticalScrollBar();
+    horizontal->setValue(horizontal->value() + qRound(offset.x()));
+    vertical->setValue(vertical->value() + qRound(offset.y()));
+}
+
+class KernelGraphView final : public InsightGraphView
+{
+public:
+    using InsightGraphView::InsightGraphView;
+    std::function<void()> readyHandler;
+    std::function<void()> interactionHandler;
+    bool preserveCenter = false;
+
+protected:
+    void showEvent(QShowEvent* event) override
+    {
+        InsightGraphView::showEvent(event);
+        if (readyHandler) readyHandler();
+    }
+    void resizeEvent(QResizeEvent* event) override
+    {
+        // The viewport already has its new size when this event is delivered.
+        const QPointF center = mapToScene(QRect(QPoint(), event->oldSize()).center());
+        InsightGraphView::resizeEvent(event);
+        if (preserveCenter && event->oldSize().isValid()) restoreCenter(this, center);
+        if (readyHandler) readyHandler();
+    }
+    void wheelEvent(QWheelEvent* event) override
+    {
+        if (interactionHandler) interactionHandler();
+        InsightGraphView::wheelEvent(event);
+    }
+    void mousePressEvent(QMouseEvent* event) override
+    {
+        if (interactionHandler) interactionHandler();
+        InsightGraphView::mousePressEvent(event);
+    }
+    void keyPressEvent(QKeyEvent* event) override
+    {
+        if (interactionHandler) interactionHandler();
+        InsightGraphView::keyPressEvent(event);
+    }
+};
 
 QString elidedText(const QString& text, const QFont& font, int width)
 {
@@ -289,8 +388,10 @@ protected:
         if (event->button() == Qt::LeftButton
             && event->modifiers().testFlag(Qt::ControlModifier)
             && rebaseHandler) {
-            rebaseHandler(node);
+            const auto handler = rebaseHandler;
+            const auto clickedNode = node;
             event->accept();
+            handler(clickedNode);
             return;
         }
         if (event->button() == Qt::RightButton && previewHandler) {
@@ -401,8 +502,10 @@ protected:
         if (event->button() == Qt::LeftButton && toggleHandler) {
             setSelected(true);
             setPen(InsightVisualStyle::selectedPen());
-            toggleHandler(key);
+            const auto handler = toggleHandler;
+            const QString clickedKey = key;
             event->accept();
+            handler(clickedKey);
             return;
         }
         QGraphicsRectItem::mousePressEvent(event);
@@ -744,6 +847,13 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                          graphSearchText = text;
                          renderReport(currentReport);
                      });
+    QObject::connect(graphSearchEdit, &QLineEdit::returnPressed,
+                     graphSearchEdit, [this]() {
+                         if (!currentReport.found || searchFocusRect.isEmpty())
+                             return;
+                         cancelInitialFit();
+                         graphView->centerOn(searchFocusRect.center());
+                     });
     QObject::connect(showInputsCheck,
                      &QCheckBox::toggled,
                      showInputsCheck,
@@ -767,7 +877,20 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                      });
 
     graphScene = new QGraphicsScene(panel);
-    graphView = new InsightGraphView(graphScene, panel);
+    auto* kernelView = new KernelGraphView(graphScene, panel);
+    graphView = kernelView;
+    kernelView->readyHandler = [this]() { scheduleInitialFit(); };
+    kernelView->interactionHandler = [this]() {
+        cancelInitialFit();
+        pendingThemePresentationState = {};
+    };
+    for (auto* scrollBar : {kernelView->horizontalScrollBar(), kernelView->verticalScrollBar()}) {
+        const auto interacted = [kernelView]() {
+            if (kernelView->interactionHandler) kernelView->interactionHandler();
+        };
+        QObject::connect(scrollBar, &QScrollBar::sliderPressed, kernelView, interacted);
+        QObject::connect(scrollBar, &QScrollBar::actionTriggered, kernelView, interacted);
+    }
     graphView->setObjectName(QStringLiteral("signalKernelGraphView"));
     graphView->setFrameShape(QFrame::StyledPanel);
     if (auto* insightGraphView =
@@ -827,6 +950,13 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                            QDockWidget::DockWidgetClosable);
     graphDock->hide();
 
+    initialFitTimer = new QTimer(graphDock);
+    initialFitTimer->setSingleShot(true);
+    QObject::connect(initialFitTimer, &QTimer::timeout, graphDock, [this]() {
+        if (needsInitialFit && currentReport.found && graphView->isVisible())
+            focusFit();
+    });
+
     hoverPopup = new EditorHoverPopup(graphDock);
     hoverCloseTimer = new QTimer(graphDock);
     hoverCloseTimer->setSingleShot(true);
@@ -843,7 +973,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
                          graphDock,
                          [this](ThemeMode, ThemeMode) {
                              pendingThemePresentationState =
-                                 captureThemePresentationState();
+                                 capturePresentationState();
                          });
 
     renderUnavailable(QStringLiteral("No signal selected."));
@@ -852,11 +982,19 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
 SignalKernelGraphPanelCoordinator::~SignalKernelGraphPanelCoordinator()
 {
     QObject::disconnect(themeAboutToChangeConnection);
+    if (!graphDock)
+        return;
+    initialFitTimer->stop();
+    auto* kernelView = static_cast<KernelGraphView*>(graphView);
+    kernelView->readyHandler = {};
+    kernelView->interactionHandler = {};
 }
 
 void SignalKernelGraphPanelCoordinator::renderReportForTest(
     const SignalKernelGraphReport& report)
 {
+    if (report.found)
+        setTargetKey(identityKey({report.kernelModuleName, selectionKey(report.kernel)}));
     renderReport(report);
 }
 
@@ -988,6 +1126,8 @@ void SignalKernelGraphPanelCoordinator::showSignalKernelGraphForSymbol(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
+    setTargetKey(identityKey({fileIdentity(fileName), moduleName,
+                             symbolName, signalAccessPath}));
     currentQuery = {};
     currentQuery.signalName = symbolName;
     currentQuery.signalAccessPath = signalAccessPath;
@@ -1017,60 +1157,63 @@ void SignalKernelGraphPanelCoordinator::refreshThemePresentation()
     if (!graphView || !graphScene)
         return;
 
-    ThemePresentationState presentationState =
+    const PresentationState presentationState =
         pendingThemePresentationState.valid
             ? pendingThemePresentationState
-            : captureThemePresentationState();
+            : capturePresentationState();
     // Consume the pre-theme snapshot before rebuilding the scene. A second
     // explicit refresh must observe the current view rather than replaying an
     // older transform after the user has interacted with the graph.
     pendingThemePresentationState = {};
 
-    if (presentationState.valid) {
-        graphSearchText = presentationState.searchText;
-        collapsedFanoutGroupKeys =
-            presentationState.collapsedGroupKeys;
-        if (graphSearchEdit
-            && graphSearchEdit->text()
-                   != presentationState.searchText) {
-            const QSignalBlocker blocker(graphSearchEdit);
-            graphSearchEdit->setText(
-                presentationState.searchText);
-        }
-    }
-
     const SignalKernelGraphReport cachedReport = currentReport;
-    renderReport(cachedReport, false);
+    renderReport(cachedReport, false, &presentationState);
+}
+
+void SignalKernelGraphPanelCoordinator::restorePresentationState(
+    const PresentationState& state)
+{
+    if (!state.valid)
+        return;
+    graphView->setTransform(state.transform);
+    if (state.hasCenter)
+        restoreCenter(graphView, state.center);
+    graphView->viewport()->update();
+    if (state.selectedNodeKeys.isEmpty() && state.selectedGroupKeys.isEmpty())
+        return;
+    QHash<QString, int> nodeCounts;
+    QHash<QString, int> groupCounts;
+    for (QGraphicsItem* item : graphScene->items()) {
+        if (auto* node = dynamic_cast<SignalKernelGraphNodeItem*>(item))
+            ++nodeCounts[selectionKey(node->graphNode())];
+        else if (auto* group = dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item))
+            ++groupCounts[group->groupKey()];
+    }
     for (QGraphicsItem* item : graphScene->items()) {
         if (auto* node =
                 dynamic_cast<SignalKernelGraphNodeItem*>(item)) {
-            if (presentationState.selectedNodeIds.contains(
-                    node->graphNode().id)) {
+            const QString key = selectionKey(node->graphNode());
+            if (nodeCounts.value(key) == 1 && state.selectedNodeKeys.contains(key)) {
                 node->setSelected(true);
             }
         } else if (auto* group =
                        dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item)) {
-            if (presentationState.selectedGroupKeys.contains(
-                    group->groupKey())) {
+            if (groupCounts.value(group->groupKey()) == 1
+                && state.selectedGroupKeys.contains(group->groupKey())) {
                 group->setSelected(true);
             }
         }
     }
-    if (presentationState.valid) {
-        graphView->setTransform(presentationState.transform);
-        if (presentationState.hasCenter)
-            graphView->centerOn(presentationState.center);
-    }
-    if (graphView->viewport())
-        graphView->viewport()->update();
 }
 
-SignalKernelGraphPanelCoordinator::ThemePresentationState
-SignalKernelGraphPanelCoordinator::captureThemePresentationState() const
+SignalKernelGraphPanelCoordinator::PresentationState
+SignalKernelGraphPanelCoordinator::capturePresentationState() const
 {
-    ThemePresentationState state;
+    PresentationState state;
     if (!graphView || !graphScene)
         return state;
+    if (!currentReport.found)
+        return retainedPresentationState;
 
     state.valid = true;
     state.transform = graphView->transform();
@@ -1079,23 +1222,76 @@ SignalKernelGraphPanelCoordinator::captureThemePresentationState() const
         state.center = graphView->mapToScene(
             graphView->viewport()->rect().center());
     }
-    state.searchText = graphSearchEdit
-        ? graphSearchEdit->text() : graphSearchText;
-    state.collapsedGroupKeys = collapsedFanoutGroupKeys;
-    for (QGraphicsItem* item : graphScene->selectedItems()) {
+    const auto selectedItems = graphScene->selectedItems();
+    if (selectedItems.isEmpty())
+        return state;
+    QHash<QString, int> nodeCounts;
+    QHash<QString, int> groupCounts;
+    for (QGraphicsItem* item : graphScene->items()) {
+        if (auto* node = dynamic_cast<SignalKernelGraphNodeItem*>(item))
+            ++nodeCounts[selectionKey(node->graphNode())];
+        else if (auto* group = dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item))
+            ++groupCounts[group->groupKey()];
+    }
+    for (QGraphicsItem* item : selectedItems) {
         if (auto* node =
                 dynamic_cast<SignalKernelGraphNodeItem*>(item)) {
-            state.selectedNodeIds.insert(node->graphNode().id);
+            const QString key = selectionKey(node->graphNode());
+            if (nodeCounts.value(key) == 1)
+                state.selectedNodeKeys.insert(key);
         } else if (auto* group =
                        dynamic_cast<SignalKernelGraphFanoutGroupItem*>(item)) {
-            state.selectedGroupKeys.insert(group->groupKey());
+            if (groupCounts.value(group->groupKey()) == 1)
+                state.selectedGroupKeys.insert(group->groupKey());
         }
     }
     return state;
 }
 
+void SignalKernelGraphPanelCoordinator::resetViewState()
+{
+    initialFitTimer->stop();
+    needsInitialFit = true;
+    currentReport = {};
+    pendingThemePresentationState = {};
+    retainedPresentationState = {};
+    knownFanoutGroupKeys.clear();
+    collapsedFanoutGroupKeys.clear();
+    searchFocusRect = {};
+    static_cast<KernelGraphView*>(graphView)->preserveCenter = false;
+}
+
+void SignalKernelGraphPanelCoordinator::setTargetKey(const QString& key)
+{
+    if (currentTargetKey == key)
+        return;
+    resetViewState();
+    currentTargetKey = key;
+}
+
+void SignalKernelGraphPanelCoordinator::scheduleInitialFit()
+{
+    if (initialFitTimer && needsInitialFit && currentReport.found
+        && graphView->isVisible())
+        initialFitTimer->start(0);
+}
+
+void SignalKernelGraphPanelCoordinator::cancelInitialFit()
+{
+    if (!currentReport.found)
+        return;
+    needsInitialFit = false;
+    initialFitTimer->stop();
+    pendingThemePresentationState = {};
+}
+
 void SignalKernelGraphPanelCoordinator::focusFit()
 {
+    if (!currentReport.found)
+        return;
+    cancelInitialFit();
+    auto* kernelView = static_cast<KernelGraphView*>(graphView);
+    kernelView->preserveCenter = false;
     if (auto* insightView =
             dynamic_cast<InsightGraphView*>(graphView)) {
         insightView->fitScene(Qt::KeepAspectRatio);
@@ -1104,10 +1300,13 @@ void SignalKernelGraphPanelCoordinator::focusFit()
             graphScene->itemsBoundingRect(),
             Qt::KeepAspectRatio);
     }
+    kernelView->preserveCenter = true;
+    retainedPresentationState = capturePresentationState();
 }
 
 void SignalKernelGraphPanelCoordinator::focusZoomIn()
 {
+    cancelInitialFit();
     if (auto* insightView =
             dynamic_cast<InsightGraphView*>(graphView)) {
         insightView->zoomIn();
@@ -1118,6 +1317,7 @@ void SignalKernelGraphPanelCoordinator::focusZoomIn()
 
 void SignalKernelGraphPanelCoordinator::focusZoomOut()
 {
+    cancelInitialFit();
     if (auto* insightView =
             dynamic_cast<InsightGraphView*>(graphView)) {
         insightView->zoomOut();
@@ -1178,11 +1378,17 @@ void SignalKernelGraphPanelCoordinator::focusInspector()
 
 void SignalKernelGraphPanelCoordinator::renderReport(
     const SignalKernelGraphReport& report,
-    bool announce)
+    bool announce,
+    const PresentationState* stateOverride)
 {
     if (!graphScene)
         return;
 
+    const PresentationState presentationState = stateOverride
+        ? *stateOverride : capturePresentationState();
+    pendingThemePresentationState = {};
+    if (presentationState.valid)
+        retainedPresentationState = presentationState;
     closeNodePreviewNow();
     graphScene->clear();
     currentReport = report;
@@ -1191,6 +1397,7 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     lastRenderedFanoutGroupRect = {};
     lastSearchMatchCount = 0;
     lastFocusedSearchNodeId = -1;
+    searchFocusRect = {};
     if (!report.found) {
         renderUnavailable(report.notFoundReasonDisplayName);
         return;
@@ -1214,8 +1421,6 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         visibleNodesById.insert(node.id, node);
     }
     const QString searchText = graphSearchText.trimmed();
-    bool hasSearchFocusRect = false;
-    QRectF firstSearchFocusRect;
 
     if (titleLabel) {
         titleLabel->setText(QStringLiteral("%1   Inputs %2/%3   Outputs %4/%5")
@@ -1321,9 +1526,8 @@ void SignalKernelGraphPanelCoordinator::renderReport(
             lastRenderedFanoutGroupRect = itemRect;
             if (searchMatch) {
                 ++lastSearchMatchCount;
-                if (!hasSearchFocusRect) {
-                    hasSearchFocusRect = true;
-                    firstSearchFocusRect = itemRect;
+                if (searchFocusRect.isEmpty()) {
+                    searchFocusRect = itemRect;
                     lastFocusedSearchNodeId = matchingGroupNodeId;
                 }
             }
@@ -1385,9 +1589,8 @@ void SignalKernelGraphPanelCoordinator::renderReport(
         ++lastVisibleGraphNodeCount;
         if (searchMatch) {
             ++lastSearchMatchCount;
-            if (!hasSearchFocusRect) {
-                hasSearchFocusRect = true;
-                firstSearchFocusRect = rect;
+            if (searchFocusRect.isEmpty()) {
+                searchFocusRect = rect;
                 lastFocusedSearchNodeId = node.id;
             }
         }
@@ -1454,11 +1657,10 @@ void SignalKernelGraphPanelCoordinator::renderReport(
     const QRectF bounds =
         graphScene->itemsBoundingRect().adjusted(-60, -60, 60, 60);
     graphScene->setSceneRect(bounds);
-    if (graphView) {
-        graphView->fitInView(bounds, Qt::KeepAspectRatio);
-        if (hasSearchFocusRect)
-            graphView->centerOn(firstSearchFocusRect.center());
-    }
+    restorePresentationState(presentationState);
+    static_cast<KernelGraphView*>(graphView)->preserveCenter = true;
+    retainedPresentationState = capturePresentationState();
+    scheduleInitialFit();
     GraphExportUi::updateActionAvailability(
         exportAction,
         currentReport.found
@@ -1480,6 +1682,12 @@ void SignalKernelGraphPanelCoordinator::renderUnavailable(
     if (!graphScene)
         return;
 
+    initialFitTimer->stop();
+    currentReport.found = false;
+    retainedPresentationState.selectedNodeKeys.clear();
+    retainedPresentationState.selectedGroupKeys.clear();
+    searchFocusRect = {};
+    static_cast<KernelGraphView*>(graphView)->preserveCenter = false;
     closeNodePreviewNow();
     graphScene->clear();
     lastVisibleGraphNodeCount = 0;
@@ -1537,10 +1745,12 @@ QString SignalKernelGraphPanelCoordinator::fanoutGroupUiKey(
 void SignalKernelGraphPanelCoordinator::initializeFanoutCollapseState(
     const SignalKernelGraphReport& report)
 {
+    QSet<QString> validKeys;
     auto rememberGroup = [&](const SignalKernelGraphFanoutGroup& group) {
+        const QString key = fanoutGroupUiKey(group);
+        validKeys.insert(key);
         if (!group.highFanout)
             return;
-        const QString key = fanoutGroupUiKey(group);
         if (key.isEmpty() || knownFanoutGroupKeys.contains(key))
             return;
         knownFanoutGroupKeys.insert(key);
@@ -1551,6 +1761,8 @@ void SignalKernelGraphPanelCoordinator::initializeFanoutCollapseState(
         rememberGroup(group);
     for (const SignalKernelGraphFanoutGroup& group : report.outputFanoutGroups)
         rememberGroup(group);
+    knownFanoutGroupKeys.intersect(validKeys);
+    collapsedFanoutGroupKeys.intersect(validKeys);
 }
 
 bool SignalKernelGraphPanelCoordinator::isFanoutGroupCollapsed(
@@ -1762,6 +1974,7 @@ void SignalKernelGraphPanelCoordinator::rebaseToNode(
                           3000);
         return;
     }
+    setTargetKey(identityKey({node.stableKey.toString()}));
     currentQuery = {};
     currentQuery.signalStableKey = node.stableKey;
     currentQuery.signalName = node.displayName;
