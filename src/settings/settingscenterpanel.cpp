@@ -20,6 +20,7 @@
 #include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QSet>
 #include <QSignalBlocker>
@@ -385,10 +386,12 @@ void SettingsCenterPanel::revertCurrentScope()
 void SettingsCenterPanel::buildUi()
 {
     auto* rootLayout = new QHBoxLayout(this);
+    rootBox = rootLayout;
     rootLayout->setContentsMargins(16, 16, 16, 16);
     rootLayout->setSpacing(20);
 
     auto* navigationLayout = new QVBoxLayout;
+    navigationBox = navigationLayout;
     auto* scopeLabel = new QLabel(tr("Scope"), this);
     scopeLabel->setObjectName(
         QStringLiteral("settingsCenterScopeLabel"));
@@ -412,7 +415,7 @@ void SettingsCenterPanel::buildUi()
         QStringLiteral("settingsCenterCategoryList"));
     categoryList->setSelectionMode(
         QAbstractItemView::SingleSelection);
-    categoryList->setMinimumWidth(150);
+    categoryList->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     navigationLayout->addWidget(categoryList, 1);
     rootLayout->addLayout(navigationLayout);
 
@@ -517,6 +520,7 @@ void SettingsCenterPanel::buildUi()
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setWidget(pageContent);
+        scroll->viewport()->installEventFilter(this);
         categoryStack->addWidget(scroll);
     }
     contentLayout->addWidget(categoryStack, 1);
@@ -554,6 +558,8 @@ void SettingsCenterPanel::buildUi()
             &QListWidget::currentRowChanged,
             categoryStack,
             &QStackedWidget::setCurrentIndex);
+    connect(categoryList, &QListWidget::currentRowChanged, this,
+            [this] { updateResponsiveLayout(); });
     connect(applyButton,
             &QPushButton::clicked,
             this,
@@ -566,6 +572,51 @@ void SettingsCenterPanel::buildUi()
     if (categoryList->count() > 0)
         categoryList->setCurrentRow(0);
     updateScopePresentation();
+}
+
+void SettingsCenterPanel::resizeEvent(QResizeEvent* event)
+{
+    QWidget::resizeEvent(event);
+    updateResponsiveLayout();
+}
+
+bool SettingsCenterPanel::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() == QEvent::Resize) {
+        auto* viewport = qobject_cast<QWidget*>(watched);
+        auto* scroll = viewport ? qobject_cast<QScrollArea*>(viewport->parentWidget()) : nullptr;
+        if (scroll && scroll->widget()) {
+            for (auto* table : scroll->widget()->findChildren<QTableView*>())
+                table->setMaximumHeight(qMax(table->minimumSizeHint().height(), viewport->height()));
+        }
+    }
+    return QWidget::eventFilter(watched, event);
+}
+
+void SettingsCenterPanel::updateResponsiveLayout()
+{
+    if (updatingLayout || !rootBox || !navigationBox || !categoryList)
+        return;
+    updatingLayout = true;
+    const int frame = style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, this);
+    const int scrollBar = style()->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, this);
+    const int categoryWidth = qMax(categoryList->minimumSizeHint().width(),
+        categoryList->sizeHintForColumn(0) + scrollBar + categoryList->frameWidth() * 2);
+    categoryList->setMinimumWidth(categoryWidth);
+    int fieldWidth = applyButton->minimumSizeHint().width() + revertButton->minimumSizeHint().width()
+        + rootBox->spacing();
+    if (auto* page = qobject_cast<QScrollArea*>(categoryStack->currentWidget()))
+        fieldWidth = qMax(fieldWidth, page->widget()->minimumSizeHint().width() + scrollBar);
+    const QMargins margins = rootBox->contentsMargins();
+    const bool narrow = width() < qMax(categoryWidth, scopeCombo->minimumSizeHint().width())
+        + fieldWidth + rootBox->spacing() + margins.left() + margins.right();
+    rootBox->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    navigationBox->setDirection(narrow ? QBoxLayout::LeftToRight : QBoxLayout::TopToBottom);
+    categoryList->setMaximumWidth(narrow ? QWIDGETSIZE_MAX : categoryWidth);
+    categoryList->setMaximumHeight(narrow
+        ? qMax(categoryList->minimumSizeHint().height(), categoryList->fontMetrics().lineSpacing() * 4 + frame * 2)
+        : QWIDGETSIZE_MAX);
+    updatingLayout = false;
 }
 
 QWidget* SettingsCenterPanel::createEditor(

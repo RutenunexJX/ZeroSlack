@@ -4,6 +4,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QStyle>
 #include <QWidget>
 
 #include <algorithm>
@@ -42,6 +43,13 @@ constexpr const char* kThemeHelperProperty =
     "_zeroslackInsightThemeHelper";
 constexpr const char* kThemeHelperConnectedProperty =
     "_zeroslackInsightThemeHelperConnected";
+
+int minimumControlHeight(const QWidget* widget)
+{
+    const int inset = qMax(widget->style()->pixelMetric(QStyle::PM_DefaultFrameWidth, nullptr, widget),
+                           widget->style()->pixelMetric(QStyle::PM_LayoutVerticalSpacing, nullptr, widget));
+    return qMax(widget->minimumSizeHint().height(), widget->fontMetrics().height() + inset * 2);
+}
 
 void refreshRegisteredWidget(QWidget* widget)
 {
@@ -1522,8 +1530,8 @@ void InsightVisualStyle::applyTitleLabel(QLabel* label)
     if (!label)
         return;
     UiTypography::apply(label, UiTypography::Role::PanelTitle);
-    label->setMinimumHeight(30);
     registerThemedWidget(label, QStringLiteral("title"));
+    label->setMinimumHeight(minimumControlHeight(label));
 }
 
 void InsightVisualStyle::applyLabel(QLabel* label, bool strong)
@@ -1542,26 +1550,29 @@ void InsightVisualStyle::applySearchField(QLineEdit* edit)
     if (!edit)
         return;
     edit->setFont(UiTypography::font());
-    edit->setMinimumHeight(28);
-    edit->setMinimumWidth(180);
     registerThemedWidget(edit, QStringLiteral("search"));
+    edit->setMinimumHeight(minimumControlHeight(edit));
+    // A readable default in character units; CompactFlowLayout releases this
+    // minimum when the field shares a wrapping toolbar with action controls.
+    edit->setMinimumWidth(qMax(edit->minimumSizeHint().width(),
+                              edit->fontMetrics().horizontalAdvance(QLatin1Char('M')) * 18));
 }
 
 void InsightVisualStyle::applyToolbarButton(QPushButton* button)
 {
     if (!button)
         return;
-    button->setMinimumHeight(28);
     registerThemedWidget(button, QStringLiteral("toolbarButton"));
+    button->setMinimumHeight(minimumControlHeight(button));
 }
 
 void InsightVisualStyle::applySegmentedCheckBox(QWidget* checkBox)
 {
     if (!checkBox)
         return;
-    checkBox->setMinimumHeight(28);
     registerThemedWidget(checkBox,
                          QStringLiteral("segmentedCheckBox"));
+    checkBox->setMinimumHeight(minimumControlHeight(checkBox));
 }
 
 void InsightVisualStyle::applyGlobalControlPanel(QWidget* widget)

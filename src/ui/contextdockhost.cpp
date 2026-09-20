@@ -19,7 +19,6 @@
 #include <QDropEvent>
 
 namespace {
-constexpr int headerHeight = 28;
 constexpr int resizeHeight = 5;
 QString displayTitle(const ContextResource& resource, QWidget* view)
 {
@@ -187,7 +186,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
     column->setSizeConstraint(QLayout::SetNoConstraint);
-    section->header->setFixedHeight(headerHeight);
+    section->header->setFixedHeight(row->sizeHint().height());
     section->resize->setFixedHeight(resizeHeight);
     column->addWidget(section->header);
     column->addWidget(view, 1);
@@ -227,6 +226,7 @@ void ContextDockHost::refreshSectionStatus(const QString& key)
     section->scope->setText(scope);
     section->scope->setToolTip(section->view->property("contextScopeTooltip").toString());
     section->scope->setVisible(!scope.isEmpty());
+    section->header->setFixedHeight(section->header->layout()->sizeHint().height());
 }
 bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
 {
@@ -296,7 +296,7 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed)
     return true;
 }
 int ContextDockHost::minimumSectionHeight(const Section* section) const
-{ return headerHeight + resizeHeight + qMax(48, section->view->minimumHeight()); }
+{ return section->header->height() + resizeHeight + qMax(48, section->view->minimumHeight()); }
 bool ContextDockHost::setSectionHeight(const QString& key, int height)
 {
     auto* section = sections.value(key);
@@ -327,12 +327,17 @@ void ContextDockHost::arrangeSections()
     QHash<QString, int> heights;
     int total = 0;
     int expanded = 0;
-    for (const QString& key : order) if (!sections.value(key)->collapsed) ++expanded;
-    const int defaultHeight = expanded ? qMax(0, scroll->viewport()->height() - (order.size() - expanded) * headerHeight) / expanded : 0;
+    int collapsedHeight = 0;
+    for (const QString& key : order) {
+        auto* section = sections.value(key);
+        if (section->collapsed) collapsedHeight += section->header->height();
+        else ++expanded;
+    }
+    const int defaultHeight = expanded ? qMax(0, scroll->viewport()->height() - collapsedHeight) / expanded : 0;
     for (const QString& key : order) {
         auto* section = sections.value(key);
         const int requested = section->retainedHeight > 0 ? section->retainedHeight : (section->height > 0 ? section->height : defaultHeight);
-        const int desired = section->collapsed ? headerHeight : qMax(minimumSectionHeight(section), requested);
+        const int desired = section->collapsed ? section->header->height() : qMax(minimumSectionHeight(section), requested);
         heights.insert(key, desired);
         total += desired;
     }
@@ -342,7 +347,7 @@ void ContextDockHost::arrangeSections()
     if (sections.contains(focusedKey)) compression.append(focusedKey);
     for (const QString& key : compression) {
         auto* section = sections.value(key);
-        const int minimum = section->collapsed ? headerHeight : minimumSectionHeight(section);
+        const int minimum = section->collapsed ? section->header->height() : minimumSectionHeight(section);
         const int reduction = qMin(deficit, heights.value(key) - minimum);
         heights[key] -= reduction;
         deficit -= reduction;

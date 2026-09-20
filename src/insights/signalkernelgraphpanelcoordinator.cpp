@@ -1,4 +1,5 @@
 #include "signalkernelgraphpanelcoordinator.h"
+#include "compactlayout.h"
 
 #include "applicationthememanager.h"
 #include "codepreviewservice.h"
@@ -839,6 +840,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     exportButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     controlsLayout->addWidget(exportButton);
     layout->addLayout(controlsLayout);
+    CompactFlowLayout::replaceRows(layout);
 
     QObject::connect(graphSearchEdit,
                      &QLineEdit::textChanged,

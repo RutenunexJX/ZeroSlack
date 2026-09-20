@@ -15,6 +15,7 @@
 #include <QWidget>
 
 class QAbstractItemModel;
+class QBoxLayout;
 class QCheckBox;
 class QComboBox;
 class QLabel;
@@ -72,6 +73,10 @@ signals:
     void issuesReported(const QStringList& messages);
     void settingsApplied(SettingsCenterScope scope);
 
+protected:
+    void resizeEvent(QResizeEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     struct FieldBinding {
         SettingsCenterFieldDescriptor descriptor;
@@ -83,6 +88,7 @@ private:
     };
 
     void buildUi();
+    void updateResponsiveLayout();
     QWidget* createEditor(const SettingsCenterFieldDescriptor& descriptor,
                           QWidget* parent,
                           FieldBinding* binding);
@@ -133,6 +139,9 @@ private:
     QPushButton* revertButton = nullptr;
     QHash<QString, FieldBinding> fieldBindings;
     bool populating = false;
+    QBoxLayout* rootBox = nullptr;
+    QBoxLayout* navigationBox = nullptr;
+    bool updatingLayout = false;
 };
 
 #endif // SETTINGSCENTERPANEL_H

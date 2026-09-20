@@ -1342,6 +1342,9 @@ if(BUILD_TESTING)
     add_executable(compact_layout_test test_sv/compact_layout_test.cpp)
     target_link_libraries(compact_layout_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(high_dpi_layout_test test_sv/high_dpi_layout_test.cpp)
+    target_link_libraries(high_dpi_layout_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(context_workspace_test
         test_sv/context_workspace_test.cpp)
     target_link_libraries(context_workspace_test
@@ -1837,6 +1840,16 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:compact_layout_test>)
+    foreach(HIGH_DPI_SCALE IN ITEMS 1 1.25 1.5 2)
+        add_test(NAME high_dpi_layout_${HIGH_DPI_SCALE}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:high_dpi_layout_test>)
+        set_tests_properties(high_dpi_layout_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 60)
+    endforeach()
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

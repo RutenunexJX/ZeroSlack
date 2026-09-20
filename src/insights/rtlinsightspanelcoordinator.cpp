@@ -1,4 +1,5 @@
 #include "rtlinsightspanelcoordinator.h"
+#include "compactlayout.h"
 
 #include "applicationthememanager.h"
 #include "graphexportui.h"
@@ -93,13 +94,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         QStringLiteral("rtlModuleBlockDiagramButton"));
     viewState->graphZoomOutButton = new QPushButton(QStringLiteral("-"), panel);
     viewState->graphZoomOutButton->setObjectName(QStringLiteral("rtlGraphZoomOutButton"));
-    viewState->graphZoomOutButton->setFixedWidth(30);
     viewState->graphFitButton = new QPushButton(QStringLiteral("Fit"), panel);
     viewState->graphFitButton->setObjectName(QStringLiteral("rtlGraphFitButton"));
-    viewState->graphFitButton->setFixedWidth(42);
     viewState->graphZoomInButton = new QPushButton(QStringLiteral("+"), panel);
     viewState->graphZoomInButton->setObjectName(QStringLiteral("rtlGraphZoomInButton"));
-    viewState->graphZoomInButton->setFixedWidth(30);
     viewState->graphSearchEdit = new QLineEdit(panel);
     viewState->graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     viewState->graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
@@ -336,7 +334,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphInspector->header()->setSectionResizeMode(0,
                                                    QHeaderView::ResizeToContents);
     viewState->graphInspector->header()->setSectionResizeMode(1, QHeaderView::Stretch);
-    viewState->graphInspector->setMinimumWidth(260);
+    viewState->graphInspector->setMinimumWidth(viewState->graphInspector->minimumSizeHint().width());
     viewState->graphInspectorJumpButton =
         new QPushButton(panel);
     viewState->graphInspectorJumpButton->setObjectName(
@@ -390,6 +388,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     inspectorActionLayout->addWidget(viewState->graphInspectorSetTopButton);
     inspectorActionLayout->addWidget(viewState->graphInspectorRevealButton);
     inspectorLayout->addLayout(inspectorActionLayout);
+    CompactFlowLayout::replaceRows(inspectorLayout);
 
     auto* graphBodySplitter = new QSplitter(Qt::Horizontal, panel);
     graphBodySplitter->setObjectName(QStringLiteral("rtlGraphBodySplitter"));
@@ -411,12 +410,19 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphPanelLayout->addWidget(viewState->graphTable, 0);
 
     viewState->signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
+    CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(viewState->signalUsageHotspotPanel->layout()));
+    CompactFlowLayout::makeScrollable(viewState->signalUsageHotspotPanel);
 
     viewState->insightsStack = new QStackedWidget(panel);
+    viewState->insightsStack->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    viewState->insightsStack->setMinimumHeight(0);
     viewState->insightsStack->addWidget(viewState->insightsTree);
     viewState->insightsStack->addWidget(viewState->insightsGraphPanel);
     viewState->insightsStack->addWidget(viewState->signalUsageHotspotPanel);
     layout->addWidget(viewState->insightsStack, 1);
+    CompactFlowLayout::replaceRows(graphPanelLayout);
+    CompactFlowLayout::makeScrollable(viewState->insightsGraphPanel);
+    CompactFlowLayout::replaceRows(layout);
 
     viewState->insightsDock = new QDockWidget(QStringLiteral("RTL Insights"), parent);
     viewState->insightsDock->setObjectName(QStringLiteral("rtlInsightsDock"));

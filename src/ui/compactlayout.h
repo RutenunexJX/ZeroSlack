@@ -6,6 +6,8 @@
 #include <QStyleOption>
 #include <QResizeEvent>
 #include <QLineEdit>
+#include <QAbstractButton>
+#include <QScrollArea>
 
 class CompactToolbar : public QWidget {
 public:
@@ -13,7 +15,7 @@ public:
 protected:
     bool event(QEvent* event) override {
         const bool result=QWidget::event(event);
-        if (event->type()==QEvent::Resize || event->type()==QEvent::LayoutRequest || event->type()==QEvent::Show) {
+        if (isVisible() && (event->type()==QEvent::Resize || event->type()==QEvent::LayoutRequest || event->type()==QEvent::Show)) {
             if (layout()) {
                 const int height=layout()->heightForWidth(width());
                 if (height>=0 && (minimumHeight()!=height || maximumHeight()!=height)) setFixedHeight(height);
@@ -70,6 +72,21 @@ public:
             root->insertWidget(i,host);
         }
     }
+    static void makeScrollable(QWidget* panel) {
+        auto* content = new QWidget;
+        content->setObjectName(panel->objectName() + QStringLiteral("Content"));
+        content->setLayout(panel->layout());
+        auto* scroll = new QScrollArea(panel);
+        scroll->setObjectName(panel->objectName() + QStringLiteral("Scroll"));
+        scroll->setFrameShape(QFrame::NoFrame);
+        scroll->setWidgetResizable(true);
+        scroll->setWidget(content);
+        content->setAutoFillBackground(false);
+        scroll->viewport()->setAutoFillBackground(false);
+        auto* outer = new QVBoxLayout(panel);
+        outer->setContentsMargins(0, 0, 0, 0);
+        outer->addWidget(scroll);
+    }
 private:
     QList<QLayoutItem*> items;
     int arrange(const QRect& rect,bool apply) const {
@@ -91,7 +108,11 @@ private:
             if (item->spacerItem()) { x+=stretchWidth; continue; }
             if (item->isEmpty()) continue;
             QSize size=preferredSize(item);
-            size.setWidth(qMin(size.width(),qMax(0,area.width())));
+            auto* widget = item->widget();
+            if (!qobject_cast<QAbstractButton*>(widget)) {
+                const int minimum = widget ? qMax(0, widget->minimumSizeHint().width()) : 0;
+                size.setWidth(qMax(minimum, qMin(size.width(), qMax(0, area.width()))));
+            }
             if (x>area.x() && x+size.width()>area.x()+area.width()) {
                 x=area.x(); y+=lineHeight+spacing(); lineHeight=0;
             }

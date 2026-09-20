@@ -1,4 +1,5 @@
 #include "workspaceconfigurationdialog.h"
+#include "compactlayout.h"
 
 #include <QDialogButtonBox>
 #include <QAbstractItemView>
@@ -12,6 +13,8 @@
 #include <QLineEdit>
 #include <QListWidget>
 #include <QPushButton>
+#include <QScreen>
+#include <QScrollArea>
 #include <QTableWidget>
 #include <QVBoxLayout>
 
@@ -38,9 +41,17 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
 {
     setWindowTitle(QStringLiteral("Workspace Configuration"));
     setObjectName(QStringLiteral("workspaceConfigurationDialog"));
-    resize(720, 720);
-
-    auto* rootLayout = new QVBoxLayout(this);
+    auto* dialogLayout = new QVBoxLayout(this);
+    auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("workspaceConfigurationScroll"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    auto* content = new QWidget;
+    auto* rootLayout = new QVBoxLayout(content);
+    scroll->setWidget(content);
+    content->setAutoFillBackground(false);
+    scroll->viewport()->setAutoFillBackground(false);
+    dialogLayout->addWidget(scroll, 1);
     auto* hint = new QLabel(
         QStringLiteral("Configuration is stored per workspace and used by workspace analysis."),
         this);
@@ -259,7 +270,12 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
         this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    rootLayout->addWidget(buttons);
+    dialogLayout->addWidget(buttons);
+    for (auto* column : content->findChildren<QVBoxLayout*>())
+        CompactFlowLayout::replaceRows(column);
+    const QSize preferred(fontMetrics().horizontalAdvance(QLatin1Char('M')) * 64,
+                          fontMetrics().lineSpacing() * 40);
+    resize(preferred.boundedTo(screen()->availableGeometry().size() * .9));
 }
 
 void WorkspaceConfigurationDialog::setConfiguration(

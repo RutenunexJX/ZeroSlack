@@ -1873,8 +1873,6 @@ CommandLayerPickerPanel::CommandLayerPickerPanel(QWidget* parent)
 {
     setObjectName(QStringLiteral("commandLayerPicker"));
     setFocusPolicy(Qt::StrongFocus);
-    setMinimumWidth(560);
-    setMaximumWidth(820);
     InsightVisualStyle::applyPanel(this);
 
     auto* layout = new QVBoxLayout(this);
@@ -1937,15 +1935,21 @@ void CommandLayerPickerPanel::showFor(QWidget* anchorWidget)
 {
     if (searchEdit)
         searchEdit->clear();
-    adjustSize();
     QWidget* target = anchorWidget ? anchorWidget->window() : nullptr;
+    QScreen* targetScreen = target ? target->screen() : screen();
+    const QRect available = targetScreen->availableGeometry();
+    const QSize preferred(fontMetrics().horizontalAdvance(QLatin1Char('M')) * 56,
+                          sizeHint().height());
+    resize(preferred.expandedTo(minimumSizeHint()).boundedTo(available.size() * .95));
     QRect rect;
     if (target)
         rect = target->geometry();
     else if (QScreen* screen = QGuiApplication::primaryScreen())
         rect = screen->availableGeometry();
-    move(rect.center().x() - width() / 2,
-         rect.top() + qMax(90, rect.height() / 5));
+    move(qBound(available.left(), rect.center().x() - width() / 2,
+                available.right() - width() + 1),
+         qBound(available.top(), rect.top() + rect.height() / 5,
+                available.bottom() - height() + 1));
     show();
     raise();
     focusSearch();
