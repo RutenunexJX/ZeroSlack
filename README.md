@@ -206,7 +206,7 @@ coverage.
 ZeroSlack is licensed under [Apache License 2.0](LICENSE). Third-party components
 and their licenses are recorded in [third-party notices](THIRD-PARTY-NOTICES.md).
 
-The repository keeps six documents. This README is the entry point; the other five are:
+The repository keeps seven documents. This README is the entry point; the other six are:
 
 | Document | Holds |
 | --- | --- |
@@ -215,6 +215,7 @@ The repository keeps six documents. This README is the entry point; the other fi
 | [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, cross-application workflows, shared visual contract |
 | [Integrations](docs/integrations.md) | Read-only CLI and external application boundaries |
 | [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
+| [Kernel view continuity](docs/kernel-view-continuity-implementation.md) | Baseline, implementation scope and validation of the 0.29.19 view-state work |
 
 Historical acceptance logs and superseded status reports are intentionally
 kept out of this current-facts document. Released changes are recorded in the Git history:
