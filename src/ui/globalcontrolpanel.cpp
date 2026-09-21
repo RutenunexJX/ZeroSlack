@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include <QShowEvent>
 #include <QHideEvent>
 #include "globalcontrolpanel.h"
@@ -40,7 +41,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     categoryTabs->addTab(QStringLiteral("Commands"));
     layout->addWidget(categoryTabs);
 
-    searchEdit = new QLineEdit(this);
+    searchEdit = UiControls::lineEdit(this);
     searchEdit->setObjectName(QStringLiteral("globalControlSearchEdit"));
     searchEdit->installEventFilter(this);
     layout->addWidget(searchEdit);

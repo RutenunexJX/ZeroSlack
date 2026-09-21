@@ -186,6 +186,8 @@ private slots:
         window.resize(1080, 780); window.show(); settle();
         auto* settingsButton = window.findChild<QToolButton*>("welcomeSettingsButton");
         QVERIFY(settingsButton);
+        if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)
+            QVERIFY(settingsButton->inherits("ElaToolButton"));
         QTest::mouseClick(settingsButton, Qt::LeftButton); settle();
         auto* settings = window.findChild<SettingsCenterPanel*>(); QVERIFY(settings);
         settings->selectCategory("analysis"); settle();
@@ -256,6 +258,8 @@ int main(int argc, char** argv)
     if (!settings.isValid()) return 2;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "ela"
+        && !ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela)) return 3;
     if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "qlementine") {
         if (!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Qlementine)) return 3;
         ApplicationThemeManager::instance().setAnimationsEnabled(false);

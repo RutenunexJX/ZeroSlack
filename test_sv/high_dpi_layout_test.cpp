@@ -361,6 +361,8 @@ int main(int argc, char** argv)
     if (!temporary.isValid()) return 2;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, temporary.path());
+    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "ela"
+        && !ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela)) return 3;
     ApplicationThemeManager::instance().applyToApplication();
     const QString scale = qEnvironmentVariable("QT_SCALE_FACTOR");
     const QString root = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");

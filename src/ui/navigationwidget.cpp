@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "navigationwidget.h"
 #include "applicationthememanager.h"
@@ -365,7 +366,7 @@ void NavigationWidget::setupUI()
     mainLayout->setContentsMargins(8, 8, 8, 8);
     mainLayout->setSpacing(8);
 
-    searchLineEdit = new QLineEdit(this);
+    searchLineEdit = UiControls::lineEdit(this);
     searchLineEdit->setObjectName(QStringLiteral("navigationSearchLineEdit"));
     searchLineEdit->setPlaceholderText("Search files or paths...");
     searchLineEdit->setClearButtonEnabled(true);
@@ -405,7 +406,7 @@ void NavigationWidget::setupFileTab()
             this,
             &NavigationWidget::processFileTreePopulationChunk);
 
-    hideUnrelatedFilesCheckBox = new QCheckBox(QStringLiteral("Hide unrelated"), fileTab);
+    hideUnrelatedFilesCheckBox = UiControls::checkBox(QStringLiteral("Hide unrelated"), fileTab);
     hideUnrelatedFilesCheckBox->setChecked(false);
     fileTabLayout->addWidget(hideUnrelatedFilesCheckBox);
     fileTabLayout->addWidget(fileTreeWidget);
@@ -426,8 +427,8 @@ void NavigationWidget::setupDesignTab()
     topLayout->setSpacing(4);
     designTopLabel = new QLabel(designTab);
     designTopLabel->setWordWrap(true);
-    designClearButton = new QPushButton(QStringLiteral("Clear"), designTab);
-    designRefreshButton = new QPushButton(QStringLiteral("Refresh"), designTab);
+    designClearButton = UiControls::pushButton(QStringLiteral("Clear"), designTab);
+    designRefreshButton = UiControls::pushButton(QStringLiteral("Refresh"), designTab);
     UiTypography::apply(designTopLabel, UiTypography::Role::Metadata);
     designTabLayout->addWidget(designTopLabel);
     topLayout->addStretch(1);

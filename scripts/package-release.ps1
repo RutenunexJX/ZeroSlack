@@ -13,6 +13,9 @@ $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath $outputRoot) { throw 'Stage into a new directory before replacing a verified formal package.' }
 $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt')
+if ($cache -contains 'ZEROSLACK_ENABLE_ELA:BOOL=ON') {
+    throw 'Use package-ela.ps1 for the isolated Ela application. It must not replace the classic formal package.'
+}
 if ($cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=OFF' -or
     $cache -notcontains 'ZEROSLACK_ENABLE_QLEMENTINE:BOOL=OFF') {
     throw 'The formal release requires the classic backend: SuiteUi OFF and the direct preview backend OFF.'

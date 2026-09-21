@@ -1,5 +1,6 @@
 #include "workspacechrome.h"
 #include "mainwindow.h"
+#include "uicontrols.h"
 #include "workspacehubsession.h"
 
 #include "actionregistry.h"
@@ -812,7 +813,7 @@ void MainWindow::setupWelcomePage()
     auto* railLayout = new QVBoxLayout(rail);
     railLayout->setContentsMargins(8, 12, 8, 8);
     railLayout->setSpacing(8);
-    auto* project = new QToolButton(rail);
+    auto* project = UiControls::toolButton(rail);
     project->setObjectName(QStringLiteral("welcomeProjectButton"));
     project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
     project->setIconSize(QSize(20, 20));
@@ -824,7 +825,7 @@ void MainWindow::setupWelcomePage()
             fileCommandCoordinator->openDirectoryAsWorkspace();
     });
     railLayout->addWidget(project);
-    auto* settings = new QToolButton(rail);
+    auto* settings = UiControls::toolButton(rail);
     settings->setObjectName(QStringLiteral("welcomeSettingsButton"));
     settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
     settings->setIconSize(QSize(20, 20));
@@ -850,7 +851,7 @@ void MainWindow::setupWelcomePage()
     auto* contentLayout = new QVBoxLayout(content);
     contentLayout->setContentsMargins(0, 0, 0, 0);
     contentLayout->setSpacing(12);
-    auto* open = new QToolButton(content);
+    auto* open = UiControls::toolButton(content);
     open->setObjectName(QStringLiteral("welcomeOpenProjectButton"));
     open->setIcon(RoundedIcons::icon(RoundedIcons::OpenProject));
     open->setIconSize(QSize(68, 68));
@@ -891,7 +892,7 @@ void MainWindow::refreshWelcomePage()
             title->setVisible(!recent.isEmpty());
         for (int index = 0; index < qMin(recent.size(), 5); ++index) {
             const auto& entry = recent.at(index);
-            auto* row = new QToolButton(welcomePage);
+            auto* row = UiControls::toolButton(welcomePage);
             row->setObjectName(QStringLiteral("welcomeRecentProject"));
             row->setSizePolicy(QSizePolicy::Expanding,
                                QSizePolicy::Preferred);

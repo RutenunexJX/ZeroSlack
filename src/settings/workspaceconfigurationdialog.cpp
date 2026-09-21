@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "workspaceconfigurationdialog.h"
 #include "compactlayout.h"
 
@@ -100,8 +101,8 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     definesLayout->addWidget(definesTable, 1);
 
     auto* defineButtons = new QHBoxLayout();
-    auto* addDefineButton = new QPushButton(QStringLiteral("Add"), definesGroup);
-    auto* removeDefineButton = new QPushButton(QStringLiteral("Remove"), definesGroup);
+    auto* addDefineButton = UiControls::pushButton(QStringLiteral("Add"), definesGroup);
+    auto* removeDefineButton = UiControls::pushButton(QStringLiteral("Remove"), definesGroup);
     defineButtons->addWidget(addDefineButton);
     defineButtons->addWidget(removeDefineButton);
     defineButtons->addStretch(1);
@@ -126,7 +127,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     grid->addWidget(definesGroup, 1, 1);
 
     auto* topLayout = new QFormLayout();
-    topModuleEdit = new QLineEdit(this);
+    topModuleEdit = UiControls::lineEdit(this);
     topModuleEdit->setObjectName(QStringLiteral("workspaceTopModuleEdit"));
     topModuleEdit->setPlaceholderText(QStringLiteral("optional"));
     topLayout->addRow(QStringLiteral("Top module / active top"),
@@ -167,35 +168,35 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     auto* sourceGroupButtons =
         new QHBoxLayout();
     auto* addGroupButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Add Group"),
             sourceGroups);
     addGroupButton->setObjectName(
         QStringLiteral(
             "workspaceAddVirtualSourceGroupButton"));
     auto* addFilesButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Add Files"),
             sourceGroups);
     addFilesButton->setObjectName(
         QStringLiteral(
             "workspaceAddVirtualSourceFilesButton"));
     auto* removeGroupButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Remove"),
             sourceGroups);
     removeGroupButton->setObjectName(
         QStringLiteral(
             "workspaceRemoveVirtualSourceGroupButton"));
     auto* moveGroupUpButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Up"),
             sourceGroups);
     moveGroupUpButton->setObjectName(
         QStringLiteral(
             "workspaceMoveVirtualSourceGroupUpButton"));
     auto* moveGroupDownButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Down"),
             sourceGroups);
     moveGroupDownButton->setObjectName(
@@ -346,17 +347,17 @@ QListWidget* WorkspaceConfigurationDialog::createStringListEditor(
     layout->addWidget(list, 1);
 
     auto* buttons = new QHBoxLayout();
-    auto* addButton = new QPushButton(QStringLiteral("Add"), group);
-    auto* editButton = new QPushButton(QStringLiteral("Edit"), group);
-    auto* removeButton = new QPushButton(QStringLiteral("Remove"), group);
+    auto* addButton = UiControls::pushButton(QStringLiteral("Add"), group);
+    auto* editButton = UiControls::pushButton(QStringLiteral("Edit"), group);
+    auto* removeButton = UiControls::pushButton(QStringLiteral("Remove"), group);
     buttons->addWidget(addButton);
     buttons->addWidget(editButton);
     buttons->addWidget(removeButton);
     QPushButton* upButton = nullptr;
     QPushButton* downButton = nullptr;
     if (allowMove) {
-        upButton = new QPushButton(QStringLiteral("Up"), group);
-        downButton = new QPushButton(QStringLiteral("Down"), group);
+        upButton = UiControls::pushButton(QStringLiteral("Up"), group);
+        downButton = UiControls::pushButton(QStringLiteral("Down"), group);
         buttons->addWidget(upButton);
         buttons->addWidget(downButton);
     }

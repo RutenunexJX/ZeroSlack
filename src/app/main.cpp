@@ -19,7 +19,9 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-#ifdef ZEROSLACK_PREVIEW_BUILD
+#if defined(ZEROSLACK_ELA_BUILD)
+    QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Ela"));
+#elif defined(ZEROSLACK_PREVIEW_BUILD)
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Qlementine-Preview"));
 #else
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack"));
@@ -29,13 +31,13 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
-    const QString defaultStyle = ApplicationThemeManager::qlementineAvailable()
-        ? QStringLiteral("qlementine") : QStringLiteral("classic");
+    const QString defaultStyle = ApplicationThemeManager::elaAvailable() ? QStringLiteral("ela")
+        : ApplicationThemeManager::qlementineAvailable() ? QStringLiteral("qlementine") : QStringLiteral("classic");
     const QCommandLineOption styleOption(QStringLiteral("ui-style"),
-        QStringLiteral("Widget style: classic or qlementine (default: %1). Qlementine uses SuiteUi in the standard build.")
+        QStringLiteral("Widget style: classic, qlementine or ela (default: %1).")
             .arg(defaultStyle),
         QStringLiteral("style"), defaultStyle);
-#ifdef ZEROSLACK_PREVIEW_BUILD
+#if defined(ZEROSLACK_PREVIEW_BUILD) || defined(ZEROSLACK_ELA_BUILD)
     // All legacy explicit ZeroSlack QSettings constructors also use this INI root.
     QSettings::setDefaultFormat(QSettings::IniFormat);
     const QString previewSettings = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
@@ -49,9 +51,10 @@ int main(int argc, char *argv[])
     parser.process(a);
     const QString style = parser.value(styleOption);
     auto& theme = ApplicationThemeManager::instance();
-    if ((style != QStringLiteral("classic") && style != QStringLiteral("qlementine"))
+    if ((style != QStringLiteral("classic") && style != QStringLiteral("qlementine") && style != QStringLiteral("ela"))
         || !theme.selectBackend(style == QStringLiteral("qlementine")
-                                    ? UiStyleBackend::Qlementine : UiStyleBackend::Classic)) {
+                                    ? UiStyleBackend::Qlementine : style == QStringLiteral("ela")
+                                    ? UiStyleBackend::Ela : UiStyleBackend::Classic)) {
         QMessageBox::critical(nullptr, QStringLiteral("ZeroSlack"),
                              QStringLiteral("The requested UI style is unavailable in this build."));
         return 2;
@@ -63,7 +66,9 @@ int main(int argc, char *argv[])
     qRegisterMetaType<SymbolRelationshipEngine::RelationType>();
 
     MainWindow w;
-#ifdef ZEROSLACK_PREVIEW_BUILD
+#if defined(ZEROSLACK_ELA_BUILD)
+    w.setWindowTitle(QStringLiteral("ZeroSlack Ela — %1").arg(QString::fromLatin1(APP_VERSION)));
+#elif defined(ZEROSLACK_PREVIEW_BUILD)
     w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
     w.show();

@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "roundedicons.h"
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
@@ -116,11 +117,11 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     auto* row = new QHBoxLayout(section->header);
     row->setContentsMargins(4, 0, 4, 0);
     row->setSpacing(2);
-    section->toggle = new QToolButton(section->header);
+    section->toggle = UiControls::toolButton(section->header);
     section->toggle->setArrowType(Qt::DownArrow);
     section->toggle->setToolTip(tr("Collapse or expand section"));
     row->addWidget(section->toggle);
-    section->drag = new QToolButton(section->header);
+    section->drag = UiControls::toolButton(section->header);
     section->drag->setObjectName(QStringLiteral("contextSectionDrag"));
     section->drag->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
     section->drag->setCursor(Qt::OpenHandCursor);
@@ -144,7 +145,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     // Same property channel as the status chip, one step further: a view that
     // names its current scope gets a clickable chip for choosing another. The
     // host stays generic — it just invokes the view's own slot.
-    section->scope = new QToolButton(section->header);
+    section->scope = UiControls::toolButton(section->header);
     section->scope->setObjectName(QStringLiteral("contextSectionScope"));
     section->scope->setCursor(Qt::PointingHandCursor);
     section->scope->hide();
@@ -154,18 +155,18 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
             QMetaObject::invokeMethod(target->view, "requestScopePick");
     });
     row->addWidget(section->scope);
-    section->fullView = new QToolButton(section->header);
+    section->fullView = UiControls::toolButton(section->header);
     section->fullView->setObjectName(QStringLiteral("contextDockFullView"));
     section->fullView->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
     section->fullView->setToolTip(tr("Open in main area"));
     section->fullView->setVisible(fullViewAvailable);
     row->addWidget(section->fullView);
-    auto* unpin = new QToolButton(section->header);
+    auto* unpin = UiControls::toolButton(section->header);
     unpin->setObjectName(QStringLiteral("contextDockUnpin"));
     unpin->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
     unpin->setToolTip(tr("Move to preview"));
     row->addWidget(unpin);
-    auto* close = new QToolButton(section->header);
+    auto* close = UiControls::toolButton(section->header);
     close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
     close->setToolTip(tr("Close section"));
     row->addWidget(close);

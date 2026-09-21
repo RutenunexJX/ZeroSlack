@@ -12,7 +12,7 @@ struct InsightTheme;
 class QStyle;
 class QWidget;
 
-enum class UiStyleBackend { Classic, Qlementine };
+enum class UiStyleBackend { Classic, Qlementine, Ela };
 
 enum class ThemeMode {
     Light,
@@ -45,6 +45,7 @@ public:
     bool selectBackend(UiStyleBackend backend);
     UiStyleBackend backend() const { return currentBackend; }
     static bool qlementineAvailable();
+    static bool elaAvailable();
     void setAnimationsEnabled(bool enabled);
     bool animationsEnabled() const { return animateControls; }
     void preserveClassicSurface(QWidget* root);

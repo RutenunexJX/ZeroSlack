@@ -1,0 +1,2 @@
+# Preserve the audited vendor bytes and reconstruction patch line endings.
+thirdparty/elawidgettools/** -text

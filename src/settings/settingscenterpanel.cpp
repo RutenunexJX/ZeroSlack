@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "settingscenterpanel.h"
 #include "insightvisualstyle.h"
@@ -400,7 +401,7 @@ void SettingsCenterPanel::buildUi()
     navigationLayout->setSpacing(8);
     navigationLayout->addWidget(scopeLabel);
 
-    scopeCombo = new QComboBox(this);
+    scopeCombo = UiControls::comboBox(this);
     scopeCombo->setObjectName(
         QStringLiteral("settingsCenterScopeCombo"));
     scopeCombo->addItem(tr("Global"),
@@ -475,7 +476,7 @@ void SettingsCenterPanel::buildUi()
             FieldBinding binding;
             binding.descriptor = descriptor;
 
-            binding.overrideCheck = new QCheckBox(group);
+            binding.overrideCheck = UiControls::checkBox(group);
             binding.overrideCheck->setObjectName(
                 fieldOverrideObjectName(descriptor.id));
             binding.overrideCheck->setVisible(
@@ -535,11 +536,11 @@ void SettingsCenterPanel::buildUi()
 
     auto* buttonLayout = new QHBoxLayout;
     buttonLayout->addStretch(1);
-    revertButton = new QPushButton(tr("Revert"), this);
+    revertButton = UiControls::pushButton(tr("Revert"), this);
     revertButton->setObjectName(
         QStringLiteral("settingsCenterRevertButton"));
     buttonLayout->addWidget(revertButton);
-    applyButton = new QPushButton(tr("Apply"), this);
+    applyButton = UiControls::pushButton(tr("Apply"), this);
     applyButton->setObjectName(
         QStringLiteral("settingsCenterApplyButton"));
     InsightVisualStyle::applyPrimaryButton(applyButton);
@@ -628,16 +629,16 @@ QWidget* SettingsCenterPanel::createEditor(
 {
     switch (descriptor.valueKind) {
     case SettingsCenterValueKind::Boolean:
-        return new QCheckBox(tr("Enabled"), parent);
+        return UiControls::checkBox(tr("Enabled"), parent);
     case SettingsCenterValueKind::Integer: {
         if (descriptor.useSlider) {
-            auto* slider = new QSlider(Qt::Horizontal, parent);
+            auto* slider = UiControls::slider(Qt::Horizontal, parent);
             slider->setRange(descriptor.minimumValue.toInt(), descriptor.maximumValue.toInt());
             slider->setTickInterval(10);
             slider->setTickPosition(QSlider::TicksBelow);
             return slider;
         }
-        auto* editor = new QSpinBox(parent);
+        auto* editor = UiControls::spinBox(parent);
         editor->setRange(
             descriptor.minimumValue.isValid()
                 ? descriptor.minimumValue.toInt()
@@ -648,7 +649,7 @@ QWidget* SettingsCenterPanel::createEditor(
         return editor;
     }
     case SettingsCenterValueKind::Real: {
-        auto* editor = new QDoubleSpinBox(parent);
+        auto* editor = UiControls::doubleSpinBox(parent);
         editor->setDecimals(3);
         editor->setSingleStep(0.05);
         editor->setRange(
@@ -662,24 +663,24 @@ QWidget* SettingsCenterPanel::createEditor(
     }
     case SettingsCenterValueKind::String:
         if (!descriptor.choices.isEmpty()) {
-            auto* editor = new QComboBox(parent);
+            auto* editor = UiControls::comboBox(parent);
             editor->addItems(descriptor.choices);
             return editor;
         }
-        return new QLineEdit(parent);
+        return UiControls::lineEdit(parent);
     case SettingsCenterValueKind::FilePath: {
         auto* container = new QWidget(parent);
         auto* layout = new QHBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
 
-        auto* editor = new QLineEdit(container);
+        auto* editor = UiControls::lineEdit(container);
         editor->setObjectName(
             QStringLiteral("settingsCenterFilePathEdit.%1")
                 .arg(descriptor.id));
         editor->setPlaceholderText(tr("Automatic discovery"));
         layout->addWidget(editor, 1);
 
-        auto* browseButton = new QPushButton(tr("Browse..."), container);
+        auto* browseButton = UiControls::pushButton(tr("Browse..."), container);
         browseButton->setObjectName(
             QStringLiteral("settingsCenterFilePathBrowse.%1")
                 .arg(descriptor.id));
@@ -741,12 +742,12 @@ QWidget* SettingsCenterPanel::createEditor(
         container->setFocusProxy(table);
 
         auto* buttons = new QHBoxLayout;
-        auto* addButton = new QPushButton(tr("Add"), container);
+        auto* addButton = UiControls::pushButton(tr("Add"), container);
         addButton->setObjectName(
             QStringLiteral("settingsCenterStringMapAdd.%1")
                 .arg(descriptor.id));
         auto* removeButton =
-            new QPushButton(tr("Remove"), container);
+            UiControls::pushButton(tr("Remove"), container);
         removeButton->setObjectName(
             QStringLiteral("settingsCenterStringMapRemove.%1")
                 .arg(descriptor.id));
@@ -782,7 +783,7 @@ QWidget* SettingsCenterPanel::createEditor(
         return container;
     }
     }
-    return new QLineEdit(parent);
+    return UiControls::lineEdit(parent);
 }
 
 void SettingsCenterPanel::connectEditor(

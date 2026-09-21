@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "editorappearancepanel.h"
 
@@ -36,32 +37,32 @@ EditorAppearancePanel::EditorAppearancePanel(
     form->setHorizontalSpacing(16);
     form->setFormAlignment(Qt::AlignTop);
 
-    fontFamilyCombo = new QComboBox(this);
+    fontFamilyCombo = UiControls::comboBox(this);
     fontFamilyCombo->setObjectName(QStringLiteral("editorFontFamilyCombo"));
     fontFamilyCombo->setEditable(false);
     populateFonts();
     form->addRow(tr("Font family"), fontFamilyCombo);
 
-    fontSizeSpin = new QSpinBox(this);
+    fontSizeSpin = UiControls::spinBox(this);
     fontSizeSpin->setObjectName(QStringLiteral("editorFontSizeSpin"));
     fontSizeSpin->setRange(8, 32);
     fontSizeSpin->setSuffix(tr(" pt"));
     form->addRow(tr("Font size"), fontSizeSpin);
 
-    lineHeightSpin = new QDoubleSpinBox(this);
+    lineHeightSpin = UiControls::doubleSpinBox(this);
     lineHeightSpin->setObjectName(QStringLiteral("editorLineHeightSpin"));
     lineHeightSpin->setRange(1.0, 2.0);
     lineHeightSpin->setDecimals(2);
     lineHeightSpin->setSingleStep(0.05);
     form->addRow(tr("Line height"), lineHeightSpin);
 
-    ligaturesCheck = new QCheckBox(tr("Enable font ligatures"), this);
+    ligaturesCheck = UiControls::checkBox(tr("Enable font ligatures"), this);
     ligaturesCheck->setObjectName(QStringLiteral("editorLigaturesCheck"));
     form->addRow(QString(), ligaturesCheck);
 
     layout->addLayout(form);
 
-    resetButton = new QPushButton(tr("Reset to defaults"), this);
+    resetButton = UiControls::pushButton(tr("Reset to defaults"), this);
     resetButton->setObjectName(QStringLiteral("editorAppearanceResetButton"));
     layout->addWidget(resetButton);
     layout->addStretch(1);

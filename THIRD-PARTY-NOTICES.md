@@ -12,6 +12,17 @@ The paths in the tables below identify the corresponding source-tree copies.
 
 ## Built into the application
 
+The separate `ZEROSLACK_ENABLE_ELA=ON` build includes ElaWidgetTools at
+`454cac2d57a47d3cc28577dc817793aec1881ca7` (MIT, Copyright 2024 Liniyous).
+Its library source, exact local patches and provenance are in
+`thirdparty/elawidgettools/`. This option is mutually exclusive with SuiteUi
+and Qlementine. Ela is dynamically linked as `ElaWidgetTools.dll`; the classic
+release does not include it. Ela packages carry the full MIT text, provenance,
+local patches and `Font/FontAwesome-LICENSE.txt` under `licenses/ElaWidgetTools/`.
+The replacement Font Awesome Free Solid 6.7.2 font is unmodified and distributed
+under SIL OFL 1.1; its upstream copyright and complete license are preserved.
+Ela's Qt private-header dependency is pinned to Qt 6.10.2.
+
 Optional Qlementine previews additionally contain Qlementine 1.5.0.0 at
 `209e549c415f1d828883f9f21a633eb535f9d67d` (MIT, © 2022 Olivier Cléro),
 with one local animation-map cleanup correction. See

@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "workspacehubview.h"
 
@@ -53,7 +54,7 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     statusChip->setTextFormat(Qt::PlainText);
     statusChip->setMaximumWidth(96);
     statusChip->setAlignment(Qt::AlignCenter);
-    previewButton = new QToolButton(header);
+    previewButton = UiControls::toolButton(header);
     previewButton->setObjectName(QStringLiteral("workspaceHubPreviewToggle"));
     previewButton->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
     previewButton->setIconSize(QSize(16, 16));
@@ -64,7 +65,7 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     previewButton->setFocusPolicy(Qt::StrongFocus);
     previewButton->setMinimumWidth(32);
     previewButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-    refreshButton = new QToolButton(header);
+    refreshButton = UiControls::toolButton(header);
     refreshButton->setObjectName(QStringLiteral("workspaceHubRefresh"));
     refreshButton->setIcon(RoundedIcons::icon(RoundedIcons::Refresh));
     refreshButton->setIconSize(QSize(16, 16));

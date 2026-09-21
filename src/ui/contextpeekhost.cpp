@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "roundedicons.h"
 #include "contextpeekhost.h"
 
@@ -318,21 +319,21 @@ void ContextPeekHost::buildUi()
     titleLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     headerLayout->addWidget(titleLabel, 1);
 
-    pinButton = new QToolButton(header);
+    pinButton = UiControls::toolButton(header);
     pinButton->setObjectName(QStringLiteral("contextPeekPin"));
     pinButton->setIcon(
         RoundedIcons::icon(RoundedIcons::Pin));
     pinButton->setToolTip(tr("Pin to context workspace"));
     headerLayout->addWidget(pinButton);
 
-    fullViewButton = new QToolButton(header);
+    fullViewButton = UiControls::toolButton(header);
     fullViewButton->setObjectName(QStringLiteral("contextPeekFullView"));
     fullViewButton->setIcon(
         RoundedIcons::icon(RoundedIcons::Expand));
     fullViewButton->setToolTip(tr("Open in main area"));
     headerLayout->addWidget(fullViewButton);
 
-    closeButton = new QToolButton(header);
+    closeButton = UiControls::toolButton(header);
     closeButton->setObjectName(QStringLiteral("contextPeekClose"));
     closeButton->setIcon(
         style()->standardIcon(QStyle::SP_DialogCloseButton));

@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "temporaryeditorcontextview.h"
 
 #include "mycodeeditor.h"
@@ -133,7 +134,7 @@ void TemporaryEditorContextView::buildUi()
     searchLayout->setContentsMargins(6, 4, 6, 4);
     searchLayout->setSpacing(4);
 
-    backToolButton = new QToolButton(searchBar);
+    backToolButton = UiControls::toolButton(searchBar);
     backToolButton->setObjectName(
         QStringLiteral("temporaryEditorContextBack"));
     backToolButton->setIcon(
@@ -141,7 +142,7 @@ void TemporaryEditorContextView::buildUi()
     backToolButton->setToolTip(tr("Back"));
     searchLayout->addWidget(backToolButton);
 
-    forwardToolButton = new QToolButton(searchBar);
+    forwardToolButton = UiControls::toolButton(searchBar);
     forwardToolButton->setObjectName(
         QStringLiteral("temporaryEditorContextForward"));
     forwardToolButton->setIcon(
@@ -149,7 +150,7 @@ void TemporaryEditorContextView::buildUi()
     forwardToolButton->setToolTip(tr("Forward"));
     searchLayout->addWidget(forwardToolButton);
 
-    searchEdit = new QLineEdit(searchBar);
+    searchEdit = UiControls::lineEdit(searchBar);
     searchEdit->setObjectName(
         QStringLiteral("temporaryEditorContextSearch"));
     searchEdit->setPlaceholderText(

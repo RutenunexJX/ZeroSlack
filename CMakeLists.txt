@@ -797,6 +797,25 @@ target_sources(zeroslack_core PRIVATE
 # Main application target.
 option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
 option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
+option(ZEROSLACK_ENABLE_ELA "Build the isolated ZeroSlack Ela application" OFF)
+target_sources(zeroslack_core PRIVATE src/ui/uicontrols.cpp)
+if(ZEROSLACK_ENABLE_ELA)
+    if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
+        message(FATAL_ERROR "Ela and Qlementine/SuiteUi backends must be built separately.")
+    endif()
+    # ElaTabBar uses Qt private headers; upgrading Qt requires rebuilding and validation.
+    if(NOT Qt6_VERSION VERSION_EQUAL "6.10.2")
+        message(FATAL_ERROR "The pinned Ela integration requires Qt 6.10.2.")
+    endif()
+    set(ELAWIDGETTOOLS_BUILD_STATIC_LIB OFF CACHE BOOL "" FORCE)
+    set(QT_VERSION_MAJOR 6)
+    find_package(Qt6 6.10.2 EXACT REQUIRED COMPONENTS WidgetsPrivate)
+    add_subdirectory(thirdparty/elawidgettools EXCLUDE_FROM_ALL)
+    set_target_properties(ElaWidgetTools PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
+    target_sources(zeroslack_core PRIVATE src/ui/elabackend.cpp)
+    target_link_libraries(zeroslack_core PRIVATE Ela::WidgetTools)
+    target_compile_definitions(zeroslack_core PRIVATE ZEROSLACK_ENABLE_ELA=1)
+endif()
 set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
 if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
     message(FATAL_ERROR "Choose either the standalone SuiteUi SDK or the vendored Qlementine preview.")
@@ -827,6 +846,10 @@ if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
 endif()
 
 add_executable(demo src/app/main.cpp)
+if(ZEROSLACK_ENABLE_ELA)
+    target_compile_definitions(demo PRIVATE ZEROSLACK_ELA_BUILD=1)
+    set_target_properties(demo PROPERTIES OUTPUT_NAME "ZeroSlack-Ela")
+endif()
 
 # Read-only machine interface for AI and automation. The support layer links
 # the existing semantic core, while the executable itself remains a console
@@ -1195,6 +1218,7 @@ if(BUILD_TESTING)
 
     add_executable(navigation_virtual_source_group_test
         test_sv/navigation_virtual_source_group_test.cpp
+        src/ui/uicontrols.cpp
         src/ui/applicationthememanager.cpp
         src/ui/insightvisualstyle.cpp
         src/ui/navigationwidget.cpp
@@ -1211,6 +1235,7 @@ if(BUILD_TESTING)
 
     add_executable(workspace_virtual_source_group_ui_test
         test_sv/workspace_virtual_source_group_ui_test.cpp
+        src/ui/uicontrols.cpp
         src/settings/workspaceconfigurationdialog.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(workspace_virtual_source_group_ui_test PRIVATE
@@ -1299,6 +1324,7 @@ if(BUILD_TESTING)
 
     add_executable(panel_layout_controller_test
         test_sv/panel_layout_controller_test.cpp
+        src/ui/uicontrols.cpp
         src/commands/actionregistry.cpp
         src/ui/applicationthememanager.cpp
         src/ui/insightvisualstyle.cpp
@@ -1312,6 +1338,7 @@ if(BUILD_TESTING)
 
     add_executable(editor_split_controller_test
         test_sv/editor_split_controller_test.cpp
+        src/ui/uicontrols.cpp
         src/commands/actionregistry.cpp
         src/ui/applicationthememanager.cpp
         src/editor/editordroppreviewoverlay.cpp
@@ -1379,6 +1406,10 @@ if(BUILD_TESTING)
 
     add_executable(control_style_interaction_test test_sv/control_style_interaction_test.cpp)
     target_link_libraries(control_style_interaction_test PRIVATE zeroslack_core Qt6::Test)
+    if(ZEROSLACK_ENABLE_ELA)
+        add_executable(ela_controls_test test_sv/ela_controls_test.cpp)
+        target_link_libraries(ela_controls_test PRIVATE zeroslack_core Qt6::Test)
+    endif()
     if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
         add_executable(qlementine_lifecycle_test test_sv/qlementine_lifecycle_test.cpp)
         target_link_libraries(qlementine_lifecycle_test PRIVATE zeroslack_core Qt6::Test)
@@ -1880,6 +1911,24 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:compact_layout_test>)
     foreach(HIGH_DPI_SCALE IN ITEMS 1 1.25 1.5 2)
+        if(ZEROSLACK_ENABLE_ELA)
+            foreach(ELA_TEST IN ITEMS ela_controls high_dpi_layout)
+                add_test(NAME ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test
+                    COMMAND ${CMAKE_COMMAND} -E env
+                        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                        "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                        "ZEROSLACK_TEST_UI_STYLE=ela"
+                        $<TARGET_FILE:${ELA_TEST}_test>)
+                set_tests_properties(ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
+            endforeach()
+            add_test(NAME ela_main_window_${HIGH_DPI_SCALE}_test
+                COMMAND ${CMAKE_COMMAND} -E env
+                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                    "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                    "ZEROSLACK_TEST_UI_STYLE=ela"
+                    $<TARGET_FILE:control_style_interaction_test> mainWindowAndFloating -o -,txt)
+            set_tests_properties(ela_main_window_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
+        endif()
         add_test(NAME high_dpi_layout_${HIGH_DPI_SCALE}_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}"

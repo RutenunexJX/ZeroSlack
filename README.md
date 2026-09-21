@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.24`
+Current version: `v0.29.25`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.24`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.25`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -142,6 +142,14 @@ contains no spaces. The Windows package directory and archive basename stay fixe
 `ZeroSlack-win64` — never put the product version in either package filename, so existing
 shortcuts remain valid. The product version is recorded only in `VERSION`, the application
 display, the guarded document markers, and the release tag.
+
+The Ela migration branch has a separate release channel. Its fixed package basename is
+`ZeroSlack-Ela-win64`, its executable is `ZeroSlack-Ela.exe`, and release tags use
+`ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
+directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps` and its ZIP alongside it.
+Formal Ela packaging requires a clean source tree and matching generated application version.
+It does not replace the classic application or share its user settings. See
+[Ela migration and validation](docs/ela-migration.md).
 
 ## Current goal and open work
 
@@ -178,13 +186,18 @@ scheduled. Released changes and their acceptance results live in the Git history
 
 时长、曲线、中断方式、减少动画规则和验证状态统一维护在
 [动效场景规格](docs/control-style-consolidation.md#动效场景规格2026-09-20)。
-原先的建议时长不再作为另一套规格。正式包默认启用 SuiteUi 控件状态过渡；classic 回退仍即时反馈。
+原先的建议时长不再作为另一套规格。经典正式包使用 classic；Ela 分支的独立正式包使用 Ela 控件。
 底栏立即展开、导航栏宽度动画和未来浮窗淡入分别记录。图标不缩放、不弹跳；
 代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
 ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等同于全应用减少动画，
 也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。
 
 ### Remaining validation
+
+`ZEROSLACK_ENABLE_ELA=ON` builds the separate Ela application. Version 0.29.25 migrates
+eight basic control types at 60 creation sites; navigation trees, tabs and remaining
+specialized toolbars are still pending. It is mutually exclusive with SuiteUi and Qlementine.
+The editor, window management and specialized diagram models/canvases remain in place.
 
 An isolated Qlementine product preview is available behind the default-off
 `ZEROSLACK_ENABLE_QLEMENTINE` CMake option. It uses an independent application

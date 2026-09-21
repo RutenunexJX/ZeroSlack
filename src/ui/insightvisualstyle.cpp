@@ -1,6 +1,7 @@
 #include "insightvisualstyle.h"
 #include "insightcontrolstyle.h"
 #include "uitypography.h"
+#include "uicontrols.h"
 
 #include <QLabel>
 #include <QLineEdit>
@@ -72,6 +73,7 @@ void refreshRegisteredWidget(QWidget* widget)
             InsightVisualStyle::labelStyleSheet(
                 widget->objectName(), true));
     } else if (helper == QStringLiteral("search")) {
+        if (widget->property("zeroslackElaControl").toBool()) return;
         widget->setStyleSheet(
             InsightVisualStyle::compactSearchFieldStyleSheet(
                 widget->objectName()));
@@ -110,6 +112,7 @@ void applyControlRole(QWidget* widget, const QString& role)
     if (!widget)
         return;
     widget->setProperty(kThemeHelperProperty, role);
+    UiControls::refreshRole(widget);
     widget->style()->unpolish(widget);
     widget->style()->polish(widget);
     widget->setMinimumHeight(minimumControlHeight(widget));
@@ -1348,7 +1351,7 @@ QString InsightVisualStyle::globalControlPanelStyleSheet(
     const InsightTheme t = theme();
     const QString selector =
         objectSelector(QStringLiteral("QFrame"), objectName);
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine) {
+    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Classic) {
         return QStringLiteral(
             "%1 { background: %2; border: 1px solid %3; border-radius: 8px; }"
             "%1 QLabel { color: %4; font-weight: 600; padding: 10px 12px 2px; }")

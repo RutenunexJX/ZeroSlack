@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "activitylogpanelcoordinator.h"
 
@@ -23,7 +24,7 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
     auto* toolbar = new QHBoxLayout;
     toolbar->setContentsMargins(0, 0, 0, 0);
     toolbar->addStretch(1);
-    clearButton = new QPushButton(QObject::tr("Clear"), panel);
+    clearButton = UiControls::pushButton(QObject::tr("Clear"), panel);
     clearButton->setObjectName(QStringLiteral("activityLogClearButton"));
     toolbar->addWidget(clearButton);
     layout->addLayout(toolbar);

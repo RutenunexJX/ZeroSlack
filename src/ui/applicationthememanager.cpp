@@ -3,6 +3,9 @@
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
 #include "uitypography.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "elabackend.h"
+#endif
 #ifdef ZEROSLACK_ENABLE_QLEMENTINE
 #include "qlementinebackend.h"
 #endif
@@ -48,10 +51,20 @@ bool ApplicationThemeManager::qlementineAvailable()
 bool ApplicationThemeManager::selectBackend(UiStyleBackend backend)
 {
     if ((installed && backend != currentBackend)
-        || (backend == UiStyleBackend::Qlementine && !qlementineAvailable()))
+        || (backend == UiStyleBackend::Qlementine && !qlementineAvailable())
+        || (backend == UiStyleBackend::Ela && !elaAvailable()))
         return false;
     currentBackend = backend;
     return true;
+}
+
+bool ApplicationThemeManager::elaAvailable()
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    return true;
+#else
+    return false;
+#endif
 }
 
 void ApplicationThemeManager::setAnimationsEnabled(bool enabled)
@@ -162,6 +175,9 @@ void ApplicationThemeManager::applyToApplication()
         return;
 
     if (!installed) {
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (currentBackend == UiStyleBackend::Ela) ElaBackend::initialize();
+#endif
 #ifdef ZEROSLACK_ENABLE_QLEMENTINE
         if (currentBackend == UiStyleBackend::Qlementine) {
             backendStyle = QlementineBackend::create();
@@ -183,6 +199,13 @@ void ApplicationThemeManager::applyToApplication()
 #endif
     application->setPalette(
         InsightVisualStyle::applicationPalette(currentMode));
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (currentBackend == UiStyleBackend::Ela) {
+        ElaBackend::applyTheme(currentMode);
+        application->setStyleSheet(ElaBackend::styleSheet(currentMode));
+        return;
+    }
+#endif
     application->setStyleSheet(
         currentBackend == UiStyleBackend::Qlementine
             ? InsightVisualStyle::chromeStyleSheet(currentMode)
