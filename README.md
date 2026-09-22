@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.30.1`
+Current version: `v0.30.2`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.30.1`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.30.2`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -147,7 +147,10 @@ The Ela migration branch has a separate release channel. Its fixed package basen
 `ZeroSlack-Ela-win64`, its executable is `ZeroSlack-Ela.exe`, and release tags use
 `ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
 directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps` and its ZIP alongside it.
-The current Ela release is `0.30.1` (`ela-v0.30.1`). Ela's hosted-tab extension handles
+The current Ela release is `0.30.2` (`ela-v0.30.2`). Module block diagrams use Ela
+breadcrumbs and a compact toolbar, with content-sized nested boxes, width-aware wrapping,
+per-instance folding and separate hierarchy/source navigation. The redundant instance
+table and inspector are removed from module mode. Ela's hosted-tab extension handles
 tab drag/drop, split targets and floating editor windows. Closing a floating container
 returns its tabs; closing a tab retains unsaved-document confirmation. Context floating
 windows use ElaAppBar and hosted drag handles. The application retains split layout,

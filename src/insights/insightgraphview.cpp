@@ -6,6 +6,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
+#include <QResizeEvent>
 #include <QWheelEvent>
 
 #include <cmath>
@@ -138,7 +139,22 @@ void InsightGraphView::fitRect(const QRectF& rect, Qt::AspectRatioMode mode)
     if (rect.isEmpty())
         return;
     fitInView(rect, mode);
+    if (!fitUpscalingEnabled && transform().m11() > 1.0) {
+        resetTransform();
+        centerOn(rect.center());
+    }
     notifyZoomChanged();
+}
+
+void InsightGraphView::setFitUpscalingEnabled(bool enabled) { fitUpscalingEnabled = enabled; }
+void InsightGraphView::setViewportResizeHandler(std::function<void()> handler)
+{ viewportResizeHandler = std::move(handler); }
+
+void InsightGraphView::resizeEvent(QResizeEvent* event)
+{
+    QGraphicsView::resizeEvent(event);
+    if (viewportResizeHandler && event->size().width() != event->oldSize().width())
+        viewportResizeHandler();
 }
 
 void InsightGraphView::centerOnRect(const QRectF& rect)

@@ -6,6 +6,9 @@
 
 #include <QRectF>
 #include <QString>
+#include <QHash>
+#include <QSet>
+#include <QPointer>
 
 #include <functional>
 
@@ -24,15 +27,28 @@ class QToolButton;
 class QTreeWidget;
 class QWidget;
 class SignalUsageHotspotPanel;
+class ModuleBlockDiagramToolbar;
+
+struct ModuleBlockScope
+{
+    QString fileName;
+    QString moduleName;
+    QString label;
+    QString instancePath;
+};
 
 struct RtlInsightsPanelViewState
 {
+    QPointer<QObject> graphCallbackContext;
     QDockWidget* insightsDock = nullptr;
     QStackedWidget* insightsStack = nullptr;
     QTreeWidget* insightsTree = nullptr;
     QWidget* insightsGraphPanel = nullptr;
+    QWidget* graphToolbar = nullptr;
+    ModuleBlockDiagramToolbar* moduleBlockToolbar = nullptr;
     QGraphicsScene* insightsGraphScene = nullptr;
     InsightGraphView* insightsGraphView = nullptr;
+    QWidget* graphInspectorPanel = nullptr;
     QTreeWidget* graphInspector = nullptr;
     QTableWidget* graphTable = nullptr;
     SignalUsageHotspotPanel* signalUsageHotspotPanel =
@@ -44,12 +60,7 @@ struct RtlInsightsPanelViewState
     QPushButton* graphFitButton = nullptr;
     QPushButton* graphZoomInButton = nullptr;
     QLineEdit* graphSearchEdit = nullptr;
-    QComboBox* moduleBlockTopCombo = nullptr;
-    QPushButton* moduleBlockSetSelectionButton =
-        nullptr;
     QSpinBox* moduleBlockDepthSpin = nullptr;
-    QCheckBox* moduleBlockCollapsePackagesCheck =
-        nullptr;
     QCheckBox* moduleBlockShowUnresolvedCheck =
         nullptr;
     QComboBox* stateTransitionSignalCombo = nullptr;
@@ -87,6 +98,10 @@ struct RtlInsightsPanelViewState
     QRectF lastGraphFitRect;
     ModuleBlockDiagramReport currentModuleBlockReport;
     int currentModuleBlockSelectedNodeId = -1;
+    QList<ModuleBlockScope> moduleBlockPath;
+    QHash<int, QString> moduleBlockInstancePaths;
+    QSet<QString> collapsedModulePaths;
+    QString moduleBlockRenderedScope;
 
     std::function<bool(const RtlInsightSourceLocation&)>
         sourceNavigationHandler;

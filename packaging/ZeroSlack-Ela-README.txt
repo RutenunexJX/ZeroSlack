@@ -6,7 +6,12 @@ ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
 
-Release 0.30.1 uses Ela's local hosted-tab extension for tab drag/drop, split targets
+Release 0.30.2 adds Ela breadcrumbs and a compact toolbar to module block diagrams.
+Nested module boxes size to their text and children, wrap with the viewport width,
+and shrink when folded. Folding and navigation use instance paths. Source jumps
+are separate from entering modules; the module instance table and inspector are removed.
+
+Version 0.30.1 uses Ela's local hosted-tab extension for tab drag/drop, split targets
 and floating editor windows. Closing a floating container returns its tabs to the
 main window; closing a tab still checks locks and unsaved changes. Context floating
 windows use ElaAppBar and hosted drag handles. Shared documents, undo, workspace

@@ -28,6 +28,8 @@ public:
                            Qt::KeyboardModifiers)> handler);
     void setDoubleClickHandler(std::function<bool(const QPoint&)> handler);
     void setZoomChangedHandler(std::function<void(qreal)> handler);
+    void setViewportResizeHandler(std::function<void()> handler);
+    void setFitUpscalingEnabled(bool enabled);
 
     qreal currentZoom() const;
     void zoomBy(qreal factor);
@@ -45,10 +47,12 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     bool gridVisible = false;
     bool clearSelectionOnEmptyLeftClick = false;
+    bool fitUpscalingEnabled = true;
     qreal minimumZoom = 0.18;
     qreal maximumZoom = 4.5;
     qreal zoomStep = 1.15;
@@ -58,6 +62,7 @@ private:
                        Qt::KeyboardModifiers)> pressHandler;
     std::function<bool(const QPoint&)> doubleClickHandler;
     std::function<void(qreal)> zoomChangedHandler;
+    std::function<void()> viewportResizeHandler;
 
     void initializeThemeConnection();
     void notifyZoomChanged();

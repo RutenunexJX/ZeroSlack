@@ -6,6 +6,7 @@
 #include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
+#include "moduleblockdiagramtoolbar.h"
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightsgraphconstants.h"
 #include "rtlinsightspanelviewstate.h"
@@ -29,9 +30,11 @@
 #include <QSpinBox>
 #include <QStackedWidget>
 #include <QTableWidget>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 
 #include <utility>
 
@@ -39,6 +42,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 {
     viewState =
         std::make_unique<RtlInsightsPanelViewState>();
+    viewState->graphCallbackContext = new QObject;
     graphController =
         std::make_unique<RtlInsightsGraphController>(
             *viewState);
@@ -103,22 +107,11 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     viewState->graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     InsightVisualStyle::applySearchField(viewState->graphSearchEdit);
-    viewState->moduleBlockTopCombo = UiControls::comboBox(panel);
-    viewState->moduleBlockTopCombo->setObjectName(QStringLiteral("rtlModuleBlockTopCombo"));
-    viewState->moduleBlockTopCombo->setMinimumWidth(150);
-    viewState->moduleBlockSetSelectionButton =
-        UiControls::pushButton(panel);
-    viewState->moduleBlockSetSelectionButton->setObjectName(
-        QStringLiteral("rtlModuleBlockSetSelectionButton"));
     viewState->moduleBlockDepthSpin = UiControls::spinBox(panel);
     viewState->moduleBlockDepthSpin->setObjectName(QStringLiteral("rtlModuleBlockDepthSpin"));
     viewState->moduleBlockDepthSpin->setRange(0, 8);
     viewState->moduleBlockDepthSpin->setValue(2);
     viewState->moduleBlockDepthSpin->setPrefix(QStringLiteral("Depth "));
-    viewState->moduleBlockCollapsePackagesCheck =
-        UiControls::checkBox(QStringLiteral("Collapse packages"), panel);
-    viewState->moduleBlockCollapsePackagesCheck->setObjectName(
-        QStringLiteral("rtlModuleBlockCollapsePackagesCheck"));
     viewState->moduleBlockShowUnresolvedCheck =
         UiControls::checkBox(QStringLiteral("Show unresolved"), panel);
     viewState->moduleBlockShowUnresolvedCheck->setObjectName(
@@ -223,15 +216,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
          {viewState->signalUsageHotspotButton,
           viewState->fsmGraphButton,
           viewState->moduleBlockDiagramButton,
-          viewState->moduleBlockSetSelectionButton,
           viewState->graphZoomOutButton,
           viewState->graphFitButton,
           viewState->graphZoomInButton}) {
         InsightVisualStyle::applyToolbarButton(button);
     }
     for (QCheckBox* checkBox :
-         {viewState->moduleBlockCollapsePackagesCheck,
-          viewState->moduleBlockShowUnresolvedCheck,
+         {viewState->moduleBlockShowUnresolvedCheck,
           viewState->stateTransitionResetCheck,
           viewState->stateTransitionErrorCheck,
           viewState->stateTransitionUnreachableCheck}) {
@@ -257,6 +248,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->insightsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     viewState->insightsGraphScene = new QGraphicsScene(panel);
+    QObject::connect(viewState->insightsGraphScene, &QGraphicsScene::selectionChanged,
+                     viewState->graphCallbackContext, [this]() {
+                         graphController->refreshModuleBlockSelectionActions();
+                     });
     QObject::connect(
         viewState->insightsGraphScene,
         &QGraphicsScene::changed,
@@ -290,19 +285,23 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphPanelLayout->setContentsMargins(0, 0, 0, 0);
     graphPanelLayout->setSpacing(6);
 
+    viewState->moduleBlockToolbar = new ModuleBlockDiagramToolbar(viewState->insightsGraphPanel);
+    viewState->moduleBlockToolbar->setMoreMenu(graphMoreMenu);
+    graphPanelLayout->addWidget(viewState->moduleBlockToolbar);
+    viewState->graphToolbar = new QWidget(viewState->insightsGraphPanel);
+    auto* legacyToolbarLayout = new QVBoxLayout(viewState->graphToolbar);
+    legacyToolbarLayout->setContentsMargins(0, 0, 0, 0);
+    graphPanelLayout->addWidget(viewState->graphToolbar);
+
     auto* graphToolbarLayout = new QHBoxLayout;
     graphToolbarLayout->setContentsMargins(0, 0, 0, 0);
     graphToolbarLayout->setSpacing(6);
-    auto* moduleBlockTopLabel = UiControls::label(QStringLiteral("Top:"), panel);
-    moduleBlockTopLabel->setObjectName(QStringLiteral("rtlModuleBlockTopLabel"));
     auto* stateSignalLabel = UiControls::label(QStringLiteral("Signal:"), panel);
     stateSignalLabel->setObjectName(QStringLiteral("rtlStateSignalLabel"));
     auto* stateCurrentLabel = UiControls::label(QStringLiteral("Current:"), panel);
     stateCurrentLabel->setObjectName(QStringLiteral("rtlStateCurrentLabel"));
     auto* stateNextLabel = UiControls::label(QStringLiteral("Next:"), panel);
     stateNextLabel->setObjectName(QStringLiteral("rtlStateNextLabel"));
-    graphToolbarLayout->addWidget(moduleBlockTopLabel);
-    graphToolbarLayout->addWidget(viewState->moduleBlockTopCombo);
     graphToolbarLayout->addWidget(stateSignalLabel);
     graphToolbarLayout->addWidget(viewState->stateTransitionSignalCombo);
     graphToolbarLayout->addWidget(stateCurrentLabel);
@@ -310,11 +309,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(stateNextLabel);
     graphToolbarLayout->addWidget(viewState->stateTransitionNextCombo);
     graphToolbarLayout->addWidget(viewState->graphSearchEdit, 1);
-    graphToolbarLayout->addWidget(viewState->moduleBlockSetSelectionButton);
     graphToolbarLayout->addWidget(viewState->graphFitButton);
-    graphToolbarLayout->addWidget(viewState->moduleBlockDepthSpin);
-    graphToolbarLayout->addWidget(viewState->moduleBlockCollapsePackagesCheck);
-    graphToolbarLayout->addWidget(viewState->moduleBlockShowUnresolvedCheck);
     graphToolbarLayout->addWidget(viewState->stateTransitionResetCheck);
     graphToolbarLayout->addWidget(viewState->stateTransitionErrorCheck);
     graphToolbarLayout->addWidget(viewState->stateTransitionUnreachableCheck);
@@ -322,7 +317,53 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(viewState->graphZoomOutButton);
     graphToolbarLayout->addWidget(viewState->graphZoomInButton);
     graphToolbarLayout->addWidget(viewState->graphMoreButton);
-    graphPanelLayout->addLayout(graphToolbarLayout);
+    legacyToolbarLayout->addLayout(graphToolbarLayout);
+    CompactFlowLayout::replaceRows(legacyToolbarLayout);
+
+    auto* moduleOptions = new QWidget;
+    auto* moduleOptionsLayout = new QVBoxLayout(moduleOptions);
+    moduleOptionsLayout->setContentsMargins(8, 6, 8, 6);
+    moduleOptionsLayout->addWidget(viewState->moduleBlockDepthSpin);
+    moduleOptionsLayout->addWidget(viewState->moduleBlockShowUnresolvedCheck);
+    auto* moduleOptionsAction = new QWidgetAction(graphMoreMenu);
+    moduleOptionsAction->setDefaultWidget(moduleOptions);
+    graphMoreMenu->addSeparator();
+    graphMoreMenu->addAction(moduleOptionsAction);
+    QObject::connect(graphMoreMenu, &QMenu::aboutToShow, viewState->graphCallbackContext,
+                     [this, moduleOptionsAction]() {
+                         moduleOptionsAction->setVisible(viewState->currentGraphMode == QStringLiteral("module-block"));
+                     });
+
+    auto* moduleBar = viewState->moduleBlockToolbar;
+    const QPointer<QObject> callbackContext = viewState->graphCallbackContext;
+    moduleBar->breadcrumbActivated = [this, callbackContext](int index) {
+        if (callbackContext) graphController->navigateModuleBlockBreadcrumb(index);
+    };
+    moduleBar->searchChanged = [this, callbackContext](const QString& text) {
+        if (callbackContext) graphController->setFocusSearchText(text);
+    };
+    QObject::connect(moduleBar->backAction, &QAction::triggered, callbackContext, [this]() {
+        graphController->navigateModuleBlockBreadcrumb(viewState->moduleBlockPath.size() - 2);
+    });
+    QObject::connect(moduleBar->fitAction, &QAction::triggered, callbackContext, [this]() { graphController->focusFit(); });
+    QObject::connect(moduleBar->zoomInAction, &QAction::triggered, callbackContext, [this]() { graphController->focusZoomIn(); });
+    QObject::connect(moduleBar->zoomOutAction, &QAction::triggered, callbackContext, [this]() { graphController->focusZoomOut(); });
+    QObject::connect(moduleBar->foldAction, &QAction::triggered, callbackContext, [this]() {
+        graphController->toggleModuleBlockNode(viewState->currentModuleBlockSelectedNodeId);
+    });
+    viewState->insightsGraphView->setZoomChangedHandler([bar = QPointer<ModuleBlockDiagramToolbar>(moduleBar)](qreal scale) {
+        if (bar) bar->setZoom(scale);
+    });
+    auto* moduleResizeTimer = new QTimer(callbackContext);
+    moduleResizeTimer->setSingleShot(true);
+    moduleResizeTimer->setInterval(60);
+    QObject::connect(moduleResizeTimer, &QTimer::timeout, callbackContext, [this]() {
+        if (viewState->currentGraphMode == QStringLiteral("module-block"))
+            graphController->mapModuleBlockDiagram(viewState->currentModuleBlockReport);
+    });
+    viewState->insightsGraphView->setViewportResizeHandler([this, callbackContext, moduleResizeTimer]() {
+        if (callbackContext && viewState->currentGraphMode == QStringLiteral("module-block")) moduleResizeTimer->start();
+    });
 
     viewState->graphInspector = UiControls::treeWidget(panel);
     viewState->graphInspector->setObjectName(QStringLiteral("rtlGraphInspector"));
@@ -361,9 +402,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     bindGraphActionButton(
         viewState->graphInspectorSetTopButton,
         viewState->graphSetTopAction);
-    bindGraphActionButton(
-        viewState->moduleBlockSetSelectionButton,
-        viewState->graphSetTopAction);
     for (QPushButton* button :
          {viewState->graphInspectorJumpButton,
           viewState->graphInspectorFocusButton,
@@ -376,6 +414,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         QStringLiteral("Hierarchy reveal is not wired for this panel yet."));
 
     auto* inspectorPanel = new QWidget(panel);
+    viewState->graphInspectorPanel = inspectorPanel;
     inspectorPanel->setObjectName(QStringLiteral("rtlGraphInspectorPanel"));
     auto* inspectorLayout = new QVBoxLayout(inspectorPanel);
     inspectorLayout->setContentsMargins(0, 0, 0, 0);
@@ -501,30 +540,8 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      viewState->insightsDock,
                      [this](const QString& text) {
                          viewState->graphSearchText = text.trimmed();
+                         viewState->moduleBlockToolbar->setSearchText(text);
                          graphController->applySearchHighlight();
-                     });
-    QObject::connect(viewState->moduleBlockTopCombo,
-                     qOverload<int>(&QComboBox::activated),
-                     viewState->insightsDock,
-                     [this](int index) {
-                         if (!viewState->moduleBlockTopCombo
-                             || viewState->currentGraphMode != QStringLiteral("module-block")) {
-                             return;
-                         }
-                         const int nodeId =
-                             viewState->moduleBlockTopCombo->itemData(index).toInt();
-                         for (const ModuleBlockDiagramNode& node :
-                              viewState->currentModuleBlockReport.nodes) {
-                             if (node.nodeId != nodeId
-                                 || node.unresolved
-                                 || node.definitionCodeLink.fileName.isEmpty()) {
-                                 continue;
-                             }
-                             showModuleBlockDiagramForModule(
-                                 node.definitionCodeLink.fileName,
-                                 node.moduleDisplayName);
-                             return;
-                         }
                      });
     QObject::connect(viewState->moduleBlockDepthSpin,
                      qOverload<int>(&QSpinBox::valueChanged),
@@ -550,36 +567,12 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                                  viewState->currentModuleBlockReport);
                      });
     QObject::connect(viewState->graphTable,
-                     &QTableWidget::cellClicked,
-                     viewState->insightsDock,
-                     [this](int row, int) {
-                         if (!viewState->graphTable || row < 0)
-                             return;
-                         const QTableWidgetItem* item =
-                             viewState->graphTable->item(row, 0);
-                         if (!item)
-                             return;
-                         if (viewState->currentGraphMode == QStringLiteral("module-block"))
-                             graphController->selectModuleBlockNode(
-                                 item->data(kGraphNodeIdRole).toInt());
-                     });
-    QObject::connect(viewState->graphTable,
                      &QTableWidget::cellDoubleClicked,
                      viewState->insightsDock,
                      [this](int row, int) {
                          if (!viewState->graphTable || row < 0)
                              return;
                          viewState->graphTable->selectRow(row);
-                         if (viewState->currentGraphMode == QStringLiteral("module-block")) {
-                             const QTableWidgetItem* item =
-                                 viewState->graphTable->item(row, 0);
-                             if (item) {
-                                 graphController->selectModuleBlockNode(
-                                     item->data(kGraphNodeIdRole).toInt(),
-                                     false,
-                                     false);
-                             }
-                         }
                          graphController->navigateSelectedItem();
                      });
     presenter->renderNoContext();
@@ -588,6 +581,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 
 RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator()
 {
+    delete viewState->graphCallbackContext.data();
     QObject::disconnect(themeAboutToChangeConnection);
     // The scene is parented to the MainWindow-owned panel and can outlive this
     // non-QObject coordinator during MainWindow member teardown.  Disconnect

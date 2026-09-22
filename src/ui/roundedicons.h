@@ -15,7 +15,7 @@ enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
-    OpenProject };
+    OpenProject, ZoomIn, ZoomOut, More };
 
 class Engine final : public QIconEngine {
 public:
@@ -51,6 +51,9 @@ public:
             p->drawPolygon(gear); circle(12,12,3); break;
         }
         case Search: circle(10,10,7); line(15,15,21,21); break;
+        case ZoomIn: line(5,12,19,12); line(12,5,12,19); break;
+        case ZoomOut: line(5,12,19,12); break;
+        case More: circle(5,12,.65); circle(12,12,.65); circle(19,12,.65); break;
         case Replace: path({{4,7},{20,7},{16,3}}); path({{20,17},{4,17},{8,21}}); break;
         case Filter: path({{3,4},{21,4},{14,12},{14,20},{10,18},{10,12}},true); break;
         case Refresh: p->drawArc(QRectF(4,4,16,16),45*16,290*16); path({{20,3},{20,8},{15,8}}); break;

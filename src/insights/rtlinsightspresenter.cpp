@@ -668,6 +668,13 @@ void RtlInsightsPresenter::showModuleBlockDiagramForModule(
     const QString& moduleName)
 {
     setContextDirect(fileName, moduleName, {});
+    if (!state.moduleBlockPath.isEmpty()) {
+        const ModuleBlockScope& scope = state.moduleBlockPath.last();
+        if (scope.fileName == fileName && scope.moduleName == moduleName) {
+            state.currentSourceLocation.instancePath = scope.instancePath;
+            state.currentSourceLocation.activeTopModule = state.moduleBlockPath.first().moduleName;
+        }
+    }
     showModuleBlockDiagram();
 }
 

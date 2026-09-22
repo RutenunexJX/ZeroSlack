@@ -3,6 +3,7 @@
 #include "rtlinsightsgraphscenemapper.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
+#include "moduleblockdiagramtoolbar.h"
 #include "rtlinsightsgraphconstants.h"
 #include "rtlinsightspanelviewstate.h"
 #include "signalusagehotspotpanel.h"
@@ -339,38 +340,10 @@ void RtlInsightsGraphController::renderGenericInspector(
     sceneMapper->renderGenericInspector(title, rows);
 }
 
-void RtlInsightsGraphController::renderModuleBlockInspector(
-    const ModuleBlockDiagramReport& report,
-    const ModuleBlockDiagramNode& node)
-{
-    sceneMapper->renderModuleBlockInspector(
-        report,
-        node);
-}
-
-void RtlInsightsGraphController::
-    populateModuleBlockInstancesTable(
-        const ModuleBlockDiagramReport& report)
-{
-    sceneMapper->populateModuleBlockInstancesTable(
-        report);
-}
-
 void RtlInsightsGraphController::
     populateFsmTransitionsTable(const FsmGraph& graph)
 {
     sceneMapper->populateFsmTransitionsTable(graph);
-}
-
-void RtlInsightsGraphController::selectModuleBlockNode(
-    int nodeId,
-    bool centerGraph,
-    bool syncTable)
-{
-    sceneMapper->selectModuleBlockNode(
-        nodeId,
-        centerGraph,
-        syncTable);
 }
 
 bool RtlInsightsGraphController::selectItemForInspector(
@@ -409,6 +382,15 @@ bool RtlInsightsGraphController::
     return sceneMapper
         ->setModuleBlockTopFromSelected();
 }
+
+bool RtlInsightsGraphController::enterModuleBlockNode(int nodeId)
+{ return sceneMapper->enterModuleBlockNode(nodeId); }
+bool RtlInsightsGraphController::navigateModuleBlockBreadcrumb(int index)
+{ return sceneMapper->navigateModuleBlockBreadcrumb(index); }
+bool RtlInsightsGraphController::toggleModuleBlockNode(int nodeId)
+{ return sceneMapper->toggleModuleBlockNode(nodeId); }
+void RtlInsightsGraphController::refreshModuleBlockSelectionActions()
+{ sceneMapper->refreshModuleBlockSelectionActions(); }
 
 bool RtlInsightsGraphController::selectSourceLocation(
     const RtlInsightSourceLocation& location,
@@ -525,6 +507,7 @@ void RtlInsightsGraphController::setFocusSearchText(
         state.signalUsageHotspotPanel->setFocusSearchText(text);
     } else if (state.graphSearchEdit) {
         state.graphSearchEdit->setText(text);
+        if (state.moduleBlockToolbar) state.moduleBlockToolbar->setSearchText(text);
     }
 }
 
@@ -548,8 +531,11 @@ void RtlInsightsGraphController::focusInspector()
     } else if (state.insightsStack
                && state.insightsStack->currentWidget()
                       == state.insightsGraphPanel
-               && state.graphInspector) {
-        state.graphInspector->setFocus();
+               && state.insightsGraphView) {
+        if (state.currentGraphMode == QStringLiteral("module-block"))
+            state.insightsGraphView->setFocus();
+        else if (state.graphInspector)
+            state.graphInspector->setFocus();
     } else if (state.insightsTree) {
         state.insightsTree->setFocus();
     }
@@ -773,16 +759,15 @@ void RtlInsightsGraphController::configureToolbarForMode(
         mode == QStringLiteral("state-transition")
         || mode == QStringLiteral("fsm");
     const bool graphMode = moduleMode || stateMode;
+    if (state.moduleBlockToolbar) state.moduleBlockToolbar->setVisible(moduleMode);
+    if (state.graphToolbar) state.graphToolbar->setVisible(stateMode);
+    if (state.insightsGraphView) {
+        state.insightsGraphView->setFitUpscalingEnabled(!moduleMode);
+        state.insightsGraphView->setGridVisible(!moduleMode);
+    }
 
     for (QWidget* widget :
-         {static_cast<QWidget*>(state.moduleBlockTopCombo),
-          state.insightsGraphPanel
-              ? state.insightsGraphPanel->findChild<QWidget*>(
-                    QStringLiteral("rtlModuleBlockTopLabel"))
-              : nullptr,
-          static_cast<QWidget*>(state.moduleBlockSetSelectionButton),
-          static_cast<QWidget*>(state.moduleBlockDepthSpin),
-          static_cast<QWidget*>(state.moduleBlockCollapsePackagesCheck),
+         {static_cast<QWidget*>(state.moduleBlockDepthSpin),
           static_cast<QWidget*>(state.moduleBlockShowUnresolvedCheck)}) {
         if (widget)
             widget->setVisible(moduleMode);
@@ -818,7 +803,7 @@ void RtlInsightsGraphController::configureToolbarForMode(
             state.graphLayoutCombo->setCurrentText(QStringLiteral("State flow"));
     }
     if (state.graphTable)
-        state.graphTable->setVisible(graphMode);
-    if (state.graphInspector)
-        state.graphInspector->setVisible(graphMode);
+        state.graphTable->setVisible(stateMode);
+    if (state.graphInspectorPanel)
+        state.graphInspectorPanel->setVisible(stateMode);
 }

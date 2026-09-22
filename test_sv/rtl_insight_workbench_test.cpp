@@ -4,6 +4,8 @@
 #include "contextrail.h"
 #include "insightcanvas.h"
 #include "insightgraphcore.h"
+#include "rtlinsightsgraphconstants.h"
+#include "actionregistry.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsightsession.h"
@@ -26,6 +28,13 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QFileInfo>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsRectItem>
+#include <QDockWidget>
+#include <QLineEdit>
+#include <QMenu>
+#include <QAbstractItemView>
 #include <QIcon>
 #include <QImage>
 #include <QMainWindow>
@@ -33,6 +42,8 @@
 #include <QSet>
 #include <QScopeGuard>
 #include <QSpinBox>
+#include <QSplitter>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -171,6 +182,7 @@ private slots:
     void toolPagesRouteAllFourWorkbenchViews();
     void specializedModesSurviveRouting();
     void sidebarSectionTeardownReleasesFocusedControls();
+    void moduleDiagramAdaptsAndNavigatesInstances();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
     void realWindowChromeButtons();
@@ -485,16 +497,27 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         QVERIFY(view);
         QCoreApplication::processEvents();
         auto* depth = view->findChild<QSpinBox*>(QStringLiteral("rtlModuleBlockDepthSpin"));
-        auto* top = view->findChild<QComboBox*>(QStringLiteral("rtlModuleBlockTopCombo"));
-        QVERIFY(depth && top);
-        QVERIFY(top->count() > 0);
-        QVERIFY(depth->isVisible());
-        top->showPopup();
+        auto* breadcrumbs = view->findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
+        auto* more = view->findChild<QToolButton*>(QStringLiteral("rtlModuleMoreButton"));
+        QVERIFY(depth && breadcrumbs && more && more->menu());
+        QVERIFY(breadcrumbs->isVisible());
+        auto* inspector = view->findChild<QWidget*>(QStringLiteral("rtlGraphInspectorPanel"));
+        auto* table = view->findChild<QTableWidget*>(QStringLiteral("rtlGraphDetailTable"));
+        auto* body = view->findChild<QSplitter*>(QStringLiteral("rtlGraphBodySplitter"));
+        QVERIFY(inspector && table && body);
+        QVERIFY(inspector->isHidden());
+        QVERIFY(table->isHidden());
+        QCOMPARE(table->rowCount(), 0);
+        auto* graph = qobject_cast<QGraphicsView*>(body->widget(0));
+        QVERIFY(graph && graph->isVisible());
+        QTRY_COMPARE(graph->width(), body->contentsRect().width());
+        more->menu()->popup(more->mapToGlobal(QPoint(0, more->height())));
         QCoreApplication::processEvents();
-        top->hidePopup();
+        QVERIFY(depth->isVisible());
         depth->setFocus();
         depth->stepUp();
         QCoreApplication::processEvents();
+        more->menu()->hide();
         QToolButton* close = nullptr;
         for (auto* button : controller.dockHost()->findChildren<QToolButton*>())
             if (button->toolTip() == QStringLiteral("Close section")) close = button;
@@ -505,6 +528,136 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         QVERIFY(view.isNull());
         QCOMPARE(controller.dockHost()->resourceCount(), 0);
     }
+}
+
+void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
+{
+    auto* index = SemanticIndex::getInstance();
+    const auto previous = index->snapshot();
+    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
+    const QString file = QDir::tempPath() + QStringLiteral("/module_compact_layout.sv");
+    const QHash<QString, QString> contents{{file, QStringLiteral(
+        "module leaf; endmodule\n"
+        "module branch; leaf u_leaf(); leaf u_long_instance_name_for_width(); endmodule\n"
+        "module top; branch u_left(); branch u_right(); endmodule\n")}};
+    SlangManager slang;
+    const auto records = slang.extractOverlayWorkspaceSymbolRecords(contents, {}, {}, nullptr, nullptr, {file});
+    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
+    QMainWindow window;
+    RtlInsightsPanelCoordinator panel(&window);
+    window.addDockWidget(Qt::LeftDockWidgetArea, panel.dock());
+    window.resize(1120, 700);
+    window.show();
+    panel.showModuleBlockDiagramForModule(file, QStringLiteral("top"));
+    auto* graph = panel.graphView();
+    auto* breadcrumb = window.findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
+    auto* toolbar = window.findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
+    auto* fold = window.findChild<QAction*>(QStringLiteral("rtlModuleFoldAction"));
+    auto* back = window.findChild<QAction*>(QStringLiteral("rtlModuleBackAction"));
+    auto* enter = panel.graphActionForTest(QString::fromLatin1(ActionIds::GraphSetTopSelected));
+    QVERIFY(graph && breadcrumb && toolbar && fold && back && enter);
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        QVERIFY(breadcrumb->inherits("ElaBreadcrumbBar"));
+        QVERIFY(window.findChild<QWidget*>(QStringLiteral("rtlModuleToolBarActions"))->inherits("ElaToolBar"));
+    }
+    const auto node = [&graph](const QString& path) -> QGraphicsRectItem* {
+        for (auto* item : graph->scene()->items()) {
+            if (item->data(kGraphKindRole).toString() == QStringLiteral("module")
+                && item->data(kGraphInstancePathRole).toString() == path)
+                return dynamic_cast<QGraphicsRectItem*>(item);
+        }
+        return nullptr;
+    };
+    const auto select = [&](const QString& module, const QString& instance) {
+        return panel.selectGraphItemForTest(QStringLiteral("module"), module,
+            QStringLiteral("instance: %1").arg(instance));
+    };
+    QTRY_COMPARE(panel.graphNodeItemCountForTest(), 7);
+    QTest::qWait(120);
+    QVERIFY(graph->transform().m11() <= 1.0);
+    QVERIFY(node("top.u_left.u_leaf") && node("top.u_left.u_long_instance_name_for_width"));
+    QVERIFY(node("top.u_left.u_leaf")->rect().width() < node("top.u_left.u_long_instance_name_for_width")->rect().width());
+    QVERIFY(node("top.u_left.u_leaf")->rect().height() < 80);
+    const QRectF initialRoot = node("top")->rect();
+    QVERIFY(node("top")->rect().contains(node("top.u_left")->rect()));
+    QVERIFY(node("top.u_left")->rect().contains(node("top.u_left.u_leaf")->rect()));
+    QVERIFY(!node("top.u_left")->rect().intersects(node("top.u_right")->rect()));
+    const auto capture = [&](const QString& name) {
+        const QString dir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+        if (!dir.isEmpty()) {
+            QDir().mkpath(dir);
+            window.grab().save(dir + QLatin1Char('/') + name + QStringLiteral(".png"));
+        }
+    };
+    capture(QStringLiteral("module-wide"));
+
+    QVERIFY(select("branch", "u_left"));
+    panel.focusZoomIn();
+    const qreal zoom = graph->transform().m11();
+    fold->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 5);
+    QVERIFY(!node("top.u_left.u_leaf"));
+    QVERIFY(node("top.u_right.u_leaf"));
+    QVERIFY(node("top.u_left")->rect().height() < node("top.u_right")->rect().height());
+    QCOMPARE(graph->transform().m11(), zoom);
+    fold->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
+
+    QVERIFY(select("branch", "u_left"));
+    fold->trigger();
+    panel.setFocusSearchText(QStringLiteral("u_leaf"));
+    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
+    QVERIFY(panel.graphSelectedItemCountForTest() >= 2);
+    panel.setFocusSearchText({});
+    QVERIFY(!fold->isEnabled());
+    QVERIFY(!enter->isEnabled());
+    QVERIFY(select("branch", "u_right"));
+    QVERIFY(enter->isEnabled());
+    enter->trigger();
+    QCOMPARE(panel.currentModuleNameForTest(), QStringLiteral("branch"));
+    QCOMPARE(panel.graphNodeItemCountForTest(), 3);
+    QVERIFY(node("top.u_right.u_leaf"));
+    QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
+    QVERIFY(back->isEnabled());
+    QVERIFY(select("leaf", "u_leaf"));
+    enter->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 1);
+    QVERIFY(node("top.u_right.u_leaf"));
+    QVERIFY(graph->sceneRect().width() < 300 && graph->sceneRect().height() < 120);
+    QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right / u_leaf"));
+    QVERIFY(!fold->isEnabled());
+    back->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 3);
+    QVERIFY(node("top.u_right"));
+    back->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
+    QVERIFY(!back->isEnabled());
+    QVERIFY(select("branch", "u_left"));
+    enter->trigger();
+    if (breadcrumb->inherits("ElaBreadcrumbBar")) {
+        auto* pathItems = breadcrumb->findChild<QAbstractItemView*>();
+        QVERIFY(pathItems);
+        const QModelIndex top = pathItems->model()->index(0, 0);
+        QTest::mouseClick(pathItems->viewport(), Qt::LeftButton, Qt::NoModifier, pathItems->visualRect(top).center());
+        QTRY_COMPARE(panel.currentModuleNameForTest(), QStringLiteral("top"));
+    } else back->trigger();
+    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
+
+    window.resize(390, 700);
+    QTest::qWait(150);
+    QVERIFY(node("top")->rect().width() < initialRoot.width());
+    QVERIFY(node("top")->rect().height() > initialRoot.height());
+    QVERIFY(node("top.u_left")->rect().bottom() < node("top.u_right")->rect().top());
+    QVERIFY(toolbar->rect().contains(toolbar->mapFromGlobal(breadcrumb->mapToGlobal(breadcrumb->rect().center()))));
+    capture(QStringLiteral("module-narrow"));
+    panel.focusFit();
+    QVERIFY(graph->transform().m11() <= 1.0);
+    const QPoint inlineEnter = graph->mapFromScene(
+        node("top.u_right")->rect().topRight() + QPointF(-15, 17));
+    QTest::mouseClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, inlineEnter);
+    QTRY_COMPARE(panel.currentModuleNameForTest(), QStringLiteral("branch"));
+    QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
 }
 
 void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()

@@ -249,6 +249,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/app/mainwindowcontextworkspace.cpp
     src/insights/rtlactioncoordinator.cpp
     src/insights/moduleblockdiagramservice.cpp
+    src/insights/moduleblockdiagramtoolbar.cpp
     src/completion/completioncommandmode.cpp
     src/completion/completioncontexthelper.cpp
     src/completion/completionmatcher.cpp

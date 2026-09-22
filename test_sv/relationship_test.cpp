@@ -4912,6 +4912,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&wrappedIndex);
     QWidget wrappedPanelHost;
     RtlInsightsPanelCoordinator wrappedPanel(&wrappedPanelHost);
+    // The host stays hidden in this fixture; give the viewport a real layout budget.
+    wrappedPanel.graphView()->viewport()->resize(800, 600);
     wrappedPanel.showModuleBlockDiagramForModule(
         wrappedTopPath,
         QStringLiteral("wrapped_top"));
@@ -4999,29 +5001,26 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphNodeItemCountForTest() == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
-    expectBool("module block diagram inspector shows root",
-               moduleBlockPanel.graphInspectorRowsForTest().join(
-                   QLatin1Char('\n')).contains(
-                       QStringLiteral("Selected=rel_top"))
-                   && moduleBlockPanel.graphInspectorRowsForTest().join(
-                       QLatin1Char('\n')).contains(
-                       QStringLiteral("Children=1")),
+    QWidget* moduleInspector = moduleBlockPanel.dock()->findChild<QWidget*>(
+        QStringLiteral("rtlGraphInspectorPanel"));
+    QWidget* moduleTable = moduleBlockPanel.dock()->findChild<QWidget*>(
+        QStringLiteral("rtlGraphDetailTable"));
+    expectBool("module block diagram has no inspector or instances table",
+               moduleInspector && moduleInspector->isHidden()
+                   && moduleTable && moduleTable->isHidden()
+                   && moduleBlockPanel.graphInspectorRowsForTest().isEmpty()
+                   && moduleBlockPanel.graphTableRowsForTest().isEmpty(),
                true);
-    expectBool("module block diagram instances table has child",
-               moduleBlockPanel.graphTableRowsForTest().join(
-                   QLatin1Char('\n')).contains(
-                       QStringLiteral("u_stage|rel_stage|rel_top")),
-               true);
-    const bool selectedStageFromTable =
-        moduleBlockPanel.selectGraphTableRowForTest(
+    const bool selectedStageFromCanvas =
+        moduleBlockPanel.selectGraphItemForTest(
+            QStringLiteral("module"),
             QStringLiteral("rel_stage"),
-            QStringLiteral("u_stage"));
-    expectBool("module block diagram table row selects graph node",
-               selectedStageFromTable
+            QStringLiteral("instance: u_stage"));
+    expectBool("module block diagram selects nodes without auxiliary data",
+               selectedStageFromCanvas
                    && moduleBlockPanel.graphSelectedItemCountForTest() == 1
-                   && moduleBlockPanel.graphInspectorRowsForTest().join(
-                       QLatin1Char('\n')).contains(
-                       QStringLiteral("Selected=u_stage : rel_stage")),
+                   && moduleBlockPanel.graphInspectorRowsForTest().isEmpty()
+                   && moduleBlockPanel.graphTableRowsForTest().isEmpty(),
                true);
     QAction* moduleBlockSetTopAction =
         moduleBlockPanel.graphActionForTest(
@@ -5054,9 +5053,10 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         topPath,
         QStringLiteral("rel_top"));
     const bool restoredStageSelection =
-        moduleBlockPanel.selectGraphTableRowForTest(
+        moduleBlockPanel.selectGraphItemForTest(
+            QStringLiteral("module"),
             QStringLiteral("rel_stage"),
-            QStringLiteral("u_stage"));
+            QStringLiteral("instance: u_stage"));
     expectBool("module block Action fixture restores parent graph selection",
                restoredStageSelection
                    && moduleBlockPanel.currentModuleNameForTest()
@@ -5123,12 +5123,16 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                        == stageInstanceRecord.location.startLine
                    && moduleBlockNavigatedColumn
                        == stageInstanceRecord.location.startColumn
-                   && moduleBlockPanel.graphNodeItemCountForTest() == 1
-                   && moduleBlockPanel.graphEdgeItemCountForTest() == 0,
+                   && moduleBlockPanel.graphNodeItemCountForTest() == 2
+                   && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
-    expectBool("module block diagram no-child reason visible",
-               moduleBlockPanel.graphTextItemsForTest().join(QLatin1Char('\n'))
-                   .contains(QStringLiteral("No child modules")),
+    moduleBlockPanel.selectGraphItemForTest(QStringLiteral("module"), QStringLiteral("rel_stage"));
+    if (moduleBlockSetTopAction) moduleBlockSetTopAction->trigger();
+    expectBool("module block diagram leaf uses compact content bounds",
+               moduleBlockPanel.graphNodeItemCountForTest() == 1
+                   && moduleBlockPanel.graphEdgeItemCountForTest() == 0
+                   && moduleBlockPanel.graphView()->scene()->sceneRect().width() < 300
+                   && moduleBlockPanel.graphView()->scene()->sceneRect().height() < 120,
                true);
 
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&blackboxIndex);
@@ -5239,13 +5243,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         drillPanel.triggerGraphNavigationForTest(
             QStringLiteral("module"),
             QStringLiteral("diagram_stage"));
-    expectBool("module block diagram drills into jumped module children",
+    expectBool("module block source jump preserves the current hierarchy",
                invokedStageDrill
                    && drillNavigatedFileName == diagramStagePath
                    && drillNavigatedLine
                        == diagramStageRecord.location.startLine
-                   && drillPanel.graphNodeItemCountForTest() == 2
-                   && drillPanel.graphEdgeItemCountForTest() == 1,
+                   && drillPanel.graphNodeItemCountForTest() == 3
+                   && drillPanel.graphEdgeItemCountForTest() == 2,
                true);
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
 
@@ -8161,6 +8165,18 @@ static void runFsmGraphServiceFixture()
     QWidget fsmPanelHost;
     RtlInsightsPanelCoordinator fsmPanel(&fsmPanelHost);
     fsmPanel.updateModuleContext(fileName, QStringLiteral("fsm_top"));
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
+    fsmPanel.showModuleBlockDiagramForModule(fileName, QStringLiteral("fsm_top"));
+    ModuleBlockDiagramService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
+    QWidget* sharedInspector = fsmPanel.dock()->findChild<QWidget*>(
+        QStringLiteral("rtlGraphInspectorPanel"));
+    QWidget* sharedTable = fsmPanel.dock()->findChild<QWidget*>(
+        QStringLiteral("rtlGraphDetailTable"));
+    expectBool("module mode removes shared auxiliary regions",
+               fsmPanel.graphModeForTest() == QStringLiteral("module-block")
+                   && sharedInspector && sharedInspector->isHidden()
+                   && sharedTable && sharedTable->isHidden(),
+               true);
     QPushButton* fsmGraphButton =
         fsmPanel.dock()
             ? fsmPanel.dock()->findChild<QPushButton*>(
@@ -8171,6 +8187,10 @@ static void runFsmGraphServiceFixture()
     QGraphicsView* fsmGraphView = fsmPanel.graphView();
     expectBool("fsm graph panel button available",
                fsmGraphButton && fsmGraphButton->isEnabled(),
+               true);
+    expectBool("fsm mode restores shared auxiliary regions after module mode",
+               sharedInspector && !sharedInspector->isHidden()
+                   && sharedTable && !sharedTable->isHidden(),
                true);
     expectBool("fsm graph panel has graph view",
                fsmGraphView && fsmGraphView->scene(),
