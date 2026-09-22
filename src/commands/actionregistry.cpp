@@ -2440,15 +2440,6 @@ void appendGraphSelectionActions(QList<ActionDescriptor>* out)
          "Render a graph and select an item first.",
          ActionCategory::Inspect,
          ActionScope::Module},
-        {ActionIds::GraphSetTopSelected,
-         "Set Selected Module as Graph Top",
-         "Rebuild the module block diagram with the selected resolved module as its top.",
-         "insight.graph.setTopSelected",
-         "Set Top",
-         "rtlGraphSetTopAction",
-         "Render a module block graph and select a resolved module first.",
-         ActionCategory::Navigate,
-         ActionScope::Hierarchy},
     };
 
     for (const Spec& spec : specs) {

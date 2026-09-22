@@ -13,7 +13,6 @@
 #include <functional>
 
 class LiveInsightSession;
-class QCheckBox;
 class QHideEvent;
 class QLabel;
 class QPushButton;
@@ -38,6 +37,7 @@ public:
     // the editor-side picker.
     struct TargetCandidate {
         QString label;
+        QString fileName;
         QString moduleName;
         QString signalName;
         QString signalAccessPath;
@@ -49,7 +49,7 @@ public:
         int scopeStartLineZeroBased = 0;
         bool operator==(const TargetCandidate& other) const
         {
-            return moduleName == other.moduleName
+            return fileName == other.fileName && moduleName == other.moduleName
                 && signalName == other.signalName
                 && signalAccessPath == other.signalAccessPath
                 && scopeLabel == other.scopeLabel
@@ -77,15 +77,12 @@ public:
     LiveInsightKind selectedKind() const;
     void setSelectedKind(LiveInsightKind kind);
 
-    bool followEditor() const;
-    void setFollowEditor(bool follow);
-    bool pinned() const;
-    void setPinned(bool pinned);
-
     QString workspaceId() const;
     void setWorkspaceId(const QString& workspaceId);
     void setFullViewHandler(FullViewHandler handler);
     void setToolContextSource(ToolContextSource source);
+    void setNavigationHandler(LiveInsightToolPage::NavigationHandler handler);
+    Q_INVOKABLE void fitGraph();
     void setTargetPickRequest(TargetPickRequest request);
     // Invoked by the section header's scope chip through the generic property
     // channel; also reachable from the empty state.
@@ -101,16 +98,12 @@ public:
     QPushButton* kindButton(LiveInsightKind kind) const;
     QLabel* kindStatusLabel(LiveInsightKind kind) const;
     QLabel* kindSummaryLabel(LiveInsightKind kind) const;
-    QCheckBox* followEditorCheckBox() const;
-    QPushButton* pinButton() const;
     QPushButton* openFullViewButton() const;
     bool hasFixedKind() const;
 
 signals:
     void selectedKindChanged(LiveInsightKind kind);
-    void followEditorChanged(bool follow);
-    void pinnedChanged(bool pinned);
-    void pinStateChangeRequested(bool pinned);
+    void targetChanged();
     void openFullViewRequested(LiveInsightKind kind);
 
 protected:
@@ -129,14 +122,15 @@ private:
     std::array<LiveInsightSnapshot, 4> renderedSnapshots;
     std::array<bool, 4> hasRenderedSnapshot{};
     QStackedWidget* contentStack = nullptr;
-    QCheckBox* followCheck = nullptr;
-    QPushButton* pinToggle = nullptr;
     QPushButton* fullViewButton = nullptr;
     LiveInsightKind selected = LiveInsightKind::Kernel;
     bool fixedKindValue = false;
     QString workspaceIdValue;
     FullViewHandler fullViewHandler;
     ToolContextSource toolContextSource;
+    LiveInsightToolPage::NavigationHandler navigationHandler;
+    LiveInsightToolContext targetContext;
+    bool hasTargetContext = false;
     TargetPickRequest targetPickRequest;
     QPointer<LiveInsightToolPage> surfaceValue;
     QPointer<QWidget> emptyStateValue;

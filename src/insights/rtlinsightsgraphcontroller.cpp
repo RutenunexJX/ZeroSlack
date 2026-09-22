@@ -376,19 +376,12 @@ RtlInsightsGraphController::selectedSourceLocation() const
     return sceneMapper->selectedSourceLocation();
 }
 
-bool RtlInsightsGraphController::
-    setModuleBlockTopFromSelected()
-{
-    return sceneMapper
-        ->setModuleBlockTopFromSelected();
-}
-
 bool RtlInsightsGraphController::enterModuleBlockNode(int nodeId)
 { return sceneMapper->enterModuleBlockNode(nodeId); }
 bool RtlInsightsGraphController::navigateModuleBlockBreadcrumb(int index)
 { return sceneMapper->navigateModuleBlockBreadcrumb(index); }
-bool RtlInsightsGraphController::toggleModuleBlockNode(int nodeId)
-{ return sceneMapper->toggleModuleBlockNode(nodeId); }
+bool RtlInsightsGraphController::navigateModuleBlockHistory(int direction)
+{ return sceneMapper->navigateModuleBlockHistory(direction); }
 void RtlInsightsGraphController::refreshModuleBlockSelectionActions()
 { sceneMapper->refreshModuleBlockSelectionActions(); }
 
@@ -466,6 +459,7 @@ void RtlInsightsGraphController::focusFit()
                && state.insightsStack
                && state.insightsStack->currentWidget()
                       == state.insightsGraphPanel) {
+        state.moduleBlockAutoFit = true;
         state.insightsGraphView->fitScene(Qt::KeepAspectRatio);
     } else if (state.insightsTree) {
         for (int column = 0;
@@ -501,18 +495,19 @@ void RtlInsightsGraphController::focusZoomOut()
 void RtlInsightsGraphController::setFocusSearchText(
     const QString& text)
 {
+    if (state.currentGraphMode == QStringLiteral("module-block")) return;
     if (state.insightsStack
         && state.insightsStack->currentWidget()
                == state.signalUsageHotspotPanel) {
         state.signalUsageHotspotPanel->setFocusSearchText(text);
     } else if (state.graphSearchEdit) {
         state.graphSearchEdit->setText(text);
-        if (state.moduleBlockToolbar) state.moduleBlockToolbar->setSearchText(text);
     }
 }
 
 QString RtlInsightsGraphController::focusSearchText() const
 {
+    if (state.currentGraphMode == QStringLiteral("module-block")) return {};
     if (state.insightsStack
         && state.insightsStack->currentWidget()
                == state.signalUsageHotspotPanel) {
@@ -762,16 +757,10 @@ void RtlInsightsGraphController::configureToolbarForMode(
     if (state.moduleBlockToolbar) state.moduleBlockToolbar->setVisible(moduleMode);
     if (state.graphToolbar) state.graphToolbar->setVisible(stateMode);
     if (state.insightsGraphView) {
-        state.insightsGraphView->setFitUpscalingEnabled(!moduleMode);
+        state.insightsGraphView->setFitUpscalingEnabled(true);
         state.insightsGraphView->setGridVisible(!moduleMode);
     }
 
-    for (QWidget* widget :
-         {static_cast<QWidget*>(state.moduleBlockDepthSpin),
-          static_cast<QWidget*>(state.moduleBlockShowUnresolvedCheck)}) {
-        if (widget)
-            widget->setVisible(moduleMode);
-    }
     for (QWidget* widget :
          {state.insightsGraphPanel
               ? state.insightsGraphPanel->findChild<QWidget*>(

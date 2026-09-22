@@ -122,7 +122,8 @@ ContextWorkspaceController::ContextWorkspaceController(
                 return;
             }
         }
-        if (dockHostValue && dockHostValue->isAncestorOf(now))
+        if (dockHostValue && (dockHostValue->isAncestorOf(now)
+                             || dockHostValue->bottomWidget()->isAncestorOf(now)))
             recordFocus(dockHostValue->currentResource().stableKey());
         else if (editorRegionValue && (now == editorRegionValue || editorRegionValue->isAncestorOf(now)))
             focusedResourceKey.clear();
@@ -144,6 +145,15 @@ ContextWorkspaceController::ContextWorkspaceController(
         ContextWorkspaceState::kMinimumDockWidth, mainWindow->width() * 3 / 10);
     mainWindow->addDockWidget(Qt::RightDockWidgetArea, dockValue);
     dockValue->hide();
+
+    bottomDockValue = new QDockWidget(tr("Context"), mainWindow);
+    bottomDockValue->setObjectName(QStringLiteral("contextWorkspaceBottomDock"));
+    bottomDockValue->setAllowedAreas(Qt::BottomDockWidgetArea);
+    bottomDockValue->setFeatures(QDockWidget::DockWidgetClosable);
+    bottomDockValue->setMinimumHeight(160);
+    bottomDockValue->setWidget(dockHostValue->bottomWidget());
+    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, bottomDockValue);
+    bottomDockValue->hide();
 
     connect(railValue,
             &ContextRail::entryActivated,
@@ -180,9 +190,11 @@ ContextWorkspaceController::ContextWorkspaceController(
     connect(dockHostValue, &ContextDockHost::dragOutRequested, this, [this](const QString& key, const QPoint& position) {
         dragOutResource(key, position);
     });
-    connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index) {
-        if (pinFloatingResource(key)) dockHostValue->moveResource(key, index);
+    connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index, bool bottom) {
+        pinFloatingResource(key, bottom, index);
     });
+    connect(dockHostValue, &ContextDockHost::sectionDragStarted, this, &ContextWorkspaceController::beginDockPreview);
+    connect(dockHostValue, &ContextDockHost::sectionDragFinished, this, &ContextWorkspaceController::endDockPreview);
     connect(dockHostValue,
             &ContextDockHost::closeResourceRequested,
             this,
@@ -223,6 +235,11 @@ ContextWorkspaceController::ContextWorkspaceController(
         this,
         [this](ThemeMode) { refreshProviderIcons(); });
     dockValue->installEventFilter(this);
+    bottomDockValue->installEventFilter(this);
+    connect(bottomDockValue, &QDockWidget::visibilityChanged, this, [this](bool) {
+        updateActiveRailEntry();
+        notifyWorkspaceStateChanged();
+    });
 }
 
 ContextWorkspaceController::~ContextWorkspaceController()
@@ -265,8 +282,10 @@ QDockWidget* ContextWorkspaceController::dockWidget() const
 
 bool ContextWorkspaceController::dockVisible() const
 {
-    return dockValue && dockValue->isVisible();
+    return (dockValue && dockValue->isVisible()) || (bottomDockValue && bottomDockValue->isVisible());
 }
+
+QDockWidget* ContextWorkspaceController::bottomDockWidget() const { return bottomDockValue; }
 
 QWidget* ContextWorkspaceController::viewForResource(
     const QString& resourceKey) const
@@ -308,6 +327,7 @@ bool ContextWorkspaceController::setDockVisible(
     if (!visible) {
         if (dockValue->isVisible())
             applyDockVisibility(false);
+        bottomDockValue->hide();
         return true;
     }
     // The rail is the sidebar's entry point, so a hidden rail is restored
@@ -317,10 +337,8 @@ bool ContextWorkspaceController::setDockVisible(
         railValue->show();
         notifyWorkspaceStateChanged();
     }
-    if (dockValue->isVisible())
-        return true;
     if (dockHostValue->resourceCount() > 0) {
-        showDock(false);
+        for (const auto& key : dockHostValue->resourceKeys()) showResourceDock(key);
         return true;
     }
     const QStringList entries =
@@ -341,7 +359,7 @@ bool ContextWorkspaceController::setDockVisible(
         || !openResource(activation,
                          defaultPlacementFor(providerId),
                          &openFailure)
-        || !dockValue->isVisible()) {
+        || !dockVisible()) {
         return fail(openFailure.isEmpty()
                         ? QStringLiteral(
                               "The Context provider could not open "
@@ -484,7 +502,7 @@ bool ContextWorkspaceController::activateDockedResource(
     dockHostValue->setFullViewAvailable(key, capabilities.supports(ContextPresentation::FullView));
     dockHostValue->setSectionDetachable(key, capabilities.detachable);
     dockHostValue->activateResource(key);
-    showDock(false);
+    showResourceDock(key);
     recordFocus(key);
     updateActiveRailEntry();
     return true;
@@ -637,7 +655,7 @@ bool ContextWorkspaceController::openInDockedSurface(
     switch (placement.persistence) {
     case ContextPersistence::Transient:
         if (transientDockResourceKey == key && dockHostValue->containsResource(key)
-            && dockValue->isVisible()) {
+            && (dockHostValue->isBottomResource(key) ? bottomDockValue->isVisible() : dockValue->isVisible())) {
             closePinnedResource(key);
             return true;
         }
@@ -673,7 +691,7 @@ bool ContextWorkspaceController::openInDockedSurface(
     return false;
 }
 
-bool ContextWorkspaceController::pinPeek(QString* failureReason)
+bool ContextWorkspaceController::pinPeek(QString* failureReason, bool bottom, int index)
 {
     if (failureReason)
         failureReason->clear();
@@ -712,7 +730,10 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason)
         return false;
     }
     dockHostValue->setSectionDetachable(resource.stableKey(), provider->capabilities(resource).detachable);
-    showDock(dockWasEmpty && !restoringState);
+    dockHostValue->moveResourceToArea(resource.stableKey(), bottom, index);
+    if (bottom) showResourceDock(resource.stableKey());
+    else showDock(dockWasEmpty && !restoringState);
+    hideEmptyDocks();
     documentBindings.remove(resource.stableKey());
     keptFloatingKeys.remove(resource.stableKey());
     forgetStoredResource(resource.stableKey());
@@ -776,8 +797,7 @@ bool ContextWorkspaceController::unpinResource(
     hiddenFloatingKeys.remove(resourceKey);
     applyFloatingVisibility();
     recordFocus(resourceKey);
-    if (dockHostValue->resourceCount() == 0)
-        dockValue->hide();
+    hideEmptyDocks();
     updateActiveRailEntry();
     emit activeResourceChanged(resource);
     notifyWorkspaceStateChanged();
@@ -806,8 +826,7 @@ bool ContextWorkspaceController::closePinnedResource(
     if (transient)
         transientDockResourceKey.clear();
     disposeView(resource, view);
-    if (dockHostValue->resourceCount() == 0)
-        dockValue->hide();
+    hideEmptyDocks();
     updateActiveRailEntry();
     emit resourceClosed(resource);
     if (!transient)
@@ -873,6 +892,7 @@ void ContextWorkspaceController::clearResources()
     }
     if (dockValue)
         dockValue->hide();
+    if (bottomDockValue) bottomDockValue->hide();
     transientDockResourceKey.clear();
     restoringState = previousRestoring;
     updateActiveRailEntry();
@@ -919,6 +939,8 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
             ? dockValue->width()
             : preferredDockWidthValue);
     state.dockVisible = dockValue && dockValue->isVisible();
+    state.bottomDockVisible = bottomDockValue && bottomDockValue->isVisible();
+    state.bottomDockHeight = state.bottomDockVisible ? bottomDockValue->height() : preferredBottomHeight;
     state.railVisible = railValue && railValue->isVisible();
     for (const auto& [id, provider] : providers) {
         if (!provider)
@@ -956,7 +978,9 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
         persisted.workspaceId.clear();
         state.pinnedResources.append(persisted.toVariantMap());
         state.dockSections.append({persisted.stableKey(), dockHostValue->isSectionCollapsed(resource.stableKey()),
-                                   dockHostValue->sectionHeight(resource.stableKey())});
+                                   dockHostValue->sectionHeight(resource.stableKey()),
+                                   dockHostValue->isBottomResource(resource.stableKey()),
+                                   dockHostValue->sectionWidth(resource.stableKey())});
     }
     return state;
 }
@@ -1026,6 +1050,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
               state.dockWidth);
 
     QHash<QString, QString> restoredResourceKeys;
+    preferredBottomHeight = qBound(160, state.bottomDockHeight, 8192);
     for (const QVariantMap& encoded : state.pinnedResources) {
         QString failureReason;
         ContextResource persisted =
@@ -1092,6 +1117,8 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         // stores 0, which would otherwise reset the section to the split share.
         if (section.height > 0)
             dockHostValue->setSectionHeight(key, section.height);
+        dockHostValue->moveResourceToArea(key, section.bottom);
+        if (section.width > 0) dockHostValue->setSectionWidth(key, section.width);
         dockHostValue->setSectionCollapsed(key, section.collapsed, false);
     }
     if (dockValue && dockHostValue) {
@@ -1099,7 +1126,10 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         applyingDockWidth = true;
         dockValue->setVisible(
             state.dockVisible
-            && dockHostValue->resourceCount() > 0);
+            && dockHostValue->areaResourceCount(false) > 0);
+        bottomDockValue->setVisible(state.bottomDockVisible && dockHostValue->areaResourceCount(true) > 0);
+        if (!preserveRestoredDockGeometry && window && bottomDockValue->isVisible())
+            window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
         if (!preserveRestoredDockGeometry
             && state.dockWidth > 0
             && !dockValue->isFloating()
@@ -1124,6 +1154,11 @@ bool ContextWorkspaceController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+    if (watched == bottomDockValue && event->type() == QEvent::Resize
+        && !restoringState && !previewingDocks && !applyingBottomHeight && bottomDockValue->isVisible()) {
+        preferredBottomHeight = bottomDockValue->height();
+        notifyWorkspaceStateChanged();
+    }
     if (watched == dockValue && event->type() == QEvent::Close && !restoringState
         && !dockValue->isFloating()) {
         applyDockVisibility(false);
@@ -1212,7 +1247,7 @@ void ContextWorkspaceController::updateActiveRailEntry()
             floatingSurfaceFor()->resource().providerId);
         return;
     }
-    if (dockValue && dockValue->isVisible()
+    if (dockVisible()
         && dockHostValue) {
         railValue->setActiveEntryId(
             dockHostValue->currentResource().providerId);
@@ -1233,7 +1268,8 @@ void ContextWorkspaceController::activateRailProvider(
 {
     for (const QString key : focusOrder) {
         auto* surface = surfaceWithResource(key);
-        QWidget* widget = surface ? dynamic_cast<QWidget*>(surface) : dockValue.data();
+        QWidget* widget = surface ? dynamic_cast<QWidget*>(surface)
+            : (dockHostValue->isBottomResource(key) ? bottomDockValue.data() : dockValue.data());
         ContextResource candidate = surface ? surface->resource() : ContextResource{};
         if (!surface) {
             for (int i = 0; i < dockHostValue->resourceCount(); ++i)
@@ -1321,6 +1357,43 @@ void ContextWorkspaceController::showDock(bool applyPreferredWidth, bool animate
     applyDockVisibility(true, applyPreferredWidth, animate);
 }
 
+void ContextWorkspaceController::showResourceDock(const QString& key)
+{
+    if (!dockHostValue->isBottomResource(key)) { showDock(false); return; }
+    const bool wasVisible = bottomDockValue->isVisible();
+    const QScopedValueRollback<bool> guard(applyingBottomHeight, true);
+    bottomDockValue->show();
+    bottomDockValue->raise();
+    if (!wasVisible && window) window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
+}
+
+void ContextWorkspaceController::hideEmptyDocks()
+{
+    if (previewingDocks || !dockHostValue) return;
+    if (dockHostValue->areaResourceCount(false) == 0 && dockValue) dockValue->hide();
+    if (dockHostValue->areaResourceCount(true) == 0 && bottomDockValue) bottomDockValue->hide();
+}
+
+void ContextWorkspaceController::beginDockPreview()
+{
+    if (previewingDocks) return;
+    previewingDocks = true;
+    sideWasVisible = dockValue->isVisible();
+    bottomWasVisible = bottomDockValue->isVisible();
+    showDock(false, false);
+    bottomDockValue->show();
+    window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
+}
+
+void ContextWorkspaceController::endDockPreview()
+{
+    if (!previewingDocks) return;
+    previewingDocks = false;
+    hideEmptyDocks();
+    updateActiveRailEntry();
+    notifyWorkspaceStateChanged();
+}
+
 void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPreferredWidth, bool animate)
 {
     if (!dockValue || !window) return;
@@ -1350,6 +1423,6 @@ void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPre
 
 void ContextWorkspaceController::notifyWorkspaceStateChanged()
 {
-    if (!restoringState)
+    if (!restoringState && !previewingDocks)
         emit workspaceStateChanged();
 }

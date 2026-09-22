@@ -347,8 +347,11 @@ QJsonObject sessionObject(
     contextWorkspace.insert(QStringLiteral("floatingGeometryValid"), state.ui.contextWorkspace.floatingGeometryValid);
     QJsonArray dockSections;
     for (const auto& section : state.ui.contextWorkspace.dockSections)
-        dockSections.append(QJsonObject{{"resourceKey", section.resourceKey}, {"collapsed", section.collapsed}, {"height", section.height}});
+        dockSections.append(QJsonObject{{"resourceKey", section.resourceKey}, {"collapsed", section.collapsed},
+            {"height", section.height}, {"bottom", section.bottom}, {"width", section.width}});
     contextWorkspace.insert(QStringLiteral("dockSections"), dockSections);
+    contextWorkspace.insert(QStringLiteral("bottomDockVisible"), state.ui.contextWorkspace.bottomDockVisible);
+    contextWorkspace.insert(QStringLiteral("bottomDockHeight"), state.ui.contextWorkspace.bottomDockHeight);
     contextWorkspace.insert(QStringLiteral("floatingInstances"), floatingInstancesToJson(state.ui.contextWorkspace.floatingInstances));
     contextWorkspace.insert(QStringLiteral("floatingCollapsed"), state.ui.contextWorkspace.floatingCollapsed);
     QJsonObject documentLayouts;
@@ -640,13 +643,19 @@ void restoreUi(
                 for (const auto& entry : contextWorkspace.value("dockSections").toArray()) {
                     const auto section = entry.toObject();
                     ui->contextWorkspace.dockSections.append({section.value("resourceKey").toString(),
-                        section.value("collapsed").toBool(), qBound(0, section.value("height").toInt(), 8192)});
+                        section.value("collapsed").toBool(), qBound(0, section.value("height").toInt(), 8192),
+                        contextVersion >= ContextWorkspaceState::kTiledDockVersion && section.value("bottom").toBool(),
+                        qBound(0, section.value("width").toInt(), 8192)});
                 }
             } else {
                 for (const auto& encoded : ui->contextWorkspace.pinnedResources) {
                     const QString key = ContextResource::fromVariantMap(encoded).stableKey();
                     ui->contextWorkspace.dockSections.append({key, key != ui->contextWorkspace.activePinnedResourceKey, 0});
                 }
+            }
+            if (contextVersion >= ContextWorkspaceState::kTiledDockVersion) {
+                ui->contextWorkspace.bottomDockVisible = contextWorkspace.value("bottomDockVisible").toBool();
+                ui->contextWorkspace.bottomDockHeight = qBound(160, contextWorkspace.value("bottomDockHeight").toInt(300), 8192);
             }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(

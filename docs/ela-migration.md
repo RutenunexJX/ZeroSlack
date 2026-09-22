@@ -1,5 +1,39 @@
 # ZeroSlack Ela 实际迁移
 
+维护范围（2026-09-22）：仅维护 Ela 版本。后续功能、修复、验证和正式发布均以
+`ZeroSlack-Ela` 为目标；classic、Qlementine 和 SuiteUi 保留为历史兼容代码，不再并行维护。
+默认 CMake 配置启用 Ela，正式包沿用 `ZeroSlack-Ela-win64` 目录，不再生成 ZIP。
+下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
+
+## 0.31.0 模块框图、并行停靠与编辑器背景（2026-09-23）
+
+模块框图与停靠的 17 项改造已完成：当前顶层及全部后代、不限制层级、不可达实例虚线、
+同层级配色、双击定义跳转与侧键历史、保留且虚化父级。Fit 移至标题条，移除 Follow Editor、
+Pin/Pinned 工具行以及模块搜索、折叠、缩放按钮和更多菜单。侧栏纵向、底栏横向平铺内容，
+分隔条调尺寸并保存 v7 布局；浮窗往返继续复用同一内容实例。26 项针对性 CTest 通过。
+详细范围、原生未验项及扩展 smoke 的 20 项既有失败对照见
+[模块框图与停靠改造](module-diagram-modernization.md)。
+
+源码编辑视图接入内置 Resting 背景，另提供 Peekaboo（A「偷偷探头」）和 Balancing
+（C「差一点就倒」）可选项。`Settings > Appearance` 可关闭、更换为本地图片并调整浓度，
+默认 55%，通过 Apply Global 保存，不写入工作区。素材见
+[背景资源](../resources/backgrounds/README.md)。
+
+图片完整等比、靠右下固定，文字和选区绘制在其上方；折叠投影、分屏和浮动源码视图共用此绘制路径。
+缩放结果缓存复用，滚动后重绘固定背景；浅色和深色主题补齐图片外侧底色，避免矩形边界。
+背景单独变化时跳过字体与行高重设，保持共享文档的撤销记录和未保存内容。
+
+Ela Release 构建及 7 项相关 CTest 通过，覆盖 100%／200% 背景渲染、设置读写及控件、
+折叠与滚动、共享视图隔离、撤销记录、图片缺失回退和编辑性能。原生桌面鼠标未被占用。
+本地证据：`build/ela-migration/editor-background-tests.log`、`editor-background-build-final.log`，
+实际控件的离屏截图位于同目录 `editor-background-review/`。
+
+本版使用 `ela-v0.31.0` 标签及 `ZeroSlack-Ela-win64` 正式目录，不生成 ZIP。
+版本文档检查改为校验 Ela 包说明，不再要求更新已停止维护的经典包说明。
+发布前重建 GUI、CLI 和相关测试，8 项发布检查全部通过：四档 DPI 的 Ela 主窗口与浮窗、
+文档标签、100%／200% 编辑器背景及版本文档一致性。记录为
+`build/ela-migration/release-0.31.0-build.log` 和 `release-0.31.0-tests.log`。
+
 分支：`codex/zeroslack-ela-migration`，基线 `3164377`。
 
 用户在 2026-09-21 明确要求开始移植。本轮从实际应用接入 Ela，不再以此前

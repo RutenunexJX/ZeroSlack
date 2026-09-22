@@ -5584,6 +5584,9 @@ void MainWindow::applySettingsCenterSnapshot(
         options.ligaturesEnabled =
             snapshot.value(
                 QStringLiteral("font.ligaturesEnabled")).toBool();
+        options.backgroundPreset = snapshot.value(QStringLiteral("appearance.editorBackground")).toString();
+        options.backgroundImagePath = snapshot.value(QStringLiteral("appearance.editorBackgroundImagePath")).toString();
+        options.backgroundOpacity = snapshot.value(QStringLiteral("appearance.editorBackgroundOpacity")).toInt();
         editorAppearanceSettings->setOptions(options);
     }
 

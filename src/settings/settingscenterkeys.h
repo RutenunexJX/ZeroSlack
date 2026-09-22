@@ -6,6 +6,12 @@ inline constexpr const char* AppearanceTheme =
     "settingsCenter/appearance/theme";
 inline constexpr const char* FloatingContextOpacity =
     "settingsCenter/appearance/floatingContextOpacity";
+inline constexpr const char* EditorBackgroundPreset =
+    "settingsCenter/appearance/editorBackground";
+inline constexpr const char* EditorBackgroundImagePath =
+    "settingsCenter/appearance/editorBackgroundImagePath";
+inline constexpr const char* EditorBackgroundOpacity =
+    "settingsCenter/appearance/editorBackgroundOpacity";
 
 inline constexpr const char* FontFamily =
     "editorAppearance/fontFamily";

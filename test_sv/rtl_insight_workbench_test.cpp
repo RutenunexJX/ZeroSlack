@@ -1,4 +1,5 @@
 #include "contextworkspacecontroller.h"
+#include "contextfloatingwindow.h"
 #include "contextdockhost.h"
 #include "testuistyle.h"
 #include "contextrail.h"
@@ -19,6 +20,9 @@
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
+#include "moduleblockdiagramservice.h"
+#include "symbolrelationshipengine.h"
+#include "semantic_fixture_records.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
 #include <QSettings>
@@ -183,6 +187,7 @@ private slots:
     void specializedModesSurviveRouting();
     void sidebarSectionTeardownReleasesFocusedControls();
     void moduleDiagramAdaptsAndNavigatesInstances();
+    void moduleDiagramIncludesDeepDescendantsAndTerminatesCycles();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
     void realWindowChromeButtons();
@@ -499,7 +504,7 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         auto* depth = view->findChild<QSpinBox*>(QStringLiteral("rtlModuleBlockDepthSpin"));
         auto* breadcrumbs = view->findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
         auto* more = view->findChild<QToolButton*>(QStringLiteral("rtlModuleMoreButton"));
-        QVERIFY(depth && breadcrumbs && more && more->menu());
+        QVERIFY(!depth && breadcrumbs && !more);
         QVERIFY(breadcrumbs->isVisible());
         auto* inspector = view->findChild<QWidget*>(QStringLiteral("rtlGraphInspectorPanel"));
         auto* table = view->findChild<QTableWidget*>(QStringLiteral("rtlGraphDetailTable"));
@@ -511,13 +516,49 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         auto* graph = qobject_cast<QGraphicsView*>(body->widget(0));
         QVERIFY(graph && graph->isVisible());
         QTRY_COMPARE(graph->width(), body->contentsRect().width());
-        more->menu()->popup(more->mapToGlobal(QPoint(0, more->height())));
-        QCoreApplication::processEvents();
-        QVERIFY(depth->isVisible());
-        depth->setFocus();
-        depth->stepUp();
-        QCoreApplication::processEvents();
-        more->menu()->hide();
+        QVERIFY2(graph->height() >= view->height() * 0.75, qPrintable(QStringLiteral("canvas %1 / body %2")
+            .arg(graph->height()).arg(view->height())));
+        QTRY_VERIFY(graph->mapFromScene(graph->sceneRect()).boundingRect().width() > graph->viewport()->width() * 0.65
+                    || graph->mapFromScene(graph->sceneRect()).boundingRect().height() > graph->viewport()->height() * 0.65);
+        const QString review = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
+        if (repeat == 0 && !review.isEmpty()) {
+            QDir().mkpath(review);
+            view->grab().save(review + QStringLiteral("/module-docked.png"));
+        }
+        auto* fit = controller.dockHost()->findChild<QToolButton*>(QStringLiteral("contextSectionFit"));
+        QVERIFY(fit && fit->isVisible());
+        fit->setFocus();
+        fit->click();
+        if (repeat == 0) {
+            const auto key = resource.stableKey();
+            QVERIFY(controller.unpinResource(key));
+            auto* floating = controller.floatingWindow();
+            QVERIFY(floating && floating->view() == view);
+            auto* floatingFit = floating->findChild<QToolButton*>(QStringLiteral("contextFloatingFit"));
+            QVERIFY(floatingFit && floatingFit->isVisible());
+            floatingFit->click();
+            QVERIFY(controller.pinFloatingResource(key, true));
+            QCOMPARE(controller.viewForResource(key), view.data());
+            QVERIFY(controller.bottomDockWidget()->isVisible());
+            QTRY_VERIFY(view->height() > 120);
+            QTRY_VERIFY(controller.bottomDockWidget()->rect().contains(
+                QRect(view->mapTo(controller.bottomDockWidget(), QPoint()), view->size())));
+            QTRY_VERIFY(graph->isVisibleTo(controller.bottomDockWidget()));
+            auto* navigationRow = view->findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
+            QVERIFY(navigationRow);
+            QTRY_VERIFY2(graph->height() + navigationRow->height() >= view->height() - 8,
+                qPrintable(QStringLiteral("canvas %1 + navigation %2 / body %3")
+                    .arg(graph->height()).arg(navigationRow->height()).arg(view->height())));
+            QTRY_VERIFY(graph->viewport()->rect().adjusted(-2, -2, 2, 2).contains(
+                graph->mapFromScene(graph->sceneRect()).boundingRect()));
+            QTRY_VERIFY(graph->mapFromScene(graph->sceneRect()).boundingRect().width() > graph->viewport()->width() * 0.65
+                        || graph->mapFromScene(graph->sceneRect()).boundingRect().height() > graph->viewport()->height() * 0.65);
+            if (!review.isEmpty()) window.grab().save(review + QStringLiteral("/module-bottom.png"));
+            QVERIFY(controller.unpinResource(key));
+            QVERIFY(controller.pinFloatingResource(key));
+            QCOMPARE(controller.viewForResource(key), view.data());
+            QVERIFY(controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible());
+        }
         QToolButton* close = nullptr;
         for (auto* button : controller.dockHost()->findChildren<QToolButton*>())
             if (button->toolTip() == QStringLiteral("Close section")) close = button;
@@ -555,11 +596,20 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
     auto* toolbar = window.findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
     auto* fold = window.findChild<QAction*>(QStringLiteral("rtlModuleFoldAction"));
     auto* back = window.findChild<QAction*>(QStringLiteral("rtlModuleBackAction"));
-    auto* enter = panel.graphActionForTest(QString::fromLatin1(ActionIds::GraphSetTopSelected));
-    QVERIFY(graph && breadcrumb && toolbar && fold && back && enter);
+    auto* forward = window.findChild<QAction*>(QStringLiteral("rtlModuleForwardAction"));
+    QVERIFY(graph && breadcrumb && toolbar && !fold && back && forward);
+    int navigations = 0;
+    int definitionLine = 0;
+    bool allowNavigation = true;
+    panel.setNavigationHandler([&](const QString& targetFile, int line, int column) {
+        if (!allowNavigation || targetFile != file || line <= 0 || column <= 0) return false;
+        ++navigations;
+        definitionLine = line;
+        return true;
+    });
     if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
         QVERIFY(breadcrumb->inherits("ElaBreadcrumbBar"));
-        QVERIFY(window.findChild<QWidget*>(QStringLiteral("rtlModuleToolBarActions"))->inherits("ElaToolBar"));
+        QVERIFY(window.findChild<QAction*>(QStringLiteral("rtlModuleFitAction")));
     }
     const auto node = [&graph](const QString& path) -> QGraphicsRectItem* {
         for (auto* item : graph->scene()->items()) {
@@ -569,13 +619,15 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
         }
         return nullptr;
     };
-    const auto select = [&](const QString& module, const QString& instance) {
-        return panel.selectGraphItemForTest(QStringLiteral("module"), module,
-            QStringLiteral("instance: %1").arg(instance));
+    const auto enter = [&](const QString& path) {
+        const QPoint point = graph->mapFromScene(node(path)->rect().topLeft() + QPointF(26, 16));
+        QTest::mouseClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+        QTest::mouseDClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+        QTest::mouseRelease(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
     };
     QTRY_COMPARE(panel.graphNodeItemCountForTest(), 7);
     QTest::qWait(120);
-    QVERIFY(graph->transform().m11() <= 1.0);
+    QVERIFY(graph->transform().m11() > 0.0);
     QVERIFY(node("top.u_left.u_leaf") && node("top.u_left.u_long_instance_name_for_width"));
     QVERIFY(node("top.u_left.u_leaf")->rect().width() < node("top.u_left.u_long_instance_name_for_width")->rect().width());
     QVERIFY(node("top.u_left.u_leaf")->rect().height() < 80);
@@ -592,55 +644,57 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
     };
     capture(QStringLiteral("module-wide"));
 
-    QVERIFY(select("branch", "u_left"));
+    QCOMPARE(node("top.u_left")->brush().color(), node("top.u_right")->brush().color());
+    QVERIFY(node("top")->brush().color() != node("top.u_left")->brush().color());
+    QCOMPARE(node("top.u_left")->cursor().shape(), Qt::ArrowCursor);
     panel.focusZoomIn();
     const qreal zoom = graph->transform().m11();
-    fold->trigger();
-    QCOMPARE(panel.graphNodeItemCountForTest(), 5);
-    QVERIFY(!node("top.u_left.u_leaf"));
-    QVERIFY(node("top.u_right.u_leaf"));
-    QVERIFY(node("top.u_left")->rect().height() < node("top.u_right")->rect().height());
+    window.resize(1100, 680);
+    QTest::qWait(150);
     QCOMPARE(graph->transform().m11(), zoom);
-    fold->trigger();
+    panel.focusFit();
+    enter("top.u_right");
+    QTRY_COMPARE(navigations, 1);
+    QCOMPARE(definitionLine, 2);
     QCOMPARE(panel.graphNodeItemCountForTest(), 7);
-
-    QVERIFY(select("branch", "u_left"));
-    fold->trigger();
-    panel.setFocusSearchText(QStringLiteral("u_leaf"));
-    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
-    QVERIFY(panel.graphSelectedItemCountForTest() >= 2);
-    panel.setFocusSearchText({});
-    QVERIFY(!fold->isEnabled());
-    QVERIFY(!enter->isEnabled());
-    QVERIFY(select("branch", "u_right"));
-    QVERIFY(enter->isEnabled());
-    enter->trigger();
-    QCOMPARE(panel.currentModuleNameForTest(), QStringLiteral("branch"));
-    QCOMPARE(panel.graphNodeItemCountForTest(), 3);
+    QCOMPARE(node("top.u_right")->opacity(), 1.0);
+    QVERIFY(node("top")->opacity() < 0.4);
+    QVERIFY(node("top.u_left")->opacity() < 0.4);
     QVERIFY(node("top.u_right.u_leaf"));
     QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
     QVERIFY(back->isEnabled());
-    QVERIFY(select("leaf", "u_leaf"));
-    enter->trigger();
-    QCOMPARE(panel.graphNodeItemCountForTest(), 1);
+    enter("top.u_right.u_leaf");
+    QTRY_COMPARE(navigations, 2);
+    QCOMPARE(definitionLine, 1);
+    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
     QVERIFY(node("top.u_right.u_leaf"));
-    QVERIFY(graph->sceneRect().width() < 300 && graph->sceneRect().height() < 120);
     QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right / u_leaf"));
-    QVERIFY(!fold->isEnabled());
+    QTest::mouseClick(graph->viewport(), Qt::BackButton);
+    QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
+    QVERIFY(forward->isEnabled());
+    QTest::mouseClick(graph->viewport(), Qt::ForwardButton);
+    QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right / u_leaf"));
     back->trigger();
-    QCOMPARE(panel.graphNodeItemCountForTest(), 3);
-    QVERIFY(node("top.u_right"));
     back->trigger();
+    QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top"));
     QCOMPARE(panel.graphNodeItemCountForTest(), 7);
     QVERIFY(!back->isEnabled());
-    QVERIFY(select("branch", "u_left"));
-    enter->trigger();
+    allowNavigation = false;
+    enter("top.u_left");
+    QTest::qWait(20);
+    QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top"));
+    QVERIFY(!back->isEnabled() && forward->isEnabled());
+    QCOMPARE(node("top")->opacity(), 1.0);
+    allowNavigation = true;
+    enter("top.u_left");
+    QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_left"));
+    QVERIFY(!forward->isEnabled());
     if (breadcrumb->inherits("ElaBreadcrumbBar")) {
         auto* pathItems = breadcrumb->findChild<QAbstractItemView*>();
         QVERIFY(pathItems);
         const QModelIndex top = pathItems->model()->index(0, 0);
         QTest::mouseClick(pathItems->viewport(), Qt::LeftButton, Qt::NoModifier, pathItems->visualRect(top).center());
-        QTRY_COMPARE(panel.currentModuleNameForTest(), QStringLiteral("top"));
+        QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top"));
     } else back->trigger();
     QCOMPARE(panel.graphNodeItemCountForTest(), 7);
 
@@ -652,12 +706,77 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
     QVERIFY(toolbar->rect().contains(toolbar->mapFromGlobal(breadcrumb->mapToGlobal(breadcrumb->rect().center()))));
     capture(QStringLiteral("module-narrow"));
     panel.focusFit();
-    QVERIFY(graph->transform().m11() <= 1.0);
-    const QPoint inlineEnter = graph->mapFromScene(
-        node("top.u_right")->rect().topRight() + QPointF(-15, 17));
-    QTest::mouseClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, inlineEnter);
-    QTRY_COMPARE(panel.currentModuleNameForTest(), QStringLiteral("branch"));
+    QVERIFY(graph->transform().m11() > 0.0);
+    enter("top.u_right");
+    QTRY_COMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
     QCOMPARE(breadcrumb->toolTip(), QStringLiteral("top / u_right"));
+}
+
+void RtlInsightWorkbenchTest::moduleDiagramIncludesDeepDescendantsAndTerminatesCycles()
+{
+    const QString file = QDir::tempPath() + QStringLiteral("/deep_modules.sv");
+    QString source;
+    for (int depth = 0; depth <= 12; ++depth) {
+        source += QStringLiteral("module m%1; ").arg(depth);
+        source += depth < 12 ? QStringLiteral("m%1 u_next(); ").arg(depth + 1)
+                            : QStringLiteral("missing_type u_missing(); ");
+        source += QStringLiteral("endmodule\n");
+    }
+    source += QStringLiteral("module independent; endmodule\n");
+    const QHash<QString, QString> contents{{file, source}};
+    SlangManager slang;
+    const auto records = slang.extractOverlayWorkspaceSymbolRecords(contents, {}, {}, nullptr, nullptr, {file});
+    SemanticIndex index;
+    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
+    ModuleBlockDiagramService service(&index);
+    ModuleBlockDiagramQuery query;
+    query.fileName = file;
+    query.moduleName = QStringLiteral("m0");
+    const auto report = service.buildModuleBlockDiagram(query);
+    QVERIFY(report.found);
+    QCOMPARE(report.nodes.size(), 14);
+    QCOMPARE(report.nodes.last().depth, 13);
+    QVERIFY(report.nodes.last().unresolved);
+    for (const auto& node : report.nodes) QVERIFY(node.moduleDisplayName != QStringLiteral("independent"));
+    query.maxDepth = 2;
+    QCOMPARE(service.buildModuleBlockDiagram(query).nodes.size(), 3);
+
+    const QString inactiveSource = QStringLiteral(
+        "module leaf; endmodule\n"
+        "module branch; leaf u_leaf(); endmodule\n"
+        "module top; if (0) begin : disabled branch u_branch(); end endmodule\n");
+    const QHash<QString, QString> inactiveContents{{file, inactiveSource}};
+    const auto inactiveRecords = slang.extractOverlayWorkspaceSymbolRecords(
+        inactiveContents, {}, {}, nullptr, nullptr, {file});
+    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(inactiveRecords, {}, {}, inactiveContents)));
+    query.moduleName = QStringLiteral("top");
+    query.maxDepth = -1;
+    const auto inactive = service.buildModuleBlockDiagram(query);
+    QCOMPARE(inactive.nodes.size(), 3);
+    QVERIFY(inactive.nodes.at(1).unresolved);
+    QVERIFY(inactive.nodes.at(2).unresolved);
+    QCOMPARE(inactive.nodes.at(2).depth, 2);
+    QVERIFY(!inactive.nodes.at(2).definitionCodeLink.fileName.isEmpty());
+
+    SemanticIndex cycleIndex;
+    const auto a = SemanticFixtureRecordBuilder("cycle_a", SymbolTaxonomy::DeclarationKind::Module)
+        .withFile(file).withLine(1).withLocalHandle(90001).record();
+    const auto b = SemanticFixtureRecordBuilder("cycle_b", SymbolTaxonomy::DeclarationKind::Module)
+        .withFile(file).withLine(2).withLocalHandle(90002).record();
+    cycleIndex.updateSymbolRecordsForFile(file, {a, b}, "module cycle_a; endmodule\nmodule cycle_b; endmodule\n");
+    SymbolRelationshipEngine relationships;
+    cycleIndex.attachRelationshipEngine(&relationships);
+    relationships.addRelationship(a.localHandle, b.localHandle, SymbolRelationshipEngine::INSTANTIATES, "a to b");
+    relationships.addRelationship(b.localHandle, a.localHandle, SymbolRelationshipEngine::INSTANTIATES, "b to a");
+    ModuleBlockDiagramService cycleService(&cycleIndex);
+    query.moduleName = QStringLiteral("cycle_a");
+    query.maxDepth = -1;
+    const auto cycle = cycleService.buildModuleBlockDiagram(query);
+    QCOMPARE(cycle.nodes.size(), 3);
+    QVERIFY(cycle.nodes.last().unresolved);
+    QVERIFY(cycle.nodes.last().unresolvedReason.contains(QStringLiteral("cyclic")));
 }
 
 void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()

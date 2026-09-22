@@ -13,7 +13,7 @@ struct ModuleBlockDiagramQuery {
     SymbolStableKey moduleStableKey;
     QString moduleName;
     QString fileName;
-    int maxDepth = 2;
+    int maxDepth = -1; // Negative means all descendants; cycles remain terminal nodes.
 };
 
 enum class ModuleBlockDiagramNotFoundReason {

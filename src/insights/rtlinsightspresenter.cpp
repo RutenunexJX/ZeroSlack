@@ -351,8 +351,6 @@ void RtlInsightsPresenter::showModuleBlockDiagram()
         ModuleBlockDiagramQuery query;
         query.fileName = state.currentFileName;
         query.moduleName = state.currentModuleName;
-        if (state.moduleBlockDepthSpin)
-            query.maxDepth = state.moduleBlockDepthSpin->value();
         report = ModuleBlockDiagramService::getInstance()
             ->buildModuleBlockDiagram(query);
     } catch (const std::exception& error) {

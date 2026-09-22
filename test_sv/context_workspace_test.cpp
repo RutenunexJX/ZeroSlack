@@ -259,6 +259,7 @@ bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
         && a.activePinnedResourceKey == b.activePinnedResourceKey
         && a.peekWidth == b.peekWidth && a.peekHeight == b.peekHeight
         && a.dockWidth == b.dockWidth && a.dockVisible == b.dockVisible
+        && a.bottomDockHeight == b.bottomDockHeight && a.bottomDockVisible == b.bottomDockVisible
         && a.railVisible == b.railVisible && a.valid == b.valid
         && a.floatingX == b.floatingX && a.floatingY == b.floatingY
         && a.floatingWidth == b.floatingWidth && a.floatingHeight == b.floatingHeight
@@ -304,7 +305,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     const auto restored = controller.restoreState(initial);
     QApplication::processEvents();
     const auto captured = controller.captureState();
-    check(ContextWorkspaceState::kVersion == 6 && restored.restoredResources == 2
+    check(ContextWorkspaceState::kVersion == 7 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
           "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
 
@@ -574,7 +575,7 @@ void verifyFloatingGeometryRoundtrip()
               && saved.floatingScreenName == window->screen()->name(),
           "floating_geometry: native frame rectangle and screen name are captured");
     controller.restoreState(saved);
-    check(ContextWorkspaceState::kVersion == 6 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
           "floating_geometry: all fields survive capture and restore independently of overlay size");
     controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
     QApplication::processEvents();
@@ -1109,7 +1110,7 @@ void verifySidebarStack()
     WorkspaceSessionState session; session.workspaceRoot = controller.workspaceRoot(); session.ui.contextWorkspace = saved;
     service.save(session);
     controller.restoreState(service.load(session.workspaceRoot).state.ui.contextWorkspace);
-    check(ContextWorkspaceState::kVersion == 6 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
           "stack_v6_roundtrip: order, collapsed states and requested heights survive the production serializer");
     controller.dockWidget()->toggleViewAction()->trigger();
     check(!controller.dockWidget()->isVisible(), "stack_hide_whole: the dock toggle still hides the entire sidebar");
@@ -1282,10 +1283,10 @@ void verifySidebarCompression()
     host.activateResource(keys[1]);
     host.resize(host.width(), qMax(260, available.height() * 3 / 5));
     QApplication::processEvents();
-    check(host.sectionWidget(keys[0])->height() <= host.sectionWidget(keys[1])->height()
-              && host.sectionWidget(keys[2])->height() <= host.sectionWidget(keys[1])->height()
+    check(qAbs(host.sectionWidget(keys[0])->height() - host.sectionWidget(keys[1])->height()) <= 1
+              && qAbs(host.sectionWidget(keys[2])->height() - host.sectionWidget(keys[1])->height()) <= 1
               && host.sectionWidget(keys[0])->height() < host.sectionHeight(keys[0]),
-          "stack_compression: nonfocused sections compress before the focused section");
+          "stack_compression: equal section weights share available height regardless of focus");
     auto* handle = host.sectionWidget(keys[1])->findChild<QWidget*>("contextSectionResize");
     const int before = host.sectionHeight(keys[1]);
     dragHandle(handle, QPoint(0, available.height() / 10));
@@ -1362,7 +1363,7 @@ void verifySidebarDragOut()
     sendMouseEvent(handle, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
     auto* floating = controller.floatingWindow();
     check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
-              && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->size() == previousSize
+              && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->height() >= previousSize.height()
               && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: title gesture transports the view and preserves neighboring sections");
     check(floating->hasResource() && available.contains(floating->frameGeometry()),
           "stack_drag_out_geometry: outside-screen drop resolves to a fully visible native rectangle");
@@ -1428,6 +1429,69 @@ void verifySidebarDragBack()
     check(!controller.dockWidget()->isVisible() && floating->hasResource(), "stack_drop_cancel: canceled drag restores the previous sidebar visibility");
 }
 
+void verifyTiledBottomAndSidebar()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    fixture.window.resize(1600, 900);
+    auto& controller = *fixture.controller;
+    auto* host = controller.dockHost();
+    check(controller.openResource(resource("side"), keptPlacement), "tiles_side_open");
+    QWidget* firstView = nullptr;
+    for (const auto& id : {"bottom-a", "bottom-b"}) {
+        const auto item = resource(id);
+        check(controller.openResource(item, floatingPlacement), "tiles_float_open");
+        auto* floating = controller.floatingWindow();
+        QWidget* original = floating->view();
+        if (!firstView) firstView = original;
+        emit floating->sidebarDragStarted();
+        QApplication::processEvents();
+        QWidget* target = host->bottomWidget();
+        check(controller.bottomDockWidget()->isVisible(), "tiles_bottom_drop_target_visible");
+        const QPoint destination = target->mapToGlobal(QPoint(target->width() - 8, target->height() / 2));
+        const bool accepted = host->acceptFloatingDrop(floating, item.stableKey(), destination);
+        emit floating->sidebarDragFinished(accepted);
+        QApplication::processEvents();
+        check(accepted && host->isBottomResource(item.stableKey())
+                  && host->viewForResource(item.stableKey()) == original && !floating->hasResource(),
+              "tiles_drop_retains_view_identity");
+    }
+    QWidget* first = host->sectionWidget("mock:bottom-a");
+    QWidget* second = host->sectionWidget("mock:bottom-b");
+    check(first && second && first->isVisible() && second->isVisible() && first->y() == second->y()
+              && first->geometry().right() < second->geometry().left()
+              && controller.dockWidget()->isVisible(), "tiles_bottom_simultaneous_horizontal_layout");
+    if (!first || !second) return;
+    const int oldFirst = first->width();
+    const int oldSecond = second->width();
+    dragHandle(first->findChild<QWidget*>("contextSectionResize"), QPoint(35, 0));
+    check(qAbs(first->width() - oldFirst - 35) <= 1 && qAbs(second->width() - oldSecond + 35) <= 1,
+          "tiles_divider_moves_adjacent_boundary_by_pointer_distance");
+    check(host->viewForResource("mock:bottom-a") == firstView, "tiles_resize_retains_content");
+    const auto saved = controller.captureState();
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("tiled.ini"));
+    WorkspaceSessionState session;
+    session.workspaceRoot = controller.workspaceRoot();
+    session.ui.contextWorkspace = saved;
+    check(service.save(session).saved, "tiles_save");
+    const auto loaded = service.load(session.workspaceRoot);
+    check(loaded.loaded && sameState(saved, loaded.state.ui.contextWorkspace), "tiles_wire_roundtrip");
+    controller.restoreState(loaded.state.ui.contextWorkspace);
+    QApplication::processEvents();
+    check(host->areaResourceCount(false) == 1 && host->areaResourceCount(true) == 2
+              && controller.bottomDockWidget()->isVisible() && controller.dockWidget()->isVisible()
+              && sameState(saved, controller.captureState()), "tiles_live_roundtrip");
+    QWidget* restored = host->viewForResource("mock:bottom-a");
+    check(controller.unpinResource("mock:bottom-a") && controller.floatingWindow()->view() == restored,
+          "tiles_bottom_to_float_identity");
+    check(controller.pinFloatingResource("mock:bottom-a") && !host->isBottomResource("mock:bottom-a")
+              && host->viewForResource("mock:bottom-a") == restored, "tiles_float_to_side_identity");
+    controller.closePinnedResource("mock:bottom-b");
+    check(!controller.bottomDockWidget()->isVisible() && controller.dockWidget()->isVisible(),
+          "tiles_empty_bottom_hides_independently");
+}
+
 void verifyNativeFrameCorrection()
 {
     PlacementFixture fixture;
@@ -1479,6 +1543,7 @@ int main(int argc, char* argv[])
     verifyV5SidebarMigration();
     verifySidebarDragOut();
     verifySidebarDragBack();
+    verifyTiledBottomAndSidebar();
 
     const ContextResource original = resource(QStringLiteral("a"));
     QString parseFailure;

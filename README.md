@@ -1,6 +1,10 @@
 # ZeroSlack
 
-Current version: `v0.30.3`
+Current version: `v0.31.0`
+
+Maintenance policy (2026-09-22): Ela is the only maintained UI version.
+Future implementation, validation and releases target `ZeroSlack-Ela`; classic and
+Qlementine/SuiteUi paths are historical compatibility code and are no longer maintenance targets.
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -30,6 +34,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | --- | --- | --- |
 | Shell | An empty workspace opens to a compact start page with the Open Project icon and recent project paths; Navigation and Context use full-height columns when editing, with a drawer under the editor and no status bar. | [manual §3](用户手册.md) |
 | Shell | Non-editor text follows a proportional typography hierarchy with distinct headings and metadata. | [architecture, visual system](ARCHITECTURE.md) |
+| Editing | Editor backgrounds include Resting, Peekaboo and Balancing illustrations, custom images, an off option and opacity control; artwork stays fixed beneath the code while scrolling. | [manual §17](用户手册.md) |
 | Panels | Problems and Activity are permanent; Search and Change Preview use the drawer, while Connections opens in a central tab. The optional pages are created on first use and retain their state on reopen. Activity counts unread important messages and clears on open. | [manual §3.3](用户手册.md) |
 | Gutter | The number lane sizes itself by line count, diagnostics and Pinloom links share one marker lane, and folding sits beside the code. | [manual §3](用户手册.md) |
 | Workspaces | Open, switch, close, rename and revisit multiple workspaces; configure include dirs, defines, ignored dirs, source extensions and the active top module. | [manual §4](用户手册.md) |
@@ -43,7 +48,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Semantics | A clean `Ctrl+S` is a true no-op; changed saves classify their impact and schedule only the needed work off the UI thread, and trivia-only edits never invoke Slang. | [manual §20](用户手册.md) |
 | Semantics | Unsaved comment and whitespace edits recover semantic availability after 250 ms of idle time when worker validation proves equivalence; other unsaved edits still require saving. | [manual §20](用户手册.md) |
 | Search | `Ctrl+F` / `Ctrl+H` use an inline editor bar; `Ctrl+Shift+F` / `Ctrl+Shift+H` open workspace search and guarded replace. | [manual §12](用户手册.md) |
-| Context | The right-side rail opens a resizable sidebar of collapsible sections that can be resized, reordered, floated into native windows, bound to a document, or hidden as a whole with `Ctrl+2`. | [manual §5.4](用户手册.md) |
+| Context | The right-side rail opens sections that tile vertically in the sidebar or horizontally in the bottom area, resize at shared dividers, float into native windows, or hide together with `Ctrl+2`. | [manual §5.4](用户手册.md) |
 | Context | Temporary source editing uses one in-editor Peek that pins into the sidebar without losing the live editor, undo state, search history or restore identity. | [manual §5.4](用户手册.md) |
 | Insights | State-transition and FSM views, nested module block diagrams, signal-kernel graphs, and usage hotspots with Track/Matrix views. | [manual §15](用户手册.md) |
 | Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
@@ -93,18 +98,19 @@ The complete command and cache contract is documented in
 
 ## Build, run, and test
 
-Requirements are CMake 3.27 or newer, a C++20/C99 toolchain, Qt 6 with Core,
-Gui, Widgets, Concurrent, Svg, and Test modules, Ninja or another CMake
+Requirements are CMake 3.27 or newer, a C++20/C99 toolchain, Qt 6.10.2 with Core,
+Gui, Widgets, WidgetsPrivate, Concurrent, Svg, and Test modules, Ninja or another CMake
 generator, and initialized `thirdparty/slang`, `thirdparty/tree_sitter`, and
 `thirdparty/tree_sitter_systemverilog` sources.
 
 ```powershell
 git submodule update --init --recursive
-cmake -S . -B build/local -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=<qt-prefix>
+cmake -S . -B build/local -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=<qt-prefix> -DZEROSLACK_ENABLE_ELA=ON
 cmake --build build/local --target demo zeroslack_cli
-build/local/demo.exe
+build/local/ZeroSlack-Ela.exe
 build/local/zeroslack-cli.exe --help
-ctest --test-dir build/local --output-on-failure -j1
+$env:ZEROSLACK_TEST_UI_STYLE = 'ela'
+ctest --test-dir build/local --output-on-failure -j1 -E 'classic|qlementine'
 ```
 
 ## Panel lifecycle
@@ -122,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.30.3`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.0`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -136,25 +142,26 @@ markers in this README, the user manual and the package README.
   dependency labels.
 
 Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
-build and run the release verification targets; create a signed-off release tag named `vX.Y.Z`;
-publish Windows artifacts under `E:\PinloomRoot\AppPackage\AppSuite`, a path that intentionally
-contains no spaces. The Windows package directory and archive basename stay fixed as
-`ZeroSlack-win64` — never put the product version in either package filename, so existing
-shortcuts remain valid. The product version is recorded only in `VERSION`, the application
-display, the guarded document markers, and the release tag.
-
-The Ela migration branch has a separate release channel. Its fixed package basename is
-`ZeroSlack-Ela-win64`, its executable is `ZeroSlack-Ela.exe`, and release tags use
+build and run the Ela release verification targets; create a signed-off release tag named
 `ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
-directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps` and its ZIP alongside it.
-The current Ela release is `0.30.3` (`ela-v0.30.3`). Context floating windows use
+`ZeroSlack-Ela-win64` directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps`.
+The executable remains `ZeroSlack-Ela.exe`; the package directory never includes the version,
+so existing shortcuts remain valid. Releases no longer create ZIP archives. The product
+version is recorded in `VERSION`, the application display, guarded documents and the tag.
+The former classic release channel is no longer maintained.
+The current Ela release is `0.31.0` (`ela-v0.31.0`). Editor backgrounds offer Resting,
+Peekaboo, Balancing and custom images, with global opacity settings and a None option.
+The image stays fixed behind source text in normal, folded, split and floating views.
+Context floating windows use
 ElaWidget for window controls, hit testing and resizing, with window-scoped Ela Acrylic
 that follows the application theme. Unsupported systems and disabled transparency use
 an opaque fallback; content, pinning and workspace ownership retain their existing behavior.
-Module block diagrams use Ela
-breadcrumbs and a compact toolbar, with content-sized nested boxes, width-aware wrapping,
-per-instance folding and separate hierarchy/source navigation. The redundant instance
-table and inspector are removed from module mode. Ela's hosted-tab extension handles
+Module block diagrams show the current top and all descendants, with dashed unreachable
+instances, depth-based colors, hover feedback and synchronized double-click/source navigation.
+The full hierarchy remains visible while inactive branches fade. Fit lives in the panel
+header; search, fold controls, zoom buttons and the more menu are removed. Context panels
+tile vertically in the sidebar and horizontally in the bottom area, with adjustable dividers
+and persistent sizes. Ela's hosted-tab extension handles
 tab drag/drop, split targets and floating editor windows. Closing a floating container
 returns its tabs; closing a tab retains unsaved-document confirmation. Context floating
 windows use ElaWidget and hosted drag handles. The application retains split layout,
@@ -166,7 +173,7 @@ available across switches. Their analysis, instance binding, session membership 
 crash recovery are isolated from the active project. Source files can also be opened
 via application arguments. Project/Settings icons remain in the expanded sidebar.
 Formal Ela packaging requires a clean source tree and matching generated application version.
-It does not replace the classic application or share its user settings. See
+Existing classic user settings remain separate. See
 [Ela migration and validation](docs/ela-migration.md).
 
 ## Current goal and open work
@@ -188,6 +195,36 @@ restores ordinary backgrounds while retaining graph content and selection.
 Future usability work addresses one concrete workflow at a time. No whole-window redesign is
 scheduled. Released changes and their acceptance results live in the Git history alone.
 
+### Context-panel simplification — implemented 2026-09-22
+
+状态：17 项纳入 0.31.0，Ela 构建和 26 项针对性回归通过。验收边界与既有 smoke 失败见 [模块框图与停靠改造](docs/module-diagram-modernization.md)。
+
+1. 删除上下文图表面板中的 `Follow Editor` 控件及跟随模式切换功能。
+2. 删除同一工具行的 `Pin`／`Pinned` 控件及其独立开关状态。
+3. 模块框图画布占满工具栏之外的可用视图，随窗口放大、最大化及面板尺寸变化自适应。
+   图形保持比例与紧凑节点布局，合理适配视口，消除固定内容尺寸和冗余边距造成的大面积空白。
+4. 删除模块框图工具栏中的放大（`+`）与缩小（`−`）按钮，保留鼠标滚轮缩放。
+5. 删除模块框图的搜索功能，包括搜索按钮、实例／模块搜索框及关联搜索逻辑。
+6. 删除模块框图更多（`…`）下拉菜单及其中全部功能：`Jump`、`Focus`、`Set Top`、
+   `Open in Temporary Editor`、`Export Graph…`、`Depth` 调整和 `Show unresolved` 开关。
+   一并移除菜单入口及模块框图专用关联逻辑。
+7. 重新设计模块框图面板顶栏，将 `Fit`（适配视图）按钮移至顶栏。
+   结合上述功能删减整理标题、当前模块信息与必要操作，减少多层工具行及冗余空白。
+8. 模块框图默认显示当前顶层及其全部子模块，不限制层级；不包含工作区中未被该顶层实例化的模块。
+9. 不可达模块保留在图中，使用虚线边框标识。
+10. 重新调整模块配色，以层级为着色依据，同一层级的模块使用同一种颜色。
+11. 鼠标悬浮模块时，通过高亮或轻微放大提供反馈。
+12. 双击模块时，框图定位到该模块，代码编辑区同步跳转到对应模块源码。
+    该图内导航与源码联动独立于第 6 项删除的下拉菜单入口。
+13. 跳转后仍显示顶层模块，但将其虚化，保留层级上下文并突出当前目标模块。
+14. 鼠标侧键支持模块浏览历史的回退与前进，并保持框图和代码编辑区的跳转联动。
+15. 移除模块节点上的向下折叠三角和向右跳转三角图标。
+16. 更换模块悬浮时的手形光标，暂定使用标准箭头，配合模块高亮提供交互反馈。
+17. 悬浮窗支持拖入侧栏或底栏停靠；同一区域中的多个面板可并行平铺、同时可见，
+    并通过拖动分隔条调整各面板的尺寸与空间比例。
+
+面板保留显式目标并接收语义更新；完整视图沿用该目标。旧 Follow/Pin 状态不再读取，旧停靠布局默认恢复到侧栏。
+
 ### Pending UI refinement — requirements synchronized 2026-09-11
 
 弱边框部分已在 v0.25.8 实施（见该版本的提交）；其余内容仍为候选。当前不新增动效。
@@ -204,8 +241,8 @@ scheduled. Released changes and their acceptance results live in the Git history
 
 时长、曲线、中断方式、减少动画规则和验证状态统一维护在
 [动效场景规格](docs/control-style-consolidation.md#动效场景规格2026-09-20)。
-原先的建议时长不再作为另一套规格。经典正式包使用 classic；Ela 分支的独立正式包使用 Ela 控件。
-classic 底栏立即展开；Ela 0.29.39 的左右栏、底栏和右栏区块使用共享合成过渡。图标不缩放、不弹跳；
+原先的建议时长不再作为另一套规格。当前仅维护 Ela 正式包。
+Ela 0.29.39 的左右栏、底栏和右栏区块使用共享合成过渡。图标不缩放、不弹跳；
 代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
 ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等同于全应用减少动画，
 也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。

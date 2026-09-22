@@ -1,10 +1,17 @@
-ZeroSlack Ela Windows package
+ZeroSlack Ela v0.31.0 Windows package
 
-This is the independent Ela branch application. Launch ZeroSlack-Ela.exe.
-It does not replace the classic formal package. The fixed package directory is
+Ela is the maintained application. Launch ZeroSlack-Ela.exe. The fixed package directory is
 ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
+
+Release 0.31.0 shows the complete module hierarchy, uses dashed unreachable instances
+and matching colors at each depth, and synchronizes double-click navigation with source.
+Fit is in the panel header; the old follow/pinned row, search, folding, zoom buttons
+and more menu are removed. Context panels tile with adjustable dividers in both docks.
+Editor backgrounds offer Resting, Peekaboo, Balancing, custom images and None under
+Settings > Appearance. Opacity is global and saved with Apply Global. Backgrounds stay
+fixed behind source text, including folded, split and floating editors. No ZIP is produced.
 
 Release 0.30.3 uses ElaWidget for context floating windows and Ela's window-scoped
 Acrylic material. Window controls, resizing and theme changes use the Ela path;
@@ -40,8 +47,8 @@ ZeroSlack/ZeroSlack-Ela. Recent workspaces, editor settings and workspace sessio
 do not share the classic application's user profile. Workspace-local files are
 still shared if you explicitly open and change the same workspace.
 
-Use ZeroSlack-Ela.exe --ui-style=classic for the original controls in this same
-isolated profile. Changing the backend requires restarting the application.
+The classic, Qlementine and SuiteUi paths remain historical compatibility code;
+they are no longer maintained or included in current release validation.
 
 Ela controls: welcome page, settings, workspace configuration, navigation filters, Problems,
 Activity, workspace hub and context panel controls. Existing window management,

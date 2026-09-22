@@ -60,9 +60,6 @@ struct RtlInsightsPanelViewState
     QPushButton* graphFitButton = nullptr;
     QPushButton* graphZoomInButton = nullptr;
     QLineEdit* graphSearchEdit = nullptr;
-    QSpinBox* moduleBlockDepthSpin = nullptr;
-    QCheckBox* moduleBlockShowUnresolvedCheck =
-        nullptr;
     QComboBox* stateTransitionSignalCombo = nullptr;
     QComboBox* stateTransitionCurrentCombo = nullptr;
     QComboBox* stateTransitionNextCombo = nullptr;
@@ -75,12 +72,10 @@ struct RtlInsightsPanelViewState
     QToolButton* pinButton = nullptr;
     QAction* graphJumpAction = nullptr;
     QAction* graphFocusAction = nullptr;
-    QAction* graphSetTopAction = nullptr;
     QAction* graphTemporaryEditorAction = nullptr;
     QAction* graphExportAction = nullptr;
     QPushButton* graphInspectorJumpButton = nullptr;
     QPushButton* graphInspectorFocusButton = nullptr;
-    QPushButton* graphInspectorSetTopButton = nullptr;
     QPushButton* graphInspectorRevealButton = nullptr;
 
     QString currentFileName;
@@ -100,15 +95,16 @@ struct RtlInsightsPanelViewState
     int currentModuleBlockSelectedNodeId = -1;
     QList<ModuleBlockScope> moduleBlockPath;
     QHash<int, QString> moduleBlockInstancePaths;
-    QSet<QString> collapsedModulePaths;
+    QString moduleBlockTargetPath;
+    QStringList moduleBlockHistory;
+    int moduleBlockHistoryIndex = -1;
+    bool moduleBlockAutoFit = true;
     QString moduleBlockRenderedScope;
 
     std::function<bool(const RtlInsightSourceLocation&)>
         sourceNavigationHandler;
     std::function<void(const QString&, int)>
         statusMessageHandler;
-    std::function<void(const QString&, const QString&)>
-        moduleBlockDiagramRequestHandler;
 };
 
 #endif // RTLINSIGHTSPANELVIEWSTATE_H

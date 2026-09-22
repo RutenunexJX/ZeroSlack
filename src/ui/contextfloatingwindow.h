@@ -62,6 +62,7 @@ private:
     QVBoxLayout* contentLayout = nullptr;
     QToolButton* pinButton = nullptr;
     QToolButton* fullViewButton = nullptr;
+    QToolButton* fitButton = nullptr;
     QToolButton* dragButton = nullptr;
     QPoint dragStart;
     QSize initialSize{520, 440};

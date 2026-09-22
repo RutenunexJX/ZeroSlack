@@ -71,6 +71,11 @@ void LiveInsightToolPage::setCompactChrome(bool compact)
         workbench->setCompactChrome(compact);
 }
 
+void LiveInsightToolPage::fitGraph()
+{
+    if (workbench) workbench->fitGraph();
+}
+
 void LiveInsightToolPage::setContext(
     const LiveInsightToolContext& context)
 {
@@ -95,6 +100,24 @@ bool LiveInsightToolPage::hasVisibleSurface() const
 RtlInsightWorkbench* LiveInsightToolPage::workbenchForTest() const
 {
     return workbench;
+}
+
+void LiveInsightToolPage::refreshTargetContext(const LiveInsightToolContext& editorContext)
+{
+    if (currentContext.fileName.isEmpty()) {
+        setContext(editorContext);
+        return;
+    }
+    if (currentContext.workspaceId != editorContext.workspaceId) return;
+    auto refreshed = currentContext;
+    refreshed.semanticRevision = qMax(refreshed.semanticRevision, editorContext.semanticRevision);
+    if (refreshed.fileName == editorContext.fileName) {
+        refreshed.documentId = editorContext.documentId;
+        refreshed.documentRevision = editorContext.documentRevision;
+        refreshed.documentText = editorContext.documentText;
+        refreshed.dirty = editorContext.dirty;
+    }
+    setContext(refreshed);
 }
 
 QMainWindow* LiveInsightToolPage::detachToWindow()

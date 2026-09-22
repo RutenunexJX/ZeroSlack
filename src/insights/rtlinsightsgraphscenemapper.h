@@ -76,10 +76,9 @@ public:
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
     RtlInsightSourceLocation selectedSourceLocation() const;
-    bool setModuleBlockTopFromSelected();
     bool enterModuleBlockNode(int nodeId);
     bool navigateModuleBlockBreadcrumb(int index);
-    bool toggleModuleBlockNode(int nodeId);
+    bool navigateModuleBlockHistory(int direction);
     void refreshModuleBlockSelectionActions();
     bool selectSourceLocation(
         const RtlInsightSourceLocation& location,
@@ -98,6 +97,8 @@ public:
         const ModuleBlockDiagramReport& report);
 
 private:
+    bool activateModuleBlockPath(const QString& path, bool recordHistory, bool navigateSource);
+    void updateModuleBlockFocus(bool fit);
     RtlInsightsPanelViewState& state;
     RtlInsightsGraphController& controller;
 };

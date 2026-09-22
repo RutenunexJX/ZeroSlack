@@ -4969,8 +4969,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             ? wrappedPanel.dock()->findChild<QLineEdit*>(
                   QStringLiteral("rtlGraphSearchEdit"))
             : nullptr;
-    if (wrappedSearchEdit)
-        wrappedSearchEdit->setText(QStringLiteral("wrapped_top"));
+    wrappedPanel.selectGraphItemForTest(QStringLiteral("module"), QStringLiteral("wrapped_top"));
     expectBool("module block diagram selection keeps nodes readable",
                wrappedSearchEdit
                    && wrappedPanel.graphSelectedItemCountForTest() > 0
@@ -5026,28 +5025,15 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
         moduleBlockPanel.graphActionForTest(
             QString::fromLatin1(
                 ActionIds::GraphSetTopSelected));
-    expectBool("module block Set Top control consumes Registry Action",
-               moduleBlockSetTopAction
-                   && moduleBlockSetTopAction->isEnabled()
-                   && moduleBlockSetTopAction->text()
-                       == QStringLiteral("Set Top")
-                   && moduleBlockSetTopAction
-                          ->property(
-                              "zeroSlack.actionExecutionRoute")
-                          .toString()
-                       == QStringLiteral(
-                           "insight.graph.setTopSelected"),
-               true);
-    if (moduleBlockSetTopAction)
-        moduleBlockSetTopAction->trigger();
+    expectBool("module block retires Set Top action", moduleBlockSetTopAction == nullptr, true);
     QApplication::processEvents();
-    expectBool("registered Set Top Action rebuilds selected module context",
+    expectBool("module selection preserves the root hierarchy",
                moduleBlockPanel.currentModuleNameForTest()
-                       == QStringLiteral("rel_stage")
+                       == QStringLiteral("rel_top")
                    && moduleBlockPanel.graphNodeItemCountForTest()
-                       == 1
+                       == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest()
-                       == 0,
+                       == 1,
                true);
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
@@ -5067,14 +5053,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             ? moduleBlockPanel.dock()->findChild<QLineEdit*>(
                   QStringLiteral("rtlGraphSearchEdit"))
             : nullptr;
-    if (moduleBlockSearchEdit)
-        moduleBlockSearchEdit->setText(QStringLiteral("rel_stage"));
-    expectBool("module block diagram graph search highlights node",
-               moduleBlockSearchEdit
-                   && moduleBlockPanel.graphSelectedItemCountForTest() > 0,
+    expectBool("module block hides shared graph search",
+               moduleBlockSearchEdit && !moduleBlockSearchEdit->isVisibleTo(moduleBlockPanel.dock()),
                true);
-    if (moduleBlockSearchEdit)
-        moduleBlockSearchEdit->clear();
     QPushButton* moduleBlockZoomIn =
         moduleBlockPanel.dock()
             ? moduleBlockPanel.dock()->findChild<QPushButton*>(
@@ -5083,13 +5064,8 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const qreal moduleBlockScaleBeforeZoom = moduleBlockGraphView
         ? moduleBlockGraphView->transform().m11()
         : 0.0;
-    if (moduleBlockZoomIn)
-        moduleBlockZoomIn->click();
-    expectBool("module block diagram zoom control scales graph",
-               moduleBlockZoomIn
-                   && moduleBlockGraphView
-                   && moduleBlockGraphView->transform().m11()
-                       > moduleBlockScaleBeforeZoom,
+    expectBool("module block hides shared zoom buttons",
+               moduleBlockZoomIn && !moduleBlockZoomIn->isVisibleTo(moduleBlockPanel.dock()),
                true);
     moduleBlockNavigatedFileName.clear();
     moduleBlockNavigatedLine = 0;
@@ -5126,8 +5102,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphNodeItemCountForTest() == 2
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
-    moduleBlockPanel.selectGraphItemForTest(QStringLiteral("module"), QStringLiteral("rel_stage"));
-    if (moduleBlockSetTopAction) moduleBlockSetTopAction->trigger();
+    moduleBlockPanel.showModuleBlockDiagramForModule(stagePath, QStringLiteral("rel_stage"));
     expectBool("module block diagram leaf uses compact content bounds",
                moduleBlockPanel.graphNodeItemCountForTest() == 1
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 0

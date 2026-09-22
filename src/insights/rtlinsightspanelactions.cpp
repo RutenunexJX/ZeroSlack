@@ -146,11 +146,6 @@ QAction* RtlInsightsPanelCoordinator::graphAction(
     }
     if (actionId
         == QString::fromLatin1(
-            ActionIds::GraphSetTopSelected)) {
-        return viewState->graphSetTopAction;
-    }
-    if (actionId
-        == QString::fromLatin1(
             ActionIds::ViewTemporaryEditorOpen)) {
         return viewState->graphTemporaryEditorAction;
     }
@@ -183,6 +178,7 @@ void RtlInsightsPanelCoordinator::
                     context);
             const bool enabled =
                 availability.executable
+                && viewState->currentGraphMode != QStringLiteral("module-block")
                 && availabilityButton
                 && availabilityButton->isEnabled();
             action->setEnabled(enabled);
@@ -200,8 +196,6 @@ void RtlInsightsPanelCoordinator::
            viewState->graphInspectorJumpButton);
     update(viewState->graphFocusAction,
            viewState->graphInspectorFocusButton);
-    update(viewState->graphSetTopAction,
-           viewState->graphInspectorSetTopButton);
 }
 
 ActionExecutionResult
@@ -275,6 +269,10 @@ RtlInsightsPanelCoordinator::executeActionRoute(
     ActionExecutionResult result;
     result.handled = true;
     const QString& route = descriptor.executionRoute;
+    if (viewState && viewState->currentGraphMode == QStringLiteral("module-block")) {
+        result.failureReason = QStringLiteral("Module diagrams use double-click and navigation history.");
+        return result;
+    }
     if (route
         == QStringLiteral(
             "insight.graph.jumpSelected")) {
@@ -311,20 +309,6 @@ RtlInsightsPanelCoordinator::executeActionRoute(
         }
         return result;
     }
-    if (route
-        == QStringLiteral(
-            "insight.graph.setTopSelected")) {
-        result.succeeded =
-            graphController
-            && graphController
-                   ->setModuleBlockTopFromSelected();
-        if (!result.succeeded) {
-            result.failureReason = QStringLiteral(
-                "Select a resolved module block first.");
-        }
-        return result;
-    }
-
     result.failureReason = QStringLiteral(
         "Action is not an RTL Insights graph-selection route.");
     return result;
@@ -335,7 +319,7 @@ GraphExportResult RtlInsightsPanelCoordinator::exportCurrentGraph(
     const GraphExportOptions& options) const
 {
     return GraphExportService::exportGraphicsScene(
-        viewState ? viewState->insightsGraphScene : nullptr,
+        viewState && viewState->currentGraphMode != QStringLiteral("module-block") ? viewState->insightsGraphScene : nullptr,
         outputPath,
         options);
 }
@@ -346,8 +330,7 @@ bool RtlInsightsPanelCoordinator::hasExportableGraph() const
         return false;
     const QString mode = viewState->currentGraphMode;
     if (mode != QStringLiteral("fsm")
-        && mode != QStringLiteral("state-transition")
-        && mode != QStringLiteral("module-block")) {
+        && mode != QStringLiteral("state-transition")) {
         return false;
     }
     for (QGraphicsItem* item :

@@ -3,8 +3,10 @@
 
 #include <QString>
 #include <QStringList>
+#include <QPointer>
 
 class MyCodeEditor;
+class QTextDocument;
 
 struct EditorAppearanceOptions
 {
@@ -12,6 +14,9 @@ struct EditorAppearanceOptions
     int fontSizePt = 12;
     double lineHeight = 1.4;
     bool ligaturesEnabled = false;
+    QString backgroundPreset = QStringLiteral("Resting");
+    QString backgroundImagePath;
+    int backgroundOpacity = 55;
 };
 
 class EditorAppearance
@@ -27,6 +32,10 @@ public:
     void apply(MyCodeEditor* editor) const;
     void apply(MyCodeEditor* editor,
                const EditorAppearanceOptions& options) const;
+
+private:
+    mutable QPointer<QTextDocument> appliedDocument;
+    mutable double appliedLineHeight = 0;
 };
 
 #endif // EDITORAPPEARANCE_H

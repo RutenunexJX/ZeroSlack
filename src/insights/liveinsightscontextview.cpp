@@ -7,7 +7,6 @@
 #include "liveinsightsession.h"
 
 #include <QButtonGroup>
-#include <QCheckBox>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHideEvent>
@@ -24,7 +23,7 @@
 
 namespace {
 const QString kViewStateSchema =
-    QStringLiteral("zeroslack-live-insights-view/v1");
+    QStringLiteral("zeroslack-live-insights-view/v2");
 
 LiveInsightKind kindForIndex(int index)
 {
@@ -112,7 +111,7 @@ QString summaryText(const LiveInsightSnapshot& snapshot)
     if (snapshot.phase == LiveInsightPhase::Building)
         return QStringLiteral("Building the latest semantic insight.");
     return QStringLiteral(
-        "Follow the editor or select source context to populate this insight.");
+        "Select source context to populate this insight.");
 }
 }
 
@@ -163,6 +162,7 @@ void LiveInsightsContextView::initialize()
 LiveInsightsContextView::~LiveInsightsContextView()
 {
     if (sessionValue) {
+        disconnect(sessionValue, nullptr, this, nullptr);
         sessionValue->setConsumerVisible(
             this, selected, false);
     }
@@ -201,46 +201,6 @@ void LiveInsightsContextView::setSelectedKind(LiveInsightKind kind)
     emit selectedKindChanged(selected);
 }
 
-bool LiveInsightsContextView::followEditor() const
-{
-    return followCheck && followCheck->isChecked();
-}
-
-void LiveInsightsContextView::setFollowEditor(bool follow)
-{
-    if (!followCheck)
-        return;
-    const bool changed = followCheck->isChecked() != follow;
-    followCheck->setChecked(follow);
-    if (follow && !changed)
-        refreshAllFromSession();
-}
-
-bool LiveInsightsContextView::pinned() const
-{
-    return pinToggle && pinToggle->isChecked();
-}
-
-void LiveInsightsContextView::setPinned(bool pinnedValue)
-{
-    if (!pinToggle)
-        return;
-    const bool changed = pinToggle->isChecked() != pinnedValue;
-    {
-        const QSignalBlocker blocker(pinToggle);
-        pinToggle->setChecked(pinnedValue);
-    }
-    pinToggle->setText(
-        pinnedValue ? QStringLiteral("Pinned")
-                    : QStringLiteral("Pin"));
-    pinToggle->setToolTip(
-        pinnedValue
-            ? QStringLiteral("Keep Live Insights pinned to the workspace")
-            : QStringLiteral("Pin Live Insights to the workspace"));
-    if (changed)
-        emit pinnedChanged(pinnedValue);
-}
-
 QString LiveInsightsContextView::workspaceId() const
 {
     return workspaceIdValue;
@@ -265,6 +225,17 @@ void LiveInsightsContextView::setToolContextSource(
     // renderSurface builds the surface only once the section is actually
     // visible, so installing a source on a collapsed section stays cheap.
     renderSurface();
+}
+
+void LiveInsightsContextView::setNavigationHandler(LiveInsightToolPage::NavigationHandler handler)
+{
+    navigationHandler = std::move(handler);
+    if (surfaceValue) surfaceValue->setNavigationHandler(navigationHandler);
+}
+
+void LiveInsightsContextView::fitGraph()
+{
+    if (surfaceValue) surfaceValue->fitGraph();
 }
 
 LiveInsightToolPage* LiveInsightsContextView::surfaceForTest() const
@@ -293,9 +264,12 @@ void LiveInsightsContextView::ensureSurface()
         QStringLiteral("liveInsightSurface_%1")
             .arg(liveInsightKindId(selected)));
     surfaceValue->setCompactChrome(true);
+    surfaceValue->setNavigationHandler(navigationHandler);
     if (QLabel* summary = cards.at(index).summary)
         summary->hide();
-    page->layout()->addWidget(surfaceValue);
+    page->layout()->setContentsMargins(0, 0, 0, 0);
+    static_cast<QVBoxLayout*>(page->layout())->addWidget(surfaceValue, 1);
+    setProperty("contextFitAvailable", selected == LiveInsightKind::Module);
     // The surface nests its own main-window layout. Inserting it after the
     // section already has a size leaves that nested layout on the geometry it
     // was built with, so re-activate it once this event round settles.
@@ -319,12 +293,23 @@ LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
 {
     LiveInsightToolContext context =
         toolContextSource ? toolContextSource() : LiveInsightToolContext{};
+    if (hasTargetContext) {
+        if (context.fileName == targetContext.fileName) {
+            context.moduleName = targetContext.moduleName;
+            context.signalName = targetContext.signalName;
+            context.signalAccessPath = targetContext.signalAccessPath;
+        } else {
+            const auto semanticRevision = context.semanticRevision;
+            context = targetContext;
+            context.semanticRevision = qMax(context.semanticRevision, semanticRevision);
+        }
+    }
     if (targetOverrideActive) {
         if (!targetOverride.moduleName.trimmed().isEmpty())
             context.moduleName = targetOverride.moduleName;
         context.signalName = targetOverride.signalName;
         context.signalAccessPath = targetOverride.signalAccessPath;
-        // Keep the selected scope with the pinned target context.
+        // Keep the selected scope with the explicit target.
         if (targetOverride.scopeStartPosition >= 0
             && targetOverride.scopeEndPosition
                    > targetOverride.scopeStartPosition) {
@@ -356,6 +341,7 @@ void LiveInsightsContextView::rememberTarget(
     const LiveInsightToolContext& context)
 {
     TargetCandidate candidate;
+    candidate.fileName = context.fileName;
     candidate.moduleName = context.moduleName.trimmed();
     candidate.signalName = context.signalName.trimmed();
     candidate.signalAccessPath = context.signalAccessPath.trimmed();
@@ -382,12 +368,12 @@ LiveInsightsContextView::candidateTargets() const
 {
     QList<TargetCandidate> candidates;
     const LiveInsightToolContext current = effectiveContext();
-    // The editor context is a candidate exactly when the section is not
-    // already showing it: frozen by Follow Editor, or pinned elsewhere.
+    // Editor targets remain available through explicit selection.
     if (toolContextSource) {
         const LiveInsightToolContext editorContext = toolContextSource();
         if (contextHasTarget(editorContext)) {
             TargetCandidate candidate;
+            candidate.fileName = editorContext.fileName;
             candidate.moduleName = editorContext.moduleName.trimmed();
             candidate.signalName = editorContext.signalName.trimmed();
             candidate.signalAccessPath =
@@ -421,11 +407,20 @@ bool LiveInsightsContextView::applyTargetCandidate(
         return false;
     targetOverride = candidate;
     targetOverrideActive = true;
-    // A chosen target is a target, not a subscription: stop following the
-    // cursor so the choice survives the next editor move.
-    setFollowEditor(false);
+    targetContext = toolContextSource ? toolContextSource() : LiveInsightToolContext{};
+    if (!candidate.fileName.isEmpty() && candidate.fileName != targetContext.fileName) {
+        targetContext.fileName = candidate.fileName;
+        targetContext.documentId = candidate.fileName;
+        targetContext.documentRevision = 0;
+        targetContext.documentText.clear();
+    }
+    targetContext.moduleName = candidate.moduleName;
+    targetContext.signalName = candidate.signalName;
+    targetContext.signalAccessPath = candidate.signalAccessPath;
+    hasTargetContext = true;
     renderSurface();
     publishSectionScope();
+    emit targetChanged();
     return true;
 }
 
@@ -585,6 +580,12 @@ void LiveInsightsContextView::renderSurface()
         refreshEmptyState(context);
         return;
     }
+    if (!hasTargetContext) {
+        targetContext = context;
+        hasTargetContext = true;
+        emit targetChanged();
+    }
+    targetContext = context;
     ensureSurface();
     if (!surfaceValue)
         return;
@@ -599,8 +600,12 @@ QVariantMap LiveInsightsContextView::saveState() const
     return {
         {QStringLiteral("schema"), kViewStateSchema},
         {QStringLiteral("kind"), liveInsightKindId(selected)},
-        {QStringLiteral("followEditor"), followEditor()},
-        {QStringLiteral("pinned"), pinned()}
+        {QStringLiteral("target"), hasTargetContext ? QVariantMap{
+            {QStringLiteral("fileName"), targetContext.fileName},
+            {QStringLiteral("moduleName"), targetContext.moduleName},
+            {QStringLiteral("signalName"), targetContext.signalName},
+            {QStringLiteral("signalAccessPath"), targetContext.signalAccessPath}}
+            : QVariantMap{}}
     };
 }
 
@@ -609,21 +614,25 @@ void LiveInsightsContextView::restoreState(
 {
     const QString schema =
         state.value(QStringLiteral("schema")).toString();
-    if (!schema.isEmpty() && schema != kViewStateSchema)
+    if (!schema.isEmpty() && schema != kViewStateSchema
+        && schema != QStringLiteral("zeroslack-live-insights-view/v1"))
         return;
 
-    if (state.contains(QStringLiteral("followEditor"))) {
-        setFollowEditor(
-            state.value(QStringLiteral("followEditor")).toBool());
-    }
-    if (state.contains(QStringLiteral("pinned"))) {
-        setPinned(state.value(QStringLiteral("pinned")).toBool());
-    }
     LiveInsightKind restoredKind = selected;
     if (liveInsightKindFromId(
             state.value(QStringLiteral("kind")).toString(),
             &restoredKind)) {
         setSelectedKind(restoredKind);
+    }
+    const QVariantMap target = state.value(QStringLiteral("target")).toMap();
+    if (!target.isEmpty()) {
+        TargetCandidate candidate;
+        candidate.fileName = target.value(QStringLiteral("fileName")).toString();
+        candidate.moduleName = target.value(QStringLiteral("moduleName")).toString();
+        candidate.signalName = target.value(QStringLiteral("signalName")).toString();
+        candidate.signalAccessPath = target.value(QStringLiteral("signalAccessPath")).toString();
+        candidate.label = candidate.signalName.isEmpty() ? candidate.moduleName : candidate.signalName;
+        applyTargetCandidate(candidate);
     }
 }
 
@@ -648,16 +657,6 @@ QLabel* LiveInsightsContextView::kindSummaryLabel(
     return index >= 0 ? cards.at(index).summary : nullptr;
 }
 
-QCheckBox* LiveInsightsContextView::followEditorCheckBox() const
-{
-    return followCheck;
-}
-
-QPushButton* LiveInsightsContextView::pinButton() const
-{
-    return pinToggle;
-}
-
 QPushButton* LiveInsightsContextView::openFullViewButton() const
 {
     return fullViewButton;
@@ -673,7 +672,7 @@ void LiveInsightsContextView::showEvent(QShowEvent* event)
     QWidget::showEvent(event);
     if (sessionValue) {
         sessionValue->setConsumerVisible(
-            this, selected, followEditor());
+            this, selected, true);
     }
     if (surfaceRenderPending || (surfaceEnabled() && !surfaceValue))
         renderSurface();
@@ -706,8 +705,9 @@ int LiveInsightsContextView::indexForKind(LiveInsightKind kind)
 void LiveInsightsContextView::buildUi()
 {
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(10, 10, 10, 10);
-    root->setSpacing(8);
+    root->setContentsMargins(fixedKindValue ? 0 : 10, fixedKindValue ? 0 : 10,
+                             fixedKindValue ? 0 : 10, fixedKindValue ? 0 : 10);
+    root->setSpacing(fixedKindValue ? 0 : 8);
 
     auto* titleRow = new QHBoxLayout;
     titleRow->setSpacing(6);
@@ -716,12 +716,6 @@ void LiveInsightsContextView::buildUi()
     title->setObjectName(QStringLiteral("liveInsightsContextTitle"));
     InsightVisualStyle::applyTitleLabel(title);
     titleRow->addWidget(title, 1);
-
-    pinToggle = UiControls::pushButton(QStringLiteral("Pin"), this);
-    pinToggle->setObjectName(QStringLiteral("liveInsightsPin"));
-    pinToggle->setCheckable(true);
-    InsightVisualStyle::applyToolbarButton(pinToggle);
-    titleRow->addWidget(pinToggle);
 
     fullViewButton = UiControls::pushButton(
         QStringLiteral("Open Full View"), this);
@@ -732,16 +726,6 @@ void LiveInsightsContextView::buildUi()
     InsightVisualStyle::applyToolbarButton(fullViewButton);
     titleRow->addWidget(fullViewButton);
     root->addLayout(titleRow);
-
-    followCheck = UiControls::checkBox(
-        QStringLiteral("Follow Editor"), this);
-    followCheck->setObjectName(
-        QStringLiteral("liveInsightsFollowEditor"));
-    followCheck->setChecked(true);
-    followCheck->setToolTip(
-        QStringLiteral("Track the active editor context"));
-    InsightVisualStyle::applySegmentedCheckBox(followCheck);
-    root->addWidget(followCheck);
 
     auto* cardGrid = new QGridLayout;
     cardGrid->setContentsMargins(0, 0, 0, 0);
@@ -817,30 +801,6 @@ void LiveInsightsContextView::buildUi()
     root->addWidget(contentStack, 1);
 
     connect(
-        followCheck,
-        &QCheckBox::toggled,
-        this,
-        [this](bool follow) {
-            if (sessionValue && isVisible()) {
-                sessionValue->setConsumerVisible(
-                    this, selected, follow);
-            }
-            if (follow)
-                refreshAllFromSession();
-            emit followEditorChanged(follow);
-        });
-    connect(
-        pinToggle,
-        &QPushButton::toggled,
-        this,
-        [this](bool checked) {
-            pinToggle->setText(
-                checked ? QStringLiteral("Pinned")
-                        : QStringLiteral("Pin"));
-            emit pinnedChanged(checked);
-            emit pinStateChangeRequested(checked);
-        });
-    connect(
         fullViewButton,
         &QPushButton::clicked,
         this,
@@ -856,9 +816,6 @@ void LiveInsightsContextView::buildUi()
         // in the body only pushes the real content down.
         title->hide();
         fullViewButton->hide();
-        // Two remaining controls do not deserve two rows.
-        root->removeWidget(followCheck);
-        titleRow->insertWidget(0, followCheck);
         for (const CardWidgets& card : cards) {
             if (card.button && card.button->parentWidget())
                 card.button->parentWidget()->hide();
@@ -878,8 +835,6 @@ void LiveInsightsContextView::refreshSnapshot(
 {
     const int index = indexForKind(kind);
     if (index < 0 || (fixedKindValue && kind != selected))
-        return;
-    if (!followEditor() && hasRenderedSnapshot.at(index))
         return;
     renderedSnapshots.at(index) = snapshot;
     hasRenderedSnapshot.at(index) = true;
@@ -961,7 +916,7 @@ void LiveInsightsContextView::updateSessionVisibility(
     LiveInsightKind previousKind,
     LiveInsightKind nextKind)
 {
-    if (!sessionValue || !isVisible() || !followEditor())
+    if (!sessionValue || !isVisible())
         return;
     sessionValue->setConsumerVisible(
         this, previousKind, false);

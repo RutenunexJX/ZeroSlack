@@ -46,7 +46,7 @@ public:
     QList<ContextFloatingWindow*> floatingWindows() const;
     bool focusResource(const QString& resourceKey);
     bool closeFloatingResource(const QString& resourceKey);
-    bool pinFloatingResource(const QString& resourceKey);
+    bool pinFloatingResource(const QString& resourceKey, bool bottom = false, int index = -1);
     bool dragOutResource(const QString& resourceKey, const QPoint& globalPosition, QString* failureReason = nullptr);
     void setFloatingCollapsed(bool collapsed);
     bool floatingCollapsed() const;
@@ -58,10 +58,10 @@ public:
     void setFloatingOpacity(int percentage);
     ContextDockHost* dockHost() const;
     QDockWidget* dockWidget() const;
+    QDockWidget* bottomDockWidget() const;
     bool dockVisible() const;
     bool canShowDock() const;
-    // The live view for a resource, wherever it currently lives: a sidebar
-    // section or a floating window.
+    // The live view in either dock area or a floating window.
     QWidget* viewForResource(const QString& resourceKey) const;
     bool setDockVisible(bool visible, QString* failureReason = nullptr);
 
@@ -74,7 +74,7 @@ public:
         const ContextResource& resource,
         ContextPlacement placement = {},
         QString* failureReason = nullptr);
-    bool pinPeek(QString* failureReason = nullptr);
+    bool pinPeek(QString* failureReason = nullptr, bool bottom = false, int index = -1);
     bool unpinResource(const QString& resourceKey,
                        QString* failureReason = nullptr);
     bool closePinnedResource(const QString& resourceKey);
@@ -122,6 +122,11 @@ private:
     ContextFloatingSurface* activeFloatingSurface = nullptr;
     QPointer<ContextDockHost> dockHostValue;
     QPointer<QDockWidget> dockValue;
+    QPointer<QDockWidget> bottomDockValue;
+    int preferredBottomHeight = 300;
+    bool previewingDocks = false;
+    bool sideWasVisible = false;
+    bool bottomWasVisible = false;
     std::map<QString,
              std::unique_ptr<IContextContentProvider>> providers;
     QString currentWorkspaceRoot;
@@ -130,6 +135,7 @@ private:
         ContextWorkspaceState::kDefaultDockWidth;
     bool restoringState = false;
     bool applyingDockWidth = false;
+    bool applyingBottomHeight = false;
 
     IContextContentProvider* providerFor(
         const ContextResource& resource) const;
@@ -192,6 +198,10 @@ private:
     void refreshProviderIcons();
     int boundedDockWidthForWindow(int width) const;
     void showDock(bool applyPreferredWidth, bool animate = true);
+    void showResourceDock(const QString& key);
+    void hideEmptyDocks();
+    void beginDockPreview();
+    void endDockPreview();
     void applyDockVisibility(bool visible, bool applyPreferredWidth = false, bool animate = true);
     void notifyWorkspaceStateChanged();
 };

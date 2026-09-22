@@ -29,6 +29,7 @@ public:
     void setDoubleClickHandler(std::function<bool(const QPoint&)> handler);
     void setZoomChangedHandler(std::function<void(qreal)> handler);
     void setViewportResizeHandler(std::function<void()> handler);
+    void setViewportInteractionHandler(std::function<void()> handler);
     void setFitUpscalingEnabled(bool enabled);
 
     qreal currentZoom() const;
@@ -46,11 +47,13 @@ protected:
     void drawBackground(QPainter* painter, const QRectF& rect) override;
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:
     bool gridVisible = false;
+    QPoint pressPosition;
     bool clearSelectionOnEmptyLeftClick = false;
     bool fitUpscalingEnabled = true;
     qreal minimumZoom = 0.18;
@@ -63,6 +66,7 @@ private:
     std::function<bool(const QPoint&)> doubleClickHandler;
     std::function<void(qreal)> zoomChangedHandler;
     std::function<void()> viewportResizeHandler;
+    std::function<void()> viewportInteractionHandler;
 
     void initializeThemeConnection();
     void notifyZoomChanged();

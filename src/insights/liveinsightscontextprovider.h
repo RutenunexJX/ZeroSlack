@@ -23,9 +23,6 @@ class ZEROSLACK_API LiveInsightsContextProvider final
 public:
     using FullViewHandler =
         std::function<void(const ContextResource& resource)>;
-    using PinRequestHandler = std::function<void(
-        bool pinned,
-        const ContextResource& resource)>;
 
     explicit LiveInsightsContextProvider(
         LiveInsightSession* session = nullptr,
@@ -53,7 +50,7 @@ public:
 
     LiveInsightSession* session() const;
     void setFullViewHandler(FullViewHandler handler);
-    void setPinRequestHandler(PinRequestHandler handler);
+    void setNavigationHandler(LiveInsightToolPage::NavigationHandler handler);
     // Installed by the host that can build an editor context. Views created
     // by this provider then render the real insight surface instead of the
     // compact summary card.
@@ -92,15 +89,13 @@ public:
 
 signals:
     void openFullViewRequested(const ContextResource& resource);
-    void pinStateChangeRequested(bool pinned,
-                                 const ContextResource& resource);
 
 private:
     QPointer<LiveInsightSession> sessionValue;
     LiveInsightKind fixedKind = LiveInsightKind::Kernel;
     bool fixedKindEnabled = false;
     FullViewHandler fullViewHandler;
-    PinRequestHandler pinRequestHandler;
+    LiveInsightToolPage::NavigationHandler navigationHandler;
     LiveInsightsContextView::ToolContextSource toolContextSource;
     LiveInsightsContextView::TargetPickRequest targetPickRequest;
 

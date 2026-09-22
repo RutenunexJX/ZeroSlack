@@ -17,7 +17,10 @@ bool sameOptions(const EditorAppearanceOptions& lhs,
     return lhs.fontFamily == rhs.fontFamily
         && lhs.fontSizePt == rhs.fontSizePt
         && qFuzzyCompare(lhs.lineHeight, rhs.lineHeight)
-        && lhs.ligaturesEnabled == rhs.ligaturesEnabled;
+        && lhs.ligaturesEnabled == rhs.ligaturesEnabled
+        && lhs.backgroundPreset == rhs.backgroundPreset
+        && lhs.backgroundImagePath == rhs.backgroundImagePath
+        && lhs.backgroundOpacity == rhs.backgroundOpacity;
 }
 }
 
@@ -102,6 +105,9 @@ void EditorAppearanceSettings::load()
             settings->value(kLineHeightKey, defaults.lineHeight).toDouble();
         defaults.ligaturesEnabled =
             settings->value(kLigaturesKey, defaults.ligaturesEnabled).toBool();
+        defaults.backgroundPreset = settings->value(SettingsCenterKeys::EditorBackgroundPreset, defaults.backgroundPreset).toString();
+        defaults.backgroundImagePath = settings->value(SettingsCenterKeys::EditorBackgroundImagePath, defaults.backgroundImagePath).toString();
+        defaults.backgroundOpacity = settings->value(SettingsCenterKeys::EditorBackgroundOpacity, defaults.backgroundOpacity).toInt();
     }
     currentOptions = normalized(defaults);
 }
@@ -115,6 +121,9 @@ void EditorAppearanceSettings::save() const
     settings->setValue(kFontSizeKey, currentOptions.fontSizePt);
     settings->setValue(kLineHeightKey, currentOptions.lineHeight);
     settings->setValue(kLigaturesKey, currentOptions.ligaturesEnabled);
+    settings->setValue(SettingsCenterKeys::EditorBackgroundPreset, currentOptions.backgroundPreset);
+    settings->setValue(SettingsCenterKeys::EditorBackgroundImagePath, currentOptions.backgroundImagePath);
+    settings->setValue(SettingsCenterKeys::EditorBackgroundOpacity, currentOptions.backgroundOpacity);
     settings->sync();
 }
 
@@ -126,5 +135,7 @@ EditorAppearanceOptions EditorAppearanceSettings::normalized(
         EditorAppearance::resolveFontFamily(options.fontFamily);
     normalizedOptions.fontSizePt = qBound(8, options.fontSizePt, 32);
     normalizedOptions.lineHeight = qBound(1.0, options.lineHeight, 2.0);
+    normalizedOptions.backgroundImagePath = options.backgroundImagePath.trimmed();
+    normalizedOptions.backgroundOpacity = qBound(0, options.backgroundOpacity, 100);
     return normalizedOptions;
 }

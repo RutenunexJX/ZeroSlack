@@ -245,7 +245,8 @@ int main()
                        ActionSurface::ContextMenu).isEmpty()
                && actionDescriptorsForSurface(
                       ActionSurface::GraphPanel).size()
-                      == 12);
+                      == 11
+               && !findActionById(QString::fromLatin1(ActionIds::GraphSetTopSelected)));
     expect("Wave Simulation command routes are removed",
            !findActionById(QStringLiteral("waveSimulation.runCurrentContext"))
                && !findActionById(QStringLiteral("waveSimulation.observeSignal"))
@@ -306,10 +307,6 @@ int main()
              "insight.graph.focusSelected",
              "Focus",
              "rtlGraphFocusAction"},
-            {ActionIds::GraphSetTopSelected,
-             "insight.graph.setTopSelected",
-             "Set Top",
-             "rtlGraphSetTopAction"},
         };
     bool graphSelectionDescriptorsComplete = true;
     for (const GraphSelectionExpectation& expected :

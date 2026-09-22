@@ -57,7 +57,7 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         Category::Appearance,
         QStringLiteral("appearance"),
         QStringLiteral("Appearance"),
-        QStringLiteral("Application color theme."),
+        QStringLiteral("Application theme and editor backgrounds."),
         {
             field(QStringLiteral("appearance.theme"),
                   QString::fromLatin1(
@@ -87,6 +87,25 @@ QList<SettingsCenterCategoryDescriptor> makeCategories()
         Kind::Integer, 90, 60, 100, {}, true, false, true, true);
     opacity.useSlider = true;
     result.last().fields.append(opacity);
+    result.last().fields.append(field(QStringLiteral("appearance.editorBackground"),
+        QString::fromLatin1(SettingsCenterKeys::EditorBackgroundPreset), Category::Appearance,
+        QStringLiteral("Editor background"),
+        QStringLiteral("A fixed illustration behind source code. Applies to editor views only."),
+        Kind::String, QStringLiteral("Resting"), {}, {},
+        {QStringLiteral("None"), QStringLiteral("Resting"), QStringLiteral("Peekaboo"),
+         QStringLiteral("Balancing"), QStringLiteral("Custom image")}, true, false, true));
+    result.last().fields.append(field(QStringLiteral("appearance.editorBackgroundImagePath"),
+        QString::fromLatin1(SettingsCenterKeys::EditorBackgroundImagePath), Category::Appearance,
+        QStringLiteral("Custom background image"),
+        QStringLiteral("Choose an image for Custom image. Missing or unreadable files use the theme background."),
+        Kind::FilePath, QString(), {}, {}, {}, true, false, true, false, true));
+    auto editorOpacity = field(QStringLiteral("appearance.editorBackgroundOpacity"),
+        QString::fromLatin1(SettingsCenterKeys::EditorBackgroundOpacity), Category::Appearance,
+        QStringLiteral("Editor background opacity (%)"),
+        QStringLiteral("Adjust the image without fading code. Dark themes soften it further for readability."),
+        Kind::Integer, 55, 0, 100, {}, true, false, true);
+    editorOpacity.useSlider = true;
+    result.last().fields.append(editorOpacity);
     result.append({
         Category::Font,
         QStringLiteral("font"),

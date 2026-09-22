@@ -679,7 +679,8 @@ QWidget* SettingsCenterPanel::createEditor(
         editor->setObjectName(
             QStringLiteral("settingsCenterFilePathEdit.%1")
                 .arg(descriptor.id));
-        editor->setPlaceholderText(tr("Automatic discovery"));
+        const bool backgroundImage = descriptor.id == QStringLiteral("appearance.editorBackgroundImagePath");
+        editor->setPlaceholderText(backgroundImage ? tr("Choose an image...") : tr("Automatic discovery"));
         layout->addWidget(editor, 1);
 
         auto* browseButton = UiControls::pushButton(tr("Browse..."), container);
@@ -693,17 +694,19 @@ QWidget* SettingsCenterPanel::createEditor(
         connect(browseButton,
                 &QPushButton::clicked,
                 this,
-                [this, descriptor, editor]() {
+                [this, descriptor, editor, backgroundImage]() {
                     const QString current = editor->text().trimmed();
                     const QString initialDirectory = current.isEmpty()
                         ? QString()
                         : QFileInfo(current).absolutePath();
 #ifdef Q_OS_WIN
-                    const QString filter = tr(
+                    QString filter = tr(
                         "Executables (*.exe);;All files (*)");
 #else
-                    const QString filter = tr("All files (*)");
+                    QString filter = tr("All files (*)");
 #endif
+                    if (backgroundImage)
+                        filter = tr("Images (*.png *.jpg *.jpeg *.webp *.bmp);;All files (*)");
                     const QString selected = QFileDialog::getOpenFileName(
                         this,
                         tr("Select %1").arg(descriptor.title),
@@ -970,10 +973,17 @@ void SettingsCenterPanel::updateFieldState(
     const QString effective =
         formattedValue(
             effectiveDraftValues().value(binding->descriptor.id));
+    if (binding->descriptor.id == QStringLiteral("appearance.editorBackgroundImagePath")) {
+        binding->editor->setEnabled(activeScope == SettingsCenterScope::Global
+            && effectiveDraftValues().value(QStringLiteral("appearance.editorBackground")).toString()
+                   == QStringLiteral("Custom image"));
+    }
     if (binding->descriptor.alwaysActive) {
         binding->stateLabel->setText(
             activeScope == SettingsCenterScope::Global
-                ? tr("Applied immediately - Effective: %1")
+                ? (binding->descriptor.immediateApply
+                       ? tr("Applied immediately - Effective: %1")
+                       : tr("Global setting - Effective: %1"))
                       .arg(effective)
                 : tr("Global only - Effective: %1")
                       .arg(effective));

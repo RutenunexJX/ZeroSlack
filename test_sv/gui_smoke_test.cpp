@@ -11294,7 +11294,7 @@ void runLiveInsightSidebarRoutingRegression(
     // through the section header entry, exercised further down.
     expectBool("State Transition command pins the section and opens no tab",
                compactView
-                   && !compactView->followEditor()
+                   && !compactView->saveState().value("target").toMap().isEmpty()
                    && compactView->surfaceForTest() != nullptr
                    && fullView == nullptr,
                true);
@@ -11416,7 +11416,7 @@ void runLiveInsightSidebarRoutingRegression(
                 routed, &routedKind)
             && routedKind == probe.kind
             && routedView
-            && !routedView->followEditor()
+            && !routedView->saveState().value("target").toMap().isEmpty()
             && routedView->surfaceForTest() != nullptr
             && window.tabManager->toolPage(
                    QStringLiteral("live-insight:%1")

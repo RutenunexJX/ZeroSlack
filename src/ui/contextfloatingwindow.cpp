@@ -119,11 +119,20 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     dragButton = UiControls::toolButton(this);
     dragButton->setObjectName(QStringLiteral("contextFloatingDrag"));
     dragButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
-    dragButton->setToolTip(tr("Drag this handle into the sidebar"));
+    dragButton->setToolTip(tr("Drag this handle into the sidebar or bottom area"));
     dragButton->setCursor(Qt::OpenHandCursor);
     dragButton->installEventFilter(this);
     actions->addWidget(dragButton);
     actions->addStretch();
+    fitButton = UiControls::toolButton(this);
+    fitButton->setObjectName(QStringLiteral("contextFloatingFit"));
+    fitButton->setText(tr("Fit"));
+    fitButton->setToolTip(tr("Fit diagram to view"));
+    fitButton->hide();
+    actions->addWidget(fitButton);
+    connect(fitButton, &QToolButton::clicked, this, [this] {
+        if (currentView) QMetaObject::invokeMethod(currentView, "fitGraph");
+    });
     pinButton = UiControls::toolButton(this);
     pinButton->setObjectName(QStringLiteral("contextFloatingPin"));
     pinButton->setText(tr("Pin"));
@@ -269,6 +278,8 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
 QWidget* ContextFloatingWindow::sidebarDragHandle() const { return dragButton; }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == currentView && event->type() == QEvent::DynamicPropertyChange)
+        fitButton->setVisible(currentView->property("contextFitAvailable").toBool());
     if (watched == dragButton && !dragButton->property("elaDragManaged").toBool()
         && dragButton->isEnabled() && hasResource()) {
         if (event->type() == QEvent::MouseButtonPress) {
@@ -302,6 +313,8 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
     clearView();
     currentResource = resource;
     currentView = view;
+    view->installEventFilter(this);
+    fitButton->setVisible(view->property("contextFitAvailable").toBool());
     contentLayout->addWidget(view);
     setWindowTitle(resource.title.isEmpty() ? resource.uri.fileName() : resource.title);
     if (!geometryValid) {
@@ -333,6 +346,7 @@ QWidget* ContextFloatingWindow::takeView()
     rememberGeometry();
     QWidget* view = currentView;
     if (view) {
+        view->removeEventFilter(this);
         contentLayout->removeWidget(view);
         view->hide();
         view->setParent(nullptr);

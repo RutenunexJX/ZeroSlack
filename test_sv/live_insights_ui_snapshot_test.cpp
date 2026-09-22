@@ -587,12 +587,9 @@ private:
                    QStringLiteral("%1 does not clip %2 freshness text")
                        .arg(scenario, name));
         }
-        expect(fullyVisibleTo(
-                   insightsView, insightsView->followEditorCheckBox()),
-               scenario + QStringLiteral(" keeps Follow Editor visible"));
-        expect(fullyVisibleTo(insightsView, insightsView->pinButton())
-                   && buttonTextFits(insightsView->pinButton()),
-               scenario + QStringLiteral(" keeps Pin control unclipped"));
+        expect(!insightsView->saveState().contains(QStringLiteral("followEditor"))
+                   && !insightsView->saveState().contains(QStringLiteral("pinned")),
+               scenario + QStringLiteral(" removes Follow Editor and Pin state"));
         expect(fullyVisibleTo(
                    insightsView, insightsView->openFullViewButton())
                    && buttonTextFits(

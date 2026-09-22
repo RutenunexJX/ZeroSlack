@@ -407,12 +407,9 @@ WorkspaceHubSnapshot WorkspaceHubSession::buildDefaultSnapshot(
             insight.summary = insightSummary(kind, request);
             insight.iconKey =
                 LiveInsightsContextProvider::iconKeyForKind(kind);
-            QVariantMap state{
-                {QStringLiteral("followEditor"), true},
-                {QStringLiteral("pinned"), false}};
             insight.contextResource =
                 LiveInsightsContextProvider::resourceForKind(
-                    kind, request.workspaceRoot, state);
+                    kind, request.workspaceRoot);
             source->items.append(insight);
         }
         source->statusText = QStringLiteral("%1 source tools")

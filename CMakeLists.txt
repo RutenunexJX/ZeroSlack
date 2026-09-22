@@ -296,6 +296,7 @@ set(ZEROSLACK_CORE_SOURCES
       src/editor/editorfileidentity.cpp
       src/editor/editorfolding.cpp
       src/editor/editorviewprojection.cpp
+      src/editor/editorbackground.cpp
       src/editor/editorgeometry.cpp
     src/editor/editorgutter.cpp
     src/editor/editorhoverpopup.cpp
@@ -804,7 +805,7 @@ target_sources(zeroslack_core PRIVATE
 # Main application target.
 option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
 option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
-option(ZEROSLACK_ENABLE_ELA "Build the isolated ZeroSlack Ela application" OFF)
+option(ZEROSLACK_ENABLE_ELA "Build the maintained ZeroSlack Ela application" ON)
 target_sources(zeroslack_core PRIVATE src/ui/uicontrols.cpp src/ui/uidialogs.cpp)
 if(ZEROSLACK_ENABLE_ELA)
     if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
@@ -1128,6 +1129,9 @@ if(BUILD_TESTING)
         test_sv/settings_center_panel_test.cpp)
     target_link_libraries(settings_center_panel_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(editor_background_test test_sv/editor_background_test.cpp)
+    target_link_libraries(editor_background_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(live_insight_session_test
         test_sv/live_insight_session_test.cpp)
@@ -1687,6 +1691,15 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:settings_center_panel_test>
     )
+    foreach(background_scale IN ITEMS 1 2)
+        add_test(NAME editor_background_${background_scale}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                "QT_SCALE_FACTOR=${background_scale}" "ZEROSLACK_TEST_UI_STYLE=ela"
+                $<TARGET_FILE:editor_background_test> -o -,txt)
+        set_tests_properties(editor_background_${background_scale}_test PROPERTIES TIMEOUT 60)
+    endforeach()
     add_test(NAME live_insight_session_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -1712,6 +1725,25 @@ if(BUILD_TESTING)
     )
     set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)
+    set(MODULE_DIAGRAM_TEST_STYLE classic)
+    if(ZEROSLACK_ENABLE_ELA)
+        set(MODULE_DIAGRAM_TEST_STYLE ela)
+    endif()
+    foreach(module_scale IN ITEMS 1.25 1.5 2)
+        add_test(NAME module_diagram_${module_scale}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}"
+                "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                "QT_SCALE_FACTOR=${module_scale}"
+                "ZEROSLACK_TEST_UI_STYLE=${MODULE_DIAGRAM_TEST_STYLE}"
+                $<TARGET_FILE:rtl_insight_workbench_test>
+                sidebarSectionTeardownReleasesFocusedControls
+                moduleDiagramAdaptsAndNavigatesInstances
+                moduleDiagramIncludesDeepDescendantsAndTerminatesCycles
+                -o -,txt)
+        set_tests_properties(module_diagram_${module_scale}_test PROPERTIES TIMEOUT 60)
+    endforeach()
     foreach(kernel_scale IN ITEMS 1 1.25 1.5 2)
         add_test(NAME kernel_view_continuity_${kernel_scale}_test
             COMMAND ${CMAKE_COMMAND} -E env

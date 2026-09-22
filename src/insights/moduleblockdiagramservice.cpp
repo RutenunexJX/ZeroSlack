@@ -1,6 +1,7 @@
 #include "moduleblockdiagramservice.h"
 
 #include "semanticindex.h"
+#include "semanticdependencygraph.h"
 #include "symboltaxonomy.h"
 
 #include <QDir>
@@ -186,7 +187,7 @@ ModuleBlockDiagramNode moduleBlockNodeFromRecord(
     node.instanceDisplayName = instanceDisplayName;
     const SymbolTaxonomy::SemanticMetadata metadata =
         semanticMetadataForSymbolRecord(record);
-    node.moduleTypeDisplayName = unresolved
+    node.moduleTypeDisplayName = !record.isValid()
         ? QStringLiteral("Blackbox")
         : SymbolTaxonomy::symbolTypeLabel(metadata);
     node.sourceRoleDisplayName =
@@ -437,15 +438,17 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
     RelationshipService relationshipService(semanticIndex());
     const QSet<QString> interfaceNames =
         moduleBlockInterfaceTypeNames(semanticIndex());
-    const int maxDepth = query.maxDepth < 0 ? 0 : query.maxDepth;
+    const int maxDepth = query.maxDepth;
     QSet<QString> emittedChildKeys;
-    std::function<void(const SemanticSymbolRecord&, int, int, QSet<QString>)>
+    QHash<QString, SemanticFileDependencyFacts> syntaxFacts;
+    std::function<void(const SemanticSymbolRecord&, int, int, QSet<QString>, bool)>
         appendChildren;
     appendChildren = [&](const SemanticSymbolRecord& parentRecord,
                          int parentNodeId,
                          int depth,
-                         QSet<QString> path) {
-        if (depth >= maxDepth || !parentRecord.stableKey.isValid())
+                         QSet<QString> path,
+                         bool unreachable) {
+        if ((maxDepth >= 0 && depth >= maxDepth) || !parentRecord.stableKey.isValid())
             return;
 
         const QString parentPathKey = parentRecord.stableKey.toString();
@@ -548,16 +551,42 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
             appendChild(child);
         }
 
+        // Elaboration omits unknown or inactive instances. Retain their syntax
+        // and mark the inactive branch, including known descendants, dashed.
+        const QString sourceFile = parentRecord.location.fileName;
+        if (!syntaxFacts.contains(sourceFile))
+            syntaxFacts.insert(sourceFile, SemanticDependencyGraph::extractFacts(
+                sourceFile, semanticIndex()->getCachedFileContent(sourceFile)));
+        for (const auto& fact : syntaxFacts.value(sourceFile).moduleInstantiations) {
+            if (fact.ownerName != parentRecord.name || !fact.syntaxComplete) continue;
+            const bool present = std::any_of(children.cbegin(), children.cend(), [&](const auto& child) {
+                return child.instanceName == fact.instanceName && child.moduleTypeName == fact.targetName;
+            });
+            if (present) continue;
+            ModuleBlockChildInstance child;
+            child.instanceName = fact.instanceName;
+            child.moduleTypeName = fact.targetName;
+            child.instanceCodeLink = RtlInsightLink::fromFileLine(sourceFile, fact.sourceLine, fact.sourceColumn);
+            child.definitionRecord = moduleDefinitionForTypeName(semanticIndex(), fact.targetName, sourceFile);
+            child.unresolved = true;
+            child.unresolvedReason = child.definitionRecord.isValid()
+                ? QStringLiteral("not present in elaborated hierarchy") : QStringLiteral("module definition not found");
+            appendChild(child);
+        }
         std::sort(children.begin(), children.end(), moduleBlockChildLess);
         for (ModuleBlockChildInstance child : std::as_const(children)) {
             const QString childPathKey =
                 child.definitionRecord.stableKey.toString();
-            if (child.definitionRecord.isValid()
+            const bool cyclic = child.definitionRecord.isValid()
                 && !childPathKey.isEmpty()
-                && path.contains(childPathKey)) {
+                && path.contains(childPathKey);
+            if (cyclic) {
                 child.unresolved = true;
                 child.unresolvedReason =
                     QStringLiteral("cyclic instantiation");
+            } else if (unreachable && !child.unresolved) {
+                child.unresolved = true;
+                child.unresolvedReason = QStringLiteral("parent instance is not reachable");
             }
 
             const ModuleBlockDiagramNode childNode =
@@ -580,15 +609,16 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
             else
                 ++report.resolvedInstanceCount;
 
-            if (!child.unresolved && child.definitionRecord.isValid())
+            if (!cyclic && child.definitionRecord.isValid())
                 appendChildren(child.definitionRecord,
                                childNode.nodeId,
                                depth + 1,
-                               path);
+                               path,
+                               child.unresolved);
         }
     };
 
-    appendChildren(rootRecord, report.root.nodeId, 0, {});
+    appendChildren(rootRecord, report.root.nodeId, 0, {}, false);
 
     report.moduleCount = report.nodes.size();
     report.edgeCount = report.edges.size();

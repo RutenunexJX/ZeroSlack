@@ -220,6 +220,12 @@ void EditorAppearance::apply(
     font.setStyleHint(QFont::Monospace);
     font.setFixedPitch(true);
     setLigatureFeatures(font, options.ligaturesEnabled);
+    editor->setEditorBackground(options.backgroundPreset, options.backgroundImagePath, options.backgroundOpacity);
+    const double lineHeight = qBound(1.0, options.lineHeight, 2.0);
+    // A background-only change must not add block-format commands to source undo.
+    if (appliedDocument == editor->document() && qFuzzyCompare(appliedLineHeight, lineHeight)
+        && editor->font() == font && editor->document()->defaultFont() == font)
+        return;
     editor->setFont(font);
     // A shared QTextDocument is bound before the coordinator applies the
     // editor appearance. QPlainTextEdit::setFont does not update that
@@ -227,7 +233,9 @@ void EditorAppearance::apply(
     // otherwise use different metrics.
     if (editor->document())
         editor->document()->setDefaultFont(font);
-    applyLineHeight(editor, qBound(1.0, options.lineHeight, 2.0));
+    applyLineHeight(editor, lineHeight);
+    appliedDocument = editor->document();
+    appliedLineHeight = lineHeight;
 
     const int tabWidth =
         editor->fontMetrics().horizontalAdvance(' ') * 4;

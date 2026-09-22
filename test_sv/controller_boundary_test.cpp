@@ -672,9 +672,7 @@ int main(int argc, char* argv[])
                    QStringLiteral(
                        "insight.graph.jumpSelected"),
                    QStringLiteral(
-                       "insight.graph.focusSelected"),
-                   QStringLiteral(
-                       "insight.graph.setTopSelected")}),
+                       "insight.graph.focusSelected")}),
           QStringLiteral(
               "Insight graph controls execute through dedicated Registry Action routes"));
     check(containsNone(

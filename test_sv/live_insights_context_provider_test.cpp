@@ -40,12 +40,13 @@ private slots:
     void providerResourcesAreStableAndSwitchable();
     void legacyHotspotSessionMigratesToDedicatedProvider();
     void retiredWaveResourceIsSkippedDuringRestore();
-    void compactViewExposesFollowPinAndFullViewSemantics();
+    void compactViewKeepsFullViewAndMigratesRetiredControls();
     void inactiveCardStaysDirtyAndStatusTracksTheme();
-    void followEditorFreezesAndCatchesUpPerView();
+    void visibleViewReceivesSemanticUpdates();
     void fixedKindSectionRendersRealSurface();
     void fixedKindSectionPublishesStatusAndTrimsChrome();
     void emptyFixedKindSectionOffersReachableTargets();
+    void targetSurvivesDocumentSwitchAndReceivesFreshRevisions();
 };
 
 void LiveInsightsContextProviderTest::initTestCase()
@@ -208,12 +209,11 @@ void LiveInsightsContextProviderTest::retiredWaveResourceIsSkippedDuringRestore(
     QVERIFY(!LiveInsightsContextProvider::kindFromResource(retired, &kind));
 }
 
-void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSemantics()
+void LiveInsightsContextProviderTest::compactViewKeepsFullViewAndMigratesRetiredControls()
 {
     LiveInsightSession session;
     LiveInsightsContextProvider provider(&session);
     int fullViewCallbacks = 0;
-    int pinCallbacks = 0;
     ContextResource callbackResource;
     provider.setFullViewHandler(
         [&fullViewCallbacks, &callbackResource](
@@ -221,19 +221,9 @@ void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSema
             ++fullViewCallbacks;
             callbackResource = resource;
         });
-    provider.setPinRequestHandler(
-        [&pinCallbacks, &callbackResource](
-            bool,
-            const ContextResource& resource) {
-            ++pinCallbacks;
-            callbackResource = resource;
-        });
     QSignalSpy fullViewSpy(
         &provider,
         &LiveInsightsContextProvider::openFullViewRequested);
-    QSignalSpy pinSpy(
-        &provider,
-        &LiveInsightsContextProvider::pinStateChangeRequested);
 
     ContextResource initial =
         LiveInsightsContextProvider::resourceForKind(
@@ -247,8 +237,7 @@ void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSema
     view->show();
     QCoreApplication::processEvents();
     QCOMPARE(view->selectedKind(), LiveInsightKind::Module);
-    QVERIFY(view->followEditor());
-    QVERIFY(!view->pinned());
+    QVERIFY(view->findChildren<QCheckBox*>().isEmpty());
 
     ContextResource observed;
     int resourceUpdates = 0;
@@ -270,17 +259,8 @@ void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSema
         observed, &observedKind));
     QCOMPARE(observedKind, LiveInsightKind::Hotspot);
 
-    view->followEditorCheckBox()->setChecked(false);
-    QVERIFY(!view->followEditor());
-    QVERIFY(resourceUpdates >= 2);
-
-    view->pinButton()->click();
-    QVERIFY(view->pinned());
-    QCOMPARE(view->pinButton()->text(), QStringLiteral("Pinned"));
-    QCOMPARE(pinCallbacks, 1);
-    QCOMPARE(pinSpy.size(), 1);
-    QCOMPARE(callbackResource.workspaceId,
-             QStringLiteral("workspace-a"));
+    view->restoreState({{"schema", "zeroslack-live-insights-view/v1"},
+                        {"followEditor", false}, {"pinned", true}});
 
     view->openFullViewButton()->click();
     QCOMPARE(fullViewCallbacks, 1);
@@ -292,9 +272,8 @@ void LiveInsightsContextProviderTest::compactViewExposesFollowPinAndFullViewSema
     const QVariantMap saved = provider.saveViewState(view);
     QCOMPARE(saved.value(QStringLiteral("kind")).toString(),
              QStringLiteral("hotspot"));
-    QCOMPARE(saved.value(QStringLiteral("followEditor")).toBool(),
-             false);
-    QCOMPARE(saved.value(QStringLiteral("pinned")).toBool(), true);
+    QVERIFY(!saved.contains(QStringLiteral("followEditor")));
+    QVERIFY(!saved.contains(QStringLiteral("pinned")));
 
     const ContextResource persisted =
         provider.resourceForPersistence(
@@ -383,7 +362,7 @@ void LiveInsightsContextProviderTest::inactiveCardStaysDirtyAndStatusTracksTheme
     QVERIFY(!session.isVisible(LiveInsightKind::State));
 }
 
-void LiveInsightsContextProviderTest::followEditorFreezesAndCatchesUpPerView()
+void LiveInsightsContextProviderTest::visibleViewReceivesSemanticUpdates()
 {
     LiveInsightSession session;
     QList<LiveInsightSession::Task> tasks;
@@ -423,21 +402,11 @@ void LiveInsightsContextProviderTest::followEditorFreezesAndCatchesUpPerView()
         view->kindSummaryLabel(LiveInsightKind::Module)->text(),
         QStringLiteral("revision 9"));
 
-    view->setFollowEditor(false);
     LiveInsightRequestKey newer = requestKey(LiveInsightKind::Module);
     newer.documentRevision = 10;
     session.requestUpdate(
         newer,
         {{QStringLiteral("summary"), QStringLiteral("revision 10")}});
-    session.flushPending(LiveInsightKind::Module);
-    QVERIFY(tasks.isEmpty());
-    QCOMPARE(session.snapshot(LiveInsightKind::Module).phase,
-             LiveInsightPhase::HiddenDirty);
-    QCOMPARE(
-        view->kindSummaryLabel(LiveInsightKind::Module)->text(),
-        QStringLiteral("revision 9"));
-
-    view->setFollowEditor(true);
     session.flushPending(LiveInsightKind::Module);
     QCOMPARE(tasks.size(), 1);
     tasks.takeFirst()();
@@ -524,16 +493,16 @@ void LiveInsightsContextProviderTest::fixedKindSectionRendersRealSurface()
     QTRY_VERIFY(contextRequests > afterCreate);
     QCOMPARE(view->surfaceForTest(), surface);
 
-    // Freezing the card freezes the surface with it.
-    view->setFollowEditor(false);
-    const int frozen = contextRequests;
+    const int beforeRefresh = contextRequests;
     LiveInsightRequestKey newer = requestKey(LiveInsightKind::Kernel);
     newer.documentRevision = 10;
     session.requestUpdate(
         newer,
         {{QStringLiteral("summary"), QStringLiteral("revision 10")}});
     session.flushPending(LiveInsightKind::Kernel);
-    QCOMPARE(contextRequests, frozen);
+    QCOMPARE(tasks.size(), 1);
+    tasks.takeFirst()();
+    QTRY_VERIFY(contextRequests > beforeRefresh);
     QCOMPARE(view->surfaceForTest(), surface);
     delete view;
 }
@@ -591,8 +560,8 @@ void LiveInsightsContextProviderTest::
     QVERIFY(!view->kindButton(LiveInsightKind::Hotspot)->isVisibleTo(view));
     QVERIFY(!view->kindStatusLabel(LiveInsightKind::Hotspot)->isVisibleTo(view));
     QVERIFY(!view->openFullViewButton()->isVisibleTo(view));
-    QVERIFY(view->followEditorCheckBox()->isVisibleTo(view));
-    QVERIFY(view->pinButton()->isVisibleTo(view));
+    QVERIFY(!view->findChild<QWidget*>(QStringLiteral("liveInsightsFollowEditor")));
+    QVERIFY(!view->findChild<QWidget*>(QStringLiteral("liveInsightsPin")));
 
     session.requestUpdate(
         requestKey(LiveInsightKind::Hotspot),
@@ -628,30 +597,82 @@ void LiveInsightsContextProviderTest::
     QVERIFY(!view->emptyStateForTest()
             || !view->emptyStateForTest()->isVisibleTo(view));
 
-    // The editor loses its signal: the section says what it can still reach
-    // instead of leaving an empty frame behind.
+    // Cursor movement keeps the explicit target, with no follow or pin switch.
     editorSignal.clear();
-    view->setFollowEditor(false);
-    view->setFollowEditor(true);
+    view->hide();
+    view->show();
     QCoreApplication::processEvents();
-    QWidget* empty = view->emptyStateForTest();
-    QVERIFY(empty);
-    QVERIFY(empty->isVisibleTo(view));
-    QVERIFY(!view->surfaceForTest()->isVisibleTo(view));
+    QVERIFY(view->surfaceForTest()->isVisibleTo(view));
+    QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(), QStringLiteral("byte_data"));
+    editorSignal = QStringLiteral("next_data");
     const auto candidates = view->candidateTargets();
-    QCOMPARE(candidates.size(), 1);
-    QCOMPARE(candidates.constFirst().label, QStringLiteral("byte_data"));
-    QCOMPARE(empty->findChildren<QPushButton*>(
-                 QStringLiteral("liveInsightCandidate")).size(), 1);
-
-    // Choosing a target pins the section to it instead of subscribing to the
-    // cursor, so a later editor move cannot silently replace it.
+    QVERIFY(!candidates.isEmpty());
+    QCOMPARE(candidates.constFirst().label, editorSignal);
     QVERIFY(view->applyTargetCandidate(candidates.constFirst()));
     QCoreApplication::processEvents();
-    QVERIFY(!view->followEditor());
+    QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(), editorSignal);
     QVERIFY(view->surfaceForTest()->isVisibleTo(view));
-    QVERIFY(!view->emptyStateForTest()->isVisibleTo(view));
     delete view;
+}
+
+void LiveInsightsContextProviderTest::targetSurvivesDocumentSwitchAndReceivesFreshRevisions()
+{
+    LiveInsightSession session;
+    LiveInsightsContextView view(&session, LiveInsightKind::Module);
+    auto current = stubContext(QStringLiteral("uart"), {});
+    current.documentText = QStringLiteral("module uart; endmodule");
+    const auto refresh = [&] { view.setToolContextSource([&] { return current; }); };
+    refresh();
+    view.show();
+    QCoreApplication::processEvents();
+    auto* surface = view.surfaceForTest();
+    QVERIFY(surface);
+
+    current.moduleName = QStringLiteral("another_module");
+    current.documentRevision = 10;
+    current.semanticRevision = 8;
+    current.documentText += QStringLiteral("\n// newer source");
+    refresh();
+    QCOMPARE(surface->contextForTest().moduleName, QStringLiteral("uart"));
+    QCOMPARE(surface->contextForTest().documentRevision, 10);
+    QCOMPARE(surface->contextForTest().documentText, current.documentText);
+    const auto saved = view.saveState();
+    const auto source = current.documentText;
+
+    current.fileName = QStringLiteral("other.sv");
+    current.documentId = QStringLiteral("document-b");
+    current.documentText = QStringLiteral("module other; endmodule");
+    current.semanticRevision = 9;
+    refresh();
+    QCOMPARE(surface->contextForTest().fileName, QStringLiteral("uart.sv"));
+    QCOMPARE(surface->contextForTest().moduleName, QStringLiteral("uart"));
+    QCOMPARE(surface->contextForTest().documentText, source);
+    QCOMPARE(surface->contextForTest().documentRevision, 10);
+    QCOMPARE(surface->contextForTest().semanticRevision, 9);
+    QCOMPARE(view.saveState(), saved);
+
+    LiveInsightsContextView restored(&session, LiveInsightKind::Module);
+    restored.setToolContextSource([&] { return current; });
+    restored.restoreState(saved);
+    restored.show();
+    QCoreApplication::processEvents();
+    QVERIFY(restored.surfaceForTest());
+    QCOMPARE(restored.surfaceForTest()->contextForTest().fileName, QStringLiteral("uart.sv"));
+    QCOMPARE(restored.surfaceForTest()->contextForTest().moduleName, QStringLiteral("uart"));
+    QVERIFY(restored.surfaceForTest()->contextForTest().documentText.isEmpty());
+
+    LiveInsightToolPage fullView(LiveInsightKind::Module);
+    fullView.setContext(surface->contextForTest());
+    fullView.refreshTargetContext(current);
+    QCOMPARE(fullView.contextForTest().fileName, QStringLiteral("uart.sv"));
+    QCOMPARE(fullView.contextForTest().moduleName, QStringLiteral("uart"));
+    current.fileName = QStringLiteral("uart.sv");
+    current.documentRevision = 11;
+    current.documentText = source + QStringLiteral("\n// latest");
+    fullView.refreshTargetContext(current);
+    QCOMPARE(fullView.contextForTest().moduleName, QStringLiteral("uart"));
+    QCOMPARE(fullView.contextForTest().documentRevision, 11);
+    QCOMPARE(fullView.contextForTest().documentText, current.documentText);
 }
 
 QTEST_MAIN(LiveInsightsContextProviderTest)

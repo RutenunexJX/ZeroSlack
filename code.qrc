@@ -1,4 +1,9 @@
 <RCC>
+    <qresource prefix="/backgrounds">
+        <file alias="resting.png">resources/backgrounds/resting.png</file>
+        <file alias="peekaboo.png">resources/backgrounds/peekaboo.png</file>
+        <file alias="balancing.png">resources/backgrounds/balancing.png</file>
+    </qresource>
     <qresource prefix="/fonts">
         <file>resources/fonts/maple-mono/MapleMono-Regular.ttf</file>
         <file>resources/fonts/maple-mono/MapleMono-Bold.ttf</file>

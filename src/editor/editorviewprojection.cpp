@@ -470,7 +470,6 @@ void EditorViewProjection::paint(
         return;
     QPainter painter(editor->viewport());
     painter.setClipRect(event->rect());
-    painter.fillRect(event->rect(), editor->palette().color(QPalette::Base));
     painter.setPen(editor->palette().color(QPalette::Text));
 
     const int first = firstVisibleRow(editor);

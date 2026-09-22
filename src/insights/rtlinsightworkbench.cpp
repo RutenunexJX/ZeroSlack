@@ -6,6 +6,7 @@
 #include "insightviewsurface.h"
 #include "insightcanvas.h"
 #include "insightgraphview.h"
+#include "moduleblockdiagramtoolbar.h"
 #include "insightvisualstyle.h"
 
 #include <QFileDialog>
@@ -219,10 +220,28 @@ QPushButton* RtlInsightWorkbench::detachButtonForTest() const
 void RtlInsightWorkbench::setCompactChrome(bool compact)
 {
     compactChrome = compact;
+    if (compact && layout()) {
+        layout()->setContentsMargins(0, 0, 0, 0);
+        layout()->setSpacing(0);
+    }
+    if (surface) {
+        if (auto* panel = surface->widget()->widget(); panel && panel->layout() && compact) {
+            panel->layout()->setContentsMargins(0, 0, 0, 0);
+            panel->layout()->setSpacing(0);
+        }
+        if (auto* bar = surface->widget()->findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar")))
+            static_cast<ModuleBlockDiagramToolbar*>(bar)->setHosted(compact);
+    }
     if (titleLabel)
         titleLabel->setVisible(!compact);
     if (detachButton)
         detachButton->setVisible(!compact);
+}
+
+void RtlInsightWorkbench::fitGraph()
+{
+    if (surface) surface->fit();
+    else if (canvasValue) canvasValue->fit();
 }
 
 IInsightViewPlugin* RtlInsightWorkbench::pluginForKind(

@@ -30,6 +30,7 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
+#include <QPainter>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QTextBlock>
@@ -931,6 +932,11 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
 {
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     state->updateVisibleTextLayoutCache(this);
+    {
+        QPainter painter(viewport());
+        state->background.paint(painter, viewport()->rect(), event->rect(),
+                                viewport()->devicePixelRatioF(), palette().color(QPalette::Base));
+    }
     if (state->projection.active())
         state->projection.paint(this, event);
     else
@@ -1925,6 +1931,12 @@ void MyCodeEditor::applyAppearanceSettings(
     state->projection.ensure(this, state->folding.collapsedLineRanges());
 }
 
+void MyCodeEditor::setEditorBackground(const QString& preset, const QString& customPath, int opacity)
+{
+    state->background.setOptions(preset, customPath, opacity);
+    viewport()->update();
+}
+
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     lifecycleTrace("key.enter");
@@ -2386,6 +2398,8 @@ void MyCodeEditor::scrollContentsBy(int dx, int dy)
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     if (!state->projection.active()) {
         QPlainTextEdit::scrollContentsBy(dx, dy);
+        // Qt scrolls existing pixels; a fixed wallpaper must repaint the viewport.
+        if (state->background.enabled()) viewport()->update();
         return;
     }
     Q_UNUSED(dx)

@@ -496,14 +496,12 @@ int main(int argc, char** argv)
                 ActionIds::ViewTemporaryEditorOpen));
     check(jumpAction
               && focusAction
-              && setTopAction
+              && !setTopAction
               && temporaryEditorAction
               && jumpAction->text()
                      == QStringLiteral("Jump")
               && focusAction->text()
                      == QStringLiteral("Focus")
-              && setTopAction->text()
-                     == QStringLiteral("Set Top")
               && jumpAction->property(
                      GraphExportUi::kActionIdProperty)
                      .toString()
@@ -555,7 +553,7 @@ int main(int argc, char** argv)
           "RTL graph More menu dispatches selected source through the unified temporary-editor Action");
     check(jumpAction && jumpAction->isEnabled()
               && focusAction && focusAction->isEnabled()
-              && setTopAction && !setTopAction->isEnabled(),
+              && !setTopAction,
           "FSM selection enables Jump and Focus but rejects Set Top");
     const ActionExecutionResult focused =
         panel.triggerGraphActionForTest(

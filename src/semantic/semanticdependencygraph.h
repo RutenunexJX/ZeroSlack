@@ -59,6 +59,7 @@ struct SemanticFileDependencyFacts {
 class SemanticDependencyGraph
 {
 public:
+    static SemanticFileDependencyFacts extractFacts(const QString& fileName, const QString& content);
     static SemanticDependencyGraph build(
         const ProjectSnapshot& project,
         const QHash<QString, QString>& contents);
@@ -98,9 +99,6 @@ private:
 
     static QString projectKey(const ProjectSnapshot& project);
     static QString normalizedPath(const QString& fileName);
-    static SemanticFileDependencyFacts extractFacts(
-        const QString& fileName,
-        const QString& content);
     void rebuildEdges();
     void addDependency(const QString& dependentFile,
                        const QString& dependencyFile,

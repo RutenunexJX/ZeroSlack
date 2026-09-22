@@ -15,6 +15,7 @@
 #include "editorfileidentity.h"
 #include "editorfolding.h"
 #include "editorviewprojection.h"
+#include "editorbackground.h"
 #include "formatterservice.h"
 #include "editorgeometry.h"
 #include "editorgutter.h"
@@ -157,6 +158,7 @@ struct EditorVisibleDocumentRange
 struct MyCodeEditorState
 {
     EditorAppearance appearance;
+    EditorBackground background;
     EditorGutter gutter;
     EditorDocumentGeometry geometry;
     EditorModeController modes;

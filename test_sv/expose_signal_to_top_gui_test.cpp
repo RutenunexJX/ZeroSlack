@@ -1791,7 +1791,7 @@ void runContextActionRegistryExecutionRegression()
                      == LiveInsightKind::Kernel
               && kernelTab == nullptr
               && kernelSection
-              && !kernelSection->followEditor()
+              && !kernelSection->saveState().value("target").toMap().isEmpty()
               && legacyKernelDock == nullptr);
 
     const QString queueFile = temp.filePath(

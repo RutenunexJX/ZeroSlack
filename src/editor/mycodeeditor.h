@@ -346,6 +346,7 @@ public:
     void flashLine(int lineNumber);
     void flashRange(int startChar, int endChar);
     void applyAppearanceSettings(const EditorAppearanceOptions& options);
+    void setEditorBackground(const QString& preset, const QString& customPath, int opacity);
     bool toggleFoldAtLineForTest(int line);
     bool foldCollapsedAtLineForTest(int line) const;
     bool foldLineVisibleForTest(int line) const;

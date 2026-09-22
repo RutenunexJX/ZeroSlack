@@ -70,12 +70,15 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
         captureLastFloatingGeometry(host);
         notifyWorkspaceStateChanged();
     });
-    connect(host, &ContextFloatingWindow::sidebarDragStarted, this, [this, host] {
-        host->setProperty("contextDockWasVisible", dockValue->isVisible());
-        showDock(false, false);
+    connect(host, &ContextFloatingWindow::sidebarDragStarted, this, [this] {
+        beginDockPreview();
     });
-    connect(host, &ContextFloatingWindow::sidebarDragFinished, this, [this, host](bool accepted) {
-        if (!accepted && !host->property("contextDockWasVisible").toBool()) dockValue->hide();
+    connect(host, &ContextFloatingWindow::sidebarDragFinished, this, [this](bool accepted) {
+        if (!accepted) {
+            if (!sideWasVisible) dockValue->hide();
+            if (!bottomWasVisible) bottomDockValue->hide();
+        }
+        endDockPreview();
     });
     return host;
 }
@@ -132,7 +135,7 @@ bool ContextWorkspaceController::focusResource(const QString& key)
         if (widget->isWindow()) widget->activateWindow();
     } else if (dockHostValue->containsResource(key)) {
         dockHostValue->activateResource(key);
-        showDock(false, false);
+        showResourceDock(key);
     } else {
         return false;
     }
@@ -149,12 +152,12 @@ bool ContextWorkspaceController::closeFloatingResource(const QString& key)
     return true;
 }
 
-bool ContextWorkspaceController::pinFloatingResource(const QString& key)
+bool ContextWorkspaceController::pinFloatingResource(const QString& key, bool bottom, int index)
 {
     auto* surface = surfaceWithResource(key);
     if (!surface) return false;
     activeFloatingSurface = surface;
-    const bool pinned = pinPeek();
+    const bool pinned = pinPeek(nullptr, bottom, index);
     if (pinned) hiddenFloatingKeys.remove(key);
     return pinned;
 }

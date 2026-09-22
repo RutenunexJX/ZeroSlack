@@ -188,10 +188,8 @@ private slots:
         }
     }
     void insightSectionHeights() {
-        // Three insight sections in one dock is the case that squeezed the
-        // graph to nothing: split evenly, a section has no room left after the
-        // workbench chrome. Heights are derived from the screen because the
-        // offscreen platform is only 400x400 logical pixels at 200%.
+        // Three sections share the dock proportionally. Equal saved weights
+        // must not change their sizes or leave the canvas below usable size.
         const QRect available=QApplication::primaryScreen()->availableGeometry();
         const int hostHeight=available.height();
         const int width=qMin(480,available.width());
@@ -226,7 +224,7 @@ private slots:
             }
             const QString focused=keys.last();
             Sample sample;
-            sample.sectionHeight=host.sectionHeight(focused);
+            sample.sectionHeight=host.sectionWidget(focused)->height();
             QWidget* view=host.viewForResource(focused);
             sample.content=view ? view->height() : 0;
             for (const char* name : {"rtlInsightsGraphView","insightCanvasView"}) {
@@ -254,18 +252,10 @@ private slots:
             if (file.open(QIODevice::Append|QIODevice::Text))
                 file.write(report.toUtf8()+"\n");
         }
-        // Holds at every scale: the graph is both visible and larger than the
-        // even split gives it.
-        QVERIFY(suggested.canvas>split.canvas);
+        QVERIFY(qAbs(suggested.sectionHeight-split.sectionHeight)<=1);
+        QVERIFY(qAbs(suggested.canvas-split.canvas)<=1);
         QVERIFY(suggested.canvas>0 && suggested.content>0);
-        // The share target applies where a whole suggested section fits on
-        // screen. At 200% the entire screen is 400 logical pixels tall — less
-        // than one section — so the fixed chrome, not the suggestion, is what
-        // bounds the canvas there; asserting 40% would be asserting that the
-        // screen is bigger than it is. That case is still covered by the two
-        // checks above, and its measured share is in the report.
-        if (hostHeight>=LiveInsightsContextProvider::suggestedSectionHeight())
-            QVERIFY(suggested.canvas*10>=suggested.content*4);
+        QVERIFY(suggested.canvas*10>=suggested.content*4);
     }
     void contextWidths() {
         // withSurface repeats the audit for the product path, where the

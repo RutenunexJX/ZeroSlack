@@ -336,16 +336,9 @@ void MainWindow::setupContextWorkspace()
                        picked) {
                 return beginLiveInsightTargetPick(kind, std::move(picked));
             });
-        provider->setPinRequestHandler(
-            [this](bool pinned, const ContextResource& resource) {
-                if (!contextWorkspaceController)
-                    return;
-                if (pinned) {
-                    contextWorkspaceController->pinFloatingResource(resource.stableKey());
-                } else {
-                    contextWorkspaceController->unpinResource(
-                        resource.stableKey());
-                }
+        provider->setNavigationHandler(
+            [this](const QString& fileName, int line, int column) {
+                return revealSuiteSource(fileName, line, column);
             });
         contextWorkspaceController->registerProvider(
             std::move(provider));
@@ -754,7 +747,7 @@ void MainWindow::refreshLiveInsightToolPages(int kindValue)
         liveInsightToolPages.value(kindValue).data();
     if (!page || !page->hasVisibleSurface())
         return;
-    page->setContext(activeLiveInsightToolContext());
+    page->refreshTargetContext(activeLiveInsightToolContext());
 }
 
 bool MainWindow::openLiveInsightFromSourceAction(
@@ -784,10 +777,6 @@ bool MainWindow::openLiveInsightFromSourceAction(
     }
 
     QVariantMap state;
-    // A symbol picked from the source is a target, not a subscription: the
-    // section pins to it instead of following the cursor away from it.
-    state.insert(QStringLiteral("followEditor"), false);
-    state.insert(QStringLiteral("pinned"), true);
     const ContextResource resource =
         LiveInsightsContextProvider::resourceForKind(
             kind,
@@ -819,6 +808,7 @@ bool MainWindow::openLiveInsightFromSourceAction(
         return false;
     }
     LiveInsightsContextView::TargetCandidate target;
+    target.fileName = context.fileName;
     target.moduleName = context.moduleName;
     target.signalName = context.signalName;
     target.signalAccessPath = context.signalAccessPath;
@@ -848,9 +838,23 @@ void MainWindow::openLiveInsightFullView(
             resource, &kind)) {
         return;
     }
-    const LiveInsightToolContext context = contextOverride
+    LiveInsightToolContext context = contextOverride
         ? *contextOverride
         : activeLiveInsightToolContext();
+    const auto target = resource.state.value(QStringLiteral("target")).toMap();
+    if (!contextOverride && !target.isEmpty()) {
+        const auto file = target.value(QStringLiteral("fileName")).toString();
+        if (!file.isEmpty() && context.fileName != file) {
+            context.fileName = file;
+            context.documentId = file;
+            context.documentRevision = 0;
+            context.documentText.clear();
+            context.dirty = false;
+        }
+        context.moduleName = target.value(QStringLiteral("moduleName")).toString();
+        context.signalName = target.value(QStringLiteral("signalName")).toString();
+        context.signalAccessPath = target.value(QStringLiteral("signalAccessPath")).toString();
+    }
     const QString stableId =
         QStringLiteral("live-insight:%1")
             .arg(liveInsightKindId(kind));
@@ -885,7 +889,7 @@ void MainWindow::openLiveInsightFullView(
                     && !snapshot.stale
                     && snapshot.publishedGeneration
                            == snapshot.requestedGeneration) {
-                    page->setContext(
+                    page->refreshTargetContext(
                         owner->activeLiveInsightToolContext());
                 }
             }

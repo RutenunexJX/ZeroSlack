@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QStringList>
 #include <QWidget>
+#include <QPointer>
 
 class QScrollArea;
 class QLabel;
@@ -24,6 +25,12 @@ public:
     ~ContextDockHost() override;
 
     int resourceCount() const;
+    int areaResourceCount(bool bottom) const;
+    QWidget* bottomWidget() const;
+    bool isBottomResource(const QString& key) const;
+    bool moveResourceToArea(const QString& key, bool bottom, int index = -1);
+    int sectionWidth(const QString& key) const;
+    bool setSectionWidth(const QString& key, int width);
     QStringList resourceKeys() const;
     bool containsResource(const QString& key) const;
     ContextResource resourceAt(int index) const;
@@ -63,7 +70,9 @@ signals:
     void resourceOrderChanged();
     void sectionLayoutChanged();
     void dragOutRequested(const QString& key, const QPoint& globalPosition);
-    void floatingDropRequested(const QString& key, int index);
+    void floatingDropRequested(const QString& key, int index, bool bottom);
+    void sectionDragStarted();
+    void sectionDragFinished();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -75,8 +84,11 @@ protected:
 
 private:
     struct Section;
-    QScrollArea* scroll = nullptr;
+    QPointer<QScrollArea> scroll;
     QWidget* stack = nullptr;
+    QPointer<QWidget> bottomRoot;
+    QPointer<QScrollArea> bottomScroll;
+    QWidget* bottomStack = nullptr;
     QWidget* insertionMarker = nullptr;
     QHash<QString, Section*> sections;
     QStringList order;
@@ -84,6 +96,9 @@ private:
     QString draggedKey;
     QPoint dragStart;
     int resizeStartHeight = 0;
+    int resizeStartWidth = 0;
+    QString resizeNeighbor;
+    QHash<QString, int> resizeLengths;
     bool resizingSection = false;
     bool arranging = false;
     QHash<QString, ContextResource> resources;
@@ -91,6 +106,10 @@ private:
     int indexOfResource(const QString& key) const;
     void refreshSectionStatus(const QString& key);
     void arrangeSections();
+    void arrangeArea(bool bottom);
+    bool isBottomPosition(const QPoint& globalPosition) const;
+    bool containsDropPosition(const QPoint& globalPosition) const;
+    void finishSectionDrag(const QString& key, const QPoint& globalPosition);
     void settleMotion();
     void focusSection(const QString& key);
     int minimumSectionHeight(const Section* section) const;

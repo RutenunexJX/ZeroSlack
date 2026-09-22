@@ -65,6 +65,7 @@ public:
     // Hides the chrome a host already provides around the workbench (its own
     // title line and detach entry), for embedding in a titled container.
     void setCompactChrome(bool compact);
+    void fitGraph();
 
 protected:
     void showEvent(QShowEvent* event) override;

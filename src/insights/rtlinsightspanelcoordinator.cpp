@@ -50,14 +50,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         std::make_unique<RtlInsightsPresenter>(
             *viewState,
             *graphController);
-    viewState->moduleBlockDiagramRequestHandler =
-        [this](const QString& fileName,
-               const QString& moduleName) {
-            presenter->showModuleBlockDiagramForModule(
-                fileName,
-                moduleName);
-        };
-
     auto* panel = new QWidget(parent);
     panel->setObjectName(QStringLiteral("rtlInsightsPanel"));
     InsightVisualStyle::applyPanel(panel);
@@ -107,17 +99,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     viewState->graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     InsightVisualStyle::applySearchField(viewState->graphSearchEdit);
-    viewState->moduleBlockDepthSpin = UiControls::spinBox(panel);
-    viewState->moduleBlockDepthSpin->setObjectName(QStringLiteral("rtlModuleBlockDepthSpin"));
-    viewState->moduleBlockDepthSpin->setRange(0, 8);
-    viewState->moduleBlockDepthSpin->setValue(2);
-    viewState->moduleBlockDepthSpin->setPrefix(QStringLiteral("Depth "));
-    viewState->moduleBlockShowUnresolvedCheck =
-        UiControls::checkBox(QStringLiteral("Show unresolved"), panel);
-    viewState->moduleBlockShowUnresolvedCheck->setObjectName(
-        QStringLiteral("rtlModuleBlockShowUnresolvedCheck"));
-    viewState->moduleBlockShowUnresolvedCheck->setChecked(true);
-
     viewState->stateTransitionSignalCombo = UiControls::comboBox(panel);
     viewState->stateTransitionSignalCombo->setObjectName(
         QStringLiteral("rtlStateTransitionSignalCombo"));
@@ -162,10 +143,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         viewState->graphMoreButton,
         QString::fromLatin1(
             ActionIds::GraphFocusSelected));
-    viewState->graphSetTopAction = createGraphAction(
-        viewState->graphMoreButton,
-        QString::fromLatin1(
-            ActionIds::GraphSetTopSelected));
     viewState->graphTemporaryEditorAction =
         createSelectedSourceAction(
             viewState->graphMoreButton,
@@ -174,7 +151,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     for (QAction* action :
          {viewState->graphJumpAction,
           viewState->graphFocusAction,
-          viewState->graphSetTopAction,
           viewState->graphTemporaryEditorAction}) {
         if (action)
             graphMoreMenu->addAction(action);
@@ -222,8 +198,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         InsightVisualStyle::applyToolbarButton(button);
     }
     for (QCheckBox* checkBox :
-         {viewState->moduleBlockShowUnresolvedCheck,
-          viewState->stateTransitionResetCheck,
+         {viewState->stateTransitionResetCheck,
           viewState->stateTransitionErrorCheck,
           viewState->stateTransitionUnreachableCheck}) {
         InsightVisualStyle::applySegmentedCheckBox(checkBox);
@@ -269,6 +244,11 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         [this](const QPoint& viewPoint,
                Qt::MouseButton button,
                Qt::KeyboardModifiers) {
+            if (viewState->currentGraphMode == QStringLiteral("module-block")
+                && (button == Qt::BackButton || button == Qt::ForwardButton)) {
+                graphController->navigateModuleBlockHistory(button == Qt::BackButton ? -1 : 1);
+                return true;
+            }
             if (button != Qt::LeftButton
                 || !viewState->insightsGraphView
                 || (viewState->currentGraphMode != QStringLiteral("state-transition")
@@ -286,7 +266,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphPanelLayout->setSpacing(6);
 
     viewState->moduleBlockToolbar = new ModuleBlockDiagramToolbar(viewState->insightsGraphPanel);
-    viewState->moduleBlockToolbar->setMoreMenu(graphMoreMenu);
     graphPanelLayout->addWidget(viewState->moduleBlockToolbar);
     viewState->graphToolbar = new QWidget(viewState->insightsGraphPanel);
     auto* legacyToolbarLayout = new QVBoxLayout(viewState->graphToolbar);
@@ -320,40 +299,18 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     legacyToolbarLayout->addLayout(graphToolbarLayout);
     CompactFlowLayout::replaceRows(legacyToolbarLayout);
 
-    auto* moduleOptions = new QWidget;
-    auto* moduleOptionsLayout = new QVBoxLayout(moduleOptions);
-    moduleOptionsLayout->setContentsMargins(8, 6, 8, 6);
-    moduleOptionsLayout->addWidget(viewState->moduleBlockDepthSpin);
-    moduleOptionsLayout->addWidget(viewState->moduleBlockShowUnresolvedCheck);
-    auto* moduleOptionsAction = new QWidgetAction(graphMoreMenu);
-    moduleOptionsAction->setDefaultWidget(moduleOptions);
-    graphMoreMenu->addSeparator();
-    graphMoreMenu->addAction(moduleOptionsAction);
-    QObject::connect(graphMoreMenu, &QMenu::aboutToShow, viewState->graphCallbackContext,
-                     [this, moduleOptionsAction]() {
-                         moduleOptionsAction->setVisible(viewState->currentGraphMode == QStringLiteral("module-block"));
-                     });
-
     auto* moduleBar = viewState->moduleBlockToolbar;
     const QPointer<QObject> callbackContext = viewState->graphCallbackContext;
     moduleBar->breadcrumbActivated = [this, callbackContext](int index) {
         if (callbackContext) graphController->navigateModuleBlockBreadcrumb(index);
     };
-    moduleBar->searchChanged = [this, callbackContext](const QString& text) {
-        if (callbackContext) graphController->setFocusSearchText(text);
-    };
     QObject::connect(moduleBar->backAction, &QAction::triggered, callbackContext, [this]() {
-        graphController->navigateModuleBlockBreadcrumb(viewState->moduleBlockPath.size() - 2);
+        graphController->navigateModuleBlockHistory(-1);
+    });
+    QObject::connect(moduleBar->forwardAction, &QAction::triggered, callbackContext, [this]() {
+        graphController->navigateModuleBlockHistory(1);
     });
     QObject::connect(moduleBar->fitAction, &QAction::triggered, callbackContext, [this]() { graphController->focusFit(); });
-    QObject::connect(moduleBar->zoomInAction, &QAction::triggered, callbackContext, [this]() { graphController->focusZoomIn(); });
-    QObject::connect(moduleBar->zoomOutAction, &QAction::triggered, callbackContext, [this]() { graphController->focusZoomOut(); });
-    QObject::connect(moduleBar->foldAction, &QAction::triggered, callbackContext, [this]() {
-        graphController->toggleModuleBlockNode(viewState->currentModuleBlockSelectedNodeId);
-    });
-    viewState->insightsGraphView->setZoomChangedHandler([bar = QPointer<ModuleBlockDiagramToolbar>(moduleBar)](qreal scale) {
-        if (bar) bar->setZoom(scale);
-    });
     auto* moduleResizeTimer = new QTimer(callbackContext);
     moduleResizeTimer->setSingleShot(true);
     moduleResizeTimer->setInterval(60);
@@ -363,6 +320,9 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     });
     viewState->insightsGraphView->setViewportResizeHandler([this, callbackContext, moduleResizeTimer]() {
         if (callbackContext && viewState->currentGraphMode == QStringLiteral("module-block")) moduleResizeTimer->start();
+    });
+    viewState->insightsGraphView->setViewportInteractionHandler([this, callbackContext]() {
+        if (callbackContext) viewState->moduleBlockAutoFit = false;
     });
 
     viewState->graphInspector = UiControls::treeWidget(panel);
@@ -385,10 +345,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         UiControls::pushButton(panel);
     viewState->graphInspectorFocusButton->setObjectName(
         QStringLiteral("rtlGraphInspectorFocusButton"));
-    viewState->graphInspectorSetTopButton =
-        UiControls::pushButton(panel);
-    viewState->graphInspectorSetTopButton->setObjectName(
-        QStringLiteral("rtlGraphInspectorSetTopButton"));
     viewState->graphInspectorRevealButton =
         UiControls::pushButton(QStringLiteral("Reveal"), panel);
     viewState->graphInspectorRevealButton->setObjectName(
@@ -399,13 +355,9 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     bindGraphActionButton(
         viewState->graphInspectorFocusButton,
         viewState->graphFocusAction);
-    bindGraphActionButton(
-        viewState->graphInspectorSetTopButton,
-        viewState->graphSetTopAction);
     for (QPushButton* button :
          {viewState->graphInspectorJumpButton,
           viewState->graphInspectorFocusButton,
-          viewState->graphInspectorSetTopButton,
           viewState->graphInspectorRevealButton}) {
         InsightVisualStyle::applyToolbarButton(button);
     }
@@ -425,7 +377,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     inspectorActionLayout->setSpacing(4);
     inspectorActionLayout->addWidget(viewState->graphInspectorJumpButton);
     inspectorActionLayout->addWidget(viewState->graphInspectorFocusButton);
-    inspectorActionLayout->addWidget(viewState->graphInspectorSetTopButton);
     inspectorActionLayout->addWidget(viewState->graphInspectorRevealButton);
     inspectorLayout->addLayout(inspectorActionLayout);
     CompactFlowLayout::replaceRows(inspectorLayout);
@@ -540,23 +491,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                      viewState->insightsDock,
                      [this](const QString& text) {
                          viewState->graphSearchText = text.trimmed();
-                         viewState->moduleBlockToolbar->setSearchText(text);
                          graphController->applySearchHighlight();
-                     });
-    QObject::connect(viewState->moduleBlockDepthSpin,
-                     qOverload<int>(&QSpinBox::valueChanged),
-                     viewState->insightsDock,
-                     [this](int) {
-                         if (viewState->currentGraphMode == QStringLiteral("module-block"))
-                             presenter->showModuleBlockDiagram();
-                     });
-    QObject::connect(viewState->moduleBlockShowUnresolvedCheck,
-                     &QCheckBox::toggled,
-                     viewState->insightsDock,
-                     [this](bool) {
-                         if (viewState->currentGraphMode == QStringLiteral("module-block"))
-                             graphController->mapModuleBlockDiagram(
-                                 viewState->currentModuleBlockReport);
                      });
     QObject::connect(viewState->graphLayoutCombo,
                      qOverload<int>(&QComboBox::currentIndexChanged),

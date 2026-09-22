@@ -53,7 +53,9 @@ public:
     // Drops the chrome a titled host already provides (workbench title line,
     // detach entry).
     void setCompactChrome(bool compact);
+    void fitGraph();
     void setContext(const LiveInsightToolContext& context);
+    void refreshTargetContext(const LiveInsightToolContext& editorContext);
     bool hasVisibleSurface() const;
     // The context this page last rendered from.
     const LiveInsightToolContext& contextForTest() const

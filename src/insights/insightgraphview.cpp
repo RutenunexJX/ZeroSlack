@@ -102,6 +102,7 @@ void InsightGraphView::zoomBy(qreal factor)
 {
     if (factor <= 0.0)
         return;
+    if (viewportInteractionHandler) viewportInteractionHandler();
     const qreal nextScale = currentZoom() * factor;
     if ((nextScale < minimumZoom && factor < 1.0)
         || (nextScale > maximumZoom && factor > 1.0)) {
@@ -149,11 +150,13 @@ void InsightGraphView::fitRect(const QRectF& rect, Qt::AspectRatioMode mode)
 void InsightGraphView::setFitUpscalingEnabled(bool enabled) { fitUpscalingEnabled = enabled; }
 void InsightGraphView::setViewportResizeHandler(std::function<void()> handler)
 { viewportResizeHandler = std::move(handler); }
+void InsightGraphView::setViewportInteractionHandler(std::function<void()> handler)
+{ viewportInteractionHandler = std::move(handler); }
 
 void InsightGraphView::resizeEvent(QResizeEvent* event)
 {
     QGraphicsView::resizeEvent(event);
-    if (viewportResizeHandler && event->size().width() != event->oldSize().width())
+    if (viewportResizeHandler && event->size() != event->oldSize())
         viewportResizeHandler();
 }
 
@@ -200,6 +203,7 @@ void InsightGraphView::wheelEvent(QWheelEvent* event)
 
 void InsightGraphView::mousePressEvent(QMouseEvent* event)
 {
+    if (event) pressPosition = event->pos();
     if (event && pressHandler
         && pressHandler(event->pos(), event->button(), event->modifiers())) {
         event->accept();
@@ -211,6 +215,14 @@ void InsightGraphView::mousePressEvent(QMouseEvent* event)
         scene()->clearSelection();
     }
     QGraphicsView::mousePressEvent(event);
+}
+
+void InsightGraphView::mouseMoveEvent(QMouseEvent* event)
+{
+    if (event && event->buttons().testFlag(Qt::LeftButton)
+        && (event->pos() - pressPosition).manhattanLength() > 4 && viewportInteractionHandler)
+        viewportInteractionHandler();
+    QGraphicsView::mouseMoveEvent(event);
 }
 
 void InsightGraphView::mouseDoubleClickEvent(QMouseEvent* event)

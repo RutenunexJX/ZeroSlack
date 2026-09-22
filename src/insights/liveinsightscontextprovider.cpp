@@ -118,8 +118,8 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
     resource.state = state;
     resource.state.insert(
         QStringLiteral("kind"), liveInsightKindId(kind));
-    if (!resource.state.contains(QStringLiteral("followEditor")))
-        resource.state.insert(QStringLiteral("followEditor"), true);
+    resource.state.remove(QStringLiteral("followEditor"));
+    resource.state.remove(QStringLiteral("pinned"));
     return resource;
 }
 
@@ -161,10 +161,10 @@ void LiveInsightsContextProvider::setFullViewHandler(
     fullViewHandler = std::move(handler);
 }
 
-void LiveInsightsContextProvider::setPinRequestHandler(
-    PinRequestHandler handler)
+void LiveInsightsContextProvider::setNavigationHandler(
+    LiveInsightToolPage::NavigationHandler handler)
 {
-    pinRequestHandler = std::move(handler);
+    navigationHandler = std::move(handler);
 }
 
 void LiveInsightsContextProvider::setToolContextSource(
@@ -236,6 +236,7 @@ QWidget* LiveInsightsContextProvider::createView(
     Q_UNUSED(hasResourceKind)
     if (toolContextSource)
         view->setToolContextSource(toolContextSource);
+    view->setNavigationHandler(navigationHandler);
     if (targetPickRequest)
         view->setTargetPickRequest(targetPickRequest);
     connect(
@@ -247,16 +248,6 @@ QWidget* LiveInsightsContextProvider::createView(
             if (fullViewHandler)
                 fullViewHandler(current);
             emit openFullViewRequested(current);
-        });
-    connect(
-        view,
-        &LiveInsightsContextView::pinStateChangeRequested,
-        this,
-        [this, view](bool pinned) {
-            const ContextResource current = resourceForView(view);
-            if (pinRequestHandler)
-                pinRequestHandler(pinned, current);
-            emit pinStateChangeRequested(pinned, current);
         });
     return view;
 }
@@ -292,11 +283,8 @@ ContextViewCapabilities LiveInsightsContextProvider::capabilities(
 
 int LiveInsightsContextProvider::suggestedSectionHeight()
 {
-    // The workbench chrome (toolbar rows, mode controls, status strip) plus
-    // the section header and resize grip take the first ~300 px; below that
-    // the graph canvas is a sliver. Measured in
-    // compact_layout_test::insightSectionHeights, which fails if this stops
-    // leaving the canvas at least 40% of the section body.
+    // Initial proportional weight relative to non-graph sections. The dock
+    // fills its viewport and respects each view's minimum height.
     return 560;
 }
 
@@ -321,14 +309,9 @@ void LiveInsightsContextProvider::observeViewResourceChanges(
         [announce](LiveInsightKind) { announce(); });
     connect(
         insightsView,
-        &LiveInsightsContextView::followEditorChanged,
+        &LiveInsightsContextView::targetChanged,
         context,
-        [announce](bool) { announce(); });
-    connect(
-        insightsView,
-        &LiveInsightsContextView::pinnedChanged,
-        context,
-        [announce](bool) { announce(); });
+        announce);
 }
 
 QVariantMap LiveInsightsContextProvider::saveViewState(
