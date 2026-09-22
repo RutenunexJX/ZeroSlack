@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.40`
+Current version: `v0.29.41`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.40`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.41`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -147,8 +147,8 @@ The Ela migration branch has a separate release channel. Its fixed package basen
 `ZeroSlack-Ela-win64`, its executable is `ZeroSlack-Ela.exe`, and release tags use
 `ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
 directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps` and its ZIP alongside it.
-The current Ela release is `0.29.40` (`ela-v0.29.40`). The welcome page hides its duplicate
-Project/Settings rail while the left sidebar is visible and restores it when the sidebar closes.
+The current Ela release is `0.29.41` (`ela-v0.29.41`). Project/Settings icons appear only in
+the expanded left sidebar. The duplicate welcome action rail and its visibility switching are removed.
 Formal Ela packaging requires a clean source tree and matching generated application version.
 It does not replace the classic application or share its user settings. See
 [Ela migration and validation](docs/ela-migration.md).

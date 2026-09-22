@@ -194,8 +194,12 @@ private slots:
             QVERIFY(initialTabs);
             QVERIFY(initialTabs->tabBar()->inherits("ElaTabBar"));
         }
-        auto* settingsButton = window.findChild<QToolButton*>("welcomeSettingsButton");
+        auto* expandSidebar = window.findChild<QToolButton*>("expandProjectSidebarButton");
+        QVERIFY(expandSidebar);
+        QTest::mouseClick(expandSidebar, Qt::LeftButton);
+        auto* settingsButton = window.findChild<QToolButton*>("settingsRailButton");
         QVERIFY(settingsButton);
+        QTRY_VERIFY(settingsButton->isVisible());
         if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)
             QVERIFY(settingsButton->inherits("ElaToolButton"));
         QTest::mouseClick(settingsButton, Qt::LeftButton); settle();

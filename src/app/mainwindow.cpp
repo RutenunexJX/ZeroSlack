@@ -314,9 +314,6 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](bool visible) {
                 if (visible)
                     navigationHiddenForWelcome = false;
-                if (auto* rail = welcomePage->findChild<QWidget*>(
-                        QStringLiteral("welcomeRail")))
-                    rail->setVisible(!visible);
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
@@ -810,39 +807,6 @@ void MainWindow::setupWelcomePage()
     auto* pageLayout = new QHBoxLayout(welcomePage);
     pageLayout->setContentsMargins(0, 0, 0, 0);
     pageLayout->setSpacing(0);
-
-    auto* rail = new QFrame(welcomePage);
-    rail->setObjectName(QStringLiteral("welcomeRail"));
-    rail->setFixedWidth(56);
-    auto* railLayout = new QVBoxLayout(rail);
-    railLayout->setContentsMargins(8, 12, 8, 8);
-    railLayout->setSpacing(8);
-    auto* project = UiControls::toolButton(rail);
-    project->setObjectName(QStringLiteral("welcomeProjectButton"));
-    project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
-    project->setIconSize(QSize(20, 20));
-    project->setToolTip(tr("Open a project"));
-    project->setAccessibleName(tr("Open a project"));
-    project->setFixedSize(40, 40);
-    connect(project, &QToolButton::clicked, this, [this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->openDirectoryAsWorkspace();
-    });
-    railLayout->addWidget(project);
-    auto* settings = UiControls::toolButton(rail);
-    settings->setObjectName(QStringLiteral("welcomeSettingsButton"));
-    settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
-    settings->setIconSize(QSize(20, 20));
-    settings->setToolTip(tr("Settings"));
-    settings->setAccessibleName(tr("Settings"));
-    settings->setFixedSize(40, 40);
-    connect(settings, &QToolButton::clicked, this, [this]() {
-        if (settingsCenterDock)
-            showDockWidget(settingsCenterDock);
-    });
-    railLayout->addWidget(settings);
-    railLayout->addStretch();
-    pageLayout->addWidget(rail);
 
     auto* center = new QWidget(welcomePage);
     auto* centerLayout = new QVBoxLayout(center);
