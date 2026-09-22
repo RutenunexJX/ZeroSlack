@@ -314,6 +314,9 @@ MainWindow::MainWindow(QWidget *parent)
             this, [this](bool visible) {
                 if (visible)
                     navigationHiddenForWelcome = false;
+                if (auto* rail = welcomePage->findChild<QWidget*>(
+                        QStringLiteral("welcomeRail")))
+                    rail->setVisible(!visible);
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,

@@ -6,7 +6,9 @@ ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
 
-Release 0.29.39 includes all migration stages below, including the shared panel
+Release 0.29.40 hides the welcome page's duplicate Project/Settings rail while the
+left sidebar is visible and restores it when the sidebar closes.
+It includes all migration stages below, including the shared panel
 compositor. Historical development-version labels describe when each feature was added.
 
 Settings use an isolated INI profile under Qt's AppConfigLocation for
