@@ -2,6 +2,7 @@
 #include "contextfloatingwindow.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
+#include "testuistyle.h"
 
 #include <QApplication>
 #include <QGraphicsRectItem>
@@ -48,6 +49,7 @@ QImage render(QWidget& widget)
 class ContextFloatingBackgroundTest final : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() { QVERIFY(initializeUiStyleForTest()); }
     void contentSurfacesFollowPlacementAndTheme();
 };
 

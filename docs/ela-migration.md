@@ -5,6 +5,42 @@
 用户在 2026-09-21 明确要求开始移植。本轮从实际应用接入 Ela，不再以此前
 对照实验中的主观流畅度观察作为实施前置条件；这不改变历史报告的测量结论。
 
+## 0.30.3 ElaWidget 上下文浮窗与 Acrylic
+
+Ela 构建的 `ContextFloatingWindow` 直接继承上游 `ElaWidget`，由其管理标题栏、窗口按钮、
+原生命中测试和边缘缩放，移除应用层单独创建与转发 `ElaAppBar` 的代码。先构造独立窗口，
+再附加主窗口作为 owner，避免 Ela 在构造时给主窗口添加标题栏或修改主窗口边距。
+窗口保持非模态 `Qt::Tool`，关闭 ElaWidget 默认的全局置顶，关闭操作仍交给上下文资源控制器。
+
+模块框图等可分离的上下文内容共用该外壳。专用图表、同一内容实例在浮窗／侧栏间移动、
+文档绑定、位置恢复与背景浓度保持原逻辑。Acrylic 改由 Ela 的原生材质路径应用，新增按窗口的
+`ElaApplication::applyWindowDisplayMode` 兼容接口，不修改 Ela 的全局显示模式；应用层不再
+在 Ela 构建中设置 DWM 材质属性。应用继续绘制背景色覆盖层，文字和图标保持完全不透明。
+关闭透明效果、高对比度、节电、系统不支持或原生调用失败时回退实色；关闭材质同时清理整窗
+玻璃边距。编辑器标签浮窗与双击符号信息卡不属于本次替换范围。
+经典构建仍使用 QWidget；Ela 的编译定义与链接依赖公开传播，确保调用方与核心 DLL 的类布局一致。
+新增第 20 份 Ela 兼容补丁和来源说明，保留原 MIT／字体 OFL 许可证及此前 19 份补丁。
+
+Release 构建及 11 项相关 CTest 通过，覆盖窗口按钮、主窗口不受影响、关闭与内容回收、
+侧栏往返、位置恢复、模块框图，以及 100%／200% 的浮窗布局和背景透出。
+日志为 `build/ela-migration/ela-floating-widget-build.log` 和 `ela-floating-widget-tests.log`。
+另以 `ZEROSLACK_ENABLE_ELA=OFF` 构建经典版本，3 项上下文／浮窗测试全部通过，记录为
+`ela-floating-classic-build.log` 和 `ela-floating-classic-tests.log`。
+验证为 Qt 离屏后台测试，未占用桌面鼠标；Windows 原生拖动手感和 DWM 合成效果尚未重新验收。
+
+Acrylic 接入后重新构建，11 项 Ela／上下文 CTest 通过，见 `ela-acrylic-final-tests.log`。
+经典构建的 3 项上下文／浮窗测试也通过，见 `ela-acrylic-classic-tests.log`。
+第 20 份补丁从上一提交重放后，4 个供应商源文件逐字节一致，见 `ela-acrylic-provenance.json`。
+另以隐藏 HWND 运行 `context_floating_window_test acrylicIsWindowScoped`，验证系统材质属性
+确为 Acrylic（3）、关闭后为 None（1），主题切换后深浅色正确，且其他窗口和 Ela 全局模式
+不变，见 `ela-acrylic-native-settle.txt`。主题属性在 Windows 事件处理完成后验收。
+该原生接口测试没有显示窗口或操作鼠标，不能代替对实际模糊画面的视觉验收。
+
+本版使用 `ela-v0.30.3` 发布标签和独立的 `ZeroSlack-Ela-win64` 正式包，
+包含 Ela MIT／字体 OFL 许可证、来源说明及全部 20 份兼容补丁。
+发布前重建 GUI、CLI 与主窗口／标签测试，额外 4 项检查通过：100%／200% 主窗口与浮窗、
+文档标签以及版本文档一致性，见 `release-0.30.3-build.log` 和 `release-0.30.3-tests.log`。
+
 ## 0.30.2 模块框图紧凑布局
 
 模块框图顶部接入 `ElaBreadcrumbBar` 与 `ElaToolBar`，使用现有 `ElaToolButton` 显示圆角图标。

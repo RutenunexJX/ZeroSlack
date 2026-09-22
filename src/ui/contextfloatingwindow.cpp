@@ -5,7 +5,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #ifdef ZEROSLACK_ENABLE_ELA
-#include "ElaAppBar.h"
+#include "ElaApplication.h"
 #include "ElaDragHandle.h"
 #endif
 
@@ -48,11 +48,13 @@ QRect resolve(const QRect& saved, const QString& screenName, QScreen* primary)
 }
 
 #ifdef Q_OS_WIN
+#ifndef ZEROSLACK_ENABLE_ELA
 // Keep compatibility with MinGW headers predating Windows 11 22H2.
 constexpr DWORD kSystemBackdropType = 38;
 constexpr DWORD kImmersiveDarkMode = 20;
 constexpr int kNoBackdrop = 1;
 constexpr int kDesktopAcrylic = 3;
+#endif
 
 bool systemAllowsAcrylic()
 {
@@ -76,11 +78,22 @@ bool systemAllowsAcrylic()
 }
 
 ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* region)
-    : QWidget(mainWindow, Qt::Tool), editorRegion(region)
+    : ContextFloatingWindowBase(nullptr), editorRegion(region)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    // ElaWidget constructs its app bar against window(). Become a top-level
+    // window first, then attach the owner so it cannot decorate the main window.
+    setParent(mainWindow, Qt::Tool | (windowFlags() & ~Qt::WindowType_Mask));
+    setIsStayTop(false);
+    setWindowButtonFlags(ElaAppBarType::MinimizeButtonHint
+        | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint);
+    // This material is scoped to context windows, independently of global Ela windows.
+    eApp->syncWindowDisplayMode(this, false);
+#else
+    setParent(mainWindow, Qt::Tool);
+#endif
     setObjectName(QStringLiteral("contextFloatingWindow"));
-    // Keep the native Tool surface and DWM backdrop. Ela takes over caption
-    // hit testing and window controls without adding a layered window flag.
+    // The content and title bar share one window material; text stays opaque.
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
         setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
@@ -130,10 +143,6 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     connect(fullViewButton, &QToolButton::clicked, this, &ContextFloatingWindow::fullViewRequested);
 #ifdef ZEROSLACK_ENABLE_ELA
     if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        auto* appBar = new ElaAppBar(this);
-        floatingAppBar = appBar;
-        appBar->setWindowButtonFlags(ElaAppBarType::MinimizeButtonHint
-            | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint);
         auto* gesture = new ElaDragHandle(dragButton, this);
         gesture->setMimeDataFactory([this]() -> QMimeData* {
             if (!hasResource()) return nullptr;
@@ -179,9 +188,18 @@ void ContextFloatingWindow::refreshBackdrop()
 {
     if (!backdropReady)
         return;
+#if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
+    const auto previousMode = acrylicBackdrop ? ElaApplicationType::Acrylic : ElaApplicationType::Normal;
+#endif
     acrylicBackdrop = false;
 #ifdef Q_OS_WIN
     if (QGuiApplication::platformName() == QStringLiteral("windows") && internalWinId()) {
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (systemAllowsAcrylic())
+            acrylicBackdrop = eApp->applyWindowDisplayMode(this, ElaApplicationType::Acrylic, previousMode);
+        if (!acrylicBackdrop)
+            eApp->applyWindowDisplayMode(this, ElaApplicationType::Normal, previousMode);
+#else
         const HWND hwnd = reinterpret_cast<HWND>(internalWinId());
         const BOOL dark = isDarkTheme(ApplicationThemeManager::instance().mode());
         DwmSetWindowAttribute(hwnd, kImmersiveDarkMode, &dark, sizeof(dark));
@@ -197,6 +215,7 @@ void ContextFloatingWindow::refreshBackdrop()
             DwmSetWindowAttribute(hwnd, kSystemBackdropType, &kNoBackdrop, sizeof(kNoBackdrop));
             DwmExtendFrameIntoClientArea(hwnd, &solid);
         }
+#endif
     }
 #endif
     // Never attenuate the text, icons or graph together with the background.
@@ -235,13 +254,7 @@ bool ContextFloatingWindow::nativeEvent(const QByteArray& eventType, void* messa
                    || native->message == WM_POWERBROADCAST))
         scheduleBackdropRefresh();
 #endif
-#if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
-    if (auto* appBar = qobject_cast<ElaAppBar*>(floatingAppBar)) {
-        const int handled = appBar->takeOverNativeEvent(eventType, message, result);
-        if (handled >= 0) return handled != 0;
-    }
-#endif
-    return QWidget::nativeEvent(eventType, message, result);
+    return ContextFloatingWindowBase::nativeEvent(eventType, message, result);
 }
 
 void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullViewAvailable)
@@ -279,7 +292,7 @@ bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
             }
         }
     }
-    return QWidget::eventFilter(watched, event);
+    return ContextFloatingWindowBase::eventFilter(watched, event);
 }
 
 void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* view)
@@ -418,19 +431,19 @@ void ContextFloatingWindow::handleScreenChange()
 
 void ContextFloatingWindow::moveEvent(QMoveEvent* event)
 {
-    QWidget::moveEvent(event);
+    ContextFloatingWindowBase::moveEvent(event);
     rememberGeometry();
 }
 
 void ContextFloatingWindow::resizeEvent(QResizeEvent* event)
 {
-    QWidget::resizeEvent(event);
+    ContextFloatingWindowBase::resizeEvent(event);
     rememberGeometry();
 }
 
 bool ContextFloatingWindow::event(QEvent* event)
 {
-    const bool handled = QWidget::event(event);
+    const bool handled = ContextFloatingWindowBase::event(event);
     if (event->type() == QEvent::WinIdChange || event->type() == QEvent::Show
         || event->type() == QEvent::ApplicationPaletteChange)
         scheduleBackdropRefresh();

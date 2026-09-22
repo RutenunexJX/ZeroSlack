@@ -122,8 +122,12 @@ void ElaWinShadowHelper::setWindowThemeMode(quint64 hwnd, bool isLightMode)
     _dwmSetWindowAttribute((HWND)hwnd, dwAttritube, &bIsLightMode, sizeof(bIsLightMode));
 }
 
-void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode displayMode, ElaApplicationType::WindowDisplayMode lastDisplayMode)
+bool ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode displayMode, ElaApplicationType::WindowDisplayMode lastDisplayMode)
 {
+    if (!widget || !_dwmSetWindowAttribute || !_dwmExtendFrameIntoClientArea)
+    {
+        return false;
+    }
     HWND winHwnd = (HWND)widget->winId();
     switch (lastDisplayMode)
     {
@@ -195,51 +199,68 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
 
     switch (displayMode)
     {
+    case ElaApplicationType::Normal:
+    {
+        // Explicitly remove a per-window material, including its full-client margins.
+        const MARGINS margins{};
+        const bool clearedMargins = SUCCEEDED(_dwmExtendFrameIntoClientArea(winHwnd, &margins));
+        if (compareWindowsVersion(Win11_22H2))
+        {
+            const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_NONE;
+            return SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE,
+                &backdropType, sizeof(backdropType))) && clearedMargins;
+        }
+        return clearedMargins;
+    }
     case ElaApplicationType::Mica:
     {
         if (!compareWindowsVersion(Win11_Origin))
         {
-            break;
+            return false;
         }
         _externWindowMargins(winHwnd);
         if (compareWindowsVersion(Win11_22H2))
         {
             const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_MAINWINDOW;
-            _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
+            return SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
         }
         else
         {
             const BOOL enable = TRUE;
-            _dwmSetWindowAttribute(winHwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable));
+            return SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_MICA_EFFECT, &enable, sizeof(enable)));
         }
-        break;
     }
     case ElaApplicationType::MicaAlt:
     {
         if (!compareWindowsVersion(Win11_22H2))
         {
-            break;
+            return false;
         }
         _externWindowMargins(winHwnd);
         const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TABBEDWINDOW;
-        _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
-        break;
+        return SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
     }
     case ElaApplicationType::Acrylic:
     {
-        if (!compareWindowsVersion(Win11_Origin))
+        if (!compareWindowsVersion(Win11_22H2) || !getIsCompositionEnabled())
         {
-            break;
+            return false;
         }
-        _externWindowMargins(winHwnd);
+        const MARGINS margins{-1, -1, -1, -1};
+        if (FAILED(_dwmExtendFrameIntoClientArea(winHwnd, &margins)))
+        {
+            return false;
+        }
         const _DWM_SYSTEMBACKDROP_TYPE backdropType = _DWMSBT_TRANSIENTWINDOW;
-        _dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType));
-        break;
+        return SUCCEEDED(_dwmSetWindowAttribute(winHwnd, _DWMWA_SYSTEMBACKDROP_TYPE, &backdropType, sizeof(backdropType)));
     }
     case ElaApplicationType::DWMBlur:
     {
         MARGINS windowMargins = {0, 1, 0, 0};
-        _dwmExtendFrameIntoClientArea(winHwnd, &windowMargins);
+        if (FAILED(_dwmExtendFrameIntoClientArea(winHwnd, &windowMargins)))
+        {
+            return false;
+        }
         if (compareWindowsVersion(Win7_Origin))
         {
             _ACCENT_POLICY policy{};
@@ -249,20 +270,19 @@ void ElaWinShadowHelper::setWindowDisplayMode(QWidget* widget, ElaApplicationTyp
             wcad.Attrib = _WCA_ACCENT_POLICY;
             wcad.pvData = &policy;
             wcad.cbData = sizeof(policy);
-            _setWindowCompositionAttribute(winHwnd, &wcad);
+            return _setWindowCompositionAttribute && _setWindowCompositionAttribute(winHwnd, &wcad);
         }
         else
         {
             DWM_BLURBEHIND bb{};
             bb.fEnable = TRUE;
             bb.dwFlags = DWM_BB_ENABLE;
-            _dwmEnableBlurBehindWindow(winHwnd, &bb);
+            return _dwmEnableBlurBehindWindow && SUCCEEDED(_dwmEnableBlurBehindWindow(winHwnd, &bb));
         }
-        break;
     }
     default:
     {
-        break;
+        return false;
     }
     }
 }

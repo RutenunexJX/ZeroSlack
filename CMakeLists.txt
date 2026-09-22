@@ -820,8 +820,10 @@ if(ZEROSLACK_ENABLE_ELA)
     add_subdirectory(thirdparty/elawidgettools EXCLUDE_FROM_ALL)
     set_target_properties(ElaWidgetTools PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
     target_sources(zeroslack_core PRIVATE src/ui/elabackend.cpp)
-    target_link_libraries(zeroslack_core PRIVATE Ela::WidgetTools)
-    target_compile_definitions(zeroslack_core PRIVATE ZEROSLACK_ENABLE_ELA=1)
+    # ContextFloatingWindow exposes ElaWidget as its base in Ela builds; every
+    # consumer must see the same class layout and link its base-class symbols.
+    target_link_libraries(zeroslack_core PUBLIC Ela::WidgetTools)
+    target_compile_definitions(zeroslack_core PUBLIC ZEROSLACK_ENABLE_ELA=1)
 endif()
 set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
 if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
@@ -1448,6 +1450,12 @@ if(BUILD_TESTING)
     add_executable(context_floating_background_test
         test_sv/context_floating_background_test.cpp)
     target_link_libraries(context_floating_background_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(context_floating_window_test
+        test_sv/context_floating_window_test.cpp)
+    target_link_libraries(context_floating_window_test PRIVATE zeroslack_core Qt6::Test)
+    if(WIN32)
+        target_link_libraries(context_floating_window_test PRIVATE dwmapi)
+    endif()
     add_executable(context_floating_preview
         test_sv/context_floating_preview.cpp)
     target_link_libraries(context_floating_preview PRIVATE zeroslack_core)
@@ -2060,6 +2068,18 @@ if(BUILD_TESTING)
             $<TARGET_FILE:ui_sidebar_contract_test> -o -,txt)
     set_tests_properties(ui_sidebar_contract_classic_test PROPERTIES TIMEOUT 60)
     if(ZEROSLACK_ENABLE_ELA)
+        foreach(FLOATING_SCALE IN ITEMS 1 2)
+            foreach(FLOATING_TEST IN ITEMS window background)
+                add_test(NAME ela_context_floating_${FLOATING_TEST}_${FLOATING_SCALE}_test
+                    COMMAND ${CMAKE_COMMAND} -E env
+                        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                        "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                        "QT_SCALE_FACTOR=${FLOATING_SCALE}"
+                        $<TARGET_FILE:context_floating_${FLOATING_TEST}_test> -o -,txt)
+                set_tests_properties(ela_context_floating_${FLOATING_TEST}_${FLOATING_SCALE}_test
+                    PROPERTIES TIMEOUT 60)
+            endforeach()
+        endforeach()
         add_test(NAME ela_context_workspace_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
@@ -2086,6 +2106,12 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:context_floating_background_test>)
+    add_test(NAME context_floating_window_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:context_floating_window_test> -o -,txt)
+    set_tests_properties(context_floating_window_test PROPERTIES TIMEOUT 60)
     add_test(NAME workspace_hub_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

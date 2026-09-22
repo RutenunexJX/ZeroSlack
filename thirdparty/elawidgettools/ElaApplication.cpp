@@ -171,6 +171,27 @@ void ElaApplication::syncWindowDisplayMode(QWidget* widget, bool isSync)
     }
 }
 
+bool ElaApplication::applyWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode mode,
+                                          ElaApplicationType::WindowDisplayMode previousMode)
+{
+#ifdef Q_OS_WIN
+    Q_D(ElaApplication);
+    if (!widget || !widget->isWindow() || !widget->internalWinId()
+        || QGuiApplication::platformName() != QStringLiteral("windows"))
+    {
+        return false;
+    }
+    const bool applied = eWinHelper->setWindowDisplayMode(widget, mode, previousMode);
+    eWinHelper->setWindowThemeMode(widget->internalWinId(), d->_themeMode == ElaThemeType::Light);
+    return applied;
+#else
+    Q_UNUSED(widget);
+    Q_UNUSED(mode);
+    Q_UNUSED(previousMode);
+    return false;
+#endif
+}
+
 bool ElaApplication::containsCursorToItem(QWidget* item)
 {
     if (!item || !item->isVisible())

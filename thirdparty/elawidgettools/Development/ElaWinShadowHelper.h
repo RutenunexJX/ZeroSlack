@@ -31,7 +31,7 @@ public:
 
     void setWindowShadow(quint64 hwnd);
     void setWindowThemeMode(quint64 hwnd, bool isLightMode);
-    void setWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode displayMode, ElaApplicationType::WindowDisplayMode lastDisplayMode);
+    bool setWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode displayMode, ElaApplicationType::WindowDisplayMode lastDisplayMode);
     bool getIsCompositionEnabled() const;
     bool getIsFullScreen(const HWND& hwnd);
     MONITORINFOEXW getMonitorForWindow(const HWND& hwnd);

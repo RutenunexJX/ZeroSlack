@@ -23,6 +23,10 @@ private:
 public:
     void init();
     void syncWindowDisplayMode(QWidget* widget, bool isSync = true);
+    // Apply a native material to one window without changing the global mode.
+    // The caller owns refresh timing and opts out of global synchronization.
+    bool applyWindowDisplayMode(QWidget* widget, ElaApplicationType::WindowDisplayMode mode,
+                                ElaApplicationType::WindowDisplayMode previousMode);
     static bool containsCursorToItem(QWidget* item);
 };
 

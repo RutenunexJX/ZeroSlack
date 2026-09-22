@@ -7,11 +7,18 @@
 #include <QPointer>
 #include <QWidget>
 
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaWidget.h"
+using ContextFloatingWindowBase = ElaWidget;
+#else
+using ContextFloatingWindowBase = QWidget;
+#endif
+
 class QToolButton;
 class QVBoxLayout;
 class QScreen;
 
-class ZEROSLACK_API ContextFloatingWindow final : public QWidget, public ContextFloatingSurface {
+class ZEROSLACK_API ContextFloatingWindow final : public ContextFloatingWindowBase, public ContextFloatingSurface {
     Q_OBJECT
 public:
     ContextFloatingWindow(QWidget* mainWindow, QWidget* editorRegion);
@@ -56,7 +63,6 @@ private:
     QToolButton* pinButton = nullptr;
     QToolButton* fullViewButton = nullptr;
     QToolButton* dragButton = nullptr;
-    QWidget* floatingAppBar = nullptr;
     QPoint dragStart;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};

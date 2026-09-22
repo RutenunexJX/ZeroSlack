@@ -143,6 +143,21 @@ cancel/release handling and MIME drag loops. Context floating windows use ElaApp
 window management with the existing native Tool/DWM surface. This patch does not
 introduce an ElaWindow shell or replace specialist editor/diagram content.
 
+Apply `patches/20-zeroslack-scoped-acrylic.patch` after patch 19.
+ElaApplication adds `applyWindowDisplayMode` for one existing native window,
+without changing or registering the application's global display mode. This is
+a local compatibility API that delegates to ElaWinShadowHelper's material path.
+The caller opts out of global synchronization and retains refresh scheduling.
+The native helper reports application failures, requires Windows 11 22H2 for the
+system Acrylic attribute, extends the material over the full client area, and
+explicitly clears the material and margins when returning to Normal. Theme is
+applied after the material, matching Ela's existing global update order.
+ZeroSlack's ContextFloatingWindow calls this API for Acrylic and solid fallback;
+the application no longer sets native material attributes in its Ela build.
+System accessibility/power preferences and the background tint remain host-owned.
+The classic build retains its existing DWM path. The original MIT and font OFL
+licenses remain unchanged and must accompany this patch in distributed packages.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
