@@ -123,6 +123,7 @@ private:
     std::function<bool()> workspaceOpenProvider;
     std::function<QString()> currentFileProvider;
     QHash<QString, DocumentSemanticStatus> semanticStatuses;
+    QHash<QString, std::uint64_t> standaloneAnalysisRevisions;
     QHash<QString, QTimer*> externalFileTimers;
     QHash<QString, QTimer*> editIdleTimers;
     struct SelfWriteStamp {
@@ -155,6 +156,8 @@ private:
     void onDocumentSaved(const DocumentSnapshot& snapshot);
     void onProjectChanged(const ProjectSnapshot& project);
     void onProjectClosed();
+    void refreshStandaloneDocuments();
+    bool belongsToActiveWorkspace(const QString& fileName) const;
     void requestSemanticAnalysis(SemanticAnalysisReason reason,
                                  SemanticChangeImpact impactHint,
                                  const QString& triggerFile,

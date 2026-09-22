@@ -527,6 +527,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/customabbreviationservice.h
     src/app/mainwindow.h
     src/ui/workspacechrome.h
+    src/ui/workspaceswitcher.h
+    src/ui/workspaceswitcher.cpp
     src/ui/uiwindowchrome.h
     src/ui/uiwindowchrome.cpp
     src/ui/roundedicons.h
@@ -1362,6 +1364,9 @@ if(BUILD_TESTING)
     target_link_libraries(workspace_session_coordinator_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(workspace_switcher_test test_sv/workspace_switcher_test.cpp)
+    target_link_libraries(workspace_switcher_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(controller_boundary_test
         test_sv/controller_boundary_test.cpp)
     target_link_libraries(controller_boundary_test
@@ -2186,6 +2191,14 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:workspace_session_coordinator_test>
+    )
+    add_test(NAME workspace_switcher_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
+            $<TARGET_FILE:workspace_switcher_test> -o -,txt
     )
     add_test(NAME controller_boundary_test
         COMMAND ${CMAKE_COMMAND} -E env

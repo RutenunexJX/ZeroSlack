@@ -150,6 +150,10 @@ public:
     void updateTabTitle(MyCodeEditor* editor);
     void setWorkspaceScope(const QStringList& workspaceRoots,
                            const QString& activeWorkspaceRoot);
+    QString workspaceForFile(const QString& fileName) const;
+    bool isTemporaryEditor(MyCodeEditor* editor) const;
+    bool workspaceHasUnsavedChanges(const QString& workspaceRoot) const;
+    QString temporaryRecoveryWorkspace() const;
     bool closeTabsInWorkspace(const QString& workspaceRoot);
     bool hasUnsavedChanges() const;
     bool resolvePendingDocuments(
@@ -221,6 +225,7 @@ signals:
     void tabGroupCreated(QTabWidget* group);
     void splitLayoutChanged();
     void workspaceSessionStateChanged();
+    void workspaceActivationRequested(const QString& workspaceRoot);
     void toolPageClosed(const QString& stableId);
 
 private slots:
@@ -262,6 +267,9 @@ private:
     QStringList scopedWorkspaceRoots;
     QString activeWorkspaceRoot;
     QPointer<MyCodeEditor> previousActiveEditor;
+    QHash<QString, QPointer<MyCodeEditor>> lastWorkspaceEditors;
+    bool changingWorkspaceScope = false;
+    bool groupingTabs = false;
     QSet<SharedDocument*> observedDocuments;
     QSet<SharedDocument*>
         explicitExternalReloadDocuments;

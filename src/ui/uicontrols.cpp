@@ -31,6 +31,21 @@
 #include <QFormLayout>
 
 namespace {
+template<class Base> class WorkspaceTabBar final : public Base {
+public:
+    using Base::Base;
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        Base::paintEvent(event);
+        const QVariant boundary = this->property("temporaryTabBoundary");
+        if (!boundary.isValid() || boundary.toInt() < 0) return;
+        const QRect tab = this->tabRect(boundary.toInt());
+        QPainter painter(this);
+        painter.setPen(this->palette().color(QPalette::Mid));
+        painter.drawLine(tab.left(), tab.top() + 9, tab.left(), tab.bottom() - 9);
+    }
+};
+
 class ToolButtonBadge {
 public:
     virtual ~ToolButtonBadge() = default;
@@ -475,7 +490,7 @@ QTreeWidget* UiControls::treeWidget(QWidget* parent) {
 QTabBar* UiControls::tabBar(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
     if (usesEla()) {
-        auto* bar = prepare(new ElaTabBar(parent));
+        auto* bar = prepare(new WorkspaceTabBar<ElaTabBar>(parent));
         bar->setNativeTabBehavior(true);
         bar->setSmoothScrollEnabled(true);
         bar->setTabsClosable(false);
@@ -484,7 +499,7 @@ QTabBar* UiControls::tabBar(QWidget* parent) {
         return bar;
     }
 #endif
-    return new QTabBar(parent);
+    return new WorkspaceTabBar<QTabBar>(parent);
 }
 
 void UiControls::enableSmoothScrolling(QAbstractScrollArea* area) {

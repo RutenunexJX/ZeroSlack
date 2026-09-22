@@ -3,6 +3,8 @@
 #include "activitylogservice.h"
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
+#include "editorfileidentity.h"
+#include "mycodeeditor.h"
 
 #include <QDateTime>
 #include <QDir>
@@ -197,6 +199,24 @@ ProjectSnapshot AnalysisScheduler::projectForAnalysis(
     return project;
 }
 
+bool AnalysisScheduler::belongsToActiveWorkspace(const QString& fileName) const
+{
+    if (!projectModel || !projectModel->isOpen()) return true;
+    const auto project = projectModel->snapshot();
+    if (auto* editor = documentModel ? documentModel->editorForFile(fileName) : nullptr) {
+        if (editor->property("standaloneDocument").isValid())
+            return !editor->property("standaloneDocument").toBool()
+                && EditorFileIdentity::same(editor->hierarchyInstanceContext().workspacePath,
+                                            project.workspaceRoot);
+    }
+    const QString fileKey = normalizedFileName(fileName);
+    const QString rootKey = normalizedFileName(project.workspaceRoot);
+    if (fileKey.startsWith(rootKey.endsWith('/') ? rootKey : rootKey + '/')) return true;
+    for (const auto& file : project.systemVerilogFiles)
+        if (normalizedFileName(file) == fileKey) return true;
+    return false;
+}
+
 void AnalysisScheduler::requestSemanticAnalysis(
     SemanticAnalysisReason reason,
     SemanticChangeImpact impactHint,
@@ -247,6 +267,18 @@ void AnalysisScheduler::requestSemanticAnalysis(
                 analysisBandsForPlan(workspacePlan));
         }
         emit workspaceAnalysisPlanPrepared(workspacePlan);
+    }
+
+    if (!triggerFile.isEmpty() && !belongsToActiveWorkspace(triggerFile)) {
+        const auto snapshot = documentModel ? documentModel->cachedDocumentForFile(triggerFile) : DocumentSnapshot();
+        if (symbolAnalyzer && !snapshot.fileName.isEmpty()) {
+            const QString fileKey = normalizedFileName(triggerFile);
+            pendingCleanSemanticChanges.remove(fileKey);
+            standaloneAnalysisRevisions.insert(fileKey, snapshot.textVersion);
+            setDocumentSemanticState(triggerFile, DocumentSemanticState::Analyzing, snapshot.textVersion);
+            symbolAnalyzer->analyzeStandaloneFileContentAsync(triggerFile, snapshot.text, snapshot.textVersion);
+        }
+        return;
     }
 
     SemanticAnalysisRequest request;
@@ -510,6 +542,8 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
     if (QTimer* timer = externalFileTimers.take(key))
         timer->deleteLater();
     semanticStatuses.remove(key);
+    standaloneAnalysisRevisions.remove(key);
+    if (symbolAnalyzer) symbolAnalyzer->cancelFileAnalysis(fileName);
     selfWriteStamps.remove(key);
     if (relationshipAnalysisQueue)
         relationshipAnalysisQueue->clearFile(fileName);
@@ -636,13 +670,16 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
                != normalizedFileName(project.workspaceRoot);
     if (replacingWorkspace && workspaceSymbolAnalysis) {
         pendingCleanSemanticChanges.clear();
+        standaloneAnalysisRevisions.clear();
         workspaceSymbolAnalysis->clearProjectSemanticState();
         workspaceInitialAnalysisScheduled = false;
     }
     lastProjectSignature = signature;
     lastScheduledProject = project;
-    if (project.systemVerilogFiles.isEmpty())
+    if (project.systemVerilogFiles.isEmpty()) {
+        QTimer::singleShot(0, this, &AnalysisScheduler::refreshStandaloneDocuments);
         return;
+    }
 
     const SemanticAnalysisReason reason = workspaceInitialAnalysisScheduled
         ? SemanticAnalysisReason::WorkspaceConfiguration
@@ -668,6 +705,7 @@ void AnalysisScheduler::onProjectClosed()
     lastProjectSignature.clear();
     workspaceInitialAnalysisScheduled = false;
     pendingCleanSemanticChanges.clear();
+    standaloneAnalysisRevisions.clear();
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->clearProjectSemanticState();
     if (documentModel) {
@@ -678,6 +716,25 @@ void AnalysisScheduler::onProjectClosed()
                 DocumentSemanticState::Dirty,
                 static_cast<std::uint64_t>(snapshot.textVersion));
         }
+    }
+    QTimer::singleShot(0, this, &AnalysisScheduler::refreshStandaloneDocuments);
+}
+
+void AnalysisScheduler::refreshStandaloneDocuments()
+{
+    if (shuttingDown || !semanticRuntimePolicy.enabled || !documentModel
+        || !symbolAnalyzer || isSemanticAnalysisActive())
+        return;
+    for (const auto& snapshot : documentModel->cachedOpenDocuments()) {
+        auto* editor = documentModel->editorForFile(snapshot.fileName);
+        if (!editor || !editor->property("standaloneDocument").toBool()
+            || snapshot.fileName.isEmpty())
+            continue;
+        const auto cached = SemanticIndex::getInstance()->getCachedFileContent(snapshot.fileName);
+        if (!cached.isNull() && cached == snapshot.text) continue;
+        standaloneAnalysisRevisions.insert(normalizedFileName(snapshot.fileName), snapshot.textVersion);
+        setDocumentSemanticState(snapshot.fileName, DocumentSemanticState::Analyzing, snapshot.textVersion);
+        symbolAnalyzer->analyzeStandaloneFileContentAsync(snapshot.fileName, snapshot.text, snapshot.textVersion);
     }
 }
 
@@ -709,6 +766,7 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
     const SemanticAnalysisRequest& request,
     const IncrementalAnalysisPlan& plan)
 {
+    QTimer::singleShot(0, this, &AnalysisScheduler::refreshStandaloneDocuments);
     acknowledgePublishedCleanSemanticChanges(request);
     if (plan.impact == SemanticChangeImpact::TriviaOnly) {
         for (const QString& fileName : plan.affectedFiles)

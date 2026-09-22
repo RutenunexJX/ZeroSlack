@@ -10,11 +10,13 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QScrollBar>
+#include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QTabBar>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTimer>
 
 #include <algorithm>
 #include <memory>
@@ -330,6 +332,9 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             &TabManager::workspaceSessionStateChanged);
 
     previousActiveEditor = getCurrentEditor();
+    QTimer::singleShot(0, this, [this] {
+        scanCrashRecoveryCandidates(temporaryRecoveryWorkspace());
+    });
 }
 
 TabManager::~TabManager()
@@ -376,18 +381,14 @@ QString TabManager::recoveryWorkspaceForDocument(
         if (!matchingRoot.isEmpty())
             return lexicalPath(matchingRoot);
     }
-    if (!activeWorkspaceRoot.isEmpty())
-        return lexicalPath(activeWorkspaceRoot);
-    if (!scopedWorkspaceRoots.isEmpty()) {
-        return lexicalPath(
-            scopedWorkspaceRoots.first());
-    }
-    if (document && !document->fileName().isEmpty()) {
-        return lexicalPath(
-            QFileInfo(document->fileName())
-                .absolutePath());
-    }
-    return lexicalPath(QDir::currentPath());
+    return temporaryRecoveryWorkspace();
+}
+
+QString TabManager::temporaryRecoveryWorkspace() const
+{
+    // A stable recovery namespace, never the current project or source folder.
+    return lexicalPath(QDir(crashRecoveryService->recoveryRootPath())
+                           .filePath(QStringLiteral("standalone")));
 }
 
 QString TabManager::recoveryWorkspacePath(
@@ -403,7 +404,7 @@ QString TabManager::recoveryWorkspacePath(
         return lexicalPath(
             scopedWorkspaceRoots.first());
     }
-    return lexicalPath(QDir::currentPath());
+    return temporaryRecoveryWorkspace();
 }
 
 CrashRecoveryDocumentKey
@@ -889,11 +890,14 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
         if (fileName.isEmpty())
             return false;
     }
+    const QString owner = workspaceForFile(fileName);
+    if (!owner.isEmpty() && identityKey(owner) != identityKey(activeWorkspaceRoot))
+        emit workspaceActivationRequested(owner);
     if (activateOpenFile(fileName)) {
         if (MyCodeEditor* editor = getCurrentEditor()) {
             editor->setHierarchyInstanceContext(
                 unboundTabInstanceContext(
-                    activeWorkspaceRoot));
+                    workspaceForFile(fileName)));
         }
         return true;
     }
@@ -1642,47 +1646,78 @@ void TabManager::setWorkspaceScope(
     const QString& activeWorkspaceRootPath)
 {
     checkpointCrashRecovery();
+    const QString previousRoot = identityKey(activeWorkspaceRoot);
+    const bool switched = previousRoot != identityKey(activeWorkspaceRootPath);
+    if (MyCodeEditor* editor = getCurrentEditor()) {
+        if (!previousRoot.isEmpty() && !isTemporaryEditor(editor))
+            lastWorkspaceEditors.insert(previousRoot, editor);
+    }
+    changingWorkspaceScope = true;
     scopedWorkspaceRoots =
         lexicalTabWorkspaceRoots(workspaceRoots);
     activeWorkspaceRoot =
         lexicalPath(
             activeWorkspaceRootPath);
-    for (MyCodeEditor* editor : allEditors()) {
+    const auto workspaceEditors = allEditors() + auxiliaryViews();
+    for (MyCodeEditor* editor : workspaceEditors) {
         if (!editor)
             continue;
         const HierarchyInstanceContext current =
             editor->hierarchyInstanceContext();
-        const QString currentWorkspaceKey =
-            identityKey(current.workspacePath);
-        bool currentWorkspaceIsScoped = false;
-        for (const QString& root : scopedWorkspaceRoots) {
-            if (!currentWorkspaceKey.isEmpty()
-                && currentWorkspaceKey
-                       == identityKey(root)) {
-                currentWorkspaceIsScoped = true;
-                break;
-            }
-        }
-        if (currentWorkspaceIsScoped) {
-            continue;
-        }
         const DocumentSnapshot document =
             getDocumentForEditor(editor);
-        QString fallbackWorkspace =
-            workspaceRootForFile(
-                document.fileName,
-                scopedWorkspaceRoots);
-        if (fallbackWorkspace.isEmpty())
-            fallbackWorkspace = activeWorkspaceRoot;
-        editor->setHierarchyInstanceContext(
-            unboundTabInstanceContext(
-                fallbackWorkspace));
+        const QString owner = workspaceForFile(document.fileName);
+        editor->setProperty("standaloneDocument", owner.isEmpty());
+        if (identityKey(current.workspacePath) != identityKey(owner))
+            editor->setHierarchyInstanceContext(unboundTabInstanceContext(owner));
     }
     applyWorkspaceScope();
+    if (switched) {
+        MyCodeEditor* preferred = lastWorkspaceEditors.value(identityKey(activeWorkspaceRoot));
+        if (!preferred || !editorVisibleInWorkspaceScope(preferred)) {
+            preferred = nullptr;
+            for (MyCodeEditor* editor : allEditors()) {
+                if (identityKey(workspaceForFile(getDocumentForEditor(editor).fileName))
+                    == identityKey(activeWorkspaceRoot) && !isTemporaryEditor(editor)) {
+                    preferred = editor;
+                    break;
+                }
+            }
+        }
+        if (preferred) {
+            if (QTabWidget* group = splitController->groupForPage(preferred)) {
+                splitController->setActiveGroup(group);
+                group->setCurrentWidget(preferred);
+            }
+        }
+    }
+    changingWorkspaceScope = false;
     updateAllTabTitles();
     scanCrashRecoveryCandidates(
         recoveryWorkspacePath(QString()));
+    scanCrashRecoveryCandidates(temporaryRecoveryWorkspace());
     checkpointCrashRecovery();
+}
+
+QString TabManager::workspaceForFile(const QString& fileName) const
+{
+    return workspaceRootForFile(fileName, scopedWorkspaceRoots);
+}
+
+bool TabManager::isTemporaryEditor(MyCodeEditor* editor) const
+{
+    const auto* document = sharedDocumentForEditor(editor);
+    return document && workspaceForFile(document->fileName()).isEmpty();
+}
+
+bool TabManager::workspaceHasUnsavedChanges(const QString& workspaceRoot) const
+{
+    for (const auto* document : sharedDocuments->documents()) {
+        if (document->dirty()
+            && identityKey(workspaceForFile(document->fileName())) == identityKey(workspaceRoot))
+            return true;
+    }
+    return false;
 }
 
 bool TabManager::closeTabsInWorkspace(
@@ -1694,14 +1729,34 @@ bool TabManager::closeTabsInWorkspace(
     for (MyCodeEditor* editor : allEditors()) {
         const DocumentSnapshot snapshot =
             getDocumentForEditor(editor);
-        if (pathInsideWorkspaceRoot(
-                snapshot.fileName,
-                workspaceRoot)
-            && !isTabLocked(editor)) {
+        if (identityKey(workspaceForFile(snapshot.fileName)) == identityKey(workspaceRoot)) {
             pending.append(editor);
         }
     }
-    return closeEditorsAtomically(pending);
+    QList<SharedDocument*> documents;
+    for (MyCodeEditor* editor : pending) {
+        auto* document = sharedDocumentForEditor(editor);
+        if (document && !documents.contains(document)) documents.append(document);
+    }
+    const auto auxiliary = auxiliaryViews();
+    for (MyCodeEditor* editor : auxiliary) {
+        auto* document = sharedDocumentForEditor(editor);
+        if (document && identityKey(workspaceForFile(document->fileName())) == identityKey(workspaceRoot)
+            && !documents.contains(document)) documents.append(document);
+    }
+    if (!resolvePendingDocuments(documents, nullptr)) return false;
+    for (MyCodeEditor* editor : auxiliary) {
+        if (documents.contains(sharedDocumentForEditor(editor)))
+            closeAuxiliaryViewInternal(editor, true);
+    }
+    bool closed = true;
+    for (MyCodeEditor* editor : pending) {
+        setTabLocked(editor, false);
+        closed = closeEditor(editor, false) && closed;
+    }
+    lastWorkspaceEditors.remove(identityKey(workspaceRoot));
+    if (splitController) splitController->removeEmptyGroups();
+    return closed;
 }
 
 bool TabManager::hasUnsavedChanges() const
@@ -1862,9 +1917,7 @@ TabManager::workspaceSessionTabs(
             const QString filePath =
                 lexicalPath(
                     snapshot.fileName);
-            if (!pathInsideWorkspaceRoot(
-                    filePath,
-                    workspaceRoot)
+            if (identityKey(workspaceForFile(filePath)) != identityKey(workspaceRoot)
                 || !QFileInfo(filePath).isFile()
                 || !fileIo.isSystemVerilogFile(
                     filePath)) {
@@ -1887,7 +1940,9 @@ TabManager::workspaceSessionTabs(
                 ? editor->horizontalScrollBar()->value()
                 : 0;
             state.active =
-                editor == getCurrentEditor();
+                editor == getCurrentEditor()
+                || (isTemporaryEditor(getCurrentEditor())
+                    && lastWorkspaceEditors.value(identityKey(workspaceRoot)) == editor);
             state.viewId =
                 editor->property(
                           "editorViewId")
@@ -1911,13 +1966,11 @@ QStringList TabManager::restoreWorkspaceSessionTabs(
         return restoredFiles;
 
     QPointer<MyCodeEditor> activeEditor;
-    QHash<QString, int> restoredCounts;
+    QSet<MyCodeEditor*> restoredViews;
     for (const WorkspaceSessionTabState& tab : tabs) {
         const QString filePath =
             lexicalPath(tab.filePath);
-        if (!pathInsideWorkspaceRoot(
-                filePath,
-                workspaceRoot)
+        if (identityKey(workspaceForFile(filePath)) != identityKey(workspaceRoot)
             || !QFileInfo(filePath).isFile()
             || !fileIo.isSystemVerilogFile(filePath)) {
             if (skippedFiles)
@@ -1934,7 +1987,20 @@ QStringList TabManager::restoreWorkspaceSessionTabs(
                 skippedFiles->append(filePath);
             continue;
         }
-        const QString key = identityKey(filePath);
+        MyCodeEditor* existing = nullptr;
+        for (MyCodeEditor* view : document->views()) {
+            if (!isAuxiliaryView(view) && !restoredViews.contains(view)
+                && (tab.viewId.isEmpty() || view->property("editorViewId").toString() == tab.viewId)) {
+                existing = view;
+                break;
+            }
+        }
+        if (existing) {
+            restoredViews.insert(existing);
+            restoredFiles.append(filePath);
+            if (tab.active) activeEditor = existing;
+            continue;
+        }
         QTabWidget* group =
             ensureGroupIndex(tab.groupIndex);
         SharedDocumentViewState viewState;
@@ -1946,7 +2012,7 @@ QStringList TabManager::restoreWorkspaceSessionTabs(
                 skippedFiles->append(filePath);
             continue;
         }
-        ++restoredCounts[key];
+        restoredViews.insert(editor);
 
         QTextBlock block =
             editor->document()->findBlockByNumber(
@@ -2062,22 +2128,8 @@ bool TabManager::editorVisibleInWorkspaceScope(
         : QString();
     if (fileName.isEmpty())
         return true;
-    if (pathInsideWorkspaceRoot(
-            fileName,
-            activeWorkspaceRoot)) {
-        return true;
-    }
-    for (const QString& root :
-         scopedWorkspaceRoots) {
-        if (identityKey(root)
-                != identityKey(activeWorkspaceRoot)
-            && pathInsideWorkspaceRoot(
-                fileName,
-                root)) {
-            return false;
-        }
-    }
-    return true;
+    const QString owner = workspaceForFile(fileName);
+    return owner.isEmpty() || identityKey(owner) == identityKey(activeWorkspaceRoot);
 }
 
 void TabManager::onTabCloseRequested(int index)
@@ -2169,7 +2221,13 @@ void TabManager::registerTabGroup(QTabWidget* group)
         connect(bar,
                 &QTabBar::tabMoved,
                 this,
-                &TabManager::workspaceSessionStateChanged);
+                [this]() {
+                    if (groupingTabs) return;
+                    QTimer::singleShot(0, this, [this]() {
+                        applyTabGrouping();
+                        emit workspaceSessionStateChanged();
+                    });
+                });
     }
 }
 
@@ -2341,7 +2399,8 @@ bool TabManager::bindEditorToDocument(
         "sharedDocumentId", document->documentId());
     editor->acceptLoadedTextAsSemanticBaseline();
     editor->setHierarchyInstanceContext(
-        unboundTabInstanceContext(activeWorkspaceRoot));
+        unboundTabInstanceContext(workspaceForFile(document->fileName())));
+    editor->setProperty("standaloneDocument", workspaceForFile(document->fileName()).isEmpty());
     documentModel->registerEditor(
         editor, document->fileName());
     observeDocument(document);
@@ -2677,7 +2736,7 @@ void TabManager::observeDocument(
     connect(document,
             &SharedDocument::identityChanged,
             this,
-            [this](const QString& previousDocumentId,
+            [this, document](const QString& previousDocumentId,
                    const QString& previousFileName,
                    const QString& documentId,
                    const QString& fileName) {
@@ -2686,6 +2745,11 @@ void TabManager::observeDocument(
                     previousFileName,
                     documentId,
                     fileName);
+                for (MyCodeEditor* view : document->views()) {
+                    const QString owner = workspaceForFile(fileName);
+                    view->setProperty("standaloneDocument", owner.isEmpty());
+                    view->setHierarchyInstanceContext(unboundTabInstanceContext(owner));
+                }
             });
     connect(document,
             &QObject::destroyed,
@@ -2791,6 +2855,8 @@ QString TabManager::tabTitleForEditor(
         groupingKeyForEditor(editor);
     if (!groupingKey.isEmpty())
         title = groupingKey + QStringLiteral(" • ") + title;
+    if (isTemporaryEditor(editor))
+        title = QStringLiteral("TEMP  ") + title;
 
     QStringList markers;
     if (document->dirty())
@@ -2844,6 +2910,8 @@ QString TabManager::tabToolTipForEditor(
                      ? QStringLiteral("—")
                      : QDir::toNativeSeparators(
                            workspace)));
+    if (workspace.isEmpty())
+        rows.append(tr("TEMP — outside all open workspaces; saves to the original file"));
     return rows.join(QLatin1Char('\n'));
 }
 
@@ -2871,10 +2939,10 @@ QString TabManager::groupingKeyForEditor(
 
 void TabManager::applyTabGrouping()
 {
-    if (!splitController
-        || groupingMode == TabGroupingMode::None) {
+    if (!splitController || groupingTabs) {
         return;
     }
+    const QScopedValueRollback<bool> groupingGuard(groupingTabs, true);
     for (QTabWidget* group :
          splitController->groups()) {
         QList<MyCodeEditor*> ordered;
@@ -2892,12 +2960,17 @@ void TabManager::applyTabGrouping()
             ordered.end(),
             [this](MyCodeEditor* left,
                    MyCodeEditor* right) {
+                const bool leftTemporary = isTemporaryEditor(left);
+                const bool rightTemporary = isTemporaryEditor(right);
+                if (leftTemporary != rightTemporary) return !leftTemporary;
+                if (groupingMode == TabGroupingMode::None) return false;
                 return groupingKeyForEditor(left)
                     .compare(
                         groupingKeyForEditor(right),
                         Qt::CaseInsensitive)
                     < 0;
             });
+        const QSignalBlocker blocker(group);
         for (int target = 0;
              target < ordered.size();
              ++target) {
@@ -2909,6 +2982,18 @@ void TabManager::applyTabGrouping()
                     source,
                     target);
         }
+        int firstTemporary = -1;
+        bool hasWorkspaceTab = false;
+        for (int index = 0; index < group->count(); ++index) {
+            if (!group->isTabVisible(index)) continue;
+            auto* editor = qobject_cast<MyCodeEditor*>(group->widget(index));
+            if (!editor) continue;
+            if (isTemporaryEditor(editor)) {
+                if (firstTemporary < 0 && hasWorkspaceTab) firstTemporary = index;
+            } else hasWorkspaceTab = true;
+        }
+        group->tabBar()->setProperty("temporaryTabBoundary", firstTemporary);
+        group->tabBar()->update();
     }
 }
 
@@ -2945,6 +3030,10 @@ void TabManager::handleCurrentTabChanged(
     }
     previousActiveEditor = editor;
     if (editor) {
+        if (!changingWorkspaceScope && !isTemporaryEditor(editor)) {
+            const QString owner = workspaceForFile(getDocumentForEditor(editor).fileName);
+            lastWorkspaceEditors.insert(identityKey(owner), editor);
+        }
         editor->refreshSemanticPresentation();
         documentModel->refreshEditorState(editor);
         updateTabTitle(editor);

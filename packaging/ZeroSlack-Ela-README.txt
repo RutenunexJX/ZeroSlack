@@ -6,8 +6,13 @@ ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
 
-Release 0.29.41 removes the welcome page's duplicate Project/Settings rail and
-its visibility switching. These icons appear only in the expanded left sidebar.
+Release 0.30.0 adds a workspace picker with full paths, unsaved markers and
+per-workspace close decisions. Switching retains live buffers, the active file,
+cursor and scroll positions. External/untitled files are marked TEMP, remain
+available across switches and keep analysis, recovery and session ownership
+separate from the active project. Saving writes back to the original file.
+Source files can also be opened through application arguments. Project/Settings
+icons remain only in the expanded sidebar; the collapsed title bar has the picker.
 It includes all migration stages below, including the shared panel
 compositor. Historical development-version labels describe when each feature was added.
 

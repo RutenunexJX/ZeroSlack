@@ -3697,6 +3697,7 @@ void runEditIdleSaveUsesExistingTabSavePath()
     fixture.documents.unregisterEditor(&fixture.editor);
     QTabWidget widget;
     TabManager tabs(&widget);
+    tabs.setWorkspaceScope({fixture.directory.path()}, fixture.directory.path());
     fixture.scheduler.setDocumentModel(tabs.getDocumentModel());
     expect("EditIdle save opens actual file tab", tabs.openFileInTab(fixture.fileName));
     auto* editor = tabs.getCurrentEditor();

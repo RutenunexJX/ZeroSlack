@@ -952,10 +952,12 @@ EditorSemanticContext MyCodeEditor::editorSemanticContextForPosition(
     int cursorPosition,
     bool includeDocumentText) const
 {
-    return state->semanticContextForPosition(
+    auto context = state->semanticContextForPosition(
         this,
         cursorPosition,
         includeDocumentText);
+    context.standaloneDocument = property("standaloneDocument").toBool();
+    return context;
 }
 
 EditorSymbolPaletteContext MyCodeEditor::symbolPaletteContext() const

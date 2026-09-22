@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QSet>
+#include <QHash>
 #include <QString>
 
 #include <functional>
@@ -91,6 +92,8 @@ private:
     WorkspaceSessionStateService stateService;
     QTimer* saveTimer = nullptr;
     QSet<QString> cleanWorkspaceRoots;
+    QHash<QString, WorkspaceSessionUiState> liveWorkspaceUi;
+    QSet<QString> activatedWorkspaceRoots;
     QString scheduledWorkspaceRoot;
     QString activationGuardWorkspaceRoot;
     std::uint64_t activationGuardGeneration = 0;

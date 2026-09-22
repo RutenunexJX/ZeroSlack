@@ -25,6 +25,7 @@ struct EditorSemanticContext {
     int column = -1;
     std::uint64_t documentRevision = 0;
     HierarchyInstanceContext hierarchyInstance;
+    bool standaloneDocument = false;
 };
 
 struct EditorCompletionActivationContext {

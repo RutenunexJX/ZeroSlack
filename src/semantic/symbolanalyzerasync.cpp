@@ -406,8 +406,14 @@ void SymbolAnalyzer::analyzeFileContentAsync(
         {{fileName, content, documentRevision}});
 }
 
+void SymbolAnalyzer::analyzeStandaloneFileContentAsync(
+    const QString& fileName, const QString& content, std::uint64_t documentRevision)
+{
+    analyzeOverlayDocumentsAsync({{fileName, content, documentRevision}}, true);
+}
+
 void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
-    const QList<OpenDocumentContent>& documents)
+    const QList<OpenDocumentContent>& documents, bool standalone)
 {
     if (shutdownStarted)
         return;
@@ -471,7 +477,7 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
     QHash<QString, QString> cachedContentsByKey;
     const std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot =
         SemanticIndex::getInstance()->snapshot();
-    if (semanticSnapshot) {
+    if (!standalone && semanticSnapshot) {
         const QHash<QString, QString> cachedContents =
             semanticSnapshot->fileContents();
         for (auto it = cachedContents.constBegin();
@@ -481,8 +487,8 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
                 normalizedAsyncAnalysisFileName(it.key()), it.value());
         }
     }
-    QStringList workspaceFiles = overlayWorkspaceFiles;
-    if (workspaceFiles.isEmpty() && semanticSnapshot) {
+    QStringList workspaceFiles = standalone ? QStringList() : overlayWorkspaceFiles;
+    if (!standalone && workspaceFiles.isEmpty() && semanticSnapshot) {
         workspaceFiles = semanticSnapshot->fileContents().keys();
         workspaceFiles.sort(Qt::CaseInsensitive);
     }
@@ -499,13 +505,14 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
             workspaceKeys.insert(key);
         }
     }
-    if (workspaceAnalysisWatcher || pendingWorkspacePublication)
+    if (!standalone && (workspaceAnalysisWatcher || pendingWorkspacePublication))
         expireWorkspaceAnalysis();
     const std::uint64_t analysisRevision =
         EffectiveValueService::getInstance()->beginComputation(
             workspaceFiles);
-    const QStringList includeDirs = overlayWorkspaceIncludeDirs;
-    const QHash<QString, QString> defines = overlayWorkspaceDefines;
+    const QStringList includeDirs = standalone ? QStringList{QFileInfo(fileName).absolutePath()}
+                                              : overlayWorkspaceIncludeDirs;
+    const QHash<QString, QString> defines = standalone ? QHash<QString, QString>() : overlayWorkspaceDefines;
 
     QHash<QString, std::uint64_t> dependencyGenerations;
     for (const QString& workspaceFile : std::as_const(workspaceFiles)) {
@@ -532,6 +539,7 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
              analysisRevision,
              workspaceFiles,
              overlayKeys,
+             standalone,
              cancellation,
              watcher]() {
                 const auto result = watcher->result();
@@ -567,7 +575,11 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
                                                 analysisRevision)) {
                     return;
                 }
-                publishOverlayAnalysisResult(result);
+                if (standalone)
+                    publishFileAnalysisResult(result.fileName, result.content, result.symbolRecords,
+                        result.diagnostics, result.effectiveValueFacts, result.analysisRevision, result.documentRevision);
+                else
+                    publishOverlayAnalysisResult(result);
 
                 QHash<QString, int> symbolsByFile;
                 for (const WorkspaceFileAnalysis& fileResult :

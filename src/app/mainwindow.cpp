@@ -272,6 +272,12 @@ MainWindow::MainWindow(QWidget *parent)
             .value(QStringLiteral("appearance.floatingContextOpacity")).toInt());
     setupRtlActionCoordinator();
     setupWorkspaceSessionCoordinator();
+    connect(tabManager.get(), &TabManager::workspaceActivationRequested, this,
+            [this](const QString& root) {
+                const auto entries = workspaceManager->workspaceEntries();
+                for (int i = 0; i < entries.size(); ++i)
+                    if (EditorFileIdentity::same(entries.at(i).path, root)) { activateWorkspace(i); break; }
+            });
     setupWorkspaceMenu();
     setupViewMenu();
     setupToolsMenu();
@@ -306,10 +312,14 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
+    auto* workspaceSwitcher = new WorkspaceSwitcher(workspaceManager.get(), tabManager.get(),
+        workspaceSessionCoordinator.get(), [this] {
+            fileCommandCoordinator->openDirectoryAsWorkspace();
+        }, this);
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
-    });
+    }, workspaceSwitcher);
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (visible)
@@ -4046,7 +4056,10 @@ ActionExecutionResult MainWindow::executeActionRoute(
         == QStringLiteral(
             "ui.crashRecovery.review")) {
         const QString workspaceRoot =
-            workspaceManager
+            tabManager && (tabManager->isTemporaryEditor(tabManager->getCurrentEditor())
+                           || !workspaceManager->isWorkspaceOpen())
+            ? tabManager->temporaryRecoveryWorkspace()
+            : workspaceManager
             ? workspaceManager
                   ->getWorkspacePath()
             : QString();

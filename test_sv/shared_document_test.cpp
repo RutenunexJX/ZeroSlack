@@ -179,9 +179,9 @@ void exerciseTabIdentityGroupingAndBatchClose()
     expect("workspace scope changes regroup external tabs immediately",
            group
                && fileAtTab(group, 0)
-                      == canonicalFixturePath(zFile)
+                      == canonicalFixturePath(aFile)
                && tabTitleForEditor(manager, zEditor)
-                      .startsWith(QStringLiteral("(external)")));
+                      .startsWith(QStringLiteral("TEMP")));
 
     manager.setTabGroupingMode(TabGroupingMode::None);
     expect("first same-name tab initially uses only its basename",
@@ -189,17 +189,17 @@ void exerciseTabIdentityGroupingAndBatchClose()
                && tabTitleForEditor(
                       manager,
                       editorForFile(manager, alphaTop))
-                      == QStringLiteral("top.sv"));
+                      == QStringLiteral("TEMP  top.sv"));
     expect("opening a conflict expands both titles to shortest unique suffixes",
            manager.openFileInTab(betaTop)
                && tabTitleForEditor(
                       manager,
                       editorForFile(manager, alphaTop))
-                      == QStringLiteral("alpha/common/top.sv")
+                      == QStringLiteral("TEMP  alpha/common/top.sv")
                && tabTitleForEditor(
                       manager,
                       editorForFile(manager, betaTop))
-                      == QStringLiteral("beta/common/top.sv"));
+                      == QStringLiteral("TEMP  beta/common/top.sv"));
 
     expect("batch-close tail fixture opens",
            manager.openFileInTab(tailFile)
@@ -230,7 +230,7 @@ void exerciseTabIdentityGroupingAndBatchClose()
     expect("closing the last same-name conflict collapses the remaining title",
            manager.editorCount() == 1
                && tabTitleForEditor(manager, alphaEditor)
-                      == QStringLiteral("top.sv"));
+                      == QStringLiteral("TEMP  top.sv"));
 
     manager.setTabLocked(alphaEditor, true);
     manager.openFileInTab(tailFile);

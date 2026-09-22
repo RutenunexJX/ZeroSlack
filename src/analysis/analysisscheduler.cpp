@@ -2,6 +2,7 @@
 
 #include "relationshipresultpublisher.h"
 #include "symbolanalyzer.h"
+#include "semanticindex.h"
 
 #include <QSet>
 
@@ -112,10 +113,25 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     if (symbolAnalyzer == analyzer)
         return;
 
+    if (symbolAnalyzer) disconnect(symbolAnalyzer, nullptr, this, nullptr);
+    standaloneAnalysisRevisions.clear();
     symbolAnalyzer = analyzer;
     if (symbolAnalyzer) {
         symbolAnalyzer->setMaxPublishedDiagnostics(
             semanticRuntimePolicy.maxDiagnostics);
+        connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted, this,
+                [this](const QString& fileName, int) {
+            const QString key = normalizedFileName(fileName);
+            if (!standaloneAnalysisRevisions.contains(key) || !documentModel) return;
+            const auto expectedRevision = standaloneAnalysisRevisions.take(key);
+            const auto snapshot = documentModel->cachedDocumentForFile(fileName);
+            const bool current = expectedRevision == static_cast<std::uint64_t>(snapshot.textVersion)
+                && SemanticIndex::getInstance()->getCachedFileContent(fileName) == snapshot.text;
+            setDocumentSemanticState(fileName, current ? DocumentSemanticState::Current : DocumentSemanticState::Dirty,
+                                     snapshot.textVersion);
+            emit documentRefreshRequested(fileName);
+            emit diagnosticsRefreshRequested(fileName);
+        });
     }
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
@@ -208,6 +224,12 @@ void AnalysisScheduler::requestDocumentSemanticRefresh(
             continue;
         }
         seen.insert(key);
+        if (!belongsToActiveWorkspace(snapshot.fileName)) {
+            requestSemanticAnalysis(SemanticAnalysisReason::Refactor,
+                                    SemanticChangeImpact::Unknown,
+                                    snapshot.fileName, {snapshot.fileName});
+            continue;
+        }
         changedFiles.append(snapshot.fileName);
         sourceOverrides.insert(snapshot.fileName, snapshot.text);
     }

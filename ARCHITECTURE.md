@@ -63,6 +63,14 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
 - `TabManager` and `DocumentModel` own open views, file identity, buffer state,
   dirty/saved revisions, cursor state, split groups, and external-file conflict
   handling.
+  Tab ownership uses the deepest matching open workspace root. Files outside
+  those roots and untitled buffers are global TEMP documents: they carry no
+  project instance binding, are excluded from workspace sessions, and use a
+  stable standalone crash-recovery namespace. The last active editor is kept
+  per workspace while TEMP views remain visible across switches.
+  `AnalysisScheduler` routes external documents to isolated single-file analysis:
+  no active-project macros/include paths or workspace recompilation. Local results
+  are refreshed after a workspace switch or close clears the semantic index.
 - `AnalysisScheduler` owns debounce, request routing, cancellation, and
   lifecycle. `WorkspaceSymbolAnalysisController` and related workers consume
   captured snapshots. `SemanticIndex` is the UI-facing semantic fact source.
@@ -78,6 +86,11 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   `WorkspaceManager`, `TabManager`, optional `PanelLayoutController` state
   notifications, and narrow UI capture/restore/status callbacks assembled by
   `MainWindow`.
+- `WorkspaceSwitcher` presents open/recent names and paths and delegates open,
+  activation, and close requests to `WorkspaceSessionCoordinator`. Its sidebar
+  and title-bar buttons share the same state. The coordinator restores persisted
+  tabs on initial activation and reuses live buffers on subsequent switches;
+  explicit restoration also reuses matching view identities.
 - `ContextWorkspaceController` owns the right-side Context Rail, one transient
   Peek, and a native tabbed Context Dock. Domain content enters through
   `IContextContentProvider`; providers create views and serialize only their

@@ -502,6 +502,13 @@ EditorActionContext EditorActionContextService::resolve(
     }
     result.semanticError = query.semanticStatus.error;
 
+    if (query.editorContext.standaloneDocument) {
+        result.workspacePath.clear();
+        result.hierarchyResolutionReason = QStringLiteral(
+            "TEMP file is outside all open workspaces; project instance actions are unavailable.");
+        return result;
+    }
+
     QString candidateReason;
     result.hierarchyCandidates = resolveHierarchyCandidates(
         query, result.workspacePath, &candidateReason);

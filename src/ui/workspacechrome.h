@@ -5,6 +5,7 @@
 #include <QApplication>
 #include "windowsnapchrome.h"
 #include "navigationpanecoordinator.h"
+#include "workspaceswitcher.h"
 #include <QClipboard>
 #include <QDesktopServices>
 #include <QFileInfo>
@@ -54,7 +55,7 @@ private:
 class WorkspaceChrome final : public QObject {
 public:
     WorkspaceChrome(QMainWindow* host, NavigationPaneCoordinator* navigationPane,
-                    std::function<void()> settings)
+                    std::function<void()> settings, WorkspaceSwitcher* workspaces = nullptr)
         : QObject(host), window(host) {
         QDockWidget* navigation = navigationPane
             ? navigationPane->dock() : nullptr;
@@ -70,8 +71,12 @@ public:
         auto* header = new QFrame(navigation ? static_cast<QWidget*>(navigation) : host);
         if (!navigation) header->hide();
         header->setObjectName(QStringLiteral("projectSidebarHeader"));
-        auto* controls = new QHBoxLayout(header);
-        controls->setContentsMargins(8, 8, 8, 8);
+        auto* headerLayout = new QVBoxLayout(header);
+        headerLayout->setContentsMargins(8, 8, 8, 8);
+        headerLayout->setSpacing(4);
+        auto* controls = new QHBoxLayout;
+        headerLayout->addLayout(controls);
+        controls->setContentsMargins(0, 0, 0, 0);
         controls->setSpacing(6);
         auto* project = UiControls::railButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
@@ -104,6 +109,9 @@ public:
         collapse->setToolTip(tr("Collapse sidebar (Ctrl+1)"));
         collapse->setAccessibleName(tr("Collapse sidebar"));
         controls->addWidget(collapse);
+        if (workspaces)
+            headerLayout->addWidget(workspaces->createButton(header,
+                QStringLiteral("sidebarWorkspaceSwitcher")));
         if (navigation) {
             navigationPane->setHeaderWidget(header);
             connect(collapse, &QToolButton::clicked, navigationPane,
@@ -111,7 +119,13 @@ public:
                         navigationPane->setExpanded(false);
                     });
         }
-        const auto titleBar = UiWindowChrome::createTitleBar(host);
+        auto* titlePicker = workspaces ? workspaces->createButton(host,
+            QStringLiteral("titleWorkspaceSwitcher")) : nullptr;
+        if (titlePicker) {
+            titlePicker->setFixedWidth(190);
+            titlePicker->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        }
+        const auto titleBar = UiWindowChrome::createTitleBar(host, titlePicker);
         title = titleBar.widget;
         maximizeButton = titleBar.maximize;
         updateMaximizeIcon();
@@ -119,6 +133,7 @@ public:
         updateTitleTheme();
         auto* expand = titleBar.sidebar;
         expand->setVisible(navigation && navigation->isHidden());
+        if (titlePicker) titlePicker->setVisible(navigation && navigation->isHidden());
         if (navigation) {
             connect(expand, &QToolButton::clicked, navigationPane,
                     [navigationPane]() {
@@ -126,6 +141,9 @@ public:
             });
             connect(navigation, &QDockWidget::visibilityChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });
+            if (titlePicker)
+                connect(navigation, &QDockWidget::visibilityChanged, titlePicker,
+                        [titlePicker](bool visible) { titlePicker->setVisible(!visible); });
         }
         auto* name = titleBar.label;
         name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file"));

@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "tabmanager.h"
 #include "applicationthememanager.h"
 #include "symbolrelationshipengine.h"
 #include "version.h"
@@ -10,6 +11,7 @@
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
+#include <QFileInfo>
 #include <QIcon>
 #include <QMessageBox>
 #include <QSettings>
@@ -31,6 +33,8 @@ int main(int argc, char *argv[])
     QCommandLineParser parser;
     parser.addHelpOption();
     parser.addVersionOption();
+    parser.addPositionalArgument(QStringLiteral("files"),
+        QStringLiteral("Open source files without adding a workspace."), QStringLiteral("[files…]"));
     const QString defaultStyle = ApplicationThemeManager::elaAvailable() ? QStringLiteral("ela")
         : ApplicationThemeManager::qlementineAvailable() ? QStringLiteral("qlementine") : QStringLiteral("classic");
     const QCommandLineOption styleOption(QStringLiteral("ui-style"),
@@ -72,6 +76,11 @@ int main(int argc, char *argv[])
     w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
     w.show();
+    const QStringList files = parser.positionalArguments();
+    QTimer::singleShot(0, &w, [&w, files] {
+        for (const QString& file : files)
+            w.tabManager->openFileInTab(QFileInfo(file).absoluteFilePath());
+    });
 #ifdef ZEROSLACK_HAS_SUITEAPP
     ZeroSlackSuiteIntegration suiteIntegration(&w);
     QTimer::singleShot(0, &a, [&suiteIntegration]() {

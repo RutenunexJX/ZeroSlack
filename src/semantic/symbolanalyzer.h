@@ -157,6 +157,8 @@ public:
         const QString& fileName,
         const QString& content,
         std::uint64_t documentRevision = 0);
+    void analyzeStandaloneFileContentAsync(const QString& fileName, const QString& content,
+                                           std::uint64_t documentRevision = 0);
     void cancelFileAnalysis(const QString& fileName);
     void setWorkspaceFileAnalysisBands(
         const QHash<QString, SemanticAnalysisBandMetadata>& bands);
@@ -283,7 +285,7 @@ private:
     void cancelWorkspaceAnalysisAndWait();
     void cancelAllFileAnalysesAndWait();
     void analyzeOverlayDocumentsAsync(
-        const QList<OpenDocumentContent>& documents);
+        const QList<OpenDocumentContent>& documents, bool standalone = false);
     void publishOverlayAnalysisResult(const FileAnalysisResult& result);
     bool isSystemVerilogFile(const QString &fileName) const;
 };

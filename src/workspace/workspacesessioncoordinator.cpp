@@ -385,6 +385,9 @@ void WorkspaceSessionCoordinator::noteSessionAvailability()
 bool WorkspaceSessionCoordinator::saveBeforeWorkspaceTransition()
 {
     cancelScheduledSave();
+    if (workspaceManager && workspaceManager->isWorkspaceOpen() && uiBridge.captureUiState)
+        liveWorkspaceUi.insert(workspaceRootKey(workspaceManager->getWorkspacePath()),
+                               captureSessionState().ui);
     return saveSession(false);
 }
 
@@ -434,6 +437,9 @@ bool WorkspaceSessionCoordinator::closeWorkspace(int index)
         saveBeforeWorkspaceTransition();
     if (!tabManager->closeTabsInWorkspace(entries.at(index).path))
         return false;
+    const QString key = workspaceRootKey(entries.at(index).path);
+    liveWorkspaceUi.remove(key);
+    activatedWorkspaceRoots.remove(key);
     return workspaceManager->closeWorkspace(index);
 }
 
@@ -455,6 +461,14 @@ void WorkspaceSessionCoordinator::handleWorkspaceActivated(
                 activationGuardWorkspaceRoot.clear();
             }
         });
+    const QString key = workspaceRootKey(path);
+    const bool alreadyOpen = activatedWorkspaceRoots.contains(key);
+    activatedWorkspaceRoots.insert(key);
+    if (alreadyOpen) {
+        if (liveWorkspaceUi.contains(key) && uiBridge.restoreUiState)
+            uiBridge.restoreUiState(liveWorkspaceUi.value(key), false);
+        return;
+    }
     if (restoreOnActivation)
         restoreSession();
     else
