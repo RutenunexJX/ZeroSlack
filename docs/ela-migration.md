@@ -5,6 +5,37 @@
 用户在 2026-09-21 明确要求开始移植。本轮从实际应用接入 Ela，不再以此前
 对照实验中的主观流畅度观察作为实施前置条件；这不改变历史报告的测量结论。
 
+## 0.30.1 文档分屏与浮窗托管
+
+编辑器分组使用 `ElaTabWidget` 的本地托管扩展。Ela 负责标签拖拽阈值、拖拽数据、
+五向落点预览、跨组转移、拖出成窗及浮窗标题栏；同组排序和横向滚动继续由 ElaTabBar 处理。
+上游没有 IDE 分屏布局控制器，因此保留 `EditorSplitController` 的 QSplitter 布局和分组登记，
+由 Ela 的落点回调创建目标分组。Ela 路径退出旧的应用层标签拖拽处理，避免两个控制器竞争。
+
+关闭编辑器浮窗将标签返回主窗口，关闭标签仍经过 TabManager 的锁定检查和未保存确认。
+移动复用同一个编辑器及共享文档，保留撤销、光标、工作区归属与 TEMP 标记。
+切换工作区隐藏不属于当前工作区的浮窗，TEMP 浮窗保持可见；窗口级 QAction 快捷键共享到浮窗。
+拖拽数据限制在同一文档控制器内，悬停不移动页面，Esc 取消不生成新窗口；拖拽结束后才回收空源容器。
+收拢最外层分隔容器时显式重设剩余编辑器的父对象，防止旧分隔容器释放时连带删除文档视图。
+
+上下文浮窗使用 ElaAppBar 管理窗口操作与原生命中测试，区块拖出、重排及拖回使用本地扩展
+`ElaDragHandle`。ContextWorkspaceController 保留资源实例、固定／预览、文档绑定和工作区生命周期。
+现有 DWM 毛玻璃背景与专用图表内容保持原路径。
+
+这些接口属于兼容扩展，并非未经修改的 Ela 上游能力，记录在第 19 份补丁及
+`thirdparty/elawidgettools/UPSTREAM-REVISION.md`。MIT 和 Font Awesome 的许可证分发规则不变。
+验证采用 Qt 离屏后台测试；未占用桌面鼠标，也未以此宣称 Windows 原生拖拽手感或 DWM 合成效果已验收。
+
+Release 构建与 17 项相关 CTest 通过，覆盖经典／Ela 窗口、侧栏、上下文浮窗、共享文档、
+未保存确认、工作区会话和切换。新增 `ela_document_tabs_test` 在 100%／200% 下通过，覆盖五向落点、
+跨控制器拒绝、浮窗返回、TEMP 可见性、锁定与取消关闭、Esc，以及拖拽结束前源容器存活。
+第 19 份补丁在上一提交的供应商文件上重放后，6 个文件逐字节一致。
+构建、CTest 和新增测试日志位于 `build/ela-migration/ela-hosted-build-final.log`、
+`ela-hosted-tests-final.log`、`ela-document-tabs.txt` 和 `ela-document-tabs-200.txt`。
+发布标签为 `ela-v0.30.1`，沿用独立的 `ZeroSlack-Ela-win64` 目录与 ZIP，分发 19 份 Ela 补丁和依赖许可证。
+更新版本后重新构建 GUI／CLI，5 项发布检查通过，涵盖标签托管、工作区切换、Ela 主窗口／标题栏和
+版本文档一致性，记录于 `build/ela-migration/release-0.30.1-build.log`、`release-0.30.1-tests.log`。
+
 ## 0.30.0 多工作区与临时文件
 
 侧栏新增工作区名称入口，收起后移至标题栏。菜单区分已打开与最近工作区，显示完整路径、

@@ -60,6 +60,7 @@ ZEROSLACK_API QTreeView* treeView(QWidget* parent = nullptr);
 ZEROSLACK_API QTreeWidget* treeWidget(QWidget* parent = nullptr);
 ZEROSLACK_API QTabBar* tabBar(QWidget* parent = nullptr);
 ZEROSLACK_API QTabWidget* tabWidget(QWidget* parent = nullptr);
+ZEROSLACK_API QTabWidget* editorTabWidget(QWidget* parent = nullptr);
 ZEROSLACK_API QListWidget* listWidget(QWidget* parent = nullptr);
 ZEROSLACK_API QTableWidget* tableWidget(QWidget* parent = nullptr);
 ZEROSLACK_API QTableWidget* tableWidget(int rows, int columns, QWidget* parent = nullptr);

@@ -134,6 +134,7 @@ private:
 #include "ElaToolButton.h"
 #include "ElaTreeView.h"
 #include "ElaTabBar.h"
+#include "ElaTabWidget.h"
 #include "ElaScrollBar.h"
 #include "ElaMenu.h"
 #include "ElaListView.h"
@@ -487,6 +488,14 @@ QTreeWidget* UiControls::treeWidget(QWidget* parent) {
 #endif
     return new QTreeWidget(parent);
 }
+QTabWidget* UiControls::editorTabWidget(QWidget* parent) {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (usesEla())
+        return prepare(new ElaTabWidget(parent));
+#endif
+    return tabWidget(parent);
+}
+
 QTabBar* UiControls::tabBar(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
     if (usesEla()) {

@@ -218,7 +218,10 @@ MainWindow::MainWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-    tabManager = std::unique_ptr<TabManager>(new TabManager(ui->tabWidget, this));
+    initialEditorTabs = UiControls::editorTabWidget(ui->tabWidget->parentWidget());
+    delete ui->tabWidget;
+    ui->tabWidget = nullptr;
+    tabManager = std::unique_ptr<TabManager>(new TabManager(initialEditorTabs, this));
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
     tabManager->setRegisteredTabActionRequestHandler(
         [this](const QString& actionId,
@@ -330,7 +333,7 @@ MainWindow::MainWindow(QWidget *parent)
             this, &MainWindow::refreshWelcomePage);
     connect(tabManager.get(), &TabManager::tabCreated,
             this, [this]() { refreshWelcomePage(); });
-    connect(ui->tabWidget, &QTabWidget::currentChanged,
+    connect(initialEditorTabs, &QTabWidget::currentChanged,
             this, [this](int) {
                 if (centralContentStack->currentWidget() == welcomePage)
                     refreshWelcomePage();
@@ -646,10 +649,10 @@ void MainWindow::applyModernShellStyle(bool applyApplicationTheme)
     if (applyApplicationTheme)
         ApplicationThemeManager::instance().applyToApplication();
 
-    if (ui && ui->tabWidget) {
-        ui->tabWidget->setDocumentMode(true);
-        ui->tabWidget->setIconSize(QSize(14, 14));
-        QTabBar* bar = ui->tabWidget->tabBar();
+    if (initialEditorTabs) {
+        initialEditorTabs->setDocumentMode(true);
+        initialEditorTabs->setIconSize(QSize(14, 14));
+        QTabBar* bar = initialEditorTabs->tabBar();
         if (bar) {
             if (bar->objectName().isEmpty())
                 bar->setObjectName(QStringLiteral("mainEditorTabBar"));
@@ -721,7 +724,7 @@ void MainWindow::setupEditorCentralArea()
         new QVBoxLayout(editorSplitHost);
     splitLayout->setContentsMargins(0, 0, 0, 0);
     splitLayout->setSpacing(0);
-    splitLayout->addWidget(ui->tabWidget);
+    splitLayout->addWidget(initialEditorTabs);
     layout->addWidget(editorSplitHost, 1);
     setupExternalConflictReviewUi(layout, editorContainer);
     if (tabManager) {
@@ -910,10 +913,14 @@ void MainWindow::refreshWelcomePage()
             recentProjectsLayout->addWidget(row);
         }
     }
+    bool hasTabs = false;
+    if (tabManager) {
+        for (QTabWidget* group : tabManager->editorSplitController()->groups())
+            hasTabs |= group->count() > 0;
+    }
     const bool showWelcome = workspaceManager
         && !workspaceManager->isWorkspaceOpen()
-        && tabManager && tabManager->openEditors().isEmpty()
-        && ui->tabWidget->count() == 0;
+        && tabManager && !hasTabs;
     centralContentStack->setCurrentWidget(
         showWelcome ? welcomePage : editorCentralPage);
     if (!navigationPane || !navigationPane->dock())

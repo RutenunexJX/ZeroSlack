@@ -4,6 +4,10 @@
 #include "contextdockhost.h"
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaAppBar.h"
+#include "ElaDragHandle.h"
+#endif
 
 #include <QCloseEvent>
 #include <QGuiApplication>
@@ -75,9 +79,8 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     : QWidget(mainWindow, Qt::Tool), editorRegion(region)
 {
     setObjectName(QStringLiteral("contextFloatingWindow"));
-    // Retain the native Tool frame: it owns resize, caption drag and DPI geometry.
-    // An alpha backing store plus the extended DWM frame exposes the backdrop;
-    // frameless/layered windows would bypass that composition path.
+    // Keep the native Tool surface and DWM backdrop. Ela takes over caption
+    // hit testing and window controls without adding a layered window flag.
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
         setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
@@ -125,6 +128,23 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     root->addLayout(contentLayout, 1);
     connect(pinButton, &QToolButton::clicked, this, &ContextFloatingWindow::pinRequested);
     connect(fullViewButton, &QToolButton::clicked, this, &ContextFloatingWindow::fullViewRequested);
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        auto* appBar = new ElaAppBar(this);
+        floatingAppBar = appBar;
+        appBar->setWindowButtonFlags(ElaAppBarType::MinimizeButtonHint
+            | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint);
+        auto* gesture = new ElaDragHandle(dragButton, this);
+        gesture->setMimeDataFactory([this]() -> QMimeData* {
+            if (!hasResource()) return nullptr;
+            auto* mime = new QMimeData;
+            mime->setData(ContextDockHost::resourceMimeType(), resource().stableKey().toUtf8());
+            return mime;
+        });
+        connect(gesture, &ElaDragHandle::dragStarted, this, &ContextFloatingWindow::sidebarDragStarted);
+        connect(gesture, &ElaDragHandle::dragFinished, this, &ContextFloatingWindow::sidebarDragFinished);
+    }
+#endif
     connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
             this, [this] { refreshBackdrop(); });
     // Native frame margins are needed when restoring the saved outer rectangle.
@@ -215,6 +235,12 @@ bool ContextFloatingWindow::nativeEvent(const QByteArray& eventType, void* messa
                    || native->message == WM_POWERBROADCAST))
         scheduleBackdropRefresh();
 #endif
+#if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
+    if (auto* appBar = qobject_cast<ElaAppBar*>(floatingAppBar)) {
+        const int handled = appBar->takeOverNativeEvent(eventType, message, result);
+        if (handled >= 0) return handled != 0;
+    }
+#endif
     return QWidget::nativeEvent(eventType, message, result);
 }
 
@@ -230,7 +256,8 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
 QWidget* ContextFloatingWindow::sidebarDragHandle() const { return dragButton; }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == dragButton && dragButton->isEnabled() && hasResource()) {
+    if (watched == dragButton && !dragButton->property("elaDragManaged").toBool()
+        && dragButton->isEnabled() && hasResource()) {
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton) dragStart = mouse->position().toPoint();

@@ -4,8 +4,13 @@
 #include "actionregistry.h"
 #include "editordroppreviewoverlay.h"
 #include "uicontrols.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaTabWidget.h"
+#include "ElaTabBar.h"
+#endif
 
 #include <QAbstractScrollArea>
+#include <QAction>
 #include <QApplication>
 #include <QBoxLayout>
 #include <QChildEvent>
@@ -34,6 +39,15 @@
 namespace {
 constexpr const char* kEditorTabMime =
     "application/x-zeroslack-editor-tab";
+
+bool isFloatingGroup(QTabWidget* group)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* ela = qobject_cast<ElaTabWidget*>(group))
+        return ela->isFloatingTabWidget();
+#endif
+    return false;
+}
 
 bool directionComesBefore(EditorSplitDirection direction)
 {
@@ -86,8 +100,8 @@ void EditorSplitController::setHost(QWidget* hostWidget)
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(0);
     }
-    if (firstGroup->parentWidget() != splitHost
-        && !qobject_cast<QSplitter*>(firstGroup->parentWidget())) {
+    if (!qobject_cast<QSplitter*>(firstGroup->parentWidget())
+        && splitHost->layout()->indexOf(firstGroup) < 0) {
         splitHost->layout()->addWidget(firstGroup);
     }
     rootWidget = firstGroup;
@@ -151,7 +165,7 @@ QTabWidget* EditorSplitController::createSplit(
     EditorSplitDirection direction)
 {
     if (!source || !tabGroups.contains(source)
-        || direction == EditorSplitDirection::Center) {
+        || direction == EditorSplitDirection::Center || isFloatingGroup(source)) {
         return nullptr;
     }
     if (!splitHost)
@@ -179,7 +193,7 @@ QTabWidget* EditorSplitController::createSplit(
                 parentSplitter->indexOf(source);
             parentSplitter->replaceWidget(sourceIndex, nested);
         } else if (splitHost->layout()) {
-            splitHost->layout()->replaceWidget(source, nested);
+            delete splitHost->layout()->replaceWidget(source, nested);
             rootWidget = nested;
         }
         if (before) {
@@ -211,6 +225,12 @@ bool EditorSplitController::movePage(
     const int sourceIndex = source->indexOf(page);
     if (sourceIndex < 0)
         return false;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* elaSource = qobject_cast<ElaTabWidget*>(source)) {
+        if (elaSource->hasHostedTabs())
+            return elaSource->transferHostedTab(page, qobject_cast<ElaTabWidget*>(destination), destinationIndex);
+    }
+#endif
 
     QWidget* takenPage = nullptr;
     const PagePresentation presentation =
@@ -280,16 +300,59 @@ void EditorSplitController::removeEmptyGroups()
             || tabGroups.size() <= 1) {
             continue;
         }
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (auto* ela = qobject_cast<ElaTabWidget*>(group); ela && ela->isHostedTabDragging())
+            continue;
+#endif
+        QTabWidget* replacement = nullptr;
+        for (QTabWidget* candidate : groups()) {
+            if (candidate != group && !isFloatingGroup(candidate)) {
+                replacement = candidate;
+                break;
+            }
+        }
+        // Keep one docked group as the return/drop target, even when every
+        // document currently lives in an Ela floating window.
+        if (!isFloatingGroup(group) && !replacement)
+            continue;
         QSplitter* parentSplitter =
             qobject_cast<QSplitter*>(group->parentWidget());
         tabGroups.removeAll(group);
+        if (firstGroup == group)
+            firstGroup = replacement;
         if (currentGroup == group)
             currentGroup = firstGroup;
-        group->setParent(nullptr);
-        group->deleteLater();
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (auto* ela = qobject_cast<ElaTabWidget*>(group); ela && ela->isFloatingTabWidget()) {
+            ela->disposeEmptyFloatingWindow();
+        } else
+#endif
+        {
+            group->setParent(nullptr);
+            group->deleteLater();
+        }
         collapseRedundantSplitter(parentSplitter);
         emit groupRemoved();
     }
+}
+
+QTabWidget* EditorSplitController::floatPage(QWidget* page, const QPoint& globalPosition)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* ela = qobject_cast<ElaTabWidget*>(groupForPage(page)))
+        return ela->floatHostedTab(page, globalPosition);
+#endif
+    return nullptr;
+}
+
+void EditorSplitController::syncFloatingVisibility()
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    for (QTabWidget* group : groups()) {
+        if (auto* ela = qobject_cast<ElaTabWidget*>(group))
+            ela->syncFloatingVisibility();
+    }
+#endif
 }
 
 bool EditorSplitController::isGroupMaximized() const
@@ -304,6 +367,10 @@ void EditorSplitController::toggleActiveGroupMaximized()
         return;
     }
     QTabWidget* active = activeGroup();
+    if (active && isFloatingGroup(active)) {
+        active->window()->isMaximized() ? active->window()->showNormal() : active->window()->showMaximized();
+        return;
+    }
     if (!active || tabGroups.size() < 2)
         return;
 
@@ -311,6 +378,8 @@ void EditorSplitController::toggleActiveGroupMaximized()
     savedGroupVisibility.clear();
     collectSplitterSizes(rootWidget);
     for (QTabWidget* group : groups()) {
+        if (isFloatingGroup(group))
+            continue;
         savedGroupVisibility.insert(group, group->isVisible());
         if (group != active)
             group->hide();
@@ -325,6 +394,8 @@ void EditorSplitController::restoreGroupLayout()
     if (!groupMaximized)
         return;
     for (QTabWidget* group : groups()) {
+        if (isFloatingGroup(group))
+            continue;
         group->setVisible(
             savedGroupVisibility.value(group, true));
     }
@@ -353,6 +424,15 @@ bool EditorSplitController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* ela = qobject_cast<ElaTabWidget*>(groupForObject(watched)); ela && ela->hasHostedTabs()) {
+        if (auto* bar = qobject_cast<QTabBar*>(watched); bar && event->type() == QEvent::ContextMenu) {
+            showTabContextMenu(bar, static_cast<QContextMenuEvent*>(event)->pos());
+            return true;
+        }
+        return false;
+    }
+#endif
     if (event->type() == QEvent::ChildAdded
         && qobject_cast<QStackedWidget*>(watched)) {
         auto* childEvent = static_cast<QChildEvent*>(event);
@@ -463,7 +543,7 @@ bool EditorSplitController::eventFilter(
 
 QTabWidget* EditorSplitController::createGroup()
 {
-    auto* group = UiControls::tabWidget(splitHost);
+    auto* group = UiControls::editorTabWidget(splitHost);
     configureGroup(group);
     tabGroups.append(group);
     emit groupCreated(group);
@@ -474,6 +554,53 @@ void EditorSplitController::configureGroup(QTabWidget* group)
 {
     if (!group)
         return;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* ela = qobject_cast<ElaTabWidget*>(group)) {
+        ela->setHostedTabs(this,
+            [this](ElaTabWidget* target, ElaTabWidget::DropArea area) -> ElaTabWidget* {
+                EditorSplitDirection direction = EditorSplitDirection::Center;
+                switch (area) {
+                case ElaTabWidget::DropArea::Left: direction = EditorSplitDirection::Left; break;
+                case ElaTabWidget::DropArea::Right: direction = EditorSplitDirection::Right; break;
+                case ElaTabWidget::DropArea::Top: direction = EditorSplitDirection::Above; break;
+                case ElaTabWidget::DropArea::Bottom: direction = EditorSplitDirection::Below; break;
+                case ElaTabWidget::DropArea::Center: return target;
+                }
+                return qobject_cast<ElaTabWidget*>(createSplit(target, direction));
+            },
+            [this]() -> ElaTabWidget* {
+                for (QTabWidget* candidate : groups()) {
+                    if (!isFloatingGroup(candidate))
+                        return qobject_cast<ElaTabWidget*>(candidate);
+                }
+                return nullptr;
+            });
+        ela->setHostedTabBar(qobject_cast<ElaTabBar*>(UiControls::tabBar(group)));
+        connect(ela, &ElaTabWidget::floatingTabWidgetCreated, this, [this](ElaTabWidget* floating) {
+            tabGroups.append(floating);
+            configureGroup(floating);
+            if (splitHost) {
+                for (QAction* action : splitHost->window()->findChildren<QAction*>()) {
+                    if (action->shortcutContext() == Qt::WindowShortcut && !action->shortcuts().isEmpty())
+                        floating->window()->addAction(action);
+                }
+            }
+            emit groupCreated(floating);
+        });
+        connect(ela, &ElaTabWidget::hostedTabMoved, this,
+            [this](QWidget* page, ElaTabWidget* source, ElaTabWidget* target) {
+                bindGroupDropTargets(target);
+                setActiveGroup(target);
+                emit pageMoved(page, source, target);
+                removeEmptyGroups();
+                emit layoutChanged();
+            });
+        connect(ela, &ElaTabWidget::hostedTabDragFinished, this, [this] {
+            removeEmptyGroups();
+            emit layoutChanged();
+        });
+    }
+#endif
     group->setObjectName(
         QStringLiteral("editorTabGroup%1")
             .arg(tabGroups.size() + 1));
@@ -625,7 +752,9 @@ void EditorSplitController::collapseRedundantSplitter(
         const int index = parentSplitter->indexOf(splitter);
         parentSplitter->replaceWidget(index, survivor);
     } else if (splitHost && splitHost->layout()) {
-        splitHost->layout()->replaceWidget(splitter, survivor);
+        delete splitHost->layout()->replaceWidget(splitter, survivor);
+        survivor->setParent(splitHost);
+        survivor->show();
         rootWidget = survivor;
     }
     splitter->setParent(nullptr);

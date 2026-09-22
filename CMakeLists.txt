@@ -1430,6 +1430,8 @@ if(BUILD_TESTING)
         target_link_libraries(sidebar_animation_benchmark PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_controls_test test_sv/ela_controls_test.cpp)
         target_link_libraries(ela_controls_test PRIVATE zeroslack_core Qt6::Test)
+        add_executable(ela_document_tabs_test test_sv/ela_document_tabs_test.cpp)
+        target_link_libraries(ela_document_tabs_test PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_navigation_test test_sv/ela_navigation_test.cpp)
         target_link_libraries(ela_navigation_test PRIVATE zeroslack_core Qt6::Test)
     endif()
@@ -2063,6 +2065,12 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
                 $<TARGET_FILE:context_workspace_test>)
         set_tests_properties(ela_context_workspace_test PROPERTIES TIMEOUT 120)
+        add_test(NAME ela_document_tabs_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:ela_document_tabs_test> -o -,txt)
+        set_tests_properties(ela_document_tabs_test PROPERTIES TIMEOUT 90)
     endif()
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env

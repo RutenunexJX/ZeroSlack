@@ -4,6 +4,9 @@
 #include "contextfloatingwindow.h"
 #include "panelcompositor.h"
 #include "applicationthememanager.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDragHandle.h"
+#endif
 #include <QApplication>
 #include <QEvent>
 #include <QLabel>
@@ -207,6 +210,27 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     column->addWidget(view, 1);
     column->addWidget(section->resize);
     sections.insert(key, section);
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        for (QWidget* handle : {section->header, static_cast<QWidget*>(section->drag)}) {
+            auto* gesture = new ElaDragHandle(handle, this);
+            connect(gesture, &ElaDragHandle::pressed, this, [this, key] { focusSection(key); });
+            connect(gesture, &ElaDragHandle::moved, this, &ContextDockHost::showInsertion);
+            connect(gesture, &ElaDragHandle::cancelled, insertionMarker, &QWidget::hide);
+            connect(gesture, &ElaDragHandle::released, this, [this, key](const QPoint& position, bool dragged) {
+                insertionMarker->hide();
+                if (!dragged || !sections.contains(key)) return;
+                if (rect().contains(mapFromGlobal(position))) {
+                    int index = insertionIndex(position);
+                    if (index > order.indexOf(key)) --index;
+                    moveResource(key, index);
+                } else if (sections.value(key)->detachable) {
+                    emit dragOutRequested(key, position);
+                }
+            });
+        }
+    }
+#endif
     setSectionDetachable(key, false);
     resources.insert(key, resource);
     order.append(key);
@@ -491,6 +515,8 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
             else if (name == "contextDisplayTitle") section->title->setText(displayTitle(resources.value(key), section->view));
             return false;
         }
+        if (watched->property("elaDragManaged").toBool())
+            return false;
         if (event->type() == QEvent::MouseButtonPress) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() == Qt::LeftButton) {

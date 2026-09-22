@@ -66,6 +66,8 @@ public:
     bool mergeGroup(QTabWidget* source,
                     QTabWidget* destination = nullptr);
     void removeEmptyGroups();
+    QTabWidget* floatPage(QWidget* page, const QPoint& globalPosition);
+    void syncFloatingVisibility();
 
     bool isGroupMaximized() const;
     void toggleActiveGroupMaximized();

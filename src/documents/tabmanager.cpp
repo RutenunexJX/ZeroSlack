@@ -326,6 +326,8 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
             &EditorSplitController::layoutChanged,
             this,
             &TabManager::splitLayoutChanged);
+    connect(splitController.get(), &EditorSplitController::pageMoved, this,
+            [this] { applyWorkspaceScope(); applyTabGrouping(); });
     connect(splitController.get(),
             &EditorSplitController::layoutChanged,
             this,
@@ -2104,6 +2106,7 @@ void TabManager::applyWorkspaceScope()
             || group->currentIndex()
                    != previousIndex;
     }
+    splitController->syncFloatingVisibility();
     if (activeChanged) {
         QTabWidget* group = activeTabWidget();
         handleCurrentTabChanged(
@@ -3277,6 +3280,8 @@ QTabWidget* TabManager::ensureGroupIndex(int index)
             groups.isEmpty()
             ? tabWidget
             : groups.last();
+        if (splitController->initialGroup())
+            source = splitController->initialGroup();
         if (!splitController->createSplit(
                 source,
                 EditorSplitDirection::Right)) {

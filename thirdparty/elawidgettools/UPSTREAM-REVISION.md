@@ -127,11 +127,29 @@ Fixed endpoint constraints remain in place while the host commits its live layou
 The application compositor uses the same OutCubic curve on Windows DirectComposition;
 stock Ela bars retain their existing width animation. This is a local API extension.
 
+Apply `patches/19-zeroslack-hosted-tabs-and-floating.patch` after patch 18.
+ElaTabWidget adds an opt-in hosted-document mode. Ela owns drag initiation, guarded
+in-process MIME, five-way drop previews, transfer and floating windows with
+ElaAppBar. The application supplies split-layout and return-target callbacks;
+tab-close requests remain application-owned. Closing a floating container returns
+its views without destroying documents. Pointer guards and controller scopes reject
+foreign/stale drops, and empty source containers remain alive until drag completion.
+The native tab geometry mode, tab visibility and host-provided tab bars are supported.
+Stock ElaTabWidget ownership remains unchanged when hosting is not enabled.
+
+ElaDragHandle is a local reusable gesture extension for hosted context panels.
+The application retains its resource/placement model while Ela owns threshold,
+cancel/release handling and MIME drag loops. Context floating windows use ElaAppBar
+window management with the existing native Tool/DWM surface. This patch does not
+introduce an ElaWindow shell or replace specialist editor/diagram content.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
 upstream's non-interruptible popup animation. No recursive application event
-filter or protected-surface traversal is installed for Ela.
+filter or protected-surface traversal is installed for control styling. Hosted tabs
+and drag handles use scoped application input filters for cross-window gestures;
+they do not traverse or restyle document content.
 Selected browsing viewports route precision pixel gestures to the matching Ela
 scrollbar and cancel motion on key or pointer input. This filter is local to those views.
 The numeric-control adapter sizes the inline step buttons and input area together,

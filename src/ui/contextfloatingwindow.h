@@ -56,6 +56,7 @@ private:
     QToolButton* pinButton = nullptr;
     QToolButton* fullViewButton = nullptr;
     QToolButton* dragButton = nullptr;
+    QWidget* floatingAppBar = nullptr;
     QPoint dragStart;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};

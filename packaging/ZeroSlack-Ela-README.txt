@@ -6,7 +6,13 @@ ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
 
-Release 0.30.0 adds a workspace picker with full paths, unsaved markers and
+Release 0.30.1 uses Ela's local hosted-tab extension for tab drag/drop, split targets
+and floating editor windows. Closing a floating container returns its tabs to the
+main window; closing a tab still checks locks and unsaved changes. Context floating
+windows use ElaAppBar and hosted drag handles. Shared documents, undo, workspace
+ownership and TEMP isolation remain application-managed.
+
+The workspace picker shows full paths, unsaved markers and
 per-workspace close decisions. Switching retains live buffers, the active file,
 cursor and scroll positions. External/untitled files are marked TEMP, remain
 available across switches and keep analysis, recovery and session ownership

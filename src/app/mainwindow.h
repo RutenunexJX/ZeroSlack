@@ -59,6 +59,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QStackedWidget;
 class QTabBar;
+class QTabWidget;
 class QTreeWidget;
 class QVBoxLayout;
 class QWidget;
@@ -181,6 +182,7 @@ private:
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
     QWidget* editorSplitHost = nullptr;
+    QPointer<QTabWidget> initialEditorTabs;
     QWidget* welcomePage = nullptr;
     QVBoxLayout* recentProjectsLayout = nullptr;
     bool navigationHiddenForWelcome = false;
