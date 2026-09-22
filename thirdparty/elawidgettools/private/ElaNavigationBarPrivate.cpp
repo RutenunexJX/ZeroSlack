@@ -20,8 +20,10 @@
 #include <QEvent>
 #include <QLayout>
 #include <QPropertyAnimation>
+#include <QVariantAnimation>
 #include <QScrollBar>
 #include <QTimer>
+#include <QVBoxLayout>
 ElaNavigationBarPrivate::ElaNavigationBarPrivate(QObject* parent)
     : QObject{parent}
 {
@@ -439,6 +441,12 @@ void ElaNavigationBarPrivate::_smoothScrollNavigationView(const QModelIndex& ind
 
 void ElaNavigationBarPrivate::_doComponentAnimation(ElaNavigationType::NavigationDisplayMode displayMode, bool isAnimation)
 {
+    if (_customContainer)
+    {
+        _currentDisplayMode = displayMode;
+        _doNavigationBarWidthAnimation(displayMode, isAnimation);
+        return;
+    }
     switch (displayMode)
     {
     case ElaNavigationType::Minimal:
@@ -514,45 +522,141 @@ void ElaNavigationBarPrivate::_resetLayout()
 void ElaNavigationBarPrivate::_doNavigationBarWidthAnimation(ElaNavigationType::NavigationDisplayMode displayMode, bool isAnimation)
 {
     Q_Q(ElaNavigationBar);
-    QPropertyAnimation* navigationBarWidthAnimation = new QPropertyAnimation(q, "maximumWidth");
-    navigationBarWidthAnimation->setEasingCurve(QEasingCurve::OutCubic);
-    navigationBarWidthAnimation->setStartValue(q->width());
-    navigationBarWidthAnimation->setDuration(isAnimation ? 255 : 0);
-    switch (displayMode)
+    if (!_widthAnimation)
     {
-    case ElaNavigationType::Minimal:
-    {
-        connect(navigationBarWidthAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
-            q->setFixedWidth(value.toUInt());
+        _widthAnimation = new QVariantAnimation(q);
+        _widthAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        connect(_widthAnimation, &QVariantAnimation::valueChanged, this, [this, q](const QVariant& value) {
+            q->setFixedWidth(value.toInt());
+            _updateCustomGeometry();
         });
-        navigationBarWidthAnimation->setEndValue(0);
-        break;
+        connect(_widthAnimation, &QVariantAnimation::finished, this, [this] { _finishWidthTransition(); });
     }
-    case ElaNavigationType::Compact:
+    _widthAnimation->stop();
+    ++_widthTransitionSerial;
+    _widthTargetMode = displayMode;
+    _widthTransitioning = true;
+    const int start = q->width();
+    const int target = displayMode == ElaNavigationType::Minimal ? 0
+        : displayMode == ElaNavigationType::Compact ? 42 : _pNavigationBarWidth;
+    if (isAnimation && _customContainer && _widthTransitionHandler)
     {
-        connect(navigationBarWidthAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
-            q->setFixedWidth(value.toUInt());
-        });
-        navigationBarWidthAnimation->setEndValue(42);
-        break;
+        if (_widthTransitionHandler(target, 255, _widthTransitionSerial))
+            return;
+        // A failed compositor must not fall back to resizing a heavy host per frame.
+        isAnimation = false;
     }
-    case ElaNavigationType::Maximal:
+    q->setFixedWidth(start);
+    if (!isAnimation || start == target)
     {
-        connect(navigationBarWidthAnimation, &QPropertyAnimation::finished, this, [=]() {
-            _resetLayout();
-        });
-        connect(navigationBarWidthAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
-            q->setFixedWidth(value.toUInt());
-        });
-        navigationBarWidthAnimation->setEndValue(_pNavigationBarWidth);
-        break;
+        q->setFixedWidth(target);
+        _finishWidthTransition();
+        return;
     }
-    default:
+    _widthAnimation->setDuration(255);
+    _widthAnimation->setStartValue(start);
+    _widthAnimation->setEndValue(target);
+    _widthAnimation->start();
+}
+
+void ElaNavigationBarPrivate::_finishWidthTransition(bool immediate)
+{
+    Q_Q(ElaNavigationBar);
+    if (_customContainer && !immediate && _widthTargetMode == ElaNavigationType::Maximal)
     {
-        break;
+        // Let the host layout consume the final fixed width before restoring
+        // splitter resizing. Otherwise its penultimate frame becomes the saved width.
+        const auto serial = _widthTransitionSerial;
+        QTimer::singleShot(0, q, [this, q, serial] {
+            if (serial != _widthTransitionSerial)
+                return;
+            _widthTransitioning = false;
+            q->setMinimumWidth(_customMinimumWidth);
+            q->setMaximumWidth(_customMaximumWidth);
+            _updateCustomGeometry();
+            q->updateGeometry();
+            Q_EMIT q->displayModeTransitionFinished(_widthTargetMode);
+        });
+        return;
     }
+    if (_customContainer && immediate && _widthTargetMode == ElaNavigationType::Maximal)
+    {
+        const auto serial = _widthTransitionSerial;
+        _updateCustomGeometry();
+        q->updateGeometry();
+        // Keep the endpoint fixed while the host shows and lays out the live dock.
+        Q_EMIT q->displayModeTransitionFinished(_widthTargetMode);
+        if (serial != _widthTransitionSerial) return;
+        q->setMinimumWidth(_customMinimumWidth);
+        q->setMaximumWidth(_customMaximumWidth);
+        _widthTransitioning = false;
+        return;
     }
-    navigationBarWidthAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+    _widthTransitioning = false;
+    if (_widthTargetMode == ElaNavigationType::Maximal)
+    {
+        if (_customContainer)
+        {
+            q->setMinimumWidth(_customMinimumWidth);
+            q->setMaximumWidth(_customMaximumWidth);
+        }
+        else _resetLayout();
+    }
+    _updateCustomGeometry();
+    q->updateGeometry();
+    Q_EMIT q->displayModeTransitionFinished(_widthTargetMode);
+}
+
+void ElaNavigationBarPrivate::_setCustomWidget(QWidget* widget, bool header)
+{
+    Q_Q(ElaNavigationBar);
+    auto& previous = header ? _customHeader : _customContent;
+    if (previous == widget)
+        return;
+    if (!_customContainer)
+    {
+        q->layout()->setSizeConstraint(QLayout::SetNoConstraint);
+        q->layout()->setEnabled(false);
+        _userCard->hide();
+        _userButton->hide();
+        _navigationView->hide();
+        _footerView->hide();
+        _customContainer = new QWidget(q);
+        _customLayout = new QVBoxLayout(_customContainer);
+        _customLayout->setContentsMargins(0, 0, 0, 0);
+        _customLayout->setSpacing(0);
+        q->setMinimumWidth(_customMinimumWidth);
+        q->setMaximumWidth(_customMaximumWidth);
+        _customContainer->show();
+    }
+    if (previous)
+    {
+        _customLayout->removeWidget(previous);
+        previous->hide();
+        previous->deleteLater();
+    }
+    previous = widget;
+    if (widget)
+    {
+        if (header)
+            _customLayout->insertWidget(0, widget);
+        else
+            _customLayout->addWidget(widget, 1);
+        widget->show();
+    }
+    _updateCustomGeometry();
+    q->updateGeometry();
+}
+
+void ElaNavigationBarPrivate::_updateCustomGeometry()
+{
+    Q_Q(ElaNavigationBar);
+    if (!_customContainer)
+        return;
+    // Keep navigation controls stable while the bar clips and slides their viewport.
+    _customContainer->setFixedWidth(_pNavigationBarWidth);
+    _customContainer->setGeometry(q->width() - _pNavigationBarWidth, 0,
+                                  _pNavigationBarWidth, q->height());
 }
 
 void ElaNavigationBarPrivate::_doNavigationViewWidthAnimation(bool isAnimation)

@@ -13,12 +13,14 @@ class ElaMenuStyle : public QProxyStyle
 public:
     explicit ElaMenuStyle(QStyle* style = nullptr);
     ~ElaMenuStyle();
+    void setNativeItemContent(bool enabled) { _nativeItemContent = enabled; }
     void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget = nullptr) const override;
     void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget = nullptr) const override;
     int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr, const QWidget* widget = nullptr) const override;
     QSize sizeFromContents(ContentsType type, const QStyleOption* option, const QSize& size, const QWidget* widget) const override;
 
 private:
+    bool _nativeItemContent{false};
     mutable bool _isAnyoneItemHasIcon{false};
     int _shadowBorderWidth{6};
     ElaThemeType::ThemeMode _themeMode;

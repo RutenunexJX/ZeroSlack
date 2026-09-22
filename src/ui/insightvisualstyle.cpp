@@ -1106,17 +1106,17 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
     result += QStringLiteral(
         "QToolBar#contextRail { padding: 6px; spacing: 6px; }"
         "QFrame#projectSidebarHeader { background: transparent; border: 0; }"
-        "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false], QToolBar#contextRail QToolButton[zeroslackElaControl=false] {"
         " min-width: 36px; min-height: 36px;"
         " padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; }"
-        "QToolButton#projectRailButton::menu-indicator { image: none; }"
-        "QFrame#projectSidebarHeader QToolButton:hover { background: %4; }"
-        "QToolBar#contextRail QToolButton:hover { background: %1; }"
-        "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
+        "QToolButton#projectRailButton[zeroslackElaControl=false]::menu-indicator { image: none; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:hover { background: %4; }"
+        "QToolBar#contextRail QToolButton[zeroslackElaControl=false]:hover { background: %1; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:checked, QToolBar#contextRail QToolButton[zeroslackElaControl=false]:checked {"
         " background: %2; color: %3; border-color: transparent; }"
-        "QFrame#projectSidebarHeader QToolButton:hover:checked { background: %4; }"
-        "QToolBar#contextRail QToolButton:hover:checked { background: %1; }"
-        "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %3; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:hover:checked { background: %4; }"
+        "QToolBar#contextRail QToolButton[zeroslackElaControl=false]:hover:checked { background: %1; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:focus, QToolBar#contextRail QToolButton[zeroslackElaControl=false]:focus { border-color: %3; }"
         "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
         " background: transparent; border: 0; border-radius: 8px; }"
         "QFrame#workspaceTitleBar QToolButton:hover { background: %1; }"
@@ -1166,21 +1166,16 @@ QString InsightVisualStyle::applicationStyleSheet(ThemeMode mode)
     return result;
 }
 
-QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode)
+QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode, bool styleMenus)
 {
     const auto& t = theme(mode);
     const auto border = subtleBorder(t.panelBackground, t.textPrimary).name();
     // This is an explicit ownership list. No runtime QSS parsing or broad
     // QWidget color rule: either would override QStyle's state-dependent ink.
-    return QStringLiteral(
+    QString result = QStringLiteral(
         "QMainWindow, QDialog, QMessageBox { background: %1; color: %2; }"
         "QToolTip { background: %3; color: %2; border: 1px solid %4; padding: 4px 6px; }"
         "QLabel:disabled { color: %5; }"
-        "QMenu { background: %3; color: %2; border: 1px solid %4; padding: 5px; }"
-        "QMenu::item { padding: 7px 28px 7px 14px; border-radius: 4px; }"
-        "QMenu::item:selected { background: %6; }"
-        "QMenu::item:disabled { color: %5; }"
-        "QMenu::separator { background: %4; height: 1px; margin: 4px 8px; }"
         "QDockWidget { background: %3; color: %2; border: 0; titlebar-close-icon: url(none); }"
         "QDockWidget::title { background: %7; padding: 9px 10px; font-size: 14px; font-weight: 600; }"
         "QToolBar { background: %7; border: 0; spacing: 4px; padding: 3px; }"
@@ -1197,15 +1192,15 @@ QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode)
         "QWidget#temporaryEditorContextSearchBar { background: %7; border-bottom: 1px solid %4; }"
         "QToolBar#contextRail { background: %7; border-left: 1px solid %4; padding: 6px; spacing: 6px; }"
         "QFrame#projectSidebarHeader { background: transparent; border: 0; }"
-        "QFrame#projectSidebarHeader QToolButton, QToolBar#contextRail QToolButton {"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false], QToolBar#contextRail QToolButton[zeroslackElaControl=false] {"
         " min-width: 36px; min-height: 36px; padding: 0; border: 1px solid transparent;"
         " border-radius: 8px; background: transparent; }"
-        "QToolButton#projectRailButton::menu-indicator { image: none; }"
-        "QFrame#projectSidebarHeader QToolButton:hover { background: %10; }"
-        "QToolBar#contextRail QToolButton:hover { background: %11; }"
-        "QFrame#projectSidebarHeader QToolButton:checked, QToolBar#contextRail QToolButton:checked {"
+        "QToolButton#projectRailButton[zeroslackElaControl=false]::menu-indicator { image: none; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:hover { background: %10; }"
+        "QToolBar#contextRail QToolButton[zeroslackElaControl=false]:hover { background: %11; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:checked, QToolBar#contextRail QToolButton[zeroslackElaControl=false]:checked {"
         " background: %6; color: %12; }"
-        "QFrame#projectSidebarHeader QToolButton:focus, QToolBar#contextRail QToolButton:focus { border-color: %12; }"
+        "QFrame#projectSidebarHeader QToolButton[zeroslackElaControl=false]:focus, QToolBar#contextRail QToolButton[zeroslackElaControl=false]:focus { border-color: %12; }"
         "QFrame#workspaceTitleBar QToolButton { min-width: 28px; min-height: 24px; padding: 2px 6px;"
         " background: transparent; border: 0; border-radius: 8px; }"
         "QFrame#workspaceTitleBar QToolButton:hover { background: %11; }"
@@ -1218,11 +1213,20 @@ QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode)
              t.button.textDisabled.name(), t.itemView.selectedBackground.name(), t.toolbarBackground.name(),
              t.borderStrong.name(), t.canvasBackground.name(), mix(t.dock.background, t.textPrimary, 0.12).name(),
              t.hover.name(), t.accent.name(), t.textSecondary.name());
+    if (styleMenus) result += QStringLiteral(
+        "QMenu { background: %1; color: %2; border: 1px solid %3; padding: 5px; }"
+        "QMenu::item { padding: 7px 28px 7px 14px; border-radius: 4px; }"
+        "QMenu::item:selected { background: %4; }"
+        "QMenu::item:disabled { color: %5; }"
+        "QMenu::separator { background: %3; height: 1px; margin: 4px 8px; }")
+        .arg(t.panelBackground.name(), t.textPrimary.name(), border,
+             t.itemView.selectedBackground.name(), t.button.textDisabled.name());
+    return result;
 }
 
 QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
 {
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine)
+    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Classic)
         return {};
     const InsightTheme t = theme();
     const QString selector =

@@ -2,6 +2,7 @@
 #define ELAWORKSPACE_ELAWIDGETTOOLS_ELANAVIGATIONBAR_H_
 
 #include <QWidget>
+#include <functional>
 
 #include "ElaWidgetToolsDef.h"
 #include "ElaWidgetToolsExport.h"
@@ -49,11 +50,28 @@ public:
     void setDisplayMode(ElaNavigationType::NavigationDisplayMode displayMode, bool isAnimation = true);
     ElaNavigationType::NavigationDisplayMode getDisplayMode() const;
 
+    // Optional content host for applications with their own navigation models.
+    // The bar owns these widgets, their layout and display-mode transitions.
+    void setCustomContent(QWidget* content);
+    QWidget* customContent() const;
+    void setCustomHeader(QWidget* header);
+    QWidget* customHeader() const;
+    void setCustomContentWidthRange(int minimum, int maximum);
+    bool isDisplayModeAnimating() const;
+    // A host may composite the transition without resizing its live document.
+    // Return true when accepted, then finish with the supplied generation.
+    void setDisplayModeTransitionHandler(std::function<bool(int, int, quint64)> handler);
+    void finishDisplayModeTransition(quint64 generation);
+    QSize sizeHint() const override;
+    QSize minimumSizeHint() const override;
+
     int getPageOpenInNewWindowCount(const QString& nodeKey) const;
 
     const QList<ElaSuggestBox::SuggestData>& getSuggestDataList() const;
 
 Q_SIGNALS:
+    Q_SIGNAL void displayModeChanged(ElaNavigationType::NavigationDisplayMode displayMode);
+    Q_SIGNAL void displayModeTransitionFinished(ElaNavigationType::NavigationDisplayMode displayMode);
     Q_SIGNAL void pageOpenInNewWindow(QString nodeKey);
     Q_SIGNAL void userInfoCardClicked();
     Q_SIGNAL void navigationNodeClicked(ElaNavigationType::NavigationNodeType nodeType, QString nodeKey, bool isRouteBack);
@@ -61,6 +79,7 @@ Q_SIGNALS:
     Q_SIGNAL void navigationNodeRemoved(ElaNavigationType::NavigationNodeType nodeType, QString nodeKey);
 
 protected:
+    void resizeEvent(QResizeEvent* event) override;
     virtual void paintEvent(QPaintEvent* event) override;
 };
 

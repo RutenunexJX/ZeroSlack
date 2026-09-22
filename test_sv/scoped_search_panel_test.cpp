@@ -1,4 +1,5 @@
 #include "scopedsearchpanel.h"
+#include "testuistyle.h"
 
 #include "editorfileidentity.h"
 #include "mainwindow.h"
@@ -139,6 +140,7 @@ bool writeUtf8File(const QString& fileName,
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
     QTemporaryDir workspace;
     check(workspace.isValid(),
           "temporary workspace is available");

@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "instancepairconnectionpanel.h"
 
@@ -212,7 +213,7 @@ public:
 
         auto* layout = new QVBoxLayout(this);
         layout->setContentsMargins(12, 10, 12, 10);
-        title = new QLabel(
+        title = UiControls::label(
             QStringLiteral("Drop left signal on the right instance"),
             this);
         title->setAlignment(Qt::AlignCenter);
@@ -401,7 +402,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     root->setContentsMargins(8, 8, 8, 8);
     root->setSpacing(8);
 
-    auto* heading = new QLabel(
+    auto* heading = UiControls::label(
         QStringLiteral("Instance Pair Connection"),
         this);
     heading->setObjectName(
@@ -410,7 +411,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     heading->setFont(headingFont);
     root->addWidget(heading);
 
-    stateLabel = new QLabel(this);
+    stateLabel = UiControls::label(this);
     stateLabel->setObjectName(
         QStringLiteral("instancePairConnectionState"));
     stateLabel->setWordWrap(true);
@@ -438,7 +439,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
                 : QStringLiteral("instancePairRightBlock"));
         auto* layout = new QVBoxLayout(group);
 
-        *instanceLabel = new QLabel(group);
+        *instanceLabel = UiControls::label(group);
         (*instanceLabel)->setObjectName(
             side == InstancePairSide::Left
                 ? QStringLiteral("instancePairLeftInstancePath")
@@ -448,7 +449,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
         (*instanceLabel)->setWordWrap(true);
         layout->addWidget(*instanceLabel);
 
-        *moduleLabel = new QLabel(group);
+        *moduleLabel = UiControls::label(group);
         (*moduleLabel)->setObjectName(
             side == InstancePairSide::Left
                 ? QStringLiteral("instancePairLeftModule")
@@ -469,7 +470,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
                     setDragActive(active);
                 };
         } else {
-            *tree = new QTreeWidget(group);
+            *tree = UiControls::treeWidget(group);
         }
         (*tree)->setObjectName(
             side == InstancePairSide::Left
@@ -553,7 +554,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
         QStringLiteral("instancePairTransactionPreview"));
     auto* previewLayout = new QVBoxLayout(previewGroup);
 
-    transactionSummary = new QLabel(previewGroup);
+    transactionSummary = UiControls::label(previewGroup);
     transactionSummary->setObjectName(
         QStringLiteral("instancePairTransactionSummary"));
     transactionSummary->setWordWrap(true);
@@ -562,7 +563,7 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
             "No transaction plan has been received."));
     previewLayout->addWidget(transactionSummary);
 
-    diffTabs = new QTabWidget(previewGroup);
+    diffTabs = UiControls::tabWidget(previewGroup);
     diffTabs->setObjectName(
         QStringLiteral("instancePairDiffTabs"));
     diffTabs->setDocumentMode(true);
@@ -570,19 +571,19 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
 
     auto* actions = new QHBoxLayout;
     actions->addStretch(1);
-    previewButton = new QPushButton(
+    previewButton = UiControls::pushButton(
         QStringLiteral("Preview Change Preview"),
         previewGroup);
     previewButton->setObjectName(
         QStringLiteral("instancePairPreviewButton"));
     previewButton->setEnabled(false);
-    confirmButton = new QPushButton(
+    confirmButton = UiControls::pushButton(
         QStringLiteral("Confirm Transaction"),
         previewGroup);
     confirmButton->setObjectName(
         QStringLiteral("instancePairConfirmButton"));
     confirmButton->setEnabled(false);
-    undoButton = new QPushButton(
+    undoButton = UiControls::pushButton(
         QStringLiteral("Undo Applied Transaction"),
         previewGroup);
     undoButton->setObjectName(
@@ -943,7 +944,7 @@ void InstancePairConnectionPanel::renderProposal(
     int fileIndex = 0;
     for (const rtledit::SourceDiffFile& file :
          proposal.sourceDiff.files) {
-        auto* view = new QPlainTextEdit(diffTabs);
+        auto* view = UiControls::readOnlyText(diffTabs);
         view->setObjectName(
             QStringLiteral("instancePairDiffFile_%1")
                 .arg(fileIndex));

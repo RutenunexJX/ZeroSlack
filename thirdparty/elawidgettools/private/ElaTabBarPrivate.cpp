@@ -9,7 +9,9 @@
 ElaTabBarPrivate::ElaTabBarPrivate(QObject* parent)
     : QObject{parent}
 {
-    _scrollAnimation = new QPropertyAnimation(this, "pScrollOffset");
+    _pScrollOffset = 0;
+    _pTargetScrollOffset = 0;
+    _scrollAnimation = new QPropertyAnimation(this, "pScrollOffset", this);
     _scrollAnimation->setDuration(200);
     _scrollAnimation->setEasingCurve(QEasingCurve::OutCubic);
 }
@@ -20,11 +22,11 @@ ElaTabBarPrivate::~ElaTabBarPrivate()
 
 void ElaTabBarPrivate::startScrollAnimation()
 {
+    _scrollAnimation->stop();
     if (qFuzzyCompare(_pScrollOffset, _pTargetScrollOffset))
     {
         return;
     }
-    _scrollAnimation->stop();
     _scrollAnimation->setStartValue(_pScrollOffset);
     _scrollAnimation->setEndValue(_pTargetScrollOffset);
     _scrollAnimation->start();

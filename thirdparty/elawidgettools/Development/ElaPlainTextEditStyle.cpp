@@ -6,6 +6,7 @@
 #include <QtMath>
 
 #include "ElaTheme.h"
+#include "ElaPlainTextEdit.h"
 ElaPlainTextEditStyle::ElaPlainTextEditStyle(QStyle* style)
 {
     _pExpandMarkWidth = 0;
@@ -27,6 +28,10 @@ void ElaPlainTextEditStyle::drawControl(ControlElement element, const QStyleOpti
     {
         if (const QStyleOptionFrame* fopt = qstyleoption_cast<const QStyleOptionFrame*>(option))
         {
+            if (fopt->frameShape == QFrame::NoFrame)
+                return;
+            const auto* edit = qobject_cast<const ElaPlainTextEdit*>(widget);
+            const bool native = edit && edit->nativeTextBehavior();
             //背景绘制
             QRect editRect = option->rect;
             painter->save();
@@ -38,7 +43,8 @@ void ElaPlainTextEditStyle::drawControl(ControlElement element, const QStyleOpti
             painter->setPen(Qt::NoPen);
 
             // 背景绘制
-            painter->setBrush(ElaThemeColor(_themeMode, BasicBaseAlpha));
+            painter->setBrush(native ? option->palette.brush(QPalette::Base)
+                                    : QBrush(ElaThemeColor(_themeMode, BasicBaseAlpha)));
             painter->drawRoundedRect(QRectF(editRect.x() + 1.5, editRect.y() + 1.5, editRect.width() - 3, editRect.height() - 3), 6, 6);
 
             // 底边线绘制
@@ -54,7 +60,8 @@ void ElaPlainTextEditStyle::drawControl(ControlElement element, const QStyleOpti
 
             //焦点指示器
             painter->setPen(Qt::NoPen);
-            painter->setBrush(ElaThemeColor(_themeMode, PrimaryNormal));
+            painter->setBrush(native ? option->palette.brush(QPalette::Highlight)
+                                    : QBrush(ElaThemeColor(_themeMode, PrimaryNormal)));
             painter->drawRoundedRect(QRectF(editRect.width() / 2 - _pExpandMarkWidth, editRect.height() - 2.5, _pExpandMarkWidth * 2, 2.5), 2, 2);
 
             painter->restore();

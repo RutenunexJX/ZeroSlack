@@ -2,6 +2,8 @@
 #include "roundedicons.h"
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
+#include "panelcompositor.h"
+#include "applicationthememanager.h"
 #include <QApplication>
 #include <QEvent>
 #include <QLabel>
@@ -18,6 +20,8 @@
 #include <QDragMoveEvent>
 #include <QDragLeaveEvent>
 #include <QDropEvent>
+#include <QMainWindow>
+#include <QPainter>
 
 namespace {
 constexpr int resizeHeight = 5;
@@ -52,7 +56,7 @@ ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
     setAcceptDrops(true);
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
-    scroll = new QScrollArea(this);
+    scroll = UiControls::scrollArea(this);
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setWidgetResizable(false);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -77,7 +81,15 @@ ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
         }
     });
 }
-ContextDockHost::~ContextDockHost() { disconnect(qApp, nullptr, this, nullptr); qDeleteAll(sections); }
+ContextDockHost::~ContextDockHost()
+{
+    disconnect(qApp, nullptr, this, nullptr);
+    if (auto* host = qobject_cast<QMainWindow*>(window())) {
+        if (auto* compositor = host->findChild<PanelCompositor*>())
+            for (auto* section : sections) compositor->settleFor(section->frame);
+    }
+    qDeleteAll(sections);
+}
 int ContextDockHost::resourceCount() const { return order.size(); }
 QStringList ContextDockHost::resourceKeys() const { return order; }
 bool ContextDockHost::containsResource(const QString& key) const { return indexOfResource(key) >= 0; }
@@ -105,6 +117,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     const QString key = resource.stableKey();
     if (!resource.isValid() || key.isEmpty() || !view) return false;
     if (containsResource(key)) { activateResource(key); return false; }
+    settleMotion();
     auto* section = new Section;
     section->frame = new QWidget(stack);
     section->frame->setObjectName(QStringLiteral("contextDockSection"));
@@ -118,6 +131,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     row->setContentsMargins(4, 0, 4, 0);
     row->setSpacing(2);
     section->toggle = UiControls::toolButton(section->header);
+    section->toggle->setProperty("panelMotionToggle", true);
     section->toggle->setArrowType(Qt::DownArrow);
     section->toggle->setToolTip(tr("Collapse or expand section"));
     row->addWidget(section->toggle);
@@ -128,7 +142,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     section->drag->setProperty("contextResourceKey", key);
     section->drag->installEventFilter(this);
     row->addWidget(section->drag);
-    section->title = new QLabel(displayTitle(resource, view), section->header);
+    section->title = UiControls::label(displayTitle(resource, view), section->header);
     section->title->setObjectName(QStringLiteral("contextSectionTitle"));
     section->title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     section->title->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -136,7 +150,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     // Freshness belongs on the title bar so the body can stay content.
     // A view publishes it through the contextStatus* properties; sections
     // whose view publishes nothing keep the header as it was.
-    section->status = new QLabel(section->header);
+    section->status = UiControls::label(section->header);
     section->status->setObjectName(QStringLiteral("contextSectionStatus"));
     section->status->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     section->status->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -239,6 +253,7 @@ bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
 void ContextDockHost::focusSection(const QString& key)
 {
     if (!sections.contains(key) || focusedKey == key) return;
+    settleMotion();
     focusedKey = key;
     arrangeSections();
     emit currentResourceChanged(resources.value(key));
@@ -246,15 +261,15 @@ void ContextDockHost::focusSection(const QString& key)
 bool ContextDockHost::activateResource(const QString& key)
 {
     if (!sections.contains(key)) return false;
-    setSectionCollapsed(key, false);
     focusSection(key);
-    arrangeSections();
+    setSectionCollapsed(key, false);
     scroll->ensureWidgetVisible(sections.value(key)->header);
     sections.value(key)->header->setFocus(Qt::OtherFocusReason);
     return true;
 }
 QWidget* ContextDockHost::takeResource(const QString& key)
 {
+    settleMotion();
     for (const QString& other : order) {
         auto* section = sections.value(other);
         if (other != key && !section->collapsed) section->retainedHeight = section->frame->height();
@@ -284,15 +299,70 @@ bool ContextDockHost::isSectionCollapsed(const QString& key) const
 { auto* section = sections.value(key); return section && section->collapsed; }
 int ContextDockHost::sectionHeight(const QString& key) const
 { auto* section = sections.value(key); return section ? section->height : 0; }
-bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed)
+bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bool animate)
 {
     auto* section = sections.value(key);
     if (!section) return false;
     if (section->collapsed == collapsed) return true;
-    for (auto* other : sections) other->retainedHeight = 0;
-    section->collapsed = collapsed;
-    section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
-    arrangeSections();
+    const auto apply = [this, section, collapsed] {
+        for (auto* other : sections) other->retainedHeight = 0;
+        section->collapsed = collapsed;
+        section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
+        arrangeSections();
+        if (!collapsed) scroll->ensureWidgetVisible(section->header);
+    };
+    auto* host = qobject_cast<QMainWindow*>(window());
+    const bool enabled = animate && isVisible() && host && host->isVisible()
+        && ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
+    auto* compositor = host ? host->findChild<PanelCompositor*>() : nullptr;
+    if (enabled && !compositor) compositor = PanelCompositor::forWindow(host);
+    if (enabled && compositor->reverse(section->frame, !collapsed, apply)) {
+        emit sectionLayoutChanged(); return true;
+    }
+    if (compositor && isVisible()) compositor->settle();
+    if (!enabled) { apply(); emit sectionLayoutChanged(); return true; }
+    const QRect area(scroll->viewport()->mapTo(host, QPoint()), scroll->viewport()->size());
+    QHash<QString, QRect> before;
+    QHash<QString, QImage> previousImages;
+    qint64 bytes = 0;
+    for (const auto& id : order) {
+        auto* frame = sections.value(id)->frame;
+        before[id] = QRect(frame->mapTo(host, QPoint()) - area.topLeft(), frame->size());
+        bytes += qint64(frame->width() * frame->devicePixelRatioF()) * qCeil(frame->height() * frame->devicePixelRatioF()) * 4;
+    }
+    if (bytes > 32 * 1024 * 1024) { apply(); emit sectionLayoutChanged(); return true; }
+    for (const auto& id : order) previousImages[id] = sections.value(id)->frame->grab().toImage();
+    apply();
+    qint64 combinedBytes = qint64(area.width() * devicePixelRatioF()) * qCeil(area.height() * devicePixelRatioF()) * 4;
+    for (const auto& id : order) {
+        const auto size = before[id].size().expandedTo(sections.value(id)->frame->size());
+        combinedBytes += qint64(size.width() * devicePixelRatioF()) * qCeil(size.height() * devicePixelRatioF()) * 4;
+    }
+    if (combinedBytes > 48 * 1024 * 1024) { emit sectionLayoutChanged(); return true; }
+    QList<PanelMotionLayer> layers;
+    QImage backdrop(qCeil(area.width() * devicePixelRatioF()), qCeil(area.height() * devicePixelRatioF()), QImage::Format_ARGB32_Premultiplied);
+    backdrop.setDevicePixelRatio(devicePixelRatioF());
+    backdrop.fill(Qt::transparent);
+    // The stack covers the viewport, including the empty area below sections.
+    // Its actual style background can differ from the viewport's palette roles.
+    stack->render(&backdrop, QPoint(), QRegion(QRect(-stack->pos(), area.size())),
+                  QWidget::DrawWindowBackground);
+    layers.append(PanelMotionLayer::stationary(backdrop));
+    for (const auto& id : order) {
+        auto* frame = sections.value(id)->frame;
+        const QRect after(frame->mapTo(host, QPoint()) - area.topLeft(), frame->size());
+        const auto current = frame->grab().toImage();
+        const auto old = previousImages.value(id);
+        QImage combined(old.size().expandedTo(current.size()), QImage::Format_ARGB32_Premultiplied);
+        combined.setDevicePixelRatio(devicePixelRatioF());
+        combined.fill(frame->palette().color(QPalette::Window));
+        { QPainter painter(&combined); painter.drawImage(QPoint(), old); painter.drawImage(QPoint(), current); }
+        layers.append({combined, collapsed ? after.topLeft() : before[id].topLeft(),
+                        collapsed ? before[id].topLeft() : after.topLeft(),
+                        collapsed ? after.size() : before[id].size(),
+                        collapsed ? before[id].size() : after.size()});
+    }
+    compositor->present(section->frame, area, std::move(layers), collapsed, !collapsed);
     emit sectionLayoutChanged();
     return true;
 }
@@ -304,6 +374,7 @@ bool ContextDockHost::setSectionHeight(const QString& key, int height)
     if (!section) return false;
     const int bounded = height <= 0 ? 0 : qBound(minimumSectionHeight(section), height, 8192);
     if (section->height == bounded) return true;
+    settleMotion();
     for (auto* other : sections) other->retainedHeight = 0;
     section->height = bounded;
     arrangeSections();
@@ -316,11 +387,18 @@ bool ContextDockHost::moveResource(const QString& key, int index)
     if (old < 0) return false;
     index = qBound(0, index, int(order.size()) - 1);
     if (old == index) return true;
+    settleMotion();
     order.move(old, index);
     arrangeSections();
     emit resourceOrderChanged();
     return true;
 }
+void ContextDockHost::settleMotion()
+{
+    if (auto* host = qobject_cast<QMainWindow*>(window()))
+        if (auto* compositor = host->findChild<PanelCompositor*>()) compositor->settle();
+}
+
 void ContextDockHost::arrangeSections()
 {
     if (arranging) return;

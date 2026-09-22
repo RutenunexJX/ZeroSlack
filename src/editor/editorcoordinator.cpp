@@ -1,3 +1,5 @@
+#include "uicontrols.h"
+#include "uidialogs.h"
 #include "editorcoordinator.h"
 
 #include "actionregistry.h"
@@ -703,7 +705,7 @@ void EditorCoordinator::handleIncludeOpenRequested(
     const QString targetPath =
         dependencies.resolveIncludePath(includePath, currentFile);
     if (targetPath.isEmpty()) {
-        QMessageBox::warning(editor,
+        UiDialogs::warning(editor,
                              tr("Include not found"),
                              tr("Can not locate include file:\n%1").arg(includePath));
         return;
@@ -1100,7 +1102,7 @@ EditorCoordinator::executeRegisteredExposeSignalAction(
             }
             bool accepted = false;
             const QString selected =
-                QInputDialog::getItem(
+                UiDialogs::getItem(
                     parentEditor,
                     QStringLiteral(
                         "Select hierarchy instance"),
@@ -1753,7 +1755,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
          model.sections) {
         QMenu* targetMenu = menu;
         if (section.section != EditorContextMenuSection::Standard) {
-            targetMenu = menu->addMenu(section.title);
+            targetMenu = UiControls::addMenu(menu, section.title);
             targetMenu->setObjectName(
                 QStringLiteral("editorContextMenu.%1")
                     .arg(section.title.toCaseFolded()));
@@ -1846,7 +1848,7 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
             ? tabManager->getCurrentEditor()
             : nullptr;
         if (parentEditor) {
-            QMessageBox::information(
+            UiDialogs::information(
                 parentEditor,
                 exposeSignalToTopActionText(),
                 result.failureReason);

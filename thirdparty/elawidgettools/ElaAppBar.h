@@ -48,6 +48,8 @@
 #endif
 
 class QMenu;
+class QLabel;
+class QAbstractButton;
 class ElaAppBarPrivate;
 class ELA_EXPORT ElaAppBar : public QWidget
 {
@@ -60,8 +62,14 @@ class ELA_EXPORT ElaAppBar : public QWidget
     Q_PROPERTY_CREATE_Q_H(int, AppBarHeight)
     Q_PROPERTY_CREATE_Q_H(int, RibbonHeight)
 public:
+    enum class WindowManagement { AppBar, External };
     explicit ElaAppBar(QWidget* parent = nullptr);
+    ElaAppBar(QWidget* parent, WindowManagement management);
     ~ElaAppBar() override;
+
+    QAbstractButton* windowButton(ElaAppBarType::ButtonType type) const;
+    QLabel* titleLabel() const;
+    void setWindowButtonIcons(const QIcon& minimize, const QIcon& maximize, const QIcon& restore);
 
     void setCustomWidget(ElaAppBarType::CustomArea customArea, QWidget* customWidget, QObject* hitTestObject = nullptr, const QString& hitTestFunctionName = "");
     QWidget* getCustomWidget(ElaAppBarType::CustomArea customArea) const;

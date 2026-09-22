@@ -1,3 +1,4 @@
+#include "uidialogs.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
 #include "uicontrols.h"
@@ -864,7 +865,7 @@ void MainWindow::setupWelcomePage()
     });
     contentLayout->addWidget(open, 0, Qt::AlignHCenter);
     contentLayout->addSpacing(18);
-    auto* recentTitle = new QLabel(tr("Recent projects"), content);
+    auto* recentTitle = UiControls::label(tr("Recent projects"), content);
     recentTitle->setObjectName(QStringLiteral("welcomeRecentTitle"));
     UiTypography::apply(recentTitle, UiTypography::Role::PanelTitle);
     contentLayout->addWidget(recentTitle, 0, Qt::AlignHCenter);
@@ -899,7 +900,7 @@ void MainWindow::refreshWelcomePage()
             auto* rowLayout = new QVBoxLayout(row);
             rowLayout->setContentsMargins(14, 9, 14, 9);
             rowLayout->setSpacing(3);
-            auto* name = new QLabel(entry.alias, row);
+            auto* name = UiControls::label(entry.alias, row);
             name->setAttribute(Qt::WA_TransparentForMouseEvents);
             UiTypography::apply(name, UiTypography::Role::Body);
             QFont nameFont = name->font();
@@ -907,7 +908,7 @@ void MainWindow::refreshWelcomePage()
             name->setFont(nameFont);
             rowLayout->addWidget(name);
             const QString fullPath = QDir::toNativeSeparators(entry.path);
-            auto* path = new QLabel(row);
+            auto* path = UiControls::label(row);
             path->setObjectName(QStringLiteral("welcomeRecentPath"));
             path->setAttribute(Qt::WA_TransparentForMouseEvents);
             UiTypography::apply(path, UiTypography::Role::Metadata);
@@ -971,14 +972,14 @@ void MainWindow::setupExternalConflictReviewUi(
 
     auto* heading = new QHBoxLayout();
     externalConflictReviewTitle =
-        new QLabel(externalConflictReviewBar);
+        UiControls::label(externalConflictReviewBar);
     externalConflictReviewTitle->setObjectName(
         QStringLiteral("externalConflictReviewTitle"));
     externalConflictReviewTitle->setTextInteractionFlags(
         Qt::TextSelectableByMouse);
     heading->addWidget(externalConflictReviewTitle, 1);
     auto* closeButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Close"),
             externalConflictReviewBar);
     closeButton->setObjectName(
@@ -1000,7 +1001,7 @@ void MainWindow::setupExternalConflictReviewUi(
         new QVBoxLayout(localGroup);
     localLayout->setContentsMargins(4, 4, 4, 4);
     externalConflictLocalText =
-        new QPlainTextEdit(localGroup);
+        UiControls::readOnlyText(localGroup);
     externalConflictLocalText->setObjectName(
         QStringLiteral("externalConflictLocalText"));
     externalConflictLocalText->setReadOnly(true);
@@ -1016,7 +1017,7 @@ void MainWindow::setupExternalConflictReviewUi(
         new QVBoxLayout(diskGroup);
     diskLayout->setContentsMargins(4, 4, 4, 4);
     externalConflictDiskText =
-        new QPlainTextEdit(diskGroup);
+        UiControls::readOnlyText(diskGroup);
     externalConflictDiskText->setObjectName(
         QStringLiteral("externalConflictDiskText"));
     externalConflictDiskText->setReadOnly(true);
@@ -1032,26 +1033,26 @@ void MainWindow::setupExternalConflictReviewUi(
 
     auto* actions = new QHBoxLayout();
     externalConflictReviewStatus =
-        new QLabel(externalConflictReviewBar);
+        UiControls::label(externalConflictReviewBar);
     externalConflictReviewStatus->setObjectName(
         QStringLiteral("externalConflictReviewStatus"));
     externalConflictReviewStatus->setTextInteractionFlags(
         Qt::TextSelectableByMouse);
     actions->addWidget(externalConflictReviewStatus, 1);
     externalConflictKeepLocalButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Keep Local"),
             externalConflictReviewBar);
     externalConflictKeepLocalButton->setObjectName(
         QStringLiteral("externalConflictKeepLocalButton"));
     externalConflictSaveAsButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Save Local As..."),
             externalConflictReviewBar);
     externalConflictSaveAsButton->setObjectName(
         QStringLiteral("externalConflictSaveAsButton"));
     externalConflictReloadButton =
-        new QPushButton(
+        UiControls::pushButton(
             QStringLiteral("Reload External"),
             externalConflictReviewBar);
     externalConflictReloadButton->setObjectName(
@@ -2488,7 +2489,7 @@ void MainWindow::setupViewMenu()
     if (!menuBar() || viewMenu)
         return;
 
-    viewMenu = menuBar()->addMenu(tr("&View"));
+    viewMenu = UiControls::addMenu(menuBar(), tr("&View"));
     viewMenu->setObjectName(QStringLiteral("viewMenu"));
 
     const auto addRegistryAction =
@@ -2512,7 +2513,7 @@ void MainWindow::setupViewMenu()
             viewMenu, ActionIds::ViewScopedSearch);
 
     QMenu* editorLayoutMenu =
-        viewMenu->addMenu(tr("Editor Layout"));
+        UiControls::addMenu(viewMenu, tr("Editor Layout"));
     editorLayoutMenu->setObjectName(
         QStringLiteral("editorLayoutMenu"));
     QAction* splitLeftAction =
@@ -2549,7 +2550,7 @@ void MainWindow::setupViewMenu()
             editorLayoutMenu,
             ActionIds::ViewReopenClosedTab);
     QMenu* groupingMenu =
-        editorLayoutMenu->addMenu(
+        UiControls::addMenu(editorLayoutMenu,
             tr("Group Tabs"));
     groupingMenu->setObjectName(
         QStringLiteral("tabGroupingMenu"));
@@ -2752,10 +2753,10 @@ void MainWindow::setupWorkspaceMenu()
     if (!menuBar() || workspaceMenu)
         return;
 
-    workspaceMenu = menuBar()->addMenu(tr("&Workspace"));
+    workspaceMenu = UiControls::addMenu(menuBar(), tr("&Workspace"));
     workspaceMenu->setObjectName(QStringLiteral("workspaceMenu"));
 
-    openWorkspacesMenu = workspaceMenu->addMenu(tr("Open Workspaces"));
+    openWorkspacesMenu = UiControls::addMenu(workspaceMenu, tr("Open Workspaces"));
     openWorkspacesMenu->setObjectName(
         QStringLiteral("openWorkspacesMenu"));
     closeActiveWorkspaceAction =
@@ -2887,10 +2888,10 @@ void MainWindow::setupToolsMenu()
     if (!menuBar() || toolsMenu)
         return;
 
-    toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    toolsMenu = UiControls::addMenu(menuBar(), tr("&Tools"));
     toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
 
-    userTemplatesMenu = toolsMenu->addMenu(tr("User Templates"));
+    userTemplatesMenu = UiControls::addMenu(toolsMenu, tr("User Templates"));
     userTemplatesMenu->setObjectName(QStringLiteral("userTemplatesMenu"));
 
     QAction* openGlobalAction =
@@ -2911,7 +2912,7 @@ void MainWindow::setupToolsMenu()
                 ActionIds::UserTemplatesReload));
 
     QMenu* rtlActionsMenu =
-        toolsMenu->addMenu(
+        UiControls::addMenu(toolsMenu,
             tr("RTL Actions"));
     rtlActionsMenu->setObjectName(
         QStringLiteral("rtlActionsMenu"));
@@ -4250,7 +4251,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
     rootLayout->setContentsMargins(12, 12, 12, 12);
     rootLayout->setSpacing(8);
 
-    auto* introduction = new QLabel(
+    auto* introduction = UiControls::label(
         tr("Review each recovery snapshot against the current source. "
            "Restoring changes the in-memory document only; saving remains "
            "an explicit action."),
@@ -4261,7 +4262,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
     rootLayout->addWidget(introduction);
 
     crashRecoveryCandidateList =
-        new QTreeWidget(crashRecoveryReviewDialog);
+        UiControls::treeWidget(crashRecoveryReviewDialog);
     crashRecoveryCandidateList->setObjectName(
         QStringLiteral("crashRecoveryCandidateList"));
     crashRecoveryCandidateList->setColumnCount(3);
@@ -4289,7 +4290,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
                       comparisonSplitter);
     auto* sourceLayout = new QVBoxLayout(sourceGroup);
     crashRecoverySourceText =
-        new QPlainTextEdit(sourceGroup);
+        UiControls::readOnlyText(sourceGroup);
     crashRecoverySourceText->setObjectName(
         QStringLiteral("crashRecoverySourceText"));
     crashRecoverySourceText->setReadOnly(true);
@@ -4303,7 +4304,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
     auto* recoveredLayout =
         new QVBoxLayout(recoveredGroup);
     crashRecoveryRecoveredText =
-        new QPlainTextEdit(recoveredGroup);
+        UiControls::readOnlyText(recoveredGroup);
     crashRecoveryRecoveredText->setObjectName(
         QStringLiteral("crashRecoveryRecoveredText"));
     crashRecoveryRecoveredText->setReadOnly(true);
@@ -4317,7 +4318,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
     rootLayout->addWidget(comparisonSplitter, 3);
 
     crashRecoveryReviewStatus =
-        new QLabel(crashRecoveryReviewDialog);
+        UiControls::label(crashRecoveryReviewDialog);
     crashRecoveryReviewStatus->setObjectName(
         QStringLiteral("crashRecoveryReviewStatus"));
     crashRecoveryReviewStatus->setWordWrap(true);
@@ -4325,17 +4326,17 @@ void MainWindow::setupCrashRecoveryReviewUi()
         Qt::TextSelectableByMouse);
     rootLayout->addWidget(crashRecoveryReviewStatus);
 
-    auto* buttons = new QDialogButtonBox(
+    auto* buttons = UiDialogs::buttonBox(
         QDialogButtonBox::Close,
         crashRecoveryReviewDialog);
     buttons->setObjectName(
         QStringLiteral("crashRecoveryReviewButtons"));
-    crashRecoveryRestoreButton = buttons->addButton(
+    crashRecoveryRestoreButton = UiDialogs::addButton(buttons,
         tr("Restore Selected"),
         QDialogButtonBox::AcceptRole);
     crashRecoveryRestoreButton->setObjectName(
         QStringLiteral("crashRecoveryRestoreButton"));
-    crashRecoveryDiscardButton = buttons->addButton(
+    crashRecoveryDiscardButton = UiDialogs::addButton(buttons,
         tr("Discard Selected"),
         QDialogButtonBox::DestructiveRole);
     crashRecoveryDiscardButton->setObjectName(
@@ -4784,7 +4785,7 @@ bool MainWindow::openUserTemplateFile(const QString& filePath,
         if (errorMessage.isEmpty())
             errorMessage = QStringLiteral("Failed to prepare user template file.");
             postActivityMessage(errorMessage, 5000);
-        QMessageBox::warning(this, tr("User Templates"), errorMessage);
+        UiDialogs::warning(this, tr("User Templates"), errorMessage);
         return false;
     }
 
@@ -4792,7 +4793,7 @@ bool MainWindow::openUserTemplateFile(const QString& filePath,
         const QString message =
             QStringLiteral("Failed to open %1.").arg(label);
             postActivityMessage(message, 5000);
-        QMessageBox::warning(this, tr("User Templates"), message);
+        UiDialogs::warning(this, tr("User Templates"), message);
         return false;
     }
 
@@ -4858,7 +4859,7 @@ void MainWindow::reloadUserTemplates()
         postActivityMessage(summary, report.issues.isEmpty() ? 3000 : 7000);
 
     if (!report.issues.isEmpty()) {
-        QMessageBox::warning(this,
+        UiDialogs::warning(this,
                              tr("User Templates"),
                              userTemplateIssueReportText(report));
     }
@@ -4920,7 +4921,7 @@ void MainWindow::showWorkspaceConfigurationDialog()
                                                      &errorMessage)) {
         if (errorMessage.isEmpty())
             errorMessage = QStringLiteral("Failed to apply workspace configuration.");
-        QMessageBox::warning(this,
+        UiDialogs::warning(this,
                              tr("Workspace Configuration"),
                              errorMessage);
         return;
@@ -5329,7 +5330,7 @@ void MainWindow::showRecentWorkspacesDialog()
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(8);
 
-    auto* tree = new QTreeWidget(dialog);
+    auto* tree = UiControls::treeWidget(dialog);
     tree->setObjectName(QStringLiteral("recentWorkspacesTree"));
     tree->setColumnCount(2);
     tree->setHeaderLabels({tr("Alias"), tr("Path")});
@@ -5362,11 +5363,11 @@ void MainWindow::showRecentWorkspacesDialog()
         tree->setCurrentItem(tree->topLevelItem(0));
     }
 
-    auto* buttons = new QDialogButtonBox(dialog);
+    auto* buttons = UiDialogs::buttonBox(QDialogButtonBox::NoButton, dialog);
     QPushButton* openButton =
-        buttons->addButton(tr("Open"), QDialogButtonBox::AcceptRole);
+        UiDialogs::addButton(buttons, tr("Open"), QDialogButtonBox::AcceptRole);
     openButton->setObjectName(QStringLiteral("recentWorkspacesOpenButton"));
-    QPushButton* removeButton = buttons->addButton(
+    QPushButton* removeButton = UiDialogs::addButton(buttons,
         tr("Remove from Recent"),
         QDialogButtonBox::DestructiveRole);
     removeButton->setObjectName(
@@ -5374,7 +5375,7 @@ void MainWindow::showRecentWorkspacesDialog()
     removeButton->setToolTip(
         tr("Remove the selected entry from Recent Workspaces. "
            "Workspace files are not deleted."));
-    buttons->addButton(QDialogButtonBox::Close);
+    UiDialogs::addButton(buttons, QDialogButtonBox::Close);
     openButton->setEnabled(!entries.isEmpty());
     removeButton->setEnabled(!entries.isEmpty());
     layout->addWidget(buttons);

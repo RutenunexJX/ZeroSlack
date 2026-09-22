@@ -22,6 +22,7 @@ ElaComboBox::ElaComboBox(QWidget* parent)
     setObjectName("ElaComboBox");
     setFixedHeight(35);
     d->_comboBoxStyle = new ElaComboBoxStyle(style());
+    d->_comboBoxStyle->setParent(qApp);
     setStyle(d->_comboBoxStyle);
 
     //调用view 让container初始化
@@ -64,13 +65,10 @@ ElaComboBox::ElaComboBox(QWidget* parent)
 ElaComboBox::~ElaComboBox()
 {
     Q_D(ElaComboBox);
-    // The popup and view share this style. Release their references while it
-    // is still alive, before QWidget closes/deletes the popup during teardown.
-    if (lineEdit()) lineEdit()->setStyle(nullptr);
-    view()->setStyle(nullptr);
-    if (auto* container = findChild<QFrame*>()) container->setStyle(nullptr);
-    setStyle(nullptr);
-    delete d->_comboBoxStyle;
+    // Keep the shared style alive through QComboBox's popup/view destruction.
+    // Resetting popup styles here repolishes its native children mid-teardown.
+    // The application owns the fallback lifetime if its event loop has stopped.
+    d->_comboBoxStyle->deleteLater();
 }
 
 void ElaComboBox::setEditable(bool editable)

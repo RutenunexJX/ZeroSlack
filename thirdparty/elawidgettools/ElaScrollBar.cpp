@@ -1,6 +1,7 @@
 #include "ElaScrollBar.h"
 
 #include <QDebug>
+#include <QApplication>
 #include <QPainter>
 #include <QPointer>
 #include <QPropertyAnimation>
@@ -25,13 +26,32 @@ ElaScrollBar::ElaScrollBar(QWidget* parent)
     d->_pIsAnimation = false;
     connect(this, &ElaScrollBar::rangeChanged, d, &ElaScrollBarPrivate::onRangeChanged);
     ElaScrollBarStyle* scrollBarStyle = new ElaScrollBarStyle(style());
+    scrollBarStyle->setParent(this);
     scrollBarStyle->setScrollBar(this);
     setStyle(scrollBarStyle);
-    d->_slideSmoothAnimation = new QPropertyAnimation(this, "value");
+    d->_pWheelValue = 0;
+    d->_slideSmoothAnimation = new QPropertyAnimation(this, "value", this);
     d->_slideSmoothAnimation->setEasingCurve(QEasingCurve::OutSine);
     d->_slideSmoothAnimation->setDuration(300);
     connect(d->_slideSmoothAnimation, &QPropertyAnimation::finished, this, [=]() {
         d->_scrollValue = value();
+    });
+    connect(d, &ElaScrollBarPrivate::pWheelValueChanged, this, [=]() {
+        d->_writingWheelValue = true;
+        setValue(qRound(d->getWheelValue()));
+        d->_writingWheelValue = false;
+    });
+    connect(this, &QScrollBar::valueChanged, this, [=]() {
+        if (d->_smoothWheelEnabled && !d->_writingWheelValue)
+            stopSmoothWheel();
+    });
+    connect(this, &QScrollBar::rangeChanged, this, [=]() {
+        if (d->_smoothWheelEnabled)
+            stopSmoothWheel();
+    });
+    connect(this, &QScrollBar::actionTriggered, this, [=]() {
+        if (d->_smoothWheelEnabled)
+            stopSmoothWheel();
     });
 
     d->_expandTimer = new QTimer(this);
@@ -79,7 +99,80 @@ ElaScrollBar::ElaScrollBar(QScrollBar* originScrollBar, QAbstractScrollArea* par
 
 ElaScrollBar::~ElaScrollBar()
 {
-    delete this->style();
+    stopSmoothWheel();
+    setStyle(nullptr);
+}
+
+void ElaScrollBar::setSmoothWheelEnabled(bool enabled)
+{
+    Q_D(ElaScrollBar);
+    stopSmoothWheel();
+    d->_smoothWheelEnabled = enabled;
+    d->_slideSmoothAnimation->setTargetObject(nullptr);
+    d->_slideSmoothAnimation->setPropertyName(enabled ? "pWheelValue" : "value");
+    d->_slideSmoothAnimation->setTargetObject(enabled ? static_cast<QObject*>(d) : this);
+}
+
+bool ElaScrollBar::smoothWheelEnabled() const
+{
+    return d_ptr->_smoothWheelEnabled;
+}
+
+void ElaScrollBar::setWheelAnimationDuration(int duration)
+{
+    d_ptr->_slideSmoothAnimation->setDuration(qMax(0, duration));
+}
+
+void ElaScrollBar::stopSmoothWheel()
+{
+    Q_D(ElaScrollBar);
+    d->_slideSmoothAnimation->stop();
+    d->_scrollValue = value();
+}
+
+void ElaScrollBar::smoothWheelEvent(QWheelEvent* event)
+{
+    Q_D(ElaScrollBar);
+    const bool horizontal = orientation() == Qt::Horizontal;
+    const QPoint pixels = event->pixelDelta();
+    const int pixelDelta = horizontal
+        ? (pixels.x() ? pixels.x() : event->modifiers().testFlag(Qt::ShiftModifier) ? pixels.y() : 0)
+        : pixels.y();
+    if (!pixels.isNull()) {
+        // Precision gestures already provide a motion curve; apply them directly.
+        stopSmoothWheel();
+        const int next = qBound(minimum(), value() - pixelDelta, maximum());
+        event->setAccepted(next != value());
+        setValue(next);
+        return;
+    }
+    const QPoint angles = event->angleDelta();
+    const int delta = horizontal ? (angles.x() ? angles.x() : angles.y()) : angles.y();
+    if (!delta) {
+        event->ignore();
+        return;
+    }
+    if (event->modifiers().testFlag(Qt::ControlModifier)) {
+        stopSmoothWheel();
+        QScrollBar::wheelEvent(event);
+        return;
+    }
+    const qreal distance = -delta / 120.0 * qMin(pageStep(), singleStep() * QApplication::wheelScrollLines());
+    const bool running = d->_slideSmoothAnimation->state() == QAbstractAnimation::Running;
+    if (!running || (d->_scrollValue - value()) * distance < 0)
+        d->_scrollValue = value();
+    const qreal target = qBound(qreal(minimum()), d->_scrollValue + distance, qreal(maximum()));
+    if (qFuzzyCompare(target + 1, value() + 1)) {
+        stopSmoothWheel();
+        event->ignore();
+        return;
+    }
+    d->_slideSmoothAnimation->stop();
+    d->_scrollValue = target;
+    d->_slideSmoothAnimation->setStartValue(qreal(value()));
+    d->_slideSmoothAnimation->setEndValue(target);
+    d->_slideSmoothAnimation->start();
+    event->accept();
 }
 
 bool ElaScrollBar::event(QEvent* event)
@@ -87,6 +180,11 @@ bool ElaScrollBar::event(QEvent* event)
     Q_D(ElaScrollBar);
     switch (event->type())
     {
+    case QEvent::Hide:
+    case QEvent::EnabledChange:
+        if (d->_smoothWheelEnabled)
+            stopSmoothWheel();
+        break;
     case QEvent::Enter:
     {
         d->_expandTimer->stop();
@@ -160,6 +258,14 @@ void ElaScrollBar::mouseMoveEvent(QMouseEvent* event)
 void ElaScrollBar::wheelEvent(QWheelEvent* event)
 {
     Q_D(ElaScrollBar);
+    if (d->_smoothWheelEnabled) {
+        smoothWheelEvent(event);
+        return;
+    }
+    if (!d->_pIsAnimation) {
+        QScrollBar::wheelEvent(event);
+        return;
+    }
     int verticalDelta = event->angleDelta().y();
     if (d->_slideSmoothAnimation->state() == QAbstractAnimation::Stopped)
     {

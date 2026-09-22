@@ -33,13 +33,29 @@ ElaTreeView::ElaTreeView(QWidget* parent)
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
     d->_treeViewStyle = new ElaTreeViewStyle(style());
+    d->_treeViewStyle->setParent(this);
     setStyle(d->_treeViewStyle);
 }
 
 ElaTreeView::~ElaTreeView()
 {
+    setStyle(nullptr);
+}
+
+QStyle* ElaTreeView::createStyle(QObject* owner, int itemHeight)
+{
+    auto* treeStyle = new ElaTreeViewStyle();
+    treeStyle->setParent(owner);
+    treeStyle->setItemHeight(itemHeight);
+    treeStyle->setNativeItemContent(true);
+    return treeStyle;
+}
+
+void ElaTreeView::setNativeItemContent(bool enabled)
+{
     Q_D(ElaTreeView);
-    delete d->_treeViewStyle;
+    d->_treeViewStyle->setNativeItemContent(enabled);
+    viewport()->update();
 }
 
 void ElaTreeView::setItemHeight(int itemHeight)

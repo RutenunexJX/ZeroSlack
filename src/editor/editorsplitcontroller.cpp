@@ -1,7 +1,9 @@
+#include <memory>
 #include "editorsplitcontroller.h"
 
 #include "actionregistry.h"
 #include "editordroppreviewoverlay.h"
+#include "uicontrols.h"
 
 #include <QAbstractScrollArea>
 #include <QApplication>
@@ -461,7 +463,7 @@ bool EditorSplitController::eventFilter(
 
 QTabWidget* EditorSplitController::createGroup()
 {
-    auto* group = new QTabWidget(splitHost);
+    auto* group = UiControls::tabWidget(splitHost);
     configureGroup(group);
     tabGroups.append(group);
     emit groupCreated(group);
@@ -481,7 +483,8 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setElideMode(Qt::ElideMiddle);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
-    group->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 108px; }"));
+    if (!group->tabBar()->property("zeroslackElaControl").toBool())
+        group->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { min-width: 108px; }"));
     bindGroupDropTargets(group);
     connect(group,
             &QTabWidget::currentChanged,
@@ -931,7 +934,8 @@ void EditorSplitController::showTabContextMenu(
         return;
     const int index = bar->tabAt(position);
 
-    QMenu menu(bar);
+    std::unique_ptr<QMenu> menuOwner(UiControls::menu(bar));
+    QMenu& menu = *menuOwner;
     for (const EditorTabContextAction& item :
          tabContextActions(group, index)) {
         if (item.separatorBefore)

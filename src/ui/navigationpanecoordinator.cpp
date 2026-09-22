@@ -2,9 +2,15 @@
 
 #include "navigationmanager.h"
 #include "navigationwidget.h"
+#include "applicationthememanager.h"
+#include "panelcompositor.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaNavigationBar.h"
+#endif
 
 #include <QEvent>
 #include <QMainWindow>
+#include <QLayout>
 #include <QResizeEvent>
 #include <QVariantAnimation>
 #include <QVBoxLayout>
@@ -58,18 +64,62 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
 {
     navigationDock = new QDockWidget("Navigation", parent);
     navigationDock->setObjectName(QStringLiteral("navigationDock"));
-    viewport = new NavigationViewport(navigationDock);
-    viewport->setContentWidth(expandedWidth);
-    navigationWidget = new NavigationWidget(viewport);
-    viewport->addBody(navigationWidget);
-    navigationDock->setWidget(viewport);
     auto* emptyTitle = new QWidget(navigationDock);
     emptyTitle->setFixedHeight(0);
     emptyTitle->setMinimumWidth(0);
     navigationDock->setTitleBarWidget(emptyTitle);
     navigationDock->setFeatures(QDockWidget::DockWidgetClosable);
     navigationDock->setAllowedAreas(Qt::LeftDockWidgetArea);
-
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        elaNavigationBar = new ElaNavigationBar(navigationDock);
+        elaNavigationBar->setObjectName(QStringLiteral("navigationElaBar"));
+        elaNavigationBar->setCustomContentWidthRange(200, 400);
+        navigationWidget = new NavigationWidget;
+        navigationWidget->setMinimumWidth(180);
+        elaNavigationBar->setCustomContent(navigationWidget);
+        elaNavigationBar->setNavigationBarWidth(280);
+        navigationDock->setWidget(elaNavigationBar);
+        if (auto* window = qobject_cast<QMainWindow*>(parent)) {
+            compositor = PanelCompositor::forWindow(window);
+            elaNavigationBar->setDisplayModeTransitionHandler([this](int target, int duration, quint64 generation) {
+                preparingComposition = true;
+                const QPointer<ElaNavigationBar> bar = elaNavigationBar;
+                const bool accepted = compositor->begin(navigationDock,
+                    elaNavigationBar, elaNavigationBar->getNavigationBarWidth(),
+                    target, duration, [bar, generation] {
+                        if (bar) bar->finishDisplayModeTransition(generation);
+                    });
+                preparingComposition = false;
+                return accepted;
+            });
+        }
+        // Ela owns mode, curve, duration and cancellation; the compositor only presents it.
+        connect(elaNavigationBar, &ElaNavigationBar::displayModeChanged, this,
+                [this](ElaNavigationType::NavigationDisplayMode mode) {
+            if (mode != ElaNavigationType::Minimal && !elaNavigationBar->isDisplayModeAnimating()) navigationDock->show();
+        });
+        connect(elaNavigationBar, &ElaNavigationBar::displayModeTransitionFinished, this,
+                [this](ElaNavigationType::NavigationDisplayMode mode) {
+            preparingComposition = true;
+            if (mode == ElaNavigationType::Minimal) navigationDock->hide();
+            else if (mode == ElaNavigationType::Maximal) {
+                navigationDock->show();
+                if (auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget()))
+                    window->resizeDocks({navigationDock}, {elaNavigationBar->getNavigationBarWidth()}, Qt::Horizontal);
+            }
+            if (compositor && compositor->isActiveFor(navigationDock)) compositor->finish();
+            preparingComposition = false;
+        });
+        navigationDock->installEventFilter(this);
+        return;
+    }
+#endif
+    viewport = new NavigationViewport(navigationDock);
+    viewport->setContentWidth(expandedWidth);
+    navigationWidget = new NavigationWidget(viewport);
+    viewport->addBody(navigationWidget);
+    navigationDock->setWidget(viewport);
     navigationDock->setMinimumWidth(200);
     navigationDock->setMaximumWidth(400);
     navigationWidget->setMinimumWidth(180);
@@ -111,6 +161,12 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
             });
 }
 
+NavigationPaneCoordinator::~NavigationPaneCoordinator()
+{
+    // Cancel callbacks before QMainWindow's base-class destruction starts hiding children.
+    if (compositor) compositor->settleFor(navigationDock);
+}
+
 void NavigationPaneCoordinator::attachNavigationManager(NavigationManager* manager)
 {
     navigationManager = manager;
@@ -131,11 +187,36 @@ void NavigationPaneCoordinator::connectNavigationInputs(
 
 void NavigationPaneCoordinator::toggleVisible()
 {
-    setExpanded(!expanded);
+    setExpanded(!isExpanded());
+}
+
+bool NavigationPaneCoordinator::isExpanded() const
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (elaNavigationBar) return elaNavigationBar->getDisplayMode() == ElaNavigationType::Maximal;
+#endif
+    return expanded;
+}
+
+bool NavigationPaneCoordinator::isAnimating() const
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (elaNavigationBar) return elaNavigationBar->isDisplayModeAnimating();
+#endif
+    return transitioning;
 }
 
 void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (elaNavigationBar) {
+        auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget());
+        elaNavigationBar->setDisplayMode(open ? ElaNavigationType::Maximal : ElaNavigationType::Minimal,
+                                        animate && window && window->isVisible());
+        if (open && (!animate || !elaNavigationBar->isDisplayModeAnimating())) navigationDock->show();
+        return;
+    }
+#endif
     if (!navigationDock
         || (expanded == open && !transitioning
             && navigationDock->isVisible() == open))
@@ -153,13 +234,14 @@ void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
     expanded = open;
     auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget());
     if (!animate || !window || !window->isVisible()) {
-        transitioning = false;
+        transitioning = true;
         navigationDock->setMaximumWidth(400);
         navigationDock->setMinimumWidth(200);
         navigationDock->setVisible(open);
         if (open && window)
             window->resizeDocks({navigationDock}, {expandedWidth},
                                 Qt::Horizontal);
+        transitioning = false;
         return;
     }
 
@@ -178,12 +260,37 @@ void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
 
 void NavigationPaneCoordinator::setHeaderWidget(QWidget* header)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (elaNavigationBar) {
+        elaNavigationBar->setCustomHeader(header);
+        return;
+    }
+#endif
     if (viewport && header)
         viewport->addHeader(header);
 }
 
 bool NavigationPaneCoordinator::eventFilter(QObject* watched, QEvent* event)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (elaNavigationBar && watched == navigationDock) {
+        if (preparingComposition) return QObject::eventFilter(watched, event);
+        // A zero-width dock reports visibilityChanged(false) even after show().
+        // Observe explicit dock visibility, not the visible area or its parent.
+        if (event->type() == QEvent::Show && !elaNavigationBar->isDisplayModeAnimating()) {
+            // restoreState() can assign a saved dock size before its first show.
+            if (elaNavigationBar->getDisplayMode() == ElaNavigationType::Maximal
+                && navigationDock->width() >= 200 && navigationDock->width() <= 400)
+                elaNavigationBar->setNavigationBarWidth(navigationDock->width());
+            elaNavigationBar->setDisplayMode(ElaNavigationType::Maximal, false);
+            if (auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget()))
+                window->resizeDocks({navigationDock}, {elaNavigationBar->getNavigationBarWidth()}, Qt::Horizontal);
+        }
+        else if (event->type() == QEvent::Hide && navigationDock->isHidden())
+            elaNavigationBar->setDisplayMode(ElaNavigationType::Minimal, false);
+        return QObject::eventFilter(watched, event);
+    }
+#endif
     if (watched == navigationDock && event->type() == QEvent::Resize
         && !transitioning && navigationDock->isVisible()) {
         const int width = navigationDock->width();
@@ -211,7 +318,7 @@ void NavigationPaneCoordinator::showDesign()
 
 void NavigationPaneCoordinator::showSearch()
 {
-    showDock();
+    setExpanded(true, false);
     if (navigationWidget)
         navigationWidget->focusSearch();
 }

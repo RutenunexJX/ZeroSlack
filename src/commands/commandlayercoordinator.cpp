@@ -1,4 +1,5 @@
 #include "uitypography.h"
+#include "uicontrols.h"
 #include "commandlayercoordinator.h"
 
 #include "columnnumbertool.h"
@@ -232,7 +233,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     outer->setContentsMargins(12, 10, 12, 12);
     outer->setSpacing(8);
 
-    auto* title = new QLabel(QStringLiteral("Insert Numbers"), this);
+    auto* title = UiControls::label(QStringLiteral("Insert Numbers"), this);
     QFont titleFont = UiTypography::font(UiTypography::Role::PanelTitle);
     title->setFont(titleFont);
     outer->addWidget(title);
@@ -242,7 +243,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     form->setSpacing(6);
     outer->addLayout(form);
 
-    startSpin = new QSpinBox(this);
+    startSpin = UiControls::spinBox(this);
     startSpin->setObjectName(QStringLiteral("columnNumberStart"));
     startSpin->setRange(-1000000000, 1000000000);
     form->addRow(QStringLiteral("Start"), startSpin);
@@ -253,10 +254,10 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     baseLayout->setHorizontalSpacing(12);
     baseLayout->setVerticalSpacing(4);
     baseButtons = new QButtonGroup(this);
-    decimalRadio = new QRadioButton(QStringLiteral("Decimal"), baseGroup);
-    hexadecimalRadio = new QRadioButton(QStringLiteral("Hexadecimal"), baseGroup);
-    octalRadio = new QRadioButton(QStringLiteral("Octal"), baseGroup);
-    binaryRadio = new QRadioButton(QStringLiteral("Binary"), baseGroup);
+    decimalRadio = UiControls::radioButton(QStringLiteral("Decimal"), baseGroup);
+    hexadecimalRadio = UiControls::radioButton(QStringLiteral("Hexadecimal"), baseGroup);
+    octalRadio = UiControls::radioButton(QStringLiteral("Octal"), baseGroup);
+    binaryRadio = UiControls::radioButton(QStringLiteral("Binary"), baseGroup);
     decimalRadio->setObjectName(QStringLiteral("columnNumberBaseDecimal"));
     hexadecimalRadio->setObjectName(QStringLiteral("columnNumberBaseHexadecimal"));
     octalRadio->setObjectName(QStringLiteral("columnNumberBaseOctal"));
@@ -275,7 +276,7 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
     baseLayout->addWidget(binaryRadio, 1, 1);
     form->addRow(baseGroup);
 
-    styleCombo = new QComboBox(this);
+    styleCombo = UiControls::comboBox(this);
     styleCombo->setObjectName(QStringLiteral("columnNumberStyle"));
     styleCombo->addItem(QStringLiteral("Plain"),
                         static_cast<int>(ColumnNumberStyle::Plain));
@@ -287,12 +288,12 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
                         static_cast<int>(ColumnNumberStyle::SvSized));
     form->addRow(QStringLiteral("Style"), styleCombo);
 
-    bitWidthLabel = new QLabel(QStringLiteral("Bit width"), this);
-    bitWidthSpin = new QSpinBox(this);
+    bitWidthLabel = UiControls::label(QStringLiteral("Bit width"), this);
+    bitWidthSpin = UiControls::spinBox(this);
     bitWidthSpin->setRange(1, 4096);
     form->addRow(bitWidthLabel, bitWidthSpin);
 
-    directionCombo = new QComboBox(this);
+    directionCombo = UiControls::comboBox(this);
     directionCombo->setObjectName(QStringLiteral("columnNumberDirection"));
     directionCombo->addItem(QStringLiteral("Up"),
                             static_cast<int>(ColumnNumberDirection::Up));
@@ -300,30 +301,30 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
                             static_cast<int>(ColumnNumberDirection::Down));
     form->addRow(QStringLiteral("Direction"), directionCombo);
 
-    stepSpin = new QSpinBox(this);
+    stepSpin = UiControls::spinBox(this);
     stepSpin->setObjectName(QStringLiteral("columnNumberStep"));
     stepSpin->setRange(0, 1000000000);
     stepSpin->setValue(1);
     form->addRow(QStringLiteral("Step"), stepSpin);
 
-    repeatSpin = new QSpinBox(this);
+    repeatSpin = UiControls::spinBox(this);
     repeatSpin->setObjectName(QStringLiteral("columnNumberRepeat"));
     repeatSpin->setRange(1, 1000000);
     repeatSpin->setValue(1);
     form->addRow(QStringLiteral("Repeat"), repeatSpin);
 
-    digitWidthModeCombo = new QComboBox(this);
+    digitWidthModeCombo = UiControls::comboBox(this);
     digitWidthModeCombo->setObjectName(QStringLiteral("columnNumberDigitWidthMode"));
     digitWidthModeCombo->addItem(QStringLiteral("auto"), 0);
     digitWidthModeCombo->addItem(QStringLiteral("fixed"), 1);
     form->addRow(QStringLiteral("Digit width"), digitWidthModeCombo);
 
-    digitWidthLabel = new QLabel(QStringLiteral("Fixed digits"), this);
-    digitWidthSpin = new QSpinBox(this);
+    digitWidthLabel = UiControls::label(QStringLiteral("Fixed digits"), this);
+    digitWidthSpin = UiControls::spinBox(this);
     digitWidthSpin->setRange(1, 1024);
     form->addRow(digitWidthLabel, digitWidthSpin);
 
-    padCombo = new QComboBox(this);
+    padCombo = UiControls::comboBox(this);
     padCombo->setObjectName(QStringLiteral("columnNumberPad"));
     padCombo->addItem(QStringLiteral("none"),
                       static_cast<int>(ColumnNumberPad::None));
@@ -333,13 +334,13 @@ ColumnNumberToolPanel::ColumnNumberToolPanel(QWidget* parent)
                       static_cast<int>(ColumnNumberPad::Zero));
     form->addRow(QStringLiteral("Pad"), padCombo);
 
-    hexCaseLabel = new QLabel(QStringLiteral("Hex case"), this);
-    hexCaseCombo = new QComboBox(this);
+    hexCaseLabel = UiControls::label(QStringLiteral("Hex case"), this);
+    hexCaseCombo = UiControls::comboBox(this);
     hexCaseCombo->addItem(QStringLiteral("Upper"), 1);
     hexCaseCombo->addItem(QStringLiteral("Lower"), 0);
     form->addRow(hexCaseLabel, hexCaseCombo);
 
-    replaceModeCombo = new QComboBox(this);
+    replaceModeCombo = UiControls::comboBox(this);
     replaceModeCombo->addItem(
         QStringLiteral("replace selection"),
         static_cast<int>(ColumnNumberReplaceMode::ReplaceSelection));
@@ -635,22 +636,22 @@ CommandLayerPanel::CommandLayerPanel(QWidget* parent)
     layout->setContentsMargins(10, 8, 10, 9);
     layout->setSpacing(4);
 
-    titleLabel = new QLabel(this);
+    titleLabel = UiControls::label(this);
     titleLabel->setObjectName(QStringLiteral("commandLayerTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
 
-    queryLabel = new QLabel(this);
+    queryLabel = UiControls::label(this);
     queryLabel->setObjectName(QStringLiteral("commandLayerQuery"));
     layout->addWidget(queryLabel);
 
-    candidateList = new QListWidget(this);
+    candidateList = UiControls::listWidget(this);
     candidateList->setObjectName(QStringLiteral("commandLayerCandidateList"));
     candidateList->setFocusPolicy(Qt::NoFocus);
     candidateList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     layout->addWidget(candidateList);
 
-    failureLabel = new QLabel(this);
+    failureLabel = UiControls::label(this);
     failureLabel->setObjectName(QStringLiteral("commandLayerFailure"));
     failureLabel->setWordWrap(true);
     layout->addWidget(failureLabel);
@@ -1880,11 +1881,11 @@ CommandLayerPickerPanel::CommandLayerPickerPanel(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    searchEdit = new QLineEdit(this);
+    searchEdit = UiControls::lineEdit(this);
     searchEdit->setObjectName(QStringLiteral("commandLayerPickerSearch"));
     InsightVisualStyle::applySearchField(searchEdit);
     layout->addWidget(searchEdit);
-    resultList = new QListWidget(this);
+    resultList = UiControls::listWidget(this);
     resultList->setObjectName(QStringLiteral("commandLayerPickerResults"));
     resultList->setMinimumHeight(280);
     layout->addWidget(resultList);

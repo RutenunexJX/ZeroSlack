@@ -1,3 +1,6 @@
+#include "uicontrols.h"
+#include <memory>
+#include "uidialogs.h"
 #include "navigationmanager.h"
 
 #include "editorhoverpopup.h"
@@ -126,7 +129,7 @@ void showFileOperationFailure(
     const ActionDescriptor& descriptor,
     const QString& reason)
 {
-    QMessageBox::warning(
+    UiDialogs::warning(
         parent,
         descriptor.canonicalName,
         reason.isEmpty()
@@ -163,7 +166,8 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
         EditorFileIdentity::same(
             workspaceRoot, path);
 
-    QMenu menu(navigationWidget);
+    std::unique_ptr<QMenu> menuOwner(UiControls::menu(navigationWidget));
+    QMenu& menu = *menuOwner;
     const auto addFileAction =
         [this, &menu, path, directory](
             const QString& actionId,
@@ -244,7 +248,7 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
                 if (descriptor
                     && !contextAlias.label.isEmpty()) {
                     QMenu* topMenu =
-                        menu.addMenu(
+                        UiControls::addMenu(&menu,
                             contextAlias.label);
                     topMenu->menuAction()->setProperty(
                         "actionId", descriptor->id);
@@ -349,7 +353,7 @@ void NavigationManager::executeFileTreeAction(
             : QString();
         bool accepted = false;
         const QString name =
-            QInputDialog::getText(
+            UiDialogs::getText(
                 navigationWidget,
                 descriptor->canonicalName,
                 QStringLiteral("Name:"),

@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "editorhoverpopup.h"
 
 #include "actionregistry.h"
@@ -65,14 +66,16 @@ EditorHoverPopup::EditorHoverPopup(QWidget* parent)
         "border: 1px solid palette(mid);"
         "border-radius: 5px;"
         "}"
-        "QLabel { color: palette(text); }"
+        "QLabel { color: palette(text); }")
+        + (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela
+            ? QString() : QStringLiteral(
         "QLineEdit {"
         "border: 1px solid palette(highlight);"
         "border-radius: 3px;"
         "padding: 3px 6px;"
         "background: palette(base);"
         "color: palette(text);"
-        "}"
+        "}")) + QStringLiteral(
         "QPlainTextEdit {"
         "border: 1px solid palette(mid);"
         "border-radius: 3px;"
@@ -97,18 +100,18 @@ EditorHoverPopup::EditorHoverPopup(QWidget* parent)
     headerLayout->addWidget(symbolIcon, 0, Qt::AlignTop);
     auto* titleStack = new QVBoxLayout;
     titleStack->setSpacing(6);
-    titleLabel = new QLabel(headerHost);
+    titleLabel = UiControls::label(headerHost);
     titleLabel->setObjectName(QStringLiteral("peekTitle"));
     titleLabel->setTextFormat(Qt::PlainText);
     titleStack->addWidget(titleLabel);
-    categoryLabel = new QLabel(headerHost);
+    categoryLabel = UiControls::label(headerHost);
     categoryLabel->setObjectName(QStringLiteral("peekCategory"));
     categoryLabel->setTextFormat(Qt::PlainText);
     categoryLabel->hide();
     titleStack->addWidget(categoryLabel, 0, Qt::AlignLeft);
     headerLayout->addLayout(titleStack, 1);
 
-    closeButton = new QToolButton(this);
+    closeButton = UiControls::toolButton(this);
     closeButton->setObjectName(QStringLiteral("peekCloseButton"));
     closeButton->setText(QStringLiteral("\u00d7"));
     closeButton->setToolTip(QStringLiteral("Close peek (Esc)"));
@@ -186,7 +189,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
         for (const PeekContentRow& row : content.rows)
             addLabel(row.text, row.role, row.wordWrap);
     if (content.readOnlyText.enabled) {
-        auto* textEdit = new QPlainTextEdit(this);
+        auto* textEdit = UiControls::readOnlyText(this);
         textEdit->setObjectName(
             content.readOnlyText.objectName.isEmpty()
                 ? QStringLiteral("peekReadOnlyText")
@@ -213,7 +216,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
         layout->addWidget(textEdit);
     }
     if (content.editor.enabled) {
-        auto* lineEdit = new QLineEdit(this);
+        auto* lineEdit = UiControls::lineEdit(this);
         editControl = lineEdit;
         lineEdit->setObjectName(
             content.editor.objectName.isEmpty()
@@ -236,7 +239,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
                 currentContent.editor.text = text;
             });
         layout->addWidget(lineEdit);
-        auto* messageLabel = new QLabel(this);
+        auto* messageLabel = UiControls::label(this);
         editMessageControl = messageLabel;
         messageLabel->setObjectName(
             QStringLiteral("peekEditableMessage"));
@@ -256,7 +259,7 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
         for (const PeekContentAction& action : content.actions) {
             if (action.id.isEmpty() || action.label.isEmpty())
                 continue;
-            auto* button = new QPushButton(
+            auto* button = UiControls::pushButton(
                 action.label, actionHost);
             button->setObjectName(
                 QStringLiteral("peekAction.%1").arg(action.id));
@@ -269,7 +272,8 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
             button->setAutoDefault(false);
             button->setFocusPolicy(Qt::NoFocus);
             if (action.role
-                == PeekContentActionRole::Destructive) {
+                == PeekContentActionRole::Destructive
+                && !button->property("zeroslackElaControl").toBool()) {
                 button->setStyleSheet(
                     QStringLiteral("color: palette(highlight);"));
             }
@@ -357,7 +361,7 @@ void EditorHoverPopup::applyAppearance()
     const QColor surface = theme.panelBackground;
     const QColor headerColor = tint(surface, accent, dark ? .09 : .055);
     const QColor border = InsightVisualStyle::subtleBorder(surface, theme.textPrimary);
-    setStyleSheet(QStringLiteral(
+    QString cardStyle = QStringLiteral(
         "QFrame#editorHoverPopup {background:%1; border:1px solid %2; border-radius:14px;}"
         "QWidget#peekHeader {background:%3; border-top-left-radius:13px; border-top-right-radius:13px;}"
         "QLabel {background:transparent; border:0; color:%4;}"
@@ -366,12 +370,15 @@ void EditorHoverPopup::applyAppearance()
         "QLabel#peekNotice {color:%8; padding:6px 0;}"
         "QScrollArea#peekSymbolScroll, QWidget#peekSymbolBody, QWidget#peekDetails {background:%1; border:0;}"
         "QPlainTextEdit#peekLongDetail {background:%1; color:%7; border:0;}"
-        "QWidget#peekFooter {border-top:1px solid %2; background:transparent;}"
+        "QWidget#peekFooter {border-top:1px solid %2; background:transparent;}");
+    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) {
+        cardStyle += QStringLiteral(
         "QToolButton {background:transparent; border:0; border-radius:6px; padding:4px; color:%7;}"
         "QToolButton:hover {background:%6; color:%4;}"
         "QToolButton#peekSourceLink {color:%5; text-decoration:underline;}"
-        "QToolButton:disabled {color:%7;}"
-    ).arg(surface.name(), border.name(), headerColor.name(), theme.textPrimary.name(),
+        "QToolButton:disabled {color:%7;}");
+    }
+    setStyleSheet(cardStyle.arg(surface.name(), border.name(), headerColor.name(), theme.textPrimary.name(),
           accent.name(), tint(surface, accent, dark ? .18 : .12).name(),
           theme.textSecondary.name(), theme.warning.name()));
     QPixmap icon = RoundedIcons::icon(currentContent.portAccent ? RoundedIcons::Right : RoundedIcons::Settings).pixmap(24, 24);
@@ -391,7 +398,7 @@ void EditorHoverPopup::applyAppearance()
 
 void EditorHoverPopup::buildSymbolCard()
 {
-    auto* scroll = new QScrollArea(this);
+    auto* scroll = UiControls::scrollArea(this);
     symbolScroll = scroll;
     scroll->setObjectName(QStringLiteral("peekSymbolScroll"));
     scroll->setFrameShape(QFrame::NoFrame);
@@ -418,12 +425,12 @@ void EditorHoverPopup::buildSymbolCard()
             auto* fieldLayout = new QHBoxLayout(field);
             fieldLayout->setContentsMargins(0, 0, 0, 0);
             fieldLayout->setSpacing(16);
-            auto* label = new QLabel(row.fieldLabel, field);
+            auto* label = UiControls::label(row.fieldLabel, field);
             label->setObjectName(QStringLiteral("peekFieldLabel"));
             label->setTextFormat(Qt::PlainText);
             label->setFont(UiTypography::font());
             fieldLayout->addWidget(label, 0, Qt::AlignTop);
-            auto* value = new QLabel(row.fieldValue, field);
+            auto* value = UiControls::label(row.fieldValue, field);
             value->setObjectName(QStringLiteral("peekFieldValue"));
             value->setAccessibleName(row.text);
             value->setProperty("peekField", row.fieldLabel);
@@ -438,7 +445,7 @@ void EditorHoverPopup::buildSymbolCard()
             fieldLayout->addWidget(value, 1);
             bodyLayout->addWidget(field);
         } else if (row.detail && (row.text.size() > 180 || row.text.count(QLatin1Char('\n')) > 3)) {
-            auto* text = new QPlainTextEdit(row.text, details);
+            auto* text = UiControls::readOnlyText(row.text, details);
             text->setObjectName(QStringLiteral("peekLongDetail"));
             text->setReadOnly(true);
             text->setFont(codeFont);
@@ -448,7 +455,7 @@ void EditorHoverPopup::buildSymbolCard()
             text->setFixedHeight(110);
             detailLayout->addWidget(text);
         } else {
-            auto* label = new QLabel(row.text, row.detail ? details : body);
+            auto* label = UiControls::label(row.text, row.detail ? details : body);
             label->setObjectName(row.detail ? QStringLiteral("peekDetailRow") : QStringLiteral("peekNotice"));
             label->setTextFormat(Qt::PlainText);
             label->setWordWrap(true);
@@ -470,7 +477,7 @@ void EditorHoverPopup::buildSymbolCard()
     footerLayout->setContentsMargins(14, 9, 14, 10);
     footerLayout->setSpacing(8);
     if (hasNavigableTarget()) {
-        auto* source = new QToolButton(footer);
+        auto* source = UiControls::toolButton(footer);
         source->setObjectName(QStringLiteral("peekSourceLink"));
         source->setText(QStringLiteral("%1:%2").arg(QFileInfo(targetFile).fileName()).arg(targetLine));
         source->setToolTip(QStringLiteral("%1:%2 — Go to definition").arg(targetFile).arg(targetLine));
@@ -494,7 +501,7 @@ void EditorHoverPopup::buildSymbolCard()
         footerLayout->addStretch(1);
     }
     if (hasDetails) {
-        auto* toggle = new QToolButton(footer);
+        auto* toggle = UiControls::toolButton(footer);
         toggle->setObjectName(QStringLiteral("peekDetailsToggle"));
         toggle->setText(QStringLiteral("More details"));
         toggle->setCheckable(true);
@@ -1028,7 +1035,7 @@ QLabel* EditorHoverPopup::addLabel(const QString& text,
                                    PeekContentRowRole role,
                                    bool wordWrap)
 {
-    auto* label = new QLabel(text, this);
+    auto* label = UiControls::label(text, this);
     label->setObjectName(QStringLiteral("peekContentRow"));
     label->setTextFormat(Qt::PlainText);
     label->setTextInteractionFlags(Qt::NoTextInteraction);

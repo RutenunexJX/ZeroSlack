@@ -1,4 +1,5 @@
 #include "actionregistry.h"
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "uitypography.h"
 #include <QDir>
@@ -51,6 +52,7 @@ int main(int argc, char* argv[])
 {
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
 
     QWidget host;
     host.resize(900, 520);

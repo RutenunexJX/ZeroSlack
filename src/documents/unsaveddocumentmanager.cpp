@@ -1,3 +1,4 @@
+#include "uidialogs.h"
 #include "unsaveddocumentmanager.h"
 
 #include "shareddocument.h"
@@ -175,7 +176,7 @@ UnsavedDocumentManager::requestDecision(
     dialog.setDetailedText(
         details.join(QLatin1Char('\n')));
 
-    QPushButton* saveButton = dialog.addButton(
+    QPushButton* saveButton = UiDialogs::addButton(&dialog,
         QStringLiteral("Save All"),
         QMessageBox::AcceptRole);
     if (hasConflict) {
@@ -183,12 +184,13 @@ UnsavedDocumentManager::requestDecision(
             QStringLiteral("Resolve Conflicts First"));
         saveButton->setEnabled(false);
     }
-    QPushButton* discardButton = dialog.addButton(
+    QPushButton* discardButton = UiDialogs::addButton(&dialog,
         QStringLiteral("Discard and Close All"),
         QMessageBox::DestructiveRole);
-    QPushButton* cancelButton = dialog.addButton(
+    QPushButton* cancelButton = UiDialogs::addButton(&dialog,
         QMessageBox::Cancel);
     dialog.setDefaultButton(cancelButton);
+    dialog.setEscapeButton(cancelButton);
     dialog.exec();
 
     const QAbstractButton* clicked = dialog.clickedButton();

@@ -1,4 +1,5 @@
 #include "applicationthememanager.h"
+#include "testuistyle.h"
 #include "editorsearchcandidate.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
@@ -107,6 +108,7 @@ SearchResult symbolResult(
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
     ApplicationThemeManager::instance().setMode(ThemeMode::Light);
 
     QWidget popupHost;

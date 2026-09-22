@@ -3,6 +3,7 @@
 #include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
 #include "deferredpanel.h"
+#include "testuistyle.h"
 
 #include <QApplication>
 #include <QDockWidget>
@@ -271,8 +272,9 @@ QString cssColor(const QColor& color)
 
 void verifyClickGeometryStability(DrawerHarness& harness)
 {
-    check(!harness.controller->animationsEnabled(),
-          "bottom drawer height animation is disabled by default");
+    check(harness.controller->animationsEnabled()
+              == (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela),
+          "Ela enables composited drawer motion; classic retains immediate layout");
     harness.controller->restorePanel(QStringLiteral("problems"));
     harness.controller->resetPanelHeight(QStringLiteral("problems"));
     QApplication::processEvents();
@@ -608,6 +610,7 @@ int main(int argc, char* argv[])
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
         qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
     DrawerHarness harness;
     verifyIndependentSideColumns(harness);
     verifyButtonContract(harness);

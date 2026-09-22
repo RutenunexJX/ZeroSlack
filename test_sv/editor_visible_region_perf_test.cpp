@@ -10,6 +10,7 @@
 #include <QSignalSpy>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextLayout>
 
 #include <cstdio>
 
@@ -243,6 +244,93 @@ void exerciseVisibleEditorPresentation()
                && metrics.fullGhostQueries == 0);
     expect("64 dense large-editor scrolls stay below 2500 ms",
            elapsedMs < 2500);
+
+    scrollBar->setValue(maximum / 2);
+    QCoreApplication::processEvents();
+    const auto beforeResize = editor.extraSelections();
+    editor.resetHotPathMetricsForTest();
+    bool selectionsUnchanged = true;
+    for (int step = 0; step < 40; ++step) {
+        editor.resize(720 + (step % 2 ? 0 : 280), 180);
+        QCoreApplication::processEvents();
+        const auto afterResize = editor.extraSelections();
+        selectionsUnchanged &= beforeResize.size() == afterResize.size();
+        for (int index = 0; index < qMin(beforeResize.size(), afterResize.size()); ++index) {
+            selectionsUnchanged &= beforeResize[index].cursor.anchor() == afterResize[index].cursor.anchor()
+                && beforeResize[index].cursor.position() == afterResize[index].cursor.position()
+                && beforeResize[index].format == afterResize[index].format;
+        }
+    }
+    const auto resizeMetrics = editor.hotPathMetricsForTest();
+    expect("width animation retains diagnostics and semantic highlight ranges",
+           selectionsUnchanged && !beforeResize.isEmpty());
+    expect("width animation does not rebuild unchanged visible annotations",
+           resizeMetrics.visiblePresentationRefreshes == 0
+               && resizeMetrics.semanticDecorationCandidatesExamined == 0
+               && resizeMetrics.diagnosticVisibleLineProbes == 0);
+
+    editor.resize(720, 480);
+    QCoreApplication::processEvents();
+    expect("height growth publishes newly visible diagnostics and highlights",
+           editor.hotPathMetricsForTest().visiblePresentationRefreshes > 0
+               && editor.extraSelections().size() > beforeResize.size());
+    editor.setDiagnosticHighlights({});
+    editor.setSemanticDecorations({});
+    const int clearedSelectionCount = editor.extraSelections().size();
+    editor.resize(1000, 480);
+    QCoreApplication::processEvents();
+    expect("explicit annotation removal survives a subsequent width resize",
+           clearedSelectionCount < beforeResize.size()
+               && editor.extraSelections().size() == clearedSelectionCount);
+
+    editor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    editor.resize(720, 180);
+    QCoreApplication::processEvents();
+    const int lastLineBeforeWrap = editor.cursorForPosition(
+        QPoint(0, editor.viewport()->height() - 1)).blockNumber();
+    editor.resetHotPathMetricsForTest();
+    editor.resize(110, 180);
+    QCoreApplication::processEvents();
+    expect("wrapped width resize refreshes the changed visible line range",
+           editor.cursorForPosition(QPoint(0, editor.viewport()->height() - 1)).blockNumber()
+                   < lastLineBeforeWrap
+               && editor.hotPathMetricsForTest().visiblePresentationRefreshes > 0);
+    expect("resizing preserves document content and creates no edit transactions",
+           documentChanges.isEmpty() && editor.toPlainText() == fixture.text);
+
+    int cachedBlocks = 0;
+    for (auto block = editor.document()->begin(); block.isValid(); block = block.next())
+        cachedBlocks += block.layout()->cacheEnabled() ? 1 : 0;
+    expect("text layout caching stays bounded after scrolling through a large file",
+           cachedBlocks > 0 && cachedBlocks <= 256
+               && !editor.document()->begin().layout()->cacheEnabled());
+    const auto sharedRevision = editor.document()->revision();
+    {
+        MyCodeEditor peer;
+        peer.attachSharedDocument(editor.document(), 0);
+        peer.resize(700, 360);
+        peer.show();
+        QCoreApplication::processEvents();
+        peer.verticalScrollBar()->setValue(200);
+        QCoreApplication::processEvents();
+        editor.viewport()->repaint();
+        peer.viewport()->repaint();
+        expect("layout caches preserve independently scrolled shared-document views",
+               peer.document() == editor.document()
+                   && peer.cursorForPosition(QPoint(0, 0)).blockNumber()
+                       != editor.cursorForPosition(QPoint(0, 0)).blockNumber()
+                   && editor.document()->revision() == sharedRevision);
+    }
+    editor.viewport()->repaint();
+    expect("closing a cached peer leaves the remaining view usable",
+           editor.document()->revision() == sharedRevision
+               && editor.cursorRect().height() > 0
+               && editor.toPlainText() == fixture.text);
+    editor.setPlainText("module replacement;\nlogic data;\nendmodule\n");
+    QCoreApplication::processEvents();
+    expect("replacing a cached document releases stale block references",
+           editor.toPlainText() == "module replacement;\nlogic data;\nendmodule\n"
+               && editor.document()->begin().layout()->cacheEnabled());
 }
 
 struct HugeSyntaxFixture {

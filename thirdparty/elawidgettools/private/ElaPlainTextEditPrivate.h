@@ -7,6 +7,7 @@
 class ElaEvent;
 class ElaPlainTextEdit;
 class ElaPlainTextEditStyle;
+class QPropertyAnimation;
 class ElaPlainTextEditPrivate : public QObject
 {
     Q_OBJECT
@@ -22,6 +23,8 @@ private:
     ElaThemeType::ThemeMode _themeMode;
     ElaPlainTextEditStyle* _style{nullptr};
     ElaEvent* _focusEvent{nullptr};
+    QPropertyAnimation* _markAnimation{nullptr};
+    bool _nativeTextBehavior{false};
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELAPLAINTEXTEDITPRIVATE_H_

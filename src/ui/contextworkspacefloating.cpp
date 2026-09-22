@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "contextworkspacecontroller.h"
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
@@ -71,7 +72,7 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     });
     connect(host, &ContextFloatingWindow::sidebarDragStarted, this, [this, host] {
         host->setProperty("contextDockWasVisible", dockValue->isVisible());
-        showDock(false);
+        showDock(false, false);
     });
     connect(host, &ContextFloatingWindow::sidebarDragFinished, this, [this, host](bool accepted) {
         if (!accepted && !host->property("contextDockWasVisible").toBool()) dockValue->hide();
@@ -131,7 +132,7 @@ bool ContextWorkspaceController::focusResource(const QString& key)
         if (widget->isWindow()) widget->activateWindow();
     } else if (dockHostValue->containsResource(key)) {
         dockHostValue->activateResource(key);
-        showDock(false);
+        showDock(false, false);
     } else {
         return false;
     }
@@ -290,7 +291,7 @@ void ContextWorkspaceController::restoreFloatingInstances(const QList<ContextFlo
 
 QMenu* ContextWorkspaceController::createRailContextMenu(const QString& providerId)
 {
-    auto* menu = new QMenu(railValue);
+    auto* menu = UiControls::menu(railValue);
     menu->setToolTipsVisible(true);
     menu->setObjectName(QStringLiteral("contextRailMenu"));
     auto* provider = providerForId(providerId);
@@ -329,7 +330,7 @@ QMenu* ContextWorkspaceController::createRailContextMenu(const QString& provider
         if (!floatingEligible(key)) item->setToolTip(tr("Switch to %1 to show this view.").arg(boundDocument(key)));
         connect(item, &QAction::triggered, this, [this, key] { focusResource(key); });
         if (dynamic_cast<ContextFloatingWindow*>(surface)) {
-            QMenu* binding = menu->addMenu(tr("Binding: %1").arg(title));
+            QMenu* binding = UiControls::addMenu(menu, tr("Binding: %1").arg(title));
             QAction* global = binding->addAction(tr("Switch to global"));
             global->setObjectName(QStringLiteral("contextBindingGlobal"));
             global->setEnabled(!boundDocument(key).isEmpty());

@@ -19,6 +19,8 @@ ElaMenu::ElaMenu(QWidget* parent)
     setAttribute(Qt::WA_TranslucentBackground);
     setObjectName("ElaMenu");
     d->_menuStyle = new ElaMenuStyle(style());
+    d->_menuStyle->setParent(qApp);
+    connect(this, &QObject::destroyed, d->_menuStyle, &QObject::deleteLater);
     setStyle(d->_menuStyle);
     d->_pAnimationImagePosY = 0;
 }
@@ -31,8 +33,13 @@ ElaMenu::ElaMenu(const QString& title, QWidget* parent)
 
 ElaMenu::~ElaMenu()
 {
+}
+
+void ElaMenu::setNativeMenuBehavior(bool enabled)
+{
     Q_D(ElaMenu);
-    delete d->_menuStyle;
+    _nativeMenuBehavior = enabled;
+    d->_menuStyle->setNativeItemContent(enabled);
 }
 
 void ElaMenu::setMenuItemHeight(int menuItemHeight)
@@ -134,6 +141,10 @@ bool ElaMenu::isHasIcon() const
 void ElaMenu::showEvent(QShowEvent* event)
 {
     Q_EMIT menuShow();
+    if (_nativeMenuBehavior) {
+        QMenu::showEvent(event);
+        return;
+    }
     Q_D(ElaMenu);
     //消除阴影偏移
     move(this->pos().x() - 6, this->pos().y());
@@ -182,6 +193,10 @@ void ElaMenu::showEvent(QShowEvent* event)
 
 void ElaMenu::paintEvent(QPaintEvent* event)
 {
+    if (_nativeMenuBehavior) {
+        QMenu::paintEvent(event);
+        return;
+    }
     Q_D(ElaMenu);
     QPainter painter(this);
     painter.setRenderHints(QPainter::Antialiasing);

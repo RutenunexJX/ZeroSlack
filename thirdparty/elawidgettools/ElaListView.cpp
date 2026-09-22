@@ -29,6 +29,16 @@ ElaListView::~ElaListView()
     delete d->_listViewStyle;
 }
 
+QStyle* ElaListView::createStyle(QObject* owner, int itemHeight)
+{
+    auto* viewStyle = new ElaListViewStyle();
+    viewStyle->setParent(owner);
+    viewStyle->setItemHeight(itemHeight);
+    viewStyle->setIsTransparent(true);
+    viewStyle->setNativeItemContent(true);
+    return viewStyle;
+}
+
 void ElaListView::setItemHeight(int itemHeight)
 {
     Q_D(ElaListView);

@@ -1,4 +1,5 @@
 #include "uitypography.h"
+#include "uicontrols.h"
 #include "multisignalpropagationpanel.h"
 
 #include "semanticindex.h"
@@ -261,7 +262,7 @@ void MultiSignalPropagationPanel::setupUi()
     root->setContentsMargins(8, 8, 8, 8);
     root->setSpacing(7);
 
-    auto* heading = new QLabel(
+    auto* heading = UiControls::label(
         QStringLiteral("Propagate Multiple Signals"),
         this);
     heading->setObjectName(
@@ -270,7 +271,7 @@ void MultiSignalPropagationPanel::setupUi()
     heading->setFont(headingFont);
     root->addWidget(heading);
 
-    stateLabel = new QLabel(this);
+    stateLabel = UiControls::label(this);
     stateLabel->setObjectName(
         QStringLiteral("multiSignalPropagationState"));
     stateLabel->setWordWrap(true);
@@ -283,7 +284,7 @@ void MultiSignalPropagationPanel::setupUi()
         QStringLiteral("multiSignalPropagationInputGroup"));
     auto* inputLayout = new QVBoxLayout(inputGroup);
 
-    signalTable = new QTableWidget(inputGroup);
+    signalTable = UiControls::tableWidget(inputGroup);
     signalTable->setObjectName(
         QStringLiteral("multiSignalPropagationSignals"));
     signalTable->setColumnCount(3);
@@ -312,15 +313,15 @@ void MultiSignalPropagationPanel::setupUi()
     inputLayout->addWidget(signalTable, 1);
 
     auto* form = new QFormLayout();
-    ancestorCombo = new QComboBox(inputGroup);
+    ancestorCombo = UiControls::comboBox(inputGroup);
     ancestorCombo->setObjectName(
         QStringLiteral("multiSignalPropagationAncestor"));
     ancestorCombo->setEditable(false);
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Target ancestor"),
         ancestorCombo);
 
-    modeCombo = new QComboBox(inputGroup);
+    modeCombo = UiControls::comboBox(inputGroup);
     modeCombo->setObjectName(
         QStringLiteral("multiSignalPropagationMode"));
     modeCombo->setEditable(false);
@@ -333,33 +334,33 @@ void MultiSignalPropagationPanel::setupUi()
         QStringLiteral("Port group"),
         static_cast<int>(
             MultiSignalPropagationMode::PortGroup));
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Port layout"),
         modeCombo);
 
-    groupNameEdit = new QLineEdit(inputGroup);
+    groupNameEdit = UiControls::lineEdit(inputGroup);
     groupNameEdit->setObjectName(
         QStringLiteral("multiSignalPropagationGroupName"));
     groupNameEdit->setPlaceholderText(
         QStringLiteral("SystemVerilog group identifier"));
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Port group"),
         groupNameEdit);
     inputLayout->addLayout(form);
 
     auto* actionRow = new QHBoxLayout();
-    previewButton = new QPushButton(
+    previewButton = UiControls::pushButton(
         QStringLiteral("Preview Change Preview"),
         inputGroup);
     previewButton->setObjectName(
         QStringLiteral("multiSignalPropagationPreviewButton"));
-    confirmButton = new QPushButton(
+    confirmButton = UiControls::pushButton(
         QStringLiteral("Apply Confirmed Plan"),
         inputGroup);
     confirmButton->setObjectName(
         QStringLiteral("multiSignalPropagationConfirmButton"));
     confirmButton->setEnabled(false);
-    undoButton = new QPushButton(
+    undoButton = UiControls::pushButton(
         QStringLiteral("Undo Applied Plan"),
         inputGroup);
     undoButton->setObjectName(
@@ -381,14 +382,14 @@ void MultiSignalPropagationPanel::setupUi()
     auto* previewMetaLayout =
         new QVBoxLayout(previewMeta);
     previewMetaLayout->setContentsMargins(0, 0, 0, 0);
-    transactionSummary = new QLabel(previewMeta);
+    transactionSummary = UiControls::label(previewMeta);
     transactionSummary->setObjectName(
         QStringLiteral(
             "multiSignalPropagationTransactionSummary"));
     transactionSummary->setWordWrap(true);
     previewMetaLayout->addWidget(transactionSummary);
 
-    blockersList = new QListWidget(previewMeta);
+    blockersList = UiControls::listWidget(previewMeta);
     blockersList->setObjectName(
         QStringLiteral(
             "multiSignalPropagationBlockers"));
@@ -397,7 +398,7 @@ void MultiSignalPropagationPanel::setupUi()
     previewMetaLayout->addWidget(blockersList);
     previewSplitter->addWidget(previewMeta);
 
-    diffView = new QPlainTextEdit(previewSplitter);
+    diffView = UiControls::readOnlyText(previewSplitter);
     diffView->setObjectName(
         QStringLiteral("multiSignalPropagationDiff"));
     diffView->setReadOnly(true);

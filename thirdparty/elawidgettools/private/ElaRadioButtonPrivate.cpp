@@ -18,5 +18,7 @@ void ElaRadioButtonPrivate::onThemeChanged(ElaThemeType::ThemeMode themeMode)
     QPalette palette = q->palette();
     palette.setColor(QPalette::Text, ElaThemeColor(_themeMode, BasicText));
     palette.setColor(QPalette::WindowText, ElaThemeColor(themeMode, BasicText));
+    palette.setColor(QPalette::Disabled, QPalette::Text, ElaThemeColor(themeMode, BasicTextDisable));
+    palette.setColor(QPalette::Disabled, QPalette::WindowText, ElaThemeColor(themeMode, BasicTextDisable));
     q->setPalette(palette);
 }

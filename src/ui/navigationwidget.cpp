@@ -372,7 +372,7 @@ void NavigationWidget::setupUI()
     searchLineEdit->setClearButtonEnabled(true);
     mainLayout->addWidget(searchLineEdit);
 
-    tabWidget = new QTabWidget(this);
+    tabWidget = UiControls::tabWidget(this);
     mainLayout->addWidget(tabWidget);
 
     setupFileTab();
@@ -388,7 +388,8 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->setContentsMargins(2, 2, 2, 2);
     fileTabLayout->setSpacing(2);
 
-    fileTreeWidget = new QTreeWidget(fileTab);
+    fileTreeWidget = UiControls::treeWidget(fileTab);
+    UiControls::enableTreeTransitions(fileTreeWidget);
     fileTreeWidget->setObjectName(
         QStringLiteral("navigationFileTree"));
     fileTreeWidget->setHeaderLabel("Files");
@@ -425,7 +426,7 @@ void NavigationWidget::setupDesignTab()
     QHBoxLayout* topLayout = new QHBoxLayout();
     topLayout->setContentsMargins(0, 0, 0, 0);
     topLayout->setSpacing(4);
-    designTopLabel = new QLabel(designTab);
+    designTopLabel = UiControls::label(designTab);
     designTopLabel->setWordWrap(true);
     designClearButton = UiControls::pushButton(QStringLiteral("Clear"), designTab);
     designRefreshButton = UiControls::pushButton(QStringLiteral("Refresh"), designTab);
@@ -436,7 +437,8 @@ void NavigationWidget::setupDesignTab()
     topLayout->addWidget(designRefreshButton);
     designTabLayout->addLayout(topLayout);
 
-    designTreeWidget = new QTreeWidget(designTab);
+    designTreeWidget = UiControls::treeWidget(designTab);
+    UiControls::enableTreeTransitions(designTreeWidget);
     designTreeWidget->setColumnCount(2);
     designTreeWidget->setHeaderLabels({QStringLiteral("Instance"),
                                        QStringLiteral("Module")});

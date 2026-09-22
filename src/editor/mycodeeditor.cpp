@@ -1,3 +1,5 @@
+#include "uidialogs.h"
+#include "uicontrols.h"
 #include "mycodeeditor.h"
 #include "applicationthememanager.h"
 #include "actionregistry.h"
@@ -201,8 +203,18 @@ protected:
         owner->setFocus();
         QFrame::closeEvent(event);
     }
-    bool eventFilter(QObject*, QEvent* event) override {
-        if (event->type() == QEvent::Resize || event->type() == QEvent::Show) place();
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::KeyPress) {
+            auto* key = static_cast<QKeyEvent*>(event);
+            auto* input = qobject_cast<QLineEdit*>(watched);
+            if (input && (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter)) {
+                // QLineEdit otherwise lets Return propagate into the editor after searching.
+                event->accept();
+                if (input->hasAcceptableInput()) emit input->returnPressed();
+                return true;
+            }
+        }
+        if (watched == owner && (event->type() == QEvent::Resize || event->type() == QEvent::Show)) place();
         return false;
     }
 private:
@@ -240,22 +252,25 @@ void showReplaceDialogFor(MyCodeEditor* editor)
     auto* findRow = new QHBoxLayout;
     auto* replaceRow = new QHBoxLayout;
 
-    auto* findLabel = new QLabel(QObject::tr("Find:"), dialog);
-    auto* findInput = new QLineEdit(dialog);
+    auto* findLabel = UiControls::label(QObject::tr("Find:"), dialog);
+    auto* findInput = UiControls::lineEdit(dialog);
     findInput->setObjectName(QStringLiteral("editorFindInput"));
-    auto* replaceLabel = new QLabel(QObject::tr("Replace:"), dialog);
-    auto* replaceInput = new QLineEdit(dialog);
-    auto* caseSensitive = new QCheckBox(QObject::tr("Match case"), dialog);
-    auto* findNext = new QPushButton(QObject::tr("Next"), dialog);
-    auto* findPrevious = new QPushButton(QObject::tr("Previous"), dialog);
-    auto* replace = new QPushButton(QObject::tr("Replace"), dialog);
-    auto* replaceAll = new QPushButton(QObject::tr("Replace All"), dialog);
+    findInput->installEventFilter(dialog);
+    auto* replaceLabel = UiControls::label(QObject::tr("Replace:"), dialog);
+    auto* replaceInput = UiControls::lineEdit(dialog);
+    replaceInput->setObjectName(QStringLiteral("editorReplaceInput"));
+    replaceInput->installEventFilter(dialog);
+    auto* caseSensitive = UiControls::checkBox(QObject::tr("Match case"), dialog);
+    auto* findNext = UiControls::pushButton(QObject::tr("Next"), dialog);
+    auto* findPrevious = UiControls::pushButton(QObject::tr("Previous"), dialog);
+    auto* replace = UiControls::pushButton(QObject::tr("Replace"), dialog);
+    auto* replaceAll = UiControls::pushButton(QObject::tr("Replace All"), dialog);
 
     for (QWidget* control : QList<QWidget*>{replaceInput, replace, replaceAll})
         control->setProperty("replaceControl", true);
-    auto* close = new QPushButton(QObject::tr("Close"), dialog);
+    auto* close = UiControls::pushButton(QObject::tr("Close"), dialog);
     close->setText(QStringLiteral("×"));
-    close->setFixedWidth(26);
+    close->setFixedWidth(qMax(26, close->minimumSizeHint().width()));
     close->setToolTip(QObject::tr("Close (Esc)"));
     QObject::connect(close, &QPushButton::clicked, dialog, &QWidget::close);
     findRow->addWidget(findLabel);
@@ -271,8 +286,8 @@ void showReplaceDialogFor(MyCodeEditor* editor)
     replaceLabel->hide();
     findPrevious->setText(QStringLiteral("<"));
     findNext->setText(QStringLiteral(">"));
-    findPrevious->setFixedWidth(26);
-    findNext->setFixedWidth(26);
+    findPrevious->setFixedWidth(qMax(26, findPrevious->minimumSizeHint().width()));
+    findNext->setFixedWidth(qMax(26, findNext->minimumSizeHint().width()));
     findPrevious->setToolTip(QObject::tr("Previous match"));
     findNext->setToolTip(QObject::tr("Next match"));
     findRow->addWidget(findPrevious);
@@ -909,12 +924,13 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
 {
     QPlainTextEdit::resizeEvent(event);
     state->projection.ensure(this, state->folding.collapsedLineRanges());
-    state->handleResize(this);
+    state->handleResize(this, false);
 }
 
 void MyCodeEditor::paintEvent(QPaintEvent *event)
 {
     state->projection.ensure(this, state->folding.collapsedLineRanges());
+    state->updateVisibleTextLayoutCache(this);
     if (state->projection.active())
         state->projection.paint(this, event);
     else
@@ -1382,7 +1398,7 @@ int MyCodeEditor::showGotoLineDialog()
 {
     const int maxLine = qMax(1, document() ? document()->blockCount() : 1);
     bool accepted = false;
-    const int lineNumber = QInputDialog::getInt(
+    const int lineNumber = UiDialogs::getInt(
         this,
         tr("Go to Line"),
         tr("Line:"),

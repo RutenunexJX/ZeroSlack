@@ -1,3 +1,4 @@
+#include "uidialogs.h"
 #include "workspacemanager.h"
 
 #include "slangparseoptions.h"
@@ -38,7 +39,7 @@ WorkspaceManager::WorkspaceManager(QObject *parent)
     workspaceAliasSelector = [](QWidget* dialogParent,
                                 const QString& suggested) {
         bool accepted = false;
-        const QString alias = QInputDialog::getText(
+        const QString alias = UiDialogs::getText(
             dialogParent,
             QStringLiteral("Workspace Alias"),
             QStringLiteral("Alias"),

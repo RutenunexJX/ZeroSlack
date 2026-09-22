@@ -13,7 +13,9 @@ ElaRadioButton::ElaRadioButton(QWidget* parent)
     QFont font = this->font();
     font.setPixelSize(eApp->getFontPixelSize() + 2);
     setFont(font);
-    setStyle(new ElaRadioButtonStyle(style()));
+    auto* radioStyle = new ElaRadioButtonStyle(style());
+    radioStyle->setParent(this);
+    setStyle(radioStyle);
     d->onThemeChanged(eTheme->getThemeMode());
     connect(eTheme, &ElaTheme::themeModeChanged, d, &ElaRadioButtonPrivate::onThemeChanged);
 }
@@ -26,13 +28,13 @@ ElaRadioButton::ElaRadioButton(const QString& text, QWidget* parent)
 
 ElaRadioButton::~ElaRadioButton()
 {
-    delete this->style();
+    setStyle(nullptr);
 }
 
 void ElaRadioButton::paintEvent(QPaintEvent* event)
 {
     Q_D(ElaRadioButton);
-    if (palette().color(QPalette::WindowText) != ElaThemeColor(d->_themeMode, BasicText))
+    if (palette().color(QPalette::Active, QPalette::WindowText) != ElaThemeColor(d->_themeMode, BasicText))
     {
         d->onThemeChanged(d->_themeMode);
     }

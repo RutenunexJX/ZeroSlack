@@ -1,3 +1,6 @@
+#include "uicontrols.h"
+#include "uiwindowchrome.h"
+#include <memory>
 #pragma once
 #include <QApplication>
 #include "windowsnapchrome.h"
@@ -58,18 +61,19 @@ public:
         host->setWindowFlag(Qt::FramelessWindowHint);
         host->setContentsMargins(4, 40, 4, 4);
         // Keep menu actions registered so hiding the menu does not remove shortcuts.
-        auto* commands = new QMenu(host);
+        auto* commands = UiControls::menu(host);
         for (auto* action : host->menuBar()->actions()) {
             commands->addAction(action);
             if (action->menu()) registerActions(action->menu());
         }
         host->menuBar()->hide();
-        auto* header = new QFrame(navigation);
+        auto* header = new QFrame(navigation ? static_cast<QWidget*>(navigation) : host);
+        if (!navigation) header->hide();
         header->setObjectName(QStringLiteral("projectSidebarHeader"));
         auto* controls = new QHBoxLayout(header);
         controls->setContentsMargins(8, 8, 8, 8);
         controls->setSpacing(6);
-        auto* project = new QToolButton(header);
+        auto* project = UiControls::railButton(header);
         project->setObjectName(QStringLiteral("projectRailButton"));
         project->setIcon(RoundedIcons::icon(RoundedIcons::Folder));
         project->setIconSize(QSize(20, 20));
@@ -83,7 +87,7 @@ public:
         connect(project, &QWidget::customContextMenuRequested, commands,
             [commands, project](QPoint point) { commands->popup(project->mapToGlobal(point)); });
         controls->addWidget(project);
-        auto* setting = new QToolButton(header);
+        auto* setting = UiControls::railButton(header);
         settingsButton = setting;
         setting->setObjectName(QStringLiteral("settingsRailButton"));
         settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
@@ -93,7 +97,7 @@ public:
         connect(setting, &QToolButton::clicked, host, std::move(settings));
         controls->addWidget(setting);
         controls->addStretch();
-        auto* collapse = new QToolButton(header);
+        auto* collapse = UiControls::railButton(header);
         collapse->setObjectName(QStringLiteral("collapseProjectSidebarButton"));
         collapse->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
         collapse->setIconSize(QSize(20, 20));
@@ -107,19 +111,13 @@ public:
                         navigationPane->setExpanded(false);
                     });
         }
-        title = new QFrame(host);
-        title->setObjectName(QStringLiteral("workspaceTitleBar"));
-
-        title->setAutoFillBackground(true);
+        const auto titleBar = UiWindowChrome::createTitleBar(host);
+        title = titleBar.widget;
+        maximizeButton = titleBar.maximize;
+        updateMaximizeIcon();
+        host->setContentsMargins(4, title->height() + 4, 4, 4);
         updateTitleTheme();
-        auto* row = new QHBoxLayout(title);
-        row->setContentsMargins(8, 0, 2, 0);
-        auto* expand = new QToolButton(title);
-        expand->setObjectName(QStringLiteral("expandProjectSidebarButton"));
-        expand->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
-        expand->setIconSize(QSize(20, 20));
-        expand->setToolTip(tr("Expand sidebar (Ctrl+1)"));
-        expand->setAccessibleName(tr("Expand sidebar"));
+        auto* expand = titleBar.sidebar;
         expand->setVisible(navigation && navigation->isHidden());
         if (navigation) {
             connect(expand, &QToolButton::clicked, navigationPane,
@@ -129,16 +127,12 @@ public:
             connect(navigation, &QDockWidget::visibilityChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });
         }
-        row->addWidget(expand);
-        auto* name = new QLabel(host->windowTitle(), title);
-        UiTypography::apply(name, UiTypography::Role::Body);
-        name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-        name->setMinimumWidth(0);
-        name->setObjectName(QStringLiteral("workspaceFilePath"));
+        auto* name = titleBar.label;
         name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file"));
         name->setContextMenuPolicy(Qt::CustomContextMenu);
         connect(name, &QWidget::customContextMenuRequested, this, [this, name](QPoint point) {
-            QMenu menu(name);
+            std::unique_ptr<QMenu> menuOwner(UiControls::menu(name));
+            QMenu& menu = *menuOwner;
             const QString path = window->windowFilePath();
             auto* copy = menu.addAction(tr("Copy full path"));
             auto* reveal = menu.addAction(tr("Reveal in Explorer"));
@@ -155,27 +149,7 @@ public:
             }
         });
         connect(host, &QWidget::windowTitleChanged, name, [host, name] { name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file")); });
-        row->addWidget(name, 1);
-        connect(host, &QWidget::windowTitleChanged, name, &QLabel::setText);
-        for (int i = 0; i < 3; ++i) {
-            auto* button = new QToolButton(title);
-            button->setObjectName(i == 0 ? QStringLiteral("windowMinimizeButton")
-                : i == 1 ? QStringLiteral("windowMaximizeButton") : QStringLiteral("windowCloseButton"));
-            button->setIcon(host->style()->standardIcon(i == 0 ? QStyle::SP_TitleBarMinButton : i == 1 ? QStyle::SP_TitleBarMaxButton : QStyle::SP_TitleBarCloseButton));
-            if (i == 1) {
-                maximizeButton = button;
-                updateMaximizeIcon();
-            }
-            button->setToolTip(i == 0 ? tr("Minimize") : i == 1 ? tr("Maximize / Restore") : tr("Close"));
-            if (i == 2) button->setStyleSheet(QStringLiteral("QToolButton:hover { background:#c42b1c; color:white; }"));
-            row->addWidget(button);
-            connect(button, &QToolButton::clicked, host, [host, i]() {
-                if (i == 0) host->showMinimized();
-                else if (i == 1) host->isMaximized() ? host->showNormal() : host->showMaximized();
-                else host->close();
-            });
-        }
-        title->setGeometry(4, 4, host->width() - 8, 36);
+        title->setGeometry(4, 4, host->width() - 8, title->height());
         title->show();
         title->raise();
         qApp->installEventFilter(this);
@@ -189,7 +163,7 @@ protected:
         if (target == window && event->type() == QEvent::WindowStateChange)
             updateMaximizeIcon();
         if (target == window && event->type() == QEvent::Resize)
-            title->setGeometry(4, 4, window->width() - 8, 36);
+            title->setGeometry(4, 4, window->width() - 8, title->height());
         if (target == window && event->type() == QEvent::PaletteChange) {
             settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
             updateTitleTheme();
@@ -210,7 +184,7 @@ protected:
                 if (at.y() >= window->height() - 4) edges |= Qt::BottomEdge;
             }
             if (edges && window->windowHandle()->startSystemResize(edges)) { return true; }
-            if (title->isVisible() && title->geometry().contains(at) && !qobject_cast<QToolButton*>(widget)) {
+            if (title->isVisible() && title->geometry().contains(at) && !qobject_cast<QAbstractButton*>(widget)) {
                 if (event->type() == QEvent::MouseButtonDblClick)
                     window->isMaximized() ? window->showNormal() : window->showMaximized();
                 else window->windowHandle()->startSystemMove();
@@ -221,10 +195,15 @@ protected:
     }
 private:
     void updateMaximizeIcon() {
+        if (title && title->property("zeroslackElaControl").toBool()) return;
         if (maximizeButton) maximizeButton->setIcon(RoundedIcons::icon(
             window->isMaximized() ? RoundedIcons::Restore : RoundedIcons::Maximize));
     }
     void updateTitleTheme() {
+        if (title->property("zeroslackElaControl").toBool()) {
+            title->setPalette(window->palette());
+            return;
+        }
         const QPalette palette = window->palette();
         const QColor base = palette.color(QPalette::Window);
         const QColor text = palette.color(QPalette::WindowText);
@@ -244,7 +223,7 @@ private:
         }
     }
     QMainWindow* window;
-    QFrame* title;
+    QWidget* title = nullptr;
     QToolButton* settingsButton = nullptr;
     QToolButton* maximizeButton = nullptr;
 };

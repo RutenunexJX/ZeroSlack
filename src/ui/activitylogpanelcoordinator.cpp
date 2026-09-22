@@ -29,7 +29,7 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
     toolbar->addWidget(clearButton);
     layout->addLayout(toolbar);
 
-    outputText = new QPlainTextEdit(panel);
+    outputText = UiControls::readOnlyText(panel);
     outputText->setObjectName(QStringLiteral("activityOutputText"));
     outputText->setReadOnly(true);
     UiTypography::apply(outputText, UiTypography::Role::Body);

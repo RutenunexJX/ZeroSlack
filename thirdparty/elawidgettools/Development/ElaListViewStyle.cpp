@@ -35,9 +35,11 @@ void ElaListViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
             itemRect.adjust(0, 2, 0, -2);
             QPainterPath path;
             path.addRoundedRect(itemRect, 4, 4);
+            if (_nativeItemContent && vopt->backgroundBrush.style() != Qt::NoBrush)
+                painter->fillPath(path, vopt->backgroundBrush);
             if (vopt->state & QStyle::State_Selected)
             {
-                if (vopt->state & QStyle::State_MouseOver)
+                if (vopt->state & QStyle::State_MouseOver && vopt->state & QStyle::State_Enabled)
                 {
                     // 选中时覆盖
                     painter->fillPath(path, ElaThemeColor(_themeMode, BasicSelectedHoverAlpha));
@@ -50,7 +52,7 @@ void ElaListViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
             }
             else
             {
-                if (vopt->state & QStyle::State_MouseOver)
+                if (vopt->state & QStyle::State_MouseOver && vopt->state & QStyle::State_Enabled)
                 {
                     // 覆盖时颜色
                     painter->fillPath(path, ElaThemeColor(_themeMode, BasicHoverAlpha));
@@ -113,6 +115,10 @@ void ElaListViewStyle::drawControl(ControlElement element, const QStyleOption* o
     {
         if (const QStyleOptionViewItem* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
         {
+            if (_nativeItemContent) {
+                QProxyStyle::drawControl(element, option, painter, widget);
+                return;
+            }
             // 背景绘制
             this->drawPrimitive(QStyle::PE_PanelItemViewItem, option, painter, widget);
 
@@ -176,6 +182,8 @@ QSize ElaListViewStyle::sizeFromContents(ContentsType type, const QStyleOption* 
     case QStyle::CT_ItemViewItem:
     {
         QSize itemSize = QProxyStyle::sizeFromContents(type, option, size, widget);
+        if (_nativeItemContent)
+            return QSize(itemSize.width() + 16, qMax(_pItemHeight, itemSize.height() + 8));
         const ElaListView* listView = dynamic_cast<const ElaListView*>(widget);
         QListView::ViewMode viewMode = listView->viewMode();
         if (viewMode == QListView::ListMode)
@@ -191,4 +199,17 @@ QSize ElaListViewStyle::sizeFromContents(ContentsType type, const QStyleOption* 
     }
     }
     return QProxyStyle::sizeFromContents(type, option, size, widget);
+}
+
+QRect ElaListViewStyle::subElementRect(SubElement element, const QStyleOption* option, const QWidget* widget) const
+{
+    if (_nativeItemContent && (element == SE_ItemViewItemText || element == SE_ItemViewItemDecoration
+                              || element == SE_ItemViewItemCheckIndicator)) {
+        if (const auto* item = qstyleoption_cast<const QStyleOptionViewItem*>(option)) {
+            QStyleOptionViewItem inset(*item);
+            inset.rect.adjust(8, 0, -8, 0);
+            return QProxyStyle::subElementRect(element, &inset, widget);
+        }
+    }
+    return QProxyStyle::subElementRect(element, option, widget);
 }

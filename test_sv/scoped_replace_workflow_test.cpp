@@ -1,4 +1,5 @@
 #include "notificationcenter.h"
+#include "testuistyle.h"
 #include "scopedreplaceworkflow.h"
 #include "scopedsearchpanel.h"
 #include "searchservice.h"
@@ -635,6 +636,7 @@ void checkHiddenDockDoesNotExpandOrStealFocus()
 int main(int argc, char* argv[])
 {
     QApplication application(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
 
     checkApplyAndSingleUndo();
     checkStaleRevision();

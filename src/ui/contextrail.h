@@ -24,6 +24,7 @@ class ZEROSLACK_API ContextRail final : public QToolBar
 public:
     explicit ContextRail(QWidget* parent = nullptr);
 
+    QAction* addRailAction(const QIcon& icon, const QString& title, QAction* before = nullptr);
     bool addEntry(const ContextRailEntry& entry);
     bool removeEntry(const QString& id);
     bool setEntryIcon(const QString& id, const QIcon& icon);

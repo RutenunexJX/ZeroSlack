@@ -42,6 +42,23 @@ ElaText::~ElaText()
 {
 }
 
+void ElaText::setThemeColorEnabled(bool enabled)
+{
+    Q_D(ElaText);
+    if (d->_themeColorEnabled == enabled)
+        return;
+    d->_themeColorEnabled = enabled;
+    if (enabled)
+        d->onThemeChanged(eTheme->getThemeMode());
+    update();
+}
+
+bool ElaText::themeColorEnabled() const
+{
+    Q_D(const ElaText);
+    return d->_themeColorEnabled;
+}
+
 void ElaText::setIsWrapAnywhere(bool isWrapAnywhere)
 {
     Q_D(ElaText);
@@ -157,7 +174,7 @@ ElaIconType::IconName ElaText::getElaIcon() const
 void ElaText::paintEvent(QPaintEvent* event)
 {
     Q_D(ElaText);
-    if (palette().color(QPalette::WindowText) != ElaThemeColor(d->_themeMode, BasicText))
+    if (d->_themeColorEnabled && palette().color(QPalette::WindowText) != ElaThemeColor(d->_themeMode, BasicText))
     {
         d->onThemeChanged(d->_themeMode);
     }
@@ -169,7 +186,8 @@ void ElaText::paintEvent(QPaintEvent* event)
         QFont iconFont = QFont("Font Awesome 6 Free");
         iconFont.setPixelSize(this->font().pixelSize());
         painter.setFont(iconFont);
-        painter.setPen(ElaThemeColor(d->_themeMode, BasicText));
+        painter.setPen(d->_themeColorEnabled ? ElaThemeColor(d->_themeMode, BasicText)
+                                            : palette().color(foregroundRole()));
         painter.drawText(rect(), Qt::AlignCenter, QChar(static_cast<char32_t>(d->_pElaIcon)));
         painter.restore();
     }
@@ -180,7 +198,8 @@ void ElaText::paintEvent(QPaintEvent* event)
             QPainter painter(this);
             painter.save();
             painter.setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
-            painter.setPen(ElaThemeColor(d->_themeMode, BasicText));
+            painter.setPen(d->_themeColorEnabled ? ElaThemeColor(d->_themeMode, BasicText)
+                                                : palette().color(foregroundRole()));
             painter.drawText(rect(), Qt::AlignLeft | Qt::AlignVCenter | Qt::TextWordWrap | Qt::TextWrapAnywhere, text());
             painter.restore();
         }

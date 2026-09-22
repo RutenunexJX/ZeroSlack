@@ -5,11 +5,14 @@
 #include "ElaSuggestBox.h"
 #include <QMap>
 #include <QObject>
+#include <QPointer>
+#include <functional>
 class QLayout;
 class ElaMenu;
 class QVBoxLayout;
 class QHBoxLayout;
 class QLinearGradient;
+class QVariantAnimation;
 
 class ElaNavigationBar;
 class ElaNavigationNode;
@@ -63,6 +66,21 @@ private:
     ElaFooterDelegate* _footerDelegate{nullptr};
     ElaInteractiveCard* _userCard{nullptr};
     bool _isShowUserCard{true};
+    QPointer<QWidget> _customContainer;
+    QPointer<QWidget> _customContent;
+    QPointer<QWidget> _customHeader;
+    QVBoxLayout* _customLayout{nullptr};
+    int _customMinimumWidth{180};
+    int _customMaximumWidth{QWIDGETSIZE_MAX};
+    QVariantAnimation* _widthAnimation{nullptr};
+    bool _widthTransitioning{false};
+    quint64 _widthTransitionSerial{0};
+    std::function<bool(int, int, quint64)> _widthTransitionHandler;
+    ElaNavigationType::NavigationDisplayMode _widthTargetMode{ElaNavigationType::Maximal};
+
+    void _setCustomWidget(QWidget* widget, bool header);
+    void _updateCustomGeometry();
+    void _finishWidthTransition(bool immediate = false);
 
     QList<ElaNavigationNode*> _lastExpandedNodesList;
 

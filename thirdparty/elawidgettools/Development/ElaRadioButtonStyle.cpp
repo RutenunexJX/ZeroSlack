@@ -28,19 +28,23 @@ void ElaRadioButtonStyle::drawPrimitive(PrimitiveElement element, const QStyleOp
         }
         QRect buttonRect = bopt->rect;
         buttonRect.adjust(1, 1, -1, -1);
+        const bool enabled = bopt->state.testFlag(QStyle::State_Enabled);
+        const bool hovered = enabled && bopt->state.testFlag(QStyle::State_MouseOver);
         painter->save();
         painter->setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
 
         if (bopt->state & QStyle::State_Off)
         {
-            painter->setPen(QPen(ElaThemeColor(_themeMode, BasicBorder), 1.5));
-            if (bopt->state & QStyle::State_MouseOver)
+            painter->setPen(QPen(enabled ? ElaThemeColor(_themeMode, BasicBorder)
+                                        : ElaThemeColor(_themeMode, BasicTextDisable), 1.5));
+            if (hovered)
             {
                 painter->setBrush(ElaThemeColor(_themeMode, BasicHover));
             }
             else
             {
-                painter->setBrush(ElaThemeColor(_themeMode, BasicBase));
+                painter->setBrush(enabled ? ElaThemeColor(_themeMode, BasicBase)
+                                          : ElaThemeColor(_themeMode, BasicDisable));
             }
             painter->drawEllipse(QPointF(buttonRect.center().x() + 1, buttonRect.center().y() + 1), 8.5, 8.5);
         }
@@ -48,20 +52,22 @@ void ElaRadioButtonStyle::drawPrimitive(PrimitiveElement element, const QStyleOp
         {
             painter->setPen(Qt::NoPen);
             // 外圆形
-            painter->setBrush(ElaThemeColor(_themeMode, PrimaryNormal));
+            painter->setBrush(enabled ? ElaThemeColor(_themeMode, PrimaryNormal)
+                                      : ElaThemeColor(_themeMode, BasicTextDisable));
             painter->drawEllipse(QPointF(buttonRect.center().x() + 1, buttonRect.center().y() + 1), buttonRect.width() / 2, buttonRect.width() / 2);
             // 内圆形
-            painter->setBrush(ElaThemeColor(_themeMode, BasicTextInvert));
+            painter->setBrush(enabled ? ElaThemeColor(_themeMode, BasicTextInvert)
+                                      : ElaThemeColor(_themeMode, BasicDisable));
             if (bopt->state & QStyle::State_Sunken)
             {
-                if (bopt->state & QStyle::State_MouseOver)
+                if (hovered)
                 {
                     painter->drawEllipse(QPointF(buttonRect.center().x() + 1, buttonRect.center().y() + 1), buttonRect.width() / 4.5, buttonRect.width() / 4.5);
                 }
             }
             else
             {
-                if (bopt->state & QStyle::State_MouseOver)
+                if (hovered)
                 {
                     painter->drawEllipse(QPointF(buttonRect.center().x() + 1, buttonRect.center().y() + 1), buttonRect.width() / 3.5, buttonRect.width() / 3.5);
                 }

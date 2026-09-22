@@ -13,11 +13,13 @@ class ElaTableViewStyle : public QProxyStyle
 public:
     explicit ElaTableViewStyle(QStyle* style = nullptr);
     ~ElaTableViewStyle();
+    void setNativeItemContent(bool enabled) { _nativeItemContent = enabled; }
     void drawPrimitive(PrimitiveElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget = nullptr) const override;
     void drawControl(ControlElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget = nullptr) const override;
     int pixelMetric(PixelMetric metric, const QStyleOption* option = nullptr, const QWidget* widget = nullptr) const override;
 
 private:
+    bool _nativeItemContent{false};
     ElaThemeType::ThemeMode _themeMode;
     int _horizontalPadding{11};
 };

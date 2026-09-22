@@ -30,6 +30,17 @@ void ElaTableViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOpti
         // 行覆盖绘制
         if (const QStyleOptionViewItem* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
         {
+            if (_nativeItemContent) {
+                painter->save();
+                if (vopt->backgroundBrush.style() != Qt::NoBrush)
+                    painter->fillRect(vopt->rect, vopt->backgroundBrush);
+                if (vopt->state.testFlag(State_Selected))
+                    painter->fillRect(vopt->rect, ElaThemeColor(_themeMode, BasicSelectedAlpha));
+                else if (vopt->state.testFlag(State_Enabled) && vopt->state.testFlag(State_MouseOver))
+                    painter->fillRect(vopt->rect, ElaThemeColor(_themeMode, BasicHoverAlpha));
+                painter->restore();
+                return;
+            }
             const ElaTableView* tabView = dynamic_cast<const ElaTableView*>(widget);
             if (!tabView)
             {
@@ -102,6 +113,10 @@ void ElaTableViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOpti
 
 void ElaTableViewStyle::drawControl(ControlElement element, const QStyleOption* option, QPainter* painter, const QWidget* widget) const
 {
+    if (_nativeItemContent && (element == CE_ItemViewItem || element == CE_HeaderLabel)) {
+        QProxyStyle::drawControl(element, option, painter, widget);
+        return;
+    }
     //qDebug() << element << option->rect;
     switch (element)
     {

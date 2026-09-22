@@ -62,7 +62,8 @@ void ElaToolButtonStyle::drawComplexControl(ComplexControl control, const QStyle
                     }
                     else
                     {
-                        if (bopt->state.testFlag(QStyle::State_MouseOver) || bopt->state.testFlag(QStyle::State_On))
+                        if (bopt->state.testFlag(QStyle::State_MouseOver) || bopt->state.testFlag(QStyle::State_On)
+                            || (widget && widget->property("nativeHovered").toBool()))
                         {
                             painter->setBrush(_pIsTransparent ? ElaThemeColor(_themeMode, BasicHoverAlpha) : ElaThemeColor(_themeMode, BasicHover));
                             painter->drawRoundedRect(toolButtonRect, _pBorderRadius, _pBorderRadius);

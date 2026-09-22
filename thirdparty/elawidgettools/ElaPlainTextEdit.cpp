@@ -1,6 +1,7 @@
 #include "ElaPlainTextEdit.h"
 
 #include <QClipboard>
+#include <QApplication>
 #include <QGuiApplication>
 #include <QMimeData>
 #include <QPainter>
@@ -27,7 +28,13 @@ ElaPlainTextEdit::ElaPlainTextEdit(QWidget* parent)
     d->_focusEvent->registerAndInit();
 
     d->_style = new ElaPlainTextEditStyle(style());
+    d->_style->setParent(qApp);
+    connect(this, &QObject::destroyed, d->_style, &QObject::deleteLater);
     setStyle(d->_style);
+    d->_markAnimation = new QPropertyAnimation(d->_style, "pExpandMarkWidth", this);
+    d->_markAnimation->setDuration(160);
+    d->_markAnimation->setEasingCurve(QEasingCurve::InOutSine);
+    connect(d->_markAnimation, &QPropertyAnimation::valueChanged, this, [this] { update(); });
     d->onThemeChanged(eTheme->getThemeMode());
     connect(eTheme, &ElaTheme::themeModeChanged, d, &ElaPlainTextEditPrivate::onThemeChanged);
 }
@@ -41,23 +48,46 @@ ElaPlainTextEdit::ElaPlainTextEdit(const QString& text, QWidget* parent)
 ElaPlainTextEdit::~ElaPlainTextEdit()
 {
     Q_D(ElaPlainTextEdit);
-    delete d->_style;
+    d->_markAnimation->stop();
+    // The viewport still uses this style during QPlainTextEdit teardown.
+    // QObject::destroyed releases it after all widget children are gone.
+}
+
+void ElaPlainTextEdit::setNativeTextBehavior(bool enabled)
+{
+    Q_D(ElaPlainTextEdit);
+    if (d->_nativeTextBehavior == enabled)
+        return;
+    d->_nativeTextBehavior = enabled;
+    if (enabled)
+    {
+        delete d->_focusEvent;
+        d->_focusEvent = nullptr;
+    }
+    else
+    {
+        d->_focusEvent = new ElaEvent("WMWindowClicked", "onWMWindowClickedEvent", d);
+        d->_focusEvent->registerAndInit();
+        d->onThemeChanged(eTheme->getThemeMode());
+    }
+    update();
+}
+
+bool ElaPlainTextEdit::nativeTextBehavior() const
+{
+    Q_D(const ElaPlainTextEdit);
+    return d->_nativeTextBehavior;
 }
 
 void ElaPlainTextEdit::focusInEvent(QFocusEvent* event)
 {
     Q_D(ElaPlainTextEdit);
-    if (event->reason() == Qt::MouseFocusReason)
+    if (d->_nativeTextBehavior || event->reason() == Qt::MouseFocusReason)
     {
-        QPropertyAnimation* markAnimation = new QPropertyAnimation(d->_style, "pExpandMarkWidth");
-        connect(markAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
-            update();
-        });
-        markAnimation->setDuration(300);
-        markAnimation->setEasingCurve(QEasingCurve::InOutSine);
-        markAnimation->setStartValue(d->_style->getExpandMarkWidth());
-        markAnimation->setEndValue(width() / 2 - 3);
-        markAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+        d->_markAnimation->stop();
+        d->_markAnimation->setStartValue(d->_style->getExpandMarkWidth());
+        d->_markAnimation->setEndValue(qMax(0, width() / 2 - 3));
+        d->_markAnimation->start();
     }
     QPlainTextEdit::focusInEvent(event);
 }
@@ -67,21 +97,21 @@ void ElaPlainTextEdit::focusOutEvent(QFocusEvent* event)
     Q_D(ElaPlainTextEdit);
     if (event->reason() != Qt::PopupFocusReason)
     {
-        QPropertyAnimation* markAnimation = new QPropertyAnimation(d->_style, "pExpandMarkWidth");
-        connect(markAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
-            update();
-        });
-        markAnimation->setDuration(300);
-        markAnimation->setEasingCurve(QEasingCurve::InOutSine);
-        markAnimation->setStartValue(d->_style->getExpandMarkWidth());
-        markAnimation->setEndValue(0);
-        markAnimation->start(QAbstractAnimation::DeleteWhenStopped);
+        d->_markAnimation->stop();
+        d->_markAnimation->setStartValue(d->_style->getExpandMarkWidth());
+        d->_markAnimation->setEndValue(0);
+        d->_markAnimation->start();
     }
     QPlainTextEdit::focusOutEvent(event);
 }
 
 void ElaPlainTextEdit::contextMenuEvent(QContextMenuEvent* event)
 {
+    if (nativeTextBehavior())
+    {
+        QPlainTextEdit::contextMenuEvent(event);
+        return;
+    }
     ElaMenu* menu = new ElaMenu(this);
     menu->setMenuItemHeight(27);
     menu->setAttribute(Qt::WA_DeleteOnClose);
@@ -142,7 +172,7 @@ void ElaPlainTextEdit::contextMenuEvent(QContextMenuEvent* event)
 void ElaPlainTextEdit::paintEvent(QPaintEvent* event)
 {
     Q_D(ElaPlainTextEdit);
-    if (palette().color(QPalette::Text) != ElaThemeColor(d->_themeMode, BasicText))
+    if (!d->_nativeTextBehavior && palette().color(QPalette::Text) != ElaThemeColor(d->_themeMode, BasicText))
     {
         d->onThemeChanged(d->_themeMode);
     }

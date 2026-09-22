@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "contextfloatingwindow.h"
 #include "roundedicons.h"
 #include "contextdockhost.h"
@@ -99,7 +100,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     root->setSizeConstraint(QLayout::SetNoConstraint);
     root->setContentsMargins(8, 6, 8, 8);
     auto* actions = new QHBoxLayout;
-    dragButton = new QToolButton(this);
+    dragButton = UiControls::toolButton(this);
     dragButton->setObjectName(QStringLiteral("contextFloatingDrag"));
     dragButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
     dragButton->setToolTip(tr("Drag this handle into the sidebar"));
@@ -107,12 +108,12 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     dragButton->installEventFilter(this);
     actions->addWidget(dragButton);
     actions->addStretch();
-    pinButton = new QToolButton(this);
+    pinButton = UiControls::toolButton(this);
     pinButton->setObjectName(QStringLiteral("contextFloatingPin"));
     pinButton->setText(tr("Pin"));
     pinButton->setToolTip(tr("Keep in sidebar"));
     pinButton->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
-    fullViewButton = new QToolButton(this);
+    fullViewButton = UiControls::toolButton(this);
     fullViewButton->setObjectName(QStringLiteral("contextFloatingFullView"));
     fullViewButton->setText(tr("Full view"));
     fullViewButton->setToolTip(tr("Open current view in main area"));

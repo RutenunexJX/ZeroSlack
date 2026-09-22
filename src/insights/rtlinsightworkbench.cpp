@@ -1,4 +1,5 @@
 #include "rtlinsightworkbench.h"
+#include "uicontrols.h"
 #include "compactlayout.h"
 
 #include "graphexportui.h"
@@ -246,28 +247,28 @@ void RtlInsightWorkbench::buildUi()
     toolbar->addWidget(titleLabel);
     toolbar->addStretch(1);
 
-    searchEdit = new QLineEdit(this);
+    searchEdit = UiControls::lineEdit(this);
     searchEdit->setObjectName(QStringLiteral("rtlInsightWorkbenchSearch"));
     searchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     searchEdit->setMaximumWidth(220);
     InsightVisualStyle::applySearchField(searchEdit);
     toolbar->addWidget(searchEdit);
 
-    auto* zoomOut = new QPushButton(QStringLiteral("-"), this);
-    auto* fitButton = new QPushButton(QStringLiteral("Fit"), this);
-    auto* zoomIn = new QPushButton(QStringLiteral("+"), this);
-    panButton = new QToolButton(this);
+    auto* zoomOut = UiControls::pushButton(QStringLiteral("-"), this);
+    auto* fitButton = UiControls::pushButton(QStringLiteral("Fit"), this);
+    auto* zoomIn = UiControls::pushButton(QStringLiteral("+"), this);
+    panButton = UiControls::toolButton(this);
     panButton->setText(QStringLiteral("Pan"));
     panButton->setCheckable(true);
     panButton->setObjectName(QStringLiteral("rtlInsightWorkbenchPan"));
-    minimapButton = new QToolButton(this);
+    minimapButton = UiControls::toolButton(this);
     minimapButton->setText(QStringLiteral("Map"));
     minimapButton->setCheckable(true);
     minimapButton->setChecked(true);
     minimapButton->setObjectName(QStringLiteral("rtlInsightWorkbenchMinimap"));
-    auto* exportButton = new QPushButton(QStringLiteral("Export"), this);
+    auto* exportButton = UiControls::pushButton(QStringLiteral("Export"), this);
     exportButton->setObjectName(QStringLiteral("rtlInsightWorkbenchExport"));
-    detachButton = new QPushButton(QStringLiteral("Detach"), this);
+    detachButton = UiControls::pushButton(QStringLiteral("Detach"), this);
     detachButton->setObjectName(QStringLiteral("rtlInsightWorkbenchDetach"));
     for (QPushButton* button : {zoomOut, fitButton, zoomIn, exportButton, detachButton})
         InsightVisualStyle::applyToolbarButton(button);
@@ -289,7 +290,7 @@ void RtlInsightWorkbench::buildUi()
     }
 
 
-    statusLabel = new QLabel(this);
+    statusLabel = UiControls::label(this);
     statusLabel->setObjectName(QStringLiteral("rtlInsightWorkbenchStatus"));
     statusLabel->setWordWrap(true);
     InsightVisualStyle::applyLabel(statusLabel);

@@ -314,7 +314,7 @@ void ContextPeekHost::buildUi()
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(8, 4, 4, 4);
     headerLayout->setSpacing(4);
-    titleLabel = new QLabel(header);
+    titleLabel = UiControls::label(header);
     titleLabel->setObjectName(QStringLiteral("contextPeekTitle"));
     titleLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     headerLayout->addWidget(titleLabel, 1);

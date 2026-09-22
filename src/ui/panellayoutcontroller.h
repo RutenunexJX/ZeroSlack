@@ -19,7 +19,7 @@ class QFrame;
 class QMainWindow;
 class QStackedWidget;
 class QToolButton;
-class QVariantAnimation;
+class PanelCompositor;
 class QWidget;
 
 struct BottomPanelContextAction {
@@ -40,7 +40,6 @@ public:
     static constexpr int kDefaultContentHeight = 280;
     static constexpr int kMinimumContentHeight = 160;
     static constexpr int kMaximumHeightPercent = 55;
-    static constexpr int kAnimationDurationMs = 140;
 
     explicit PanelLayoutController(QMainWindow* mainWindow,
                                    QObject* parent = nullptr);
@@ -136,7 +135,7 @@ private:
     QPointer<QWidget> bottomResizeHandle;
     QPointer<QStackedWidget> bottomContentStack;
     QPointer<QFrame> bottomButtonBar;
-    QPointer<QVariantAnimation> heightAnimation;
+    QPointer<PanelCompositor> compositor;
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;
     QHash<QString, QString> aliases;
@@ -167,7 +166,6 @@ private:
     void buildButton(PanelEntry& entry);
     void activatePanel(PanelEntry& entry, bool moveFocus);
     void applyDrawerState(bool animate);
-    void animateContentHeight(int start, int end);
     void applyContentHeight(int height, bool settleDock = true);
     void updateButtons();
     void updateDrawerStyle();

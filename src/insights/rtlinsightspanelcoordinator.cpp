@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "compactlayout.h"
 
@@ -60,10 +61,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     layout->setContentsMargins(8, 8, 8, 8);
     layout->setSpacing(6);
 
-    auto* titleLabel = new QLabel(QStringLiteral("RTL Insights"), panel);
+    auto* titleLabel = UiControls::label(QStringLiteral("RTL Insights"), panel);
     titleLabel->setObjectName(QStringLiteral("rtlInsightsTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
-    viewState->pinButton = new QToolButton(panel);
+    viewState->pinButton = UiControls::toolButton(panel);
     viewState->pinButton->setObjectName(
         QStringLiteral("rtlInsightsPinButton"));
     viewState->pinButton->setText(QStringLiteral("Pin"));
@@ -83,83 +84,83 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     actionLayout->setContentsMargins(0, 0, 0, 0);
     actionLayout->setSpacing(4);
     viewState->signalUsageHotspotButton =
-        new QPushButton(QStringLiteral("Usage Hotspot"), panel);
+        UiControls::pushButton(QStringLiteral("Usage Hotspot"), panel);
     viewState->signalUsageHotspotButton->setObjectName(
         QStringLiteral("rtlSignalUsageHotspotButton"));
-    viewState->fsmGraphButton = new QPushButton(QStringLiteral("FSM Graph"), panel);
+    viewState->fsmGraphButton = UiControls::pushButton(QStringLiteral("FSM Graph"), panel);
     viewState->fsmGraphButton->setObjectName(QStringLiteral("rtlFsmGraphButton"));
     viewState->moduleBlockDiagramButton =
-        new QPushButton(QStringLiteral("Module Block Diagram"), panel);
+        UiControls::pushButton(QStringLiteral("Module Block Diagram"), panel);
     viewState->moduleBlockDiagramButton->setObjectName(
         QStringLiteral("rtlModuleBlockDiagramButton"));
-    viewState->graphZoomOutButton = new QPushButton(QStringLiteral("-"), panel);
+    viewState->graphZoomOutButton = UiControls::pushButton(QStringLiteral("-"), panel);
     viewState->graphZoomOutButton->setObjectName(QStringLiteral("rtlGraphZoomOutButton"));
-    viewState->graphFitButton = new QPushButton(QStringLiteral("Fit"), panel);
+    viewState->graphFitButton = UiControls::pushButton(QStringLiteral("Fit"), panel);
     viewState->graphFitButton->setObjectName(QStringLiteral("rtlGraphFitButton"));
-    viewState->graphZoomInButton = new QPushButton(QStringLiteral("+"), panel);
+    viewState->graphZoomInButton = UiControls::pushButton(QStringLiteral("+"), panel);
     viewState->graphZoomInButton->setObjectName(QStringLiteral("rtlGraphZoomInButton"));
-    viewState->graphSearchEdit = new QLineEdit(panel);
+    viewState->graphSearchEdit = UiControls::lineEdit(panel);
     viewState->graphSearchEdit->setObjectName(QStringLiteral("rtlGraphSearchEdit"));
     viewState->graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
     InsightVisualStyle::applySearchField(viewState->graphSearchEdit);
-    viewState->moduleBlockTopCombo = new QComboBox(panel);
+    viewState->moduleBlockTopCombo = UiControls::comboBox(panel);
     viewState->moduleBlockTopCombo->setObjectName(QStringLiteral("rtlModuleBlockTopCombo"));
     viewState->moduleBlockTopCombo->setMinimumWidth(150);
     viewState->moduleBlockSetSelectionButton =
-        new QPushButton(panel);
+        UiControls::pushButton(panel);
     viewState->moduleBlockSetSelectionButton->setObjectName(
         QStringLiteral("rtlModuleBlockSetSelectionButton"));
-    viewState->moduleBlockDepthSpin = new QSpinBox(panel);
+    viewState->moduleBlockDepthSpin = UiControls::spinBox(panel);
     viewState->moduleBlockDepthSpin->setObjectName(QStringLiteral("rtlModuleBlockDepthSpin"));
     viewState->moduleBlockDepthSpin->setRange(0, 8);
     viewState->moduleBlockDepthSpin->setValue(2);
     viewState->moduleBlockDepthSpin->setPrefix(QStringLiteral("Depth "));
     viewState->moduleBlockCollapsePackagesCheck =
-        new QCheckBox(QStringLiteral("Collapse packages"), panel);
+        UiControls::checkBox(QStringLiteral("Collapse packages"), panel);
     viewState->moduleBlockCollapsePackagesCheck->setObjectName(
         QStringLiteral("rtlModuleBlockCollapsePackagesCheck"));
     viewState->moduleBlockShowUnresolvedCheck =
-        new QCheckBox(QStringLiteral("Show unresolved"), panel);
+        UiControls::checkBox(QStringLiteral("Show unresolved"), panel);
     viewState->moduleBlockShowUnresolvedCheck->setObjectName(
         QStringLiteral("rtlModuleBlockShowUnresolvedCheck"));
     viewState->moduleBlockShowUnresolvedCheck->setChecked(true);
 
-    viewState->stateTransitionSignalCombo = new QComboBox(panel);
+    viewState->stateTransitionSignalCombo = UiControls::comboBox(panel);
     viewState->stateTransitionSignalCombo->setObjectName(
         QStringLiteral("rtlStateTransitionSignalCombo"));
-    viewState->stateTransitionCurrentCombo = new QComboBox(panel);
+    viewState->stateTransitionCurrentCombo = UiControls::comboBox(panel);
     viewState->stateTransitionCurrentCombo->setObjectName(
         QStringLiteral("rtlStateTransitionCurrentCombo"));
-    viewState->stateTransitionNextCombo = new QComboBox(panel);
+    viewState->stateTransitionNextCombo = UiControls::comboBox(panel);
     viewState->stateTransitionNextCombo->setObjectName(
         QStringLiteral("rtlStateTransitionNextCombo"));
     viewState->stateTransitionResetCheck =
-        new QCheckBox(QStringLiteral("Show reset"), panel);
+        UiControls::checkBox(QStringLiteral("Show reset"), panel);
     viewState->stateTransitionResetCheck->setObjectName(
         QStringLiteral("rtlStateTransitionResetCheck"));
     viewState->stateTransitionResetCheck->setChecked(true);
     viewState->stateTransitionErrorCheck =
-        new QCheckBox(QStringLiteral("Show error"), panel);
+        UiControls::checkBox(QStringLiteral("Show error"), panel);
     viewState->stateTransitionErrorCheck->setObjectName(
         QStringLiteral("rtlStateTransitionErrorCheck"));
     viewState->stateTransitionErrorCheck->setChecked(true);
     viewState->stateTransitionUnreachableCheck =
-        new QCheckBox(QStringLiteral("Show unreachable"), panel);
+        UiControls::checkBox(QStringLiteral("Show unreachable"), panel);
     viewState->stateTransitionUnreachableCheck->setObjectName(
         QStringLiteral("rtlStateTransitionUnreachableCheck"));
     viewState->stateTransitionUnreachableCheck->setChecked(true);
 
-    viewState->graphLayoutCombo = new QComboBox(panel);
+    viewState->graphLayoutCombo = UiControls::comboBox(panel);
     viewState->graphLayoutCombo->setObjectName(QStringLiteral("rtlGraphLayoutCombo"));
     viewState->graphLayoutCombo->addItems({QStringLiteral("Nested blocks"),
                                 QStringLiteral("State flow"),
                                 QStringLiteral("Tree")});
-    viewState->graphMoreButton = new QToolButton(panel);
+    viewState->graphMoreButton = UiControls::toolButton(panel);
     viewState->graphMoreButton->setObjectName(QStringLiteral("rtlGraphMoreButton"));
     viewState->graphMoreButton->setText(QStringLiteral("..."));
     viewState->graphMoreButton->setPopupMode(QToolButton::InstantPopup);
     viewState->graphMoreButton->setToolTip(QStringLiteral("More graph actions"));
-    auto* graphMoreMenu = new QMenu(viewState->graphMoreButton);
+    auto* graphMoreMenu = UiControls::menu(viewState->graphMoreButton);
     viewState->graphJumpAction = createGraphAction(
         viewState->graphMoreButton,
         QString::fromLatin1(
@@ -242,7 +243,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     actionLayout->addStretch(1);
     layout->addLayout(actionLayout);
 
-    viewState->insightsTree = new QTreeWidget(panel);
+    viewState->insightsTree = UiControls::treeWidget(panel);
     viewState->insightsTree->setObjectName(QStringLiteral("rtlInsightsTree"));
     viewState->insightsTree->setColumnCount(5);
     viewState->insightsTree->setHeaderLabels({"Section", "Symbol", "Detail", "File", "Line"});
@@ -292,13 +293,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     auto* graphToolbarLayout = new QHBoxLayout;
     graphToolbarLayout->setContentsMargins(0, 0, 0, 0);
     graphToolbarLayout->setSpacing(6);
-    auto* moduleBlockTopLabel = new QLabel(QStringLiteral("Top:"), panel);
+    auto* moduleBlockTopLabel = UiControls::label(QStringLiteral("Top:"), panel);
     moduleBlockTopLabel->setObjectName(QStringLiteral("rtlModuleBlockTopLabel"));
-    auto* stateSignalLabel = new QLabel(QStringLiteral("Signal:"), panel);
+    auto* stateSignalLabel = UiControls::label(QStringLiteral("Signal:"), panel);
     stateSignalLabel->setObjectName(QStringLiteral("rtlStateSignalLabel"));
-    auto* stateCurrentLabel = new QLabel(QStringLiteral("Current:"), panel);
+    auto* stateCurrentLabel = UiControls::label(QStringLiteral("Current:"), panel);
     stateCurrentLabel->setObjectName(QStringLiteral("rtlStateCurrentLabel"));
-    auto* stateNextLabel = new QLabel(QStringLiteral("Next:"), panel);
+    auto* stateNextLabel = UiControls::label(QStringLiteral("Next:"), panel);
     stateNextLabel->setObjectName(QStringLiteral("rtlStateNextLabel"));
     graphToolbarLayout->addWidget(moduleBlockTopLabel);
     graphToolbarLayout->addWidget(viewState->moduleBlockTopCombo);
@@ -323,7 +324,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(viewState->graphMoreButton);
     graphPanelLayout->addLayout(graphToolbarLayout);
 
-    viewState->graphInspector = new QTreeWidget(panel);
+    viewState->graphInspector = UiControls::treeWidget(panel);
     viewState->graphInspector->setObjectName(QStringLiteral("rtlGraphInspector"));
     viewState->graphInspector->setColumnCount(2);
     viewState->graphInspector->setHeaderLabels({QStringLiteral("Field"),
@@ -336,19 +337,19 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphInspector->header()->setSectionResizeMode(1, QHeaderView::Stretch);
     viewState->graphInspector->setMinimumWidth(viewState->graphInspector->minimumSizeHint().width());
     viewState->graphInspectorJumpButton =
-        new QPushButton(panel);
+        UiControls::pushButton(panel);
     viewState->graphInspectorJumpButton->setObjectName(
         QStringLiteral("rtlGraphInspectorJumpButton"));
     viewState->graphInspectorFocusButton =
-        new QPushButton(panel);
+        UiControls::pushButton(panel);
     viewState->graphInspectorFocusButton->setObjectName(
         QStringLiteral("rtlGraphInspectorFocusButton"));
     viewState->graphInspectorSetTopButton =
-        new QPushButton(panel);
+        UiControls::pushButton(panel);
     viewState->graphInspectorSetTopButton->setObjectName(
         QStringLiteral("rtlGraphInspectorSetTopButton"));
     viewState->graphInspectorRevealButton =
-        new QPushButton(QStringLiteral("Reveal"), panel);
+        UiControls::pushButton(QStringLiteral("Reveal"), panel);
     viewState->graphInspectorRevealButton->setObjectName(
         QStringLiteral("rtlGraphInspectorRevealButton"));
     bindGraphActionButton(
@@ -398,7 +399,7 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphBodySplitter->setStretchFactor(1, 0);
     graphPanelLayout->addWidget(graphBodySplitter, 1);
 
-    viewState->graphTable = new QTableWidget(panel);
+    viewState->graphTable = UiControls::tableWidget(panel);
     viewState->graphTable->setObjectName(QStringLiteral("rtlGraphDetailTable"));
     viewState->graphTable->setAlternatingRowColors(true);
     viewState->graphTable->setSelectionBehavior(QAbstractItemView::SelectRows);

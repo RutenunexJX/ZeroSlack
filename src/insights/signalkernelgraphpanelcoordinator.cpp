@@ -1,4 +1,5 @@
 #include "signalkernelgraphpanelcoordinator.h"
+#include "uicontrols.h"
 #include "compactlayout.h"
 
 #include "applicationthememanager.h"
@@ -778,7 +779,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     layout->setContentsMargins(6, 6, 6, 6);
     layout->setSpacing(6);
 
-    titleLabel = new QLabel(QStringLiteral("Signal Kernel Graph"), panel);
+    titleLabel = UiControls::label(QStringLiteral("Signal Kernel Graph"), panel);
     titleLabel->setObjectName(QStringLiteral("signalKernelGraphTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
     layout->addWidget(titleLabel);
@@ -786,7 +787,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     auto* controlsLayout = new QHBoxLayout();
     controlsLayout->setContentsMargins(0, 0, 0, 0);
     controlsLayout->setSpacing(6);
-    graphSearchEdit = new QLineEdit(panel);
+    graphSearchEdit = UiControls::lineEdit(panel);
     graphSearchEdit->setObjectName(
         QStringLiteral("signalKernelGraphSearchEdit"));
     graphSearchEdit->setPlaceholderText(QStringLiteral("Search graph"));
@@ -794,14 +795,14 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     InsightVisualStyle::applySearchField(graphSearchEdit);
     controlsLayout->addWidget(graphSearchEdit, 1);
 
-    showInputsCheck = new QCheckBox(QStringLiteral("Inputs"), panel);
+    showInputsCheck = UiControls::checkBox(QStringLiteral("Inputs"), panel);
     showInputsCheck->setObjectName(
         QStringLiteral("signalKernelGraphShowInputsCheck"));
     showInputsCheck->setChecked(graphShowInputs);
     InsightVisualStyle::applySegmentedCheckBox(showInputsCheck);
     controlsLayout->addWidget(showInputsCheck);
 
-    showOutputsCheck = new QCheckBox(QStringLiteral("Outputs"), panel);
+    showOutputsCheck = UiControls::checkBox(QStringLiteral("Outputs"), panel);
     showOutputsCheck->setObjectName(
         QStringLiteral("signalKernelGraphShowOutputsCheck"));
     showOutputsCheck->setChecked(graphShowOutputs);
@@ -809,7 +810,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
     controlsLayout->addWidget(showOutputsCheck);
 
     crossModuleOnlyCheck =
-        new QCheckBox(QStringLiteral("Cross-module"), panel);
+        UiControls::checkBox(QStringLiteral("Cross-module"), panel);
     crossModuleOnlyCheck->setObjectName(
         QStringLiteral("signalKernelGraphCrossModuleOnlyCheck"));
     crossModuleOnlyCheck->setChecked(graphCrossModuleOnly);
@@ -832,7 +833,7 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
         [this](const QString& message, int timeoutMs) {
             showStatusMessage(message, timeoutMs);
         });
-    auto* exportButton = new QToolButton(panel);
+    auto* exportButton = UiControls::toolButton(panel);
     exportButton->setObjectName(
         QStringLiteral("signalKernelGraphExportButton"));
     if (exportAction)

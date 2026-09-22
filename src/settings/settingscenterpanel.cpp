@@ -394,7 +394,7 @@ void SettingsCenterPanel::buildUi()
 
     auto* navigationLayout = new QVBoxLayout;
     navigationBox = navigationLayout;
-    auto* scopeLabel = new QLabel(tr("Scope"), this);
+    auto* scopeLabel = UiControls::label(tr("Scope"), this);
     scopeLabel->setObjectName(
         QStringLiteral("settingsCenterScopeLabel"));
     UiTypography::apply(scopeLabel, UiTypography::Role::Section);
@@ -412,7 +412,8 @@ void SettingsCenterPanel::buildUi()
                             SettingsCenterScope::Workspace));
     navigationLayout->addWidget(scopeCombo);
 
-    categoryList = new QListWidget(this);
+    categoryList = UiControls::listWidget(this);
+    UiControls::enableSmoothScrolling(categoryList);
     categoryList->setObjectName(
         QStringLiteral("settingsCenterCategoryList"));
     categoryList->setSelectionMode(
@@ -422,7 +423,7 @@ void SettingsCenterPanel::buildUi()
     rootLayout->addLayout(navigationLayout);
 
     auto* contentLayout = new QVBoxLayout;
-    scopeSummaryLabel = new QLabel(this);
+    scopeSummaryLabel = UiControls::label(this);
     scopeSummaryLabel->setObjectName(
         QStringLiteral("settingsCenterScopeSummary"));
     scopeSummaryLabel->setWordWrap(true);
@@ -449,11 +450,11 @@ void SettingsCenterPanel::buildUi()
         auto* pageLayout = new QVBoxLayout(pageContent);
         pageLayout->setContentsMargins(8, 8, 8, 8);
         pageLayout->setSpacing(16);
-        auto* pageTitle = new QLabel(category.title, pageContent);
+        auto* pageTitle = UiControls::label(category.title, pageContent);
         UiTypography::apply(pageTitle, UiTypography::Role::PageTitle);
         pageLayout->addWidget(pageTitle);
 
-        auto* description = new QLabel(category.description,
+        auto* description = UiControls::label(category.description,
                                        pageContent);
         description->setWordWrap(true);
         description->setObjectName(
@@ -493,7 +494,7 @@ void SettingsCenterPanel::buildUi()
             fieldLayout->addWidget(binding.editor);
 
             auto* fieldDescription =
-                new QLabel(descriptor.description, group);
+                UiControls::label(descriptor.description, group);
             fieldDescription->setWordWrap(true);
             fieldDescription->setObjectName(
                 QStringLiteral("settingsCenterFieldDescription.%1")
@@ -501,7 +502,7 @@ void SettingsCenterPanel::buildUi()
             UiTypography::apply(fieldDescription, UiTypography::Role::Metadata);
             fieldLayout->addWidget(fieldDescription);
 
-            binding.stateLabel = new QLabel(group);
+            binding.stateLabel = UiControls::label(group);
             binding.stateLabel->setWordWrap(true);
             UiTypography::apply(binding.stateLabel, UiTypography::Role::Metadata);
             binding.stateLabel->setObjectName(
@@ -515,19 +516,20 @@ void SettingsCenterPanel::buildUi()
         }
         pageLayout->addStretch(1);
 
-        auto* scroll = new QScrollArea(this);
+        auto* scroll = UiControls::scrollArea(this);
         scroll->setObjectName(
             QStringLiteral("settingsCenterCategoryScroll.%1")
                 .arg(category.id));
         scroll->setWidgetResizable(true);
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setWidget(pageContent);
+        UiControls::enableSmoothScrolling(scroll);
         scroll->viewport()->installEventFilter(this);
         categoryStack->addWidget(scroll);
     }
     contentLayout->addWidget(categoryStack, 1);
 
-    statusLabel = new QLabel(this);
+    statusLabel = UiControls::label(this);
     statusLabel->setObjectName(
         QStringLiteral("settingsCenterStatusLabel"));
     statusLabel->setWordWrap(true);
@@ -717,7 +719,8 @@ QWidget* SettingsCenterPanel::createEditor(
         auto* layout = new QVBoxLayout(container);
         layout->setContentsMargins(0, 0, 0, 0);
 
-        auto* table = new QTableView(container);
+        auto* table = UiControls::tableView(container);
+        UiControls::enableSmoothScrolling(table);
         table->setObjectName(
             QStringLiteral("settingsCenterStringMapView.%1")
                 .arg(descriptor.id));

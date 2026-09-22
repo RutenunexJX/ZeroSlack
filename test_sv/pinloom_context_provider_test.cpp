@@ -1,4 +1,5 @@
 #include "contextworkspacecontroller.h"
+#include "testuistyle.h"
 #include "contextdockhost.h"
 #include "contextpeekhost.h"
 #include "contextfloatingwindow.h"
@@ -167,6 +168,7 @@ QJsonObject rectangleDocumentJson(const QJsonObject& entry,
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
 
     const PinloomHostIdentity parsedIdentity =
         PinloomHostIdentity::fromUri(

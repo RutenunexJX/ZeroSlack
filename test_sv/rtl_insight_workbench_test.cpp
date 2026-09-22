@@ -1,4 +1,6 @@
 #include "contextworkspacecontroller.h"
+#include "contextdockhost.h"
+#include "testuistyle.h"
 #include "contextrail.h"
 #include "insightcanvas.h"
 #include "insightgraphcore.h"
@@ -13,6 +15,8 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
+#include "semanticindexsnapshot.h"
+#include "slangmanager.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
 #include <QSettings>
@@ -20,12 +24,15 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QComboBox>
 #include <QFileInfo>
 #include <QIcon>
 #include <QImage>
 #include <QMainWindow>
 #include <QPushButton>
 #include <QSet>
+#include <QScopeGuard>
+#include <QSpinBox>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -163,6 +170,7 @@ private slots:
     void workbenchPreservesPerViewState();
     void toolPagesRouteAllFourWorkbenchViews();
     void specializedModesSurviveRouting();
+    void sidebarSectionTeardownReleasesFocusedControls();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
     void realWindowChromeButtons();
@@ -438,6 +446,67 @@ void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
     }
 }
 
+void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
+{
+    auto* index = SemanticIndex::getInstance();
+    const auto previous = index->snapshot();
+    const auto restoreSnapshot = qScopeGuard([&] { index->setSnapshot(previous); });
+    const QString fileName = QDir::tempPath() + QStringLiteral("/ela_teardown.sv");
+    const QHash<QString, QString> contents{{fileName,
+        QStringLiteral("module child(input logic clk); endmodule\n"
+                       "module top(input logic clk); child u_child(.clk(clk)); endmodule\n")}};
+    SlangManager slang;
+    const auto records = slang.extractOverlayWorkspaceSymbolRecords(
+        contents, {}, {}, nullptr, nullptr, {fileName});
+    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
+    QMainWindow window;
+    auto* editor = new QWidget(&window);
+    window.setCentralWidget(editor);
+    ContextWorkspaceController controller(&window, editor);
+    LiveInsightSession session;
+    auto provider = std::make_unique<LiveInsightsContextProvider>(LiveInsightKind::Module, &session);
+    provider->setToolContextSource([fileName] {
+        LiveInsightToolContext context;
+        context.workspaceId = QStringLiteral("workspace");
+        context.documentId = fileName;
+        context.fileName = fileName;
+        context.moduleName = QStringLiteral("top");
+        return context;
+    });
+    QVERIFY(controller.registerProvider(std::move(provider)));
+    window.resize(1280, 800);
+    window.show();
+    const auto resource = LiveInsightsContextProvider::resourceForKind(
+        LiveInsightKind::Module, QStringLiteral("workspace"));
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        QVERIFY(controller.openResource(resource));
+        QPointer<QWidget> view = controller.viewForResource(resource.stableKey());
+        QVERIFY(view);
+        QCoreApplication::processEvents();
+        auto* depth = view->findChild<QSpinBox*>(QStringLiteral("rtlModuleBlockDepthSpin"));
+        auto* top = view->findChild<QComboBox*>(QStringLiteral("rtlModuleBlockTopCombo"));
+        QVERIFY(depth && top);
+        QVERIFY(top->count() > 0);
+        QVERIFY(depth->isVisible());
+        top->showPopup();
+        QCoreApplication::processEvents();
+        top->hidePopup();
+        depth->setFocus();
+        depth->stepUp();
+        QCoreApplication::processEvents();
+        QToolButton* close = nullptr;
+        for (auto* button : controller.dockHost()->findChildren<QToolButton*>())
+            if (button->toolTip() == QStringLiteral("Close section")) close = button;
+        QVERIFY(close);
+        QTest::mouseClick(close, Qt::LeftButton);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QTest::qWait(500);
+        QVERIFY(view.isNull());
+        QCOMPARE(controller.dockHost()->resourceCount(), 0);
+    }
+}
+
 void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
 {
 #ifdef Q_OS_WIN
@@ -527,17 +596,17 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
     QVERIFY(QTest::qWaitForWindowExposed(&window));
     auto* title = window.findChild<QWidget*>(QStringLiteral("workspaceTitleBar"));
     QVERIFY(title);
-    const QList<QToolButton*> buttons {
-        title->findChild<QToolButton*>(QStringLiteral("windowMinimizeButton")),
-        title->findChild<QToolButton*>(QStringLiteral("windowMaximizeButton")),
-        title->findChild<QToolButton*>(QStringLiteral("windowCloseButton"))
+    const QList<QAbstractButton*> buttons {
+        title->findChild<QAbstractButton*>(QStringLiteral("windowMinimizeButton")),
+        title->findChild<QAbstractButton*>(QStringLiteral("windowMaximizeButton")),
+        title->findChild<QAbstractButton*>(QStringLiteral("windowCloseButton"))
     };
     for (auto* button : buttons) QVERIFY(button);
     window.activateWindow();
     SetForegroundWindow(reinterpret_cast<HWND>(window.internalWinId()));
     const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
     if (!reviewDir.isEmpty()) QDir().mkpath(reviewDir);
-    for (auto* button : {window.findChild<QToolButton*>(QStringLiteral("projectRailButton")), buttons[0], buttons[1]}) {
+    for (auto* button : QList<QAbstractButton*>{window.findChild<QToolButton*>(QStringLiteral("projectRailButton")), buttons[0], buttons[1]}) {
         QVERIFY(button);
         QTest::mouseMove(title, QPoint(180, 18));
         QTest::qWait(50);
@@ -560,7 +629,7 @@ void RtlInsightWorkbenchTest::realWindowChromeButtons()
         buttons[1]->click();
         QTRY_VERIFY(!window.isMaximized());
     }
-    auto physicalClick = [&](QToolButton* button) {
+    auto physicalClick = [&](QAbstractButton* button) {
         window.activateWindow();
         SetForegroundWindow(reinterpret_cast<HWND>(window.internalWinId()));
         QTest::qWait(100);
@@ -741,6 +810,12 @@ void RtlInsightWorkbenchTest::legacyBottomDockDoesNotCarryStateWhenDisabled()
     QCOMPARE(panel.graphModeForTest(), mode);
 }
 
-QTEST_MAIN(RtlInsightWorkbenchTest)
+int main(int argc, char** argv)
+{
+    QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
+    RtlInsightWorkbenchTest test;
+    return QTest::qExec(&test, argc, argv);
+}
 
 #include "rtl_insight_workbench_test.moc"

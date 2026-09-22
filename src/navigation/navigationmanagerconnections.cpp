@@ -1,3 +1,5 @@
+#include "uicontrols.h"
+#include <memory>
 #include "navigationmanager.h"
 
 #include "navigationservice.h"
@@ -300,7 +302,8 @@ void NavigationManager::onDesignNodeContextMenuRequested(
     const DesignHierarchyNode& node,
     const QPoint& globalPos)
 {
-    QMenu menu(navigationWidget);
+    std::unique_ptr<QMenu> menuOwner(UiControls::menu(navigationWidget));
+    QMenu& menu = *menuOwner;
     for (const DesignHierarchyContextAction& item :
          designNodeContextActions(node)) {
         if (item.separatorBefore)

@@ -22,6 +22,10 @@ ElaTabBarStyle::~ElaTabBarStyle()
 
 void ElaTabBarStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt, QPainter* p, const QWidget* w) const
 {
+    if (_nativeTabBehavior && (pe == PE_IndicatorArrowLeft || pe == PE_IndicatorArrowRight || pe == PE_PanelButtonTool)) {
+        QProxyStyle::drawPrimitive(pe, opt, p, w);
+        return;
+    }
     // qDebug() << pe << opt->rect;
     switch (pe)
     {
@@ -57,11 +61,11 @@ void ElaTabBarStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt,
             p->setBrush(ElaThemeColor(_themeMode, BasicHoverAlpha));
             p->drawRoundedRect(opt->rect, 2, 2);
         }
-        QFont iconFont = QFont("Font Awesome 6 Free");
-        iconFont.setPixelSize(eApp->getFontPixelSize() + 3);
-        p->setFont(iconFont);
-        p->setPen(ElaThemeColor(_themeMode, BasicText));
-        p->drawText(opt->rect, Qt::AlignCenter, QChar(static_cast<char32_t>(ElaIconType::Xmark)));
+        p->setPen(QPen(ElaThemeColor(_themeMode, BasicText), 1.4, Qt::SolidLine, Qt::RoundCap));
+        const qreal half = qMin(4.0, qMin(opt->rect.width(), opt->rect.height()) / 4.0);
+        const QPointF center = QRectF(opt->rect).center();
+        p->drawLine(center + QPointF(-half, -half), center + QPointF(half, half));
+        p->drawLine(center + QPointF(half, -half), center + QPointF(-half, half));
         p->restore();
         return;
     }
@@ -141,6 +145,10 @@ void ElaTabBarStyle::drawControl(ControlElement element, const QStyleOption* opt
     }
     case QStyle::CE_TabBarTabLabel:
     {
+        if (_nativeTabBehavior) {
+            QProxyStyle::drawControl(element, option, painter, widget);
+            return;
+        }
         //文字和图标绘制
         if (const QStyleOptionTab* topt = qstyleoption_cast<const QStyleOptionTab*>(option))
         {
@@ -191,6 +199,12 @@ QSize ElaTabBarStyle::sizeFromContents(ContentsType type, const QStyleOption* op
     {
     case CT_TabBarTab:
     {
+        if (_nativeTabBehavior) {
+            QSize hint = QProxyStyle::sizeFromContents(type, option, size, widget);
+            hint.setHeight(qMax(hint.height(), option->fontMetrics.height() + 14));
+            hint.setWidth(qMax(hint.width() + 14, 64));
+            return hint;
+        }
         return _pTabSize;
     }
     default:
@@ -203,6 +217,8 @@ QSize ElaTabBarStyle::sizeFromContents(ContentsType type, const QStyleOption* op
 
 QRect ElaTabBarStyle::subElementRect(SubElement element, const QStyleOption* option, const QWidget* widget) const
 {
+    if (_nativeTabBehavior)
+        return QProxyStyle::subElementRect(element, option, widget);
     switch (element)
     {
     case QStyle::SE_TabBarScrollLeftButton:

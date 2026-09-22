@@ -27,7 +27,7 @@ EditorAppearancePanel::EditorAppearancePanel(
     layout->setContentsMargins(10, 10, 10, 10);
     layout->setSpacing(10);
 
-    auto* title = new QLabel(tr("Editor Appearance"), this);
+    auto* title = UiControls::label(tr("Editor Appearance"), this);
     UiTypography::apply(title, UiTypography::Role::PanelTitle);
     layout->addWidget(title);
 
@@ -41,24 +41,24 @@ EditorAppearancePanel::EditorAppearancePanel(
     fontFamilyCombo->setObjectName(QStringLiteral("editorFontFamilyCombo"));
     fontFamilyCombo->setEditable(false);
     populateFonts();
-    form->addRow(tr("Font family"), fontFamilyCombo);
+    UiControls::addFormRow(form, tr("Font family"), fontFamilyCombo);
 
     fontSizeSpin = UiControls::spinBox(this);
     fontSizeSpin->setObjectName(QStringLiteral("editorFontSizeSpin"));
     fontSizeSpin->setRange(8, 32);
     fontSizeSpin->setSuffix(tr(" pt"));
-    form->addRow(tr("Font size"), fontSizeSpin);
+    UiControls::addFormRow(form, tr("Font size"), fontSizeSpin);
 
     lineHeightSpin = UiControls::doubleSpinBox(this);
     lineHeightSpin->setObjectName(QStringLiteral("editorLineHeightSpin"));
     lineHeightSpin->setRange(1.0, 2.0);
     lineHeightSpin->setDecimals(2);
     lineHeightSpin->setSingleStep(0.05);
-    form->addRow(tr("Line height"), lineHeightSpin);
+    UiControls::addFormRow(form, tr("Line height"), lineHeightSpin);
 
     ligaturesCheck = UiControls::checkBox(tr("Enable font ligatures"), this);
     ligaturesCheck->setObjectName(QStringLiteral("editorLigaturesCheck"));
-    form->addRow(QString(), ligaturesCheck);
+    UiControls::addFormRow(form, QString(), ligaturesCheck);
 
     layout->addLayout(form);
 

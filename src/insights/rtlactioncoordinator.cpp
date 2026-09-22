@@ -1,4 +1,6 @@
+#include "uidialogs.h"
 #include "rtlactioncoordinator.h"
+#include "uicontrols.h"
 
 #include "definitionservice.h"
 #include "documentmodel.h"
@@ -388,13 +390,13 @@ selectInstancePair(
         QStringLiteral("Connect Instance Pair"));
     auto* layout = new QVBoxLayout(&dialog);
     auto* form = new QFormLayout();
-    auto* leftCombo = new QComboBox(&dialog);
+    auto* leftCombo = UiControls::comboBox(&dialog);
     leftCombo->setObjectName(
         QStringLiteral("instancePairLeftSelection"));
-    auto* rightCombo = new QComboBox(&dialog);
+    auto* rightCombo = UiControls::comboBox(&dialog);
     rightCombo->setObjectName(
         QStringLiteral("instancePairRightSelection"));
-    auto* connectionEdit = new QLineEdit(
+    auto* connectionEdit = UiControls::lineEdit(
         defaults.connectionName, &dialog);
     connectionEdit->setObjectName(
         QStringLiteral("instancePairConnectionName"));
@@ -447,17 +449,17 @@ selectInstancePair(
         [rebuildRight](int) { rebuildRight(); });
     rebuildRight();
 
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Source instance"),
         leftCombo);
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Destination instance"),
         rightCombo);
-    form->addRow(
+    UiControls::addFormRow(form,
         QStringLiteral("Connection identifier"),
         connectionEdit);
     layout->addLayout(form);
-    auto* buttons = new QDialogButtonBox(
+    auto* buttons = UiDialogs::buttonBox(
         QDialogButtonBox::Ok
             | QDialogButtonBox::Cancel,
         &dialog);

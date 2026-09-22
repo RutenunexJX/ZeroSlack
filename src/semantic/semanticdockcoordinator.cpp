@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "semanticdockcoordinator.h"
 #include "deferredpanel.h"
 
@@ -104,7 +105,7 @@ void SemanticDockCoordinator::PanelBundle::createPanels(
         Qt::BottomDockWidgetArea);
     connectionsContent = new DeferredPanel(connectionsDock, nullptr,
         [this](QWidget* parent) -> QWidget* {
-            connectionsTabs = new QTabWidget(parent);
+            connectionsTabs = UiControls::tabWidget(parent);
             connectionsTabs->setObjectName(
                 QStringLiteral("connectionsWorkflowTabs"));
             connectionsTabs->setAccessibleName(

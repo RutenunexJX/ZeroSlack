@@ -396,6 +396,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/navigation/navigationmanagerfileoperations.cpp
     src/navigation/navigationmanagerstate.cpp
     src/ui/navigationpanecoordinator.cpp
+    src/ui/panelcompositor.cpp
+    src/ui/nativepanelcomposition.cpp
     src/ui/panellayoutcontroller.cpp
     src/commands/packagetoolservice.cpp
     src/navigation/navigationservice.cpp
@@ -525,6 +527,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/customabbreviationservice.h
     src/app/mainwindow.h
     src/ui/workspacechrome.h
+    src/ui/uiwindowchrome.h
+    src/ui/uiwindowchrome.cpp
     src/ui/roundedicons.h
     src/ui/insightcontrolstyle.h
     src/ui/uitypography.h
@@ -798,7 +802,7 @@ target_sources(zeroslack_core PRIVATE
 option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
 option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
 option(ZEROSLACK_ENABLE_ELA "Build the isolated ZeroSlack Ela application" OFF)
-target_sources(zeroslack_core PRIVATE src/ui/uicontrols.cpp)
+target_sources(zeroslack_core PRIVATE src/ui/uicontrols.cpp src/ui/uidialogs.cpp)
 if(ZEROSLACK_ENABLE_ELA)
     if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
         message(FATAL_ERROR "Ela and Qlementine/SuiteUi backends must be built separately.")
@@ -908,6 +912,7 @@ target_link_libraries(zeroslack_core PUBLIC
 target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
 if(WIN32)
     target_link_libraries(zeroslack_core PRIVATE dwmapi)
+    target_link_libraries(zeroslack_core PRIVATE dcomp d3d11 dxgi)
 endif()
 
 if(ZEROSLACK_SHARED_CORE)
@@ -1234,15 +1239,9 @@ if(BUILD_TESTING)
         PRIVATE Qt6::Widgets)
 
     add_executable(workspace_virtual_source_group_ui_test
-        test_sv/workspace_virtual_source_group_ui_test.cpp
-        src/ui/uicontrols.cpp
-        src/settings/workspaceconfigurationdialog.cpp)
-    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-        target_compile_options(workspace_virtual_source_group_ui_test PRIVATE
-            "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
-    endif()
+        test_sv/workspace_virtual_source_group_ui_test.cpp)
     target_link_libraries(workspace_virtual_source_group_ui_test
-        PRIVATE Qt6::Widgets)
+        PRIVATE zeroslack_core Qt6::Widgets)
 
     add_executable(rtl_insight_linkage_test
         test_sv/rtl_insight_linkage_test.cpp)
@@ -1323,18 +1322,13 @@ if(BUILD_TESTING)
         PRIVATE Qt6::Core Qt6::Gui)
 
     add_executable(panel_layout_controller_test
-        test_sv/panel_layout_controller_test.cpp
-        src/ui/uicontrols.cpp
-        src/commands/actionregistry.cpp
-        src/ui/applicationthememanager.cpp
-        src/ui/insightvisualstyle.cpp
-        src/ui/panellayoutcontroller.cpp)
+        test_sv/panel_layout_controller_test.cpp)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(panel_layout_controller_test PRIVATE
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(panel_layout_controller_test
-        PRIVATE Qt6::Widgets Qt6::Test)
+        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(editor_split_controller_test
         test_sv/editor_split_controller_test.cpp
@@ -1406,9 +1400,33 @@ if(BUILD_TESTING)
 
     add_executable(control_style_interaction_test test_sv/control_style_interaction_test.cpp)
     target_link_libraries(control_style_interaction_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_dialog_contract_test test_sv/ui_dialog_contract_test.cpp)
+    target_link_libraries(ui_dialog_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_item_menu_contract_test test_sv/ui_item_menu_contract_test.cpp)
+    target_link_libraries(ui_item_menu_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ela_motion_test test_sv/ela_motion_test.cpp)
+    target_link_libraries(ela_motion_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_window_chrome_test test_sv/ui_window_chrome_test.cpp)
+    target_link_libraries(ui_window_chrome_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_navigation_rail_test test_sv/ui_navigation_rail_test.cpp)
+    target_link_libraries(ui_navigation_rail_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_text_view_test test_sv/ui_text_view_test.cpp)
+    target_link_libraries(ui_text_view_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_label_contract_test test_sv/ui_label_contract_test.cpp)
+    target_link_libraries(ui_label_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_sidebar_contract_test test_sv/ui_sidebar_contract_test.cpp)
+    target_link_libraries(ui_sidebar_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(ui_panel_motion_test test_sv/ui_panel_motion_test.cpp)
+    target_link_libraries(ui_panel_motion_test PRIVATE zeroslack_core Qt6::Test)
     if(ZEROSLACK_ENABLE_ELA)
+        target_compile_definitions(ui_sidebar_contract_test PRIVATE ZEROSLACK_ENABLE_ELA=1)
+        target_link_libraries(ui_sidebar_contract_test PRIVATE ElaWidgetTools)
+        add_executable(sidebar_animation_benchmark test_sv/sidebar_animation_benchmark.cpp)
+        target_link_libraries(sidebar_animation_benchmark PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_controls_test test_sv/ela_controls_test.cpp)
         target_link_libraries(ela_controls_test PRIVATE zeroslack_core Qt6::Test)
+        add_executable(ela_navigation_test test_sv/ela_navigation_test.cpp)
+        target_link_libraries(ela_navigation_test PRIVATE zeroslack_core Qt6::Test)
     endif()
     if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
         add_executable(qlementine_lifecycle_test test_sv/qlementine_lifecycle_test.cpp)
@@ -1912,13 +1930,17 @@ if(BUILD_TESTING)
             $<TARGET_FILE:compact_layout_test>)
     foreach(HIGH_DPI_SCALE IN ITEMS 1 1.25 1.5 2)
         if(ZEROSLACK_ENABLE_ELA)
-            foreach(ELA_TEST IN ITEMS ela_controls high_dpi_layout)
+            foreach(ELA_TEST IN ITEMS ela_controls ela_navigation ela_motion ui_dialog_contract ui_item_menu_contract ui_window_chrome ui_navigation_rail ui_text_view ui_label_contract ui_sidebar_contract ui_panel_motion panel_layout_controller high_dpi_layout)
+                set(ELA_TEST_ARGUMENTS)
+                if(NOT ELA_TEST STREQUAL "high_dpi_layout" AND NOT ELA_TEST STREQUAL "panel_layout_controller")
+                    set(ELA_TEST_ARGUMENTS -o -,txt)
+                endif()
                 add_test(NAME ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test
                     COMMAND ${CMAKE_COMMAND} -E env
                         "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                         "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                         "ZEROSLACK_TEST_UI_STYLE=ela"
-                        $<TARGET_FILE:${ELA_TEST}_test>)
+                        $<TARGET_FILE:${ELA_TEST}_test> ${ELA_TEST_ARGUMENTS})
                 set_tests_properties(ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
             endforeach()
             add_test(NAME ela_main_window_${HIGH_DPI_SCALE}_test
@@ -1961,6 +1983,82 @@ if(BUILD_TESTING)
                 qlementine_lifecycle_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
         endif()
     endforeach()
+    if(ZEROSLACK_ENABLE_ELA)
+        foreach(ELA_WORKFLOW IN ITEMS scoped_search_panel scoped_replace_workflow
+                rtl_high_risk_edit_panel instance_pair_connection_panel
+                instance_pair_connection_workflow multi_signal_propagation_panel
+                signal_usage_hotspot_panel graph_export_panel_integration
+                kernel_view_continuity rtl_insight_workbench pinloom_context_provider
+                unified_peek_container settings_center_panel temporary_editor_context_search)
+            set(ELA_WORKFLOW_ARGUMENTS)
+            if(ELA_WORKFLOW STREQUAL "rtl_insight_workbench")
+                set(ELA_WORKFLOW_ARGUMENTS -o -,txt)
+            endif()
+            add_test(NAME ela_${ELA_WORKFLOW}_test
+                COMMAND ${CMAKE_COMMAND} -E env
+                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                    "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                    "ZEROSLACK_TEST_UI_STYLE=ela"
+                    $<TARGET_FILE:${ELA_WORKFLOW}_test> ${ELA_WORKFLOW_ARGUMENTS})
+            set_tests_properties(ela_${ELA_WORKFLOW}_test PROPERTIES TIMEOUT 120)
+        endforeach()
+    endif()
+    add_test(NAME ui_dialog_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_dialog_contract_test> -o -,txt)
+    set_tests_properties(ui_dialog_contract_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_item_menu_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_item_menu_contract_test> -o -,txt)
+    set_tests_properties(ui_item_menu_contract_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ela_motion_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ela_motion_test> -o -,txt)
+    set_tests_properties(ela_motion_classic_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_window_chrome_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_window_chrome_test> -o -,txt)
+    set_tests_properties(ui_window_chrome_classic_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_navigation_rail_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_navigation_rail_test> -o -,txt)
+    set_tests_properties(ui_navigation_rail_classic_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_text_view_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_text_view_test> -o -,txt)
+    set_tests_properties(ui_text_view_classic_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_label_contract_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_label_contract_test> -o -,txt)
+    set_tests_properties(ui_label_contract_classic_test PROPERTIES TIMEOUT 60)
+    add_test(NAME ui_sidebar_contract_classic_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:ui_sidebar_contract_test> -o -,txt)
+    set_tests_properties(ui_sidebar_contract_classic_test PROPERTIES TIMEOUT 60)
+    if(ZEROSLACK_ENABLE_ELA)
+        add_test(NAME ela_context_workspace_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                $<TARGET_FILE:context_workspace_test>)
+        set_tests_properties(ela_context_workspace_test PROPERTIES TIMEOUT 120)
+    endif()
     add_test(NAME context_workspace_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

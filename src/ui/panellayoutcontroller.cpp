@@ -1,6 +1,9 @@
 #include "uitypography.h"
 #include "panellayoutcontroller.h"
+#include "uicontrols.h"
 #include "deferredpanel.h"
+#include "panelcompositor.h"
+#include "applicationthememanager.h"
 
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
@@ -14,14 +17,12 @@
 #include <QHBoxLayout>
 #include <QMainWindow>
 #include <QMouseEvent>
-#include <QPainter>
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolButton>
-#include <QVariantAnimation>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -103,73 +104,6 @@ QModelIndex modelIndexFromPath(QAbstractItemModel* model,
     return parent;
 }
 
-class DrawerToolButton final : public QToolButton
-{
-public:
-    explicit DrawerToolButton(QWidget* parent = nullptr)
-        : QToolButton(parent)
-    {
-    }
-
-    void setBadge(const QString& text, const QString& tone)
-    {
-        badgeText = text.trimmed();
-        badgeTone = tone.trimmed().toLower();
-        setProperty("hasBadge", !badgeText.isEmpty());
-        const int reserve = badgeText.isEmpty()
-            ? 0
-            : qMax(35, fontMetrics().horizontalAdvance(badgeText) + 22);
-        setProperty("badgeReserve", reserve);
-        setStyleSheet(reserve > 0
-            ? QStringLiteral("padding-right: %1px;").arg(reserve)
-            : QString());
-        style()->unpolish(this);
-        style()->polish(this);
-        updateGeometry();
-        update();
-    }
-
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        QToolButton::paintEvent(event);
-        if (badgeText.isEmpty())
-            return;
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        QFont badgeFont = UiTypography::font(UiTypography::Role::Badge);
-        painter.setFont(badgeFont);
-        const int width = qMax(18,
-            painter.fontMetrics().horizontalAdvance(badgeText) + 10);
-        const QRect badgeRect(rect().right() - width - 6,
-                              rect().center().y() - 9,
-                              width,
-                              18);
-        const InsightTheme& theme = InsightVisualStyle::theme();
-        QColor background = theme.statusBar.infoBackground;
-        QColor foreground = theme.statusBar.infoText;
-        if (badgeTone == QStringLiteral("error")) {
-            background = theme.statusBar.errorBackground;
-            foreground = theme.statusBar.errorText;
-        } else if (badgeTone == QStringLiteral("warning")) {
-            background = theme.statusBar.warningBackground;
-            foreground = theme.statusBar.warningText;
-        } else if (badgeTone == QStringLiteral("success")) {
-            background = theme.statusBar.successBackground;
-            foreground = theme.statusBar.successText;
-        }
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(background);
-        painter.drawRoundedRect(badgeRect, 9, 9);
-        painter.setPen(foreground);
-        painter.drawText(badgeRect, Qt::AlignCenter, badgeText);
-    }
-
-private:
-    QString badgeText;
-    QString badgeTone;
-};
 }
 
 PanelLayoutController::PanelLayoutController(
@@ -178,15 +112,13 @@ PanelLayoutController::PanelLayoutController(
     : QObject(parent)
     , window(mainWindow)
 {
-    // Animating a QMainWindow dock's height moves its embedded button bar
-    // during relayout on Windows. Keep drawer transitions atomic so the
-    // controls and top-level window remain visually stationary.
-    animationsEnabledValue = false;
+    animationsEnabledValue = ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
     if (window) {
         window->setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
         window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     }
     buildDrawer();
+    if (animationsEnabledValue) compositor = PanelCompositor::forWindow(window);
     if (qApp)
         qApp->installEventFilter(this);
     if (window)
@@ -195,6 +127,7 @@ PanelLayoutController::PanelLayoutController(
 
 PanelLayoutController::~PanelLayoutController()
 {
+    if (compositor) compositor->settleFor(this);
     if (qApp)
         qApp->removeEventFilter(this);
 }
@@ -255,32 +188,6 @@ void PanelLayoutController::buildDrawer()
 
     bottomDrawerDock->setWidget(bottomDrawerRoot);
     window->addDockWidget(Qt::BottomDockWidgetArea, bottomDrawerDock);
-
-    heightAnimation = new QVariantAnimation(this);
-    heightAnimation->setDuration(kAnimationDurationMs);
-    heightAnimation->setEasingCurve(QEasingCurve::OutCubic);
-    connect(heightAnimation,
-            &QVariantAnimation::valueChanged,
-            this,
-            [this](const QVariant& value) {
-                applyContentHeight(value.toInt(), false);
-            });
-    connect(heightAnimation,
-            &QVariantAnimation::finished,
-            this,
-            [this]() {
-                if (collapsed) {
-                    if (bottomContentStack)
-                        bottomContentStack->hide();
-                    if (bottomResizeHandle)
-                        bottomResizeHandle->hide();
-                    applyContentHeight(0);
-                } else {
-                    if (PanelEntry* entry = entryForId(activePanel))
-                        applyContentHeight(
-                            boundedContentHeight(entry->height));
-                }
-            });
 
     auto* escapeShortcut = new QShortcut(
         QKeySequence(Qt::Key_Escape), bottomContentStack);
@@ -410,7 +317,8 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
     auto* layout = qobject_cast<QHBoxLayout*>(bottomButtonBar->layout());
     if (!layout)
         return;
-    auto* button = new DrawerToolButton(bottomButtonBar);
+    auto* button = UiControls::badgedToolButton(bottomButtonBar);
+    button->setProperty("panelMotionToggle", true);
     button->setObjectName(
         QStringLiteral("bottomPanelButton_%1").arg(entry.id));
     button->setText(entry.label);
@@ -791,6 +699,7 @@ bool PanelLayoutController::setPanelHeight(
     const QString& panelId,
     int height)
 {
+    if (compositor) compositor->settleFor(this);
     PanelEntry* entry = entryForId(panelId);
     if (!entry)
         return false;
@@ -837,8 +746,7 @@ void PanelLayoutController::setPanelBadge(
     entry->badgeText = cleanText;
     entry->badgeTone = cleanTone;
     if (entry->button) {
-        static_cast<DrawerToolButton*>(entry->button.data())
-            ->setBadge(cleanText, cleanTone);
+        UiControls::setToolButtonBadge(entry->button, cleanText, cleanTone);
         entry->button->setAccessibleDescription(
             cleanText.isEmpty()
                 ? QStringLiteral(
@@ -877,9 +785,8 @@ void PanelLayoutController::setStateChangedHandler(
 void PanelLayoutController::setAnimationsEnabled(bool enabled)
 {
     animationsEnabledValue = enabled;
-    if (!enabled && heightAnimation
-        && heightAnimation->state() == QAbstractAnimation::Running) {
-        heightAnimation->stop();
+    if (!enabled && compositor && compositor->isActiveFor(this)) {
+        compositor->settle();
         applyDrawerState(false);
     }
 }
@@ -922,6 +829,15 @@ bool PanelLayoutController::eventFilter(
 {
     if (!event)
         return QObject::eventFilter(watched, event);
+
+    if (watched == bottomButtonBar && event->type() == QEvent::LayoutRequest
+        && bottomButtonBar->layout()) {
+        const int height = qMax(kButtonBarHeight, bottomButtonBar->layout()->sizeHint().height() + 6);
+        if (bottomButtonBar->height() != height) {
+            bottomButtonBar->setFixedHeight(height);
+            applyContentHeight(bottomContentStack->height());
+        }
+    }
 
     if (watched == bottomResizeHandle) {
         if (event->type() == QEvent::MouseButtonDblClick) {
@@ -1042,6 +958,7 @@ void PanelLayoutController::activatePanel(
     PanelEntry& entry,
     bool moveFocus)
 {
+    if (activePanel != entry.id && compositor) compositor->settleFor(this);
     if (entry.id == QStringLiteral("connections") && mainAreaRequest && entry.content) {
         mainAreaRequest(entry.content, bottomContentStack);
         return;
@@ -1065,49 +982,26 @@ void PanelLayoutController::applyDrawerState(bool animate)
 {
     if (!bottomDrawerDock || panels.isEmpty())
         return;
-    bottomDrawerDock->show();
-    if (collapsed) {
-        const int start = visibleContentHeight();
-        if (animate && animationsEnabledValue && start > 0) {
-            bottomContentStack->show();
-            bottomResizeHandle->show();
-            animateContentHeight(start, 0);
-        } else {
-            if (heightAnimation)
-                heightAnimation->stop();
-            bottomContentStack->hide();
-            bottomResizeHandle->hide();
-            applyContentHeight(0);
-        }
-        return;
-    }
-
     PanelEntry* entry = entryForId(activePanel);
-    if (!entry)
-        return;
-    bottomContentStack->show();
-    bottomResizeHandle->show();
-    const int target = boundedContentHeight(entry->height);
-    const int start = visibleContentHeight();
-    if (animate && animationsEnabledValue && start != target)
-        animateContentHeight(start, target);
-    else {
-        if (heightAnimation)
-            heightAnimation->stop();
+    if (!collapsed && !entry) return;
+    const bool wasOpen = visibleContentHeight() > 0;
+    const int target = collapsed ? 0 : boundedContentHeight(entry->height);
+    const auto apply = [this, target] {
+        bottomDrawerDock->show();
+        bottomContentStack->setVisible(target > 0);
+        bottomResizeHandle->setVisible(target > 0);
         applyContentHeight(target);
+    };
+    if (animate && animationsEnabledValue && compositor && window->isVisible()
+        && (wasOpen != !collapsed || compositor->isActiveFor(this))) {
+        compositor->reveal(this, Qt::BottomEdge, !collapsed, [this] {
+            return QRect(bottomDrawerRoot->mapTo(window, QPoint()),
+                         QSize(bottomDrawerRoot->width(), bottomDrawerRoot->height() - bottomButtonBar->height()));
+        }, apply, bottomButtonBar->height());
+    } else {
+        if (compositor) compositor->settle();
+        apply();
     }
-}
-
-void PanelLayoutController::animateContentHeight(int start, int end)
-{
-    if (!heightAnimation) {
-        applyContentHeight(end);
-        return;
-    }
-    heightAnimation->stop();
-    heightAnimation->setStartValue(qMax(0, start));
-    heightAnimation->setEndValue(qMax(0, end));
-    heightAnimation->start();
 }
 
 void PanelLayoutController::applyContentHeight(
@@ -1122,7 +1016,7 @@ void PanelLayoutController::applyContentHeight(
     bottomContentStack->setMinimumHeight(safeHeight);
     bottomContentStack->setMaximumHeight(safeHeight);
     const int handleHeight = safeHeight > 0 ? kResizeHandleHeight : 0;
-    const int totalHeight = safeHeight + handleHeight + kButtonBarHeight;
+    const int totalHeight = safeHeight + handleHeight + bottomButtonBar->height();
     bottomDrawerDock->setMinimumHeight(totalHeight);
     bottomDrawerDock->setMaximumHeight(totalHeight);
     if (settleDock) {
@@ -1179,14 +1073,14 @@ void PanelLayoutController::updateDrawerStyle()
         "QWidget#bottomToolDrawerResizeHandle:hover { background: %3; }"
         "QFrame#bottomToolDrawerButtonBar {"
         " background: %1; border-top: 1px solid %2; }"
-        "QToolButton { color: %4; border: 0; border-radius: 8px;"
+        "QToolButton[zeroslackElaControl=false] { color: %4; border: 0; border-radius: 8px;"
         " padding: 0 11px 0 9px; min-height: 30px; }"
-        "QToolButton:hover { background: %3; }"
-        "QToolButton:checked { background: %5; font-weight: 600;"
+        "QToolButton[zeroslackElaControl=false]:hover { background: %3; }"
+        "QToolButton[zeroslackElaControl=false]:checked { background: %5; font-weight: 600;"
         " border-bottom: 2px solid %6; }"
-        "QToolButton:focus { outline: none;"
+        "QToolButton[zeroslackElaControl=false]:focus { outline: none;"
         " border: %7px solid %6; }"
-        "QToolButton:checked:focus { border: %7px solid %6;"
+        "QToolButton[zeroslackElaControl=false]:checked:focus { border: %7px solid %6;"
         " border-bottom: 2px solid %6; }"
     ).arg(colorCss(background),
           colorCss(border),

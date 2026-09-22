@@ -162,14 +162,15 @@ vendored 源码位于 `thirdparty/qlementine/`，仍固定 `209e549c415f1d828883
 | classic 按钮、工具按钮、复选框、分段选中反馈 | 即时（0 ms），无插值 | 新状态直接替换，输入不等待 | 已即时，不增加额外开关 | 已实现并实测；`control_style_interaction_test::states` 在真实控件上比较悬停/按下图像、激活计数及取消，classic 基线 116/116；未测原生呈现延迟 |
 | SuiteUi 0.1.0/0.1.1 与 vendored 控件状态色、勾选指示器 | 默认 192 ms，OutCubic；内部焦点即时 | Qt 先处理输入；上游反向过渡从上次目标重新起步，不能宣称从当前颜色连续反转；隐藏停止，关闭动画清空动画对象 | ZeroSlack `--no-ui-animations`；RegMap `QT_REDUCE_MOTION`/系统偏好各自映射 SDK 开关 | 已实现未实测；过渡存在性及开关生命周期已覆盖，完整的默认时长/反向连续性及原生帧节奏尚未全部实测 |
 | SuiteUi 0.1.1 显式过渡时长接口 | 非负毫秒，OutCubic；测试取 0/600 ms，负数明确拒绝 | 改时长后下一次绘制重设该控件的过渡；保留原输入语义 | `setAnimationsEnabled(false)` 优先，立即呈现最终状态 | 已实现并实测；`transitionDurationChangesRenderingAndReducedMotionWins` 验证中间图像区别于两端，600 ms 用例在 565 ms 采样时像素已量化为终值；这不是计时器或帧率精度结论 |
-| ZeroSlack 左侧栏宽度 | 180 ms，OutCubic | 停止旧过渡，从当前实际宽度转向新目标；完成后才隐藏 | `setExpanded(..., false)` 即时；尚未接系统偏好或控件动画 CLI 开关 | 已实现未实测；`navigationpanecoordinator.cpp`，原生帧节奏与中断时序未形成量化验收 |
-| ZeroSlack 底栏生产路径 | 即时（0 ms），无插值 | 连续反向点击立即落实最后状态 | 构造器主动禁用高度动画，与 SDK 开关无关；未启用的内部动画分支为 140 ms / OutCubic | 已实现并实测；`panel_layout_controller_test::verifyClickGeometryStability` 检查默认禁用、展开高度和按钮/顶层几何不变，基线通过；未测屏幕呈现延迟 |
+| ZeroSlack 左侧栏 | Ela：255 ms，OutCubic，独立合成；classic：180 ms，OutCubic，宽度插值 | 从当前进度反向；普通输入先结束过渡；Ela 不逐帧重排编辑器 | `setExpanded(..., false)` 即时；尚未接系统偏好或控件动画 CLI 开关 | Ela 四档 DPI 开合、输入与像素端点已验证；Windows 原生数据见 `ela-migration.md`，不等同于逐帧呈现测量 |
+| ZeroSlack 底部工具抽屉 | Ela 0.29.39：255 ms，OutCubic，内容纵向合成；classic 即时 | 按钮条固定；反向点击沿当前进度继续，普通输入先结束过渡 | `PanelLayoutController::setAnimationsEnabled(false)` 即时；恢复布局即时；旧 140 ms 高度动画已删除 | `ui_panel_motion_test` 四档 DPI 验证反向、按钮位置、编辑器几何和输入接管；原生证据见 `ela-migration.md` |
+| Ela Context 整栏与内部区块（0.29.39） | 255 ms，OutCubic；整栏平移，区块平移并裁切 | 同面板连续反向，不同面板先结束前一过渡；不缩放文字 | 恢复、浮动／标签化停靠和资源删除即时；全局 CLI 开关尚未接管 | `ui_panel_motion_test` 四档 DPI 验证保留视图、快速切换、重排和销毁；不将系统合成刷新率当成应用帧率 |
 | Files/Design/Pinloom 条目底纹过渡候选 | 100 ms，OutCubic | 从当前颜色重定向，不重启固定起点，不阻塞选中 | 未来开关关闭后即时；当前底纹仍即时 | 仅规格未实现；不得把现有静态 hover 规则计作过渡通过 |
 | 信息浮窗淡入/关闭候选 | 打开 100 ms、关闭 60 ms，OutCubic | 交互区立即可用，重复开关从当前透明度反向；关闭取消挂起任务 | 未来开关关闭后即时；不得淡化文字与内容独立造成透明度叠乘 | 仅规格未实现；原生材质与此淡入规格分开验收 |
 | 圆环菜单及子项条候选 | 80 ms，OutCubic | 立即命中，不延迟关闭；从当前透明度反向 | 未来开关关闭后即时；禁止恢复矩形阴影 | 仅规格未实现；当前菜单行为保持原样 |
 | Activity 数字提示、复制成功指示候选 | 提亮 120 ms / OutCubic；成功勾号保留 800 ms 后即时恢复 | 新事件重置提示期限，不能排队积累闪烁 | 关闭装饰动画后仍直接显示语义结果；不丢计数与成功反馈 | 仅规格未实现；没有计作已覆盖 |
 
-本次规格共 9 行：已实现并实测 3、已实现未实测 2、仅规格未实现 4。
+本表在 2026-09-22 补充 Ela 共享面板过渡；2026-09-20 的原始验证统计保留在下方证据中。
 离屏图像采样一律 `nativeFramePacingMeasured: false`。上述 565 ms 是在颜色量化后的
 首个满足图像相等断言的采样时间，不是 600 ms 配置的误差上限，更不是 DWM 呈现间隔。
 原始数据保存在 `build/evidence/plan-remainder-20260920/a-sdk011/controls.log`。

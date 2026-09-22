@@ -3,6 +3,7 @@
 
 #include <QDockWidget>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 
 class NavigationManager;
@@ -13,19 +14,22 @@ class WorkspaceManager;
 class NavigationViewport;
 class QVariantAnimation;
 class QEvent;
+class ElaNavigationBar;
+class PanelCompositor;
 
 class NavigationPaneCoordinator : public QObject
 {
 public:
     explicit NavigationPaneCoordinator(QWidget* parent);
+    ~NavigationPaneCoordinator() override;
 
     void attachNavigationManager(NavigationManager* manager);
     void connectNavigationInputs(TabManager* tabManager,
                                  WorkspaceManager* workspaceManager);
     void toggleVisible();
     void setExpanded(bool expanded, bool animate = true);
-    bool isExpanded() const { return expanded; }
-    bool isAnimating() const { return transitioning; }
+    bool isExpanded() const;
+    bool isAnimating() const;
     void setHeaderWidget(QWidget* header);
     void showFiles();
     void showDesign();
@@ -43,6 +47,9 @@ private:
 
     QDockWidget* navigationDock = nullptr;
     NavigationViewport* viewport = nullptr;
+    ElaNavigationBar* elaNavigationBar = nullptr;
+    QPointer<PanelCompositor> compositor;
+    bool preparingComposition = false;
     NavigationWidget* navigationWidget = nullptr;
     NavigationManager* navigationManager = nullptr;
     QVariantAnimation* widthAnimation = nullptr;

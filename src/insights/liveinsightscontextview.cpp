@@ -1,4 +1,5 @@
 #include "liveinsightscontextview.h"
+#include "uicontrols.h"
 #include "compactlayout.h"
 
 #include "applicationthememanager.h"
@@ -530,7 +531,7 @@ void LiveInsightsContextView::refreshEmptyState(
     }
     const QList<TargetCandidate> candidates = candidateTargets();
     for (const TargetCandidate& candidate : candidates) {
-        auto* row = new QPushButton(candidate.label, emptyStateValue);
+        auto* row = UiControls::pushButton(candidate.label, emptyStateValue);
         row->setObjectName(QStringLiteral("liveInsightCandidate"));
         row->setToolTip(
             candidate.moduleName.isEmpty()
@@ -545,7 +546,7 @@ void LiveInsightsContextView::refreshEmptyState(
     if (targetPickRequest) {
         // The header chip is the usual entry; this one also covers a section
         // dragged out into a floating window, which has no section header.
-        auto* pick = new QPushButton(
+        auto* pick = UiControls::pushButton(
             QStringLiteral("Pick in editor…"), emptyStateValue);
         pick->setObjectName(QStringLiteral("liveInsightPickTarget"));
         pick->setToolTip(
@@ -555,7 +556,7 @@ void LiveInsightsContextView::refreshEmptyState(
                 [this]() { requestScopePick(); });
         emptyStateList->addWidget(pick);
     }
-    auto* hint = new QLabel(emptyStateValue);
+    auto* hint = UiControls::label(emptyStateValue);
     hint->setObjectName(QStringLiteral("liveInsightEmptyHint"));
     hint->setWordWrap(true);
     hint->setText(candidates.isEmpty()
@@ -716,13 +717,13 @@ void LiveInsightsContextView::buildUi()
     InsightVisualStyle::applyTitleLabel(title);
     titleRow->addWidget(title, 1);
 
-    pinToggle = new QPushButton(QStringLiteral("Pin"), this);
+    pinToggle = UiControls::pushButton(QStringLiteral("Pin"), this);
     pinToggle->setObjectName(QStringLiteral("liveInsightsPin"));
     pinToggle->setCheckable(true);
     InsightVisualStyle::applyToolbarButton(pinToggle);
     titleRow->addWidget(pinToggle);
 
-    fullViewButton = new QPushButton(
+    fullViewButton = UiControls::pushButton(
         QStringLiteral("Open Full View"), this);
     fullViewButton->setObjectName(
         QStringLiteral("liveInsightsOpenFullView"));
@@ -732,7 +733,7 @@ void LiveInsightsContextView::buildUi()
     titleRow->addWidget(fullViewButton);
     root->addLayout(titleRow);
 
-    followCheck = new QCheckBox(
+    followCheck = UiControls::checkBox(
         QStringLiteral("Follow Editor"), this);
     followCheck->setObjectName(
         QStringLiteral("liveInsightsFollowEditor"));
@@ -765,7 +766,7 @@ void LiveInsightsContextView::buildUi()
         cardLayout->setContentsMargins(5, 5, 5, 5);
         cardLayout->setSpacing(3);
 
-        auto* button = new QPushButton(
+        auto* button = UiControls::pushButton(
             liveInsightKindDisplayName(kind), card);
         button->setObjectName(
             QStringLiteral("liveInsightKind_%1").arg(kindId));
@@ -776,7 +777,7 @@ void LiveInsightsContextView::buildUi()
         buttonGroup->addButton(button, index);
         cardLayout->addWidget(button);
 
-        auto* status = new QLabel(QStringLiteral("Waiting"), card);
+        auto* status = UiControls::label(QStringLiteral("Waiting"), card);
         status->setObjectName(
             QStringLiteral("liveInsightStatus_%1").arg(kindId));
         status->setAlignment(Qt::AlignCenter);
@@ -790,7 +791,7 @@ void LiveInsightsContextView::buildUi()
             QStringLiteral("liveInsightPage_%1").arg(kindId));
         auto* pageLayout = new QVBoxLayout(page);
         pageLayout->setContentsMargins(8, 8, 8, 8);
-        auto* summary = new QLabel(page);
+        auto* summary = UiControls::label(page);
         summary->setObjectName(
             QStringLiteral("liveInsightSummary_%1").arg(kindId));
         summary->setWordWrap(true);

@@ -1,4 +1,5 @@
 #include "actionregistry.h"
+#include "testuistyle.h"
 #include "graphexportui.h"
 #include "signalusagehotspotpanel.h"
 #include "semantic_fixture_records.h"
@@ -479,6 +480,7 @@ int main(int argc, char** argv)
 {
     qInstallMessageHandler(stderrQtMessageHandler);
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
     resetApplicationActionExecutionHistory();
     if (!verifyReportBuildIsAsyncAndLatestWins()) {
         qWarning() << "Hotspot report build blocked UI or published a stale result";

@@ -1,4 +1,5 @@
 #include "actionregistry.h"
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "graphexportservice.h"
 #include "graphexportui.h"
@@ -320,6 +321,7 @@ int main(int argc, char** argv)
 {
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
     QTemporaryDir temporary;
     expect("temporary export directory is available", temporary.isValid());
     if (!temporary.isValid())

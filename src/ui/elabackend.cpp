@@ -75,20 +75,17 @@ QString ElaBackend::styleSheet(ThemeMode mode)
 {
     const auto& t = InsightVisualStyle::theme(mode);
     // No generic input/button QSS: Ela owns those controls' state painting.
-    // Model views, editor tabs, and the existing window chrome stay in place.
-    return InsightVisualStyle::chromeStyleSheet(mode) + QStringLiteral(
+    // Trees, tabs and the app bar use Ela painting; native frame handling stays with the host.
+    return InsightVisualStyle::chromeStyleSheet(mode, false) + QStringLiteral(
         "QTreeView, QListView, QTableView { background: %1; color: %2; border: 0;"
         " alternate-background-color: %1; selection-background-color: %3; }"
-        "QTreeView::item, QListView::item { padding: 4px 5px; border-radius: 4px; }"
-        "QTreeView::item:hover, QListView::item:hover { background: %4; }"
-        "QTreeView::item:selected, QListView::item:selected { background: %3; color: %2; }"
-        "QHeaderView::section { background: %5; color: %2; border: 0; padding: 5px; }"
+        "QHeaderView::section { background: %4; color: %2; border: 0; padding: 5px; }"
         "QTabWidget::pane { border: 0; background: %1; }"
         "QAbstractSpinBox { min-height: 30px; }"
         "QPlainTextEdit[codeEditorSurface=true] { border: 0; padding: 0; }"
-        "QGroupBox { border: 1px solid %6; border-radius: 6px; margin-top: 12px; padding-top: 8px; }"
+        "QGroupBox { border: 1px solid %5; border-radius: 6px; margin-top: 12px; padding-top: 8px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }")
         .arg(t.itemView.background.name(), t.textPrimary.name(),
-             t.itemView.selectedBackground.name(), t.itemView.hoverBackground.name(),
+             t.itemView.selectedBackground.name(),
              t.itemView.headerBackground.name(), t.border.name());
 }

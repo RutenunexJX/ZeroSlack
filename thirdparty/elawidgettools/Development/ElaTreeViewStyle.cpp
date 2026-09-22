@@ -36,6 +36,8 @@ void ElaTreeViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
             itemRect.adjust(0, 2, 0, -2);
             QPainterPath path;
             path.addRoundedRect(itemRect, 4, 4);
+            if (vopt->backgroundBrush.style() != Qt::NoBrush)
+                painter->fillPath(path, vopt->backgroundBrush);
             bool isEnable = vopt->state.testFlag(QStyle::State_Enabled);
             if (vopt->state & QStyle::State_Selected)
             {
@@ -64,6 +66,28 @@ void ElaTreeViewStyle::drawPrimitive(PrimitiveElement element, const QStyleOptio
     }
     case QStyle::PE_IndicatorBranch:
     {
+        if (_nativeItemContent) {
+            if (option->state.testFlag(State_Children)) {
+                painter->save();
+                painter->setRenderHint(QPainter::Antialiasing);
+                painter->setPen(QPen(ElaThemeColor(_themeMode, BasicText), 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+                const QPointF center = QRectF(option->rect).center();
+                QPainterPath arrow;
+                if (option->state.testFlag(State_Open)) {
+                    arrow.moveTo(center + QPointF(-3, -1.5));
+                    arrow.lineTo(center + QPointF(0, 1.5));
+                    arrow.lineTo(center + QPointF(3, -1.5));
+                } else {
+                    const qreal direction = option->direction == Qt::RightToLeft ? -1 : 1;
+                    arrow.moveTo(center + QPointF(-1.5 * direction, -3));
+                    arrow.lineTo(center + QPointF(1.5 * direction, 0));
+                    arrow.lineTo(center + QPointF(-1.5 * direction, 3));
+                }
+                painter->drawPath(arrow);
+                painter->restore();
+            }
+            return;
+        }
         // 展开图标绘制
         if (const QStyleOptionViewItem* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
         {
@@ -140,6 +164,10 @@ void ElaTreeViewStyle::drawControl(ControlElement element, const QStyleOption* o
     }
     case QStyle::CE_HeaderLabel:
     {
+        if (_nativeItemContent) {
+            QProxyStyle::drawControl(element, option, painter, widget);
+            return;
+        }
         // 表头文字绘制
         if (const QStyleOptionHeader* hopt = qstyleoption_cast<const QStyleOptionHeader*>(option))
         {
@@ -170,6 +198,24 @@ void ElaTreeViewStyle::drawControl(ControlElement element, const QStyleOption* o
     {
         if (const QStyleOptionViewItem* vopt = qstyleoption_cast<const QStyleOptionViewItem*>(option))
         {
+            if (_nativeItemContent) {
+                // Qt retains model fonts/brushes, elision, wrapping, check states and focus.
+                // Its renderer calls our primitive and subElementRect; apply padding once.
+                QProxyStyle::drawControl(element, option, painter, widget);
+                if (vopt->state.testFlag(State_Selected)
+                    && (vopt->viewItemPosition == QStyleOptionViewItem::Beginning
+                        || vopt->viewItemPosition == QStyleOptionViewItem::OnlyOne)) {
+                    painter->save();
+                    painter->setRenderHint(QPainter::Antialiasing);
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(ElaThemeColor(_themeMode, PrimaryNormal));
+                    const int inset = vopt->rect.height() / 4;
+                    painter->drawRoundedRect(QRectF(vopt->rect.left() + 2, vopt->rect.top() + inset,
+                                                   3, vopt->rect.height() - 2 * inset), 1.5, 1.5);
+                    painter->restore();
+                }
+                return;
+            }
             // 背景绘制
             this->drawPrimitive(QStyle::PE_PanelItemViewItem, option, painter, widget);
 
@@ -254,7 +300,9 @@ QSize ElaTreeViewStyle::sizeFromContents(ContentsType type, const QStyleOption* 
     case QStyle::CT_ItemViewItem:
     {
         QSize itemSize = QProxyStyle::sizeFromContents(type, option, size, widget);
-        itemSize.setHeight(_pItemHeight);
+        itemSize.setHeight(qMax(itemSize.height(), _pItemHeight));
+        if (_nativeItemContent)
+            itemSize.rwidth() += 10;
         return itemSize;
     }
     default:
@@ -283,6 +331,16 @@ int ElaTreeViewStyle::pixelMetric(PixelMetric metric, const QStyleOption* option
 
 QRect ElaTreeViewStyle::subElementRect(SubElement element, const QStyleOption* option, const QWidget* widget) const
 {
+    if (_nativeItemContent) {
+        if (element == SE_ItemViewItemCheckIndicator || element == SE_ItemViewItemDecoration || element == SE_ItemViewItemText) {
+            if (const auto* item = qstyleoption_cast<const QStyleOptionViewItem*>(option)) {
+                QStyleOptionViewItem content(*item);
+                content.rect.adjust(8, 0, -2, 0);
+                return QProxyStyle::subElementRect(element, &content, widget);
+            }
+        }
+        return QProxyStyle::subElementRect(element, option, widget);
+    }
     switch (element)
     {
     case QStyle::SE_ItemViewItemCheckIndicator:

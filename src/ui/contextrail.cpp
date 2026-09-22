@@ -1,6 +1,9 @@
 #include "contextrail.h"
+#include "uicontrols.h"
 
 #include <QAction>
+#include <QToolButton>
+#include <QWidgetAction>
 
 ContextRail::ContextRail(QWidget* parent)
     : QToolBar(parent)
@@ -21,15 +24,35 @@ ContextRail::ContextRail(QWidget* parent)
     });
 }
 
+QAction* ContextRail::addRailAction(const QIcon& icon, const QString& title, QAction* before)
+{
+    auto* action = new QWidgetAction(this);
+    action->setIcon(icon);
+    action->setText(title);
+    auto* button = UiControls::railButton(this);
+    button->setProperty("panelMotionToggle", true);
+    button->setIconSize(iconSize());
+    button->setDefaultAction(action);
+    action->setDefaultWidget(button);
+    insertAction(before, action);
+    connect(this, &QToolBar::iconSizeChanged, button, &QToolButton::setIconSize);
+    button->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(button, &QWidget::customContextMenuRequested, this, [this, button, action](const QPoint& pos) {
+        const QString id = action->data().toString();
+        if (actionsById.value(id) == action)
+            emit entryContextMenuRequested(id, button->mapToGlobal(pos));
+    });
+    return action;
+}
+
 bool ContextRail::addEntry(const ContextRailEntry& entry)
 {
     const QString id = entry.id.trimmed();
     if (id.isEmpty() || actionsById.contains(id))
         return false;
 
-    QAction* action = new QAction(entry.icon, entry.title, this);
     QAction* footer = findChild<QAction*>(QStringLiteral("contextFloatingFooter"));
-    insertAction(footer, action);
+    QAction* action = addRailAction(entry.icon, entry.title, footer);
     action->setObjectName(
         QStringLiteral("contextRail.%1").arg(id));
     action->setCheckable(true);
@@ -47,12 +70,13 @@ bool ContextRail::addEntry(const ContextRailEntry& entry)
 
 bool ContextRail::removeEntry(const QString& id)
 {
-    QAction* action = actionsById.take(id.trimmed());
+    const QString normalized = id.trimmed();
+    QAction* action = actionsById.take(normalized);
     if (!action)
         return false;
     removeAction(action);
     action->deleteLater();
-    if (activeId == id)
+    if (activeId == normalized)
         activeId.clear();
     updateVisibility();
     return true;

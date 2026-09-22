@@ -14,11 +14,18 @@ class ELA_EXPORT ElaScrollBar : public QScrollBar
     Q_Q_CREATE(ElaScrollBar)
     Q_PROPERTY_CREATE_Q_H(bool, IsAnimation)
     Q_PROPERTY_CREATE_Q_H(qreal, SpeedLimit)
+    Q_PROPERTY(bool smoothWheelEnabled READ smoothWheelEnabled WRITE setSmoothWheelEnabled)
 public:
     explicit ElaScrollBar(QWidget* parent = nullptr);
     explicit ElaScrollBar(Qt::Orientation orientation, QWidget* parent = nullptr);
     explicit ElaScrollBar(QScrollBar* originScrollBar, QAbstractScrollArea* parent = nullptr);
     ~ElaScrollBar() override;
+
+    // Animate wheel input without animating the view's scroll range.
+    void setSmoothWheelEnabled(bool enabled);
+    bool smoothWheelEnabled() const;
+    void setWheelAnimationDuration(int duration);
+    void stopSmoothWheel();
 
 Q_SIGNALS:
     Q_SIGNAL void rangeAnimationFinished();
@@ -31,6 +38,9 @@ protected:
     virtual void mouseMoveEvent(QMouseEvent* event) override;
     virtual void wheelEvent(QWheelEvent* event) override;
     virtual void contextMenuEvent(QContextMenuEvent* event) override;
+
+private:
+    void smoothWheelEvent(QWheelEvent* event);
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_ELASCROLLBAR_H_

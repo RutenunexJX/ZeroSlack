@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "uitypography.h"
 #include "rtlhighriskeditpanel.h"
 #include "deferredpanel.h"
@@ -104,7 +105,7 @@ void RtlHighRiskEditPanel::setupUi()
     root->setContentsMargins(8, 8, 8, 8);
     root->setSpacing(7);
 
-    auto* heading = new QLabel(
+    auto* heading = UiControls::label(
         QStringLiteral("RTL Change Preview Edit"), this);
     heading->setObjectName(
         QStringLiteral("rtlHighRiskEditHeading"));
@@ -112,7 +113,7 @@ void RtlHighRiskEditPanel::setupUi()
     heading->setFont(headingFont);
     root->addWidget(heading);
 
-    stateLabel = new QLabel(this);
+    stateLabel = UiControls::label(this);
     stateLabel->setObjectName(
         QStringLiteral("rtlHighRiskEditState"));
     stateLabel->setWordWrap(true);
@@ -125,7 +126,7 @@ void RtlHighRiskEditPanel::setupUi()
     emptyInputPage = new QWidget(inputStack);
     auto* emptyLayout = new QVBoxLayout(emptyInputPage);
     emptyLayout->addWidget(
-        new QLabel(
+        UiControls::label(
             QStringLiteral(
                 "Invoke an RTL rename or connection transform "
                 "action to populate this page."),
@@ -136,28 +137,28 @@ void RtlHighRiskEditPanel::setupUi()
     renameInputPage = new QGroupBox(
         QStringLiteral("Rename request"), inputStack);
     auto* renameForm = new QFormLayout(renameInputPage);
-    renameSubjectLabel = new QLabel(renameInputPage);
+    renameSubjectLabel = UiControls::label(renameInputPage);
     renameSubjectLabel->setObjectName(
         QStringLiteral("rtlHighRiskRenameSubject"));
     renameSubjectLabel->setTextInteractionFlags(
         Qt::TextSelectableByMouse);
-    renameForm->addRow(
+    UiControls::addFormRow(renameForm,
         QStringLiteral("Semantic target"),
         renameSubjectLabel);
-    renameOldNameLabel = new QLabel(renameInputPage);
+    renameOldNameLabel = UiControls::label(renameInputPage);
     renameOldNameLabel->setObjectName(
         QStringLiteral("rtlHighRiskRenameOldName"));
     renameOldNameLabel->setTextInteractionFlags(
         Qt::TextSelectableByMouse);
-    renameForm->addRow(
+    UiControls::addFormRow(renameForm,
         QStringLiteral("Current name"),
         renameOldNameLabel);
-    renameNewNameEdit = new QLineEdit(renameInputPage);
+    renameNewNameEdit = UiControls::lineEdit(renameInputPage);
     renameNewNameEdit->setObjectName(
         QStringLiteral("rtlHighRiskRenameNewName"));
     renameNewNameEdit->setPlaceholderText(
         QStringLiteral("SystemVerilog identifier"));
-    renameForm->addRow(
+    UiControls::addFormRow(renameForm,
         QStringLiteral("New name"),
         renameNewNameEdit);
     inputStack->addWidget(renameInputPage);
@@ -168,44 +169,44 @@ void RtlHighRiskEditPanel::setupUi()
     auto* connectionForm =
         new QFormLayout(connectionInputPage);
     connectionInstanceLabel =
-        new QLabel(connectionInputPage);
+        UiControls::label(connectionInputPage);
     connectionInstanceLabel->setObjectName(
         QStringLiteral(
             "rtlHighRiskConnectionInstance"));
     connectionInstanceLabel->setTextInteractionFlags(
         Qt::TextSelectableByMouse);
-    connectionForm->addRow(
+    UiControls::addFormRow(connectionForm,
         QStringLiteral("Semantic instance"),
         connectionInstanceLabel);
-    convertOrderedCheck = new QCheckBox(
+    convertOrderedCheck = UiControls::checkBox(
         QStringLiteral("Convert ordered associations to named"),
         connectionInputPage);
     convertOrderedCheck->setObjectName(
         QStringLiteral(
             "rtlHighRiskConvertOrdered"));
-    connectionForm->addRow(QString(), convertOrderedCheck);
-    addMissingPortsCheck = new QCheckBox(
+    UiControls::addFormRow(connectionForm, QString(), convertOrderedCheck);
+    addMissingPortsCheck = UiControls::checkBox(
         QStringLiteral("Add missing formal ports"),
         connectionInputPage);
     addMissingPortsCheck->setObjectName(
         QStringLiteral(
             "rtlHighRiskAddMissingPorts"));
-    connectionForm->addRow(QString(), addMissingPortsCheck);
-    removeUnknownPortsCheck = new QCheckBox(
+    UiControls::addFormRow(connectionForm, QString(), addMissingPortsCheck);
+    removeUnknownPortsCheck = UiControls::checkBox(
         QStringLiteral("Remove connections to deleted formal ports"),
         connectionInputPage);
     removeUnknownPortsCheck->setObjectName(
         QStringLiteral("rtlHighRiskRemoveUnknownPorts"));
-    connectionForm->addRow(QString(), removeUnknownPortsCheck);
-    synchronizeAllInstancesCheck = new QCheckBox(
+    UiControls::addFormRow(connectionForm, QString(), removeUnknownPortsCheck);
+    synchronizeAllInstancesCheck = UiControls::checkBox(
         QStringLiteral("Apply to every source instance of this module"),
         connectionInputPage);
     synchronizeAllInstancesCheck->setObjectName(
         QStringLiteral("rtlHighRiskSynchronizeAllInstances"));
-    connectionForm->addRow(QString(), synchronizeAllInstancesCheck);
+    UiControls::addFormRow(connectionForm, QString(), synchronizeAllInstancesCheck);
 
     missingPortPolicyCombo =
-        new QComboBox(connectionInputPage);
+        UiControls::comboBox(connectionInputPage);
     missingPortPolicyCombo->setObjectName(
         QStringLiteral(
             "rtlHighRiskMissingPortPolicy"));
@@ -219,11 +220,11 @@ void RtlHighRiskEditPanel::setupUi()
         static_cast<int>(
             RtlMissingPortConnectionPolicy::
                 ConnectSameNamedSignal));
-    connectionForm->addRow(
+    UiControls::addFormRow(connectionForm,
         QStringLiteral("Missing ports"),
         missingPortPolicyCombo);
 
-    castPolicyCombo = new QComboBox(connectionInputPage);
+    castPolicyCombo = UiControls::comboBox(connectionInputPage);
     castPolicyCombo->setObjectName(
         QStringLiteral("rtlHighRiskCastPolicy"));
     castPolicyCombo->addItem(
@@ -236,19 +237,19 @@ void RtlHighRiskEditPanel::setupUi()
         static_cast<int>(
             RtlExplicitCastPolicy::
                 InsertWhenRequired));
-    connectionForm->addRow(
+    UiControls::addFormRow(connectionForm,
         QStringLiteral("Width/signed cast"),
         castPolicyCombo);
     inputStack->addWidget(connectionInputPage);
     root->addWidget(inputStack);
 
     auto* summaryRow = new QHBoxLayout();
-    transactionSummary = new QLabel(this);
+    transactionSummary = UiControls::label(this);
     transactionSummary->setObjectName(
         QStringLiteral(
             "rtlHighRiskTransactionSummary"));
     transactionSummary->setWordWrap(true);
-    tokenFingerprintLabel = new QLabel(this);
+    tokenFingerprintLabel = UiControls::label(this);
     tokenFingerprintLabel->setObjectName(
         QStringLiteral(
             "rtlHighRiskConfirmationFingerprint"));
@@ -258,7 +259,7 @@ void RtlHighRiskEditPanel::setupUi()
     summaryRow->addWidget(tokenFingerprintLabel);
     root->addLayout(summaryRow);
 
-    conflictLabel = new QLabel(this);
+    conflictLabel = UiControls::label(this);
     conflictLabel->setObjectName(
         QStringLiteral("rtlHighRiskConflict"));
     conflictLabel->setWordWrap(true);
@@ -268,7 +269,7 @@ void RtlHighRiskEditPanel::setupUi()
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->setObjectName(
         QStringLiteral("rtlHighRiskDiffSplitter"));
-    diffTree = new QTreeWidget(splitter);
+    diffTree = UiControls::treeWidget(splitter);
     diffTree->setObjectName(
         QStringLiteral("rtlHighRiskDiffTree"));
     diffTree->setColumnCount(3);
@@ -286,7 +287,7 @@ void RtlHighRiskEditPanel::setupUi()
         2, QHeaderView::ResizeToContents);
     splitter->addWidget(diffTree);
 
-    diffView = new QPlainTextEdit(splitter);
+    diffView = UiControls::readOnlyText(splitter);
     diffView->setObjectName(
         QStringLiteral("rtlHighRiskDiffView"));
     diffView->setReadOnly(true);
@@ -304,19 +305,19 @@ void RtlHighRiskEditPanel::setupUi()
     root->addWidget(splitter, 1);
 
     auto* actionRow = new QHBoxLayout();
-    previewButton = new QPushButton(
+    previewButton = UiControls::pushButton(
         QStringLiteral("Preview Change Preview"), this);
     previewButton->setObjectName(
         QStringLiteral("rtlHighRiskPreviewButton"));
-    confirmButton = new QPushButton(
+    confirmButton = UiControls::pushButton(
         QStringLiteral("Apply Confirmed Plan"), this);
     confirmButton->setObjectName(
         QStringLiteral("rtlHighRiskConfirmButton"));
-    cancelButton = new QPushButton(
+    cancelButton = UiControls::pushButton(
         QStringLiteral("Cancel Preview"), this);
     cancelButton->setObjectName(
         QStringLiteral("rtlHighRiskCancelButton"));
-    undoButton = new QPushButton(
+    undoButton = UiControls::pushButton(
         QStringLiteral("Undo Applied Plan"), this);
     undoButton->setObjectName(
         QStringLiteral("rtlHighRiskUndoButton"));

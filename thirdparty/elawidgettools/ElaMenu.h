@@ -19,6 +19,7 @@ public:
     ~ElaMenu();
     void setMenuItemHeight(int menuItemHeight);
     int getMenuItemHeight() const;
+    void setNativeMenuBehavior(bool enabled);
 
     QAction* addMenu(QMenu* menu);
     ElaMenu* addMenu(const QString& title);
@@ -36,6 +37,8 @@ Q_SIGNALS:
 protected:
     virtual void showEvent(QShowEvent* event) override;
     virtual void paintEvent(QPaintEvent* event) override;
+private:
+    bool _nativeMenuBehavior{false};
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_ELAMENU_H_

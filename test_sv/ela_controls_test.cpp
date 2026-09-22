@@ -14,10 +14,14 @@
 #include <QDoubleSpinBox>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QPointer>
+#include <QRadioButton>
+#include <QButtonGroup>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QSlider>
 #include <QSpinBox>
+#include <QStyle>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTextDocument>
@@ -146,12 +150,73 @@ private slots:
     void visibleControlDestruction() {
         const QList<QWidget*> controls{UiControls::pushButton("Close"), UiControls::toolButton(),
             UiControls::lineEdit("Close"), UiControls::comboBox(), UiControls::checkBox("Close"),
-            UiControls::spinBox(), UiControls::doubleSpinBox(), UiControls::slider(Qt::Horizontal)};
+            UiControls::spinBox(), UiControls::doubleSpinBox(), UiControls::slider(Qt::Horizontal),
+            UiControls::radioButton("Choice")};
         for (auto* control : controls) {
             qInfo() << "destroy-visible" << control->metaObject()->className();
             control->resize(180, 40); control->show(); control->activateWindow(); settle();
             delete control;
             settle();
+        }
+    }
+
+    void radioExclusiveKeyboardAndDisabledState() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        QButtonGroup group(&host);
+        auto* first = UiControls::radioButton("&Decimal", &host);
+        auto* second = UiControls::radioButton("&Hexadecimal", &host);
+        for (auto* radio : {first, second}) {
+            QVERIFY(radio->inherits("ElaRadioButton"));
+            group.addButton(radio); layout->addWidget(radio);
+            QCOMPARE(radio->font(), UiTypography::font());
+        }
+        host.show(); host.activateWindow(); first->setChecked(true); settle();
+        QSignalSpy toggled(second, &QRadioButton::toggled);
+        second->setFocus(); QTest::keyClick(second, Qt::Key_Space); settle();
+        QVERIFY(second->isChecked()); QVERIFY(!first->isChecked()); QCOMPARE(toggled.count(), 1);
+        const auto checked = second->grab().toImage();
+        second->setEnabled(false); settle();
+        QVERIFY(checked != second->grab().toImage());
+        QTest::keyClick(second, Qt::Key_Space); QCOMPARE(toggled.count(), 1);
+        for (auto mode : modes) {
+            ApplicationThemeManager::instance().setMode(mode); settle();
+            QVERIFY(second->isChecked());
+            QCOMPARE(second->palette().color(QPalette::Disabled, QPalette::WindowText),
+                     InsightVisualStyle::theme().button.textDisabled);
+            QVERIFY(first->height() >= first->minimumSizeHint().height());
+        }
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    }
+
+    void comboPopupStyleOutlivesPopup() {
+        for (bool editable : {false, true}) {
+            QWidget host;
+            auto* layout = new QVBoxLayout(&host);
+            auto* combo = UiControls::comboBox(&host);
+            combo->setEditable(editable);
+            combo->addItems({"top", "counter"});
+            layout->addWidget(combo);
+            host.show(); settle();
+            combo->showPopup(); settle();
+            QPointer<QWidget> popup = combo->view()->window();
+            QVERIFY(popup && popup->isVisible());
+            combo->hidePopup();
+            QPointer<QStyle> localStyle;
+            for (auto* style : qApp->findChildren<QStyle*>(QString(), Qt::FindDirectChildrenOnly))
+                if (style->inherits("ElaComboBoxStyle")) localStyle = style;
+            QVERIFY(localStyle);
+            bool styleAliveAtPopupDestruction = false;
+            connect(popup, &QObject::destroyed, &host, [&] {
+                styleAliveAtPopupDestruction = !localStyle.isNull();
+            });
+            combo->hide();
+            combo->setParent(nullptr);
+            delete combo;
+            QVERIFY(popup.isNull());
+            QVERIFY(styleAliveAtPopupDestruction);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            QVERIFY(localStyle.isNull());
         }
     }
 

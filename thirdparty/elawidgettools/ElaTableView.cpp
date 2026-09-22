@@ -1,6 +1,7 @@
 #include "ElaTableView.h"
 
 #include <QHeaderView>
+#include <QApplication>
 #include <QMouseEvent>
 
 #include "ElaTableViewStyle.h"
@@ -24,13 +25,28 @@ ElaTableView::ElaTableView(QWidget* parent)
     setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     d->_tableViewStyle = new ElaTableViewStyle(style());
+    d->_tableViewStyle->setParent(qApp);
+    connect(this, &QObject::destroyed, d->_tableViewStyle, &QObject::deleteLater);
     setStyle(d->_tableViewStyle);
 }
 
 ElaTableView::~ElaTableView()
 {
+}
+
+QStyle* ElaTableView::createStyle(QObject* owner)
+{
+    auto* viewStyle = new ElaTableViewStyle();
+    viewStyle->setParent(owner);
+    viewStyle->setNativeItemContent(true);
+    return viewStyle;
+}
+
+void ElaTableView::setNativeItemContent(bool enabled)
+{
     Q_D(ElaTableView);
-    delete d->_tableViewStyle;
+    d->_tableViewStyle->setNativeItemContent(enabled);
+    viewport()->update();
 }
 
 void ElaTableView::setHeaderMargin(int headerMargin)

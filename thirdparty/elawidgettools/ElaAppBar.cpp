@@ -30,16 +30,36 @@ Q_PROPERTY_CREATE_Q_CPP(ElaAppBar, bool, IsStayTop)
 Q_PROPERTY_CREATE_Q_CPP(ElaAppBar, bool, IsDefaultClosed)
 Q_PROPERTY_CREATE_Q_CPP(ElaAppBar, bool, IsOnlyAllowMinAndClose)
 
+namespace {
+class AppBarCloseButton final : public ElaIconButton {
+public:
+    using ElaIconButton::ElaIconButton;
+    QSize sizeHint() const override {
+        return QSize(qMax(30, fontMetrics().horizontalAdvance(text()) + 16),
+                     qMax(28, fontMetrics().height() + 8));
+    }
+    QSize minimumSizeHint() const override { return sizeHint(); }
+};
+}
+
 ElaAppBar::ElaAppBar(QWidget* parent)
+    : ElaAppBar(parent, WindowManagement::AppBar)
+{
+}
+
+ElaAppBar::ElaAppBar(QWidget* parent, WindowManagement management)
     : QWidget{parent}, d_ptr(new ElaAppBarPrivate())
 {
     Q_D(ElaAppBar);
+    d->_externalWindowManagement = management == WindowManagement::External;
     d->_buttonFlags = ElaAppBarType::RouteBackButtonHint | ElaAppBarType::RouteForwardButtonHint | ElaAppBarType::StayTopButtonHint | ElaAppBarType::ThemeChangeButtonHint | ElaAppBarType::MinimizeButtonHint | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint;
-    window()->setAttribute(Qt::WA_Mapped);
+    if (!d->_externalWindowManagement)
+        window()->setAttribute(Qt::WA_Mapped);
     d->_pAppBarHeight = 45;
     d->_pRibbonHeight = 0;
     setFixedHeight(d->_pAppBarHeight);
-    window()->setContentsMargins(0, this->height(), 0, 0);
+    if (!d->_externalWindowManagement)
+        window()->setContentsMargins(0, this->height(), 0, 0);
     d->q_ptr = this;
     d->_pIsStayTop = false;
     d->_pIsFixedSize = false;
@@ -53,10 +73,12 @@ ElaAppBar::ElaAppBar(QWidget* parent)
         d->_win7Margins = 8;
     }
 #if (QT_VERSION >= QT_VERSION_CHECK(6, 5, 3) && QT_VERSION <= QT_VERSION_CHECK(6, 6, 1))
-    window()->setWindowFlags((window()->windowFlags()) | Qt::WindowMinimizeButtonHint | Qt::FramelessWindowHint);
+    if (!d->_externalWindowManagement)
+        window()->setWindowFlags((window()->windowFlags()) | Qt::WindowMinimizeButtonHint | Qt::FramelessWindowHint);
 #endif
 #else
-    window()->setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::FramelessWindowHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowSystemMenuHint | Qt::WindowFullscreenButtonHint | Qt::WindowSystemMenuHint);
+    if (!d->_externalWindowManagement)
+        window()->setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::FramelessWindowHint | Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint | Qt::WindowSystemMenuHint | Qt::WindowFullscreenButtonHint | Qt::WindowSystemMenuHint);
 #endif
     setMouseTracking(true);
     setObjectName("ElaAppBar");
@@ -95,7 +117,7 @@ ElaAppBar::ElaAppBar(QWidget* parent)
     //图标
     d->_iconLabel = new QLabel(this);
     d->_iconLabelLayout = d->_createVLayout(d->_iconLabel);
-    if (parent->windowIcon().isNull())
+    if (d->_externalWindowManagement || parent->windowIcon().isNull())
     {
         d->_iconLabel->setVisible(false);
     }
@@ -105,6 +127,7 @@ ElaAppBar::ElaAppBar(QWidget* parent)
         d->_iconLabelLayout->setContentsMargins(10, 0, 0, 0);
     }
     connect(parent, &QWidget::windowIconChanged, this, [=](const QIcon& icon) {
+        if (d->_externalWindowManagement) return;
         d->_iconLabel->setPixmap(icon.pixmap(18, 18));
         d->_iconLabel->setVisible(!icon.isNull());
         d->_iconLabelLayout->setContentsMargins(icon.isNull() ? 0 : 10, 0, 0, 0);
@@ -148,7 +171,7 @@ ElaAppBar::ElaAppBar(QWidget* parent)
     d->_maxButton->setElaIcon(ElaIconType::Square);
     d->_maxButton->setFixedSize(40, 30);
     connect(d->_maxButton, &ElaToolButton::clicked, d, &ElaAppBarPrivate::onMaxButtonClicked);
-    d->_closeButton = new ElaIconButton(ElaIconType::Xmark, 18, 40, 30, this);
+    d->_closeButton = new AppBarCloseButton(ElaIconType::Xmark, 18, 40, 30, this);
     d->_closeButton->setLightHoverColor(QColor(0xE8, 0x11, 0x23));
     d->_closeButton->setDarkHoverColor(QColor(0xE8, 0x11, 0x23));
     d->_closeButton->setLightHoverIconColor(Qt::white);
@@ -161,13 +184,14 @@ ElaAppBar::ElaAppBar(QWidget* parent)
     QHBoxLayout* leftLayout = new QHBoxLayout();
     leftLayout->setSpacing(0);
     leftLayout->setContentsMargins(0, 0, 0, 0);
-    leftLayout->setAlignment(Qt::AlignLeft);
+    if (!d->_externalWindowManagement)
+        leftLayout->setAlignment(Qt::AlignLeft);
     leftLayout->addLayout(d->_createVLayout(d->_routeBackButton));
     leftLayout->addLayout(d->_createVLayout(d->_routeForwardButton));
     leftLayout->addLayout(d->_createVLayout(d->_navigationButton));
     leftLayout->addLayout(d->_iconLabelLayout);
-    leftLayout->addLayout(d->_titleLabelLayout);
-    d->_mainLayout->addLayout(leftLayout);
+    leftLayout->addLayout(d->_titleLabelLayout, d->_externalWindowManagement ? 1 : 0);
+    d->_mainLayout->addLayout(leftLayout, d->_externalWindowManagement ? 1 : 0);
 
     auto leftAreaWidget = new QWidget(this);
     leftAreaWidget->setVisible(false);
@@ -205,23 +229,26 @@ ElaAppBar::ElaAppBar(QWidget* parent)
     d->_clientWidgetList.append(d->_closeButton);
 
 #ifdef Q_OS_WIN
-    for (int i = 0; i < qApp->screens().count(); i++)
+    if (!d->_externalWindowManagement)
     {
-        connect(qApp->screens().at(i), &QScreen::logicalDotsPerInchChanged, this, [=] {
-            if (d->_pIsFixedSize)
-            {
-                HWND hwnd = (HWND)(d->_currentWinID);
-                SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_FRAMECHANGED);
-            }
+        for (int i = 0; i < qApp->screens().count(); i++)
+        {
+            connect(qApp->screens().at(i), &QScreen::logicalDotsPerInchChanged, this, [=] {
+                if (d->_pIsFixedSize)
+                {
+                    HWND hwnd = (HWND)(d->_currentWinID);
+                    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_FRAMECHANGED);
+                }
+            });
+        }
+        //主屏幕变更处理
+        connect(qApp, &QApplication::primaryScreenChanged, this, [=]() {
+            HWND hwnd = (HWND)(d->_currentWinID);
+            ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+            ::RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
         });
+        d->_lastScreen = qApp->screenAt(window()->geometry().center());
     }
-    //主屏幕变更处理
-    connect(qApp, &QApplication::primaryScreenChanged, this, [=]() {
-        HWND hwnd = (HWND)(d->_currentWinID);
-        ::SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
-        ::RedrawWindow(hwnd, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
-    });
-    d->_lastScreen = qApp->screenAt(window()->geometry().center());
 #endif
 
     d->_themeMode = eTheme->getThemeMode();
@@ -235,12 +262,46 @@ ElaAppBar::~ElaAppBar()
 {
 }
 
+QAbstractButton* ElaAppBar::windowButton(ElaAppBarType::ButtonType type) const
+{
+    Q_D(const ElaAppBar);
+    switch (type)
+    {
+    case ElaAppBarType::RouteBackButtonHint: return d->_routeBackButton;
+    case ElaAppBarType::RouteForwardButtonHint: return d->_routeForwardButton;
+    case ElaAppBarType::NavigationButtonHint: return d->_navigationButton;
+    case ElaAppBarType::StayTopButtonHint: return d->_stayTopButton;
+    case ElaAppBarType::ThemeChangeButtonHint: return d->_themeChangeButton;
+    case ElaAppBarType::MinimizeButtonHint: return d->_minButton;
+    case ElaAppBarType::MaximizeButtonHint: return d->_maxButton;
+    case ElaAppBarType::CloseButtonHint: return d->_closeButton;
+    default: return nullptr;
+    }
+}
+
+QLabel* ElaAppBar::titleLabel() const
+{
+    Q_D(const ElaAppBar);
+    return d->_titleLabel;
+}
+
+void ElaAppBar::setWindowButtonIcons(const QIcon& minimize, const QIcon& maximize, const QIcon& restore)
+{
+    Q_D(ElaAppBar);
+    d->_minButton->setProperty("ElaIconType", QVariant());
+    d->_minButton->setIcon(minimize);
+    d->_maximizeIcon = maximize;
+    d->_restoreIcon = restore;
+    d->_changeMaxButtonAwesome(window()->isMaximized());
+}
+
 void ElaAppBar::setAppBarHeight(int height)
 {
     Q_D(ElaAppBar);
     d->_pAppBarHeight = height;
     setFixedHeight(d->_pAppBarHeight);
-    window()->setContentsMargins(0, d->_pAppBarHeight + d->_pRibbonHeight, 0, 0);
+    if (!d->_externalWindowManagement)
+        window()->setContentsMargins(0, d->_pAppBarHeight + d->_pRibbonHeight, 0, 0);
     Q_EMIT pAppBarHeightChanged();
 }
 
@@ -254,7 +315,8 @@ void ElaAppBar::setRibbonHeight(int height)
 {
     Q_D(ElaAppBar);
     d->_pRibbonHeight = height;
-    window()->setContentsMargins(0, d->_pAppBarHeight + d->_pRibbonHeight, 0, 0);
+    if (!d->_externalWindowManagement)
+        window()->setContentsMargins(0, d->_pAppBarHeight + d->_pRibbonHeight, 0, 0);
     Q_EMIT pAppBarHeightChanged();
 }
 
@@ -307,6 +369,11 @@ void ElaAppBar::setIsFixedSize(bool isFixedSize)
 {
     Q_D(ElaAppBar);
     d->_pIsFixedSize = isFixedSize;
+    if (d->_externalWindowManagement)
+    {
+        Q_EMIT pIsFixedSizeChanged();
+        return;
+    }
 #ifdef Q_OS_WIN
     HWND hwnd = (HWND)d->_currentWinID;
     DWORD style = ::GetWindowLongPtr(hwnd, GWL_STYLE);
@@ -407,6 +474,8 @@ int ElaAppBar::takeOverNativeEvent(const QByteArray& eventType, void* message, l
 #endif
 {
     Q_D(ElaAppBar);
+    if (d->_externalWindowManagement || !result)
+        return -1;
     if ((eventType != "windows_generic_MSG") || !message)
     {
         return 0;
@@ -732,6 +801,11 @@ int ElaAppBar::takeOverNativeEvent(const QByteArray& eventType, void* message, l
 bool ElaAppBar::eventFilter(QObject* obj, QEvent* event)
 {
     Q_D(ElaAppBar);
+    if (event->type() == QEvent::WindowStateChange)
+        d->_changeMaxButtonAwesome(window()->isMaximized());
+    // The host retains its native frame, margins, hit testing and close event.
+    if (d->_externalWindowManagement)
+        return QObject::eventFilter(obj, event);
     switch (event->type())
     {
     case QEvent::Resize:
@@ -906,6 +980,8 @@ bool ElaAppBar::eventFilter(QObject* obj, QEvent* event)
 #ifdef Q_OS_WIN
 void ElaAppBar::paintEvent(QPaintEvent* event)
 {
+    if (d_ptr->_externalWindowManagement)
+        return;
     if (eWinHelper->getIsWinVersionGreater10() && !eWinHelper->getIsWinVersionGreater11())
     {
         Q_D(ElaAppBar);

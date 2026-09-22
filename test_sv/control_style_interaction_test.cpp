@@ -1,5 +1,6 @@
 #include "applicationthememanager.h"
 #include "contextfloatingwindow.h"
+#include "editorsplitcontroller.h"
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
 #include "settingscenterpanel.h"
@@ -20,6 +21,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
+#include <QTabBar>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 namespace {
@@ -184,6 +187,13 @@ private slots:
     {
         MainWindow window;
         window.resize(1080, 780); window.show(); settle();
+        if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+            auto* splits = window.findChild<EditorSplitController*>();
+            QVERIFY(splits);
+            auto* initialTabs = splits->initialGroup();
+            QVERIFY(initialTabs);
+            QVERIFY(initialTabs->tabBar()->inherits("ElaTabBar"));
+        }
         auto* settingsButton = window.findChild<QToolButton*>("welcomeSettingsButton");
         QVERIFY(settingsButton);
         if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)

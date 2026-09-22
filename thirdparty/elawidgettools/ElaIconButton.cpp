@@ -163,7 +163,7 @@ bool ElaIconButton::event(QEvent* event)
         if (isEnabled() && !d->_pIsSelected)
         {
             d->_isAlphaAnimationFinished = false;
-            QPropertyAnimation* alphaAnimation = new QPropertyAnimation(d, "pHoverAlpha");
+            QPropertyAnimation* alphaAnimation = new QPropertyAnimation(d, "pHoverAlpha", d);
             connect(alphaAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
                 update();
             });
@@ -182,7 +182,7 @@ bool ElaIconButton::event(QEvent* event)
         if (isEnabled() && !d->_pIsSelected)
         {
             d->_isAlphaAnimationFinished = false;
-            QPropertyAnimation* alphaAnimation = new QPropertyAnimation(d, "pHoverAlpha");
+            QPropertyAnimation* alphaAnimation = new QPropertyAnimation(d, "pHoverAlpha", d);
             connect(alphaAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
                 update();
             });
@@ -224,6 +224,8 @@ void ElaIconButton::paintEvent(QPaintEvent* event)
         hoverColor.setAlpha(d->_pHoverAlpha);
         painter.setBrush(hoverColor);
     }
+    if (isEnabled() && isDown())
+        painter.setBrush((d->_themeMode == ElaThemeType::Light ? d->_pLightHoverColor : d->_pDarkHoverColor).darker(115));
     painter.drawRoundedRect(rect(), d->_pBorderRadius, d->_pBorderRadius);
     // 图标绘制
     if (!d->_iconPix.isNull())
@@ -233,12 +235,25 @@ void ElaIconButton::paintEvent(QPaintEvent* event)
         painter.setClipPath(path);
         painter.drawPixmap(rect(), d->_iconPix);
     }
+    else if (!icon().isNull())
+    {
+        const QSize size = iconSize().boundedTo(this->size());
+        const QRect target(QPoint((width() - size.width()) / 2, (height() - size.height()) / 2), size);
+        icon().paint(&painter, target, Qt::AlignCenter,
+                     !isEnabled() ? QIcon::Disabled : underMouse() ? QIcon::Active : QIcon::Normal);
+    }
     else
     {
         painter.setPen(isEnabled() ? d->_themeMode == ElaThemeType::Light ? underMouse() ? d->_pLightHoverIconColor : d->_pLightIconColor : underMouse() ? d->_pDarkHoverIconColor
                                                                                                                                                          : d->_pDarkIconColor
                                    : ElaThemeColor(d->_themeMode, BasicTextDisable));
         painter.drawText(rect(), Qt::AlignCenter, QChar(static_cast<char32_t>(d->_pAwesome)));
+    }
+    if (isEnabled() && hasFocus())
+    {
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(ElaThemeColor(d->_themeMode, PrimaryNormal), 1.5));
+        painter.drawRoundedRect(QRectF(rect()).adjusted(2, 2, -2, -2), 3, 3);
     }
     painter.restore();
 }

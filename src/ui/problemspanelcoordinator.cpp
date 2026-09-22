@@ -216,11 +216,11 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     auto* statusLayout = new QHBoxLayout();
     statusLayout->setContentsMargins(0, 0, 0, 0);
     statusLayout->setSpacing(8);
-    diagnosticSummaryLabel = new QLabel(panel);
+    diagnosticSummaryLabel = UiControls::label(panel);
     UiTypography::apply(diagnosticSummaryLabel, UiTypography::Role::Metadata);
     diagnosticSummaryLabel->setObjectName(QStringLiteral("diagnosticSummaryLabel"));
     diagnosticSummaryLabel->setText(QStringLiteral("Current file: 0 errors, 0 warnings, 0 info"));
-    diagnosticStateLabel = new QLabel(panel);
+    diagnosticStateLabel = UiControls::label(panel);
     UiTypography::apply(diagnosticStateLabel, UiTypography::Role::Metadata);
     diagnosticStateLabel->setObjectName(QStringLiteral("diagnosticStateLabel"));
     diagnosticStateLabel->setText(QStringLiteral("Diagnostics: current"));
@@ -229,7 +229,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     statusLayout->addWidget(diagnosticStateLabel);
     layout->addLayout(statusLayout);
 
-    problemsTree = new QTreeWidget(panel);
+    problemsTree = UiControls::treeWidget(panel);
     problemsTree->setObjectName(QStringLiteral("problemsTree"));
     problemsTree->setColumnCount(7);
     problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message", "Owner", "Band"});

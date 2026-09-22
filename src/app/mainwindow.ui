@@ -18,7 +18,7 @@
     <normaloff>:/images/images/temp.png</normaloff>:/images/images/temp.png</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QTabWidget" name="tabWidget">
+   <widget class="UiTabWidget" name="tabWidget">
     <property name="geometry">
      <rect>
       <x>0</x>
@@ -55,6 +55,14 @@
    </property>
   </widget>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>UiTabWidget</class>
+   <extends>QTabWidget</extends>
+   <header>uicontrols.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="images.qrc"/>
  </resources>

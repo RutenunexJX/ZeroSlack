@@ -8,6 +8,7 @@
 #include "contextrail.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
+#include "panelcompositor.h"
 
 #include <QDockWidget>
 #include <QDir>
@@ -24,6 +25,7 @@
 #include <QApplication>
 #include <QAction>
 #include <QMenu>
+#include <QScopedValueRollback>
 
 #include <array>
 
@@ -102,7 +104,7 @@ ContextWorkspaceController::ContextWorkspaceController(
     availableFloatingWindow();
     QAction* footer = railValue->addSeparator();
     footer->setObjectName(QStringLiteral("contextFloatingFooter"));
-    collapseFloatingAction = railValue->addAction(RoundedIcons::icon(RoundedIcons::Collapse), tr("Hide floating views"));
+    collapseFloatingAction = railValue->addRailAction(RoundedIcons::icon(RoundedIcons::Collapse), tr("Hide floating views"));
     collapseFloatingAction->setObjectName(QStringLiteral("contextFloatingCollapse"));
     collapseFloatingAction->setCheckable(true);
     connect(collapseFloatingAction, &QAction::triggered, this, &ContextWorkspaceController::setFloatingCollapsed);
@@ -226,6 +228,7 @@ ContextWorkspaceController::ContextWorkspaceController(
 ContextWorkspaceController::~ContextWorkspaceController()
 {
     restoringState = true;
+    if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settleFor(dockValue);
     for (auto* surface : floatingSurfaces()) {
         activeFloatingSurface = surface;
         closePeek();
@@ -304,7 +307,7 @@ bool ContextWorkspaceController::setDockVisible(
     }
     if (!visible) {
         if (dockValue->isVisible())
-            dockValue->hide();
+            applyDockVisibility(false);
         return true;
     }
     // The rail is the sidebar's entry point, so a hidden rail is restored
@@ -849,6 +852,7 @@ void ContextWorkspaceController::setWorkspaceRoot(const QString& root)
 
 void ContextWorkspaceController::clearResources()
 {
+    if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
     const bool previousRestoring = restoringState;
     restoringState = true;
     for (auto* surface : floatingSurfaces()) {
@@ -1088,7 +1092,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         // stores 0, which would otherwise reset the section to the split share.
         if (section.height > 0)
             dockHostValue->setSectionHeight(key, section.height);
-        dockHostValue->setSectionCollapsed(key, section.collapsed);
+        dockHostValue->setSectionCollapsed(key, section.collapsed, false);
     }
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;
@@ -1120,6 +1124,11 @@ bool ContextWorkspaceController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+    if (watched == dockValue && event->type() == QEvent::Close && !restoringState
+        && !dockValue->isFloating()) {
+        applyDockVisibility(false);
+        return true;
+    }
     if (event && event->type() == QEvent::WindowActivate) {
         if (auto* host = qobject_cast<ContextFloatingWindow*>(watched); host && host->hasResource())
             recordFocus(host->resource().stableKey());
@@ -1307,24 +1316,36 @@ int ContextWorkspaceController::boundedDockWidthForWindow(
     return qBound(minimum, stored, maximum);
 }
 
-void ContextWorkspaceController::showDock(bool applyPreferredWidth)
+void ContextWorkspaceController::showDock(bool applyPreferredWidth, bool animate)
 {
-    if (!dockValue)
-        return;
-    const bool previousApplying = applyingDockWidth;
-    applyingDockWidth = true;
-    dockValue->show();
-    dockValue->raise();
-    if (applyPreferredWidth
-        && !dockValue->isFloating()
-        && window) {
-        window->resizeDocks(
-            {dockValue},
-            {boundedDockWidthForWindow(
-                preferredDockWidthValue)},
-            Qt::Horizontal);
+    applyDockVisibility(true, applyPreferredWidth, animate);
+}
+
+void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPreferredWidth, bool animate)
+{
+    if (!dockValue || !window) return;
+    const bool changesVisibility = dockValue->isVisible() != visible;
+    if (!changesVisibility && !applyPreferredWidth) return;
+    auto* compositor = window->findChild<PanelCompositor*>();
+    const auto apply = [this, visible, applyPreferredWidth] {
+        QScopedValueRollback<bool> guard(applyingDockWidth, true);
+        dockValue->setVisible(visible);
+        if (visible) dockValue->raise();
+        if (visible && applyPreferredWidth && !dockValue->isFloating())
+            window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
+    };
+    const auto area = window->dockWidgetArea(dockValue);
+    if (changesVisibility && animate && !restoringState && window->isVisible() && !dockValue->isFloating()
+        && window->tabifiedDockWidgets(dockValue).isEmpty()
+        && (area == Qt::RightDockWidgetArea || area == Qt::LeftDockWidgetArea)
+        && ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        if (!compositor) compositor = PanelCompositor::forWindow(window);
+        compositor->reveal(dockValue, area == Qt::RightDockWidgetArea ? Qt::RightEdge : Qt::LeftEdge,
+                           visible, [this] { return dockValue->geometry(); }, apply);
+    } else {
+        if (compositor) compositor->settle();
+        apply();
     }
-    applyingDockWidth = previousApplying;
 }
 
 void ContextWorkspaceController::notifyWorkspaceStateChanged()

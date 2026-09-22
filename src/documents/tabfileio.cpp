@@ -1,3 +1,4 @@
+#include "uidialogs.h"
 #include "tabfileio.h"
 
 #include <QCryptographicHash>
@@ -56,7 +57,7 @@ bool TabFileIo::readTextFile(
 {
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-        QMessageBox::warning(
+        UiDialogs::warning(
             parent,
             "warning",
             "can not open file:" + file.errorString());

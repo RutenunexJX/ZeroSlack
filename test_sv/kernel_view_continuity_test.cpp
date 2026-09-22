@@ -1,4 +1,5 @@
 #include "applicationthememanager.h"
+#include "testuistyle.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "rtlinsightworkbench.h"
 #include "projectmodel.h"
@@ -262,6 +263,7 @@ int measureWorkspace(const QString& path)
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
     const QString workspace = qEnvironmentVariable("ZEROSLACK_KERNEL_WORKSPACE");
     if (!workspace.isEmpty()) return measureWorkspace(workspace);
     const bool measureOnly = app.arguments().contains(QStringLiteral("--measure-only"));

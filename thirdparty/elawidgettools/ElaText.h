@@ -22,6 +22,10 @@ public:
     explicit ElaText(const QString& text, int pixelSize, QWidget* parent = nullptr);
     ~ElaText() override;
 
+    // Disable forced theme ink when the host supplies semantic or disabled colors.
+    void setThemeColorEnabled(bool enabled);
+    bool themeColorEnabled() const;
+
 protected:
     virtual void paintEvent(QPaintEvent* event) override;
 };

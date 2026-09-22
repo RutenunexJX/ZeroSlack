@@ -1,9 +1,11 @@
+#include "uidialogs.h"
 #include "uicontrols.h"
 #include "workspaceconfigurationdialog.h"
 #include "compactlayout.h"
 
 #include <QDialogButtonBox>
 #include <QAbstractItemView>
+#include <QEvent>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QGridLayout>
@@ -20,6 +22,32 @@
 #include <QVBoxLayout>
 
 namespace {
+class ConfigurationViewportSizing final : public QObject {
+public:
+    explicit ConfigurationViewportSizing(QScrollArea* area) : QObject(area), scroll(area) {
+        area->viewport()->installEventFilter(this);
+    }
+protected:
+    bool eventFilter(QObject*, QEvent* event) override {
+        if (event->type() == QEvent::Resize && !pending) {
+            pending = true;
+            // Run after the scroll area's viewport resize has updated its layout.
+            QMetaObject::invokeMethod(this, [this] {
+                pending = false;
+                if (!scroll->widget()) return;
+                for (auto* view : scroll->widget()->findChildren<QAbstractItemView*>()) {
+                    if (!qobject_cast<QHeaderView*>(view))
+                        view->setMaximumHeight(qMax(view->minimumSizeHint().height(), scroll->viewport()->height()));
+                }
+            }, Qt::QueuedConnection);
+        }
+        return false;
+    }
+private:
+    QScrollArea* scroll;
+    bool pending = false;
+};
+
 QString normalizedDefineKey(QString text)
 {
     const int equals = text.indexOf(QLatin1Char('='));
@@ -43,7 +71,8 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     setWindowTitle(QStringLiteral("Workspace Configuration"));
     setObjectName(QStringLiteral("workspaceConfigurationDialog"));
     auto* dialogLayout = new QVBoxLayout(this);
-    auto* scroll = new QScrollArea(this);
+    auto* scroll = UiControls::scrollArea(this);
+    new ConfigurationViewportSizing(scroll);
     scroll->setObjectName(QStringLiteral("workspaceConfigurationScroll"));
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setWidgetResizable(true);
@@ -53,7 +82,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     content->setAutoFillBackground(false);
     scroll->viewport()->setAutoFillBackground(false);
     dialogLayout->addWidget(scroll, 1);
-    auto* hint = new QLabel(
+    auto* hint = UiControls::label(
         QStringLiteral("Configuration is stored per workspace and used by workspace analysis."),
         this);
     hint->setWordWrap(true);
@@ -90,7 +119,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
 
     auto* definesGroup = new QGroupBox(QStringLiteral("Defines"), this);
     auto* definesLayout = new QVBoxLayout(definesGroup);
-    definesTable = new QTableWidget(0, 2, definesGroup);
+    definesTable = UiControls::tableWidget(0, 2, definesGroup);
     definesTable->setObjectName(QStringLiteral("workspaceDefinesTable"));
     definesTable->setHorizontalHeaderLabels({QStringLiteral("Key"),
                                              QStringLiteral("Value")});
@@ -109,7 +138,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     definesLayout->addLayout(defineButtons);
     connect(addDefineButton, &QPushButton::clicked, this, [this]() {
         bool ok = false;
-        const QString text = QInputDialog::getText(
+        const QString text = UiDialogs::getText(
             this,
             QStringLiteral("Add Define"),
             QStringLiteral("Define, for example FOO or WIDTH=32"),
@@ -130,7 +159,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     topModuleEdit = UiControls::lineEdit(this);
     topModuleEdit->setObjectName(QStringLiteral("workspaceTopModuleEdit"));
     topModuleEdit->setPlaceholderText(QStringLiteral("optional"));
-    topLayout->addRow(QStringLiteral("Top module / active top"),
+    UiControls::addFormRow(topLayout, QStringLiteral("Top module / active top"),
                       topModuleEdit);
     rootLayout->addLayout(topLayout);
 
@@ -142,7 +171,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
     auto* sourceGroupsLayout =
         new QVBoxLayout(sourceGroups);
     virtualSourceGroupsTable =
-        new QTableWidget(0, 2, sourceGroups);
+        UiControls::tableWidget(0, 2, sourceGroups);
     virtualSourceGroupsTable->setObjectName(
         QStringLiteral(
             "workspaceVirtualSourceGroupsTable"));
@@ -224,7 +253,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
         [this]() {
             bool accepted = false;
             const QString name =
-                QInputDialog::getText(
+                UiDialogs::getText(
                     this,
                     QStringLiteral(
                         "Add Virtual Source Group"),
@@ -266,7 +295,7 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
             moveSelectedVirtualSourceGroup(1);
         });
 
-    auto* buttons = new QDialogButtonBox(
+    auto* buttons = UiDialogs::buttonBox(
         QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
         this);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -340,7 +369,7 @@ QListWidget* WorkspaceConfigurationDialog::createStringListEditor(
 {
     auto* group = new QGroupBox(title, parent);
     auto* layout = new QVBoxLayout(group);
-    auto* list = new QListWidget(group);
+    auto* list = UiControls::listWidget(group);
     list->setObjectName(QStringLiteral("workspace%1List")
                             .arg(title.simplified().remove(QLatin1Char(' '))));
     list->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -404,7 +433,7 @@ void WorkspaceConfigurationDialog::addListValue(QListWidget* list,
         next = QFileDialog::getExistingDirectory(this, prompt, workspaceRoot);
     } else if (next.isEmpty()) {
         bool ok = false;
-        next = QInputDialog::getText(this,
+        next = UiDialogs::getText(this,
                                      prompt,
                                      prompt,
                                      QLineEdit::Normal,
@@ -427,7 +456,7 @@ void WorkspaceConfigurationDialog::editSelectedListValue(QListWidget* list,
     if (!list || !list->currentItem())
         return;
     bool ok = false;
-    const QString next = QInputDialog::getText(
+    const QString next = UiDialogs::getText(
         this,
         prompt,
         prompt,

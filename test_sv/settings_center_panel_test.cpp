@@ -1,4 +1,5 @@
 #include "settingscenterpanel.h"
+#include "testuistyle.h"
 
 #include <QAbstractItemModel>
 #include <QApplication>
@@ -82,6 +83,7 @@ int main(int argc, char* argv[])
 {
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
 
     QTemporaryDir temporary;
     check(temporary.isValid(), "temporary directory is valid");

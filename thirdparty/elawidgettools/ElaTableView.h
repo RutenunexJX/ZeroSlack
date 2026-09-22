@@ -15,6 +15,8 @@ class ELA_EXPORT ElaTableView : public QTableView
 public:
     explicit ElaTableView(QWidget* parent = nullptr);
     ~ElaTableView();
+    static QStyle* createStyle(QObject* owner);
+    void setNativeItemContent(bool enabled);
 
 Q_SIGNALS:
     Q_SIGNAL void tableViewShow();

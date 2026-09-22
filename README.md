@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.29.25`
+Current version: `v0.29.39`
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -122,7 +122,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.25`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.29.39`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -147,6 +147,8 @@ The Ela migration branch has a separate release channel. Its fixed package basen
 `ZeroSlack-Ela-win64`, its executable is `ZeroSlack-Ela.exe`, and release tags use
 `ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
 directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps` and its ZIP alongside it.
+The current Ela release is `0.29.39` (`ela-v0.29.39`), incorporating the control migrations
+and shared panel transitions developed in 0.29.26–0.29.39.
 Formal Ela packaging requires a clean source tree and matching generated application version.
 It does not replace the classic application or share its user settings. See
 [Ela migration and validation](docs/ela-migration.md).
@@ -187,7 +189,7 @@ scheduled. Released changes and their acceptance results live in the Git history
 时长、曲线、中断方式、减少动画规则和验证状态统一维护在
 [动效场景规格](docs/control-style-consolidation.md#动效场景规格2026-09-20)。
 原先的建议时长不再作为另一套规格。经典正式包使用 classic；Ela 分支的独立正式包使用 Ela 控件。
-底栏立即展开、导航栏宽度动画和未来浮窗淡入分别记录。图标不缩放、不弹跳；
+classic 底栏立即展开；Ela 0.29.39 的左右栏、底栏和右栏区块使用共享合成过渡。图标不缩放、不弹跳；
 代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
 ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等同于全应用减少动画，
 也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。
@@ -195,8 +197,61 @@ ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等�
 ### Remaining validation
 
 `ZEROSLACK_ENABLE_ELA=ON` builds the separate Ela application. Version 0.29.25 migrates
-eight basic control types at 60 creation sites; navigation trees, tabs and remaining
-specialized toolbars are still pending. It is mutually exclusive with SuiteUi and Qlementine.
+eight basic control types at 60 creation sites. The 0.29.26 development build adds
+tree rendering and tab bars at 19 creation sites, including the initial Designer editor tab group.
+Document close confirmation, split/move operations and tree item models retain their existing
+controllers. The 0.29.27 development build adds 117 specialized toolbar/form control
+creation sites and Ela radio buttons. Diagram rendering, transactions and undo remain
+unchanged. Version 0.29.28 adds Ela inputs and action buttons to common dialogs,
+the editor find/replace bar, Peek and floating-panel controls. Qt still owns modal
+results, cancellation and native window frames. Version 0.29.29 adds Ela menus and
+list/table rendering, including command results and settings shortcut tables. Qt retains
+action ownership, item models, editing delegates and keyboard behavior. Native file
+pickers and custom radial menus remain unchanged.
+Version 0.29.31 adopts ElaAppBar for the main title layout and window buttons. The
+host retains native snap/resize handling and unsaved-document close decisions;
+the title path menu and sidebar toggle remain available. ElaWindow is not used.
+Version 0.29.32 moves the left Project/Settings/sidebar controls, right context rail
+and bottom panel buttons to ElaToolButton. QAction state, repeat-click collapse,
+context menus and Problems/Activity badges retain their existing behavior.
+Version 0.29.33 adopts ElaScrollArea for settings, stacked panels and detail/image
+viewports, and ElaPlainTextEdit for read-only logs, diffs, recovery and Peek content.
+Host fonts, text palettes, selection/copy, document data and scroll positioning remain
+under Qt and the existing controllers; the code editor keeps its specialized implementation.
+Version 0.29.34 adopts ElaText for common headings, descriptions, state labels and
+form captions. Host typography, semantic/disabled colors, selection, links and
+mnemonic buddies retain their Qt behavior. Workspace Configuration now also uses
+ElaScrollArea with viewport-aware sizing of its nested lists and tables.
+Version 0.29.35 moves the complete left sidebar into ElaNavigationBar. Its native
+display-mode animation controls opening and closing; a documented content-host
+extension lays out the existing Project/Settings header and Files/Design views.
+The Qt dock remains the workspace layout slot, with one size synchronization at
+transition completion. Dragged width, interrupted transitions and Ctrl+1 are retained.
+Version 0.29.36 reduces sidebar resize overhead: Ela applies its animated width once
+per value, and the editor reuses diagnostics and semantic highlights when the visible
+document range is unchanged. Scrolling, edits and newly exposed lines still refresh.
+Visible text also uses a bounded Qt layout cache to reduce repeated glyph shaping.
+Version 0.29.37 separates sidebar presentation from live document layout. Ela owns
+the display modes and transition contract; Windows DirectComposition animates two
+unscaled temporary surfaces at the desktop composition cadence. The live editor
+resizes only at transition boundaries. Input settles the transition before delivery,
+and snapshots are released afterwards. Device creation is warmed on a worker;
+unsupported or unready graphics use the same layout-isolated raster fallback.
+Version 0.29.38 fixes the sidebar handoff: the native visual now overlays the host
+directly, allowing Qt to paint the final layout and focus before it is detached.
+Snapshots include the complete Ela sidebar background and border, including when
+opening from a collapsed bar, to avoid switching appearance at the endpoint.
+Version 0.29.39 shares this compositor with the right Context sidebar, bottom drawer
+and collapsible Context sections. Snapshots translate and clip without scaling text
+or resizing the editor every frame. The bottom button bar stays fixed. Reversals
+continue from the current position; different panels settle the previous transition
+before starting. Classic keeps its existing behavior, and restored layouts apply immediately.
+
+Version 0.29.30 adds interruptible Ela wheel scrolling to settings and Workspace Hub,
+tree expansion transitions to Files/Design/Workspace Hub, and horizontal tab scrolling
+without changing the selected document or its close/split controllers. Pixel-based
+touchpad scrolling is applied directly; scroll ranges remain immediate.
+Ela is mutually exclusive with SuiteUi and Qlementine.
 The editor, window management and specialized diagram models/canvases remain in place.
 
 An isolated Qlementine product preview is available behind the default-off

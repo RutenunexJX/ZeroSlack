@@ -211,6 +211,11 @@ struct MyCodeEditorState
     std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
     QList<QPointer<QObject>> ghostQueryWatchers;
     EditorHotPathMetrics hotPathMetrics;
+    EditorVisibleDocumentRange presentedVisibleRange;
+    QPointer<QTextDocument> presentedVisibleDocument;
+    int presentedVisibleRevision = -1;
+    QPointer<QTextDocument> textLayoutCacheDocument;
+    QList<QTextCursor> cachedTextLayoutAnchors;
     bool hotPathTimingEnabled = false;
     QString lastInsightScopeKey;
     // One semantic query per publish is the budget for blinking targets, so
@@ -380,7 +385,7 @@ struct MyCodeEditorState
     EditorSynchronousEditState synchronousEditStateForTest() const;
     void finishEditorInput(MyCodeEditor* editor);
     bool handleKeyRelease(MyCodeEditor* editor, QKeyEvent* event);
-    void handleResize(MyCodeEditor* editor);
+    void handleResize(MyCodeEditor* editor, bool forcePresentation = true);
     bool handleGutterMousePress(MyCodeEditor* editor, QMouseEvent* event);
     bool handleGutterMouseMove(MyCodeEditor* editor, QMouseEvent* event);
     void paintGutterDecorations(MyCodeEditor* editor,
@@ -554,7 +559,9 @@ struct MyCodeEditorState
     void rebuildSemanticDecorationPositionIndex();
     EditorVisibleDocumentRange visibleDocumentRange(
         const MyCodeEditor* editor) const;
-    void refreshVisibleRegionPresentation(MyCodeEditor* editor);
+    void refreshVisibleRegionPresentation(MyCodeEditor* editor, bool force = true);
+    void updateVisibleTextLayoutCache(MyCodeEditor* editor);
+    void clearVisibleTextLayoutCache();
     void rebuildDiagnosticOverviewIndex(
         const MyCodeEditor* editor);
     void refreshDiagnosticPresentation(MyCodeEditor* editor);

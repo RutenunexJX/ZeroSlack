@@ -1,4 +1,5 @@
 #include "rtlhighriskeditpanel.h"
+#include "testuistyle.h"
 
 #include "semanticindexsnapshot.h"
 #include "workspaceedittransactionservice.h"
@@ -283,6 +284,7 @@ bool containsFullTokenLikeText(
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
 
     SemanticIndex index;
     const SemanticSnapshotToken token =

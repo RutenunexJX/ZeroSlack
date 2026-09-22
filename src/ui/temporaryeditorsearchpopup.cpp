@@ -1,3 +1,4 @@
+#include "uicontrols.h"
 #include "temporaryeditorsearchpopup.h"
 
 #include "applicationthememanager.h"
@@ -33,7 +34,7 @@ TemporaryEditorSearchPopup::TemporaryEditorSearchPopup(
     layout->setContentsMargins(1, 1, 1, 1);
     layout->setSpacing(0);
 
-    list = new QListWidget(this);
+    list = UiControls::listWidget(this);
     list->setObjectName(QStringLiteral("temporaryEditorSearchResults"));
     list->setAlternatingRowColors(true);
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);

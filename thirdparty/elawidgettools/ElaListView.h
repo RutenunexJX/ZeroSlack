@@ -16,6 +16,7 @@ class ELA_EXPORT ElaListView : public QListView
 public:
     explicit ElaListView(QWidget* parent = nullptr);
     ~ElaListView();
+    static QStyle* createStyle(QObject* owner, int itemHeight = 28);
 };
 
 #endif // ELAWORKSPACE_ELAWIDGETTOOLS_ELALISTVIEW_H_

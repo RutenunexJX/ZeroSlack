@@ -41,13 +41,13 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(4, 2, 2, 2);
     headerLayout->setSpacing(6);
-    auto* title = new QLabel(QStringLiteral("Workspace Hub"), header);
+    auto* title = UiControls::label(QStringLiteral("Workspace Hub"), header);
     title->setObjectName(QStringLiteral("workspaceHubTitle"));
     UiTypography::apply(title, UiTypography::Role::PanelTitle);
     title->setAccessibleName(QStringLiteral("Workspace Hub"));
     title->setMinimumWidth(70);
     title->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    statusChip = new QLabel(QStringLiteral("Idle"), header);
+    statusChip = UiControls::label(QStringLiteral("Idle"), header);
     statusChip->setObjectName(QStringLiteral("workspaceHubStatus"));
     UiTypography::apply(statusChip, UiTypography::Role::Badge);
     statusChip->setAccessibleName(QStringLiteral("Workspace Hub status"));
@@ -81,7 +81,7 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     layout->addWidget(header);
 
     hubModel = new WorkspaceHubModel(this);
-    tree = new QTreeView(this);
+    tree = UiControls::treeView(this);
     tree->setObjectName(QStringLiteral("workspaceHubTree"));
     tree->setAccessibleName(QStringLiteral("Workspace resources"));
     tree->setAccessibleDescription(QStringLiteral(
@@ -89,7 +89,8 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     tree->setModel(hubModel);
     tree->setHeaderHidden(true);
     tree->setUniformRowHeights(true);
-    tree->setAnimated(false);
+    UiControls::enableSmoothScrolling(tree);
+    UiControls::enableTreeTransitions(tree);
     tree->setExpandsOnDoubleClick(false);
     tree->setSelectionMode(QAbstractItemView::SingleSelection);
     tree->setFocusPolicy(Qt::StrongFocus);
@@ -106,11 +107,11 @@ WorkspaceHubView::WorkspaceHubView(QWidget* parent)
     auto* previewLayout = new QVBoxLayout(preview);
     previewLayout->setContentsMargins(10, 8, 10, 8);
     previewLayout->setSpacing(3);
-    previewTitle = new QLabel(preview);
+    previewTitle = UiControls::label(preview);
     previewTitle->setObjectName(QStringLiteral("workspaceHubPreviewTitle"));
     previewTitle->setWordWrap(true);
     previewTitle->setTextFormat(Qt::PlainText);
-    previewSummary = new QLabel(preview);
+    previewSummary = UiControls::label(preview);
     previewSummary->setObjectName(QStringLiteral("workspaceHubPreviewSummary"));
     previewSummary->setWordWrap(true);
     previewSummary->setTextFormat(Qt::PlainText);

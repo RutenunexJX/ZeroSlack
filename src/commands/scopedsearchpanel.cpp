@@ -1,3 +1,5 @@
+#include <memory>
+#include "uicontrols.h"
 #include "scopedsearchpanel.h"
 #include "deferredpanel.h"
 
@@ -403,7 +405,7 @@ void ScopedSearchPanel::buildUi()
     searchControls->setContentsMargins(0, 0, 0, 0);
     searchControls->setSpacing(6);
 
-    queryEdit = new QLineEdit(this);
+    queryEdit = UiControls::lineEdit(this);
     queryEdit->setObjectName(
         QStringLiteral("scopedSearchQueryEdit"));
     queryEdit->setPlaceholderText(
@@ -411,7 +413,7 @@ void ScopedSearchPanel::buildUi()
     queryEdit->setClearButtonEnabled(true);
     searchControls->addWidget(queryEdit, 1);
 
-    scopeCombo = new QComboBox(this);
+    scopeCombo = UiControls::comboBox(this);
     scopeCombo->setObjectName(
         QStringLiteral("scopedSearchScopeCombo"));
     scopeCombo->addItem(
@@ -432,33 +434,33 @@ void ScopedSearchPanel::buildUi()
             ScopedSearchScope::Workspace));
     searchControls->addWidget(scopeCombo);
 
-    caseSensitiveCheck = new QCheckBox(
+    caseSensitiveCheck = UiControls::checkBox(
         QStringLiteral("Case sensitive"), this);
     caseSensitiveCheck->setObjectName(
         QStringLiteral("scopedSearchCaseSensitiveCheck"));
     searchControls->addWidget(caseSensitiveCheck);
 
-    wholeWordCheck = new QCheckBox(
+    wholeWordCheck = UiControls::checkBox(
         QStringLiteral("Whole word"), this);
     wholeWordCheck->setObjectName(
         QStringLiteral("scopedSearchWholeWordCheck"));
     searchControls->addWidget(wholeWordCheck);
 
-    semanticCheck = new QCheckBox(
+    semanticCheck = UiControls::checkBox(
         QStringLiteral("Semantic"), this);
     semanticCheck->setObjectName(
         QStringLiteral("scopedSearchSemanticCheck"));
     semanticCheck->setChecked(true);
     searchControls->addWidget(semanticCheck);
 
-    searchButton = new QPushButton(
+    searchButton = UiControls::pushButton(
         QStringLiteral("Search"), this);
     searchButton->setObjectName(
         QStringLiteral("scopedSearchButton"));
     searchControls->addWidget(searchButton);
     rootLayout->addLayout(searchControls);
 
-    searchStatusLabel = new QLabel(this);
+    searchStatusLabel = UiControls::label(this);
     searchStatusLabel->setObjectName(
         QStringLiteral("scopedSearchStatusLabel"));
     searchStatusLabel->setSizePolicy(
@@ -468,7 +470,7 @@ void ScopedSearchPanel::buildUi()
         QStringLiteral("Enter a search query."));
     rootLayout->addWidget(searchStatusLabel);
 
-    resultsTree = new QTreeWidget(this);
+    resultsTree = UiControls::treeWidget(this);
     resultsTree->setObjectName(
         QStringLiteral("scopedSearchResultsTree"));
     resultsTree->setColumnCount(3);
@@ -502,15 +504,15 @@ void ScopedSearchPanel::buildUi()
     auto* replaceControls = new QHBoxLayout();
     replaceControls->setContentsMargins(0, 0, 0, 0);
     replaceControls->setSpacing(6);
-    auto* replaceLabel = new QLabel(
+    auto* replaceLabel = UiControls::label(
         QStringLiteral("Replace with:"), replaceGroup);
     replaceControls->addWidget(replaceLabel);
-    replacementEdit = new QLineEdit(replaceGroup);
+    replacementEdit = UiControls::lineEdit(replaceGroup);
     replacementEdit->setObjectName(
         QStringLiteral("scopedSearchReplacementEdit"));
     replacementEdit->setClearButtonEnabled(true);
     replaceControls->addWidget(replacementEdit, 1);
-    buildPreviewButton = new QPushButton(
+    buildPreviewButton = UiControls::pushButton(
         QStringLiteral("Build Diff Preview"),
         replaceGroup);
     buildPreviewButton->setObjectName(
@@ -518,7 +520,7 @@ void ScopedSearchPanel::buildUi()
             "scopedSearchBuildReplacePreviewButton"));
     buildPreviewButton->setEnabled(false);
     replaceControls->addWidget(buildPreviewButton);
-    dryRunCheck = new QCheckBox(
+    dryRunCheck = UiControls::checkBox(
         QStringLiteral("Dry run"), replaceGroup);
     dryRunCheck->setObjectName(
         QStringLiteral("scopedSearchReplaceDryRunCheck"));
@@ -528,7 +530,7 @@ void ScopedSearchPanel::buildUi()
     replaceControls->addWidget(dryRunCheck);
     replaceLayout->addLayout(replaceControls);
 
-    replaceTree = new QTreeWidget(replaceGroup);
+    replaceTree = UiControls::treeWidget(replaceGroup);
     replaceTree->setObjectName(
         QStringLiteral("scopedSearchReplaceTree"));
     replaceTree->setColumnCount(2);
@@ -547,7 +549,7 @@ void ScopedSearchPanel::buildUi()
     replaceLayout->addWidget(replaceTree, 1);
 
     replaceDiffView =
-        new QPlainTextEdit(replaceGroup);
+        UiControls::readOnlyText(replaceGroup);
     replaceDiffView->setObjectName(
         QStringLiteral("scopedSearchReplaceDiffView"));
     replaceDiffView->setReadOnly(true);
@@ -566,21 +568,21 @@ void ScopedSearchPanel::buildUi()
     transactionControls->setContentsMargins(0, 0, 0, 0);
     transactionControls->setSpacing(6);
     transactionControls->addStretch(1);
-    applyReplaceButton = new QPushButton(
+    applyReplaceButton = UiControls::pushButton(
         QStringLiteral("Apply Confirmed Diff"),
         replaceGroup);
     applyReplaceButton->setObjectName(
         QStringLiteral("scopedSearchApplyReplaceButton"));
     applyReplaceButton->setEnabled(false);
     transactionControls->addWidget(applyReplaceButton);
-    cancelReplaceButton = new QPushButton(
+    cancelReplaceButton = UiControls::pushButton(
         QStringLiteral("Cancel Preview"),
         replaceGroup);
     cancelReplaceButton->setObjectName(
         QStringLiteral("scopedSearchCancelReplaceButton"));
     cancelReplaceButton->setEnabled(false);
     transactionControls->addWidget(cancelReplaceButton);
-    undoReplaceButton = new QPushButton(
+    undoReplaceButton = UiControls::pushButton(
         QStringLiteral("Undo Replace"),
         replaceGroup);
     undoReplaceButton->setObjectName(
@@ -589,7 +591,7 @@ void ScopedSearchPanel::buildUi()
     transactionControls->addWidget(undoReplaceButton);
     replaceLayout->addLayout(transactionControls);
 
-    replaceStatusLabel = new QLabel(replaceGroup);
+    replaceStatusLabel = UiControls::label(replaceGroup);
     replaceStatusLabel->setObjectName(
         QStringLiteral("scopedSearchReplaceStatusLabel"));
     replaceStatusLabel->setSizePolicy(
@@ -933,7 +935,8 @@ void ScopedSearchPanel::showResultContextMenu(
     const ActionAliasDescriptor alias =
         descriptor->aliasForSurface(
             ActionSurface::ContextMenu);
-    QMenu menu(resultsTree);
+    std::unique_ptr<QMenu> menuOwner(UiControls::menu(resultsTree));
+    QMenu& menu = *menuOwner;
     QAction* action = menu.addAction(
         alias.label.trimmed().isEmpty()
             ? descriptor->canonicalName

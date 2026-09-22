@@ -4,6 +4,8 @@
 #include <QDrag>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPropertyAnimation>
+#include <QToolButton>
 
 #include "ElaTabBarPrivate.h"
 #include "ElaTabBarStyle.h"
@@ -21,6 +23,7 @@ ElaTabBar::ElaTabBar(QWidget* parent)
     setMovable(true);
     setAcceptDrops(true);
     d->_style = new ElaTabBarStyle(style());
+    d->_style->setParent(this);
     setStyle(d->_style);
 
     d->_pTargetScrollOffset = 0;
@@ -28,21 +31,108 @@ ElaTabBar::ElaTabBar(QWidget* parent)
     // 关闭自带滚动按钮，避免 layoutTabs 在 tab 溢出时重置 scrollOffset
     setUsesScrollButtons(false);
     connect(d, &ElaTabBarPrivate::pScrollOffsetChanged, this, [=]() {
+        if (_nativeTabBehavior && _smoothScrollEnabled) {
+            // A Qt selection, arrow button or layout change takes precedence.
+            if (d->_tabBarPrivate->scrollOffset != _lastScrollOffset) {
+                stopSmoothScroll();
+                return;
+            }
+            const int maximum = smoothScrollMaximum();
+            _lastScrollOffset = qBound(0, qRound(d->getScrollOffset()), maximum);
+            d->_tabBarPrivate->scrollOffset = _lastScrollOffset;
+            d->_tabBarPrivate->layoutWidgets();
+            d->_tabBarPrivate->leftB->setEnabled(_lastScrollOffset > 0);
+            d->_tabBarPrivate->rightB->setEnabled(_lastScrollOffset < maximum);
+            update();
+            return;
+        }
         // 动画每帧将偏移应用到 QTabBar 官方滚动机制
         d->_tabBarPrivate->scrollOffset = qRound(d->getScrollOffset());
         update();
     });
     // Qt 内部(refresh/makeVisible 等)修改 scrollOffset 时同步动画状态
     connect(this, &QTabBar::currentChanged, this, [=]() {
+        if (_nativeTabBehavior) {
+            if (_smoothScrollEnabled && currentIndex() >= 0)
+                d->_tabBarPrivate->makeVisible(currentIndex());
+            stopSmoothScroll();
+            return;
+        }
         d->setTargetScrollOffset(d->_tabBarPrivate->scrollOffset);
         d->setScrollOffset(d->_tabBarPrivate->scrollOffset);
     });
+    connect(this, &QTabBar::tabMoved, this, [=]() { stopSmoothScroll(); });
+    for (auto* button : {d->_tabBarPrivate->leftB, d->_tabBarPrivate->rightB})
+        button->installEventFilter(this);
 }
 
 ElaTabBar::~ElaTabBar()
 {
+    d_ptr->_scrollAnimation->stop();
+    setStyle(nullptr);
+}
+
+void ElaTabBar::setSmoothScrollEnabled(bool enabled)
+{
+    stopSmoothScroll();
+    _smoothScrollEnabled = enabled;
+    d_ptr->_scrollAnimation->setDuration(enabled ? 160 : 200);
+}
+
+bool ElaTabBar::smoothScrollEnabled() const
+{
+    return _smoothScrollEnabled;
+}
+
+int ElaTabBar::smoothScrollMaximum() const
+{
+    Q_D(const ElaTabBar);
+    auto* tabs = d->_tabBarPrivate;
+    if (tabs->layoutDirty)
+        tabs->layoutTabs();
+    const auto* last = tabs->lastVisibleTab();
+    return last ? qMax(0, last->rect.right() - tabs->normalizedScrollRect().right()) : 0;
+}
+
+void ElaTabBar::stopSmoothScroll()
+{
     Q_D(ElaTabBar);
-    delete d->_style;
+    d->_scrollAnimation->stop();
+    _lastScrollOffset = d->_tabBarPrivate->scrollOffset;
+    d->setTargetScrollOffset(_lastScrollOffset);
+    d->setScrollOffset(_lastScrollOffset);
+}
+
+bool ElaTabBar::event(QEvent* event)
+{
+    if (_smoothScrollEnabled && (event->type() == QEvent::MouseButtonPress
+        || event->type() == QEvent::KeyPress || event->type() == QEvent::Hide
+        || event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange
+        || event->type() == QEvent::LayoutDirectionChange))
+        stopSmoothScroll();
+    return QTabBar::event(event);
+}
+
+bool ElaTabBar::eventFilter(QObject* watched, QEvent* event)
+{
+    if (_smoothScrollEnabled && event->type() == QEvent::MouseButtonPress)
+        stopSmoothScroll();
+    return QTabBar::eventFilter(watched, event);
+}
+
+void ElaTabBar::setNativeTabBehavior(bool enabled)
+{
+    Q_D(ElaTabBar);
+    _nativeTabBehavior = enabled;
+    d->_style->setNativeTabBehavior(enabled);
+    setUsesScrollButtons(enabled);
+    updateGeometry();
+    update();
+}
+
+bool ElaTabBar::nativeTabBehavior() const
+{
+    return _nativeTabBehavior;
 }
 
 void ElaTabBar::setTabText(int index, const QString& text)
@@ -65,6 +155,8 @@ QSize ElaTabBar::getTabSize() const
 
 QSize ElaTabBar::sizeHint() const
 {
+    if (_nativeTabBehavior || !parentWidget())
+        return QTabBar::sizeHint();
     QSize oldSize = QTabBar::sizeHint();
     QSize newSize = oldSize;
     newSize.setWidth(parentWidget()->maximumWidth());
@@ -73,12 +165,19 @@ QSize ElaTabBar::sizeHint() const
 
 QSize ElaTabBar::minimumSizeHint() const
 {
+    if (_nativeTabBehavior)
+        return QTabBar::minimumSizeHint();
     // useScrollButtons=false 时基类会返回全部 tab 宽度总和，会撑大窗口，宽度最小设为 0 由布局分配
     return {0, QTabBar::minimumSizeHint().height()};
 }
 
 void ElaTabBar::tabInserted(int index)
 {
+    if (_nativeTabBehavior) {
+        stopSmoothScroll();
+        QTabBar::tabInserted(index);
+        return;
+    }
     Q_D(ElaTabBar);
     // 基类 addTab 内部先执行 refresh/makeVisible 再调用本虚函数，
     // _tabBarPrivate->scrollOffset 已被重置，动画状态仍是插入前的值
@@ -89,6 +188,11 @@ void ElaTabBar::tabInserted(int index)
 
 void ElaTabBar::tabRemoved(int index)
 {
+    if (_nativeTabBehavior) {
+        stopSmoothScroll();
+        QTabBar::tabRemoved(index);
+        return;
+    }
     Q_D(ElaTabBar);
     // 记录移除前的偏移，基类 removeTab 的 refresh/makeVisible 会把偏移重置回最左
     qreal preScrollOffset = d->getScrollOffset();
@@ -100,6 +204,8 @@ void ElaTabBar::tabRemoved(int index)
 void ElaTabBar::mouseMoveEvent(QMouseEvent* event)
 {
     QTabBar::mouseMoveEvent(event);
+    if (_nativeTabBehavior)
+        return;
     Q_D(ElaTabBar);
     if (d->_tabBarPrivate->pressedIndex >= 0)
     {
@@ -165,6 +271,10 @@ void ElaTabBar::mouseMoveEvent(QMouseEvent* event)
 
 void ElaTabBar::dragEnterEvent(QDragEnterEvent* event)
 {
+    if (_nativeTabBehavior) {
+        QTabBar::dragEnterEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     if (event->mimeData()->property("DragType").toString() == "ElaTabBarDrag")
     {
@@ -188,6 +298,10 @@ void ElaTabBar::dragEnterEvent(QDragEnterEvent* event)
 
 void ElaTabBar::dragMoveEvent(QDragMoveEvent* event)
 {
+    if (_nativeTabBehavior) {
+        QTabBar::dragMoveEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     if (event->mimeData()->property("DragType").toString() == "ElaTabBarDrag")
     {
@@ -199,6 +313,10 @@ void ElaTabBar::dragMoveEvent(QDragMoveEvent* event)
 
 void ElaTabBar::dragLeaveEvent(QDragLeaveEvent* event)
 {
+    if (_nativeTabBehavior) {
+        QTabBar::dragLeaveEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     if (d->_mimeData)
     {
@@ -212,6 +330,10 @@ void ElaTabBar::dragLeaveEvent(QDragLeaveEvent* event)
 
 void ElaTabBar::dropEvent(QDropEvent* event)
 {
+    if (_nativeTabBehavior) {
+        QTabBar::dropEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     d->_mimeData = nullptr;
     QMouseEvent releaseEvent(QEvent::MouseButtonRelease, QPoint(-1, -1), QPoint(-1, -1), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
@@ -231,6 +353,36 @@ void ElaTabBar::dropEvent(QDropEvent* event)
 
 void ElaTabBar::wheelEvent(QWheelEvent* event)
 {
+    if (_nativeTabBehavior && _smoothScrollEnabled && !verticalTabs(shape())) {
+        Q_D(ElaTabBar);
+        const int maximum = smoothScrollMaximum();
+        const QPoint pixels = event->pixelDelta();
+        const QPoint angles = event->angleDelta();
+        const qreal distance = !pixels.isNull() ? -(pixels.x() ? pixels.x() : pixels.y())
+            : -(angles.x() ? angles.x() : angles.y()) / 120.0 * 72;
+        if (!maximum || !distance) {
+            event->ignore();
+            return;
+        }
+        const bool running = d->_scrollAnimation->state() == QAbstractAnimation::Running;
+        if (!running || d->_tabBarPrivate->scrollOffset != _lastScrollOffset
+            || (d->getTargetScrollOffset() - d->getScrollOffset()) * distance < 0)
+            stopSmoothScroll();
+        const qreal target = qBound(0.0, d->getTargetScrollOffset() + distance, qreal(maximum));
+        d->setTargetScrollOffset(target);
+        if (!pixels.isNull()) {
+            d->_scrollAnimation->stop();
+            d->setScrollOffset(target);
+        } else {
+            d->startScrollAnimation();
+        }
+        event->accept();
+        return;
+    }
+    if (_nativeTabBehavior) {
+        QTabBar::wheelEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     // 滚轮平滑横向滚动，不切换 tab
     int maxOffset = qMax(0, d->_tabBarPrivate->tabList.size() * d->_style->getTabSize().width() - width());
@@ -242,7 +394,11 @@ void ElaTabBar::wheelEvent(QWheelEvent* event)
 
 void ElaTabBar::resizeEvent(QResizeEvent* event)
 {
+    if (_smoothScrollEnabled)
+        stopSmoothScroll();
     QTabBar::resizeEvent(event);
+    if (_nativeTabBehavior)
+        return;
     Q_D(ElaTabBar);
     // 窗口变宽时收敛超出的滚动偏移
     int maxOffset = qMax(0, d->_tabBarPrivate->tabList.size() * d->_style->getTabSize().width() - width());
@@ -253,6 +409,10 @@ void ElaTabBar::resizeEvent(QResizeEvent* event)
 
 void ElaTabBar::paintEvent(QPaintEvent* event)
 {
+    if (_nativeTabBehavior) {
+        QTabBar::paintEvent(event);
+        return;
+    }
     Q_D(ElaTabBar);
     QSize tabSize = d->_style->getTabSize();
     for (int i = 0; i < d->_tabBarPrivate->tabList.size(); i++)

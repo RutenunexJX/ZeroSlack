@@ -1,6 +1,7 @@
 #ifndef ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELAAPPBARPRIVATE_H_
 #define ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELAAPPBARPRIVATE_H_
 #include "ElaWidgetToolsDef.h"
+#include <QIcon>
 
 class QLabel;
 class QScreen;
@@ -31,6 +32,9 @@ public:
     Q_SLOT void onStayTopButtonClicked();
 
 private:
+    bool _externalWindowManagement{false};
+    QIcon _maximizeIcon;
+    QIcon _restoreIcon;
     ElaThemeType::ThemeMode _themeMode;
     QHBoxLayout* _mainLayout{nullptr};
     QVBoxLayout* _iconLabelLayout{nullptr};

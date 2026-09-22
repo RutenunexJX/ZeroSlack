@@ -191,7 +191,8 @@ private:
     void resetPeekToProviderPreferredSize();
     void refreshProviderIcons();
     int boundedDockWidthForWindow(int width) const;
-    void showDock(bool applyPreferredWidth);
+    void showDock(bool applyPreferredWidth, bool animate = true);
+    void applyDockVisibility(bool visible, bool applyPreferredWidth = false, bool animate = true);
     void notifyWorkspaceStateChanged();
 };
 

@@ -1,4 +1,5 @@
 #include "instancepairconnectionpanel.h"
+#include "testuistyle.h"
 
 #include "semanticindexsnapshot.h"
 
@@ -297,6 +298,7 @@ int main(int argc, char** argv)
         "QT_QPA_PLATFORM",
         QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 3;
 
     QWidget host;
     auto* layout = new QVBoxLayout(&host);

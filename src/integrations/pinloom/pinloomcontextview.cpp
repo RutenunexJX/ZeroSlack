@@ -1,4 +1,5 @@
 #include "uitypography.h"
+#include "uicontrols.h"
 #include "pinloomcontextview.h"
 
 #include <QApplication>
@@ -559,11 +560,11 @@ void PinloomContextView::buildUi()
     auto* searchRow = new QHBoxLayout;
     searchRow->setContentsMargins(0, 0, 0, 0);
     searchRow->setSpacing(4);
-    searchEdit = new QLineEdit(this);
+    searchEdit = UiControls::lineEdit(this);
     searchEdit->setObjectName(QStringLiteral("pinloomContextSearch"));
     searchEdit->setPlaceholderText(QStringLiteral("Search Pinloom"));
     searchEdit->setClearButtonEnabled(true);
-    reloadButton = new QToolButton(this);
+    reloadButton = UiControls::toolButton(this);
     reloadButton->setObjectName(QStringLiteral("pinloomContextReload"));
     reloadButton->setIcon(style()->standardIcon(QStyle::SP_BrowserReload));
     reloadButton->setToolTip(QStringLiteral("Refresh Pinloom results"));
@@ -577,23 +578,23 @@ void PinloomContextView::buildUi()
     auto* linkLayout = new QVBoxLayout(linkPanel);
     linkLayout->setContentsMargins(8, 6, 8, 6);
     linkLayout->setSpacing(4);
-    linkSourceLabel = new QLabel(linkPanel);
+    linkSourceLabel = UiControls::label(linkPanel);
     linkSourceLabel->setObjectName(QStringLiteral("pinloomContextLinkSource"));
     QFont linkSourceFont = linkSourceLabel->font();
     linkSourceFont.setWeight(QFont::DemiBold);
     linkSourceLabel->setFont(linkSourceFont);
     linkLayout->addWidget(linkSourceLabel);
-    linkTitleEdit = new QLineEdit(linkPanel);
+    linkTitleEdit = UiControls::lineEdit(linkPanel);
     linkTitleEdit->setObjectName(QStringLiteral("pinloomContextLinkTitle"));
     linkTitleEdit->setPlaceholderText(QStringLiteral("Anchor title"));
     linkLayout->addWidget(linkTitleEdit);
     auto* linkButtons = new QHBoxLayout;
-    attachEntryButton = new QToolButton(linkPanel);
+    attachEntryButton = UiControls::toolButton(linkPanel);
     attachEntryButton->setObjectName(QStringLiteral("pinloomContextAttachEntry"));
     attachEntryButton->setText(QStringLiteral("Link Selected"));
     attachEntryButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     attachEntryButton->setEnabled(false);
-    createAnchorButton = new QToolButton(linkPanel);
+    createAnchorButton = UiControls::toolButton(linkPanel);
     createAnchorButton->setObjectName(QStringLiteral("pinloomContextCreateAnchor"));
     createAnchorButton->setText(QStringLiteral("Create Anchor"));
     createAnchorButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
@@ -607,7 +608,7 @@ void PinloomContextView::buildUi()
     auto* splitter = new QSplitter(Qt::Vertical, this);
     splitter->setObjectName(QStringLiteral("pinloomContextSplitter"));
     splitter->setChildrenCollapsible(false);
-    results = new QListWidget(splitter);
+    results = UiControls::listWidget(splitter);
     results->setObjectName(QStringLiteral("pinloomContextResults"));
     results->setSelectionMode(QAbstractItemView::SingleSelection);
     results->setAlternatingRowColors(false);
@@ -619,20 +620,20 @@ void PinloomContextView::buildUi()
     previewLayout->setContentsMargins(0, 4, 0, 0);
     previewLayout->setSpacing(4);
     auto* titleRow = new QHBoxLayout;
-    titleLabel = new QLabel(QStringLiteral("Pinloom"), preview);
+    titleLabel = UiControls::label(QStringLiteral("Pinloom"), preview);
     titleLabel->setObjectName(QStringLiteral("pinloomContextTitle"));
     QFont titleFont = UiTypography::font(UiTypography::Role::PanelTitle);
     titleLabel->setFont(titleFont);
     titleLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     titleRow->addWidget(titleLabel, 1);
-    openTargetButton = new QToolButton(preview);
+    openTargetButton = UiControls::toolButton(preview);
     openTargetButton->setObjectName(QStringLiteral("pinloomContextOpen"));
     openTargetButton->setIcon(style()->standardIcon(QStyle::SP_ArrowForward));
     openTargetButton->setText(QStringLiteral("Open"));
     openTargetButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     openTargetButton->setToolTip(QStringLiteral("Open the selected Pinloom target"));
     openTargetButton->setEnabled(false);
-    copyUriButton = new QToolButton(preview);
+    copyUriButton = UiControls::toolButton(preview);
     copyUriButton->setObjectName(QStringLiteral("pinloomContextCopyLink"));
     copyUriButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
     copyUriButton->setToolTip(QStringLiteral("Copy stable Pinloom link"));
@@ -640,12 +641,12 @@ void PinloomContextView::buildUi()
     titleRow->addWidget(openTargetButton);
     titleRow->addWidget(copyUriButton);
     previewLayout->addLayout(titleRow);
-    detailsLabel = new QLabel(preview);
+    detailsLabel = UiControls::label(preview);
     detailsLabel->setObjectName(QStringLiteral("pinloomContextDetails"));
     detailsLabel->setWordWrap(true);
     detailsLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     previewLayout->addWidget(detailsLabel);
-    technicalDetailsButton = new QToolButton(preview);
+    technicalDetailsButton = UiControls::toolButton(preview);
     technicalDetailsButton->setObjectName(
         QStringLiteral("pinloomContextTechnicalDetailsToggle"));
     technicalDetailsButton->setText(QStringLiteral("Technical details"));
@@ -654,7 +655,7 @@ void PinloomContextView::buildUi()
     technicalDetailsButton->setCheckable(true);
     technicalDetailsButton->setChecked(false);
     previewLayout->addWidget(technicalDetailsButton, 0, Qt::AlignLeft);
-    technicalDetailsLabel = new QLabel(preview);
+    technicalDetailsLabel = UiControls::label(preview);
     technicalDetailsLabel->setObjectName(
         QStringLiteral("pinloomContextTechnicalDetails"));
     technicalDetailsLabel->setWordWrap(true);
@@ -664,7 +665,7 @@ void PinloomContextView::buildUi()
 
     previewStack = new QStackedWidget(preview);
     previewStack->setObjectName(QStringLiteral("pinloomContextPreviewStack"));
-    contentPreview = new QPlainTextEdit(previewStack);
+    contentPreview = UiControls::readOnlyText(previewStack);
     contentPreview->setObjectName(QStringLiteral("pinloomContextContent"));
     contentPreview->setReadOnly(true);
     contentPreview->setLineWrapMode(QPlainTextEdit::WidgetWidth);
@@ -684,7 +685,7 @@ void PinloomContextView::buildUi()
     splitter->setStretchFactor(1, 2);
     root->addWidget(splitter, 1);
 
-    statusLabel = new QLabel(this);
+    statusLabel = UiControls::label(this);
     statusLabel->setObjectName(QStringLiteral("pinloomContextStatus"));
     statusLabel->setWordWrap(true);
     statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -980,7 +981,7 @@ void PinloomContextView::openImagePreview()
     dialog->setWindowTitle(titleLabel->text());
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(8, 8, 8, 8);
-    auto* scroll = new QScrollArea(dialog);
+    auto* scroll = UiControls::scrollArea(dialog);
     scroll->setObjectName(QStringLiteral("pinloomContextImageScroll"));
     scroll->setAlignment(Qt::AlignCenter);
     scroll->setWidgetResizable(false);

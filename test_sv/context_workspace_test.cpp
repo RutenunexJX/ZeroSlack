@@ -11,6 +11,7 @@
 #include "settingscenterservice.h"
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
+#include "testuistyle.h"
 
 #include <QAction>
 #include <QApplication>
@@ -445,16 +446,19 @@ void verifyRailThreeStates()
     auto& controller = *fixture.controller;
     fixture.counters.activation = resource(QStringLiteral("rail"));
     QAction* action = controller.rail()->actions().constFirst();
-    action->trigger();
+    QWidget* button = controller.rail()->widgetForAction(action);
+    QApplication::processEvents();
+    check(button && button->isVisible(), "rail entry exposes a clickable widget");
+    QTest::mouseClick(button, Qt::LeftButton);
     QWidget* firstView = controller.dockHost()->viewForResource(fixture.counters.activation.stableKey());
     check(firstView && controller.dockWidget()->isVisible()
               && controller.dockHost()->resourceCount() == 1
               && !controller.peekHost()->hasResource(),
           "rail_three_states: first click opens a transient dock instance");
-    action->trigger();
+    QTest::mouseClick(button, Qt::LeftButton);
     check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()) && controller.dockHost()->resourceCount() == 1,
           "rail_three_states: second click collapses without disposing the view");
-    action->trigger();
+    QTest::mouseClick(button, Qt::LeftButton);
     check(controller.dockWidget()->isVisible()
               && controller.dockHost()->viewForResource(fixture.counters.activation.stableKey()) == firstView
               && fixture.counters.created == 1 && controller.captureState().pinnedResources.isEmpty(),
@@ -1446,6 +1450,7 @@ void verifyNativeFrameCorrection()
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
     verifyStateCompatibility(app.arguments());
     verifyPlacementMapping();
     verifyUnsupportedPlacements();

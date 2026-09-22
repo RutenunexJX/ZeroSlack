@@ -1,3 +1,5 @@
+#include <memory>
+#include "uicontrols.h"
 #include "signalusagehotspotpanel.h"
 
 #include "editorfileidentity.h"
@@ -665,7 +667,7 @@ private:
 
 QPushButton* modeButton(const QString& text, QWidget* parent)
 {
-    auto* button = new QPushButton(text, parent);
+    auto* button = UiControls::pushButton(text, parent);
     button->setCheckable(true);
     InsightVisualStyle::applyToolbarButton(button);
     return button;
@@ -689,7 +691,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     rootLayout->setContentsMargins(8, 8, 8, 8);
     rootLayout->setSpacing(6);
 
-    titleLabel = new QLabel(QStringLiteral("Signal Usage Hotspot"), this);
+    titleLabel = UiControls::label(QStringLiteral("Signal Usage Hotspot"), this);
     titleLabel->setObjectName(QStringLiteral("signalUsageHotspotTitle"));
     InsightVisualStyle::applyTitleLabel(titleLabel);
     titleLabel->setVisible(false);
@@ -705,22 +707,22 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     matrixModeButton->setObjectName(
         QStringLiteral("signalUsageHotspotMatrixModeButton"));
     trackModeButton->setChecked(true);
-    searchEdit = new QLineEdit(this);
+    searchEdit = UiControls::lineEdit(this);
     searchEdit->setPlaceholderText(QStringLiteral("Search usage"));
     InsightVisualStyle::applySearchField(searchEdit);
-    zoomOutButton = new QPushButton(this);
+    zoomOutButton = UiControls::pushButton(this);
     zoomOutButton->setObjectName(
         QStringLiteral("signalUsageHotspotZoomOutButton"));
-    zoomInButton = new QPushButton(this);
+    zoomInButton = UiControls::pushButton(this);
     zoomInButton->setObjectName(
         QStringLiteral("signalUsageHotspotZoomInButton"));
-    fitButton = new QPushButton(this);
+    fitButton = UiControls::pushButton(this);
     fitButton->setObjectName(
         QStringLiteral("signalUsageHotspotFitButton"));
-    centerCurrentButton = new QPushButton(this);
+    centerCurrentButton = UiControls::pushButton(this);
     centerCurrentButton->setObjectName(
         QStringLiteral("signalUsageHotspotCenterCurrentButton"));
-    resetLayoutButton = new QPushButton(this);
+    resetLayoutButton = UiControls::pushButton(this);
     resetLayoutButton->setObjectName(
         QStringLiteral("signalUsageHotspotResetLayoutButton"));
     fitViewAction = createGraphViewAction(
@@ -748,12 +750,12 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
         resetLayoutButton,
         resetLayoutViewAction);
     refreshGraphViewActionAvailability();
-    auto* exportButton = new QToolButton(this);
+    auto* exportButton = UiControls::toolButton(this);
     exportButton->setObjectName(
         QStringLiteral("signalUsageHotspotExportButton"));
     exportButton->setText(QStringLiteral("Export"));
     exportButton->setPopupMode(QToolButton::InstantPopup);
-    auto* exportMenu = new QMenu(exportButton);
+    auto* exportMenu = UiControls::menu(exportButton);
     exportTrackAction = GraphExportUi::bindRegistryAction(
         this,
         QString::fromLatin1(
@@ -821,7 +823,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     roleLayout->setContentsMargins(0, 0, 0, 0);
     roleLayout->setSpacing(4);
     for (SignalUsageHotspotRole role : hotspotRoles()) {
-        auto* check = new QCheckBox(
+        auto* check = UiControls::checkBox(
             SignalUsageHotspotService::roleDisplayName(role),
             this);
         check->setChecked(true);
@@ -863,7 +865,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     matrixView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     matrixView->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     matrixView->setAlignment(Qt::AlignLeft | Qt::AlignTop);
-    matrixItemsTree = new QTreeWidget(matrixPage);
+    matrixItemsTree = UiControls::treeWidget(matrixPage);
     matrixItemsTree->setObjectName(QStringLiteral("signalUsageHotspotMatrixItems"));
     matrixItemsTree->setColumnCount(5);
     matrixItemsTree->setHeaderLabels(
@@ -885,11 +887,11 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     auto* inspectorLayout = new QVBoxLayout(inspectorPanel);
     inspectorLayout->setContentsMargins(10, 10, 8, 10);
     inspectorLayout->setSpacing(8);
-    inspectorTitleLabel = new QLabel(
+    inspectorTitleLabel = UiControls::label(
         QStringLiteral("Evidence Details"), inspectorPanel);
     inspectorTitleLabel->setFont(
         InsightVisualStyle::titleFont(inspectorTitleLabel->font()));
-    inspectorDetailLabel = new QLabel(
+    inspectorDetailLabel = UiControls::label(
         QStringLiteral("Select a usage or matrix cell to inspect its source evidence."),
         inspectorPanel);
     inspectorDetailLabel->setTextFormat(Qt::RichText);
@@ -946,7 +948,8 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     connect(trackView, &QWidget::customContextMenuRequested,
             this, [this](const QPoint& pos) {
                 refreshGraphViewActionAvailability();
-                QMenu menu(trackView);
+                std::unique_ptr<QMenu> menuOwner(UiControls::menu(trackView));
+    QMenu& menu = *menuOwner;
                 if (fitViewAction)
                     menu.addAction(fitViewAction);
                 if (centerCurrentViewAction)

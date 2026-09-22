@@ -1,3 +1,5 @@
+#include "uicontrols.h"
+#include <memory>
 #include "editorgutter.h"
 #include <QMenu>
 #include "editorruntime.h"
@@ -1182,6 +1184,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
+    clearVisibleTextLayoutCache();
     folding.resetForDocumentChange(editor);
     highlightRefresh.detach();
     completion.detach();
@@ -1488,6 +1491,7 @@ void MyCodeEditorState::rebindDocument(
     documentContentsChangeConnection = {};
     syntax.detachHighlighter();
     editor->setExtraSelections({});
+    clearVisibleTextLayoutCache();
     rebindingDocument = true;
     editor->QPlainTextEdit::setDocument(document);
     rebindingDocument = false;
@@ -1948,14 +1952,76 @@ MyCodeEditorState::visibleDocumentRange(
     return range;
 }
 
+void MyCodeEditorState::clearVisibleTextLayoutCache()
+{
+    if (textLayoutCacheDocument) {
+        for (const auto& anchor : std::as_const(cachedTextLayoutAnchors)) {
+            if (!anchor.isNull()) {
+                auto* layout = anchor.block().layout();
+                layout->setCacheEnabled(false);
+                // Disabling the flag alone retains shaped data until endLayout().
+                // Empty lazy layout releases it without modifying text or formats.
+                layout->beginLayout();
+                layout->endLayout();
+            }
+        }
+    }
+    cachedTextLayoutAnchors.clear();
+    textLayoutCacheDocument.clear();
+}
+
+void MyCodeEditorState::updateVisibleTextLayoutCache(MyCodeEditor* editor)
+{
+    if (textLayoutCacheDocument != editor->document())
+        clearVisibleTextLayoutCache();
+    const auto range = visibleDocumentRange(editor);
+    QList<QTextCursor> visible;
+    QSet<int> visibleNumbers;
+    // Bound retained glyph/layout data even for huge files or very small fonts.
+    constexpr int maximumCachedBlocks = 256;
+    for (auto block = editor->firstVisibleBlock();
+         block.isValid() && block.blockNumber() <= range.lastLine
+             && visible.size() < maximumCachedBlocks;
+         block = projection.active() ? projection.nextVisibleBlock(editor, block) : block.next()) {
+        visible.append(QTextCursor(block));
+        visibleNumbers.insert(block.blockNumber());
+    }
+    for (const auto& anchor : std::as_const(cachedTextLayoutAnchors)) {
+        if (!anchor.isNull() && !visibleNumbers.contains(anchor.blockNumber())) {
+            auto* layout = anchor.block().layout();
+            layout->setCacheEnabled(false);
+            layout->beginLayout();
+            layout->endLayout();
+        }
+    }
+    for (const auto& anchor : std::as_const(visible))
+        anchor.block().layout()->setCacheEnabled(true);
+    textLayoutCacheDocument = editor->document();
+    cachedTextLayoutAnchors = std::move(visible);
+}
+
 void MyCodeEditorState::refreshVisibleRegionPresentation(
-    MyCodeEditor* editor)
+    MyCodeEditor* editor, bool force)
 {
     if (!editor)
         return;
-    ++hotPathMetrics.visiblePresentationRefreshes;
     const EditorVisibleDocumentRange range =
         visibleDocumentRange(editor);
+    const int revision = editor->document()->revision();
+    // A width-only resize in NoWrap mode normally keeps the same visible lines.
+    // Reuse their annotations; content, scrolling and explicit refreshes still publish.
+    if (!force && presentedVisibleDocument == editor->document()
+        && presentedVisibleRevision == revision
+        && presentedVisibleRange.firstLine == range.firstLine
+        && presentedVisibleRange.lastLine == range.lastLine
+        && presentedVisibleRange.startPosition == range.startPosition
+        && presentedVisibleRange.endPosition == range.endPosition) {
+        return;
+    }
+    presentedVisibleDocument = editor->document();
+    presentedVisibleRevision = revision;
+    presentedVisibleRange = range;
+    ++hotPathMetrics.visiblePresentationRefreshes;
     if (range.valid()) {
         templateSlots.publishVisibleAnnotations(
             editor,
@@ -3010,11 +3076,11 @@ void MyCodeEditorState::finishEditorInput(MyCodeEditor* editor)
     editorPresentationPending = false;
 }
 
-void MyCodeEditorState::handleResize(MyCodeEditor* editor)
+void MyCodeEditorState::handleResize(MyCodeEditor* editor, bool forcePresentation)
 {
     gutter.updateViewportMargins(editor);
     gutter.resizeTo(editor, editor->contentsRect());
-    refreshVisibleRegionPresentation(editor);
+    refreshVisibleRegionPresentation(editor, forcePresentation);
 }
 
 bool MyCodeEditorState::handleGutterMousePress(
@@ -3058,7 +3124,7 @@ bool MyCodeEditorState::handleGutterMousePress(
                        == EditorAnnotationPlacement::Gutter
                 && annotation.range.firstLine
                        == block.blockNumber()) {
-                auto* menu = new QMenu(editor);
+                auto* menu = UiControls::menu(editor);
                 menu->setAttribute(Qt::WA_DeleteOnClose);
                 if (diagnosticSeverityByLine.contains(block.blockNumber())) {
                     auto* detail = menu->addAction(diagnosticTooltipForLine(block.blockNumber()));
@@ -3385,7 +3451,8 @@ void MyCodeEditorState::handleContextMenu(
         signalSelection.completeForContextMenu();
         const QTextCursor contextCursor =
             editor->cursorForPosition(event->pos());
-        QMenu menu(editor);
+        std::unique_ptr<QMenu> menuOwner(UiControls::menu(editor));
+        QMenu& menu = *menuOwner;
         EditorContextMenuRequest request;
         request.actionContext.workspacePath =
             hierarchyInstance.workspacePath;
@@ -3410,7 +3477,7 @@ void MyCodeEditorState::handleContextMenu(
         const EditorContextMenuModel model =
             buildEditorContextMenuModel(request);
         QMenu* refactorMenu =
-            menu.addMenu(QStringLiteral("Refactor"));
+            UiControls::addMenu(&menu, QStringLiteral("Refactor"));
         refactorMenu->setObjectName(
             QStringLiteral("editorContextMenu.refactor"));
         const EditorContextMenuItem item =

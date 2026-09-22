@@ -20,17 +20,123 @@ the source. The following ZeroSlack-specific changes are applied:
 Reconstruction: extract the library subtree at the pinned revision, then apply
 `patches/01` through `06` in filename order. These patches reproduce all 417
 files of the audited comparison source, including its historical formatting.
-Apply `patches/07-zeroslack-control-contracts.patch` last for the migration:
+Use `git -c core.autocrlf=false apply` to retain the recorded file bytes.
+Apply `patches/07-zeroslack-control-contracts.patch` next for the basic-control migration:
 QIcon/mnemonic/keyboard/checked/focus/default-button painting, selected tool-button
 icons, theme repaint, ownership of a removed combo-box layout item, and safe style
 detachment before tool/combo/spin-box destruction. The latter includes the shared
 popup/view and embedded line-edit styles; visible top-level teardown is tested.
+
+Then apply `patches/08-zeroslack-tree-tab-contracts.patch`. It provides a native
+Qt behavior mode for ElaTabBar: Qt owns variable tab sizing, overflow buttons,
+selection, reordering and input, while Ela owns painting. The application keeps
+its QTabWidget page ownership; ElaTabWidget's automatic close and tear-out
+controllers are not used. Close icons use compact strokes.
+
+ElaTreeView exposes a style factory for QTreeWidget hosts and a native item-content
+mode that preserves model fonts/brushes, check states, wrapping, elision and focus.
+Branch painting accepts Qt's generic style option, row sizes honor content height,
+and painting/check-box hit regions use the same padding, applied only once so
+automatic column sizing does not elide otherwise fitting labels. Tree/tab/scroll-bar styles
+are QObject-owned and detached before widget teardown. Disabling scroll-bar
+animation also restores immediate native wheel handling.
+
+Apply `patches/09-zeroslack-radio-contracts.patch` after patch 08. Radio-button
+styles are QObject-owned and detached before widget teardown. Disabled radio
+labels and indicators use the disabled theme colors and ignore hover feedback.
+
+Apply `patches/10-zeroslack-combo-popup-lifetime.patch` after patch 09. A combo's
+shared style is application-owned and released with deleteLater after its popup,
+view and line edit have been destroyed. It is not reset during combo teardown:
+native popup repolishing from setStyle could invalidate children during Qt's
+style propagation. This supersedes patch 07's combo style-detachment sequence.
+
+Apply `patches/11-zeroslack-menu-item-view-contracts.patch` after patch 10. ElaMenu
+adds an immediate Qt popup mode, retaining QAction ownership, mnemonics, checked
+and exclusive actions, disabled state, icons, shortcuts and submenu navigation.
+Qt measures item content and Ela paints the rounded popup and hover background.
+ElaListView and ElaTableView expose style factories for existing QListWidget and
+QTableWidget models. Native item-content mode preserves model fonts/brushes,
+check indicators, wrapping, editing delegates, header labels and sort indicators.
+List padding is shared by painting and check-box hit testing. Menu/table and
+adapter-created list styles are application-owned and released with deleteLater
+after their widgets are destroyed, including visible popup teardown.
+
+Apply `patches/12-zeroslack-interruptible-scrolling.patch` after patch 11. ElaScrollBar
+adds an opt-in wheel mode independent of scroll-range animation, with bounded targets,
+immediate direction reversal, direct pixel gestures, and interruption by navigation,
+range changes and hiding. ElaTabBar can animate variable-width Qt tabs without taking
+over page ownership; close buttons and overflow arrows follow the current offset.
+Selection, layout and drag operations supersede motion. Both animation objects are
+owned, stopped on teardown, and use 160ms in the product adapter.
+
+Apply `patches/13-zeroslack-appbar-host-contracts.patch` after patch 12. ElaAppBar
+adds an opt-in external window-management mode for an existing native frame host.
+It leaves flags, content margins, hit testing and close-event policy to the host,
+while retaining Ela layout, title updates and window-button actions. Button and
+title accessors support accessibility, path menus and sidebar integration.
+Maximize icons follow Qt window-state changes; tool-button painting recognizes
+native caption hover. Closing requests QWidget::close() only once, respecting a
+veto and delete-on-close without nested processEvents or a second native close.
+Window-button icons can be supplied without replacing Ela's state handling. The
+close icon supports QIcon, content-based sizing, pressed/focus feedback and owned
+hover animations. External layout assigns stretch to the title so a shrinkable
+path label does not collapse to zero width. The application adapter is
+`src/ui/uiwindowchrome.cpp`; ElaWindow
+and its navigation/page controllers are not used.
+
+Apply `patches/14-zeroslack-text-view-contracts.patch` after patch 13. ElaPlainTextEdit
+adds an opt-in native text mode that leaves palettes and focus policy to the host.
+The product adapter uses Qt-generated context actions in an ElaMenu. A single owned
+focus animation can reverse immediately, and the style is application-owned until
+widget and viewport teardown completes. NoFrame is respected; the native mode uses
+the host's Base and Highlight palette roles. ElaScrollArea needs no upstream patch:
+the adapter restores as-needed scrollbars without enabling drag-scroll gestures.
+
+Apply `patches/15-zeroslack-label-palette-contracts.patch` after patch 14. ElaText
+adds an opt-out from forced theme text colors, including its paint-time reset,
+so host semantic and disabled palettes survive theme changes. The default upstream
+behavior is unchanged. ZeroSlack's label adapter disables that override, restores
+its own typography and native QLabel defaults, and clears constructor QSS/palette
+overrides. QLabel continues to handle ordinary text layout, selection and links.
+
+Apply `patches/16-zeroslack-navigation-content-host.patch` after patch 15.
+ElaNavigationBar adds optional custom header/content hosting for existing navigation
+models. It owns their vertical layout and stable-width sliding viewport, while its
+native Maximal/Minimal/Compact modes drive the width transition. A single owned
+animation supports reversal and instant settlement; generation-guarded completion
+releases custom width constraints after layout has consumed the final frame.
+The public mode/completion signals let an external dock synchronize its saved size
+once at completion. The host may resize the expanded bar within its configured range.
+ZeroSlack's adapter is `src/ui/navigationpanecoordinator.cpp`; it retains QDockWidget
+only for existing window layout persistence. ElaWindow and its page routing remain
+unused. This content-host API is a local extension, not an unmodified upstream API.
+
+Apply `patches/17-zeroslack-navigation-width-batching.patch` after patch 16.
+The owned width driver uses QVariantAnimation and one setFixedWidth per value.
+It no longer first writes maximumWidth through QPropertyAnimation and then changes
+both constraints in the value callback. Duration, easing, interruption and final
+width restoration are unchanged; all animation ownership remains in Ela.
+
+Apply `patches/18-zeroslack-navigation-composition-contract.patch` after patch 17.
+The optional display-mode transition handler delegates presentation to a host
+compositor, supplying the target width, Ela's 255 ms duration and a generation.
+Late completions from a cancelled generation are ignored. Accepted transitions
+do not animate the real bar width; the endpoint is applied once at completion.
+Fixed endpoint constraints remain in place while the host commits its live layout.
+The application compositor uses the same OutCubic curve on Windows DirectComposition;
+stock Ela bars retain their existing width animation. This is a local API extension.
 
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
 upstream's non-interruptible popup animation. No recursive application event
 filter or protected-surface traversal is installed for Ela.
+Selected browsing viewports route precision pixel gestures to the matching Ela
+scrollbar and cancel motion on key or pointer input. This filter is local to those views.
+The numeric-control adapter sizes the inline step buttons and input area together,
+including prefixes, suffixes and input padding; it does not assume Qt's narrower
+native step-button geometry.
 
 This integration is pinned to Qt 6.10.2 because ElaTabBar includes Qt private
 headers. Rebuild both DLLs and rerun validation before changing the Qt version.

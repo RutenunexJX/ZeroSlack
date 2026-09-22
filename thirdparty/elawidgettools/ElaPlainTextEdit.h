@@ -16,6 +16,10 @@ public:
     explicit ElaPlainTextEdit(const QString& text, QWidget* parent = nullptr);
     ~ElaPlainTextEdit() override;
 
+    // The host owns the text palette and Qt focus policy in this mode.
+    void setNativeTextBehavior(bool enabled);
+    bool nativeTextBehavior() const;
+
 protected:
     virtual void focusInEvent(QFocusEvent* event) override;
     virtual void focusOutEvent(QFocusEvent* event) override;

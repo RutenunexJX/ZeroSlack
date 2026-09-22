@@ -19,6 +19,7 @@ public:
 private:
     ElaThemeType::ThemeMode _themeMode;
     bool _isWrapAnywhere{false};
+    bool _themeColorEnabled{true};
     qreal _textSpacing{0.5};
 };
 

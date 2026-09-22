@@ -1,5 +1,7 @@
 #pragma once
 
+#include "uicontrols.h"
+
 #include <QBoxLayout>
 #include <QLabel>
 #include <QPainter>
@@ -76,7 +78,7 @@ public:
         auto* content = new QWidget;
         content->setObjectName(panel->objectName() + QStringLiteral("Content"));
         content->setLayout(panel->layout());
-        auto* scroll = new QScrollArea(panel);
+        auto* scroll = UiControls::scrollArea(panel);
         scroll->setObjectName(panel->objectName() + QStringLiteral("Scroll"));
         scroll->setFrameShape(QFrame::NoFrame);
         scroll->setWidgetResizable(true);

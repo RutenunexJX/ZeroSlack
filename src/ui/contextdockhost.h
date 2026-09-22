@@ -40,7 +40,7 @@ public:
     QWidget* takeResource(const QString& key);
     bool removeResource(const QString& key);
     bool isSectionCollapsed(const QString& key) const;
-    bool setSectionCollapsed(const QString& key, bool collapsed);
+    bool setSectionCollapsed(const QString& key, bool collapsed, bool animate = true);
     int sectionHeight(const QString& key) const;
     bool setSectionHeight(const QString& key, int height);
     bool moveResource(const QString& key, int index);
@@ -91,6 +91,7 @@ private:
     int indexOfResource(const QString& key) const;
     void refreshSectionStatus(const QString& key);
     void arrangeSections();
+    void settleMotion();
     void focusSection(const QString& key);
     int minimumSectionHeight(const Section* section) const;
     void showInsertion(const QPoint& globalPosition);

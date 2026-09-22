@@ -41,7 +41,7 @@ void ElaAppBarPrivate::onMaxButtonClicked()
     Q_Q(ElaAppBar);
     bool isMaximized = q->window()->isMaximized();
     isMaximized ? q->window()->showNormal() : q->window()->showMaximized();
-#ifndef Q_OS_WIM
+#ifndef Q_OS_WIN
     _changeMaxButtonAwesome(!isMaximized);
 #endif
 }
@@ -51,13 +51,8 @@ void ElaAppBarPrivate::onCloseButtonClicked()
     Q_Q(ElaAppBar);
     if (_pIsDefaultClosed)
     {
-        const auto window = q->window();
-        window->close();
-        QApplication::processEvents();
-        if (const auto windowHandle = window->windowHandle())
-        {
-            windowHandle->close();
-        }
+        // QWidget::close() may be rejected, or delete the window on acceptance.
+        q->window()->close();
     }
     else
     {
@@ -88,6 +83,12 @@ void ElaAppBarPrivate::onStayTopButtonClicked()
 
 void ElaAppBarPrivate::_changeMaxButtonAwesome(bool isMaximized)
 {
+    if (!_maximizeIcon.isNull() && !_restoreIcon.isNull())
+    {
+        _maxButton->setProperty("ElaIconType", QVariant());
+        _maxButton->setIcon(isMaximized ? _restoreIcon : _maximizeIcon);
+        return;
+    }
     if (isMaximized)
     {
         _maxButton->setElaIcon(ElaIconType::WindowRestore);
@@ -291,7 +292,11 @@ QVBoxLayout* ElaAppBarPrivate::_createVLayout(QWidget* widget)
     QVBoxLayout* vLayout = new QVBoxLayout();
     vLayout->setContentsMargins(0, 0, 0, 0);
     vLayout->setSpacing(0);
-    if (widget == _iconLabel || widget == _titleLabel)
+    if (_externalWindowManagement)
+    {
+        vLayout->addStretch();
+    }
+    else if (widget == _iconLabel || widget == _titleLabel)
     {
         vLayout->addSpacing(6);
     }

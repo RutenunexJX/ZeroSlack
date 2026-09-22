@@ -60,6 +60,27 @@ void ElaMenuStyle::drawControl(ControlElement element, const QStyleOption* optio
         //内容绘制 区分类型
         if (const QStyleOptionMenuItem* mopt = qstyleoption_cast<const QStyleOptionMenuItem*>(option))
         {
+            if (_nativeItemContent && mopt->menuItemType != QStyleOptionMenuItem::Separator) {
+                painter->save();
+                painter->setRenderHint(QPainter::Antialiasing);
+                if (mopt->state.testFlag(State_Enabled) && mopt->state.testFlag(State_Selected)) {
+                    painter->setPen(Qt::NoPen);
+                    painter->setBrush(ElaThemeColor(_themeMode, PopupHover));
+                    painter->drawRoundedRect(mopt->rect.adjusted(0, 2, 0, -2), 5, 5);
+                }
+                QStyleOptionMenuItem content(*mopt);
+                content.state &= ~(State_Selected | State_MouseOver);
+                for (auto group : {QPalette::Active, QPalette::Inactive, QPalette::Disabled}) {
+                    const QColor ink = group == QPalette::Disabled
+                        ? ElaThemeColor(_themeMode, BasicTextDisable) : ElaThemeColor(_themeMode, BasicText);
+                    for (auto role : {QPalette::Text, QPalette::WindowText, QPalette::ButtonText})
+                        content.palette.setColor(group, role, ink);
+                }
+                // Qt retains mnemonics, shortcuts, checked/exclusive actions, QIcon and RTL layout.
+                QProxyStyle::drawControl(element, &content, painter, widget);
+                painter->restore();
+                return;
+            }
             if (mopt->menuItemType == QStyleOptionMenuItem::Separator)
             {
                 QRect separatorRect = mopt->rect;
@@ -181,6 +202,7 @@ int ElaMenuStyle::pixelMetric(PixelMetric metric, const QStyleOption* option, co
     {
     case QStyle::PM_SmallIconSize:
     {
+        if (_nativeItemContent) return 16;
         //图标宽度
         _iconWidth = _pMenuItemHeight * 0.7;
         return _iconWidth;
@@ -211,7 +233,12 @@ QSize ElaMenuStyle::sizeFromContents(ContentsType type, const QStyleOption* opti
                 break;
             }
             QSize menuItemSize = QProxyStyle::sizeFromContents(type, option, size, widget);
+            if (_nativeItemContent) {
+                menuItemSize.setHeight(qMax(menuItemSize.height(), qMax(_pMenuItemHeight, mopt->fontMetrics.height() + 12)));
+                return menuItemSize;
+            }
             const ElaMenu* menu = dynamic_cast<const ElaMenu*>(widget);
+            if (!menu) return menuItemSize;
             if (menu->isHasIcon() || mopt->menuHasCheckableItems)
             {
                 _isAnyoneItemHasIcon = true;

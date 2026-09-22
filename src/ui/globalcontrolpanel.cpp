@@ -30,10 +30,10 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    auto* title = new QLabel(QStringLiteral("Insert and Command"), this);
+    auto* title = UiControls::label(QStringLiteral("Insert and Command"), this);
     layout->addWidget(title);
 
-    categoryTabs = new QTabBar(this);
+    categoryTabs = UiControls::tabBar(this);
     categoryTabs->setObjectName(QStringLiteral("globalControlCategoryTabs"));
     categoryTabs->setExpanding(true);
     categoryTabs->addTab(QStringLiteral("Symbols"));
@@ -46,7 +46,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     searchEdit->installEventFilter(this);
     layout->addWidget(searchEdit);
 
-    resultList = new QListWidget(this);
+    resultList = UiControls::listWidget(this);
     resultList->setObjectName(QStringLiteral("globalControlResultList"));
     resultList->setMinimumHeight(260);
     resultList->setMouseTracking(true);
