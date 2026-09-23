@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.3`
+Current version: `v0.31.4`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.3`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.4`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -150,12 +150,14 @@ Replace the current local package without keeping older copies or backups, and u
 the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current release is `0.31.3` (`v0.31.3`). Ela is now the sole formal package,
+The current release is `0.31.4` (`v0.31.4`). Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
-Context floating windows have one
-Ela title bar for the resource name and actions. The shared temporary editor uses the
+Context floating windows use an Ela frameless shell with one title bar for the resource
+name and actions. Module diagrams remove the section collapse arrow, breadcrumb row
+and full-view icon, retain Fit and mouse-side-button navigation, and use a borderless canvas.
+Ela handles DPI-scaled edge resizing. The shared temporary editor uses the
 same floating host; old whole-Context floating layouts migrate to individual windows.
 Source-editor wallpaper retains its theme background. Workspace Hub and its dedicated
 background refresh pipeline are removed; legacy Hub layout records are discarded during
@@ -333,8 +335,8 @@ the shared renderer; application fonts, palettes, other controls and professiona
 views retain their existing ownership. See [SDK integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入)
 for build switches, deployment, rollback and validation limits.
 Set `SuiteUi_DIR` to the installed SDK's `lib/cmake/SuiteUi` directory when enabling it.
-`scripts/package-release.ps1` stages the classic formal package and refuses any
-configuration that enables an optional backend.
+`scripts/package-release.ps1` stages the maintained Ela formal package and refuses
+classic, Qlementine and SuiteUi configurations.
 
 0.29.23 shipped SuiteUi as the formal default; 0.29.24 reverts that default to
 classic because the SDK control path was judged unacceptably sluggish in real

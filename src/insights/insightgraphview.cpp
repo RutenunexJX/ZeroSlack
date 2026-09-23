@@ -48,7 +48,15 @@ void InsightGraphView::applyInsightGraphStyle()
     setTransformationAnchor(QGraphicsView::AnchorUnderMouse);
     setResizeAnchor(QGraphicsView::AnchorViewCenter);
     setBackgroundBrush(InsightVisualStyle::canvasBrush());
-    setStyleSheet(InsightVisualStyle::graphViewStyleSheet(objectName()));
+    setFrameShape(borderVisible ? QFrame::StyledPanel : QFrame::NoFrame);
+    setStyleSheet(InsightVisualStyle::graphViewStyleSheet(objectName(), borderVisible));
+}
+
+void InsightGraphView::setBorderVisible(bool visible)
+{
+    if (borderVisible == visible) return;
+    borderVisible = visible;
+    applyInsightGraphStyle();
 }
 
 void InsightGraphView::setZoomRange(qreal minimumScale, qreal maximumScale)

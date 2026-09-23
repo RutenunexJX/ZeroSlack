@@ -20,6 +20,7 @@ public:
     void applyInsightGraphStyle();
     void setZoomRange(qreal minimumScale, qreal maximumScale);
     void setGridVisible(bool visible);
+    void setBorderVisible(bool visible);
     void setClearSelectionOnEmptyLeftClick(bool enabled);
 
     void setPressHandler(
@@ -53,6 +54,7 @@ protected:
 
 private:
     bool gridVisible = false;
+    bool borderVisible = true;
     QPoint pressPosition;
     bool clearSelectionOnEmptyLeftClick = false;
     bool fitUpscalingEnabled = true;

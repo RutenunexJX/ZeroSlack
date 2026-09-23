@@ -301,15 +301,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
 
     auto* moduleBar = viewState->moduleBlockToolbar;
     const QPointer<QObject> callbackContext = viewState->graphCallbackContext;
-    moduleBar->breadcrumbActivated = [this, callbackContext](int index) {
-        if (callbackContext) graphController->navigateModuleBlockBreadcrumb(index);
-    };
-    QObject::connect(moduleBar->backAction, &QAction::triggered, callbackContext, [this]() {
-        graphController->navigateModuleBlockHistory(-1);
-    });
-    QObject::connect(moduleBar->forwardAction, &QAction::triggered, callbackContext, [this]() {
-        graphController->navigateModuleBlockHistory(1);
-    });
     QObject::connect(moduleBar->fitAction, &QAction::triggered, callbackContext, [this]() { graphController->focusFit(); });
     auto* moduleResizeTimer = new QTimer(callbackContext);
     moduleResizeTimer->setSingleShot(true);

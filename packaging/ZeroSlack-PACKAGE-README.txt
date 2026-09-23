@@ -1,9 +1,14 @@
-ZeroSlack v0.31.3 Windows package
+ZeroSlack v0.31.4 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.4 makes context windows frameless through Ela while preserving title-bar
+controls, drag, DPI-aware edge resizing and workspace ownership. Module diagrams use
+a borderless canvas, with the collapse arrow, breadcrumb row and full-view icon removed.
+Fit, mouse-side-button history and source navigation remain available.
 
 Release 0.31.3 replaces the former classic package with the maintained Ela application.
 The executable, window title and shortcuts use the ZeroSlack name. Only the current
@@ -34,8 +39,8 @@ Release 0.30.3 uses ElaWidget for context floating windows and Ela's window-scop
 Acrylic material. Window controls, resizing and theme changes use the Ela path;
 unsupported systems or disabled transparency fall back to an opaque background.
 Pinning, content ownership and workspace behavior are preserved. Editor tab windows
-and double-click symbol cards are outside this change. The package includes the
-Ela MIT license, Font Awesome license and all 20 local compatibility patches.
+and double-click symbol cards are outside this change. The current package includes the
+Ela MIT license, Font Awesome license and all 21 local compatibility patches.
 
 Version 0.30.2 adds Ela breadcrumbs and a compact toolbar to module block diagrams.
 Nested module boxes size to their text and children, wrap with the viewport width,

@@ -81,6 +81,7 @@ private:
 
     void refreshBackdrop();
     void refreshTitle();
+    void refreshFullViewAction();
     void layoutTitleBar();
     void scheduleBackdropRefresh();
     void rememberGeometry();

@@ -139,6 +139,8 @@ LiveInsightsContextView::LiveInsightsContextView(
 void LiveInsightsContextView::initialize()
 {
     setObjectName(QStringLiteral("liveInsightsContextView"));
+    setProperty("contextSectionToggleVisible", selected != LiveInsightKind::Module);
+    setProperty("contextFullViewActionVisible", selected != LiveInsightKind::Module);
     buildUi();
     if (sessionValue) {
         connect(
@@ -193,6 +195,9 @@ void LiveInsightsContextView::setSelectedKind(LiveInsightKind kind)
 
     const LiveInsightKind previous = selected;
     selected = kind;
+    setProperty("contextSectionToggleVisible", selected != LiveInsightKind::Module);
+    setProperty("contextFullViewActionVisible", selected != LiveInsightKind::Module);
+    fullViewButton->setVisible(!fixedKindValue && selected != LiveInsightKind::Module);
     if (cards.at(index).button)
         cards.at(index).button->setChecked(true);
     if (contentStack)
@@ -725,6 +730,7 @@ void LiveInsightsContextView::buildUi()
         QStringLiteral("Open the selected insight beside the editor"));
     InsightVisualStyle::applyToolbarButton(fullViewButton);
     titleRow->addWidget(fullViewButton);
+    fullViewButton->setVisible(!fixedKindValue && selected != LiveInsightKind::Module);
     root->addLayout(titleRow);
 
     auto* cardGrid = new QGridLayout;

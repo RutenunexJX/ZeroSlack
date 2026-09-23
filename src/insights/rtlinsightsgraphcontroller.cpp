@@ -378,8 +378,6 @@ RtlInsightsGraphController::selectedSourceLocation() const
 
 bool RtlInsightsGraphController::enterModuleBlockNode(int nodeId)
 { return sceneMapper->enterModuleBlockNode(nodeId); }
-bool RtlInsightsGraphController::navigateModuleBlockBreadcrumb(int index)
-{ return sceneMapper->navigateModuleBlockBreadcrumb(index); }
 bool RtlInsightsGraphController::navigateModuleBlockHistory(int direction)
 { return sceneMapper->navigateModuleBlockHistory(direction); }
 void RtlInsightsGraphController::refreshModuleBlockSelectionActions()
@@ -754,11 +752,12 @@ void RtlInsightsGraphController::configureToolbarForMode(
         mode == QStringLiteral("state-transition")
         || mode == QStringLiteral("fsm");
     const bool graphMode = moduleMode || stateMode;
-    if (state.moduleBlockToolbar) state.moduleBlockToolbar->setVisible(moduleMode);
+    if (state.moduleBlockToolbar) state.moduleBlockToolbar->setModuleMode(moduleMode);
     if (state.graphToolbar) state.graphToolbar->setVisible(stateMode);
     if (state.insightsGraphView) {
         state.insightsGraphView->setFitUpscalingEnabled(true);
         state.insightsGraphView->setGridVisible(!moduleMode);
+        state.insightsGraphView->setBorderVisible(!moduleMode);
     }
 
     for (QWidget* widget :

@@ -6,6 +6,7 @@
 
 #include <QEnterEvent>
 #include <QEvent>
+#include <QDynamicPropertyChangeEvent>
 #include <QHBoxLayout>
 #include <QHideEvent>
 #include <QLabel>
@@ -198,8 +199,14 @@ void ContextPeekHost::setActionsAvailable(
 {
     pinButton->setVisible(pinAvailable);
     pinButton->setEnabled(pinAvailable);
-    fullViewButton->setVisible(fullViewAvailable);
     fullViewButton->setEnabled(fullViewAvailable);
+    refreshFullViewAction();
+}
+
+void ContextPeekHost::refreshFullViewAction()
+{
+    const QVariant visible = currentView ? currentView->property("contextFullViewActionVisible") : QVariant();
+    fullViewButton->setVisible(fullViewButton->isEnabled() && (!visible.isValid() || visible.toBool()));
 }
 
 void ContextPeekHost::setView(
@@ -211,6 +218,8 @@ void ContextPeekHost::setView(
     clearView();
     currentResource = resourceValue;
     currentView = viewValue;
+    viewValue->installEventFilter(this);
+    refreshFullViewAction();
     viewValue->setParent(contentHost);
     contentLayout->addWidget(viewValue);
     titleLabel->setText(
@@ -245,6 +254,7 @@ QWidget* ContextPeekHost::takeView()
 {
     QWidget* result = currentView;
     if (result) {
+        result->removeEventFilter(this);
         contentLayout->removeWidget(result);
         result->hide();
         result->setParent(nullptr);
@@ -265,6 +275,10 @@ void ContextPeekHost::clearView()
 
 bool ContextPeekHost::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == currentView && event && event->type() == QEvent::DynamicPropertyChange
+        && static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName() == "contextFullViewActionVisible") {
+        refreshFullViewAction();
+    }
     if ((watched == leftResizeHandle
          || watched == bottomResizeHandle
          || watched == cornerResizeHandle)

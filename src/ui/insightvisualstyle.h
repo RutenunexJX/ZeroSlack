@@ -299,7 +299,7 @@ public:
         const QString& objectName = {});
     static QString sideInspectorStyleSheet(
         const QString& objectName = {});
-    static QString graphViewStyleSheet(const QString& objectName = {});
+    static QString graphViewStyleSheet(const QString& objectName = {}, bool borderVisible = true);
     static QString titleBarStyleSheet(const QString& objectName = {});
     static QString compactSearchFieldStyleSheet(
         const QString& objectName = {});

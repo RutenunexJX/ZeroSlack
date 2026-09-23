@@ -158,6 +158,16 @@ System accessibility/power preferences and the background tint remain host-owned
 The classic build retains its existing DWM path. The original MIT and font OFL
 licenses remain unchanged and must accompany this patch in distributed packages.
 
+Apply `patches/21-zeroslack-frameless-context-windows.patch` after patch 20.
+ElaAppBar honors explicit Qt::FramelessWindowHint windows without retaining the
+Windows non-client border. All four edges and corners use DPI-scaled client-area
+resize hit regions; maximized windows use the current monitor's work area. Its
+Windows 10 top-border painting is suppressed for this opt-in mode. Other Ela
+windows retain their existing native-frame behavior. ZeroSlack enables the mode
+on ContextFloatingWindow and keeps the Ela title bar, drag handling and controls.
+Hidden native HWND checks exercise border calculation and edge hit testing without
+showing windows or moving the cursor. Original MIT and font OFL licenses remain.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids

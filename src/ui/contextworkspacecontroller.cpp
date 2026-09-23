@@ -1141,7 +1141,10 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
             dockHostValue->setSectionHeight(key, section.height);
         dockHostValue->moveResourceToArea(key, section.bottom);
         if (section.width > 0) dockHostValue->setSectionWidth(key, section.width);
-        dockHostValue->setSectionCollapsed(key, section.collapsed, false);
+        QWidget* view = dockHostValue->viewForResource(key);
+        const QVariant toggleVisible = view ? view->property("contextSectionToggleVisible") : QVariant();
+        dockHostValue->setSectionCollapsed(key, section.collapsed
+            && (!toggleVisible.isValid() || toggleVisible.toBool()), false);
     }
     // QMainWindow state can restore a floating QDockWidget despite its new features.
     // Move each restored section into an Ela window, retaining its view and persistence.

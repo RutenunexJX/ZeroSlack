@@ -1413,18 +1413,20 @@ QString InsightVisualStyle::globalControlPanelStyleSheet(
              t.itemView.selectedBackground.name());
 }
 
-QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName)
+QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName, bool borderVisible)
 {
     const InsightTheme t = theme();
     return QStringLiteral(
                "%1 {"
                "  background: %2;"
-               "  border: 1px solid %3;"
-               "  border-radius: 8px;"
+               "  border: %3px solid %4;"
+               "  border-radius: %5px;"
                "}")
         .arg(objectSelector(QStringLiteral("QGraphicsView"), objectName),
-             t.graph.background.name(),
-             t.border.name())
+             t.graph.background.name())
+        .arg(borderVisible ? 1 : 0)
+        .arg(t.border.name())
+        .arg(borderVisible ? 8 : 0)
         + floatingBackgroundRule(QStringLiteral("QGraphicsView"), objectName);
 }
 

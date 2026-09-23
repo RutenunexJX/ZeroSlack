@@ -642,9 +642,11 @@ void verifyDetachableRoutingAndMovement()
               && controller.floatingWindow()->isWindow()
               && controller.floatingWindow()->windowType() == Qt::Tool
               && controller.floatingWindow()->parentWidget() == &fixture.window
-              && !(controller.floatingWindow()->windowFlags() & Qt::FramelessWindowHint)
+#ifdef ZEROSLACK_ENABLE_ELA
+              && controller.floatingWindow()->windowFlags().testFlag(Qt::FramelessWindowHint)
+#endif
               && !controller.peekHost()->hasResource() && fixture.counters.created == created,
-          "floating_movement: dock to native Tool window transports without reconstruction");
+          "floating_movement: dock to Ela Tool window transports without reconstruction");
     check(controller.pinPeek() && controller.dockHost()->viewForResource(item.stableKey()) == original,
           "floating_movement: native window to dock preserves identity");
     fixture.counters.detachable = false;

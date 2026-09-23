@@ -84,6 +84,7 @@ private:
     bool resizeChanged = false;
 
     void buildUi();
+    void refreshFullViewAction();
     void buildResizeHandles();
     void synchronizeGeometry();
     void updateResizeHandleGeometry();

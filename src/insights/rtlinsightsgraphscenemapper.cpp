@@ -1687,9 +1687,6 @@ void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
         && !state.moduleBlockAutoFit;
     state.moduleBlockRenderedScope = scope;
     if (state.moduleBlockToolbar) {
-        QStringList labels;
-        for (const ModuleBlockScope& frame : state.moduleBlockPath) labels.append(frame.label);
-        state.moduleBlockToolbar->setBreadcrumbs(labels);
         state.moduleBlockToolbar->setToolTip(
             QStringLiteral("%1 modules · %2 unresolved").arg(report.moduleCount).arg(report.unresolvedInstanceCount));
     }
@@ -2350,15 +2347,6 @@ bool RtlInsightsGraphSceneMapper::enterModuleBlockNode(int nodeId)
     return activateModuleBlockPath(state.moduleBlockInstancePaths.value(nodeId), true, true);
 }
 
-bool RtlInsightsGraphSceneMapper::navigateModuleBlockBreadcrumb(int index)
-{
-    if (index < 0 || index >= state.moduleBlockPath.size()) return false;
-    const QPointer<QObject> lifetime = state.graphCallbackContext;
-    const bool navigated = activateModuleBlockPath(state.moduleBlockPath.at(index).instancePath, true, true);
-    if (lifetime && !navigated) updateModuleBlockFocus(false);
-    return navigated;
-}
-
 bool RtlInsightsGraphSceneMapper::navigateModuleBlockHistory(int direction)
 {
     if (direction != -1 && direction != 1) return false;
@@ -2435,13 +2423,6 @@ void RtlInsightsGraphSceneMapper::updateModuleBlockFocus(bool fit)
         const QString path = item->data(kGraphInstancePathRole).toString();
         item->setOpacity(path == state.moduleBlockTargetPath || path.startsWith(descendantPrefix) ? 1.0 : 0.28);
         item->setSelected(item->data(kGraphNodeIdRole).toInt() == targetId);
-    }
-    if (state.moduleBlockToolbar) {
-        QStringList labels;
-        for (const auto& frame : state.moduleBlockPath) labels.append(frame.label);
-        state.moduleBlockToolbar->setBreadcrumbs(labels);
-        state.moduleBlockToolbar->setHistoryAvailable(state.moduleBlockHistoryIndex > 0,
-            state.moduleBlockHistoryIndex + 1 < state.moduleBlockHistory.size());
     }
     if (fit) state.insightsGraphView->fitRect(state.lastGraphFitRect, Qt::KeepAspectRatio);
 }

@@ -77,7 +77,6 @@ public:
     bool navigateSelectedItem();
     RtlInsightSourceLocation selectedSourceLocation() const;
     bool enterModuleBlockNode(int nodeId);
-    bool navigateModuleBlockBreadcrumb(int index);
     bool navigateModuleBlockHistory(int direction);
     void refreshModuleBlockSelectionActions();
     bool selectSourceLocation(

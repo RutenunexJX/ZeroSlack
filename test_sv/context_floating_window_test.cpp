@@ -74,6 +74,7 @@ private slots:
         QCOMPARE(owner.windowTitle(), QStringLiteral("Main window"));
 #ifdef ZEROSLACK_ENABLE_ELA
         QVERIFY(qobject_cast<ElaWidget*>(&host));
+        QVERIFY(host.windowFlags().testFlag(Qt::FramelessWindowHint));
         QVERIFY(!host.getIsStayTop());
         QCOMPARE(host.findChildren<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly).size(), 1);
         QVERIFY(owner.findChildren<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly).isEmpty());
@@ -100,6 +101,12 @@ private slots:
         QVERIFY(pin->isHidden() && fullView->isHidden());
         QVERIFY(!host.sidebarDragHandle()->isEnabled());
         host.setActionsAvailable(true, true);
+        view->setProperty("contextFullViewActionVisible", false);
+        QVERIFY(fullView->isHidden());
+        host.setActionsAvailable(true, true);
+        QVERIFY(fullView->isHidden());
+        view->setProperty("contextFullViewActionVisible", true);
+        QVERIFY(fullView->isVisible());
 
         QCOMPARE(host.takeView(), view);
         QVERIFY(!host.hasResource() && !host.isVisible());
@@ -252,6 +259,62 @@ private slots:
         QCOMPARE(restored.frameGeometry(), normalFrame);
         QCOMPARE(restored.backgroundOpacity(), 90);
         QCOMPARE(restored.windowOpacity(), 1.0);
+    }
+
+    void nativeFramelessGeometryAndHitTesting()
+    {
+#if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
+        if (QGuiApplication::platformName() != QStringLiteral("windows"))
+            QSKIP("Native Windows platform required");
+        const HWND foreground = GetForegroundWindow();
+        ContextFloatingWindow host(nullptr, nullptr);
+        host.setGeometry(-16000, -16000, 600, 400);
+        QApplication::processEvents();
+        const auto hwnd = reinterpret_cast<HWND>(host.winId());
+        auto* bar = host.findChild<ElaAppBar*>();
+        QVERIFY(bar);
+        QVERIFY(!IsWindowVisible(hwnd));
+
+        NCCALCSIZE_PARAMS geometry{};
+        geometry.rgrc[0] = RECT{100, 100, 700, 500};
+        MSG message{};
+        message.hwnd = hwnd;
+        message.message = WM_NCCALCSIZE;
+        message.wParam = TRUE;
+        message.lParam = reinterpret_cast<LPARAM>(&geometry);
+        qintptr result = 0;
+        QCOMPARE(bar->takeOverNativeEvent("windows_generic_MSG", &message, &result), 1);
+        QCOMPARE(geometry.rgrc[0].left, LONG(100));
+        QCOMPARE(geometry.rgrc[0].top, LONG(100));
+        QCOMPARE(geometry.rgrc[0].right, LONG(700));
+        QCOMPARE(geometry.rgrc[0].bottom, LONG(500));
+
+        RECT client{};
+        QVERIFY(GetClientRect(hwnd, &client));
+        const LONG right = client.right - 1;
+        const LONG bottom = client.bottom - 1;
+        const QList<QPair<POINT, int>> edges{
+            {{1, 1}, HTTOPLEFT}, {{right, 1}, HTTOPRIGHT},
+            {{1, bottom}, HTBOTTOMLEFT}, {{right, bottom}, HTBOTTOMRIGHT},
+            {{1, bottom / 2}, HTLEFT}, {{right, bottom / 2}, HTRIGHT},
+            {{right / 2, 1}, HTTOP}, {{right / 2, bottom}, HTBOTTOM},
+            {{right / 2, bottom / 2}, HTCLIENT}
+        };
+        for (const auto& edge : edges) {
+            POINT point = edge.first;
+            QVERIFY(ClientToScreen(hwnd, &point));
+            message.message = WM_NCHITTEST;
+            message.wParam = 0;
+            message.lParam = MAKELPARAM(point.x, point.y);
+            result = 0;
+            QCOMPARE(bar->takeOverNativeEvent("windows_generic_MSG", &message, &result), 1);
+            QCOMPARE(result, qintptr(edge.second));
+        }
+        QVERIFY(!IsWindowVisible(hwnd));
+        QCOMPARE(GetForegroundWindow(), foreground);
+#else
+        QSKIP("Ela on Windows required");
+#endif
     }
 
     void acrylicIsWindowScoped()

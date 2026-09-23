@@ -205,6 +205,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     row->setContentsMargins(4, 0, 4, 0);
     row->setSpacing(2);
     section->toggle = UiControls::toolButton(section->header);
+    section->toggle->setObjectName(QStringLiteral("contextSectionToggle"));
     section->toggle->setProperty("panelMotionToggle", true);
     section->toggle->setArrowType(Qt::DownArrow);
     section->toggle->setToolTip(tr("Collapse or expand section"));
@@ -257,6 +258,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     section->fullView->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
     section->fullView->setToolTip(tr("Open in main area"));
     section->fullView->setVisible(fullViewAvailable);
+    section->fullView->setEnabled(fullViewAvailable);
     row->addWidget(section->fullView);
     auto* unpin = UiControls::toolButton(section->header);
     unpin->setObjectName(QStringLiteral("contextDockUnpin"));
@@ -344,13 +346,19 @@ void ContextDockHost::refreshSectionStatus(const QString& key)
     section->scope->setToolTip(section->view->property("contextScopeTooltip").toString());
     section->scope->setVisible(!scope.isEmpty());
     section->fit->setVisible(section->view->property("contextFitAvailable").toBool());
+    const QVariant toggleVisible = section->view->property("contextSectionToggleVisible");
+    section->toggle->setVisible(!toggleVisible.isValid() || toggleVisible.toBool());
+    const QVariant fullView = section->view->property("contextFullViewActionVisible");
+    section->fullView->setVisible(section->fullView->isEnabled()
+        && (!fullView.isValid() || fullView.toBool()));
     section->header->setFixedHeight(section->header->layout()->sizeHint().height());
 }
 bool ContextDockHost::setFullViewAvailable(const QString& key, bool available)
 {
     auto* section = sections.value(key);
     if (!section) return false;
-    section->fullView->setVisible(available);
+    section->fullView->setEnabled(available);
+    refreshSectionStatus(key);
     return true;
 }
 void ContextDockHost::focusSection(const QString& key)
@@ -653,7 +661,8 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
             const QByteArray name = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
             if (name == "contextStatusText" || name == "contextStatusTooltip"
                 || name == "contextScopeText" || name == "contextScopeTooltip"
-                || name == "contextFitAvailable") refreshSectionStatus(key);
+                || name == "contextFitAvailable" || name == "contextSectionToggleVisible"
+                || name == "contextFullViewActionVisible") refreshSectionStatus(key);
             else if (name == "contextDisplayTitle") section->title->setText(displayTitle(resources.value(key), section->view));
             return false;
         }

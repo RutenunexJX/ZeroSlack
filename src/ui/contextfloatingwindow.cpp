@@ -86,7 +86,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
 #ifdef ZEROSLACK_ENABLE_ELA
     // ElaWidget constructs its app bar against window(). Become a top-level
     // window first, then attach the owner so it cannot decorate the main window.
-    setParent(mainWindow, Qt::Tool | (windowFlags() & ~Qt::WindowType_Mask));
+    setParent(mainWindow, Qt::Tool | Qt::FramelessWindowHint | (windowFlags() & ~Qt::WindowType_Mask));
     setIsStayTop(false);
     setWindowButtonFlags(ElaAppBarType::MinimizeButtonHint
         | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint);
@@ -102,7 +102,11 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     setAutoFillBackground(false);
     auto* root = new QVBoxLayout(this);
     root->setSizeConstraint(QLayout::SetNoConstraint);
+#ifdef ZEROSLACK_ENABLE_ELA
+    root->setContentsMargins(0, 0, 0, 0);
+#else
     root->setContentsMargins(8, 0, 8, 8);
+#endif
     titleActions = new QWidget(this);
     titleActions->setObjectName(QStringLiteral("contextFloatingActions"));
     titleActions->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -299,8 +303,8 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
     dragButton->setEnabled(pinAvailable);
     pinButton->setVisible(pinAvailable);
     pinButton->setEnabled(pinAvailable);
-    fullViewButton->setVisible(fullViewAvailable);
     fullViewButton->setEnabled(fullViewAvailable);
+    refreshFullViewAction();
     layoutTitleBar();
 }
 
@@ -310,6 +314,12 @@ void ContextFloatingWindow::refreshTitle()
     setWindowTitle(!displayTitle.isEmpty() ? displayTitle
         : currentResource.title.isEmpty() ? currentResource.uri.fileName() : currentResource.title);
     layoutTitleBar();
+}
+
+void ContextFloatingWindow::refreshFullViewAction()
+{
+    const QVariant visible = currentView ? currentView->property("contextFullViewActionVisible") : QVariant();
+    fullViewButton->setVisible(fullViewButton->isEnabled() && (!visible.isValid() || visible.toBool()));
 }
 
 void ContextFloatingWindow::layoutTitleBar()
@@ -350,6 +360,9 @@ bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
             layoutTitleBar();
         } else if (name == "contextDisplayTitle") {
             refreshTitle();
+        } else if (name == "contextFullViewActionVisible") {
+            refreshFullViewAction();
+            layoutTitleBar();
         }
     }
     if (watched == dragButton && !dragButton->property("elaDragManaged").toBool()
@@ -387,6 +400,7 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
     currentView = view;
     view->installEventFilter(this);
     fitButton->setVisible(view->property("contextFitAvailable").toBool());
+    refreshFullViewAction();
     contentLayout->addWidget(view);
     refreshTitle();
     if (!geometryValid) {
