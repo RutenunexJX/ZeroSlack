@@ -3,6 +3,7 @@
 #include "applicationthememanager.h"
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
+#include "contextdocktransition.h"
 #include "contextpeekhost.h"
 #include "contextfloatingwindow.h"
 #include "contextrail.h"
@@ -155,8 +156,12 @@ ContextWorkspaceController::ContextWorkspaceController(
         title->setFixedHeight(0);
         dock->setTitleBarWidget(title);
     }
-    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, bottomDockValue);
+    mainWindow->addDockWidget(Qt::BottomDockWidgetArea, bottomDockValue, Qt::Vertical);
+    if (auto* drawer = mainWindow->findChild<QDockWidget*>(QStringLiteral("bottomToolDrawerDock"), Qt::FindDirectChildrenOnly))
+        mainWindow->splitDockWidget(bottomDockValue, drawer, Qt::Vertical);
     bottomDockValue->hide();
+
+    dockTransition = new ContextDockTransition(mainWindow, dockHostValue);
 
     connect(railValue,
             &ContextRail::entryActivated,
@@ -247,6 +252,9 @@ ContextWorkspaceController::ContextWorkspaceController(
 
 ContextWorkspaceController::~ContextWorkspaceController()
 {
+    // QWidget may already be deleting the main window's children.
+    if (!qobject_cast<QMainWindow*>(window.data())) window.clear();
+    if (dockTransition) dockTransition->finish();
     restoringState = true;
     if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settleFor(dockValue);
     for (auto* surface : floatingSurfaces()) {
@@ -735,7 +743,7 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason, bool bottom, in
     dockHostValue->setSectionDetachable(resource.stableKey(), provider->capabilities(resource).detachable);
     dockHostValue->moveResourceToArea(resource.stableKey(), bottom, index);
     if (bottom) showResourceDock(resource.stableKey());
-    else showDock(dockWasEmpty && !restoringState);
+    else showDock(dockWasEmpty && !restoringState, !dockingTransition);
     hideEmptyDocks();
     documentBindings.remove(resource.stableKey());
     keptFloatingKeys.remove(resource.stableKey());
@@ -874,6 +882,8 @@ void ContextWorkspaceController::setWorkspaceRoot(const QString& root)
 
 void ContextWorkspaceController::clearResources()
 {
+    floatingDragSource.clear();
+    if (dockTransition) dockTransition->finish();
     if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
     const bool previousRestoring = restoringState;
     restoringState = true;
@@ -1409,6 +1419,10 @@ void ContextWorkspaceController::showResourceDock(const QString& key)
     if (!dockHostValue->isBottomResource(key)) { showDock(false); return; }
     const bool wasVisible = bottomDockValue->isVisible();
     const QScopedValueRollback<bool> guard(applyingBottomHeight, true);
+    if (!wasVisible && window) {
+        if (auto* drawer = window->findChild<QDockWidget*>(QStringLiteral("bottomToolDrawerDock"), Qt::FindDirectChildrenOnly))
+            window->splitDockWidget(bottomDockValue, drawer, Qt::Vertical);
+    }
     bottomDockValue->show();
     bottomDockValue->raise();
     if (!wasVisible && window) window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);

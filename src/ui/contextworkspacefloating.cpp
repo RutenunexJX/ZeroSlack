@@ -2,6 +2,8 @@
 #include "contextworkspacecontroller.h"
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
+#include "contextdocktransition.h"
+#include "panelcompositor.h"
 #include "contextfloatingwindow.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
@@ -13,6 +15,7 @@
 #include <QMenu>
 #include <QScreen>
 #include <QGuiApplication>
+#include <QScopedValueRollback>
 
 ContextFloatingSurface* ContextWorkspaceController::floatingSurfaceFor() const
 {
@@ -64,22 +67,32 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
         captureLastFloatingGeometry(host);
         notifyWorkspaceStateChanged();
     });
-    connect(host, &ContextFloatingWindow::titleDragStarted, this, [this] {
-        beginDockPreview();
+    connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
+        if (!dockTransition || !host->canDock()) return;
+        PanelCompositor::forWindow(window)->settle();
+        dockTransition->finish();
+        floatingDragSource = host;
     });
     connect(host, &ContextFloatingWindow::titleDragMoved, this, [this, host](const QPoint& position) {
+        if (floatingDragSource != host || !dockTransition) return;
+        dockTransition->preview(dockTransition->targetAt(position, host->view(), dockValue, bottomDockValue,
+            boundedDockWidthForWindow(preferredDockWidthValue), preferredBottomHeight));
         dockHostValue->previewFloatingDrop(host, position);
     });
     connect(host, &ContextFloatingWindow::titleDragFinished, this, [this, host](const QPoint& position, bool cancelled) {
-        if (!previewingDocks) return;
+        if (floatingDragSource != host || !dockTransition) return;
+        floatingDragSource.clear();
         dockHostValue->clearFloatingDropPreview();
-        const bool accepted = !cancelled && host->canDock()
-            && dockHostValue->acceptFloatingDrop(host, host->resource().stableKey(), position);
-        if (!accepted) {
-            if (!sideWasVisible) dockValue->hide();
-            if (!bottomWasVisible) bottomDockValue->hide();
-        }
-        endDockPreview();
+        dockTransition->clearPreview();
+        if (cancelled || !host->canDock()) return;
+        const auto target = dockTransition->targetAt(position, host->view(), dockValue, bottomDockValue,
+            boundedDockWidthForWindow(preferredDockWidthValue), preferredBottomHeight);
+        if (!target.isValid()) return;
+        const QString key = host->resource().stableKey();
+        dockTransition->transfer(host, key, [this, key, target] {
+            const QScopedValueRollback<bool> guard(dockingTransition, true);
+            return pinFloatingResource(key, target.bottom, target.index);
+        });
     });
     return host;
 }

@@ -79,6 +79,25 @@ Ela 第 21 份兼容补丁补齐无边框窗口四边和四角的 DPI 缩放命�
 0.31.5 发布构建及 13 项发布回归通过（5.07 秒），另覆盖主窗口两档缩放与 insight provider。
 记录：`build/ela-migration/release-0.31.5-build.log`、`release-0.31.5-tests.log`。
 
+0.31.7：浮窗停靠采用覆盖式落点预览，不再为拖动提前展开两个停靠区。释放后沿用同一个内容实例，
+先完成目标布局，再由 `ContextDockTransition` 在独立、无焦点且鼠标穿透的临时层内播放 200 ms 过渡。
+快照只平移和裁切，新旧内容在末段交接；目标真实控件完成绘制后撤去覆盖层。
+窗口缩放、隐藏、再次输入、资源删除和其他面板动画均会结束当前过渡并释放图像。
+底部 Context 与 Problems／Activity 改为纵向分行，Context 内仍横向平铺，避免停靠到狭窄角落。
+Windows 复用 `NativePanelComposition`，新增不透明度效果组和延迟交接；接口或设备不可用时使用
+Qt 栅格过渡，快照超过预算时即时停靠。原生合成支持绑定本进程的透明顶层窗口，依据
+[CreateTargetForHwnd 文档](https://learn.microsoft.com/en-us/windows/win32/api/dcomp/nf-dcomp-idcompositiondevice-createtargetforhwnd)。
+
+验证：Release 构建及 19 项相关 CTest 通过（33.85 秒），覆盖四档 DPI、侧栏／底栏插入、
+隐藏目标预览不改布局、取消与中断、动画中销毁宿主、快照背景像素、内容实例、光标、滚动和撤销状态。
+100%／200% 的后台过渡及落位截图已核对，Windows 隐藏 HWND 的透明合成与延迟不透明度动画检查通过。
+这些检查不包含桌面鼠标拖动或可见原生动画逐帧验收。
+记录：`build/ela-migration/dock-transfer-build-final.log`、`dock-transfer-tests-final.log`、
+`dock-transfer-native-hidden.txt`；截图位于 `dock-transfer-review/`。
+
+0.31.7 发布构建及 20 项发布检查通过（33.77 秒），包括上述回归与版本／文档一致性检查。
+记录：`build/ela-migration/release-0.31.7-build.log`、`release-0.31.7-tests.log`。
+
 - 模块节点按文字和层级布局，悬浮高亮；选中分支外的节点透明度降至 0.28。图中保留完整层级。
 - 初次显示与 Fit 后随窗口适配；滚轮或拖动后保留手动视角。Fit 在停靠标题条和浮窗操作条中。
 - 语义展开忽略的实例由源码结构补充，使用虚线；有定义的不可达分支继续展开，未知定义与循环在边界停止。

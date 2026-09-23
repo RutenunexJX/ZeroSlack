@@ -365,6 +365,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextrail.cpp
     src/ui/contextpeekhost.cpp
     src/ui/contextdockhost.cpp
+    src/ui/contextdocktransition.cpp
     src/ui/contextworkspacecontroller.cpp
     src/ui/contextworkspacefloating.cpp
     src/ui/contextworkspacedocuments.cpp

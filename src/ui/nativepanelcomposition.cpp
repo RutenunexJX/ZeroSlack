@@ -3,6 +3,7 @@
 #include <QWidget>
 #include <QtConcurrentRun>
 #include <vector>
+#include <cmath>
 
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
@@ -23,6 +24,7 @@ public:
     struct Layer {
         ComPtr<IDCompositionVisual> visual;
         ComPtr<IDCompositionRectangleClip> clip;
+        ComPtr<IDCompositionEffectGroup> opacity;
     };
     std::vector<Layer> layers;
     qreal scale = 1;
@@ -62,16 +64,17 @@ public:
         return SUCCEEDED(visual->SetContent(surface.Get()));
     }
 
-    ComPtr<IDCompositionAnimation> animation(float from, float to, int durationMs)
+    ComPtr<IDCompositionAnimation> animation(float from, float to, int durationMs, float delay = 0)
     {
-        const float seconds = durationMs / 1000.0f;
+        const float seconds = durationMs / 1000.0f - delay;
         const float distance = to - from;
         ComPtr<IDCompositionAnimation> animation;
         if (FAILED(device->CreateAnimation(&animation))) return {};
         // Ela's OutCubic curve: from + distance * (3t - 3t^2 + t^3).
-        if (FAILED(animation->AddCubic(0, from, 3 * distance / seconds,
+        if (delay > 0 && FAILED(animation->AddCubic(0, from, 0, 0, 0))) return {};
+        if (FAILED(animation->AddCubic(delay, from, 3 * distance / seconds,
                 -3 * distance / (seconds * seconds), distance / (seconds * seconds * seconds)))) return {};
-        if (FAILED(animation->End(seconds, to))) return {};
+        if (FAILED(animation->End(delay + seconds, to))) return {};
         return animation;
     }
 
@@ -136,6 +139,12 @@ bool NativePanelComposition::prepare(QWidget* parent, const QRect& geometry,
             || FAILED(state->root->AddVisual(nativeLayer.visual.Get(), FALSE, nullptr))) {
             state->clear(); return false;
         }
+        if (layer.closedOpacity != 1 || layer.openOpacity != 1) {
+            if (FAILED(state->device->CreateEffectGroup(&nativeLayer.opacity))
+                || FAILED(nativeLayer.visual->SetEffect(nativeLayer.opacity.Get()))) {
+                state->clear(); return false;
+            }
+        }
         state->layers.push_back(std::move(nativeLayer));
     }
     return true;
@@ -161,6 +170,12 @@ bool NativePanelComposition::animate(const QList<PanelMotionLayer>& layers, qrea
         if (!x || !y || !width || !height
             || FAILED(native.visual->SetOffsetX(x.Get())) || FAILED(native.visual->SetOffsetY(y.Get()))
             || FAILED(native.clip->SetRight(width.Get())) || FAILED(native.clip->SetBottom(height.Get()))) return false;
+        if (native.opacity) {
+            const float delay = from == 0 && to == 1 && layer.opacityStart > 0
+                ? (1 - std::cbrt(1 - layer.opacityStart)) * durationMs / 1000.0f : 0;
+            const auto opacity = state->animation(layer.opacity(from), layer.opacity(to), durationMs, delay);
+            if (!opacity || FAILED(native.opacity->SetOpacity(opacity.Get()))) return false;
+        }
     }
     return SUCCEEDED(state->device->Commit());
 #else

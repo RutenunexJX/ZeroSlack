@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.5`
+Current version: `v0.31.7`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and

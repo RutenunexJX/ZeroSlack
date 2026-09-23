@@ -2,6 +2,7 @@
 #include "roundedicons.h"
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
+#include "contextdocktransition.h"
 #include "panelcompositor.h"
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -28,6 +29,28 @@
 
 namespace {
 constexpr int resizeHeight = 5;
+struct SectionExtent { int minimum; int requested; bool collapsed; };
+QList<int> distributeExtents(int extent, const QList<SectionExtent>& items)
+{
+    int minimumSum = 0, weightSum = 0;
+    QList<int> weights, lengths;
+    for (const auto& item : items) {
+        const int weight = item.collapsed ? 0
+            : qMax(1, (item.requested > 0 ? item.requested : extent / qMax(1, int(items.size()))) - item.minimum);
+        weights.append(weight);
+        minimumSum += item.minimum;
+        weightSum += weight;
+    }
+    const int extra = qMax(0, extent - minimumSum);
+    int allocated = 0, accumulatedWeight = 0;
+    for (int i = 0; i < items.size(); ++i) {
+        accumulatedWeight += weights[i];
+        const int next = weightSum ? qint64(extra) * accumulatedWeight / weightSum : 0;
+        lengths.append(items[i].minimum + next - allocated);
+        allocated = next;
+    }
+    return lengths;
+}
 QString displayTitle(const ContextResource& resource, QWidget* view)
 {
     const QString title = view ? view->property("contextDisplayTitle").toString() : QString();
@@ -138,6 +161,7 @@ bool ContextDockHost::setSectionWidth(const QString& key, int width)
     if (!section) return false;
     const int bounded = width <= 0 ? 0 : qBound(180, width, 8192);
     if (section->width == bounded) return true;
+    settleMotion();
     section->width = bounded;
     arrangeSections();
     emit sectionLayoutChanged();
@@ -509,8 +533,10 @@ bool ContextDockHost::moveResource(const QString& key, int index)
 }
 void ContextDockHost::settleMotion()
 {
-    if (auto* host = qobject_cast<QMainWindow*>(window()))
+    if (auto* host = qobject_cast<QMainWindow*>(window())) {
+        if (auto* transfer = host->findChild<ContextDockTransition*>()) transfer->finish();
         if (auto* compositor = host->findChild<PanelCompositor*>()) compositor->settle();
+    }
 }
 
 void ContextDockHost::arrangeSections()
@@ -530,29 +556,19 @@ void ContextDockHost::arrangeArea(bool bottom)
     const int extent = bottom ? available.width() : available.height();
     QStringList keys;
     for (const QString& key : order) if (sections.value(key)->bottom == bottom) keys.append(key);
-    QList<int> minimums;
-    QList<int> weights;
-    int minimumSum = 0, weightSum = 0;
+    QList<SectionExtent> extents;
     for (const auto& key : keys) {
         auto* section = sections.value(key);
         const int minimum = bottom ? qMax(180, section->header->minimumSizeHint().width())
             : (section->collapsed ? section->header->height() : minimumSectionHeight(section));
         const int requested = bottom ? section->width : (section->retainedHeight > 0 ? section->retainedHeight : section->height);
-        const int weight = !bottom && section->collapsed ? 0
-            : qMax(1, (requested > 0 ? requested : extent / qMax(1, int(keys.size()))) - minimum);
-        minimums.append(minimum);
-        weights.append(weight);
-        minimumSum += minimum;
-        weightSum += weight;
+        extents.append({minimum, requested, !bottom && section->collapsed});
     }
-    const int extra = qMax(0, extent - minimumSum);
-    int position = 0, allocated = 0, accumulatedWeight = 0;
+    const auto lengths = distributeExtents(extent, extents);
+    int position = 0;
     for (int i = 0; i < keys.size(); ++i) {
         auto* section = sections.value(keys.at(i));
-        accumulatedWeight += weights.at(i);
-        const int nextAllocation = weightSum ? qint64(extra) * accumulatedWeight / weightSum : 0;
-        const int length = minimums.at(i) + nextAllocation - allocated;
-        allocated = nextAllocation;
+        const int length = lengths.at(i);
         section->frame->setGeometry(bottom ? QRect(position, 0, length, available.height())
                                            : QRect(0, position, available.width(), length));
         section->view->setVisible(!section->collapsed);
@@ -568,6 +584,44 @@ void ContextDockHost::arrangeArea(bool bottom)
     }
     areaStack->resize(bottom ? QSize(qMax(position, available.width()), available.height())
                             : QSize(available.width(), qMax(position, available.height())));
+}
+QRect ContextDockHost::viewportGlobalRect(bool bottom) const
+{
+    auto* area = bottom ? bottomScroll.data() : scroll.data();
+    if (!area || !area->isVisible()) return {};
+    return QRect(area->viewport()->mapToGlobal(QPoint()), area->viewport()->size());
+}
+QRect ContextDockHost::projectedSectionRect(bool bottom, int index, const QRect& viewport, QWidget* incoming) const
+{
+    if (viewport.isEmpty() || !incoming) return {};
+    QList<SectionExtent> extents;
+    int insertion = 0;
+    int headerHeight = 30;
+    for (int i = 0; i < order.size(); ++i) {
+        const auto* section = sections.value(order[i]);
+        if (section->bottom != bottom) continue;
+        headerHeight = section->header->height();
+        if (i < index) ++insertion;
+        extents.append({bottom ? qMax(180, section->header->minimumSizeHint().width())
+            : (section->collapsed ? headerHeight : minimumSectionHeight(section)),
+            bottom ? section->width : (section->retainedHeight > 0 ? section->retainedHeight : section->height),
+            !bottom && section->collapsed});
+    }
+    const int incomingMinimum = bottom ? qMax(180, incoming->minimumWidth())
+        : headerHeight + resizeHeight + qMax(48, incoming->minimumHeight());
+    extents.insert(insertion, {incomingMinimum, 0, false});
+    const auto lengths = distributeExtents(bottom ? viewport.width() : viewport.height(), extents);
+    int offset = 0;
+    for (int i = 0; i < insertion; ++i) offset += lengths[i];
+    auto* areaStack = bottom ? bottomStack : stack;
+    auto* area = bottom ? bottomScroll.data() : scroll.data();
+    if (area && area->isVisible()) offset += bottom ? areaStack->x() : areaStack->y();
+    // The inserted section is brought into view when the drop is committed.
+    const int extent = bottom ? viewport.width() : viewport.height();
+    const int length = qMin(lengths[insertion], extent);
+    offset = qBound(0, offset, qMax(0, extent - length));
+    return bottom ? QRect(viewport.x() + offset, viewport.y(), length, viewport.height())
+                  : QRect(viewport.x(), viewport.y() + offset, viewport.width(), length);
 }
 void ContextDockHost::resizeEvent(QResizeEvent* event)
 {

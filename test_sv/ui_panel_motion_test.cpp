@@ -1,17 +1,22 @@
 #include "applicationthememanager.h"
 #include "contextdockhost.h"
+#include "contextdocktransition.h"
+#include "contextfloatingwindow.h"
 #include "contextworkspacecontroller.h"
 #include "navigationpanecoordinator.h"
+#include "nativepanelcomposition.h"
 #include "panelcompositor.h"
 #include "panellayoutcontroller.h"
 #include "testuistyle.h"
 #include <QApplication>
 #include <QDockWidget>
+#include <QDir>
 #include <QLabel>
 #include <QLayout>
 #include <QMainWindow>
 #include <QPlainTextEdit>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -77,6 +82,236 @@ QRect inWindow(QWidget* widget, QWidget* window) {
 class UiPanelMotionTest final : public QObject {
     Q_OBJECT
 private slots:
+    void floatingDockTargetsDoNotChangeLayout() {
+        Harness h;
+        auto* transition = h.window.findChild<ContextDockTransition*>();
+        QVERIFY(transition);
+        auto* side = h.context->dockWidget();
+        auto* bottom = h.context->bottomDockWidget();
+        const auto geometry = h.editor->geometry();
+        const int resizes = h.editor->resizes;
+        QLabel incoming("Retained floating content");
+        const auto at = [&](QPoint local) {
+            return transition->targetAt(h.editor->mapToGlobal(local), &incoming, side, bottom, 340, 280);
+        };
+        auto target = at(QPoint(h.editor->width() - 8, h.editor->height() / 2));
+        QVERIFY(target.isValid()); QVERIFY(!target.bottom);
+        transition->preview(target);
+        QVERIFY(transition->isPreviewing());
+        QVERIFY(transition->windowFlags().testFlag(Qt::WindowDoesNotAcceptFocus));
+        QVERIFY(transition->windowFlags().testFlag(Qt::WindowTransparentForInput));
+        QTest::qWait(30);
+        QCOMPARE(h.editor->geometry(), geometry);
+        QCOMPARE(h.editor->resizes, resizes);
+        QVERIFY(!side->isVisible()); QVERIFY(!bottom->isVisible());
+        target = at(QPoint(h.editor->width() / 2, h.editor->height() - 8));
+        QVERIFY(target.isValid()); QVERIFY(target.bottom);
+        transition->preview(target);
+        QCOMPARE(transition->previewRect(), target.rect);
+        const auto outside = transition->targetAt(h.window.mapToGlobal(QPoint(-50, -50)), &incoming,
+                                                  side, bottom, 340, 280);
+        QVERIFY(!outside.isValid());
+        transition->preview(outside);
+        QVERIFY(!transition->isVisible());
+        QCOMPARE(h.editor->geometry(), geometry);
+        QCOMPARE(transition->snapshotBytes(), 0);
+        transition->preview(target);
+        h.window.resize(1100, 760);
+        QVERIFY(!transition->isPreviewing());
+    }
+
+    void floatingTransferRetainsEditorAndSettles_data() {
+        QTest::addColumn<bool>("bottom");
+        QTest::addColumn<bool>("existing");
+        QTest::newRow("hidden-side") << false << false;
+        QTest::newRow("existing-side") << false << true;
+        QTest::newRow("hidden-bottom") << true << false;
+        QTest::newRow("existing-bottom") << true << true;
+    }
+    void floatingTransferRetainsEditorAndSettles() {
+        QFETCH(bool, bottom); QFETCH(bool, existing);
+        Harness h;
+        auto* dock = h.context->dockHost();
+        auto* side = h.context->dockWidget();
+        auto* bottomDock = h.context->bottomDockWidget();
+        if (existing) {
+            if (bottom) {
+                for (const auto& key : h.keys) dock->moveResourceToArea(key, true);
+                bottomDock->show();
+                h.window.resizeDocks({bottomDock}, {250}, Qt::Vertical);
+            } else h.context->setDockVisible(true);
+        }
+        h.compositor->settle(); QApplication::processEvents();
+        ContextResource resource;
+        resource.providerId = "motion-test"; resource.resourceId = "incoming";
+        resource.title = "Incoming editor"; resource.uri = QUrl("motion:incoming");
+        const auto key = resource.stableKey();
+        ContextFloatingWindow source(&h.window, h.editor);
+        auto* editor = new Editor;
+        QStringList lines;
+        for (int i = 0; i < 140; ++i) lines.append(QString("logic retained_%1;").arg(i));
+        editor->setPlainText(lines.join('\n'));
+        editor->moveCursor(QTextCursor::End);
+        editor->insertPlainText("\n// retained undo");
+        source.setView(resource, editor);
+        source.setActionsAvailable(true, false);
+        source.move(h.window.mapToGlobal(QPoint(170, 95)));
+        source.show(); QApplication::processEvents();
+        const QString text = editor->toPlainText();
+        const auto cursor = editor->textCursor().position();
+        const int scroll = editor->verticalScrollBar()->value();
+        const int undo = editor->document()->availableUndoSteps();
+        auto* transition = h.window.findChild<ContextDockTransition*>();
+        QSignalSpy started(transition, &ContextDockTransition::started);
+        QSignalSpy finished(transition, &ContextDockTransition::finished);
+        QVERIFY(transition->transfer(&source, key, [&] {
+            auto* view = source.takeView();
+            if (!dock->addResource(resource, view)) return false;
+            dock->moveResourceToArea(key, bottom, 0);
+            auto* area = bottom ? bottomDock : side;
+            area->show();
+            h.window.resizeDocks({area}, {bottom ? 280 : 340}, bottom ? Qt::Vertical : Qt::Horizontal);
+            return true;
+        }));
+        QCOMPARE(started.count(), 1);
+        QVERIFY(transition->isAnimating());
+        QVERIFY(transition->snapshotBytes() > 0);
+        QVERIFY(!source.hasResource()); QVERIFY(!source.isVisible());
+        QCOMPARE(dock->viewForResource(key), editor);
+        QCOMPARE(dock->isBottomResource(key), bottom);
+        if (bottom) {
+            QVERIFY(dock->viewportGlobalRect(true).width() >= h.editor->width() - 4);
+            const auto bar = inWindow(h.drawer->buttonBar(), &h.window);
+            QVERIFY(bar.top() >= bottomDock->geometry().bottom());
+        }
+        QApplication::processEvents();
+        const auto editorGeometry = h.editor->geometry();
+        const int mainResizes = h.editor->resizes;
+        const int contentResizes = editor->resizes;
+        QTest::qWait(50);
+        QVERIFY(transition->isAnimating());
+        QCOMPARE(h.editor->geometry(), editorGeometry);
+        QCOMPARE(h.editor->resizes, mainResizes);
+        QCOMPARE(editor->resizes, contentResizes);
+        if (existing) {
+            auto* last = dock->sectionWidget(h.keys.last());
+            // Sample content shared by both sizes, not newly exposed space during growth.
+            const QPoint global = last->mapToGlobal(QPoint(60, 70));
+            const auto motion = transition->grab().toImage();
+            const auto live = h.window.grab().toImage();
+            const QPoint motionPixel = transition->mapFromGlobal(global) * motion.devicePixelRatio();
+            const QPoint livePixel = h.window.mapFromGlobal(global) * live.devicePixelRatio();
+            QVERIFY(motion.rect().contains(motionPixel));
+            QVERIFY(live.rect().contains(livePixel));
+            QCOMPARE(motion.pixelColor(motionPixel), live.pixelColor(livePixel));
+        }
+        const QString evidence = qEnvironmentVariable("ZEROSLACK_DOCK_MOTION_SCREENSHOTS");
+        if (!evidence.isEmpty()) {
+            QDir().mkpath(evidence);
+            QVERIFY(transition->grab().save(evidence + "/" + QTest::currentDataTag() + "-moving.png"));
+        }
+        QTRY_VERIFY(!transition->isAnimating());
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(transition->snapshotBytes(), 0);
+        QVERIFY(!transition->isVisible());
+        QCOMPARE(editor->toPlainText(), text);
+        QCOMPARE(editor->textCursor().position(), cursor);
+        QCOMPARE(editor->verticalScrollBar()->value(), scroll);
+        QCOMPARE(editor->document()->availableUndoSteps(), undo);
+        QVERIFY(editor->document()->isModified());
+        QVERIFY(editor->isVisible());
+        if (!evidence.isEmpty()) QVERIFY(h.window.grab().save(evidence + "/" + QTest::currentDataTag() + "-settled.png"));
+    }
+
+    void floatingTransferFailureAndInterruption() {
+        Harness h;
+        auto* transition = h.window.findChild<ContextDockTransition*>();
+        auto* dock = h.context->dockHost();
+        ContextResource resource;
+        resource.providerId = "motion-test"; resource.resourceId = "interrupted";
+        resource.uri = QUrl("motion:interrupted");
+        ContextFloatingWindow source(&h.window, h.editor);
+        auto* content = new QLabel("Retained content");
+        source.setView(resource, content);
+        source.show(); QApplication::processEvents();
+        QVERIFY(!transition->transfer(&source, resource.stableKey(), [] { return false; }));
+        QVERIFY(source.hasResource()); QVERIFY(source.isVisible());
+        QCOMPARE(transition->snapshotBytes(), 0);
+        QVERIFY(!transition->isAnimating());
+        QVERIFY(transition->transfer(&source, resource.stableKey(), [&] {
+            dock->addResource(resource, source.takeView());
+            h.context->dockWidget()->show();
+            return true;
+        }));
+        QVERIFY(transition->isAnimating());
+        h.window.resize(1100, 750);
+        QVERIFY(!transition->isAnimating());
+        QVERIFY(!transition->isVisible());
+        QCOMPARE(transition->snapshotBytes(), 0);
+        QCOMPARE(dock->viewForResource(resource.stableKey()), content);
+        QVERIFY(content->isVisible());
+        source.setView(resource, dock->takeResource(resource.stableKey()));
+        source.show();
+        QVERIFY(transition->transfer(&source, resource.stableKey(), [&] {
+            return dock->addResource(resource, source.takeView());
+        }));
+        QVERIFY(transition->isAnimating());
+        QVERIFY(dock->removeResource(resource.stableKey()));
+        QVERIFY(!transition->isAnimating());
+        QCOMPARE(transition->snapshotBytes(), 0);
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
+    void nativeCompositionAcceptsTransparentTransferLayers() {
+        if (QGuiApplication::platformName() != "windows") QSKIP("Windows hidden-HWND check");
+        QWidget surface(nullptr, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowDoesNotAcceptFocus
+            | Qt::WindowTransparentForInput);
+        surface.setAttribute(Qt::WA_TranslucentBackground);
+        surface.resize(240, 160);
+        surface.winId();
+        auto* focused = QApplication::focusWidget();
+        auto* active = QApplication::activeWindow();
+        QImage image(QSize(100, 80) * surface.devicePixelRatioF(), QImage::Format_ARGB32_Premultiplied);
+        image.setDevicePixelRatio(surface.devicePixelRatioF());
+        image.fill(QColor(50, 120, 210, 160));
+        auto layer = PanelMotionLayer::stationary(image);
+        layer.closedOpacity = 0;
+        layer.opacityStart = .97;
+        layer.openPosition = QPointF(70, 40);
+        layer.openClip = QSizeF(80, 60);
+        NativePanelComposition native;
+        native.warmUp();
+        QTRY_VERIFY_WITH_TIMEOUT(native.prepare(&surface, surface.rect(), {layer}), 5000);
+        QVERIFY(native.animate({layer}, 0, 1, ContextDockTransition::duration));
+        QTest::qWait(ContextDockTransition::duration + 25);
+        native.clear();
+        QVERIFY(!surface.isVisible());
+        QCOMPARE(QApplication::focusWidget(), focused);
+        QCOMPARE(QApplication::activeWindow(), active);
+    }
+
+    void destroyingOwnerDuringFloatingTransfer() {
+        auto* h = new Harness;
+        auto* transition = h->window.findChild<ContextDockTransition*>();
+        auto* dock = h->context->dockHost();
+        auto* source = new ContextFloatingWindow(&h->window, h->editor);
+        ContextResource resource;
+        resource.providerId = "motion-test"; resource.resourceId = "owner-close";
+        resource.uri = QUrl("motion:owner-close");
+        source->setView(resource, new QLabel("Content"));
+        source->show(); QApplication::processEvents();
+        QVERIFY(transition->transfer(source, resource.stableKey(), [&] {
+            dock->addResource(resource, source->takeView());
+            h->context->dockWidget()->show();
+            return true;
+        }));
+        QVERIFY(transition->isAnimating());
+        QPointer<ContextDockTransition> retained = transition;
+        delete h;
+        QVERIFY(retained.isNull());
+        QTest::qWait(ContextDockTransition::duration + 20);
+    }
+
     void drawerReversesWithoutMovingButtonBar() {
         Harness h;
         QVERIFY(h.drawer->animationsEnabled());

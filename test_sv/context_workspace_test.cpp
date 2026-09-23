@@ -1,5 +1,6 @@
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
+#include "contextdocktransition.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
 #include "contextworkspacecontroller.h"
@@ -1586,12 +1587,20 @@ void verifySidebarDragBack()
     controller.openResource(resource("empty-target"), floatingPlacement);
     floating = controller.floatingWindow();
     beginFloatingMove(floating);
-    check(controller.dockWidget()->isVisible(), "stack_drop_empty_target: a drag exposes even an empty hidden sidebar");
-    const QPoint cancelledTarget = host->mapToGlobal(host->rect().center());
+    check(!controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible(),
+          "stack_drop_empty_target: dragging keeps hidden docks closed and the editor layout stable");
+    auto* center = fixture.window.centralWidget();
+    const QPoint cancelledTarget = center->mapToGlobal(QPoint(center->width() - 8, center->height() / 2));
+    const QRect originalCenter = center->geometry();
     updateFloatingMove(floating, cancelledTarget);
+    auto* transition = fixture.window.findChild<ContextDockTransition*>();
+    check(transition && transition->isPreviewing() && !transition->previewRect().isEmpty()
+              && center->geometry() == originalCenter && !controller.dockWidget()->isVisible(),
+          "stack_hidden_preview: overlay previews a hidden dock without resizing the editor");
     finishFloatingMove(floating, cancelledTarget, true);
     check(!controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible()
-              && floating->hasResource() && marker && !marker->isVisible(),
+              && floating->hasResource() && marker && !marker->isVisible()
+              && transition && !transition->isPreviewing() && !transition->isAnimating(),
           "stack_drop_cancel: cancel over a target restores both dock visibilities without moving content");
     beginFloatingMove(floating);
     finishFloatingMove(floating, fixture.window.mapToGlobal(QPoint(-500, -500)), false);
@@ -1630,8 +1639,10 @@ void verifyTiledBottomAndSidebar()
         beginFloatingMove(floating);
         QApplication::processEvents();
         QWidget* target = host->bottomWidget();
-        check(controller.bottomDockWidget()->isVisible(), "tiles_bottom_drop_target_visible");
-        const QPoint destination = target->mapToGlobal(QPoint(target->width() - 8, target->height() / 2));
+        QWidget* center = fixture.window.centralWidget();
+        const QPoint destination = controller.bottomDockWidget()->isVisible()
+            ? target->mapToGlobal(QPoint(target->width() - 8, target->height() / 2))
+            : center->mapToGlobal(QPoint(center->width() / 2, center->height() - 8));
         updateFloatingMove(floating, destination);
         finishFloatingMove(floating, destination, false);
         QApplication::processEvents();

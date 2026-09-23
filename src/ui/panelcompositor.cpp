@@ -296,6 +296,7 @@ void PanelCompositor::paintEvent(QPaintEvent*)
     // No scaling or text re-rasterization between frames.
     for (const auto& layer : layers) {
         painter.save();
+        painter.setOpacity(layer.opacity(value));
         painter.translate(layer.position(value));
         painter.setClipRect(QRectF(QPointF(), layer.clip(value)), Qt::IntersectClip);
         painter.drawImage(QPointF(), layer.image);

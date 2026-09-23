@@ -58,6 +58,8 @@ public:
     int insertionIndex(const QPoint& globalPosition) const;
     bool setSectionDetachable(const QString& key, bool detachable);
     QWidget* sectionDragHandle(const QString& key) const;
+    QRect viewportGlobalRect(bool bottom) const;
+    QRect projectedSectionRect(bool bottom, int index, const QRect& viewport, QWidget* incoming) const;
     bool acceptFloatingDrop(ContextFloatingWindow* source, const QString& key, const QPoint& globalPosition);
     void previewFloatingDrop(ContextFloatingWindow* source, const QPoint& globalPosition);
     void clearFloatingDropPreview();

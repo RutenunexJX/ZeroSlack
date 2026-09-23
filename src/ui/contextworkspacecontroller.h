@@ -16,6 +16,7 @@
 #include <memory>
 
 class ContextDockHost;
+class ContextDockTransition;
 class ContextPeekHost;
 class ContextFloatingSurface;
 class ContextFloatingWindow;
@@ -123,6 +124,9 @@ private:
     QPointer<ContextDockHost> dockHostValue;
     QPointer<QDockWidget> dockValue;
     QPointer<QDockWidget> bottomDockValue;
+    QPointer<ContextDockTransition> dockTransition;
+    QPointer<ContextFloatingWindow> floatingDragSource;
+    bool dockingTransition = false;
     int preferredBottomHeight = 300;
     bool previewingDocks = false;
     bool sideWasVisible = false;
