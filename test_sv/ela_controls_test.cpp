@@ -28,6 +28,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <memory>
+#include "ElaCentralStackedWidget.h"
+#include <QStackedWidget>
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(20); }
@@ -38,6 +40,69 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void pageTransitionsKeepLatestSelectionAndLifetime() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        QStackedWidget* stack = nullptr;
+        auto* surface = qobject_cast<ElaCentralStackedWidget*>(UiControls::pageStack(stack, &host));
+        QVERIFY(surface);
+        layout->addWidget(surface);
+        auto* first = new QLineEdit("unsaved first");
+        auto* second = new QLineEdit("unsaved second");
+        auto* third = new QLineEdit("unsaved third");
+        stack->addWidget(first); stack->addWidget(second); stack->addWidget(third);
+        host.resize(600, 400); host.show(); settle();
+        for (const auto mode : {ElaWindowType::Popup, ElaWindowType::Scale, ElaWindowType::Flip, ElaWindowType::Blur}) {
+            surface->doWindowStackSwitch(mode, 1, false);
+            QTest::qWait(25);
+            surface->doWindowStackSwitch(mode, 2, false);
+            QTest::qWait(25);
+            surface->doWindowStackSwitch(mode, 0, true);
+            QCOMPARE(stack->currentWidget(), first);
+            QTRY_VERIFY(!surface->isStackSwitching());
+            QVERIFY(first->isVisible()); QVERIFY(second->isHidden()); QVERIFY(third->isHidden());
+            QCOMPARE(first->text(), QString("unsaved first"));
+        }
+        UiControls::selectPage(stack, 2);
+        delete third;
+        QTest::qWait(700);
+        QVERIFY(!surface->isStackSwitching());
+        QVERIFY(stack->currentWidget()->isVisible());
+        UiControls::selectPage(stack, 0, false);
+        UiControls::selectPage(stack, 1);
+        host.resize(680, 480); settle();
+        QVERIFY(!surface->isStackSwitching());
+        QVERIFY(second->isVisible());
+        UiControls::selectPage(stack, 0);
+        QTest::keyClicks(first, "!");
+        QVERIFY(!surface->isStackSwitching());
+        QVERIFY(first->text().contains("!"));
+        UiControls::selectPage(stack, 1);
+        host.hide(); QTest::qWait(400); host.show(); settle();
+        QVERIFY(second->isVisible());
+        surface->doWindowStackSwitch(ElaWindowType::Popup, 99, false);
+        QCOMPARE(stack->currentWidget(), second);
+        const auto redirect = connect(stack, &QStackedWidget::currentChanged, &host, [&](int index) {
+            if (index == 0) UiControls::selectPage(stack, 1);
+        });
+        UiControls::selectPage(stack, 0);
+        QTRY_VERIFY(!surface->isStackSwitching());
+        QCOMPARE(stack->currentWidget(), second);
+        QVERIFY(second->isVisible());
+        disconnect(redirect);
+        connect(stack, &QStackedWidget::currentChanged, &host, [&](int index) {
+            if (index == 0 && first) {
+                auto* closing = first;
+                first = nullptr;
+                delete closing;
+            }
+        });
+        UiControls::selectPage(stack, 0);
+        QTRY_VERIFY(!surface->isStackSwitching());
+        QCOMPARE(stack->currentWidget(), second);
+        QVERIFY(second->isVisible());
+    }
+
     void actualWidgetsAndKeyboardContracts() {
         QDialog host;
         auto* layout = new QVBoxLayout(&host);

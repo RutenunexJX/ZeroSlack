@@ -139,10 +139,10 @@ public:
                     [navigationPane]() {
                 navigationPane->setExpanded(true);
             });
-            connect(navigation, &QDockWidget::visibilityChanged, expand,
+            connect(navigationPane, &NavigationPaneCoordinator::expandedChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });
             if (titlePicker)
-                connect(navigation, &QDockWidget::visibilityChanged, titlePicker,
+                connect(navigationPane, &NavigationPaneCoordinator::expandedChanged, titlePicker,
                         [titlePicker](bool visible) { titlePicker->setVisible(!visible); });
         }
         auto* name = titleBar.label;

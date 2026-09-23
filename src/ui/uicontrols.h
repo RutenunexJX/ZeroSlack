@@ -29,6 +29,7 @@ class QScrollArea;
 class QPlainTextEdit;
 class QLabel;
 class QFormLayout;
+class QStackedWidget;
 
 // Also used by Designer for the initial editor group.
 class ZEROSLACK_API UiTabWidget : public QTabWidget {
@@ -39,6 +40,8 @@ public:
 // Backend choice is fixed before widget creation. Consumers keep Qt contracts;
 // specialized editors, graph canvases and native window chrome do not use this factory.
 namespace UiControls {
+ZEROSLACK_API QWidget* pageStack(QStackedWidget*& stack, QWidget* parent = nullptr);
+ZEROSLACK_API void selectPage(QStackedWidget* stack, int index, bool animate = true);
 ZEROSLACK_API QLabel* label(QWidget* parent = nullptr);
 ZEROSLACK_API QLabel* label(const QString& text, QWidget* parent = nullptr);
 ZEROSLACK_API void addFormRow(QFormLayout* form, const QString& text, QWidget* field);

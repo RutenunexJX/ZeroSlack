@@ -10,6 +10,9 @@
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
 #include "panelcompositor.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDockWidget.h"
+#endif
 
 #include <QDockWidget>
 #include <QDir>
@@ -129,7 +132,11 @@ ContextWorkspaceController::ContextWorkspaceController(
             focusedResourceKey.clear();
     });
 
+#ifdef ZEROSLACK_ENABLE_ELA
+    dockValue = new ElaDockWidget(tr("Context"), mainWindow);
+#else
     dockValue = new QDockWidget(tr("Context"), mainWindow);
+#endif
     dockValue->setObjectName(QStringLiteral("contextWorkspaceDock"));
     dockValue->setAllowedAreas(Qt::RightDockWidgetArea
                                | Qt::LeftDockWidgetArea);
@@ -144,7 +151,11 @@ ContextWorkspaceController::ContextWorkspaceController(
     mainWindow->addDockWidget(Qt::RightDockWidgetArea, dockValue);
     dockValue->hide();
 
+#ifdef ZEROSLACK_ENABLE_ELA
+    bottomDockValue = new ElaDockWidget(tr("Context"), mainWindow);
+#else
     bottomDockValue = new QDockWidget(tr("Context"), mainWindow);
+#endif
     bottomDockValue->setObjectName(QStringLiteral("contextWorkspaceBottomDock"));
     bottomDockValue->setAllowedAreas(Qt::BottomDockWidgetArea);
     bottomDockValue->setFeatures(QDockWidget::DockWidgetClosable);
@@ -161,7 +172,9 @@ ContextWorkspaceController::ContextWorkspaceController(
         mainWindow->splitDockWidget(bottomDockValue, drawer, Qt::Vertical);
     bottomDockValue->hide();
 
+#ifndef ZEROSLACK_ENABLE_ELA
     dockTransition = new ContextDockTransition(mainWindow, dockHostValue);
+#endif
 
     connect(railValue,
             &ContextRail::entryActivated,
@@ -196,7 +209,28 @@ ContextWorkspaceController::ContextWorkspaceController(
     connect(dockHostValue, &ContextDockHost::sectionLayoutChanged, this,
             &ContextWorkspaceController::notifyWorkspaceStateChanged);
     connect(dockHostValue, &ContextDockHost::dragOutRequested, this, [this](const QString& key, const QPoint& position) {
-        dragOutResource(key, position);
+        const bool bottom = dockHostValue->isBottomResource(key);
+        const int index = dockHostValue->resourceKeys().indexOf(key);
+        const int height = dockHostValue->sectionHeight(key);
+        const int width = dockHostValue->sectionWidth(key);
+        if (!dragOutResource(key, position)) return;
+#ifdef ZEROSLACK_ENABLE_ELA
+        auto* host = dynamic_cast<ContextFloatingWindow*>(surfaceWithResource(key));
+        if (!host) return;
+        auto connection = std::make_shared<QMetaObject::Connection>();
+        *connection = connect(host, &ContextFloatingWindow::titleDragFinished, this,
+            [this, host, key, bottom, index, height, width, connection](const QPoint&, bool cancelled) {
+                disconnect(*connection);
+                if (!cancelled || restoringState || !host->canDock() || host->resource().stableKey() != key) return;
+                const QScopedValueRollback<bool> guard(dockingTransition, true);
+                if (pinFloatingResource(key, bottom, index)) {
+                    dockHostValue->setSectionHeight(key, height);
+                    dockHostValue->setSectionWidth(key, width);
+                }
+            });
+        host->beginNativeDockDrag(position);
+        if (!host->isDockDragging()) disconnect(*connection);
+#endif
     });
     connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index, bool bottom) {
         pinFloatingResource(key, bottom, index);

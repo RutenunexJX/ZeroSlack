@@ -319,7 +319,12 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
         for (QWidget* handle : {section->header, static_cast<QWidget*>(section->drag)}) {
             auto* gesture = new ElaDragHandle(handle, this);
             connect(gesture, &ElaDragHandle::pressed, this, [this, key] { focusSection(key); });
-            connect(gesture, &ElaDragHandle::moved, this, [this](const QPoint& position) {
+            connect(gesture, &ElaDragHandle::moved, this, [this, key](const QPoint& position) {
+                const auto* section = sections.value(key);
+                if (section && section->detachable) {
+                    emit dragOutRequested(key, position);
+                    return;
+                }
                 emit sectionDragStarted();
                 showInsertion(position);
             });

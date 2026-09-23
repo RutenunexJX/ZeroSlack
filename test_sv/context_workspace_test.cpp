@@ -66,7 +66,8 @@ void processDeferredDeletes()
 void beginFloatingMove(ContextFloatingWindow* host)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoveStarted();
+    QTest::qWait(240);
+    host->beginNativeDockDrag(host->mapToGlobal(QPoint(24, 16)));
 #else
     emit host->titleDragStarted();
 #endif
@@ -75,7 +76,9 @@ void beginFloatingMove(ContextFloatingWindow* host)
 void updateFloatingMove(ContextFloatingWindow* host, const QPoint& position)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoved(position);
+    QMouseEvent event(QEvent::MouseMove, host->mapFromGlobal(position), position,
+                      Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+    QApplication::sendEvent(host, &event);
 #else
     emit host->titleDragMoved(position);
 #endif
@@ -84,7 +87,14 @@ void updateFloatingMove(ContextFloatingWindow* host, const QPoint& position)
 void finishFloatingMove(ContextFloatingWindow* host, const QPoint& position, bool cancelled)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoveFinished(position, cancelled);
+    if (cancelled) host->ElaDockWidget::cancelDockDrag();
+    else {
+        updateFloatingMove(host, position);
+        QMouseEvent event(QEvent::MouseButtonRelease, host->mapFromGlobal(position), position,
+                          Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(host, &event);
+    }
+    QTest::qWait(300);
 #else
     emit host->titleDragFinished(position, cancelled);
 #endif
@@ -1517,8 +1527,12 @@ void verifySidebarDragOut()
     const QPoint start = handle->mapToGlobal(handle->rect().center());
     sendMouseEvent(handle, QEvent::MouseButtonPress, start, Qt::LeftButton, Qt::LeftButton);
     sendMouseEvent(handle, QEvent::MouseMove, destination, Qt::NoButton, Qt::LeftButton);
-    sendMouseEvent(handle, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
     auto* floating = controller.floatingWindow();
+#ifdef ZEROSLACK_ENABLE_ELA
+    sendMouseEvent(floating, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+#else
+    sendMouseEvent(handle, QEvent::MouseButtonRelease, destination, Qt::LeftButton, Qt::NoButton);
+#endif
     check(floating->view() == view && fixture.counters.created == created && !host->containsResource(keys[2])
               && host->sectionHeight(keys[0]) == previousHeight && host->sectionWidget(keys[0])->height() >= previousSize.height()
               && host->isSectionCollapsed(keys[1]), "stack_drag_out_identity: title gesture transports the view and preserves neighboring sections");
@@ -1594,13 +1608,12 @@ void verifySidebarDragBack()
     const QRect originalCenter = center->geometry();
     updateFloatingMove(floating, cancelledTarget);
     auto* transition = fixture.window.findChild<ContextDockTransition*>();
-    check(transition && transition->isPreviewing() && !transition->previewRect().isEmpty()
-              && center->geometry() == originalCenter && !controller.dockWidget()->isVisible(),
-          "stack_hidden_preview: overlay previews a hidden dock without resizing the editor");
+    check(!transition && floating->isDockDragging() && !controller.dockWidget()->isVisible(),
+          "stack_hidden_preview: Qt owns the dock drag without a custom snapshot preview");
     finishFloatingMove(floating, cancelledTarget, true);
     check(!controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible()
               && floating->hasResource() && marker && !marker->isVisible()
-              && transition && !transition->isPreviewing() && !transition->isAnimating(),
+              && !floating->isDockDragging() && center->geometry() == originalCenter,
           "stack_drop_cancel: cancel over a target restores both dock visibilities without moving content");
     beginFloatingMove(floating);
     finishFloatingMove(floating, fixture.window.mapToGlobal(QPoint(-500, -500)), false);

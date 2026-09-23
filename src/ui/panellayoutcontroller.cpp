@@ -165,12 +165,14 @@ void PanelLayoutController::buildDrawer()
     bottomResizeHandle->installEventFilter(this);
     rootLayout->addWidget(bottomResizeHandle);
 
-    bottomContentStack = new QStackedWidget(bottomDrawerRoot);
+    QStackedWidget* contentStack = nullptr;
+    bottomContentSurface = UiControls::pageStack(contentStack, bottomDrawerRoot);
+    bottomContentStack = contentStack;
     bottomContentStack->setObjectName(
         QStringLiteral("bottomToolDrawerContent"));
     bottomContentStack->setSizePolicy(
         QSizePolicy::Expanding, QSizePolicy::Fixed);
-    rootLayout->addWidget(bottomContentStack);
+    rootLayout->addWidget(bottomContentSurface);
 
     bottomButtonBar = new QFrame(bottomDrawerRoot);
     bottomButtonBar->setObjectName(
@@ -969,7 +971,8 @@ void PanelLayoutController::activatePanel(
     lastPanel = entry.id;
     collapsed = false;
     if (bottomContentStack && entry.content)
-        bottomContentStack->setCurrentWidget(entry.content);
+        UiControls::selectPage(bottomContentStack, bottomContentStack->indexOf(entry.content),
+                              animationsEnabledValue && visibleContentHeight() > 0);
     restorePanelViewState(entry);
     applyDrawerState(true);
     updateButtons();
@@ -988,7 +991,7 @@ void PanelLayoutController::applyDrawerState(bool animate)
     const int target = collapsed ? 0 : boundedContentHeight(entry->height);
     const auto apply = [this, target] {
         bottomDrawerDock->show();
-        bottomContentStack->setVisible(target > 0);
+        bottomContentSurface->setVisible(target > 0);
         bottomResizeHandle->setVisible(target > 0);
         applyContentHeight(target);
     };
@@ -1015,6 +1018,7 @@ void PanelLayoutController::applyContentHeight(
     const int safeHeight = qMax(0, height);
     bottomContentStack->setMinimumHeight(safeHeight);
     bottomContentStack->setMaximumHeight(safeHeight);
+    bottomContentSurface->setFixedHeight(safeHeight);
     const int handleHeight = safeHeight > 0 ? kResizeHandleHeight : 0;
     const int totalHeight = safeHeight + handleHeight + bottomButtonBar->height();
     bottomDrawerDock->setMinimumHeight(totalHeight);

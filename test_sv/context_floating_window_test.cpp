@@ -11,6 +11,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QMouseEvent>
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaApplication.h"
 #endif
@@ -73,11 +74,10 @@ private slots:
         QCOMPARE(owner.frameGeometry(), ownerFrame);
         QCOMPARE(owner.windowTitle(), QStringLiteral("Main window"));
 #ifdef ZEROSLACK_ENABLE_ELA
-        QVERIFY(qobject_cast<ElaWidget*>(&host));
+        QVERIFY(qobject_cast<ElaDockWidget*>(&host));
         QVERIFY(host.windowFlags().testFlag(Qt::FramelessWindowHint));
-        QVERIFY(!host.getIsStayTop());
-        QCOMPARE(host.findChildren<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly).size(), 1);
-        QVERIFY(owner.findChildren<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly).isEmpty());
+        QCOMPARE(host.titleBarWidget(), host.titleBar());
+        QVERIFY(owner.dockOptions().testFlag(QMainWindow::AnimatedDocks));
 #endif
         QWidget* view = content();
         host.setView(resource(), view);
@@ -115,7 +115,7 @@ private slots:
         QSignalSpy closed(&host, &ContextFloatingWindow::closeRequested);
         const auto closeWindow = [&] {
 #ifdef ZEROSLACK_ENABLE_ELA
-            host.findChild<ElaAppBar*>()->windowButton(ElaAppBarType::CloseButtonHint)->click();
+            host.findChild<QToolButton*>(QStringLiteral("contextFloatingClose"))->click();
 #else
             host.close();
 #endif
@@ -161,12 +161,13 @@ private slots:
         view->setProperty("contextDisplayTitle", longTitle);
         host.setView(resource(), view);
         host.resize(width, 400);
-        auto* bar = host.findChild<ElaAppBar*>();
+        auto* bar = host.titleBar();
+        auto* titleLabel = bar->findChild<QLabel*>();
         QVERIFY(bar);
         QPixmap icon(18, 18);
         icon.fill(Qt::red);
         host.setWindowIcon(QIcon(icon));
-        QVERIFY(bar->findChild<QLabel*>(QStringLiteral("ElaAppBarIcon"))->isHidden());
+        QVERIFY(titleLabel);
         for (const bool fit : {true, false}) {
             view->setProperty("contextFitAvailable", fit);
             for (const bool full : {true, false}) {
@@ -174,8 +175,8 @@ private slots:
                 QApplication::processEvents();
                 QCOMPARE(host.width(), qBound(host.minimumWidth(), width, host.maximumWidth()));
                 QCOMPARE(host.windowTitle(), longTitle);
-                QCOMPARE(bar->titleLabel()->toolTip(), longTitle);
-                QVERIFY(bar->titleLabel()->text() != longTitle);
+                QCOMPARE(titleLabel->toolTip(), longTitle);
+                QVERIFY(titleLabel->text() != longTitle);
                 QList<QRect> occupied;
                 for (auto* button : bar->findChildren<QAbstractButton*>()) {
                     if (!button->isVisible()) continue;
@@ -186,7 +187,7 @@ private slots:
                     for (const QRect& other : occupied) QVERIFY(!other.intersects(bounds));
                     occupied.append(bounds);
                 }
-                const QRect titleBounds(bar->titleLabel()->mapTo(bar, QPoint()), bar->titleLabel()->size());
+                const QRect titleBounds(titleLabel->mapTo(bar, QPoint()), titleLabel->size());
                 for (const QRect& other : occupied) QVERIFY(!other.intersects(titleBounds));
                 auto* fitButton = host.findChild<QToolButton*>(QStringLiteral("contextFloatingFit"));
                 QCOMPARE(fitButton->isVisible(), fit);
@@ -215,28 +216,23 @@ private slots:
         QApplication::processEvents();
         const auto normalFrame = host.frameGeometry();
 #ifdef ZEROSLACK_ENABLE_ELA
-        auto* title = host.findChild<ElaAppBar*>();
+        auto* title = host.titleBar();
         QVERIFY(title);
-        for (const auto type : {ElaAppBarType::CloseButtonHint}) {
-            auto* button = title->windowButton(type);
-            QVERIFY(button && button->isVisible());
-            QVERIFY(title->rect().contains(QRect(button->mapTo(title, QPoint()), button->size())));
-        }
-        QVERIFY(title->windowButton(ElaAppBarType::MinimizeButtonHint)->isHidden());
-        QVERIFY(title->windowButton(ElaAppBarType::MaximizeButtonHint)->isHidden());
+        auto* button = title->findChild<QToolButton*>("contextFloatingClose");
+        QVERIFY(button && button->isVisible());
+        QVERIFY(title->rect().contains(QRect(button->mapTo(title, QPoint()), button->size())));
         const QRect viewRect(host.view()->mapTo(&host, QPoint()), host.view()->size());
         QVERIFY(host.rect().contains(viewRect));
         QVERIFY(viewRect.top() >= title->geometry().bottom());
+        // QDockWidget's title double-click docks/undocks; it does not maximize.
         for (int i = 0; i < 3; ++i) {
-            QTest::mouseDClick(title->titleLabel(), Qt::LeftButton);
+            host.setFloating(false);
+            QVERIFY(!host.isFloating()); QVERIFY(!owner.isMaximized());
+            host.setFloating(true);
             QApplication::processEvents();
-            QVERIFY(host.isMaximized());
-            QVERIFY(!owner.isMaximized());
-            QTest::mouseDClick(title->titleLabel(), Qt::LeftButton);
-            QApplication::processEvents();
-            QVERIFY(!host.isMaximized());
-            QCOMPARE(host.frameGeometry(), normalFrame);
+            QVERIFY(host.isFloating());
         }
+        host.setGeometry(normalFrame);
 #endif
         ContextWorkspaceState saved;
         host.captureGeometry(saved);
@@ -249,107 +245,50 @@ private slots:
         QCOMPARE(restored.windowOpacity(), 1.0);
     }
 
-    void titleMoveKeepsResourceLifecycle()
+    void nativeDockGestureAndCancel()
     {
 #ifdef ZEROSLACK_ENABLE_ELA
-        ContextFloatingWindow host(nullptr, nullptr);
-        host.setView(resource(), content());
-        auto* bar = qobject_cast<ElaAppBar*>(host.titleBar());
-        QVERIFY(bar && bar->isWindowMoveTrackingEnabled());
+        QMainWindow owner;
+        owner.setCentralWidget(new QWidget);
+        owner.resize(1100, 750); owner.show();
+        ContextFloatingWindow host(&owner, owner.centralWidget());
+        QWidget* view = content();
+        host.setView(resource(), view);
+        QTest::qWait(40);
         QSignalSpy started(&host, &ContextFloatingWindow::titleDragStarted);
-        QSignalSpy moved(&host, &ContextFloatingWindow::titleDragMoved);
         QSignalSpy finished(&host, &ContextFloatingWindow::titleDragFinished);
-        emit bar->windowMoveStarted();
-        emit bar->windowMoved(QPoint(120, 150));
+        QSignalSpy docked(&host, &ContextFloatingWindow::nativeDocked);
+        const QPoint origin = host.mapToGlobal(QPoint(24, 16));
+        host.beginNativeDockDrag(origin);
+        QVERIFY(host.isDockDragging());
         QCOMPARE(started.count(), 1);
-        QCOMPARE(moved.count(), 1);
-        QWidget* original = host.takeView();
+        QTest::keyClick(&host, Qt::Key_Escape);
+        QVERIFY(!host.isDockDragging());
         QCOMPARE(finished.count(), 1);
         QVERIFY(finished.last().at(1).toBool());
-        emit bar->windowMoveFinished(QPoint(120, 150), false);
-        QCOMPARE(finished.count(), 1);
-        host.setView(resource(), original);
-        emit bar->windowMoveStarted();
-        emit bar->windowMoveFinished(QPoint(220, 250), false);
-        QCOMPARE(started.count(), 2);
-        QCOMPARE(finished.count(), 2);
-        QCOMPARE(finished.last().at(0).toPoint(), QPoint(220, 250));
-        QVERIFY(!finished.last().at(1).toBool());
-        QCOMPARE(host.view(), original);
-#endif
-    }
-
-    void nativeWindowMoveTracking()
-    {
-#if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
-        if (QGuiApplication::platformName() != QStringLiteral("windows"))
-            QSKIP("Native Windows platform required");
-        const HWND foreground = GetForegroundWindow();
-        ContextFloatingWindow host(nullptr, nullptr);
-        host.setGeometry(-16000, -16000, 600, 400);
-        QApplication::processEvents();
-        const HWND hwnd = reinterpret_cast<HWND>(host.winId());
-        auto* bar = qobject_cast<ElaAppBar*>(host.titleBar());
-        QSignalSpy started(bar, &ElaAppBar::windowMoveStarted);
-        QSignalSpy moved(bar, &ElaAppBar::windowMoved);
-        QSignalSpy finished(bar, &ElaAppBar::windowMoveFinished);
-        const auto message = [&](UINT type, WPARAM key = 0) {
-            MSG event{};
-            event.hwnd = hwnd;
-            event.message = type;
-            event.wParam = key;
-            qintptr result = 0;
-            bar->takeOverNativeEvent("windows_generic_MSG", &event, &result);
-        };
-        const auto shift = [&] {
-            RECT frame{};
-            GetWindowRect(hwnd, &frame);
-            return SetWindowPos(hwnd, nullptr, frame.left + 40, frame.top + 40, 0, 0,
-                SWP_NOACTIVATE | SWP_NOZORDER | SWP_NOSIZE);
-        };
-        message(WM_ENTERSIZEMOVE);
-        message(WM_SIZING);
-        message(WM_EXITSIZEMOVE);
-        QApplication::processEvents();
-        QCOMPARE(started.count(), 0);
-        QCOMPARE(finished.count(), 0);
-
-        message(WM_ENTERSIZEMOVE);
-        message(WM_MOVING);
-        message(WM_MOVING);
-        QCOMPARE(started.count(), 1);
-        QCOMPARE(moved.count(), 2);
-        QVERIFY(shift());
-        message(WM_EXITSIZEMOVE);
-        QCOMPARE(finished.count(), 0);
-        QApplication::processEvents();
-        QCOMPARE(finished.count(), 1);
-        QVERIFY(!finished.last().at(1).toBool());
-
-        for (const UINT cancellation : {UINT(WM_CANCELMODE), UINT(WM_KEYDOWN), UINT(0)}) {
-            message(WM_ENTERSIZEMOVE);
-            message(WM_MOVING);
-            if (cancellation) {
-                QVERIFY(shift());
-                message(cancellation, VK_ESCAPE);
-            }
-            // Unchanged native geometry also covers Escape restoring the original rectangle.
-            message(WM_EXITSIZEMOVE);
-            QApplication::processEvents();
-            QVERIFY(finished.last().at(1).toBool());
-        }
-        QCOMPARE(finished.count(), 4);
-        bar->setWindowMoveTrackingEnabled(false);
-        message(WM_ENTERSIZEMOVE);
-        message(WM_MOVING);
-        message(WM_EXITSIZEMOVE);
-        QApplication::processEvents();
-        QCOMPARE(started.count(), 4);
-        QCOMPARE(finished.count(), 4);
-        QVERIFY(!IsWindowVisible(hwnd));
-        QCOMPARE(GetForegroundWindow(), foreground);
-#else
-        QSKIP("Ela on Windows required");
+        QCOMPARE(host.view(), view); QVERIFY(host.isFloating());
+        QTest::qWait(250);
+        host.beginNativeDockDrag(origin);
+        QVERIFY(host.isDockDragging());
+        const QPoint destination = owner.centralWidget()->mapToGlobal(
+            QPoint(owner.centralWidget()->width() - 2, owner.centralWidget()->height() / 2));
+        QMouseEvent move(QEvent::MouseMove, host.mapFromGlobal(destination), destination,
+                         Qt::NoButton, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(&host, &move);
+        QMouseEvent release(QEvent::MouseButtonRelease, host.mapFromGlobal(destination), destination,
+                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QApplication::sendEvent(&host, &release);
+        QTRY_VERIFY(!host.isDockDragging());
+        QTRY_VERIFY(!host.isFloating());
+        QTRY_COMPARE(docked.count(), 1);
+        QCOMPARE(qvariant_cast<Qt::DockWidgetArea>(docked.first().first()), Qt::RightDockWidgetArea);
+        QCOMPARE(host.view(), view);
+        QCOMPARE(view->findChild<QLineEdit*>()->text(), QString("retained content"));
+        host.setFloating(true);
+        host.beginNativeDockDrag(host.mapToGlobal(QPoint(24, 16)));
+        QWidget* retained = host.takeView();
+        QVERIFY(!host.isDockDragging()); QCOMPARE(retained, view);
+        delete retained;
 #endif
     }
 
@@ -359,12 +298,12 @@ private slots:
         if (QGuiApplication::platformName() != QStringLiteral("windows"))
             QSKIP("Native Windows platform required");
         const HWND foreground = GetForegroundWindow();
-        ContextFloatingWindow host(nullptr, nullptr);
+        class DockProbe : public ElaDockWidget {
+        public: using ElaDockWidget::nativeEvent;
+        } host;
         host.setGeometry(-16000, -16000, 600, 400);
         QApplication::processEvents();
         const auto hwnd = reinterpret_cast<HWND>(host.winId());
-        auto* bar = host.findChild<ElaAppBar*>();
-        QVERIFY(bar);
         QVERIFY(!IsWindowVisible(hwnd));
 
         NCCALCSIZE_PARAMS geometry{};
@@ -375,7 +314,7 @@ private slots:
         message.wParam = TRUE;
         message.lParam = reinterpret_cast<LPARAM>(&geometry);
         qintptr result = 0;
-        QCOMPARE(bar->takeOverNativeEvent("windows_generic_MSG", &message, &result), 1);
+        QVERIFY(host.nativeEvent("windows_generic_MSG", &message, &result));
         QCOMPARE(geometry.rgrc[0].left, LONG(100));
         QCOMPARE(geometry.rgrc[0].top, LONG(100));
         QCOMPARE(geometry.rgrc[0].right, LONG(700));
@@ -399,7 +338,7 @@ private slots:
             message.wParam = 0;
             message.lParam = MAKELPARAM(point.x, point.y);
             result = 0;
-            QCOMPARE(bar->takeOverNativeEvent("windows_generic_MSG", &message, &result), 1);
+            QVERIFY(host.nativeEvent("windows_generic_MSG", &message, &result));
             QCOMPARE(result, qintptr(edge.second));
         }
         QVERIFY(!IsWindowVisible(hwnd));

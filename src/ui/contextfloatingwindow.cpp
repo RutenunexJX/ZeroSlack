@@ -22,6 +22,13 @@
 #include <QPainter>
 #include <QSettings>
 #include <QShortcut>
+#include <QMainWindow>
+#include <QPropertyAnimation>
+#include <QKeyEvent>
+#include <QStyle>
+#include <QScopedValueRollback>
+#include <QScrollBar>
+#include <utility>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -78,89 +85,114 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     : ContextFloatingWindowBase(nullptr), editorRegion(region)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    // ElaWidget constructs its app bar against window(). Become a top-level
-    // window first, then attach the owner so it cannot decorate the main window.
-    setParent(mainWindow, Qt::Tool | Qt::FramelessWindowHint | (windowFlags() & ~Qt::WindowType_Mask));
-    setIsStayTop(false);
-    setWindowButtonFlags(ElaAppBarType::CloseButtonHint);
-    // This material is scoped to context windows, independently of global Ela windows.
+    setParent(mainWindow);
+    hide();
+    setAllowedAreas(Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+    setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
+    if (auto* owner = qobject_cast<QMainWindow*>(mainWindow)) {
+        owner->setDockOptions(owner->dockOptions() | QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks);
+        owner->addDockWidget(Qt::RightDockWidgetArea, this);
+        setFloating(true);
+    }
     eApp->syncWindowDisplayMode(this, false);
 #else
     setParent(mainWindow, Qt::Tool);
 #endif
     setObjectName(QStringLiteral("contextFloatingWindow"));
-    // The content and title bar share one window material; text stays opaque.
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
         setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
-    auto* root = new QVBoxLayout(this);
+    auto* body = new QWidget(this);
+    auto* root = new QVBoxLayout(body);
     root->setSizeConstraint(QLayout::SetNoConstraint);
-#ifdef ZEROSLACK_ENABLE_ELA
     root->setContentsMargins(0, 0, 0, 0);
+#ifdef ZEROSLACK_ENABLE_ELA
+    setWidget(body);
+    dockTitle = new QWidget(this);
+    dockTitle->setObjectName(QStringLiteral("contextFloatingTitleBar"));
+    auto* titleRow = new QHBoxLayout(dockTitle);
+    titleRow->setContentsMargins(10, 2, 2, 2);
+    titleLabel = UiControls::label(dockTitle);
+    titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    titleLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    titleRow->addWidget(titleLabel, 1);
+    setTitleBarWidget(dockTitle);
 #else
-    root->setContentsMargins(8, 0, 8, 8);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(8, 0, 8, 8);
+    outer->addWidget(body);
 #endif
     titleActions = new QWidget(this);
     titleActions->setObjectName(QStringLiteral("contextFloatingActions"));
-    titleActions->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     auto* actions = new QHBoxLayout(titleActions);
-    actions->setContentsMargins(0, 0, 4, 0);
+    actions->setContentsMargins(0, 0, 0, 0);
     actions->setSpacing(2);
     fitButton = UiControls::toolButton(titleActions);
     fitButton->setObjectName(QStringLiteral("contextFloatingFit"));
     fitButton->setText(tr("Fit"));
     fitButton->setToolTip(tr("Fit diagram to view"));
+    fitButton->setAccessibleName(fitButton->toolTip());
     fitButton->hide();
     actions->addWidget(fitButton);
     connect(fitButton, &QToolButton::clicked, this, [this] {
         if (currentView) QMetaObject::invokeMethod(currentView, "fitGraph");
     });
-    fitButton->setAccessibleName(fitButton->toolTip());
-    fitButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 #ifdef ZEROSLACK_ENABLE_ELA
-    appBar = findChild<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly);
-    appBar->setWindowIconVisible(false);
-    appBar->setWindowMoveTrackingEnabled(true);
-    appBar->setToolTip(tr("Drag the title bar to move or dock; double-click to maximize or restore"));
-    appBar->setCustomWidget(ElaAppBarType::RightArea, titleActions);
-    appBar->titleLabel()->setTextFormat(Qt::PlainText);
-    appBar->titleLabel()->setWordWrap(false);
-    appBar->titleLabel()->setMinimumWidth(0);
-    appBar->titleLabel()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    titleRow->addWidget(titleActions);
+    auto* close = UiControls::toolButton(dockTitle);
+    close->setObjectName(QStringLiteral("contextFloatingClose"));
+    close->setIcon(style()->standardIcon(QStyle::SP_TitleBarCloseButton));
+    close->setToolTip(tr("Close"));
+    close->setAccessibleName(close->toolTip());
+    titleRow->addWidget(close);
+    connect(close, &QToolButton::clicked, this, &ContextFloatingWindow::closeRequested);
     connect(this, &QWidget::windowTitleChanged, this, &ContextFloatingWindow::layoutTitleBar);
-    connect(appBar, &ElaAppBar::windowMoveStarted, this, [this] {
-        if (!canDock() || dockDragActive) return;
+    connect(this, &ElaDockWidget::dockDragStarted, this, [this] {
+        captureDockScrollPositions();
         dockDragActive = true;
+        ++dockGeneration;
         emit titleDragStarted();
     });
-    connect(appBar, &ElaAppBar::windowMoved, this, [this](const QPoint& position) {
-        if (dockDragActive) emit titleDragMoved(position);
-    });
-    connect(appBar, &ElaAppBar::windowMoveFinished, this, [this](const QPoint& position, bool cancelled) {
-        if (!dockDragActive) return;
+    connect(this, &ElaDockWidget::dockDragMoved, this, &ContextFloatingWindow::titleDragMoved);
+    connect(this, &ElaDockWidget::dockDragFinished, this, [this](bool cancelled) {
         dockDragActive = false;
-        emit titleDragFinished(position, cancelled || !canDock());
+        if (!cancelled && isFloating() && hasResource()) {
+            rememberGeometry();
+            applyGeometry();
+            rememberGeometry();
+        }
+        emit titleDragFinished(QCursor::pos(), cancelled);
+        if (isFloating()) restoreDockScrollPositions(currentView);
+        scheduleDockCommit();
+    });
+    connect(this, &QDockWidget::topLevelChanged, this, [this](bool floating) {
+        ++dockGeneration;
+        if (!floating) scheduleDockCommit();
+        scheduleBackdropRefresh();
     });
 #else
     root->addWidget(titleActions, 0, Qt::AlignRight);
 #endif
     contentLayout = new QVBoxLayout;
+    contentLayout->setContentsMargins(0, 0, 0, 0);
     root->addLayout(contentLayout, 1);
     auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     escape->setContext(Qt::WidgetWithChildrenShortcut);
     connect(escape, &QShortcut::activated, this, &ContextFloatingWindow::closeRequested);
+#ifdef ZEROSLACK_ENABLE_ELA
+    connect(this, &ElaDockWidget::dockDragStarted, escape, [escape] { escape->setEnabled(false); });
+    connect(this, &ElaDockWidget::dockDragFinished, escape, [escape] { escape->setEnabled(true); });
+#endif
     connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
             this, [this] { layoutTitleBar(); refreshBackdrop(); });
-    // Native frame margins are needed when restoring the saved outer rectangle.
-    winId();
-    connect(windowHandle(), &QWindow::screenChanged, this, [this] { handleScreenChange(); });
+    if (QGuiApplication::platformName() == QStringLiteral("windows")) winId();
+    if (windowHandle()) connect(windowHandle(), &QWindow::screenChanged, this, [this] { handleScreenChange(); });
     connect(qGuiApp, &QGuiApplication::screenRemoved, this, [this] { handleScreenChange(); });
     connect(qGuiApp, &QGuiApplication::screenAdded, this, [this](QScreen* screen) {
         watchScreen(screen);
         handleScreenChange();
     });
-    for (QScreen* screen : QGuiApplication::screens())
-        watchScreen(screen);
+    for (QScreen* screen : QGuiApplication::screens()) watchScreen(screen);
     backdropReady = true;
     layoutTitleBar();
     refreshBackdrop();
@@ -275,6 +307,9 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
 {
     Q_UNUSED(fullViewAvailable);
     dockingAllowed = pinAvailable;
+#ifdef ZEROSLACK_ENABLE_ELA
+    setAllowedAreas(pinAvailable ? Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea : Qt::NoDockWidgetArea);
+#endif
     if (!dockingAllowed) cancelDockDrag();
 }
 
@@ -288,6 +323,11 @@ void ContextFloatingWindow::refreshTitle()
 
 void ContextFloatingWindow::cancelDockDrag()
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (isDockDragging()) {
+        ElaDockWidget::cancelDockDrag();
+    }
+#endif
     if (!dockDragActive) return;
     dockDragActive = false;
     emit titleDragFinished({}, true);
@@ -296,40 +336,72 @@ void ContextFloatingWindow::cancelDockDrag()
 void ContextFloatingWindow::layoutTitleBar()
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (!appBar || !titleActions) return;
-    int height = 30;
-    int controlsWidth = 0;
-    for (const auto type : {ElaAppBarType::CloseButtonHint}) {
-        auto* button = appBar->windowButton(type);
-        const QSize size = button->minimumSizeHint().expandedTo(QSize(40, 30));
-        button->setFixedSize(size);
-        height = qMax(height, size.height());
-        if (!button->isHidden()) controlsWidth += size.width();
-    }
-    titleActions->layout()->invalidate();
+    if (!dockTitle || !titleLabel) return;
     titleActions->setVisible(!fitButton->isHidden());
-    const QSize actionsSize = titleActions->isHidden() ? QSize(0, 0) : titleActions->sizeHint();
-    height = qMax(height, actionsSize.height());
-    appBar->setAppBarHeight(height + 4);
-    titleActions->setFixedSize(actionsSize);
-    const int available = qMax(0, width() - controlsWidth - actionsSize.width() - 26);
-    auto* label = appBar->titleLabel();
-    const QString title = label->fontMetrics().elidedText(windowTitle(), Qt::ElideMiddle, available);
-    label->setFixedWidth(qMin(available, label->fontMetrics().horizontalAdvance(title)));
-    label->setText(title);
-    label->setToolTip(windowTitle());
+    const int available = qMax(0, width() - titleActions->sizeHint().width() - 54);
+    titleLabel->setText(titleLabel->fontMetrics().elidedText(windowTitle(), Qt::ElideMiddle, available));
+    titleLabel->setToolTip(windowTitle());
+    dockTitle->setFixedHeight(qMax(30, dockTitle->layout()->sizeHint().height()));
 #endif
 }
 
 QWidget* ContextFloatingWindow::titleBar() const
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    return appBar;
+    return dockTitle;
 #else
     return titleActions;
 #endif
 }
-bool ContextFloatingWindow::canDock() const { return dockingAllowed && hasResource(); }
+
+void ContextFloatingWindow::beginNativeDockDrag(const QPoint& position)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (canDock()) beginDockDrag(position);
+#else
+    Q_UNUSED(position);
+#endif
+}
+
+#ifdef ZEROSLACK_ENABLE_ELA
+void ContextFloatingWindow::captureDockScrollPositions()
+{
+    if (!currentView || !dockScrollPositions.isEmpty()) return;
+    for (auto* bar : currentView->findChildren<QScrollBar*>())
+        dockScrollPositions.append({bar, bar->value()});
+}
+
+void ContextFloatingWindow::restoreDockScrollPositions(QWidget* view)
+{
+    const auto positions = std::exchange(dockScrollPositions, {});
+    if (!view || positions.isEmpty()) return;
+    QTimer::singleShot(0, view, [positions] {
+        for (const auto& position : positions)
+            if (position.first) position.first->setValue(position.second);
+    });
+}
+
+void ContextFloatingWindow::scheduleDockCommit()
+{
+    const auto generation = ++dockGeneration;
+    QTimer::singleShot(16, this, [this, generation] {
+        if (generation != dockGeneration || isFloating() || !canDock()) return;
+        if (isDockDragging()) { scheduleDockCommit(); return; }
+        auto* owner = qobject_cast<QMainWindow*>(parentWidget());
+        if (!owner) return;
+        // Wait for Qt's own landing animation before handing the view back to
+        // the workspace's ordered, independently sized resource sections.
+        for (auto* animation : owner->findChildren<QPropertyAnimation*>())
+            if (animation->targetObject() == this && animation->state() == QAbstractAnimation::Running) {
+                scheduleDockCommit();
+                return;
+            }
+        const auto area = owner->dockWidgetArea(this);
+        if (area != Qt::NoDockWidgetArea) emit nativeDocked(area);
+    });
+}
+#endif
+bool ContextFloatingWindow::canDock() const { return dockingAllowed && !releasingView && hasResource(); }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == currentView && event->type() == QEvent::DynamicPropertyChange) {
@@ -349,6 +421,9 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
     if (!resource.isValid() || !view)
         return;
     clearView();
+#ifdef ZEROSLACK_ENABLE_ELA
+    setFloating(true);
+#endif
     currentResource = resource;
     currentView = view;
     view->installEventFilter(this);
@@ -381,6 +456,10 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
 
 QWidget* ContextFloatingWindow::takeView()
 {
+    const QScopedValueRollback<bool> guard(releasingView, true);
+#ifdef ZEROSLACK_ENABLE_ELA
+    captureDockScrollPositions();
+#endif
     cancelDockDrag();
     rememberGeometry();
     QWidget* view = currentView;
@@ -394,6 +473,9 @@ QWidget* ContextFloatingWindow::takeView()
     currentResource = {};
     setWindowTitle({});
     hide();
+#ifdef ZEROSLACK_ENABLE_ELA
+    restoreDockScrollPositions(view);
+#endif
     return view;
 }
 
@@ -420,6 +502,9 @@ void ContextFloatingWindow::closeEvent(QCloseEvent* event)
 
 void ContextFloatingWindow::rememberGeometry()
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (!isFloating()) return;
+#endif
     if (applyingGeometry || !hasResource() || !isVisible() || isMinimized())
         return;
     const QRect geometry = frameGeometry();
@@ -436,7 +521,7 @@ void ContextFloatingWindow::applyGeometry()
 {
     applyingGeometry = true;
     storedGeometry = resolve(storedGeometry, storedScreenName, QGuiApplication::primaryScreen());
-    const QMargins margins = windowHandle()->frameMargins();
+    const QMargins margins = windowHandle() ? windowHandle()->frameMargins() : QMargins();
     const int frameWidth = margins.left() + margins.right();
     const int frameHeight = margins.top() + margins.bottom();
     setMinimumSize(qMax(1, qMin(ContextWorkspaceState::kMinimumPeekWidth, storedGeometry.width()) - frameWidth),
@@ -497,7 +582,16 @@ void ContextFloatingWindow::resizeEvent(QResizeEvent* event)
 
 bool ContextFloatingWindow::event(QEvent* event)
 {
+    const QPointer<ContextFloatingWindow> guard(this);
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (event->type() == QEvent::Hide && isFloating()) captureDockScrollPositions();
+#endif
     const bool handled = ContextFloatingWindowBase::event(event);
+    if (!guard) return handled;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (event->type() == QEvent::Show && isFloating() && !isDockDragging())
+        restoreDockScrollPositions(currentView);
+#endif
     if (event->type() == QEvent::WinIdChange || event->type() == QEvent::Show
         || event->type() == QEvent::ApplicationPaletteChange)
         scheduleBackdropRefresh();

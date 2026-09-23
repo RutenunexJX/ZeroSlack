@@ -196,6 +196,41 @@ layout items. The lighter mask and conditional stock footer retain Ela painting.
 The five changed files replay byte-for-byte from the preceding revision.
 Original MIT and font OFL licenses remain unchanged.
 
+Apply `patches/25-zeroslack-native-interaction-routing.patch` after patch 24.
+This supersedes patch 18's optional external navigation compositor callback,
+patch 19's hosted-tab gesture replacement, and patches 21/22's Context window
+controller selection. It does not remove those APIs from other ElaAppBar users.
+
+ElaNavigationBar again runs its own 255 ms OutCubic width animation. The 225 ms
+OutCubic overlay-position animation is shared by ElaWindow and the application's
+QMainWindow adapter through new overlay methods. The custom Files/Design content
+host remains a local extension; it is not replaced by Ela's page-node model.
+
+Hosted document tabs retain the original ElaTabBar gesture signals and
+ElaTabWidgetPrivate enter/leave/drop routing. The ownership adapter floats the
+real page immediately, merges on tab-bar entry, detaches on leave, and tracks
+floating content at the upstream 10 ms cadence. Cancellation restores the original
+index and tab metadata. Scope, page and source destruction and hidden workspace
+tabs invalidate the drag. The application still owns split layout, document close
+decisions, and workspace visibility. This is an adapted upstream interaction,
+not an unmodified ElaFloatingWidget document owner.
+
+ElaCentralStackedWidget exposes immediate settlement and switching state. Its
+existing Popup, Scale, Flip and Blur effects use owned, interruptible animations;
+rapid selection, reentrant selection, page deletion, hide and resize discard stale
+pixmaps and restore the current live page. Popup begins immediately rather than
+after the former 180 ms timer. ZeroSlack uses Popup for settings categories and
+Problems/Activity page switches; editor and diagram rendering remain specialized.
+
+ElaDockWidget exposes Qt dock-drag lifecycle signals, a gesture handoff, and
+cancellation using QDockWidget's abort path. Qt owns floating movement, dock-area
+preview and AnimatedDocks landing. The application subsequently transfers the same
+view to its existing ordered/resizable Context sections. Resource ownership,
+parallel layout persistence, insertion ordering, scroll preservation, compact
+title controls and scoped Acrylic remain application responsibilities. The
+previous ContextDockTransition snapshot landing is inactive in the Ela build.
+The original MIT and font OFL licenses are unchanged.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
@@ -215,8 +250,10 @@ Qt retains hover timing; the adapter bounds the popup to the screen, wraps long
 paths, avoids focus activation, and clears stale tips on input and owner changes.
 Interactive symbol information cards remain application-owned.
 
-This integration is pinned to Qt 6.10.2 because ElaTabBar includes Qt private
-headers. Rebuild both DLLs and rerun validation before changing the Qt version.
+This integration is pinned to Qt 6.10.2 because ElaTabBar and the dock-drag state
+observer include Qt private headers. The observer reads QDockWidgetPrivate state;
+it does not invoke or link private Qt functions. Rebuild both DLLs and rerun
+validation before changing the Qt version.
 Upstream CMake declares version 2.0.0 while its public header declares 2.0.3;
 the commit identifier above is the authoritative source version.
 

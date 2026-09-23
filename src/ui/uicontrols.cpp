@@ -30,6 +30,7 @@
 #include <QScrollArea>
 #include <QLabel>
 #include <QFormLayout>
+#include <QStackedWidget>
 
 namespace {
 template<class Base> class WorkspaceTabBar final : public Base {
@@ -136,6 +137,7 @@ private:
 #include "ElaTreeView.h"
 #include "ElaTabBar.h"
 #include "ElaTabWidget.h"
+#include "ElaCentralStackedWidget.h"
 #include "ElaScrollBar.h"
 #include "ElaMenu.h"
 #include "ElaListView.h"
@@ -415,6 +417,29 @@ QToolButton* UiControls::badgedToolButton(QWidget* parent) {
 }
 void UiControls::setToolButtonBadge(QToolButton* button, const QString& text, const QString& tone) {
     if (auto* badge = dynamic_cast<ToolButtonBadge*>(button)) badge->setBadge(text, tone);
+}
+QWidget* UiControls::pageStack(QStackedWidget*& stack, QWidget* parent) {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (usesEla()) {
+        auto* surface = new ElaCentralStackedWidget(parent);
+        surface->setIsTransparent(true);
+        surface->setIsHasRadius(false);
+        stack = surface->getContainerStackedWidget();
+        return surface;
+    }
+#endif
+    stack = new QStackedWidget(parent);
+    return stack;
+}
+void UiControls::selectPage(QStackedWidget* stack, int index, bool animate) {
+    if (!stack || index < 0 || index >= stack->count()) return;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (auto* surface = qobject_cast<ElaCentralStackedWidget*>(stack->parentWidget())) {
+        surface->doWindowStackSwitch(animate ? ElaWindowType::Popup : ElaWindowType::None, index, false);
+        return;
+    }
+#endif
+    stack->setCurrentIndex(index);
 }
 QLineEdit* UiControls::lineEdit(QWidget* parent) { return lineEdit(QString(), parent); }
 QLineEdit* UiControls::lineEdit(const QString& text, QWidget* parent) {

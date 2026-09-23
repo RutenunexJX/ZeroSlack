@@ -876,6 +876,8 @@ target_link_libraries(zeroslack_cli PRIVATE zeroslack_cli_support)
 
 # Build a Windows GUI app without a console window.
 if(WIN32)
+    set_property(SOURCE resources/windows/zeroslack.rc APPEND PROPERTY OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/windows/zeroslack.ico")
     target_sources(demo PRIVATE resources/windows/zeroslack.rc)
     set_target_properties(demo PROPERTIES WIN32_EXECUTABLE ON)
 endif()
@@ -1426,7 +1428,7 @@ if(BUILD_TESTING)
         add_executable(sidebar_animation_benchmark test_sv/sidebar_animation_benchmark.cpp)
         target_link_libraries(sidebar_animation_benchmark PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_controls_test test_sv/ela_controls_test.cpp)
-        target_link_libraries(ela_controls_test PRIVATE zeroslack_core Qt6::Test)
+        target_link_libraries(ela_controls_test PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_document_tabs_test test_sv/ela_document_tabs_test.cpp)
         target_link_libraries(ela_document_tabs_test PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_navigation_test test_sv/ela_navigation_test.cpp)

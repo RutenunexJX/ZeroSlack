@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include "zeroslackexport.h"
 
 class NavigationManager;
 class NavigationWidget;
@@ -15,10 +16,10 @@ class NavigationViewport;
 class QVariantAnimation;
 class QEvent;
 class ElaNavigationBar;
-class PanelCompositor;
 
-class NavigationPaneCoordinator : public QObject
+class ZEROSLACK_API NavigationPaneCoordinator : public QObject
 {
+    Q_OBJECT
 public:
     explicit NavigationPaneCoordinator(QWidget* parent);
     ~NavigationPaneCoordinator() override;
@@ -41,6 +42,9 @@ public:
 
     QDockWidget* dock() const { return navigationDock; }
 
+signals:
+    void expandedChanged(bool expanded);
+
 private:
     void showDock();
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -48,8 +52,9 @@ private:
     QDockWidget* navigationDock = nullptr;
     NavigationViewport* viewport = nullptr;
     ElaNavigationBar* elaNavigationBar = nullptr;
-    QPointer<PanelCompositor> compositor;
-    bool preparingComposition = false;
+    QPointer<QWidget> overlayParent;
+    bool changingPlacement = false;
+    void finishOverlay();
     NavigationWidget* navigationWidget = nullptr;
     NavigationManager* navigationManager = nullptr;
     QVariantAnimation* widthAnimation = nullptr;

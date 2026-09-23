@@ -5,6 +5,27 @@
 默认 CMake 配置启用 Ela，正式包使用 `ZeroSlack-win64` 目录和 `ZeroSlack.exe`，不再生成 ZIP。
 下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
 
+## 0.31.9 Ela 原生交互适配与图标修复（2026-09-24）
+
+侧栏恢复 ElaNavigationBar 的显示模式动画，并共享 ElaWindow 的窄窗覆盖滑出流程；
+原外部快照回调已移除。保留 Files/Design 内容、宽度调整、布局恢复与仅工程/设置的入口。
+Tab 接回 ElaTabBar 和 ElaTabWidgetPrivate 的手势路由，拖出即显示实际文档，进入标签栏即时
+合并、离开再次浮起。文档关闭决策、工作区隔离、临时文件和分屏模型仍由应用管理。
+
+Context 浮窗采用 ElaDockWidget，Qt 负责拖动、停靠预览与落位动画；应用在落位完成后把
+同一个视图交回现有并排面板，保留顺序、尺寸、滚动位置和布局持久化。浮窗保持单标题栏、
+可用时的 Fit 与关闭按钮，以及 Ela Acrylic。Ela 构建不再使用 ContextDockTransition 落位快照。
+设置分类和 Problems/Activity 的页面切换使用 ElaCentralStackedWidget Popup，支持快速切换、
+删除页面、隐藏、缩放和输入时终止过渡。右侧栏整区开合、底栏抽屉和面板折叠仍使用原有
+合成器：Ela 没有与这些专用布局直接等价的业务控制器。
+
+供应商变更记录为补丁 25，MIT／字体 OFL 许可保留；完整边界和验证记录见
+[原生交互实施记录](ela-native-interaction-plan.md)。
+
+应用图标沿用原电路式 Z、方形节点与圆角底板，只修补两处透明缺口；Windows ICO
+包含 16／24／32／48／64／128／256 像素资源。资源编译显式依赖 ICO，避免仅修改图标时
+可执行文件仍嵌入旧资源。正式包版本为 0.31.9，不生成 ZIP 或旧版备份。
+
 ## 0.31.8 通用弹出界面迁移（2026-09-23）
 
 代码补全候选列表采用 ElaListView 和 ElaScrollBar，行高随字体调整，保留候选分类、

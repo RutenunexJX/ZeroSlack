@@ -134,6 +134,7 @@ private:
     QPointer<QWidget> bottomDrawerRoot;
     QPointer<QWidget> bottomResizeHandle;
     QPointer<QStackedWidget> bottomContentStack;
+    QPointer<QWidget> bottomContentSurface;
     QPointer<QFrame> bottomButtonBar;
     QPointer<PanelCompositor> compositor;
     QVector<PanelEntry> panels;

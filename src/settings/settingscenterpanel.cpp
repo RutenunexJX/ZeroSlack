@@ -431,7 +431,7 @@ void SettingsCenterPanel::buildUi()
     contentLayout->setSpacing(12);
     contentLayout->addWidget(scopeSummaryLabel);
 
-    categoryStack = new QStackedWidget(this);
+    auto* categorySurface = UiControls::pageStack(categoryStack, this);
     categoryStack->setObjectName(
         QStringLiteral("settingsCenterCategoryStack"));
 
@@ -527,7 +527,7 @@ void SettingsCenterPanel::buildUi()
         scroll->viewport()->installEventFilter(this);
         categoryStack->addWidget(scroll);
     }
-    contentLayout->addWidget(categoryStack, 1);
+    contentLayout->addWidget(categorySurface, 1);
 
     statusLabel = UiControls::label(this);
     statusLabel->setObjectName(
@@ -561,8 +561,7 @@ void SettingsCenterPanel::buildUi()
             });
     connect(categoryList,
             &QListWidget::currentRowChanged,
-            categoryStack,
-            &QStackedWidget::setCurrentIndex);
+            this, [this](int index) { UiControls::selectPage(categoryStack, index); });
     connect(categoryList, &QListWidget::currentRowChanged, this,
             [this] { updateResponsiveLayout(); });
     connect(applyButton,

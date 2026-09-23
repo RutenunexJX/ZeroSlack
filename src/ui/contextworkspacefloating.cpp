@@ -16,6 +16,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 #include <QScopedValueRollback>
+#include <QTimer>
 
 ContextFloatingSurface* ContextWorkspaceController::floatingSurfaceFor() const
 {
@@ -67,6 +68,32 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
         captureLastFloatingGeometry(host);
         notifyWorkspaceStateChanged();
     });
+#ifdef ZEROSLACK_ENABLE_ELA
+    connect(host, &ContextFloatingWindow::nativeDocked, this, [this, host](Qt::DockWidgetArea area) {
+        if (!host->canDock()) return;
+        const QString key = host->resource().stableKey();
+        const bool bottom = area == Qt::BottomDockWidgetArea;
+        const int index = host->property("contextDockInsertionBottom").toBool() == bottom
+            ? host->property("contextDockInsertionIndex").toInt() : -1;
+        const QScopedValueRollback<bool> guard(dockingTransition, true);
+        pinFloatingResource(key, bottom, index);
+    });
+    connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
+        if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
+        host->setProperty("contextDockInsertionIndex", -1);
+    });
+    connect(host, &ContextFloatingWindow::titleDragMoved, this, [this, host](const QPoint& position) {
+        if (!host->canDock()) return;
+        const bool bottom = dockHostValue->viewportGlobalRect(true).contains(position);
+        const bool side = dockHostValue->viewportGlobalRect(false).contains(position);
+        host->setProperty("contextDockInsertionBottom", bottom);
+        host->setProperty("contextDockInsertionIndex", (bottom || side) ? dockHostValue->insertionIndex(position) : -1);
+        dockHostValue->previewFloatingDrop(host, position);
+    });
+    connect(host, &ContextFloatingWindow::titleDragFinished, this, [this](const QPoint&, bool) {
+        dockHostValue->clearFloatingDropPreview();
+    });
+#else
     connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
         if (!dockTransition || !host->canDock()) return;
         PanelCompositor::forWindow(window)->settle();
@@ -94,6 +121,7 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
             return pinFloatingResource(key, target.bottom, target.index);
         });
     });
+#endif
     return host;
 }
 

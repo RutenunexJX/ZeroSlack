@@ -1,5 +1,6 @@
 #include "applicationthememanager.h"
 #include "contextfloatingwindow.h"
+#include "contextworkspacecontroller.h"
 #include "contextrail.h"
 #include "editorsplitcontroller.h"
 #include "insightvisualstyle.h"
@@ -18,6 +19,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSet>
 #include <QSignalSpy>
 #include <QStyleOptionButton>
 #include <QTemporaryDir>
@@ -195,7 +197,12 @@ private slots:
         auto* contextRail = window.findChild<ContextRail*>();
         QVERIFY(contextRail);
         const auto contextEntries = contextRail->entryIds();
-        QCOMPARE(contextEntries.size(), 6);
+        auto* context = window.findChild<ContextWorkspaceController*>();
+        QVERIFY(context);
+        const auto providerIds = context->providerIds();
+        QCOMPARE(QSet<QString>(contextEntries.begin(), contextEntries.end()),
+                 QSet<QString>(providerIds.begin(), providerIds.end()));
+        QCOMPARE(contextEntries.size(), providerIds.size());
         QVERIFY(!contextEntries.contains(QStringLiteral("workspaceHub")));
         for (const auto& id : {"temporaryEditor", "rtlInsight.kernel", "rtlInsight.block",
                                "rtlInsight.hotspot", "rtlInsight.state", "pinloom"})

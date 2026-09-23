@@ -140,7 +140,8 @@ private slots:
 #endif
     }
 
-    void compositedMotionKeepsLiveLayoutStableAndAcceptsInput() {
+    void nativeOverlayKeepsEditorStableAndAcceptsInput() {
+#ifdef ZEROSLACK_ENABLE_ELA
         if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) QSKIP("Ela backend only");
         QMainWindow host;
         auto* editor = new QPlainTextEdit;
@@ -149,8 +150,10 @@ private slots:
         host.setCentralWidget(editor);
         auto* pane = new NavigationPaneCoordinator(&host);
         host.addDockWidget(Qt::LeftDockWidgetArea, pane->dock());
-        host.resize(1600, 1000); host.show(); host.activateWindow(); settle();
-        auto* compositor = host.findChild<PanelCompositor*>(); QVERIFY(compositor);
+        host.resize(700, 600); host.show(); host.activateWindow(); settle();
+        auto* bar = host.findChild<ElaNavigationBar*>(); QVERIFY(bar);
+        QVERIFY(!host.findChild<PanelCompositor*>());
+        pane->setExpanded(false, false); settle();
         struct Resizes final : QObject {
             int count = 0;
             bool eventFilter(QObject*, QEvent* event) override {
@@ -159,33 +162,32 @@ private slots:
             }
         } resizes;
         editor->installEventFilter(&resizes);
-        for (bool open : {false, true}) {
+        for (bool open : {true, false, true}) {
             resizes.count = 0;
             pane->setExpanded(open);
             const int preparedCount = resizes.count;
             const auto preparedSize = editor->size();
             QTest::qWait(80);
-            QVERIFY(compositor->isActive());
+            QVERIFY(bar->isOverlayAnimating());
             QCOMPARE(editor->size(), preparedSize);
             QCOMPARE(resizes.count, preparedCount);
             QTRY_VERIFY(!pane->isAnimating());
-            QVERIFY2(resizes.count <= 1, qPrintable(QString("Expected <= 1 boundary resize, got %1, open=%2")
-                .arg(resizes.count).arg(open)));
-            QCOMPARE(compositor->snapshotBytes(), 0);
+            QCOMPARE(resizes.count, 0);
+            QCOMPARE(pane->isExpanded(), open);
+            QVERIFY(pane->dock()->isHidden());
         }
         editor->setFocus();
         editor->moveCursor(QTextCursor::End);
         pane->setExpanded(false);
         QTest::keyClicks(editor, "input");
-        QVERIFY(!pane->isAnimating());
-        QVERIFY(!compositor->isActive());
+        QTRY_VERIFY(!pane->isAnimating());
         QVERIFY(editor->toPlainText().endsWith("input"));
         pane->setExpanded(true);
-        host.resize(1300, 850);
+        host.resize(740, 650);
         settle();
         QVERIFY(!pane->isAnimating());
-        QVERIFY(!compositor->isActive());
-        QVERIFY(!pane->dock()->isHidden());
+        QVERIFY(pane->dock()->isHidden());
+        QCOMPARE(bar->height(), editor->height());
         QVERIFY(host.rect().contains(editor->geometry()));
         pane->setExpanded(false); QTest::qWait(35);
         pane->showSearch();
@@ -193,23 +195,28 @@ private slots:
         auto* search = host.findChild<QLineEdit*>("navigationSearchLineEdit"); QVERIFY(search);
         QVERIFY(search->hasFocus());
         QVERIFY(!pane->isAnimating());
-        QCOMPARE(compositor->snapshotBytes(), 0);
+        for (int i = 0; i < 4; ++i) {
+            pane->setExpanded(false); QTest::qWait(20);
+            pane->setExpanded(true); QTest::qWait(20);
+        }
+        QTRY_VERIFY(!pane->isAnimating());
+        QVERIFY(pane->isExpanded());
 
         auto* probe = new QPushButton("Click after motion", editor);
-        probe->setGeometry(40, 40, 170, 32); probe->show(); settle();
+        probe->setGeometry(440, 40, 170, 32); probe->show(); settle();
         QSignalSpy clicked(probe, &QPushButton::clicked);
-        const QPoint global = probe->mapToGlobal(probe->rect().center());
-        pane->setExpanded(false, false); settle();
-        pane->setExpanded(true);
-        QVERIFY(compositor->isActive());
-        QMouseEvent press(QEvent::MouseButtonPress, editor->mapFromGlobal(global), global,
-                          Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-        QApplication::sendEvent(editor, &press);
-        QVERIFY(!compositor->isActive());
-        QMouseEvent release(QEvent::MouseButtonRelease, editor->mapFromGlobal(global), global,
-                            Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-        QApplication::sendEvent(editor, &release);
+        QTest::mouseClick(probe, Qt::LeftButton);
         QCOMPARE(clicked.size(), 1);
+        QTRY_VERIFY(!pane->isAnimating());
+        QVERIFY(!pane->isExpanded());
+        pane->setExpanded(true); QTest::qWait(25);
+        pane->dock()->show(); settle();
+        QVERIFY(pane->isExpanded());
+        QVERIFY(!pane->dock()->isHidden());
+        QCOMPARE(pane->dock()->widget(), bar);
+#else
+        QSKIP("Ela backend not built");
+#endif
     }
 
     void contentAndHeaderSurvive() {
@@ -326,22 +333,11 @@ private slots:
         QTRY_VERIFY(!bar.isDisplayModeAnimating());
         QTRY_VERIFY(first.isNull());
         QCOMPARE(bar.width(), 330); QCOMPARE(bar.customContent(), replacement);
-        quint64 generation = 0;
-        int delegatedDuration = 0;
-        bar.setDisplayModeTransitionHandler([&](int, int duration, quint64 token) {
-            delegatedDuration = duration;
-            generation = token;
-            return true;
-        });
         bar.setDisplayMode(ElaNavigationType::Minimal);
-        QCOMPARE(delegatedDuration, 255);
-        const auto cancelled = generation;
+        QTest::qWait(25);
         bar.setDisplayMode(ElaNavigationType::Maximal);
-        QVERIFY(generation != cancelled);
-        bar.finishDisplayModeTransition(cancelled);
         QVERIFY(bar.isDisplayModeAnimating());
-        bar.finishDisplayModeTransition(generation);
-        QVERIFY(!bar.isDisplayModeAnimating());
+        QTRY_VERIFY(!bar.isDisplayModeAnimating());
         QCOMPARE(bar.width(), 330);
 #else
         QSKIP("Ela backend not built");

@@ -13,6 +13,7 @@
 #include <QDir>
 #include <QDrag>
 #include <QDragEnterEvent>
+#include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QFile>
 #include <QKeyEvent>
@@ -23,6 +24,7 @@
 #include <QTabBar>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QToolButton>
 #include <QTimer>
 #include <QVBoxLayout>
 
@@ -191,7 +193,7 @@ private slots:
         QVERIFY(started);
         QVERIFY(entered);
         QVERIFY(accepted);
-        QCOMPARE(moved.count(), 1);
+        QCOMPARE(moved.count(), 2); // Source -> live floating group -> destination.
         QCOMPARE(split.groupCount(), area == 0 ? 2 : 3);
         QVERIFY(split.groupForPage(page) != initial);
         QCOMPARE(initial->widget(0), second);
@@ -240,6 +242,111 @@ private slots:
         QVERIFY(destination->isVisible());
     }
 
+    void nativeTabEnterLeaveAndCancelRestoresDocument() {
+        QWidget host;
+        auto* initial = UiControls::editorTabWidget(&host);
+        EditorSplitController split(initial);
+        split.setHost(&host);
+        auto* keep = new QWidget;
+        auto* page = new QWidget;
+        initial->addTab(keep, "keep");
+        initial->addTab(page, "dirty.sv*");
+        initial->setTabToolTip(1, "workspace/dirty.sv");
+        initial->tabBar()->setTabData(1, "document-identity");
+        auto* destination = split.createSplit(initial, EditorSplitDirection::Right);
+        destination->addTab(new QWidget, "target");
+        QObject foreignScope;
+        ElaTabWidget foreign;
+        foreign.setHostedTabs(&foreignScope, {}, {});
+        foreign.addTab(new QWidget, "foreign");
+        ElaTabWidget unmanaged;
+        unmanaged.addTab(new QWidget, "unmanaged");
+        host.resize(1000, 600); host.show();
+        QApplication::processEvents();
+        bool sawFloating = false, sawMerge = false, sawLeave = false, rejected = false;
+        connect(qobject_cast<ElaTabWidget*>(initial), &ElaTabWidget::hostedTabDragStarted,
+                &host, [&](QDrag* drag) {
+            auto* floating = qobject_cast<ElaTabWidget*>(split.groupForPage(page));
+            sawFloating = floating && floating->isFloatingTabWidget()
+                && floating->window()->isVisible() && initial->indexOf(page) == -1;
+            const QPoint target = destination->tabBar()->tabRect(0).center();
+            QDragEnterEvent enter(target, Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(destination->tabBar(), &enter);
+            sawMerge = destination->indexOf(page) >= 0 && initial->indexOf(page) == -1;
+            QDragLeaveEvent leave;
+            QApplication::sendEvent(destination->tabBar(), &leave);
+            floating = qobject_cast<ElaTabWidget*>(split.groupForPage(page));
+            sawLeave = floating && floating->isFloatingTabWidget() && destination->indexOf(page) == -1;
+            QDragEnterEvent foreignEnter(QPoint(5, 5), Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(foreign.tabBar(), &foreignEnter);
+            QDragEnterEvent unmanagedEnter(QPoint(5, 5), Qt::MoveAction, drag->mimeData(), Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(unmanaged.tabBar(), &unmanagedEnter);
+            rejected = !foreignEnter.isAccepted() && !unmanagedEnter.isAccepted()
+                && foreign.indexOf(page) == -1 && unmanaged.indexOf(page) == -1;
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QApplication::sendEvent(destination->tabBar(), &escape);
+        });
+        auto* bar = initial->tabBar();
+        const QPoint press = bar->tabRect(1).center();
+        QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, press);
+        sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 100), Qt::NoButton, Qt::LeftButton);
+        QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
+        QVERIFY(sawFloating);
+        QVERIFY(sawMerge);
+        QVERIFY(sawLeave);
+        QVERIFY(rejected);
+        QCOMPARE(initial->widget(1), page);
+        QCOMPARE(initial->tabText(1), QString("dirty.sv*"));
+        QCOMPARE(initial->tabToolTip(1), QString("workspace/dirty.sv"));
+        QCOMPARE(initial->tabBar()->tabData(1).toString(), QString("document-identity"));
+        QCOMPARE(split.groupCount(), 2);
+    }
+
+    void dragScopeAndDocumentInvalidation_data() {
+        QTest::addColumn<int>("mutation");
+        QTest::newRow("workspace-hidden-tab") << 0;
+        QTest::newRow("document-closed") << 1;
+        QTest::newRow("scope-destroyed") << 2;
+        QTest::newRow("source-destroyed") << 3;
+    }
+    void dragScopeAndDocumentInvalidation() {
+        QFETCH(int, mutation);
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        QPointer<QObject> scope = new QObject(&host);
+        QPointer<ElaTabWidget> tabs = new ElaTabWidget(&host);
+        tabs->setHostedTabs(scope, {}, [tabs] { return tabs.data(); });
+        layout->addWidget(tabs);
+        QPointer<QWidget> page = new QWidget;
+        tabs->addTab(page, "document");
+        tabs->addTab(new QWidget, "keep");
+        host.resize(800, 600); host.show(); QApplication::processEvents();
+        bool started = false;
+        connect(tabs, &ElaTabWidget::hostedTabDragStarted, &host, [&](QDrag*) {
+            started = true;
+            auto* floating = qobject_cast<ElaTabWidget*>(page->parentWidget()->parentWidget());
+            QVERIFY(floating && floating->isFloatingTabWidget());
+            if (mutation == 0) floating->setTabVisible(floating->indexOf(page), false);
+            else if (mutation == 1) delete page.data();
+            else if (mutation == 2) delete scope.data();
+            else delete tabs.data();
+        });
+        QPointer<QTabBar> bar = tabs->tabBar();
+        const QPoint press = bar->tabRect(0).center();
+        QTest::mousePress(bar, Qt::LeftButton, Qt::NoModifier, press);
+        sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 100), Qt::NoButton, Qt::LeftButton);
+        if (bar) QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
+        QVERIFY(started);
+        if (tabs) QVERIFY(!tabs->isHostedTabDragging());
+        if (mutation == 0) {
+            QCOMPARE(tabs->widget(0), page.data());
+            QVERIFY(!tabs->isTabVisible(0));
+        } else if (mutation == 1) QVERIFY(page.isNull());
+        else if (mutation == 2) QVERIFY(scope.isNull());
+        else QVERIFY(tabs.isNull());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
+
     void escapeKeepsSourceAndContextUsesEla() {
         QWidget host;
         auto* initial = UiControls::editorTabWidget(&host);
@@ -263,15 +370,14 @@ private slots:
         sendMouse(bar, QEvent::MouseMove, press + QPoint(0, 80), Qt::NoButton, Qt::LeftButton);
         QTest::mouseRelease(bar, Qt::LeftButton, Qt::NoModifier, press);
         QVERIFY(started);
-        QCOMPARE(created.count(), 0);
+        QCOMPARE(created.count(), 1);
+        QCOMPARE(split.groupCount(), 1);
         QCOMPARE(initial->widget(0), page);
         ContextFloatingWindow floating(&host, &host);
-        auto* appBar = floating.findChild<ElaAppBar*>();
-        QVERIFY(appBar);
-        QCOMPARE(floating.titleBar(), appBar);
-        QVERIFY(appBar->isWindowMoveTrackingEnabled());
+        QVERIFY(qobject_cast<ElaDockWidget*>(&floating));
+        QCOMPARE(floating.titleBar(), floating.titleBarWidget());
         QSignalSpy closed(&floating, &ContextFloatingWindow::closeRequested);
-        appBar->windowButton(ElaAppBarType::CloseButtonHint)->click();
+        floating.findChild<QToolButton*>("contextFloatingClose")->click();
         QCOMPARE(closed.count(), 1);
     }
 };

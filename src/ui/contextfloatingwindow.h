@@ -8,8 +8,8 @@
 #include <QWidget>
 
 #ifdef ZEROSLACK_ENABLE_ELA
-#include "ElaWidget.h"
-using ContextFloatingWindowBase = ElaWidget;
+#include "ElaDockWidget.h"
+using ContextFloatingWindowBase = ElaDockWidget;
 #else
 using ContextFloatingWindowBase = QWidget;
 #endif
@@ -17,6 +17,8 @@ using ContextFloatingWindowBase = QWidget;
 class QToolButton;
 class QVBoxLayout;
 class QScreen;
+class QLabel;
+class QScrollBar;
 
 class ZEROSLACK_API ContextFloatingWindow final : public ContextFloatingWindowBase, public ContextFloatingSurface {
     Q_OBJECT
@@ -38,6 +40,7 @@ public:
     void restoreGeometry(const ContextWorkspaceState& state);
     QWidget* titleBar() const;
     bool canDock() const;
+    void beginNativeDockDrag(const QPoint& position);
 
 signals:
     void closeRequested();
@@ -45,6 +48,7 @@ signals:
     void titleDragStarted();
     void titleDragMoved(const QPoint& globalPosition);
     void titleDragFinished(const QPoint& globalPosition, bool cancelled);
+    void nativeDocked(Qt::DockWidgetArea area);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -63,9 +67,16 @@ private:
     QToolButton* fitButton = nullptr;
     QWidget* titleActions = nullptr;
 #ifdef ZEROSLACK_ENABLE_ELA
-    ElaAppBar* appBar = nullptr;
+    QWidget* dockTitle = nullptr;
+    QLabel* titleLabel = nullptr;
+    quint64 dockGeneration = 0;
+    QList<QPair<QPointer<QScrollBar>, int>> dockScrollPositions;
+    void scheduleDockCommit();
+    void captureDockScrollPositions();
+    void restoreDockScrollPositions(QWidget* view);
 #endif
     bool dockingAllowed = true;
+    bool releasingView = false;
     bool dockDragActive = false;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};
