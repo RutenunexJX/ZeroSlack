@@ -44,12 +44,12 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 | 应用 | 仓库 | 现有执行任务 | 状态 |
 | --- | --- | --- | --- |
-| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 8f7abf6 已推送；0.31.11 暂存包通过校验 |
-| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 51ec1d1 已提交；0.4.8 干净发布构建中 |
-| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 16 组布局截图通过，完整回归与发布收尾中 |
-| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 6d1b1a9 已推送；0.12.0 暂存包通过校验 |
-| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 功能及性能对照完成，合入补丁 29 收尾中 |
-| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | 2.2.0 预检通过，合入补丁 29 收尾中 |
+| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 1c7194c／0.31.11，已推送并安装 |
+| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 02b29c4／0.4.8，已推送并安装 |
+| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 6420730／0.3.5，已推送并安装 |
+| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 73a0162／0.12.0，已推送并安装 |
+| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 2b90166／0.2.0，已推送并安装 |
+| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | e0100ff／2.2.1，已推送并安装 |
 
 初始 ZeroSlack HEAD：c482aab。未跟踪的 docs/questa-suite-plan.md 属于其他任务，保留。
 用户明确指定表内五个对应执行任务，后续直接续接，不另建任务。
@@ -59,10 +59,10 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 - [x] ZeroSlack 能力矩阵与剩余适配
 - [x] ZeroSlack 性能前后对照
-- [ ] 五应用正式实施分派与结果审计
-- [ ] 六应用功能回归、版本与许可检查
-- [ ] 六应用提交与远端一致性
-- [ ] 六个正式包与 AppSuite 清单替换及校验
+- [x] 五应用正式实施分派与结果审计
+- [x] 六应用功能回归、版本与许可检查
+- [x] 六应用提交与远端一致性
+- [x] 六个正式包与 AppSuite 清单替换及校验
 
 ## ZeroSlack 实际组件与职责
 
@@ -112,7 +112,8 @@ ZeroSlack 两档 DPI 下控件／弹出／对话框 6/6 通过（24.99 秒）；
 
 实际 xIPs 插件已使用 ZeroSlack 干净 Release 暂存中的核心及 Ela DLL 验证，100%／200%
 均为 4/4，覆盖原生视图创建、使用、导出哈希、引用及工作区关闭，并断言创建和销毁
-插件不改变宿主应用字体和调色板。最终六应用发布仍需使用最终暂存重验。
+插件不改变宿主应用字体和调色板。最终 1c7194c／e0100ff 的正式 DLL 又完成相同两档
+4/4 联测，ABI 保持 p27，双方实现补丁均为 30。
 
 性能采用同一 MainWindow、5000 行 SystemVerilog、模块框图和每场景 12 次切换。
 下表为 3840×2160、DPR 1；dispatch 是入口执行中位耗时，P95 是事件间隔，均为 ms。
@@ -131,3 +132,52 @@ ZeroSlack 两档 DPI 下控件／弹出／对话框 6/6 通过（24.99 秒）；
 `ela-suite-patch26-provenance.json`、`ela-suite-patch27-provenance.json`。
 后台事件间隔不代表显示器帧率。真实 OLE 拖放、跨屏混合 DPI、合成器观感和结束闪动仍没有
 桌面鼠标工具验收，不能据此声明全部视觉验收通过。
+
+## 六应用最终交付（2026-09-24）
+
+正式根目录为 `E:/PinloomRoot/AppPackage/AppSuite/Apps`，直接更新既有应用目录；
+无 ZIP、无旧正式包备份。共享 `suite-manifest.json` 和 `SHA256SUMS.txt` 已更新。
+Runtime 保持 1.0.1，Toolchain 及其他校验项保留。475 个套件校验项全部通过，六应用
+版本、源码提交和发布元数据一致。ZeroSlack 两处桌面快捷方式仍指向正式目录，
+`build/packages/ZeroSlack-win64` 也已更新为同一 0.31.11 包。
+
+| 应用 | 正式子目录 | 源码提交 | 回归与交付证据 |
+| --- | --- | --- | --- |
+| ZeroSlack 0.31.11 | ZeroSlack-win64 | 1c7194c803a85b71327a8ef8d734c68e7250efbb | 25 组相关回归；补丁 30 定向 6/6；正式 GUI／CLI 启动、xIPs 两档宿主各 4/4 |
+| Pinloom 0.4.8 | Pinloom | 02b29c49a56db66c5bc3709efe2ca538ec993d0d | 全量 28/28；增量 13/13；正式 UI／SQLite／PDF helper 自检；2 个可选真实 PDF probe 未执行 |
+| RegMapWorkbench 0.3.5 | RegMapWorkbench | 6420730d0470b8a60ac2d6910ae663aad619816f | 全量 10/10、GUI 168/168；增量 3/3；16 组主窗和 120 状态图；隔离 CLI 生成／校验 |
+| WaveWorkbench 0.12.0 | WaveWorkbench | 73a0162a404005ec62676bb959aab8e9168c78df | 全量 122/122；增量 10/10；暂存运行时 10 组、正式目录启动通过 |
+| SimDock 0.2.0 | SimDock | 2b90166d6c7a2d747fcdf91b59208abd9d45b410 | 核心 15 通过、2 个真实 Questa 用例跳过；两档 UI 各 21 通过；正式目录渲染／Suite descriptor 验证 |
+| xIPs 2.2.1 | xIPs | e0100ffd923e64d119ffcb3cb6a6d6ac59b23379 | 两档全量各 8/8；增量各 5/5；正式 GUI／CLI 启动和实际宿主联测通过 |
+
+本任务逐仓库核对了本地和远端提交。ZeroSlack 发布标签为 v0.31.11，SimDock 为
+v0.2.0，xIPs 为 v2.2.1；既有 v0.31.10／v2.2.0 标签未改写。其他三应用以提交号
+标识此包，未新建标签。所有包保留 MIT／OFL、其他运行时许可及可重放的供应商补丁。
+Pinloom 的发布元数据原在候选目录外，统一安装时原样放入应用目录并生成对应相对路径
+清单，应用文件与其已验证候选逐字节一致。
+
+发布过程中云同步目录从 CLOUD_6 变成 CLOUD_2，初次目录替换在 ZeroSlack 完成后
+中断。扩大标记范围的重试被自动审批拒绝；最终采用经过预检的逐文件受管更新，
+仅覆盖与旧清单哈希一致的包文件并移除 10 个旧 Pinloom 受管文件，没有递归删除
+其余正式目录，也未覆盖用户修改。清理了本次留下的空 incoming 目录。正式目录
+最终 8 组启动检查通过；Wave 的 offscreen 插件仅用于包外测试夹具。
+
+性能对照使用固定数据和窗口，以下为 CPU 分派／查询中位耗时，不是桌面 FPS：
+
+| 应用／场景 | 修改前 → 后 |
+| --- | --- |
+| ZeroSlack 4K 右栏／底栏 | 28.28 → 3.58 ms／27.97 → 2.60 ms |
+| Pinloom 2000 条 Clip，1000×700 | 12049.79 → 152.94 ms |
+| RegMap 1000 寄存器搜索，960 宽 | 1.7619 → 0.6051 ms |
+| SimDock 1500 文件工程切换，100% | 28.3584 → 0.8323 ms |
+| xIPs 2000 资产／64 文件过滤，100% | 18.2163 → 0.9411 ms |
+
+并非所有路径提速：Wave 连续动画较即时基线增加重绘和 CPU；SimDock 勾选没有改善，
+日志合批降低提交耗时但将完整显示延迟从约 13 ms 增至 27–33 ms；RegMap Results
+部分窗口的耗时略升。这些原始数据及限制均保留在各应用交付文档。
+
+总回执位于 `build/ela-migration/ela-suite-staging-plan.installed.json`、
+`ela-suite-installed-verification.json`、`ela-suite-installed-smoke/receipt.json` 和
+`ela-suite-final-xips-host.json`。各应用明细见各自 Ela 能力文档及交付目录的验证回执。
+真实桌面拖拽、混合显示器 DPI、全局热键／托盘、live PDF 和 Questa 授权环境未在
+本轮后台验证中执行；专业画布、模型、工作区和文档生命周期保留应用自身职责。
