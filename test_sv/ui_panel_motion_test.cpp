@@ -8,6 +8,9 @@
 #include "panelcompositor.h"
 #include "panellayoutcontroller.h"
 #include "testuistyle.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDrawerArea.h"
+#endif
 #include <QApplication>
 #include <QDockWidget>
 #include <QDir>
@@ -250,6 +253,49 @@ private slots:
 
     void drawerReversesWithoutMovingButtonBar() {
         Harness h;
+#ifdef ZEROSLACK_ENABLE_ELA
+        {
+        auto* motion = h.window.findChild<ElaDrawerArea*>("bottomPanelDrawer");
+        QVERIFY(motion);
+        const auto bar = inWindow(h.drawer->buttonBar(), &h.window);
+        auto* button = h.drawer->buttonForPanel("problems");
+        QTest::mouseClick(button, Qt::LeftButton);
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(motion->drawerSnapshotBytes() > 0);
+        QApplication::processEvents();
+        const auto editorGeometry = h.editor->geometry();
+        const int resizes = h.editor->resizes;
+        QTest::qWait(55);
+        QCOMPARE(h.editor->geometry(), editorGeometry);
+        QCOMPARE(h.editor->resizes, resizes);
+        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        const auto progress = motion->drawerProgress();
+        QTest::mouseClick(button, Qt::LeftButton);
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(qAbs(motion->drawerProgress() - progress) < .08);
+        QVERIFY(h.drawer->isBottomCollapsed());
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
+        QCOMPARE(motion->drawerSnapshotBytes(), 0);
+        QVERIFY(!h.compositor->isActive());
+        h.drawer->restorePanel("activity");
+        QVERIFY(motion->isDrawerAnimating());
+        QTest::keyClicks(h.editor, "x");
+        QVERIFY(!motion->isDrawerAnimating());
+        QVERIFY(h.editor->toPlainText().startsWith("xmodule"));
+        const auto state = h.drawer->layoutState();
+        h.drawer->setBottomCollapsed(true);
+        h.drawer->restoreLayoutState(state);
+        QVERIFY(!motion->isDrawerAnimating());
+        QVERIFY(!h.drawer->isBottomCollapsed());
+        h.drawer->setBottomCollapsed(true);
+        h.drawer->setAnimationsEnabled(false);
+        QVERIFY(!motion->isDrawerAnimating());
+        h.drawer->setBottomCollapsed(false);
+        QVERIFY(!motion->isDrawerAnimating());
+        return;
+        }
+#endif
         QVERIFY(h.drawer->animationsEnabled());
         const auto bar = inWindow(h.drawer->buttonBar(), &h.window);
         auto* button = h.drawer->buttonForPanel("problems");
@@ -292,6 +338,44 @@ private slots:
 
     void rightSidebarPreservesViewsAndCanReverse() {
         Harness h;
+#ifdef ZEROSLACK_ENABLE_ELA
+        {
+        auto* motion = h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer");
+        QVERIFY(motion);
+        auto* view = h.context->dockHost()->viewForResource(h.keys[0]);
+        QVERIFY(h.context->setDockVisible(true));
+        QVERIFY(motion->isDrawerAnimating());
+        QApplication::processEvents();
+        const int resizes = h.editor->resizes;
+        const auto geometry = h.editor->geometry();
+        QTest::qWait(55);
+        QCOMPARE(h.editor->geometry(), geometry);
+        QCOMPARE(h.editor->resizes, resizes);
+        const auto progress = motion->drawerProgress();
+        QVERIFY(h.context->setDockVisible(false));
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(qAbs(motion->drawerProgress() - progress) < .08);
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QVERIFY(!h.context->dockVisible());
+        for (int i = 0; i < 4; ++i) {
+            QVERIFY(h.context->setDockVisible(i % 2 == 0));
+            QTest::qWait(30);
+        }
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QVERIFY(!h.context->dockVisible());
+        QCOMPARE(h.context->dockHost()->viewForResource(h.keys[0]), view);
+        h.context->setDockVisible(true);
+        motion->finishDrawerAnimation();
+        h.context->dockWidget()->close();
+        QVERIFY(motion->isDrawerAnimating());
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QVERIFY(!h.context->dockVisible());
+        QCOMPARE(motion->drawerSnapshotBytes(), 0);
+        QVERIFY(!h.compositor->isActive());
+        QVERIFY(!h.editor->document()->isModified());
+        return;
+        }
+#endif
         auto* view = h.context->dockHost()->viewForResource(h.keys[0]);
         QVERIFY(h.context->setDockVisible(true));
         QVERIFY(h.compositor->isActiveFor(h.context->dockWidget()));
@@ -325,6 +409,44 @@ private slots:
 
     void sectionsRetainContentAndSettleBeforeStructuralChanges() {
         Harness h;
+#ifdef ZEROSLACK_ENABLE_ELA
+        {
+        h.context->setDockVisible(true);
+        h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer")->finishDrawerAnimation();
+        QTest::qWait(40);
+        auto* dock = h.context->dockHost();
+        auto* view = dock->viewForResource(h.keys[0]);
+        auto* motion = dock->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
+        QVERIFY(motion);
+        const auto size = dock->sectionWidget(h.keys[0])->size();
+        QVERIFY(dock->setSectionCollapsed(h.keys[0], true));
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(dock->isSectionCollapsed(h.keys[0]));
+        const auto after = dock->sectionWidget(h.keys[1])->geometry();
+        QTest::qWait(55);
+        QCOMPARE(dock->sectionWidget(h.keys[1])->geometry(), after);
+        const auto progress = motion->drawerProgress();
+        QVERIFY(dock->setSectionCollapsed(h.keys[0], false));
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(qAbs(motion->drawerProgress() - progress) < .08);
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(dock->viewForResource(h.keys[0]), view);
+        QCOMPARE(dock->sectionWidget(h.keys[0])->size(), size);
+        QVERIFY(view->isVisible());
+        dock->setSectionCollapsed(h.keys[0], true);
+        dock->setSectionHeight(h.keys[1], 200);
+        QVERIFY(!motion->isDrawerAnimating());
+        dock->setSectionCollapsed(h.keys[0], false);
+        dock->moveResource(h.keys[1], 0);
+        QVERIFY(!motion->isDrawerAnimating());
+        dock->setSectionCollapsed(h.keys[0], true);
+        QPointer<ElaDrawerArea> retained = motion;
+        dock->removeResource(h.keys[0]);
+        QVERIFY(!retained || !retained->isDrawerAnimating());
+        QVERIFY(!h.compositor->isActive());
+        return;
+        }
+#endif
         h.context->setDockVisible(true); h.compositor->settle();
         QTest::qWait(40);
         auto* dock = h.context->dockHost();
@@ -358,6 +480,33 @@ private slots:
 
     void viewportBackgroundIsCapturedInsteadOfGuessed() {
         Harness h;
+#ifdef ZEROSLACK_ENABLE_ELA
+        {
+        auto* dock = h.context->dockHost();
+        dock->removeResource(h.keys[1]);
+        h.context->setDockVisible(true);
+        h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer")->finishDrawerAnimation();
+        QTest::qWait(40);
+        auto* motion = dock->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
+        QVERIFY(motion);
+        auto* viewport = dock->findChild<QScrollArea*>()->viewport();
+        auto palette = viewport->palette();
+        palette.setColor(QPalette::Base, QColor(73, 137, 192));
+        viewport->setPalette(palette);
+        viewport->setBackgroundRole(QPalette::Base);
+        viewport->setAutoFillBackground(true);
+        dock->setSectionCollapsed(h.keys[0], true);
+        QTest::qWait(40);
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(!h.compositor->isActive());
+        QCOMPARE(viewport->palette().color(QPalette::Base), QColor(73, 137, 192));
+        QVERIFY(motion->drawerSnapshotBytes() <= qint64(motion->width() * motion->devicePixelRatioF())
+            * qCeil(motion->height() * motion->devicePixelRatioF()) * 4);
+        motion->finishDrawerAnimation();
+        QVERIFY(!dock->viewForResource(h.keys[0])->isVisible());
+        return;
+        }
+#endif
         auto* dock = h.context->dockHost();
         dock->removeResource(h.keys[1]);
         h.context->setDockVisible(true); h.compositor->settle();
@@ -384,6 +533,30 @@ private slots:
 
     void nativeNavigationAndOtherPanelsCoexistSafely() {
         Harness h;
+#ifdef ZEROSLACK_ENABLE_ELA
+        {
+        h.navigation->setExpanded(false);
+        QVERIFY(h.navigation->isAnimating());
+        h.context->setDockVisible(true);
+        auto* side = h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer");
+        auto* bottom = h.window.findChild<ElaDrawerArea*>("bottomPanelDrawer");
+        QVERIFY(side->isDrawerAnimating());
+        h.drawer->restorePanel("problems");
+        QVERIFY(bottom->isDrawerAnimating());
+        side->finishDrawerAnimation();
+        h.context->dockHost()->setSectionCollapsed(h.keys[0], true);
+        auto* section = h.context->dockHost()->sectionWidget(h.keys[0])->findChild<ElaDrawerArea*>("contextSectionDrawer");
+        QVERIFY(section->isDrawerAnimating());
+        h.window.resize(1250, 810);
+        QTRY_VERIFY(!h.navigation->isAnimating());
+        QTRY_VERIFY(!bottom->isDrawerAnimating() && !section->isDrawerAnimating());
+        QVERIFY(!h.compositor->isActive());
+        QVERIFY(h.drawer->isPanelOpen("problems"));
+        QVERIFY(h.context->dockVisible());
+        QVERIFY(!h.editor->document()->isModified());
+        return;
+        }
+#endif
         h.navigation->setExpanded(false);
         QVERIFY(h.navigation->isAnimating());
         h.context->setDockVisible(true);
@@ -434,7 +607,13 @@ private slots:
                     transient->context->dockHost()->setSectionCollapsed(transient->keys[0], true);
                 }
             }
+#ifdef ZEROSLACK_ENABLE_ELA
+            bool active = false;
+            for (auto* motion : transient->window.findChildren<ElaDrawerArea*>()) active |= motion->isDrawerAnimating();
+            QVERIFY(active);
+#else
             QVERIFY(transient->compositor->isActive());
+#endif
             delete transient;
         }
         QTest::qWait(300);

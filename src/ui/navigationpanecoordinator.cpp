@@ -5,6 +5,7 @@
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaNavigationBar.h"
+#include "ElaDockWidget.h"
 #endif
 
 #include <QEvent>
@@ -63,7 +64,11 @@ private:
 NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     : QObject(parent)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    navigationDock = new ElaDockWidget("Navigation", parent);
+#else
     navigationDock = new QDockWidget("Navigation", parent);
+#endif
     navigationDock->setObjectName(QStringLiteral("navigationDock"));
     auto* emptyTitle = new QWidget(navigationDock);
     emptyTitle->setFixedHeight(0);

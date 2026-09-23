@@ -347,6 +347,7 @@ void verifyFocusAndEditorPreservation(DrawerHarness& harness)
     QApplication::processEvents();
     QTest::keyClick(panelTree, Qt::Key_Escape);
     QApplication::processEvents();
+    QTest::qWait(330);
     check(harness.controller->isBottomCollapsed()
               && QApplication::focusWidget() == harness.editor,
           "panel-scoped Escape closes the drawer and restores editor focus");

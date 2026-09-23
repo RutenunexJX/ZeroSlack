@@ -10,6 +10,7 @@
 #include "contextdockhost.h"
 #include "liveinsightscontextprovider.h"
 #include "ElaNavigationBar.h"
+#include "ElaDrawerArea.h"
 #include <QApplication>
 #include <QDockWidget>
 #include <QElapsedTimer>
@@ -41,6 +42,7 @@ public:
     QVector<double> intervals;
     QPointer<QDockWidget> dock;
     QPointer<PanelCompositor> compositor;
+    QPointer<ElaDrawerArea> drawer;
     QElapsedTimer frames;
     qint64 previousFrame = -1;
 
@@ -54,6 +56,8 @@ public:
             : QString("%1/%2").arg(receiver->metaObject()->className(), receiver->objectName());
         const QString key = QString::number(type) + ":" + owner;
         if ((!nativeNavigation && compositor && receiver == compositor && type == QEvent::Paint)
+            || (!nativeNavigation && drawer && type == QEvent::Paint && receiver->parent() == drawer
+                && receiver->inherits("ElaDrawerContainer"))
             || (nativeNavigation && receiver == dock && type == QEvent::Resize)) {
             const auto now = frames.nsecsElapsed();
             if (previousFrame >= 0) intervals.append((now - previousFrame) / 1e6);
@@ -101,7 +105,7 @@ int main(int argc, char** argv) {
     PanelLayoutController* drawer = nullptr;
     for (auto* child : host.children())
         if (auto* candidate = dynamic_cast<PanelLayoutController*>(child)) drawer = candidate;
-    if (!context || !drawer || !app.compositor) return 11;
+    if (!context || !drawer) return 11;
     const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module, profile.path());
     if (!context->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global})) return 12;
     auto* navigation = host.findChild<NavigationWidget*>();
@@ -117,18 +121,25 @@ int main(int argc, char** argv) {
         else host.resize(size);
         QTest::qWait(100);
         for (const auto& scene : {QString("left"), QString("right"), QString("bottom"), QString("section")}) {
-        app.compositor->settle();
+        if (app.compositor) app.compositor->settle();
+        for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
         navigationPane->setExpanded(true, false);
         drawer->setBottomCollapsed(true);
         context->setDockVisible(scene == "section");
-        app.compositor->settle();
+        if (app.compositor) app.compositor->settle();
+        for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
         context->dockHost()->setSectionCollapsed(resource.stableKey(), false, false);
         QTest::qWait(100);
         app.costs.clear(); app.intervals.clear(); editor->resetHotPathMetricsForTest();
         app.nativeNavigation = scene == "left";
+        app.drawer = scene == "right" ? host.findChild<ElaDrawerArea*>("contextSidebarDrawer")
+            : scene == "bottom" ? host.findChild<ElaDrawerArea*>("bottomPanelDrawer")
+            : scene == "section" ? context->dockHost()->sectionWidget(resource.stableKey())->findChild<ElaDrawerArea*>("contextSectionDrawer") : nullptr;
         QJsonArray durations;
         QJsonArray dispatchTimes;
         QJsonArray renderers;
+        QJsonArray snapshotBytes;
+        QJsonArray preparationMs;
         for (int i = 0; i < 12; ++i) {
             app.previousFrame = -1; app.frames.start(); app.measuring = true;
             QElapsedTimer duration; duration.start();
@@ -136,28 +147,35 @@ int main(int argc, char** argv) {
             QTimer deadline;
             deadline.setSingleShot(true);
             QObject::connect(&deadline, &QTimer::timeout, &motion, &QEventLoop::quit);
-            const auto finished = QObject::connect(app.compositor, &PanelCompositor::finished,
-                &motion, &QEventLoop::quit);
+            const auto finished = app.compositor ? QObject::connect(app.compositor, &PanelCompositor::finished,
+                &motion, &QEventLoop::quit) : QMetaObject::Connection();
             const auto navigationFinished = QObject::connect(bar, &ElaNavigationBar::displayModeTransitionFinished,
                 &motion, &QEventLoop::quit);
-            if (!finished) return 13;
+            const auto drawerFinished = app.drawer ? QObject::connect(app.drawer, &ElaDrawerArea::drawerAnimationFinished,
+                &motion, &QEventLoop::quit) : QMetaObject::Connection();
             if (scene == "left") navigationPane->setExpanded(i % 2 != 0);
             else if (scene == "right") context->setDockVisible(i % 2 == 0);
             else if (scene == "bottom") drawer->setBottomCollapsed(i % 2 != 0);
             else context->dockHost()->setSectionCollapsed(resource.stableKey(), i % 2 == 0);
             dispatchTimes.append(duration.nsecsElapsed() / 1e6);
             renderers.append(bar->isDisplayModeAnimating() ? "ElaNavigationBar"
-                : app.compositor->isActive() ? app.compositor->renderer() : "immediate");
-            if (app.compositor->isActive() || bar->isDisplayModeAnimating()) {
+                : app.drawer && app.drawer->isDrawerAnimating() ? "ElaDrawerArea"
+                : app.compositor && app.compositor->isActive() ? app.compositor->renderer() : "immediate");
+            snapshotBytes.append(app.drawer ? app.drawer->drawerSnapshotBytes() : app.compositor ? app.compositor->snapshotBytes() : 0);
+            preparationMs.append(app.drawer ? app.drawer->drawerPreparationMs() : 0);
+            if ((app.compositor && app.compositor->isActive()) || bar->isDisplayModeAnimating()
+                || (app.drawer && app.drawer->isDrawerAnimating())) {
                 deadline.start(3000);
                 motion.exec();
             }
             QObject::disconnect(finished);
             QObject::disconnect(navigationFinished);
+            QObject::disconnect(drawerFinished);
             QTest::qWait(20);
             app.measuring = false;
             durations.append(duration.nsecsElapsed() / 1e6);
-            if (app.compositor->isActive() || bar->isDisplayModeAnimating()) return 8;
+            if ((app.compositor && app.compositor->isActive()) || bar->isDisplayModeAnimating()
+                || (app.drawer && app.drawer->isDrawerAnimating())) return 8;
         }
         QJsonObject events;
         for (auto it = app.costs.cbegin(); it != app.costs.cend(); ++it)
@@ -172,8 +190,9 @@ int main(int argc, char** argv) {
             {"editorWidth", editor->width()}, {"editorHeight", editor->height()},
             {"durationsMs", durations}, {"frameIntervals", sorted.size()},
             {"dispatchMs", dispatchTimes}, {"renderers", renderers},
+            {"snapshotBytes", snapshotBytes}, {"preparationMs", preparationMs},
             {"renderer", app.nativeNavigation ? "ElaNavigationBar/live-layout"
-                : app.compositor ? app.compositor->renderer() : "live-layout"},
+                : app.drawer ? "ElaDrawerArea" : app.compositor ? app.compositor->renderer() : "live-layout"},
             {"compositionRefreshRate", !app.nativeNavigation && app.compositor ? app.compositor->compositionRefreshRate() : 0},
             {"intervalMedianMs", quantile(.5)}, {"intervalP95Ms", quantile(.95)},
             {"intervalMaxMs", quantile(1)}, {"visiblePresentationRefreshes", qint64(metrics.visiblePresentationRefreshes)},

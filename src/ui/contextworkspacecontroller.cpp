@@ -12,15 +12,18 @@
 #include "panelcompositor.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDockWidget.h"
+#include "ElaDrawerArea.h"
 #endif
 
 #include <QDockWidget>
 #include <QDir>
 #include <QEvent>
+#include <QCloseEvent>
 #include <QFileInfo>
 #include <QHash>
 #include <QIcon>
 #include <QMainWindow>
+#include <QLayout>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -143,7 +146,24 @@ ContextWorkspaceController::ContextWorkspaceController(
                                | Qt::LeftDockWidgetArea);
     dockValue->setFeatures(QDockWidget::DockWidgetClosable);
     dockHostValue = new ContextDockHost(dockValue);
+#ifdef ZEROSLACK_ENABLE_ELA
+    sideDrawer = new ElaDrawerArea(dockValue);
+    sideDrawer->setObjectName(QStringLiteral("contextSidebarDrawer"));
+    sideDrawer->setDrawerHeaderVisible(false);
+    sideDrawer->setBorderRadius(0);
+    sideDrawer->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
+    sideDrawer->setDrawerEdge(Qt::RightEdge);
+    sideDrawer->addDrawer(dockHostValue);
+    dockValue->setWidget(sideDrawer);
+    connect(sideDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
+        if (!expanded && dockValue) dockValue->hide();
+    });
+    connect(dockValue, &QDockWidget::topLevelChanged, sideDrawer, [this] {
+        sideDrawer->finishDrawerAnimation();
+    });
+#else
     dockValue->setWidget(dockHostValue);
+#endif
     dockHostValue->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
     if (mainWindow->centralWidget())
         mainWindow->centralWidget()->setMinimumWidth(240);
@@ -328,7 +348,12 @@ QDockWidget* ContextWorkspaceController::dockWidget() const
 
 bool ContextWorkspaceController::dockVisible() const
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    return (dockValue && dockValue->isVisible() && sideDrawer && sideDrawer->getIsExpand())
+        || (bottomDockValue && bottomDockValue->isVisible());
+#else
     return (dockValue && dockValue->isVisible()) || (bottomDockValue && bottomDockValue->isVisible());
+#endif
 }
 
 QDockWidget* ContextWorkspaceController::bottomDockWidget() const { return bottomDockValue; }
@@ -987,6 +1012,9 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
             ? dockValue->width()
             : preferredDockWidthValue);
     state.dockVisible = dockValue && dockValue->isVisible();
+#ifdef ZEROSLACK_ENABLE_ELA
+    state.dockVisible = state.dockVisible && sideDrawer && sideDrawer->getIsExpand();
+#endif
     state.bottomDockVisible = bottomDockValue && bottomDockValue->isVisible();
     state.bottomDockHeight = state.bottomDockVisible ? bottomDockValue->height() : preferredBottomHeight;
     state.railVisible = railValue && railValue->isVisible();
@@ -1246,6 +1274,14 @@ bool ContextWorkspaceController::eventFilter(
     QObject* watched,
     QEvent* event)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (watched == dockValue && sideDrawer && !applyingDockWidth) {
+        if (event->type() == QEvent::Show && !sideDrawer->getIsExpand())
+            sideDrawer->setExpanded(true, false);
+        else if (event->type() == QEvent::Hide && sideDrawer->getIsExpand())
+            sideDrawer->setExpanded(false, false);
+    }
+#endif
     if (watched == bottomDockValue && event->type() == QEvent::Resize
         && !restoringState && !previewingDocks && !applyingBottomHeight && bottomDockValue->isVisible()) {
         preferredBottomHeight = bottomDockValue->height();
@@ -1253,6 +1289,7 @@ bool ContextWorkspaceController::eventFilter(
     }
     if (watched == dockValue && event->type() == QEvent::Close && !restoringState
         && !dockValue->isFloating()) {
+        static_cast<QCloseEvent*>(event)->ignore();
         applyDockVisibility(false);
         return true;
     }
@@ -1494,6 +1531,26 @@ void ContextWorkspaceController::endDockPreview()
 void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPreferredWidth, bool animate)
 {
     if (!dockValue || !window) return;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (sideDrawer) {
+        const auto area = window->dockWidgetArea(dockValue);
+        sideDrawer->setDrawerEdge(area == Qt::LeftDockWidgetArea ? Qt::LeftEdge : Qt::RightEdge);
+        QScopedValueRollback<bool> guard(applyingDockWidth, true);
+        const bool canAnimate = animate && !restoringState && window->isVisible()
+            && !dockValue->isFloating() && window->tabifiedDockWidgets(dockValue).isEmpty();
+        if (visible) {
+            if (!dockValue->isVisible()) sideDrawer->setExpanded(false, false);
+            dockValue->show();
+            dockValue->raise();
+            if (applyPreferredWidth && !dockValue->isFloating())
+                window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
+            if (window->layout()) window->layout()->activate();
+        }
+        sideDrawer->setExpanded(visible, canAnimate);
+        if (!visible && !sideDrawer->isDrawerAnimating()) dockValue->hide();
+        return;
+    }
+#endif
     const bool changesVisibility = dockValue->isVisible() != visible;
     if (!changesVisibility && !applyPreferredWidth) return;
     auto* compositor = window->findChild<PanelCompositor*>();

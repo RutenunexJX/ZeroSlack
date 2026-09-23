@@ -13,6 +13,9 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "testuistyle.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDrawerArea.h"
+#endif
 
 #include <QAction>
 #include <QApplication>
@@ -39,6 +42,7 @@
 #include <QMenu>
 #include <QPainter>
 #include <QImage>
+#include <QSplitter>
 
 #include <iostream>
 #include <limits>
@@ -47,6 +51,32 @@
 namespace {
 int checks = 0;
 int failures = 0;
+
+void settleUi()
+{
+    QApplication::processEvents();
+#ifdef ZEROSLACK_ENABLE_ELA
+    // These are lifecycle/geometry checks; motion interruption is tested separately.
+    QElapsedTimer elapsed;
+    elapsed.start();
+    for (;;) {
+        bool active = false;
+        for (auto* widget : QApplication::topLevelWidgets())
+            for (auto* drawer : widget->findChildren<ElaDrawerArea*>())
+                active |= drawer->isDrawerAnimating();
+        if (!active || elapsed.elapsed() > 1000) break;
+        QTest::qWait(10);
+    }
+    QApplication::processEvents();
+#endif
+}
+
+QWidget* sectionResizeHandle(ContextDockHost* host, const QString& key)
+{
+    auto* frame = host->sectionWidget(key);
+    auto* splitter = qobject_cast<QSplitter*>(frame ? frame->parentWidget() : nullptr);
+    return splitter ? splitter->handle(splitter->indexOf(frame) + 1) : nullptr;
+}
 
 void check(bool condition, const char* message)
 {
@@ -60,7 +90,7 @@ void check(bool condition, const char* message)
 void processDeferredDeletes()
 {
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-    QApplication::processEvents();
+    settleUi();
 }
 
 void beginFloatingMove(ContextFloatingWindow* host)
@@ -140,7 +170,7 @@ void dragHandle(QWidget* handle, const QPoint& globalDelta)
                    finish,
                    Qt::LeftButton,
                    Qt::NoButton);
-    QApplication::processEvents();
+    settleUi();
 }
 
 void doubleClickHandle(QWidget* handle)
@@ -154,7 +184,7 @@ void doubleClickHandle(QWidget* handle)
                    global,
                    Qt::LeftButton,
                    Qt::LeftButton);
-    QApplication::processEvents();
+    settleUi();
 }
 
 bool anchoredToBottomRight(const QWidget* host,
@@ -316,7 +346,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     auto* region = new QWidget(&window);
     window.setCentralWidget(region);
     window.show();
-    QApplication::processEvents();
+    settleUi();
     ProviderCounters counters;
     ContextWorkspaceController controller(&window, region, &window);
     controller.registerProvider(std::make_unique<MockProvider>(&counters));
@@ -341,7 +371,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     }
     initial.activePinnedResourceKey = QStringLiteral("mock:compat-a");
     const auto restored = controller.restoreState(initial);
-    QApplication::processEvents();
+    settleUi();
     const auto captured = controller.captureState();
     check(ContextWorkspaceState::kVersion == 7 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
@@ -356,7 +386,7 @@ void verifyStateCompatibility(const QStringList& arguments)
         check(loaded.loaded && sameState(initial, loaded.state.ui.contextWorkspace),
               "cross_build_import: every serialized context field matches the old/new fixture");
         controller.restoreState(loaded.state.ui.contextWorkspace);
-        QApplication::processEvents();
+        settleUi();
         check(sameState(initial, controller.captureState()),
               "cross_build_restore: imported state restores to identical live context state");
     }
@@ -380,7 +410,7 @@ struct PlacementFixture {
         auto* region = new QWidget(&window);
         window.setCentralWidget(region);
         window.show();
-        QApplication::processEvents();
+        settleUi();
         controller = std::make_unique<ContextWorkspaceController>(&window, region, &window);
         controller->setWorkspaceRoot(QStringLiteral("workspace-a"));
         controller->registerProvider(std::make_unique<MockProvider>(&counters));
@@ -418,7 +448,7 @@ void verifyLegacyFloatingDockMigration()
           "legacy_dock_fixture: Qt restores floating state even with Floatable disabled");
     const int created = fixture.counters.created;
     const auto result = controller.restoreState(saved, true);
-    QApplication::processEvents();
+    settleUi();
     check(!side->isFloating() && !bottom->isFloating() && !side->isVisible()
               && controller.floatingWindows().size() == 2 && controller.dockHost()->resourceCount() == 1
               && controller.dockHost()->isBottomResource("mock:bottom"),
@@ -613,7 +643,7 @@ void verifyRailThreeStates()
     fixture.counters.activation = resource(QStringLiteral("rail"));
     QAction* action = controller.rail()->actions().constFirst();
     QWidget* button = controller.rail()->widgetForAction(action);
-    QApplication::processEvents();
+    settleUi();
     check(button && button->isVisible(), "rail entry exposes a clickable widget");
     QTest::mouseClick(button, Qt::LeftButton);
     QWidget* firstView = controller.dockHost()->viewForResource(fixture.counters.activation.stableKey());
@@ -729,7 +759,7 @@ void verifyFloatingGeometryRoundtrip()
     window->resize(target.width() - margins.left() - margins.right(),
                    target.height() - margins.top() - margins.bottom());
     window->move(target.topLeft());
-    QApplication::processEvents();
+    settleUi();
     const auto saved = controller.captureState();
     check(available.contains(target) && window->frameGeometry() == target,
           "floating_geometry: derived outer rectangle is fully visible and applied exactly");
@@ -745,7 +775,7 @@ void verifyFloatingGeometryRoundtrip()
     check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
           "floating_geometry: all fields survive capture and restore independently of overlay size");
     controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
-    QApplication::processEvents();
+    settleUi();
     check(sameState(saved, controller.captureState()),
           "floating_geometry: reopening uses saved geometry rather than provider preferred size");
     window->close();
@@ -831,7 +861,7 @@ void verifyFloatingOpacityAndSettings()
     PlacementFixture fixture;
     auto* window = fixture.controller->floatingWindow();
     window->setView(resource("acrylic"), new QLabel(QStringLiteral("Opaque content")));
-    QApplication::processEvents();
+    settleUi();
     check(window->backgroundOpacity() == 90, "floating_opacity: default background opacity is 90 percent");
     window->setBackgroundOpacity(73);
     for (const auto type : {QEvent::WindowDeactivate, QEvent::WindowActivate, QEvent::Leave}) {
@@ -957,14 +987,14 @@ void verifyMultipleFloatingWindows()
     check(hosts[0]->isVisible() && hosts[1]->isVisible() && hosts[2]->isVisible()
               && sameState(saved, controller.captureState()) && closed.isEmpty(),
           "multi_expand: all captured geometry fields survive hide and restore exactly");
-    QApplication::processEvents();
+    settleUi();
     controller.focusResource(resource("two").stableKey());
-    QApplication::processEvents();
+    settleUi();
     controller.dockWidget()->hide();
     fixture.window.centralWidget()->setFocusPolicy(Qt::StrongFocus);
     fixture.window.activateWindow();
     fixture.window.centralWidget()->setFocus();
-    QApplication::processEvents();
+    settleUi();
     controller.rail()->actions().constFirst()->trigger();
     check(controller.floatingSurface()->view() == hosts[1]->view() && hosts[1]->isVisible() && fixture.counters.created == created,
           "multi_rail_focus: left click selects the most recently focused instance without cycling");
@@ -1064,7 +1094,7 @@ void verifyRailContextMenuSignal()
 {
     ContextRail rail;
     rail.addEntry({"provider", "Provider", {}, {}});
-    rail.resize(60, 200); rail.show(); QApplication::processEvents();
+    rail.resize(60, 200); rail.show(); settleUi();
     QSignalSpy requested(&rail, &ContextRail::entryContextMenuRequested);
     const QPoint point = rail.actionGeometry(rail.actions().first()).center();
     QMetaObject::invokeMethod(&rail, "customContextMenuRequested", Qt::DirectConnection, Q_ARG(QPoint, point));
@@ -1230,7 +1260,7 @@ void verifySidebarStack()
     auto& controller = *fixture.controller;
     auto* host = controller.dockHost();
     for (const auto& id : {"stack-a", "stack-b", "stack-c"}) controller.openResource(resource(id), keptPlacement);
-    QApplication::processEvents();
+    settleUi();
     const auto keys = host->resourceKeys();
     bool visible = keys.size() == 3;
     for (const auto& key : keys)
@@ -1246,6 +1276,7 @@ void verifySidebarStack()
     check(!middle->isVisible() && host->viewForResource(keys[1]) == middle && fixture.counters.created == created,
           "stack_collapse: hiding the middle content retains the view");
     host->setSectionCollapsed(keys[1], false);
+    settleUi();
     check(host->sectionWidget(keys[1])->geometry() == geometry && middle->isVisible(),
           "stack_expand: expanded geometry returns exactly");
     for (const auto& key : keys) host->setSectionCollapsed(key, true);
@@ -1265,7 +1296,7 @@ void verifySidebarStack()
     fixture.window.activateWindow();
     fixture.window.centralWidget()->setFocusPolicy(Qt::StrongFocus);
     fixture.window.centralWidget()->setFocus();
-    QApplication::processEvents();
+    settleUi();
     controller.rail()->actions().first()->trigger();
     controller.rail()->actions().first()->trigger();
     check(host->isSectionCollapsed(keys[1]) && !host->isSectionCollapsed(keys[0]) && controller.dockWidget()->isVisible(),
@@ -1280,6 +1311,7 @@ void verifySidebarStack()
     check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
           "stack_v6_roundtrip: order, collapsed states and requested heights survive the production serializer");
     controller.dockWidget()->toggleViewAction()->trigger();
+    settleUi();
     check(!controller.dockWidget()->isVisible(), "stack_hide_whole: the dock toggle still hides the entire sidebar");
 }
 
@@ -1296,7 +1328,7 @@ void verifySectionPreferredHeight()
         const ContextResource item = resource(QStringLiteral("height-default"));
         check(controller.openResource(item, keptPlacement),
               "section_height_default_open: kept resource opens");
-        QApplication::processEvents();
+        settleUi();
         check(controller.dockHost()->sectionHeight(item.stableKey()) == 0,
               "section_height_default: a provider suggesting nothing leaves the "
               "section on the dock's own split");
@@ -1311,7 +1343,7 @@ void verifySectionPreferredHeight()
         const QString key = item.stableKey();
         check(controller.openResource(item, keptPlacement),
               "section_height_suggested_open: kept resource opens");
-        QApplication::processEvents();
+        settleUi();
         check(host->sectionHeight(key) == suggested,
               "section_height_suggested: the section starts at the height its "
               "provider suggested");
@@ -1331,7 +1363,7 @@ void verifySectionPreferredHeight()
               "section_height_persisted: the dragged height is what state "
               "capture records");
         controller.restoreState(saved);
-        QApplication::processEvents();
+        settleUi();
         check(controller.dockHost()->sectionHeight(key) == dragged,
               "section_height_restore_user: a stored height the user chose wins "
               "over the suggestion");
@@ -1346,14 +1378,14 @@ void verifySectionPreferredHeight()
         const QString key = item.stableKey();
         check(controller.openResource(item, keptPlacement),
               "section_height_legacy_open: kept resource opens");
-        QApplication::processEvents();
+        settleUi();
         ContextWorkspaceState state = controller.captureState();
         for (auto& section : state.dockSections) {
             if (section.resourceKey == key)
                 section.height = 0;
         }
         controller.restoreState(state);
-        QApplication::processEvents();
+        settleUi();
         check(controller.dockHost()->sectionHeight(key) == suggested,
               "section_height_restore_legacy: a stored height of zero keeps the "
               "suggested height instead of clearing it");
@@ -1367,7 +1399,7 @@ void verifySectionStatusFromView()
     const ContextResource item = resource(QStringLiteral("status-a"));
     const QString key = item.stableKey();
     check(controller.openResource(item, keptPlacement), "section_status_open: kept resource opens");
-    QApplication::processEvents();
+    settleUi();
     auto* host = controller.dockHost();
     QLabel* status = host->sectionStatus(key);
     check(status && !status->isVisible(),
@@ -1375,12 +1407,12 @@ void verifySectionStatusFromView()
     QWidget* view = host->viewForResource(key);
     view->setProperty("contextStatusText", QStringLiteral("Stale"));
     view->setProperty("contextStatusTooltip", QStringLiteral("last valid result"));
-    QApplication::processEvents();
+    settleUi();
     check(status->isVisible() && status->text() == QStringLiteral("Stale")
               && status->toolTip() == QStringLiteral("last valid result"),
           "section_status_published: the header shows status published by the view");
     view->setProperty("contextStatusText", QString());
-    QApplication::processEvents();
+    settleUi();
     check(!status->isVisible(),
           "section_status_cleared: clearing the property hides the header chip");
 }
@@ -1398,9 +1430,9 @@ void verifySidebarVisibilityToggle()
     check(controller.openResource(item, keptPlacement) && controller.dockVisible()
               && controller.canShowDock(),
           "sidebar_visibility_open: opening a kept resource shows the sidebar");
-    QApplication::processEvents();
+    settleUi();
     fixture.window.resizeDocks({controller.dockWidget()}, {520}, Qt::Horizontal);
-    QApplication::processEvents();
+    settleUi();
     const int width = controller.dockWidget()->width();
     QWidget* view = controller.dockHost()->viewForResource(key);
     const int created = fixture.counters.created;
@@ -1443,18 +1475,18 @@ void verifySidebarCompression()
     const QRect available = QGuiApplication::primaryScreen()->availableGeometry();
     host.resize(available.width() / 2, available.height() / 2);
     for (const auto& id : {"compress-a", "compress-b", "compress-c"}) host.addResource(resource(id), new QLabel(id));
-    host.show(); QApplication::processEvents();
+    host.show(); settleUi();
     const auto keys = host.resourceKeys();
     const int desired = available.height() / 3;
     for (const auto& key : keys) host.setSectionHeight(key, desired);
     host.activateResource(keys[1]);
     host.resize(host.width(), qMax(260, available.height() * 3 / 5));
-    QApplication::processEvents();
+    settleUi();
     check(qAbs(host.sectionWidget(keys[0])->height() - host.sectionWidget(keys[1])->height()) <= 1
               && qAbs(host.sectionWidget(keys[2])->height() - host.sectionWidget(keys[1])->height()) <= 1
               && host.sectionWidget(keys[0])->height() < host.sectionHeight(keys[0]),
           "stack_compression: equal section weights share available height regardless of focus");
-    auto* handle = host.sectionWidget(keys[1])->findChild<QWidget*>("contextSectionResize");
+    auto* handle = sectionResizeHandle(&host, keys[1]);
     const int before = host.sectionHeight(keys[1]);
     dragHandle(handle, QPoint(0, available.height() / 10));
     check(host.sectionHeight(keys[1]) != before, "stack_resize: the section boundary changes its persisted height");
@@ -1513,7 +1545,7 @@ void verifySidebarDragOut()
     auto& controller = *fixture.controller;
     auto* host = controller.dockHost();
     for (const auto& id : {"drag-a", "drag-b", "drag-c"}) controller.openResource(resource(id), keptPlacement);
-    QApplication::processEvents();
+    settleUi();
     const auto keys = host->resourceKeys();
     host->setSectionCollapsed(keys[1], true);
     QWidget* view = host->viewForResource(keys[2]);
@@ -1565,7 +1597,7 @@ void verifySidebarDragBack()
               && floating->isAncestorOf(floating->titleBar()),
           "stack_drag_title: the Ela title bar remains interactive and supports docking");
     beginFloatingMove(floating);
-    QApplication::processEvents();
+    settleUi();
     for (const auto& key : host->resourceKeys()) host->setSectionCollapsed(key, true);
     QWidget* second = host->sectionWidget("mock:drop-b");
     const QPoint upper = second->mapToGlobal(QPoint(second->width() / 2, second->height() / 4));
@@ -1581,6 +1613,7 @@ void verifySidebarDragBack()
               && !floating->isVisible() && !floating->hasResource() && controller.floatingWindows().isEmpty(),
           "stack_drop_identity: drag back retains QWidget and closes the empty native surface with no duplicate resource");
     controller.unpinResource(floatingResource.stableKey()); floating = controller.floatingWindow();
+    settleUi();
     second = host->sectionWidget("mock:drop-b");
     const QPoint lower = second->mapToGlobal(QPoint(second->width() / 2, second->height() * 3 / 4));
     check(host->acceptFloatingDrop(floating, floatingResource.stableKey(), lower)
@@ -1650,7 +1683,7 @@ void verifyTiledBottomAndSidebar()
         QWidget* original = floating->view();
         if (!firstView) firstView = original;
         beginFloatingMove(floating);
-        QApplication::processEvents();
+        settleUi();
         QWidget* target = host->bottomWidget();
         QWidget* center = fixture.window.centralWidget();
         const QPoint destination = controller.bottomDockWidget()->isVisible()
@@ -1658,7 +1691,7 @@ void verifyTiledBottomAndSidebar()
             : center->mapToGlobal(QPoint(center->width() / 2, center->height() - 8));
         updateFloatingMove(floating, destination);
         finishFloatingMove(floating, destination, false);
-        QApplication::processEvents();
+        settleUi();
         check(host->isBottomResource(item.stableKey())
                   && host->viewForResource(item.stableKey()) == original && !floating->hasResource(),
               "tiles_drop_retains_view_identity");
@@ -1671,7 +1704,7 @@ void verifyTiledBottomAndSidebar()
     if (!first || !second) return;
     const int oldFirst = first->width();
     const int oldSecond = second->width();
-    dragHandle(first->findChild<QWidget*>("contextSectionResize"), QPoint(35, 0));
+    dragHandle(sectionResizeHandle(host, "mock:bottom-a"), QPoint(35, 0));
     check(qAbs(first->width() - oldFirst - 35) <= 1 && qAbs(second->width() - oldSecond + 35) <= 1,
           "tiles_divider_moves_adjacent_boundary_by_pointer_distance");
     check(host->viewForResource("mock:bottom-a") == firstView, "tiles_resize_retains_content");
@@ -1685,7 +1718,7 @@ void verifyTiledBottomAndSidebar()
     const auto loaded = service.load(session.workspaceRoot);
     check(loaded.loaded && sameState(saved, loaded.state.ui.contextWorkspace), "tiles_wire_roundtrip");
     controller.restoreState(loaded.state.ui.contextWorkspace);
-    QApplication::processEvents();
+    settleUi();
     check(host->areaResourceCount(false) == 1 && host->areaResourceCount(true) == 2
               && controller.bottomDockWidget()->isVisible() && controller.dockWidget()->isVisible()
               && sameState(saved, controller.captureState()), "tiles_live_roundtrip");
@@ -1774,7 +1807,7 @@ int main(int argc, char* argv[])
     editorRegion->setObjectName(QStringLiteral("editorRegion"));
     window.setCentralWidget(editorRegion);
     window.show();
-    QApplication::processEvents();
+    settleUi();
 
     ProviderCounters counters;
     ContextWorkspaceController controller(
@@ -1824,7 +1857,7 @@ int main(int argc, char* argv[])
               && controller.peekHost()->resource() == original
               && !controller.dockWidget()->isVisible(),
           "resource opens in the single transient Peek host");
-    QApplication::processEvents();
+    settleUi();
     QWidget* leftHandle =
         controller.peekHost()->findChild<QWidget*>(
             QStringLiteral("contextPeekResizeLeft"));
@@ -1905,7 +1938,7 @@ int main(int argc, char* argv[])
     const QSize retainedUserSize(610, 390);
     controller.peekHost()->setPreferredSize(retainedUserSize);
     window.resize(560, 500);
-    QApplication::processEvents();
+    settleUi();
     check(editorRegion->contentsRect().contains(
               controller.peekHost()->geometry())
               && editorRegion->contentsRect().width()
@@ -1917,7 +1950,7 @@ int main(int argc, char* argv[])
               && cornerHandle->isVisible(),
           "narrow windows keep Peek and every handle reachable while retaining editor width");
     window.resize(1000, 700);
-    QApplication::processEvents();
+    settleUi();
     check(controller.peekHost()->preferredSize()
               == retainedUserSize
               && controller.peekHost()->size()
@@ -1960,6 +1993,7 @@ int main(int argc, char* argv[])
     QToolButton* dockFullView =
         controller.dockHost()->findChild<QToolButton*>(
             QStringLiteral("contextDockFullView"));
+    settleUi();
     if (dockFullView)
         dockFullView->click();
     check(dockFullView && dockFullView->isVisible()
@@ -1974,10 +2008,10 @@ int main(int argc, char* argv[])
           "pinned host supports multiple independent resource tabs");
     controller.closePeek();
     controller.rail()->actions().constFirst()->trigger();
-    QApplication::processEvents();
+    settleUi();
     check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()), "rail collapses the active pinned section while retaining the sidebar");
     controller.rail()->actions().constFirst()->trigger();
-    QApplication::processEvents();
+    settleUi();
     check(controller.dockWidget()->isVisible()
               && controller.dockHost()->currentResource() == original,
           "reopening a provider preserves its active tab among multiple resources");
@@ -2023,7 +2057,7 @@ int main(int argc, char* argv[])
           "workspace-scoped resources can be pinned before capture");
     window.resizeDocks(
         {controller.dockWidget()}, {420}, Qt::Horizontal);
-    QApplication::processEvents();
+    settleUi();
     const int userDockWidth = controller.dockWidget()->width();
     controller.dockHost()->activateResource(original.stableKey());
     const ContextResource transient = resource(QStringLiteral("transient"));
@@ -2051,7 +2085,7 @@ int main(int argc, char* argv[])
           "providers receive a state-change bridge from the Context controller");
     if (counters.providerStateChanged)
         counters.providerStateChanged();
-    QApplication::processEvents();
+    settleUi();
     check(providerStateSignalSpy.count() == 1,
           "provider-only state changes request automatic workspace persistence");
 
@@ -2081,20 +2115,20 @@ int main(int argc, char* argv[])
 
     window.resizeDocks(
         {controller.dockWidget()}, {350}, Qt::Horizontal);
-    QApplication::processEvents();
+    settleUi();
     const int qtRestoredWidth = controller.dockWidget()->width();
     ContextWorkspaceState alternateDockState = savedState;
     alternateDockState.dockWidth = 650;
     const ContextWorkspaceRestoreResult preservedDockRestore =
         controller.restoreState(alternateDockState, true);
-    QApplication::processEvents();
+    settleUi();
     const int preservedDockWidth = controller.dockWidget()->width();
     check(preservedDockRestore.restoredResources == 2
               && qAbs(preservedDockWidth - qtRestoredWidth) <= 12,
           "Context restore can preserve geometry already restored by QMainWindow");
     const ContextWorkspaceRestoreResult portableDockRestore =
         controller.restoreState(alternateDockState, false);
-    QApplication::processEvents();
+    settleUi();
     const int portableDockWidth = controller.dockWidget()->width();
     check(portableDockRestore.restoredResources == 2
               && portableDockWidth > preservedDockWidth
@@ -2138,7 +2172,7 @@ int main(int argc, char* argv[])
                    lifecycleHost));
     lifecycleHost->setPreferredSize(QSize(520, 440));
     lifecycleHost->setFocus();
-    QApplication::processEvents();
+    settleUi();
     QWidget* lifecycleHandle =
         lifecycleHost->findChild<QWidget*>(
             QStringLiteral("contextPeekResizeCorner"));
@@ -2160,7 +2194,7 @@ int main(int argc, char* argv[])
                    Qt::NoButton,
                    Qt::LeftButton);
     QTest::keyClick(lifecycleHost, Qt::Key_Escape);
-    QApplication::processEvents();
+    settleUi();
     check(closeSpy.count() == 1
               && lifecycleHost->preferredSize()
                      == QSize(520, 440)
@@ -2174,7 +2208,7 @@ int main(int argc, char* argv[])
                    Qt::LeftButton,
                    Qt::LeftButton);
     delete lifecycleHost;
-    QApplication::processEvents();
+    settleUi();
     check(lifecycleHandleGuard.isNull()
               && QWidget::mouseGrabber() == nullptr,
           "destroying a resizing host safely releases and destroys its local handles");
@@ -2190,22 +2224,22 @@ int main(int argc, char* argv[])
         ContextWorkspaceController sidebar(&sidebarWindow, center, &sidebarWindow);
         sidebar.registerProvider(std::make_unique<MockProvider>(&sidebarCounters));
         sidebar.rail()->actions().constFirst()->trigger();
-        QApplication::processEvents();
+        settleUi();
         check(sidebar.dockWidget()->isVisible() && !sidebar.peekHost()->hasResource(),
               "rail opens an independent sidebar instead of an editor overlay");
         QWidget* graphView = sidebar.dockHost()->viewForResource(original.stableKey());
         sidebarWindow.resizeDocks({sidebar.dockWidget()}, {750}, Qt::Horizontal);
-        QApplication::processEvents();
+        settleUi();
         const int widened = sidebar.dockWidget()->width();
         check(widened >= 700 && center->width() >= 240,
               "sidebar expands for charts while retaining editor space");
         check(sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
               "resizing preserves the chart view instance");
         sidebar.rail()->actions().constFirst()->trigger();
-        QApplication::processEvents();
+        settleUi();
         check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey()), "second rail click collapses transient section");
         sidebar.rail()->actions().constFirst()->trigger();
-        QApplication::processEvents();
+        settleUi();
         check(qAbs(sidebar.dockWidget()->width() - widened) <= 2,
               "reopening sidebar preserves its resized width");
         check(sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
@@ -2213,12 +2247,12 @@ int main(int argc, char* argv[])
         check(sidebar.openResource(original, ContextPlacement{ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}),
               "current sidebar resource can be pinned");
         sidebar.rail()->actions().constFirst()->trigger();
-        QApplication::processEvents();
+        settleUi();
         check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey())
                   && sidebar.dockHost()->resourceCount() == 1,
               "second click also hides pinned content without removing it");
         sidebar.rail()->actions().constFirst()->trigger();
-        QApplication::processEvents();
+        settleUi();
         check(sidebar.dockWidget()->isVisible()
                   && sidebar.dockHost()->viewForResource(original.stableKey()) == graphView,
               "pinned content reopens with its original view");

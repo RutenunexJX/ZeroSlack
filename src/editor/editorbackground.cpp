@@ -41,21 +41,6 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
             const QSize pixelSize(qRound(viewport.width() * devicePixelRatio),
                                   qRound(viewport.height() * devicePixelRatio));
             const QSize target = source.size().scaled(pixelSize, Qt::KeepAspectRatio);
-            if (scaled.isNull() || target != scaledSize || scaledDpr != devicePixelRatio) {
-                const QString cacheKey = QStringLiteral("zeroslack.editorBackground:%1:%2:%3:%4")
-                    .arg(source.cacheKey()).arg(target.width()).arg(target.height()).arg(devicePixelRatio);
-                if (!QPixmapCache::find(cacheKey, &scaled)) {
-                    scaled = source.scaled(target, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-                    scaled.setDevicePixelRatio(devicePixelRatio);
-                    QPixmapCache::insert(cacheKey, scaled);
-                }
-                scaledSize = target;
-                scaledDpr = devicePixelRatio;
-            }
-            // Keep the complete illustration anchored to the viewport, below all text.
-            const QSizeF size = scaled.deviceIndependentSize();
-            const QPointF origin(viewport.x() + viewport.width() - size.width(),
-                                 viewport.y() + viewport.height() - size.height());
             const qreal themeAttenuation = base.lightnessF() < 0.5 ? 0.35 : 1.0;
             const qreal opacity = imageOpacity / 100.0 * themeAttenuation;
             const qreal surroundOpacity = opacity * sourceBackground.alphaF();
@@ -66,9 +51,37 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
                                    blend(base.green(), sourceBackground.green()),
                                    blend(base.blue(), sourceBackground.blue()));
             painter.fillRect(dirty, surround);
-            painter.fillRect(QRectF(origin, size), base);
-            painter.setOpacity(opacity);
-            painter.drawPixmap(origin, scaled);
+            // Width-only dock animation reuses one opaque, pre-blended image.
+            // Keep the exact fit rectangle; cap the cache for unusually wide images.
+            QSize raster(qMax(1, qRound(qreal(pixelSize.height()) * source.width() / source.height())), pixelSize.height());
+            const qreal pixels = qreal(raster.width()) * raster.height();
+            if (pixels > 8 * 1024 * 1024) raster *= qSqrt(8.0 * 1024 * 1024 / pixels);
+            if (scaled.isNull() || raster != scaledSize || scaledDpr != devicePixelRatio
+                || scaledBase != base || scaledOpacity != opacity) {
+                const QString cacheKey = QStringLiteral("zeroslack.editorBackground:%1:%2:%3:%4:%5:%6")
+                    .arg(source.cacheKey()).arg(raster.width()).arg(raster.height()).arg(devicePixelRatio)
+                    .arg(base.rgba()).arg(opacity);
+                if (!QPixmapCache::find(cacheKey, &scaled)) {
+                    scaled = QPixmap(raster);
+                    scaled.fill(base);
+                    QPainter imagePainter(&scaled);
+                    imagePainter.setRenderHint(QPainter::SmoothPixmapTransform);
+                    imagePainter.setOpacity(opacity);
+                    imagePainter.drawPixmap(scaled.rect(), source);
+                    imagePainter.end();
+                    scaled.setDevicePixelRatio(devicePixelRatio);
+                    QPixmapCache::insert(cacheKey, scaled);
+                }
+                scaledSize = raster;
+                scaledDpr = devicePixelRatio;
+                scaledBase = base;
+                scaledOpacity = opacity;
+            }
+            const QSizeF size = QSizeF(target) / devicePixelRatio;
+            const QPointF origin(viewport.x() + viewport.width() - size.width(),
+                                 viewport.y() + viewport.height() - size.height());
+            painter.setRenderHint(QPainter::SmoothPixmapTransform);
+            painter.drawPixmap(QRectF(origin, size), scaled, QRectF(scaled.rect()));
         }
     }
     painter.restore();

@@ -7,6 +7,12 @@
 #include <QIcon>
 #include <QStringList>
 #include <QToolBar>
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaToolBar.h"
+using ContextRailBase = ElaToolBar;
+#else
+using ContextRailBase = QToolBar;
+#endif
 
 class QAction;
 
@@ -17,7 +23,7 @@ struct ContextRailEntry {
     QIcon icon;
 };
 
-class ZEROSLACK_API ContextRail final : public QToolBar
+class ZEROSLACK_API ContextRail final : public ContextRailBase
 {
     Q_OBJECT
 

@@ -1,6 +1,6 @@
 # Ela 原生交互适配
 
-状态：实现、构建与后台验证完成（2026-09-24）；纳入 0.31.9 发布，桌面观感验收待执行。适用范围：仅 Ela 版本。
+状态：以下是已纳入 0.31.9 的第一轮记录；2026-09-24 的后续适配已替换右栏、底栏和折叠控制，当前结果见 [六应用原生能力计划](ela-suite-capability-plan.md)。桌面观感验收仍待执行。适用范围：仅 Ela 版本。
 
 ## 目标与边界
 
@@ -33,8 +33,9 @@ Context 在 Qt 落位动画结束后把同一个 QWidget 交回现有 ContextDoc
 业务布局替换为 Ela 示例的窗口模型。浮窗保留单标题栏、可用时的 Fit、关闭和 Ela Acrylic。
 原来松手后播放的 ContextDockTransition 快照在 Ela 构建中不再创建。
 
-右侧栏整区开合、底栏抽屉和 section 折叠继续使用现有 PanelCompositor。Ela 没有与这些
-业务布局直接等价的控制器；本轮不把它们描述为 Ela 原生，也不重写专业编辑器或图画布。
+0.31.9 第一轮中，右侧栏整区开合、底栏抽屉和 section 折叠仍使用 PanelCompositor。
+后续补丁 26 已改为 ElaDrawerArea 的原生快照平移／淡入流程，并补齐中断和生命周期。
+业务布局没有整体替换成 Ela 示例窗口；并排排列和调整改用 Qt QSplitter。
 托管 Tab 和导航内容扩展仍属于本地适配，详细差异见
 [`UPSTREAM-REVISION.md`](../thirdparty/elawidgettools/UPSTREAM-REVISION.md)。
 

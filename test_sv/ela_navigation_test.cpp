@@ -65,6 +65,8 @@ private slots:
         tree->resize(480, 240); tree->show(); tree->activateWindow(); settle();
         tree->setCurrentItem(root); tree->setFocus();
         QTest::keyClick(tree.get(), Qt::Key_Right); settle();
+        // Item pixels become visible as Qt's native tree expansion completes.
+        QTRY_VERIFY(colorPixels(tree->viewport()->grab().toImage(), ink) > 3);
         QVERIFY(root->isExpanded());
         QVERIFY(tree->visualItemRect(child).height() >= QFontMetrics(font).height());
         QVERIFY(colorPixels(tree->viewport()->grab().toImage(), ink) > 3);

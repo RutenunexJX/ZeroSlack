@@ -7,6 +7,7 @@
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDragHandle.h"
+#include "ElaDrawerArea.h"
 #endif
 #include <QApplication>
 #include <QEvent>
@@ -26,6 +27,7 @@
 #include <QDropEvent>
 #include <QMainWindow>
 #include <QPainter>
+#include <QSplitter>
 
 namespace {
 constexpr int resizeHeight = 5;
@@ -63,7 +65,10 @@ struct ContextDockHost::Section {
     QWidget* frame;
     QWidget* header;
     QWidget* view;
-    QWidget* resize;
+    QPointer<QWidget> resize;
+#ifdef ZEROSLACK_ENABLE_ELA
+    ElaDrawerArea* drawer = nullptr;
+#endif
     QLabel* title;
     QLabel* status;
     QToolButton* scope;
@@ -108,6 +113,28 @@ ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
     bottomScroll->viewport()->installEventFilter(this);
     bottomLayout->addWidget(bottomScroll);
     bottomRoot->hide();
+    for (bool bottom : {false, true}) {
+        auto* surface = bottom ? bottomStack : stack;
+        auto* splitter = new QSplitter(bottom ? Qt::Horizontal : Qt::Vertical, surface);
+        (bottom ? bottomSplitter : sideSplitter) = splitter;
+        splitter->setObjectName(bottom ? QStringLiteral("contextBottomSplitter") : QStringLiteral("contextSideSplitter"));
+        splitter->setChildrenCollapsible(false);
+        splitter->setHandleWidth(resizeHeight);
+        auto* contents = new QVBoxLayout(surface);
+        contents->setContentsMargins(0, 0, 0, 0);
+        if (!bottom) contents->setAlignment(Qt::AlignTop);
+        contents->addWidget(splitter);
+        connect(splitter, &QSplitter::splitterMoved, this, [this, bottom] {
+            if (arranging) return;
+            for (auto* section : sections) {
+                if (section->bottom != bottom) continue;
+                section->retainedHeight = 0;
+                if (bottom) section->width = section->frame->width();
+                else if (!section->collapsed) section->height = section->frame->height();
+            }
+            emit sectionLayoutChanged();
+        });
+    }
     insertionMarker = new QWidget(stack);
     insertionMarker->setObjectName(QStringLiteral("contextSectionInsertion"));
     insertionMarker->setAutoFillBackground(true);
@@ -136,8 +163,11 @@ ContextDockHost::~ContextDockHost()
             for (auto* section : sections) compositor->settleFor(section->frame);
     }
     for (auto* section : sections) {
-        for (QObject* target : {section->view, section->header, section->resize, static_cast<QWidget*>(section->drag)})
-            target->removeEventFilter(this);
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (section->drawer) disconnect(section->drawer, nullptr, this, nullptr);
+#endif
+        for (QObject* target : {section->view, section->header, section->resize.data(), static_cast<QWidget*>(section->drag)})
+            if (target) target->removeEventFilter(this);
     }
     qDeleteAll(sections);
     sections.clear();
@@ -173,11 +203,7 @@ bool ContextDockHost::moveResourceToArea(const QString& key, bool bottom, int in
     if (!section) return false;
     settleMotion();
     section->bottom = bottom;
-    section->frame->setParent(bottom ? bottomStack : stack);
-    section->frame->layout()->setContentsMargins(0, 0, bottom ? resizeHeight : 0, bottom ? 0 : resizeHeight);
-    section->resize->setMinimumSize(0, 0);
-    section->resize->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
-    section->resize->setCursor(bottom ? Qt::SizeHorCursor : Qt::SizeVerCursor);
+    (bottom ? bottomSplitter : sideSplitter)->addWidget(section->frame);
     if (index >= 0) {
         const int oldIndex = order.indexOf(key);
         if (index > oldIndex) --index;
@@ -217,7 +243,7 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     if (containsResource(key)) { activateResource(key); return false; }
     settleMotion();
     auto* section = new Section;
-    section->frame = new QWidget(stack);
+    section->frame = new QWidget(sideSplitter);
     section->frame->setObjectName(QStringLiteral("contextDockSection"));
     section->header = new QWidget(section->frame);
     section->header->setObjectName(QStringLiteral("contextSectionHeader"));
@@ -301,18 +327,26 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     view->setProperty("contextResourceKey", key);
     view->installEventFilter(this);
     section->view = view;
-    section->resize = new QWidget(section->frame);
-    section->resize->setObjectName(QStringLiteral("contextSectionResize"));
-    section->resize->setCursor(Qt::SizeVerCursor);
-    section->resize->setProperty("contextResourceKey", key);
-    section->resize->installEventFilter(this);
     auto* column = new QVBoxLayout(section->frame);
-    column->setContentsMargins(0, 0, 0, resizeHeight);
+    column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(0);
     column->setSizeConstraint(QLayout::SetNoConstraint);
     section->header->setFixedHeight(row->sizeHint().height());
     column->addWidget(section->header);
+#ifdef ZEROSLACK_ENABLE_ELA
+    section->drawer = new ElaDrawerArea(section->frame);
+    section->drawer->setObjectName(QStringLiteral("contextSectionDrawer"));
+    section->drawer->setDrawerHeaderVisible(false);
+    section->drawer->setBorderRadius(0);
+    section->drawer->addDrawer(view);
+    section->drawer->setExpanded(true, false);
+    column->addWidget(section->drawer, 1);
+    connect(section->drawer, &ElaDrawerArea::drawerAnimationFinished, this, [this, key] {
+        if (sections.contains(key)) arrangeSections();
+    });
+#else
     column->addWidget(view, 1);
+#endif
     sections.insert(key, section);
 #ifdef ZEROSLACK_ENABLE_ELA
     if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
@@ -347,7 +381,6 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     section->frame->show();
     section->header->show();
     view->show();
-    section->resize->show();
     activateResource(key);
     return true;
 }
@@ -417,12 +450,16 @@ QWidget* ContextDockHost::takeResource(const QString& key)
     auto* section = sections.take(key);
     if (!section) return nullptr;
     QWidget* view = section->view;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (section->drawer) section->drawer->removeDrawer(view);
+#endif
     view->hide();
     view->setProperty("contextResourceKey", QVariant());
     view->setParent(nullptr);
     order.removeAll(key);
     resources.remove(key);
     section->frame->hide();
+    section->frame->setParent(nullptr);
     section->frame->deleteLater();
     delete section;
     if (focusedKey == key) {
@@ -444,68 +481,28 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
     auto* section = sections.value(key);
     if (!section) return false;
     if (section->collapsed == collapsed) return true;
-    const auto apply = [this, section, collapsed] {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (section->drawer) {
         for (auto* other : sections) other->retainedHeight = 0;
         section->collapsed = collapsed;
         section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
-        arrangeSections();
+        if (!collapsed && !section->drawer->isDrawerAnimating()) {
+            arrangeSections();
+            section->frame->layout()->activate();
+        }
+        section->drawer->setExpanded(!collapsed, animate);
+        if (!section->drawer->isDrawerAnimating()) arrangeSections();
         if (!collapsed) (section->bottom ? bottomScroll : scroll)->ensureWidgetVisible(section->header);
-    };
-    auto* host = qobject_cast<QMainWindow*>(window());
-    const bool enabled = animate && !section->bottom && isVisible() && host && host->isVisible()
-        && ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
-    auto* compositor = host ? host->findChild<PanelCompositor*>() : nullptr;
-    if (enabled && !compositor) compositor = PanelCompositor::forWindow(host);
-    if (enabled && compositor->reverse(section->frame, !collapsed, apply)) {
-        emit sectionLayoutChanged(); return true;
+        emit sectionLayoutChanged();
+        return true;
     }
-    if (compositor && isVisible()) compositor->settle();
-    if (!enabled) { apply(); emit sectionLayoutChanged(); return true; }
-    const QRect area(scroll->viewport()->mapTo(host, QPoint()), scroll->viewport()->size());
-    QHash<QString, QRect> before;
-    QHash<QString, QImage> previousImages;
-    qint64 bytes = 0;
-    for (const auto& id : order) {
-        if (sections.value(id)->bottom) continue;
-        auto* frame = sections.value(id)->frame;
-        before[id] = QRect(frame->mapTo(host, QPoint()) - area.topLeft(), frame->size());
-        bytes += qint64(frame->width() * frame->devicePixelRatioF()) * qCeil(frame->height() * frame->devicePixelRatioF()) * 4;
-    }
-    if (bytes > 32 * 1024 * 1024) { apply(); emit sectionLayoutChanged(); return true; }
-    for (const auto& id : order) if (!sections.value(id)->bottom) previousImages[id] = sections.value(id)->frame->grab().toImage();
-    apply();
-    qint64 combinedBytes = qint64(area.width() * devicePixelRatioF()) * qCeil(area.height() * devicePixelRatioF()) * 4;
-    for (const auto& id : order) {
-        if (sections.value(id)->bottom) continue;
-        const auto size = before[id].size().expandedTo(sections.value(id)->frame->size());
-        combinedBytes += qint64(size.width() * devicePixelRatioF()) * qCeil(size.height() * devicePixelRatioF()) * 4;
-    }
-    if (combinedBytes > 48 * 1024 * 1024) { emit sectionLayoutChanged(); return true; }
-    QList<PanelMotionLayer> layers;
-    QImage backdrop(qCeil(area.width() * devicePixelRatioF()), qCeil(area.height() * devicePixelRatioF()), QImage::Format_ARGB32_Premultiplied);
-    backdrop.setDevicePixelRatio(devicePixelRatioF());
-    backdrop.fill(Qt::transparent);
-    // The stack covers the viewport, including the empty area below sections.
-    // Its actual style background can differ from the viewport's palette roles.
-    stack->render(&backdrop, QPoint(), QRegion(QRect(-stack->pos(), area.size())),
-                  QWidget::DrawWindowBackground);
-    layers.append(PanelMotionLayer::stationary(backdrop));
-    for (const auto& id : order) {
-        if (sections.value(id)->bottom) continue;
-        auto* frame = sections.value(id)->frame;
-        const QRect after(frame->mapTo(host, QPoint()) - area.topLeft(), frame->size());
-        const auto current = frame->grab().toImage();
-        const auto old = previousImages.value(id);
-        QImage combined(old.size().expandedTo(current.size()), QImage::Format_ARGB32_Premultiplied);
-        combined.setDevicePixelRatio(devicePixelRatioF());
-        combined.fill(frame->palette().color(QPalette::Window));
-        { QPainter painter(&combined); painter.drawImage(QPoint(), old); painter.drawImage(QPoint(), current); }
-        layers.append({combined, collapsed ? after.topLeft() : before[id].topLeft(),
-                        collapsed ? before[id].topLeft() : after.topLeft(),
-                        collapsed ? after.size() : before[id].size(),
-                        collapsed ? before[id].size() : after.size()});
-    }
-    compositor->present(section->frame, area, std::move(layers), collapsed, !collapsed);
+#endif
+    Q_UNUSED(animate)
+    for (auto* other : sections) other->retainedHeight = 0;
+    section->collapsed = collapsed;
+    section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
+    arrangeSections();
+    if (!collapsed) (section->bottom ? bottomScroll : scroll)->ensureWidgetVisible(section->header);
     emit sectionLayoutChanged();
     return true;
 }
@@ -538,6 +535,10 @@ bool ContextDockHost::moveResource(const QString& key, int index)
 }
 void ContextDockHost::settleMotion()
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    for (auto* section : sections)
+        if (section->drawer) section->drawer->finishDrawerAnimation();
+#endif
     if (auto* host = qobject_cast<QMainWindow*>(window())) {
         if (auto* transfer = host->findChild<ContextDockTransition*>()) transfer->finish();
         if (auto* compositor = host->findChild<PanelCompositor*>()) compositor->settle();
@@ -559,36 +560,43 @@ void ContextDockHost::arrangeArea(bool bottom)
     QWidget* areaStack = bottom ? bottomStack : stack;
     const QSize available = areaScroll->viewport()->size();
     const int extent = bottom ? available.width() : available.height();
+    auto* splitter = bottom ? bottomSplitter : sideSplitter;
     QStringList keys;
     for (const QString& key : order) if (sections.value(key)->bottom == bottom) keys.append(key);
     QList<SectionExtent> extents;
     for (const auto& key : keys) {
         auto* section = sections.value(key);
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (section->drawer && section->drawer->isDrawerAnimating()) return;
+#endif
         const int minimum = bottom ? qMax(180, section->header->minimumSizeHint().width())
             : (section->collapsed ? section->header->height() : minimumSectionHeight(section));
         const int requested = bottom ? section->width : (section->retainedHeight > 0 ? section->retainedHeight : section->height);
         extents.append({minimum, requested, !bottom && section->collapsed});
     }
     const auto lengths = distributeExtents(extent, extents);
-    int position = 0;
+    int minimumExtent = qMax(0, keys.size() - 1) * resizeHeight;
     for (int i = 0; i < keys.size(); ++i) {
         auto* section = sections.value(keys.at(i));
-        const int length = lengths.at(i);
-        section->frame->setGeometry(bottom ? QRect(position, 0, length, available.height())
-                                           : QRect(0, position, available.width(), length));
+        if (splitter->widget(i) != section->frame) splitter->insertWidget(i, section->frame);
+        const int minimum = extents[i].minimum;
+        section->frame->setMinimumSize(bottom ? QSize(minimum, section->header->height()) : QSize(0, minimum));
+        section->frame->setMaximumHeight(!bottom && section->collapsed ? minimum : QWIDGETSIZE_MAX);
+        section->frame->show();
+#ifndef ZEROSLACK_ENABLE_ELA
         section->view->setVisible(!section->collapsed);
-        section->resize->setVisible(i + 1 < keys.size());
-        section->resize->setGeometry(bottom ? QRect(length - resizeHeight, 0, resizeHeight, available.height())
-                                            : QRect(0, length - resizeHeight, available.width(), resizeHeight));
-        section->resize->raise();
-        section->frame->layout()->setContentsMargins(0, 0,
-            bottom && i + 1 < keys.size() ? resizeHeight : 0,
-            !bottom && i + 1 < keys.size() ? resizeHeight : 0);
-        section->frame->layout()->setGeometry(section->frame->rect());
-        position += length;
+#endif
+        section->resize = i + 1 < keys.size() ? splitter->handle(i + 1) : nullptr;
+        if (section->resize) {
+            section->resize->setObjectName(QStringLiteral("contextSectionResize"));
+            section->resize->setProperty("contextResourceKey", keys.at(i));
+        }
+        minimumExtent += minimum;
     }
-    areaStack->resize(bottom ? QSize(qMax(position, available.width()), available.height())
-                            : QSize(available.width(), qMax(position, available.height())));
+    areaStack->resize(bottom ? QSize(qMax(minimumExtent, available.width()), available.height())
+                            : QSize(available.width(), qMax(minimumExtent, available.height())));
+    areaStack->layout()->activate();
+    splitter->setSizes(lengths);
 }
 QRect ContextDockHost::viewportGlobalRect(bool bottom) const
 {
@@ -633,14 +641,6 @@ void ContextDockHost::resizeEvent(QResizeEvent* event)
     QWidget::resizeEvent(event);
     for (auto* section : sections) section->retainedHeight = 0;
     arrangeSections();
-    QTimer::singleShot(0, this, [this] {
-        for (const QString& key : order) {
-            auto* view = sections.value(key)->view;
-            const auto layouts = view->findChildren<QLayout*>();
-            for (auto* layout : layouts) { layout->invalidate(); layout->activate(); }
-        }
-        arrangeSections();
-    });
 }
 int ContextDockHost::insertionIndex(const QPoint& globalPosition) const
 {
@@ -650,7 +650,8 @@ int ContextDockHost::insertionIndex(const QPoint& globalPosition) const
     int end = order.size();
     for (int i = 0; i < order.size(); ++i) {
         if (sections.value(order[i])->bottom != bottom) continue;
-        const QRect bounds = sections.value(order[i])->frame->geometry();
+        auto* frame = sections.value(order[i])->frame;
+        const QRect bounds(frame->mapTo(bottom ? bottomStack : stack, QPoint()), frame->size());
         if (axis < (bottom ? bounds.center().x() : bounds.center().y())) return i;
         end = i + 1;
     }
@@ -679,7 +680,8 @@ void ContextDockHost::showInsertion(const QPoint& globalPosition)
         const auto* section = sections.value(order.at(i));
         if (section->bottom != bottom) continue;
         if (i >= index) break;
-        position = bottom ? section->frame->geometry().right() + 1 : section->frame->geometry().bottom() + 1;
+        const QPoint origin = section->frame->mapTo(areaStack, QPoint());
+        position = bottom ? origin.x() + section->frame->width() : origin.y() + section->frame->height();
     }
     insertionMarker->setGeometry(bottom ? QRect(position, 0, 3, areaStack->height())
                                        : QRect(0, position, areaStack->width(), 3));
@@ -733,48 +735,11 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
                 focusSection(key);
                 draggedKey = key;
                 dragStart = mouse->globalPosition().toPoint();
-                resizingSection = watched == section->resize;
-                resizeStartHeight = section->frame->height();
-                resizeStartWidth = section->frame->width();
-                resizeNeighbor.clear();
-                resizeLengths.clear();
-                if (resizingSection) {
-                    settleMotion();
-                    bool after = false;
-                    for (const auto& id : order) {
-                        const auto* other = sections.value(id);
-                        if (other->bottom != section->bottom) continue;
-                        resizeLengths[id] = section->bottom ? other->frame->width() : other->frame->height();
-                        if (after && resizeNeighbor.isEmpty()) resizeNeighbor = id;
-                        if (id == key) after = true;
-                    }
-                }
                 return true;
             }
         } else if (event->type() == QEvent::MouseMove && draggedKey == key) {
             auto* mouse = static_cast<QMouseEvent*>(event);
-            if (resizingSection) {
-                auto* neighbor = sections.value(resizeNeighbor);
-                if (!neighbor) return true;
-                const auto minimum = [this](Section* item) {
-                    return item->bottom ? qMax(180, item->header->minimumSizeHint().width())
-                        : (item->collapsed ? item->header->height() : minimumSectionHeight(item));
-                };
-                const QPoint delta = mouse->globalPosition().toPoint() - dragStart;
-                const int movement = qBound(minimum(section) - resizeLengths.value(key),
-                    section->bottom ? delta.x() : delta.y(),
-                    resizeLengths.value(resizeNeighbor) - minimum(neighbor));
-                for (auto it = resizeLengths.cbegin(); it != resizeLengths.cend(); ++it) {
-                    auto* item = sections.value(it.key());
-                    const int length = it.value() + (it.key() == key ? movement : (it.key() == resizeNeighbor ? -movement : 0));
-                    item->retainedHeight = 0;
-                    if (item->bottom) item->width = length;
-                    else item->height = length;
-                }
-                arrangeSections();
-                emit sectionLayoutChanged();
-            }
-            else if ((mouse->globalPosition().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
+            if ((mouse->globalPosition().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
                 emit sectionDragStarted();
                 showInsertion(mouse->globalPosition().toPoint());
             }
@@ -782,7 +747,7 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
         } else if (event->type() == QEvent::MouseButtonRelease && draggedKey == key) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             const QPoint position = mouse->globalPosition().toPoint();
-            if (!resizingSection && (position - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
+            if ((position - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
                 finishSectionDrag(key, position);
             }
             draggedKey.clear();

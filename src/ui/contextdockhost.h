@@ -15,6 +15,7 @@ class QMimeData;
 class ContextFloatingWindow;
 class QAbstractButton;
 class QToolButton;
+class QSplitter;
 
 class ZEROSLACK_API ContextDockHost final : public QWidget
 {
@@ -93,17 +94,14 @@ private:
     QPointer<QWidget> bottomRoot;
     QPointer<QScrollArea> bottomScroll;
     QWidget* bottomStack = nullptr;
+    QSplitter* sideSplitter = nullptr;
+    QSplitter* bottomSplitter = nullptr;
     QWidget* insertionMarker = nullptr;
     QHash<QString, Section*> sections;
     QStringList order;
     QString focusedKey;
     QString draggedKey;
     QPoint dragStart;
-    int resizeStartHeight = 0;
-    int resizeStartWidth = 0;
-    QString resizeNeighbor;
-    QHash<QString, int> resizeLengths;
-    bool resizingSection = false;
     bool arranging = false;
     QHash<QString, ContextResource> resources;
 

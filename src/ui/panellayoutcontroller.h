@@ -20,6 +20,9 @@ class QMainWindow;
 class QStackedWidget;
 class QToolButton;
 class PanelCompositor;
+#ifdef ZEROSLACK_ENABLE_ELA
+class ElaDrawerArea;
+#endif
 class QWidget;
 
 struct BottomPanelContextAction {
@@ -137,6 +140,9 @@ private:
     QPointer<QWidget> bottomContentSurface;
     QPointer<QFrame> bottomButtonBar;
     QPointer<PanelCompositor> compositor;
+#ifdef ZEROSLACK_ENABLE_ELA
+    QPointer<ElaDrawerArea> contentDrawer;
+#endif
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;
     QHash<QString, QString> aliases;

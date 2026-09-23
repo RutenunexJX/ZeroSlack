@@ -25,6 +25,8 @@ private:
     QPixmap scaled;
     QSize scaledSize;
     qreal scaledDpr = 0;
+    QColor scaledBase;
+    qreal scaledOpacity = -1;
 };
 
 #endif

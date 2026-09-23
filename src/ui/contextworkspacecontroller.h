@@ -28,6 +28,9 @@ class QMainWindow;
 class QWidget;
 class QMenu;
 class QAction;
+#ifdef ZEROSLACK_ENABLE_ELA
+class ElaDrawerArea;
+#endif
 
 class ZEROSLACK_API ContextWorkspaceController final : public QObject
 {
@@ -123,6 +126,9 @@ private:
     ContextFloatingSurface* activeFloatingSurface = nullptr;
     QPointer<ContextDockHost> dockHostValue;
     QPointer<QDockWidget> dockValue;
+#ifdef ZEROSLACK_ENABLE_ELA
+    QPointer<ElaDrawerArea> sideDrawer;
+#endif
     QPointer<QDockWidget> bottomDockValue;
     QPointer<ContextDockTransition> dockTransition;
     QPointer<ContextFloatingWindow> floatingDragSource;

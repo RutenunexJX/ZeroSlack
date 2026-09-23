@@ -6,7 +6,7 @@
 #include <QWidgetAction>
 
 ContextRail::ContextRail(QWidget* parent)
-    : QToolBar(parent)
+    : ContextRailBase(parent)
 {
     setObjectName(QStringLiteral("contextRail"));
     setWindowTitle(tr("Context"));
@@ -15,6 +15,10 @@ ContextRail::ContextRail(QWidget* parent)
     setFloatable(false);
     setToolButtonStyle(Qt::ToolButtonIconOnly);
     setIconSize(QSize(22, 22));
+#ifdef ZEROSLACK_ENABLE_ELA
+    setToolBarSpacing(2);
+    setToolButtonSize(QSize(38, 38));
+#endif
     setVisible(false);
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {

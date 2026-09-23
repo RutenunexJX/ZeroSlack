@@ -245,10 +245,6 @@ template<class Control> Control* prepare(Control* widget) {
 class ElaChoice final : public AccessibleElaControl<ElaComboBox> {
 public:
     using AccessibleElaControl<ElaComboBox>::AccessibleElaControl;
-    // Upstream blocks dismissal during its opening animation. Keep Qt's
-    // immediate selection/Escape contract, with Ela painting and item delegate.
-    void showPopup() override { QComboBox::showPopup(); }
-    void hidePopup() override { QComboBox::hidePopup(); }
 };
 
 template<class Control> class ElaNumber final : public AccessibleElaControl<Control> {
@@ -302,6 +298,7 @@ public:
 protected:
     bool eventFilter(QObject*, QEvent* event) override {
         if (event->type() == QEvent::KeyPress || event->type() == QEvent::MouseButtonPress) {
+            if (auto* tree = qobject_cast<QTreeView*>(area)) ElaTreeView::finishExpansion(tree);
             for (auto* scroll : {area->horizontalScrollBar(), area->verticalScrollBar()})
                 if (auto* bar = qobject_cast<ElaScrollBar*>(scroll)) bar->stopSmoothWheel();
         }
@@ -495,9 +492,8 @@ QTreeView* UiControls::treeView(QWidget* parent) {
         auto* tree = prepare(new ElaTreeView(parent));
         tree->setNativeItemContent(true);
         tree->setItemHeight(qMax(28, tree->fontMetrics().height() + 10));
-        tree->setAnimated(false);
-        for (auto* bar : {tree->horizontalScrollBar(), tree->verticalScrollBar()})
-            if (auto* elaBar = qobject_cast<ElaScrollBar*>(bar)) elaBar->setIsAnimation(false);
+        enableTreeTransitions(tree);
+        enableSmoothScrolling(tree);
         return tree;
     }
 #endif
@@ -509,6 +505,8 @@ QTreeWidget* UiControls::treeWidget(QWidget* parent) {
         auto* tree = prepare(new ElaItemTree(parent));
         tree->setStyle(ElaTreeView::createStyle(tree, qMax(28, tree->fontMetrics().height() + 10)));
         tree->setMouseTracking(true);
+        enableTreeTransitions(tree);
+        enableSmoothScrolling(tree);
         return tree;
     }
 #endif
@@ -583,6 +581,7 @@ QListWidget* UiControls::listWidget(QWidget* parent) {
     if (usesEla()) {
         prepare(list);
         ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
+        enableSmoothScrolling(list);
     }
 #endif
     return list;
@@ -592,6 +591,7 @@ QListView* UiControls::listView(QWidget* parent) {
     if (usesEla()) {
         auto* list = prepare(new ElaListView(parent));
         ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
+        enableSmoothScrolling(list);
         return list;
     }
 #endif
@@ -605,6 +605,7 @@ QTableWidget* UiControls::tableWidget(int rows, int columns, QWidget* parent) {
         prepare(table);
         ownViewStyle(table, ElaTableView::createStyle(qApp));
         table->setShowGrid(false);
+        enableSmoothScrolling(table);
     }
 #endif
     return table;
@@ -614,8 +615,7 @@ QTableView* UiControls::tableView(QWidget* parent) {
     if (usesEla()) {
         auto* table = prepare(new ElaTableView(parent));
         table->setNativeItemContent(true);
-        for (auto* bar : {table->horizontalScrollBar(), table->verticalScrollBar()})
-            if (auto* elaBar = qobject_cast<ElaScrollBar*>(bar)) elaBar->setIsAnimation(false);
+        enableSmoothScrolling(table);
         return table;
     }
 #endif
@@ -629,6 +629,7 @@ QScrollArea* UiControls::scrollArea(QWidget* parent) {
         area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         area->setIsAnimation(Qt::Horizontal, false);
         area->setIsAnimation(Qt::Vertical, false);
+        enableSmoothScrolling(area);
         return area;
     }
 #endif
@@ -648,6 +649,7 @@ QPlainTextEdit* UiControls::readOnlyText(QWidget* parent) {
 #endif
     if (!text) text = new QPlainTextEdit(parent);
     text->setReadOnly(true);
+    enableSmoothScrolling(text);
     return text;
 }
 QPlainTextEdit* UiControls::readOnlyText(const QString& value, QWidget* parent) {

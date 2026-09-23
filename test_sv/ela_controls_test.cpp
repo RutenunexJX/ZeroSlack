@@ -29,6 +29,10 @@
 #include <QVBoxLayout>
 #include <memory>
 #include "ElaCentralStackedWidget.h"
+#include "ElaDrawerArea.h"
+#include "ElaComboBox.h"
+#include <QPlainTextEdit>
+#include <QPropertyAnimation>
 #include <QStackedWidget>
 
 namespace {
@@ -40,6 +44,95 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void nativeComboPopupRemainsInterruptible() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        auto* combo = UiControls::comboBox(&host);
+        layout->addWidget(combo);
+        combo->addItems({"First", "Second", "Third"});
+        host.resize(320, 180); host.show(); host.activateWindow(); settle();
+        auto* native = qobject_cast<ElaComboBox*>(combo);
+        QVERIFY(native);
+        for (int i = 0; i < 8; ++i) {
+            combo->showPopup();
+            QVERIFY(native->isPopupAnimating());
+            QTest::qWait(20);
+            combo->hidePopup();
+            QVERIFY(!native->isPopupAnimating());
+            QVERIFY(!combo->view()->isVisible());
+            QCOMPARE(combo->view()->parentWidget()->layout()->indexOf(combo->view()), 0);
+        }
+        combo->showPopup();
+        QTest::keyClick(combo->view(), Qt::Key_Down);
+        QTest::keyClick(combo->view(), Qt::Key_Return);
+        QVERIFY(!combo->view()->isVisible());
+        QCOMPARE(combo->currentIndex(), 1);
+        combo->showPopup();
+        host.hide();
+        QVERIFY(!native->isPopupAnimating());
+        QVERIFY(!combo->view()->isVisible());
+        host.show(); settle();
+        combo->showPopup();
+        QPointer<QWidget> popup = combo->view()->window();
+        delete combo;
+        QTest::qWait(220);
+        QVERIFY(!popup);
+    }
+
+    void drawerKeepsContentAndLatestState() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        auto* drawer = new ElaDrawerArea(&host);
+        drawer->setDrawerHeaderVisible(false);
+        auto* text = new QPlainTextEdit("unsaved source text");
+        text->setMinimumHeight(140);
+        drawer->addDrawer(text);
+        layout->addWidget(drawer);
+        layout->addStretch();
+        host.resize(600, 500); host.show(); settle();
+        QVERIFY(!drawer->getIsExpand());
+        drawer->setExpanded(true, false); settle();
+        QVERIFY(text->isVisible());
+        const int childAnimations = drawer->findChildren<QPropertyAnimation*>().size();
+        for (const auto edge : {Qt::TopEdge, Qt::BottomEdge, Qt::LeftEdge, Qt::RightEdge}) {
+            drawer->setDrawerEdge(edge);
+            drawer->collapse();
+            QVERIFY(drawer->isDrawerAnimating());
+            const qint64 bytes = drawer->drawerSnapshotBytes();
+            QVERIFY(bytes > 0 && bytes <= 32 * 1024 * 1024);
+            QTest::qWait(25);
+            drawer->expand();
+            QCOMPARE(drawer->drawerSnapshotBytes(), bytes);
+            QTRY_VERIFY(!drawer->isDrawerAnimating());
+            QVERIFY(drawer->getIsExpand());
+            QVERIFY(text->isVisible());
+            QCOMPARE(text->toPlainText(), QString("unsaved source text"));
+            QCOMPARE(drawer->drawerSnapshotBytes(), qint64(0));
+            QCOMPARE(drawer->findChildren<QPropertyAnimation*>().size(), childAnimations);
+        }
+        drawer->collapse();
+        host.resize(660, 540); settle();
+        QVERIFY(!drawer->isDrawerAnimating());
+        QVERIFY(!text->isVisible());
+        drawer->expand();
+        host.hide(); settle();
+        QVERIFY(!drawer->isDrawerAnimating());
+        host.show(); settle();
+        QVERIFY(text->isVisible());
+        drawer->collapse();
+        drawer->removeDrawer(text);
+        text->setParent(&host);
+        QCOMPARE(text->toPlainText(), QString("unsaved source text"));
+        QVERIFY(!drawer->isDrawerAnimating());
+        drawer->addDrawer(text);
+        drawer->setExpanded(true, false);
+        drawer->collapse();
+        delete text;
+        QTest::qWait(350);
+        QVERIFY(!drawer->isDrawerAnimating());
+        QCOMPARE(drawer->drawerSnapshotBytes(), qint64(0));
+    }
+
     void pageTransitionsKeepLatestSelectionAndLifetime() {
         QWidget host;
         auto* layout = new QVBoxLayout(&host);

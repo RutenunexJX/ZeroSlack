@@ -231,7 +231,7 @@ title controls and scoped Acrylic remain application responsibilities. The
 previous ContextDockTransition snapshot landing is inactive in the Ela build.
 The original MIT and font OFL licenses are unchanged.
 
-The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
+For the patch-25 baseline, the product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
 upstream's non-interruptible popup animation. No recursive application event
@@ -256,6 +256,38 @@ it does not invoke or link private Qt functions. Rebuild both DLLs and rerun
 validation before changing the Qt version.
 Upstream CMake declares version 2.0.0 while its public header declares 2.0.3;
 the commit identifier above is the authoritative source version.
+
+Apply `patches/26-zeroslack-interruptible-drawers-controls.patch` after patch 25.
+ElaDrawerArea retains its upstream translated/faded body snapshot and header
+rotation, with owned animations, four drawer edges, header visibility, immediate
+settlement, completion signals and bounded capture diagnostics. Reversal reuses
+the current body snapshot; resize, hide and input settle the latest requested
+state. Snapshots are limited to 32 MiB and released on completion. The application
+uses these APIs for the right dock, bottom drawer and individual Context sections;
+the old PanelCompositor is not used for those Ela paths. This is an extension of
+the upstream drawer, not an unmodified upstream dock-layout controller.
+
+ElaComboBox again uses its original popup-height, view-position and indicator
+animations. Owned groups replace unowned callbacks and the non-interruptible hide
+gate. Opening takes 180 ms, indicators 150 ms; selection, dismissal and Escape
+close immediately and restore the live view layout. Input, hide, resize and
+destruction cancel pending transitions. The shared popup style remains alive
+through Qt popup/view teardown, without repolishing children from the destructor.
+ElaToolBar applies the same deferred style-lifetime protection to action widgets.
+
+ElaTreeView exposes finishExpansion(QTreeView*) to finish Qt's existing expansion
+animation before new input. Qt otherwise ignores some pointer input while that
+animation is active. This reads QTreeViewPrivate::animatedOperation and advances
+the existing animation to completion; it does not link private Qt functions.
+The existing exact Qt 6.10.2/WidgetsPrivate dependency therefore also covers trees.
+
+The application enables Ela smooth wheel scrolling on ordinary browsing views,
+while programmatic value changes remain immediate. Professional editor/diagram
+coordinates retain their own interaction semantics. Ordered Context resizing now
+uses Qt QSplitter, which is not an Ela class; document and workspace ownership,
+selection and persistence remain application responsibilities. Patch 26 replays
+13 vendor source files byte-for-byte after line-ending normalization. MIT and
+font OFL license text and attribution are unchanged.
 
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

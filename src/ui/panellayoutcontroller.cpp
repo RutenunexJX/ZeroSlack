@@ -4,6 +4,10 @@
 #include "deferredpanel.h"
 #include "panelcompositor.h"
 #include "applicationthememanager.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDockWidget.h"
+#include "ElaDrawerArea.h"
+#endif
 
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
@@ -118,7 +122,9 @@ PanelLayoutController::PanelLayoutController(
         window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     }
     buildDrawer();
+#ifndef ZEROSLACK_ENABLE_ELA
     if (animationsEnabledValue) compositor = PanelCompositor::forWindow(window);
+#endif
     if (qApp)
         qApp->installEventFilter(this);
     if (window)
@@ -127,6 +133,9 @@ PanelLayoutController::PanelLayoutController(
 
 PanelLayoutController::~PanelLayoutController()
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (contentDrawer) disconnect(contentDrawer, nullptr, this, nullptr);
+#endif
     if (compositor) compositor->settleFor(this);
     if (qApp)
         qApp->removeEventFilter(this);
@@ -137,7 +146,11 @@ void PanelLayoutController::buildDrawer()
     if (!window || bottomDrawerDock)
         return;
 
+#ifdef ZEROSLACK_ENABLE_ELA
+    bottomDrawerDock = new ElaDockWidget(window);
+#else
     bottomDrawerDock = new QDockWidget(window);
+#endif
     bottomDrawerDock->setObjectName(
         QStringLiteral("bottomToolDrawerDock"));
     bottomDrawerDock->setAccessibleName(
@@ -172,7 +185,24 @@ void PanelLayoutController::buildDrawer()
         QStringLiteral("bottomToolDrawerContent"));
     bottomContentStack->setSizePolicy(
         QSizePolicy::Expanding, QSizePolicy::Fixed);
+#ifdef ZEROSLACK_ENABLE_ELA
+    contentDrawer = new ElaDrawerArea(bottomDrawerRoot);
+    contentDrawer->setObjectName(QStringLiteral("bottomPanelDrawer"));
+    contentDrawer->setDrawerHeaderVisible(false);
+    contentDrawer->setBorderRadius(0);
+    contentDrawer->setDrawerEdge(Qt::BottomEdge);
+    contentDrawer->addDrawer(bottomContentSurface);
+    contentDrawer->setExpanded(true, false);
+    rootLayout->addWidget(contentDrawer);
+    connect(contentDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
+        if (!expanded) {
+            bottomResizeHandle->hide();
+            applyContentHeight(0);
+        }
+    });
+#else
     rootLayout->addWidget(bottomContentSurface);
+#endif
 
     bottomButtonBar = new QFrame(bottomDrawerRoot);
     bottomButtonBar->setObjectName(
@@ -787,6 +817,12 @@ void PanelLayoutController::setStateChangedHandler(
 void PanelLayoutController::setAnimationsEnabled(bool enabled)
 {
     animationsEnabledValue = enabled;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (!enabled && contentDrawer) {
+        contentDrawer->finishDrawerAnimation();
+        applyDrawerState(false);
+    }
+#endif
     if (!enabled && compositor && compositor->isActiveFor(this)) {
         compositor->settle();
         applyDrawerState(false);
@@ -960,6 +996,9 @@ void PanelLayoutController::activatePanel(
     PanelEntry& entry,
     bool moveFocus)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (activePanel != entry.id && contentDrawer) contentDrawer->finishDrawerAnimation();
+#endif
     if (activePanel != entry.id && compositor) compositor->settleFor(this);
     if (entry.id == QStringLiteral("connections") && mainAreaRequest && entry.content) {
         mainAreaRequest(entry.content, bottomContentStack);
@@ -987,6 +1026,23 @@ void PanelLayoutController::applyDrawerState(bool animate)
         return;
     PanelEntry* entry = entryForId(activePanel);
     if (!collapsed && !entry) return;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (contentDrawer) {
+        bottomDrawerDock->show();
+        if (!collapsed) {
+            bottomContentSurface->show();
+            bottomResizeHandle->show();
+            applyContentHeight(boundedContentHeight(entry->height));
+            if (window->layout()) window->layout()->activate();
+        }
+        contentDrawer->setExpanded(!collapsed, animate && animationsEnabledValue && window->isVisible());
+        if (collapsed && !contentDrawer->isDrawerAnimating()) {
+            bottomResizeHandle->hide();
+            applyContentHeight(0);
+        }
+        return;
+    }
+#endif
     const bool wasOpen = visibleContentHeight() > 0;
     const int target = collapsed ? 0 : boundedContentHeight(entry->height);
     const auto apply = [this, target] {
