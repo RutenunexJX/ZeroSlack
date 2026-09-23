@@ -133,7 +133,7 @@ UnsavedDocumentManager::requestDecision(
     const QList<PendingDocumentChange>& changes,
     QWidget* dialogParent)
 {
-    QMessageBox dialog(dialogParent);
+    UiMessageDialog dialog(dialogParent);
     dialog.setIcon(QMessageBox::Warning);
     dialog.setWindowTitle(
         QStringLiteral("Pending Documents"));

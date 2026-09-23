@@ -2,6 +2,7 @@
 #include "insightvisualstyle.h"
 #include "ElaApplication.h"
 #include "ElaTheme.h"
+#include "uitooltips.h"
 #include <QApplication>
 
 void ElaBackend::initialize()
@@ -13,6 +14,7 @@ void ElaBackend::initialize()
     eApp->init();
     qApp->setFont(font);
     QApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings, siblings);
+    UiToolTips::install();
 }
 
 void ElaBackend::applyTheme(ThemeMode mode)

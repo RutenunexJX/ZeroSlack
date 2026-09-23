@@ -1,5 +1,6 @@
 #include "uitypography.h"
 #include "uicontrols.h"
+#include "uidialogs.h"
 #include "pinloomcontextview.h"
 
 #include <QApplication>
@@ -975,7 +976,7 @@ void PinloomContextView::openImagePreview()
     if (!imagePreview || imagePreview->sourcePixmap().isNull())
         return;
 
-    auto* dialog = new QDialog(this, Qt::Window);
+    auto* dialog = new UiDialog(this, Qt::Window);
     dialog->setObjectName(QStringLiteral("pinloomContextImageDialog"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowTitle(titleLabel->text());

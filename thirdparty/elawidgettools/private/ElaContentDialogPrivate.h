@@ -2,6 +2,7 @@
 #define ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELACONTENTDIALOGPRIVATE_H_
 
 #include <QObject>
+#include <QPointer>
 
 #include "ElaWidgetToolsDef.h"
 class QVBoxLayout;
@@ -21,7 +22,8 @@ private:
     qint64 _currentWinID{0};
     ElaAppBar* _appBar{nullptr};
     ElaThemeType::ThemeMode _themeMode;
-    ElaMaskWidget* _maskWidget{nullptr};
+    QPointer<ElaMaskWidget> _maskWidget;
+    bool _standardButtonsVisible{true};
     QWidget* _centralWidget{nullptr};
     QWidget* _buttonWidget{nullptr};
     QVBoxLayout* _mainLayout{nullptr};

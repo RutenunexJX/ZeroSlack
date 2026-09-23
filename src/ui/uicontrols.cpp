@@ -17,6 +17,7 @@
 #include <QTabWidget>
 #include <QApplication>
 #include <QListWidget>
+#include <QListView>
 #include <QTableWidget>
 #include <QMenu>
 #include <QMenuBar>
@@ -560,6 +561,16 @@ QListWidget* UiControls::listWidget(QWidget* parent) {
     }
 #endif
     return list;
+}
+QListView* UiControls::listView(QWidget* parent) {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (usesEla()) {
+        auto* list = prepare(new ElaListView(parent));
+        ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
+        return list;
+    }
+#endif
+    return new QListView(parent);
 }
 QTableWidget* UiControls::tableWidget(QWidget* parent) { return tableWidget(0, 0, parent); }
 QTableWidget* UiControls::tableWidget(int rows, int columns, QWidget* parent) {

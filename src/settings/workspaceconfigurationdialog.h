@@ -5,13 +5,13 @@
 
 #include "workspaceconfigurationservice.h"
 
-#include <QDialog>
+#include "uidialogs.h"
 
 class QLineEdit;
 class QListWidget;
 class QTableWidget;
 
-class ZEROSLACK_API WorkspaceConfigurationDialog : public QDialog
+class ZEROSLACK_API WorkspaceConfigurationDialog : public UiDialog
 {
     Q_OBJECT
 

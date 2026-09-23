@@ -184,6 +184,18 @@ selected foreground color. It no longer reads the other (dark) theme's text colo
 so light/dark switches and custom palettes cannot leave stale indicator colors.
 MIT and font OFL licenses remain unchanged.
 
+Apply `patches/24-zeroslack-dialog-lifecycle.patch` after patch 23.
+ElaContentDialog supports an optional parent and hiding its stock button row so
+ZeroSlack can retain Qt button roles and explicit default/cancel decisions.
+Accept, reject, close and hide synchronously dismiss the parent mask; closing no
+longer enters a nested processEvents loop or closes the native window handle.
+Delayed callbacks are scoped to the dialog. The mask follows parent resizing,
+uses guarded ownership, and owns/cancels its opacity animations. Parentless
+dialogs center on the current screen. Replacing central content releases removed
+layout items. The lighter mask and conditional stock footer retain Ela painting.
+The five changed files replay byte-for-byte from the preceding revision.
+Original MIT and font OFL licenses remain unchanged.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids
@@ -196,6 +208,12 @@ scrollbar and cancel motion on key or pointer input. This filter is local to tho
 The numeric-control adapter sizes the inline step buttons and input area together,
 including prefixes, suffixes and input padding; it does not assume Qt's narrower
 native step-button geometry.
+
+The ordinary tooltip adapter intercepts Qt help events and explicit gutter hints
+to present an ElaToolTip. It does not traverse or restyle editor/diagram content.
+Qt retains hover timing; the adapter bounds the popup to the screen, wraps long
+paths, avoids focus activation, and clears stale tips on input and owner changes.
+Interactive symbol information cards remain application-owned.
 
 This integration is pinned to Qt 6.10.2 because ElaTabBar includes Qt private
 headers. Rebuild both DLLs and rerun validation before changing the Qt version.

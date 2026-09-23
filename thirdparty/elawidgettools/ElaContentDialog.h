@@ -19,6 +19,8 @@ public:
     Q_SLOT virtual void onMiddleButtonClicked();
     Q_SLOT virtual void onRightButtonClicked();
     void setCentralWidget(QWidget* centralWidget);
+    void setStandardButtonsVisible(bool visible);
+    void done(int result) override;
 
     void setLeftButtonText(const QString& text);
     void setMiddleButtonText(const QString& text);
@@ -32,6 +34,8 @@ Q_SIGNALS:
 
 protected:
     virtual void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
     virtual void paintEvent(QPaintEvent* event) override;
     virtual void keyPressEvent(QKeyEvent* event) override;
 };

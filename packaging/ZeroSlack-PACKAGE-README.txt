@@ -1,9 +1,16 @@
-ZeroSlack v0.31.7 Windows package
+ZeroSlack v0.31.8 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.8 uses Ela lists for completion candidates, ElaDialog for common input
+and configuration windows, ElaContentDialog for confirmations, and ElaToolTip for
+ordinary hover hints. Completion selection maps proxy/source indexes correctly.
+Keyboard acceptance, cancellation, unsaved/conflict decisions and interactive symbol
+cards are preserved. Tooltips wrap long paths without taking focus; dialog masks
+are dismissed immediately on close. Includes Ela compatibility patch 24.
 
 Release 0.31.7 previews floating-window dock targets without changing the editor layout.
 Releasing the window transfers the existing content with a 200 ms snapshot transition;

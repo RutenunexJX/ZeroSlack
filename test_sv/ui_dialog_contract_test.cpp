@@ -4,11 +4,13 @@
 #include "testuistyle.h"
 #include "uidialogs.h"
 #include "unsaveddocumentmanager.h"
+#include "workspaceconfigurationdialog.h"
 
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
 #include <QDialog>
+#include <QDir>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalSpy>
@@ -48,6 +50,7 @@ private slots:
             auto* edit = input<QLineEdit>(dialog);
             QCOMPARE(edit->text(), QString("original"));
             if (usesEla()) QVERIFY(edit->inherits("ElaLineEdit"));
+            if (usesEla()) QVERIFY(dialog->inherits("ElaDialog"));
             edit->setText(QString::fromUtf8("workspace_中文"));
             QTest::keyClick(edit, Qt::Key_Return);
         });
@@ -142,7 +145,7 @@ private slots:
         int saveCalls = 0;
         auto save = [&](SharedDocument*) { ++saveCalls; return false; };
         whenModal([](QDialog* dialog) {
-            auto* box = qobject_cast<QMessageBox*>(dialog);
+            auto* box = qobject_cast<UiMessageDialog*>(dialog);
             QVERIFY(box);
             QVERIFY(box->defaultButton());
             QVERIFY(box->escapeButton() == box->defaultButton());
@@ -152,14 +155,14 @@ private slots:
         QVERIFY(!manager.resolve({&document}, nullptr, save));
         QCOMPARE(saveCalls, 0);
         whenModal([](QDialog* dialog) {
-            auto* box = qobject_cast<QMessageBox*>(dialog);
+            auto* box = qobject_cast<UiMessageDialog*>(dialog);
             for (auto* button : box->buttons())
                 if (box->buttonRole(button) == QMessageBox::DestructiveRole) button->click();
         });
         QVERIFY(manager.resolve({&document}, nullptr, save));
         QCOMPARE(saveCalls, 0);
         whenModal([](QDialog* dialog) {
-            auto* box = qobject_cast<QMessageBox*>(dialog);
+            auto* box = qobject_cast<UiMessageDialog*>(dialog);
             for (auto* button : box->buttons())
                 if (box->buttonRole(button) == QMessageBox::AcceptRole) button->click();
         });
@@ -167,7 +170,7 @@ private slots:
         QCOMPARE(saveCalls, 1);
         document.setExternalState(SharedDocumentExternalState::Conflict);
         whenModal([](QDialog* dialog) {
-            auto* box = qobject_cast<QMessageBox*>(dialog);
+            auto* box = qobject_cast<UiMessageDialog*>(dialog);
             for (auto* button : box->buttons()) {
                 if (box->buttonRole(button) == QMessageBox::AcceptRole) QVERIFY(!button->isEnabled());
             }
@@ -179,10 +182,16 @@ private slots:
 
     void warningEscapeAndEditorSearch() {
         whenModal([](QDialog* dialog) {
-            auto* box = qobject_cast<QMessageBox*>(dialog);
-            QVERIFY(box);
-            QCOMPARE(box->text(), QString("Could not save."));
-            if (usesEla()) QVERIFY(box->defaultButton()->inherits("ElaPushButton"));
+            if (usesEla()) {
+                auto* box = qobject_cast<UiMessageDialog*>(dialog);
+                QVERIFY(box && box->inherits("ElaContentDialog"));
+                QCOMPARE(box->text(), QString("Could not save."));
+                QVERIFY(box->defaultButton()->inherits("ElaPushButton"));
+            } else {
+                auto* box = qobject_cast<QMessageBox*>(dialog);
+                QVERIFY(box);
+                QCOMPARE(box->text(), QString("Could not save."));
+            }
             QTest::keyClick(dialog, Qt::Key_Escape);
         });
         UiDialogs::warning(nullptr, "Save", "Could not save.");
@@ -229,6 +238,71 @@ private slots:
         editor.undo();
         QCOMPARE(editor.toPlainText(), QString("one\ntwo\nthree\n"));
         QCOMPARE(editor.font(), original);
+    }
+
+    void maskCloseReopenAndDetails() {
+        QWidget parent;
+        parent.resize(850, 650);
+        parent.show();
+        UiMessageDialog dialog(&parent);
+        dialog.setWindowTitle("Close documents");
+        dialog.setText("Changes require a decision.");
+        dialog.setDetailedText(QString(20, 'x') + "\nrtl/top.sv\nrtl/sub.sv");
+        auto* cancel = UiDialogs::addButton(&dialog, QMessageBox::Cancel);
+        dialog.setDefaultButton(cancel);
+        dialog.setEscapeButton(cancel);
+        QSignalSpy finished(&dialog, &QDialog::finished);
+        for (int cycle = 0; cycle < 3; ++cycle) {
+            dialog.show();
+            QApplication::processEvents();
+            auto* mask = parent.findChild<QWidget*>("ElaMaskWidget");
+            if (usesEla()) QVERIFY(mask && mask->isVisible());
+            parent.resize(860 + cycle, 660 + cycle);
+            if (mask) QCOMPARE(mask->geometry(), parent.rect());
+            auto* toggle = dialog.findChild<QPushButton*>("uiMessageDetailsToggle");
+            QVERIFY(toggle);
+            toggle->setChecked(true);
+            QApplication::processEvents();
+            for (auto* button : dialog.buttons()) {
+                QVERIFY(button->width() >= button->minimumSizeHint().width());
+                QVERIFY(dialog.rect().contains(QRect(button->mapTo(&dialog, QPoint()), button->size())));
+            }
+            if (cycle == 0) {
+                const QString path = qEnvironmentVariable("ZEROSLACK_SURFACE_SCREENSHOTS");
+                if (!path.isEmpty()) {
+                    QVERIFY(QDir().mkpath(path));
+                    QVERIFY(dialog.grab().save(path + "/confirmation.png"));
+                }
+            }
+            if (cycle == 0) dialog.reject();
+            else if (cycle == 1) static_cast<QDialog*>(&dialog)->close();
+            else cancel->click();
+            QCOMPARE(finished.count(), cycle + 1);
+            QVERIFY(!dialog.isVisible());
+            if (mask) QVERIFY(!mask->isVisible());
+            QCOMPARE(dialog.clickedButton(), static_cast<QAbstractButton*>(cancel));
+        }
+    }
+
+    void configurationUsesCompactElaShell() {
+        QWidget owner;
+        const auto originalMargins = owner.contentsMargins();
+        const auto originalFlags = owner.windowFlags();
+        WorkspaceConfigurationDialog dialog(&owner);
+        dialog.resize(820, 700);
+        dialog.show();
+        QApplication::processEvents();
+        QCOMPARE(owner.contentsMargins(), originalMargins);
+        QCOMPARE(owner.windowFlags(), originalFlags);
+        if (usesEla()) {
+            QVERIFY(dialog.inherits("ElaDialog"));
+#ifdef ZEROSLACK_ENABLE_ELA
+            QCOMPARE(dialog.getWindowButtonFlags(), ElaAppBarType::ButtonFlags(ElaAppBarType::CloseButtonHint));
+            QVERIFY(!dialog.getIsStayTop());
+#endif
+        }
+        QTest::keyClick(&dialog, Qt::Key_Escape);
+        QVERIFY(!dialog.isVisible());
     }
 };
 

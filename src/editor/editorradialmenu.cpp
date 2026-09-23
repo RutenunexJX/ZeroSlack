@@ -13,7 +13,7 @@
 #include <QPainterPath>
 #include <QScreen>
 #include <QToolButton>
-#include <QToolTip>
+#include "uitooltips.h"
 #include <cmath>
 #include <algorithm>
 
@@ -320,7 +320,7 @@ void EditorRadialMenu::exec(QMenu* commands,const QPoint& globalPosition) {
         popup.popupAt(globalPosition);
         loop.exec();
         selected=popup.chosen;
-        QToolTip::hideText();
+        UiToolTips::hideText();
     }
     if(executable(selected))selected->trigger();
 }

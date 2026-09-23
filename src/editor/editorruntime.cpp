@@ -46,7 +46,7 @@
 #include <QTextEdit>
 #include <QTextLayout>
 #include <QTimer>
-#include <QToolTip>
+#include "uitooltips.h"
 #include <QStringList>
 
 #include <algorithm>
@@ -3200,7 +3200,7 @@ bool MyCodeEditorState::handleGutterMouseMove(
                 && annotation.range.firstLine
                        == block.blockNumber()) {
                 closeDiagnosticPeek();
-                QToolTip::showText(
+                UiToolTips::showText(
                     event->globalPosition().toPoint(),
                     diagnosticTooltipForLine(block.blockNumber()) + QLatin1Char('\n') + annotation.detail,
                     editor);

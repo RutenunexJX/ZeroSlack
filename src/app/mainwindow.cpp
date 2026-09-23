@@ -4207,7 +4207,7 @@ void MainWindow::setupCrashRecoveryReviewUi()
     if (crashRecoveryReviewDialog)
         return;
 
-    crashRecoveryReviewDialog = new QDialog(this);
+    crashRecoveryReviewDialog = new UiDialog(this);
     crashRecoveryReviewDialog->setObjectName(
         QStringLiteral("crashRecoveryReviewDialog"));
     crashRecoveryReviewDialog->setWindowTitle(
@@ -5297,7 +5297,7 @@ void MainWindow::showPanelById(const QString& panelId)
 
 void MainWindow::showRecentWorkspacesDialog()
 {
-    auto* dialog = new QDialog(this);
+    auto* dialog = new UiDialog(this);
     dialog->setObjectName(QStringLiteral("recentWorkspacesDialog"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setWindowTitle(tr("Recent Workspaces"));

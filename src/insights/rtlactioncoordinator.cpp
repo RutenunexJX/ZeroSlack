@@ -383,7 +383,7 @@ selectInstancePair(
         return std::nullopt;
     }
 
-    QDialog dialog(parent);
+    UiDialog dialog(parent);
     dialog.setObjectName(
         QStringLiteral("instancePairSelectionDialog"));
     dialog.setWindowTitle(

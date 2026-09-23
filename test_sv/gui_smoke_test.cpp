@@ -1,6 +1,7 @@
 #include <QMenuBar>
 #include <QToolBar>
 #include "editorgutter.h"
+#include "uidialogs.h"
 #include "fixture_names.h"
 // Offscreen GUI smoke test for the real MainWindow/TabManager/MyCodeEditor path.
 // It keeps the assertions coarse on purpose: this target is a repeatable guard that
@@ -628,15 +629,16 @@ static void acceptNextMessageBoxOk()
     *action = [action](int attempts) {
         QMessageBox* box =
             qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
-        if (!box) {
+        auto* elaBox = qobject_cast<UiMessageDialog*>(QApplication::activeModalWidget());
+        if (!box && !elaBox) {
             if (attempts > 0)
                 QTimer::singleShot(
                     10,
                     [action, attempts]() { (*action)(attempts - 1); });
             return;
         }
-        for (QAbstractButton* button : box->buttons()) {
-            if (box->standardButton(button) == QMessageBox::Ok
+        for (QAbstractButton* button : box ? box->buttons() : elaBox->buttons()) {
+            if ((box && box->standardButton(button) == QMessageBox::Ok)
                 || button->property("uiDialogStandardButton").toInt() == QMessageBox::Ok) {
                 button->click();
                 return;

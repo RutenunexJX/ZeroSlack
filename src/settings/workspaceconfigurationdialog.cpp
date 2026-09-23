@@ -66,7 +66,7 @@ QString normalizedDefineValue(const QString& text)
 }
 
 WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
-    : QDialog(parent)
+    : UiDialog(parent)
 {
     setWindowTitle(QStringLiteral("Workspace Configuration"));
     setObjectName(QStringLiteral("workspaceConfigurationDialog"));

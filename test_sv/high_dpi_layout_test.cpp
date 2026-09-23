@@ -102,7 +102,14 @@ QJsonObject audit(QWidget* window, const QString& name)
         const QRect rect = rectIn(widget, window);
         const QRect displayed = displayedRect(widget, window);
         const QSize minimum = widget->minimumSizeHint();
-        const bool inside = displayed.isEmpty() || window->contentsRect().contains(displayed);
+        QWidget* titleBar = nullptr;
+        for (auto* ancestor = widget->parentWidget(); ancestor && ancestor != window; ancestor = ancestor->parentWidget())
+            if (ancestor->inherits("ElaAppBar")) titleBar = ancestor;
+        // Ela reserves contentsMargins for its title bar. Check its controls against
+        // that bar and the window, and keep all form controls inside contentsRect.
+        const QRect bounds = titleBar ? rectIn(titleBar, window).intersected(window->rect()) : window->contentsRect();
+        const bool inside = displayed.isEmpty() || (bounds.contains(displayed)
+            && (!titleBar || !window->contentsRect().intersects(displayed)));
         const bool below = widget->width() < minimum.width() || widget->height() < minimum.height();
         outside += !inside;
         undersized += below;
@@ -115,6 +122,7 @@ QJsonObject audit(QWidget* window, const QString& name)
         controls.append(QJsonObject{{"widget", id(widget)}, {"parent", id(widget->parentWidget())},
             {"rect", rectJson(rect)}, {"minimumSizeHint", sizeJson(minimum)}, {"text", text},
             {"inside", inside}, {"belowMinimumHint", below}, {"helper", helper},
+            {"surface", titleBar ? "titlebar" : "content"}, {"bounds", rectJson(bounds)},
             {"displayedRect", rectJson(displayed)}, {"scrollClipped", rect != displayed},
             {"font", widget->font().toString()}});
         visible.append(widget);

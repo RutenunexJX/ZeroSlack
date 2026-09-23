@@ -16,7 +16,11 @@ ElaMaskWidget::~ElaMaskWidget()
 
 void ElaMaskWidget::doMaskAnimation(int endValue)
 {
-    QPropertyAnimation* opacityAnimation = new QPropertyAnimation(this, "pMaskAlpha");
+    for (auto* running : findChildren<QPropertyAnimation*>()) {
+        running->stop();
+        running->deleteLater();
+    }
+    QPropertyAnimation* opacityAnimation = new QPropertyAnimation(this, "pMaskAlpha", this);
     connect(opacityAnimation, &QPropertyAnimation::valueChanged, this, [=](const QVariant& value) {
         update();
     });
