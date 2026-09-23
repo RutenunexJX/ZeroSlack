@@ -5,6 +5,22 @@
 默认 CMake 配置启用 Ela，正式包沿用 `ZeroSlack-Ela-win64` 目录，不再生成 ZIP。
 下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
 
+## 0.31.1 移除 Workspace Hub（2026-09-23）
+
+删除 Workspace Hub 的右侧入口、汇总面板、专用模型／会话／跨应用打开适配器和后台刷新。
+仅用于 Hub 的状态控件与回归目标一并移除，动效基准改用模块框图面板。
+旧会话在读取和恢复时清理 Hub 的停靠、浮窗、文档绑定布局及专用设置，其他面板继续恢复。
+保留 Pinloom 独立面板和绑定、源码／分析图入口、Suite 公共接口及 `suite-context` 只读查询。
+下文 Workspace Hub 的迁移记录保留为历史说明。
+
+Ela Release 构建及 11 项相关 CTest 通过，覆盖 100%／200% 主窗口入口与动效、
+新旧停靠／浮窗／文档绑定布局恢复、Pinloom 面板与关联存储、分析图 provider、CLI 和版本文档。
+原生桌面鼠标未被占用。证据：`build/ela-migration/remove-workspace-hub-build.log`
+及 `remove-workspace-hub-tests.log`。
+本版使用 `ela-v0.31.1` 标签，直接替换 `ZeroSlack-Ela-win64` 正式目录，不生成 ZIP。
+发布前重建 GUI／CLI，4 项发布检查通过：100%／200% Ela 主窗口、上下文布局恢复及版本文档。
+记录为 `build/ela-migration/release-0.31.1-build.log` 和 `release-0.31.1-tests.log`。
+
 ## 0.31.0 模块框图、并行停靠与编辑器背景（2026-09-23）
 
 模块框图与停靠的 17 项改造已完成：当前顶层及全部后代、不限制层级、不可达实例虚线、

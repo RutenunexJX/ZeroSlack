@@ -354,6 +354,66 @@ constexpr ContextPlacement floatingPlacement{
 constexpr ContextPlacement keptPlacement{
     ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global};
 
+void verifyRetiredHubLayout()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    controller.setActiveDocument("rtl/active.sv");
+    ContextResource hub;
+    hub.providerId = QStringLiteral("workspaceHub");
+    hub.resourceId = QStringLiteral("home");
+    hub.uri = QUrl(QStringLiteral("zeroslack://workspace-hub"));
+    hub.title = QStringLiteral("Workspace Hub");
+    auto docked = resource("kept-dock");
+    docked.workspaceId.clear();
+    ContextFloatingInstanceState oldFloating;
+    oldFloating.resource = hub.toVariantMap();
+    auto liveFloating = oldFloating;
+    liveFloating.resource = resource("kept-float").toVariantMap();
+    auto documentFloating = oldFloating;
+    documentFloating.resource = resource("kept-document").toVariantMap();
+    ContextWorkspaceState old;
+    old.valid = true;
+    old.dockVisible = true;
+    old.pinnedResources = {hub.toVariantMap(), docked.toVariantMap()};
+    old.activePinnedResourceKey = hub.stableKey();
+    old.dockSections = {{hub.stableKey(), false, 260}, {docked.stableKey(), false, 300}};
+    old.floatingInstances = {oldFloating, liveFloating};
+    old.documentFloatingLayouts.insert("rtl/other.sv", {oldFloating, documentFloating});
+    old.documentFloatingLayouts.insert("rtl/retired.sv", {oldFloating});
+    old.documentFloatingOrder = {"rtl/other.sv", "rtl/retired.sv"};
+    old.providerStates.insert("workspaceHub", QVariantMap{{"previewVisible", true}});
+    old.providerStates.insert("testProvider", QVariantMap{{"expanded", true}});
+
+    QTemporaryDir temporary;
+    WorkspaceSessionStateService service(temporary.filePath("retired-hub.ini"));
+    WorkspaceSessionState session;
+    session.workspaceRoot = controller.workspaceRoot();
+    session.ui.contextWorkspace = old;
+    check(service.save(session).saved, "retired_hub_fixture: old layout is persisted");
+    const auto loaded = service.load(session.workspaceRoot);
+    const auto& clean = loaded.state.ui.contextWorkspace;
+    check(loaded.loaded && clean.pinnedResources == QList<QVariantMap>{docked.toVariantMap()}
+              && clean.floatingInstances == QList<ContextFloatingInstanceState>{liveFloating}
+              && clean.documentFloatingLayouts.value("rtl/other.sv") == QList<ContextFloatingInstanceState>{documentFloating}
+              && clean.documentFloatingOrder == QStringList{"rtl/other.sv"}
+              && !clean.documentFloatingLayouts.contains("rtl/retired.sv")
+              && !clean.providerStates.contains("workspaceHub") && clean.providerStates.contains("testProvider")
+              && clean.activePinnedResourceKey.isEmpty() && clean.dockSections.size() == 1
+              && clean.dockSections.first().resourceKey == docked.stableKey(),
+          "retired_hub_load: all Hub placements are discarded while other state survives");
+    const auto restored = controller.restoreState(old);
+    check(restored.restoredResources == 2 && restored.skippedResources == 0 && restored.warnings.isEmpty()
+              && controller.dockHost()->containsResource(docked.stableKey())
+              && controller.floatingWindows().size() == 1,
+          "retired_hub_restore: direct restore keeps live panels without missing-provider warnings");
+    controller.setActiveDocument("rtl/other.sv");
+    check(controller.floatingWindows().size() == 2
+              && !controller.captureState().documentFloatingLayouts.contains("rtl/retired.sv"),
+          "retired_hub_document: switching documents restores only remaining content");
+}
+
 void verifyPlacementMapping()
 {
     PlacementFixture fixture;
@@ -1516,6 +1576,7 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     if (!initializeUiStyleForTest()) return 2;
     verifyStateCompatibility(app.arguments());
+    verifyRetiredHubLayout();
     verifyPlacementMapping();
     verifyUnsupportedPlacements();
     verifyRailThreeStates();

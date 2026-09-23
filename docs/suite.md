@@ -195,17 +195,14 @@ ZeroSlack also retains the `pinloom-host/v1` context adapter; the suite protocol
 ## Implemented workflows
 
 
-### ZeroSlack Workspace Hub
+### ZeroSlack context panels
 
-The Hub is a side-panel navigation model scoped to the active workspace and
-current source selection. It groups Source, Pinloom, Wave, and RegMap items,
-shows availability/stale/missing state, previews model surfaces when available,
-and invokes stable native deep links for editing. It never reads another
-application's private database.
-
-Updates are generation-tagged. Older provider responses cannot replace a newer
-selection. Provider absence degrades only that section. Hub visibility, width,
-expanded groups, selection, and preview state are persisted.
+Source, analysis and Pinloom resources use independent Context Workspace panels.
+The Workspace Hub summary panel and its background refresh/preview pipeline were
+removed on 2026-09-23. Restoring an older session discards its Hub records from
+docked, floating and document-bound layouts without recreating a missing panel.
+Shared associations, source deep links, Pinloom bindings and public Suite contracts
+remain in use; applications retain ownership of their private data.
 
 ### `zeroslack-cli suite-context`
 

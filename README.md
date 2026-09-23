@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.0`
+Current version: `v0.31.1`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target `ZeroSlack-Ela`; classic and
@@ -13,9 +13,9 @@ editing SystemVerilog workspaces. It combines an incremental editor syntax
 model with workspace-wide semantic analysis, relationship views, diagnostics,
 and preview-first RTL editing workflows.
 
-The Workspace Hub groups the active source context, Pinloom bindings, and
-explicit WaveWorkbench and RegMapWorkbench resources in the existing Context
-Workspace sidebar. The same versioned associations are available to automation:
+Context Workspace provides independent source, analysis and Pinloom panels.
+The Workspace Hub summary panel has been removed. Explicit Pinloom,
+WaveWorkbench and RegMapWorkbench associations remain available to automation:
 
 ```powershell
 zeroslack-cli suite-context <workspace> --file rtl/top.sv --line 42 `
@@ -53,7 +53,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Insights | State-transition and FSM views, nested module block diagrams, signal-kernel graphs, and usage hotspots with Track/Matrix views. | [manual §15](用户手册.md) |
 | Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
 | RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
-| Suite | Workspace Hub groups source, Pinloom, Wave and RegMap resources, and the same versioned associations are available to automation. | [AppSuite integration](docs/suite.md), [manual §21](用户手册.md) |
+| Suite | Independent context panels and versioned cross-application associations remain available through public contracts and the read-only CLI. | [AppSuite integration](docs/suite.md), [manual §20](用户手册.md) |
 | Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
 Ownership boundary: native documents and external application data stay with their owners.
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.0`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.1`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -149,7 +149,10 @@ The executable remains `ZeroSlack-Ela.exe`; the package directory never includes
 so existing shortcuts remain valid. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current Ela release is `0.31.0` (`ela-v0.31.0`). Editor backgrounds offer Resting,
+The current Ela release is `0.31.1` (`ela-v0.31.1`). Workspace Hub and its dedicated
+background refresh pipeline are removed; legacy Hub layout records are discarded during
+session restoration. Independent panels and shared cross-application contracts remain.
+Editor backgrounds offer Resting,
 Peekaboo, Balancing and custom images, with global opacity settings and a None option.
 The image stays fixed behind source text in normal, folded, split and floating views.
 Context floating windows use
@@ -179,7 +182,7 @@ Existing classic user settings remain separate. See
 ## Current goal and open work
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic
-authority. Workspace Hub, provider-based Context Workspace, live insights
+authority. Provider-based Context Workspace, live insights
 and the read-only AI CLI are implemented. Native documents and external application
 data remain with their owners. Context content is placed by the user: sections stack in the
 sidebar, detachable views open in native floating windows with workspace geometry memory, and

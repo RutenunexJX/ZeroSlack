@@ -85,7 +85,7 @@ ZeroSlack no longer provides Wave Preview, Wave Simulation, an embedded Wave res
 simulation toolchain discovery or bundle extraction. Simulation and trace viewing belong to
 the independent WaveWorkbench application.
 
-Workspace Hub and `suite-context` retain explicit Wave project associations through the
-public Suite contract. They do not create simulation manifests or execute a simulator.
+`suite-context` retains explicit Wave project associations through the public Suite
+contract. It does not create simulation manifests or execute a simulator.
 The AppSuite packager still accepts WaveWorkbench and its own Toolchain as sibling components;
 those files are not ZeroSlack runtime dependencies and must retain their own licenses.

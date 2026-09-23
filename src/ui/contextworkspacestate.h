@@ -129,6 +129,36 @@ struct ContextWorkspaceState {
         }
     };
     QList<DockSection> dockSections;
+
+    void removeRetiredProviders()
+    {
+        // Drop retired Hub records before restoration, including inactive documents.
+        const QString retiredId = QStringLiteral("workspaceHub");
+        const QString keyPrefix = retiredId + QLatin1Char(':');
+        const auto retiredResource = [&retiredId](const QVariantMap& resource) {
+            return resource.value(QStringLiteral("providerId")).toString().trimmed() == retiredId;
+        };
+        const auto retiredFloating = [&retiredResource](const FloatingInstance& instance) {
+            return retiredResource(instance.resource);
+        };
+        providerStates.remove(retiredId);
+        pinnedResources.removeIf(retiredResource);
+        floatingInstances.removeIf(retiredFloating);
+        dockSections.removeIf([&keyPrefix](const DockSection& section) {
+            return section.resourceKey.startsWith(keyPrefix);
+        });
+        if (activePinnedResourceKey.startsWith(keyPrefix))
+            activePinnedResourceKey.clear();
+        for (auto it = documentFloatingLayouts.begin(); it != documentFloatingLayouts.end();) {
+            it.value().removeIf(retiredFloating);
+            if (it.value().isEmpty()) {
+                documentFloatingOrder.removeAll(it.key());
+                it = documentFloatingLayouts.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
 };
 
 using ContextFloatingInstanceState = ContextWorkspaceState::FloatingInstance;

@@ -7,7 +7,7 @@
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
-#include "workspacehubcontextprovider.h"
+#include "liveinsightscontextprovider.h"
 #include "ElaNavigationBar.h"
 #include <QApplication>
 #include <QDockWidget>
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     for (auto* child : host.children())
         if (auto* candidate = dynamic_cast<PanelLayoutController*>(child)) drawer = candidate;
     if (!context || !drawer || !app.compositor) return 11;
-    const auto resource = WorkspaceHubContextProvider::homeResource(profile.path());
+    const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module, profile.path());
     if (!context->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global})) return 12;
     auto* navigation = host.findChild<NavigationWidget*>();
     navigation->setWorkspaceRoot(profile.path()); navigation->updateFileHierarchy({path});

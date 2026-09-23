@@ -1,9 +1,14 @@
-ZeroSlack Ela v0.31.0 Windows package
+ZeroSlack Ela v0.31.1 Windows package
 
 Ela is the maintained application. Launch ZeroSlack-Ela.exe. The fixed package directory is
 ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
+
+Release 0.31.1 removes the Workspace Hub summary panel, right-rail entry and
+dedicated background refresh pipeline. Old Hub layout and view-state records are
+discarded during session restoration. Independent source, analysis and Pinloom
+panels, shared associations and the read-only suite-context CLI remain available.
 
 Release 0.31.0 shows the complete module hierarchy, uses dashed unreachable instances
 and matching colors at each depth, and synchronizes double-click navigation with source.
@@ -51,7 +56,7 @@ The classic, Qlementine and SuiteUi paths remain historical compatibility code;
 they are no longer maintained or included in current release validation.
 
 Ela controls: welcome page, settings, workspace configuration, navigation filters, Problems,
-Activity, workspace hub and context panel controls. Existing window management,
+Activity and context panel controls. Existing window management,
 editor, specialized diagrams and their data models remain in use.
 The 0.29.26 development build also uses Ela tree rendering and tab bars.
 Tree item models, unsaved-document confirmation and split/drag controllers are retained.

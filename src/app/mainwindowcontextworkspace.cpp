@@ -18,52 +18,14 @@
 #include "semanticindex.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
-#include "workspacehubcontextprovider.h"
-#include "workspacehubsession.h"
-#include "workspacehubsuitebridge.h"
 #include "workspacemanager.h"
 
 #include <QDir>
 #include <QDockWidget>
 #include <QFileInfo>
 #include <QTextCursor>
-#include <QTextBlock>
-#include <QThreadPool>
 
 #include <utility>
-
-namespace {
-
-bool isSuiteSymbolName(const QString& value)
-{
-    if (value.isEmpty() || value.size() > 256)
-        return false;
-    bool atSegmentStart = true;
-    for (const QChar character : value) {
-        const ushort code = character.unicode();
-        if (character == QLatin1Char('.')) {
-            if (atSegmentStart)
-                return false;
-            atSegmentStart = true;
-            continue;
-        }
-        const bool asciiLetter = (code >= 'A' && code <= 'Z')
-            || (code >= 'a' && code <= 'z');
-        const bool asciiDigit = code >= '0' && code <= '9';
-        const bool common = character == QLatin1Char('_')
-            || character == QLatin1Char('$');
-        if (atSegmentStart) {
-            if (!asciiLetter && !common)
-                return false;
-            atSegmentStart = false;
-        } else if (!asciiLetter && !asciiDigit && !common) {
-            return false;
-        }
-    }
-    return !atSegmentStart;
-}
-
-} // namespace
 
 bool MainWindow::revealSuiteSource(const QString& filePath,
                                    int lineNumber,
@@ -157,98 +119,6 @@ void MainWindow::setupContextWorkspace()
                 });
         contextWorkspaceController->setActiveDocument(relativeDocument(tabManager->getCurrentDocumentMetadata().fileName));
     }
-
-    workspaceHubSession =
-        std::make_unique<WorkspaceHubSession>(this);
-    workspaceHubSession->setSemanticCapture(
-        [](WorkspaceHubRequest* request) {
-            if (!request)
-                return;
-            request->semanticSymbols.clear();
-            request->semanticSymbolsSupplied = true;
-            SemanticIndex* index = SemanticIndex::getInstance();
-            if (!request->filePath.trimmed().isEmpty()
-                && index->getCachedFileContent(request->filePath)
-                       == request->documentText) {
-                request->semanticSymbols =
-                    index->getSymbolRecords(request->filePath);
-            }
-        });
-    auto workspaceHubProvider =
-        std::make_unique<WorkspaceHubContextProvider>(
-            workspaceHubSession.get());
-    workspaceHubProvider->setOpenHandler(
-        [this](const WorkspaceHubItem& item,
-               QString* failureReason) {
-            if (item.contextResource.isValid()) {
-                return contextWorkspaceController
-                    && contextWorkspaceController->openResource(
-                        item.contextResource,
-                        ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global},
-                        failureReason);
-            }
-            if (!item.suiteUri.isValid()) {
-                if (failureReason) {
-                    *failureReason = QStringLiteral(
-                        "The workspace item has no stable resource URI.");
-                }
-                return false;
-            }
-            const QString openKey = item.stableKey;
-            if (workspaceHubOpenRequests.contains(openKey)) {
-                {
-                    postActivityMessage(
-                        QStringLiteral("%1 is already opening.")
-                            .arg(item.title),
-                        2500);
-                }
-                return true;
-            }
-            workspaceHubOpenRequests.insert(openKey);
-            {
-                postActivityMessage(
-                    QStringLiteral("Opening %1…").arg(item.title),
-                    3000);
-            }
-            const QPointer<MainWindow> owner(this);
-            QThreadPool::globalInstance()->start(
-                [owner, item, openKey]() {
-                const WorkspaceHubSuiteResult result =
-                    WorkspaceHubSuiteBridge::open(item);
-                if (!owner)
-                    return;
-                QMetaObject::invokeMethod(
-                    owner,
-                    [owner, item, openKey, result]() {
-                        if (!owner)
-                            return;
-                        owner->workspaceHubOpenRequests.remove(openKey);
-                        owner->postActivityMessage(
-                            result.ok
-                                ? QStringLiteral("Opened %1.")
-                                      .arg(item.title)
-                                : (result.errorMessage.isEmpty()
-                                       ? QStringLiteral(
-                                             "The Suite provider could not open %1.")
-                                             .arg(item.title)
-                                       : result.errorMessage),
-                            result.ok ? 3000 : 6000);
-                    },
-                    Qt::QueuedConnection);
-                });
-            return true;
-        });
-    workspaceHubProvider->setRefreshHandler([this]() {
-        if (workspaceHubSession)
-            workspaceHubSession->clear();
-        requestWorkspaceHubUpdate();
-    });
-    workspaceHubProvider->setStatusHandler(
-        [this](const QString& message, int timeoutMs) {
-                postActivityMessage(message, timeoutMs);
-        });
-    contextWorkspaceController->registerProvider(
-        std::move(workspaceHubProvider));
 
     auto temporaryProvider =
         std::make_unique<TemporaryEditorContextProvider>(
@@ -392,14 +262,8 @@ void MainWindow::setupContextWorkspace()
                 }
                 return false;
             }
-            const bool attached = pinloomCodeLinkCoordinator->attachLink(
+            return pinloomCodeLinkCoordinator->attachLink(
                 sourceMap, entry, failureReason);
-            if (attached) {
-                if (workspaceHubSession)
-                    workspaceHubSession->clear();
-                requestWorkspaceHubUpdate();
-            }
-            return attached;
         });
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));
@@ -572,7 +436,6 @@ bool MainWindow::beginLiveInsightTargetPick(
 
 void MainWindow::requestLiveInsightUpdates()
 {
-    requestWorkspaceHubUpdate();
     if (!liveInsightSession || !tabManager)
         return;
     MyCodeEditor* editor = tabManager->getCurrentEditor();
@@ -682,61 +545,6 @@ void MainWindow::requestLiveInsightUpdates()
         }
         liveInsightSession->requestUpdate(key, input);
     }
-}
-
-void MainWindow::requestWorkspaceHubUpdate()
-{
-    if (!workspaceHubSession || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen()) {
-        if (workspaceHubSession)
-            workspaceHubSession->clear();
-        return;
-    }
-    WorkspaceHubRequest request;
-    request.workspaceRoot = workspaceManager->getWorkspacePath();
-    request.workspaceId = request.workspaceRoot;
-    if (!tabManager) {
-        workspaceHubSession->requestUpdate(request);
-        return;
-    }
-    MyCodeEditor* editor = tabManager->getCurrentEditor();
-    if (!editor) {
-        workspaceHubSession->requestUpdate(request);
-        return;
-    }
-    const DocumentSnapshot document =
-        tabManager->getCurrentDocumentMetadata();
-    request.documentId = document.documentId.trimmed().isEmpty()
-        ? document.fileName : document.documentId;
-    request.filePath = document.fileName;
-    request.documentText = editor->cachedDocumentText();
-    request.moduleName = document.currentModuleName;
-    if (SharedDocument* shared =
-            tabManager->sharedDocumentForEditor(editor)) {
-        request.documentRevision = shared->textRevision();
-    } else {
-        request.documentRevision = static_cast<quint64>(
-            qMax(0, document.textVersion));
-    }
-    request.semanticRevision =
-        SemanticIndex::getInstance()->snapshotToken().revision;
-    const QTextCursor cursor = editor->textCursor();
-    request.cursorPosition = cursor.position();
-    request.line = cursor.block().isValid()
-        ? cursor.block().blockNumber() + 1 : 1;
-    request.column = cursor.block().isValid()
-        ? cursor.position() - cursor.block().position() + 1 : 1;
-    QTextCursor symbolCursor = cursor;
-    QString symbolName = symbolCursor.selectedText().trimmed();
-    if (!isSuiteSymbolName(symbolName)) {
-        symbolCursor = cursor;
-        symbolCursor.select(QTextCursor::WordUnderCursor);
-        symbolName = symbolCursor.selectedText().trimmed();
-    }
-    request.symbolName = isSuiteSymbolName(symbolName)
-        ? symbolName
-        : QString();
-    workspaceHubSession->requestUpdate(request);
 }
 
 void MainWindow::refreshLiveInsightToolPages(int kindValue)

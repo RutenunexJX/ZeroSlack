@@ -1,5 +1,6 @@
 #include "applicationthememanager.h"
 #include "contextfloatingwindow.h"
+#include "contextrail.h"
 #include "editorsplitcontroller.h"
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
@@ -187,6 +188,14 @@ private slots:
     {
         MainWindow window;
         window.resize(1080, 780); window.show(); settle();
+        auto* contextRail = window.findChild<ContextRail*>();
+        QVERIFY(contextRail);
+        const auto contextEntries = contextRail->entryIds();
+        QCOMPARE(contextEntries.size(), 6);
+        QVERIFY(!contextEntries.contains(QStringLiteral("workspaceHub")));
+        for (const auto& id : {"temporaryEditor", "rtlInsight.kernel", "rtlInsight.block",
+                               "rtlInsight.hotspot", "rtlInsight.state", "pinloom"})
+            QVERIFY2(contextEntries.contains(QString::fromLatin1(id)), id);
         if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
             auto* splits = window.findChild<EditorSplitController*>();
             QVERIFY(splits);

@@ -156,7 +156,7 @@ alive.
 `ContextResource` carries stable provider/resource identity, a provider URI, workspace/source identity,
 title and serializable provider state. It never serializes widget pointers or domain semantic objects.
 Providers own content construction, destruction, capabilities and portable view state; hosts own geometry.
-Temporary Editor, Pinloom, Live Insights and Workspace Hub use the registered provider boundary.
+Temporary Editor, Pinloom and Live Insights use the registered provider boundary.
 
 Peek has left, bottom and corner resize handles. Width is bounded to 280–920 px and the available editor
 width; height is bounded from 220 px to available editor height. Double-click restores provider preferences.
@@ -169,8 +169,9 @@ compatible layout, selection and source navigation. Kernel, Module, Hotspot and 
 specialized surfaces. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are no longer compiled or registered.
 Editor folding is derived only from Tree-sitter syntax nodes; comments do not define custom fold ranges.
 
-Workspace Hub groups Source, Pinloom, Wave and RegMap resources. Provider failure affects only its section;
-old replies cannot cross workspace/selection generations. Hub selection, groups and view geometry persist.
+Workspace Hub and its dedicated refresh/preview pipeline have been removed. Session restoration
+discards retired Hub records from all placements. Shared Suite associations, CLI queries and independent
+context providers remain available.
 See [AppSuite integration](docs/suite.md) and [integrations](docs/integrations.md).
 
 
@@ -262,7 +263,7 @@ build targets and unique quoted header names; they do not create new runtime lay
 | `src/completion/` | Completion, snippets and templates |
 | `src/commands/` | Command registry, search, rename and RTL editing workflows |
 | `src/documents/` | Documents, tabs, file synchronization and recovery |
-| `src/workspace/` | Workspace lifecycle, projects, transactions and Workspace Hub |
+| `src/workspace/` | Workspace lifecycle, projects, transactions and session persistence |
 | `src/navigation/` | Source navigation, definition previews and navigation management |
 | `src/insights/` | Specialized graph services, panels, workbench and export |
 | `src/ui/` | Shared shell, context surfaces, icons, typography and notifications |

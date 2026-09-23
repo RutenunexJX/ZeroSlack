@@ -3,7 +3,6 @@
 #include "settingscenterpanel.h"
 #include "testuistyle.h"
 #include "uicontrols.h"
-#include "workspacehubview.h"
 
 #include <QApplication>
 #include <QListWidget>
@@ -189,10 +188,6 @@ private slots:
             QCOMPARE(scroll->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
         for (auto* table : settings.findChildren<QTableView*>())
             QCOMPARE(table->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
-        WorkspaceHubView hub;
-        auto* hubTree = hub.findChild<QTreeView*>("workspaceHubTree"); QVERIFY(hubTree);
-        QCOMPARE(hubTree->isAnimated(), usesEla());
-        QCOMPARE(hubTree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
         NavigationWidget navigation;
         const auto trees = navigation.findChildren<QTreeWidget*>();
         QVERIFY(trees.size() >= 2);

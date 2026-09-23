@@ -52,8 +52,7 @@ bool sameRoot(const QString& lhs, const QString& rhs)
 
 bool hasBuiltInProviderIcon(const QString& providerId)
 {
-    return providerId == QStringLiteral("workspaceHub")
-        || providerId == QStringLiteral("temporaryEditor")
+    return providerId == QStringLiteral("temporaryEditor")
         || providerId == QStringLiteral("liveInsights")
         || providerId.startsWith(QStringLiteral("rtlInsight."))
         || providerId == QStringLiteral("pinloom");
@@ -74,7 +73,6 @@ QIcon contextProviderIcon(
     }
 
     using namespace RoundedIcons;
-    if (providerId == QStringLiteral("workspaceHub")) return icon(Grid);
     if (providerId == QStringLiteral("temporaryEditor")) return icon(File);
     if (providerId == QStringLiteral("rtlInsight.kernel")) return icon(Module);
     if (providerId == QStringLiteral("rtlInsight.block")) return icon(Hierarchy);
@@ -986,9 +984,11 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
 }
 
 ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
-    const ContextWorkspaceState& state,
+    const ContextWorkspaceState& savedState,
     bool preserveRestoredDockGeometry)
 {
+    ContextWorkspaceState state = savedState;
+    state.removeRetiredProviders();
     ContextWorkspaceRestoreResult result;
     const int restoredQtDockWidth =
         dockValue && dockValue->width() > 0

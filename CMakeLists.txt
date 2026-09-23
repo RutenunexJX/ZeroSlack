@@ -374,13 +374,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/integrations/pinloom/pinloomcontextview.cpp
     src/integrations/pinloom/pinloomcontextprovider.cpp
     src/integrations/suite/suitecontextcatalog.cpp
-    src/semantic/semanticstateview.cpp
-    src/workspace/workspacehubtypes.cpp
-    src/workspace/workspacehubsession.cpp
-    src/workspace/workspacehubmodel.cpp
-    src/workspace/workspacehubview.cpp
-    src/workspace/workspacehubcontextprovider.cpp
-    src/workspace/workspacehubsuitebridge.cpp
     src/ui/temporaryeditorsession.cpp
     src/ui/temporaryeditorcontextview.cpp
     src/ui/temporaryeditorcontextprovider.cpp
@@ -929,12 +922,6 @@ else()
     target_link_libraries(zeroslack_core PUBLIC slang::slang)
 endif()
 
-if(SuiteApp_FOUND)
-    target_link_libraries(zeroslack_core PRIVATE SuiteApp::suiteapp)
-    target_compile_definitions(zeroslack_core PRIVATE
-        ZEROSLACK_CORE_HAS_SUITEAPP=1)
-endif()
-
 target_link_libraries(demo PRIVATE zeroslack_core)
 if(SuiteApp_FOUND)
     target_sources(demo PRIVATE
@@ -1463,11 +1450,6 @@ if(BUILD_TESTING)
     add_executable(context_floating_preview
         test_sv/context_floating_preview.cpp)
     target_link_libraries(context_floating_preview PRIVATE zeroslack_core)
-
-    add_executable(workspace_hub_test
-        test_sv/workspace_hub_test.cpp)
-    target_link_libraries(workspace_hub_test
-        PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(temporary_editor_context_provider_test
         test_sv/temporary_editor_context_provider_test.cpp)
@@ -2144,43 +2126,6 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:context_floating_window_test> -o -,txt)
     set_tests_properties(context_floating_window_test PROPERTIES TIMEOUT 60)
-    add_test(NAME workspace_hub_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_hub_test>
-    )
-    add_test(NAME workspace_hub_150pct_dpi_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_SCALE_FACTOR=1.5"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_hub_test>
-    )
-    add_test(NAME workspace_hub_125pct_dpi_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_SCALE_FACTOR=1.25"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_hub_test>
-    )
-    add_test(NAME workspace_hub_200pct_dpi_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_SCALE_FACTOR=2"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_hub_test>
-    )
-    set_tests_properties(
-        workspace_hub_test
-        workspace_hub_125pct_dpi_test
-        workspace_hub_150pct_dpi_test
-        workspace_hub_200pct_dpi_test
-        PROPERTIES TIMEOUT 120)
     add_test(NAME context_workspace_125pct_dpi_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

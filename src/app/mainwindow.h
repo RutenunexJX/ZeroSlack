@@ -37,7 +37,6 @@ class CommandLayerCoordinator;
 class ContextWorkspaceController;
 class LiveInsightSession;
 class LiveInsightToolPage;
-class WorkspaceHubSession;
 class PinloomCodeLinkCoordinator;
 class PinloomHostClient;
 class EditorCoordinator;
@@ -119,8 +118,6 @@ private:
     std::unique_ptr<ContextWorkspaceController>
         contextWorkspaceController;
     std::unique_ptr<LiveInsightSession> liveInsightSession;
-    std::unique_ptr<WorkspaceHubSession> workspaceHubSession;
-    QSet<QString> workspaceHubOpenRequests;
     QHash<int, QPointer<LiveInsightToolPage>>
         liveInsightToolPages;
     std::unique_ptr<PinloomCodeLinkCoordinator>
@@ -213,7 +210,6 @@ private:
     void setupPanelLayoutController();
     void setupContextWorkspace();
     void requestLiveInsightUpdates();
-    void requestWorkspaceHubUpdate();
     void refreshLiveInsightToolPages(int kindValue);
     void openLiveInsightFullView(
         const ContextResource& resource,

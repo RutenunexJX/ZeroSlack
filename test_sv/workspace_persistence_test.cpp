@@ -387,7 +387,7 @@ int main(int argc, char* argv[])
     sessionA.ui.contextWorkspace.dockVisible = true;
     sessionA.ui.contextWorkspace.railVisible = true;
     sessionA.ui.contextWorkspace.providerStates.insert(
-        QStringLiteral("workspaceHub"),
+        QStringLiteral("testProvider"),
         QVariantMap{
             {QStringLiteral("expandedSections"),
              QStringList{QStringLiteral("source"),
@@ -531,7 +531,7 @@ int main(int argc, char* argv[])
     editableContext.insert(QStringLiteral("peekHeight"), 477);
     editableContext.insert(
         QStringLiteral("providerStates"),
-        QJsonObject{{QStringLiteral("workspaceHub"),
+        QJsonObject{{QStringLiteral("testProvider"),
                      QJsonObject{{QStringLiteral("previewVisible"), false}}}});
     editableUi.insert(QStringLiteral("contextWorkspace"), editableContext);
     editableRoot.insert(QStringLiteral("ui"), editableUi);

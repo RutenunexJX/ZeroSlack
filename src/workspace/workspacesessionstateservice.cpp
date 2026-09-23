@@ -660,6 +660,7 @@ void restoreUi(
             ui->contextWorkspace.valid =
                 contextWorkspace.value(
                     QStringLiteral("valid")).toBool(true);
+            ui->contextWorkspace.removeRetiredProviders();
         }
     }
 }
