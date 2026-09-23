@@ -9,7 +9,7 @@
 
 #include <functional>
 
-class ProblemsPanelCoordinator
+class ProblemsPanelCoordinator : public QObject
 {
 public:
     explicit ProblemsPanelCoordinator(QWidget* parent);
@@ -32,6 +32,9 @@ public:
     bool showsCurrentFileScope() const;
     bool isVisibleToUser() const;
     int updateInvocationCount() const { return updateInvocations; }
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
     QDockWidget* problemsDock = nullptr;

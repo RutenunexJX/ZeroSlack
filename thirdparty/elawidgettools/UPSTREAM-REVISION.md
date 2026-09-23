@@ -178,6 +178,12 @@ ZeroSlack removes floating-window action clutter and consumes these notification
 preview or accept drops through its existing resource controller. Other Ela windows
 do not enable tracking. MIT and font OFL licenses remain unchanged.
 
+Apply `patches/23-zeroslack-checkbox-current-theme.patch` after patch 22.
+ElaCheckBox paints checked and partially checked marks with the current theme's
+selected foreground color. It no longer reads the other (dark) theme's text color,
+so light/dark switches and custom palettes cannot leave stale indicator colors.
+MIT and font OFL licenses remain unchanged.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids

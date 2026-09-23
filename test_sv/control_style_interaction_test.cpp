@@ -6,6 +6,7 @@
 #include "mainwindow.h"
 #include "settingscenterpanel.h"
 #include "signalkernelgraphpanelcoordinator.h"
+#include "uicontrols.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -90,22 +91,24 @@ private slots:
         QWidget host;
         auto* layout = new QVBoxLayout(&host);
         QList<QAbstractButton*> controls;
-        auto* normal = new QPushButton("Open", &host);
-        auto* toolbar = new QPushButton("Inspect", &host);
+        auto* normal = UiControls::pushButton("Open", &host);
+        auto* toolbar = UiControls::pushButton("Inspect", &host);
         InsightVisualStyle::applyToolbarButton(toolbar);
-        auto* primary = new QPushButton("Apply", &host);
+        auto* primary = UiControls::pushButton("Apply", &host);
         InsightVisualStyle::applyPrimaryButton(primary);
-        auto* tool = new QToolButton(&host);
+        auto* tool = UiControls::toolButton(&host);
         tool->setText("Export"); tool->setToolButtonStyle(Qt::ToolButtonTextOnly);
-        auto* check = new QCheckBox("Enabled", &host);
-        auto* segment = new QCheckBox("Inputs", &host);
+        auto* check = UiControls::checkBox("Enabled", &host);
+        auto* segment = UiControls::checkBox("Inputs", &host);
         InsightVisualStyle::applySegmentedCheckBox(segment);
         controls = {normal, toolbar, primary, tool, check, segment};
         for (auto* button : controls) { layout->addWidget(button); button->setFocusPolicy(Qt::StrongFocus); }
         host.show(); host.activateWindow(); settle();
         int index = 0;
         for (auto* button : controls) {
-            QVERIFY(button->styleSheet().isEmpty());
+            const QString initialStyleSheet = button->styleSheet();
+            if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)
+                QVERIFY(button->property("zeroslackElaControl").toBool());
             QSignalSpy clicked(button, &QAbstractButton::clicked);
             const QSize hint = button->sizeHint();
             const QSize size = button->size();
@@ -114,11 +117,11 @@ private slots:
             const QImage ordinary = button->grab().toImage();
             moveMouse(button, button->rect().center()); settle();
             const QImage hover = button->grab().toImage();
-            QVERIFY(hover != ordinary);
+            QVERIFY2(hover != ordinary, qPrintable(button->text()));
             QTest::mousePress(button, Qt::LeftButton); settle();
             QVERIFY(button->isDown());
             const QImage pressed = button->grab().toImage();
-            QVERIFY(pressed != hover);
+            QVERIFY2(pressed != hover, qPrintable(button->text()));
             QCOMPARE(button->sizeHint(), hint);
             QCOMPARE(button->size(), size);
             // Drag outside cancels activation; there must be no delayed click.
@@ -129,7 +132,7 @@ private slots:
             moveMouse(&host, QPoint(host.width() - 1, host.height() - 1));
             button->setFocus(Qt::TabFocusReason); settle();
             QVERIFY(button->hasFocus());
-            QVERIFY(button->grab().toImage() != ordinary);
+            QVERIFY2(button->grab().toImage() != ordinary, qPrintable(button->text()));
             QCOMPARE(button->sizeHint(), hint);
             QTest::keyClick(button, Qt::Key_Space);
             QCOMPARE(clicked.count(), 1);
@@ -170,13 +173,14 @@ private slots:
             }
             capture(button, QString("state-%1-%2-checked").arg(int(mode)).arg(index++));
             QCOMPARE(button->size(), size);
+            QCOMPARE(button->styleSheet(), initialStyleSheet);
         }
         // The style must not change QWidget keyboard navigation or dialog defaults.
         normal->setFocus(Qt::TabFocusReason); settle();
         QTest::keyClick(normal, Qt::Key_Tab); QCOMPARE(host.focusWidget(), toolbar);
         QTest::keyClick(toolbar, Qt::Key_Tab, Qt::ShiftModifier); QCOMPARE(host.focusWidget(), normal);
         QDialog dialog;
-        auto* defaultButton = new QPushButton("Apply", &dialog);
+        auto* defaultButton = UiControls::pushButton("Apply", &dialog);
         defaultButton->setDefault(true); InsightVisualStyle::applyPrimaryButton(defaultButton);
         auto* dialogLayout = new QVBoxLayout(&dialog); dialogLayout->addWidget(defaultButton);
         QSignalSpy accepted(defaultButton, &QAbstractButton::clicked);
@@ -270,6 +274,33 @@ private slots:
             kernel.dock()->setWidget(panel); panel->show(); floating.hide(); settle();
             QVERIFY(inputs->styleSheet().isEmpty());
             capture(panel, QString("docked-kernel-%1").arg(int(mode)));
+        }
+    }
+
+    void checkboxThemeSwitching()
+    {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        auto* box = UiControls::checkBox("Enabled", &host);
+        layout->addWidget(box);
+        host.show(); settle();
+        moveMouse(&host, QPoint(host.width() - 1, host.height() - 1));
+        box->clearFocus();
+        for (auto mode : {ThemeMode::Dark, ThemeMode::Light, ThemeMode::CatppuccinMocha,
+                          ThemeMode::CatppuccinLatte, ThemeMode::CatppuccinFrappe,
+                          ThemeMode::CatppuccinMacchiato}) {
+            ApplicationThemeManager::instance().setMode(mode);
+            box->setCheckState(Qt::Checked); settle();
+            QStyleOptionButton option;
+            option.initFrom(box);
+            const QRect indicator = box->style()->subElementRect(
+                QStyle::SE_CheckBoxIndicator, &option, box);
+            const QImage checked = box->grab().toImage();
+            QVERIFY2(colorPixels(checked, indicator.adjusted(3, 3, -3, -3),
+                InsightVisualStyle::theme().button.textChecked) >= 3,
+                "An existing checked indicator must follow the current theme");
+            box->setCheckState(Qt::PartiallyChecked); settle();
+            QVERIFY(box->grab().toImage() != checked);
         }
     }
 };

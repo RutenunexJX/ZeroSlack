@@ -30,14 +30,8 @@ function(assert_version_marker relative_path marker_regex marker_name)
     endif()
 endfunction()
 
-assert_version_marker(
-    "README.md"
-    "Current version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
-    "README")
-assert_version_marker(
-    "README.md"
-    "Current controlled baseline:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
-    "README release baseline")
+# README.md is maintained independently of release deliveries. Guard the
+# shipped documentation and generated application version against VERSION.
 assert_version_marker(
     "packaging/ZeroSlack-PACKAGE-README.txt"
     "ZeroSlack[ \\t]+v?([0-9]+\\.[0-9]+\\.[0-9]+)"

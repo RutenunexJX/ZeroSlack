@@ -5,6 +5,25 @@
 默认 CMake 配置启用 Ela，正式包使用 `ZeroSlack-win64` 目录和 `ZeroSlack.exe`，不再生成 ZIP。
 下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
 
+## 0.31.6 诊断刷新与回归修复（2026-09-23）
+
+复选框的选中与部分选中标记使用当前主题的前景色，供应商变更记录为补丁 23。
+Problems 面板监听实际视图的重新显示，并允许展开动画期间更新诊断，避免抽屉重挂载或
+动画遮挡使内容保留旧结果。
+
+回归夹具同步当前 Ela 控件、TEMP／工作区归属、上下文浮窗和语义发布流程；文件监听测试
+等待原生监听就绪后执行实际原子保存，仍检查单次文件通知且不触发工程重扫。
+原 11 项失败全部修复，Ela 全量回归 196/196 通过，GUI smoke 为 1010 项检查、0 失败；
+文件监听单项重复 12 轮通过。记录位于 `build/failure-review/closure-ela-full.log` 和
+`build/failure-review/watcher-probe-2.log`。
+
+0.31.6 Release 重建与 8 项发布检查通过，覆盖 100%／200% 主窗口和浮窗、上下文恢复、
+临时编辑器、CLI 及版本一致性。记录为 `build/failure-review/release-0.31.6-build.log`
+和 `build/failure-review/release-0.31.6-tests.log`。
+
+仓库 README 保持不变。发布版本以 `VERSION` 为源，版本守卫校验生成头文件、用户手册和
+包内说明；README 仍保留固定包目录名称的检查，不再要求随每次发布更新版本标记。
+
 ## 0.31.3 统一正式包名称（2026-09-23）
 
 Ela 版本成为唯一正式包，替换原 `ZeroSlack-win64`，移除独立的 `ZeroSlack-Ela-win64`。

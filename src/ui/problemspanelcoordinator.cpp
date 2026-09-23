@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QFileInfo>
+#include <QEvent>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
@@ -168,6 +169,7 @@ void updateDiagnosticBandComboPresentation(QComboBox* combo,
 } // namespace
 
 ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
+    : QObject(parent)
 {
     auto* panel = new QWidget(parent);
     auto* layout = new QVBoxLayout(panel);
@@ -230,6 +232,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent)
     layout->addLayout(statusLayout);
 
     problemsTree = UiControls::treeWidget(panel);
+    problemsTree->installEventFilter(this);
     problemsTree->setObjectName(QStringLiteral("problemsTree"));
     problemsTree->setColumnCount(7);
     problemsTree->setHeaderLabels({"Severity", "File", "Line", "Column", "Message", "Owner", "Band"});
@@ -447,6 +450,19 @@ void ProblemsPanelCoordinator::update()
     }
 }
 
+bool ProblemsPanelCoordinator::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == problemsTree && event->type() == QEvent::Show) {
+        // Drawer hosting reparents the content out of its QDockWidget. Refresh
+        // when the actual view returns, including after a compositor transition.
+        QMetaObject::invokeMethod(this, [this]() {
+            if (isVisibleToUser())
+                update();
+        }, Qt::QueuedConnection);
+    }
+    return QObject::eventFilter(watched, event);
+}
+
 bool ProblemsPanelCoordinator::showsCurrentFileScope() const
 {
     return !problemsScopeCombo || problemsScopeCombo->currentData().toInt() == 0;
@@ -454,7 +470,8 @@ bool ProblemsPanelCoordinator::showsCurrentFileScope() const
 
 bool ProblemsPanelCoordinator::isVisibleToUser() const
 {
+    // A reveal animation can temporarily cover the view without hiding it.
+    // Keep its backing content current for the frame exposed at completion.
     return problemsTree
-        && problemsTree->isVisible()
-        && !problemsTree->visibleRegion().isEmpty();
+        && problemsTree->isVisible();
 }

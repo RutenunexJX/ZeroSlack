@@ -1,9 +1,12 @@
-ZeroSlack v0.31.5 Windows package
+ZeroSlack v0.31.6 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.6 fixes checkbox indicators after theme changes and refreshes Problems
+when its drawer reopens or diagnostics arrive during the reveal animation.
 
 Release 0.31.5 simplifies context-window title bars to the title, optional Fit and Close.
 Dragging the title moves the window or docks it in the sidebar/bottom area; double-click

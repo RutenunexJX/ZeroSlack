@@ -165,7 +165,7 @@ private slots:
         QVERIFY(writeFile(first) && writeFile(second));
         QWidget host;
         auto* layout = new QVBoxLayout(&host);
-        auto* tabs = UiControls::tabWidget(&host); layout->addWidget(tabs);
+        auto* tabs = UiControls::editorTabWidget(&host); layout->addWidget(tabs);
         TabManager manager(tabs);
         manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(dir.filePath("recovery")));
         manager.enableSplitLayout(&host);

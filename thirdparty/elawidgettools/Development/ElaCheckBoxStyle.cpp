@@ -75,7 +75,7 @@ void ElaCheckBoxStyle::drawControl(ControlElement element, const QStyleOption* o
             }
             painter->drawRoundedRect(checkRect, 2, 2);
             //图标绘制
-            painter->setPen(ElaThemeColor(ElaThemeType::Dark, BasicText));
+            painter->setPen(ElaThemeColor(_themeMode, BasicTextInvert));
             if (bopt->state.testFlag(QStyle::State_On))
             {
                 painter->save();

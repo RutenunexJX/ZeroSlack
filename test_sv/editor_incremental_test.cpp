@@ -1646,8 +1646,15 @@ int main(int argc, char** argv)
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
 
     const DocumentSnapshot opened = manager.getCurrentDocument();
-    expect("first tab title is rtl_top.sv",
-           tabs->tabText(0) == QStringLiteral("rtl_top.sv"));
+    expect("standalone file title includes TEMP",
+           manager.isTemporaryEditor(manager.getCurrentEditor())
+               && tabs->tabText(0) == QStringLiteral("TEMP  rtl_top.sv"));
+    manager.setWorkspaceScope({QFileInfo(rtlTop).absolutePath()},
+                              QFileInfo(rtlTop).absolutePath());
+    expect("opening the owning workspace removes TEMP without reopening the file",
+           !manager.isTemporaryEditor(manager.getCurrentEditor())
+               && tabs->tabText(0) == QStringLiteral("rtl_top.sv")
+               && manager.editorCount() == 1);
     expect("first file window title is never untitled",
            !window.windowTitle().isEmpty()
                && window.windowTitle() != QStringLiteral("untitled"));

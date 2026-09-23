@@ -4912,8 +4912,17 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&wrappedIndex);
     QWidget wrappedPanelHost;
     RtlInsightsPanelCoordinator wrappedPanel(&wrappedPanelHost);
-    // The host stays hidden in this fixture; give the viewport a real layout budget.
-    wrappedPanel.graphView()->viewport()->resize(800, 600);
+    wrappedPanel.showModuleBlockDiagramForModule(
+        wrappedTopPath,
+        QStringLiteral("wrapped_top"));
+    wrappedPanelHost.resize(1000, 700);
+    wrappedPanelHost.show();
+    QCoreApplication::processEvents();
+    wrappedPanel.graphView()->resize(802, 602);
+    QCoreApplication::processEvents();
+    expectBool("module block diagram fixture has a wide viewport",
+               wrappedPanel.graphView()->viewport()->width() >= 800,
+               true);
     wrappedPanel.showModuleBlockDiagramForModule(
         wrappedTopPath,
         QStringLiteral("wrapped_top"));

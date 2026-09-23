@@ -35,6 +35,7 @@
 #include <QImage>
 #include <QIODevice>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QStatusBar>
@@ -150,14 +151,18 @@
 #undef private
 #include "applicationthememanager.h"
 #include "contextdockhost.h"
+#include "contextfloatingwindow.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
 #include "contextworkspacecontroller.h"
 #include "editordroppreviewoverlay.h"
+#include "editorfileidentity.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
+#include "panelcompositor.h"
 #include "rtlinsightworkbench.h"
+#include "tabfileio.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
 
@@ -630,8 +635,13 @@ static void acceptNextMessageBoxOk()
                     [action, attempts]() { (*action)(attempts - 1); });
             return;
         }
-        if (QAbstractButton* ok = box->button(QMessageBox::Ok))
-            ok->click();
+        for (QAbstractButton* button : box->buttons()) {
+            if (box->standardButton(button) == QMessageBox::Ok
+                || button->property("uiDialogStandardButton").toInt() == QMessageBox::Ok) {
+                button->click();
+                return;
+            }
+        }
     };
     QTimer::singleShot(0, [action]() { (*action)(50); });
 }
@@ -1068,6 +1078,12 @@ static void runTabOpenDedupRegression()
                    && !editorB->hierarchyInstanceContext().isBound(),
                true);
 
+    expectBool("closing an unregistered workspace preserves TEMP tabs",
+               scopedTabs.closeTabsInWorkspace(workspaceB.path())
+                   && scopedTabs.editorCount() == 4,
+               true);
+    scopedTabs.setWorkspaceScope(
+        {workspaceA.path(), workspaceB.path()}, workspaceB.path());
     QSignalSpy scopedCloseSpy(&scopedTabs, &TabManager::tabClosed);
     expectBool("close workspace tabs succeeds",
                scopedTabs.closeTabsInWorkspace(workspaceB.path()),
@@ -1112,6 +1128,7 @@ static void runTabOpenDedupRegression()
     captureWidget.resize(480, 160);
     captureWidget.show();
     TabManager captureTabs(&captureWidget);
+    captureTabs.setWorkspaceScope({sessionTabsWorkspace.path()}, sessionTabsWorkspace.path());
     expectBool("tab session opens top",
                captureTabs.openFileInTab(sessionTopFile),
                true);
@@ -1176,6 +1193,7 @@ static void runTabOpenDedupRegression()
     restoreWidget.resize(480, 160);
     restoreWidget.show();
     TabManager restoreTabs(&restoreWidget);
+    restoreTabs.setWorkspaceScope({sessionTabsWorkspace.path()}, sessionTabsWorkspace.path());
     QStringList skippedSessionTabs;
     const QStringList restoredSessionTabs =
         restoreTabs.restoreWorkspaceSessionTabs(sessionTabsWorkspace.path(),
@@ -2545,19 +2563,28 @@ static void runWorkspaceWatcherIncrementalRegression()
     QSignalSpy fileChangedSpy(
         &workspace,
         &WorkspaceManager::fileChanged);
+    QSignalSpy scanFinishedSpy(
+        &workspace,
+        &WorkspaceManager::workspaceScanFinished);
     expectBool("workspace watcher opens fixture",
                workspace.openWorkspace(directory.path()),
                true);
     expectBool("workspace watcher initial scan completes",
                waitUntil([&]() {
-                   return workspace.getSystemVerilogFiles().contains(
-                       QDir::cleanPath(QFileInfo(source).absoluteFilePath()));
+                   const QString path = QDir::cleanPath(QFileInfo(source).absoluteFilePath());
+                   return !scanFinishedSpy.isEmpty()
+                       && workspace.getSystemVerilogFiles().contains(path)
+                       && workspace.watcher.watcher
+                       && workspace.watcher.watcher->files().contains(path);
                }, 3000),
                true);
+    // Let the native watcher thread consume its newly registered handles.
+    QTest::qWait(50);
 
     const int scansBeforeSave = scanStartedSpy.count();
     expectBool("workspace watcher updates existing source",
-               writeTextFile(
+               TabFileIo().writeTextFile(
+                   nullptr,
                    source,
                    QStringLiteral(
                        "module watch_top; logic changed; endmodule\n")),
@@ -6978,7 +7005,7 @@ static bool hasNavigableFile(QTreeWidgetItem* item, const QString& fileName)
         return false;
     const QString itemFileName = item->data(0, Qt::UserRole).toString();
     if (!itemFileName.isEmpty()
-        && QFileInfo(itemFileName).absoluteFilePath() == QFileInfo(fileName).absoluteFilePath()) {
+        && EditorFileIdentity::same(itemFileName, fileName)) {
         return true;
     }
     for (int i = 0; i < item->childCount(); ++i) {
@@ -7047,17 +7074,10 @@ static bool hasDiagnosticTreeItem(QTreeWidget* tree,
                                   const QString& fileName,
                                   const QString& message)
 {
-    const QString normalizedFile =
-        QDir::cleanPath(
-            QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
     const QList<QTreeWidgetItem*> items = navigableItems(tree);
     for (QTreeWidgetItem* item : items) {
         const QString itemFileName = item->data(0, Qt::UserRole).toString();
-        const QString normalizedItemFile =
-            QDir::cleanPath(
-                QDir::fromNativeSeparators(
-                    QFileInfo(itemFileName).absoluteFilePath()));
-        if (normalizedItemFile == normalizedFile
+        if (EditorFileIdentity::same(itemFileName, fileName)
             && item->text(4).contains(message)) {
             return true;
         }
@@ -7135,6 +7155,49 @@ static void drainRelationshipWork(MainWindow& window)
     }
 }
 
+static void runProblemsPanelReopenRegression()
+{
+    QTemporaryDir directory;
+    expectBool("Problems reopen fixture directory exists", directory.isValid(), true);
+    if (!directory.isValid())
+        return;
+    SemanticIndex* index = SemanticIndex::getInstance();
+    const auto previousSnapshot = index->snapshot();
+    MainWindow window;
+    window.resize(900, 640);
+    window.show();
+    window.panelLayoutController->restorePanel(QStringLiteral("problems"));
+    problemsScopeCombo(window)->setCurrentIndex(
+        problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
+    SemanticDiagnostic first;
+    first.fileName = directory.filePath(QStringLiteral("before_hide.sv"));
+    first.line = 1;
+    first.column = 1;
+    first.message = QStringLiteral("before hide");
+    first.severity = SemanticDiagnostic::Error;
+    index->setSnapshot(snapshotFromRecords({}, {}, {first}));
+    semanticPanelRefresh(window)->updateProblemsPanel();
+    expectBool("Problems shows its initial diagnostic",
+               waitUntil([&] {
+                   return window.semanticDocks->problemsPanelCoordinator()->isVisibleToUser()
+                       && hasNavigableFile(problemsTree(window), first.fileName);
+               }, 2000), true);
+    window.panelLayoutController->closePanel(QStringLiteral("problems"));
+    expectBool("Problems content hides inside the drawer",
+               waitUntil([&] { return !problemsTree(window)->isVisible(); }, 2000), true);
+    SemanticDiagnostic second = first;
+    second.fileName = directory.filePath(QStringLiteral("while_hidden.sv"));
+    second.message = QStringLiteral("published while hidden");
+    index->setSnapshot(snapshotFromRecords({}, {}, {second}));
+    window.panelLayoutController->restorePanel(QStringLiteral("problems"));
+    expectBool("reopening Problems refreshes diagnostics published while hidden",
+               waitUntil([&] {
+                   return hasNavigableFile(problemsTree(window), second.fileName)
+                       && !hasNavigableFile(problemsTree(window), first.fileName);
+               }, 2000), true);
+    index->setSnapshot(previousSnapshot);
+}
+
 static void runSemanticStateUiRegression()
 {
     printf("\n-- semantic state UI regression --\n");
@@ -7158,6 +7221,20 @@ static void runSemanticStateUiRegression()
                true);
 
     MainWindow window;
+    bool initialAnalysisFinished = false;
+    const auto initialAnalysisConnection = QObject::connect(
+        window.analysisScheduler.get(),
+        &AnalysisScheduler::workspaceSymbolAnalysisFinished,
+        &window, [&](const ProjectSnapshot&, int, int) {
+            initialAnalysisFinished = true;
+        });
+    expectBool("semantic state UI opens the owning workspace",
+               window.workspaceManager->openWorkspace(directory.path()),
+               true);
+    expectBool("semantic state UI initial analysis finishes",
+               waitUntil([&]() { return initialAnalysisFinished; }, 10000),
+               true);
+    QObject::disconnect(initialAnalysisConnection);
     SemanticIndex::getInstance()->setSnapshot(snapshotFromRecords(
         {SemanticFixtureRecordBuilder(
              QStringLiteral("current_dirty"),
@@ -7206,10 +7283,11 @@ static void runSemanticStateUiRegression()
         });
     const int updatesBeforeTyping = problems->updateInvocationCount();
     QTextCursor cursor = editor->textCursor();
-    cursor.movePosition(QTextCursor::End);
+    cursor.setPosition(currentText.indexOf(QStringLiteral("current_dirty"))
+                       + QStringLiteral("current_dirty").size());
     editor->setTextCursor(cursor);
     for (int index = 0; index < 100; ++index)
-        editor->insertPlainText(QStringLiteral(" "));
+        editor->insertPlainText(QStringLiteral("x"));
     expectBool("100 edits cause only the first Dirty visible-state refresh",
                problems->updateInvocationCount() == updatesBeforeTyping + 1,
                true);
@@ -11231,7 +11309,20 @@ void runLiveInsightSidebarRoutingRegression(
     MainWindow& window,
     const QString& fixturePath)
 {
+    expectBool("Live Insight target source opens in the active editor",
+               window.tabManager->openFileInTab(fixturePath),
+               true);
     runRtlInsightsPanelRegression(window, fixturePath);
+    MyCodeEditor* pickEditor = window.tabManager->getCurrentEditor();
+    const QString pickSource = SemanticIndex::getInstance()->getCachedFileContent(fixturePath);
+    expectBool("Live Insight picker has its published source fixture",
+               pickEditor && !pickSource.isEmpty(), true);
+    if (pickEditor && !pickSource.isEmpty()) {
+        // Earlier workflows edit this document. Match the explicitly published
+        // fixture without scheduling analysis that would replace its test records.
+        const QSignalBlocker fixtureSignals(window.tabManager->getDocumentModel());
+        pickEditor->setPlainText(pickSource);
+    }
     ContextWorkspaceController* controller =
         window.contextWorkspaceController.get();
     SemanticPanelRefreshCoordinator* refresh =
@@ -11314,21 +11405,15 @@ void runLiveInsightSidebarRoutingRegression(
     // this is the only place that exercises the whole chain through MainWindow.
     QAbstractButton* scopeChip =
         controller->dockHost()->sectionScope(active.stableKey());
-    MyCodeEditor* pickEditor = window.tabManager
-        ? window.tabManager->getCurrentEditor()
-        : nullptr;
     expectBool("State section header names the pinned target",
                scopeChip != nullptr && scopeChip->isVisible()
                    && !scopeChip->text().trimmed().isEmpty()
                    && scopeChip->text() != QStringLiteral("Pick target"),
                true);
     if (scopeChip && pickEditor) {
-        // Put a declaration on screen first: candidates come from the visible
-        // region, and this editor opens on a comment header that holds none.
-        const QRegularExpression declarationPattern(
-            QStringLiteral("\\n\\s*(logic|reg|wire)\\s"));
+        // Put the fixture's state declaration on screen before re-picking.
         const int declaration = pickEditor->toPlainText().indexOf(
-            declarationPattern);
+            QStringLiteral("state_t state_q"));
         if (declaration >= 0) {
             QTextCursor cursor = pickEditor->textCursor();
             cursor.setPosition(declaration);
@@ -11343,11 +11428,8 @@ void runLiveInsightSidebarRoutingRegression(
                    true);
         const QPair<int, int> pickRange =
             pickEditor->insightTargetEnumeratedLineRangeForTest();
-        // Which symbols blink depends on the semantic records for the open
-        // document, which this fixture does not analyse; the candidate set
-        // itself is covered by editor_insight_target_pick_test against a known
-        // snapshot. What this asserts is that the mode reads the region the
-        // editor is actually showing.
+        // Candidate identities are covered by editor_insight_target_pick_test.
+        // Here the MainWindow route must enumerate the visible editor region.
         const int firstVisibleLine =
             pickEditor->cursorForPosition(QPoint(0, 0)).blockNumber();
         expectBool("Picker enumerates the editor visible region",
@@ -11552,6 +11634,10 @@ int main(int argc, char** argv)
 {
     ScopedGuiTestSettingsRoot isolatedSettings;
     QApplication app(argc, argv);
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela))
+        return 2;
+#endif
     ApplicationThemeManager::instance().applyToApplication();
 
     expectBool("GUI settings use an isolated writable INI root",
@@ -11592,6 +11678,7 @@ int main(int argc, char** argv)
     runTreeSitterFoldingProviderRegression();
     runNavigationDesignCacheWorkspaceActivationRegression();
     runNavigationHierarchyModelRegression();
+    runProblemsPanelReopenRegression();
     runSemanticStateUiRegression();
     runEditorContextMenuGroupingRegression();
 
@@ -11746,12 +11833,17 @@ int main(int argc, char** argv)
                    && !window.menuBar()->isVisible(), true);
     const int sidebarWidth = projectSidebar->width();
     const int editorWidthWithSidebar = window.centralWidget()->width();
+    auto* sidebarCompositor = window.findChild<PanelCompositor*>();
+    const auto visibleSidebarWidth = [&]() -> qreal {
+        return sidebarCompositor && sidebarCompositor->isActiveFor(projectSidebar)
+            ? sidebarCompositor->extent() : projectSidebar->width();
+    };
     saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-expanded.png"));
     collapseSidebar->click();
     expectBool("sidebar closing passes through an intermediate width",
                waitUntil([&] {
-                   return projectSidebar->width() >= sidebarWidth / 4
-                       && projectSidebar->width() <= sidebarWidth * 3 / 4;
+                   return visibleSidebarWidth() >= sidebarWidth / 4
+                       && visibleSidebarWidth() <= sidebarWidth * 3 / 4;
                }, 500), true);
     saveEditorLayoutScreenshot(
         window, QStringLiteral("project-sidebar-transition.png"));
@@ -11794,7 +11886,7 @@ int main(int argc, char** argv)
     window.navigationPane->toggleVisible();
     const bool startedClosing = waitUntil([&] {
         return window.navigationPane->isAnimating()
-            && projectSidebar->width() < sidebarWidth * 3 / 4;
+            && visibleSidebarWidth() < sidebarWidth * 3 / 4;
     }, 500);
     window.navigationPane->toggleVisible();
     expectBool("sidebar motion reverses without losing its width",
@@ -11951,9 +12043,12 @@ int main(int argc, char** argv)
         window.navigationPane->showFiles();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("navigation Files entry restores pane",
-                   navigationDock->isVisible()
-                       && railNavigationWidget->tabWidget->currentIndex()
-                              == NavigationWidget::FileTab,
+                   waitUntil([&] {
+                       return navigationDock->isVisible()
+                           && !window.navigationPane->isAnimating()
+                           && railNavigationWidget->tabWidget->currentIndex()
+                                  == NavigationWidget::FileTab;
+                   }, 2000),
                    true);
 
         navigationDock->hide();
@@ -11961,9 +12056,12 @@ int main(int argc, char** argv)
         window.navigationPane->showDesign();
         QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
         expectBool("navigation Design entry restores pane",
-                   navigationDock->isVisible()
-                       && railNavigationWidget->tabWidget->currentIndex()
-                              == NavigationWidget::DesignTab,
+                   waitUntil([&] {
+                       return navigationDock->isVisible()
+                           && !window.navigationPane->isAnimating()
+                           && railNavigationWidget->tabWidget->currentIndex()
+                                  == NavigationWidget::DesignTab;
+                   }, 2000),
                    true);
 
         navigationDock->hide();
@@ -13080,12 +13178,16 @@ int main(int argc, char** argv)
                    == editorCountBeforeSplit,
                true);
 
+    if (originalSplitView && splitController) {
+        if (auto* group = splitController->groupForPage(originalSplitView)) {
+            group->setCurrentWidget(originalSplitView);
+            splitController->setActiveGroup(group);
+        }
+    }
+
     ContextWorkspaceController* themeContextController =
         window.contextWorkspaceController.get();
-    ContextPeekHost* themePeek =
-        themeContextController
-            ? themeContextController->peekHost()
-            : nullptr;
+    ContextFloatingWindow* themeFloating = nullptr;
     ContextDockHost* themeDock =
         themeContextController
             ? themeContextController->dockHost()
@@ -13233,26 +13335,28 @@ int main(int argc, char** argv)
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
     }
+    themeFloating = themeContextController
+        ? themeContextController->floatingWindow() : nullptr;
     auto* themeContextView =
-        themePeek
+        themeFloating
         ? qobject_cast<TemporaryEditorContextView*>(
-              themePeek->view())
+              themeFloating->view())
         : nullptr;
     QPointer<QWidget> themeContextViewIdentity =
         themeContextView;
     const QColor lightWindowSurface =
         window.palette().color(QPalette::Window);
-    const QColor lightPeekSurface =
-        themePeek
-        ? themePeek->palette().color(QPalette::Window)
+    const QColor lightFloatingSurface =
+        themeFloating
+        ? themeFloating->palette().color(QPalette::Window)
         : QColor();
-    expectBool("Light theme Context Peek screenshot saved",
+    expectBool("Light theme Context floating window screenshot saved",
                lightThemeSelected
                    && ApplicationThemeManager::instance().mode()
                           == ThemeMode::Light
                    && themeContextOpened
-                   && themePeek
-                   && themePeek->isVisible()
+                   && themeFloating
+                   && themeFloating->isVisible()
                    && themeContextView
                    && themeContextView->searchField()
                    && themeContextView->searchField()->isVisible()
@@ -13263,12 +13367,12 @@ int main(int argc, char** argv)
                    && saveEditorLayoutScreenshot(
                        window,
                        QStringLiteral(
-                           "theme_light_context_peek.png")),
+                           "theme_light_context_floating.png")),
                true);
 
     const bool themeContextPinned =
         themeContextController
-        && themeContextController->pinPeek();
+        && themeContextController->pinFloatingResource(themeContextResource.stableKey());
     for (int iteration = 0; iteration < 3; ++iteration) {
         QCoreApplication::processEvents(
             QEventLoop::AllEvents, 50);
@@ -13289,8 +13393,8 @@ int main(int argc, char** argv)
                           == themeContextViewIdentity
                    && themeContextDockWidget
                    && themeContextDockWidget->isVisible()
-                   && themePeek
-                   && !themePeek->hasResource()
+                   && themeFloating
+                   && !themeFloating->hasResource()
                    && saveEditorLayoutScreenshot(
                        window,
                        QStringLiteral(
@@ -13391,21 +13495,23 @@ int main(int argc, char** argv)
             themeContextResource.stableKey());
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    expectBool("unpinning moves the exact Context view back to Peek",
+    expectBool("unpinning moves the exact Context view back to its floating window",
                themeContextUnpinned
-                   && themePeek
-                   && themePeek->view()
+                   && themeFloating
+                   && themeFloating->view()
                           == themeContextViewIdentity
                    && themeDock
                    && themeDock->resourceCount() == 0,
                true);
-    if (themeContextController)
-        themeContextController->closePeek();
+    expectBool("Context floating resource closes",
+               themeContextController
+                   && themeContextController->closeFloatingResource(themeContextResource.stableKey()),
+               true);
     QCoreApplication::sendPostedEvents(
         nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    expectBool("closing Context Peek restores shared-view and split baselines",
+    expectBool("closing Context floating window restores shared-view and split baselines",
                themeContextViewIdentity.isNull()
                    && themeMainDocument
                    && themeMainDocument->viewCount()
@@ -13489,6 +13595,7 @@ int main(int argc, char** argv)
 
     QTemporaryDir saveDir;
     expectBool("save temp dir valid", saveDir.isValid(), true);
+    window.tabManager->createNewTab();
     MyCodeEditor* saveEditor = window.tabManager->getCurrentEditor();
     expectBool("save editor exists", saveEditor != nullptr, true);
     if (saveDir.isValid() && saveEditor) {
@@ -14659,22 +14766,42 @@ int main(int argc, char** argv)
         closeDiagnostic.column = 1;
         closeDiagnostic.message = QStringLiteral("workspace close probe");
         closeDiagnostic.severity = SemanticDiagnostic::Error;
+        SemanticDiagnostic workspaceCloseDiagnostic = closeDiagnostic;
+        workspaceCloseDiagnostic.fileName =
+            window.workspaceManager->getSystemVerilogFiles().value(0);
+        expectBool("workspace close diagnostic belongs to an existing source",
+                   QFileInfo::exists(workspaceCloseDiagnostic.fileName),
+                   true);
         SemanticIndex::getInstance()->setSnapshot(
             snapshotFromRecords(
                 QList<SemanticSymbolRecord>{},
                 QList<SemanticRelationship>{},
-                QList<SemanticDiagnostic>{closeDiagnostic}));
+                QList<SemanticDiagnostic>{closeDiagnostic, workspaceCloseDiagnostic}));
         problemsScopeCombo(window)->setCurrentIndex(
             problemsScopeCombo(window)->findText(QStringLiteral("All Files")));
         semanticPanelRefresh(window)->updateProblemsPanel();
         expectBool("problems close probe visible",
-                   navigableItemCount(problemsTree(window)) == 1,
+                   navigableItemCount(problemsTree(window)) == 2,
                    true);
         window.workspaceManager->closeWorkspace();
-        expectBool("problems clear on workspace close",
+        window.panelLayoutController->restorePanel(QStringLiteral("problems"));
+        expectBool("workspace close diagnostic check uses the visible Problems panel",
                    waitUntil([&]() {
-                       return navigableItemCount(problemsTree(window)) == 0;
+                       return window.semanticDocks->problemsPanelCoordinator()->isVisibleToUser();
                    }, 2000),
+                   true);
+        expectBool("workspace close clears stale workspace and unopened-file diagnostics",
+                   waitUntil([&]() {
+                       return !hasDiagnosticTreeItem(problemsTree(window), workspaceCloseDiagnostic.fileName,
+                                                     workspaceCloseDiagnostic.message)
+                           && !hasDiagnosticTreeItem(problemsTree(window), closeDiagnostic.fileName,
+                                                      closeDiagnostic.message);
+                   }, 2000),
+                   true);
+        expectBool("workspace close preserves open TEMP file diagnostics",
+                   waitUntil([&]() {
+                       return hasNavigableFile(problemsTree(window), diagnosticPath);
+                   }, 10000),
                    true);
         SemanticIndex::getInstance()->setSnapshot(
             snapshotFromRecords(

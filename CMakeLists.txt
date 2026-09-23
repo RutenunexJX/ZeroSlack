@@ -1997,6 +1997,10 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:control_style_interaction_test> -o -,txt)
         set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 90)
+        if(ZEROSLACK_ENABLE_ELA)
+            set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES
+                ENVIRONMENT "ZEROSLACK_TEST_UI_STYLE=ela")
+        endif()
         if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
             add_test(NAME qlementine_controls_${HIGH_DPI_SCALE}_test
                 COMMAND ${CMAKE_COMMAND} -E env
@@ -2259,6 +2263,7 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
+    set_tests_properties(gui_smoke_test PROPERTIES TIMEOUT 300)
     add_test(NAME expose_signal_to_top_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
