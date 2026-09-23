@@ -70,6 +70,9 @@ public:
     QAbstractButton* windowButton(ElaAppBarType::ButtonType type) const;
     QLabel* titleLabel() const;
     void setWindowButtonIcons(const QIcon& minimize, const QIcon& maximize, const QIcon& restore);
+    void setWindowIconVisible(bool visible);
+    void setWindowMoveTrackingEnabled(bool enabled);
+    bool isWindowMoveTrackingEnabled() const;
 
     void setCustomWidget(ElaAppBarType::CustomArea customArea, QWidget* customWidget, QObject* hitTestObject = nullptr, const QString& hitTestFunctionName = "");
     QWidget* getCustomWidget(ElaAppBarType::CustomArea customArea) const;
@@ -99,6 +102,9 @@ Q_SIGNALS:
     Q_SIGNAL void closeButtonClicked();
     Q_SIGNAL void customWidgetChanged();
     Q_SIGNAL void customMenuChanged();
+    Q_SIGNAL void windowMoveStarted();
+    Q_SIGNAL void windowMoved(const QPoint& globalPosition);
+    Q_SIGNAL void windowMoveFinished(const QPoint& globalPosition, bool cancelled);
 
 protected:
     bool eventFilter(QObject* obj, QEvent* event) override;

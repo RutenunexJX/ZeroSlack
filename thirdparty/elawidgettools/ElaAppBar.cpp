@@ -16,6 +16,7 @@
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QPropertyAnimation>
 #include <QScreen>
 #include <QTimer>
@@ -116,6 +117,7 @@ ElaAppBar::ElaAppBar(QWidget* parent, WindowManagement management)
 
     //图标
     d->_iconLabel = new QLabel(this);
+    d->_iconLabel->setObjectName("ElaAppBarIcon");
     d->_iconLabelLayout = d->_createVLayout(d->_iconLabel);
     if (d->_externalWindowManagement || parent->windowIcon().isNull())
     {
@@ -129,12 +131,15 @@ ElaAppBar::ElaAppBar(QWidget* parent, WindowManagement management)
     connect(parent, &QWidget::windowIconChanged, this, [=](const QIcon& icon) {
         if (d->_externalWindowManagement) return;
         d->_iconLabel->setPixmap(icon.pixmap(18, 18));
-        d->_iconLabel->setVisible(!icon.isNull());
-        d->_iconLabelLayout->setContentsMargins(icon.isNull() ? 0 : 10, 0, 0, 0);
+        const bool visible = d->_windowIconVisible && !icon.isNull();
+        d->_iconLabel->setVisible(visible);
+        d->_iconLabelLayout->setContentsMargins(visible ? 10 : 0, 0, 0, 0);
     });
 
     //标题
     d->_titleLabel = new ElaText(this);
+    installEventFilter(this);
+    d->_titleLabel->installEventFilter(this);
     d->_titleLabel->setIsWrapAnywhere(false);
     d->_titleLabel->setTextPixelSize(13);
     d->_titleLabelLayout = d->_createVLayout(d->_titleLabel);
@@ -293,6 +298,26 @@ void ElaAppBar::setWindowButtonIcons(const QIcon& minimize, const QIcon& maximiz
     d->_maximizeIcon = maximize;
     d->_restoreIcon = restore;
     d->_changeMaxButtonAwesome(window()->isMaximized());
+}
+
+void ElaAppBar::setWindowIconVisible(bool visible)
+{
+    Q_D(ElaAppBar);
+    d->_windowIconVisible = visible;
+    visible = visible && !d->_externalWindowManagement && !window()->windowIcon().isNull();
+    d->_iconLabel->setVisible(visible);
+    d->_iconLabelLayout->setContentsMargins(visible ? 10 : 0, 0, 0, 0);
+}
+
+void ElaAppBar::setWindowMoveTrackingEnabled(bool enabled)
+{
+    Q_D(ElaAppBar);
+    d->_windowMoveTracking = enabled;
+}
+
+bool ElaAppBar::isWindowMoveTrackingEnabled() const
+{
+    return d_ptr->_windowMoveTracking;
 }
 
 void ElaAppBar::setAppBarHeight(int height)
@@ -492,6 +517,54 @@ int ElaAppBar::takeOverNativeEvent(const QByteArray& eventType, void* message, l
     const LPARAM lParam = msg->lParam;
     switch (uMsg)
     {
+    case WM_ENTERSIZEMOVE:
+    {
+        if (d->_windowMoveTracking) {
+            RECT frame{};
+            ::GetWindowRect(hwnd, &frame);
+            d->_moveStartFrame = QRect(frame.left, frame.top, frame.right - frame.left, frame.bottom - frame.top);
+            d->_inMoveSizeLoop = true;
+            d->_windowMoving = false;
+            d->_windowMoveCancelled = false;
+        }
+        break;
+    }
+    case WM_MOVING:
+    {
+        if (d->_windowMoveTracking && d->_inMoveSizeLoop) {
+            QPointer<ElaAppBar> guard(this);
+            if (!d->_windowMoving) {
+                d->_windowMoving = true;
+                Q_EMIT windowMoveStarted();
+            }
+            if (guard) Q_EMIT windowMoved(QCursor::pos());
+        }
+        break;
+    }
+    case WM_CANCELMODE:
+    {
+        d->_windowMoveCancelled = true;
+        break;
+    }
+    case WM_EXITSIZEMOVE:
+    {
+        const bool moved = d->_windowMoving;
+        d->_inMoveSizeLoop = false;
+        d->_windowMoving = false;
+        if (d->_windowMoveTracking && moved) {
+            RECT frame{};
+            ::GetWindowRect(hwnd, &frame);
+            const QRect finalFrame(frame.left, frame.top, frame.right - frame.left, frame.bottom - frame.top);
+            const bool cancelled = d->_windowMoveCancelled || finalFrame == d->_moveStartFrame
+                || (::GetAsyncKeyState(VK_ESCAPE) & 0x8000);
+            const QPoint position = QCursor::pos();
+            // Leave the native move loop before the host reparents or hides content.
+            QTimer::singleShot(0, this, [this, position, cancelled] {
+                Q_EMIT windowMoveFinished(position, cancelled);
+            });
+        }
+        break;
+    }
     case WM_WINDOWPOSCHANGING:
     {
         WINDOWPOS* wp = reinterpret_cast<WINDOWPOS*>(lParam);
@@ -801,6 +874,7 @@ int ElaAppBar::takeOverNativeEvent(const QByteArray& eventType, void* message, l
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
     {
+        if (d->_inMoveSizeLoop && wParam == VK_ESCAPE) d->_windowMoveCancelled = true;
         if ((GetAsyncKeyState(VK_MENU) & 0x8000) && (GetAsyncKeyState(VK_SPACE) & 0x8000) && !d->_pIsOnlyAllowMinAndClose)
         {
             auto pos = window()->geometry().topLeft();
@@ -816,6 +890,16 @@ int ElaAppBar::takeOverNativeEvent(const QByteArray& eventType, void* message, l
 bool ElaAppBar::eventFilter(QObject* obj, QEvent* event)
 {
     Q_D(ElaAppBar);
+    if (obj == this || obj == d->_titleLabel) {
+        if (d->_windowMoveTracking && !d->_externalWindowManagement
+            && event->type() == QEvent::MouseButtonDblClick
+            && static_cast<QMouseEvent*>(event)->button() == Qt::LeftButton
+            && !d->_pIsFixedSize && !d->_pIsOnlyAllowMinAndClose) {
+            d->onMaxButtonClicked();
+            return true;
+        }
+        return QObject::eventFilter(obj, event);
+    }
     if (event->type() == QEvent::WindowStateChange)
         d->_changeMaxButtonAwesome(window()->isMaximized());
     // The host retains its native frame, margins, hit testing and close event.

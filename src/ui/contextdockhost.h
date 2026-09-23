@@ -59,6 +59,8 @@ public:
     bool setSectionDetachable(const QString& key, bool detachable);
     QWidget* sectionDragHandle(const QString& key) const;
     bool acceptFloatingDrop(ContextFloatingWindow* source, const QString& key, const QPoint& globalPosition);
+    void previewFloatingDrop(ContextFloatingWindow* source, const QPoint& globalPosition);
+    void clearFloatingDropPreview();
     static const char* resourceMimeType() { return "application/x-zeroslack-context-resource"; }
     QSize minimumSizeHint() const override { return QSize(120, 32); }
 

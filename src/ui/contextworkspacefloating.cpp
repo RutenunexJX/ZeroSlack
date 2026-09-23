@@ -57,23 +57,24 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     floatingWindowValues.append(host);
     host->setBackgroundOpacity(floatingOpacity);
     host->installEventFilter(this);
-    connect(host, &ContextFloatingWindow::pinRequested, this, [this, host] {
-        pinFloatingResource(host->resource().stableKey());
-    });
     connect(host, &ContextFloatingWindow::closeRequested, this, [this, host] {
         closeFloatingResource(host->resource().stableKey());
-    });
-    connect(host, &ContextFloatingWindow::fullViewRequested, this, [this, host] {
-        if (host->hasResource()) emit fullViewRequested(host->resource());
     });
     connect(host, &ContextFloatingWindow::geometryChanged, this, [this, host] {
         captureLastFloatingGeometry(host);
         notifyWorkspaceStateChanged();
     });
-    connect(host, &ContextFloatingWindow::sidebarDragStarted, this, [this] {
+    connect(host, &ContextFloatingWindow::titleDragStarted, this, [this] {
         beginDockPreview();
     });
-    connect(host, &ContextFloatingWindow::sidebarDragFinished, this, [this](bool accepted) {
+    connect(host, &ContextFloatingWindow::titleDragMoved, this, [this, host](const QPoint& position) {
+        dockHostValue->previewFloatingDrop(host, position);
+    });
+    connect(host, &ContextFloatingWindow::titleDragFinished, this, [this, host](const QPoint& position, bool cancelled) {
+        if (!previewingDocks) return;
+        dockHostValue->clearFloatingDropPreview();
+        const bool accepted = !cancelled && host->canDock()
+            && dockHostValue->acceptFloatingDrop(host, host->resource().stableKey(), position);
         if (!accepted) {
             if (!sideWasVisible) dockValue->hide();
             if (!bottomWasVisible) bottomDockValue->hide();

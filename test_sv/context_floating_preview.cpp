@@ -152,7 +152,8 @@ int main(int argc, char* argv[])
     resource.resourceId = QStringLiteral("native-acrylic");
     resource.uri = QUrl(QStringLiteral("preview:/acrylic"));
     resource.title = QStringLiteral("ZeroSlack Acrylic floating preview");
-    QObject::connect(&floating, &ContextFloatingWindow::pinRequested, &main, [&] {
+    QObject::connect(&floating, &ContextFloatingWindow::titleDragFinished, &main, [&](const QPoint& position, bool cancelled) {
+        if (cancelled || !main.rect().contains(main.mapFromGlobal(position)) || !floating.hasResource()) return;
         layout->insertWidget(1, floating.takeView(), 1);
         content->show();
     });

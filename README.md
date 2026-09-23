@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.4`
+Current version: `v0.31.5`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.4`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.5`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -150,12 +150,13 @@ Replace the current local package without keeping older copies or backups, and u
 the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current release is `0.31.4` (`v0.31.4`). Ela is now the sole formal package,
+The current release is `0.31.5` (`v0.31.5`). Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
-Context floating windows use an Ela frameless shell with one title bar for the resource
-name and actions. Module diagrams remove the section collapse arrow, breadcrumb row
+Context floating windows use an Ela frameless shell with a title, optional Fit and Close.
+Dragging the title moves the window or docks it in the sidebar/bottom area; double-click
+maximizes or restores it. Module diagrams remove the section collapse arrow, breadcrumb row
 and full-view icon, retain Fit and mouse-side-button navigation, and use a borderless canvas.
 Ela handles DPI-scaled edge resizing. The shared temporary editor uses the
 same floating host; old whole-Context floating layouts migrate to individual windows.
@@ -197,7 +198,8 @@ and the read-only AI CLI are implemented. Native documents and external applicat
 data remain with their owners. Context content is placed by the user: sections stack in the
 sidebar, and detachable views, including the shared temporary source editor, open in Ela
 floating windows with workspace geometry memory. Each floating window has one title bar for
-the resource name and actions; the Context dock container no longer floats. Legacy floating
+the resource name, optional Fit and Close; title dragging handles movement and docking.
+The Context dock container no longer floats. Legacy floating
 dock layouts migrate to individual windows. Insight sections render the same view
 their full view uses and stay pinned to the target the user chose.
 

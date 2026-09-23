@@ -62,6 +62,33 @@ void processDeferredDeletes()
     QApplication::processEvents();
 }
 
+void beginFloatingMove(ContextFloatingWindow* host)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoveStarted();
+#else
+    emit host->titleDragStarted();
+#endif
+}
+
+void updateFloatingMove(ContextFloatingWindow* host, const QPoint& position)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoved(position);
+#else
+    emit host->titleDragMoved(position);
+#endif
+}
+
+void finishFloatingMove(ContextFloatingWindow* host, const QPoint& position, bool cancelled)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    emit qobject_cast<ElaAppBar*>(host->titleBar())->windowMoveFinished(position, cancelled);
+#else
+    emit host->titleDragFinished(position, cancelled);
+#endif
+}
+
 void sendMouseEvent(QWidget* target,
                     QEvent::Type type,
                     const QPoint& globalPosition,
@@ -1519,16 +1546,22 @@ void verifySidebarDragBack()
     auto* floating = controller.floatingWindow();
     QWidget* original = floating->view();
     const int created = fixture.counters.created;
-    check(floating->sidebarDragHandle() && floating->sidebarDragHandle()->isEnabled()
-              && floating->isAncestorOf(floating->sidebarDragHandle()),
-          "stack_drag_client_handle: drag back begins inside the native window client area");
+    check(floating->titleBar() && floating->titleBar()->isEnabled() && floating->canDock()
+              && floating->isAncestorOf(floating->titleBar()),
+          "stack_drag_title: the Ela title bar remains interactive and supports docking");
+    beginFloatingMove(floating);
     QApplication::processEvents();
     for (const auto& key : host->resourceKeys()) host->setSectionCollapsed(key, true);
     QWidget* second = host->sectionWidget("mock:drop-b");
     const QPoint upper = second->mapToGlobal(QPoint(second->width() / 2, second->height() / 4));
-    check(host->acceptFloatingDrop(floating, floatingResource.stableKey(), upper)
+    updateFloatingMove(floating, upper);
+    auto* marker = fixture.window.findChild<QWidget*>(QStringLiteral("contextSectionInsertion"));
+    check(marker && marker->isVisible(), "stack_title_drop_preview: title movement reveals the insertion marker");
+    finishFloatingMove(floating, upper, false);
+    check(host->containsResource(floatingResource.stableKey())
               && host->resourceKeys().indexOf(floatingResource.stableKey()) == 1,
           "stack_drop_upper: upper half inserts before the second section");
+    check(marker && !marker->isVisible(), "stack_title_drop_preview_cleared: accepted title drop clears the marker");
     check(host->viewForResource(floatingResource.stableKey()) == original && fixture.counters.created == created
               && !floating->isVisible() && !floating->hasResource() && controller.floatingWindows().isEmpty(),
           "stack_drop_identity: drag back retains QWidget and closes the empty native surface with no duplicate resource");
@@ -1552,10 +1585,31 @@ void verifySidebarDragBack()
     for (const auto& key : host->resourceKeys()) controller.closePinnedResource(key);
     controller.openResource(resource("empty-target"), floatingPlacement);
     floating = controller.floatingWindow();
-    emit floating->sidebarDragStarted();
+    beginFloatingMove(floating);
     check(controller.dockWidget()->isVisible(), "stack_drop_empty_target: a drag exposes even an empty hidden sidebar");
-    emit floating->sidebarDragFinished(false);
-    check(!controller.dockWidget()->isVisible() && floating->hasResource(), "stack_drop_cancel: canceled drag restores the previous sidebar visibility");
+    const QPoint cancelledTarget = host->mapToGlobal(host->rect().center());
+    updateFloatingMove(floating, cancelledTarget);
+    finishFloatingMove(floating, cancelledTarget, true);
+    check(!controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible()
+              && floating->hasResource() && marker && !marker->isVisible(),
+          "stack_drop_cancel: cancel over a target restores both dock visibilities without moving content");
+    beginFloatingMove(floating);
+    finishFloatingMove(floating, fixture.window.mapToGlobal(QPoint(-500, -500)), false);
+    check(floating->hasResource() && !controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible(),
+          "stack_title_move_only: releasing outside a target leaves the floating resource intact");
+    floating->setActionsAvailable(false, false);
+    beginFloatingMove(floating);
+    updateFloatingMove(floating, cancelledTarget);
+    finishFloatingMove(floating, cancelledTarget, false);
+    check(floating->hasResource() && floating->titleBar()->isEnabled()
+              && !controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible(),
+          "stack_title_docking_opt_out: disabling docking preserves window movement without opening targets");
+    floating->setActionsAvailable(true, false);
+    beginFloatingMove(floating);
+    floating->setActionsAvailable(false, false);
+    finishFloatingMove(floating, cancelledTarget, false);
+    check(floating->hasResource() && !controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible(),
+          "stack_title_docking_revoked: losing docking capability cancels an active preview");
 }
 
 void verifyTiledBottomAndSidebar()
@@ -1573,15 +1627,15 @@ void verifyTiledBottomAndSidebar()
         auto* floating = controller.floatingWindow();
         QWidget* original = floating->view();
         if (!firstView) firstView = original;
-        emit floating->sidebarDragStarted();
+        beginFloatingMove(floating);
         QApplication::processEvents();
         QWidget* target = host->bottomWidget();
         check(controller.bottomDockWidget()->isVisible(), "tiles_bottom_drop_target_visible");
         const QPoint destination = target->mapToGlobal(QPoint(target->width() - 8, target->height() / 2));
-        const bool accepted = host->acceptFloatingDrop(floating, item.stableKey(), destination);
-        emit floating->sidebarDragFinished(accepted);
+        updateFloatingMove(floating, destination);
+        finishFloatingMove(floating, destination, false);
         QApplication::processEvents();
-        check(accepted && host->isBottomResource(item.stableKey())
+        check(host->isBottomResource(item.stableKey())
                   && host->viewForResource(item.stableKey()) == original && !floating->hasResource(),
               "tiles_drop_retains_view_identity");
     }

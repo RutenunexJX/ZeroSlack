@@ -1436,6 +1436,7 @@ void ContextWorkspaceController::endDockPreview()
 {
     if (!previewingDocks) return;
     previewingDocks = false;
+    dockHostValue->clearFloatingDropPreview();
     hideEmptyDocks();
     updateActiveRailEntry();
     notifyWorkspaceStateChanged();

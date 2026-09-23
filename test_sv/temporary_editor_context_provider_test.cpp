@@ -132,7 +132,7 @@ int main(int argc, char* argv[])
     QToolButton* unavailableFullView =
         controller.floatingWindow()->findChild<QToolButton*>(
             QStringLiteral("contextFloatingFullView"));
-    check(unavailableFullView && !unavailableFullView->isVisible(),
+    check(!unavailableFullView,
           "temporary editor does not expose an unsupported full-view action");
     check(controller.floatingWindow()->isWindow()
               && contextView->window() == controller.floatingWindow(),

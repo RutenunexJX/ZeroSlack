@@ -168,6 +168,16 @@ on ContextFloatingWindow and keeps the Ela title bar, drag handling and controls
 Hidden native HWND checks exercise border calculation and edge hit testing without
 showing windows or moving the cursor. Original MIT and font OFL licenses remain.
 
+Apply `patches/22-zeroslack-compact-context-title-docking.patch` after patch 21.
+ElaAppBar adds an opt-in native window-move notification lifecycle and explicit
+title-icon visibility. The Windows move loop retains ownership of movement, resizing
+and caption double-clicks. Only actual move messages expose docking targets; completion
+is deferred until the native loop exits. Cancellation and an unchanged/restored native
+rectangle reject docking. Qt title double-clicks use Ela's maximize/restore handler.
+ZeroSlack removes floating-window action clutter and consumes these notifications to
+preview or accept drops through its existing resource controller. Other Ela windows
+do not enable tracking. MIT and font OFL licenses remain unchanged.
+
 The product adapter in `src/ui/uicontrols.cpp` releases fixed dimensions, restores
 ZeroSlack typography, updates per-button theme colors, supplies focus outlines,
 and uses Qt's immediate combo popup lifecycle with Ela's style. This avoids

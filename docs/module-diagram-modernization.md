@@ -63,6 +63,22 @@ Ela 第 21 份兼容补丁补齐无边框窗口四边和四角的 DPI 缩放命�
 0.31.4 发布构建及 13 项发布回归通过（9.57 秒），另覆盖主窗口的两档缩放和临时编辑器。
 记录：`build/ela-migration/release-0.31.4-build.log`、`release-0.31.4-tests.log`。
 
+后续顶栏精简（0.31.5）：独立浮窗只保留资源标题、按需显示的 Fit 与关闭；移除应用图标、
+专用拖拽手柄、Pin、完整视图及最小化／最大化按钮。标题文字与空白区拖动统一处理移动和停靠，
+双击最大化／还原；边缘缩放保留。Ela 第 22 份补丁提供原生窗口移动通知，资源控制器继续负责
+落点、内容所有权和布局保存；侧栏、底栏插入线及取消恢复共用原停靠逻辑。
+原生移动循环依据 [Windows 移动结束消息](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-exitsizemove)
+排队完成停靠，避免在系统移动过程中搬移内容。
+
+本次 Release 构建与 10 项针对性 CTest 通过（3.60 秒），覆盖窗口标题、双击还原、窄窗与
+100%／125%／150%／200% 布局、拖回侧栏／底栏、取消与能力撤销、内容身份、文档标签及临时编辑器。
+隐藏原生 HWND 的移动消息和边缘命中检查通过，窗口未显示、前台焦点未改变；未操控桌面鼠标。
+记录：`build/ela-migration/context-minimal-title-build-final.log`、`context-minimal-title-tests.log`、
+`context-minimal-title-native-results.txt`；后台截图位于 `context-minimal-title-review/`。
+
+0.31.5 发布构建及 13 项发布回归通过（5.07 秒），另覆盖主窗口两档缩放与 insight provider。
+记录：`build/ela-migration/release-0.31.5-build.log`、`release-0.31.5-tests.log`。
+
 - 模块节点按文字和层级布局，悬浮高亮；选中分支外的节点透明度降至 0.28。图中保留完整层级。
 - 初次显示与 Fit 后随窗口适配；滚轮或拖动后保留手动视角。Fit 在停靠标题条和浮窗操作条中。
 - 语义展开忽略的实例由源码结构补充，使用虚线；有定义的不可达分支继续展开，未知定义与循环在边界停止。

@@ -36,15 +36,15 @@ public:
     bool hasAcrylicBackdrop() const;
     void captureGeometry(ContextWorkspaceState& state) const;
     void restoreGeometry(const ContextWorkspaceState& state);
-    QWidget* sidebarDragHandle() const;
+    QWidget* titleBar() const;
+    bool canDock() const;
 
 signals:
-    void pinRequested();
     void closeRequested();
-    void fullViewRequested();
     void geometryChanged();
-    void sidebarDragStarted();
-    void sidebarDragFinished(bool accepted);
+    void titleDragStarted();
+    void titleDragMoved(const QPoint& globalPosition);
+    void titleDragFinished(const QPoint& globalPosition, bool cancelled);
 
 protected:
     void closeEvent(QCloseEvent* event) override;
@@ -60,15 +60,13 @@ private:
     QPointer<QWidget> currentView;
     ContextResource currentResource;
     QVBoxLayout* contentLayout = nullptr;
-    QToolButton* pinButton = nullptr;
-    QToolButton* fullViewButton = nullptr;
     QToolButton* fitButton = nullptr;
-    QToolButton* dragButton = nullptr;
     QWidget* titleActions = nullptr;
 #ifdef ZEROSLACK_ENABLE_ELA
     ElaAppBar* appBar = nullptr;
 #endif
-    QPoint dragStart;
+    bool dockingAllowed = true;
+    bool dockDragActive = false;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};
     QString storedScreenName;
@@ -81,7 +79,7 @@ private:
 
     void refreshBackdrop();
     void refreshTitle();
-    void refreshFullViewAction();
+    void cancelDockDrag();
     void layoutTitleBar();
     void scheduleBackdropRefresh();
     void rememberGeometry();

@@ -558,7 +558,7 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
             auto* floatingFit = floating->findChild<QToolButton*>(QStringLiteral("contextFloatingFit"));
             auto* floatingFullView = floating->findChild<QToolButton*>(QStringLiteral("contextFloatingFullView"));
             QVERIFY(floatingFit && floatingFit->isVisible());
-            QVERIFY(floatingFullView && floatingFullView->isHidden());
+            QVERIFY(!floatingFullView);
             QCOMPARE(graph->frameWidth(), 0);
             floatingFit->click();
             if (!review.isEmpty()) floating->grab().save(review + QStringLiteral("/module-floating.png"));

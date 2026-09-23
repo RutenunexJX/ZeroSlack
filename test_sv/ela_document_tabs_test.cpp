@@ -268,7 +268,8 @@ private slots:
         ContextFloatingWindow floating(&host, &host);
         auto* appBar = floating.findChild<ElaAppBar*>();
         QVERIFY(appBar);
-        QVERIFY(floating.sidebarDragHandle()->findChild<ElaDragHandle*>());
+        QCOMPARE(floating.titleBar(), appBar);
+        QVERIFY(appBar->isWindowMoveTrackingEnabled());
         QSignalSpy closed(&floating, &ContextFloatingWindow::closeRequested);
         appBar->windowButton(ElaAppBarType::CloseButtonHint)->click();
         QCOMPARE(closed.count(), 1);

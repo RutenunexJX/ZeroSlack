@@ -749,7 +749,7 @@ QWidget* ContextDockHost::sectionDragHandle(const QString& key) const
 bool ContextDockHost::validFloatingSource(QObject* source, const QMimeData* mime) const
 {
     auto* floating = qobject_cast<ContextFloatingWindow*>(source);
-    return floating && floating->parentWidget() && floating->parentWidget()->isAncestorOf(this) && floating->hasResource()
+    return floating && floating->parentWidget() && floating->parentWidget()->isAncestorOf(this) && floating->canDock()
         && mime && mime->hasFormat(resourceMimeType())
         && floating->resource().stableKey() == QString::fromUtf8(mime->data(resourceMimeType()));
 }
@@ -760,6 +760,14 @@ bool ContextDockHost::acceptFloatingDrop(ContextFloatingWindow* source, const QS
     emit floatingDropRequested(key, insertionIndex(globalPosition), isBottomPosition(globalPosition));
     return containsResource(key) && !source->hasResource();
 }
+void ContextDockHost::previewFloatingDrop(ContextFloatingWindow* source, const QPoint& globalPosition)
+{
+    QMimeData mime;
+    if (source) mime.setData(resourceMimeType(), source->resource().stableKey().toUtf8());
+    if (validFloatingSource(source, &mime)) showInsertion(globalPosition);
+    else clearFloatingDropPreview();
+}
+void ContextDockHost::clearFloatingDropPreview() { insertionMarker->hide(); }
 void ContextDockHost::dragEnterEvent(QDragEnterEvent* event)
 {
     if (validFloatingSource(event->source(), event->mimeData())) event->acceptProposedAction();

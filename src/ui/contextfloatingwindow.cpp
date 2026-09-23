@@ -1,12 +1,9 @@
 #include "uicontrols.h"
 #include "contextfloatingwindow.h"
-#include "roundedicons.h"
-#include "contextdockhost.h"
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaApplication.h"
-#include "ElaDragHandle.h"
 #endif
 
 #include <QCloseEvent>
@@ -22,9 +19,6 @@
 #include <QVBoxLayout>
 #include <QWindow>
 #include <QApplication>
-#include <QDrag>
-#include <QMimeData>
-#include <QMouseEvent>
 #include <QPainter>
 #include <QSettings>
 #include <QShortcut>
@@ -88,8 +82,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     // window first, then attach the owner so it cannot decorate the main window.
     setParent(mainWindow, Qt::Tool | Qt::FramelessWindowHint | (windowFlags() & ~Qt::WindowType_Mask));
     setIsStayTop(false);
-    setWindowButtonFlags(ElaAppBarType::MinimizeButtonHint
-        | ElaAppBarType::MaximizeButtonHint | ElaAppBarType::CloseButtonHint);
+    setWindowButtonFlags(ElaAppBarType::CloseButtonHint);
     // This material is scoped to context windows, independently of global Ela windows.
     eApp->syncWindowDisplayMode(this, false);
 #else
@@ -113,13 +106,6 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     auto* actions = new QHBoxLayout(titleActions);
     actions->setContentsMargins(0, 0, 4, 0);
     actions->setSpacing(2);
-    dragButton = UiControls::toolButton(titleActions);
-    dragButton->setObjectName(QStringLiteral("contextFloatingDrag"));
-    dragButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
-    dragButton->setToolTip(tr("Drag this handle into the sidebar or bottom area"));
-    dragButton->setCursor(Qt::OpenHandCursor);
-    dragButton->installEventFilter(this);
-    actions->addWidget(dragButton);
     fitButton = UiControls::toolButton(titleActions);
     fitButton->setObjectName(QStringLiteral("contextFloatingFit"));
     fitButton->setText(tr("Fit"));
@@ -129,53 +115,40 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     connect(fitButton, &QToolButton::clicked, this, [this] {
         if (currentView) QMetaObject::invokeMethod(currentView, "fitGraph");
     });
-    pinButton = UiControls::toolButton(titleActions);
-    pinButton->setObjectName(QStringLiteral("contextFloatingPin"));
-    pinButton->setText(tr("Pin"));
-    pinButton->setToolTip(tr("Keep in sidebar"));
-    pinButton->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
-    fullViewButton = UiControls::toolButton(titleActions);
-    fullViewButton->setObjectName(QStringLiteral("contextFloatingFullView"));
-    fullViewButton->setText(tr("Full view"));
-    fullViewButton->setToolTip(tr("Open current view in main area"));
-    fullViewButton->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
-    actions->addWidget(pinButton);
-    actions->addWidget(fullViewButton);
-    for (auto* button : {dragButton, fitButton, pinButton, fullViewButton}) {
-        button->setAccessibleName(button->toolTip());
-        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    }
+    fitButton->setAccessibleName(fitButton->toolTip());
+    fitButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 #ifdef ZEROSLACK_ENABLE_ELA
     appBar = findChild<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly);
+    appBar->setWindowIconVisible(false);
+    appBar->setWindowMoveTrackingEnabled(true);
+    appBar->setToolTip(tr("Drag the title bar to move or dock; double-click to maximize or restore"));
     appBar->setCustomWidget(ElaAppBarType::RightArea, titleActions);
     appBar->titleLabel()->setTextFormat(Qt::PlainText);
     appBar->titleLabel()->setWordWrap(false);
     appBar->titleLabel()->setMinimumWidth(0);
     appBar->titleLabel()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     connect(this, &QWidget::windowTitleChanged, this, &ContextFloatingWindow::layoutTitleBar);
+    connect(appBar, &ElaAppBar::windowMoveStarted, this, [this] {
+        if (!canDock() || dockDragActive) return;
+        dockDragActive = true;
+        emit titleDragStarted();
+    });
+    connect(appBar, &ElaAppBar::windowMoved, this, [this](const QPoint& position) {
+        if (dockDragActive) emit titleDragMoved(position);
+    });
+    connect(appBar, &ElaAppBar::windowMoveFinished, this, [this](const QPoint& position, bool cancelled) {
+        if (!dockDragActive) return;
+        dockDragActive = false;
+        emit titleDragFinished(position, cancelled || !canDock());
+    });
 #else
     root->addWidget(titleActions, 0, Qt::AlignRight);
 #endif
     contentLayout = new QVBoxLayout;
     root->addLayout(contentLayout, 1);
-    connect(pinButton, &QToolButton::clicked, this, &ContextFloatingWindow::pinRequested);
-    connect(fullViewButton, &QToolButton::clicked, this, &ContextFloatingWindow::fullViewRequested);
     auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
     escape->setContext(Qt::WidgetWithChildrenShortcut);
     connect(escape, &QShortcut::activated, this, &ContextFloatingWindow::closeRequested);
-#ifdef ZEROSLACK_ENABLE_ELA
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        auto* gesture = new ElaDragHandle(dragButton, this);
-        gesture->setMimeDataFactory([this]() -> QMimeData* {
-            if (!hasResource()) return nullptr;
-            auto* mime = new QMimeData;
-            mime->setData(ContextDockHost::resourceMimeType(), resource().stableKey().toUtf8());
-            return mime;
-        });
-        connect(gesture, &ElaDragHandle::dragStarted, this, &ContextFloatingWindow::sidebarDragStarted);
-        connect(gesture, &ElaDragHandle::dragFinished, this, &ContextFloatingWindow::sidebarDragFinished);
-    }
-#endif
     connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
             this, [this] { layoutTitleBar(); refreshBackdrop(); });
     // Native frame margins are needed when restoring the saved outer rectangle.
@@ -300,12 +273,9 @@ bool ContextFloatingWindow::nativeEvent(const QByteArray& eventType, void* messa
 
 void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullViewAvailable)
 {
-    dragButton->setEnabled(pinAvailable);
-    pinButton->setVisible(pinAvailable);
-    pinButton->setEnabled(pinAvailable);
-    fullViewButton->setEnabled(fullViewAvailable);
-    refreshFullViewAction();
-    layoutTitleBar();
+    Q_UNUSED(fullViewAvailable);
+    dockingAllowed = pinAvailable;
+    if (!dockingAllowed) cancelDockDrag();
 }
 
 void ContextFloatingWindow::refreshTitle()
@@ -316,10 +286,11 @@ void ContextFloatingWindow::refreshTitle()
     layoutTitleBar();
 }
 
-void ContextFloatingWindow::refreshFullViewAction()
+void ContextFloatingWindow::cancelDockDrag()
 {
-    const QVariant visible = currentView ? currentView->property("contextFullViewActionVisible") : QVariant();
-    fullViewButton->setVisible(fullViewButton->isEnabled() && (!visible.isValid() || visible.toBool()));
+    if (!dockDragActive) return;
+    dockDragActive = false;
+    emit titleDragFinished({}, true);
 }
 
 void ContextFloatingWindow::layoutTitleBar()
@@ -328,8 +299,7 @@ void ContextFloatingWindow::layoutTitleBar()
     if (!appBar || !titleActions) return;
     int height = 30;
     int controlsWidth = 0;
-    for (const auto type : {ElaAppBarType::MinimizeButtonHint,
-                           ElaAppBarType::MaximizeButtonHint, ElaAppBarType::CloseButtonHint}) {
+    for (const auto type : {ElaAppBarType::CloseButtonHint}) {
         auto* button = appBar->windowButton(type);
         const QSize size = button->minimumSizeHint().expandedTo(QSize(40, 30));
         button->setFixedSize(size);
@@ -337,7 +307,8 @@ void ContextFloatingWindow::layoutTitleBar()
         if (!button->isHidden()) controlsWidth += size.width();
     }
     titleActions->layout()->invalidate();
-    const QSize actionsSize = titleActions->sizeHint();
+    titleActions->setVisible(!fitButton->isHidden());
+    const QSize actionsSize = titleActions->isHidden() ? QSize(0, 0) : titleActions->sizeHint();
     height = qMax(height, actionsSize.height());
     appBar->setAppBarHeight(height + 4);
     titleActions->setFixedSize(actionsSize);
@@ -350,7 +321,15 @@ void ContextFloatingWindow::layoutTitleBar()
 #endif
 }
 
-QWidget* ContextFloatingWindow::sidebarDragHandle() const { return dragButton; }
+QWidget* ContextFloatingWindow::titleBar() const
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    return appBar;
+#else
+    return titleActions;
+#endif
+}
+bool ContextFloatingWindow::canDock() const { return dockingAllowed && hasResource(); }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == currentView && event->type() == QEvent::DynamicPropertyChange) {
@@ -360,32 +339,6 @@ bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
             layoutTitleBar();
         } else if (name == "contextDisplayTitle") {
             refreshTitle();
-        } else if (name == "contextFullViewActionVisible") {
-            refreshFullViewAction();
-            layoutTitleBar();
-        }
-    }
-    if (watched == dragButton && !dragButton->property("elaDragManaged").toBool()
-        && dragButton->isEnabled() && hasResource()) {
-        if (event->type() == QEvent::MouseButtonPress) {
-            auto* mouse = static_cast<QMouseEvent*>(event);
-            if (mouse->button() == Qt::LeftButton) dragStart = mouse->position().toPoint();
-        } else if (event->type() == QEvent::MouseMove) {
-            auto* mouse = static_cast<QMouseEvent*>(event);
-            if ((mouse->buttons() & Qt::LeftButton)
-                && (mouse->position().toPoint() - dragStart).manhattanLength() >= QApplication::startDragDistance()) {
-                QPointer<ContextFloatingWindow> owner(this);
-                QPointer<QDrag> drag = new QDrag(this);
-                auto* mime = new QMimeData;
-                mime->setData(ContextDockHost::resourceMimeType(), resource().stableKey().toUtf8());
-                drag->setMimeData(mime);
-                emit sidebarDragStarted();
-                if (!owner || !drag) return true;
-                const bool accepted = drag->exec(Qt::MoveAction) == Qt::MoveAction;
-                if (owner) emit sidebarDragFinished(accepted);
-                if (drag) drag->deleteLater();
-                return true;
-            }
         }
     }
     return ContextFloatingWindowBase::eventFilter(watched, event);
@@ -400,7 +353,6 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
     currentView = view;
     view->installEventFilter(this);
     fitButton->setVisible(view->property("contextFitAvailable").toBool());
-    refreshFullViewAction();
     contentLayout->addWidget(view);
     refreshTitle();
     if (!geometryValid) {
@@ -429,6 +381,7 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
 
 QWidget* ContextFloatingWindow::takeView()
 {
+    cancelDockDrag();
     rememberGeometry();
     QWidget* view = currentView;
     if (view) {

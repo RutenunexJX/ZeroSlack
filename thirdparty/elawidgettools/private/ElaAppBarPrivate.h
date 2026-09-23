@@ -2,6 +2,7 @@
 #define ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELAAPPBARPRIVATE_H_
 #include "ElaWidgetToolsDef.h"
 #include <QIcon>
+#include <QRect>
 
 class QLabel;
 class QScreen;
@@ -33,6 +34,12 @@ public:
 
 private:
     bool _externalWindowManagement{false};
+    bool _windowIconVisible{true};
+    bool _windowMoveTracking{false};
+    bool _inMoveSizeLoop{false};
+    bool _windowMoving{false};
+    bool _windowMoveCancelled{false};
+    QRect _moveStartFrame;
     QIcon _maximizeIcon;
     QIcon _restoreIcon;
     ElaThemeType::ThemeMode _themeMode;
