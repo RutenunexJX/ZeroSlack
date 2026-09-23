@@ -8,6 +8,7 @@
 #include "panellayoutcontroller.h"
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
+#include "../integrations/xips/xipscontextprovider.h"
 #include "pinloomhostclient.h"
 #include "settingscenterservice.h"
 #include "temporaryeditorcontextprovider.h"
@@ -267,6 +268,9 @@ void MainWindow::setupContextWorkspace()
         });
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));
+
+    contextWorkspaceController->registerProvider(
+        std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get()));
 
     requestLiveInsightUpdates();
 }

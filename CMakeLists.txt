@@ -792,6 +792,9 @@ message(STATUS
 add_subdirectory(components/rtleditcore)
 
 target_sources(zeroslack_core PRIVATE
+    src/integrations/xips/xipscontextprovider.cpp
+    src/integrations/xips/xipscontextprovider.h
+    resources/zeroslack_xips.qrc
     src/commands/exposesignaltotopservice.cpp
     src/commands/exposesignaltotoppreview.cpp
 )
@@ -1470,6 +1473,9 @@ if(BUILD_TESTING)
         test_sv/pinloom_code_link_store_test.cpp)
     target_link_libraries(pinloom_code_link_store_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(xips_context_provider_test test_sv/xips_context_provider_test.cpp)
+    target_link_libraries(xips_context_provider_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(zeroslack_cli_test
         test_sv/zeroslack_cli_test.cpp)
@@ -2185,6 +2191,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:pinloom_code_link_store_test>
     )
+    add_test(NAME xips_context_provider_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=ela"
+            $<TARGET_FILE:xips_context_provider_test> -o -,txt)
+    set_tests_properties(xips_context_provider_test PROPERTIES TIMEOUT 60)
     if(SuiteApp_FOUND)
         add_test(NAME zeroslack_suiteapp_integration_test
             COMMAND ${CMAKE_COMMAND} -E env

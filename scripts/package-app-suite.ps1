@@ -13,6 +13,9 @@ param(
     [string]$RegMapWorkbenchDirectory,
 
     [Parameter(Mandatory = $true)]
+    [string]$XipsDirectory,
+
+    [Parameter(Mandatory = $true)]
     [string]$RuntimeInstallDirectory,
 
     [Parameter(Mandatory = $true)]
@@ -25,6 +28,7 @@ param(
     [string]$PinloomVersion = "",
     [string]$WaveWorkbenchVersion = "",
     [string]$RegMapWorkbenchVersion = "",
+    [string]$XipsVersion = "",
     [string]$RuntimeVersion = "",
     [switch]$ReplaceExisting
 )
@@ -71,6 +75,7 @@ $zeroSlackSource = Resolve-RequiredDirectory $ZeroSlackDirectory "ZeroSlack"
 $pinloomSource = Resolve-RequiredDirectory $PinloomDirectory "Pinloom"
 $waveSource = Resolve-RequiredDirectory $WaveWorkbenchDirectory "WaveWorkbench"
 $regMapSource = Resolve-RequiredDirectory $RegMapWorkbenchDirectory "RegMapWorkbench"
+$xipsSource = Resolve-RequiredDirectory $XipsDirectory "xIPs"
 $runtimeInstall = Resolve-RequiredDirectory $RuntimeInstallDirectory "Suite Runtime install"
 $toolchainSource = Resolve-RequiredDirectory $ToolchainDirectory "Wave toolchain"
 $qtBin = Resolve-RequiredDirectory $QtBinDirectory "Qt bin"
@@ -99,6 +104,9 @@ Assert-RequiredFile $waveSource "wave-workbench.exe"
 Assert-RequiredFile $waveSource "wavewidgets.dll"
 Assert-RequiredFile $regMapSource "RegMapWorkbench.exe"
 Assert-RequiredFile $regMapSource "regmapc.exe"
+foreach ($file in @("xips.exe", "xips-cli.exe", "xips-browser.dll", "assets\icons\xips-256.png")) {
+    Assert-RequiredFile $xipsSource $file
+}
 Assert-RequiredFile $runtimeInstall "bin\suite-runtime.exe"
 Assert-RequiredFile $runtimeInstall "bin\suite-cli.exe"
 Assert-RequiredFile $toolchainSource "wave-toolchain-bundle.json"
@@ -131,6 +139,7 @@ $zeroSlackTarget = Join-Path $appsDirectory "ZeroSlack-win64"
 $pinloomTarget = Join-Path $appsDirectory "Pinloom"
 $waveTarget = Join-Path $appsDirectory "WaveWorkbench"
 $regMapTarget = Join-Path $appsDirectory "RegMapWorkbench"
+$xipsTarget = Join-Path $appsDirectory "xIPs"
 $runtimeTarget = Join-Path $appsDirectory "Runtime"
 $toolchainTarget = Join-Path $appsDirectory "Toolchain"
 
@@ -149,6 +158,7 @@ if (Test-Path -LiteralPath $duplicateWave -PathType Container) {
 Copy-DirectoryContents $pinloomSource $pinloomTarget
 Copy-DirectoryContents $waveSource $waveTarget
 Copy-DirectoryContents $regMapSource $regMapTarget
+Copy-DirectoryContents $xipsSource $xipsTarget
 Copy-DirectoryContents $toolchainSource $toolchainTarget
 
 New-Item -ItemType Directory -Path $runtimeTarget -Force | Out-Null
@@ -196,6 +206,14 @@ $components = @(
         version = Resolve-ComponentVersion `
             $RegMapWorkbenchVersion (Join-Path $regMapTarget "RegMapWorkbench.exe")
         executable = "Apps/RegMapWorkbench/RegMapWorkbench.exe"
+    },
+    [ordered]@{
+        id = "xips"
+        version = Resolve-ComponentVersion $XipsVersion (Join-Path $xipsTarget "xips.exe")
+        executable = "Apps/xIPs/xips.exe"
+        cli = "Apps/xIPs/xips-cli.exe"
+        icon = "Apps/xIPs/assets/icons/xips-256.png"
+        nativeSurfaceAbi = 1
     }
 )
 $manifest = [ordered]@{

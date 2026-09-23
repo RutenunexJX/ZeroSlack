@@ -1,6 +1,6 @@
 # AppSuite integration
 
-ZeroSlack is one of four independent applications in the AppSuite family. This document is
+ZeroSlack is an independent application in the AppSuite family. This document is
 the single ZeroSlack-side record of that family contract: the transport protocol, the
 implemented cross-application workflows, and the shared visual and interaction language.
 Application state always stays with its owner.
@@ -42,7 +42,7 @@ provides per-user discovery and routing. CMake exports and JSON schemas define
 the public integration boundary.
 
 The runtime owns discovery and routing only. It never owns Pinloom content,
-wave projects, register-map projects, or ZeroSlack workspaces.
+wave projects, register-map projects, xIPs libraries, or ZeroSlack workspaces.
 
 #### Application roles
 
@@ -143,6 +143,15 @@ The implemented application contracts are:
 | Pinloom | `pinloom://entry/...` | `pinloom.entry.open`, `pinloom.source-anchor.create` | `pinloom.entry.preview` (`model`) |
 | WaveWorkbench | `wave://project?...` | `wave.project.open` | `wave.waveform` (`native`, external fallback) |
 | RegMapWorkbench | `regmap://project?...` | `regmap.project.open` | `regmap.workbench` (`model`) |
+| xIPs | `xips://show`, `xips://asset/<id>?revision=<n>` | `xips.library.open`, `xips.asset.open` | `xips.library` (`native`, external fallback) |
+
+xIPs 2.1.0 registers through the optional `SuiteApp::suiteapp` SDK. Resource
+resolution reads the current library's cached metadata, including the exact
+revision and recorded digest; it does not verify or expose snapshot payloads.
+The provider's actions only open the library or select an asset. Collect, Use,
+and Update remain explicit UI operations. The native component is
+`xips-browser.dll`, ABI v1; hosts must match Qt, compiler, architecture, and Ela.
+An absent runtime leaves standalone and native library use available.
 
 Provider calls use a 2-second bound. Runtime probing uses 300 ms and first
 startup uses a 3-second bound. The transport accepts a response that arrives
@@ -164,6 +173,7 @@ AppSuite/
 |   |-- Pinloom/
 |   |-- WaveWorkbench/
 |   |-- RegMapWorkbench/
+|   |-- xIPs/
 |   `-- Toolchain/
 |-- suite-manifest.json
 `-- SHA256SUMS.txt
@@ -189,6 +199,9 @@ the family package is an additional distribution form.
 The formal package is `E:/PinloomRoot/AppPackage/AppSuite`. Its manifest records component versions;
 `SHA256SUMS.txt` records file hashes, not a digital signature. The assembly script
 `../scripts/package-app-suite.ps1` consumes prebuilt portable inputs and does not compile applications.
+Its `XipsDirectory` input supplies `xips.exe`, `xips-cli.exe`, `xips-browser.dll`,
+the icon, and private Qt/Ela dependencies. The manifest records xIPs as `xips`
+with native surface ABI 1. There is no additional xIPs runtime process.
 `ReplaceExisting` removes the old destination and moves staging; replacement is not transactional.
 ZeroSlack also retains the `pinloom-host/v1` context adapter; the suite protocol does not remove that compatibility path.
 
@@ -280,6 +293,8 @@ dependency is introduced between otherwise independent products.
 - WaveWorkbench uses teal for actual signals and violet for expected/derived
   state.
 - RegMapWorkbench uses indigo for address structure and cyan for RTL sync.
+- xIPs uses coral for a compact X on stacked asset/revision plates, with a
+  graphite tile and a cyan layer connecting it to the family palette.
 
 Identity accents never replace shared success/warning/error semantics. Text and
 critical diagram edges meet readable contrast in light and dark themes.
@@ -320,7 +335,7 @@ tokens and component behavior instead of copying one window layout:
   interception while editing text;
 - feedback: non-modal status/notice surfaces for recoverable work; modal dialogs
   only for destructive or choice-requiring actions;
-- identity: ZeroSlack, Pinloom, WaveWorkbench, and RegMapWorkbench keep distinct
+- identity: ZeroSlack, Pinloom, WaveWorkbench, RegMapWorkbench, and xIPs keep distinct
   accent/icon identities while using the same state semantics.
 
 Every implementation must preserve system light/dark adaptation, 100-200%

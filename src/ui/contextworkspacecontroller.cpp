@@ -69,7 +69,8 @@ QIcon contextProviderIcon(
     QStyle* fallbackStyle)
 {
     if (!hasBuiltInProviderIcon(providerId)) {
-        QIcon icon = QIcon::fromTheme(iconName);
+        QIcon icon = iconName.startsWith(QStringLiteral(":"))
+            ? QIcon(iconName) : QIcon::fromTheme(iconName);
         if (icon.isNull() && fallbackStyle) {
             icon = fallbackStyle->standardIcon(
                 QStyle::SP_FileDialogContentsView);

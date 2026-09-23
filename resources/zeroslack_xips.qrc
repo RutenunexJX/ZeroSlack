@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/xips-brand">
+    <file alias="icon.png">../images/xips_app.png</file>
+  </qresource>
+</RCC>
