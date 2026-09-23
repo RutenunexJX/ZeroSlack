@@ -354,6 +354,73 @@ constexpr ContextPlacement floatingPlacement{
 constexpr ContextPlacement keptPlacement{
     ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global};
 
+void verifyLegacyFloatingDockMigration()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    auto* side = controller.dockWidget();
+    auto* bottom = controller.bottomDockWidget();
+    for (auto* dock : {side, bottom}) {
+        check(!(dock->features() & (QDockWidget::DockWidgetFloatable | QDockWidget::DockWidgetMovable))
+                  && dock->titleBarWidget() && dock->titleBarWidget()->maximumHeight() == 0,
+              "single_header_dock: only section headers provide detach and close controls");
+    }
+    for (const auto& id : {"legacy-a", "legacy-b", "bottom"})
+        controller.openResource(resource(id), keptPlacement);
+    controller.dockHost()->moveResourceToArea("mock:bottom", true);
+    side->setFloating(true); // Reproduce a QMainWindow state saved by the previous release.
+    side->resize(500, 400);
+    side->move(40, 40);
+    const auto saved = controller.captureState();
+    const auto qtState = fixture.window.saveState();
+    side->setFloating(false);
+    controller.clearResources();
+    check(fixture.window.restoreState(qtState) && side->isFloating(),
+          "legacy_dock_fixture: Qt restores floating state even with Floatable disabled");
+    const int created = fixture.counters.created;
+    const auto result = controller.restoreState(saved, true);
+    QApplication::processEvents();
+    check(!side->isFloating() && !bottom->isFloating() && !side->isVisible()
+              && controller.floatingWindows().size() == 2 && controller.dockHost()->resourceCount() == 1
+              && controller.dockHost()->isBottomResource("mock:bottom"),
+          "legacy_dock_migration: the floating area becomes individual windows and leaves the bottom section docked");
+    check(result.restoredResources == 3 && result.skippedResources == 0
+              && fixture.counters.created == created + 3,
+          "legacy_dock_identity: migration does not recreate the restored views");
+    auto migrated = controller.captureState();
+    const auto screenRect = side->screen()->availableGeometry();
+    const QString screenName = side->screen()->name();
+    const QSize expectedSize = ContextWorkspaceState::resolvedFloatingGeometry(
+        QRect(40, 40, 500, 400), screenName, {screenRect}, screenRect, {screenName}).size();
+    bool retained = migrated.floatingInstances.size() == 2;
+    for (const auto& instance : migrated.floatingInstances)
+        retained &= instance.kept && instance.geometryValid
+            && QSize(instance.width, instance.height) == expectedSize;
+    check(retained, "legacy_dock_persistence: geometry and kept lifetime survive migration");
+    const auto migratedQtState = fixture.window.saveState();
+    controller.clearResources();
+    fixture.window.restoreState(migratedQtState);
+    controller.restoreState(migrated, true);
+    check(!side->isFloating() && controller.floatingWindows().size() == 2
+              && controller.dockHost()->resourceCount() == 1,
+          "legacy_dock_roundtrip: the next restore uses only individual floating windows");
+
+    controller.clearResources();
+    fixture.counters.detachable = false;
+    controller.openResource(resource("opt-out"), keptPlacement);
+    side->setFloating(true);
+    const auto optOut = controller.captureState();
+    controller.restoreState(optOut, true);
+    check(!side->isFloating() && side->isVisible() && controller.dockHost()->containsResource("mock:opt-out")
+              && controller.floatingWindows().isEmpty(),
+          "legacy_dock_opt_out: unsupported sections are retained in the dock");
+    bottom->setFloating(true);
+    controller.restoreState({});
+    check(!bottom->isFloating() && !bottom->isVisible(),
+          "legacy_dock_empty: invalid or absent context state cannot leave an empty outer floating window");
+}
+
 void verifyRetiredHubLayout()
 {
     PlacementFixture fixture;
@@ -587,11 +654,11 @@ void verifyDetachableRoutingAndMovement()
           "floating_movement: returning to overlay keeps the original view and creation count");
     TemporaryEditorContextProvider editorProvider(nullptr);
     const auto capabilities = editorProvider.capabilities({});
-    check(!capabilities.detachable && capabilities.preferredSize() == QSize(580, 480)
+    check(capabilities.detachable && capabilities.preferredSize() == QSize(580, 480)
               && capabilities.minimumWidth == 360 && capabilities.maximumWidth == 900
               && capabilities.minimumHeight == 260 && capabilities.maximumHeight == 920
               && !capabilities.supports(ContextPresentation::FullView),
-          "temporary_editor_detachable: real provider opts out without changing existing capabilities");
+          "temporary_editor_detachable: shared source editor uses a native window without changing its other capabilities");
 }
 
 void verifyFloatingGeometryRoundtrip()
@@ -1451,7 +1518,7 @@ void verifySidebarDragBack()
     QWidget* original = floating->view();
     const int created = fixture.counters.created;
     check(floating->sidebarDragHandle() && floating->sidebarDragHandle()->isEnabled()
-              && floating->sidebarDragHandle()->parentWidget() == floating,
+              && floating->isAncestorOf(floating->sidebarDragHandle()),
           "stack_drag_client_handle: drag back begins inside the native window client area");
     QApplication::processEvents();
     for (const auto& key : host->resourceKeys()) host->setSectionCollapsed(key, true);
@@ -1576,6 +1643,7 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
     if (!initializeUiStyleForTest()) return 2;
     verifyStateCompatibility(app.arguments());
+    verifyLegacyFloatingDockMigration();
     verifyRetiredHubLayout();
     verifyPlacementMapping();
     verifyUnsupportedPlacements();

@@ -1,9 +1,15 @@
-ZeroSlack Ela v0.31.1 Windows package
+ZeroSlack Ela v0.31.2 Windows package
 
 Ela is the maintained application. Launch ZeroSlack-Ela.exe. The fixed package directory is
 ZeroSlack-Ela-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag ela-vX.Y.Z.
+
+Release 0.31.2 merges context-window titles and actions into a single Ela title bar.
+The outer Context dock container no longer floats. The shared temporary editor now
+uses the same Ela window, retaining pinning, navigation and document ownership.
+Legacy floating dock layouts migrate to individual windows. Source-editor wallpaper
+retains an opaque theme base instead of inheriting the generic transparent panel rule.
 
 Release 0.31.1 removes the Workspace Hub summary panel, right-rail entry and
 dedicated background refresh pipeline. Old Hub layout and view-state records are

@@ -26,6 +26,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QScopedValueRollback>
+#include <QScreen>
 
 #include <array>
 
@@ -131,9 +132,7 @@ ContextWorkspaceController::ContextWorkspaceController(
     dockValue->setObjectName(QStringLiteral("contextWorkspaceDock"));
     dockValue->setAllowedAreas(Qt::RightDockWidgetArea
                                | Qt::LeftDockWidgetArea);
-    dockValue->setFeatures(QDockWidget::DockWidgetClosable
-                           | QDockWidget::DockWidgetMovable
-                           | QDockWidget::DockWidgetFloatable);
+    dockValue->setFeatures(QDockWidget::DockWidgetClosable);
     dockHostValue = new ContextDockHost(dockValue);
     dockValue->setWidget(dockHostValue);
     dockHostValue->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
@@ -150,6 +149,12 @@ ContextWorkspaceController::ContextWorkspaceController(
     bottomDockValue->setFeatures(QDockWidget::DockWidgetClosable);
     bottomDockValue->setMinimumHeight(160);
     bottomDockValue->setWidget(dockHostValue->bottomWidget());
+    // Each section owns its title and detach handle; the area itself never floats.
+    for (auto* dock : {dockValue.data(), bottomDockValue.data()}) {
+        auto* title = new QWidget(dock);
+        title->setFixedHeight(0);
+        dock->setTitleBarWidget(title);
+    }
     mainWindow->addDockWidget(Qt::BottomDockWidgetArea, bottomDockValue);
     bottomDockValue->hide();
 
@@ -990,12 +995,29 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     ContextWorkspaceState state = savedState;
     state.removeRetiredProviders();
     ContextWorkspaceRestoreResult result;
+    const bool previousRestoring = restoringState;
+    restoringState = true;
+    QList<QPair<bool, ContextWorkspaceState>> legacyFloatingDocks;
+    for (const bool bottom : {false, true}) {
+        auto* dock = bottom ? bottomDockValue.data() : dockValue.data();
+        if (!dock || !dock->isFloating()) continue;
+        const QRect frame = dock->frameGeometry();
+        ContextWorkspaceState geometry;
+        geometry.floatingGeometryValid = true;
+        geometry.floatingX = frame.x();
+        geometry.floatingY = frame.y();
+        geometry.floatingWidth = frame.width();
+        geometry.floatingHeight = frame.height();
+        geometry.floatingScreenName = dock->screen()->name();
+        legacyFloatingDocks.append({bottom, geometry});
+        dock->hide();
+        dock->setFloating(false);
+    }
+    if (!legacyFloatingDocks.isEmpty()) preserveRestoredDockGeometry = false;
     const int restoredQtDockWidth =
         dockValue && dockValue->width() > 0
         ? boundedDockWidthForWindow(dockValue->width())
         : ContextWorkspaceState::kDefaultDockWidth;
-    const bool previousRestoring = restoringState;
-    restoringState = true;
     clearResources();
     lastFloatingGeometry = state.valid ? state : ContextWorkspaceState{};
     setFloatingCollapsed(state.valid && state.floatingCollapsed);
@@ -1120,6 +1142,28 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         dockHostValue->moveResourceToArea(key, section.bottom);
         if (section.width > 0) dockHostValue->setSectionWidth(key, section.width);
         dockHostValue->setSectionCollapsed(key, section.collapsed, false);
+    }
+    // QMainWindow state can restore a floating QDockWidget despite its new features.
+    // Move each restored section into an Ela window, retaining its view and persistence.
+    for (const auto& legacy : legacyFloatingDocks) {
+        const auto keys = dockHostValue->resourceKeys();
+        int offset = 0;
+        for (const QString& key : keys) {
+            if (dockHostValue->isBottomResource(key) != legacy.first) continue;
+            ContextResource resource;
+            for (int i = 0; i < dockHostValue->resourceCount(); ++i)
+                if (dockHostValue->resourceAt(i).stableKey() == key) resource = dockHostValue->resourceAt(i);
+            auto* provider = providerFor(resource);
+            if (!provider || !provider->capabilities(resource).detachable || floatingWindows().size() >= 16)
+                continue; // Keep unsupported or excess sections safely docked.
+            QScopedValueRollback<ContextWorkspaceState> geometry(lastFloatingGeometry, legacy.second);
+            lastFloatingGeometry.floatingX += offset;
+            lastFloatingGeometry.floatingY += offset;
+            if (unpinResource(key)) {
+                keptFloatingKeys.insert(key);
+                offset += 24;
+            }
+        }
     }
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;

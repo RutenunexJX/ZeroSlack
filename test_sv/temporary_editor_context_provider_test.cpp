@@ -1,14 +1,17 @@
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
-#include "contextpeekhost.h"
+#include "contextfloatingwindow.h"
 #include "editorcoordinator.h"
+#include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorcontextview.h"
+#include "testuistyle.h"
 
 #include <QApplication>
+#include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QMainWindow>
@@ -52,6 +55,7 @@ bool writeFixture(const QString& path)
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    if (!initializeUiStyleForTest()) return 2;
     QTemporaryDir temporaryDirectory;
     check(temporaryDirectory.isValid(),
           "temporary directory is available");
@@ -114,22 +118,40 @@ int main(int argc, char* argv[])
             first, temporaryDirectory.path());
     check(controller.openResource(
               firstResource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global}),
-          "temporary editor opens in Peek");
+          "temporary editor opens in an independent window");
 
     auto* contextView = qobject_cast<TemporaryEditorContextView*>(
-        controller.peekHost()->view());
+        controller.floatingWindow()->view());
     MyCodeEditor* contextEditor =
         contextView ? contextView->editor() : nullptr;
     check(contextView && contextEditor
               && contextEditor->document()
                      == primaryEditor->document()
               && tabManager.isAuxiliaryView(contextEditor),
-          "Peek uses the authoritative shared QTextDocument");
+          "floating editor uses the authoritative shared QTextDocument");
     QToolButton* unavailableFullView =
-        controller.peekHost()->findChild<QToolButton*>(
-            QStringLiteral("contextPeekFullView"));
+        controller.floatingWindow()->findChild<QToolButton*>(
+            QStringLiteral("contextFloatingFullView"));
     check(unavailableFullView && !unavailableFullView->isVisible(),
           "temporary editor does not expose an unsupported full-view action");
+    check(controller.floatingWindow()->isWindow()
+              && contextView->window() == controller.floatingWindow(),
+          "temporary editor uses the individual floating host");
+    const ThemeMode originalTheme = ApplicationThemeManager::instance().mode();
+    for (const auto mode : {ThemeMode::Light, ThemeMode::Dark, ThemeMode::CatppuccinMocha}) {
+        ApplicationThemeManager::instance().setMode(mode);
+        QApplication::processEvents();
+        check(contextEditor->palette().color(QPalette::Base) == InsightVisualStyle::theme().input.background,
+              "source wallpaper receives an opaque theme base in the floating host");
+    }
+    ApplicationThemeManager::instance().setMode(originalTheme);
+    const QString reviewDirectory = qEnvironmentVariable("ZEROSLACK_CONTEXT_REVIEW_DIR");
+    if (!reviewDirectory.isEmpty()) {
+        QApplication::processEvents();
+        QDir().mkpath(reviewDirectory);
+        check(controller.floatingWindow()->grab().save(QDir(reviewDirectory).filePath("temporary-editor.png")),
+              "floating editor review image is saved");
+    }
     check(contextView->currentLocation().equivalentTo(first)
               && contextEditor->textCursor().blockNumber() == 1,
           "resource location positions the shared auxiliary view");
@@ -139,7 +161,7 @@ int main(int argc, char* argv[])
     primaryCursor.movePosition(QTextCursor::Start);
     primaryCursor.insertText(inserted);
     check(contextEditor->toPlainText().startsWith(inserted),
-          "main-editor changes are visible in Peek without copying text");
+          "main-editor changes are visible in the floating editor without copying text");
 
     EditorLocation second = first;
     second.line = 4;
@@ -150,7 +172,7 @@ int main(int argc, char* argv[])
     QPointer<TemporaryEditorContextView> originalView = contextView;
     check(controller.openResource(
               secondResource, ContextPlacement{ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global})
-              && controller.peekHost()->view() == originalView
+              && controller.floatingWindow()->view() == originalView
               && contextView->historyCount() == 2
               && contextView->canGoBack(),
           "same stable resource reuses its view and appends history");
@@ -160,22 +182,22 @@ int main(int argc, char* argv[])
     contextView->backButton()->click();
     check(contextView->currentLocation().refersToSameDocument(first)
               && contextView->currentLocation().line == first.line
-              && controller.peekHost()->resource().title
+              && controller.floatingWindow()->resource().title
                      == TemporaryEditorContextProvider::resourceForCurrentEditor(
                          &tabManager, temporaryDirectory.path()).title,
-          "Back navigation updates both the view and common Peek title");
+          "Back navigation updates both the view and floating title");
     check(backNotifications == 1
               && contextView->currentLocation().equivalentTo(first)
-              && controller.peekHost()->resource().stableKey() == firstResource.stableKey()
+              && controller.floatingWindow()->resource().stableKey() == firstResource.stableKey()
               && TemporaryEditorContextProvider::locationFromResource(
-                     controller.peekHost()->resource()).equivalentTo(first),
+                     controller.floatingWindow()->resource()).equivalentTo(first),
           "Back notification preserves identity and updates the common resource location");
 
     check(controller.pinPeek()
               && controller.dockHost()->resourceCount() == 1
               && controller.dockHost()->viewForResource(
                      firstResource.stableKey()) == originalView
-              && controller.peekHost()->view() == nullptr,
+              && controller.floatingWindow()->view() == nullptr,
           "pinning moves the exact shared editor view into the dock");
     const ContextWorkspaceState persistedState = controller.captureState();
     const ContextResource persistedResource =
@@ -198,9 +220,23 @@ int main(int argc, char* argv[])
     if (unpinButton)
         unpinButton->click();
     check(unpinButton
-              && controller.peekHost()->view() == originalView
+              && controller.floatingWindow()->view() == originalView
               && controller.dockHost()->resourceCount() == 0,
-          "Dock unpin action returns the exact view to Peek");
+          "Dock unpin action returns the exact view to an Ela floating window");
+    QApplication::processEvents();
+    check(contextView->editor()->palette().color(QPalette::Base) == InsightVisualStyle::theme().input.background,
+          "floating editor background survives docking and detaching");
+    const auto floatingState = controller.captureState();
+    check(floatingState.floatingInstances.size() == 1,
+          "temporary native editor geometry and resource are persisted");
+    const auto floatingRestored = controller.restoreState(floatingState);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    contextView = qobject_cast<TemporaryEditorContextView*>(controller.floatingWindow()->view());
+    check(floatingRestored.restoredResources == 1 && floatingRestored.skippedResources == 0
+              && contextView && contextView->editor()->document() == primaryEditor->document()
+              && originalView.isNull(),
+          "restored floating editor reattaches to the authoritative document");
+    originalView = contextView;
 
     controller.closePeek();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);

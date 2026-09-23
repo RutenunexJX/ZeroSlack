@@ -138,6 +138,70 @@ private slots:
         host.close();
         QCOMPARE(closed.count(), 3);
         QVERIFY(!host.isVisible() && !host.hasResource());
+        host.setView(resource(), content());
+        auto* edit = host.view()->findChild<QLineEdit*>();
+        host.activateWindow();
+        edit->setFocus();
+        QApplication::processEvents();
+        QTest::keyClick(edit, Qt::Key_Escape);
+        QCOMPARE(closed.count(), 4);
+        QVERIFY(!host.hasResource());
+    }
+
+    void singleTitleBar_data()
+    {
+        QTest::addColumn<int>("width");
+        for (int width : {280, 360, 580, 920})
+            QTest::newRow(qPrintable(QString::number(width))) << width;
+    }
+
+    void singleTitleBar()
+    {
+#ifdef ZEROSLACK_ENABLE_ELA
+        QFETCH(int, width);
+        ContextFloatingWindow host(nullptr, nullptr);
+        QWidget* view = content();
+        const QString longTitle = QStringLiteral("axi_uart_wrapper_").repeated(10) + QStringLiteral(".sv*");
+        view->setProperty("contextDisplayTitle", longTitle);
+        host.setView(resource(), view);
+        host.resize(width, 400);
+        auto* bar = host.findChild<ElaAppBar*>();
+        QVERIFY(bar);
+        for (const bool fit : {true, false}) {
+            view->setProperty("contextFitAvailable", fit);
+            for (const bool full : {true, false}) {
+                host.setActionsAvailable(true, full);
+                QApplication::processEvents();
+                QCOMPARE(host.width(), qBound(host.minimumWidth(), width, host.maximumWidth()));
+                QCOMPARE(host.windowTitle(), longTitle);
+                QCOMPARE(bar->titleLabel()->toolTip(), longTitle);
+                QVERIFY(bar->titleLabel()->text() != longTitle);
+                QList<QRect> occupied;
+                for (auto* button : bar->findChildren<QAbstractButton*>()) {
+                    if (!button->isVisible()) continue;
+                    const QRect bounds(button->mapTo(bar, QPoint()), button->size());
+                    QVERIFY2(bar->rect().contains(bounds), qPrintable(button->objectName()));
+                    QVERIFY2(button->width() >= button->minimumSizeHint().width(), qPrintable(button->objectName()));
+                    QVERIFY2(button->height() >= button->minimumSizeHint().height(), qPrintable(button->objectName()));
+                    for (const QRect& other : occupied) QVERIFY(!other.intersects(bounds));
+                    occupied.append(bounds);
+                }
+                const QRect titleBounds(bar->titleLabel()->mapTo(bar, QPoint()), bar->titleLabel()->size());
+                for (const QRect& other : occupied) QVERIFY(!other.intersects(titleBounds));
+                auto* fitButton = host.findChild<QToolButton*>(QStringLiteral("contextFloatingFit"));
+                QCOMPARE(fitButton->isVisible(), fit);
+                QVERIFY(bar->isAncestorOf(host.sidebarDragHandle()));
+                // The view starts directly after the one title bar, without another action row.
+                const int gap = view->mapTo(&host, QPoint()).y() - bar->geometry().bottom() - 1;
+                QVERIFY(gap >= 0 && gap <= 2);
+                QVERIFY(host.rect().contains(QRect(view->mapTo(&host, QPoint()), view->size())));
+            }
+        }
+        view->setProperty("contextDisplayTitle", QStringLiteral("uart_top.sv*"));
+        QCOMPARE(host.windowTitle(), QStringLiteral("uart_top.sv*"));
+        view->setProperty("contextDisplayTitle", QVariant());
+        QCOMPARE(host.windowTitle(), resource().title);
+#endif
     }
 
     void windowControlsAndGeometry()

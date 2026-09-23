@@ -64,6 +64,10 @@ private:
     QToolButton* fullViewButton = nullptr;
     QToolButton* fitButton = nullptr;
     QToolButton* dragButton = nullptr;
+    QWidget* titleActions = nullptr;
+#ifdef ZEROSLACK_ENABLE_ELA
+    ElaAppBar* appBar = nullptr;
+#endif
     QPoint dragStart;
     QSize initialSize{520, 440};
     QRect storedGeometry{0, 0, 520, 440};
@@ -76,6 +80,8 @@ private:
     bool backdropUpdatePending = false;
 
     void refreshBackdrop();
+    void refreshTitle();
+    void layoutTitleBar();
     void scheduleBackdropRefresh();
     void rememberGeometry();
     void applyGeometry();

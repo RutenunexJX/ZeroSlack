@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.1`
+Current version: `v0.31.2`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target `ZeroSlack-Ela`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.1`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.2`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -149,7 +149,10 @@ The executable remains `ZeroSlack-Ela.exe`; the package directory never includes
 so existing shortcuts remain valid. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current Ela release is `0.31.1` (`ela-v0.31.1`). Workspace Hub and its dedicated
+The current Ela release is `0.31.2` (`ela-v0.31.2`). Context floating windows have one
+Ela title bar for the resource name and actions. The shared temporary editor uses the
+same floating host; old whole-Context floating layouts migrate to individual windows.
+Source-editor wallpaper retains its theme background. Workspace Hub and its dedicated
 background refresh pipeline are removed; legacy Hub layout records are discarded during
 session restoration. Independent panels and shared cross-application contracts remain.
 Editor backgrounds offer Resting,
@@ -185,8 +188,10 @@ Maintain a focused SystemVerilog editor with Tree-sitter structural editing and 
 authority. Provider-based Context Workspace, live insights
 and the read-only AI CLI are implemented. Native documents and external application
 data remain with their owners. Context content is placed by the user: sections stack in the
-sidebar, detachable views open in native floating windows with workspace geometry memory, and
-temporary source editors keep their in-editor overlay. Insight sections render the same view
+sidebar, and detachable views, including the shared temporary source editor, open in Ela
+floating windows with workspace geometry memory. Each floating window has one title bar for
+the resource name and actions; the Context dock container no longer floats. Legacy floating
+dock layouts migrate to individual windows. Insight sections render the same view
 their full view uses and stay pinned to the target the user chose.
 
 Native context floating windows request Windows 11 Desktop Acrylic. Their background opacity

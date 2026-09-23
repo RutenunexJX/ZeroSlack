@@ -10,8 +10,10 @@
 #endif
 
 #include <QCloseEvent>
+#include <QDynamicPropertyChangeEvent>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QMoveEvent>
 #include <QResizeEvent>
 #include <QScreen>
@@ -25,6 +27,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QSettings>
+#include <QShortcut>
 
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -97,34 +100,23 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     if (QGuiApplication::platformName() == QStringLiteral("windows"))
         setAttribute(Qt::WA_TranslucentBackground);
     setAutoFillBackground(false);
-    // Content surfaces share this host's backdrop. Local theme helpers carry
-    // the same ancestor rule so their own styles cannot cover it again.
-    setStyleSheet(QStringLiteral(
-        "#contextFloatingWindow QDockWidget, "
-        "#contextFloatingWindow QToolBar, "
-        "#contextFloatingWindow QAbstractScrollArea, "
-        "#contextFloatingWindow QLineEdit, "
-        "#contextFloatingWindow QComboBox, "
-        "#contextFloatingWindow QAbstractSpinBox, "
-        "#contextFloatingWindow QTabBar, "
-        "#contextFloatingWindow QHeaderView { background: transparent; }"
-        "#contextFloatingWindow QScrollArea > QWidget > QWidget { background: transparent; }"
-        "#contextFloatingWindow QAbstractItemView { alternate-background-color: transparent; }"
-        "#contextFloatingWindow QTabWidget::pane, "
-        "#contextFloatingWindow QHeaderView::section { background: transparent; }"));
     auto* root = new QVBoxLayout(this);
     root->setSizeConstraint(QLayout::SetNoConstraint);
-    root->setContentsMargins(8, 6, 8, 8);
-    auto* actions = new QHBoxLayout;
-    dragButton = UiControls::toolButton(this);
+    root->setContentsMargins(8, 0, 8, 8);
+    titleActions = new QWidget(this);
+    titleActions->setObjectName(QStringLiteral("contextFloatingActions"));
+    titleActions->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    auto* actions = new QHBoxLayout(titleActions);
+    actions->setContentsMargins(0, 0, 4, 0);
+    actions->setSpacing(2);
+    dragButton = UiControls::toolButton(titleActions);
     dragButton->setObjectName(QStringLiteral("contextFloatingDrag"));
     dragButton->setIcon(style()->standardIcon(QStyle::SP_TitleBarNormalButton));
     dragButton->setToolTip(tr("Drag this handle into the sidebar or bottom area"));
     dragButton->setCursor(Qt::OpenHandCursor);
     dragButton->installEventFilter(this);
     actions->addWidget(dragButton);
-    actions->addStretch();
-    fitButton = UiControls::toolButton(this);
+    fitButton = UiControls::toolButton(titleActions);
     fitButton->setObjectName(QStringLiteral("contextFloatingFit"));
     fitButton->setText(tr("Fit"));
     fitButton->setToolTip(tr("Fit diagram to view"));
@@ -133,23 +125,40 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     connect(fitButton, &QToolButton::clicked, this, [this] {
         if (currentView) QMetaObject::invokeMethod(currentView, "fitGraph");
     });
-    pinButton = UiControls::toolButton(this);
+    pinButton = UiControls::toolButton(titleActions);
     pinButton->setObjectName(QStringLiteral("contextFloatingPin"));
     pinButton->setText(tr("Pin"));
     pinButton->setToolTip(tr("Keep in sidebar"));
     pinButton->setIcon(RoundedIcons::icon(RoundedIcons::Pin));
-    fullViewButton = UiControls::toolButton(this);
+    fullViewButton = UiControls::toolButton(titleActions);
     fullViewButton->setObjectName(QStringLiteral("contextFloatingFullView"));
     fullViewButton->setText(tr("Full view"));
     fullViewButton->setToolTip(tr("Open current view in main area"));
     fullViewButton->setIcon(RoundedIcons::icon(RoundedIcons::Expand));
     actions->addWidget(pinButton);
     actions->addWidget(fullViewButton);
-    root->addLayout(actions);
+    for (auto* button : {dragButton, fitButton, pinButton, fullViewButton}) {
+        button->setAccessibleName(button->toolTip());
+        button->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    }
+#ifdef ZEROSLACK_ENABLE_ELA
+    appBar = findChild<ElaAppBar*>(QString(), Qt::FindDirectChildrenOnly);
+    appBar->setCustomWidget(ElaAppBarType::RightArea, titleActions);
+    appBar->titleLabel()->setTextFormat(Qt::PlainText);
+    appBar->titleLabel()->setWordWrap(false);
+    appBar->titleLabel()->setMinimumWidth(0);
+    appBar->titleLabel()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    connect(this, &QWidget::windowTitleChanged, this, &ContextFloatingWindow::layoutTitleBar);
+#else
+    root->addWidget(titleActions, 0, Qt::AlignRight);
+#endif
     contentLayout = new QVBoxLayout;
     root->addLayout(contentLayout, 1);
     connect(pinButton, &QToolButton::clicked, this, &ContextFloatingWindow::pinRequested);
     connect(fullViewButton, &QToolButton::clicked, this, &ContextFloatingWindow::fullViewRequested);
+    auto* escape = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+    escape->setContext(Qt::WidgetWithChildrenShortcut);
+    connect(escape, &QShortcut::activated, this, &ContextFloatingWindow::closeRequested);
 #ifdef ZEROSLACK_ENABLE_ELA
     if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
         auto* gesture = new ElaDragHandle(dragButton, this);
@@ -164,7 +173,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     }
 #endif
     connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
-            this, [this] { refreshBackdrop(); });
+            this, [this] { layoutTitleBar(); refreshBackdrop(); });
     // Native frame margins are needed when restoring the saved outer rectangle.
     winId();
     connect(windowHandle(), &QWindow::screenChanged, this, [this] { handleScreenChange(); });
@@ -176,6 +185,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     for (QScreen* screen : QGuiApplication::screens())
         watchScreen(screen);
     backdropReady = true;
+    layoutTitleBar();
     refreshBackdrop();
     hide();
 }
@@ -197,6 +207,24 @@ void ContextFloatingWindow::refreshBackdrop()
 {
     if (!backdropReady)
         return;
+    // Source editors paint their own wallpaper from Palette::Base. A transparent
+    // base would be blended as black; ordinary panels still share the Acrylic surface.
+    const QString sheet = QStringLiteral(
+        "#contextFloatingWindow QDockWidget, "
+        "#contextFloatingWindow QToolBar, "
+        "#contextFloatingWindow QAbstractScrollArea, "
+        "#contextFloatingWindow QLineEdit, "
+        "#contextFloatingWindow QComboBox, "
+        "#contextFloatingWindow QAbstractSpinBox, "
+        "#contextFloatingWindow QTabBar, "
+        "#contextFloatingWindow QHeaderView { background: transparent; }"
+        "#contextFloatingWindow QScrollArea > QWidget > QWidget { background: transparent; }"
+        "#contextFloatingWindow QAbstractItemView { alternate-background-color: transparent; }"
+        "#contextFloatingWindow QTabWidget::pane, "
+        "#contextFloatingWindow QHeaderView::section { background: transparent; }"
+        "#contextFloatingWindow QAbstractScrollArea[codeEditorSurface=true] { background: %1; }")
+        .arg(InsightVisualStyle::theme().input.background.name());
+    if (styleSheet() != sheet) setStyleSheet(sheet);
 #if defined(ZEROSLACK_ENABLE_ELA) && defined(Q_OS_WIN)
     const auto previousMode = acrylicBackdrop ? ElaApplicationType::Acrylic : ElaApplicationType::Normal;
 #endif
@@ -273,13 +301,57 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
     pinButton->setEnabled(pinAvailable);
     fullViewButton->setVisible(fullViewAvailable);
     fullViewButton->setEnabled(fullViewAvailable);
+    layoutTitleBar();
+}
+
+void ContextFloatingWindow::refreshTitle()
+{
+    const QString displayTitle = currentView ? currentView->property("contextDisplayTitle").toString() : QString();
+    setWindowTitle(!displayTitle.isEmpty() ? displayTitle
+        : currentResource.title.isEmpty() ? currentResource.uri.fileName() : currentResource.title);
+    layoutTitleBar();
+}
+
+void ContextFloatingWindow::layoutTitleBar()
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (!appBar || !titleActions) return;
+    int height = 30;
+    int controlsWidth = 0;
+    for (const auto type : {ElaAppBarType::MinimizeButtonHint,
+                           ElaAppBarType::MaximizeButtonHint, ElaAppBarType::CloseButtonHint}) {
+        auto* button = appBar->windowButton(type);
+        const QSize size = button->minimumSizeHint().expandedTo(QSize(40, 30));
+        button->setFixedSize(size);
+        height = qMax(height, size.height());
+        if (!button->isHidden()) controlsWidth += size.width();
+    }
+    titleActions->layout()->invalidate();
+    const QSize actionsSize = titleActions->sizeHint();
+    height = qMax(height, actionsSize.height());
+    appBar->setAppBarHeight(height + 4);
+    titleActions->setFixedSize(actionsSize);
+    const int available = qMax(0, width() - controlsWidth - actionsSize.width() - 26);
+    auto* label = appBar->titleLabel();
+    const QString title = label->fontMetrics().elidedText(windowTitle(), Qt::ElideMiddle, available);
+    label->setFixedWidth(qMin(available, label->fontMetrics().horizontalAdvance(title)));
+    label->setText(title);
+    label->setToolTip(windowTitle());
+#endif
 }
 
 QWidget* ContextFloatingWindow::sidebarDragHandle() const { return dragButton; }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
-    if (watched == currentView && event->type() == QEvent::DynamicPropertyChange)
-        fitButton->setVisible(currentView->property("contextFitAvailable").toBool());
+    if (watched == currentView && event->type() == QEvent::DynamicPropertyChange) {
+        const auto name = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
+        if (name == "contextFitAvailable") {
+            fitButton->setVisible(currentView->property("contextFitAvailable").toBool());
+            layoutTitleBar();
+        } else if (name == "contextDisplayTitle") {
+            refreshTitle();
+        }
+    }
     if (watched == dragButton && !dragButton->property("elaDragManaged").toBool()
         && dragButton->isEnabled() && hasResource()) {
         if (event->type() == QEvent::MouseButtonPress) {
@@ -316,7 +388,7 @@ void ContextFloatingWindow::setView(const ContextResource& resource, QWidget* vi
     view->installEventFilter(this);
     fitButton->setVisible(view->property("contextFitAvailable").toBool());
     contentLayout->addWidget(view);
-    setWindowTitle(resource.title.isEmpty() ? resource.uri.fileName() : resource.title);
+    refreshTitle();
     if (!geometryValid) {
         QScreen* screen = parentWidget() ? parentWidget()->screen() : QGuiApplication::primaryScreen();
         const QPoint corner = editorRegion
@@ -369,7 +441,7 @@ bool ContextFloatingWindow::updateResource(const ContextResource& resource)
     if (!hasResource() || currentResource.stableKey() != resource.stableKey())
         return false;
     currentResource = resource;
-    setWindowTitle(resource.title.isEmpty() ? resource.uri.fileName() : resource.title);
+    refreshTitle();
     return true;
 }
 
@@ -452,6 +524,7 @@ void ContextFloatingWindow::moveEvent(QMoveEvent* event)
 void ContextFloatingWindow::resizeEvent(QResizeEvent* event)
 {
     ContextFloatingWindowBase::resizeEvent(event);
+    layoutTitleBar();
     rememberGeometry();
 }
 

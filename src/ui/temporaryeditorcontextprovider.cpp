@@ -199,7 +199,7 @@ TemporaryEditorContextProvider::capabilities(
     const ContextResource&) const
 {
     ContextViewCapabilities result;
-    result.detachable = false;
+    result.detachable = true;
     result.presentations = ContextPresentation::Peek
         | ContextPresentation::Pinned;
     result.minimumWidth = 360;
