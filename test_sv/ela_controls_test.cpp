@@ -32,6 +32,10 @@
 #include "ElaDrawerArea.h"
 #include "ElaComboBox.h"
 #include "ElaMenu.h"
+#include "ElaListView.h"
+#include "ElaTreeView.h"
+#include "ElaTableView.h"
+#include <QStandardItemModel>
 #include <QAction>
 #include <QWidgetAction>
 #include <QPlainTextEdit>
@@ -47,6 +51,31 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void focusedNativeViewsSurviveTeardown() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        QStandardItemModel model(50, 2);
+        for (int row = 0; row < model.rowCount(); ++row)
+            model.setData(model.index(row, 0), QString("Row %1").arg(row));
+        host.resize(480, 400); host.show(); host.activateWindow(); settle();
+        for (int repeat = 0; repeat < 3; ++repeat) {
+            const QList<QAbstractItemView*> views{
+                new ElaListView(&host), new ElaTreeView(&host), new ElaTableView(&host)};
+            for (auto* view : views) {
+                layout->addWidget(view);
+                view->setModel(&model);
+                view->show(); view->setFocus(); settle();
+                QVERIFY(view->hasFocus());
+                QTest::keyClick(view, Qt::Key_Down);
+                QVERIFY(view->currentIndex().isValid());
+                QPointer<QAbstractItemView> removed(view);
+                delete view;
+                QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+                QVERIFY(removed.isNull());
+            }
+        }
+    }
+
     void nativeMenuAnimationPreservesImmediateActions() {
         QWidget host;
         host.resize(400, 240); host.show(); settle();

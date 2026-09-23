@@ -305,5 +305,15 @@ baseline as `ela=454cac2d-p27`; rebuild both packages together. This supplements
 the existing Qt, pointer-size and compiler ABI checks and does not change the
 native surface v1 data contract.
 
+Apply `patches/28-xips-list-style-lifetime.patch` after patch 27.
+The xIPs integration's focused-list teardown regression exposed ElaListView
+freeing its style before QWidget finished clearing focus. The style now belongs
+to the application and is scheduled for deferred deletion when the view is
+destroyed, matching ElaTableView's established lifecycle. No style reset or
+event-loop reentry is introduced. ZeroSlack additionally exercises focused bare
+ElaListView, ElaTreeView and ElaTableView destruction at 100% and 200% scale.
+The one-file patch replays byte-for-byte. It does not change the public API or
+class layout; native browser capability ABI remains p27. MIT/OFL are unchanged.
+
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

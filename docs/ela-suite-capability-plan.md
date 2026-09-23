@@ -44,7 +44,7 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 | 应用 | 仓库 | 现有执行任务 | 状态 |
 | --- | --- | --- | --- |
-| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 基线 3f1c4af 已验证；准备 0.31.10 正式包 |
+| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 共享适配已验证；合入联测析构修复，准备 0.31.11 |
 | Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 已下发 3f1c4af 基线，实施中 |
 | RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 已下发 3f1c4af 基线，实施中 |
 | WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 已下发基线；保留同期析构／英文修复 |
@@ -79,7 +79,7 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 不添加无业务用途的日历、轮播、Ribbon、状态栏等入口。径向菜单和可交互符号卡片不改成
 普通悬浮提示。Ela 没有 QSplitter 对应类，不能把 Qt 分隔布局列为 Ela 原生组件。
-适配扩展记录在补丁 26–27；组件存在不等于应用所有权也应由它接管。
+适配扩展记录在补丁 26–28；组件存在不等于应用所有权也应由它接管。
 补丁 27 恢复此前 native-item 路径绕过的菜单展开，同时保留 Qt 菜单语义。
 菜单动作、主题、尺寸变化和输入会终止过渡；含实时编辑控件的 QWidgetAction 菜单不使用快照。
 
@@ -92,6 +92,10 @@ Context 工作区保留 238 项检查。隐藏 Windows HWND 的无边框命中�
 100%／200% 均为 4/4，通过过程中未显示窗口、抢焦点或操作桌面鼠标。
 补丁 26 对 c482aab 的 13 个供应商源文件重放一致；补丁 27 对 89eea24 的 3 个文件逐字节一致。
 许可文本保持不变。共享 xIPs ABI 要求 `ela=454cac2d-p27`，实际正式 DLL 加载验证在发布前执行。
+
+xIPs 新增聚焦列表销毁用例发现 ElaListView 提前释放 style。补丁 28 合入其已验证修复，
+主任务增加裸列表／树／表聚焦销毁回归；100%／200% 控件、导航和弹出 6/6 通过（22.55 秒）。
+因此 0.31.10 暂存候选不部署；既有提交与 tag 保持不变，最终正式包递增至 0.31.11。
 
 性能采用同一 MainWindow、5000 行 SystemVerilog、模块框图和每场景 12 次切换。
 下表为 3840×2160、DPR 1；dispatch 是入口执行中位耗时，P95 是事件间隔，均为 ms。
