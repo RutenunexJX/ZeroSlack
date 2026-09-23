@@ -6,7 +6,8 @@ class QWidget;
 class QObject;
 
 // Native surface v1. Load only when the ABI string matches the host's Qt,
-// pointer size and compiler. Keep the library loaded until its widgets die.
+// pointer size, compiler and shared Ela capabilities. Keep the library loaded
+// until its widgets die.
 // The returned QWidget exposes these public Qt invokables:
 // setContext(QString library, QString workspace), collectPaths(QStringList),
 // revealAsset(QString), refresh(), saveState()->QVariantMap,
@@ -28,5 +29,6 @@ inline QByteArray xipsExpectedBrowserAbi()
 #else
     result += ";compiler=unknown";
 #endif
+    result += ";ela=454cac2d-p26";
     return result;
 }

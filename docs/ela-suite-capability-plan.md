@@ -44,12 +44,12 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 | 应用 | 仓库 | 现有执行任务 | 状态 |
 | --- | --- | --- | --- |
-| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 本地实施 |
-| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 等待 ZeroSlack 验证 |
-| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 等待 ZeroSlack 验证 |
-| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 等待 ZeroSlack 验证 |
-| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 等待 ZeroSlack 验证 |
-| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | 等待 ZeroSlack 验证 |
+| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 基线 3f1c4af 已验证；准备 0.31.10 正式包 |
+| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 已下发 3f1c4af 基线，实施中 |
+| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 已下发 3f1c4af 基线，实施中 |
+| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 已下发基线；保留同期析构／英文修复 |
+| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 审计完成，已下发基线并实施 |
+| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | 审计完成，已下发基线并实施 |
 
 初始 ZeroSlack HEAD：c482aab。未跟踪的 docs/questa-suite-plan.md 属于其他任务，保留。
 用户明确指定表内五个对应执行任务，后续直接续接，不另建任务。

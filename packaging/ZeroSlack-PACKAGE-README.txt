@@ -1,9 +1,17 @@
-ZeroSlack v0.31.9 Windows package
+ZeroSlack v0.31.10 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.10 uses interruptible ElaDrawerArea transitions for the right sidebar,
+bottom drawer and context-panel folding. Qt QSplitter now owns parallel-panel
+resizing. Combo boxes restore Ela popup and indicator animations without blocking
+selection or dismissal; ordinary views use smooth wheel scrolling and tree expansion
+accepts new input immediately. Editor background caching reduces large-window
+sidebar repaint cost. Includes Ela patch 26 with unchanged MIT/OFL attribution.
+Embedded xIPs requires the matching Ela patch-26 native browser ABI.
 
 Release 0.31.9 adopts Ela sidebar display modes and overlay slides, and immediate
 tab floating/merging through Ela's gesture routing. Context windows use ElaDockWidget
