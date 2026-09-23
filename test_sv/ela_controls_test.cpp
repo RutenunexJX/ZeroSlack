@@ -55,6 +55,39 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void comboPopupRowsRemainFullyVisible() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        auto* combo = UiControls::comboBox(&host);
+        auto* ela = qobject_cast<ElaComboBox*>(combo);
+        QVERIFY(ela);
+        layout->addWidget(combo);
+        host.resize(400, 240); host.show(); settle();
+        for (int rows : {1, 3, 5}) {
+            combo->clear();
+            for (int row = 0; row < rows; ++row) combo->addItem(QString("Choice %1").arg(row));
+            QSize stableSize;
+            for (int repeat = 0; repeat < 3; ++repeat) {
+                combo->setCurrentIndex(repeat % 2 ? rows - 1 : 0);
+                combo->showPopup();
+                QTRY_VERIFY_WITH_TIMEOUT(!ela->isPopupAnimating(), 500);
+                auto* view = combo->view();
+                for (int row = 0; row < rows; ++row) {
+                    const QRect item = view->visualRect(view->model()->index(row, 0));
+                    QVERIFY2(view->viewport()->rect().contains(item),
+                        qPrintable(QString("row %1: item %2,%3 %4x%5 viewport %6x%7")
+                            .arg(row).arg(item.x()).arg(item.y()).arg(item.width()).arg(item.height())
+                            .arg(view->viewport()->width()).arg(view->viewport()->height())));
+                }
+                if (repeat) QCOMPARE(view->window()->size(), stableSize);
+                stableSize = view->window()->size();
+                combo->showPopup();
+                QCOMPARE(view->window()->size(), stableSize);
+                combo->hidePopup();
+            }
+        }
+    }
+
     void replacedOverlayOriginSurvivesResize() {
         QListView view;
         auto* origin = new QScrollBar(Qt::Vertical, &view);

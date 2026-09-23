@@ -324,5 +324,14 @@ The three-file patch replays byte-for-byte. ZeroSlack exercises origin replaceme
 deferred deletion, resize and capture at 100% and 200% scale. This private-lifetime
 fix does not change public API or class layout; browser ABI remains p27.
 
+Apply `patches/30-regmap-combo-popup-padding.patch` after patch 29.
+RegMapWorkbench's terminal popup screenshots exposed clipped first/last items:
+Qt's calculated popup height omitted Ela's extra layout padding. Add the vertical
+padding once to the native endpoint, constrained to the available screen. A show
+request while already visible settles the current animation without growing the
+popup. Repeated open, first/last selection and all rows of one/three/five-item
+combos are checked at 100% and 200%. The one-file patch replays byte-for-byte;
+public API and class layout are unchanged, and the browser capability ABI remains p27.
+
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

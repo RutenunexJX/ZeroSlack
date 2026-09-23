@@ -44,12 +44,12 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 | 应用 | 仓库 | 现有执行任务 | 状态 |
 | --- | --- | --- | --- |
-| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 共享适配已验证；合入联测析构修复，准备 0.31.11 |
-| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 已下发 3f1c4af 基线，实施中 |
-| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 已下发 3f1c4af 基线，实施中 |
-| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 已下发基线；保留同期析构／英文修复 |
-| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 审计完成，已下发基线并实施 |
-| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | 审计完成，已下发基线并实施 |
+| ZeroSlack | E:/ZeroSlack/ZeroSlack | 当前任务 | 8f7abf6 已推送；0.31.11 暂存包通过校验 |
+| Pinloom | E:/Pinloom/Pinloom | Pinloom执行侧 / 01a04d23-c1b6-7b50-b7dd-b1b23fc3be53 | 51ec1d1 已提交；0.4.8 干净发布构建中 |
+| RegMapWorkbench | E:/RegMapWorkbench/RegMapWorkbench | RegMapWorkbench执行侧 / 01a03836-e5e3-77e2-bec8-0498d5526ef3 | 16 组布局截图通过，完整回归与发布收尾中 |
+| WaveWorkbench | E:/WaveWorkbench/WaveWorkbench | WaveWorkbench执行侧 / 01a038a2-4113-7e10-ab72-e4584cec0190 | 6d1b1a9 已推送；0.12.0 暂存包通过校验 |
+| SimDock | E:/SimDock/SimDock | 开发 Questasim 集成套件 / 01a0ce40-2180-75e1-b773-b174a4dcf387 | 功能及性能对照完成，合入补丁 29 收尾中 |
+| xIPs | E:/xIPs/xIPs | 查看本地 xIPs 应用 / 01a0ce6b-4f79-7151-a9bd-64ea81f6c3bc | 2.2.0 预检通过，合入补丁 29 收尾中 |
 
 初始 ZeroSlack HEAD：c482aab。未跟踪的 docs/questa-suite-plan.md 属于其他任务，保留。
 用户明确指定表内五个对应执行任务，后续直接续接，不另建任务。
@@ -79,7 +79,7 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 不添加无业务用途的日历、轮播、Ribbon、状态栏等入口。径向菜单和可交互符号卡片不改成
 普通悬浮提示。Ela 没有 QSplitter 对应类，不能把 Qt 分隔布局列为 Ela 原生组件。
-适配扩展记录在补丁 26–29；组件存在不等于应用所有权也应由它接管。
+适配扩展记录在补丁 26–30；组件存在不等于应用所有权也应由它接管。
 补丁 27 恢复此前 native-item 路径绕过的菜单展开，同时保留 Qt 菜单语义。
 菜单动作、主题、尺寸变化和输入会终止过渡；含实时编辑控件的 QWidgetAction 菜单不使用快照。
 
@@ -103,6 +103,12 @@ WaveWorkbench 颜色选择器回归发现 overlay 滚动条仍引用被替换的
 普通只读文本的精确滚动交由 Qt 处理，角度滚轮继续使用 Ela 动画。两档 DPI 下均逐事件
 对比原生 Qt 的横纵位置和最终文本。专业代码编辑器保持独立滚动语义。
 合入补丁 29 和文本滚动修复后，25 组完整相关回归再次全部通过（82.25 秒）。
+
+RegMap 的弹层终态截图进一步发现，Qt 算出的弹层高度未包含 Ela 的 6 px 底部留白，
+ZeroSlack、xIPs 和 SimDock 均复现首末选项裁切。补丁 30 按本次 Qt 高度补齐留白并
+约束屏幕边界，已可见时只结束过渡，不重复增加高度。原失败用例保留；1／3／5 个
+选项、首末选择、反复关闭重开及可见时再次 show 均验证完整可见且尺寸稳定。
+ZeroSlack 两档 DPI 下控件／弹出／对话框 6/6 通过（24.99 秒）；各应用增量更新候选包。
 
 实际 xIPs 插件已使用 ZeroSlack 干净 Release 暂存中的核心及 Ela DLL 验证，100%／200%
 均为 4/4，覆盖原生视图创建、使用、导出哈希、引用及工作区关闭，并断言创建和销毁
