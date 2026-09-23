@@ -851,7 +851,7 @@ endif()
 add_executable(demo src/app/main.cpp)
 if(ZEROSLACK_ENABLE_ELA)
     target_compile_definitions(demo PRIVATE ZEROSLACK_ELA_BUILD=1)
-    set_target_properties(demo PROPERTIES OUTPUT_NAME "ZeroSlack-Ela")
+    set_target_properties(demo PROPERTIES OUTPUT_NAME "ZeroSlack")
 endif()
 
 # Read-only machine interface for AI and automation. The support layer links

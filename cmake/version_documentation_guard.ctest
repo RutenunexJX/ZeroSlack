@@ -39,18 +39,18 @@ assert_version_marker(
     "Current controlled baseline:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
     "README release baseline")
 assert_version_marker(
-    "packaging/ZeroSlack-Ela-README.txt"
-    "ZeroSlack Ela[ \\t]+v?([0-9]+\\.[0-9]+\\.[0-9]+)"
-    "Ela package README")
+    "packaging/ZeroSlack-PACKAGE-README.txt"
+    "ZeroSlack[ \\t]+v?([0-9]+\\.[0-9]+\\.[0-9]+)"
+    "package README")
 assert_version_marker(
     "用户手册.md"
     "Current version:[ \\t]*`v?([0-9]+\\.[0-9]+\\.[0-9]+)`"
     "user manual")
 
 file(READ "${ZEROSLACK_SOURCE_DIR}/README.md" versioning_policy)
-if(NOT versioning_policy MATCHES "ZeroSlack-Ela-win64")
+if(NOT versioning_policy MATCHES "ZeroSlack-win64")
     message(FATAL_ERROR
-        "README.md must preserve the fixed ZeroSlack-Ela-win64 package basename")
+        "README.md must preserve the fixed ZeroSlack-win64 package basename")
 endif()
 foreach(current_document
         README.md 用户手册.md ARCHITECTURE.md)

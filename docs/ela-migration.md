@@ -1,9 +1,24 @@
 # ZeroSlack Ela 实际迁移
 
 维护范围（2026-09-22）：仅维护 Ela 版本。后续功能、修复、验证和正式发布均以
-`ZeroSlack-Ela` 为目标；classic、Qlementine 和 SuiteUi 保留为历史兼容代码，不再并行维护。
-默认 CMake 配置启用 Ela，正式包沿用 `ZeroSlack-Ela-win64` 目录，不再生成 ZIP。
+基于 Ela 的 `ZeroSlack` 为目标；classic、Qlementine 和 SuiteUi 保留为历史兼容代码，不再并行维护。
+默认 CMake 配置启用 Ela，正式包使用 `ZeroSlack-win64` 目录和 `ZeroSlack.exe`，不再生成 ZIP。
 下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
+
+## 0.31.3 统一正式包名称（2026-09-23）
+
+Ela 版本成为唯一正式包，替换原 `ZeroSlack-win64`，移除独立的 `ZeroSlack-Ela-win64`。
+窗口标题、可执行文件和快捷方式统一为 ZeroSlack；继续使用既有 INI 存储标识和配置路径，
+保留设置、最近工程与会话。`--version` 显示正式产品名称及版本。
+
+`package-release.ps1` 使用 Ela 构建、完整许可证和补丁清单、版本元数据与 SHA-256 清单；
+旧 `package-ela.ps1` 转发到同一个流程。发布标签改为 `vX.Y.Z`，旧标签保留为历史记录。
+本地只保留当前包，不生成备份或 ZIP；套件清单和桌面入口同步改为正式路径。
+
+Release GUI／CLI 重建通过；7 项发布检查通过，覆盖 100%／200% 主窗口与浮窗、
+上下文布局恢复、临时编辑器和版本文档一致性。GUI／CLI 版本探测均为 0.31.3，
+配置文件哈希保持不变。记录为 `build/ela-migration/release-0.31.3-build.log`、
+`release-0.31.3-tests.log`；验证未占用桌面鼠标。
 
 ## 0.31.2 上下文单标题栏（2026-09-23）
 

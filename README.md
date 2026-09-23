@@ -1,9 +1,9 @@
 # ZeroSlack
 
-Current version: `v0.31.2`
+Current version: `v0.31.3`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
-Future implementation, validation and releases target `ZeroSlack-Ela`; classic and
+Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
 Qlementine/SuiteUi paths are historical compatibility code and are no longer maintenance targets.
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
@@ -107,7 +107,7 @@ generator, and initialized `thirdparty/slang`, `thirdparty/tree_sitter`, and
 git submodule update --init --recursive
 cmake -S . -B build/local -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=<qt-prefix> -DZEROSLACK_ENABLE_ELA=ON
 cmake --build build/local --target demo zeroslack_cli
-build/local/ZeroSlack-Ela.exe
+build/local/ZeroSlack.exe
 build/local/zeroslack-cli.exe --help
 $env:ZEROSLACK_TEST_UI_STYLE = 'ela'
 ctest --test-dir build/local --output-on-failure -j1 -E 'classic|qlementine'
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.2`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.3`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -143,13 +143,18 @@ markers in this README, the user manual and the package README.
 
 Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
 build and run the Ela release verification targets; create a signed-off release tag named
-`ela-vX.Y.Z`. Stage with `scripts/package-ela.ps1 -Formal`, then publish the verified
-`ZeroSlack-Ela-win64` directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps`.
-The executable remains `ZeroSlack-Ela.exe`; the package directory never includes the version,
-so existing shortcuts remain valid. Releases no longer create ZIP archives. The product
+`vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish the verified
+`ZeroSlack-win64` directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps`.
+The executable is `ZeroSlack.exe`; the package directory never includes the version.
+Replace the current local package without keeping older copies or backups, and update
+the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current Ela release is `0.31.2` (`ela-v0.31.2`). Context floating windows have one
+The current release is `0.31.3` (`v0.31.3`). Ela is now the sole formal package,
+replacing the former classic package with the normal ZeroSlack name. The existing
+`ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
+`package-ela.ps1` forwards to the same release script for compatibility.
+Context floating windows have one
 Ela title bar for the resource name and actions. The shared temporary editor uses the
 same floating host; old whole-Context floating layouts migrate to individual windows.
 Source-editor wallpaper retains its theme background. Workspace Hub and its dedicated

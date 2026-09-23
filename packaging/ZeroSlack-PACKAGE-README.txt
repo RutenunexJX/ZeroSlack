@@ -1,102 +1,128 @@
-ZeroSlack v0.30.3
+ZeroSlack v0.31.3 Windows package
 
-Build profile: Shared Release
-Qt: 6.10.2
-Compiler: MinGW 13.1.0
-Default UI: classic controls (SuiteUi is a default-off optional backend, not in this package)
-slang: 10.0.14
-Suite WaveWorkbench: v0.12.0
-Release root: E:\PinloomRoot\AppPackage\AppSuite
+Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
+ZeroSlack-win64. Consult build-info.json for the product version, release
+channel, exact commit and branch. Formal packages have dirty=false and use
+the release tag vX.Y.Z.
 
-Run ZeroSlack.exe. Runtime provides the optional shared SuiteApp broker.
-Existing ZeroSlack settings and workspace profiles are retained.
-0.29.23 shipped SuiteUi as the default; 0.29.24 reverted it to classic after real
-desktop use showed unacceptable control sluggishness. The cause is not yet diagnosed.
-WaveWorkbench remains a separate sibling application for simulation and waveform viewing.
-ZeroSlack no longer runs simulation, loads wavewidgets.dll, or unpacks a Wave toolchain.
-The fixed ZeroSlack-win64 directory and executable names preserve existing shortcuts.
+Release 0.31.3 replaces the former classic package with the maintained Ela application.
+The executable, window title and shortcuts use the ZeroSlack name. Only the current
+local package is retained; no backups or ZIP archives are produced. The existing
+ZeroSlack/ZeroSlack-Ela configuration directory remains the storage identity so
+settings, recent workspaces and sessions continue without migration.
 
-Settings, Search / Replace, Change Preview and Connections create their pages on first use.
-Reopening retains their state. Fold Shelf, custom Fold Region, static Wave Preview and Wave Simulation are removed.
-The four specialized diagrams and syntax folding remain available.
-The old Module Brief, Signal Journey and Clock/Reset Map report pages are removed.
-Shared signal relationships, clock/reset analysis and semantic Diff remain available.
+Release 0.31.2 merges context-window titles and actions into a single Ela title bar.
+The outer Context dock container no longer floats. The shared temporary editor now
+uses the same Ela window, retaining pinning, navigation and document ownership.
+Legacy floating dock layouts migrate to individual windows. Source-editor wallpaper
+retains an opaque theme base instead of inheriting the generic transparent panel rule.
 
-Activity replaces the status bar. Scan, semantic and operation messages are
-retained in Activity. Important unread messages increment its numeric badge;
-viewing Activity marks displayed messages as read. Ordinary progress stays passive.
+Release 0.31.1 removes the Workspace Hub summary panel, right-rail entry and
+dedicated background refresh pipeline. Old Hub layout and view-state records are
+discarded during session restoration. Independent source, analysis and Pinloom
+panels, shared associations and the read-only suite-context CLI remain available.
 
-Navigation and Context remain full-height columns; the bottom drawer occupies
-only the area beneath the editor. Drag the sidebar divider to widen charts.
-Reopening the sidebar retains its width. Settings opens in a central tab.
-Ctrl+2 or View > Context Sidebar toggles the entire Context sidebar without
-closing its sections. Showing an empty sidebar opens the first rail provider's
-default view and restores a hidden rail. Each insight section renders that
-insight's real view instead of a text summary; drag the section boundary or the
-sidebar divider to size it, and Follow Editor freezes it on the current result.
-Source insight commands retarget and pin the matching
-section rather than opening a central tab; the full view stays on the header.
-Supported charts can open in the main area. Explicit Peek previews remain available.
-Detachable Context resources can float in multiple native windows. Right-click a
-Context rail icon to create or focus views, collect them into the sidebar, or
-bind them to the current document. The separate rail toggle hides/restores all
-floating views without closing them. Document layouts retain up to 32 recent
-paths; source editors keep their single overlay. Context sections can be shown
-together, collapsed, resized and reordered inside one sidebar. Drag an eligible
-section outside to float it; use a floating window's client-area handle to drag
-it back to an indicated position. Source editors do not support native drag-out.
-State v6 reads v5 with only the old active section expanded; older builds ignore
-v6 Context state on downgrade.
+Release 0.31.0 shows the complete module hierarchy, uses dashed unreachable instances
+and matching colors at each depth, and synchronizes double-click navigation with source.
+Fit is in the panel header; the old follow/pinned row, search, folding, zoom buttons
+and more menu are removed. Context panels tile with adjustable dividers in both docks.
+Editor backgrounds offer Resting, Peekaboo, Balancing, custom images and None under
+Settings > Appearance. Opacity is global and saved with Apply Global. Backgrounds stay
+fixed behind source text, including folded, split and floating editors. No ZIP is produced.
 
-Native floating windows use Desktop Acrylic on supported Windows 11 systems.
-Appearance > Floating background opacity adjusts only the background tint;
-panels, lists, text previews and graph canvas backgrounds share the material.
-Text, icons, graph nodes and edges stay opaque; docking restores ordinary backgrounds.
-Unsupported systems, disabled transparency, high contrast and battery saver
-use the theme's solid background.
+Release 0.30.3 uses ElaWidget for context floating windows and Ela's window-scoped
+Acrylic material. Window controls, resizing and theme changes use the Ela path;
+unsupported systems or disabled transparency fall back to an opaque background.
+Pinning, content ownership and workspace behavior are preserved. Editor tab windows
+and double-click symbol cards are outside this change. The package includes the
+Ela MIT license, Font Awesome license and all 20 local compatibility patches.
 
-The left sidebar groups the file tree with Project and Settings icons at the top.
-Click Project for commands. Collapse the entire sidebar and restore it from the title bar.
-Click Settings again to close its active central tab; Context icons collapse or
-expand their selected sections while preserving view state. Files, Design and Pinloom use uniform rows
-with distinct hover and selection backgrounds. Focus Mode has been removed.
-Ctrl+Space hides F24-exclusive commands; F24 Command Mode retains those commands.
-The themed title bar stays visible in its own row without covering the editor.
-Rounded controls and graph nodes share a scalable outline icon system.
-Fixed-panel separators and popup outlines use subtle theme-relative borders.
-Panel titles use bottom separators; this visual update adds no animation.
-The editor context menu uses an icon-only ring and rounded rectangular action
-bars. Hover for names and unavailable reasons; gray actions cannot execute.
-Escape, the center close button, or an outside click dismisses the menu.
-Only Problems and Activity remain permanent in the drawer. Ctrl+F/H reuse the
-inline find/replace bar; Ctrl+Shift+F/H open workspace search/replace.
+Version 0.30.2 adds Ela breadcrumbs and a compact toolbar to module block diagrams.
+Nested module boxes size to their text and children, wrap with the viewport width,
+and shrink when folded. Folding and navigation use instance paths. Source jumps
+are separate from entering modules; the module instance table and inspector are removed.
 
-Non-editor typography prefers installed Noto Sans with system font fallbacks,
-and uses proportional text with distinct title, body, metadata
-and badge sizes. Settings groups and navigation explanations have clearer spacing.
-Editor font preferences are preserved. Catppuccin Latte, Frappe, Macchiato and
-Mocha are available in Settings > Appearance. Palette attribution and its MIT license
-are in resources/catppuccin/LICENSE.txt.
+Version 0.30.1 uses Ela's local hosted-tab extension for tab drag/drop, split targets
+and floating editor windows. Closing a floating container returns its tabs to the
+main window; closing a tab still checks locks and unsaved changes. Context floating
+windows introduced ElaAppBar and hosted drag handles; 0.30.3 uses the ElaWidget shell.
+Shared documents, undo, workspace
+ownership and TEMP isolation remain application-managed.
 
-Right-click the title file path to copy its absolute path or reveal it in Explorer.
-Windows maximize and keyboard snap retain native window capabilities.
+The workspace picker shows full paths, unsaved markers and
+per-workspace close decisions. Switching retains live buffers, the active file,
+cursor and scroll positions. External/untitled files are marked TEMP, remain
+available across switches and keep analysis, recovery and session ownership
+separate from the active project. Saving writes back to the original file.
+Source files can also be opened through application arguments. Project/Settings
+icons remain only in the expanded sidebar; the collapsed title bar has the picker.
+It includes all migration stages below, including the shared panel
+compositor. Historical development-version labels describe when each feature was added.
 
-The unified workbench hosts dedicated graph panels, including Hotspot Track/Matrix,
-nested module blocks, Kernel filtering/fanout and State Transition controls.
+Settings continue using the INI profile under Qt's AppConfigLocation for
+ZeroSlack/ZeroSlack-Ela. The historical storage name is retained for compatibility;
+renaming the executable does not reset or replace this profile. Workspace-local
+files remain with their workspace.
 
-Licensing
----------
+The classic, Qlementine and SuiteUi paths remain historical compatibility code;
+they are no longer maintained or included in current release validation.
 
-ZeroSlack is licensed under Apache License 2.0. A full list of third-party
-components and their licenses is in THIRD-PARTY-NOTICES.md.
-ZeroSlack's license is in LICENSE; the Qt, embedded font, and other dependency
-license texts are in the licenses directory beside ZeroSlack.exe.
+Ela controls: welcome page, settings, workspace configuration, navigation filters, Problems,
+Activity and context panel controls. Existing window management,
+editor, specialized diagrams and their data models remain in use.
+The 0.29.26 development build also uses Ela tree rendering and tab bars.
+Tree item models, unsaved-document confirmation and split/drag controllers are retained.
+The 0.29.27 development build adds specialized toolbar/form controls and radio buttons.
+Diagram renderers, transactions and undo are retained. Version 0.29.28 adds Ela inputs and
+action buttons to common dialogs, editor search, Peek and floating-panel controls.
+Qt retains modal results, cancellation and window frames. Version 0.29.29 adds Ela menus
+and list/table rendering while preserving action ownership, item models, editing delegates
+and keyboard behavior. Native file pickers and custom radial menus remain unchanged.
+See build-info.json for the release channel.
+Version 0.29.30 adds 160ms interruptible wheel scrolling to settings and Workspace Hub,
+tree expansion transitions to Files/Design/Workspace Hub, and horizontal tab scrolling.
+Precision touchpad scrolling is immediate. Document selection, close confirmation and
+split ownership remain with the existing controllers.
+Version 0.29.31 adopts ElaAppBar title layout and window buttons, keeping native
+snap/resize handling, the title path menu, sidebar expansion and document close policy.
+Canceling unsaved-document confirmation keeps the window open. ElaWindow is not used.
+Version 0.29.32 adds ElaToolButton to the left navigation controls, right context
+rail and bottom panel bar. Existing icons, action state, repeat-click collapse,
+context menus and status badges are retained. Project remains icon-only.
+Version 0.29.34 adds ElaText headings, descriptions, state labels and form captions,
+preserving host fonts, semantic/disabled colors, selection, links and mnemonic buddies.
+Workspace Configuration also uses ElaScrollArea with nested view height adaptation.
+Version 0.29.35 hosts the whole left sidebar in ElaNavigationBar, including its
+Project/Settings header and Files/Design content. Ela owns display modes, width
+animation and inner layout; the existing Qt dock stores its workspace position.
+Compatibility patch 16 documents the custom-content and interruptible-motion APIs.
+Version 0.29.36 reduces repeated layout/presentation work during sidebar motion.
+Compatibility patch 17 batches the animated width into one constraint update;
+unchanged visible editor lines retain their diagnostic and semantic selections.
+Visible text uses a bounded layout cache; scrolling out releases cached shaping data.
+Version 0.29.37 uses Windows DirectComposition for sidebar transition presentation.
+Ela retains display modes and timing; the live editor resizes only at boundaries.
+Temporary images are never scaled and are released after the transition. Input
+settles the layout first. Device creation runs in the background; the raster fallback
+also avoids per-frame document layout. No additional UI runtime is bundled.
+Version 0.29.38 paints the live layout and restored focus before detaching the
+transition visual, which now attaches directly above the host's raster surface.
+The complete Ela sidebar frame is captured so its background and border match
+the live endpoint, including transitions started with a collapsed sidebar.
+Version 0.29.39 reuses the compositor for the right Context sidebar, bottom drawer
+and Context section folding. Content moves and clips without text scaling or
+per-frame editor layout. The bottom button bar stays fixed; reverse clicks continue
+from the current position. Different panels share one presenter, and restored
+layouts apply immediately. Specialized graph and editor components are retained.
+Version 0.29.33 adopts ElaScrollArea and read-only ElaPlainTextEdit for settings,
+stacked/detail panels, Activity, Pinloom previews, diffs and recovery previews.
+Existing fonts, palettes, selection/copy and document/scroll state are preserved.
+The code editor remains specialized. Scrollbars appear only when needed.
 
-This package uses Qt 6.10.2 under the GNU Lesser General Public License v3
-(LGPLv3). Qt is not modified and is linked dynamically: its DLLs sit beside
-ZeroSlack.exe and may be replaced with your own compatible Qt 6 build, which is
-the right LGPLv3 reserves for you. The LGPLv3 text ships with the Qt runtime
-files in this package; Qt sources are available from https://download.qt.io.
+The application links Qt and ElaWidgetTools dynamically. Keep the distributed
+DLLs and platform plugins with the executable. Do not substitute another Qt
+version: this Ela source uses private Qt 6.10.2 headers.
 
-Sibling applications and their toolchains retain their own license notices. They are not
-linked into ZeroSlack or required for its editing and analysis features.
+Licenses and exact Ela provenance/patches are under licenses/. See also LICENSE
+and THIRD-PARTY-NOTICES.md. ElaWidgetTools is MIT; its unmodified Font Awesome
+Free Solid 6.7.2 font is SIL OFL 1.1. ZeroSlack remains Apache-2.0.

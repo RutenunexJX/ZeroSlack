@@ -1,42 +1,53 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
-    [string]$BuildDirectory = 'build/Desktop_Qt_6_10_2_MinGW_64_bit-Release',
-    [Parameter(Mandatory = $true)][string]$OutputDirectory,
+    [string]$BuildDirectory = 'build/ela-migration',
+    [string]$OutputDirectory = '',
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
-    [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64'
+    [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
+    [switch]$Formal
 )
-
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
+$version = (Get-Content -LiteralPath (Join-Path $sourceRoot 'VERSION') -Raw).Trim()
 if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $sourceRoot $BuildDirectory }
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
-$outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
-if (Test-Path -LiteralPath $outputRoot) { throw 'Stage into a new directory before replacing a verified formal package.' }
 $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt')
-if ($cache -contains 'ZEROSLACK_ENABLE_ELA:BOOL=ON') {
-    throw 'Use package-ela.ps1 for the isolated Ela application. It must not replace the classic formal package.'
+if ($cache -notcontains 'ZEROSLACK_ENABLE_ELA:BOOL=ON' -or
+    $cache -notcontains 'ZEROSLACK_ENABLE_QLEMENTINE:BOOL=OFF' -or
+    $cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=OFF') { throw 'The maintained release requires the Ela backend.' }
+$generatedVersion = [regex]::Match(
+    (Get-Content -LiteralPath (Join-Path $buildRoot 'generated/version.h') -Raw),
+    '#define\s+APP_VERSION\s+"([^"]+)"')
+if (-not $generatedVersion.Success -or $generatedVersion.Groups[1].Value -ne $version) {
+    throw 'Generated application version does not match VERSION; reconfigure and rebuild first.'
 }
-if ($cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=OFF' -or
-    $cache -notcontains 'ZEROSLACK_ENABLE_QLEMENTINE:BOOL=OFF') {
-    throw 'The formal release requires the classic backend: SuiteUi OFF and the direct preview backend OFF.'
-}
-foreach ($name in @('demo.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll')) {
-    if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name) -PathType Leaf)) { throw "Missing build output: $name" }
+$revision = & git -C $sourceRoot rev-parse HEAD
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git revision.' }
+$branch = & git -C $sourceRoot branch --show-current
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git branch.' }
+$dirty = [bool](& git -C $sourceRoot status --porcelain)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git source status.' }
+if ($Formal -and $dirty) { throw 'Commit all source changes before creating a formal package.' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $sourceRoot 'build/packages/ZeroSlack-win64' }
+$outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
+# Verify the new staging directory before replacing the installed package.
+if (Test-Path -LiteralPath $outputRoot) { throw 'Output must be a new directory.' }
+$binaries = @('ZeroSlack.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll', 'ElaWidgetTools.dll')
+foreach ($name in $binaries) {
+    if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name) -PathType Leaf)) { throw "Missing binary: $name" }
 }
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
-Copy-Item -LiteralPath (Join-Path $buildRoot 'demo.exe') -Destination (Join-Path $outputRoot 'ZeroSlack.exe')
-foreach ($name in @('zeroslack-cli.exe', 'libzeroslack_core.dll')) {
-    Copy-Item -LiteralPath (Join-Path $buildRoot $name) -Destination $outputRoot
-}
-Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
-foreach ($name in @('用户手册.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md')) {
-    Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $outputRoot
-}
-& (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --compiler-runtime --no-translations --dir $outputRoot `
-    (Join-Path $outputRoot 'ZeroSlack.exe') (Join-Path $outputRoot 'zeroslack-cli.exe') (Join-Path $outputRoot 'libzeroslack_core.dll')
+foreach ($name in $binaries) { Copy-Item -LiteralPath (Join-Path $buildRoot $name) -Destination $outputRoot }
+& (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
+    --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot `
+    (Join-Path $outputRoot 'ZeroSlack.exe') (Join-Path $outputRoot 'libzeroslack_core.dll') `
+    (Join-Path $outputRoot 'ElaWidgetTools.dll') (Join-Path $outputRoot 'zeroslack-cli.exe')
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
+foreach ($name in @('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll')) {
+    Copy-Item -LiteralPath (Join-Path $CompilerDirectory "bin/$name") -Destination $outputRoot
+}
 $licenseRoot = Join-Path $outputRoot 'licenses'
-New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $licenseRoot | Out-Null
 $licenses = [ordered]@{
     'slang-MIT.txt' = 'thirdparty/slang/LICENSE'
     'tree-sitter-MIT.txt' = 'thirdparty/tree_sitter/LICENSE'
@@ -50,13 +61,32 @@ $licenses = [ordered]@{
     'MonaspaceNeon-OFL.txt' = 'resources/fonts/monaspace-neon/LICENSE.txt'
     'Catppuccin-MIT.txt' = 'resources/catppuccin/LICENSE.txt'
 }
-foreach ($item in $licenses.GetEnumerator()) {
-    Copy-Item -LiteralPath (Join-Path $sourceRoot $item.Value) -Destination (Join-Path $licenseRoot $item.Key)
+foreach ($entry in $licenses.GetEnumerator()) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot $entry.Value) -Destination (Join-Path $licenseRoot $entry.Key)
 }
+$elaLicenses = Join-Path $licenseRoot 'ElaWidgetTools'
+New-Item -ItemType Directory -Path $elaLicenses | Out-Null
+foreach ($name in @('LICENSE', 'UPSTREAM-REVISION.md', 'UPSTREAM-README.md', 'Font/FontAwesome-LICENSE.txt')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "thirdparty/elawidgettools/$name") -Destination $elaLicenses
+}
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'thirdparty/elawidgettools/patches') -Destination $elaLicenses -Recurse
 foreach ($name in @('COPYING3', 'COPYING3.LIB', 'COPYING.RUNTIME')) {
     Copy-Item -LiteralPath (Join-Path $CompilerDirectory "licenses/gcc/$name") -Destination (Join-Path $licenseRoot "GCC-$name.txt")
 }
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/gcc/COPYING3.LIB') -Destination (Join-Path $licenseRoot 'Qt-LGPLv3.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/winpthreads/COPYING') -Destination (Join-Path $licenseRoot 'winpthreads-COPYING.txt')
 Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/mingw-w64/COPYING.MinGW-w64.txt') -Destination (Join-Path $licenseRoot 'MinGW-w64-COPYING.txt')
-Write-Output "Staged classic formal release: $outputRoot"
+foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $outputRoot
+}
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
+$channel = if ($Formal) { 'formal' } else { 'preview' }
+$releaseTag = if ($Formal) { "v$version" } else { $null }
+[ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
+    releaseTag=$releaseTag; backend='ela'; qt='6.10.2';
+    upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
+Get-ChildItem -LiteralPath $outputRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
+    '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.FullName.Substring($outputRoot.Length + 1).Replace('\', '/')
+} | Set-Content -LiteralPath (Join-Path $outputRoot 'SHA256SUMS.txt') -Encoding utf8
+Write-Output $outputRoot

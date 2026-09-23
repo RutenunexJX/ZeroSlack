@@ -16,13 +16,16 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTextStream>
 #include <QTimer>
 
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 #if defined(ZEROSLACK_ELA_BUILD)
+    // Keep the storage identity so existing settings and sessions remain in place.
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Ela"));
+    QGuiApplication::setApplicationDisplayName(QStringLiteral("ZeroSlack"));
 #elif defined(ZEROSLACK_PREVIEW_BUILD)
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Qlementine-Preview"));
 #else
@@ -32,7 +35,13 @@ int main(int argc, char *argv[])
     QCoreApplication::setApplicationVersion(QString::fromLatin1(APP_VERSION));
     QCommandLineParser parser;
     parser.addHelpOption();
+#if defined(ZEROSLACK_ELA_BUILD)
+    const QCommandLineOption versionOption({QStringLiteral("v"), QStringLiteral("version")},
+        QStringLiteral("Displays version information."));
+    parser.addOption(versionOption);
+#else
     parser.addVersionOption();
+#endif
     parser.addPositionalArgument(QStringLiteral("files"),
         QStringLiteral("Open source files without adding a workspace."), QStringLiteral("[files…]"));
     const QString defaultStyle = ApplicationThemeManager::elaAvailable() ? QStringLiteral("ela")
@@ -53,6 +62,13 @@ int main(int argc, char *argv[])
     parser.addOption(styleOption);
     parser.addOption({QStringLiteral("no-ui-animations"), QStringLiteral("Disable Qlementine control animations.")});
     parser.process(a);
+#if defined(ZEROSLACK_ELA_BUILD)
+    if (parser.isSet(versionOption)) {
+        QTextStream(stdout) << QGuiApplication::applicationDisplayName() << ' '
+                            << QCoreApplication::applicationVersion() << Qt::endl;
+        return 0;
+    }
+#endif
     const QString style = parser.value(styleOption);
     auto& theme = ApplicationThemeManager::instance();
     if ((style != QStringLiteral("classic") && style != QStringLiteral("qlementine") && style != QStringLiteral("ela"))
@@ -71,7 +87,7 @@ int main(int argc, char *argv[])
 
     MainWindow w;
 #if defined(ZEROSLACK_ELA_BUILD)
-    w.setWindowTitle(QStringLiteral("ZeroSlack Ela — %1").arg(QString::fromLatin1(APP_VERSION)));
+    w.setWindowTitle(QStringLiteral("ZeroSlack — %1").arg(QString::fromLatin1(APP_VERSION)));
 #elif defined(ZEROSLACK_PREVIEW_BUILD)
     w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
