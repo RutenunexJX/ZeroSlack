@@ -74,20 +74,24 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 | 滚动和展开 | ElaScrollBar 平滑滚轮，160 ms；Qt/Ela 树展开 | 精确触控板按像素路由；程序定位和新输入即时生效 |
 | 通用只读文字 | ElaPlainTextEdit | Qt 标准操作与英语标签、复制、只读、业务日志 |
 | 页面和标题 | ElaCentralStackedWidget、ElaAppBar、ElaDockWidget、ElaToolBar | 页面生命周期、紧凑图标、窗口及资源状态 |
-| 菜单、对话框、提示 | ElaMenu、ElaContentDialog、ElaToolTip，以及现有反馈适配器 | 确认／取消含义、校验、焦点恢复、提示生命周期 |
+| 菜单、对话框、提示 | ElaMenu 的可中断 160 ms 展开、ElaContentDialog、ElaToolTip，以及现有反馈适配器 | 确认／取消含义、校验、焦点恢复、提示生命周期 |
 | 专业内容和系统能力 | 专用编辑器／图画布、Qt QSplitter、系统文件选择 | 编辑精度、撤销、坐标、工作区、数据和文件格式 |
 
 不添加无业务用途的日历、轮播、Ribbon、状态栏等入口。径向菜单和可交互符号卡片不改成
 普通悬浮提示。Ela 没有 QSplitter 对应类，不能把 Qt 分隔布局列为 Ela 原生组件。
-适配扩展记录在补丁 26；组件存在不等于应用所有权也应由它接管。
+适配扩展记录在补丁 26–27；组件存在不等于应用所有权也应由它接管。
+补丁 27 恢复此前 native-item 路径绕过的菜单展开，同时保留 Qt 菜单语义。
+菜单动作、主题、尺寸变化和输入会终止过渡；含实时编辑控件的 QWidgetAction 菜单不使用快照。
 
 ## ZeroSlack 验证和性能
 
-最终 25 组 CTest 全部通过（79.70 秒），覆盖 100%／200% 控件、树、菜单、对话框、
+补丁 26 的 25 组 CTest 全部通过（79.70 秒）；加入补丁 27 后再次 25/25 通过（84.60 秒），
+覆盖 100%／200% 控件、树、菜单、对话框、
 侧栏、底栏、动效、主窗口、浮窗、编辑背景，以及托管 Tab、设置与 Context 工作区。
 Context 工作区保留 238 项检查。隐藏 Windows HWND 的无边框命中与 Acrylic 检查在
 100%／200% 均为 4/4，通过过程中未显示窗口、抢焦点或操作桌面鼠标。
-补丁 26 对 c482aab 的 13 个供应商源文件重放一致；许可文本保持不变。
+补丁 26 对 c482aab 的 13 个供应商源文件重放一致；补丁 27 对 89eea24 的 3 个文件逐字节一致。
+许可文本保持不变。共享 xIPs ABI 要求 `ela=454cac2d-p27`，实际正式 DLL 加载验证在发布前执行。
 
 性能采用同一 MainWindow、5000 行 SystemVerilog、模块框图和每场景 12 次切换。
 下表为 3840×2160、DPR 1；dispatch 是入口执行中位耗时，P95 是事件间隔，均为 ms。
@@ -102,6 +106,7 @@ Context 工作区保留 238 项检查。隐藏 Windows HWND 的无边框命中�
 1000×700 与 2560×1392 也保留完整记录，前后窗口尺寸一致。只抓抽屉正文，单个快照
 上限 32 MiB，反向复用，结束释放。编辑背景缓存预合成结果，仍保持原来的比例和右下角定位。
 数据来源：`build/ela-migration/ela-suite-panel-before.json`、`ela-suite-panel-final.json`、
-`ela-suite-final-regression.txt`、`ela-suite-hidden-native-{1,2}.txt`、`ela-suite-patch26-provenance.json`。
+`ela-suite-final-regression.txt`、`ela-suite-p27-regression.txt`、`ela-suite-hidden-native-{1,2}.txt`、
+`ela-suite-patch26-provenance.json`、`ela-suite-patch27-provenance.json`。
 后台事件间隔不代表显示器帧率。真实 OLE 拖放、跨屏混合 DPI、合成器观感和结束闪动仍没有
 桌面鼠标工具验收，不能据此声明全部视觉验收通过。

@@ -29,6 +29,6 @@ inline QByteArray xipsExpectedBrowserAbi()
 #else
     result += ";compiler=unknown";
 #endif
-    result += ";ela=454cac2d-p26";
+    result += ";ela=454cac2d-p27";
     return result;
 }

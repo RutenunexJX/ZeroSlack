@@ -289,5 +289,21 @@ selection and persistence remain application responsibilities. Patch 26 replays
 13 vendor source files byte-for-byte after line-ending normalization. MIT and
 font OFL license text and attribution are unchanged.
 
+Apply `patches/27-zeroslack-interruptible-menu-popup.patch` after patch 26.
+ElaMenu restores its upstream snapshot-position reveal even when native Qt item
+content is enabled. The animation is owned by the menu, runs for 160 ms with
+OutCubic easing, and is settled immediately on pointer/keyboard input, resize,
+hide, action or theme changes. Qt continues to own placement, action dispatch,
+shortcuts, checked/disabled state and submenu navigation. Submenus inherit the
+native-item policy. Menu capture is bounded to 8 MiB; menus containing live
+QWidgetAction editors remain live without a snapshot. Destruction cancels the
+animation. This is an adapted upstream reveal, not a replacement menu gesture
+system. The three source files replay byte-for-byte. MIT/OFL remain unchanged.
+
+The shared ZeroSlack/xIPs native browser contract identifies this capability
+baseline as `ela=454cac2d-p27`; rebuild both packages together. This supplements
+the existing Qt, pointer-size and compiler ABI checks and does not change the
+native surface v1 data contract.
+
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

@@ -31,6 +31,9 @@
 #include "ElaCentralStackedWidget.h"
 #include "ElaDrawerArea.h"
 #include "ElaComboBox.h"
+#include "ElaMenu.h"
+#include <QAction>
+#include <QWidgetAction>
 #include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QStackedWidget>
@@ -44,6 +47,76 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void nativeMenuAnimationPreservesImmediateActions() {
+        QWidget host;
+        host.resize(400, 240); host.show(); settle();
+        auto* menu = qobject_cast<ElaMenu*>(UiControls::menu(&host));
+        QVERIFY(menu);
+        auto* disabled = menu->addAction("Unavailable");
+        disabled->setEnabled(false);
+        auto* checked = menu->addAction("&Enabled");
+        checked->setCheckable(true);
+        auto* child = qobject_cast<ElaMenu*>(UiControls::addMenu(menu, "More"));
+        QVERIFY(child);
+        auto* nested = child->addAction("Nested");
+        QSignalSpy selected(checked, &QAction::triggered);
+        const QPoint position = host.mapToGlobal(QPoint(20, 20));
+        const int animationCount = menu->findChildren<QPropertyAnimation*>().size();
+        for (int repeat = 0; repeat < 6; ++repeat) {
+            menu->popup(position);
+            QVERIFY(menu->isPopupAnimating());
+            QTest::keyClick(menu, Qt::Key_Down);
+            QVERIFY(!menu->isPopupAnimating());
+            QCOMPARE(menu->activeAction(), checked);
+            QTest::keyClick(menu, Qt::Key_Return);
+            QVERIFY(!menu->isVisible());
+            QCOMPARE(selected.size(), repeat + 1);
+            QCOMPARE(checked->isChecked(), repeat % 2 == 0);
+            QCOMPARE(menu->findChildren<QPropertyAnimation*>().size(), animationCount);
+        }
+        menu->popup(position);
+        QTest::keyClick(menu, Qt::Key_Escape);
+        QVERIFY(!menu->isVisible());
+        QVERIFY(!menu->isPopupAnimating());
+        menu->popup(position);
+        menu->setActiveAction(child->menuAction());
+        QTest::keyClick(menu, Qt::Key_Right);
+        QTRY_VERIFY(child->isVisible());
+        QTest::keyClick(child, Qt::Key_Down);
+        QCOMPARE(child->activeAction(), nested);
+        QTest::keyClick(child, Qt::Key_Escape);
+        menu->hide();
+        menu->popup(position);
+        checked->setText("Changed while opening");
+        QVERIFY(!menu->isPopupAnimating());
+        menu->hide();
+        menu->popup(position);
+        menu->resize(menu->width() + 10, menu->height());
+        QVERIFY(!menu->isPopupAnimating());
+        menu->hide();
+        menu->popup(position);
+        QTRY_VERIFY(!menu->isPopupAnimating());
+        QVERIFY(menu->isVisible());
+        QVERIFY(!menu->grab().isNull());
+        menu->hide();
+        auto* editorAction = new QWidgetAction(menu);
+        auto* embedded = new QLineEdit("Live editor");
+        editorAction->setDefaultWidget(embedded);
+        menu->addAction(editorAction);
+        menu->popup(position);
+        QVERIFY(!menu->isPopupAnimating());
+        QTest::keyClicks(embedded, "!");
+        QVERIFY(embedded->text().contains('!'));
+        menu->hide();
+        menu->removeAction(editorAction);
+        delete editorAction;
+        menu->popup(position);
+        QPointer<ElaMenu> deleted(menu);
+        delete menu;
+        QTest::qWait(180);
+        QVERIFY(deleted.isNull());
+    }
+
     void nativeComboPopupRemainsInterruptible() {
         QWidget host;
         auto* layout = new QVBoxLayout(&host);

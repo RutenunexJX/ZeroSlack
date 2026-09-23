@@ -10,8 +10,9 @@ bottom drawer and context-panel folding. Qt QSplitter now owns parallel-panel
 resizing. Combo boxes restore Ela popup and indicator animations without blocking
 selection or dismissal; ordinary views use smooth wheel scrolling and tree expansion
 accepts new input immediately. Editor background caching reduces large-window
-sidebar repaint cost. Includes Ela patch 26 with unchanged MIT/OFL attribution.
-Embedded xIPs requires the matching Ela patch-26 native browser ABI.
+sidebar repaint cost. Menus use Ela's reveal while accepting input immediately.
+Includes Ela patches 26-27 with unchanged MIT/OFL attribution. Embedded xIPs
+requires the matching Ela patch-27 native browser ABI.
 
 Release 0.31.9 adopts Ela sidebar display modes and overlay slides, and immediate
 tab floating/merging through Ela's gesture routing. Context windows use ElaDockWidget
