@@ -315,5 +315,14 @@ ElaListView, ElaTreeView and ElaTableView destruction at 100% and 200% scale.
 The one-file patch replays byte-for-byte. It does not change the public API or
 class layout; native browser capability ABI remains p27. MIT/OFL are unchanged.
 
+Apply `patches/29-wave-overlay-origin-lifetime.patch` after patch 28.
+WaveWorkbench's color-picker regression exposed an overlay scrollbar retaining
+its replaced origin scrollbar. Guarded pointers now track the origin and area;
+origin destruction removes the event filter, cancels scrolling and hides the
+overlay. Configuration, value forwarding and geometry tolerate released origins.
+The three-file patch replays byte-for-byte. ZeroSlack exercises origin replacement,
+deferred deletion, resize and capture at 100% and 200% scale. This private-lifetime
+fix does not change public API or class layout; browser ABI remains p27.
+
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

@@ -71,7 +71,7 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 | 通用输入、按钮、数字、选择 | ElaLineEdit、ElaPushButton、ElaToolButton、ElaSpinBox、ElaDoubleSpinBox、ElaCheckBox、ElaRadioButton、ElaSlider | 字体、最小尺寸、英文菜单、校验和命令 |
 | 下拉选择 | ElaComboBox 的高度／位置及指示器动画；输入立即中断 | 选项模型、业务提交；关闭不等待动画 |
 | 普通树、表、列表 | ElaTreeView、ElaTableView、ElaListView；依赖 item API 的 Qt 容器使用 Ela 官方 style/delegate | role、复选状态、模型、排序与导航 |
-| 滚动和展开 | ElaScrollBar 平滑滚轮，160 ms；Qt/Ela 树展开 | 精确触控板按像素路由；程序定位和新输入即时生效 |
+| 滚动和展开 | ElaScrollBar 平滑滚轮，160 ms；Qt/Ela 树展开 | 普通视图按像素路由；文本保持 Qt 行单位；程序定位和新输入即时生效 |
 | 通用只读文字 | ElaPlainTextEdit | Qt 标准操作与英语标签、复制、只读、业务日志 |
 | 页面和标题 | ElaCentralStackedWidget、ElaAppBar、ElaDockWidget、ElaToolBar | 页面生命周期、紧凑图标、窗口及资源状态 |
 | 菜单、对话框、提示 | ElaMenu 的可中断 160 ms 展开、ElaContentDialog、ElaToolTip，以及现有反馈适配器 | 确认／取消含义、校验、焦点恢复、提示生命周期 |
@@ -79,7 +79,7 @@ WaveWorkbench、SimDock、xIPs 全部适用组件与原生交互能力，最后�
 
 不添加无业务用途的日历、轮播、Ribbon、状态栏等入口。径向菜单和可交互符号卡片不改成
 普通悬浮提示。Ela 没有 QSplitter 对应类，不能把 Qt 分隔布局列为 Ela 原生组件。
-适配扩展记录在补丁 26–28；组件存在不等于应用所有权也应由它接管。
+适配扩展记录在补丁 26–29；组件存在不等于应用所有权也应由它接管。
 补丁 27 恢复此前 native-item 路径绕过的菜单展开，同时保留 Qt 菜单语义。
 菜单动作、主题、尺寸变化和输入会终止过渡；含实时编辑控件的 QWidgetAction 菜单不使用快照。
 
@@ -96,6 +96,17 @@ Context 工作区保留 238 项检查。隐藏 Windows HWND 的无边框命中�
 xIPs 新增聚焦列表销毁用例发现 ElaListView 提前释放 style。补丁 28 合入其已验证修复，
 主任务增加裸列表／树／表聚焦销毁回归；100%／200% 控件、导航和弹出 6/6 通过（22.55 秒）。
 因此 0.31.10 暂存候选不部署；既有提交与 tag 保持不变，最终正式包递增至 0.31.11。
+
+WaveWorkbench 颜色选择器回归发现 overlay 滚动条仍引用被替换的源滚动条。补丁 29
+使用 QPointer 和销毁清理，三个文件重放逐字节一致；源条替换、延迟销毁、缩放与抓图
+回归通过。Pinloom 联测进一步发现 QPlainTextEdit 使用行单位，不能直接套用像素增量；
+普通只读文本的精确滚动交由 Qt 处理，角度滚轮继续使用 Ela 动画。两档 DPI 下均逐事件
+对比原生 Qt 的横纵位置和最终文本。专业代码编辑器保持独立滚动语义。
+合入补丁 29 和文本滚动修复后，25 组完整相关回归再次全部通过（82.25 秒）。
+
+实际 xIPs 插件已使用 ZeroSlack 干净 Release 暂存中的核心及 Ela DLL 验证，100%／200%
+均为 4/4，覆盖原生视图创建、使用、导出哈希、引用及工作区关闭，并断言创建和销毁
+插件不改变宿主应用字体和调色板。最终六应用发布仍需使用最终暂存重验。
 
 性能采用同一 MainWindow、5000 行 SystemVerilog、模块框图和每场景 12 次切换。
 下表为 3840×2160、DPR 1；dispatch 是入口执行中位耗时，P95 是事件间隔，均为 ms。

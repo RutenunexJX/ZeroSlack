@@ -103,7 +103,11 @@ class XipsContextProviderTest final : public QObject
         XipsContextProvider provider(nullptr, &workspaces);
         QVERIFY(!QIcon(provider.iconKey()).isNull());
         const auto resource = provider.activationResource(root);
+        const auto hostFont = QApplication::font();
+        const auto hostPalette = QApplication::palette();
         std::unique_ptr<QWidget> view(provider.createView(resource, nullptr));
+        QCOMPARE(QApplication::font(), hostFont);
+        QCOMPARE(QApplication::palette(), hostPalette);
         view->resize(480, 620);
         view->show();
         auto *panel = view->findChild<QWidget *>("xipsBrowser");
@@ -145,6 +149,9 @@ class XipsContextProviderTest final : public QObject
             view->grab().save(screenshots + "/zeroslack-xips.png");
         workspaces.closeWorkspace();
         QCOMPARE(take->text(), QString("Use…"));
+        view.reset();
+        QCOMPARE(QApplication::font(), hostFont);
+        QCOMPARE(QApplication::palette(), hostPalette);
     }
 };
 QTEST_MAIN(XipsContextProviderTest)

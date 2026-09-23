@@ -289,6 +289,22 @@ void ownViewStyle(QWidget* view, QStyle* style) {
     view->setMouseTracking(true);
 }
 
+class TextUnitScrollBar final : public ElaScrollBar {
+public:
+    TextUnitScrollBar(Qt::Orientation orientation, QWidget* parent) : ElaScrollBar(orientation, parent) {
+        setProperty("zeroslackTextScrollUnits", true);
+    }
+protected:
+    void wheelEvent(QWheelEvent* event) override {
+        if (!event->pixelDelta().isNull()) {
+            stopSmoothWheel();
+            QScrollBar::wheelEvent(event);
+        } else {
+            ElaScrollBar::wheelEvent(event);
+        }
+    }
+};
+
 class PrecisionWheelRouter final : public QObject {
 public:
     explicit PrecisionWheelRouter(QAbstractScrollArea* view) : QObject(view), area(view) {
@@ -306,6 +322,11 @@ protected:
         auto* wheel = static_cast<QWheelEvent*>(event);
         const QPoint pixels = wheel->pixelDelta();
         if (pixels.isNull()) return false;
+        if (qobject_cast<QPlainTextEdit*>(area)) {
+            for (auto* scroll : {area->horizontalScrollBar(), area->verticalScrollBar()})
+                if (auto* bar = qobject_cast<ElaScrollBar*>(scroll)) bar->stopSmoothWheel();
+            return false;
+        }
         // Qt item views can choose the wrong axis when only pixelDelta is present.
         auto* bar = (qAbs(pixels.x()) > qAbs(pixels.y()) || wheel->modifiers().testFlag(Qt::ShiftModifier))
             ? area->horizontalScrollBar() : area->verticalScrollBar();
@@ -549,8 +570,9 @@ void UiControls::enableSmoothScrolling(QAbstractScrollArea* area) {
         for (const auto orientation : {Qt::Horizontal, Qt::Vertical}) {
             auto* current = orientation == Qt::Horizontal ? area->horizontalScrollBar() : area->verticalScrollBar();
             auto* bar = qobject_cast<ElaScrollBar*>(current);
-            if (!bar) {
-                bar = new ElaScrollBar(orientation, area);
+            const bool textUnits = qobject_cast<QPlainTextEdit*>(area);
+            if (!bar || (textUnits && !bar->property("zeroslackTextScrollUnits").toBool())) {
+                bar = textUnits ? new TextUnitScrollBar(orientation, area) : new ElaScrollBar(orientation, area);
                 if (orientation == Qt::Horizontal) area->setHorizontalScrollBar(bar);
                 else area->setVerticalScrollBar(bar);
             }

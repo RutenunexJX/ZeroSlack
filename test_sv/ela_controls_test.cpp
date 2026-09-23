@@ -35,9 +35,13 @@
 #include "ElaListView.h"
 #include "ElaTreeView.h"
 #include "ElaTableView.h"
+#include "ElaScrollBar.h"
+#include <QListView>
 #include <QStandardItemModel>
 #include <QAction>
 #include <QWidgetAction>
+#include <QScrollBar>
+#include <QWheelEvent>
 #include <QPlainTextEdit>
 #include <QPropertyAnimation>
 #include <QStackedWidget>
@@ -51,6 +55,64 @@ const QList<ThemeMode> modes{ThemeMode::Light, ThemeMode::Dark, ThemeMode::Catpp
 class ElaControlsTest final : public QObject {
     Q_OBJECT
 private slots:
+    void replacedOverlayOriginSurvivesResize() {
+        QListView view;
+        auto* origin = new QScrollBar(Qt::Vertical, &view);
+        QPointer<QScrollBar> removed(origin);
+        view.setVerticalScrollBar(origin);
+        auto* overlay = new ElaScrollBar(origin, &view);
+        origin->setRange(0, 1000);
+        overlay->setSmoothWheelEnabled(true);
+        view.show(); settle();
+        view.setVerticalScrollBar(new QScrollBar(Qt::Vertical, &view));
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(removed.isNull());
+        QVERIFY(overlay->isHidden());
+        overlay->setValue(20);
+        for (int i = 0; i < 10; ++i) {
+            view.resize(300 + i, 200);
+            QVERIFY(!view.grab().isNull());
+            QVERIFY(overlay->isHidden());
+        }
+    }
+
+    void plainTextPrecisionMatchesQtUnits() {
+        QWidget host;
+        auto* layout = new QVBoxLayout(&host);
+        const QString content = (QString(120, 'x') + '\n').repeated(500);
+        auto* edit = UiControls::readOnlyText(content, &host);
+        auto* native = new QPlainTextEdit(content, &host);
+        native->setReadOnly(true);
+        native->setFont(edit->font());
+        for (auto* text : {edit, native}) {
+            text->setFixedSize(300, 160);
+            text->setLineWrapMode(QPlainTextEdit::NoWrap);
+            layout->addWidget(text);
+        }
+        host.show(); settle();
+        for (auto* text : {edit, native}) {
+            text->verticalScrollBar()->setValue(50);
+            text->horizontalScrollBar()->setValue(50);
+        }
+        const QList<QPair<QPoint, QPoint>> packets{
+            {{0, -7}, {}}, {{0, -7}, {0, -120}}, {{0, 7}, {0, 120}},
+            {{-7, 0}, {}}, {{-7, 0}, {-120, 0}}, {{7, 0}, {120, 0}}};
+        for (int repeat = 0; repeat < 10; ++repeat) {
+            for (const auto& packet : packets) {
+                for (auto* text : {edit, native}) {
+                    QWheelEvent wheel(QPointF(5, 5), QPointF(5, 5), packet.first, packet.second,
+                        Qt::NoButton, Qt::NoModifier, Qt::ScrollUpdate, false);
+                    QApplication::sendEvent(text->viewport(), &wheel);
+                }
+                QCOMPARE(edit->verticalScrollBar()->value(), native->verticalScrollBar()->value());
+                QCOMPARE(edit->horizontalScrollBar()->value(), native->horizontalScrollBar()->value());
+            }
+        }
+        QTest::qWait(180);
+        QCOMPARE(edit->verticalScrollBar()->value(), native->verticalScrollBar()->value());
+        QCOMPARE(edit->toPlainText(), content);
+    }
+
     void focusedNativeViewsSurviveTeardown() {
         QWidget host;
         auto* layout = new QVBoxLayout(&host);
