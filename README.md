@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.14`
+Current version: `v0.31.15`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.14`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.15`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -156,17 +156,24 @@ When a working-tree package is explicitly requested without committing or taggin
 a null releaseTag; packaging never creates a commit or tag. The default clean-source
 check remains in force unless -AllowDirty is supplied.
 The former classic release channel is no longer maintained.
-The current release is `0.31.14`. Ela is now the sole formal package,
+The current release is `0.31.15`. Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
+Release 0.31.15 reduces sidebar stutter while keeping the live editor, background,
+text appearance and editing state. It preserves Ela's native sibling-window policy,
+avoids redundant opaque background painting, retains scaled backgrounds in a bounded
+shared cache and draws semantic foreground colors from Qt's existing shaped glyphs.
+Complex text and selections retain Qt's original painter. Native Windows DPR 2
+measurements show maximized left/right median Paint dispatch intervals improving
+from about 37/33 ms to 20–21/17–18 ms; these are event timings, not presented frames
+or a guarantee of stable 60 FPS. See [release validation](docs/ela-migration.md#03115-sidebar-rendering-performance).
 Release 0.31.14 makes the outer Context sidebar resize the editor and background
 continuously while preserving user width, reversal and floating/redocking behavior.
 The left and right sidebars use a local 120 Hz target clock with unchanged 255/300 ms
 durations. Actual paint cadence depends on rendering load; native high-DPI maximized
 windows do not reach 120 FPS. The clean formal package records its exact release
-commit and tag. Sidebar smoothness on high-DPI maximized windows remains under
-investigation; this release does not resolve the newly reported stutter.
+commit and tag; the rendering improvements above are introduced in 0.31.15.
 Release 0.31.13 restores the visible ZeroSlack name and version at the top left,
 beside the workspace icon strip. The app identity stays visible when files change
 and shares the title bar with workspace icons and window controls without overlap.

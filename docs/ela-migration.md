@@ -1073,3 +1073,31 @@ Workspace Hub。DPR 1.5 下，1000 × 700 与最大化 2560 × 1392 各运行左
 68 个清单文件、四个二进制与构建目录一致，18 份 Ela 补丁与许可证及仅系统 PATH
 下的 GUI／CLI 版本调用均通过核验，见 `stage15-package-verification.json`。
 本轮未提交、推送或替换正式包。
+
+### 0.31.15 Sidebar rendering performance
+
+0.31.15 纳入 2026-09-26 统一验收通过的侧栏绘制优化。保留 Ela 初始化的原生兄弟窗口策略，
+避免隐藏上下文浮窗导致编辑器和侧栏生成多余原生子窗口；编辑器以完整不透明绘制避免重复清除。
+背景采用应用生命周期内共享的 64 MiB 有界缓存，并只填充图片未覆盖的边缘。语义前景色复用
+QTextLayout 已排版字形；复杂选区、当前行高亮、IME、RTL、换行等情况保留 Qt 原绘制路径。
+没有改字体引擎、修改文档布局或引入截图动画；Ela 计时器及过渡时长保持 0.31.14 的实现。
+
+候选与已发布 v0.31.14 使用同一个测量程序，在 Windows、实际 DPR 2、60 Hz、5002 行
+498926 字节文本、1280×800 普通窗口及 1536×912 最大化窗口下做两轮反序对照，共 192 次开合。
+最大化左展开/收起 Paint 间隔中位数为 37.47/37.05 → 21.13/20.34 ms，右展开/收起为
+33.72/32.43 → 18.06/17.17 ms。另一次独立验收的 96 次动作复现同方向改善。
+这些是编辑器 Paint 分发间隔，不是屏幕呈现帧率；最大化左侧仍不保证稳定 60 FPS。
+
+候选验证包括 22 个相关 CTest；私有 test_sv/new、test_sv/huge_prj 及 local_fixture_names.h
+按用户要求保持排除，未将完整测试套件描述为全绿。原生动画 20/20、工作区切换 16/16、
+xIPs 4/4、Context workspace 256 断言通过。背景测试在 DPR 1.5/2 均 7/7；独立验收补充
+七种字体、连字、语义角色、RTL、IME、换行、选择、滚动、字号/行高与主题，共 44 组文字像素
+与 Qt 原绘制完全一致。首轮发现的当前行边缘 1 像素差异通过保留 Qt 原绘制路径修复。
+
+可在启用 Ela 的 Release 构建中运行 `sidebar_animation_benchmark`，设置 Windows QPA、
+`QT_SCALE_FACTOR=1`（本机实际 DPR 2）、`ZEROSLACK_SIDEBAR_FPS_BENCHMARK=1` 和
+`ZEROSLACK_SIDEBAR_TRACE_MODE=minimal`，输出路径作为唯一参数；最大化另设
+`ZEROSLACK_SIDEBAR_FPS_MAXIMIZED=1`。测量仅用生成的临时源码和隔离配置。
+本机原始样本与候选记录为 `build/validation/20260926-sidebar-smoothness/final/`，独立验收为
+`build/validation/20260926-sidebar-smoothness-coordinator/candidate-review/`，正式构建/发布记录为
+`build/validation/20260926-sidebar-0.31.15-release/`。

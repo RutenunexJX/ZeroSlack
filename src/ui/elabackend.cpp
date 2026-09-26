@@ -7,13 +7,12 @@
 
 void ElaBackend::initialize()
 {
-    // Ela initializes resources and native helpers, but ZeroSlack owns the
-    // application font and window flags. This runs before any widgets exist.
+    // Preserve Ela's native-sibling policy: creating the floating context window
+    // must not turn the editor and every dock sibling into a native child window.
+    // ZeroSlack still owns the application font. No widgets exist yet.
     const auto font = qApp->font();
-    const bool siblings = QApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     eApp->init();
     qApp->setFont(font);
-    QApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings, siblings);
     UiToolTips::install();
 }
 

@@ -4,6 +4,7 @@
 #include "applicationthememanager.h"
 #include "actionregistry.h"
 #include "editorruntime.h"
+#include "editortextpaint.h"
 #include "editorlexicalboundary.h"
 #include "editorsemanticcontextservice.h"
 #include "shareddocument.h"
@@ -381,6 +382,10 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     , state(std::make_unique<MyCodeEditorState>())
 {
     setProperty("codeEditorSurface", true);
+    // paintEvent fills the entire dirty region with an opaque editor background.
+    // Avoid clearing it again or repainting the parent surface underneath it.
+    viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
+    viewport()->setAutoFillBackground(false);
     state->attachToEditor(this);
     ApplicationThemeManager::instance().preserveClassicSurface(this);
 }
@@ -939,7 +944,8 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     }
     if (state->projection.active())
         state->projection.paint(this, event);
-    else
+    else if (qEnvironmentVariableIsSet("ZEROSLACK_NATIVE_TEXT_PAINT")
+             || !EditorTextPaint::paint(this, event, getPaintContext()))
         QPlainTextEdit::paintEvent(event);
     state->paintFoldPlaceholders(this, event);
     state->paintGhostAnnotations(this, event);

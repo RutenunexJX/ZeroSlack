@@ -12,10 +12,12 @@
 #include "ElaNavigationBar.h"
 #include "ElaDrawerArea.h"
 #include <QApplication>
+#include <QAbstractEventDispatcher>
 #include <QDockWidget>
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -24,8 +26,11 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
+#include <QWindow>
 #include <algorithm>
 #include <cstdio>
+#include <QTextBlock>
+#include <QTextLayout>
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -64,9 +69,75 @@ public:
     QPointer<QWidget> editorViewport;
     QJsonArray viewportEvents;
     bool tail = false;
+    QString traceMode = qEnvironmentVariable("ZEROSLACK_SIDEBAR_TRACE_MODE", "minimal");
+    struct ViewSample { int type; qint64 start, duration; int width, height; bool tail; };
+    struct DispatchSample { quintptr receiver; int type, depth; qint64 start, duration, children; bool tail; };
+    QVector<ViewSample> viewSamples;
+    QVector<DispatchSample> dispatchSamples;
+    QHash<quintptr, QString> owners;
+    qint64 childTimes[256]{};
+    int dispatchDepth = 0;
+    qint64 rootDispatchNs = 0;
+    qint64 sleepingSince = -1;
+    qint64 sleepingNs = 0;
+
+    void resetSamples() {
+        viewSamples.clear(); viewSamples.reserve(1024);
+        dispatchSamples.clear(); dispatchSamples.reserve(32768);
+        dispatchDepth = 0; rootDispatchNs = 0; sleepingNs = 0; sleepingSince = -1;
+        owners.clear();
+        const auto identify = [this](QObject* object) {
+            owners[quintptr(object)] = QString("%1/%2@%3 parent=%4/%5")
+                .arg(object->metaObject()->className(), object->objectName()).arg(quintptr(object), 0, 16)
+                .arg(object->parent() ? object->parent()->metaObject()->className() : "none",
+                     object->parent() ? object->parent()->objectName() : QString());
+        };
+        for (auto* widget : QApplication::allWidgets()) identify(widget);
+        for (auto* window : QGuiApplication::allWindows()) identify(window);
+        for (auto* object : findChildren<QObject*>()) identify(object);
+        if (editorViewport && editorViewport->window())
+            for (auto* object : editorViewport->window()->findChildren<QObject*>()) identify(object);
+    }
+
+    void finishSamples() {
+        if (traceMode == "legacy") return;
+        for (const auto& sample : viewSamples)
+            viewportEvents.append(QJsonObject{{"event", sample.type == QEvent::Paint ? "paint" : "resize"},
+                {"ms", sample.start / 1e6}, {"handlerMs", sample.duration / 1e6}, {"tail", sample.tail},
+                {"width", sample.width}, {"height", sample.height}});
+    }
+
+    QJsonArray dispatchJson() const {
+        QJsonArray output;
+        for (const auto& sample : dispatchSamples)
+            output.append(QJsonObject{{"owner", owners.value(sample.receiver, "unregistered")},
+                {"type", sample.type}, {"depth", sample.depth}, {"ms", sample.start / 1e6},
+                {"handlerMs", sample.duration / 1e6}, {"exclusiveMs", (sample.duration-sample.children)/1e6},
+                {"tail", sample.tail}});
+        return output;
+    }
 
     bool notify(QObject* receiver, QEvent* event) override {
         const auto type = event->type();
+        if (measuring && traceMode != "legacy") {
+            if (traceMode == "off") return QApplication::notify(receiver, event);
+            const bool viewportEvent = receiver == editorViewport && (type == QEvent::Resize || type == QEvent::Paint);
+            const bool profile = traceMode == "profile";
+            if (!viewportEvent && !profile) return QApplication::notify(receiver, event);
+            const qint64 start = frames.nsecsElapsed();
+            const int depth = dispatchDepth++;
+            Q_ASSERT(depth < 256);
+            childTimes[depth] = 0;
+            const bool handled = QApplication::notify(receiver, event);
+            const qint64 elapsed = frames.nsecsElapsed() - start;
+            --dispatchDepth;
+            if (depth) childTimes[depth - 1] += elapsed;
+            else if (!tail) rootDispatchNs += elapsed;
+            if (profile) dispatchSamples.append({quintptr(receiver), int(type), depth, start, elapsed, childTimes[depth], tail});
+            if (viewportEvent && editorViewport)
+                viewSamples.append({int(type), start, elapsed, editorViewport->width(), editorViewport->height(), tail});
+            return handled;
+        }
         if (!measuring || (type != QEvent::Paint && type != QEvent::Resize
             && type != QEvent::LayoutRequest && type != QEvent::UpdateRequest))
             return QApplication::notify(receiver, event);
@@ -99,6 +170,13 @@ public:
 
 int main(int argc, char** argv) {
     MeasuredApplication app(argc, argv); app.setQuitOnLastWindowClosed(false);
+    QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::aboutToBlock, &app, [&] {
+        if (app.measuring && !app.tail) app.sleepingSince = app.frames.nsecsElapsed();
+    });
+    QObject::connect(app.eventDispatcher(), &QAbstractEventDispatcher::awake, &app, [&] {
+        if (app.measuring && !app.tail && app.sleepingSince >= 0) app.sleepingNs += app.frames.nsecsElapsed() - app.sleepingSince;
+        app.sleepingSince = -1;
+    });
     if (argc > 2) return 2;
     const QString outputPath = argc == 2 ? QString::fromLocal8Bit(argv[1])
         : QCoreApplication::applicationDirPath() + "/panel-native-benchmark.json";
@@ -175,6 +253,7 @@ int main(int argc, char** argv) {
         QJsonArray actions;
         for (int i = 0; i < 12; ++i) {
             app.previousFrame = -1; app.viewportEvents = {}; app.tail = false;
+            app.resetSamples();
             app.frames.start(); app.measuring = true;
             const double cpuStart = threadCpuMs();
             QElapsedTimer duration; duration.start();
@@ -211,11 +290,14 @@ int main(int argc, char** argv) {
             app.tail = true;
             QTest::qWait(20);
             app.measuring = false;
+            app.finishSamples();
             durations.append(actionMs);
             actions.append(QJsonObject{{"index", i},
                 {"opening", scene == "left" ? i % 2 != 0 : i % 2 == 0},
                 {"durationMs", actionMs}, {"tailMs", duration.nsecsElapsed() / 1e6 - actionMs},
-                {"uiThreadCpuMs", cpuMs}, {"viewportEvents", app.viewportEvents}});
+                {"uiThreadCpuMs", cpuMs}, {"viewportEvents", app.viewportEvents},
+                {"rootDispatchMs", app.rootDispatchNs / 1e6}, {"dispatcherBlockMs", app.sleepingNs / 1e6},
+                {"dispatchEvents", app.dispatchJson()}});
             if ((app.compositor && app.compositor->isActive()) || bar->isDisplayModeAnimating()
                 || (app.drawer && app.drawer->isDrawerAnimating())) return 8;
         }
@@ -228,8 +310,18 @@ int main(int argc, char** argv) {
             return sorted.isEmpty() ? 0.0 : sorted[qMin(sorted.size() - 1, qsizetype(fraction * sorted.size()))];
         };
         const auto metrics = editor->hotPathMetricsForTest();
+        int visibleCharacters = 0, visibleFormats = 0, visibleBlocks = 0;
+        const int lastVisible = editor->cursorForPosition(editor->viewport()->rect().bottomRight()).blockNumber();
+        for (auto block = editor->cursorForPosition(QPoint(0, 0)).block();
+             block.isValid() && block.blockNumber() <= lastVisible; block = block.next()) {
+            ++visibleBlocks;
+            visibleCharacters += block.text().size();
+            visibleFormats += block.layout()->formats().size();
+        }
         scenarios.append(QJsonObject{{"scene", scene}, {"width", host.width()}, {"height", host.height()},
             {"editorWidth", editor->width()}, {"editorHeight", editor->height()},
+            {"visibleCharacters", visibleCharacters}, {"visibleFormats", visibleFormats},
+            {"visibleBlocks", visibleBlocks}, {"extraSelections", editor->extraSelections().size()},
             {"actions", actions},
             {"durationsMs", durations}, {"frameIntervals", sorted.size()},
             {"dispatchMs", dispatchTimes}, {"renderers", renderers},
@@ -244,12 +336,21 @@ int main(int argc, char** argv) {
     }
     QFile output(outputPath);
     if (!output.open(QIODevice::WriteOnly)) return 9;
+    QJsonArray nativeWidgets;
+    for (auto* widget : host.findChildren<QWidget*>())
+        if (widget->internalWinId()) nativeWidgets.append(QJsonObject{{"class", widget->metaObject()->className()},
+            {"name", widget->objectName()}, {"nativeAttribute", widget->testAttribute(Qt::WA_NativeWindow)},
+            {"width", widget->width()}, {"height", widget->height()}, {"isWindow", widget->isWindow()}});
     output.write(QJsonDocument(QJsonObject{{"platform", QApplication::platformName()},
+        {"traceMode", app.traceMode}, {"nativeWidgets", nativeWidgets},
         {"devicePixelRatio", host.devicePixelRatioF()}, {"transitionsPerSize", 12},
         {"qtVersion", qVersion()}, {"screenRefreshHz", host.screen()->refreshRate()},
+        {"dontCreateNativeWidgetSiblings", QApplication::testAttribute(Qt::AA_DontCreateNativeWidgetSiblings)},
         {"windowMode", maximized ? "maximized" : "window"},
         {"sourceLines", 5002}, {"sourceBytes", source.toUtf8().size()},
         {"theme", "Light"}, {"viewportBaseColor", editor->viewport()->palette().color(QPalette::Base).name()},
+        {"viewportOpaque", editor->viewport()->testAttribute(Qt::WA_OpaquePaintEvent)},
+        {"viewportAutoFill", editor->viewport()->autoFillBackground()},
         {"note", "Actual editor viewport Resize/Paint dispatches, not presented display frames. Action duration excludes the separately recorded 20 ms tail. handlerMs is inclusive dispatch wall time; uiThreadCpuMs is Windows thread CPU time, with OS accounting granularity. Legacy aggregate event costs can nest."},
         {"scenarios", scenarios}}).toJson());
     std::puts("Panel animation benchmark complete.");

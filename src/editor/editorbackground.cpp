@@ -1,7 +1,26 @@
 #include "editorbackground.h"
 
 #include <QPainter>
-#include <QPixmapCache>
+#include <QApplication>
+#include <QCache>
+#include <QPointer>
+
+namespace {
+class BackgroundCache final : public QObject {
+public:
+    BackgroundCache() : QObject(qApp), pixmaps(64 * 1024) {}
+    // Shared across editors. A DPR 2 background can exceed QPixmapCache's
+    // default total limit by itself; retain both scrollbar-height variants.
+    QCache<QString, QPixmap> pixmaps;
+};
+
+QCache<QString, QPixmap>& backgroundCache()
+{
+    static QPointer<BackgroundCache> cache;
+    if (!cache) cache = new BackgroundCache;
+    return cache->pixmaps;
+}
+}
 
 void EditorBackground::setOptions(const QString& preset, const QString& customPath, int opacity)
 {
@@ -30,7 +49,7 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
 {
     painter.save();
     painter.setClipRect(dirty);
-    painter.fillRect(dirty, base);
+    bool painted = false;
     if (enabled()) {
         if (!loadAttempted) {
             source.load(imagePath);
@@ -50,10 +69,12 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
             const QColor surround(blend(base.red(), sourceBackground.red()),
                                    blend(base.green(), sourceBackground.green()),
                                    blend(base.blue(), sourceBackground.blue()));
-            painter.fillRect(dirty, surround);
+            painted = true;
             // Width-only dock animation reuses one opaque, pre-blended image.
             // Keep the exact fit rectangle; cap the cache for unusually wide images.
-            QSize raster(qMax(1, qRound(qreal(pixelSize.height()) * source.width() / source.height())), pixelSize.height());
+            QSize raster = source.size().scaled(
+                QSize(qMax(pixelSize.width(), qCeil(qreal(pixelSize.height()) * source.width() / source.height())),
+                      pixelSize.height()), Qt::KeepAspectRatio);
             const qreal pixels = qreal(raster.width()) * raster.height();
             if (pixels > 8 * 1024 * 1024) raster *= qSqrt(8.0 * 1024 * 1024 / pixels);
             if (scaled.isNull() || raster != scaledSize || scaledDpr != devicePixelRatio
@@ -61,7 +82,10 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
                 const QString cacheKey = QStringLiteral("zeroslack.editorBackground:%1:%2:%3:%4:%5:%6")
                     .arg(source.cacheKey()).arg(raster.width()).arg(raster.height()).arg(devicePixelRatio)
                     .arg(base.rgba()).arg(opacity);
-                if (!QPixmapCache::find(cacheKey, &scaled)) {
+                auto& cache = backgroundCache();
+                if (const auto* cached = cache.object(cacheKey)) {
+                    scaled = *cached;
+                } else {
                     scaled = QPixmap(raster);
                     scaled.fill(base);
                     QPainter imagePainter(&scaled);
@@ -70,7 +94,8 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
                     imagePainter.drawPixmap(scaled.rect(), source);
                     imagePainter.end();
                     scaled.setDevicePixelRatio(devicePixelRatio);
-                    QPixmapCache::insert(cacheKey, scaled);
+                    const int costKiB = qCeil(qreal(raster.width()) * raster.height() * scaled.depth() / (8 * 1024));
+                    cache.insert(cacheKey, new QPixmap(scaled), costKiB);
                 }
                 scaledSize = raster;
                 scaledDpr = devicePixelRatio;
@@ -80,9 +105,20 @@ void EditorBackground::paint(QPainter& painter, const QRect& viewport, const QRe
             const QSizeF size = QSizeF(target) / devicePixelRatio;
             const QPointF origin(viewport.x() + viewport.width() - size.width(),
                                  viewport.y() + viewport.height() - size.height());
+            if (scaled.hasAlphaChannel()) {
+                painter.fillRect(dirty, surround);
+            } else {
+                // The pre-blended raster covers its fit rectangle completely.
+                // Fill only the two exposed margins, avoiding another full pass.
+                painter.fillRect(QRectF(viewport.x(), viewport.y(), viewport.width(),
+                                        origin.y() - viewport.y()), surround);
+                painter.fillRect(QRectF(viewport.x(), origin.y(), origin.x() - viewport.x(),
+                                        size.height()), surround);
+            }
             painter.setRenderHint(QPainter::SmoothPixmapTransform);
             painter.drawPixmap(QRectF(origin, size), scaled, QRectF(scaled.rect()));
         }
     }
+    if (!painted) painter.fillRect(dirty, base);
     painter.restore();
 }

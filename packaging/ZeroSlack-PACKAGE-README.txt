@@ -1,4 +1,4 @@
-ZeroSlack v0.31.14 Windows package
+ZeroSlack v0.31.15 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
@@ -6,13 +6,20 @@ channel, base commit, branch and dirty source state. An explicitly requested
 working-tree formal package has dirty=true and releaseTag=null. Packaging does
 not create commits or tags; a tag is recorded only when it identifies clean source.
 
+Release 0.31.15 reduces sidebar stutter in large high-DPI windows while keeping
+the editor and background live throughout transitions. Text appearance, editing,
+selections and workspace state are preserved. Native Windows DPR 2 measurements
+show maximized left/right median Paint dispatch intervals improving from about
+37/33 ms to 20–21/17–18 ms. These event timings are not physical display frame
+rates and do not guarantee stable 60 FPS. The clean package records its exact
+source commit, version tag and dirty=false in build-info.json.
+
 Release 0.31.14 makes the outer right sidebar resize the editor and background
 continuously, preserving widths, reversal and floating/redocking behavior. Left
 and right transitions retain their 255/300 ms durations with a local 120 Hz target
 clock. Actual painting remains limited by rendering load, especially in maximized
 high-DPI windows; this is not a claim of 120 displayed frames per second.
-The clean 0.31.14 package records its release commit and tag. The newly reported
-sidebar stutter remains under investigation and is not resolved by repackaging.
+The rendering performance improvements above are introduced in 0.31.15.
 
 Release 0.31.13 restores the visible ZeroSlack name and version at the top left,
 beside the workspace icon strip. Opening or switching files preserves this app

@@ -49,6 +49,7 @@ private slots:
     void backgroundStaysFixedWhenScrollingAndFolding();
     void backgroundChangesPreserveEditingAndOtherViews();
     void customImageFallbackAndDarkTheme();
+    void semanticTextMatchesQtPaint();
 };
 
 void EditorBackgroundTest::presetsAndSettingsPersist()
@@ -185,6 +186,97 @@ void EditorBackgroundTest::customImageFallbackAndDarkTheme()
     ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     editor.setEditorBackground(QStringLiteral("Balancing"), {}, 55);
     saveReview(capture(editor), QStringLiteral("editor-balancing"));
+}
+
+void EditorBackgroundTest::semanticTextMatchesQtPaint()
+{
+    const int flashTime = QApplication::cursorFlashTime();
+    QApplication::setCursorFlashTime(0);
+    MyCodeEditor editor;
+    QString source = QStringLiteral("module colored;\n");
+    QList<SemanticDecoration> decorations;
+    for (int i = 0; i < 60; ++i) {
+        const QString name = QStringLiteral("signal_%1").arg(i);
+        const QString line = QStringLiteral("  logic [31:0] %1; // 保持文字清晰\n").arg(name);
+        SemanticDecoration decoration;
+        decoration.role = SemanticDecorationRole::ActualSignal;
+        decoration.text = name;
+        decoration.startPosition = source.size() + line.indexOf(name);
+        decoration.length = name.size();
+        decorations.append(decoration);
+        source += line;
+    }
+    source += QStringLiteral("endmodule\n");
+    editor.setPlainText(source);
+    editor.setSemanticDecorations(decorations);
+    editor.resize(1040, 700);
+    editor.show();
+    QTest::qWait(30);
+    const auto checkPixels = [&](MyCodeEditor& view, const QString& label) {
+        qputenv("ZEROSLACK_NATIVE_TEXT_PAINT", "1");
+        view.viewport()->update();
+        const QImage native = view.viewport()->grab().toImage();
+        qunsetenv("ZEROSLACK_NATIVE_TEXT_PAINT");
+        view.viewport()->update();
+        const QImage optimized = view.viewport()->grab().toImage();
+        saveReview(native, label + QStringLiteral("-native"));
+        saveReview(optimized, label + QStringLiteral("-optimized"));
+        if (optimized != native) {
+            QRect differences;
+            int count = 0;
+            for (int y = 0; y < native.height(); ++y)
+                for (int x = 0; x < native.width(); ++x)
+                    if (native.pixel(x, y) != optimized.pixel(x, y)) {
+                        differences |= QRect(x, y, 1, 1);
+                        ++count;
+                    }
+            qInfo() << label << "different pixels" << count << differences;
+        }
+        QCOMPARE(optimized, native);
+    };
+    checkPixels(editor, QStringLiteral("semantic-light"));
+    auto selections = editor.extraSelections();
+    QTextEdit::ExtraSelection diagnostic;
+    diagnostic.cursor = QTextCursor(editor.document());
+    diagnostic.cursor.setPosition(decorations[2].startPosition);
+    diagnostic.cursor.setPosition(decorations[2].startPosition + decorations[2].length, QTextCursor::KeepAnchor);
+    diagnostic.format.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+    diagnostic.format.setUnderlineColor(Qt::red);
+    selections.append(diagnostic);
+    editor.setExtraSelections(selections);
+    checkPixels(editor, QStringLiteral("semantic-diagnostic"));
+    selections.removeLast();
+    editor.setExtraSelections(selections);
+    {
+        MyCodeEditor second;
+        second.attachSharedDocument(editor.document());
+        second.resize(700, 550);
+        auto alternateColors = decorations;
+        for (auto& decoration : alternateColors) decoration.role = SemanticDecorationRole::FormalPort;
+        second.setSemanticDecorations(alternateColors);
+        second.show();
+        checkPixels(editor, QStringLiteral("semantic-shared-first"));
+        checkPixels(second, QStringLiteral("semantic-shared-second"));
+    }
+    editor.moveCursor(QTextCursor::End);
+    editor.insertPlainText(QStringLiteral("// edit remains live"));
+    checkPixels(editor, QStringLiteral("semantic-edit"));
+    editor.undo();
+    QCOMPARE(editor.toPlainText(), source);
+    editor.moveCursor(QTextCursor::Start);
+    editor.resize(620, 700);
+    checkPixels(editor, QStringLiteral("semantic-narrow"));
+    editor.horizontalScrollBar()->setValue(80);
+    checkPixels(editor, QStringLiteral("semantic-horizontal"));
+    editor.verticalScrollBar()->setValue(12);
+    checkPixels(editor, QStringLiteral("semantic-scroll"));
+    ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+    checkPixels(editor, QStringLiteral("semantic-dark"));
+    editor.moveCursor(QTextCursor::NextWord, QTextCursor::KeepAnchor);
+    checkPixels(editor, QStringLiteral("semantic-selection"));
+    QCOMPARE(editor.toPlainText(), source);
+    ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    QApplication::setCursorFlashTime(flashTime);
 }
 
 int main(int argc, char** argv)

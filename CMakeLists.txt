@@ -297,6 +297,7 @@ set(ZEROSLACK_CORE_SOURCES
       src/editor/editorfolding.cpp
       src/editor/editorviewprojection.cpp
       src/editor/editorbackground.cpp
+      src/editor/editortextpaint.cpp
       src/editor/editorgeometry.cpp
     src/editor/editorgutter.cpp
     src/editor/editorhoverpopup.cpp
@@ -568,6 +569,7 @@ set(ZEROSLACK_CORE_SOURCES
       src/editor/editorfoldviewstate.h
       src/editor/editorfolding.h
       src/editor/editorviewprojection.h
+      src/editor/editortextpaint.h
       src/editor/editorgeometry.h
     src/editor/editorgutter.h
     src/editor/editorhoverpopup.h
