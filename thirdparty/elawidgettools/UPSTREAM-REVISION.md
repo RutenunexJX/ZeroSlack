@@ -333,5 +333,28 @@ popup. Repeated open, first/last selection and all rows of one/three/five-item
 combos are checked at 100% and 200%. The one-file patch replays byte-for-byte;
 public API and class layout are unchanged, and the browser capability ABI remains p27.
 
+Apply `patches/31-zeroslack-live-sidebar-width.patch` after patch 30.
+The outer ZeroSlack Context sidebar opts into live drawer content and a progress
+signal so its host can resize the actual dock and editor layout each frame.
+The existing 300 ms OutCubic animation, reversal progress and input settling are
+retained. Resizing the live drawer no longer prematurely ends its animation;
+completion releases the host's temporary width constraint. Section and bottom
+drawers keep the default snapshot behavior, retaining their content size hints
+through capture and animation so live parent layouts cannot collapse a snapshot
+to zero height. The opt-in API adds no data to the
+public ElaDrawerArea class; existing browser capability ABI remains p27.
+
+Apply `patches/32-zeroslack-local-sidebar-frame-clock.patch` after patch 31.
+The navigation width transition and opt-in live Context drawer use a local
+120 Hz target clock built from public QTimer, QElapsedTimer and QEasingCurve.
+Elapsed wall time controls progress; overdue frames are skipped, and timers stop
+at completion, cancellation or destruction. Generation and QObject guards protect
+against reversal or deletion during callbacks. The existing 255 ms navigation
+and 300 ms drawer durations and OutCubic easing remain unchanged. Narrow-window
+overlays, section drawers and the bottom drawer retain their Qt animation drivers.
+The new private helper and private pointer changes do not alter public class
+layout; native browser capability ABI remains p27. This is a scheduling target,
+not a promise of 120 presented frames per second. MIT/OFL remain unchanged.
+
 Both `LICENSE` (ElaWidgetTools) and `Font/FontAwesome-LICENSE.txt` must
 accompany redistributed binaries.

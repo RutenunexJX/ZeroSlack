@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.13`
+Current version: `v0.31.14`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.13`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.14`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -142,20 +142,31 @@ markers in this README, the user manual and the package README.
   dependency labels.
 
 Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
-build and run the Ela release verification targets; create a signed-off release tag named
-`vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish the verified
+build and run the Ela release verification targets. A committed release can carry a tag
+named `vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish the verified
 `ZeroSlack-win64` directory under the local Nutstore `PinloomRoot\AppPackage\AppSuite\Apps`
 root (`D:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass explicit
 local build and toolchain paths to the packaging script; its defaults refer to the original machine.
 The executable is `ZeroSlack.exe`; the package directory never includes the version.
 Replace the current local package without keeping older copies or backups, and update
 the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
-version is recorded in `VERSION`, the application display, guarded documents and the tag.
+version is recorded in `VERSION`, the application display and guarded documents.
+When a working-tree package is explicitly requested without committing or tagging, use
+`-Formal -AllowDirty`. Its build-info records the actual base revision, dirty state and
+a null releaseTag; packaging never creates a commit or tag. The default clean-source
+check remains in force unless -AllowDirty is supplied.
 The former classic release channel is no longer maintained.
-The current release is `0.31.13` (`v0.31.13`). Ela is now the sole formal package,
+The current release is `0.31.14`. Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
+Release 0.31.14 makes the outer Context sidebar resize the editor and background
+continuously while preserving user width, reversal and floating/redocking behavior.
+The left and right sidebars use a local 120 Hz target clock with unchanged 255/300 ms
+durations. Actual paint cadence depends on rendering load; native high-DPI maximized
+windows do not reach 120 FPS. The clean formal package records its exact release
+commit and tag. Sidebar smoothness on high-DPI maximized windows remains under
+investigation; this release does not resolve the newly reported stutter.
 Release 0.31.13 restores the visible ZeroSlack name and version at the top left,
 beside the workspace icon strip. The app identity stays visible when files change
 and shares the title bar with workspace icons and window controls without overlap.

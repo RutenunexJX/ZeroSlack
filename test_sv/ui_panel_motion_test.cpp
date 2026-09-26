@@ -8,6 +8,10 @@
 #include "panelcompositor.h"
 #include "panellayoutcontroller.h"
 #include "testuistyle.h"
+#include "mainwindow.h"
+#include "mycodeeditor.h"
+#include "tabmanager.h"
+#include "liveinsightscontextprovider.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDrawerArea.h"
 #endif
@@ -25,6 +29,15 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
+#include <QAction>
+#include <QElapsedTimer>
+#include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QScopeGuard>
+#include <QStyle>
+#include <QTimer>
 
 namespace {
 class Editor final : public QPlainTextEdit {
@@ -85,6 +98,207 @@ QRect inWindow(QWidget* widget, QWidget* window) {
 class UiPanelMotionTest final : public QObject {
     Q_OBJECT
 private slots:
+    void rightSidebarResizesRealEditor_data() {
+        QTest::addColumn<bool>("toolbox");
+        QTest::newRow("provider") << false;
+        QTest::newRow("toolbox") << true;
+    }
+    void rightSidebarResizesRealEditor() {
+#ifdef ZEROSLACK_ENABLE_ELA
+        QFETCH(bool, toolbox);
+        const bool previousAnimations = ApplicationThemeManager::instance().animationsEnabled();
+        const auto restoreAnimations = qScopeGuard([=] { ApplicationThemeManager::instance().setAnimationsEnabled(previousAnimations); });
+        ApplicationThemeManager::instance().setAnimationsEnabled(true);
+        QTemporaryDir files; QVERIFY(files.isValid());
+        const QString path = files.filePath("layout.sv");
+        QFile source(path); QVERIFY(source.open(QIODevice::WriteOnly));
+        source.write("module layout;\n  logic retained;\nendmodule\n"); source.close();
+        MainWindow window; window.resize(1280, 800); window.show();
+        QVERIFY(window.tabManager->openFileInTab(path));
+        auto* editor = window.tabManager->getCurrentEditor(); QVERIFY(editor);
+        auto* context = window.findChild<ContextWorkspaceController*>(); QVERIFY(context);
+        auto* motion = window.findChild<ElaDrawerArea*>("contextSidebarDrawer"); QVERIFY(motion);
+        auto* action = window.findChild<QAction*>(toolbox ? "contextRail.toolbox" : "contextRail.temporaryEditor"); QVERIFY(action);
+        context->setDockVisible(false); motion->finishDrawerAnimation(); QTest::qWait(40);
+        const int closedWidth = editor->viewport()->width();
+        const QString original = editor->toPlainText();
+        const auto sample = [&](const QString& phase) {
+            QJsonArray rows;
+            QElapsedTimer timer; timer.start();
+            do {
+                rows.append(QJsonObject{{"ms",timer.nsecsElapsed()/1e6},
+                    {"viewportWidth",editor->viewport()->width()},
+                    {"editorWidth",editor->width()},
+                    {"dockWidth",context->dockWidget()->isVisible() ? context->dockWidget()->width() : 0}});
+                if (!motion->isDrawerAnimating()) break;
+                QTest::qWait(8);
+            } while (timer.elapsed() < 2000);
+            const QString evidence = qEnvironmentVariable("ZEROSLACK_UI_EVIDENCE_DIR");
+            if (!evidence.isEmpty()) {
+                QDir().mkpath(evidence);
+                QFile output(evidence + '/' + (toolbox ? "toolbox-" : "provider-") + phase + ".json");
+                if (output.open(QIODevice::WriteOnly)) output.write(QJsonDocument(rows).toJson());
+            }
+            return rows;
+        };
+        action->trigger();
+        QVERIFY(motion->isDrawerAnimating());
+        const auto opening = sample("open");
+        QVERIFY(!motion->isDrawerAnimating());
+        const int openWidth = editor->viewport()->width();
+        QVERIFY(openWidth < closedWidth);
+        const int separator = window.style()->pixelMetric(QStyle::PM_DockWidgetSeparatorExtent);
+        QVERIFY(qAbs(opening.first().toObject().value("viewportWidth").toInt() - closedWidth) <= separator + 2);
+        const auto checkContinuous = [&](const QJsonArray& rows, bool opening) {
+            for (int i = 1; i < rows.size(); ++i) {
+                const int previous = rows.at(i-1).toObject().value("viewportWidth").toInt();
+                const int current = rows.at(i).toObject().value("viewportWidth").toInt();
+                if (opening ? current > previous : current < previous) return false;
+            }
+            return rows.size() >= 2 && qAbs(rows.last().toObject().value("viewportWidth").toInt()
+                - rows.at(rows.size()-2).toObject().value("viewportWidth").toInt()) <= separator + 2;
+        };
+        QVERIFY(checkContinuous(opening, true));
+        const auto intermediateWidths = [](const QJsonArray& rows, int low, int high) {
+            QSet<int> widths;
+            for (const auto& row : rows) {
+                const int value = row.toObject().value("viewportWidth").toInt();
+                if (value > low + 1 && value < high - 1) widths.insert(value);
+            }
+            return widths.size();
+        };
+        QVERIFY2(intermediateWidths(opening, openWidth, closedWidth) >= 3,
+                 "Opening must resize the actual editor viewport through intermediate widths");
+        QCOMPARE(motion->drawerSnapshotBytes(), 0);
+        window.resizeDocks({context->dockWidget()}, {420}, Qt::Horizontal);
+        QTest::qWait(30);
+        const int preferred = context->dockWidget()->width();
+        const int beforeClose = editor->viewport()->width();
+        action->trigger();
+        QVERIFY(motion->isDrawerAnimating());
+        QCOMPARE(context->captureState().dockWidth, preferred);
+        const auto closing = sample("close");
+        QVERIFY(checkContinuous(closing, false));
+        QVERIFY2(intermediateWidths(closing, beforeClose, closedWidth) >= 3,
+                 "Closing must resize the actual editor viewport through intermediate widths");
+        QCOMPARE(editor->viewport()->width(), closedWidth);
+        action->trigger(); QTest::qWait(45);
+        const int midWidth = editor->viewport()->width();
+        action->trigger();
+        QVERIFY(qAbs(editor->viewport()->width() - midWidth) <= 1);
+        QTest::qWait(20); action->trigger();
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(context->dockWidget()->width(), preferred);
+        QVERIFY(context->dockWidget()->minimumWidth() < context->dockWidget()->maximumWidth());
+        // Restore a kept resource; transient tools and More intentionally do not
+        // persist a section in the workspace state.
+        const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module, files.path());
+        QVERIFY(context->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}));
+        motion->finishDrawerAnimation();
+        window.resizeDocks({context->dockWidget()}, {preferred}, Qt::Horizontal); QTest::qWait(20);
+        const auto retainedState = context->captureState();
+        QVERIFY(!retainedState.dockSections.isEmpty());
+        QCOMPARE(retainedState.dockWidth, preferred);
+        context->setDockVisible(false); QTest::qWait(30);
+        context->restoreState(retainedState);
+        QVERIFY(!motion->isDrawerAnimating()); QVERIFY(context->dockVisible());
+        QVERIFY(context->dockWidget()->minimumWidth() < context->dockWidget()->maximumWidth());
+        QTRY_COMPARE(context->dockWidget()->width(), preferred);
+        context->setDockVisible(false); QTest::qWait(30);
+        window.resize(1360, 820);
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QVERIFY(!context->dockVisible());
+        context->setDockVisible(true); QTRY_VERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(context->dockWidget()->width(), preferred);
+        context->setDockVisible(false); QTest::qWait(30);
+        context->dockWidget()->setFloating(true);
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QVERIFY(context->dockWidget()->minimumWidth() < context->dockWidget()->maximumWidth());
+        QTRY_COMPARE(context->dockWidget()->width(), preferred);
+        QCOMPARE(context->captureState().dockWidth, preferred);
+        context->dockWidget()->setFloating(false);
+        context->setDockVisible(true); motion->finishDrawerAnimation();
+        QCOMPARE(context->captureState().dockWidth, preferred);
+        QTRY_COMPARE(context->dockWidget()->width(), preferred);
+        window.resizeDocks({context->dockWidget()}, {preferred + 40}, Qt::Horizontal);
+        QTRY_COMPARE(context->captureState().dockWidth, preferred + 40);
+        window.resizeDocks({context->dockWidget()}, {preferred}, Qt::Horizontal);
+        QTRY_COMPARE(context->captureState().dockWidth, preferred);
+        QCOMPARE(editor->toPlainText(), original);
+        ApplicationThemeManager::instance().setAnimationsEnabled(false);
+        context->setDockVisible(false); QVERIFY(!motion->isDrawerAnimating()); QVERIFY(!context->dockVisible());
+        context->setDockVisible(true); QVERIFY(!motion->isDrawerAnimating()); QVERIFY(context->dockVisible());
+        QCOMPARE(context->dockWidget()->width(), preferred);
+#endif
+    }
+
+    void sidebarFrameClocksStopWhenIdleAndAnimationsAreDisabled() {
+#ifdef ZEROSLACK_ENABLE_ELA
+        auto& theme = ApplicationThemeManager::instance();
+        const bool previous = theme.animationsEnabled();
+        const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(previous); });
+        theme.setAnimationsEnabled(false);
+        Harness h;
+        h.navigation->setExpanded(false);
+        h.context->setDockVisible(false);
+        QTRY_VERIFY(!h.navigation->isAnimating());
+        auto* right = h.window.findChild<ElaDrawerArea*>("contextSidebarDrawer");
+        QVERIFY(right); QVERIFY(!right->isDrawerAnimating());
+        const auto clocks = h.window.findChildren<QTimer*>("elaSidebarFrameTimer");
+        QVERIFY(clocks.size() >= 2);
+        for (auto* clock : clocks) QVERIFY(!clock->isActive());
+        theme.setAnimationsEnabled(true);
+        h.navigation->setExpanded(true);
+        h.context->setDockVisible(true);
+        QVERIFY(h.navigation->isAnimating()); QVERIFY(right->isDrawerAnimating());
+        QTest::qWait(35);
+        theme.setAnimationsEnabled(false);
+        h.navigation->setExpanded(true);
+        h.context->setDockVisible(true);
+        QTRY_VERIFY(!h.navigation->isAnimating());
+        QVERIFY(!right->isDrawerAnimating());
+        QVERIFY(h.navigation->isExpanded()); QVERIFY(h.context->dockVisible());
+        for (auto* clock : clocks) QVERIFY(!clock->isActive());
+        h.window.resize(760, 780);
+        h.navigation->setExpanded(false);
+        h.navigation->setExpanded(true);
+        QTRY_VERIFY(!h.navigation->isAnimating());
+        QVERIFY(h.navigation->isExpanded());
+        for (auto* clock : clocks) QVERIFY(!clock->isActive());
+#endif
+    }
+
+    void navigationFrameClockReversesAndStopsOnOwnerDestruction() {
+#ifdef ZEROSLACK_ENABLE_ELA
+        auto& theme = ApplicationThemeManager::instance();
+        const bool previous = theme.animationsEnabled();
+        const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(previous); });
+        theme.setAnimationsEnabled(true);
+        auto h = std::make_unique<Harness>();
+        h->navigation->setExpanded(false, false);
+        QTRY_VERIFY(!h->navigation->isAnimating());
+        h->navigation->setExpanded(true);
+        QVERIFY(h->navigation->isAnimating());
+        QTest::qWait(35);
+        const int beforeReverse = h->navigation->dock()->width();
+        h->navigation->setExpanded(false);
+        QVERIFY(h->navigation->isAnimating());
+        QVERIFY(qAbs(h->navigation->dock()->width() - beforeReverse) <= 1);
+        QTRY_VERIFY(!h->navigation->isAnimating());
+        QVERIFY(!h->navigation->isExpanded());
+        const auto clocks = h->window.findChildren<QTimer*>("elaSidebarFrameTimer");
+        QVERIFY(!clocks.isEmpty());
+        for (auto* clock : clocks) QVERIFY(!clock->isActive());
+        h->navigation->setExpanded(true);
+        QVERIFY(h->navigation->isAnimating());
+        QList<QPointer<QTimer>> retained;
+        for (auto* clock : clocks) retained.append(clock);
+        h.reset();
+        for (const auto& clock : retained) QVERIFY(clock.isNull());
+        QTest::qWait(280);
+#endif
+    }
+
     void nativeDockTargetsUseQtWithoutSnapshots() {
 #ifdef ZEROSLACK_ENABLE_ELA
         Harness h;
@@ -349,8 +563,8 @@ private slots:
         const int resizes = h.editor->resizes;
         const auto geometry = h.editor->geometry();
         QTest::qWait(55);
-        QCOMPARE(h.editor->geometry(), geometry);
-        QCOMPARE(h.editor->resizes, resizes);
+        QVERIFY(h.editor->geometry() != geometry);
+        QVERIFY(h.editor->resizes > resizes);
         const auto progress = motion->drawerProgress();
         QVERIFY(h.context->setDockVisible(false));
         QVERIFY(motion->isDrawerAnimating());

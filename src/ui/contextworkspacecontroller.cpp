@@ -25,6 +25,7 @@
 #include <QIcon>
 #include <QMainWindow>
 #include <QLayout>
+#include <QTimer>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -170,18 +171,24 @@ ContextWorkspaceController::ContextWorkspaceController(
     sideDrawer->setObjectName(QStringLiteral("contextSidebarDrawer"));
     sideDrawer->setDrawerHeaderVisible(false);
     sideDrawer->setBorderRadius(0);
-    sideDrawer->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
     sideDrawer->setDrawerEdge(Qt::RightEdge);
+    sideDrawer->setLiveResizeEnabled(true);
     sideDrawer->addDrawer(sidebarPages);
     dockValue->setWidget(sideDrawer);
-    connect(sideDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
-        if (!expanded && dockValue) dockValue->hide();
-        updateActiveRailEntry();
-    });
+    connect(sideDrawer, &ElaDrawerArea::drawerProgressChanged, this, &ContextWorkspaceController::applyAnimatedDockWidth);
+    connect(sideDrawer, &ElaDrawerArea::drawerAnimationFinished, this, &ContextWorkspaceController::finishAnimatedDockWidth);
     connect(sideDrawer, &ElaDrawerArea::expandStateChanged, this, [this](bool) { updateActiveRailEntry(); });
-    connect(dockValue, &QDockWidget::topLevelChanged, sideDrawer, [this] {
-        sideDrawer->finishDrawerAnimation();
+    connect(dockValue, &QDockWidget::topLevelChanged, this, [this] {
+        if (!qobject_cast<QMainWindow*>(window.data())) return;
+        if (sideDrawer) sideDrawer->finishDrawerAnimation();
+        settleDockTopology();
     });
+    connect(dockValue, &QDockWidget::dockLocationChanged, this, [this] {
+        if (!qobject_cast<QMainWindow*>(window.data())) return;
+        if (sideDrawer) sideDrawer->finishDrawerAnimation();
+        settleDockTopology();
+    });
+    mainWindow->installEventFilter(this);
 #else
     dockValue->setWidget(sidebarPages);
 #endif
@@ -1031,6 +1038,11 @@ void ContextWorkspaceController::clearResources()
     if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
     const bool previousRestoring = restoringState;
     restoringState = true;
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (sideDrawer) sideDrawer->finishDrawerAnimation();
+    interruptedDockWidth = 0;
+    ++dockGeometrySerial;
+#endif
     for (auto* surface : floatingSurfaces()) {
         activeFloatingSurface = surface;
         closePeek();
@@ -1093,6 +1105,9 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
     }
     state.dockWidth = ContextWorkspaceState::boundedDockWidth(
         dockValue && dockValue->isVisible()
+#ifdef ZEROSLACK_ENABLE_ELA
+            && !animatingDockWidth && !interruptedDockWidth
+#endif
             ? dockValue->width()
             : preferredDockWidthValue);
     state.dockVisible = dockValue && dockValue->isVisible();
@@ -1154,6 +1169,18 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     ContextWorkspaceRestoreResult result;
     const bool previousRestoring = restoringState;
     restoringState = true;
+    const int restoredQtDockWidth =
+#ifdef ZEROSLACK_ENABLE_ELA
+        (animatingDockWidth || interruptedDockWidth) ? boundedDockWidthForWindow(preferredDockWidthValue) :
+#endif
+        dockValue && dockValue->width() > 0
+        ? boundedDockWidthForWindow(dockValue->width())
+        : ContextWorkspaceState::kDefaultDockWidth;
+#ifdef ZEROSLACK_ENABLE_ELA
+    // Release the animation's width constraints before changing dock geometry
+    // or rebuilding its contents. Never restore a partially collapsed width.
+    if (sideDrawer) sideDrawer->finishDrawerAnimation();
+#endif
     QList<QPair<bool, ContextWorkspaceState>> legacyFloatingDocks;
     for (const bool bottom : {false, true}) {
         auto* dock = bottom ? bottomDockValue.data() : dockValue.data();
@@ -1171,10 +1198,6 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         dock->setFloating(false);
     }
     if (!legacyFloatingDocks.isEmpty()) preserveRestoredDockGeometry = false;
-    const int restoredQtDockWidth =
-        dockValue && dockValue->width() > 0
-        ? boundedDockWidthForWindow(dockValue->width())
-        : ContextWorkspaceState::kDefaultDockWidth;
     clearResources();
     lastFloatingGeometry = state.valid ? state : ContextWorkspaceState{};
     setFloatingCollapsed(state.valid && state.floatingCollapsed);
@@ -1328,9 +1351,9 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     if (dockValue && dockHostValue) {
         const bool previousApplying = applyingDockWidth;
         applyingDockWidth = true;
-        dockValue->setVisible(
+        applyDockVisibility(
             state.dockVisible
-            && dockHostValue->areaResourceCount(false) > 0);
+            && dockHostValue->areaResourceCount(false) > 0, false, false);
         bottomDockValue->setVisible(state.bottomDockVisible && dockHostValue->areaResourceCount(true) > 0);
         if (!preserveRestoredDockGeometry && window && bottomDockValue->isVisible())
             window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
@@ -1345,6 +1368,7 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
                     preferredDockWidthValue)},
                 Qt::Horizontal);
         }
+        if (window && window->layout()) window->layout()->activate();
         applyingDockWidth = previousApplying;
     }
     if (railValue)
@@ -1359,6 +1383,17 @@ bool ContextWorkspaceController::eventFilter(
     QEvent* event)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
+    // setFloating hides the dock before emitting its topology signals. Keep
+    // the full width until Qt has finished both floating and redocking it.
+    if (watched == dockValue && event->type() == QEvent::Hide
+        && animatingDockWidth && !applyingDockWidth) {
+        interruptedDockWidth = animationDockWidth;
+        settleDockTopology();
+    }
+    if (watched == window && sideDrawer && animatingDockWidth
+        && (event->type() == QEvent::Resize || event->type() == QEvent::Hide
+            || event->type() == QEvent::MouseButtonPress))
+        sideDrawer->finishDrawerAnimation();
     if (watched == dockValue && sideDrawer && !applyingDockWidth) {
         if (event->type() == QEvent::Show && !sideDrawer->getIsExpand())
             sideDrawer->setExpanded(true, false);
@@ -1387,6 +1422,10 @@ bool ContextWorkspaceController::eventFilter(
         if (!restoringState
             && !applyingDockWidth
             && dockValue
+#ifdef ZEROSLACK_ENABLE_ELA
+            && !animatingDockWidth && !interruptedDockWidth
+            && !dockValue->isFloating()
+#endif
             && dockValue->isVisible()) {
             preferredDockWidthValue =
                 ContextWorkspaceState::boundedDockWidth(
@@ -1644,6 +1683,54 @@ void ContextWorkspaceController::endDockPreview()
     notifyWorkspaceStateChanged();
 }
 
+#ifdef ZEROSLACK_ENABLE_ELA
+void ContextWorkspaceController::applyAnimatedDockWidth(qreal progress)
+{
+    if (!animatingDockWidth || !dockValue || !qobject_cast<QMainWindow*>(window.data()) || dockValue->isFloating()) return;
+    const QScopedValueRollback<bool> guard(applyingDockWidth, true);
+    dockValue->setFixedWidth(qRound(animationDockWidth * qBound(qreal(0), progress, qreal(1))));
+    if (window->layout()) window->layout()->activate();
+}
+
+void ContextWorkspaceController::finishAnimatedDockWidth(bool expanded)
+{
+    if (!dockValue || !qobject_cast<QMainWindow*>(window.data())) return;
+    const QScopedValueRollback<bool> guard(applyingDockWidth, true);
+    if (!expanded) dockValue->hide();
+    if (animatingDockWidth) {
+        dockValue->setMinimumWidth(dockMinimumWidth);
+        dockValue->setMaximumWidth(dockMaximumWidth);
+        if (dockValue->isFloating()) dockValue->resize(animationDockWidth, dockValue->height());
+        else if (expanded)
+            window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
+        if (window->layout()) window->layout()->activate();
+        animatingDockWidth = false;
+    }
+    updateActiveRailEntry();
+    notifyWorkspaceStateChanged();
+}
+
+void ContextWorkspaceController::settleDockTopology()
+{
+    if (!interruptedDockWidth || !qobject_cast<QMainWindow*>(window.data())) return;
+    const auto serial = ++dockGeometrySerial;
+    QTimer::singleShot(0, this, [this, serial] {
+        if (serial != dockGeometrySerial || !dockValue
+            || !qobject_cast<QMainWindow*>(window.data())) return;
+        const QScopedValueRollback<bool> guard(applyingDockWidth, true);
+        if (dockValue->isFloating()) {
+            dockValue->resize(interruptedDockWidth, dockValue->height());
+        } else {
+            if (dockValue->isVisible()) {
+                window->resizeDocks({dockValue}, {boundedDockWidthForWindow(interruptedDockWidth)}, Qt::Horizontal);
+                if (window->layout()) window->layout()->activate();
+            }
+            interruptedDockWidth = 0;
+        }
+    });
+}
+#endif
+
 void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPreferredWidth, bool animate)
 {
     if (!dockValue || !window) return;
@@ -1652,8 +1739,35 @@ void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPre
         const auto area = window->dockWidgetArea(dockValue);
         sideDrawer->setDrawerEdge(area == Qt::LeftDockWidgetArea ? Qt::LeftEdge : Qt::RightEdge);
         QScopedValueRollback<bool> guard(applyingDockWidth, true);
-        const bool canAnimate = animate && !restoringState && window->isVisible()
+        if (interruptedDockWidth && !dockValue->isFloating()) {
+            // An explicit action after redocking supersedes the queued topology
+            // repair, including any width the user chooses immediately after it.
+            ++dockGeometrySerial;
+            window->resizeDocks({dockValue}, {boundedDockWidthForWindow(interruptedDockWidth)}, Qt::Horizontal);
+            if (window->layout()) window->layout()->activate();
+            interruptedDockWidth = 0;
+        }
+        const bool canAnimate = animate && ApplicationThemeManager::instance().animationsEnabled()
+            && !restoringState && window->isVisible()
             && !dockValue->isFloating() && window->tabifiedDockWidgets(dockValue).isEmpty();
+        if (canAnimate && (visible != sideDrawer->getIsExpand() || !dockValue->isVisible())) {
+            if (!animatingDockWidth) {
+                if (dockValue->isVisible() && !interruptedDockWidth)
+                    preferredDockWidthValue = ContextWorkspaceState::boundedDockWidth(dockValue->width());
+                else if (!dockValue->isVisible()) sideDrawer->setExpanded(false, false);
+                animationDockWidth = boundedDockWidthForWindow(preferredDockWidthValue);
+                dockMinimumWidth = dockValue->minimumWidth();
+                dockMaximumWidth = dockValue->maximumWidth();
+                animatingDockWidth = true;
+            }
+            applyAnimatedDockWidth(sideDrawer->drawerProgress());
+            if (visible) { dockValue->show(); dockValue->raise(); }
+            sideDrawer->setExpanded(visible, true);
+            if (!sideDrawer->isDrawerAnimating()) finishAnimatedDockWidth(visible);
+            return;
+        }
+        if (canAnimate && animatingDockWidth) return;
+        if (animatingDockWidth) sideDrawer->finishDrawerAnimation();
         if (visible) {
             if (!dockValue->isVisible()) sideDrawer->setExpanded(false, false);
             dockValue->show();
@@ -1662,7 +1776,7 @@ void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPre
                 window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
             if (window->layout()) window->layout()->activate();
         }
-        sideDrawer->setExpanded(visible, canAnimate);
+        sideDrawer->setExpanded(visible, false);
         if (!visible && !sideDrawer->isDrawerAnimating()) dockValue->hide();
         return;
     }

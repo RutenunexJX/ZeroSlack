@@ -4,7 +4,8 @@ param(
     [string]$OutputDirectory = '',
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
-    [switch]$Formal
+    [switch]$Formal,
+    [switch]$AllowDirty
 )
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
@@ -27,7 +28,9 @@ $branch = & git -C $sourceRoot branch --show-current
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git branch.' }
 $dirty = [bool](& git -C $sourceRoot status --porcelain)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git source status.' }
-if ($Formal -and $dirty) { throw 'Commit all source changes before creating a formal package.' }
+if ($Formal -and $dirty -and -not $AllowDirty) {
+    throw 'Formal packages require clean source unless -AllowDirty is explicitly requested.'
+}
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $sourceRoot 'build/packages/ZeroSlack-win64' }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 # Verify the new staging directory before replacing the installed package.
@@ -81,7 +84,12 @@ foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
 }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
 $channel = if ($Formal) { 'formal' } else { 'preview' }
-$releaseTag = if ($Formal) { "v$version" } else { $null }
+$releaseTag = $null
+if ($Formal -and -not $dirty) {
+    $matchingTags = @(& git -C $sourceRoot tag --points-at $revision --list "v$version")
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot read release tags.' }
+    if ($matchingTags -contains "v$version") { $releaseTag = "v$version" }
+}
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2';
     upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |

@@ -11,7 +11,7 @@ class ElaMenu;
 class QVBoxLayout;
 class QHBoxLayout;
 class QLinearGradient;
-class QVariantAnimation;
+class ElaFrameAnimation;
 class QPropertyAnimation;
 
 class ElaNavigationBar;
@@ -72,7 +72,7 @@ private:
     QVBoxLayout* _customLayout{nullptr};
     int _customMinimumWidth{180};
     int _customMaximumWidth{QWIDGETSIZE_MAX};
-    QVariantAnimation* _widthAnimation{nullptr};
+    ElaFrameAnimation* _widthAnimation{nullptr};
     QPropertyAnimation* _overlayAnimation{nullptr};
     bool _overlayExpanded{false};
     bool _widthTransitioning{false};

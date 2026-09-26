@@ -220,6 +220,7 @@ bool NavigationPaneCoordinator::isAnimating() const
 
 void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
 {
+    animate = animate && ApplicationThemeManager::instance().animationsEnabled();
     // An overlay is reparented into the central widget, which can be destroyed
     // before this sibling coordinator during window teardown or replacement.
     if (!navigationDock || !navigationWidget) return;

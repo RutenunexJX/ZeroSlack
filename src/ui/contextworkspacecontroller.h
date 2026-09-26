@@ -137,6 +137,15 @@ private:
     QPointer<QDockWidget> dockValue;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> sideDrawer;
+    bool animatingDockWidth = false;
+    int animationDockWidth = 0;
+    int dockMinimumWidth = 0;
+    int dockMaximumWidth = 0;
+    int interruptedDockWidth = 0;
+    quint64 dockGeometrySerial = 0;
+    void applyAnimatedDockWidth(qreal progress);
+    void finishAnimatedDockWidth(bool expanded);
+    void settleDockTopology();
 #endif
     QPointer<QDockWidget> bottomDockValue;
     QPointer<ContextDockTransition> dockTransition;

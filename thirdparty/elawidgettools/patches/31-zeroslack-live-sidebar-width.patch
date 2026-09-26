@@ -1,0 +1,178 @@
+diff --git a/Development/ElaDrawerContainer.cpp b/Development/ElaDrawerContainer.cpp
+index 2d3e38f..9aabd68 100644
+--- a/Development/ElaDrawerContainer.cpp
++++ b/Development/ElaDrawerContainer.cpp
+@@ -31,7 +31,10 @@ ElaDrawerContainer::ElaDrawerContainer(QWidget* parent)
+     setMaximumHeight(0);
+     _animation = new QPropertyAnimation(this, "pOpacity", this);
+     _animation->setEasingCurve(QEasingCurve::OutCubic);
+-    connect(_animation, &QPropertyAnimation::valueChanged, this, [this] { update(); });
++    connect(_animation, &QPropertyAnimation::valueChanged, this, [this] {
++        update();
++        Q_EMIT progressChanged(_pOpacity);
++    });
+     connect(_animation, &QPropertyAnimation::finished, this, &ElaDrawerContainer::finishAnimation);
+ 
+     _themeMode = eTheme->getThemeMode();
+@@ -92,13 +95,15 @@ qint64 ElaDrawerContainer::snapshotBytes() const
+ QSize ElaDrawerContainer::sizeHint() const
+ {
+     const QSize content = _containerLayout->sizeHint();
+-    return _expanded ? content : QSize(0, 0);
++    const bool retainingSnapshot = !_liveResize && (_preparing || !_pContainerPix.isNull());
++    return _expanded || retainingSnapshot ? content : QSize(0, 0);
+ }
+ 
+ QSize ElaDrawerContainer::minimumSizeHint() const
+ {
+     const QSize content = _containerLayout->minimumSize();
+-    return _expanded ? content : QSize(0, 0);
++    const bool retainingSnapshot = !_liveResize && (_preparing || !_pContainerPix.isNull());
++    return _expanded || retainingSnapshot ? content : QSize(0, 0);
+ }
+ 
+ void ElaDrawerContainer::setEdge(Qt::Edge edge)
+@@ -108,12 +113,20 @@ void ElaDrawerContainer::setEdge(Qt::Edge edge)
+     _edge = edge;
+ }
+ 
++void ElaDrawerContainer::setLiveResizeEnabled(bool enabled)
++{
++    if (_liveResize == enabled) return;
++    finishAnimation();
++    _liveResize = enabled;
++}
++
+ void ElaDrawerContainer::finishAnimation()
+ {
+     if (_settling || _preparing) return;
+     _settling = true;
+-    const bool wasAnimating = isAnimating() || !_pContainerPix.isNull();
++    const bool wasAnimating = isAnimating() || !_pContainerPix.isNull() || _liveTransition;
+     _animation->stop();
++    _liveTransition = false;
+     qApp->removeEventFilter(this);
+     _pContainerPix = QPixmap();
+     _pOpacity = _expanded ? 1 : 0;
+@@ -125,6 +138,9 @@ void ElaDrawerContainer::finishAnimation()
+     updateGeometry();
+     update();
+     _settling = false;
++    QPointer<ElaDrawerContainer> guard(this);
++    Q_EMIT progressChanged(_pOpacity);
++    if (!guard) return;
+     if (wasAnimating) Q_EMIT animationFinished(_expanded);
+ }
+ 
+@@ -142,6 +158,26 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
+     }
+     QElapsedTimer preparation;
+     preparation.start();
++    if (_liveResize) {
++        {
++            QScopedValueRollback<bool> guard(_preparing, true);
++            setMinimumHeight(0);
++            setMaximumHeight(QWIDGETSIZE_MAX);
++            _isShowBorder = true;
++            _containerWidget->setGeometry(rect());
++            _containerWidget->show();
++            updateGeometry();
++        }
++        _preparationMs = preparation.nsecsElapsed() / 1e6;
++        const qreal target = isExpand ? 1 : 0;
++        _animation->setDuration(qMax(1, qRound(300 * qAbs(target - _pOpacity))));
++        _animation->setStartValue(_pOpacity);
++        _animation->setEndValue(target);
++        _liveTransition = true;
++        qApp->installEventFilter(this);
++        _animation->start();
++        return;
++    }
+     {
+         QScopedValueRollback<bool> guard(_preparing, true);
+         if (_pContainerPix.isNull()) {
+@@ -178,7 +214,7 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
+ void ElaDrawerContainer::resizeEvent(QResizeEvent* event)
+ {
+     QWidget::resizeEvent(event);
+-    if (!_preparing) finishAnimation();
++    if (!_preparing && !_liveResize) finishAnimation();
+     _containerWidget->setGeometry(rect());
+ }
+ 
+diff --git a/Development/ElaDrawerContainer.h b/Development/ElaDrawerContainer.h
+index ff22dcc..066cfc6 100644
+--- a/Development/ElaDrawerContainer.h
++++ b/Development/ElaDrawerContainer.h
+@@ -26,6 +26,7 @@ public:
+     bool isAnimating() const;
+     bool isExpanded() const { return _expanded; }
+     void setEdge(Qt::Edge edge);
++    void setLiveResizeEnabled(bool enabled);
+     qint64 snapshotBytes() const;
+     double preparationMs() const { return _preparationMs; }
+     QSize sizeHint() const override;
+@@ -33,6 +34,7 @@ public:
+ 
+ signals:
+     void animationFinished(bool expanded);
++    void progressChanged(qreal progress);
+ 
+ protected:
+     virtual void paintEvent(QPaintEvent* event) override;
+@@ -51,6 +53,8 @@ private:
+     bool _expanded{false};
+     bool _preparing{false};
+     bool _settling{false};
++    bool _liveResize{false};
++    bool _liveTransition{false};
+     double _preparationMs{0};
+ };
+ 
+diff --git a/ElaDrawerArea.cpp b/ElaDrawerArea.cpp
+index 84026a4..9850742 100644
+--- a/ElaDrawerArea.cpp
++++ b/ElaDrawerArea.cpp
+@@ -14,6 +14,8 @@ ElaDrawerArea::ElaDrawerArea(QWidget* parent)
+     connect(d->_drawerHeader, &ElaDrawerHeader::drawerHeaderClicked, d, &ElaDrawerAreaPrivate::onDrawerHeaderClicked);
+     connect(d->_drawerContainer, &ElaDrawerContainer::animationFinished,
+             this, &ElaDrawerArea::drawerAnimationFinished);
++    connect(d->_drawerContainer, &ElaDrawerContainer::progressChanged,
++            this, &ElaDrawerArea::drawerProgressChanged);
+ 
+     QVBoxLayout* mainLayout = new QVBoxLayout(this);
+     mainLayout->setContentsMargins(0, 0, 0, 0);
+@@ -108,6 +110,12 @@ void ElaDrawerArea::setDrawerEdge(Qt::Edge edge)
+     d->_drawerContainer->setEdge(edge);
+ }
+ 
++void ElaDrawerArea::setLiveResizeEnabled(bool enabled)
++{
++    Q_D(ElaDrawerArea);
++    d->_drawerContainer->setLiveResizeEnabled(enabled);
++}
++
+ bool ElaDrawerArea::isDrawerAnimating() const
+ {
+     Q_D(const ElaDrawerArea);
+diff --git a/ElaDrawerArea.h b/ElaDrawerArea.h
+index 12f01b3..0459452 100644
+--- a/ElaDrawerArea.h
++++ b/ElaDrawerArea.h
+@@ -27,6 +27,8 @@ public:
+     void setExpanded(bool expanded, bool animate = true);
+     void setDrawerHeaderVisible(bool visible);
+     void setDrawerEdge(Qt::Edge edge);
++    // Opt-in live content for a host that resizes its layout on drawerProgressChanged.
++    void setLiveResizeEnabled(bool enabled);
+     bool isDrawerAnimating() const;
+     void finishDrawerAnimation();
+     qint64 drawerSnapshotBytes() const;
+@@ -37,6 +39,7 @@ public:
+ Q_SIGNALS:
+     Q_SIGNAL void expandStateChanged(bool isExpand);
+     Q_SIGNAL void drawerAnimationFinished(bool isExpand);
++    Q_SIGNAL void drawerProgressChanged(qreal progress);
+ };
+ 
+ #endif //ELAWORKSPACE_ELAWIDGETTOOLS_ELADRAWERAREA_H_

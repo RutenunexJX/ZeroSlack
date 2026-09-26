@@ -1,5 +1,6 @@
 ﻿#include "ElaNavigationBarPrivate.h"
 #include "ElaActionCommander.h"
+#include "ElaFrameAnimation.h"
 #include "ElaApplication.h"
 #include "ElaBaseListView.h"
 #include "ElaCustomTabWidget.h"
@@ -524,13 +525,13 @@ void ElaNavigationBarPrivate::_doNavigationBarWidthAnimation(ElaNavigationType::
     Q_Q(ElaNavigationBar);
     if (!_widthAnimation)
     {
-        _widthAnimation = new QVariantAnimation(q);
+        _widthAnimation = new ElaFrameAnimation(q);
         _widthAnimation->setEasingCurve(QEasingCurve::OutCubic);
-        connect(_widthAnimation, &QVariantAnimation::valueChanged, this, [this, q](const QVariant& value) {
-            q->setFixedWidth(value.toInt());
+        connect(_widthAnimation, &ElaFrameAnimation::valueChanged, this, [this, q](qreal value) {
+            q->setFixedWidth(qRound(value));
             _updateCustomGeometry();
         });
-        connect(_widthAnimation, &QVariantAnimation::finished, this, [this] { _finishWidthTransition(); });
+        connect(_widthAnimation, &ElaFrameAnimation::finished, this, [this] { _finishWidthTransition(); });
     }
     _widthAnimation->stop();
     ++_widthTransitionSerial;

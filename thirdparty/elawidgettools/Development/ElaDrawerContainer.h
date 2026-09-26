@@ -26,6 +26,7 @@ public:
     bool isAnimating() const;
     bool isExpanded() const { return _expanded; }
     void setEdge(Qt::Edge edge);
+    void setLiveResizeEnabled(bool enabled);
     qint64 snapshotBytes() const;
     double preparationMs() const { return _preparationMs; }
     QSize sizeHint() const override;
@@ -33,6 +34,7 @@ public:
 
 signals:
     void animationFinished(bool expanded);
+    void progressChanged(qreal progress);
 
 protected:
     virtual void paintEvent(QPaintEvent* event) override;
@@ -47,10 +49,13 @@ private:
     QWidget* _containerWidget{nullptr};
     QList<QPointer<QWidget>> _drawerWidgetList;
     class QPropertyAnimation* _animation{nullptr};
+    class ElaFrameAnimation* _liveAnimation{nullptr};
     Qt::Edge _edge{Qt::TopEdge};
     bool _expanded{false};
     bool _preparing{false};
     bool _settling{false};
+    bool _liveResize{false};
+    bool _liveTransition{false};
     double _preparationMs{0};
 };
 

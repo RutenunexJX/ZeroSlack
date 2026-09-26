@@ -26,6 +26,22 @@
 #include <QTimer>
 #include <algorithm>
 #include <cstdio>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+static double threadCpuMs() {
+#ifdef Q_OS_WIN
+    FILETIME created, exited, kernel, user;
+    if (GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user))
+        return ((quint64(kernel.dwHighDateTime) << 32) + kernel.dwLowDateTime
+            + (quint64(user.dwHighDateTime) << 32) + user.dwLowDateTime) / 10000.0;
+#endif
+    return 0;
+}
 
 struct EventCost {
     int count = 0;
@@ -45,6 +61,9 @@ public:
     QPointer<ElaDrawerArea> drawer;
     QElapsedTimer frames;
     qint64 previousFrame = -1;
+    QPointer<QWidget> editorViewport;
+    QJsonArray viewportEvents;
+    bool tail = false;
 
     bool notify(QObject* receiver, QEvent* event) override {
         const auto type = event->type();
@@ -55,6 +74,8 @@ public:
             ? QString("Editor/%1").arg(receiver->objectName())
             : QString("%1/%2").arg(receiver->metaObject()->className(), receiver->objectName());
         const QString key = QString::number(type) + ":" + owner;
+        const bool viewportEvent = receiver == editorViewport && (type == QEvent::Resize || type == QEvent::Paint);
+        const double timestampMs = frames.nsecsElapsed() / 1e6;
         if ((!nativeNavigation && compositor && receiver == compositor && type == QEvent::Paint)
             || (!nativeNavigation && drawer && type == QEvent::Paint && receiver->parent() == drawer
                 && receiver->inherits("ElaDrawerContainer"))
@@ -68,6 +89,10 @@ public:
         const auto elapsed = timer.nsecsElapsed();
         auto& cost = costs[key];
         ++cost.count; cost.totalNs += elapsed; cost.maximumNs = qMax(cost.maximumNs, elapsed);
+        if (viewportEvent && editorViewport)
+            viewportEvents.append(QJsonObject{{"event", type == QEvent::Resize ? "resize" : "paint"},
+                {"ms", timestampMs}, {"handlerMs", elapsed / 1e6}, {"tail", tail},
+                {"width", editorViewport->width()}, {"height", editorViewport->height()}});
         return handled;
     }
 };
@@ -85,6 +110,8 @@ int main(int argc, char** argv) {
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH", (profile.path() + "/sessions.ini").toUtf8());
     auto& theme = ApplicationThemeManager::instance();
     if (!theme.selectBackend(UiStyleBackend::Ela)) return 4;
+    theme.setMode(ThemeMode::Light);
+    theme.setAnimationsEnabled(true);
     theme.applyToApplication();
     QString source("module sidebar_benchmark;\n");
     for (int i = 0; i < 5000; ++i)
@@ -101,6 +128,7 @@ int main(int argc, char** argv) {
     app.dock = host.findChild<QDockWidget*>("navigationDock");
     app.compositor = host.findChild<PanelCompositor*>();
     if (!editor || !bar || !navigationPane || !app.dock) return 7;
+    app.editorViewport = editor->viewport();
     auto* context = host.findChild<ContextWorkspaceController*>();
     PanelLayoutController* drawer = nullptr;
     for (auto* child : host.children())
@@ -113,14 +141,18 @@ int main(int argc, char** argv) {
     host.show(); QTest::qWait(1500);
     QJsonArray scenarios;
     const bool nativeRun = QApplication::platformName() == "windows";
-    const QList<QSize> sizes = nativeRun
+    const bool sidebarFps = qEnvironmentVariableIsSet("ZEROSLACK_SIDEBAR_FPS_BENCHMARK");
+    const bool maximized = sidebarFps && nativeRun && qEnvironmentVariableIsSet("ZEROSLACK_SIDEBAR_FPS_MAXIMIZED");
+    const QList<QSize> sizes = maximized ? QList<QSize>{host.screen()->availableGeometry().size()}
+        : sidebarFps ? QList<QSize>{QSize(1280, 800)} : nativeRun
         ? QList<QSize>{QSize(1000, 700), host.screen()->availableGeometry().size()}
         : QList<QSize>{QSize(1000, 700), QSize(2560, 1392), QSize(3840, 2160)};
     for (QSize size : sizes) {
-        if (nativeRun && size == sizes.last()) host.showMaximized();
+        if (maximized || (!sidebarFps && nativeRun && size == sizes.last())) host.showMaximized();
         else host.resize(size);
         QTest::qWait(100);
         for (const auto& scene : {QString("left"), QString("right"), QString("bottom"), QString("section")}) {
+        if (sidebarFps && scene != "left" && scene != "right") continue;
         if (app.compositor) app.compositor->settle();
         for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
         navigationPane->setExpanded(true, false);
@@ -140,8 +172,11 @@ int main(int argc, char** argv) {
         QJsonArray renderers;
         QJsonArray snapshotBytes;
         QJsonArray preparationMs;
+        QJsonArray actions;
         for (int i = 0; i < 12; ++i) {
-            app.previousFrame = -1; app.frames.start(); app.measuring = true;
+            app.previousFrame = -1; app.viewportEvents = {}; app.tail = false;
+            app.frames.start(); app.measuring = true;
+            const double cpuStart = threadCpuMs();
             QElapsedTimer duration; duration.start();
             QEventLoop motion;
             QTimer deadline;
@@ -171,9 +206,16 @@ int main(int argc, char** argv) {
             QObject::disconnect(finished);
             QObject::disconnect(navigationFinished);
             QObject::disconnect(drawerFinished);
+            const double actionMs = duration.nsecsElapsed() / 1e6;
+            const double cpuMs = threadCpuMs() - cpuStart;
+            app.tail = true;
             QTest::qWait(20);
             app.measuring = false;
-            durations.append(duration.nsecsElapsed() / 1e6);
+            durations.append(actionMs);
+            actions.append(QJsonObject{{"index", i},
+                {"opening", scene == "left" ? i % 2 != 0 : i % 2 == 0},
+                {"durationMs", actionMs}, {"tailMs", duration.nsecsElapsed() / 1e6 - actionMs},
+                {"uiThreadCpuMs", cpuMs}, {"viewportEvents", app.viewportEvents}});
             if ((app.compositor && app.compositor->isActive()) || bar->isDisplayModeAnimating()
                 || (app.drawer && app.drawer->isDrawerAnimating())) return 8;
         }
@@ -188,6 +230,7 @@ int main(int argc, char** argv) {
         const auto metrics = editor->hotPathMetricsForTest();
         scenarios.append(QJsonObject{{"scene", scene}, {"width", host.width()}, {"height", host.height()},
             {"editorWidth", editor->width()}, {"editorHeight", editor->height()},
+            {"actions", actions},
             {"durationsMs", durations}, {"frameIntervals", sorted.size()},
             {"dispatchMs", dispatchTimes}, {"renderers", renderers},
             {"snapshotBytes", snapshotBytes}, {"preparationMs", preparationMs},
@@ -203,7 +246,11 @@ int main(int argc, char** argv) {
     if (!output.open(QIODevice::WriteOnly)) return 9;
     output.write(QJsonDocument(QJsonObject{{"platform", QApplication::platformName()},
         {"devicePixelRatio", host.devicePixelRatioF()}, {"transitionsPerSize", 12},
-        {"note", "CPU event timings, not display presentation times. Event costs are inclusive and can nest."},
+        {"qtVersion", qVersion()}, {"screenRefreshHz", host.screen()->refreshRate()},
+        {"windowMode", maximized ? "maximized" : "window"},
+        {"sourceLines", 5002}, {"sourceBytes", source.toUtf8().size()},
+        {"theme", "Light"}, {"viewportBaseColor", editor->viewport()->palette().color(QPalette::Base).name()},
+        {"note", "Actual editor viewport Resize/Paint dispatches, not presented display frames. Action duration excludes the separately recorded 20 ms tail. handlerMs is inclusive dispatch wall time; uiThreadCpuMs is Windows thread CPU time, with OS accounting granularity. Legacy aggregate event costs can nest."},
         {"scenarios", scenarios}}).toJson());
     std::puts("Panel animation benchmark complete.");
     if (nativeRun && argc == 1) {

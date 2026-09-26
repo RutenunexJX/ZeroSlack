@@ -1,0 +1,245 @@
+diff --git a/Development/ElaDrawerContainer.cpp b/Development/ElaDrawerContainer.cpp
+index 5609a4b..5697623 100644
+--- a/Development/ElaDrawerContainer.cpp
++++ b/Development/ElaDrawerContainer.cpp
+@@ -1,4 +1,5 @@
+ #include "ElaDrawerContainer.h"
++#include "ElaFrameAnimation.h"
+ 
+ #include "ElaTheme.h"
+ 
+@@ -48,6 +49,7 @@ ElaDrawerContainer::~ElaDrawerContainer()
+ {
+     qApp->removeEventFilter(this);
+     _animation->stop();
++    if (_liveAnimation) _liveAnimation->stop();
+     for (const auto& widget : _drawerWidgetList)
+         if (widget) disconnect(widget, nullptr, this, nullptr);
+ }
+@@ -84,7 +86,8 @@ void ElaDrawerContainer::removeWidget(QWidget* widget)
+ 
+ bool ElaDrawerContainer::isAnimating() const
+ {
+-    return _animation->state() == QAbstractAnimation::Running;
++    return _animation->state() == QAbstractAnimation::Running
++        || (_liveAnimation && _liveAnimation->isRunning());
+ }
+ 
+ qint64 ElaDrawerContainer::snapshotBytes() const
+@@ -118,6 +121,16 @@ void ElaDrawerContainer::setLiveResizeEnabled(bool enabled)
+     if (_liveResize == enabled) return;
+     finishAnimation();
+     _liveResize = enabled;
++    if (enabled && !_liveAnimation) {
++        _liveAnimation = new ElaFrameAnimation(this);
++        _liveAnimation->setEasingCurve(QEasingCurve::OutCubic);
++        connect(_liveAnimation, &ElaFrameAnimation::valueChanged, this, [this](qreal value) {
++            setOpacity(value);
++            update();
++            Q_EMIT progressChanged(_pOpacity);
++        });
++        connect(_liveAnimation, &ElaFrameAnimation::finished, this, &ElaDrawerContainer::finishAnimation);
++    }
+ }
+ 
+ void ElaDrawerContainer::finishAnimation()
+@@ -126,6 +139,7 @@ void ElaDrawerContainer::finishAnimation()
+     _settling = true;
+     const bool wasAnimating = isAnimating() || !_pContainerPix.isNull() || _liveTransition;
+     _animation->stop();
++    if (_liveAnimation) _liveAnimation->stop();
+     _liveTransition = false;
+     qApp->removeEventFilter(this);
+     _pContainerPix = QPixmap();
+@@ -152,6 +166,7 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
+     }
+     _expanded = isExpand;
+     _animation->stop();
++    if (_liveAnimation) _liveAnimation->stop();
+     if (!animate || !isVisible() || _containerLayout->count() == 0) {
+         finishAnimation();
+         return;
+@@ -170,12 +185,12 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
+         }
+         _preparationMs = preparation.nsecsElapsed() / 1e6;
+         const qreal target = isExpand ? 1 : 0;
+-        _animation->setDuration(qMax(1, qRound(300 * qAbs(target - _pOpacity))));
+-        _animation->setStartValue(_pOpacity);
+-        _animation->setEndValue(target);
++        _liveAnimation->setDuration(qMax(1, qRound(300 * qAbs(target - _pOpacity))));
++        _liveAnimation->setStartValue(_pOpacity);
++        _liveAnimation->setEndValue(target);
+         _liveTransition = true;
+         qApp->installEventFilter(this);
+-        _animation->start();
++        _liveAnimation->start();
+         return;
+     }
+     {
+diff --git a/Development/ElaDrawerContainer.h b/Development/ElaDrawerContainer.h
+index 5ca16dc..7465a9c 100644
+--- a/Development/ElaDrawerContainer.h
++++ b/Development/ElaDrawerContainer.h
+@@ -49,6 +49,7 @@ private:
+     QWidget* _containerWidget{nullptr};
+     QList<QPointer<QWidget>> _drawerWidgetList;
+     class QPropertyAnimation* _animation{nullptr};
++    class ElaFrameAnimation* _liveAnimation{nullptr};
+     Qt::Edge _edge{Qt::TopEdge};
+     bool _expanded{false};
+     bool _preparing{false};
+diff --git a/Development/ElaFrameAnimation.cpp b/Development/ElaFrameAnimation.cpp
+new file mode 100644
+index 0000000..3a96cee
+--- /dev/null
++++ b/Development/ElaFrameAnimation.cpp
+@@ -0,0 +1,52 @@
++#include "ElaFrameAnimation.h"
++
++#include <QPointer>
++
++ElaFrameAnimation::ElaFrameAnimation(QObject* parent)
++    : QObject(parent), _timer(this)
++{
++    _timer.setObjectName("elaSidebarFrameTimer");
++    _timer.setTimerType(Qt::PreciseTimer);
++    _timer.setSingleShot(true);
++    connect(&_timer, &QTimer::timeout, this, &ElaFrameAnimation::advance);
++}
++
++void ElaFrameAnimation::start()
++{
++    stop();
++    _running = true;
++    _elapsed.start();
++    advance();
++}
++
++void ElaFrameAnimation::stop()
++{
++    ++_serial;
++    _running = false;
++    _timer.stop();
++}
++
++void ElaFrameAnimation::advance()
++{
++    if (!_running) return;
++    const auto serial = _serial;
++    const qreal progress = _duration ? qMin(qreal(1), _elapsed.nsecsElapsed() / (_duration * 1000000.0)) : 1;
++    const bool complete = progress >= 1;
++    if (complete) _running = false;
++    const qreal value = complete ? _end : _start + (_end - _start) * _curve.valueForProgress(progress);
++    QPointer<ElaFrameAnimation> guard(this);
++    Q_EMIT valueChanged(value);
++    if (!guard || serial != _serial) return;
++    if (complete) Q_EMIT finished();
++    else schedule();
++}
++
++void ElaFrameAnimation::schedule()
++{
++    // Round each next 120 Hz deadline up to timer milliseconds. Missed frames
++    // are skipped using elapsed wall time, rather than extending the motion.
++    const qint64 now = _elapsed.nsecsElapsed();
++    const qint64 nextFrame = (now * 120 / 1000000000 + 1) * 1000000000 / 120;
++    const qint64 deadline = qMin(qint64(_duration) * 1000000, nextFrame);
++    _timer.start(int(qMax(qint64(1), (deadline - now + 999999) / 1000000)));
++}
+diff --git a/Development/ElaFrameAnimation.h b/Development/ElaFrameAnimation.h
+new file mode 100644
+index 0000000..870b39e
+--- /dev/null
++++ b/Development/ElaFrameAnimation.h
+@@ -0,0 +1,40 @@
++#ifndef ELA_FRAME_ANIMATION_H
++#define ELA_FRAME_ANIMATION_H
++
++#include <QEasingCurve>
++#include <QElapsedTimer>
++#include <QObject>
++#include <QTimer>
++
++// Local clock for live sidebar widths. It does not replace Qt's animation driver.
++class ElaFrameAnimation final : public QObject
++{
++    Q_OBJECT
++public:
++    explicit ElaFrameAnimation(QObject* parent = nullptr);
++    void setStartValue(qreal value) { _start = value; }
++    void setEndValue(qreal value) { _end = value; }
++    void setDuration(int milliseconds) { _duration = qMax(0, milliseconds); }
++    void setEasingCurve(const QEasingCurve& curve) { _curve = curve; }
++    void start();
++    void stop();
++    bool isRunning() const { return _running; }
++
++signals:
++    void valueChanged(qreal value);
++    void finished();
++
++private:
++    void advance();
++    void schedule();
++    QTimer _timer;
++    QElapsedTimer _elapsed;
++    QEasingCurve _curve;
++    qreal _start = 0;
++    qreal _end = 1;
++    int _duration = 0;
++    quint64 _serial = 0;
++    bool _running = false;
++};
++
++#endif
+diff --git a/private/ElaNavigationBarPrivate.cpp b/private/ElaNavigationBarPrivate.cpp
+index ef9e0b7..4570ba4 100644
+--- a/private/ElaNavigationBarPrivate.cpp
++++ b/private/ElaNavigationBarPrivate.cpp
+@@ -1,5 +1,6 @@
+ #include "ElaNavigationBarPrivate.h"
+ #include "ElaActionCommander.h"
++#include "ElaFrameAnimation.h"
+ #include "ElaApplication.h"
+ #include "ElaBaseListView.h"
+ #include "ElaCustomTabWidget.h"
+@@ -524,13 +525,13 @@ void ElaNavigationBarPrivate::_doNavigationBarWidthAnimation(ElaNavigationType::
+     Q_Q(ElaNavigationBar);
+     if (!_widthAnimation)
+     {
+-        _widthAnimation = new QVariantAnimation(q);
++        _widthAnimation = new ElaFrameAnimation(q);
+         _widthAnimation->setEasingCurve(QEasingCurve::OutCubic);
+-        connect(_widthAnimation, &QVariantAnimation::valueChanged, this, [this, q](const QVariant& value) {
+-            q->setFixedWidth(value.toInt());
++        connect(_widthAnimation, &ElaFrameAnimation::valueChanged, this, [this, q](qreal value) {
++            q->setFixedWidth(qRound(value));
+             _updateCustomGeometry();
+         });
+-        connect(_widthAnimation, &QVariantAnimation::finished, this, [this] { _finishWidthTransition(); });
++        connect(_widthAnimation, &ElaFrameAnimation::finished, this, [this] { _finishWidthTransition(); });
+     }
+     _widthAnimation->stop();
+     ++_widthTransitionSerial;
+diff --git a/private/ElaNavigationBarPrivate.h b/private/ElaNavigationBarPrivate.h
+index c5b1d44..52a0f8c 100644
+--- a/private/ElaNavigationBarPrivate.h
++++ b/private/ElaNavigationBarPrivate.h
+@@ -11,7 +11,7 @@ class ElaMenu;
+ class QVBoxLayout;
+ class QHBoxLayout;
+ class QLinearGradient;
+-class QVariantAnimation;
++class ElaFrameAnimation;
+ class QPropertyAnimation;
+ 
+ class ElaNavigationBar;
+@@ -72,7 +72,7 @@ private:
+     QVBoxLayout* _customLayout{nullptr};
+     int _customMinimumWidth{180};
+     int _customMaximumWidth{QWIDGETSIZE_MAX};
+-    QVariantAnimation* _widthAnimation{nullptr};
++    ElaFrameAnimation* _widthAnimation{nullptr};
+     QPropertyAnimation* _overlayAnimation{nullptr};
+     bool _overlayExpanded{false};
+     bool _widthTransitioning{false};

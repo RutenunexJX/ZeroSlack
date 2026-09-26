@@ -14,6 +14,8 @@ ElaDrawerArea::ElaDrawerArea(QWidget* parent)
     connect(d->_drawerHeader, &ElaDrawerHeader::drawerHeaderClicked, d, &ElaDrawerAreaPrivate::onDrawerHeaderClicked);
     connect(d->_drawerContainer, &ElaDrawerContainer::animationFinished,
             this, &ElaDrawerArea::drawerAnimationFinished);
+    connect(d->_drawerContainer, &ElaDrawerContainer::progressChanged,
+            this, &ElaDrawerArea::drawerProgressChanged);
 
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
     mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -106,6 +108,12 @@ void ElaDrawerArea::setDrawerEdge(Qt::Edge edge)
 {
     Q_D(ElaDrawerArea);
     d->_drawerContainer->setEdge(edge);
+}
+
+void ElaDrawerArea::setLiveResizeEnabled(bool enabled)
+{
+    Q_D(ElaDrawerArea);
+    d->_drawerContainer->setLiveResizeEnabled(enabled);
 }
 
 bool ElaDrawerArea::isDrawerAnimating() const

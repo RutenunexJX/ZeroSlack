@@ -1,4 +1,5 @@
 #include "ElaDrawerContainer.h"
+#include "ElaFrameAnimation.h"
 
 #include "ElaTheme.h"
 
@@ -31,7 +32,10 @@ ElaDrawerContainer::ElaDrawerContainer(QWidget* parent)
     setMaximumHeight(0);
     _animation = new QPropertyAnimation(this, "pOpacity", this);
     _animation->setEasingCurve(QEasingCurve::OutCubic);
-    connect(_animation, &QPropertyAnimation::valueChanged, this, [this] { update(); });
+    connect(_animation, &QPropertyAnimation::valueChanged, this, [this] {
+        update();
+        Q_EMIT progressChanged(_pOpacity);
+    });
     connect(_animation, &QPropertyAnimation::finished, this, &ElaDrawerContainer::finishAnimation);
 
     _themeMode = eTheme->getThemeMode();
@@ -45,6 +49,7 @@ ElaDrawerContainer::~ElaDrawerContainer()
 {
     qApp->removeEventFilter(this);
     _animation->stop();
+    if (_liveAnimation) _liveAnimation->stop();
     for (const auto& widget : _drawerWidgetList)
         if (widget) disconnect(widget, nullptr, this, nullptr);
 }
@@ -81,7 +86,8 @@ void ElaDrawerContainer::removeWidget(QWidget* widget)
 
 bool ElaDrawerContainer::isAnimating() const
 {
-    return _animation->state() == QAbstractAnimation::Running;
+    return _animation->state() == QAbstractAnimation::Running
+        || (_liveAnimation && _liveAnimation->isRunning());
 }
 
 qint64 ElaDrawerContainer::snapshotBytes() const
@@ -92,13 +98,15 @@ qint64 ElaDrawerContainer::snapshotBytes() const
 QSize ElaDrawerContainer::sizeHint() const
 {
     const QSize content = _containerLayout->sizeHint();
-    return _expanded ? content : QSize(0, 0);
+    const bool retainingSnapshot = !_liveResize && (_preparing || !_pContainerPix.isNull());
+    return _expanded || retainingSnapshot ? content : QSize(0, 0);
 }
 
 QSize ElaDrawerContainer::minimumSizeHint() const
 {
     const QSize content = _containerLayout->minimumSize();
-    return _expanded ? content : QSize(0, 0);
+    const bool retainingSnapshot = !_liveResize && (_preparing || !_pContainerPix.isNull());
+    return _expanded || retainingSnapshot ? content : QSize(0, 0);
 }
 
 void ElaDrawerContainer::setEdge(Qt::Edge edge)
@@ -108,12 +116,31 @@ void ElaDrawerContainer::setEdge(Qt::Edge edge)
     _edge = edge;
 }
 
+void ElaDrawerContainer::setLiveResizeEnabled(bool enabled)
+{
+    if (_liveResize == enabled) return;
+    finishAnimation();
+    _liveResize = enabled;
+    if (enabled && !_liveAnimation) {
+        _liveAnimation = new ElaFrameAnimation(this);
+        _liveAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        connect(_liveAnimation, &ElaFrameAnimation::valueChanged, this, [this](qreal value) {
+            setOpacity(value);
+            update();
+            Q_EMIT progressChanged(_pOpacity);
+        });
+        connect(_liveAnimation, &ElaFrameAnimation::finished, this, &ElaDrawerContainer::finishAnimation);
+    }
+}
+
 void ElaDrawerContainer::finishAnimation()
 {
     if (_settling || _preparing) return;
     _settling = true;
-    const bool wasAnimating = isAnimating() || !_pContainerPix.isNull();
+    const bool wasAnimating = isAnimating() || !_pContainerPix.isNull() || _liveTransition;
     _animation->stop();
+    if (_liveAnimation) _liveAnimation->stop();
+    _liveTransition = false;
     qApp->removeEventFilter(this);
     _pContainerPix = QPixmap();
     _pOpacity = _expanded ? 1 : 0;
@@ -125,6 +152,9 @@ void ElaDrawerContainer::finishAnimation()
     updateGeometry();
     update();
     _settling = false;
+    QPointer<ElaDrawerContainer> guard(this);
+    Q_EMIT progressChanged(_pOpacity);
+    if (!guard) return;
     if (wasAnimating) Q_EMIT animationFinished(_expanded);
 }
 
@@ -136,12 +166,33 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
     }
     _expanded = isExpand;
     _animation->stop();
+    if (_liveAnimation) _liveAnimation->stop();
     if (!animate || !isVisible() || _containerLayout->count() == 0) {
         finishAnimation();
         return;
     }
     QElapsedTimer preparation;
     preparation.start();
+    if (_liveResize) {
+        {
+            QScopedValueRollback<bool> guard(_preparing, true);
+            setMinimumHeight(0);
+            setMaximumHeight(QWIDGETSIZE_MAX);
+            _isShowBorder = true;
+            _containerWidget->setGeometry(rect());
+            _containerWidget->show();
+            updateGeometry();
+        }
+        _preparationMs = preparation.nsecsElapsed() / 1e6;
+        const qreal target = isExpand ? 1 : 0;
+        _liveAnimation->setDuration(qMax(1, qRound(300 * qAbs(target - _pOpacity))));
+        _liveAnimation->setStartValue(_pOpacity);
+        _liveAnimation->setEndValue(target);
+        _liveTransition = true;
+        qApp->installEventFilter(this);
+        _liveAnimation->start();
+        return;
+    }
     {
         QScopedValueRollback<bool> guard(_preparing, true);
         if (_pContainerPix.isNull()) {
@@ -178,7 +229,7 @@ void ElaDrawerContainer::doDrawerAnimation(bool isExpand, bool animate)
 void ElaDrawerContainer::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
-    if (!_preparing) finishAnimation();
+    if (!_preparing && !_liveResize) finishAnimation();
     _containerWidget->setGeometry(rect());
 }
 

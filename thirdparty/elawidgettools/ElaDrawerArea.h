@@ -27,6 +27,8 @@ public:
     void setExpanded(bool expanded, bool animate = true);
     void setDrawerHeaderVisible(bool visible);
     void setDrawerEdge(Qt::Edge edge);
+    // Opt-in live content for a host that resizes its layout on drawerProgressChanged.
+    void setLiveResizeEnabled(bool enabled);
     bool isDrawerAnimating() const;
     void finishDrawerAnimation();
     qint64 drawerSnapshotBytes() const;
@@ -37,6 +39,7 @@ public:
 Q_SIGNALS:
     Q_SIGNAL void expandStateChanged(bool isExpand);
     Q_SIGNAL void drawerAnimationFinished(bool isExpand);
+    Q_SIGNAL void drawerProgressChanged(qreal progress);
 };
 
 #endif //ELAWORKSPACE_ELAWIDGETTOOLS_ELADRAWERAREA_H_
