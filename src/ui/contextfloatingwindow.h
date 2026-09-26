@@ -41,6 +41,8 @@ public:
     QWidget* titleBar() const;
     bool canDock() const;
     void beginNativeDockDrag(const QPoint& position);
+    void cancelDockDrag();
+    void setDockDropTarget(Qt::DockWidgetArea area);
 
 signals:
     void closeRequested();
@@ -70,6 +72,8 @@ private:
     QWidget* dockTitle = nullptr;
     QLabel* titleLabel = nullptr;
     quint64 dockGeneration = 0;
+    Qt::DockWidgetArea pendingDropArea = Qt::NoDockWidgetArea;
+    QPoint lastDockDragPosition;
     QList<QPair<QPointer<QScrollBar>, int>> dockScrollPositions;
     void scheduleDockCommit();
     void captureDockScrollPositions();
@@ -90,7 +94,6 @@ private:
 
     void refreshBackdrop();
     void refreshTitle();
-    void cancelDockDrag();
     void layoutTitleBar();
     void scheduleBackdropRefresh();
     void rememberGeometry();

@@ -22,6 +22,7 @@ class ContextFloatingSurface;
 class ContextFloatingWindow;
 class ContextRail;
 class ContextToolbox;
+class PanelLayoutController;
 class QStackedWidget;
 class IContextContentProvider;
 class QDockWidget;
@@ -53,6 +54,7 @@ public:
     bool focusResource(const QString& resourceKey);
     bool closeFloatingResource(const QString& resourceKey);
     bool pinFloatingResource(const QString& resourceKey, bool bottom = false, int index = -1);
+    bool pinFloatingResourceInArea(const QString& resourceKey, Qt::DockWidgetArea area, int index = -1);
     bool dragOutResource(const QString& resourceKey, const QPoint& globalPosition, QString* failureReason = nullptr);
     void setFloatingCollapsed(bool collapsed);
     bool floatingCollapsed() const;
@@ -65,6 +67,7 @@ public:
     ContextDockHost* dockHost() const;
     QDockWidget* dockWidget() const;
     QDockWidget* bottomDockWidget() const;
+    QDockWidget* leftDockWidget() const;
     bool dockVisible() const;
     bool canShowDock() const;
     // The live view in either dock area or a floating window.
@@ -148,10 +151,14 @@ private:
     void settleDockTopology();
 #endif
     QPointer<QDockWidget> bottomDockValue;
+    QPointer<QDockWidget> leftDockValue;
+    QPointer<PanelLayoutController> bottomPanels;
     QPointer<ContextDockTransition> dockTransition;
     QPointer<ContextFloatingWindow> floatingDragSource;
     bool dockingTransition = false;
     int preferredBottomHeight = 300;
+    int preferredLeftWidth = ContextWorkspaceState::kDefaultDockWidth;
+    int preferredLeftHeight = 300;
     bool previewingDocks = false;
     bool sideWasVisible = false;
     bool bottomWasVisible = false;
@@ -227,6 +234,10 @@ private:
     void announceResourceOpened(const ContextResource& resource, ContextPlacement placement);
     void resetPeekToProviderPreferredSize();
     void refreshProviderIcons();
+    bool pinPeekInArea(QString* failureReason, Qt::DockWidgetArea area, int index);
+    Qt::DockWidgetArea floatingDropArea(const QPoint& position) const;
+    bool bottomAreaVisible() const;
+    void setBottomAreaVisible(bool visible, bool expandDrawer = true);
     int boundedDockWidthForWindow(int width) const;
     void showDock(bool applyPreferredWidth, bool animate = true);
     void showResourceDock(const QString& key);

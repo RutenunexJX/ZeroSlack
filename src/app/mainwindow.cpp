@@ -28,6 +28,7 @@
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
+#include "contextfloatingwindow.h"
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "pinloomhostclient.h"
@@ -619,6 +620,10 @@ void MainWindow::setupNotificationCenter()
 
 MainWindow::~MainWindow()
 {
+    // Qt destroys its dock layout before the child docks. Abort active drags
+    // while that layout and all of its widgets are still intact.
+    for (auto* floating : findChildren<ContextFloatingWindow*>())
+        floating->cancelDockDrag();
     ++semanticDecorationGeneration;
     if (semanticDecorationCancellation)
         semanticDecorationCancellation->store(true);

@@ -1,4 +1,5 @@
 #include "contextworkspacecontroller.h"
+#include "panellayoutcontroller.h"
 
 #include "applicationthememanager.h"
 #include "contextcontentprovider.h"
@@ -89,12 +90,12 @@ QIcon contextProviderIcon(
 
     using namespace RoundedIcons;
     if (providerId == QStringLiteral("temporaryEditor")) return icon(File);
-    if (providerId == QStringLiteral("rtlInsight.kernel")) return icon(Module);
-    if (providerId == QStringLiteral("rtlInsight.block")) return icon(Hierarchy);
-    if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(Signals);
-    if (providerId == QStringLiteral("rtlInsight.state")) return icon(Context);
+    if (providerId == QStringLiteral("rtlInsight.kernel")) return icon(KernelGraph);
+    if (providerId == QStringLiteral("rtlInsight.block")) return icon(ModuleGraph);
+    if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(HotspotGraph);
+    if (providerId == QStringLiteral("rtlInsight.state")) return icon(StateGraph);
     if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
-    if (providerId == QStringLiteral("xips")) return icon(Grid);
+    if (providerId == QStringLiteral("xips")) return icon(IpCatalog);
     return icon(Bookmark);
 }
 }
@@ -141,7 +142,8 @@ ContextWorkspaceController::ContextWorkspaceController(
             }
         }
         if (dockHostValue && (dockHostValue->isAncestorOf(now)
-                             || dockHostValue->bottomWidget()->isAncestorOf(now)))
+                             || dockHostValue->bottomWidget()->isAncestorOf(now)
+                             || dockHostValue->leftWidget()->isAncestorOf(now)))
             recordFocus(dockHostValue->currentResource().stableKey());
         else if (editorRegionValue && (now == editorRegionValue || editorRegionValue->isAncestorOf(now)))
             focusedResourceKey.clear();
@@ -217,9 +219,40 @@ ContextWorkspaceController::ContextWorkspaceController(
         dock->setTitleBarWidget(title);
     }
     mainWindow->addDockWidget(Qt::BottomDockWidgetArea, bottomDockValue, Qt::Vertical);
-    if (auto* drawer = mainWindow->findChild<QDockWidget*>(QStringLiteral("bottomToolDrawerDock"), Qt::FindDirectChildrenOnly))
-        mainWindow->splitDockWidget(bottomDockValue, drawer, Qt::Vertical);
     bottomDockValue->hide();
+    for (auto* child : mainWindow->children()) {
+        if (auto* panels = dynamic_cast<PanelLayoutController*>(child)) {
+            bottomPanels = panels;
+            break;
+        }
+    }
+    if (bottomPanels) {
+        auto* unusedDock = bottomDockValue.data();
+        bottomPanels->attachBottomCompanion(dockHostValue->bottomWidget());
+        mainWindow->removeDockWidget(unusedDock);
+        delete unusedDock;
+        bottomDockValue = bottomPanels->drawerDock();
+    }
+#ifdef ZEROSLACK_ENABLE_ELA
+    leftDockValue = new ElaDockWidget(tr("Context"), mainWindow);
+#else
+    leftDockValue = new QDockWidget(tr("Context"), mainWindow);
+#endif
+    leftDockValue->setObjectName(QStringLiteral("contextWorkspaceLeftDock"));
+    leftDockValue->setAllowedAreas(Qt::LeftDockWidgetArea);
+    leftDockValue->setFeatures(QDockWidget::DockWidgetClosable);
+    leftDockValue->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
+    leftDockValue->setMinimumHeight(160);
+    auto* leftTitle = new QWidget(leftDockValue);
+    leftTitle->setFixedHeight(0);
+    leftDockValue->setTitleBarWidget(leftTitle);
+    leftDockValue->setWidget(dockHostValue->leftWidget());
+    mainWindow->addDockWidget(Qt::LeftDockWidgetArea, leftDockValue);
+    leftDockValue->hide();
+    leftDockValue->installEventFilter(this);
+    connect(leftDockValue, &QDockWidget::visibilityChanged, this, [this](bool) {
+        notifyWorkspaceStateChanged();
+    });
 
 #ifndef ZEROSLACK_ENABLE_ELA
     dockTransition = new ContextDockTransition(mainWindow, dockHostValue);
@@ -261,7 +294,7 @@ ContextWorkspaceController::ContextWorkspaceController(
                 notifyWorkspaceStateChanged();
             });
     connect(dockHostValue, &ContextDockHost::dragOutRequested, this, [this](const QString& key, const QPoint& position) {
-        const bool bottom = dockHostValue->isBottomResource(key);
+        const auto area = dockHostValue->resourceArea(key);
         const int index = dockHostValue->resourceKeys().indexOf(key);
         const int height = dockHostValue->sectionHeight(key);
         const int width = dockHostValue->sectionWidth(key);
@@ -271,21 +304,26 @@ ContextWorkspaceController::ContextWorkspaceController(
         if (!host) return;
         auto connection = std::make_shared<QMetaObject::Connection>();
         *connection = connect(host, &ContextFloatingWindow::titleDragFinished, this,
-            [this, host, key, bottom, index, height, width, connection](const QPoint&, bool cancelled) {
+            [this, host, key, area, index, height, width, connection](const QPoint&, bool cancelled) {
                 disconnect(*connection);
                 if (!cancelled || restoringState || !host->canDock() || host->resource().stableKey() != key) return;
                 const QScopedValueRollback<bool> guard(dockingTransition, true);
-                if (pinFloatingResource(key, bottom, index)) {
+                if (pinFloatingResourceInArea(key, area, index)) {
                     dockHostValue->setSectionHeight(key, height);
                     dockHostValue->setSectionWidth(key, width);
                 }
             });
-        host->beginNativeDockDrag(position);
-        if (!host->isDockDragging()) disconnect(*connection);
+        // Finish the section's mouse event and release its old mouse grab before
+        // Qt starts the floating dock's drag transaction on the same gesture.
+        QTimer::singleShot(0, host, [host, position, connection] {
+            if (host->canDock() && QApplication::mouseButtons().testFlag(Qt::LeftButton))
+                host->beginNativeDockDrag(position);
+            if (!host->isDockDragging()) QObject::disconnect(*connection);
+        });
 #endif
     });
-    connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index, bool bottom) {
-        pinFloatingResource(key, bottom, index);
+    connect(dockHostValue, &ContextDockHost::floatingDropRequested, this, [this](const QString& key, int index, Qt::DockWidgetArea area) {
+        pinFloatingResourceInArea(key, area, index);
     });
     connect(dockHostValue, &ContextDockHost::sectionDragStarted, this, &ContextWorkspaceController::beginDockPreview);
     connect(dockHostValue, &ContextDockHost::sectionDragFinished, this, &ContextWorkspaceController::endDockPreview);
@@ -384,13 +422,25 @@ bool ContextWorkspaceController::dockVisible() const
 {
 #ifdef ZEROSLACK_ENABLE_ELA
     return (dockValue && dockValue->isVisible() && sideDrawer && sideDrawer->getIsExpand())
-        || (bottomDockValue && bottomDockValue->isVisible());
+        || bottomAreaVisible() || (leftDockValue && leftDockValue->isVisible());
 #else
-    return (dockValue && dockValue->isVisible()) || (bottomDockValue && bottomDockValue->isVisible());
+    return (dockValue && dockValue->isVisible()) || bottomAreaVisible() || (leftDockValue && leftDockValue->isVisible());
 #endif
 }
 
 QDockWidget* ContextWorkspaceController::bottomDockWidget() const { return bottomDockValue; }
+QDockWidget* ContextWorkspaceController::leftDockWidget() const { return leftDockValue; }
+
+bool ContextWorkspaceController::bottomAreaVisible() const
+{
+    return bottomPanels ? bottomPanels->bottomCompanionVisible() && !bottomPanels->isBottomCollapsed()
+                        : bottomDockValue && bottomDockValue->isVisible();
+}
+void ContextWorkspaceController::setBottomAreaVisible(bool visible, bool expandDrawer)
+{
+    if (bottomPanels) bottomPanels->setBottomCompanionVisible(visible, expandDrawer);
+    else if (bottomDockValue) bottomDockValue->setVisible(visible);
+}
 
 QWidget* ContextWorkspaceController::viewForResource(
     const QString& resourceKey) const
@@ -432,7 +482,8 @@ bool ContextWorkspaceController::setDockVisible(
     if (!visible) {
         if (dockValue->isVisible())
             applyDockVisibility(false);
-        bottomDockValue->hide();
+        setBottomAreaVisible(false);
+        leftDockValue->hide();
         updateActiveRailEntry();
         return true;
     }
@@ -814,7 +865,7 @@ bool ContextWorkspaceController::openInDockedSurface(
     switch (placement.persistence) {
     case ContextPersistence::Transient:
         if (transientDockResourceKey == key && dockHostValue->containsResource(key)
-            && (dockHostValue->isBottomResource(key) ? bottomDockValue->isVisible() : dockValue->isVisible())) {
+            && dockHostValue->sectionWidget(key)->isVisible()) {
             closePinnedResource(key);
             return true;
         }
@@ -851,10 +902,13 @@ bool ContextWorkspaceController::openInDockedSurface(
 }
 
 bool ContextWorkspaceController::pinPeek(QString* failureReason, bool bottom, int index)
+{ return pinPeekInArea(failureReason, bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea, index); }
+
+bool ContextWorkspaceController::pinPeekInArea(QString* failureReason, Qt::DockWidgetArea area, int index)
 {
     if (failureReason)
         failureReason->clear();
-    if (!peekHostValue || !floatingSurfaceFor()->hasResource()) {
+    if (!floatingSurfaceFor() || !floatingSurfaceFor()->hasResource()) {
         if (failureReason)
             *failureReason = QStringLiteral("No context preview is open.");
         return false;
@@ -889,8 +943,8 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason, bool bottom, in
         return false;
     }
     dockHostValue->setSectionDetachable(resource.stableKey(), provider->capabilities(resource).detachable);
-    dockHostValue->moveResourceToArea(resource.stableKey(), bottom, index);
-    if (bottom) showResourceDock(resource.stableKey());
+    dockHostValue->moveResourceToArea(resource.stableKey(), area, index);
+    if (area != Qt::RightDockWidgetArea) showResourceDock(resource.stableKey());
     else {
         sidebarPages->setCurrentWidget(dockHostValue);
         showDock(dockWasEmpty && !restoringState, !dockingTransition);
@@ -1061,7 +1115,8 @@ void ContextWorkspaceController::clearResources()
     }
     if (dockValue)
         dockValue->hide();
-    if (bottomDockValue) bottomDockValue->hide();
+    setBottomAreaVisible(false);
+    if (leftDockValue) leftDockValue->hide();
     transientDockResourceKey.clear();
     restoringState = previousRestoring;
     updateActiveRailEntry();
@@ -1114,8 +1169,14 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
 #ifdef ZEROSLACK_ENABLE_ELA
     state.dockVisible = state.dockVisible && sideDrawer && sideDrawer->getIsExpand();
 #endif
-    state.bottomDockVisible = bottomDockValue && bottomDockValue->isVisible();
-    state.bottomDockHeight = state.bottomDockVisible ? bottomDockValue->height() : preferredBottomHeight;
+    state.bottomDockVisible = bottomPanels ? bottomPanels->bottomCompanionVisible() : bottomAreaVisible();
+    state.leftDockVisible = leftDockValue && leftDockValue->isVisible();
+    state.leftDockWidth = state.leftDockVisible ? leftDockValue->width() : preferredLeftWidth;
+    state.leftDockHeight = state.leftDockVisible ? leftDockValue->height() : preferredLeftHeight;
+    if (bottomPanels) state.bottomSplitState = bottomPanels->bottomSplitState();
+    state.bottomDockHeight = bottomPanels
+        ? bottomPanels->panelHeight(bottomPanels->activeBottomPanelId())
+        : state.bottomDockVisible ? bottomDockValue->height() : preferredBottomHeight;
     state.railVisible = railValue && railValue->isVisible();
     for (const auto& [id, provider] : providers) {
         if (!provider)
@@ -1155,7 +1216,8 @@ ContextWorkspaceState ContextWorkspaceController::captureState() const
         state.dockSections.append({persisted.stableKey(), dockHostValue->isSectionCollapsed(resource.stableKey()),
                                    dockHostValue->sectionHeight(resource.stableKey()),
                                    dockHostValue->isBottomResource(resource.stableKey()),
-                                   dockHostValue->sectionWidth(resource.stableKey())});
+                                   dockHostValue->sectionWidth(resource.stableKey()),
+                                   dockHostValue->resourceArea(resource.stableKey()) == Qt::LeftDockWidgetArea});
     }
     return state;
 }
@@ -1165,6 +1227,8 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     bool preserveRestoredDockGeometry)
 {
     ContextWorkspaceState state = savedState;
+    preferredLeftWidth = ContextWorkspaceState::boundedDockWidth(state.leftDockWidth);
+    preferredLeftHeight = qBound(160, state.leftDockHeight, 8192);
     state.removeRetiredProviders();
     ContextWorkspaceRestoreResult result;
     const bool previousRestoring = restoringState;
@@ -1319,7 +1383,8 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         // stores 0, which would otherwise reset the section to the split share.
         if (section.height > 0)
             dockHostValue->setSectionHeight(key, section.height);
-        dockHostValue->moveResourceToArea(key, section.bottom);
+        dockHostValue->moveResourceToArea(key, section.bottom ? Qt::BottomDockWidgetArea
+            : section.left ? Qt::LeftDockWidgetArea : Qt::RightDockWidgetArea);
         if (section.width > 0) dockHostValue->setSectionWidth(key, section.width);
         QWidget* view = dockHostValue->viewForResource(key);
         const QVariant toggleVisible = view ? view->property("contextSectionToggleVisible") : QVariant();
@@ -1354,8 +1419,14 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         applyDockVisibility(
             state.dockVisible
             && dockHostValue->areaResourceCount(false) > 0, false, false);
-        bottomDockValue->setVisible(state.bottomDockVisible && dockHostValue->areaResourceCount(true) > 0);
-        if (!preserveRestoredDockGeometry && window && bottomDockValue->isVisible())
+        setBottomAreaVisible(state.bottomDockVisible && dockHostValue->areaResourceCount(true) > 0, false);
+        if (bottomPanels) bottomPanels->restoreBottomSplitState(state.bottomSplitState);
+        leftDockValue->setVisible(state.leftDockVisible && dockHostValue->areaResourceCount(Qt::LeftDockWidgetArea) > 0);
+        if (!preserveRestoredDockGeometry && window && leftDockValue->isVisible()) {
+            window->resizeDocks({leftDockValue}, {boundedDockWidthForWindow(state.leftDockWidth)}, Qt::Horizontal);
+            window->resizeDocks({leftDockValue}, {preferredLeftHeight}, Qt::Vertical);
+        }
+        if (!bottomPanels && !preserveRestoredDockGeometry && window && bottomDockValue->isVisible())
             window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
         if (!preserveRestoredDockGeometry
             && state.dockWidth > 0
@@ -1401,7 +1472,13 @@ bool ContextWorkspaceController::eventFilter(
             sideDrawer->setExpanded(false, false);
     }
 #endif
-    if (watched == bottomDockValue && event->type() == QEvent::Resize
+    if (watched == leftDockValue && event->type() == QEvent::Resize
+        && !restoringState && leftDockValue->isVisible()) {
+        preferredLeftWidth = leftDockValue->width();
+        preferredLeftHeight = leftDockValue->height();
+        notifyWorkspaceStateChanged();
+    }
+    if (!bottomPanels && watched == bottomDockValue && event->type() == QEvent::Resize
         && !restoringState && !previewingDocks && !applyingBottomHeight && bottomDockValue->isVisible()) {
         preferredBottomHeight = bottomDockValue->height();
         notifyWorkspaceStateChanged();
@@ -1494,9 +1571,9 @@ QString ContextWorkspaceController::activeSidebarProviderId() const
 {
     if (!sidebarVisible() || !dockHostValue || sidebarPages->currentWidget() != dockHostValue)
         return {};
-    // Bottom and floating focus must not replace the right sidebar's active tool.
+    // Focus in another area must not replace the right sidebar's active tool.
     for (const auto& key : focusOrder) {
-        if (!dockHostValue->containsResource(key) || dockHostValue->isBottomResource(key))
+        if (dockHostValue->resourceArea(key) != Qt::RightDockWidgetArea)
             continue;
         if (dockHostValue->isSectionCollapsed(key)) return {};
         for (int i = 0; i < dockHostValue->resourceCount(); ++i) {
@@ -1638,16 +1715,30 @@ void ContextWorkspaceController::showDock(bool applyPreferredWidth, bool animate
 
 void ContextWorkspaceController::showResourceDock(const QString& key)
 {
+    if (dockHostValue->resourceArea(key) == Qt::LeftDockWidgetArea) {
+        const bool wasVisible = leftDockValue->isVisible();
+        const QScopedValueRollback<bool> guard(restoringState, true);
+        leftDockValue->show();
+        if (!wasVisible && window) {
+            window->resizeDocks({leftDockValue}, {boundedDockWidthForWindow(preferredLeftWidth)}, Qt::Horizontal);
+            window->resizeDocks({leftDockValue}, {preferredLeftHeight}, Qt::Vertical);
+        }
+        return;
+    }
     if (!dockHostValue->isBottomResource(key)) {
         sidebarPages->setCurrentWidget(dockHostValue);
         showDock(false);
         return;
     }
     const bool wasVisible = bottomDockValue->isVisible();
+    if (bottomPanels) {
+        setBottomAreaVisible(true);
+        return;
+    }
     const QScopedValueRollback<bool> guard(applyingBottomHeight, true);
     if (!wasVisible && window) {
         if (auto* drawer = window->findChild<QDockWidget*>(QStringLiteral("bottomToolDrawerDock"), Qt::FindDirectChildrenOnly))
-            window->splitDockWidget(bottomDockValue, drawer, Qt::Vertical);
+            window->splitDockWidget(drawer, bottomDockValue, Qt::Horizontal);
     }
     bottomDockValue->show();
     bottomDockValue->raise();
@@ -1659,7 +1750,8 @@ void ContextWorkspaceController::hideEmptyDocks()
     if (previewingDocks || !dockHostValue) return;
     if (dockHostValue->areaResourceCount(false) == 0 && dockValue
         && sidebarPages->currentWidget() != toolbox) dockValue->hide();
-    if (dockHostValue->areaResourceCount(true) == 0 && bottomDockValue) bottomDockValue->hide();
+    if (dockHostValue->areaResourceCount(true) == 0) setBottomAreaVisible(false);
+    if (dockHostValue->areaResourceCount(Qt::LeftDockWidgetArea) == 0 && leftDockValue) leftDockValue->hide();
 }
 
 void ContextWorkspaceController::beginDockPreview()
@@ -1667,10 +1759,10 @@ void ContextWorkspaceController::beginDockPreview()
     if (previewingDocks) return;
     previewingDocks = true;
     sideWasVisible = dockValue->isVisible();
-    bottomWasVisible = bottomDockValue->isVisible();
+    bottomWasVisible = bottomAreaVisible();
     showDock(false, false);
-    bottomDockValue->show();
-    window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
+    setBottomAreaVisible(true);
+    if (!bottomPanels) window->resizeDocks({bottomDockValue}, {preferredBottomHeight}, Qt::Vertical);
 }
 
 void ContextWorkspaceController::endDockPreview()

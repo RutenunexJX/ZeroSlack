@@ -338,8 +338,8 @@ private slots:
         if (existing) {
             if (bottom) {
                 for (const auto& key : h.keys) dock->moveResourceToArea(key, true);
-                bottomDock->show();
-                h.window.resizeDocks({bottomDock}, {250}, Qt::Vertical);
+                h.drawer->setBottomCompanionVisible(true);
+                h.drawer->setPanelHeight(h.drawer->activeBottomPanelId(), 250);
             } else h.context->setDockVisible(true);
         }
         h.compositor->settle(); QApplication::processEvents();
@@ -369,8 +369,13 @@ private slots:
             transferred = dock->addResource(resource, view);
             dock->moveResourceToArea(key, area == Qt::BottomDockWidgetArea, 0);
             auto* target = bottom ? bottomDock : side;
-            target->show();
-            h.window.resizeDocks({target}, {bottom ? 280 : 340}, bottom ? Qt::Vertical : Qt::Horizontal);
+            if (bottom) {
+                h.drawer->setBottomCompanionVisible(true);
+                h.drawer->setPanelHeight(h.drawer->activeBottomPanelId(), 280);
+            } else {
+                target->show();
+                h.window.resizeDocks({target}, {340}, Qt::Horizontal);
+            }
         });
         h.window.addDockWidget(bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea, &source);
         source.setFloating(false);
@@ -378,7 +383,8 @@ private slots:
 #else
         QVERIFY(dock->addResource(resource, source.takeView()));
         dock->moveResourceToArea(key, bottom, 0);
-        (bottom ? bottomDock : side)->show();
+        if (bottom) h.drawer->setBottomCompanionVisible(true);
+        else side->show();
 #endif
         QVERIFY(!h.window.findChild<ContextDockTransition*>());
         QVERIFY(!source.hasResource()); QVERIFY(!source.isVisible());
@@ -449,8 +455,10 @@ private slots:
 
     void destroyingOwnerDuringFloatingTransfer() {
 #ifdef ZEROSLACK_ENABLE_ELA
-        auto* h = new Harness;
-        auto* source = new ContextFloatingWindow(&h->window, h->editor);
+        auto* window = new MainWindow;
+        window->resize(1200, 780);
+        window->show();
+        auto* source = new ContextFloatingWindow(window, window->centralWidget());
         ContextResource resource;
         resource.providerId = "motion-test"; resource.resourceId = "owner-close";
         resource.uri = QUrl("motion:owner-close");
@@ -459,7 +467,7 @@ private slots:
         source->beginNativeDockDrag(source->mapToGlobal(QPoint(24, 16)));
         QVERIFY(source->isDockDragging());
         QPointer<ContextFloatingWindow> retained = source;
-        delete h;
+        delete window;
         QVERIFY(retained.isNull());
         QTest::qWait(250);
 #endif
@@ -475,13 +483,13 @@ private slots:
         auto* button = h.drawer->buttonForPanel("problems");
         QTest::mouseClick(button, Qt::LeftButton);
         QVERIFY(motion->isDrawerAnimating());
-        QVERIFY(motion->drawerSnapshotBytes() > 0);
+        QCOMPARE(motion->drawerSnapshotBytes(), 0);
         QApplication::processEvents();
         const auto editorGeometry = h.editor->geometry();
         const int resizes = h.editor->resizes;
         QTest::qWait(55);
-        QCOMPARE(h.editor->geometry(), editorGeometry);
-        QCOMPARE(h.editor->resizes, resizes);
+        QVERIFY(h.editor->geometry().height() < editorGeometry.height());
+        QVERIFY(h.editor->resizes > resizes);
         QCOMPARE(inWindow(h.drawer->buttonBar(), &h.window), bar);
         const auto progress = motion->drawerProgress();
         QTest::mouseClick(button, Qt::LeftButton);
@@ -548,6 +556,102 @@ private slots:
         QVERIFY(!h.compositor->isActive());
         h.drawer->setBottomCollapsed(false);
         QVERIFY(!h.compositor->isActive());
+    }
+
+    void bottomHeightSurvivesWindowResizing_data() {
+        QTest::addColumn<bool>("companion");
+        QTest::newRow("original-panel") << false;
+        QTest::newRow("with-bottom-content") << true;
+    }
+
+    void bottomHeightSurvivesWindowResizing() {
+#ifdef ZEROSLACK_ENABLE_ELA
+        QFETCH(bool, companion);
+        MainWindow window;
+        window.resize(1280, 800); window.show(); QTest::qWait(100);
+        PanelLayoutController* panels = nullptr;
+        for (auto* child : window.children())
+            if (auto* value = dynamic_cast<PanelLayoutController*>(child)) panels = value;
+        QVERIFY(panels);
+        auto* context = window.findChild<ContextWorkspaceController*>(); QVERIFY(context);
+        auto* motion = window.findChild<ElaDrawerArea*>("bottomPanelDrawer"); QVERIFY(motion);
+        if (companion) {
+            ContextResource resource;
+            resource.providerId = "motion-test"; resource.resourceId = "bottom-boundary";
+            resource.uri = QUrl("motion:bottom-boundary"); resource.title = "Retained bottom content";
+            QVERIFY(context->dockHost()->addResource(resource, new QLabel("Companion content")));
+            QVERIFY(context->dockHost()->moveResourceToArea(resource.stableKey(), Qt::BottomDockWidgetArea));
+            panels->setBottomCompanionVisible(true);
+        }
+        panels->setAnimationsEnabled(false);
+        QVERIFY(panels->restorePanel("problems"));
+        QVERIFY(panels->setPanelHeight("problems", 400));
+        QTest::qWait(50);
+        const QSize normalSize = window.size();
+        auto* primary = panels->drawerContent(); QVERIFY(primary);
+        const auto preferred = [&] { return panels->layoutState().bottomPanelHeights.value("problems"); };
+        const auto contentIsSynchronized = [&] {
+            return !companion || primary->height() == context->dockHost()->bottomWidget()->height();
+        };
+        QCOMPARE(primary->height(), 400);
+        window.resize(1280, 500); QTest::qWait(80);
+        QVERIFY(panels->maximumContentHeight() < 400);
+        QCOMPARE(primary->height(), panels->maximumContentHeight());
+        QVERIFY(contentIsSynchronized());
+        QCOMPARE(preferred(), 400);
+        const auto constrainedState = panels->layoutState();
+        panels->restoreLayoutState(constrainedState);
+        window.resize(normalSize);
+        QTRY_COMPARE(primary->height(), 400);
+        QCOMPARE(preferred(), 400);
+
+        window.showMaximized(); QTRY_VERIFY(window.isMaximized()); QTest::qWait(80);
+        QCOMPARE(primary->height(), qMin(400, panels->maximumContentHeight()));
+        QCOMPARE(preferred(), 400); QVERIFY(contentIsSynchronized());
+        window.showNormal(); window.resize(normalSize);
+        QTRY_COMPARE(primary->height(), 400);
+
+        panels->setBottomCollapsed(true);
+        window.resize(1280, 500); QTest::qWait(80);
+        panels->setBottomCollapsed(false);
+        QCOMPARE(primary->height(), panels->maximumContentHeight());
+        QCOMPARE(preferred(), 400); QVERIFY(contentIsSynchronized());
+        window.resize(normalSize); QTRY_COMPARE(primary->height(), 400);
+
+        panels->setBottomCollapsed(true);
+        panels->setAnimationsEnabled(true);
+        panels->setBottomCollapsed(false); QTest::qWait(50);
+        QVERIFY(motion->isDrawerAnimating());
+        QVERIFY(primary->height() > 0 && primary->height() < 400);
+        QVERIFY(contentIsSynchronized());
+        window.resize(1280, 500); QTest::qWait(80);
+        QVERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(primary->height(), panels->maximumContentHeight());
+        QCOMPARE(preferred(), 400); QVERIFY(contentIsSynchronized());
+        window.resize(normalSize); QTRY_COMPARE(primary->height(), 400);
+        panels->setBottomCollapsed(true); QTest::qWait(50);
+        QVERIFY(motion->isDrawerAnimating()); QVERIFY(contentIsSynchronized());
+        window.resize(1280, 500); QTest::qWait(80);
+        QVERIFY(!motion->isDrawerAnimating()); QVERIFY(panels->isBottomCollapsed());
+        QCOMPARE(preferred(), 400);
+        window.resize(normalSize); panels->setBottomCollapsed(false);
+        QTRY_VERIFY(!motion->isDrawerAnimating());
+        QCOMPARE(primary->height(), 400); QVERIFY(contentIsSynchronized());
+
+        // A user resize is an intentional preference change, unlike a window resize.
+        QWidget* handle = panels->resizeHandle();
+        const QPoint center = handle->rect().center();
+        QTest::mousePress(handle, Qt::LeftButton, Qt::NoModifier, center);
+        QTest::mouseMove(handle, center + QPoint(0, 80));
+        QTest::mouseRelease(handle, Qt::LeftButton, Qt::NoModifier, center);
+        QCOMPARE(preferred(), 320);
+        QCOMPARE(primary->height(), 320); QVERIFY(contentIsSynchronized());
+        window.resize(1280, 500); QTest::qWait(80);
+        window.resize(normalSize); QTest::qWait(80);
+        QCOMPARE(preferred(), 320); QCOMPARE(primary->height(), 320);
+#else
+        QSKIP("Maintained Ela live drawer behavior");
+#endif
     }
 
     void rightSidebarPreservesViewsAndCanReverse() {

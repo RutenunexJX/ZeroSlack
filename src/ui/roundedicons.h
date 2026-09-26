@@ -15,7 +15,8 @@ enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
-    OpenProject, ZoomIn, ZoomOut, More };
+    OpenProject, ZoomIn, ZoomOut, More,
+    KernelGraph, ModuleGraph, HotspotGraph, StateGraph, IpCatalog };
 
 class Engine final : public QIconEngine {
 public:
@@ -58,6 +59,39 @@ public:
         case Filter: path({{3,4},{21,4},{14,12},{14,20},{10,18},{10,12}},true); break;
         case Refresh: p->drawArc(QRectF(4,4,16,16),45*16,290*16); path({{20,3},{20,8},{15,8}}); break;
         case Context: line(7,10,16,6); line(7,14,16,18); circle(5,12,3); circle(19,5,3); circle(19,19,3); break;
+        case KernelGraph:
+            path({{12,7},{17,10},{17,15},{12,18},{7,15},{7,10}},true);
+            circle(12,12.5,1.6);
+            line(12,7,12,3); line(7,11,3,8); line(17,11,21,8);
+            line(8,16,5,21); line(16,16,19,21); break;
+        case ModuleGraph:
+            box(3,3,18,18); box(6,7,5,5); box(13,13,5,5);
+            path({{11,9.5},{15.5,9.5},{15.5,13}}); break;
+        case HotspotGraph: {
+            QPainterPath flame;
+            flame.moveTo(13,2);
+            flame.cubicTo(14,8,19,8,20,13);
+            flame.cubicTo(22,23,3,24,4,14);
+            flame.cubicTo(4,10,8,8,8,5);
+            flame.lineTo(10,10);
+            flame.cubicTo(13,8,13,5,13,2);
+            p->drawPath(flame);
+            QPainterPath core;
+            core.moveTo(12,13); core.cubicTo(9,16,9,20,12,21);
+            core.cubicTo(15,20,15,17,12,13); p->drawPath(core); break;
+        }
+        case StateGraph:
+            circle(5,12,3); circle(19,12,3);
+            p->drawArc(QRectF(5,3,14,14),25*16,130*16);
+            path({{16,3},{19,6},{15,7}});
+            p->drawArc(QRectF(5,7,14,14),205*16,130*16);
+            path({{8,21},{5,18},{9,17}}); break;
+        case IpCatalog:
+            box(6,6,12,12); line(10,10,14,14); line(14,10,10,14);
+            for (int i : {8,12,16}) {
+                line(i,3,i,6); line(i,18,i,21);
+                line(3,i,6,i); line(18,i,21,i);
+            } break;
         case Module: box(6,6,12,12); for(int i=8;i<=16;i+=4){line(i,3,i,6);line(i,18,i,21);line(3,i,6,i);line(18,i,21,i);} break;
         case Hierarchy: box(9,2,6,5); box(2,17,6,5); box(16,17,6,5); line(12,7,12,12); path({{5,17},{5,12},{19,12},{19,17}}); break;
         case Signals: for(int i=5;i<=19;i+=7){int y=i==12?15:8;line(i,3,i,y-2);line(i,y+2,i,21);circle(i,y,2);} break;

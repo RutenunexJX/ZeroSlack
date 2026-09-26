@@ -1101,3 +1101,27 @@ xIPs 4/4、Context workspace 256 断言通过。背景测试在 DPR 1.5/2 均 7/
 本机原始样本与候选记录为 `build/validation/20260926-sidebar-smoothness/final/`，独立验收为
 `build/validation/20260926-sidebar-smoothness-coordinator/candidate-review/`，正式构建/发布记录为
 `build/validation/20260926-sidebar-0.31.15-release/`。
+
+### 0.31.16 Workspace navigation and docking
+
+0.31.16 纳入 2026-09-27 统一验收通过的 R2 工作区改进：Design 返回 Files 复用未失效的树，
+保留选择和滚动；底栏以实时布局动画同步编辑器与背景；右栏资源可直接拖出浮窗，支持左侧停靠，
+原 Problems／Activity 与拖入内容在底部横向并列并保存分隔尺寸。热点图移除 7 类角色复选框，
+默认显示全部角色并保留搜索。Kernel、Module、Hotspot、State 和 xIPs 使用不同形状的统一矢量图标。
+
+R2 修复验收发现的底栏高度回归：窗口 Resize 只应用受当前窗口约束的几何和动画目标，
+不覆盖保存的用户偏好；用户拖动仍更新偏好。同一独立探针的初始／缩小／恢复高度为
+400→344→400。带或不带底部附加内容均覆盖窗口恢复、最大化还原、折叠、动画中缩放、
+状态保存恢复、附加内容同步，以及鼠标拖动将偏好改为 320 后保持。右／左栏实际原生拖出前
+收起底栏，拖出后继续收起。
+
+已验收 R2 的相关 CTest 为 25/25，Windows 原生动画 22 项、拖拽和图标 5 项、xIPs provider
+4 项通过，工作区 256 项断言通过；相关计数含各自初始化和清理。独立包 81 项校验与仅系统 PATH
+下 GUI／CLI／扫描冒烟通过。验收对象的 26 份源码保持不变，本次只增加版本与发布文档更新。
+按用户要求继续排除缺失私有 test_sv/new、test_sv/huge_prj 和 local_fixture_names.h。
+
+本地正式包使用干净提交和 annotated tag `v0.31.16`，版本及提交写入 build-info.json。
+本次本地替换保留上一正式包及套件元数据的可恢复备份。远端推送单独处理，不能从本地标签
+或本地正式包推断已经发布到 GitHub。R2 验收记录位于
+`build/validation/20260926-workspace-refinements-coordinator/r2-review/`，本地正式发布证据位于
+`build/validation/20260927-workspace-0.31.16-release/`。

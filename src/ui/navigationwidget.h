@@ -119,6 +119,8 @@ private:
 
     QString fileSearchFilter;
     QString designSearchFilter;
+    bool fileTreeRefreshPending = true;
+    bool designTreeRefreshPending = true;
     QString currentHighlightedFile;
     QString fileTreeRootPath;
     QString workspaceFileTreeRootPath;

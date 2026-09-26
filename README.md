@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.15`
+Current version: `v0.31.16`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -148,18 +148,26 @@ named `vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish t
 root (`D:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass explicit
 local build and toolchain paths to the packaging script; its defaults refer to the original machine.
 The executable is `ZeroSlack.exe`; the package directory never includes the version.
-Replace the current local package without keeping older copies or backups, and update
-the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
+Replace the current local package and update the suite manifest and shortcuts.
+The local 0.31.16 replacement retains a recoverable previous-package backup as requested.
+Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display and guarded documents.
 When a working-tree package is explicitly requested without committing or tagging, use
 `-Formal -AllowDirty`. Its build-info records the actual base revision, dirty state and
 a null releaseTag; packaging never creates a commit or tag. The default clean-source
 check remains in force unless -AllowDirty is supplied.
 The former classic release channel is no longer maintained.
-The current release is `0.31.15`. Ela is now the sole formal package,
+The current release is `0.31.16`. Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
+Release 0.31.16 preserves Files tree selection and scrolling when returning from Design,
+and animates the bottom panel through live editor/background layout changes. Temporary
+window constraints preserve the user's preferred panel height. Context views can be
+dragged from the sidebar into floating windows, docked on the left, or placed horizontally
+beside Problems/Activity, retaining their contents and saved sizes. The hotspot view
+shows all seven roles without role checkboxes. Kernel, Module, Hotspot, State and xIPs
+use distinct vector icons; the toolbox keeps its icon matrix and hover names.
 Release 0.31.15 reduces sidebar stutter while keeping the live editor, background,
 text appearance and editing state. It preserves Ela's native sibling-window policy,
 avoids redundant opaque background painting, retains scaled backgrounds in a bounded

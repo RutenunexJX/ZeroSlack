@@ -358,8 +358,10 @@ void verifyFocusAndEditorPreservation(DrawerHarness& harness)
 
     const int collapsedEditorHeight = harness.editor->height();
     harness.controller->setBottomCollapsed(false);
-    QApplication::processEvents();
-    check(harness.editor->height() < collapsedEditorHeight
+    const bool reflowed = QTest::qWaitFor([&] {
+        return harness.editor->height() < collapsedEditorHeight;
+    }, 1000);
+    check(reflowed
               && harness.editor->textCursor().anchor() == anchor
               && harness.editor->textCursor().position() == position,
           "expanded drawer reflows the editor without overlaying or resetting it");

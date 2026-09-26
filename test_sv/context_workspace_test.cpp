@@ -336,7 +336,10 @@ bool sameState(const ContextWorkspaceState& a, const ContextWorkspaceState& b)
         && a.floatingGeometryValid == b.floatingGeometryValid
         && a.floatingInstances == b.floatingInstances && a.floatingCollapsed == b.floatingCollapsed
         && a.documentFloatingLayouts == b.documentFloatingLayouts
-        && a.documentFloatingOrder == b.documentFloatingOrder && a.dockSections == b.dockSections;
+        && a.documentFloatingOrder == b.documentFloatingOrder && a.dockSections == b.dockSections
+        && a.leftDockVisible == b.leftDockVisible && a.leftDockWidth == b.leftDockWidth
+        && a.leftDockHeight == b.leftDockHeight
+        && a.bottomSplitState == b.bottomSplitState;
 }
 
 void verifyStateCompatibility(const QStringList& arguments)
@@ -374,7 +377,7 @@ void verifyStateCompatibility(const QStringList& arguments)
     const auto restored = controller.restoreState(initial);
     settleUi();
     const auto captured = controller.captureState();
-    check(ContextWorkspaceState::kVersion == 7 && restored.restoredResources == 2
+    check(ContextWorkspaceState::kVersion == 8 && restored.restoredResources == 2
               && restored.skippedResources == 0 && sameState(initial, captured),
           "state_all_fields_roundtrip: multiple kept resources and all v3 fields survive restore");
 
@@ -865,7 +868,7 @@ void verifyFloatingGeometryRoundtrip()
               && saved.floatingScreenName == window->screen()->name(),
           "floating_geometry: native frame rectangle and screen name are captured");
     controller.restoreState(saved);
-    check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 8 && sameState(saved, controller.captureState()),
           "floating_geometry: all fields survive capture and restore independently of overlay size");
     controller.openResource(resource(QStringLiteral("geometry")), floatingPlacement);
     settleUi();
@@ -1407,7 +1410,7 @@ void verifySidebarStack()
     WorkspaceSessionState session; session.workspaceRoot = controller.workspaceRoot(); session.ui.contextWorkspace = saved;
     service.save(session);
     controller.restoreState(service.load(session.workspaceRoot).state.ui.contextWorkspace);
-    check(ContextWorkspaceState::kVersion == 7 && sameState(saved, controller.captureState()),
+    check(ContextWorkspaceState::kVersion == 8 && sameState(saved, controller.captureState()),
           "stack_v6_roundtrip: order, collapsed states and requested heights survive the production serializer");
     controller.dockWidget()->toggleViewAction()->trigger();
     settleUi();
@@ -1750,6 +1753,12 @@ void verifySidebarDragBack()
               && host->resourceKeys().indexOf(floatingResource.stableKey()) == 1,
           "stack_drop_upper: upper half inserts before the second section");
     check(marker && !marker->isVisible(), "stack_title_drop_preview_cleared: accepted title drop clears the marker");
+    if (host->viewForResource(floatingResource.stableKey()) != original || fixture.counters.created != created
+        || floating->isVisible() || floating->hasResource() || !controller.floatingWindows().isEmpty())
+        std::cerr << "stack_drop_identity diagnostic: sameView=" << (host->viewForResource(floatingResource.stableKey()) == original)
+                  << " created=" << fixture.counters.created << '/' << created
+                  << " visible=" << floating->isVisible() << " hasResource=" << floating->hasResource()
+                  << " floatingCount=" << controller.floatingWindows().size() << '\n';
     check(host->viewForResource(floatingResource.stableKey()) == original && fixture.counters.created == created
               && !floating->isVisible() && !floating->hasResource() && controller.floatingWindows().isEmpty(),
           "stack_drop_identity: drag back retains QWidget and closes the empty native surface with no duplicate resource");
@@ -1895,6 +1904,11 @@ void verifyNativeFrameCorrection()
 int main(int argc, char* argv[])
 {
     QApplication app(argc, argv);
+    QTemporaryDir profile;
+    if (!profile.isValid()) return 2;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, profile.path());
     if (!initializeUiStyleForTest()) return 2;
     verifyStateCompatibility(app.arguments());
     verifyLegacyFloatingDockMigration();

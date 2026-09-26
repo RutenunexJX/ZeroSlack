@@ -348,10 +348,14 @@ QJsonObject sessionObject(
     QJsonArray dockSections;
     for (const auto& section : state.ui.contextWorkspace.dockSections)
         dockSections.append(QJsonObject{{"resourceKey", section.resourceKey}, {"collapsed", section.collapsed},
-            {"height", section.height}, {"bottom", section.bottom}, {"width", section.width}});
+            {"height", section.height}, {"bottom", section.bottom}, {"width", section.width}, {"left", section.left}});
     contextWorkspace.insert(QStringLiteral("dockSections"), dockSections);
     contextWorkspace.insert(QStringLiteral("bottomDockVisible"), state.ui.contextWorkspace.bottomDockVisible);
     contextWorkspace.insert(QStringLiteral("bottomDockHeight"), state.ui.contextWorkspace.bottomDockHeight);
+    contextWorkspace.insert(QStringLiteral("leftDockVisible"), state.ui.contextWorkspace.leftDockVisible);
+    contextWorkspace.insert(QStringLiteral("leftDockWidth"), state.ui.contextWorkspace.leftDockWidth);
+    contextWorkspace.insert(QStringLiteral("leftDockHeight"), state.ui.contextWorkspace.leftDockHeight);
+    contextWorkspace.insert(QStringLiteral("bottomSplitState"), QString::fromLatin1(state.ui.contextWorkspace.bottomSplitState.toBase64()));
     contextWorkspace.insert(QStringLiteral("floatingInstances"), floatingInstancesToJson(state.ui.contextWorkspace.floatingInstances));
     contextWorkspace.insert(QStringLiteral("floatingCollapsed"), state.ui.contextWorkspace.floatingCollapsed);
     QJsonObject documentLayouts;
@@ -645,7 +649,8 @@ void restoreUi(
                     ui->contextWorkspace.dockSections.append({section.value("resourceKey").toString(),
                         section.value("collapsed").toBool(), qBound(0, section.value("height").toInt(), 8192),
                         contextVersion >= ContextWorkspaceState::kTiledDockVersion && section.value("bottom").toBool(),
-                        qBound(0, section.value("width").toInt(), 8192)});
+                        qBound(0, section.value("width").toInt(), 8192),
+                        contextVersion >= ContextWorkspaceState::kThreeAreaVersion && section.value("left").toBool()});
                 }
             } else {
                 for (const auto& encoded : ui->contextWorkspace.pinnedResources) {
@@ -656,6 +661,12 @@ void restoreUi(
             if (contextVersion >= ContextWorkspaceState::kTiledDockVersion) {
                 ui->contextWorkspace.bottomDockVisible = contextWorkspace.value("bottomDockVisible").toBool();
                 ui->contextWorkspace.bottomDockHeight = qBound(160, contextWorkspace.value("bottomDockHeight").toInt(300), 8192);
+            }
+            if (contextVersion >= ContextWorkspaceState::kThreeAreaVersion) {
+                ui->contextWorkspace.leftDockVisible = contextWorkspace.value("leftDockVisible").toBool();
+                ui->contextWorkspace.leftDockWidth = ContextWorkspaceState::boundedDockWidth(contextWorkspace.value("leftDockWidth").toInt(ContextWorkspaceState::kDefaultDockWidth));
+                ui->contextWorkspace.leftDockHeight = qBound(160, contextWorkspace.value("leftDockHeight").toInt(300), 8192);
+                ui->contextWorkspace.bottomSplitState = QByteArray::fromBase64(contextWorkspace.value("bottomSplitState").toString().toLatin1());
             }
             ui->contextWorkspace.valid =
                 contextWorkspace.value(

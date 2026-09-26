@@ -24,6 +24,7 @@
 #include <QScrollBar>
 #include <QShortcut>
 #include <QStackedWidget>
+#include <QSplitter>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolButton>
@@ -184,24 +185,29 @@ void PanelLayoutController::buildDrawer()
     bottomContentStack->setObjectName(
         QStringLiteral("bottomToolDrawerContent"));
     bottomContentStack->setSizePolicy(
-        QSizePolicy::Expanding, QSizePolicy::Fixed);
+        QSizePolicy::Ignored, QSizePolicy::Fixed);
+    bottomContentSurface->setMinimumWidth(180);
+    bottomContentSurface->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    bottomContentRow = new QSplitter(Qt::Horizontal, bottomDrawerRoot);
+    bottomContentRow->setObjectName(QStringLiteral("bottomWorkspaceSplitter"));
+    bottomContentRow->setChildrenCollapsible(false);
+    bottomContentRow->setHandleWidth(kResizeHandleHeight);
+    bottomContentRow->addWidget(bottomContentSurface);
+    connect(bottomContentRow, &QSplitter::splitterMoved, this, [this] { notifyStateChanged(); });
 #ifdef ZEROSLACK_ENABLE_ELA
     contentDrawer = new ElaDrawerArea(bottomDrawerRoot);
     contentDrawer->setObjectName(QStringLiteral("bottomPanelDrawer"));
     contentDrawer->setDrawerHeaderVisible(false);
     contentDrawer->setBorderRadius(0);
     contentDrawer->setDrawerEdge(Qt::BottomEdge);
-    contentDrawer->addDrawer(bottomContentSurface);
+    contentDrawer->setLiveResizeEnabled(true);
+    contentDrawer->addDrawer(bottomContentRow);
     contentDrawer->setExpanded(true, false);
     rootLayout->addWidget(contentDrawer);
-    connect(contentDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
-        if (!expanded) {
-            bottomResizeHandle->hide();
-            applyContentHeight(0);
-        }
-    });
+    connect(contentDrawer, &ElaDrawerArea::drawerProgressChanged,
+            this, &PanelLayoutController::applyDrawerProgress);
 #else
-    rootLayout->addWidget(bottomContentSurface);
+    rootLayout->addWidget(bottomContentRow);
 #endif
 
     bottomButtonBar = new QFrame(bottomDrawerRoot);
@@ -742,7 +748,15 @@ bool PanelLayoutController::setPanelHeight(
     }
     entry->height = bounded;
     if (activePanel == entry->id && !collapsed)
+#ifdef ZEROSLACK_ENABLE_ELA
+    {
+        expandedContentHeight = bounded;
+        if (contentDrawer) contentDrawer->finishDrawerAnimation();
         applyContentHeight(bounded);
+    }
+#else
+        applyContentHeight(bounded);
+#endif
     notifyStateChanged();
     return true;
 }
@@ -936,9 +950,20 @@ bool PanelLayoutController::eventFilter(
         }
     }
     if (watched == window && event->type() == QEvent::Resize
-        && !collapsed && !applyingDrawerGeometry) {
-        if (PanelEntry* entry = entryForId(activePanel))
-            applyContentHeight(boundedContentHeight(entry->height));
+        && !applyingDrawerGeometry) {
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (contentDrawer) contentDrawer->finishDrawerAnimation();
+#endif
+        if (!collapsed) {
+            if (const PanelEntry* entry = entryForId(activePanel)) {
+                // Window bounds constrain geometry without changing the saved preference.
+                const int height = boundedContentHeight(entry->height);
+#ifdef ZEROSLACK_ENABLE_ELA
+                expandedContentHeight = height;
+#endif
+                applyContentHeight(height);
+            }
+        }
     }
     if ((watched == window || watched == bottomDrawerRoot)
         && (event->type() == QEvent::PaletteChange
@@ -1029,17 +1054,11 @@ void PanelLayoutController::applyDrawerState(bool animate)
 #ifdef ZEROSLACK_ENABLE_ELA
     if (contentDrawer) {
         bottomDrawerDock->show();
-        if (!collapsed) {
-            bottomContentSurface->show();
-            bottomResizeHandle->show();
-            applyContentHeight(boundedContentHeight(entry->height));
-            if (window->layout()) window->layout()->activate();
-        }
+        if (entry) expandedContentHeight = boundedContentHeight(entry->height);
+        bottomContentRow->show();
+        applyDrawerProgress(contentDrawer->drawerProgress());
         contentDrawer->setExpanded(!collapsed, animate && animationsEnabledValue && window->isVisible());
-        if (collapsed && !contentDrawer->isDrawerAnimating()) {
-            bottomResizeHandle->hide();
-            applyContentHeight(0);
-        }
+        if (!contentDrawer->isDrawerAnimating()) applyDrawerProgress(collapsed ? 0 : 1);
         return;
     }
 #endif
@@ -1047,7 +1066,7 @@ void PanelLayoutController::applyDrawerState(bool animate)
     const int target = collapsed ? 0 : boundedContentHeight(entry->height);
     const auto apply = [this, target] {
         bottomDrawerDock->show();
-        bottomContentSurface->setVisible(target > 0);
+        bottomContentRow->setVisible(target > 0);
         bottomResizeHandle->setVisible(target > 0);
         applyContentHeight(target);
     };
@@ -1075,7 +1094,10 @@ void PanelLayoutController::applyContentHeight(
     bottomContentStack->setMinimumHeight(safeHeight);
     bottomContentStack->setMaximumHeight(safeHeight);
     bottomContentSurface->setFixedHeight(safeHeight);
-    const int handleHeight = safeHeight > 0 ? kResizeHandleHeight : 0;
+    bottomContentRow->setFixedHeight(safeHeight);
+    const int handleHeight = qMin(kResizeHandleHeight, safeHeight);
+    bottomResizeHandle->setFixedHeight(handleHeight);
+    bottomResizeHandle->setVisible(handleHeight > 0);
     const int totalHeight = safeHeight + handleHeight + bottomButtonBar->height();
     bottomDrawerDock->setMinimumHeight(totalHeight);
     bottomDrawerDock->setMaximumHeight(totalHeight);
@@ -1088,6 +1110,64 @@ void PanelLayoutController::applyContentHeight(
             {bottomDrawerDock}, {totalHeight}, Qt::Vertical);
     }
     applyingDrawerGeometry = false;
+}
+
+#ifdef ZEROSLACK_ENABLE_ELA
+void PanelLayoutController::applyDrawerProgress(qreal progress)
+{
+    if (!window || !bottomDrawerDock || !bottomButtonBar) return;
+    applyContentHeight(qRound(expandedContentHeight * progress));
+    if (window->layout()) window->layout()->activate();
+}
+#endif
+
+void PanelLayoutController::attachBottomCompanion(QWidget* content)
+{
+    if (!content || !bottomContentRow || bottomCompanion == content) return;
+    bottomCompanion = content;
+    bottomContentRow->addWidget(content);
+    bottomContentRow->setStretchFactor(0, 1);
+    bottomContentRow->setStretchFactor(1, 1);
+    content->hide();
+}
+
+void PanelLayoutController::setBottomCompanionVisible(bool visible, bool expandDrawer)
+{
+    if (!bottomCompanion) return;
+    const bool wasVisible = !bottomCompanion->isHidden();
+    if (wasVisible && !visible) retainedBottomSplitState = bottomContentRow->saveState();
+    bottomCompanion->setVisible(visible);
+    if (visible) {
+        if (expandDrawer) setBottomCollapsed(false);
+        if (!wasVisible) {
+            if (retainedBottomSplitState.isEmpty()) {
+                const int half = qMax(1, bottomContentRow->width() / 2);
+                bottomContentRow->setSizes({half, half});
+            } else bottomContentRow->restoreState(retainedBottomSplitState);
+        }
+    }
+}
+
+bool PanelLayoutController::bottomCompanionVisible() const
+{
+    return bottomCompanion && !bottomCompanion->isHidden();
+}
+
+QByteArray PanelLayoutController::bottomSplitState() const
+{
+    return bottomCompanionVisible() && bottomContentRow ? bottomContentRow->saveState() : retainedBottomSplitState;
+}
+
+void PanelLayoutController::restoreBottomSplitState(const QByteArray& state)
+{
+    retainedBottomSplitState = state;
+    if (!bottomContentRow) return;
+    if (!state.isEmpty()) {
+        bottomContentRow->restoreState(state);
+    } else if (bottomCompanionVisible()) {
+        const int half = qMax(1, bottomContentRow->width() / 2);
+        bottomContentRow->setSizes({half, half});
+    }
 }
 
 void PanelLayoutController::updateButtons()

@@ -81,7 +81,7 @@ struct ContextDockHost::Section {
     int height = 0;
     int retainedHeight = 0;
     int width = 0;
-    bool bottom = false;
+    Qt::DockWidgetArea area = Qt::RightDockWidgetArea;
 };
 
 ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
@@ -113,21 +113,40 @@ ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
     bottomScroll->viewport()->installEventFilter(this);
     bottomLayout->addWidget(bottomScroll);
     bottomRoot->hide();
-    for (bool bottom : {false, true}) {
-        auto* surface = bottom ? bottomStack : stack;
+    leftRoot = new QWidget(this);
+    leftRoot->setObjectName(QStringLiteral("contextLeftHost"));
+    leftRoot->setAcceptDrops(true);
+    leftRoot->installEventFilter(this);
+    auto* leftLayout = new QVBoxLayout(leftRoot);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftScroll = UiControls::scrollArea(leftRoot);
+    leftScroll->setFrameShape(QFrame::NoFrame);
+    leftScroll->setWidgetResizable(false);
+    leftScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    leftStack = new QWidget;
+    leftScroll->setWidget(leftStack);
+    leftScroll->viewport()->installEventFilter(this);
+    leftLayout->addWidget(leftScroll);
+    leftRoot->hide();
+    for (const auto area : {Qt::RightDockWidgetArea, Qt::BottomDockWidgetArea, Qt::LeftDockWidgetArea}) {
+        const bool bottom = area == Qt::BottomDockWidgetArea;
+        auto* surface = stackForArea(area);
         auto* splitter = new QSplitter(bottom ? Qt::Horizontal : Qt::Vertical, surface);
-        (bottom ? bottomSplitter : sideSplitter) = splitter;
-        splitter->setObjectName(bottom ? QStringLiteral("contextBottomSplitter") : QStringLiteral("contextSideSplitter"));
+        if (bottom) bottomSplitter = splitter;
+        else if (area == Qt::LeftDockWidgetArea) leftSplitter = splitter;
+        else sideSplitter = splitter;
+        splitter->setObjectName(bottom ? QStringLiteral("contextBottomSplitter")
+            : area == Qt::LeftDockWidgetArea ? QStringLiteral("contextLeftSplitter") : QStringLiteral("contextSideSplitter"));
         splitter->setChildrenCollapsible(false);
         splitter->setHandleWidth(resizeHeight);
         auto* contents = new QVBoxLayout(surface);
         contents->setContentsMargins(0, 0, 0, 0);
         if (!bottom) contents->setAlignment(Qt::AlignTop);
         contents->addWidget(splitter);
-        connect(splitter, &QSplitter::splitterMoved, this, [this, bottom] {
+        connect(splitter, &QSplitter::splitterMoved, this, [this, bottom, area] {
             if (arranging) return;
             for (auto* section : sections) {
-                if (section->bottom != bottom) continue;
+                if (section->area != area) continue;
                 section->retainedHeight = 0;
                 if (bottom) section->width = section->frame->width();
                 else if (!section->collapsed) section->height = section->frame->height();
@@ -156,6 +175,8 @@ ContextDockHost::~ContextDockHost()
 {
     disconnect(qApp, nullptr, this, nullptr);
     if (bottomRoot) bottomRoot->removeEventFilter(this);
+    if (leftRoot) leftRoot->removeEventFilter(this);
+    if (leftScroll) leftScroll->viewport()->removeEventFilter(this);
     if (scroll) scroll->viewport()->removeEventFilter(this);
     if (bottomScroll) bottomScroll->viewport()->removeEventFilter(this);
     if (auto* host = qobject_cast<QMainWindow*>(window())) {
@@ -163,6 +184,7 @@ ContextDockHost::~ContextDockHost()
             for (auto* section : sections) compositor->settleFor(section->frame);
     }
     for (auto* section : sections) {
+        disconnect(section->frame, nullptr, this, nullptr);
 #ifdef ZEROSLACK_ENABLE_ELA
         if (section->drawer) disconnect(section->drawer, nullptr, this, nullptr);
 #endif
@@ -172,17 +194,29 @@ ContextDockHost::~ContextDockHost()
     qDeleteAll(sections);
     sections.clear();
     delete bottomRoot;
+    delete leftRoot;
 }
 int ContextDockHost::resourceCount() const { return order.size(); }
 int ContextDockHost::areaResourceCount(bool bottom) const
+{ return areaResourceCount(bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea); }
+int ContextDockHost::areaResourceCount(Qt::DockWidgetArea area) const
 {
     int count = 0;
-    for (auto* section : sections) if (section->bottom == bottom) ++count;
+    for (auto* section : sections) if (section->area == area) ++count;
     return count;
 }
 QWidget* ContextDockHost::bottomWidget() const { return bottomRoot; }
+QWidget* ContextDockHost::leftWidget() const { return leftRoot; }
 bool ContextDockHost::isBottomResource(const QString& key) const
-{ const auto* section = sections.value(key); return section && section->bottom; }
+{ return resourceArea(key) == Qt::BottomDockWidgetArea; }
+Qt::DockWidgetArea ContextDockHost::resourceArea(const QString& key) const
+{ const auto* section = sections.value(key); return section ? section->area : Qt::NoDockWidgetArea; }
+QScrollArea* ContextDockHost::scrollForArea(Qt::DockWidgetArea area) const
+{ return area == Qt::BottomDockWidgetArea ? bottomScroll : area == Qt::LeftDockWidgetArea ? leftScroll : scroll; }
+QWidget* ContextDockHost::stackForArea(Qt::DockWidgetArea area) const
+{ return area == Qt::BottomDockWidgetArea ? bottomStack : area == Qt::LeftDockWidgetArea ? leftStack : stack; }
+QSplitter* ContextDockHost::splitterForArea(Qt::DockWidgetArea area) const
+{ return area == Qt::BottomDockWidgetArea ? bottomSplitter : area == Qt::LeftDockWidgetArea ? leftSplitter : sideSplitter; }
 int ContextDockHost::sectionWidth(const QString& key) const
 { const auto* section = sections.value(key); return section ? section->width : 0; }
 bool ContextDockHost::setSectionWidth(const QString& key, int width)
@@ -198,12 +232,15 @@ bool ContextDockHost::setSectionWidth(const QString& key, int width)
     return true;
 }
 bool ContextDockHost::moveResourceToArea(const QString& key, bool bottom, int index)
+{ return moveResourceToArea(key, bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea, index); }
+bool ContextDockHost::moveResourceToArea(const QString& key, Qt::DockWidgetArea area, int index)
 {
     auto* section = sections.value(key);
     if (!section) return false;
+    if (area != Qt::LeftDockWidgetArea && area != Qt::RightDockWidgetArea && area != Qt::BottomDockWidgetArea) return false;
     settleMotion();
-    section->bottom = bottom;
-    (bottom ? bottomSplitter : sideSplitter)->addWidget(section->frame);
+    section->area = area;
+    splitterForArea(area)->addWidget(section->frame);
     if (index >= 0) {
         const int oldIndex = order.indexOf(key);
         if (index > oldIndex) --index;
@@ -348,6 +385,17 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
     column->addWidget(view, 1);
 #endif
     sections.insert(key, section);
+    // A shared area can belong to an earlier-created dock and be destroyed
+    // before this host. Drop its records while the frame is still identifiable.
+    connect(section->frame, &QObject::destroyed, this, [this, key](QObject* frame) {
+        auto* orphan = sections.value(key);
+        if (!orphan || orphan->frame != frame) return;
+        sections.remove(key);
+        order.removeAll(key);
+        resources.remove(key);
+        if (focusedKey == key) focusedKey = order.value(0);
+        delete orphan;
+    });
 #ifdef ZEROSLACK_ENABLE_ELA
     if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
         for (QWidget* handle : {section->header, static_cast<QWidget*>(section->drag)}) {
@@ -436,7 +484,7 @@ bool ContextDockHost::activateResource(const QString& key)
     if (!sections.contains(key)) return false;
     focusSection(key);
     setSectionCollapsed(key, false);
-    (isBottomResource(key) ? bottomScroll : scroll)->ensureWidgetVisible(sections.value(key)->header);
+    scrollForArea(resourceArea(key))->ensureWidgetVisible(sections.value(key)->header);
     sections.value(key)->header->setFocus(Qt::OtherFocusReason);
     return true;
 }
@@ -458,6 +506,7 @@ QWidget* ContextDockHost::takeResource(const QString& key)
     view->setParent(nullptr);
     order.removeAll(key);
     resources.remove(key);
+    disconnect(section->frame, nullptr, this, nullptr);
     section->frame->hide();
     section->frame->setParent(nullptr);
     section->frame->deleteLater();
@@ -492,7 +541,7 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
         }
         section->drawer->setExpanded(!collapsed, animate);
         if (!section->drawer->isDrawerAnimating()) arrangeSections();
-        if (!collapsed) (section->bottom ? bottomScroll : scroll)->ensureWidgetVisible(section->header);
+        if (!collapsed) scrollForArea(section->area)->ensureWidgetVisible(section->header);
         emit sectionLayoutChanged();
         return true;
     }
@@ -502,7 +551,7 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
     section->collapsed = collapsed;
     section->toggle->setArrowType(collapsed ? Qt::RightArrow : Qt::DownArrow);
     arrangeSections();
-    if (!collapsed) (section->bottom ? bottomScroll : scroll)->ensureWidgetVisible(section->header);
+    if (!collapsed) scrollForArea(section->area)->ensureWidgetVisible(section->header);
     emit sectionLayoutChanged();
     return true;
 }
@@ -547,22 +596,25 @@ void ContextDockHost::settleMotion()
 
 void ContextDockHost::arrangeSections()
 {
-    if (arranging || !bottomScroll || !bottomStack) return;
+    if (arranging || !scroll || !bottomScroll || !leftScroll
+        || !sideSplitter || !bottomSplitter || !leftSplitter) return;
     arranging = true;
-    arrangeArea(false);
-    arrangeArea(true);
+    arrangeArea(Qt::RightDockWidgetArea);
+    arrangeArea(Qt::BottomDockWidgetArea);
+    arrangeArea(Qt::LeftDockWidgetArea);
     arranging = false;
 }
 
-void ContextDockHost::arrangeArea(bool bottom)
+void ContextDockHost::arrangeArea(Qt::DockWidgetArea area)
 {
-    QScrollArea* areaScroll = bottom ? bottomScroll : scroll;
-    QWidget* areaStack = bottom ? bottomStack : stack;
+    const bool bottom = area == Qt::BottomDockWidgetArea;
+    QScrollArea* areaScroll = scrollForArea(area);
+    QWidget* areaStack = stackForArea(area);
     const QSize available = areaScroll->viewport()->size();
     const int extent = bottom ? available.width() : available.height();
-    auto* splitter = bottom ? bottomSplitter : sideSplitter;
+    auto* splitter = splitterForArea(area);
     QStringList keys;
-    for (const QString& key : order) if (sections.value(key)->bottom == bottom) keys.append(key);
+    for (const QString& key : order) if (sections.value(key)->area == area) keys.append(key);
     QList<SectionExtent> extents;
     for (const auto& key : keys) {
         auto* section = sections.value(key);
@@ -600,8 +652,10 @@ void ContextDockHost::arrangeArea(bool bottom)
     splitter->setSizes(lengths);
 }
 QRect ContextDockHost::viewportGlobalRect(bool bottom) const
+{ return viewportGlobalRect(bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea); }
+QRect ContextDockHost::viewportGlobalRect(Qt::DockWidgetArea dockArea) const
 {
-    auto* area = bottom ? bottomScroll.data() : scroll.data();
+    auto* area = scrollForArea(dockArea);
     if (!area || !area->isVisible()) return {};
     return QRect(area->viewport()->mapToGlobal(QPoint()), area->viewport()->size());
 }
@@ -613,7 +667,7 @@ QRect ContextDockHost::projectedSectionRect(bool bottom, int index, const QRect&
     int headerHeight = 30;
     for (int i = 0; i < order.size(); ++i) {
         const auto* section = sections.value(order[i]);
-        if (section->bottom != bottom) continue;
+        if (section->area != (bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea)) continue;
         headerHeight = section->header->height();
         if (i < index) ++insertion;
         extents.append({bottom ? qMax(180, section->header->minimumSizeHint().width())
@@ -648,14 +702,15 @@ void ContextDockHost::resizeEvent(QResizeEvent* event)
 }
 int ContextDockHost::insertionIndex(const QPoint& globalPosition) const
 {
-    const bool bottom = isBottomPosition(globalPosition);
-    const QPoint point = (bottom ? bottomStack : stack)->mapFromGlobal(globalPosition);
+    const auto area = areaAt(globalPosition);
+    const bool bottom = area == Qt::BottomDockWidgetArea;
+    const QPoint point = stackForArea(area)->mapFromGlobal(globalPosition);
     const int axis = bottom ? point.x() : point.y();
     int end = order.size();
     for (int i = 0; i < order.size(); ++i) {
-        if (sections.value(order[i])->bottom != bottom) continue;
+        if (sections.value(order[i])->area != area) continue;
         auto* frame = sections.value(order[i])->frame;
-        const QRect bounds(frame->mapTo(bottom ? bottomStack : stack, QPoint()), frame->size());
+        const QRect bounds(frame->mapTo(stackForArea(area), QPoint()), frame->size());
         if (axis < (bottom ? bounds.center().x() : bounds.center().y())) return i;
         end = i + 1;
     }
@@ -664,25 +719,33 @@ int ContextDockHost::insertionIndex(const QPoint& globalPosition) const
 bool ContextDockHost::isBottomPosition(const QPoint& position) const
 { return bottomRoot && bottomRoot->isVisible() && bottomRoot->rect().contains(bottomRoot->mapFromGlobal(position)); }
 bool ContextDockHost::containsDropPosition(const QPoint& position) const
-{ return (isVisible() && rect().contains(mapFromGlobal(position))) || isBottomPosition(position); }
+{ return areaAt(position) != Qt::NoDockWidgetArea; }
+Qt::DockWidgetArea ContextDockHost::areaAt(const QPoint& position) const
+{
+    if (isBottomPosition(position)) return Qt::BottomDockWidgetArea;
+    if (leftRoot && leftRoot->isVisible() && leftRoot->rect().contains(leftRoot->mapFromGlobal(position))) return Qt::LeftDockWidgetArea;
+    if (isVisible() && rect().contains(mapFromGlobal(position))) return Qt::RightDockWidgetArea;
+    return Qt::NoDockWidgetArea;
+}
 void ContextDockHost::finishSectionDrag(const QString& key, const QPoint& position)
 {
     if (!sections.contains(key)) return;
-    if (containsDropPosition(position)) moveResourceToArea(key, isBottomPosition(position), insertionIndex(position));
+    if (containsDropPosition(position)) moveResourceToArea(key, areaAt(position), insertionIndex(position));
     else if (sections.value(key)->detachable) emit dragOutRequested(key, position);
     emit sectionDragFinished();
 }
 void ContextDockHost::showInsertion(const QPoint& globalPosition)
 {
     if (!containsDropPosition(globalPosition)) { insertionMarker->hide(); return; }
-    const bool bottom = isBottomPosition(globalPosition);
-    QWidget* areaStack = bottom ? bottomStack : stack;
+    const auto area = areaAt(globalPosition);
+    const bool bottom = area == Qt::BottomDockWidgetArea;
+    QWidget* areaStack = stackForArea(area);
     insertionMarker->setParent(areaStack);
     const int index = insertionIndex(globalPosition);
     int position = 0;
     for (int i = 0; i < order.size(); ++i) {
         const auto* section = sections.value(order.at(i));
-        if (section->bottom != bottom) continue;
+        if (section->area != area) continue;
         if (i >= index) break;
         const QPoint origin = section->frame->mapTo(areaStack, QPoint());
         position = bottom ? origin.x() + section->frame->width() : origin.y() + section->frame->height();
@@ -694,14 +757,16 @@ void ContextDockHost::showInsertion(const QPoint& globalPosition)
 }
 bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
 {
-    if (((scroll && watched == scroll->viewport()) || (bottomScroll && watched == bottomScroll->viewport()))
+    if (((scroll && watched == scroll->viewport()) || (bottomScroll && watched == bottomScroll->viewport())
+        || (leftScroll && watched == leftScroll->viewport()))
         && event->type() == QEvent::Resize) arrangeSections();
-    if (watched == bottomRoot) {
+    if (watched == bottomRoot || watched == leftRoot) {
+        auto* targetRoot = qobject_cast<QWidget*>(watched);
         if (event->type() == QEvent::DragEnter) { dragEnterEvent(static_cast<QDragEnterEvent*>(event)); return true; }
         if (event->type() == QEvent::DragMove) {
             auto* drag = static_cast<QDragMoveEvent*>(event);
             if (validFloatingSource(drag->source(), drag->mimeData())) {
-                showInsertion(bottomRoot->mapToGlobal(drag->position().toPoint()));
+                showInsertion(targetRoot->mapToGlobal(drag->position().toPoint()));
                 drag->acceptProposedAction();
             }
             return true;
@@ -712,7 +777,7 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
             insertionMarker->hide();
             if (validFloatingSource(drop->source(), drop->mimeData())
                 && acceptFloatingDrop(qobject_cast<ContextFloatingWindow*>(drop->source()),
-                    QString::fromUtf8(drop->mimeData()->data(resourceMimeType())), bottomRoot->mapToGlobal(drop->position().toPoint()))) {
+                    QString::fromUtf8(drop->mimeData()->data(resourceMimeType())), targetRoot->mapToGlobal(drop->position().toPoint()))) {
                 drop->setDropAction(Qt::MoveAction);
                 drop->accept();
             }
@@ -785,7 +850,7 @@ bool ContextDockHost::acceptFloatingDrop(ContextFloatingWindow* source, const QS
 {
     QMimeData mime; mime.setData(resourceMimeType(), key.toUtf8());
     if (!validFloatingSource(source, &mime) || !containsDropPosition(globalPosition)) return false;
-    emit floatingDropRequested(key, insertionIndex(globalPosition), isBottomPosition(globalPosition));
+    emit floatingDropRequested(key, insertionIndex(globalPosition), areaAt(globalPosition));
     return containsResource(key) && !source->hasResource();
 }
 void ContextDockHost::previewFloatingDrop(ContextFloatingWindow* source, const QPoint& globalPosition)

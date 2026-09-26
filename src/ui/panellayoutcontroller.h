@@ -18,6 +18,7 @@ class QEvent;
 class QFrame;
 class QMainWindow;
 class QStackedWidget;
+class QSplitter;
 class QToolButton;
 class PanelCompositor;
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -108,6 +109,11 @@ public:
     QWidget* resizeHandle() const;
     QWidget* buttonBar() const;
     QToolButton* buttonForPanel(const QString& panelId) const;
+    void attachBottomCompanion(QWidget* content);
+    void setBottomCompanionVisible(bool visible, bool expandDrawer = true);
+    bool bottomCompanionVisible() const;
+    QByteArray bottomSplitState() const;
+    void restoreBottomSplitState(const QByteArray& state);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -138,10 +144,15 @@ private:
     QPointer<QWidget> bottomResizeHandle;
     QPointer<QStackedWidget> bottomContentStack;
     QPointer<QWidget> bottomContentSurface;
+    QPointer<QSplitter> bottomContentRow;
+    QPointer<QWidget> bottomCompanion;
+    QByteArray retainedBottomSplitState;
     QPointer<QFrame> bottomButtonBar;
     QPointer<PanelCompositor> compositor;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> contentDrawer;
+    int expandedContentHeight = kDefaultContentHeight;
+    void applyDrawerProgress(qreal progress);
 #endif
     QVector<PanelEntry> panels;
     QVector<SidePanelEntry> sidePanels;

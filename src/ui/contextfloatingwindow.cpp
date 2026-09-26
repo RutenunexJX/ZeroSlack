@@ -23,6 +23,7 @@
 #include <QSettings>
 #include <QShortcut>
 #include <QMainWindow>
+#include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QKeyEvent>
 #include <QStyle>
@@ -87,9 +88,10 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
 #ifdef ZEROSLACK_ENABLE_ELA
     setParent(mainWindow);
     hide();
-    setAllowedAreas(Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
+    setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea);
     setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable);
     if (auto* owner = qobject_cast<QMainWindow*>(mainWindow)) {
+        owner->installEventFilter(this);
         owner->setDockOptions(owner->dockOptions() | QMainWindow::AnimatedDocks | QMainWindow::AllowNestedDocks);
         owner->addDockWidget(Qt::RightDockWidgetArea, this);
         setFloating(true);
@@ -150,6 +152,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
     connect(this, &ElaDockWidget::dockDragStarted, this, [this] {
         captureDockScrollPositions();
         dockDragActive = true;
+        pendingDropArea = Qt::NoDockWidgetArea;
         ++dockGeneration;
         emit titleDragStarted();
     });
@@ -161,7 +164,7 @@ ContextFloatingWindow::ContextFloatingWindow(QWidget* mainWindow, QWidget* regio
             applyGeometry();
             rememberGeometry();
         }
-        emit titleDragFinished(QCursor::pos(), cancelled);
+        emit titleDragFinished(lastDockDragPosition, cancelled);
         if (isFloating()) restoreDockScrollPositions(currentView);
         scheduleDockCommit();
     });
@@ -308,7 +311,7 @@ void ContextFloatingWindow::setActionsAvailable(bool pinAvailable, bool fullView
     Q_UNUSED(fullViewAvailable);
     dockingAllowed = pinAvailable;
 #ifdef ZEROSLACK_ENABLE_ELA
-    setAllowedAreas(pinAvailable ? Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea : Qt::NoDockWidgetArea);
+    setAllowedAreas(pinAvailable ? Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea | Qt::BottomDockWidgetArea : Qt::NoDockWidgetArea);
 #endif
     if (!dockingAllowed) cancelDockDrag();
 }
@@ -357,6 +360,7 @@ QWidget* ContextFloatingWindow::titleBar() const
 void ContextFloatingWindow::beginNativeDockDrag(const QPoint& position)
 {
 #ifdef ZEROSLACK_ENABLE_ELA
+    lastDockDragPosition = position;
     if (canDock()) beginDockDrag(position);
 #else
     Q_UNUSED(position);
@@ -385,7 +389,8 @@ void ContextFloatingWindow::scheduleDockCommit()
 {
     const auto generation = ++dockGeneration;
     QTimer::singleShot(16, this, [this, generation] {
-        if (generation != dockGeneration || isFloating() || !canDock()) return;
+        if (generation != dockGeneration || !canDock()
+            || (isFloating() && pendingDropArea == Qt::NoDockWidgetArea)) return;
         if (isDockDragging()) { scheduleDockCommit(); return; }
         auto* owner = qobject_cast<QMainWindow*>(parentWidget());
         if (!owner) return;
@@ -396,14 +401,29 @@ void ContextFloatingWindow::scheduleDockCommit()
                 scheduleDockCommit();
                 return;
             }
-        const auto area = owner->dockWidgetArea(this);
+        const auto area = pendingDropArea != Qt::NoDockWidgetArea ? pendingDropArea : owner->dockWidgetArea(this);
+        pendingDropArea = Qt::NoDockWidgetArea;
         if (area != Qt::NoDockWidgetArea) emit nativeDocked(area);
     });
 }
 #endif
+void ContextFloatingWindow::setDockDropTarget(Qt::DockWidgetArea area)
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    pendingDropArea = area;
+#else
+    Q_UNUSED(area);
+#endif
+}
 bool ContextFloatingWindow::canDock() const { return dockingAllowed && !releasingView && hasResource(); }
 bool ContextFloatingWindow::eventFilter(QObject* watched, QEvent* event)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    // Closing or hiding the owner also ends its native drag transaction.
+    if (watched == parentWidget()
+        && (event->type() == QEvent::Close || event->type() == QEvent::Hide))
+        cancelDockDrag();
+#endif
     if (watched == currentView && event->type() == QEvent::DynamicPropertyChange) {
         const auto name = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
         if (name == "contextFitAvailable") {
@@ -582,12 +602,21 @@ void ContextFloatingWindow::resizeEvent(QResizeEvent* event)
 
 bool ContextFloatingWindow::event(QEvent* event)
 {
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (event->type() == QEvent::MouseMove || event->type() == QEvent::MouseButtonPress
+        || event->type() == QEvent::MouseButtonRelease)
+        lastDockDragPosition = static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
+#endif
     const QPointer<ContextFloatingWindow> guard(this);
 #ifdef ZEROSLACK_ENABLE_ELA
     if (event->type() == QEvent::Hide && isFloating()) captureDockScrollPositions();
 #endif
     const bool handled = ContextFloatingWindowBase::event(event);
     if (!guard) return handled;
+    if (event->type() == QEvent::Show && !hasResource()) {
+        // Qt may finish a landing transition after the content was transferred.
+        QTimer::singleShot(0, this, [this] { if (!hasResource()) hide(); });
+    }
 #ifdef ZEROSLACK_ENABLE_ELA
     if (event->type() == QEvent::Show && isFloating() && !isDockDragging())
         restoreDockScrollPositions(currentView);

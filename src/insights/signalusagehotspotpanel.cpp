@@ -11,7 +11,6 @@
 #include <QAction>
 #include <QApplication>
 #include <QBrush>
-#include <QCheckBox>
 #include <QFileInfo>
 #include <QFontMetrics>
 #include <QGraphicsRectItem>
@@ -819,22 +818,6 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
     toolbar->addWidget(exportButton);
     rootLayout->addLayout(toolbar);
 
-    auto* roleLayout = new QHBoxLayout;
-    roleLayout->setContentsMargins(0, 0, 0, 0);
-    roleLayout->setSpacing(4);
-    for (SignalUsageHotspotRole role : hotspotRoles()) {
-        auto* check = UiControls::checkBox(
-            SignalUsageHotspotService::roleDisplayName(role),
-            this);
-        check->setChecked(true);
-        check->setProperty("hotspotRole", static_cast<int>(role));
-        InsightVisualStyle::applySegmentedCheckBox(check);
-        roleChecks.append(check);
-        roleLayout->addWidget(check);
-    }
-    roleLayout->addStretch(1);
-    rootLayout->addLayout(roleLayout);
-
     contentSplitter = new QSplitter(Qt::Horizontal, this);
     contentSplitter->setChildrenCollapsible(false);
 
@@ -971,12 +954,6 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent)
         focusedItemIndexes.clear();
         rebuild();
     });
-    for (QCheckBox* check : roleChecks) {
-        connect(check, &QCheckBox::toggled, this, [this]() {
-            focusedItemIndexes.clear();
-            rebuild();
-        });
-    }
     connect(matrixItemsTree, &QTreeWidget::itemClicked, this,
             [this](QTreeWidgetItem* item, int) {
                 if (!item)
@@ -3128,22 +3105,9 @@ void SignalUsageHotspotPanel::navigateItem(int itemIndex)
 bool SignalUsageHotspotPanel::itemPassesFilters(
     const SignalUsageHotspotItem& item) const
 {
-    if (!roleEnabled(item.role))
-        return false;
     if (searchText.isEmpty())
         return true;
     return itemSearchText(item).contains(searchText, Qt::CaseInsensitive);
-}
-
-bool SignalUsageHotspotPanel::roleEnabled(SignalUsageHotspotRole role) const
-{
-    for (QCheckBox* check : roleChecks) {
-        if (!check)
-            continue;
-        if (check->property("hotspotRole").toInt() == static_cast<int>(role))
-            return check->isChecked();
-    }
-    return true;
 }
 
 QList<int> SignalUsageHotspotPanel::filteredItemIndexes(

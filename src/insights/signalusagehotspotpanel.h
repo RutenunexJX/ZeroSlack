@@ -13,7 +13,6 @@
 #include <memory>
 #include <QSet>
 
-class QCheckBox;
 class QAction;
 class QGraphicsScene;
 class InsightGraphView;
@@ -114,7 +113,6 @@ private:
     QAction* resetLayoutViewAction = nullptr;
     QAction* exportTrackAction = nullptr;
     QAction* exportMatrixAction = nullptr;
-    QList<QCheckBox*> roleChecks;
     QSplitter* contentSplitter = nullptr;
     QStackedWidget* modeStack = nullptr;
     QGraphicsScene* trackScene = nullptr;
@@ -181,7 +179,6 @@ private:
     void showMatrixCellDetails();
     void navigateItem(int itemIndex);
     bool itemPassesFilters(const SignalUsageHotspotItem& item) const;
-    bool roleEnabled(SignalUsageHotspotRole role) const;
     QList<int> filteredItemIndexes(bool includeMatrixFocus = true) const;
     void showStatusMessage(const QString& message, int timeoutMs) const;
     QAction* createGraphViewAction(

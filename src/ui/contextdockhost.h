@@ -27,9 +27,14 @@ public:
 
     int resourceCount() const;
     int areaResourceCount(bool bottom) const;
+    int areaResourceCount(Qt::DockWidgetArea area) const;
     QWidget* bottomWidget() const;
+    QWidget* leftWidget() const;
     bool isBottomResource(const QString& key) const;
+    Qt::DockWidgetArea resourceArea(const QString& key) const;
+    Qt::DockWidgetArea areaAt(const QPoint& position) const;
     bool moveResourceToArea(const QString& key, bool bottom, int index = -1);
+    bool moveResourceToArea(const QString& key, Qt::DockWidgetArea area, int index = -1);
     int sectionWidth(const QString& key) const;
     bool setSectionWidth(const QString& key, int width);
     QStringList resourceKeys() const;
@@ -60,6 +65,7 @@ public:
     bool setSectionDetachable(const QString& key, bool detachable);
     QWidget* sectionDragHandle(const QString& key) const;
     QRect viewportGlobalRect(bool bottom) const;
+    QRect viewportGlobalRect(Qt::DockWidgetArea area) const;
     QRect projectedSectionRect(bool bottom, int index, const QRect& viewport, QWidget* incoming) const;
     bool acceptFloatingDrop(ContextFloatingWindow* source, const QString& key, const QPoint& globalPosition);
     void previewFloatingDrop(ContextFloatingWindow* source, const QPoint& globalPosition);
@@ -75,7 +81,7 @@ signals:
     void resourceOrderChanged();
     void sectionLayoutChanged();
     void dragOutRequested(const QString& key, const QPoint& globalPosition);
-    void floatingDropRequested(const QString& key, int index, bool bottom);
+    void floatingDropRequested(const QString& key, int index, Qt::DockWidgetArea area);
     void sectionDragStarted();
     void sectionDragFinished();
 
@@ -96,6 +102,10 @@ private:
     QWidget* bottomStack = nullptr;
     QSplitter* sideSplitter = nullptr;
     QSplitter* bottomSplitter = nullptr;
+    QPointer<QWidget> leftRoot;
+    QPointer<QScrollArea> leftScroll;
+    QWidget* leftStack = nullptr;
+    QSplitter* leftSplitter = nullptr;
     QWidget* insertionMarker = nullptr;
     QHash<QString, Section*> sections;
     QStringList order;
@@ -108,7 +118,10 @@ private:
     int indexOfResource(const QString& key) const;
     void refreshSectionStatus(const QString& key);
     void arrangeSections();
-    void arrangeArea(bool bottom);
+    void arrangeArea(Qt::DockWidgetArea area);
+    QScrollArea* scrollForArea(Qt::DockWidgetArea area) const;
+    QWidget* stackForArea(Qt::DockWidgetArea area) const;
+    QSplitter* splitterForArea(Qt::DockWidgetArea area) const;
     bool isBottomPosition(const QPoint& globalPosition) const;
     bool containsDropPosition(const QPoint& globalPosition) const;
     void finishSectionDrag(const QString& key, const QPoint& globalPosition);

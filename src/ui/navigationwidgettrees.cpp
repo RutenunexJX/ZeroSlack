@@ -135,6 +135,7 @@ void NavigationWidget::populateFileTree()
 {
     if (!fileTreeWidget)
         return;
+    fileTreeRefreshPending = false;
     cancelFileTreePopulation();
 
     QStringList sourceFiles = currentFileList;
@@ -537,6 +538,7 @@ void NavigationWidget::populateDesignTree()
 {
     if (!designTreeWidget)
         return;
+    designTreeRefreshPending = false;
     TreePopulationGuard guard(designTreeWidget);
     designTreeWidget->clear();
     designItemPayloads.clear();

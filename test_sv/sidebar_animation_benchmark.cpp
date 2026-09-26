@@ -230,7 +230,8 @@ int main(int argc, char** argv) {
         else host.resize(size);
         QTest::qWait(100);
         for (const auto& scene : {QString("left"), QString("right"), QString("bottom"), QString("section")}) {
-        if (sidebarFps && scene != "left" && scene != "right") continue;
+        if (sidebarFps && (qEnvironmentVariableIsSet("ZEROSLACK_BOTTOM_FPS_BENCHMARK")
+                ? scene != "bottom" : scene != "left" && scene != "right")) continue;
         if (app.compositor) app.compositor->settle();
         for (auto* item : host.findChildren<ElaDrawerArea*>()) item->finishDrawerAnimation();
         navigationPane->setExpanded(true, false);

@@ -218,6 +218,7 @@ void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report
 void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report)
 {
     currentDesignHierarchy = report;
+    designTreeRefreshPending = true;
     designParticipatingFiles = report.participatingFiles;
     designTopFiles.clear();
     for (const auto& node : report.nodes) {
@@ -286,9 +287,9 @@ void NavigationWidget::onTabChanged(int index)
                 ? QStringLiteral("Search instances or modules...")
                 : QStringLiteral("Search files or paths..."));
     }
-    if (index == DesignTab)
+    if (index == DesignTab && designTreeRefreshPending)
         populateDesignTree();
-    else
+    else if (index == FileTab && fileTreeRefreshPending)
         populateFileTree();
     emit viewChanged(index);
 }
@@ -297,6 +298,9 @@ void NavigationWidget::onSearchTextChanged(const QString& text)
 {
     const int index = tabWidget ? tabWidget->currentIndex() : FileTab;
     const QString normalized = text.trimmed();
+    if (searchFilterForIndex(index) == normalized
+        && !(index == DesignTab ? designTreeRefreshPending : fileTreeRefreshPending))
+        return;
     setStoredSearchFilter(index, normalized);
     if (index == DesignTab)
         populateDesignTree();
@@ -467,10 +471,13 @@ QString NavigationWidget::searchFilterForIndex(int index) const
 void NavigationWidget::setStoredSearchFilter(int index,
                                              const QString& filter)
 {
-    if (index == DesignTab)
+    if (index == DesignTab) {
+        designTreeRefreshPending |= designSearchFilter != filter;
         designSearchFilter = filter;
-    else
+    } else {
+        fileTreeRefreshPending |= fileSearchFilter != filter;
         fileSearchFilter = filter;
+    }
 }
 
 void NavigationWidget::setupConnections()

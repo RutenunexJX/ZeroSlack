@@ -7,6 +7,7 @@
 
 #include <QApplication>
 #include <QAction>
+#include <QCheckBox>
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
@@ -421,6 +422,52 @@ bool verifyControlledTrackGeometry(SignalUsageHotspotPanel& panel,
     return true;
 }
 
+bool verifyAllRolesVisible()
+{
+    SignalUsageHotspotPanel panel;
+    if (!panel.findChildren<QCheckBox*>().isEmpty()) {
+        qWarning() << "Hotspot type filter checkboxes must be removed";
+        return false;
+    }
+    auto allRoles = sampleReport();
+    allRoles.items.clear(); allRoles.matrixCells.clear(); allRoles.trackLanes.first().positions.clear();
+    const QList<SignalUsageHotspotRole> roles{SignalUsageHotspotRole::Write, SignalUsageHotspotRole::Read,
+        SignalUsageHotspotRole::Port, SignalUsageHotspotRole::Condition, SignalUsageHotspotRole::Case,
+        SignalUsageHotspotRole::Timing, SignalUsageHotspotRole::Unknown};
+    for (const auto role : roles) {
+        const int index = allRoles.items.size();
+        const auto name = SignalUsageHotspotService::roleDisplayName(role);
+        allRoles.items.append(item(role, "chl_ctrl", "chl_ctrl.sv", 18 + index * 3, name));
+        SignalUsageHotspotTrackPosition position;
+        position.itemIndex = index; position.role = role; position.roleDisplayName = name;
+        position.line = 18 + index * 3; position.column = 3;
+        allRoles.trackLanes.first().positions.append(position);
+        SignalUsageHotspotMatrixCell cell;
+        cell.moduleName = "chl_ctrl"; cell.fileName = "chl_ctrl.sv";
+        cell.role = role; cell.roleDisplayName = name; cell.count = 1;
+        allRoles.matrixCells.append(cell);
+    }
+    allRoles.trackLanes.first().count = roles.size();
+    panel.renderReportForTest(allRoles);
+    if (panel.trackBlockCountForTest() != 7 || panel.matrixNonEmptyCellCountForTest() != 7) {
+        qWarning() << "All seven roles must remain visible without type filters";
+        return false;
+    }
+    panel.setFocusSearchText("Unknown");
+    if (panel.trackBlockCountForTest() != 1) return false;
+    panel.setFocusSearchText("");
+    if (panel.trackBlockCountForTest() != 7) return false;
+    const auto evidence = qEnvironmentVariable("ZEROSLACK_UI_EVIDENCE_DIR");
+    if (!evidence.isEmpty()) {
+        QDir().mkpath(evidence);
+        panel.resize(1400, 760); panel.show(); QApplication::processEvents();
+        panel.grab().save(evidence + "/hotspot-all-roles-track.png");
+        panel.setMatrixModeForTest(true); QApplication::processEvents();
+        panel.grab().save(evidence + "/hotspot-all-roles-matrix.png");
+    }
+    return true;
+}
+
 bool verifyReportBuildIsAsyncAndLatestWins()
 {
     SignalUsageHotspotPanel panel;
@@ -482,6 +529,7 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     if (!initializeUiStyleForTest()) return 3;
     resetApplicationActionExecutionHistory();
+    if (!verifyAllRolesVisible()) return 1;
     if (!verifyReportBuildIsAsyncAndLatestWins()) {
         qWarning() << "Hotspot report build blocked UI or published a stale result";
         return 1;

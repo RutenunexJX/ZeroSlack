@@ -17,7 +17,8 @@ struct ContextWorkspaceState {
     static constexpr int kFloatingInstancesVersion = 5;
     static constexpr int kDockSectionsVersion = 6;
     static constexpr int kTiledDockVersion = 7;
-    static constexpr int kVersion = 7;
+    static constexpr int kThreeAreaVersion = 8;
+    static constexpr int kVersion = 8;
 
     static constexpr int kMinimumPeekWidth = 280;
     static constexpr int kMaximumPeekWidth = 920;
@@ -89,6 +90,10 @@ struct ContextWorkspaceState {
     bool dockVisible = false;
     bool bottomDockVisible = false;
     int bottomDockHeight = 300;
+    bool leftDockVisible = false;
+    int leftDockWidth = kDefaultDockWidth;
+    int leftDockHeight = 300;
+    QByteArray bottomSplitState;
     bool railVisible = true;
     bool valid = false;
     int floatingX = 0;
@@ -123,9 +128,10 @@ struct ContextWorkspaceState {
         int height = 0;
         bool bottom = false;
         int width = 0;
+        bool left = false;
         bool operator==(const DockSection& other) const {
             return resourceKey == other.resourceKey && collapsed == other.collapsed && height == other.height
-                && bottom == other.bottom && width == other.width;
+                && bottom == other.bottom && width == other.width && left == other.left;
         }
     };
     QList<DockSection> dockSections;

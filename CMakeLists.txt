@@ -1421,6 +1421,8 @@ if(BUILD_TESTING)
     target_link_libraries(ui_window_chrome_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(ui_navigation_rail_test test_sv/ui_navigation_rail_test.cpp)
     target_link_libraries(ui_navigation_rail_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(navigation_switch_test test_sv/navigation_switch_test.cpp)
+    target_link_libraries(navigation_switch_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(ui_text_view_test test_sv/ui_text_view_test.cpp)
     target_link_libraries(ui_text_view_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(ui_label_contract_test test_sv/ui_label_contract_test.cpp)
@@ -1431,6 +1433,11 @@ if(BUILD_TESTING)
     target_link_libraries(ui_panel_motion_test PRIVATE zeroslack_core Qt6::Test)
     if(ZEROSLACK_ENABLE_ELA)
         target_compile_definitions(ui_sidebar_contract_test PRIVATE ZEROSLACK_ENABLE_ELA=1)
+        add_executable(workspace_docking_test test_sv/workspace_docking_test.cpp)
+        target_link_libraries(workspace_docking_test PRIVATE zeroslack_core Qt6::Test)
+        if(WIN32)
+            target_link_libraries(workspace_docking_test PRIVATE user32)
+        endif()
         target_link_libraries(ui_sidebar_contract_test PRIVATE ElaWidgetTools)
         add_executable(sidebar_animation_benchmark test_sv/sidebar_animation_benchmark.cpp)
         target_link_libraries(sidebar_animation_benchmark PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
@@ -2119,6 +2126,13 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
                 $<TARGET_FILE:context_workspace_test>)
         set_tests_properties(ela_context_workspace_test PROPERTIES TIMEOUT 120)
+        add_test(NAME ela_navigation_switch_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_SCALE_FACTOR=1" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:navigation_switch_test>
+                "${CMAKE_CURRENT_BINARY_DIR}/navigation-switch.json" --verify)
+        set_tests_properties(ela_navigation_switch_test PROPERTIES TIMEOUT 120)
         add_test(NAME ela_document_tabs_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"

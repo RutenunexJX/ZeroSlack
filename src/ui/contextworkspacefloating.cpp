@@ -4,6 +4,7 @@
 #include "contextdockhost.h"
 #include "contextdocktransition.h"
 #include "panelcompositor.h"
+#include "panellayoutcontroller.h"
 #include "contextfloatingwindow.h"
 #include "contextpeekhost.h"
 #include "contextrail.h"
@@ -72,11 +73,10 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     connect(host, &ContextFloatingWindow::nativeDocked, this, [this, host](Qt::DockWidgetArea area) {
         if (!host->canDock()) return;
         const QString key = host->resource().stableKey();
-        const bool bottom = area == Qt::BottomDockWidgetArea;
-        const int index = host->property("contextDockInsertionBottom").toBool() == bottom
+        const int index = host->property("contextDockInsertionArea").toInt() == area
             ? host->property("contextDockInsertionIndex").toInt() : -1;
         const QScopedValueRollback<bool> guard(dockingTransition, true);
-        pinFloatingResource(key, bottom, index);
+        pinFloatingResourceInArea(key, area, index);
     });
     connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
         if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
@@ -84,14 +84,23 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
     });
     connect(host, &ContextFloatingWindow::titleDragMoved, this, [this, host](const QPoint& position) {
         if (!host->canDock()) return;
-        const bool bottom = dockHostValue->viewportGlobalRect(true).contains(position);
-        const bool side = dockHostValue->viewportGlobalRect(false).contains(position);
-        host->setProperty("contextDockInsertionBottom", bottom);
-        host->setProperty("contextDockInsertionIndex", (bottom || side) ? dockHostValue->insertionIndex(position) : -1);
+        const auto area = floatingDropArea(position);
+        host->setProperty("contextDockInsertionArea", int(area));
+        host->setProperty("contextDockInsertionIndex", dockHostValue->areaAt(position) == area
+            && area != Qt::NoDockWidgetArea ? dockHostValue->insertionIndex(position) : -1);
         dockHostValue->previewFloatingDrop(host, position);
     });
-    connect(host, &ContextFloatingWindow::titleDragFinished, this, [this](const QPoint&, bool) {
+    connect(host, &ContextFloatingWindow::titleDragFinished, this, [this, host](const QPoint& position, bool cancelled) {
         dockHostValue->clearFloatingDropPreview();
+        if (cancelled || !host->canDock()) return;
+        const auto area = floatingDropArea(position);
+        if (area == Qt::NoDockWidgetArea) return;
+        const int index = dockHostValue->areaAt(position) == area ? dockHostValue->insertionIndex(position) : -1;
+        host->setProperty("contextDockInsertionArea", int(area));
+        host->setProperty("contextDockInsertionIndex", index);
+        // Reuse the native landing completion path: moving the content before
+        // Qt finishes can re-show an empty dock over the destination splitter.
+        host->setDockDropTarget(area);
     });
 #else
     connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
@@ -195,13 +204,34 @@ bool ContextWorkspaceController::closeFloatingResource(const QString& key)
 }
 
 bool ContextWorkspaceController::pinFloatingResource(const QString& key, bool bottom, int index)
+{ return pinFloatingResourceInArea(key, bottom ? Qt::BottomDockWidgetArea : Qt::RightDockWidgetArea, index); }
+
+bool ContextWorkspaceController::pinFloatingResourceInArea(const QString& key, Qt::DockWidgetArea area, int index)
 {
+    if (area != Qt::LeftDockWidgetArea && area != Qt::RightDockWidgetArea && area != Qt::BottomDockWidgetArea) return false;
     auto* surface = surfaceWithResource(key);
     if (!surface) return false;
     activeFloatingSurface = surface;
-    const bool pinned = pinPeek(nullptr, bottom, index);
+    const bool pinned = pinPeekInArea(nullptr, area, index);
     if (pinned) hiddenFloatingKeys.remove(key);
     return pinned;
+}
+
+Qt::DockWidgetArea ContextWorkspaceController::floatingDropArea(const QPoint& position) const
+{
+    if (!window || !dockHostValue) return Qt::NoDockWidgetArea;
+    const auto contains = [&position](QWidget* widget) {
+        return widget && widget->isVisible() && widget->rect().contains(widget->mapFromGlobal(position));
+    };
+    if (contains(bottomDockValue)) return Qt::BottomDockWidgetArea;
+    const auto area = dockHostValue->areaAt(position);
+    if (area != Qt::NoDockWidgetArea) return area;
+    // The Files/Design navigation area is also a valid left-side drop target.
+    for (auto* dock : window->findChildren<QDockWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+        if (!dock->isFloating() && contains(dock)
+            && window->dockWidgetArea(dock) == Qt::LeftDockWidgetArea) return Qt::LeftDockWidgetArea;
+    }
+    return Qt::NoDockWidgetArea;
 }
 
 bool ContextWorkspaceController::dragOutResource(const QString& key, const QPoint& globalPosition, QString* failureReason)
