@@ -6,11 +6,6 @@
 #include "windowsnapchrome.h"
 #include "navigationpanecoordinator.h"
 #include "workspaceswitcher.h"
-#include <QClipboard>
-#include <QDesktopServices>
-#include <QFileInfo>
-#include <QProcess>
-#include <QUrl>
 #include <QDockWidget>
 #include "roundedicons.h"
 #include "uitypography.h"
@@ -109,9 +104,6 @@ public:
         collapse->setToolTip(tr("Collapse sidebar (Ctrl+1)"));
         collapse->setAccessibleName(tr("Collapse sidebar"));
         controls->addWidget(collapse);
-        if (workspaces)
-            headerLayout->addWidget(workspaces->createButton(header,
-                QStringLiteral("sidebarWorkspaceSwitcher")));
         if (navigation) {
             navigationPane->setHeaderWidget(header);
             connect(collapse, &QToolButton::clicked, navigationPane,
@@ -119,21 +111,18 @@ public:
                         navigationPane->setExpanded(false);
                     });
         }
-        auto* titlePicker = workspaces ? workspaces->createButton(host,
-            QStringLiteral("titleWorkspaceSwitcher")) : nullptr;
-        if (titlePicker) {
-            titlePicker->setFixedWidth(190);
-            titlePicker->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-        }
-        const auto titleBar = UiWindowChrome::createTitleBar(host, titlePicker);
+        workspaceStrip = workspaces ? workspaces->createStrip(host) : nullptr;
+        if (workspaceStrip) workspaceStrip->setMaximumWidth(qMax(96, host->width() - 240));
+        const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip);
         title = titleBar.widget;
         maximizeButton = titleBar.maximize;
         updateMaximizeIcon();
         host->setContentsMargins(4, title->height() + 4, 4, 4);
         updateTitleTheme();
+        connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::themeChanged,
+                this, [this](ThemeMode) { updateTitleTheme(); });
         auto* expand = titleBar.sidebar;
         expand->setVisible(navigation && navigation->isHidden());
-        if (titlePicker) titlePicker->setVisible(navigation && navigation->isHidden());
         if (navigation) {
             connect(expand, &QToolButton::clicked, navigationPane,
                     [navigationPane]() {
@@ -141,32 +130,7 @@ public:
             });
             connect(navigationPane, &NavigationPaneCoordinator::expandedChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });
-            if (titlePicker)
-                connect(navigationPane, &NavigationPaneCoordinator::expandedChanged, titlePicker,
-                        [titlePicker](bool visible) { titlePicker->setVisible(!visible); });
         }
-        auto* name = titleBar.label;
-        name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file"));
-        name->setContextMenuPolicy(Qt::CustomContextMenu);
-        connect(name, &QWidget::customContextMenuRequested, this, [this, name](QPoint point) {
-            std::unique_ptr<QMenu> menuOwner(UiControls::menu(name));
-            QMenu& menu = *menuOwner;
-            const QString path = window->windowFilePath();
-            auto* copy = menu.addAction(tr("Copy full path"));
-            auto* reveal = menu.addAction(tr("Reveal in Explorer"));
-            copy->setEnabled(!path.isEmpty());
-            reveal->setEnabled(QFileInfo::exists(path));
-            auto* selected = menu.exec(name->mapToGlobal(point));
-            if (selected == copy) QApplication::clipboard()->setText(QDir::toNativeSeparators(path));
-            else if (selected == reveal) {
-#ifdef Q_OS_WIN
-                QProcess::startDetached(QStringLiteral("explorer.exe"), {QStringLiteral("/select,"), QDir::toNativeSeparators(path)});
-#else
-                QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
-#endif
-            }
-        });
-        connect(host, &QWidget::windowTitleChanged, name, [host, name] { name->setToolTip(host->windowFilePath() + tr("\nRight-click to copy the path or reveal the file")); });
         title->setGeometry(4, 4, host->width() - 8, title->height());
         title->show();
         title->raise();
@@ -180,16 +144,20 @@ protected:
         if (!widget || widget->window() != window) return false;
         if (target == window && event->type() == QEvent::WindowStateChange)
             updateMaximizeIcon();
-        if (target == window && event->type() == QEvent::Resize)
+        if (target == window && event->type() == QEvent::Resize) {
             title->setGeometry(4, 4, window->width() - 8, title->height());
+            if (workspaceStrip) workspaceStrip->setMaximumWidth(qMax(96, window->width() - 240));
+        }
         if (target == window && event->type() == QEvent::PaletteChange) {
-            settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
+            if (settingsButton)
+                settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
             updateTitleTheme();
         }
         if (widget != title && !title->isAncestorOf(widget)
             && (event->type() == QEvent::ZOrderChange || event->type() == QEvent::Show)
             && title->isVisible()) title->raise();
         if (widget != window && widget != title && !title->isAncestorOf(widget)) return false;
+        if (workspaceStrip && (widget == workspaceStrip || workspaceStrip->isAncestorOf(widget))) return false;
         if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() != Qt::LeftButton || !window->windowHandle()) return false;
@@ -219,7 +187,9 @@ private:
     }
     void updateTitleTheme() {
         if (title->property("zeroslackElaControl").toBool()) {
-            title->setPalette(window->palette());
+            title->setPalette(QApplication::palette());
+            title->setStyleSheet(QStringLiteral("QWidget#workspaceTitleBar { background-color: %1; }")
+                .arg(QApplication::palette().color(QPalette::Window).name()));
             return;
         }
         const QPalette palette = window->palette();
@@ -242,6 +212,7 @@ private:
     }
     QMainWindow* window;
     QWidget* title = nullptr;
-    QToolButton* settingsButton = nullptr;
+    QWidget* workspaceStrip = nullptr;
+    QPointer<QToolButton> settingsButton;
     QToolButton* maximizeButton = nullptr;
 };

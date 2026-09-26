@@ -6,8 +6,7 @@
 #include <QPointer>
 #include <functional>
 
-class QMenu;
-class QToolButton;
+class QTabBar;
 class QWidget;
 class WorkspaceManager;
 class WorkspaceSessionCoordinator;
@@ -18,17 +17,15 @@ public:
     WorkspaceSwitcher(WorkspaceManager* workspaces, TabManager* tabs,
                       WorkspaceSessionCoordinator* sessions,
                       std::function<void()> openWorkspace, QWidget* parent);
-    QToolButton* createButton(QWidget* parent, const QString& objectName);
-    void showPopup(QToolButton* anchor);
+    QWidget* createStrip(QWidget* parent);
 private:
     bool eventFilter(QObject* object, QEvent* event) override;
     void refresh();
-    void updateButton(QToolButton* button);
+    void showContextMenu(QTabBar* bar, const QPoint& point);
     void requestWorkspace(const QString& path, bool close);
     QPointer<WorkspaceManager> workspaces;
     QPointer<TabManager> tabs;
     QPointer<WorkspaceSessionCoordinator> sessions;
     std::function<void()> openWorkspace;
-    QList<QPointer<QToolButton>> buttons;
-    QMenu* popup = nullptr;
+    QList<QPointer<QTabBar>> bars;
 };

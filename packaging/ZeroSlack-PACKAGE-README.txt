@@ -1,9 +1,15 @@
-ZeroSlack v0.31.11 Windows package
+ZeroSlack v0.31.12 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.12 refines workspace icons, Files/Design navigation, sidebar toggling
+and the icon-only More toolbox with hover names and persistent pinning. Splitter
+allocation and navigation teardown during theme changes are fixed. Windows saves
+recover from transient read leases with bounded atomic retries and renewed external
+change checks; persistent locks and conflicts preserve unsaved local content.
 
 Release 0.31.11 also fixes focused native-list teardown discovered by the xIPs
 integration checks. Ela patch 28 keeps the view style alive until Qt finishes

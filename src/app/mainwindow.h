@@ -25,6 +25,7 @@ class MyCodeEditor;
 class TabManager;
 class WorkspaceManager;
 class WorkspaceSessionCoordinator;
+class WorkspaceSwitcher;
 class RtlActionCoordinator;
 class NavigationCommandCoordinator;
 class NavigationManager;
@@ -130,6 +131,7 @@ private:
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<WorkspaceSessionCoordinator>
         workspaceSessionCoordinator;
+    std::unique_ptr<WorkspaceSwitcher> workspaceSwitcher;
     std::unique_ptr<GlobalControlCoordinator> globalControlCoordinator;
     std::unique_ptr<NavigationCommandCoordinator> navigationCommandCoordinator;
     std::unique_ptr<SemanticDockCoordinator> semanticDocks;
@@ -144,7 +146,6 @@ private:
     QDockWidget* settingsCenterDock = nullptr;
     QMenu* viewMenu = nullptr;
     QMenu* workspaceMenu = nullptr;
-    QMenu* openWorkspacesMenu = nullptr;
     QAction* closeActiveWorkspaceAction = nullptr;
     QMenu* toolsMenu = nullptr;
     QMenu* userTemplatesMenu = nullptr;
@@ -229,7 +230,7 @@ private:
             picked);
     void setupViewMenu();
     void setupWorkspaceMenu();
-    void refreshWorkspaceMenuEntries();
+    void refreshWorkspaceActions();
     void activateWorkspace(int index);
     void closeActiveWorkspace();
     void setupToolsMenu();

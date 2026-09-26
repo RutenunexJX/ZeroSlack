@@ -7,6 +7,7 @@
 #include "contextpeekhost.h"
 #include "contextfloatingwindow.h"
 #include "contextrail.h"
+#include "contexttoolbox.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
 #include "panelcompositor.h"
@@ -34,10 +35,13 @@
 #include <QMenu>
 #include <QScopedValueRollback>
 #include <QScreen>
+#include <QSettings>
+#include <QStackedWidget>
 
 #include <array>
 
 namespace {
+constexpr auto unpinnedProviderSettingsKey = "contextRail/unpinnedProviders";
 QString normalizedRoot(const QString& root)
 {
     if (root.trimmed().isEmpty())
@@ -63,6 +67,7 @@ bool hasBuiltInProviderIcon(const QString& providerId)
     return providerId == QStringLiteral("temporaryEditor")
         || providerId == QStringLiteral("liveInsights")
         || providerId.startsWith(QStringLiteral("rtlInsight."))
+        || providerId == QStringLiteral("xips")
         || providerId == QStringLiteral("pinloom");
 }
 
@@ -88,6 +93,7 @@ QIcon contextProviderIcon(
     if (providerId == QStringLiteral("rtlInsight.hotspot")) return icon(Signals);
     if (providerId == QStringLiteral("rtlInsight.state")) return icon(Context);
     if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
+    if (providerId == QStringLiteral("xips")) return icon(Grid);
     return icon(Bookmark);
 }
 }
@@ -105,17 +111,21 @@ ContextWorkspaceController::ContextWorkspaceController(
 
     railValue = new ContextRail(mainWindow);
     mainWindow->addToolBar(Qt::RightToolBarArea, railValue);
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    const auto hiddenProviders = settings.value(QLatin1String(unpinnedProviderSettingsKey)).toStringList();
+    unpinnedProviders = QSet<QString>(hiddenProviders.cbegin(), hiddenProviders.cend());
+    railValue->addEntry({QStringLiteral("toolbox"), tr("More"), tr("More tools"), RoundedIcons::icon(RoundedIcons::More)});
 
     peekHostValue = new ContextPeekHost(editorRegion);
     activeFloatingSurface = peekHostValue;
     availableFloatingWindow();
-    QAction* footer = railValue->addSeparator();
-    footer->setObjectName(QStringLiteral("contextFloatingFooter"));
-    collapseFloatingAction = railValue->addRailAction(RoundedIcons::icon(RoundedIcons::Collapse), tr("Hide floating views"));
+    collapseFloatingAction = new QAction(RoundedIcons::icon(RoundedIcons::Collapse), tr("Hide floating views"), railValue);
     collapseFloatingAction->setObjectName(QStringLiteral("contextFloatingCollapse"));
     collapseFloatingAction->setCheckable(true);
     connect(collapseFloatingAction, &QAction::triggered, this, &ContextWorkspaceController::setFloatingCollapsed);
     connect(railValue, &ContextRail::entryContextMenuRequested, this, [this](const QString& id, const QPoint& pos) {
+        if (id == QStringLiteral("toolbox")) return;
         QMenu* menu = createRailContextMenu(id);
         menu->setAttribute(Qt::WA_DeleteOnClose);
         menu->popup(pos);
@@ -146,6 +156,15 @@ ContextWorkspaceController::ContextWorkspaceController(
                                | Qt::LeftDockWidgetArea);
     dockValue->setFeatures(QDockWidget::DockWidgetClosable);
     dockHostValue = new ContextDockHost(dockValue);
+    sidebarPages = new QStackedWidget(dockValue);
+    sidebarPages->setObjectName(QStringLiteral("contextSidebarPages"));
+    sidebarPages->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
+    sidebarPages->addWidget(dockHostValue);
+    toolbox = new ContextToolbox(sidebarPages);
+    sidebarPages->addWidget(toolbox);
+    toolbox->setUtilityAction(collapseFloatingAction);
+    connect(toolbox, &ContextToolbox::toolRequested, this, [this](const QString& id) { openTool(id); });
+    connect(toolbox, &ContextToolbox::pinChanged, this, &ContextWorkspaceController::setProviderPinned);
 #ifdef ZEROSLACK_ENABLE_ELA
     sideDrawer = new ElaDrawerArea(dockValue);
     sideDrawer->setObjectName(QStringLiteral("contextSidebarDrawer"));
@@ -153,16 +172,18 @@ ContextWorkspaceController::ContextWorkspaceController(
     sideDrawer->setBorderRadius(0);
     sideDrawer->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
     sideDrawer->setDrawerEdge(Qt::RightEdge);
-    sideDrawer->addDrawer(dockHostValue);
+    sideDrawer->addDrawer(sidebarPages);
     dockValue->setWidget(sideDrawer);
     connect(sideDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
         if (!expanded && dockValue) dockValue->hide();
+        updateActiveRailEntry();
     });
+    connect(sideDrawer, &ElaDrawerArea::expandStateChanged, this, [this](bool) { updateActiveRailEntry(); });
     connect(dockValue, &QDockWidget::topLevelChanged, sideDrawer, [this] {
         sideDrawer->finishDrawerAnimation();
     });
 #else
-    dockValue->setWidget(dockHostValue);
+    dockValue->setWidget(sidebarPages);
 #endif
     dockHostValue->setMinimumWidth(ContextWorkspaceState::kMinimumDockWidth);
     if (mainWindow->centralWidget())
@@ -228,7 +249,10 @@ ContextWorkspaceController::ContextWorkspaceController(
             &ContextWorkspaceController::
                 resetPeekToProviderPreferredSize);
     connect(dockHostValue, &ContextDockHost::sectionLayoutChanged, this,
-            &ContextWorkspaceController::notifyWorkspaceStateChanged);
+            [this] {
+                updateActiveRailEntry();
+                notifyWorkspaceStateChanged();
+            });
     connect(dockHostValue, &ContextDockHost::dragOutRequested, this, [this](const QString& key, const QPoint& position) {
         const bool bottom = dockHostValue->isBottomResource(key);
         const int index = dockHostValue->resourceKeys().indexOf(key);
@@ -309,6 +333,9 @@ ContextWorkspaceController::~ContextWorkspaceController()
 {
     // QWidget may already be deleting the main window's children.
     if (!qobject_cast<QMainWindow*>(window.data())) window.clear();
+#ifdef ZEROSLACK_ENABLE_ELA
+    if (sideDrawer) sideDrawer->finishDrawerAnimation();
+#endif
     if (dockTransition) dockTransition->finish();
     restoringState = true;
     if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settleFor(dockValue);
@@ -399,6 +426,7 @@ bool ContextWorkspaceController::setDockVisible(
         if (dockValue->isVisible())
             applyDockVisibility(false);
         bottomDockValue->hide();
+        updateActiveRailEntry();
         return true;
     }
     // The rail is the sidebar's entry point, so a hidden rail is restored
@@ -408,6 +436,7 @@ bool ContextWorkspaceController::setDockVisible(
         railValue->show();
         notifyWorkspaceStateChanged();
     }
+    if (sidebarPages->currentWidget() == toolbox) { showToolbox(); return true; }
     if (dockHostValue->resourceCount() > 0) {
         for (const auto& key : dockHostValue->resourceKeys()) showResourceDock(key);
         return true;
@@ -418,7 +447,11 @@ bool ContextWorkspaceController::setDockVisible(
         return fail(QStringLiteral(
             "No Context provider is registered."));
     }
-    const QString providerId = entries.constFirst();
+    QString providerId = QStringLiteral("toolbox");
+    for (const QString& id : entries) {
+        if (isProviderPinned(id)) { providerId = id; break; }
+    }
+    if (providerId == QStringLiteral("toolbox")) { showToolbox(); return true; }
     IContextContentProvider* provider =
         providerForId(providerId);
     const ContextResource activation =
@@ -446,7 +479,7 @@ bool ContextWorkspaceController::registerProvider(
     if (!provider)
         return false;
     const QString id = provider->providerId().trimmed();
-    if (id.isEmpty() || providers.contains(id))
+    if (id.isEmpty() || id == QStringLiteral("toolbox") || providers.contains(id))
         return false;
 
     ContextRailEntry entry;
@@ -460,6 +493,8 @@ bool ContextWorkspaceController::registerProvider(
         window ? window->style() : nullptr);
     if (!railValue->addEntry(entry))
         return false;
+    railValue->setEntryVisible(id, !unpinnedProviders.contains(id));
+    toolbox->addEntry(id, entry.title, entry.icon, !unpinnedProviders.contains(id));
     provider->setProviderStateChangedHandler([this]() {
         if (!restoringState)
             emit workspaceStateChanged();
@@ -489,6 +524,7 @@ bool ContextWorkspaceController::unregisterProvider(
         }
     }
     railValue->removeEntry(id);
+    toolbox->removeEntry(id);
     providers.erase(it);
     return true;
 }
@@ -501,6 +537,50 @@ QStringList ContextWorkspaceController::providerIds() const
         result.append(id);
     }
     return result;
+}
+
+bool ContextWorkspaceController::isProviderPinned(const QString& id) const
+{
+    return providers.contains(id) && !unpinnedProviders.contains(id);
+}
+
+bool ContextWorkspaceController::setProviderPinned(const QString& id, bool pinned)
+{
+    if (!providers.contains(id)) return false;
+    if (pinned) unpinnedProviders.remove(id);
+    else unpinnedProviders.insert(id);
+    railValue->setEntryVisible(id, pinned);
+    toolbox->setPinned(id, pinned);
+    QSettings settings(QSettings::defaultFormat(), QSettings::UserScope,
+                       QStringLiteral("ZeroSlack"), QStringLiteral("ZeroSlack"));
+    QStringList hidden = unpinnedProviders.values();
+    hidden.sort();
+    settings.setValue(QLatin1String(unpinnedProviderSettingsKey), hidden);
+    settings.sync();
+    updateActiveRailEntry();
+    return settings.status() == QSettings::NoError;
+}
+
+bool ContextWorkspaceController::sidebarVisible() const
+{
+#ifdef ZEROSLACK_ENABLE_ELA
+    return dockValue && dockValue->isVisible() && sideDrawer && sideDrawer->getIsExpand();
+#else
+    return dockValue && dockValue->isVisible();
+#endif
+}
+
+bool ContextWorkspaceController::toolboxVisible() const
+{
+    return sidebarVisible() && sidebarPages && sidebarPages->currentWidget() == toolbox;
+}
+
+void ContextWorkspaceController::showToolbox()
+{
+    sidebarPages->setCurrentWidget(toolbox);
+    toolbox->setStatus({});
+    showDock(false);
+    updateActiveRailEntry();
 }
 
 ContextPresentation ContextWorkspaceController::presentationFor(
@@ -713,6 +793,7 @@ bool ContextWorkspaceController::addDockedResource(
         dockHostValue->setSectionHeight(
             resource.stableKey(), capabilities.preferredSectionHeight);
     }
+    sidebarPages->setCurrentWidget(dockHostValue);
     showDock(dockWasEmpty && !restoringState);
     return true;
 }
@@ -803,7 +884,10 @@ bool ContextWorkspaceController::pinPeek(QString* failureReason, bool bottom, in
     dockHostValue->setSectionDetachable(resource.stableKey(), provider->capabilities(resource).detachable);
     dockHostValue->moveResourceToArea(resource.stableKey(), bottom, index);
     if (bottom) showResourceDock(resource.stableKey());
-    else showDock(dockWasEmpty && !restoringState, !dockingTransition);
+    else {
+        sidebarPages->setCurrentWidget(dockHostValue);
+        showDock(dockWasEmpty && !restoringState, !dockingTransition);
+    }
     hideEmptyDocks();
     documentBindings.remove(resource.stableKey());
     keptFloatingKeys.remove(resource.stableKey());
@@ -1367,22 +1451,32 @@ void ContextWorkspaceController::handleViewResourceChanged(
     }
 }
 
+QString ContextWorkspaceController::activeSidebarProviderId() const
+{
+    if (!sidebarVisible() || !dockHostValue || sidebarPages->currentWidget() != dockHostValue)
+        return {};
+    // Bottom and floating focus must not replace the right sidebar's active tool.
+    for (const auto& key : focusOrder) {
+        if (!dockHostValue->containsResource(key) || dockHostValue->isBottomResource(key))
+            continue;
+        if (dockHostValue->isSectionCollapsed(key)) return {};
+        for (int i = 0; i < dockHostValue->resourceCount(); ++i) {
+            const auto resource = dockHostValue->resourceAt(i);
+            if (resource.stableKey() == key) return resource.providerId;
+        }
+    }
+    return {};
+}
+
 void ContextWorkspaceController::updateActiveRailEntry()
 {
     if (!railValue)
         return;
-    if (peekHostValue && floatingSurfaceFor()->hasResource() && floatingWidget()->isVisible()) {
-        railValue->setActiveEntryId(
-            floatingSurfaceFor()->resource().providerId);
+    if (toolboxVisible()) {
+        railValue->setActiveEntryId(QStringLiteral("toolbox"));
         return;
     }
-    if (dockVisible()
-        && dockHostValue) {
-        railValue->setActiveEntryId(
-            dockHostValue->currentResource().providerId);
-        return;
-    }
-    railValue->setActiveEntryId({});
+    railValue->setActiveEntryId(activeSidebarProviderId());
 }
 
 ContextPlacement ContextWorkspaceController::defaultPlacementFor(const QString& providerId)
@@ -1395,38 +1489,55 @@ ContextPlacement ContextWorkspaceController::defaultPlacementFor(const QString& 
 void ContextWorkspaceController::activateRailProvider(
     const QString& providerId)
 {
+    const bool active = toolboxVisible() ? providerId == QStringLiteral("toolbox")
+        : activeSidebarProviderId() == providerId;
+    if (active) {
+        applyDockVisibility(false);
+        updateActiveRailEntry();
+        return;
+    }
+    openTool(providerId);
+}
+
+bool ContextWorkspaceController::openTool(const QString& providerId)
+{
+    if (providerId == QStringLiteral("toolbox")) { showToolbox(); return true; }
+    IContextContentProvider* provider = providerForId(providerId);
+    if (!provider) return false;
     for (const QString key : focusOrder) {
         auto* surface = surfaceWithResource(key);
-        QWidget* widget = surface ? dynamic_cast<QWidget*>(surface)
-            : (dockHostValue->isBottomResource(key) ? bottomDockValue.data() : dockValue.data());
         ContextResource candidate = surface ? surface->resource() : ContextResource{};
         if (!surface) {
             for (int i = 0; i < dockHostValue->resourceCount(); ++i)
                 if (dockHostValue->resourceAt(i).stableKey() == key) candidate = dockHostValue->resourceAt(i);
         }
         if (candidate.providerId != providerId || (surface && !floatingEligible(key))) continue;
-        if (focusedResourceKey == key && widget->isVisible()
-            && (surface || !dockHostValue->isSectionCollapsed(key))) {
-            if (surface == peekHostValue) {
-                closeFloatingResource(key);
-            } else if (!surface) {
-                dockHostValue->setSectionCollapsed(key, true);
-            } else {
-                widget->hide();
-                if (surface) hiddenFloatingKeys.insert(key);
-            }
-            updateActiveRailEntry();
-        } else {
-            focusResource(key);
-        }
-        return;
+        sidebarPages->setCurrentWidget(dockHostValue);
+        if (surface && !pinFloatingResource(key, false)) return false;
+        dockHostValue->moveResourceToArea(key, false);
+        dockHostValue->setSectionCollapsed(key, false, false);
+        dockHostValue->activateResource(key);
+        showDock(false);
+        hideEmptyDocks();
+        recordFocus(key);
+        updateActiveRailEntry();
+        return true;
     }
-    if (IContextContentProvider* provider = providerForId(providerId)) {
-        const ContextResource resource = provider->activationResource(currentWorkspaceRoot);
-        if (resource.isValid() && openResource(resource, defaultPlacementFor(providerId)))
-            return;
+    const ContextResource resource = provider->activationResource(currentWorkspaceRoot);
+    QString failure;
+    if (resource.isValid()) {
+        sidebarPages->setCurrentWidget(dockHostValue);
+        if (openResource(resource, defaultPlacementFor(providerId), &failure)) {
+            updateActiveRailEntry();
+            return true;
+        }
     }
     emit providerActivationRequested(providerId);
+    showToolbox();
+    toolbox->setStatus(failure.isEmpty()
+        ? tr("%1 needs a source file or a design selection. Open one, then choose this tool again.").arg(provider->displayName())
+        : failure);
+    return false;
 }
 
 void ContextWorkspaceController::resetPeekToProviderPreferredSize()
@@ -1452,12 +1563,12 @@ void ContextWorkspaceController::refreshProviderIcons()
     for (const auto& [id, provider] : providers) {
         if (!provider)
             continue;
-        railValue->setEntryIcon(
-            id,
-            contextProviderIcon(
+        const auto icon = contextProviderIcon(
                 id,
                 provider->iconKey().trimmed(),
-                window ? window->style() : nullptr));
+                window ? window->style() : nullptr);
+        railValue->setEntryIcon(id, icon);
+        toolbox->setEntryIcon(id, icon);
     }
 }
 
@@ -1488,7 +1599,11 @@ void ContextWorkspaceController::showDock(bool applyPreferredWidth, bool animate
 
 void ContextWorkspaceController::showResourceDock(const QString& key)
 {
-    if (!dockHostValue->isBottomResource(key)) { showDock(false); return; }
+    if (!dockHostValue->isBottomResource(key)) {
+        sidebarPages->setCurrentWidget(dockHostValue);
+        showDock(false);
+        return;
+    }
     const bool wasVisible = bottomDockValue->isVisible();
     const QScopedValueRollback<bool> guard(applyingBottomHeight, true);
     if (!wasVisible && window) {
@@ -1503,7 +1618,8 @@ void ContextWorkspaceController::showResourceDock(const QString& key)
 void ContextWorkspaceController::hideEmptyDocks()
 {
     if (previewingDocks || !dockHostValue) return;
-    if (dockHostValue->areaResourceCount(false) == 0 && dockValue) dockValue->hide();
+    if (dockHostValue->areaResourceCount(false) == 0 && dockValue
+        && sidebarPages->currentWidget() != toolbox) dockValue->hide();
     if (dockHostValue->areaResourceCount(true) == 0 && bottomDockValue) bottomDockValue->hide();
 }
 

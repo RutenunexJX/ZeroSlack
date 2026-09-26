@@ -6,6 +6,7 @@
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
+#include "roundedicons.h"
 
 #include <QAction>
 #include <QMenu>
@@ -93,9 +94,9 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     designHierarchyCacheByScope.clear();
                     caches.designTopModule.clear();
                     caches.designTopInferred = true;
+                    if (navigationWidget)
+                        navigationWidget->clearDesignHierarchy();
                     if (currentView == DesignHierarchyView) {
-                        if (navigationWidget)
-                            navigationWidget->clearDesignHierarchy();
                         return;
                     }
                     refreshCurrentView();
@@ -304,6 +305,7 @@ void NavigationManager::onDesignNodeContextMenuRequested(
 {
     std::unique_ptr<QMenu> menuOwner(UiControls::menu(navigationWidget));
     QMenu& menu = *menuOwner;
+    menu.setObjectName(QStringLiteral("navigationDesignContextMenu"));
     for (const DesignHierarchyContextAction& item :
          designNodeContextActions(node)) {
         if (item.separatorBefore)
@@ -319,9 +321,18 @@ void NavigationManager::onDesignNodeContextMenuRequested(
             item.executionRoute);
         action->setEnabled(item.enabled);
     }
+    menu.addSeparator();
+    auto* refresh = menu.addAction(RoundedIcons::icon(RoundedIcons::Refresh), tr("Refresh"));
+    refresh->setObjectName(QStringLiteral("refreshDesignAction"));
+    refresh->setEnabled(navigationService && !getSystemVerilogFiles().isEmpty());
+    auto* automatic = menu.addAction(tr("Use automatic design tops"));
+    automatic->setObjectName(QStringLiteral("automaticDesignTopsAction"));
+    automatic->setEnabled(!caches.designTopInferred);
     QAction* selected = menu.exec(globalPos);
     if (!selected)
         return;
+    if (selected == refresh) { refreshDesignHierarchy(true); return; }
+    if (selected == automatic) { clearDesignTop(); return; }
     const QString actionId =
         selected->property("actionId").toString();
     if (!actionId.isEmpty())
@@ -383,18 +394,6 @@ void NavigationManager::setupConnections()
             &NavigationWidget::designNodeDoubleClicked,
             this,
             &NavigationManager::onDesignNodeDoubleClicked);
-
-    connect(navigationWidget,
-            &NavigationWidget::clearDesignTopRequested,
-            this,
-            &NavigationManager::clearDesignTop);
-
-    connect(navigationWidget,
-            &NavigationWidget::refreshDesignHierarchyRequested,
-            this,
-            [this]() {
-                refreshDesignHierarchy(true);
-            });
 
     connect(navigationWidget, &NavigationWidget::viewChanged,
             this, &NavigationManager::onViewChanged);

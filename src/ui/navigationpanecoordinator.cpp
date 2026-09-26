@@ -164,7 +164,7 @@ NavigationPaneCoordinator::~NavigationPaneCoordinator()
 void NavigationPaneCoordinator::finishOverlay()
 {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (!elaNavigationBar || !overlayParent) return;
+    if (!navigationDock || !elaNavigationBar || !overlayParent) return;
     changingPlacement = true;
     const QRect area(0, 0, elaNavigationBar->getNavigationBarWidth(), overlayParent->height());
     overlayParent.clear();
@@ -201,6 +201,7 @@ void NavigationPaneCoordinator::toggleVisible()
 
 bool NavigationPaneCoordinator::isExpanded() const
 {
+    if (!navigationDock || !navigationWidget) return false;
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar) return overlayParent ? elaNavigationBar->isOverlayExpanded()
         : elaNavigationBar->getDisplayMode() == ElaNavigationType::Maximal;
@@ -210,6 +211,7 @@ bool NavigationPaneCoordinator::isExpanded() const
 
 bool NavigationPaneCoordinator::isAnimating() const
 {
+    if (!navigationDock || !navigationWidget) return false;
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar) return elaNavigationBar->isOverlayAnimating() || elaNavigationBar->isDisplayModeAnimating();
 #endif
@@ -218,6 +220,9 @@ bool NavigationPaneCoordinator::isAnimating() const
 
 void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
 {
+    // An overlay is reparented into the central widget, which can be destroyed
+    // before this sibling coordinator during window teardown or replacement.
+    if (!navigationDock || !navigationWidget) return;
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar) {
         auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget());
@@ -303,6 +308,7 @@ void NavigationPaneCoordinator::setHeaderWidget(QWidget* header)
 
 bool NavigationPaneCoordinator::eventFilter(QObject* watched, QEvent* event)
 {
+    if (!navigationDock || !navigationWidget) return QObject::eventFilter(watched, event);
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar && overlayParent && !changingPlacement) {
         auto* target = qobject_cast<QWidget*>(watched);

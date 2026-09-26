@@ -215,14 +215,14 @@ struct ProviderCounters {
 class MockProvider final : public IContextContentProvider
 {
 public:
-    explicit MockProvider(ProviderCounters* countersValue)
-        : counters(countersValue)
+    explicit MockProvider(ProviderCounters* countersValue, QString id = QStringLiteral("mock"))
+        : counters(countersValue), id(std::move(id))
     {
     }
 
     QString providerId() const override
     {
-        return QStringLiteral("mock");
+        return id;
     }
 
     ContextResource activationResource(const QString&) const override
@@ -306,6 +306,7 @@ public:
 
 private:
     ProviderCounters* counters = nullptr;
+    QString id;
 };
 
 ContextResource resource(const QString& id)
@@ -421,6 +422,95 @@ constexpr ContextPlacement floatingPlacement{
     ContextSurface::Floating, ContextPersistence::Transient, ContextBinding::Global};
 constexpr ContextPlacement keptPlacement{
     ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global};
+
+void verifyRailAreaBoundaries()
+{
+    ProviderCounters bottomCounters;
+    PlacementFixture fixture;
+    bottomCounters.detachable = true;
+    auto& controller = *fixture.controller;
+    controller.registerProvider(std::make_unique<MockProvider>(&bottomCounters, "bottom"));
+    auto* host = controller.dockHost();
+    const auto side = resource("side");
+    auto bottom = resource("bottom");
+    bottom.providerId = "bottom";
+    check(controller.openResource(side, keptPlacement)
+              && controller.openResource(bottom, floatingPlacement)
+              && controller.pinFloatingResource(bottom.stableKey(), true),
+          "rail_area_setup: distinct providers open in the right and bottom docks");
+    controller.focusResource(bottom.stableKey());
+    settleUi();
+    auto* sideView = host->viewForResource(side.stableKey());
+    auto* bottomView = host->viewForResource(bottom.stableKey());
+    auto* bottomAction = controller.rail()->findChild<QAction*>("contextRail.bottom");
+    check(bottomAction && sideView && bottomView, "rail_area_setup: views and entry exist");
+    if (!bottomAction || !sideView || !bottomView) return;
+    check(controller.rail()->activeEntryId() == "mock",
+          "rail_area_focus: bottom focus leaves the visible right provider highlighted");
+    bottomAction->trigger();
+    settleUi();
+    check(controller.dockWidget()->isVisible() && !host->isBottomResource(bottom.stableKey())
+              && bottomView->isVisible() && sideView->isVisible()
+              && host->viewForResource(bottom.stableKey()) == bottomView
+              && host->viewForResource(side.stableKey()) == sideView
+              && fixture.counters.created == 1 && bottomCounters.created == 1,
+          "rail_area_first_click: bottom view moves to the right without recreating or losing either view");
+    check(!controller.bottomDockWidget()->isVisible(),
+          "rail_area_empty_bottom: moving the last bottom section hides the empty dock");
+    bottomAction->trigger();
+    settleUi();
+    check(!controller.dockWidget()->isVisible()
+              && host->viewForResource(bottom.stableKey()) == bottomView
+              && host->viewForResource(side.stableKey()) == sideView,
+          "rail_area_second_click: the whole right sidebar hides and retains both views");
+}
+
+void verifyRailCollapsedSection()
+{
+    PlacementFixture fixture;
+    auto& controller = *fixture.controller;
+    auto* host = controller.dockHost();
+    const auto item = resource("collapsed");
+    check(controller.openResource(item, keptPlacement), "rail_collapsed_setup");
+    auto* view = host->viewForResource(item.stableKey());
+    host->setSectionCollapsed(item.stableKey(), true, false);
+    settleUi();
+    check(controller.rail()->activeEntryId().isEmpty(),
+          "rail_collapsed_highlight: a collapsed section is not an active expanded tool");
+    auto* action = controller.rail()->findChild<QAction*>("contextRail.mock");
+    action->trigger();
+    settleUi();
+    check(controller.dockWidget()->isVisible() && !host->isSectionCollapsed(item.stableKey())
+              && view->isVisible() && host->viewForResource(item.stableKey()) == view
+              && fixture.counters.created == 1,
+          "rail_collapsed_first_click: the existing section expands and the sidebar stays open");
+    action->trigger();
+    settleUi();
+    check(!controller.dockWidget()->isVisible() && host->viewForResource(item.stableKey()) == view,
+          "rail_collapsed_second_click: the next click hides the whole right sidebar");
+}
+
+void verifyBottomFocusPreservesToolbox()
+{
+    PlacementFixture fixture;
+    fixture.counters.detachable = true;
+    auto& controller = *fixture.controller;
+    const auto bottom = resource("bottom-focus");
+    check(controller.openResource(resource("side"), keptPlacement)
+              && controller.openResource(bottom, floatingPlacement)
+              && controller.pinFloatingResource(bottom.stableKey(), true), "toolbox_bottom_setup");
+    auto* original = controller.viewForResource(bottom.stableKey());
+    controller.openTool("toolbox");
+    settleUi();
+    check(controller.toolboxVisible(), "toolbox_bottom_setup: More is visible");
+    controller.focusResource(bottom.stableKey());
+    settleUi();
+    check(controller.toolboxVisible() && controller.rail()->activeEntryId() == "toolbox"
+              && controller.bottomDockWidget()->isVisible()
+              && controller.dockHost()->isBottomResource(bottom.stableKey())
+              && controller.viewForResource(bottom.stableKey()) == original,
+          "toolbox_bottom_focus: focusing bottom content does not replace the right toolbox page");
+}
 
 void verifyLegacyFloatingDockMigration()
 {
@@ -652,8 +742,9 @@ void verifyRailThreeStates()
               && !controller.peekHost()->hasResource(),
           "rail_three_states: first click opens a transient dock instance");
     QTest::mouseClick(button, Qt::LeftButton);
-    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()) && controller.dockHost()->resourceCount() == 1,
-          "rail_three_states: second click collapses without disposing the view");
+    settleUi();
+    check(!controller.dockVisible() && !controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()) && controller.dockHost()->resourceCount() == 1,
+          "rail_three_states: second click hides the sidebar without disposing the view");
     QTest::mouseClick(button, Qt::LeftButton);
     check(controller.dockWidget()->isVisible()
               && controller.dockHost()->viewForResource(fixture.counters.activation.stableKey()) == firstView
@@ -663,9 +754,11 @@ void verifyRailThreeStates()
     controller.openResource(fixture.counters.activation, floatingPlacement);
     QPointer<QWidget> preview = controller.peekHost()->view();
     action->trigger();
+    settleUi();
     processDeferredDeletes();
-    check(!controller.peekHost()->hasResource() && preview.isNull(),
-          "rail_three_states: an active floating instance retains close-and-dispose behavior");
+    check(!controller.peekHost()->hasResource() && preview
+              && controller.dockHost()->viewForResource(fixture.counters.activation.stableKey()) == preview,
+          "rail_three_states: a floating instance moves into the sidebar without reconstruction");
 }
 
 void verifyRailFocusExisting()
@@ -995,15 +1088,20 @@ void verifyMultipleFloatingWindows()
     fixture.window.activateWindow();
     fixture.window.centralWidget()->setFocus();
     settleUi();
+    QWidget* secondView = hosts[1]->view();
     controller.rail()->actions().constFirst()->trigger();
-    check(controller.floatingSurface()->view() == hosts[1]->view() && hosts[1]->isVisible() && fixture.counters.created == created,
-          "multi_rail_focus: left click selects the most recently focused instance without cycling");
+    settleUi();
+    check(controller.dockVisible() && controller.dockHost()->viewForResource(resource("two").stableKey()) == secondView
+              && !hosts[1]->hasResource() && fixture.counters.created == created,
+          "multi_rail_focus: left click moves the most recent floating instance into the sidebar without reconstruction");
     controller.rail()->actions().constFirst()->trigger();
-    check(!hosts[1]->isVisible() && hosts[1]->hasResource() && closed.isEmpty(),
-          "multi_rail_hide: left click hides the active native instance without closing");
+    settleUi();
+    check(!controller.dockVisible() && controller.dockHost()->viewForResource(resource("two").stableKey()) == secondView && closed.isEmpty(),
+          "multi_rail_hide: second click hides the sidebar without closing its view");
     controller.rail()->actions().constFirst()->trigger();
-    check(hosts[1]->isVisible() && fixture.counters.created == created,
-          "multi_rail_restore: left click restores the same most recent native instance");
+    settleUi();
+    check(controller.dockVisible() && controller.dockHost()->viewForResource(resource("two").stableKey()) == secondView && fixture.counters.created == created,
+          "multi_rail_restore: third click restores the same sidebar view");
     std::unique_ptr<QMenu> menu(controller.createRailContextMenu("mock"));
     auto* collect = menu->findChild<QAction*>("contextCollectFloating");
     check(collect && collect->isEnabled(), "multi_menu: controller offers collecting existing floating views");
@@ -1299,8 +1397,9 @@ void verifySidebarStack()
     settleUi();
     controller.rail()->actions().first()->trigger();
     controller.rail()->actions().first()->trigger();
-    check(host->isSectionCollapsed(keys[1]) && !host->isSectionCollapsed(keys[0]) && controller.dockWidget()->isVisible(),
-          "stack_rail: two clicks focus then collapse only the MRU section");
+    settleUi();
+    check(!host->isSectionCollapsed(keys[1]) && !host->isSectionCollapsed(keys[0]) && controller.dockVisible(),
+          "stack_rail: two clicks hide then restore the sidebar without collapsing individual sections");
     host->setSectionHeight(keys[0], fixture.window.screen()->availableGeometry().height() / 3);
     const auto saved = controller.captureState();
     QTemporaryDir temporary;
@@ -1482,6 +1581,12 @@ void verifySidebarCompression()
     host.activateResource(keys[1]);
     host.resize(host.width(), qMax(260, available.height() * 3 / 5));
     settleUi();
+    auto* diagnosticSplitter = host.findChild<QSplitter*>("contextSideSplitter");
+    std::cerr << "compression diagnostic screen=" << available.height() << " host=" << host.height()
+              << " desired=" << desired << " heights=" << host.sectionWidget(keys[0])->height()
+              << "," << host.sectionWidget(keys[1])->height() << "," << host.sectionWidget(keys[2])->height()
+              << " splitter=" << diagnosticSplitter->height() << " handle=" << diagnosticSplitter->handleWidth()
+              << " persisted=" << host.sectionHeight(keys[0]) << "," << host.sectionHeight(keys[1]) << "," << host.sectionHeight(keys[2]) << '\n';
     check(qAbs(host.sectionWidget(keys[0])->height() - host.sectionWidget(keys[1])->height()) <= 1
               && qAbs(host.sectionWidget(keys[2])->height() - host.sectionWidget(keys[1])->height()) <= 1
               && host.sectionWidget(keys[0])->height() < host.sectionHeight(keys[0]),
@@ -1490,6 +1595,42 @@ void verifySidebarCompression()
     const int before = host.sectionHeight(keys[1]);
     dragHandle(handle, QPoint(0, available.height() / 10));
     check(host.sectionHeight(keys[1]) != before, "stack_resize: the section boundary changes its persisted height");
+    for (const auto& key : keys) host.setSectionHeight(key, desired);
+    for (int height : {319, 320, 321}) {
+        host.resize(host.width(), height); settleUi();
+        const auto sizes = diagnosticSplitter->sizes();
+        check(sizes.size() == 3 && qAbs(sizes[0] - sizes[1]) <= 1 && qAbs(sizes[2] - sizes[1]) <= 1,
+              "stack_gap_rounding: equal weights stay equal across integer remainder cases");
+        check(sizes.size() == 3 && sizes[0] + sizes[1] + sizes[2] + 2 * diagnosticSplitter->handleWidth() == diagnosticSplitter->height(),
+              "stack_gap_budget: sections and handles consume the available height once");
+    }
+    for (bool bottom : {false, true}) {
+        ContextDockHost projectionHost;
+        QWidget* surface = bottom ? projectionHost.bottomWidget() : &projectionHost;
+        if (bottom) surface->setParent(nullptr);
+        surface->resize(760, 660); surface->show();
+        const auto first = resource("projection-a");
+        const auto last = resource("projection-b");
+        const auto inserted = resource("projection-c");
+        projectionHost.addResource(first, new QLabel("a"));
+        projectionHost.addResource(last, new QLabel("b"));
+        if (bottom) {
+            projectionHost.moveResourceToArea(first.stableKey(), true);
+            projectionHost.moveResourceToArea(last.stableKey(), true);
+        }
+        settleUi();
+        auto* incoming = new QLabel("c");
+        if (bottom) incoming->setMinimumWidth(projectionHost.sectionHeader(first.stableKey())->minimumSizeHint().width());
+        const auto predicted = projectionHost.projectedSectionRect(bottom, 1, projectionHost.viewportGlobalRect(bottom), incoming);
+        projectionHost.addResource(inserted, incoming);
+        if (bottom) projectionHost.moveResourceToArea(inserted.stableKey(), true, 1);
+        else projectionHost.moveResource(inserted.stableKey(), 1);
+        settleUi();
+        auto* frame = projectionHost.sectionWidget(inserted.stableKey());
+        const QRect actual(frame->mapToGlobal(QPoint()), frame->size());
+        check(predicted == actual, bottom ? "stack_projection_bottom: preview includes handle gaps and matches the inserted section"
+                                         : "stack_projection_side: preview includes handle gaps and matches the inserted section");
+    }
 }
 
 void verifyV5SidebarMigration()
@@ -1762,6 +1903,9 @@ int main(int argc, char* argv[])
     verifyUnsupportedPlacements();
     verifyRailThreeStates();
     verifyRailFocusExisting();
+    verifyRailAreaBoundaries();
+    verifyRailCollapsedSection();
+    verifyBottomFocusPreservesToolbox();
     verifyDetachableRoutingAndMovement();
     verifyFloatingGeometryRoundtrip();
     verifyFloatingScreenFallback();
@@ -1822,8 +1966,8 @@ int main(int argc, char* argv[])
               == QStringList{QStringLiteral("mock")}
               && controller.rail()->isVisible()
               && controller.rail()->entryIds()
-                     == QStringList{QStringLiteral("mock")},
-          "provider registration creates one explicit rail entry");
+                     == QStringList{QStringLiteral("mock"), QStringLiteral("toolbox")},
+          "provider registration creates its entry and keeps the toolbox accessible");
 
     int activationRequests = 0;
     int fullViewRequests = 0;
@@ -1847,6 +1991,9 @@ int main(int argc, char* argv[])
     controller.rail()->actions().constFirst()->trigger();
     check(activationRequests == 1,
           "empty provider rail activation delegates resource selection");
+    check(controller.toolboxVisible(), "empty provider explains its missing input in the toolbox");
+    controller.setDockVisible(false);
+    settleUi();
 
     QString failureReason;
     check(controller.openResource(original,
@@ -2009,7 +2156,7 @@ int main(int argc, char* argv[])
     controller.closePeek();
     controller.rail()->actions().constFirst()->trigger();
     settleUi();
-    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()), "rail collapses the active pinned section while retaining the sidebar");
+    check(!controller.dockVisible() && !controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()), "rail hides the sidebar while retaining the active pinned section");
     controller.rail()->actions().constFirst()->trigger();
     settleUi();
     check(controller.dockWidget()->isVisible()
@@ -2237,7 +2384,7 @@ int main(int argc, char* argv[])
               "resizing preserves the chart view instance");
         sidebar.rail()->actions().constFirst()->trigger();
         settleUi();
-        check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey()), "second rail click collapses transient section");
+        check(!sidebar.dockVisible() && !sidebar.dockHost()->isSectionCollapsed(original.stableKey()), "second rail click hides the sidebar and preserves the transient section");
         sidebar.rail()->actions().constFirst()->trigger();
         settleUi();
         check(qAbs(sidebar.dockWidget()->width() - widened) <= 2,
@@ -2248,7 +2395,7 @@ int main(int argc, char* argv[])
               "current sidebar resource can be pinned");
         sidebar.rail()->actions().constFirst()->trigger();
         settleUi();
-        check(sidebar.dockWidget()->isVisible() && sidebar.dockHost()->isSectionCollapsed(original.stableKey())
+        check(!sidebar.dockVisible() && !sidebar.dockHost()->isSectionCollapsed(original.stableKey())
                   && sidebar.dockHost()->resourceCount() == 1,
               "second click also hides pinned content without removing it");
         sidebar.rail()->actions().constFirst()->trigger();

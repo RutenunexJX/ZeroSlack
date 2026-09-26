@@ -21,6 +21,8 @@ class ContextPeekHost;
 class ContextFloatingSurface;
 class ContextFloatingWindow;
 class ContextRail;
+class ContextToolbox;
+class QStackedWidget;
 class IContextContentProvider;
 class QDockWidget;
 class QEvent;
@@ -73,6 +75,10 @@ public:
         std::unique_ptr<IContextContentProvider> provider);
     bool unregisterProvider(const QString& providerId);
     QStringList providerIds() const;
+    bool isProviderPinned(const QString& providerId) const;
+    bool setProviderPinned(const QString& providerId, bool pinned);
+    bool toolboxVisible() const;
+    bool openTool(const QString& providerId);
 
     bool openResource(
         const ContextResource& resource,
@@ -125,6 +131,9 @@ private:
     bool preservingDocumentLayout = false;
     ContextFloatingSurface* activeFloatingSurface = nullptr;
     QPointer<ContextDockHost> dockHostValue;
+    QPointer<QStackedWidget> sidebarPages;
+    QPointer<ContextToolbox> toolbox;
+    QSet<QString> unpinnedProviders;
     QPointer<QDockWidget> dockValue;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> sideDrawer;
@@ -157,7 +166,10 @@ private:
         QWidget* view,
         const ContextResource& resource);
     void updateActiveRailEntry();
+    QString activeSidebarProviderId() const;
     void activateRailProvider(const QString& providerId);
+    bool sidebarVisible() const;
+    void showToolbox();
     static ContextPlacement defaultPlacementFor(const QString& providerId);
     static ContextPresentation presentationFor(const ContextPlacement& placement);
     ContextFloatingSurface* floatingSurfaceFor() const;

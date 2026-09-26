@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QString>
+#include <functional>
 
 class QWidget;
 
@@ -26,7 +27,8 @@ public:
         const QString& text,
         QString* failureReason = nullptr,
         QByteArray* rawSha256 = nullptr,
-        QByteArray* logicalTextSha256 = nullptr) const;
+        QByteArray* logicalTextSha256 = nullptr,
+        const std::function<bool(QString*)>& revalidateOverwrite = {}) const;
 };
 
 #endif // TABFILEIO_H

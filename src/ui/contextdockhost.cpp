@@ -574,8 +574,9 @@ void ContextDockHost::arrangeArea(bool bottom)
         const int requested = bottom ? section->width : (section->retainedHeight > 0 ? section->retainedHeight : section->height);
         extents.append({minimum, requested, !bottom && section->collapsed});
     }
-    const auto lengths = distributeExtents(extent, extents);
-    int minimumExtent = qMax(0, keys.size() - 1) * resizeHeight;
+    const int handleExtent = qMax(0, keys.size() - 1) * splitter->handleWidth();
+    const auto lengths = distributeExtents(qMax(0, extent - handleExtent), extents);
+    int minimumExtent = handleExtent;
     for (int i = 0; i < keys.size(); ++i) {
         auto* section = sections.value(keys.at(i));
         if (splitter->widget(i) != section->frame) splitter->insertWidget(i, section->frame);
@@ -623,14 +624,17 @@ QRect ContextDockHost::projectedSectionRect(bool bottom, int index, const QRect&
     const int incomingMinimum = bottom ? qMax(180, incoming->minimumWidth())
         : headerHeight + resizeHeight + qMax(48, incoming->minimumHeight());
     extents.insert(insertion, {incomingMinimum, 0, false});
-    const auto lengths = distributeExtents(bottom ? viewport.width() : viewport.height(), extents);
-    int offset = 0;
+    const auto* splitter = bottom ? bottomSplitter : sideSplitter;
+    const int handleWidth = splitter->handleWidth();
+    const int extent = bottom ? viewport.width() : viewport.height();
+    const int handleExtent = qMax(0, extents.size() - 1) * handleWidth;
+    const auto lengths = distributeExtents(qMax(0, extent - handleExtent), extents);
+    int offset = insertion * handleWidth;
     for (int i = 0; i < insertion; ++i) offset += lengths[i];
     auto* areaStack = bottom ? bottomStack : stack;
     auto* area = bottom ? bottomScroll.data() : scroll.data();
     if (area && area->isVisible()) offset += bottom ? areaStack->x() : areaStack->y();
     // The inserted section is brought into view when the drop is committed.
-    const int extent = bottom ? viewport.width() : viewport.height();
     const int length = qMin(lengths[insertion], extent);
     offset = qBound(0, offset, qMax(0, extent - length));
     return bottom ? QRect(viewport.x() + offset, viewport.y(), length, viewport.height())

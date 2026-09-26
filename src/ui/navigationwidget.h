@@ -11,7 +11,6 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
-#include <QPushButton>
 #include <QCheckBox>
 #include <QTimer>
 #include <QTreeWidgetItem>
@@ -39,6 +38,7 @@ public:
     };
     static constexpr int FileTreeKindRole =
         Qt::UserRole + 2;
+    static constexpr int DesignTopRole = Qt::UserRole + 3;
 
     explicit NavigationWidget(QWidget *parent = nullptr);
     ~NavigationWidget();
@@ -65,6 +65,7 @@ public:
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
     void setDesignParticipatingFiles(const QSet<QString>& fileNames);
+    void updateDesignSummary(const DesignHierarchyReport& report);
 
     void highlightFile(const QString& filePath);
 
@@ -82,8 +83,6 @@ signals:
     void designNodeContextMenuRequested(const DesignHierarchyNode& node,
                                         const QPoint& globalPos);
     void designNodeDoubleClicked(const DesignHierarchyNode& node);
-    void clearDesignTopRequested();
-    void refreshDesignHierarchyRequested();
     void viewChanged(int newTabIndex);
     void searchFilterChanged(int tabIndex, const QString& filter);
 
@@ -110,12 +109,11 @@ private:
     QTreeWidget* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
     QLabel* designTopLabel = nullptr;
-    QPushButton* designClearButton = nullptr;
-    QPushButton* designRefreshButton = nullptr;
 
     QStringList currentFileList;
     DesignHierarchyReport currentDesignHierarchy;
     QSet<QString> designParticipatingFiles;
+    QSet<QString> designTopFiles;
     QHash<int, DesignHierarchyNode> designItemPayloads;
     int nextDesignItemPayloadId = 1;
 
@@ -164,6 +162,7 @@ private:
     void refreshFileTreeIcons();
     void refreshDesignTreeIcons();
     void applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed);
+    void applyDesignTopPresentation(QTreeWidgetItem* item);
     void applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed);
     bool fileParticipatesInDesign(const QString& filePath) const;
     QString normalizedFileItemPath(const QString& filePath) const;

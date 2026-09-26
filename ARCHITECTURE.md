@@ -63,6 +63,12 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
 - `TabManager` and `DocumentModel` own open views, file identity, buffer state,
   dirty/saved revisions, cursor state, split groups, and external-file conflict
   handling.
+  `TabFileIo` retains atomic `QSaveFile` writes. Windows rename failures may
+  recover only with a `TabManager` source-conflict guard: at most four attempts,
+  spaced 25 ms apart within a 150 ms recovery window. Every new attempt rechecks
+  the disk generation; changed content aborts into the existing conflict flow.
+  Open/write errors and saves without this guard do not retry. Failed saves
+  keep the buffer dirty and preserve its crash-recovery snapshot.
   Tab ownership uses the deepest matching open workspace root. Files outside
   those roots and untitled buffers are global TEMP documents: they carry no
   project instance binding, are excluded from workspace sessions, and use a
@@ -86,9 +92,11 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   `WorkspaceManager`, `TabManager`, optional `PanelLayoutController` state
   notifications, and narrow UI capture/restore/status callbacks assembled by
   `MainWindow`.
-- `WorkspaceSwitcher` presents open/recent names and paths and delegates open,
-  activation, and close requests to `WorkspaceSessionCoordinator`. Its sidebar
-  and title-bar buttons share the same state. The coordinator restores persisted
+- `WorkspaceSwitcher` presents open workspaces as a permanent title-bar icon strip,
+  with names, full paths and unsaved state in tooltips. Queued activation and close
+  requests resolve workspace paths at dispatch and delegate to
+  `WorkspaceSessionCoordinator`. `MainWindow` stops this observer before document
+  teardown. The coordinator restores persisted
   tabs on initial activation and reuses live buffers on subsequent switches;
   explicit restoration also reuses matching view identities.
 - `ContextWorkspaceController` owns the right-side Context Rail, one transient
@@ -101,7 +109,11 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
   stores only stable Pinloom identity, URI, and provider view state; Pinloom
   remains authoritative for search, content, anchor resolution, and opening.
   Provider rail activation is resolved by the provider contract rather than
-  provider-specific `MainWindow` branches. `MainWindow` registers providers
+  provider-specific `MainWindow` branches. The active tool toggles the whole sidebar;
+  another tool opens or reuses its view. `ContextToolbox` builds its grid from the
+  same provider registry and dispatches through the same controller. Rail membership
+  is stored in application settings; hiding a rail entry does not unregister its tool.
+  More remains available even when every provider is unpinned. `MainWindow` registers providers
   but does not calculate context geometry or inspect provider state.
 - `RtlActionCoordinator` owns validation, parameter recovery, document capture,
   instance-selection UI, panel activation, and launch/preview orchestration for

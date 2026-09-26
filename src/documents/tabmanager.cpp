@@ -2494,9 +2494,8 @@ bool TabManager::saveEditor(
             fileName,
             document->fileName());
     QString overwriteFailure;
-    // Validate once at the last possible point before the atomic write. The
-    // former pre-check became redundant after format-on-save was removed and
-    // doubled the synchronous external-state probe on every Ctrl+S.
+    // Validate immediately before the first atomic attempt; recovery from a
+    // Windows rename conflict must validate again before any later attempt.
     if (overwritesCurrentSource
         && externalDocumentSync
         && !externalDocumentSync->canOverwriteDocument(
@@ -2515,13 +2514,20 @@ bool TabManager::saveEditor(
     const QString& savedText = editor->cachedDocumentText();
     QByteArray savedRawFingerprint;
     QByteArray savedLogicalFingerprint;
+    std::function<bool(QString*)> revalidateOverwrite;
+    if (overwritesCurrentSource && externalDocumentSync) {
+        revalidateOverwrite = [this, document](QString* reason) {
+            return externalDocumentSync->canOverwriteDocument(document, reason);
+        };
+    }
     if (!fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
             fileName,
             savedText,
             &saveFailure,
             &savedRawFingerprint,
-            &savedLogicalFingerprint)) {
+            &savedLogicalFingerprint,
+            revalidateOverwrite)) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,

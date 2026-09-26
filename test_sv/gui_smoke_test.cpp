@@ -12176,9 +12176,11 @@ int main(int argc, char** argv)
                    && window.findChild<QAction*>(
                           QStringLiteral("viewRelationshipsAction")) == nullptr,
                true);
-    expectBool("multi-workspace controls remain in Workspace menu",
+    expectBool("workspace icons replace the submenu while close remains available",
                window.findChild<QMenu*>(
-                   QStringLiteral("openWorkspacesMenu")) != nullptr
+                   QStringLiteral("openWorkspacesMenu")) == nullptr
+                   && window.findChild<QWidget*>(
+                          QStringLiteral("workspaceIconStrip")) != nullptr
                    && window.findChild<QAction*>(
                           QStringLiteral("closeActiveWorkspaceAction"))
                           != nullptr,

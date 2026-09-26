@@ -211,10 +211,21 @@ void NavigationWidget::updateFileHierarchy(
 
 void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report)
 {
+    updateDesignSummary(report);
+    populateDesignTree();
+}
+
+void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report)
+{
     currentDesignHierarchy = report;
     designParticipatingFiles = report.participatingFiles;
+    designTopFiles.clear();
+    for (const auto& node : report.nodes) {
+        if (node.isTop && (report.selectedTopModule.isEmpty() || node.moduleType == report.selectedTopModule)
+            && !node.definitionFile.isEmpty())
+            designTopFiles.insert(normalizedFileItemPath(node.definitionFile));
+    }
     refreshDesignHeader();
-    populateDesignTree();
     if (hideUnrelatedFiles)
         populateFileTree();
     else
@@ -225,6 +236,7 @@ void NavigationWidget::clearDesignHierarchy()
 {
     currentDesignHierarchy = {};
     designParticipatingFiles.clear();
+    designTopFiles.clear();
     refreshDesignHeader();
     populateDesignTree();
     if (hideUnrelatedFiles)
@@ -265,6 +277,7 @@ void NavigationWidget::highlightFile(const QString& filePath)
 
 void NavigationWidget::onTabChanged(int index)
 {
+    (index == DesignTab ? designTabLayout : fileTabLayout)->insertWidget(0, searchLineEdit);
     if (searchLineEdit) {
         const QSignalBlocker blocker(searchLineEdit);
         searchLineEdit->setText(searchFilterForIndex(index));
@@ -350,14 +363,9 @@ void NavigationWidget::onFileTreeContextMenuRequested(const QPoint& pos)
 void NavigationWidget::onDesignTreeContextMenuRequested(const QPoint& pos)
 {
     QTreeWidgetItem* item = designTreeWidget->itemAt(pos);
-    if (!item)
-        return;
-    const int payloadId = item->data(0, Qt::UserRole + 1).toInt();
-    if (designItemPayloads.contains(payloadId)) {
-        emit designNodeContextMenuRequested(
-            designItemPayloads.value(payloadId),
-            designTreeWidget->viewport()->mapToGlobal(pos));
-    }
+    const int payloadId = item ? item->data(0, Qt::UserRole + 1).toInt() : -1;
+    emit designNodeContextMenuRequested(designItemPayloads.value(payloadId),
+        designTreeWidget->viewport()->mapToGlobal(pos));
 }
 
 void NavigationWidget::setupUI()
@@ -373,10 +381,13 @@ void NavigationWidget::setupUI()
     mainLayout->addWidget(searchLineEdit);
 
     tabWidget = UiControls::tabWidget(this);
-    mainLayout->addWidget(tabWidget);
+    tabWidget->setObjectName(QStringLiteral("navigationTabs"));
+    mainLayout->insertWidget(0, tabWidget);
+    mainLayout->removeWidget(searchLineEdit);
 
     setupFileTab();
     setupDesignTab();
+    fileTabLayout->insertWidget(0, searchLineEdit);
 
     setLayout(mainLayout);
 }
@@ -423,21 +434,13 @@ void NavigationWidget::setupDesignTab()
     designTabLayout->setContentsMargins(2, 2, 2, 2);
     designTabLayout->setSpacing(8);
 
-    QHBoxLayout* topLayout = new QHBoxLayout();
-    topLayout->setContentsMargins(0, 0, 0, 0);
-    topLayout->setSpacing(4);
     designTopLabel = UiControls::label(designTab);
     designTopLabel->setWordWrap(true);
-    designClearButton = UiControls::pushButton(QStringLiteral("Clear"), designTab);
-    designRefreshButton = UiControls::pushButton(QStringLiteral("Refresh"), designTab);
     UiTypography::apply(designTopLabel, UiTypography::Role::Metadata);
     designTabLayout->addWidget(designTopLabel);
-    topLayout->addStretch(1);
-    topLayout->addWidget(designClearButton);
-    topLayout->addWidget(designRefreshButton);
-    designTabLayout->addLayout(topLayout);
 
     designTreeWidget = UiControls::treeWidget(designTab);
+    designTreeWidget->setObjectName(QStringLiteral("navigationDesignTree"));
     UiControls::enableTreeTransitions(designTreeWidget);
     designTreeWidget->setColumnCount(2);
     designTreeWidget->setHeaderLabels({QStringLiteral("Instance"),
@@ -497,8 +500,4 @@ void NavigationWidget::setupConnections()
     connect(designTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onDesignTreeContextMenuRequested);
 
-    connect(designClearButton, &QPushButton::clicked,
-            this, &NavigationWidget::clearDesignTopRequested);
-    connect(designRefreshButton, &QPushButton::clicked,
-            this, &NavigationWidget::refreshDesignHierarchyRequested);
 }

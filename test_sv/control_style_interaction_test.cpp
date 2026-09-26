@@ -200,9 +200,11 @@ private slots:
         auto* context = window.findChild<ContextWorkspaceController*>();
         QVERIFY(context);
         const auto providerIds = context->providerIds();
+        auto expectedEntries = providerIds;
+        expectedEntries.append(QStringLiteral("toolbox"));
         QCOMPARE(QSet<QString>(contextEntries.begin(), contextEntries.end()),
-                 QSet<QString>(providerIds.begin(), providerIds.end()));
-        QCOMPARE(contextEntries.size(), providerIds.size());
+                 QSet<QString>(expectedEntries.begin(), expectedEntries.end()));
+        QCOMPARE(contextEntries.size(), expectedEntries.size());
         QVERIFY(!contextEntries.contains(QStringLiteral("workspaceHub")));
         for (const auto& id : {"temporaryEditor", "rtlInsight.kernel", "rtlInsight.block",
                                "rtlInsight.hotspot", "rtlInsight.state", "pinloom"})

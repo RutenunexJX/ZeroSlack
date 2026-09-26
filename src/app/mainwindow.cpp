@@ -314,18 +314,23 @@ MainWindow::MainWindow(QWidget *parent)
     }
 
     setWindowTitle(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
-    auto* workspaceSwitcher = new WorkspaceSwitcher(workspaceManager.get(), tabManager.get(),
+    workspaceSwitcher = std::make_unique<WorkspaceSwitcher>(workspaceManager.get(), tabManager.get(),
         workspaceSessionCoordinator.get(), [this] {
             fileCommandCoordinator->openDirectoryAsWorkspace();
         }, this);
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
-    }, workspaceSwitcher);
+    }, workspaceSwitcher.get());
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (visible)
                     navigationHiddenForWelcome = false;
+            });
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened,
+            this, [this](const QString&) {
+                refreshWelcomePage();
+                navigationPane->setExpanded(true, false);
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceListChanged,
@@ -624,6 +629,8 @@ MainWindow::~MainWindow()
     if (analysisScheduler)
         analysisScheduler->shutdown();
 
+    // Stop chrome observers before editor teardown emits document state signals.
+    workspaceSwitcher.reset();
     workspaceSessionCoordinator.reset();
 
     // TabManager owns SharedDocuments whose teardown rebinds every attached
@@ -647,6 +654,16 @@ void MainWindow::applyModernShellStyle(bool applyApplicationTheme)
 {
     if (applyApplicationTheme)
         ApplicationThemeManager::instance().applyToApplication();
+
+    if (editorCentralPage) {
+        editorCentralPage->setObjectName(QStringLiteral("editorCentralPage"));
+        QPalette surface = editorCentralPage->palette();
+        surface.setColor(QPalette::Window, InsightVisualStyle::theme().tab.tabBackgroundSelected);
+        editorCentralPage->setPalette(surface);
+        editorCentralPage->setAutoFillBackground(true);
+        editorCentralPage->setStyleSheet(QStringLiteral("QWidget#editorCentralPage { background: %1; }")
+            .arg(InsightVisualStyle::theme().tab.tabBackgroundSelected.name()));
+    }
 
     if (initialEditorTabs) {
         initialEditorTabs->setDocumentMode(true);
@@ -785,7 +802,7 @@ void MainWindow::setupEditorCentralArea()
             this,
             [this]() {
                 refreshWorkspaceScope();
-                refreshWorkspaceMenuEntries();
+                refreshWorkspaceActions();
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceActivated,
@@ -795,7 +812,7 @@ void MainWindow::setupEditorCentralArea()
                 UserTemplateService::getInstance()->reload();
                 refreshSettingsCenterWorkspace(path);
                 refreshWorkspaceScope();
-                refreshWorkspaceMenuEntries();
+                refreshWorkspaceActions();
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceClosed,
@@ -2730,15 +2747,12 @@ void MainWindow::setupWorkspaceMenu()
     workspaceMenu = UiControls::addMenu(menuBar(), tr("&Workspace"));
     workspaceMenu->setObjectName(QStringLiteral("workspaceMenu"));
 
-    openWorkspacesMenu = UiControls::addMenu(workspaceMenu, tr("Open Workspaces"));
-    openWorkspacesMenu->setObjectName(
-        QStringLiteral("openWorkspacesMenu"));
     closeActiveWorkspaceAction =
         addRegistryMenuAction(
             workspaceMenu,
             QString::fromLatin1(
                 ActionIds::WorkspaceCloseActive));
-    refreshWorkspaceMenuEntries();
+    refreshWorkspaceActions();
 
     workspaceMenu->addSeparator();
     QAction* configureAction =
@@ -2793,35 +2807,10 @@ void MainWindow::setupWorkspaceMenu()
         });
 }
 
-void MainWindow::refreshWorkspaceMenuEntries()
+void MainWindow::refreshWorkspaceActions()
 {
-    if (!openWorkspacesMenu || !workspaceManager)
-        return;
-
-    openWorkspacesMenu->clear();
-    const QList<WorkspaceManager::WorkspaceEntry> entries =
-        workspaceManager->workspaceEntries();
-    const int activeIndex = workspaceManager->activeWorkspaceIndex();
-    for (int index = 0; index < entries.size(); ++index) {
-        const WorkspaceManager::WorkspaceEntry& entry = entries.at(index);
-        QAction* action = openWorkspacesMenu->addAction(entry.alias);
-        action->setObjectName(
-            QStringLiteral("activateWorkspaceAction_%1").arg(index));
-        action->setCheckable(true);
-        action->setChecked(index == activeIndex);
-        action->setToolTip(QDir::toNativeSeparators(entry.path));
-        connect(action,
-                &QAction::triggered,
-                this,
-                [this, index]() { activateWorkspace(index); });
-    }
-    if (entries.isEmpty()) {
-        QAction* emptyAction =
-            openWorkspacesMenu->addAction(tr("No Open Workspaces"));
-        emptyAction->setEnabled(false);
-    }
     if (closeActiveWorkspaceAction)
-        closeActiveWorkspaceAction->setEnabled(activeIndex >= 0);
+        closeActiveWorkspaceAction->setEnabled(workspaceManager && workspaceManager->isWorkspaceOpen());
 }
 
 void MainWindow::activateWorkspace(int index)
@@ -5015,11 +5004,13 @@ void MainWindow::setupWorkspaceSessionCoordinator()
     if (fileCommandCoordinator) {
         QPointer<WorkspaceSessionCoordinator> sessionCoordinator(
             workspaceSessionCoordinator.get());
+        QPointer<NavigationPaneCoordinator> navigationPaneRef(navigationPane.get());
         fileCommandCoordinator->setWorkspaceOpenHandler(
-            [sessionCoordinator](const QString& folderPath) {
-                return sessionCoordinator
-                    && sessionCoordinator
-                           ->openWorkspaceFromUserSelection(folderPath);
+            [sessionCoordinator, navigationPaneRef](const QString& folderPath) {
+                const bool opened = sessionCoordinator
+                    && sessionCoordinator->openWorkspaceFromUserSelection(folderPath);
+                if (opened && navigationPaneRef) navigationPaneRef->setExpanded(true, false);
+                return opened;
             });
     }
 

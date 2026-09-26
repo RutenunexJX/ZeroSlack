@@ -31,6 +31,14 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
         if (workspacePicker)
             bar->setCustomWidget(ElaAppBarType::LeftArea, workspacePicker);
         result.label = bar->titleLabel();
+        if (workspacePicker) {
+            QObject::disconnect(host, &QWidget::windowTitleChanged, bar, nullptr);
+            result.label->hide();
+            if (auto* row = qobject_cast<QHBoxLayout*>(bar->layout())) {
+                row->setStretch(0, 0);
+                row->itemAt(0)->setAlignment(Qt::AlignLeft);
+            }
+        }
         result.sidebar = qobject_cast<QToolButton*>(bar->windowButton(ElaAppBarType::NavigationButtonHint));
         result.maximize = qobject_cast<QToolButton*>(bar->windowButton(ElaAppBarType::MaximizeButtonHint));
         minimize = bar->windowButton(ElaAppBarType::MinimizeButtonHint);
@@ -99,6 +107,7 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
             });
         }
         QObject::connect(host, &QWidget::windowTitleChanged, result.label, &QLabel::setText);
+        if (workspacePicker) result.label->hide();
     }
     result.widget->setObjectName(QStringLiteral("workspaceTitleBar"));
     result.widget->setAutoFillBackground(true);

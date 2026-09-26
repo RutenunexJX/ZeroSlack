@@ -56,6 +56,7 @@ bool ContextRail::addEntry(const ContextRailEntry& entry)
         return false;
 
     QAction* footer = findChild<QAction*>(QStringLiteral("contextFloatingFooter"));
+    if (auto* more = actionsById.value(QStringLiteral("toolbox"))) footer = more;
     QAction* action = addRailAction(entry.icon, entry.title, footer);
     action->setObjectName(
         QStringLiteral("contextRail.%1").arg(id));
@@ -109,6 +110,15 @@ void ContextRail::clearEntries()
     updateVisibility();
 }
 
+bool ContextRail::setEntryVisible(const QString& id, bool visible)
+{
+    auto* action = actionsById.value(id, nullptr);
+    if (!action) return false;
+    action->setVisible(visible);
+    if (!visible && activeId == id) setActiveEntryId({});
+    return true;
+}
+
 QStringList ContextRail::entryIds() const
 {
     QStringList result;
@@ -127,7 +137,7 @@ QString ContextRail::activeEntryId() const
 void ContextRail::setActiveEntryId(const QString& id)
 {
     const QString normalized = id.trimmed();
-    activeId = actionsById.contains(normalized)
+    activeId = actionsById.contains(normalized) && actionsById.value(normalized)->isVisible()
         ? normalized
         : QString();
     for (auto it = actionsById.cbegin();

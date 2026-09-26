@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.11`
+Current version: `v0.31.12`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.5`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.12`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -144,16 +144,23 @@ markers in this README, the user manual and the package README.
 Release steps: update `VERSION`; reconfigure CMake so `generated/version.h` is regenerated;
 build and run the Ela release verification targets; create a signed-off release tag named
 `vX.Y.Z`. Stage with `scripts/package-release.ps1 -Formal`, then publish the verified
-`ZeroSlack-win64` directory under `E:\PinloomRoot\AppPackage\AppSuite\Apps`.
+`ZeroSlack-win64` directory under the local Nutstore `PinloomRoot\AppPackage\AppSuite\Apps`
+root (`D:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass explicit
+local build and toolchain paths to the packaging script; its defaults refer to the original machine.
 The executable is `ZeroSlack.exe`; the package directory never includes the version.
 Replace the current local package without keeping older copies or backups, and update
 the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current release is `0.31.5` (`v0.31.5`). Ela is now the sole formal package,
+The current release is `0.31.12` (`v0.31.12`). Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
+Release 0.31.12 refines workspace icon switching, Files/Design navigation and the
+icon-only More toolbox with hover names and persistent pinning. It also fixes
+sidebar toggling, splitter space allocation, navigation teardown during theme changes,
+and bounded atomic-save recovery for transient Windows read leases while preserving
+external-change conflict checks.
 Context floating windows use an Ela frameless shell with a title, optional Fit and Close.
 Dragging the title moves the window or docks it in the sidebar/bottom area; double-click
 maximizes or restores it. Module diagrams remove the section collapse arrow, breadcrumb row
@@ -179,13 +186,21 @@ and persistent sizes. Ela's hosted-tab extension handles
 tab drag/drop, split targets and floating editor windows. Closing a floating container
 returns its tabs; closing a tab retains unsaved-document confirmation. Context floating
 windows use ElaWidget and hosted drag handles. The application retains split layout,
-document lifetime and workspace ownership. The workspace picker appears in the
-sidebar, or in the title bar when collapsed, with full paths, unsaved markers and
-workspace-specific close decisions. Switching retains live buffers, the active file,
+document lifetime and workspace ownership. A permanent title-bar icon strip shows
+every open workspace, highlights the active one, and scrolls when space is limited.
+Tooltips identify names, full paths and unsaved changes; right-click or middle-click
+closes the chosen workspace through its normal unsaved-document review.
+Switching retains live buffers, the active file,
 cursor and scroll positions. External/untitled files carry a TEMP label and remain
 available across switches. Their analysis, instance binding, session membership and
 crash recovery are isolated from the active project. Source files can also be opened
-via application arguments. Project/Settings icons remain in the expanded sidebar.
+via application arguments. Opening a workspace expands the navigation sidebar.
+Files and Design appear above search, Design Top entries carry a bold TOP marker,
+and Design refresh is available in the tree's context menu. The empty editor area
+uses the selected tab's surface color. Project/Settings icons remain in the expanded sidebar.
+Right-side tool icons open their view, and clicking the active icon hides the sidebar.
+More opens an icon-only grid of registered tools, named by tooltips, with independent controls for keeping each
+tool in the rail; these preferences persist across workspaces and application restarts.
 Formal Ela packaging requires a clean source tree and matching generated application version.
 Existing classic user settings remain separate. See
 [Ela migration and validation](docs/ela-migration.md).

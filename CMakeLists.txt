@@ -367,6 +367,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextdockhost.cpp
     src/ui/contextdocktransition.cpp
     src/ui/contextworkspacecontroller.cpp
+    src/ui/contexttoolbox.cpp
+    src/ui/contexttoolbox.h
     src/ui/contextworkspacefloating.cpp
     src/ui/contextworkspacedocuments.cpp
     src/integrations/pinloom/pinloomhostclient.cpp

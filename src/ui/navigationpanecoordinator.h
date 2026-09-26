@@ -49,13 +49,13 @@ private:
     void showDock();
     bool eventFilter(QObject* watched, QEvent* event) override;
 
-    QDockWidget* navigationDock = nullptr;
-    NavigationViewport* viewport = nullptr;
-    ElaNavigationBar* elaNavigationBar = nullptr;
+    QPointer<QDockWidget> navigationDock;
+    QPointer<NavigationViewport> viewport;
+    QPointer<ElaNavigationBar> elaNavigationBar;
     QPointer<QWidget> overlayParent;
     bool changingPlacement = false;
     void finishOverlay();
-    NavigationWidget* navigationWidget = nullptr;
+    QPointer<NavigationWidget> navigationWidget;
     NavigationManager* navigationManager = nullptr;
     QVariantAnimation* widthAnimation = nullptr;
     int expandedWidth = 280;

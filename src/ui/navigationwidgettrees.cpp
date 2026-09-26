@@ -515,6 +515,7 @@ void NavigationWidget::refreshFileTreeDirectoryDimming()
                 applyDesignFileDimming(
                     item,
                     !designParticipatingFiles.isEmpty() && !participates);
+                applyDesignTopPresentation(item);
                 return participates;
             }
 
@@ -625,6 +626,7 @@ QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)
     applyDesignFileDimming(item,
                            !designParticipatingFiles.isEmpty()
                                && !fileParticipatesInDesign(filePath));
+    applyDesignTopPresentation(item);
     const QString normalized = normalizedFileItemPath(filePath);
     if (!normalized.isEmpty())
         fileItemsByNormalizedPath.insert(normalized, item);
@@ -644,6 +646,9 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
         node.moduleType.isEmpty() ? QStringLiteral("<unknown>") : node.moduleType;
     if (node.unresolved)
         moduleType += QStringLiteral(" (unresolved)");
+    const bool top = node.isTop && (currentDesignHierarchy.selectedTopModule.isEmpty()
+        || node.moduleType == currentDesignHierarchy.selectedTopModule);
+    if (top) moduleType += QStringLiteral("  [TOP]");
 
     item->setText(0, instanceName);
     item->setText(1, moduleType);
@@ -654,6 +659,11 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
                                               : SymbolOutlineIconKind::Instance)));
     item->setData(0, Qt::UserRole, node.id);
     item->setData(0, Qt::UserRole + 1, payloadId);
+    item->setData(0, DesignTopRole, top);
+    QFont font = item->font(0);
+    font.setBold(top);
+    item->setFont(0, font);
+    item->setFont(1, font);
     const QString location = node.isTop
         ? QStringLiteral("%1:%2").arg(node.definitionFile).arg(node.definitionLine)
         : QStringLiteral("instance %1:%2\nmodule %3:%4")
@@ -667,6 +677,19 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
     item->setToolTip(1, item->toolTip(0));
     applyDesignItemDimming(item, !node.inSelectedTop);
     return item;
+}
+
+void NavigationWidget::applyDesignTopPresentation(QTreeWidgetItem* item)
+{
+    if (!item || item->data(0, FileTreeKindRole).toInt() != FileItem) return;
+    const QString path = item->data(0, Qt::UserRole).toString();
+    const bool top = designTopFiles.contains(normalizedFileItemPath(path));
+    item->setData(0, DesignTopRole, top);
+    item->setText(0, navigationFileNameFromPath(path) + (top ? QStringLiteral("  [TOP]") : QString()));
+    item->setToolTip(0, top ? tr("Design top\n%1").arg(path) : path);
+    QFont font = item->font(0);
+    font.setBold(top);
+    item->setFont(0, font);
 }
 
 void NavigationWidget::applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed)
@@ -708,7 +731,7 @@ QString NavigationWidget::normalizedFileItemPath(const QString& filePath) const
 
 void NavigationWidget::refreshDesignHeader()
 {
-    if (!designTopLabel || !designClearButton || !designRefreshButton)
+    if (!designTopLabel)
         return;
 
     const bool hasTop = !currentDesignHierarchy.topModule.isEmpty();
@@ -730,8 +753,6 @@ void NavigationWidget::refreshDesignHeader()
             QStringLiteral("Auto Design Top: %1")
                 .arg(currentDesignHierarchy.topModule));
     }
-    designClearButton->setEnabled(!currentDesignHierarchy.selectedTopModule.isEmpty());
-    designRefreshButton->setEnabled(hasTop);
 }
 
 void NavigationWidget::expandCurrentFileNodes()

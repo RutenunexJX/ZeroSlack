@@ -136,8 +136,7 @@ void NavigationManager::warmDesignHierarchyCache()
     const bool changed = updateDesignHierarchyData(false);
     if (changed && navigationWidget) {
         designHierarchyWidgetValid = false;
-        navigationWidget->setDesignParticipatingFiles(
-            caches.designHierarchy.participatingFiles);
+        navigationWidget->updateDesignSummary(caches.designHierarchy);
     }
 }
 
@@ -249,6 +248,8 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     caches.clearFileList();
     restoreDesignHierarchyCache();
     designHierarchyWidgetValid = false;
+    if (navigationWidget)
+        navigationWidget->updateDesignSummary(caches.designHierarchy);
 
     refreshCurrentView();
 }

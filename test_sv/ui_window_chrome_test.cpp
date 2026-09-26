@@ -85,7 +85,15 @@ private slots:
         auto* expand = button(&host, "expandProjectSidebarButton"); QVERIFY(expand);
         QVERIFY(expand->isVisible());
         QTest::mouseClick(expand, Qt::LeftButton); QTest::qWait(250); settle();
-        QVERIFY(pane->dock()->isVisible()); QVERIFY(!expand->isVisible());
+        if (usesEla()) {
+            auto* navigation = host.findChild<QWidget*>("navigationElaBar"); QVERIFY(navigation);
+            QVERIFY(pane->dock()->isHidden());
+            QVERIFY(navigation->isVisible() && !navigation->visibleRegion().isEmpty());
+            QVERIFY(host.centralWidget()->isAncestorOf(navigation));
+        } else {
+            QVERIFY(pane->dock()->isVisible());
+        }
+        QVERIFY(!expand->isVisible());
         host.setWindowTitle(QString("C:/long directory/%1/uart_engine.sv").arg(QString(200, 'x')));
         for (int width : {480, 800, 1200}) {
             host.resize(width, 520); settle();
@@ -126,7 +134,7 @@ private slots:
         }
     }
 
-    void pathMenuAndThemes() {
+    void titleThemesWithoutRetiredPathMenu() {
         QTemporaryDir files; QVERIFY(files.isValid());
         const auto path = files.filePath("with spaces & marks.sv");
         QFile file(path); QVERIFY(file.open(QIODevice::WriteOnly)); file.write("module top; endmodule\n"); file.close();
@@ -135,22 +143,8 @@ private slots:
         new WorkspaceChrome(&host, nullptr, [] {});
         host.resize(720, 360); host.show(); settle();
         auto* label = host.findChild<QLabel*>("workspaceFilePath"); QVERIFY(label);
-        QVERIFY(label->toolTip().contains(path));
-        const auto originalClipboard = QApplication::clipboard()->text();
-        bool menuChecked = false;
-        QTimer::singleShot(40, &host, [&] {
-            auto* popup = qobject_cast<QMenu*>(QApplication::activePopupWidget());
-            if (!popup) return;
-            menuChecked = popup->actions().size() == 2 && popup->actions()[0]->isEnabled()
-                && popup->actions()[1]->isEnabled();
-            popup->setActiveAction(popup->actions().first());
-            QTest::keyClick(popup, Qt::Key_Return);
-        });
-        QTimer::singleShot(1500, &host, [] { if (auto* popup = QApplication::activePopupWidget()) popup->close(); });
-        QMetaObject::invokeMethod(label, "customContextMenuRequested", Q_ARG(QPoint, label->rect().center()));
-        QVERIFY(menuChecked);
-        QCOMPARE(QApplication::clipboard()->text(), QDir::toNativeSeparators(path));
-        QApplication::clipboard()->setText(originalClipboard);
+        QVERIFY(label->toolTip().isEmpty());
+        QVERIFY(label->contextMenuPolicy() != Qt::CustomContextMenu);
         const auto labelFont = label->font();
         auto* close = button(&host, "windowCloseButton"); QVERIFY(close);
         QImage previous;
@@ -163,6 +157,127 @@ private slots:
             previous = image;
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+    }
+
+    void navigationPresentationAndInput() {
+        if (!usesEla()) QSKIP("Ela overlay and dock presentations");
+        QMainWindow host;
+        host.setCentralWidget(new QWidget(&host));
+        auto* pane = new NavigationPaneCoordinator(&host);
+        host.addDockWidget(Qt::LeftDockWidgetArea, pane->dock());
+        new WorkspaceChrome(&host, pane, [] {});
+        host.resize(800, 520); host.show(); settle();
+        auto* navigation = host.findChild<QWidget*>("navigationElaBar"); QVERIFY(navigation);
+        auto* expand = button(&host, "expandProjectSidebarButton"); QVERIFY(expand);
+        auto* collapse = button(&host, "collapseProjectSidebarButton"); QVERIFY(collapse);
+        for (int width : {800, 1200}) {
+            pane->setExpanded(false, false);
+            host.resize(width, 520); settle();
+            const QRect centralBefore = host.centralWidget()->geometry();
+            QTRY_VERIFY(expand->isVisible());
+            QTest::mouseClick(expand, Qt::LeftButton);
+            QTRY_VERIFY(!pane->isAnimating());
+            QVERIFY(pane->isExpanded());
+            QVERIFY(navigation->isVisible() && !navigation->visibleRegion().isEmpty());
+            QVERIFY(collapse->isVisible());
+            QVERIFY(!expand->isVisible());
+            if (width < 850) {
+                QVERIFY(pane->dock()->isHidden());
+                QCOMPARE(navigation->parentWidget(), host.centralWidget());
+                QCOMPARE(host.centralWidget()->geometry(), centralBefore);
+                QVERIFY(host.centralWidget()->rect().contains(navigation->geometry()));
+                QCOMPARE(navigation->height(), host.centralWidget()->height());
+            } else {
+                QVERIFY(pane->dock()->isVisible());
+                QVERIFY(pane->dock()->isAncestorOf(navigation));
+                QVERIFY(host.centralWidget()->width() < centralBefore.width());
+            }
+            QCOMPARE(host.childAt(collapse->mapTo(&host, collapse->rect().center())), collapse);
+            QTest::mouseClick(collapse, Qt::LeftButton);
+            QTRY_VERIFY(!pane->isAnimating());
+            QVERIFY(!pane->isExpanded());
+            QVERIFY(pane->dock()->isHidden());
+            QVERIFY(!navigation->isVisible());
+            QVERIFY(expand->isVisible());
+        }
+    }
+
+    void overlayContentDestroyedBeforeCoordinator() {
+        if (!usesEla()) QSKIP("Overlay ownership is specific to the Ela navigation bar");
+        QMainWindow host;
+        host.setCentralWidget(new QWidget(&host));
+        auto* pane = new NavigationPaneCoordinator(&host);
+        host.addDockWidget(Qt::LeftDockWidgetArea, pane->dock());
+        new WorkspaceChrome(&host, pane, [] {});
+        host.resize(800, 520); host.show(); settle();
+        pane->setExpanded(false, false);
+        pane->setExpanded(true);
+        QTest::qWait(250); settle();
+        QVERIFY(pane->isExpanded());
+        QPointer<QWidget> navigation = host.findChild<QWidget*>("navigationElaBar");
+        QVERIFY(navigation && navigation->isVisible());
+        QVERIFY(host.centralWidget()->isAncestorOf(navigation));
+        // The central widget owns the overlay. It can die before the sibling
+        // coordinator during main-window teardown or central-widget replacement.
+        delete host.takeCentralWidget();
+        QVERIFY(navigation.isNull());
+        pane->setExpanded(false, false);
+        QVERIFY(!pane->isExpanded());
+        host.hide();
+        settle();
+    }
+
+    void overlayDestructionDuringTransition_data() {
+        QTest::addColumn<int>("phase");
+        QTest::addColumn<bool>("closeWindow");
+        for (int phase : {0, 1, 2})
+            for (bool closeWindow : {false, true})
+                QTest::newRow(qPrintable(QString("%1-%2").arg(phase).arg(closeWindow ? "window" : "content")))
+                    << phase << closeWindow;
+    }
+
+    void overlayDestructionDuringTransition() {
+        if (!usesEla()) QSKIP("Ela overlay ownership and animation");
+        QFETCH(int, phase); QFETCH(bool, closeWindow);
+        QPointer<QMainWindow> host = new QMainWindow;
+        host->setAttribute(Qt::WA_DeleteOnClose);
+        host->setCentralWidget(new QWidget(host));
+        QPointer<NavigationPaneCoordinator> pane = new NavigationPaneCoordinator(host);
+        host->addDockWidget(Qt::LeftDockWidgetArea, pane->dock());
+        new WorkspaceChrome(host, pane, [] {});
+        host->resize(800, 520); host->show(); settle();
+        pane->setExpanded(false, false);
+        pane->setExpanded(true);
+        if (phase > 0) QTRY_VERIFY(!pane->isAnimating());
+        if (phase == 2) pane->setExpanded(false);
+        if (phase != 1) {
+            QVERIFY(pane->isAnimating());
+            QTest::qWait(25);
+            QVERIFY(pane->isAnimating());
+        }
+        QPointer<QWidget> navigation = host->findChild<QWidget*>("navigationElaBar");
+        QVERIFY(navigation && host->centralWidget()->isAncestorOf(navigation));
+        QList<QPointer<QAbstractAnimation>> animations;
+        for (auto* animation : navigation->findChildren<QAbstractAnimation*>()) animations.append(animation);
+        if (closeWindow) {
+            auto* close = button(host, "windowCloseButton"); QVERIFY(close);
+            QTest::mouseClick(close, Qt::LeftButton);
+            QTRY_VERIFY(host.isNull());
+            QVERIFY(pane.isNull());
+        } else {
+            delete host->takeCentralWidget();
+            pane->setExpanded(false, false);
+            QVERIFY(!pane->isExpanded() && !pane->isAnimating());
+            host->setCentralWidget(new QWidget(host));
+            ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
+            host->resize(820, 540); settle();
+            ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+            delete host.data();
+        }
+        QVERIFY(navigation.isNull());
+        for (const auto& animation : animations) QVERIFY(animation.isNull());
+        // Process the time span in which a stale animation completion would run.
+        QTest::qWait(220);
     }
 
     void actualUnsavedDocumentClose() {
