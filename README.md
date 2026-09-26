@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.12`
+Current version: `v0.31.13`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -128,7 +128,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.12`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.13`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -152,10 +152,13 @@ Replace the current local package without keeping older copies or backups, and u
 the suite manifest and shortcuts. Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display, guarded documents and the tag.
 The former classic release channel is no longer maintained.
-The current release is `0.31.12` (`v0.31.12`). Ela is now the sole formal package,
+The current release is `0.31.13` (`v0.31.13`). Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
+Release 0.31.13 restores the visible ZeroSlack name and version at the top left,
+beside the workspace icon strip. The app identity stays visible when files change
+and shares the title bar with workspace icons and window controls without overlap.
 Release 0.31.12 refines workspace icon switching, Files/Design navigation and the
 icon-only More toolbox with hover names and persistent pinning. It also fixes
 sidebar toggling, splitter space allocation, navigation teardown during theme changes,

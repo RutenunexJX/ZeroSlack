@@ -17,6 +17,7 @@
 #include "contextrail.h"
 #include "filecommandcoordinator.h"
 #include "globalcontrolcoordinator.h"
+#include "version.h"
 #include <QCheckBox>
 #include <QContextMenuEvent>
 #include <QStackedWidget>
@@ -203,6 +204,7 @@ private slots:
         auto* bar = window.findChild<QTabBar*>("workspaceIconTabs"); QVERIFY(bar);
         auto* strip = window.findChild<QWidget*>("workspaceIconStrip"); QVERIFY(strip);
         auto* title = window.findChild<QWidget*>("workspaceTitleBar"); QVERIFY(title);
+        auto* brand = window.findChild<QLabel*>("workspaceFilePath"); QVERIFY(brand);
         auto* open = window.findChild<QToolButton*>("openWorkspaceButton"); QVERIFY(open);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         QStringList paths;
@@ -211,7 +213,8 @@ private slots:
             QVERIFY(QDir().mkpath(path)); QVERIFY(sessions->openWorkspace(path)); paths.append(path);
         }
         QCOMPARE(bar->count(), count);
-        for (int width : {1050, 760}) {
+        window.setWindowTitle(QStringLiteral("ZeroSlack — %1").arg(QLatin1String(APP_VERSION)));
+        for (int width : {1050, 760, 600}) {
             const auto theme = dark ? ThemeMode::Dark : ThemeMode::Light;
             // Construction and workspace activation can restore theme settings.
             ApplicationThemeManager::instance().setMode(theme);
@@ -219,6 +222,14 @@ private slots:
             QCOMPARE(ApplicationThemeManager::instance().mode(), theme);
             QTRY_COMPARE(title->palette().color(QPalette::Window), QApplication::palette().color(QPalette::Window));
             QCOMPARE(title->palette().color(QPalette::Window).lightness() < 128, dark);
+            QVERIFY(brand->isVisible());
+            QCOMPARE(brand->text(), QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
+            QVERIFY(brand->width() >= brand->sizeHint().width());
+            QVERIFY(brand->visibleRegion().contains(brand->rect()));
+            const QRect brandRect(brand->mapTo(&window, QPoint()), brand->size());
+            const QRect stripRect(strip->mapTo(&window, QPoint()), strip->size());
+            QVERIFY(title->geometry().contains(brandRect));
+            QVERIFY(brandRect.right() < stripRect.left());
             const QString evidence = qEnvironmentVariable("ZEROSLACK_UI_EVIDENCE_DIR");
             if (!evidence.isEmpty()) {
                 QDir().mkpath(evidence);
@@ -237,12 +248,15 @@ private slots:
                 QCOMPARE(window.childAt(point), static_cast<QWidget*>(bar));
                 QTest::mouseClick(bar, Qt::LeftButton, {}, rect.center());
                 QTRY_COMPARE(window.workspaceManager->getWorkspacePath(), paths.at(i));
+                QCOMPARE(brand->text(), QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
             }
             int controlsLeft = window.width();
             for (const auto* name : {"windowMinimizeButton", "windowMaximizeButton", "windowCloseButton"}) {
                 auto* button = window.findChild<QAbstractButton*>(name); QVERIFY(button && button->isVisible());
                 const QRect rect(button->mapTo(&window, QPoint()), button->size());
                 QVERIFY(window.rect().contains(rect));
+                QVERIFY(!rect.intersects(brandRect));
+                QVERIFY(!rect.intersects(stripRect));
                 QCOMPARE(window.childAt(rect.center()), static_cast<QWidget*>(button));
                 controlsLeft = qMin(controlsLeft, rect.left());
             }
@@ -328,6 +342,7 @@ private slots:
         }
         auto* pages = window.findChild<QStackedWidget*>("centralContentStack");
         QVERIFY(pages);
+        auto* brand = window.findChild<QLabel*>("workspaceFilePath"); QVERIFY(brand);
         for (auto theme : {ThemeMode::Light, ThemeMode::Dark}) {
             ApplicationThemeManager::instance().setMode(theme);
             QTRY_COMPARE(pages->currentWidget()->palette().color(QPalette::Window),
@@ -335,8 +350,14 @@ private slots:
             for (int width : {600, 1050}) {
                 window.resize(width, 600);
                 QTest::qWait(40);
+                QVERIFY(brand->isVisible() && brand->width() >= brand->sizeHint().width());
+                QCOMPARE(brand->text(), QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
+                const QRect brandRect(brand->mapTo(&window, QPoint()), brand->size());
+                const QRect tabsRect(strip->mapTo(&window, QPoint()), strip->size());
+                QVERIFY(brandRect.right() < tabsRect.left());
                 auto* close = window.findChild<QAbstractButton*>("windowCloseButton");
                 QVERIFY(close && close->isVisible());
+                QVERIFY(!brandRect.intersects(QRect(close->mapTo(&window, QPoint()), close->size())));
                 QVERIFY(strip->width() < window.width() - close->width());
                 strip->setFocus();
                 QTest::keyClick(strip, Qt::Key_Home);
@@ -427,7 +448,8 @@ private slots:
             auto* controller = window.findChild<ContextWorkspaceController*>(); QVERIFY(controller);
             auto* titleBar = window.findChild<QWidget*>("workspaceTitleBar"); QVERIFY(titleBar);
             auto* titlePath = window.findChild<QLabel*>("workspaceFilePath");
-            QVERIFY(titlePath && !titlePath->isVisible());
+            QVERIFY(titlePath && titlePath->isVisible());
+            QCOMPARE(titlePath->text(), QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
             auto* more = controller->rail()->findChild<QAction*>("contextRail.toolbox"); QVERIFY(more);
             auto ids = controller->rail()->entryIds();
             ids.removeAll(QStringLiteral("toolbox"));
@@ -680,7 +702,9 @@ private slots:
         QVERIFY(!window.findChild<QToolButton*>("titleWorkspaceSwitcher"));
         QVERIFY(!window.findChild<QMenu*>("workspaceSwitcherPopup"));
         QVERIFY(!window.findChild<QMenu*>("openWorkspacesMenu"));
-        QVERIFY(!window.findChild<QLabel*>("workspaceFilePath")->isVisible());
+        auto* brand = window.findChild<QLabel*>("workspaceFilePath");
+        QVERIFY(brand && brand->isVisible());
+        QCOMPARE(brand->text(), QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
         auto* expand = window.findChild<QToolButton*>("expandProjectSidebarButton");
         QTRY_VERIFY(strip->isVisible());
         const auto iconsVisible = [&] {

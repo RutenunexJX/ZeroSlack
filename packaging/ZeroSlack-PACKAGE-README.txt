@@ -1,9 +1,13 @@
-ZeroSlack v0.31.12 Windows package
+ZeroSlack v0.31.13 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, exact commit and branch. Formal packages have dirty=false and use
 the release tag vX.Y.Z.
+
+Release 0.31.13 restores the visible ZeroSlack name and version at the top left,
+beside the workspace icon strip. Opening or switching files preserves this app
+identity, with room for workspace icons and window controls in narrow windows.
 
 Release 0.31.12 refines workspace icons, Files/Design navigation, sidebar toggling
 and the icon-only More toolbox with hover names and persistent pinning. Splitter

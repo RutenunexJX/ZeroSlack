@@ -112,9 +112,9 @@ public:
                     });
         }
         workspaceStrip = workspaces ? workspaces->createStrip(host) : nullptr;
-        if (workspaceStrip) workspaceStrip->setMaximumWidth(qMax(96, host->width() - 240));
         const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip);
         title = titleBar.widget;
+        titleLabel = titleBar.label;
         maximizeButton = titleBar.maximize;
         updateMaximizeIcon();
         host->setContentsMargins(4, title->height() + 4, 4, 4);
@@ -131,7 +131,7 @@ public:
             connect(navigationPane, &NavigationPaneCoordinator::expandedChanged, expand,
                     [expand](bool visible) { expand->setVisible(!visible); });
         }
-        title->setGeometry(4, 4, host->width() - 8, title->height());
+        updateTitleGeometry();
         title->show();
         title->raise();
         qApp->installEventFilter(this);
@@ -145,8 +145,7 @@ protected:
         if (target == window && event->type() == QEvent::WindowStateChange)
             updateMaximizeIcon();
         if (target == window && event->type() == QEvent::Resize) {
-            title->setGeometry(4, 4, window->width() - 8, title->height());
-            if (workspaceStrip) workspaceStrip->setMaximumWidth(qMax(96, window->width() - 240));
+            updateTitleGeometry();
         }
         if (target == window && event->type() == QEvent::PaletteChange) {
             if (settingsButton)
@@ -180,6 +179,12 @@ protected:
         return false;
     }
 private:
+    void updateTitleGeometry() {
+        title->setGeometry(4, 4, window->width() - 8, title->height());
+        if (workspaceStrip)
+            workspaceStrip->setMaximumWidth(qMax(96, window->width() - 240
+                - (titleLabel ? titleLabel->sizeHint().width() : 0)));
+    }
     void updateMaximizeIcon() {
         if (title && title->property("zeroslackElaControl").toBool()) return;
         if (maximizeButton) maximizeButton->setIcon(RoundedIcons::icon(
@@ -212,6 +217,7 @@ private:
     }
     QMainWindow* window;
     QWidget* title = nullptr;
+    QPointer<QLabel> titleLabel;
     QWidget* workspaceStrip = nullptr;
     QPointer<QToolButton> settingsButton;
     QToolButton* maximizeButton = nullptr;

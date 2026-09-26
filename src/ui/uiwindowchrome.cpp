@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "roundedicons.h"
 #include "uitypography.h"
+#include "version.h"
 #include <QAbstractButton>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -33,7 +34,6 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
         result.label = bar->titleLabel();
         if (workspacePicker) {
             QObject::disconnect(host, &QWidget::windowTitleChanged, bar, nullptr);
-            result.label->hide();
             if (auto* row = qobject_cast<QHBoxLayout*>(bar->layout())) {
                 row->setStretch(0, 0);
                 row->itemAt(0)->setAlignment(Qt::AlignLeft);
@@ -86,9 +86,12 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
         row->setContentsMargins(8, 0, 2, 0);
         result.sidebar = new QToolButton(frame);
         row->addWidget(result.sidebar);
-        if (workspacePicker) row->addWidget(workspacePicker);
         result.label = new QLabel(host->windowTitle(), frame);
-        row->addWidget(result.label, 1);
+        row->addWidget(result.label, workspacePicker ? 0 : 1);
+        if (workspacePicker) {
+            row->addWidget(workspacePicker);
+            row->addStretch();
+        }
         for (int index = 0; index < 3; ++index) {
             auto* button = new QToolButton(frame);
             button->setIcon(host->style()->standardIcon(index == 0 ? QStyle::SP_TitleBarMinButton
@@ -106,17 +109,23 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
                 else host->close();
             });
         }
-        QObject::connect(host, &QWidget::windowTitleChanged, result.label, &QLabel::setText);
-        if (workspacePicker) result.label->hide();
+        if (!workspacePicker)
+            QObject::connect(host, &QWidget::windowTitleChanged, result.label, &QLabel::setText);
     }
     result.widget->setObjectName(QStringLiteral("workspaceTitleBar"));
     result.widget->setAutoFillBackground(true);
     result.label->setObjectName(QStringLiteral("workspaceFilePath"));
     result.label->setTextFormat(Qt::PlainText);
     result.label->setWordWrap(false);
-    result.label->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    result.label->setSizePolicy(workspacePicker ? QSizePolicy::Minimum : QSizePolicy::Ignored,
+                               QSizePolicy::Preferred);
     result.label->setMinimumWidth(0);
     UiTypography::apply(result.label, UiTypography::Role::Body);
+    if (workspacePicker) {
+        // Document window titles may contain paths; the visible app identity stays fixed.
+        result.label->setText(QStringLiteral("ZeroSlack v%1").arg(QLatin1String(APP_VERSION)));
+        result.label->show();
+    }
     result.sidebar->setObjectName(QStringLiteral("expandProjectSidebarButton"));
     result.sidebar->setIcon(RoundedIcons::icon(RoundedIcons::Sidebar));
     result.sidebar->setIconSize(QSize(20, 20));
