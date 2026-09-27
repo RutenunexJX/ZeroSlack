@@ -731,7 +731,6 @@ void ScopedSearchPanel::renderResponse()
             fileItem->setToolTip(0, result.fileName);
             fileItem->setData(
                 0, kFileIdentityRole, fileKey);
-            fileItem->setFirstColumnSpanned(false);
             fileItems.insert(fileKey, fileItem);
         }
 

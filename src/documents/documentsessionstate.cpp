@@ -68,7 +68,7 @@ void DocumentSessionState::refreshEditorState(MyCodeEditor* editor)
     if (!editor || !registry.contains(editor))
         return;
 
-    refreshTrackedDocument(editor);
+    refreshTrackedMetadata(editor);
 }
 
 bool DocumentSessionState::refreshCursor(
@@ -93,7 +93,7 @@ bool DocumentSessionState::refreshCursor(
 
 void DocumentSessionState::refreshFileName(MyCodeEditor* editor)
 {
-    refreshTrackedDocument(editor);
+    refreshTrackedMetadata(editor);
 }
 
 DocumentSnapshot DocumentSessionState::refreshTrackedDocument(
@@ -102,8 +102,16 @@ DocumentSnapshot DocumentSessionState::refreshTrackedDocument(
     if (!editor || !registry.contains(editor))
         return DocumentSnapshot();
 
+    refreshTrackedMetadata(editor);
+    return registry.snapshotForEditor(editor);
+}
+
+void DocumentSessionState::refreshTrackedMetadata(MyCodeEditor* editor)
+{
+    if (!editor || !registry.contains(editor))
+        return;
+
     const TrackedDocument previous = registry.value(editor);
     TrackedDocument tracked = snapshotReader.capture(editor, &previous);
     registry.replace(editor, tracked, previous.snapshot);
-    return registry.snapshotForEditor(editor);
 }

@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QSet>
 #include <algorithm>
+#include <utility>
 
 using namespace semantic_index_completion;
 
@@ -51,69 +52,91 @@ QList<SemanticSymbolRecord> SemanticIndex::getCommandCompletionSymbolRecords(
     CompletionCommandKind commandKind,
     const QString& prefix) const
 {
-    QList<SemanticSymbolRecord> result;
-    QSet<QString> seenNames;
+    return getCommandCompletionSymbolRecordGroups(
+        context, {commandKind}, prefix).value(0);
+}
+
+QList<QList<SemanticSymbolRecord>> SemanticIndex::getCommandCompletionSymbolRecordGroups(
+    const SemanticQueryContext& context,
+    const QList<CompletionCommandKind>& commandKinds,
+    const QString& prefix) const
+{
+    QList<QList<SemanticSymbolRecord>> results(commandKinds.size());
+    QHash<QString, QList<SemanticSymbolRecord>> recordsByOwner;
+    QList<SemanticSymbolRecord> importedRecords;
+    bool importsLoaded = false;
     const QString ownerName = commandCompletionOwnerName(context);
-    if (ownerName.isEmpty()
-        && !completionCommandKindIsGlobalCommand(commandKind))
-        return result;
-
-    const bool useGlobalScope = ownerName.isEmpty()
-        || completionCommandKindIsAlwaysGlobalCommand(commandKind);
-    QList<SemanticSymbolRecord> records = useGlobalScope
-        ? getSymbolRecordsByOwner(QString())
-        : getSymbolRecordsByOwner(ownerName);
-    if (!useGlobalScope
-        && completionCommandKindIsPackageVisibleCommand(commandKind)) {
-        records.append(getVisibleImportedPackageRecords(context));
-    }
-    QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
-    for (const SemanticSymbolRecord& record : records) {
-        if (!commandCompletionScopeVisibleForRecord(
-                record,
-                commandKind,
-                context)
-            || !completionCommandKindMatchesCommandRecord(record, commandKind)
-            || !semanticCompletionNameMatches(record.name, prefix)) {
+    for (qsizetype i = 0; i < commandKinds.size(); ++i) {
+        auto& result = results[i];
+        const CompletionCommandKind commandKind = commandKinds.at(i);
+        QSet<QString> seenNames;
+        if (ownerName.isEmpty()
+            && !completionCommandKindIsGlobalCommand(commandKind))
             continue;
-        }
 
-        const QString key = record.name.toCaseFolded();
-        if (record.visibility
-            == SymbolTaxonomy::SymbolVisibility::PackageVisible) {
-            importedRecordsByName[key].append(record);
-        } else {
-            if (seenNames.contains(key))
+        const bool useGlobalScope = ownerName.isEmpty()
+            || completionCommandKindIsAlwaysGlobalCommand(commandKind);
+        const QString recordOwner = useGlobalScope ? QString() : ownerName;
+        auto prepared = recordsByOwner.constFind(recordOwner);
+        if (prepared == recordsByOwner.cend())
+            prepared = recordsByOwner.insert(recordOwner, getSymbolRecordsByOwner(recordOwner));
+        QList<SemanticSymbolRecord> records = prepared.value();
+        if (!useGlobalScope
+            && completionCommandKindIsPackageVisibleCommand(commandKind)) {
+            if (!importsLoaded) {
+                importedRecords = getVisibleImportedPackageRecords(context);
+                importsLoaded = true;
+            }
+            records.append(importedRecords);
+        }
+        QHash<QString, QList<SemanticSymbolRecord>> importedRecordsByName;
+        for (const SemanticSymbolRecord& record : std::as_const(records)) {
+            if (!commandCompletionScopeVisibleForRecord(
+                    record,
+                    commandKind,
+                    context)
+                || !completionCommandKindMatchesCommandRecord(record, commandKind)
+                || !semanticCompletionNameMatches(record.name, prefix)) {
                 continue;
-            seenNames.insert(key);
-            result.append(record);
+            }
+
+            const QString key = record.name.toCaseFolded();
+            if (record.visibility
+                == SymbolTaxonomy::SymbolVisibility::PackageVisible) {
+                importedRecordsByName[key].append(record);
+            } else {
+                if (seenNames.contains(key))
+                    continue;
+                seenNames.insert(key);
+                result.append(record);
+            }
         }
-    }
 
-    for (auto it = importedRecordsByName.constBegin();
-         it != importedRecordsByName.constEnd();
-         ++it) {
-        if (seenNames.contains(it.key()))
-            continue;
-        QSet<QString> owners;
-        for (const SemanticSymbolRecord& record : it.value())
-            owners.insert(record.owner.name);
-        if (owners.size() != 1 || it.value().isEmpty())
-            continue;
-        seenNames.insert(it.key());
-        result.append(it.value().first());
-    }
+        for (auto it = importedRecordsByName.constBegin();
+             it != importedRecordsByName.constEnd();
+             ++it) {
+            if (seenNames.contains(it.key()))
+                continue;
+            QSet<QString> owners;
+            for (const SemanticSymbolRecord& record : it.value())
+                owners.insert(record.owner.name);
+            if (owners.size() != 1 || it.value().isEmpty())
+                continue;
+            seenNames.insert(it.key());
+            result.append(it.value().first());
+        }
 
-    std::sort(
-        result.begin(),
-        result.end(),
-        [](const SemanticSymbolRecord& left,
-           const SemanticSymbolRecord& right) {
-            return QString::compare(
-                       left.name,
-                       right.name,
-                       Qt::CaseInsensitive)
-                < 0;
-        });
-    return result;
+        std::sort(
+            result.begin(),
+            result.end(),
+            [](const SemanticSymbolRecord& left,
+               const SemanticSymbolRecord& right) {
+                return QString::compare(
+                           left.name,
+                           right.name,
+                           Qt::CaseInsensitive)
+                    < 0;
+            });
+    }
+    return results;
 }

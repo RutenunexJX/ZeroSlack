@@ -1631,7 +1631,7 @@ void TabManager::updateTabTitle(MyCodeEditor* editor)
         editor->property("editorViewId"));
     if (editor == getCurrentEditor()) {
         const QString fileName =
-            getDocumentForEditor(editor).fileName;
+            documentModel->documentMetadataForEditor(editor).fileName;
         if (QWidget* parentWidget =
                 qobject_cast<QWidget*>(parent())) {
             parentWidget->setWindowFilePath(fileName.isEmpty() ? QString() : QFileInfo(fileName).absoluteFilePath());

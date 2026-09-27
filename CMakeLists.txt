@@ -1008,6 +1008,14 @@ if(BUILD_TESTING)
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
 
+    add_executable(insert_palette_catalog_test
+        test_sv/insert_palette_catalog_test.cpp)
+    target_link_libraries(insert_palette_catalog_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(semantic_hot_path_test test_sv/semantic_hot_path_test.cpp)
+    target_link_libraries(semantic_hot_path_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(formatter_cursor_anchor_test
         test_sv/formatter_cursor_anchor_test.cpp)
     target_link_libraries(formatter_cursor_anchor_test
@@ -1615,6 +1623,22 @@ if(BUILD_TESTING)
             $<TARGET_FILE:completion_test>
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/test_symbols.sv
     )
+    add_test(NAME insert_palette_catalog_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:insert_palette_catalog_test>
+    )
+    set_tests_properties(insert_palette_catalog_test PROPERTIES TIMEOUT 90)
+    add_test(NAME semantic_hot_path_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:semantic_hot_path_test>
+    )
+    set_tests_properties(semantic_hot_path_test PROPERTIES TIMEOUT 90)
     add_test(NAME formatter_cursor_anchor_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

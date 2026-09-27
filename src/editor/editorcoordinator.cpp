@@ -575,7 +575,9 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
 void EditorCoordinator::refreshPinloomCodeLinks(
     MyCodeEditor* editor) const
 {
-    if (!editor || !pinloomMarkersVisible || !pinloomCodeLinkStore) {
+    if (!editor || !pinloomMarkersVisible || !pinloomCodeLinkStore
+        || !pinloomCodeLinkStore->hasLinksForDocument(
+            editor->documentFileName())) {
         if (editor)
             editor->setPinloomCodeLinkAnnotations({});
         return;

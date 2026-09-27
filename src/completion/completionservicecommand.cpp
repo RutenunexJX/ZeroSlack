@@ -616,24 +616,20 @@ CompletionService::findVisibleStructMemberRecords(
     if (!semantic)
         return {};
 
+    CommandCompletionQuery typeQuery = query;
+    typeQuery.prefix.clear();
+    const auto groups = CompletionSemanticQuery::commandSymbolRecordGroups(
+        semantic, typeQuery, {CompletionCommandKind::PackedStructType,
+                              CompletionCommandKind::UnpackedStructType,
+                              CompletionCommandKind::VisibleSymbol});
     QSet<QString> typeNames;
-    for (const CompletionCommandKind kind : {
-             CompletionCommandKind::PackedStructType,
-             CompletionCommandKind::UnpackedStructType}) {
-        CommandCompletionQuery typeQuery = query;
-        typeQuery.commandKind = kind;
-        typeQuery.prefix.clear();
-        for (const SemanticSymbolRecord& type :
-             findCommandCompletionSymbolRecords(typeQuery)) {
+    for (int i = 0; i < 2; ++i) {
+        for (const SemanticSymbolRecord& type : groups.at(i)) {
             if (!type.name.isEmpty())
                 typeNames.insert(type.name);
         }
     }
-    CommandCompletionQuery visibleQuery = query;
-    visibleQuery.commandKind = CompletionCommandKind::VisibleSymbol;
-    visibleQuery.prefix.clear();
-    for (const SemanticSymbolRecord& record :
-         findCommandCompletionSymbolRecords(visibleQuery)) {
+    for (const SemanticSymbolRecord& record : groups.at(2)) {
         const QString typeName =
             !record.type.resolvedTypeName.isEmpty()
             ? record.type.resolvedTypeName
@@ -743,20 +739,17 @@ CompletionService::findVisibleEnumValueRecords(
     if (!semantic)
         return {};
 
-    QSet<QString> typeNames;
     CommandCompletionQuery typeQuery = query;
-    typeQuery.commandKind = CompletionCommandKind::EnumType;
     typeQuery.prefix.clear();
-    for (const SemanticSymbolRecord& type :
-         findCommandCompletionSymbolRecords(typeQuery)) {
+    const auto groups = CompletionSemanticQuery::commandSymbolRecordGroups(
+        semantic, typeQuery, {CompletionCommandKind::EnumType,
+                              CompletionCommandKind::VisibleSymbol});
+    QSet<QString> typeNames;
+    for (const SemanticSymbolRecord& type : groups.at(0)) {
         if (!type.name.isEmpty())
             typeNames.insert(type.name);
     }
-    CommandCompletionQuery visibleQuery = query;
-    visibleQuery.commandKind = CompletionCommandKind::VisibleSymbol;
-    visibleQuery.prefix.clear();
-    for (const SemanticSymbolRecord& record :
-         findCommandCompletionSymbolRecords(visibleQuery)) {
+    for (const SemanticSymbolRecord& record : groups.at(1)) {
         const QString typeName =
             !record.type.resolvedTypeName.isEmpty()
             ? record.type.resolvedTypeName

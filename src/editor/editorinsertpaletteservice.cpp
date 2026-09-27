@@ -8,6 +8,7 @@
 #include "usertemplateservice.h"
 
 #include <QFileInfo>
+#include <QHash>
 #include <QSet>
 #include <Qt>
 
@@ -108,6 +109,17 @@ QList<GlobalControlItem> symbolItems(
     CompletionService* service = CompletionService::getInstance();
     QList<GlobalControlItem> result;
     QSet<QString> seen;
+    // A query has one filter, but record names and prepared item titles are
+    // separate score inputs. Cache by the exact text used by each sort.
+    QHash<QString, int> scores;
+    const auto scoreForText = [&](const QString& candidate) {
+        const auto found = scores.constFind(candidate);
+        if (found != scores.cend())
+            return found.value();
+        const int score = service->completionItemScore(candidate, parsed.filter);
+        scores.insert(candidate, score);
+        return score;
+    };
     auto append = [&](const QList<SemanticSymbolRecord>& records,
                       CompletionCommandKind kind) {
         QList<SemanticSymbolRecord> rankedRecords = records;
@@ -115,12 +127,9 @@ QList<GlobalControlItem> symbolItems(
             std::stable_sort(
                 rankedRecords.begin(),
                 rankedRecords.end(),
-                [service, &parsed](const SemanticSymbolRecord& left,
-                                   const SemanticSymbolRecord& right) {
-                    return service->completionItemScore(
-                               left.name, parsed.filter)
-                        > service->completionItemScore(
-                               right.name, parsed.filter);
+                [&scoreForText](const SemanticSymbolRecord& left,
+                                const SemanticSymbolRecord& right) {
+                    return scoreForText(left.name) > scoreForText(right.name);
                 });
         }
         for (const SemanticSymbolRecord& record : rankedRecords) {
@@ -161,12 +170,9 @@ QList<GlobalControlItem> symbolItems(
         std::stable_sort(
             result.begin(),
             result.end(),
-            [service, &parsed](const GlobalControlItem& left,
-                               const GlobalControlItem& right) {
-                return service->completionItemScore(
-                           left.title, parsed.filter)
-                    > service->completionItemScore(
-                           right.title, parsed.filter);
+            [&scoreForText](const GlobalControlItem& left,
+                            const GlobalControlItem& right) {
+                return scoreForText(left.title) > scoreForText(right.title);
             });
     };
 
@@ -183,13 +189,18 @@ QList<GlobalControlItem> symbolItems(
             context.moduleName,
             parsed.filter);
     };
-    const QList<SemanticSymbolRecord> visibleRecords =
-        parsed.explicitSelector
-        ? service->findCommandCompletionSymbolRecords(
-              completionQuery(context,
-                              CompletionCommandKind::VisibleSymbol,
-                              parsed.filter))
-        : QList<SemanticSymbolRecord>();
+    QList<SemanticSymbolRecord> visibleRecords;
+    bool visibleRecordsLoaded = false;
+    const auto visibleSymbols = [&]() -> const QList<SemanticSymbolRecord>& {
+        if (!visibleRecordsLoaded) {
+            visibleRecords = service->findCommandCompletionSymbolRecords(
+                completionQuery(context,
+                                CompletionCommandKind::VisibleSymbol,
+                                parsed.filter));
+            visibleRecordsLoaded = true;
+        }
+        return visibleRecords;
+    };
 
     if (!parsed.explicitSelector && context.memberAccess) {
         const QList<SemanticSymbolRecord> members = structMembers();
@@ -233,7 +244,7 @@ QList<GlobalControlItem> symbolItems(
                 continue;
             }
             QList<SemanticSymbolRecord> matchingRecords;
-            for (const SemanticSymbolRecord& record : visibleRecords) {
+            for (const SemanticSymbolRecord& record : visibleSymbols()) {
                 if (completionCommandKindMatchesCommandRecord(record, kind))
                     matchingRecords.append(record);
             }

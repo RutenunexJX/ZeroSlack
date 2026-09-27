@@ -28,7 +28,7 @@ void WorkspaceAnalysisRequestQueue::start(const ProjectSnapshot& project)
 
 bool WorkspaceAnalysisRequestQueue::queueLatest(const ProjectSnapshot& project)
 {
-    if (!activeRequest || !project.isOpen())
+    if (!project.isOpen())
         return false;
 
     if (!pendingRequest) {

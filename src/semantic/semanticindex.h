@@ -560,6 +560,10 @@ public:
         const SemanticQueryContext& context,
         CompletionCommandKind commandKind,
         const QString& prefix = QString()) const;
+    QList<QList<SemanticSymbolRecord>> getCommandCompletionSymbolRecordGroups(
+        const SemanticQueryContext& context,
+        const QList<CompletionCommandKind>& commandKinds,
+        const QString& prefix = QString()) const;
     SemanticSymbolRecord getSymbolRecordByStableKey(
         const SymbolStableKey& key) const;
     QList<SemanticSymbolRecord> findDefinitionRecords(
@@ -584,6 +588,11 @@ public:
         const QString& moduleName,
         const QString& fileName,
         CompletionCommandKind commandKind,
+        const QString& prefix = QString()) const;
+    QList<QList<SemanticSymbolRecord>> getModuleContextSymbolRecordGroups(
+        const QString& moduleName,
+        const QString& fileName,
+        const QList<CompletionCommandKind>& commandKinds,
         const QString& prefix = QString()) const;
     QString currentModuleAt(const QString& fileName, int cursorPosition) const;
     bool isValidModuleName(const QString& name) const;

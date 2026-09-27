@@ -63,6 +63,7 @@ private:
     DocumentSnapshotReader snapshotReader;
 
     DocumentSnapshot refreshTrackedDocument(MyCodeEditor* editor);
+    void refreshTrackedMetadata(MyCodeEditor* editor);
 };
 
 #endif // DOCUMENTSESSIONSTATE_H

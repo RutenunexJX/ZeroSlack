@@ -1,10 +1,14 @@
-ZeroSlack v0.31.16 Windows package
+ZeroSlack v0.31.17 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, base commit, branch and dirty source state. An explicitly requested
 working-tree formal package has dirty=true and releaseTag=null. Packaging does
 not create commits or tags; a tag is recorded only when it identifies clean source.
+
+Release 0.31.17 fixes workspace-analysis handoff and reduces repeated document,
+search-tree, catalog, Pinloom marker and semantic-query work. Diagnostic-only
+updates reuse unchanged semantic data. Existing sidebar and docking behavior is retained.
 
 Release 0.31.16 preserves Files tree selection and scrolling when returning from
 Design. The bottom panel animates live editor/background geometry and retains its

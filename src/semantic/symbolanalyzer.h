@@ -164,6 +164,12 @@ public:
         const QHash<QString, SemanticAnalysisBandMetadata>& bands);
     void setMaxPublishedDiagnostics(int maxDiagnostics);
     int maxPublishedDiagnostics() const;
+    // A finished watcher still owns the slot until its GUI completion handler
+    // retires it. Cancellation of the logical request does not free this slot.
+    bool hasWorkspaceAnalysisInFlight() const
+    {
+        return workspaceAnalysisWatcher || pendingWorkspacePublication;
+    }
     void expireWorkspaceAnalysis();
     // Broadcast cancellation without joining worker threads. Shutdown callers
     // use this before waiting on any analysis family so a saturated global

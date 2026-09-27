@@ -725,8 +725,17 @@ void MainWindow::refreshTemporaryEditorSemanticCatalog()
 {
     if (!temporaryEditorSearchProvider)
         return;
+    const auto* index = SemanticIndex::getInstance();
+    const std::uint64_t revision = index->snapshotRevision();
+    // Batch and file completion can report the same published snapshot.
+    // With no snapshot the live store may change without a new revision.
+    if (index->snapshot()
+        && temporaryEditorCatalogSnapshotRevision == revision) {
+        return;
+    }
     temporaryEditorSearchProvider->setSemanticCatalog(
         SearchService::getInstance()->symbolCatalog());
+    temporaryEditorCatalogSnapshotRevision = index->snapshot() ? revision : 0;
 }
 
 void MainWindow::setupEditorCentralArea()
@@ -767,6 +776,7 @@ void MainWindow::setupEditorCentralArea()
                     [this](
                         int, const QString&, const QString&) {
                         refreshTemporaryEditorFileCatalog();
+                        temporaryEditorCatalogSnapshotRevision = 0;
                         if (temporaryEditorSearchProvider) {
                             temporaryEditorSearchProvider
                                 ->setSemanticCatalog({});
@@ -777,6 +787,7 @@ void MainWindow::setupEditorCentralArea()
                     this,
                     [this]() {
                         refreshTemporaryEditorFileCatalog();
+                        temporaryEditorCatalogSnapshotRevision = 0;
                         if (temporaryEditorSearchProvider) {
                             temporaryEditorSearchProvider
                                 ->setSemanticCatalog({});

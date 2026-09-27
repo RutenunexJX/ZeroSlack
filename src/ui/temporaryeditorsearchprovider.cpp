@@ -64,11 +64,12 @@ EditorSearchCandidateType typeFor(const SearchResult& result)
     return EditorSearchCandidateType::Symbol;
 }
 
-QString candidateIdentity(const EditorSearchCandidate& candidate)
+QString candidateIdentity(const EditorSearchCandidate& candidate,
+                          const QString& fileIdentity)
 {
     return QStringLiteral("%1|%2|%3|%4|%5")
         .arg(static_cast<int>(candidate.type))
-        .arg(EditorFileIdentity::lookupKey(candidate.location.filePath))
+        .arg(fileIdentity)
         .arg(candidate.location.line)
         .arg(candidate.location.column)
         .arg(candidate.location.sourceLinkId);
@@ -281,8 +282,19 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
     indexedSemanticCandidates.clear();
     indexedSemanticCandidates.reserve(rebuilt.size());
     QSet<QString> seen;
+    // Resolving an identity can open the file (including junction/symlink
+    // resolution). All symbols from the same path share that work for this
+    // rebuild only, so a later catalog refresh observes changed aliases.
+    QHash<QString, QString> fileIdentities;
     for (const IndexedCandidate& indexed : rebuilt) {
-        const QString identity = candidateIdentity(indexed.candidate);
+        const QString& path = indexed.candidate.location.filePath;
+        auto fileIdentity = fileIdentities.constFind(path);
+        if (fileIdentity == fileIdentities.cend()) {
+            fileIdentity = fileIdentities.insert(
+                path, EditorFileIdentity::lookupKey(path));
+        }
+        const QString identity = candidateIdentity(indexed.candidate,
+                                                   fileIdentity.value());
         if (seen.contains(identity))
             continue;
         seen.insert(identity);

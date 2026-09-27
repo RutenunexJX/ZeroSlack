@@ -132,6 +132,7 @@ public:
                  const QString& title,
                  const QVariantMap& identity,
                  QString* failureReason = nullptr);
+    bool hasLinksForDocument(const QString& filePath) const;
     QList<ResolvedPinloomCodeLink> linksForDocument(
         const QString& filePath,
         const QString& documentText,

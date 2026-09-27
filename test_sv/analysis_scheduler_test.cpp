@@ -792,6 +792,135 @@ void runDocumentOpenRequiresMatchingIndexedText()
     }
 }
 
+void runRapidWorkspaceHandoffs()
+{
+    for (const QString& outcome : {QStringLiteral("reopen"),
+                                  QStringLiteral("latest"),
+                                  QStringLiteral("close"),
+                                  QStringLiteral("cancel"),
+                                  QStringLiteral("cancel-restart"),
+                                  QStringLiteral("shutdown")}) {
+        std::printf("Workspace handoff: %s\n", qPrintable(outcome));
+        QTemporaryDir directory;
+        expect("handoff fixture is available", directory.isValid());
+        if (!directory.isValid())
+            return;
+        QStringList roots, files, texts;
+        for (const QString& name : {QStringLiteral("a"),
+                                   QStringLiteral("b"),
+                                   QStringLiteral("c")}) {
+            roots.append(directory.filePath(name));
+            QDir().mkpath(roots.constLast());
+            files.append(QDir(roots.constLast()).filePath(name + ".sv"));
+            texts.append(QStringLiteral("module handoff_%1; logic value_%1; endmodule\n")
+                             .arg(name));
+            QFile file(files.constLast());
+            expect("handoff source opens", file.open(QIODevice::WriteOnly));
+            file.write(texts.constLast().toUtf8());
+        }
+
+        SemanticIndex::getInstance()->clearSemanticState();
+        // Gate captures outlive every worker owner, including failure teardown.
+        std::atomic_bool releaseWorker{false};
+        std::atomic_int gateEntries{0};
+        ProjectModel project;
+        SymbolAnalyzer analyzer;
+        AnalysisScheduler scheduler;
+        scheduler.setSymbolAnalyzer(&analyzer);
+        scheduler.setProjectModel(&project);
+        QSignalSpy finished(&scheduler,
+                            &AnalysisScheduler::workspaceSymbolAnalysisFinished);
+        QSignalSpy queued(&scheduler,
+                          &AnalysisScheduler::workspaceAnalysisRequestQueued);
+        QSignalSpy expired(&analyzer, &SymbolAnalyzer::workspaceAnalysisExpired);
+        project.setWorkspaceState(roots[1], {files[1]});
+        expect("B has a published baseline before close/reactivation",
+               waitUntil([&]() { return finished.size() == 1; }, 5000));
+        finished.clear();
+        QSignalSpy physicalStarts(&analyzer, &SymbolAnalyzer::analysisStarted);
+        analyzer.setWorkspaceWorkerStartGateForTesting(
+            [&](const std::function<bool()>& isCancelled) {
+                gateEntries.fetch_add(1, std::memory_order_relaxed);
+                while (!releaseWorker.load(std::memory_order_relaxed)
+                       && !isCancelled()) {
+                    QThread::msleep(1);
+                }
+            });
+
+        // Closing B activates A. Reopen B before the GUI can deliver A's
+        // watcher completion, even if its cancelled worker has already exited.
+        project.setWorkspaceState(roots[0], {files[0]});
+        expect("reactivated A enters the worker gate",
+               waitUntil([&]() { return gateEntries.load() == 1; }, 3000));
+        project.setWorkspaceState(roots[1], {files[1]});
+        int target = 1;
+        if (outcome == "latest") {
+            project.setWorkspaceState(roots[2], {files[2]});
+            target = 2;
+        } else if (outcome == "close") {
+            project.closeProject();
+        } else if (outcome == "cancel" || outcome == "cancel-restart") {
+            scheduler.cancelWorkspaceAnalysis();
+            expect("cancel removes active and pending logical work",
+                   !scheduler.isSemanticAnalysisActive());
+            if (outcome == "cancel-restart")
+                scheduler.requestWorkspaceAnalysis(project.snapshot());
+        } else if (outcome == "shutdown") {
+            scheduler.shutdown();
+        }
+
+        const bool shouldPublish = outcome == "reopen" || outcome == "latest"
+            || outcome == "cancel-restart";
+        if (shouldPublish) {
+            expect("new workspace remains busy while waiting for retired A",
+                   scheduler.isSemanticAnalysisActive());
+            expect("waiting request is reported as queued",
+                   !queued.isEmpty()
+                       && qvariant_cast<WorkspaceAnalysisRequestTelemetry>(
+                              queued.constLast().at(0)).pending);
+            expect("old worker expiration starts exactly one replacement worker",
+                   waitUntil([&]() { return gateEntries.load() == 2; }, 3000));
+            expect("old expiration cannot clear the replacement request",
+                   !expired.isEmpty() && scheduler.isSemanticAnalysisActive()
+                       && finished.isEmpty());
+            expect("only A and the latest target reach the analyzer",
+                   physicalStarts.size() == 2
+                       && EditorFileIdentity::same(
+                           physicalStarts.constLast().at(0).toString(), roots[target]));
+            releaseWorker.store(true, std::memory_order_relaxed);
+            expect("latest workspace publishes and settles",
+                   waitUntil([&]() {
+                       return finished.size() == 1
+                           && !scheduler.isSemanticAnalysisActive();
+                   }, 5000));
+            expect("completion and snapshot belong only to the latest workspace",
+                   finished.size() == 1
+                       && EditorFileIdentity::same(
+                           qvariant_cast<ProjectSnapshot>(finished[0][0]).workspaceRoot,
+                           roots[target])
+                       && SemanticIndex::getInstance()->getCachedFileContent(files[target])
+                              == texts[target]
+                       && SemanticIndex::getInstance()->getCachedFileContent(files[0]).isEmpty()
+                       && (target == 1
+                           || SemanticIndex::getInstance()->getCachedFileContent(files[1]).isEmpty()));
+        } else {
+            releaseWorker.store(true, std::memory_order_relaxed);
+            if (outcome != "shutdown")
+                expect("cancelled old worker acknowledges retirement",
+                       waitUntil([&]() { return !expired.isEmpty(); }, 3000));
+            QCoreApplication::processEvents();
+            expect("close/cancel/shutdown discards waiting work without publication",
+                   !scheduler.isSemanticAnalysisActive() && finished.isEmpty()
+                       && physicalStarts.size() == 1 && gateEntries.load() == 1);
+            expect("closed or cancelled workspace cannot repopulate the cleared snapshot",
+                   SemanticIndex::getInstance()->getCachedFileContent(files[0]).isEmpty()
+                       && SemanticIndex::getInstance()->getCachedFileContent(files[1]).isEmpty());
+        }
+        releaseWorker.store(true, std::memory_order_relaxed);
+        scheduler.shutdown();
+    }
+}
+
 void runWorkspaceEditDoesNotRestartWorker()
 {
     QTemporaryDir directory;
@@ -3949,6 +4078,11 @@ int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication app(argc, argv);
+    if (app.arguments().contains(QStringLiteral("--workspace-handoff-only"))) {
+        runRapidWorkspaceHandoffs();
+        std::printf("\n%d checks, %d failed\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
     if (app.arguments().contains(QStringLiteral("--edit-idle-large"))) {
         runEditIdleLargeFileMeasurement();
         std::printf("\n%d checks, %d failed\n", checks, failures);
@@ -3978,6 +4112,7 @@ int main(int argc, char** argv)
     runPublicationRefreshesEditorOnce();
     runIncludeResolutionUsesConfiguredSearchOrder();
     runDocumentOpenRequiresMatchingIndexedText();
+    runRapidWorkspaceHandoffs();
     runWorkspaceEditDoesNotRestartWorker();
     runSupersededRequestsConvergeDocumentStates();
     runSinglePendingCleanChangeMergesIntoDifferentRequest();

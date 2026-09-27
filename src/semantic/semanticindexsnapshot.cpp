@@ -354,12 +354,13 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
     const QStringList& fileNames,
     const QList<SemanticDiagnostic>& diagnostics) const
 {
-    if (fileNames.isEmpty())
-        return SemanticIndexSnapshot(FromRecordsTag{},
-                                     m_symbolRecords,
-                                     m_relationships,
-                                     diagnostics,
-                                     m_fileContents);
+    // Diagnostics do not change symbol identities or relationship bindings.
+    // Keep the immutable snapshot's implicitly shared records and indexes.
+    SemanticIndexSnapshot next = *this;
+    if (fileNames.isEmpty()) {
+        next.m_diagnostics = diagnostics;
+        return next;
+    }
 
     QSet<QString> targetFiles;
     for (const QString& fileName : fileNames) {
@@ -377,11 +378,8 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedDiagnostics(
     }
     merged.append(diagnostics);
 
-    return SemanticIndexSnapshot(FromRecordsTag{},
-                                 m_symbolRecords,
-                                 m_relationships,
-                                 merged,
-                                 m_fileContents);
+    next.m_diagnostics = std::move(merged);
+    return next;
 }
 
 SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(

@@ -31,9 +31,19 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     CompletionCommandKind commandKind,
     const QString& prefix) const
 {
-    QList<SemanticSymbolRecord> result;
-    if (moduleName.isEmpty() || fileName.isEmpty())
-        return result;
+    return getModuleContextSymbolRecordGroups(
+        moduleName, fileName, {commandKind}, prefix).value(0);
+}
+
+QList<QList<SemanticSymbolRecord>> SemanticIndex::getModuleContextSymbolRecordGroups(
+    const QString& moduleName,
+    const QString& fileName,
+    const QList<CompletionCommandKind>& commandKinds,
+    const QString& prefix) const
+{
+    QList<QList<SemanticSymbolRecord>> results(commandKinds.size());
+    if (moduleName.isEmpty() || fileName.isEmpty() || commandKinds.isEmpty())
+        return results;
 
     const QString normalizedTargetFile = normalizedModuleContextFileName(fileName);
     const QList<SemanticSymbolRecord> fileRecords = getSymbolRecords(fileName);
@@ -50,7 +60,7 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
         }
     }
     if (!foundModule)
-        return result;
+        return results;
 
     int moduleEndLineExclusive = std::numeric_limits<int>::max();
     for (const SemanticSymbolRecord& record : fileRecords) {
@@ -72,7 +82,6 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
             && record.location.startLine < moduleEndLineExclusive;
     };
 
-    QSet<QString> seenStableKeys;
     SemanticQueryContext queryContext;
     queryContext.fileName = fileName;
     queryContext.moduleName = moduleName;
@@ -80,72 +89,91 @@ QList<SemanticSymbolRecord> SemanticIndex::getModuleContextSymbolRecordsByType(
     queryContext.cursorLine = moduleEndLineExclusive == std::numeric_limits<int>::max()
         ? -1
         : moduleEndLineExclusive - 1;
-    auto appendRecord = [&](const SemanticSymbolRecord& record) {
-        if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible
-            && !packageVisibleRecordImported(record, queryContext)) {
-            return;
-        }
-        if (!completionCommandKindMatchesModuleContextRecord(record, commandKind)) {
-            return;
-        }
-        if (!moduleContextNameMatches(record.name, prefix))
-            return;
-        const QString dedupeKey =
-            stableDedupeKeyForModuleContextRecord(record);
-        if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
-            return;
-        seenStableKeys.insert(dedupeKey);
-        result.append(record);
-    };
 
-    QList<SemanticSymbolRecord> candidateRecords =
-        completionCommandKindIsModuleRange(commandKind)
-            ? fileRecords
-            : getSymbolRecordsByOwner(moduleName);
-    if (completionCommandKindIsModuleRange(commandKind)) {
-        candidateRecords.append(getSymbolRecordsByOwner(moduleName));
+    const QList<SemanticSymbolRecord> ownerRecords =
+        getSymbolRecordsByOwner(moduleName);
+    QList<SemanticSymbolRecord> rangeRecords;
+    if (std::any_of(commandKinds.cbegin(), commandKinds.cend(),
+                    completionCommandKindIsModuleRange)) {
+        rangeRecords = fileRecords;
+        rangeRecords.append(ownerRecords);
     }
-    for (const SemanticSymbolRecord& record : candidateRecords) {
-        bool isCorrectModule = false;
-        if (completionCommandKindIsModuleRange(commandKind)) {
-            isCorrectModule = inModuleRange(record)
-                || record.owner.name == moduleName;
-        } else {
-            isCorrectModule = record.owner.name == moduleName;
+    QList<SemanticSymbolRecord> importedRecords;
+    for (const QString& packageName : activeImportedPackageNames(queryContext))
+        importedRecords.append(getSymbolRecordsByOwner(packageName));
+    QHash<QString, QHash<QString, bool>> importedVisibility;
+    QList<SemanticRelationshipResult> relationships;
+    bool relationshipsLoaded = false;
+
+    for (qsizetype i = 0; i < commandKinds.size(); ++i) {
+        const CompletionCommandKind commandKind = commandKinds.at(i);
+        auto& result = results[i];
+        QSet<QString> seenStableKeys;
+        auto appendRecord = [&](const SemanticSymbolRecord& record) {
+            if (record.visibility == SymbolTaxonomy::SymbolVisibility::PackageVisible) {
+                auto& byName = importedVisibility[record.owner.name];
+                auto visible = byName.constFind(record.name);
+                if (visible == byName.cend()) {
+                    visible = byName.insert(record.name,
+                                           packageVisibleRecordImported(record, queryContext));
+                }
+                if (!visible.value())
+                    return;
+            }
+            if (!completionCommandKindMatchesModuleContextRecord(record, commandKind)) {
+                return;
+            }
+            if (!moduleContextNameMatches(record.name, prefix))
+                return;
+            const QString dedupeKey =
+                stableDedupeKeyForModuleContextRecord(record);
+            if (dedupeKey.isEmpty() || seenStableKeys.contains(dedupeKey))
+                return;
+            seenStableKeys.insert(dedupeKey);
+            result.append(record);
+        };
+
+        const QList<SemanticSymbolRecord>& candidateRecords =
+            completionCommandKindIsModuleRange(commandKind)
+                ? rangeRecords : ownerRecords;
+        for (const SemanticSymbolRecord& record : candidateRecords) {
+            bool isCorrectModule = false;
+            if (completionCommandKindIsModuleRange(commandKind)) {
+                isCorrectModule = inModuleRange(record)
+                    || record.owner.name == moduleName;
+            } else {
+                isCorrectModule = record.owner.name == moduleName;
+            }
+            if (isCorrectModule)
+                appendRecord(record);
         }
-        if (isCorrectModule)
+
+        for (const SemanticSymbolRecord& record : importedRecords)
             appendRecord(record);
-    }
 
-    for (const QString& packageName :
-         activeImportedPackageNames(queryContext)) {
-        for (const SemanticSymbolRecord& record :
-             getSymbolRecordsByOwner(packageName)) {
-            appendRecord(record);
+        if (result.isEmpty()) {
+            if (!relationshipsLoaded) {
+                relationships = moduleRecord.stableKey.isValid()
+                    ? getRelationshipResults(moduleRecord.stableKey, true)
+                    : QList<SemanticRelationshipResult>();
+                relationshipsLoaded = true;
+            }
+            for (const SemanticRelationshipResult& relationship : relationships) {
+                if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
+                    continue;
+                const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
+                const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
+                    ? targetRecord.stableKey
+                    : relationship.toStableKey;
+                const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
+                    ? targetRecord
+                    : getSymbolRecordByStableKey(targetKey);
+                if (resolvedTargetRecord.localHandle >= 0)
+                    appendRecord(resolvedTargetRecord);
+            }
         }
-    }
 
-    if (result.isEmpty()) {
-        const SymbolStableKey moduleStableKey = moduleRecord.stableKey;
-        const QList<SemanticRelationshipResult> relationships =
-            moduleStableKey.isValid()
-                ? getRelationshipResults(moduleStableKey, true)
-                : QList<SemanticRelationshipResult>();
-        for (const SemanticRelationshipResult& relationship : relationships) {
-            if (relationship.relationship.type != SymbolRelationshipEngine::CONTAINS)
-                continue;
-            const SemanticSymbolRecord targetRecord = relationship.toSymbolRecord;
-            const SymbolStableKey targetKey = targetRecord.stableKey.isValid()
-                ? targetRecord.stableKey
-                : relationship.toStableKey;
-            const SemanticSymbolRecord resolvedTargetRecord = targetRecord.isValid()
-                ? targetRecord
-                : getSymbolRecordByStableKey(targetKey);
-            if (resolvedTargetRecord.localHandle >= 0)
-                appendRecord(resolvedTargetRecord);
-        }
+        sortModuleContextSymbolRecords(result);
     }
-
-    sortModuleContextSymbolRecords(result);
-    return result;
+    return results;
 }

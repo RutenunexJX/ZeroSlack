@@ -248,9 +248,54 @@ void exerciseTabIdentityGroupingAndBatchClose()
 }
 }
 
+static void runMetadataRefreshRegression()
+{
+    MyCodeEditor editor;
+    editor.setPlainText(QStringLiteral("module metadata;\n  logic data;\nendmodule\n"));
+    DocumentModel model;
+    model.registerEditor(&editor, QStringLiteral("metadata_refresh.sv"));
+    const auto original = model.documentMetadataForEditor(&editor);
+    editor.resetHotPathMetricsForTest();
+    for (int i = 0; i < 100; ++i) {
+        QTextCursor cursor(editor.document());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(QStringLiteral(" "));
+        editor.setTextCursor(cursor);
+        model.refreshEditorState(&editor);
+    }
+    const auto edited = model.documentMetadataForEditor(&editor);
+    expect("metadata refresh after 100 edits never materializes text",
+           editor.hotPathMetricsForTest().fullTextMaterializations == 0
+               && edited.text.isEmpty());
+    expect("metadata refresh preserves dirty state, revision and cursor",
+           edited.dirty && !edited.saved
+               && edited.textVersion == original.textVersion + 100
+               && edited.savedTextVersion == original.savedTextVersion
+               && edited.cursorPosition == editor.textCursor().position()
+               && edited.cursorLine == editor.textCursor().blockNumber() + 1);
+    const auto full = model.documentForEditor(&editor);
+    expect("explicit full snapshot still materializes current body",
+           full.text == editor.QPlainTextEdit::toPlainText()
+               && editor.hotPathMetricsForTest().fullTextMaterializations == 1);
+    editor.setDocumentFileName(QStringLiteral("metadata_renamed.sv"));
+    const auto renamed = model.documentMetadataForEditor(&editor);
+    expect("filename signal refresh preserves identity and revision",
+           renamed.fileName.endsWith(QStringLiteral("metadata_renamed.sv"))
+               && renamed.textVersion == edited.textVersion
+               && model.editorForFile(renamed.fileName) == &editor
+               && !model.editorForFile(original.fileName));
+    model.markSaved(&editor);
+    model.refreshEditorState(&editor);
+    const auto saved = model.documentMetadataForEditor(&editor);
+    expect("metadata retains saved revision after explicit save",
+           saved.saved && !saved.dirty && saved.text.isEmpty()
+               && saved.savedTextVersion == edited.textVersion);
+}
+
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
+    runMetadataRefreshRegression();
 
     SharedDocumentRegistry registry;
     const QString fileName =
@@ -608,10 +653,15 @@ int main(int argc, char** argv)
     QSignalSpy managerEditedSpy(
         manager.getDocumentModel(),
         &DocumentModel::documentEdited);
+    firstView->resetHotPathMetricsForTest();
+    secondView->resetHotPathMetricsForTest();
     QTextCursor managedEdit(firstView->document());
     managedEdit.setPosition(
         initialText.indexOf(QStringLiteral("data")));
     managedEdit.insertText(QStringLiteral("shared_"));
+    expect("shared tab metadata updates do not materialize either view",
+           firstView->hotPathMetricsForTest().fullTextMaterializations == 0
+               && secondView->hotPathMetricsForTest().fullTextMaterializations == 0);
     QCoreApplication::processEvents();
     expect("one shared edit publishes one DocumentModel edit",
            managerEditedSpy.size() == 1

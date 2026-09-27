@@ -106,7 +106,9 @@ void WorkspaceSymbolAnalysisController::requestSemanticAnalysis(
         return;
     }
 
-    if (workspaceAnalysisActive) {
+    if (workspaceAnalysisActive || symbolAnalyzer->hasWorkspaceAnalysisInFlight()) {
+        // clear/cancel can retire the logical request before the old watcher
+        // exits. Keep the replacement pending until that slot is really free.
         dropPendingRequest(
             SemanticAnalysisRequestDisposition::Superseded);
         pendingSemanticRequest = request;
@@ -325,9 +327,13 @@ void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisCompleted(
 
 void WorkspaceSymbolAnalysisController::onWorkspaceSymbolAnalysisExpired()
 {
-    if (!workspaceAnalysisActive)
+    if ((!workspaceAnalysisActive && !hasPendingSemanticRequest)
+        || (symbolAnalyzer && symbolAnalyzer->hasWorkspaceAnalysisInFlight())) {
         return;
+    }
 
+    // After clear/cancel there may only be a replacement waiting for the old
+    // worker's acknowledgement. Resolve the retired slot, then start it once.
     notifyActiveRequestDropped(
         SemanticAnalysisRequestDisposition::Expired);
     ProjectSnapshot ignoredPendingProject;

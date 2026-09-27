@@ -39,7 +39,7 @@ public:
     void clearProjectSemanticState();
     bool isWorkspaceAnalysisActive() const
     {
-        return workspaceAnalysisActive;
+        return workspaceAnalysisActive || hasPendingSemanticRequest;
     }
     std::uint64_t activeSemanticGenerationForFile(
         const QString& fileName) const;

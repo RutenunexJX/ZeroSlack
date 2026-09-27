@@ -27,6 +27,7 @@ public:
     WorkspaceAnalysisRequestTelemetry telemetry() const;
 
     void start(const ProjectSnapshot& project);
+    // May wait without a logical active request while a cancelled worker exits.
     bool queueLatest(const ProjectSnapshot& project);
     bool finishAndTakePending(ProjectSnapshot* nextProject);
     WorkspaceAnalysisRequestTelemetry cancel();

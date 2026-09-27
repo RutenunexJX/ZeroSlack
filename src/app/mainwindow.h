@@ -127,6 +127,7 @@ private:
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<TemporaryEditorSearchProvider>
         temporaryEditorSearchProvider;
+    std::uint64_t temporaryEditorCatalogSnapshotRevision = 0;
     std::unique_ptr<EditorActionContextService> editorActionContextService;
     std::unique_ptr<FileCommandCoordinator> fileCommandCoordinator;
     std::unique_ptr<WorkspaceSessionCoordinator>

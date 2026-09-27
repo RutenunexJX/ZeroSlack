@@ -305,6 +305,42 @@ int main(int argc, char** argv)
                && indexedCandidates
                       == reorderedProvider.query(QStringLiteral("dplct")));
 
+    QTemporaryDir identityFixture;
+    const QString identityFile = identityFixture.filePath(QStringLiteral("catalog.sv"));
+    expect("catalog identity fixture exists",
+           identityFixture.isValid()
+               && writeFile(identityFile, QStringLiteral("module catalog; endmodule\n")));
+    QList<SearchResult> sharedFileCatalog;
+    for (int i = 0; i < 512; ++i) {
+        sharedFileCatalog.append(symbolResult(
+            QStringLiteral("cached_symbol_%1").arg(i),
+            SymbolTaxonomy::DeclarationKind::Signal, identityFile, i + 1));
+    }
+    // Same source link reached through another lexical path must still dedup.
+    SearchResult alias = sharedFileCatalog.first();
+    alias.codeLink.fileName = identityFixture.path() + QStringLiteral("/./catalog.sv");
+    sharedFileCatalog.append(alias);
+    sharedFileCatalog.append(sharedFileCatalog.last());
+    TemporaryEditorSearchProvider identityProvider;
+    identityProvider.setSemanticCatalog(sharedFileCatalog);
+    const auto originalIdentityCandidates = identityProvider.query(QStringLiteral("cached_symbol"));
+    expect("repeated file identities retain all distinct symbols and dedup path aliases",
+           originalIdentityCandidates.size() == 512);
+    std::reverse(sharedFileCatalog.begin(), sharedFileCatalog.end());
+    identityProvider.setSemanticCatalog(sharedFileCatalog);
+    expect("per-rebuild identity reuse preserves candidate ordering and locations",
+           identityProvider.query(QStringLiteral("cached_symbol")) == originalIdentityCandidates);
+    sharedFileCatalog = {symbolResult(QStringLiteral("replacement_symbol"),
+                                     SymbolTaxonomy::DeclarationKind::Module,
+                                     identityFixture.filePath(QStringLiteral("not_created.sv")), 7)};
+    identityProvider.setSemanticCatalog(sharedFileCatalog);
+    expect("catalog refresh replaces old symbols and retains unresolved file targets",
+           identityProvider.query(QStringLiteral("cached_symbol")).isEmpty()
+               && identityProvider.query(QStringLiteral("replacement_symbol")).size() == 1);
+    identityProvider.setSemanticCatalog({});
+    expect("catalog clear removes candidates after identity reuse",
+           identityProvider.query(QStringLiteral("replacement_symbol")).isEmpty());
+
     WorkspaceManager refreshWorkspaceManager;
     QObject refreshContext;
     int fileCatalogRefreshCalls = 0;

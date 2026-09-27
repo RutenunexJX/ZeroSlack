@@ -1021,6 +1021,15 @@ bool PinloomCodeLinkStore::addLink(
     return true;
 }
 
+bool PinloomCodeLinkStore::hasLinksForDocument(const QString& filePath) const
+{
+    return std::any_of(anchorRecords.cbegin(), anchorRecords.cend(),
+                       [&](const PinloomCodeLinkAnchorRecord& anchor) {
+        return !anchor.links.isEmpty()
+            && sourceMatchesFile(anchor.source, root, filePath);
+    });
+}
+
 QList<ResolvedPinloomCodeLink> PinloomCodeLinkStore::linksForDocument(
     const QString& filePath,
     const QString& documentText,
