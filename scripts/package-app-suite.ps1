@@ -7,10 +7,12 @@ param(
     [string]$PinloomDirectory,
 
     [Parameter(Mandatory = $true)]
-    [string]$WaveWorkbenchDirectory,
+    [Alias("WaveWorkbenchDirectory")]
+    [string]$TickxDirectory,
 
     [Parameter(Mandatory = $true)]
-    [string]$RegMapWorkbenchDirectory,
+    [Alias("RegMapWorkbenchDirectory")]
+    [string]$CsrioDirectory,
 
     [Parameter(Mandatory = $true)]
     [string]$XipsDirectory,
@@ -26,8 +28,10 @@ param(
     [string]$SuiteName = "AppSuite",
     [string]$ZeroSlackVersion = "",
     [string]$PinloomVersion = "",
-    [string]$WaveWorkbenchVersion = "",
-    [string]$RegMapWorkbenchVersion = "",
+    [Alias("WaveWorkbenchVersion")]
+    [string]$TickxVersion = "",
+    [Alias("RegMapWorkbenchVersion")]
+    [string]$CsrioVersion = "",
     [string]$XipsVersion = "",
     [string]$RuntimeVersion = "",
     [switch]$ReplaceExisting
@@ -73,8 +77,8 @@ function Resolve-ComponentVersion([string]$ExplicitVersion, [string]$Executable)
 
 $zeroSlackSource = Resolve-RequiredDirectory $ZeroSlackDirectory "ZeroSlack"
 $pinloomSource = Resolve-RequiredDirectory $PinloomDirectory "Pinloom"
-$waveSource = Resolve-RequiredDirectory $WaveWorkbenchDirectory "WaveWorkbench"
-$regMapSource = Resolve-RequiredDirectory $RegMapWorkbenchDirectory "RegMapWorkbench"
+$waveSource = Resolve-RequiredDirectory $TickxDirectory "Tickx"
+$regMapSource = Resolve-RequiredDirectory $CsrioDirectory "Csrio"
 $xipsSource = Resolve-RequiredDirectory $XipsDirectory "xIPs"
 $runtimeInstall = Resolve-RequiredDirectory $RuntimeInstallDirectory "Suite Runtime install"
 $toolchainSource = Resolve-RequiredDirectory $ToolchainDirectory "Wave toolchain"
@@ -100,9 +104,9 @@ foreach ($notice in @(
     Assert-RequiredFile $zeroSlackSource $notice
 }
 Assert-RequiredFile $pinloomSource "pinloom_app.exe"
-Assert-RequiredFile $waveSource "wave-workbench.exe"
+Assert-RequiredFile $waveSource "Tickx.exe"
 Assert-RequiredFile $waveSource "wavewidgets.dll"
-Assert-RequiredFile $regMapSource "RegMapWorkbench.exe"
+Assert-RequiredFile $regMapSource "Csrio.exe"
 Assert-RequiredFile $regMapSource "regmapc.exe"
 foreach ($file in @("xips.exe", "xips-cli.exe", "xips-browser.dll", "assets\icons\xips-256.png")) {
     Assert-RequiredFile $xipsSource $file
@@ -137,23 +141,25 @@ if (Test-Path -LiteralPath $stagingDirectory) {
 $appsDirectory = Join-Path $stagingDirectory "Apps"
 $zeroSlackTarget = Join-Path $appsDirectory "ZeroSlack-win64"
 $pinloomTarget = Join-Path $appsDirectory "Pinloom"
-$waveTarget = Join-Path $appsDirectory "WaveWorkbench"
-$regMapTarget = Join-Path $appsDirectory "RegMapWorkbench"
+$waveTarget = Join-Path $appsDirectory "Tickx"
+$regMapTarget = Join-Path $appsDirectory "Csrio"
 $xipsTarget = Join-Path $appsDirectory "xIPs"
 $runtimeTarget = Join-Path $appsDirectory "Runtime"
 $toolchainTarget = Join-Path $appsDirectory "Toolchain"
 
 Copy-DirectoryContents $zeroSlackSource $zeroSlackTarget
-$duplicateWave = Join-Path $zeroSlackTarget "WaveWorkbench"
-if (Test-Path -LiteralPath $duplicateWave -PathType Container) {
-    $stagingRoot = [System.IO.Path]::GetFullPath($stagingDirectory).TrimEnd('\') + '\'
-    $fullDuplicate = [System.IO.Path]::GetFullPath($duplicateWave)
-    if (-not $fullDuplicate.StartsWith(
-            $stagingRoot,
-            [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw "Duplicate WaveWorkbench path is outside staging: $fullDuplicate"
+foreach ($embeddedWaveDirectory in @("Tickx", "WaveWorkbench")) {
+    $duplicateWave = Join-Path $zeroSlackTarget $embeddedWaveDirectory
+    if (Test-Path -LiteralPath $duplicateWave -PathType Container) {
+        $stagingRoot = [System.IO.Path]::GetFullPath($stagingDirectory).TrimEnd('\') + '\'
+        $fullDuplicate = [System.IO.Path]::GetFullPath($duplicateWave)
+        if (-not $fullDuplicate.StartsWith(
+                $stagingRoot,
+                [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Duplicate Tickx path is outside staging: $fullDuplicate"
+        }
+        Remove-Item -LiteralPath $duplicateWave -Recurse -Force
     }
-    Remove-Item -LiteralPath $duplicateWave -Recurse -Force
 }
 Copy-DirectoryContents $pinloomSource $pinloomTarget
 Copy-DirectoryContents $waveSource $waveTarget
@@ -197,15 +203,15 @@ $components = @(
     [ordered]@{
         id = "wave"
         version = Resolve-ComponentVersion `
-            $WaveWorkbenchVersion (Join-Path $waveTarget "wave-workbench.exe")
-        executable = "Apps/WaveWorkbench/wave-workbench.exe"
+            $TickxVersion (Join-Path $waveTarget "Tickx.exe")
+        executable = "Apps/Tickx/Tickx.exe"
         nativeSurfaceAbi = 1
     },
     [ordered]@{
         id = "regmap"
         version = Resolve-ComponentVersion `
-            $RegMapWorkbenchVersion (Join-Path $regMapTarget "RegMapWorkbench.exe")
-        executable = "Apps/RegMapWorkbench/RegMapWorkbench.exe"
+            $CsrioVersion (Join-Path $regMapTarget "Csrio.exe")
+        executable = "Apps/Csrio/Csrio.exe"
     },
     [ordered]@{
         id = "xips"

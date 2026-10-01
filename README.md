@@ -15,7 +15,7 @@ and preview-first RTL editing workflows.
 
 Context Workspace provides independent source, analysis and Pinloom panels.
 The Workspace Hub summary panel has been removed. Explicit Pinloom,
-WaveWorkbench and RegMapWorkbench associations remain available to automation:
+Tickx and Csrio associations remain available to automation:
 
 ```powershell
 zeroslack-cli suite-context <workspace> --file rtl/top.sv --line 42 `
