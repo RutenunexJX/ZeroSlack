@@ -1,4 +1,5 @@
 #include "tsdocument.h"
+#include "structuralinputcontext_p.h"
 #include <cstring>
 #include <algorithm>
 #include <cctype>
@@ -5318,7 +5319,60 @@ bool keywordSymbolName(const char* name)
     }
     return true;
 }
+bool structuralInputNeedsContinuation(const QVector<StructuralInput::Token>& tokens)
+{
+    if (tokens.isEmpty())
+        return false;
+    const auto& last = tokens.last();
+    if (last.text == QLatin1String("or") || last.text == QLatin1String("inside")
+        || last.text == QLatin1String("iff") || last.text == QLatin1String("::"))
+        return true;
+    if (last.text.size() != 1 || !QStringLiteral(",.?=:!~+-*/%&|^<>").contains(last.text))
+        return false;
+
+    // The tolerant lexer splits punctuation. Adjacent ++/-- after an operand
+    // are postfix expressions; prefix ++/-- and separated + + still need one.
+    if ((last.text == QLatin1String("+") || last.text == QLatin1String("-"))
+        && tokens.size() >= 3) {
+        const auto& previous = tokens.at(tokens.size() - 2);
+        const QString& operand = tokens.at(tokens.size() - 3).text;
+        if (previous.text == last.text && previous.end == last.start
+            && (operand == QLatin1String(")") || operand == QLatin1String("]")
+                || operand == QLatin1String("}") || operand == QLatin1String("<escaped-identifier>")
+                || (!operand.isEmpty() && StructuralInput::identifierChar(operand.at(0)))))
+            return false;
+    }
+    return true;
+}
+
+// Bound work on an input event. Prefer the live enclosing module; incomplete
+// modules can appear as ERROR nodes, in which case use a bounded file prefix.
+constexpr int kStructuralInputLimit = 256 * 1024;
+
+template <typename Text>
+int structuralInputStart(TSTree* tree, const Text& text, int cursor)
+{
+    const TSNode previous = lastLeafEndingAtOrBefore(ts_tree_root_node(tree), cursor);
+    const TSNode module = ancestorOfType(previous, "module_declaration");
+    const int moduleStart = ts_node_is_null(module) ? 0 : nodeStartChar(module);
+    const int start = moduleStart > 0
+        ? text.lastIndexOf(QLatin1Char('\n'), moduleStart - 1) + 1 : 0;
+    return cursor - start <= kStructuralInputLimit ? start : -1;
+}
 } // namespace
+
+bool TSDocument::structuralClosingIndent(int tokenStartChar,
+                                        const QString& closing,
+                                        QString* indent) const
+{
+    if (!indent || !m_tree || tokenStartChar < 0 || tokenStartChar > m_text.size())
+        return false;
+    const int start = structuralInputStart(m_tree, m_text, tokenStartChar);
+    if (start < 0)
+        return false;
+    const StructuralInput::Context context(m_text.mid(start, tokenStartChar - start), 4);
+    return context.closingIndent(closing, indent);
+}
 
 TSStructuralNewlineTarget TSDocument::structuralNewlineTarget(
     int cursorChar,
@@ -5343,93 +5397,73 @@ TSStructuralNewlineTarget TSDocument::structuralNewlineTarget(
     target.insertionText =
         QStringLiteral("\n") + cursorIndent;
     target.caretOffset = target.insertionText.size();
-    if (m_text.isEmpty() || boundedCursor <= 0)
+    if (m_text.isEmpty() || boundedCursor <= lineStart + baseIndent.size() || !m_tree)
         return target;
 
-    const TSNode previous =
-        lastLeafEndingAtOrBefore(
-            ts_tree_root_node(m_tree), boundedCursor);
-    if (ts_node_is_null(previous)
-        || !horizontalWhitespaceOnlyBetween(m_text,
-                                            nodeEndChar(previous),
-                                            boundedCursor)
-        || commentOrStringNode(previous)) {
+    const int contextStart = structuralInputStart(m_tree, m_text, boundedCursor);
+    if (contextStart < 0)
         return target;
-    }
+    const StructuralInput::Context context(
+        m_text.mid(contextStart, boundedCursor - contextStart), indentWidth);
+    if (!context.reliable || context.tokens.openLiteral || context.tokens.items.isEmpty())
+        return target;
+    const auto& previous = context.tokens.items.last();
+    if (contextStart + previous.end <= lineStart)
+        return target;
+    target.insertionText = QStringLiteral("\n") + context.nextIndent;
+    target.caretOffset = target.insertionText.size();
 
-    const QString previousText = nodeText(m_text, previous);
+    const QString previousText = previous.text;
     if (previousText == QStringLiteral("begin")) {
-        TSNode block =
-            ancestorOfType(previous, "seq_block");
-        TSNode opening{};
-        TSNode closing{};
-        if (!ts_node_is_null(block)) {
-            keywordBoundaryLeaves(
-                block,
-                m_text,
-                {QStringLiteral("begin")},
-                QStringLiteral("end"),
-                &opening,
-                &closing);
-            if (!ts_node_is_null(opening)
-                && nodeStartChar(opening)
-                       != nodeStartChar(previous)) {
-                block = {};
-                opening = {};
-                closing = {};
+        // Match lexical begin/end nesting, including ERROR nodes and comments.
+        // Do not insert a speculative closer beyond the scan budget.
+        const int beginStart = contextStart + previous.start;
+        if (m_text.size() - beginStart > kStructuralInputLimit)
+            return target;
+        const StructuralInput::Tokens following(m_text.mid(beginStart));
+        int nesting = 0;
+        int closingPosition = -1;
+        for (const auto& token : following.items) {
+            if (token.text == QLatin1String("begin"))
+                ++nesting;
+            else if (token.text == QLatin1String("end") && --nesting == 0) {
+                closingPosition = beginStart + token.start;
+                break;
+            } else if (token.text == QLatin1String("endmodule")) {
+                break;
             }
         }
-
-        const bool hasClosing =
-            !ts_node_is_null(closing)
-            && nodeStartChar(closing) >= boundedCursor;
-        const bool closingOnCurrentLine =
-            hasClosing
-            && ts_node_start_point(closing).row
-                   == ts_node_end_point(previous).row;
-        target.insertionText =
-            QStringLiteral("\n") + childIndent;
+        target.insertionText = QStringLiteral("\n") + childIndent;
         target.caretOffset = target.insertionText.size();
-        if (closingOnCurrentLine) {
-            target.insertionText +=
-                QStringLiteral("\n") + baseIndent;
-        } else if (!hasClosing) {
-            target.insertionText +=
-                QStringLiteral("\n")
-                + baseIndent
-                + QStringLiteral("end");
+        if (closingPosition >= boundedCursor
+            && horizontalWhitespaceOnlyBetween(m_text, boundedCursor, closingPosition)) {
+            target.insertionText += QStringLiteral("\n") + baseIndent;
+        } else if (closingPosition < 0) {
+            target.insertionText += QStringLiteral("\n") + baseIndent + QStringLiteral("end");
             target.insertedClosingKeyword = true;
         }
         return target;
     }
 
-    const TSNode caseContainer =
-        ancestorOfAnyType(
-            previous,
-            {"case_statement",
-             "case_generate_construct",
-             "randcase_statement"});
-    const TSNode caseItem =
-        ancestorOfAnyType(
-            previous,
-            {"case_item",
-             "case_generate_item",
-             "randcase_item"});
-    const bool opensCaseBody =
-        !ts_node_is_null(caseContainer)
-        && ts_node_end_point(previous).row
-               == static_cast<uint32_t>(
-                   m_text.left(boundedCursor)
-                       .count(QLatin1Char('\n')))
-        && (previousText == QStringLiteral(")")
-            || previousText == QStringLiteral("randcase"));
-    const bool opensCaseItem =
-        !ts_node_is_null(caseItem)
-        && previousText == QStringLiteral(":");
-    if (opensCaseBody || opensCaseItem) {
-        target.insertionText =
-            QStringLiteral("\n") + childIndent;
-        target.caretOffset = target.insertionText.size();
+    // Split an empty pair into body + aligned closer. A comma or unfinished
+    // operator still needs content even if auto-pairing already put a closer
+    // on the right. Only a completed item/expression enters closing level.
+    int suffix = boundedCursor;
+    while (suffix < m_text.size()
+           && (m_text.at(suffix) == QLatin1Char(' ') || m_text.at(suffix) == QLatin1Char('\t')))
+        ++suffix;
+    if (suffix < m_text.size()
+        && QStringLiteral(")]}").contains(m_text.at(suffix))) {
+        QString closingIndent;
+        const QString closing(m_text.at(suffix));
+        if (context.closingIndent(closing, &closingIndent)) {
+            if (StructuralInput::closerFor(previousText) == closing)
+                target.insertionText += QStringLiteral("\n") + closingIndent;
+            else if (!structuralInputNeedsContinuation(context.tokens.items)) {
+                target.insertionText = QStringLiteral("\n") + closingIndent;
+                target.caretOffset = target.insertionText.size();
+            }
+        }
     }
     return target;
 }

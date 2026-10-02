@@ -837,6 +837,11 @@ public:
     TSStructuralNewlineTarget structuralNewlineTarget(
         int cursorChar,
         int indentWidth = 4) const;
+    // Indent for a committed standalone terminator; false when context is
+    // ambiguous, inside a literal, or outside the bounded input scan.
+    bool structuralClosingIndent(int tokenStartChar,
+                                 const QString& closing,
+                                 QString* indent) const;
     TSKeywordCompletionTarget uniqueKeywordCompletionAt(
         int cursorChar,
         int minimumPrefixLength = 3) const;

@@ -1,6 +1,6 @@
 # ZeroSlack
 
-Current version: `v0.31.17`
+Current version: `v0.31.18`
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
@@ -149,7 +149,7 @@ root (`D:\PinloomRoot\AppPackage\AppSuite\Apps` on the current machine). Pass ex
 local build and toolchain paths to the packaging script; its defaults refer to the original machine.
 The executable is `ZeroSlack.exe`; the package directory never includes the version.
 Replace the current local package and update the suite manifest and shortcuts.
-The local 0.31.17 replacement retains a recoverable previous-package backup as requested.
+The local 0.31.18 replacement retains a recoverable previous-package backup as requested.
 Releases no longer create ZIP archives. The product
 version is recorded in `VERSION`, the application display and guarded documents.
 When a working-tree package is explicitly requested without committing or tagging, use
@@ -157,9 +157,13 @@ When a working-tree package is explicitly requested without committing or taggin
 a null releaseTag; packaging never creates a commit or tag. The default clean-source
 check remains in force unless -AllowDirty is supplied.
 The former classic release channel is no longer maintained.
+Release 0.31.18 improves indentation while typing module parameter/port lists and
+incomplete or nested if/else, always and case constructs. Closing delimiters and
+end/endcase/endmodule align with their opening structure. Generated delimiter
+tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.31.17`. Ela is now the sole formal package,
+The current release is `0.31.18`. Ela is now the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

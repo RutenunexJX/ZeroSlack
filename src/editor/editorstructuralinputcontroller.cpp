@@ -8,8 +8,13 @@
 #include <QKeyEvent>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextCharFormat>
 
 namespace {
+// A nonvisual document property follows QTextDocument's own undo/redo history.
+// It is never serialized in RTL source or applied to user-authored terminators.
+constexpr int kGeneratedEndProperty = QTextFormat::UserProperty + 0x5356;
+
 bool hasCommandModifier(const QKeyEvent* event)
 {
     if (!event)
@@ -50,6 +55,20 @@ bool syntaxLiteralAt(const TSDocument* document,
     return document->isCommentAt(position)
         || document->isStringAt(position);
 }
+
+bool identifierCharacter(QChar ch)
+{
+    return ch.isLetterOrNumber() || ch == QLatin1Char('_') || ch == QLatin1Char('$');
+}
+
+int indentLength(const QString& text)
+{
+    int length = 0;
+    while (length < text.size()
+           && (text.at(length) == QLatin1Char(' ') || text.at(length) == QLatin1Char('\t')))
+        ++length;
+    return length;
+}
 }
 
 bool EditorStructuralInputController::handleKeyPress(
@@ -58,7 +77,85 @@ bool EditorStructuralInputController::handleKeyPress(
     const EditorSyntaxState& syntax)
 {
     return handleStructuralEnter(editor, event, syntax)
+        || handleKeywordBoundary(editor, event, syntax)
         || handlePairInput(editor, event, syntax);
+}
+
+bool EditorStructuralInputController::alignClosingKeyword(
+    MyCodeEditor* editor, QTextCursor* cursor, const EditorSyntaxState& syntax)
+{
+    if (!editor || !cursor || cursor->hasSelection() || !syntax.tsDocument())
+        return false;
+    const QTextBlock block = cursor->block();
+    const QString text = block.text();
+    const int column = cursor->position() - block.position();
+    const int whitespace = indentLength(text);
+    const QString keyword = text.mid(whitespace, column - whitespace);
+    if (keyword != QLatin1String("end") && keyword != QLatin1String("endcase")
+        && keyword != QLatin1String("endmodule") && keyword != QLatin1String("else"))
+        return false;
+    if (column < text.size() && identifierCharacter(text.at(column)))
+        return false;
+    QString indent;
+    if (!syntax.tsDocument()->structuralClosingIndent(
+            block.position() + whitespace, keyword, &indent))
+        return false;
+
+    // Only a marked generated keyword can be reused. The marker is restored by
+    // undo together with its text, including when the user edits after undo.
+    int duplicateEnd = -1;
+    if (keyword == QLatin1String("end")) {
+        const int documentEnd = editor->document()->characterCount() - 1;
+        int next = cursor->position();
+        while (next < documentEnd && editor->document()->characterAt(next).isSpace())
+            ++next;
+        if (next + 3 <= documentEnd) {
+            QTextCursor generated(editor->document());
+            generated.setPosition(next);
+            generated.setPosition(next + 3, QTextCursor::KeepAnchor);
+            bool marked = generated.selectedText() == QLatin1String("end")
+                && (next + 3 == documentEnd
+                    || !identifierCharacter(editor->document()->characterAt(next + 3)));
+            generated.setPosition(next + 1);
+            generated.setPosition(next + 2, QTextCursor::KeepAnchor);
+            marked = marked && generated.charFormat().boolProperty(kGeneratedEndProperty);
+            if (marked)
+                duplicateEnd = next + 3;
+        }
+    }
+    if (indent == text.left(whitespace) && duplicateEnd < 0)
+        return false;
+    cursor->beginEditBlock();
+    if (duplicateEnd >= 0) {
+        QTextCursor duplicate = *cursor;
+        duplicate.setPosition(duplicateEnd, QTextCursor::KeepAnchor);
+        duplicate.removeSelectedText();
+    }
+    cursor->setPosition(block.position());
+    cursor->setPosition(block.position() + whitespace, QTextCursor::KeepAnchor);
+    cursor->insertText(indent);
+    cursor->setPosition(block.position() + indent.size() + keyword.size());
+    cursor->endEditBlock();
+    return true;
+}
+
+bool EditorStructuralInputController::handleKeywordBoundary(
+    MyCodeEditor* editor, QKeyEvent* event, const EditorSyntaxState& syntax)
+{
+    if (!editor || !event || hasCommandModifier(event) || event->text().size() != 1)
+        return false;
+    const QChar ch = event->text().at(0);
+    if (!ch.isPrint() || identifierCharacter(ch))
+        return false;
+    QTextCursor cursor = editor->textCursor();
+    if (!alignClosingKeyword(editor, &cursor, syntax))
+        return false;
+    cursor.joinPreviousEditBlock();
+    cursor.insertText(event->text());
+    cursor.endEditBlock();
+    editor->setTextCursor(cursor);
+    event->accept();
+    return true;
 }
 
 bool EditorStructuralInputController::handleStructuralEnter(
@@ -77,6 +174,7 @@ bool EditorStructuralInputController::handleStructuralEnter(
     QTextCursor cursor = editor->textCursor();
     if (cursor.hasSelection())
         return false;
+    const bool aligned = alignClosingKeyword(editor, &cursor, syntax);
     const int originalPosition = cursor.position();
     const TSStructuralNewlineTarget target =
         syntax.structuralNewlineTargetAt(
@@ -106,10 +204,24 @@ bool EditorStructuralInputController::handleStructuralEnter(
         }
     }
 
-    cursor.beginEditBlock();
+    if (aligned)
+        cursor.joinPreviousEditBlock();
+    else
+        cursor.beginEditBlock();
     cursor.insertText(target.insertionText);
     cursor.setPosition(
         insertionStart + target.caretOffset);
+    if (target.insertedClosingKeyword) {
+        QTextCursor generated(editor->document());
+        const int end = insertionStart + target.insertionText.size();
+        // Mark only the interior character so typing after "end" cannot inherit
+        // the marker and accidentally turn user text into a generated keyword.
+        generated.setPosition(end - 2);
+        generated.setPosition(end - 1, QTextCursor::KeepAnchor);
+        QTextCharFormat format = generated.charFormat();
+        format.setProperty(kGeneratedEndProperty, true);
+        generated.setCharFormat(format);
+    }
     cursor.endEditBlock();
     editor->setTextCursor(cursor);
     event->accept();
@@ -144,9 +256,28 @@ bool EditorStructuralInputController::handlePairInput(
     const TSDocument* syntaxDocument =
         syntax.tsDocument();
 
+    if (!cursor.hasSelection() && closer.isNull() && syntaxDocument
+        && cursor.position() - cursor.block().position()
+               == indentLength(cursor.block().text())) {
+        QString indent;
+        if (syntaxDocument->structuralClosingIndent(position, QString(typed), &indent)) {
+            const int blockStart = cursor.block().position();
+            cursor.beginEditBlock();
+            cursor.setPosition(blockStart);
+            cursor.setPosition(position, QTextCursor::KeepAnchor);
+            cursor.insertText(indent);
+            if (!skipTrackedCloser(editor, &cursor, typed))
+                cursor.insertText(QString(typed));
+            cursor.endEditBlock();
+            editor->setTextCursor(cursor);
+            event->accept();
+            return true;
+        }
+    }
+
     if (!cursor.hasSelection()
         && closingCharacter(typed)
-        && consumeTrackedCloser(editor, &cursor, typed)) {
+        && skipTrackedCloser(editor, &cursor, typed)) {
         event->accept();
         return true;
     }
@@ -232,6 +363,7 @@ void EditorStructuralInputController::pruneTrackedClosers()
         if (!document
             || position < 0
             || position >= documentEnd
+            || it->endCursor.position() != position + 1
             || document->characterAt(position) != it->value) {
             it = trackedClosers.erase(it);
         } else {
@@ -240,7 +372,7 @@ void EditorStructuralInputController::pruneTrackedClosers()
     }
 }
 
-bool EditorStructuralInputController::consumeTrackedCloser(
+bool EditorStructuralInputController::skipTrackedCloser(
     MyCodeEditor* editor,
     QTextCursor* cursor,
     QChar typed)
@@ -254,7 +386,9 @@ bool EditorStructuralInputController::consumeTrackedCloser(
             || it->value != typed) {
             continue;
         }
-        trackedClosers.erase(it);
+        // Skipping moves the caret; it does not remove the generated character.
+        // Keep its cursor so undo/redo of indentation can move it back with the
+        // text. Only prune a record when its document/character is no longer valid.
         cursor->movePosition(QTextCursor::Right);
         editor->setTextCursor(*cursor);
         return true;
@@ -275,5 +409,12 @@ void EditorStructuralInputController::trackCloser(
                               position,
                               qMax(0, document->characterCount() - 1)));
     cursor.setKeepPositionOnInsert(false);
-    trackedClosers.append({document, cursor, value});
+    // Opposite insertion affinities delimit the actual generated character:
+    // edits on either side move the range, but deletion/replacement collapses
+    // or reverses it instead of transferring provenance to a neighboring closer.
+    QTextCursor endCursor(document);
+    endCursor.setPosition(qMin(cursor.position() + 1,
+                              qMax(0, document->characterCount() - 1)));
+    endCursor.setKeepPositionOnInsert(true);
+    trackedClosers.append({document, cursor, endCursor, value});
 }

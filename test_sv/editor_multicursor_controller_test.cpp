@@ -1183,6 +1183,36 @@ int main(int argc, char* argv[])
 
     {
         MyCodeEditor editor;
+        EditorModeController modes;
+        EditorMultiCursorController controller;
+        TSDocument syntax;
+        const QString original = QStringLiteral(
+            "module first #(\n    parameter N = 1\n);\nendmodule\n"
+            "module second;\n    if (ready)\n        q = d;\nendmodule\n");
+        editor.setPlainText(original);
+        syntax.setText(original);
+        controller.bind(&modes, &editor);
+        const int list = original.indexOf(QStringLiteral("#(")) + 2;
+        const int condition = original.indexOf(QStringLiteral("if (ready)")) + 10;
+        controller.setCarets({point(list), point(condition)});
+        QString expected = original;
+        expected.insert(condition, QStringLiteral("\n        "));
+        expected.insert(list, QStringLiteral("\n    "));
+        expect("multi-caret Enter independently indents module list and if body",
+               controller.insertStructuralNewline(&syntax, 4)
+                   && editor.toPlainText() == expected
+                   && controller.snapshot().carets.at(0).position == list + 5
+                   && controller.snapshot().carets.at(1).position == condition + 14);
+        editor.undo();
+        expect("contextual multi-caret Enter undoes as one edit",
+               editor.toPlainText() == original);
+        editor.redo();
+        expect("contextual multi-caret Enter redoes as one edit",
+               editor.toPlainText() == expected);
+    }
+
+    {
+        MyCodeEditor editor;
         const QString source = QStringLiteral(
             "module readonly_keyword;\n"
             "  always_comb begin\n"

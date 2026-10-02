@@ -27,18 +27,25 @@ private:
         MyCodeEditor* editor,
         QKeyEvent* event,
         const EditorSyntaxState& syntax);
+    bool handleKeywordBoundary(MyCodeEditor* editor,
+                               QKeyEvent* event,
+                               const EditorSyntaxState& syntax);
+    bool alignClosingKeyword(MyCodeEditor* editor,
+                             QTextCursor* cursor,
+                             const EditorSyntaxState& syntax);
 
     struct TrackedCloser {
         QPointer<QTextDocument> document;
         QTextCursor cursor;
+        QTextCursor endCursor;
         QChar value;
     };
     QList<TrackedCloser> trackedClosers;
 
     void pruneTrackedClosers();
-    bool consumeTrackedCloser(MyCodeEditor* editor,
-                              QTextCursor* cursor,
-                              QChar typed);
+    bool skipTrackedCloser(MyCodeEditor* editor,
+                           QTextCursor* cursor,
+                           QChar typed);
     void trackCloser(QTextDocument* document,
                      int position,
                      QChar value);

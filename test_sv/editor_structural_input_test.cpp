@@ -1252,6 +1252,434 @@ int main(int argc, char* argv[])
                    && horizontal->value() == horizontalBeforeRedo);
     }
 
+    // Exercise the same key dispatch used by a new, unsaved RTL document.
+    const auto typeRtl = [](MyCodeEditor& editor, const QString& text) {
+        for (QChar ch : text) {
+            if (ch == QLatin1Char('\n'))
+                QTest::keyClick(&editor, Qt::Key_Return);
+            else
+                sendTextKey(editor, ch.toUpper().unicode(), QString(ch));
+        }
+    };
+    const auto expectEnter = [&](const char* label, const QString& source,
+                                 const QString& insertion) {
+        MyCodeEditor editor;
+        editor.setPlainText(source);
+        setCursor(editor, source.size());
+        typeRtl(editor, QStringLiteral("\n"));
+        const QString result = editor.toPlainText();
+        const int caret = editor.textCursor().position();
+        editor.undo();
+        const bool undid = editor.toPlainText() == source;
+        editor.redo();
+        expect(label, result == source + insertion && undid
+               && editor.toPlainText() == result
+               && editor.textCursor().position() == caret);
+    };
+    expectEnter("unfinished parameter list continues at one indent",
+                QStringLiteral("module m #(\n    parameter W = 8,"),
+                QStringLiteral("\n    "));
+    expectEnter("opening parameter list indents from module header",
+                QStringLiteral("module m #("), QStringLiteral("\n    "));
+    expectEnter("nested port expression preserves its opener indent",
+                QStringLiteral("module m (\n    input logic ["),
+                QStringLiteral("\n        "));
+    expectEnter("completed module header opens module body",
+                QStringLiteral("module m (\n    input clk\n);"),
+                QStringLiteral("\n    "));
+    expectEnter("incomplete if condition keeps continuation indent",
+                QStringLiteral("always_comb begin\n    if (ready &&"),
+                QStringLiteral("\n        "));
+    expectEnter("if condition starts a single statement body",
+                QStringLiteral("always_comb begin\n    if (ready)"),
+                QStringLiteral("\n        "));
+    expectEnter("completed unbraced if returns to the if level",
+                QStringLiteral("always_comb begin\n    if (ready)\n        q = d;"),
+                QStringLiteral("\n    "));
+    expectEnter("always event control opens statement body",
+                QStringLiteral("  always @(posedge clk)"),
+                QStringLiteral("\n      "));
+    expectEnter("incomplete case opens item level without a closing keyword",
+                QStringLiteral("always_comb begin\n    case (state)"),
+                QStringLiteral("\n        "));
+    expectEnter("case item opens its statement body",
+                QStringLiteral("case (state)\n    0:"),
+                QStringLiteral("\n        "));
+    expectEnter("completed case item returns to label level",
+                QStringLiteral("case (state)\n    0:\n        q = d;"),
+                QStringLiteral("\n    "));
+    expectEnter("comments do not hide the if header on Enter",
+                QStringLiteral("if (ready) // endcase begin"),
+                QStringLiteral("\n    "));
+    expectEnter("manual tabs are retained before the default indent step",
+                QStringLiteral("\tif (ready)"), QStringLiteral("\n\t    "));
+
+    // Unlike prefix-only fixtures, real typing already has the auto-paired
+    // closer to the right of the caret when Enter is pressed.
+    const auto expectPairedEnter = [&](const char* label, const QString& prefix,
+                                       int column) {
+        MyCodeEditor editor;
+        typeRtl(editor, prefix);
+        const QString before = editor.toPlainText();
+        const int beforeCaret = editor.textCursor().position();
+        const bool pairedCloserPresent = beforeCaret < before.size()
+            && QStringLiteral(")]}").contains(before.at(beforeCaret));
+        const QString newline = QStringLiteral("\n") + QString(column, QLatin1Char(' '));
+        const QString expected = QString(before).insert(beforeCaret, newline);
+        typeRtl(editor, QStringLiteral("\n"));
+        const bool inserted = editor.toPlainText() == expected
+            && editor.textCursor().position() == beforeCaret + newline.size();
+        editor.undo();
+        const bool undid = editor.toPlainText() == before
+            && editor.textCursor().position() == beforeCaret;
+        editor.redo();
+        expect(label, pairedCloserPresent && inserted && undid && editor.toPlainText() == expected
+               && editor.textCursor().position() == beforeCaret + newline.size());
+    };
+    expectPairedEnter("typed parameter comma before paired closer continues the list",
+                      QStringLiteral("module m #(parameter W = 8,"), 4);
+    expectPairedEnter("typed port comma before paired closer continues the list",
+                      QStringLiteral("module m (input logic clk,"), 4);
+    expectPairedEnter("typed logical and before paired closer continues the condition",
+                      QStringLiteral("if (ready &&"), 4);
+    expectPairedEnter("typed logical or preserves the existing opener indent",
+                      QStringLiteral("  if (ready ||"), 6);
+    expectPairedEnter("typed comparison before paired closer expects an operand",
+                      QStringLiteral("if (ready =="), 4);
+    expectPairedEnter("typed arithmetic operator before paired closer expects an operand",
+                      QStringLiteral("if (count +"), 4);
+    expectPairedEnter("typed unary operator before paired closer expects an operand",
+                      QStringLiteral("if (!"), 4);
+    expectPairedEnter("typed prefix increment before paired closer expects an operand",
+                      QStringLiteral("if (++"), 4);
+    expectPairedEnter("typed ternary colon before paired closer expects an operand",
+                      QStringLiteral("if (a ? b :"), 4);
+    expectPairedEnter("typed range colon before paired bracket continues the range",
+                      QStringLiteral("logic [7:"), 4);
+    expectPairedEnter("typed concatenation comma before paired brace continues its items",
+                      QStringLiteral("assign q = {a,"), 4);
+    expectPairedEnter("typed event or before paired closer continues the event control",
+                      QStringLiteral("always @(posedge clk or"), 4);
+    expectPairedEnter("typed inside before paired closer expects a set expression",
+                      QStringLiteral("if (state inside"), 4);
+    expectPairedEnter("typed shift before paired closer expects an operand",
+                      QStringLiteral("if (count <<"), 4);
+    expectPairedEnter("typed member separator before paired closer expects a member",
+                      QStringLiteral("if (bus."), 4);
+    expectPairedEnter("comment after a typed operator does not finish the expression",
+                      QStringLiteral("if (ready && /* keep going */"), 4);
+    expectPairedEnter("completed parameter before paired closer enters closing level",
+                      QStringLiteral("module m #(parameter W = 8"), 0);
+    expectPairedEnter("completed condition before paired closer enters closing level",
+                      QStringLiteral("if (ready"), 0);
+    expectPairedEnter("postfix increment before paired closer is a completed expression",
+                      QStringLiteral("if (count++"), 0);
+    expectPairedEnter("postfix decrement before paired closer is a completed expression",
+                      QStringLiteral("if (count--"), 0);
+    expectPairedEnter("operator characters inside a string do not imply continuation",
+                      QStringLiteral("if (name == \"&&\""), 0);
+
+    for (const auto& continuation : {
+             qMakePair(QStringLiteral("module m #(parameter W = 8,"),
+                       QStringLiteral("parameter D = 4")),
+             qMakePair(QStringLiteral("if (ready &&"), QStringLiteral("valid"))}) {
+        MyCodeEditor editor;
+        typeRtl(editor, continuation.first + QStringLiteral("\n") + continuation.second
+                            + QStringLiteral("\n"));
+        const QString beforeCloser = editor.toPlainText();
+        const int beforeCaret = editor.textCursor().position();
+        typeRtl(editor, QStringLiteral("    )"));
+        const QString completed = editor.toPlainText();
+        const int completedCaret = editor.textCursor().position();
+        const QString expected = continuation.first + QStringLiteral("\n    ")
+            + continuation.second + QStringLiteral("\n)");
+        editor.undo();
+        typeRtl(editor, QStringLiteral(")"));
+        expect(qPrintable(QStringLiteral("typed continuation finishes and retains closer tracking: ")
+                          + continuation.first),
+               beforeCloser == expected && beforeCaret == expected.size() - 1
+                   && completed == expected && completedCaret == expected.size()
+                   && editor.toPlainText() == completed
+                   && editor.textCursor().position() == completedCaret);
+    }
+
+    const auto expectClosing = [&](const char* label, const QString& source,
+                                   const QString& keys, const QString& expected,
+                                   bool checkUndo = true) {
+        MyCodeEditor editor;
+        editor.setPlainText(source);
+        setCursor(editor, source.size());
+        typeRtl(editor, keys.left(keys.size() - 1));
+        const QString beforeCommit = editor.toPlainText();
+        typeRtl(editor, keys.right(1));
+        const QString result = editor.toPlainText();
+        const int caret = editor.textCursor().position();
+        editor.undo();
+        const bool undid = editor.toPlainText() == beforeCommit;
+        editor.redo();
+        expect(label, result == expected && (!checkUndo || (undid
+               && editor.toPlainText() == result
+               && editor.textCursor().position() == caret)));
+    };
+    expectClosing("manual end aligns and commits with one undo/redo",
+                  QStringLiteral("  always_comb begin\n      "),
+                  QStringLiteral("end\n"),
+                  QStringLiteral("  always_comb begin\n  end\n  "));
+    expectClosing("manual endcase aligns on a space boundary",
+                  QStringLiteral("case (s)\n    0: q = 0;\n        "),
+                  QStringLiteral("endcase "),
+                  QStringLiteral("case (s)\n    0: q = 0;\nendcase "));
+    expectClosing("manual endmodule aligns on Enter",
+                  QStringLiteral("module m;\n    "), QStringLiteral("endmodule\n"),
+                  QStringLiteral("module m;\nendmodule\n"));
+    expectClosing("standalone port closer aligns and undoes once",
+                  QStringLiteral("module m (\n    input clk\n    "),
+                  QStringLiteral(")"),
+                  QStringLiteral("module m (\n    input clk\n)"));
+    expectClosing("end-prefixed identifier retains its indentation",
+                  QStringLiteral("begin\n    "), QStringLiteral("end_signal "),
+                  QStringLiteral("begin\n    end_signal "), false);
+    expectClosing("keyword in comment never aligns",
+                  QStringLiteral("begin\n    // "), QStringLiteral("end "),
+                  QStringLiteral("begin\n    // end "), false);
+    expectClosing("escaped end identifier is not a terminator",
+                  QStringLiteral("begin\n    \\"), QStringLiteral("end "),
+                  QStringLiteral("begin\n    \\end "), false);
+    expectClosing("unterminated string cannot move the line",
+                  QStringLiteral("begin\n    $display(\""), QStringLiteral("end "),
+                  QStringLiteral("begin\n    $display(\"end "), false);
+    expectClosing("nested closing delimiter uses the nearest matching opener",
+                  QStringLiteral("module m (\n    input logic [\n        "),
+                  QStringLiteral("]"),
+                  QStringLiteral("module m (\n    input logic [\n    ]"));
+    expectClosing("dangling else aligns to the nearest unbraced if",
+                  QStringLiteral("if (a)\n    if (b)\n        q = 0;\n"),
+                  QStringLiteral("else "),
+                  QStringLiteral("if (a)\n    if (b)\n        q = 0;\n    else "));
+    expectEnter("nested single-statement if returns to the outer level",
+                QStringLiteral("if (a)\n    if (b)\n        q = 0;"),
+                QStringLiteral("\n"));
+    expectEnter("else opens the matching single statement",
+                QStringLiteral("if (a)\n    q = 0;\nelse"),
+                QStringLiteral("\n    "));
+    expectEnter("else-if condition opens its body",
+                QStringLiteral("if (a)\n    q = 0;\nelse if (b)"),
+                QStringLiteral("\n    "));
+    expectEnter("unterminated block comment keeps its current indentation",
+                QStringLiteral("module m;\n    /* begin if ("),
+                QStringLiteral("\n    "));
+    expectEnter("keywords and delimiters inside a string are opaque",
+                QStringLiteral("module m;\n    $display(\"begin endcase (\");"),
+                QStringLiteral("\n    "));
+    expectEnter("ordinary manually indented statement is not reformatted",
+                QStringLiteral("module m;\n  logic q;"),
+                QStringLiteral("\n  "));
+    expectEnter("existing two-space parameter items keep their chosen indent",
+                QStringLiteral("module m #(\n  parameter N = 1,"),
+                QStringLiteral("\n  "));
+    expectEnter("an inner range does not move the following port item",
+                QStringLiteral("module m (\n  input logic [\n      7:0] data,"),
+                QStringLiteral("\n  "));
+    expectEnter("qualified case keeps the same structural input rule",
+                QStringLiteral("    unique case (state)"), QStringLiteral("\n        "));
+    expectEnter("unrelated multiline statement retains its current indent",
+                QStringLiteral("module m;\n    assign q =\n        a | b;"),
+                QStringLiteral("\n        "));
+    expectClosing("case branch dangling else retains its if alignment",
+                  QStringLiteral("case (s)\n    0:\n        if (a)\n            q = 0;\n    "),
+                  QStringLiteral("else "),
+                  QStringLiteral("case (s)\n    0:\n        if (a)\n            q = 0;\n        else "));
+    {
+        MyCodeEditor editor;
+        editor.setPlainText(QString());
+        typeRtl(editor, QStringLiteral("always_comb begin\nq = 0;\nend"));
+        const QString before = editor.toPlainText();
+        typeRtl(editor, QStringLiteral("\n"));
+        const QString after = editor.toPlainText();
+        editor.undo();
+        const bool undid = editor.toPlainText() == before;
+        editor.redo();
+        expect("manually committed end reuses generated end in one undo transaction",
+               after == QStringLiteral("always_comb begin\n    q = 0;\nend\n")
+                   && undid && editor.toPlainText() == after);
+        editor.undo();
+        typeRtl(editor, QStringLiteral("\n"));
+        expect("undo then retyping end boundary still reuses generated end",
+               editor.toPlainText() == after);
+    }
+    {
+        MyCodeEditor editor;
+        const QString source = QStringLiteral("always_comb begin // begin\nend");
+        editor.setPlainText(source);
+        setCursor(editor, source.indexOf(QLatin1Char('\n')));
+        typeRtl(editor, QStringLiteral("\n"));
+        expect("Enter keeps an existing end despite a trailing comment",
+               editor.toPlainText()
+                   == QStringLiteral("always_comb begin // begin\n    \nend"));
+        editor.undo();
+        expect("existing end split undoes once", editor.toPlainText() == source);
+    }
+    {
+        MyCodeEditor editor;
+        const QString source = QStringLiteral("begin\n    end\nend");
+        editor.setPlainText(source);
+        setCursor(editor, source.indexOf(QStringLiteral("end")) + 3);
+        typeRtl(editor, QStringLiteral(" "));
+        expect("alignment never deletes an adjacent user-authored end",
+               editor.toPlainText() == QStringLiteral("begin\nend \nend"));
+    }
+    {
+        MyCodeEditor editor;
+        editor.setPlainText(QString());
+        typeRtl(editor, QStringLiteral("module m #(\nparameter N = 1"));
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QTest::keyClick(&editor, Qt::Key_Home);
+        typeRtl(editor, QStringLiteral("    "));
+        const QString before = editor.toPlainText();
+        typeRtl(editor, QStringLiteral(")"));
+        const QString after = editor.toPlainText();
+        const int position = editor.textCursor().position();
+        editor.undo();
+        const bool undid = editor.toPlainText() == before;
+        editor.redo();
+        expect("tracked list closer alignment, skip and undo/redo are atomic",
+               after == QStringLiteral("module m #(\n    parameter N = 1\n)")
+                   && undid && editor.toPlainText() == after
+                   && editor.textCursor().position() == position);
+    }
+
+    // A skip does not destroy the generated character. Its provenance must
+    // survive undo/redo of indentation and subsequent edits at that boundary.
+    for (const auto& closerCase : {
+             qMakePair(QStringLiteral("module m #(\nparameter N = 1"), QLatin1Char(')')),
+             qMakePair(QStringLiteral("logic [\n7:0"), QLatin1Char(']')),
+             qMakePair(QStringLiteral("assign q = {\n1'b0"), QLatin1Char('}'))}) {
+        MyCodeEditor editor;
+        typeRtl(editor, closerCase.first);
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QTest::keyClick(&editor, Qt::Key_Home);
+        typeRtl(editor, QStringLiteral("    "));
+        const QString before = editor.toPlainText();
+        const int beforeCaret = editor.textCursor().position();
+        const QString close(closerCase.second);
+        typeRtl(editor, close);
+        const QString first = editor.toPlainText();
+        const int firstCaret = editor.textCursor().position();
+        const auto check = [&](const char* label, bool condition) {
+            expect(qPrintable(QString::fromLatin1(label) + QStringLiteral(" [") + close
+                              + QStringLiteral("]")), condition);
+        };
+        check("generated closer first alignment skips exactly one character",
+              first == QString(before).remove(beforeCaret - 4, 4)
+                  && firstCaret == beforeCaret - 3);
+
+        editor.undo();
+        check("undo restores pre-alignment text and caret",
+              editor.toPlainText() == before && editor.textCursor().position() == beforeCaret);
+        typeRtl(editor, close);
+        check("undo then retype generated closer preserves text and caret",
+              editor.toPlainText() == first && editor.textCursor().position() == firstCaret);
+        editor.undo();
+        editor.redo();
+        check("redo restores generated closer alignment and caret",
+              editor.toPlainText() == first && editor.textCursor().position() == firstCaret);
+        typeRtl(editor, QStringLiteral(";"));
+        check("typing after redo edits after the generated closer",
+              editor.toPlainText() == first + QLatin1Char(';'));
+        editor.undo();
+        editor.undo();
+        typeRtl(editor, close);
+        check("undo past post-redo typing then retype still skips generated closer",
+              editor.toPlainText() == first && editor.textCursor().position() == firstCaret);
+
+        typeRtl(editor, close);
+        setCursor(editor, firstCaret);
+        typeRtl(editor, close);
+        check("newly typed adjacent user closer is inserted rather than skipped",
+              editor.toPlainText() == first + close + close);
+
+        // Same text loaded as user source has no generated-closer provenance.
+        editor.setPlainText(before);
+        setCursor(editor, beforeCaret);
+        typeRtl(editor, close);
+        const QString userFirst = editor.toPlainText();
+        check("matching user-authored closer is never treated as generated",
+              userFirst == first + close);
+        editor.undo();
+        typeRtl(editor, close);
+        check("undo then retype user-authored closer retains ordinary insertion",
+              editor.toPlainText() == userFirst);
+
+        MyCodeEditor deletionEditor;
+        const QString open = close == QLatin1String(")") ? QStringLiteral("(")
+            : close == QLatin1String("]") ? QStringLiteral("[") : QStringLiteral("{");
+        typeRtl(deletionEditor, open + close + close);
+        setCursor(deletionEditor, 2);
+        QTest::keyClick(&deletionEditor, Qt::Key_Backspace);
+        typeRtl(deletionEditor, close);
+        check("deleting the generated closer cannot transfer tracking to its user neighbor",
+              deletionEditor.toPlainText() == open + close + close
+                  && deletionEditor.textCursor().position() == 2);
+    }
+
+    {
+        MyCodeEditor editor;
+        editor.setPlainText(QString());
+        typeRtl(editor, QStringLiteral("module counter #(\n"
+                                      "parameter WIDTH = 8,\n"
+                                      "parameter STEP = 1"));
+        // Move to the existing paired delimiter instead of inserting a second one.
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QTest::keyClick(&editor, Qt::Key_Home);
+        typeRtl(editor, QStringLiteral(") (\n"
+                                      "input logic clk,\n"
+                                      "input logic rst_n,\n"
+                                      "output logic [WIDTH-1:0] q"));
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QTest::keyClick(&editor, Qt::Key_Home);
+        typeRtl(editor, QStringLiteral(");\n"
+                                      "always_ff @(posedge clk) begin\n"
+                                      "if (!rst_n)\n"
+                                      "q <= '0;\n"
+                                      "else begin\n"
+                                      "case (q)\n"
+                                      "0:\n"
+                                      "q <= STEP;\n"
+                                      "default:\n"
+                                      "q <= q + STEP;\n"
+                                      "endcase\n"
+                                      "end\n"
+                                      "end\n"
+                                      "endmodule\n"));
+        const QString expected = QStringLiteral(
+            "module counter #(\n"
+            "    parameter WIDTH = 8,\n"
+            "    parameter STEP = 1\n"
+            ") (\n"
+            "    input logic clk,\n"
+            "    input logic rst_n,\n"
+            "    output logic [WIDTH-1:0] q\n"
+            ");\n"
+            "    always_ff @(posedge clk) begin\n"
+            "        if (!rst_n)\n"
+            "            q <= '0;\n"
+            "        else begin\n"
+            "            case (q)\n"
+            "                0:\n"
+            "                    q <= STEP;\n"
+            "                default:\n"
+            "                    q <= q + STEP;\n"
+            "            endcase\n"
+            "        end\n"
+            "    end\n"
+            "endmodule\n");
+        expect("blank-file continuous module typing has correct structure and indentation",
+               editor.toPlainText() == expected
+                   && editor.textCursor().position() == expected.size());
+        std::printf("[RTL TYPING BEGIN]\n%s[RTL TYPING END]\n",
+                    editor.toPlainText().toUtf8().constData());
+    }
+
     std::printf("%d checks, %d failed\n",
                 checks,
                 failures);

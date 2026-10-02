@@ -1,10 +1,15 @@
-ZeroSlack v0.31.17 Windows package
+ZeroSlack v0.31.18 Windows package
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release
 channel, base commit, branch and dirty source state. An explicitly requested
 working-tree formal package has dirty=true and releaseTag=null. Packaging does
 not create commits or tags; a tag is recorded only when it identifies clean source.
+
+Release 0.31.18 improves structural indentation for module parameter/port lists,
+incomplete or nested if/else, always and case constructs, and manual closing
+delimiters and end/endcase/endmodule. Generated delimiter tracking preserves
+continuation indentation and repeated-close behavior after undo/redo.
 
 Release 0.31.17 fixes workspace-analysis handoff and reduces repeated document,
 search-tree, catalog, Pinloom marker and semantic-query work. Diagnostic-only
