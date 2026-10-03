@@ -125,7 +125,9 @@ void SymbolAnalyzer::startSemanticAnalysisAsync(
                 const bool watcherCancelled = watcher->isCanceled();
                 WorkspaceAnalysisResult result;
                 if (!watcherCancelled)
-                    result = watcher->result();
+                    // Transfer the single result out of the future. The
+                    // publication retirement pool owns its eventual disposal.
+                    result = watcher->future().takeResult();
                 if (workspaceAnalysisWatcher == watcher)
                     workspaceAnalysisWatcher = nullptr;
                 watcher->deleteLater();

@@ -53,10 +53,10 @@ QString normalizedRelativePath(const QString& filePath,
     return QDir::fromNativeSeparators(QDir::cleanPath(relative));
 }
 
-EditorSearchCandidateType typeFor(const SearchResult& result)
+EditorSearchCandidateType typeFor(const SemanticSymbolRecord& record)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
-        semanticMetadataForSymbolRecord(result.symbolRecord);
+        semanticMetadataForSymbolRecord(record);
     if (SymbolTaxonomy::isModuleDeclaration(metadata))
         return EditorSearchCandidateType::Module;
     if (SymbolTaxonomy::isPackageDeclaration(metadata))
@@ -158,8 +158,56 @@ void TemporaryEditorSearchProvider::setWorkspaceFiles(
 void TemporaryEditorSearchProvider::setSemanticCatalog(
     const QList<SearchResult>& semanticCatalog)
 {
-    semanticSourceCatalog = semanticCatalog;
+    semanticSourceCatalog.clear();
+    semanticSourceCatalog.reserve(semanticCatalog.size());
+    for (const SearchResult& match : semanticCatalog) {
+        semanticSourceCatalog.append(catalogEntry(
+            match.symbolRecord, match.symbolDisplayName,
+            match.codeLink, match.symbolStableKey));
+    }
     rebuildSemanticCatalog();
+}
+
+void TemporaryEditorSearchProvider::setSemanticRecords(
+    const QList<SemanticSymbolRecord>& records)
+{
+    // Search needs only presentation and navigation fields. Retaining complete
+    // records keeps large semantic payloads alive until a GUI-thread clear.
+    semanticSourceCatalog.clear();
+    semanticSourceCatalog.reserve(records.size());
+    for (const SemanticSymbolRecord& record : records) {
+        const RtlInsightCodeLink link{
+            record.location.fileName,
+            record.location.startLine,
+            record.location.startColumn,
+            {}, {}};
+        semanticSourceCatalog.append(catalogEntry(
+            record,
+            record.name.isEmpty() ? QStringLiteral("<unknown>") : record.name,
+            link,
+            record.stableKey.isValid() ? record.stableKey : SymbolStableKey{}));
+    }
+    rebuildSemanticCatalog();
+}
+
+TemporaryEditorSearchProvider::SemanticCatalogEntry
+TemporaryEditorSearchProvider::catalogEntry(
+    const SemanticSymbolRecord& record,
+    const QString& displayName,
+    const RtlInsightCodeLink& codeLink,
+    const SymbolStableKey& stableKey)
+{
+    SemanticCatalogEntry entry;
+    entry.title = !displayName.trimmed().isEmpty()
+        ? displayName.trimmed() : record.name.trimmed();
+    entry.owner = record.owner.name.trimmed();
+    entry.type = typeFor(record);
+    entry.location.filePath = codeLink.fileName;
+    entry.location.line = qMax(1, codeLink.line);
+    entry.location.column = qMax(1, codeLink.column);
+    entry.location.symbolKey = entry.title;
+    entry.location.sourceLinkId = stableKey.toString();
+    return entry;
 }
 
 EditorSearchCandidates TemporaryEditorSearchProvider::query(
@@ -229,18 +277,22 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
 {
     QList<IndexedCandidate> rebuilt;
     rebuilt.reserve(semanticSourceCatalog.size());
-    for (const SearchResult& match : semanticSourceCatalog) {
-        if (match.codeLink.fileName.trimmed().isEmpty())
+    QHash<QString, QString> relativePaths;
+    for (const SemanticCatalogEntry& entry : semanticSourceCatalog) {
+        if (entry.location.filePath.trimmed().isEmpty())
             continue;
-        const QString title = !match.symbolDisplayName.trimmed().isEmpty()
-            ? match.symbolDisplayName.trimmed()
-            : match.symbolRecord.name.trimmed();
+        const QString& title = entry.title;
         if (title.isEmpty())
             continue;
-        const QString relative = normalizedRelativePath(
-            match.codeLink.fileName, workspaceRootValue);
-        const QString owner = match.symbolRecord.owner.name.trimmed();
-        const EditorSearchCandidateType type = typeFor(match);
+        auto relativePath = relativePaths.constFind(entry.location.filePath);
+        if (relativePath == relativePaths.cend()) {
+            relativePath = relativePaths.insert(
+                entry.location.filePath,
+                normalizedRelativePath(entry.location.filePath, workspaceRootValue));
+        }
+        const QString& relative = relativePath.value();
+        const QString& owner = entry.owner;
+        const EditorSearchCandidateType type = entry.type;
         const QString typeLabel = editorSearchCandidateTypeLabel(type);
         const QString disambiguation = owner.isEmpty()
             ? QStringLiteral("%1 in %2").arg(typeLabel, relative)
@@ -248,15 +300,7 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
                   .arg(typeLabel, relative, owner);
 
         EditorSearchCandidate candidate;
-        candidate.location = editorLocationFromActionParameters(
-            QVariantMap{
-                {QStringLiteral("path"), match.codeLink.fileName},
-                {QStringLiteral("line"), qMax(1, match.codeLink.line)},
-                {QStringLiteral("column"), qMax(1, match.codeLink.column)},
-                {QStringLiteral("symbolId"), title},
-                {QStringLiteral("sourceLinkId"),
-                 match.symbolStableKey.toString()},
-            });
+        candidate.location = entry.location;
         candidate.title = title;
         candidate.type = type;
         candidate.disambiguation = disambiguation;

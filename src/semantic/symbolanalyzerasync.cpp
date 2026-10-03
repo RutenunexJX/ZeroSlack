@@ -55,6 +55,10 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     semanticRetirementThreadPool.setThreadPriority(QThread::LowestPriority);
     semanticRetirementThreadPool.setObjectName(
         QStringLiteral("ZeroSlackSemanticRetirement"));
+    workspaceRetirementTimer = new QTimer(this);
+    workspaceRetirementTimer->setSingleShot(true);
+    connect(workspaceRetirementTimer, &QTimer::timeout,
+            this, &SymbolAnalyzer::flushDeferredWorkspaceRetirements);
     workspacePublicationTimer = new QTimer(this);
     workspacePublicationTimer->setSingleShot(true);
     connect(workspacePublicationTimer,
@@ -82,7 +86,8 @@ void SymbolAnalyzer::setPublicationRetirementGateForTesting(
 
 int SymbolAnalyzer::pendingPublicationRetirementsForTesting() const
 {
-    return pendingPublicationRetirements->load(std::memory_order_acquire);
+    return pendingPublicationRetirements->load(std::memory_order_acquire)
+        + static_cast<int>(deferredWorkspaceRetirements.size());
 }
 
 int SymbolAnalyzer::publicationRetirementEnqueueCountForTesting() const
@@ -275,7 +280,9 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
                 const bool watcherCancelled = watcher->isCanceled();
                 WorkspaceAnalysisResult result;
                 if (!watcherCancelled)
-                    result = watcher->result();
+                    // Take the single result so deferred watcher deletion
+                    // cannot retain a second bulk payload on the GUI thread.
+                    result = watcher->future().takeResult();
                 if (workspaceAnalysisWatcher == watcher)
                     workspaceAnalysisWatcher = nullptr;
                 watcher->deleteLater();
@@ -387,9 +394,12 @@ void SymbolAnalyzer::shutdown()
     cancelAllFileAnalysesAndWait();
     cancelWorkspaceAnalysisAndWait();
 
-    // Worker watchers and the zero-delay publication timer have now been
-    // detached or cancelled. A retirement submitted after this point would
-    // indicate a real teardown ordering defect.
+    // Shutdown may precede the next GUI turn. Dispatch still-owned workspace
+    // snapshots before sealing, so cancellation never destroys them inline or
+    // leaves their release dependent on another event-loop iteration.
+    flushDeferredWorkspaceRetirements();
+    // Worker watchers and both zero-delay timers are detached or cancelled.
+    // A retirement submitted after this point is a teardown ordering defect.
     publicationRetirementQueueOpen = false;
     waitForPublicationRetirements();
     publicationRetirementGateForTesting = {};

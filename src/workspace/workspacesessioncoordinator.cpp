@@ -433,6 +433,9 @@ bool WorkspaceSessionCoordinator::closeWorkspace(int index)
     if (index < 0 || index >= entries.size())
         return false;
 
+    if (index == workspaceManager->activeWorkspaceIndex()
+        && !workspaceManager->canChangeActiveWorkspace())
+        return false;
     if (index == workspaceManager->activeWorkspaceIndex())
         saveBeforeWorkspaceTransition();
     if (!tabManager->closeTabsInWorkspace(entries.at(index).path))

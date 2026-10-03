@@ -104,7 +104,14 @@ void ContextWorkspaceController::documentClosed(const QString& filePath)
     preservingDocumentLayout = true;
     for (auto* host : floatingWindows()) {
         const QString key = host->resource().stableKey();
-        if (boundDocument(key) == path) closeFloatingResource(key);
+        if (boundDocument(key) == path && !closeFloatingResource(key)) {
+            // The editor has closed, but a simulation or asset operation still
+            // owns this view. Keep its Stop/Cancel controls reachable.
+            documentBindings.remove(key);
+            hiddenFloatingKeys.remove(key);
+            keptFloatingKeys.insert(key);
+            forgetStoredResource(key);
+        }
     }
     preservingDocumentLayout = previous;
     restoringState = previousRestoring;

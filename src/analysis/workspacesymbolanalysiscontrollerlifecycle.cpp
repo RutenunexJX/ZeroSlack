@@ -290,7 +290,10 @@ void WorkspaceSymbolAnalysisController::clearProjectSemanticState()
     }
     EffectiveValueService::getInstance()->clearPublishedFacts();
     emit workspaceRelationshipAnalysisCancelRequested();
-    SemanticIndex::getInstance()->clearSemanticState();
+    if (symbolAnalyzer)
+        symbolAnalyzer->clearSemanticIndex();
+    else
+        SemanticIndex::getInstance()->clearSemanticState();
     emit relationshipDataClearRequested();
     emit diagnosticsRefreshRequested(QString());
 }

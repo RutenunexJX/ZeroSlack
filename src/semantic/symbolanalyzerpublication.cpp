@@ -115,6 +115,11 @@ void SymbolAnalyzer::retirePublicationState(
          pending]() mutable {
             if (gate)
                 gate();
+            // Results retain per-file symbols, facts and dependency edges even
+            // after the prepared snapshot is installed. Release those final
+            // owners off the GUI thread too, before marking retirement done.
+            payload.analysisResult.reset();
+            payload.dependencyGraph = SemanticDependencyGraph();
             payload.effectiveFacts.reset();
             payload.semanticIndex.relationshipState.reset();
             payload.semanticIndex.snapshot.reset();
@@ -123,9 +128,40 @@ void SymbolAnalyzer::retirePublicationState(
         -1);
 }
 
+void SymbolAnalyzer::flushDeferredWorkspaceRetirements()
+{
+    if (workspaceRetirementTimer)
+        workspaceRetirementTimer->stop();
+    auto retirements = std::exchange(
+        deferredWorkspaceRetirements,
+        std::vector<SemanticPublicationRetirementPayload>{});
+    for (auto& retirement : retirements)
+        retirePublicationState(std::move(retirement));
+}
+
 void SymbolAnalyzer::waitForPublicationRetirements()
 {
+    flushDeferredWorkspaceRetirements();
     semanticRetirementThreadPool.waitForDone();
+}
+
+void SymbolAnalyzer::clearSemanticIndex()
+{
+    auto* index = SemanticIndex::getInstance();
+    if (shutdownStarted || !publicationRetirementQueueOpen) {
+        index->clearSemanticState();
+        return;
+    }
+    SemanticPublicationRetirementPayload retirement;
+    retirement.semanticIndex.snapshot = index->snapshot();
+    index->clearSemanticState();
+    if (!retirement.isEmpty()) {
+        // Let workspace activation finish registering watches and notifying
+        // views before bulk destruction competes with those GUI allocations.
+        // Ownership stays here until the timer or a synchronous drain runs.
+        deferredWorkspaceRetirements.push_back(std::move(retirement));
+        workspaceRetirementTimer->start(0);
+    }
 }
 
 void SymbolAnalyzer::publishOpenDocumentResults(
@@ -387,13 +423,18 @@ void SymbolAnalyzer::cancelWorkspacePublication()
 {
     if (workspacePublicationTimer)
         workspacePublicationTimer->stop();
-    pendingWorkspacePublication.reset();
+    SemanticPublicationRetirementPayload retirement;
+    retirement.analysisResult = std::move(pendingWorkspacePublication);
     pendingWorkspacePublicationPath.clear();
     pendingWorkspacePublicationTotalFiles = 0;
     pendingWorkspacePublicationFilesAnalyzed = 0;
     pendingWorkspacePublicationUpdateMs = 0;
     pendingWorkspacePublicationFinalSnapshotMs = 0;
     pendingWorkspacePublicationDiagnostics.clear();
+    // shutdown() calls cancellation before sealing this owned queue, then
+    // joins it. No result or future-owned Qt value is leaked past shutdown.
+    if (publicationRetirementQueueOpen)
+        retirePublicationState(std::move(retirement));
 }
 
 void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
@@ -454,9 +495,11 @@ void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
         SemanticPublicationRetirementPayload retirement;
         retirement.semanticIndex = std::move(retiredIndex);
         retirement.effectiveFacts = std::move(retiredFacts);
-        retirePublicationState(std::move(retirement));
-        if (result.dependencyGraph.isValidFor(result.request.project))
+        if (result.dependencyGraph.isValidFor(result.request.project)) {
+            retirement.dependencyGraph = std::move(semanticDependencyGraph);
             semanticDependencyGraph = result.dependencyGraph;
+        }
+        retirePublicationState(std::move(retirement));
         const qint64 snapshotInstallMs = stageTimer.elapsed();
         const qint64 publicationMs = publicationTimer.elapsed();
         const int totalSymbols = result.totalSymbols;

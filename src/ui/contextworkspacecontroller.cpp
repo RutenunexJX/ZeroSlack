@@ -70,6 +70,7 @@ bool hasBuiltInProviderIcon(const QString& providerId)
         || providerId == QStringLiteral("liveInsights")
         || providerId.startsWith(QStringLiteral("rtlInsight."))
         || providerId == QStringLiteral("xips")
+        || providerId == QStringLiteral("simdock")
         || providerId == QStringLiteral("pinloom");
 }
 
@@ -96,6 +97,7 @@ QIcon contextProviderIcon(
     if (providerId == QStringLiteral("rtlInsight.state")) return icon(StateGraph);
     if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
     if (providerId == QStringLiteral("xips")) return icon(IpCatalog);
+    if (providerId == QStringLiteral("simdock")) return icon(Wave);
     return icon(Bookmark);
 }
 }
@@ -376,6 +378,7 @@ ContextWorkspaceController::ContextWorkspaceController(
 
 ContextWorkspaceController::~ContextWorkspaceController()
 {
+    destroying = true;
     // QWidget may already be deleting the main window's children.
     if (!qobject_cast<QMainWindow*>(window.data())) window.clear();
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -568,6 +571,15 @@ bool ContextWorkspaceController::unregisterProvider(
     auto it = providers.find(id);
     if (it == providers.end())
         return false;
+
+    for (auto* surface : floatingSurfaces())
+        if (surface->resource().providerId == id && !allowClose(surface->resource(), surface->view()))
+            return false;
+    for (int i = 0; dockHostValue && i < dockHostValue->resourceCount(); ++i) {
+        const auto resource = dockHostValue->resourceAt(i);
+        if (resource.providerId == id && !allowClose(resource, viewForResource(resource.stableKey())))
+            return false;
+    }
 
     for (auto* surface : floatingSurfaces()) {
         if (surface->resource().providerId == id)
@@ -807,10 +819,18 @@ bool ContextWorkspaceController::openInFloatingSurface(
         return activateFloatingResource(resource, provider, capabilities, failureReason);
     }
     if (!target) target = floatingSurfaceFor(capabilities);
+    if (target->hasResource() && !allowClose(target->resource(), target->view())) {
+        if (failureReason) *failureReason = tr("The current component is busy.");
+        return false;
+    }
     QWidget* view = createResourceView(resource, provider, dynamic_cast<QWidget*>(target), failureReason);
     if (!view)
         return false;
-    if (target->hasResource()) closeFloatingResource(target->resource().stableKey());
+    if (target->hasResource() && !closeFloatingResource(target->resource().stableKey())) {
+        disposeView(resource, view);
+        if (failureReason) *failureReason = tr("The current component is busy.");
+        return false;
+    }
     activeFloatingSurface = target;
     if (placement.binding == ContextBinding::DocumentBound) documentBindings.insert(key, activeDocumentPath);
     if (placement.persistence == ContextPersistence::Kept) keptFloatingKeys.insert(key);
@@ -866,11 +886,13 @@ bool ContextWorkspaceController::openInDockedSurface(
     case ContextPersistence::Transient:
         if (transientDockResourceKey == key && dockHostValue->containsResource(key)
             && dockHostValue->sectionWidget(key)->isVisible()) {
-            closePinnedResource(key);
-            return true;
+            return closePinnedResource(key);
         }
-        if (!transientDockResourceKey.isEmpty() && transientDockResourceKey != key)
-            closePinnedResource(transientDockResourceKey);
+        if (!transientDockResourceKey.isEmpty() && transientDockResourceKey != key
+            && !closePinnedResource(transientDockResourceKey)) {
+            if (failureReason) *failureReason = tr("The current component is busy.");
+            return false;
+        }
         if (dockHostValue->containsResource(key))
             return activateDockedResource(resource, provider, capabilities, failureReason);
         // Existing previews retain their surface, just as existing dock tabs do.
@@ -991,6 +1013,12 @@ bool ContextWorkspaceController::unpinResource(
         return false;
     }
 
+    const ContextViewCapabilities capabilities = provider->capabilities(resource);
+    ContextFloatingSurface* target = floatingSurfaceFor(capabilities);
+    if (target->hasResource() && !closeFloatingResource(target->resource().stableKey())) {
+        if (failureReason) *failureReason = tr("The current component is busy.");
+        return false;
+    }
     QWidget* view = dockHostValue->takeResource(resourceKey);
     if (!view) {
         if (failureReason)
@@ -999,9 +1027,6 @@ bool ContextWorkspaceController::unpinResource(
     }
     if (transientDockResourceKey == resourceKey)
         transientDockResourceKey.clear();
-    const ContextViewCapabilities capabilities = provider->capabilities(resource);
-    ContextFloatingSurface* target = floatingSurfaceFor(capabilities);
-    if (target->hasResource()) closeFloatingResource(target->resource().stableKey());
     activeFloatingSurface = target;
     floatingSurfaceFor()->setActionsAvailable(
         provider->capabilities(resource).supports(
@@ -1035,6 +1060,7 @@ bool ContextWorkspaceController::closePinnedResource(
     }
     if (!resource.isValid())
         return false;
+    if (!allowClose(resource, viewForResource(resourceKey))) return false;
     const bool transient = transientDockResourceKey == resourceKey;
     QWidget* view = dockHostValue->takeResource(resourceKey);
     if (!view)
@@ -1050,11 +1076,12 @@ bool ContextWorkspaceController::closePinnedResource(
     return true;
 }
 
-void ContextWorkspaceController::closePeek()
+bool ContextWorkspaceController::closePeek()
 {
     if (!peekHostValue || !floatingSurfaceFor()->hasResource())
-        return;
+        return true;
     const ContextResource resource = floatingSurfaceFor()->resource();
+    if (!allowClose(resource, floatingSurfaceFor()->view())) return false;
     QWidget* view = floatingSurfaceFor()->takeView();
     disposeView(resource, view);
     if (!preservingDocumentLayout) forgetStoredResource(resource.stableKey());
@@ -1066,6 +1093,7 @@ void ContextWorkspaceController::closePeek()
     updateActiveRailEntry();
     emit resourceClosed(resource);
     notifyWorkspaceStateChanged();
+    return true;
 }
 
 QString ContextWorkspaceController::workspaceRoot() const
@@ -1073,20 +1101,26 @@ QString ContextWorkspaceController::workspaceRoot() const
     return currentWorkspaceRoot;
 }
 
-void ContextWorkspaceController::setWorkspaceRoot(const QString& root)
+bool ContextWorkspaceController::setWorkspaceRoot(const QString& root)
 {
     const QString normalized = normalizedRoot(root);
     if (sameRoot(currentWorkspaceRoot, normalized))
-        return;
-    clearResources();
+        return true;
+    if (!clearResources()) return false;
     currentWorkspaceRoot = normalized;
     activeDocumentPath.clear();
     lastFloatingGeometry = {};
     setFloatingCollapsed(false);
+    return true;
 }
 
-void ContextWorkspaceController::clearResources()
+bool ContextWorkspaceController::clearResources()
 {
+    QString error;
+    if (!canCloseResources(&error)) {
+        emit resourceCloseRejected(error);
+        return false;
+    }
     floatingDragSource.clear();
     if (dockTransition) dockTransition->finish();
     if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
@@ -1121,6 +1155,7 @@ void ContextWorkspaceController::clearResources()
     restoringState = previousRestoring;
     updateActiveRailEntry();
     notifyWorkspaceStateChanged();
+    return true;
 }
 
 ContextWorkspaceState ContextWorkspaceController::captureState() const
@@ -1226,6 +1261,13 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
     const ContextWorkspaceState& savedState,
     bool preserveRestoredDockGeometry)
 {
+    QString closeError;
+    if (!canCloseResources(&closeError)) {
+        ContextWorkspaceRestoreResult blocked;
+        blocked.warnings.append(closeError);
+        emit resourceCloseRejected(closeError);
+        return blocked;
+    }
     ContextWorkspaceState state = savedState;
     preferredLeftWidth = ContextWorkspaceState::boundedDockWidth(state.leftDockWidth);
     preferredLeftHeight = qBound(160, state.leftDockHeight, 8192);
@@ -1262,7 +1304,11 @@ ContextWorkspaceRestoreResult ContextWorkspaceController::restoreState(
         dock->setFloating(false);
     }
     if (!legacyFloatingDocks.isEmpty()) preserveRestoredDockGeometry = false;
-    clearResources();
+    if (!clearResources()) {
+        restoringState = previousRestoring;
+        result.warnings.append(tr("An embedded component became busy while restoring the workspace."));
+        return result;
+    }
     lastFloatingGeometry = state.valid ? state : ContextWorkspaceState{};
     setFloatingCollapsed(state.valid && state.floatingCollapsed);
     if (state.valid) {
@@ -1535,9 +1581,36 @@ void ContextWorkspaceController::disposeView(
 {
     if (!view)
         return;
-    if (IContextContentProvider* provider = providerFor(resource))
+    if (IContextContentProvider* provider = providerFor(resource)) {
         provider->saveViewState(view);
+        provider->deactivateView(view);
+    }
     view->deleteLater();
+}
+
+bool ContextWorkspaceController::canCloseResources(QString* failureReason) const
+{
+    if (destroying) return true;
+    const auto allowed = [this, failureReason](const ContextResource& resource, QWidget* view) {
+        const auto* provider = providerFor(resource);
+        return !provider || !view || provider->canCloseView(view, failureReason);
+    };
+    for (auto* surface : floatingSurfaces())
+        if (!allowed(surface->resource(), surface->view())) return false;
+    for (int i = 0; dockHostValue && i < dockHostValue->resourceCount(); ++i) {
+        const auto resource = dockHostValue->resourceAt(i);
+        if (!allowed(resource, viewForResource(resource.stableKey()))) return false;
+    }
+    return true;
+}
+
+bool ContextWorkspaceController::allowClose(const ContextResource& resource, QWidget* view)
+{
+    QString error;
+    const auto* provider = providerFor(resource);
+    if (destroying || !provider || !view || provider->canCloseView(view, &error)) return true;
+    emit resourceCloseRejected(error);
+    return false;
 }
 
 void ContextWorkspaceController::handleViewResourceChanged(

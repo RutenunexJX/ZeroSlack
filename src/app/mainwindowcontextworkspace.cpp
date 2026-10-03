@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "../integrations/simdock/simdockcontextprovider.h"
 
 #include "contextworkspacecontroller.h"
 #include "liveinsightscontextprovider.h"
@@ -271,11 +272,29 @@ void MainWindow::setupContextWorkspace()
 
     contextWorkspaceController->registerProvider(
         std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get()));
+    contextWorkspaceController->registerProvider(std::make_unique<SimDockContextProvider>());
+
+    connect(contextWorkspaceController.get(), &ContextWorkspaceController::resourceCloseRejected,
+            this, [this](const QString &reason) { postActivityMessage(reason, 6000); });
+    if (workspaceManager) {
+        const QPointer<ContextWorkspaceController> controller(contextWorkspaceController.get());
+        workspaceManager->setWorkspaceTransitionGuard([controller] {
+            QString error;
+            if (controller && !controller->canCloseResources(&error))
+                return error.isEmpty() ? QStringLiteral("An embedded component is busy.") : error;
+            return QString();
+        });
+    }
 
     requestLiveInsightUpdates();
 }
 
 LiveInsightToolContext MainWindow::activeLiveInsightToolContext() const
+{
+    return activeLiveInsightToolContext(true);
+}
+
+LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocumentText) const
 {
     LiveInsightToolContext context;
     context.workspaceRoot =
@@ -297,7 +316,8 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext() const
     if (context.documentId.isEmpty())
         context.documentId = document.fileName.trimmed();
     context.fileName = document.fileName;
-    context.documentText = editor->cachedDocumentText();
+    if (includeDocumentText)
+        context.documentText = editor->cachedDocumentText();
     context.dirty = document.dirty;
     context.moduleName = document.currentModuleName;
     if (SharedDocument* sharedDocument =
@@ -458,8 +478,10 @@ void MainWindow::requestLiveInsightUpdates()
         tabManager->getCurrentDocumentMetadata();
     SharedDocument* sharedDocument =
         tabManager->sharedDocumentForEditor(editor);
+    // Scheduling uses identity, revision and scope only. The visible tool's
+    // context resolver captures text when the debounced request is executed.
     const LiveInsightToolContext context =
-        activeLiveInsightToolContext();
+        activeLiveInsightToolContext(false);
     const QString workspaceId = !context.workspaceRoot.isEmpty()
         ? QDir::cleanPath(context.workspaceRoot)
         : QStringLiteral("standalone");

@@ -1,6 +1,9 @@
 #include "../src/integrations/xips/xipscontextprovider.h"
 #include "testuistyle.h"
 #include "workspacemanager.h"
+#include <QAbstractButton>
+#include <QAbstractItemView>
+#include <QDialog>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -9,12 +12,14 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QSettings>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QTimer>
 #include <QtTest>
+#include <functional>
 #include <memory>
 
 namespace
@@ -28,6 +33,31 @@ QByteArray get(const QString &path)
 {
     QFile file(path);
     return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{};
+}
+void whenVisible(QWidget *owner, const QString &name, const std::function<void(QWidget *)> &action)
+{
+    auto *timer = new QTimer(owner);
+    QElapsedTimer elapsed; elapsed.start();
+    QObject::connect(timer, &QTimer::timeout, owner, [owner, name, timer, elapsed, action] {
+        for (auto *form : owner->findChildren<QWidget *>(name)) {
+            if (!form->isVisible()) continue;
+            timer->stop(); timer->deleteLater();
+            action(form); return;
+        }
+        if (elapsed.elapsed() > 10000) {
+            timer->stop(); timer->deleteLater();
+            QTest::qFail(qPrintable("Dialog not shown: " + name), __FILE__, __LINE__);
+            for (auto *dialog : owner->findChildren<QDialog *>()) if (dialog->isVisible()) dialog->reject();
+        }
+    });
+    timer->start(10);
+}
+void acceptWhenVisible(QWidget *owner, const QString &name)
+{
+    whenVisible(owner, name, [](QWidget *form) {
+        auto *accept = form->window()->findChild<QAbstractButton *>("formAccept");
+        QVERIFY(accept); accept->click();
+    });
 }
 } // namespace
 
@@ -106,31 +136,31 @@ class XipsContextProviderTest final : public QObject
         const auto hostFont = QApplication::font();
         const auto hostPalette = QApplication::palette();
         std::unique_ptr<QWidget> view(provider.createView(resource, nullptr));
+        QVERIFY2(view->property("nativeComponentReady").toBool(),
+                 qPrintable(view->property("nativeComponentError").toString()));
         QCOMPARE(QApplication::font(), hostFont);
         QCOMPARE(QApplication::palette(), hostPalette);
         view->resize(480, 620);
         view->show();
         auto *panel = view->findChild<QWidget *>("xipsBrowser");
         QVERIFY(panel);
-        auto *collect = panel->findChild<QPushButton *>("collectButton");
-        auto *take = panel->findChild<QPushButton *>("takeButton");
-        auto *versions = panel->findChild<QComboBox *>("versionCombo");
+        auto *collect = panel->findChild<QAbstractButton *>("collectButton");
+        auto *take = panel->findChild<QAbstractButton *>("takeButton");
+        auto *versions = panel->findChild<QAbstractItemView *>("revisionTable");
         QVERIFY(collect);
         QVERIFY(take);
         QVERIFY(versions);
         QTRY_VERIFY(collect->isEnabled());
-        const auto accept = [&]
-        {
-            auto *form = view->findChild<QWidget *>("xipsForm");
-            QVERIFY(form);
-            form->findChild<QPushButton *>("formAccept")->click();
-        };
-        QTimer::singleShot(0, view.get(), accept);
+        acceptWhenVisible(view.get(), "collectName");
+        acceptWhenVisible(view.get(), "payloadReviewForm");
         QVERIFY(QMetaObject::invokeMethod(panel, "collectPaths",
                                           Q_ARG(QStringList, QStringList{source})));
-        QTRY_COMPARE(versions->count(), 1);
+        QTRY_COMPARE(versions->model()->rowCount(), 1);
         QTRY_VERIFY(take->isEnabled());
-        QTimer::singleShot(0, view.get(), accept);
+        QVariantMap state;
+        QVERIFY(QMetaObject::invokeMethod(panel, "saveState", Q_RETURN_ARG(QVariantMap, state)));
+        QVERIFY(!state.value("revision").toString().isEmpty());
+        acceptWhenVisible(view.get(), "exportDestination");
         take->click();
         const auto references = root + "/.zeroslack/xips-references.json";
         QTRY_VERIFY(QFileInfo::exists(references));
@@ -141,14 +171,33 @@ class XipsContextProviderTest final : public QObject
                                .toArray()
                                .first()
                                .toObject();
-        QCOMPARE(entry.value("revision").toString(), QString("1"));
+        QCOMPARE(entry.value("revision").toString(), state.value("revision").toString());
         QCOMPARE(entry.value("path").toString(), QString("uart.sv"));
         QVERIFY(entry.value("contentHash").toString().startsWith("sha256:"));
         const auto screenshots = qEnvironmentVariable("XIPS_SCREENSHOT_DIR");
         if (!screenshots.isEmpty())
             view->grab().save(screenshots + "/zeroslack-xips.png");
+        const auto catalogBusy = [panel] {
+            bool busy = true;
+            QMetaObject::invokeMethod(panel, "isCatalogBusy", Q_RETURN_ARG(bool, busy));
+            return busy;
+        };
+        QTRY_VERIFY(!catalogBusy());
         workspaces.closeWorkspace();
-        QCOMPARE(take->text(), QString("Use…"));
+        QVERIFY(view->property("nativeComponentReady").toBool());
+        bool destinationInspected = false;
+        QString observedDestination;
+        whenVisible(view.get(), "exportDestination", [&](QWidget *form) {
+            auto *destination = qobject_cast<QLineEdit *>(form);
+            QVERIFY(destination);
+            observedDestination = destination->text();
+            destinationInspected = true;
+            auto *dialog = qobject_cast<QDialog *>(destination->window());
+            QVERIFY(dialog); dialog->reject();
+        });
+        take->click();
+        QTRY_VERIFY(destinationInspected);
+        QVERIFY2(observedDestination.isEmpty(), qPrintable(observedDestination));
         view.reset();
         QCOMPARE(QApplication::font(), hostFont);
         QCOMPARE(QApplication::palette(), hostPalette);

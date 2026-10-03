@@ -34,6 +34,7 @@ CMakeLists.txt.user
 CMakeLists.txt.user.*
 *.cmake
 !cmake/source_layout.cmake
+!cmake/NativeComponents.cmake
 !thirdparty/qlementine/cmake/*.cmake
 !scripts/suite_ui_pilot/*.cmake
 

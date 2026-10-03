@@ -733,8 +733,8 @@ void MainWindow::refreshTemporaryEditorSemanticCatalog()
         && temporaryEditorCatalogSnapshotRevision == revision) {
         return;
     }
-    temporaryEditorSearchProvider->setSemanticCatalog(
-        SearchService::getInstance()->symbolCatalog());
+    temporaryEditorSearchProvider->setSemanticRecords(
+        index->getSymbolRecords());
     temporaryEditorCatalogSnapshotRevision = index->snapshot() ? revision : 0;
 }
 
@@ -775,23 +775,25 @@ void MainWindow::setupEditorCentralArea()
                     this,
                     [this](
                         int, const QString&, const QString&) {
-                        refreshTemporaryEditorFileCatalog();
+                        // Drop the old workspace catalog before rebasing file
+                        // paths; otherwise every old symbol is rebuilt first.
                         temporaryEditorCatalogSnapshotRevision = 0;
                         if (temporaryEditorSearchProvider) {
                             temporaryEditorSearchProvider
                                 ->setSemanticCatalog({});
                         }
+                        refreshTemporaryEditorFileCatalog();
                     });
             connect(workspaceManager.get(),
                     &WorkspaceManager::workspaceClosed,
                     this,
                     [this]() {
-                        refreshTemporaryEditorFileCatalog();
                         temporaryEditorCatalogSnapshotRevision = 0;
                         if (temporaryEditorSearchProvider) {
                             temporaryEditorSearchProvider
                                 ->setSemanticCatalog({});
                         }
+                        refreshTemporaryEditorFileCatalog();
                     });
         }
         connect(tabManager.get(),
@@ -5769,6 +5771,12 @@ void MainWindow::setupEditorCoordinator()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    QString componentError;
+    if (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError)) {
+        event->ignore();
+        postActivityMessage(componentError, 6000);
+        return;
+    }
     if (fileCommandCoordinator)
         fileCommandCoordinator->handleCloseEvent(event, this);
     else

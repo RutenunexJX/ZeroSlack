@@ -160,6 +160,7 @@ private:
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
     QIcon getFileIcon(const QString& filePath);
+    QIcon getDirectoryIcon(bool virtualGroup = false);
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void refreshFileTreeIcons();
     void refreshDesignTreeIcons();

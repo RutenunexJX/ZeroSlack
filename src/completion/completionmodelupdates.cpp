@@ -1,6 +1,7 @@
 #include "completionmodel.h"
 
 #include "completionservice.h"
+#include "completioncommandmode.h"
 
 #include <QSet>
 
@@ -382,7 +383,7 @@ void CompletionModel::updateSymbolRecordCompletions(
         }
 
         const CommandSymbolCompletionItem serviceItem =
-            completionService->commandSymbolCompletionItem(record, requestedKind, prefix);
+            CompletionCommandMode::symbolCompletionItem(record, requestedKind, prefix);
         if (addedItems.contains(serviceItem.uniqueKey))
             continue;
         addedItems.insert(serviceItem.uniqueKey);
@@ -435,6 +436,21 @@ void CompletionModel::updateSymbolRecordCompletions(
     }
     if (completions.size() > 32) {
         completions = completions.mid(0, 32);
+    }
+    // Ranking and deduplication need only the presentation key and score.
+    // Resolve parameter/port templates only for modules retained in the popup.
+    if (requestedKind == CompletionCommandKind::Module) {
+        for (CompletionItem& item : completions) {
+            if (item.symbolRecord.name.isEmpty())
+                continue;
+            const CommandSymbolCompletionItem serviceItem =
+                completionService->commandSymbolCompletionItem(
+                    item.symbolRecord, requestedKind, prefix);
+            item.defaultValue = serviceItem.defaultValue;
+            item.selectionStart = serviceItem.selectionStart;
+            item.selectionLength = serviceItem.selectionLength;
+            item.templateSlots = serviceItem.templateSlots;
+        }
     }
     const QList<CompletionAnalysisBandCount> bandCounts =
         completionBandCountsForVisibleSymbols(completions);

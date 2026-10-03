@@ -82,7 +82,7 @@ QString ElaBackend::styleSheet(ThemeMode mode)
         " alternate-background-color: %1; selection-background-color: %3; }"
         "QHeaderView::section { background: %4; color: %2; border: 0; padding: 5px; }"
         "QTabWidget::pane { border: 0; background: %1; }"
-        "QAbstractSpinBox { min-height: 30px; }"
+        "QAbstractSpinBox[zeroslackElaControl=true] { min-height: 30px; }"
         "QPlainTextEdit[codeEditorSurface=true] { border: 0; padding: 0; }"
         "QGroupBox { border: 1px solid %5; border-radius: 6px; margin-top: 12px; padding-top: 8px; }"
         "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }")

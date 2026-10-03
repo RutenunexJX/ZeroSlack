@@ -264,10 +264,51 @@ int main(int argc, char** argv)
     indexedProvider.setSemanticCatalog(completeCatalog);
     const EditorSearchCandidates indexedCandidates =
         indexedProvider.query(QStringLiteral("dplct"));
+    TemporaryEditorSearchProvider compactProvider;
+    compactProvider.setWorkspaceFiles(
+        {QStringLiteral("/workspace/a/duplicate.sv"),
+         QStringLiteral("/workspace/b/duplicate.sv"),
+         QStringLiteral("/workspace/unrelated.sv")},
+        QStringLiteral("/workspace"));
+    compactProvider.setSemanticRecords(catalogIndex.getSymbolRecords());
+    expect("compact semantic records preserve complete search results and navigation",
+           compactProvider.query(QStringLiteral("dplct")) == indexedCandidates);
+    compactProvider.setWorkspaceFiles({}, QStringLiteral("/workspace/rtl"));
+    TemporaryEditorSearchProvider rebasedCatalogProvider;
+    rebasedCatalogProvider.setWorkspaceFiles({}, QStringLiteral("/workspace/rtl"));
+    rebasedCatalogProvider.setSemanticCatalog(completeCatalog);
+    expect("compact semantic catalog preserves rebasing and metadata ordering",
+           compactProvider.query(QStringLiteral("dplct"))
+               == rebasedCatalogProvider.query(QStringLiteral("dplct")));
     catalogIndex.clearSemanticState();
     expect("per-keystroke search uses its cached catalog",
            indexedProvider.query(QStringLiteral("dplct"))
                == indexedCandidates);
+    expect("compact catalog remains independent of the released source index",
+           compactProvider.query(QStringLiteral("dplct"))
+               == rebasedCatalogProvider.query(QStringLiteral("dplct")));
+
+    SemanticSymbolRecord unknownRecord;
+    unknownRecord.location.fileName = QStringLiteral("/workspace/unknown.sv");
+    unknownRecord.location.startLine = 0;
+    unknownRecord.location.startColumn = -1;
+    unknownRecord.owner.name = QStringLiteral(" owner ");
+    catalogIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords({unknownRecord})));
+    const auto unknownRecords = catalogIndex.getSymbolRecords();
+    compactProvider.setSemanticRecords(unknownRecords);
+    rebasedCatalogProvider.setSemanticCatalog(catalogService.symbolCatalog());
+    const auto unknownCandidates = compactProvider.query(QStringLiteral("unknown"));
+    expect("compact catalog keeps unknown names, invalid-key fallback and clamped locations",
+           unknownCandidates == rebasedCatalogProvider.query(QStringLiteral("unknown"))
+               && unknownCandidates.size() == 1
+               && unknownCandidates.first().title == QStringLiteral("<unknown>")
+               && unknownCandidates.first().location.line == 1
+               && unknownCandidates.first().location.column == 1);
+    compactProvider.setSemanticRecords({});
+    expect("clearing compact semantic records removes old candidates",
+           compactProvider.query(QStringLiteral("unknown")).isEmpty());
+    catalogIndex.clearSemanticState();
     int fileCount = 0;
     int moduleCount = 0;
     int packageCount = 0;
@@ -329,6 +370,20 @@ int main(int argc, char** argv)
     std::reverse(sharedFileCatalog.begin(), sharedFileCatalog.end());
     identityProvider.setSemanticCatalog(sharedFileCatalog);
     expect("per-rebuild identity reuse preserves candidate ordering and locations",
+           identityProvider.query(QStringLiteral("cached_symbol")) == originalIdentityCandidates);
+    identityProvider.setWorkspaceFiles({identityFile}, identityFixture.path());
+    const auto relativeCandidates = identityProvider.query(QStringLiteral("cached_symbol"));
+    expect("workspace root refresh rebases every symbol sharing a file",
+           relativeCandidates.size() == originalIdentityCandidates.size()
+               && std::all_of(relativeCandidates.cbegin(), relativeCandidates.cend(),
+                   [&](const EditorSearchCandidate& candidate) {
+                       return candidate.disambiguation.contains(QStringLiteral("in catalog.sv"))
+                           && QDir::cleanPath(candidate.location.filePath) == QDir::cleanPath(identityFile)
+                           && candidate.location.line > 0
+                           && candidate.location.column > 0;
+                   }));
+    identityProvider.setWorkspaceFiles({}, QString());
+    expect("clearing workspace root restores the original semantic search catalog",
            identityProvider.query(QStringLiteral("cached_symbol")) == originalIdentityCandidates);
     sharedFileCatalog = {symbolResult(QStringLiteral("replacement_symbol"),
                                      SymbolTaxonomy::DeclarationKind::Module,

@@ -16,6 +16,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <vector>
 #include "effectivevalueservice.h"
 #include "semanticanalysisrequest.h"
 #include "semanticdependencygraph.h"
@@ -120,10 +121,12 @@ struct FileAnalysisResult {
 struct SemanticPublicationRetirementPayload {
     SemanticIndexRetirementPayload semanticIndex;
     std::shared_ptr<EffectiveValueService::RetiredFactsState> effectiveFacts;
+    std::unique_ptr<WorkspaceAnalysisResult> analysisResult;
+    SemanticDependencyGraph dependencyGraph;
 
     bool isEmpty() const
     {
-        return semanticIndex.isEmpty() && !effectiveFacts;
+        return semanticIndex.isEmpty() && !effectiveFacts && !analysisResult && dependencyGraph.isEmpty();
     }
 };
 
@@ -179,6 +182,9 @@ public:
     // Terminal shutdown. Closes every analysis / publication entry before
     // joining workers and the retirement pool; the analyzer cannot be reused.
     void shutdown();
+    // Clear visible index state now, then dispatch the former snapshot to the
+    // owned retirement pool after this GUI turn. Shutdown drains both queues.
+    void clearSemanticIndex();
     void cancelWorkspaceAnalysisAndInvalidate();
     // Test-only gate. Runs on the worker thread and must return once the
     // supplied cancellation predicate becomes true.
@@ -226,6 +232,8 @@ private:
     SemanticDependencyGraph semanticDependencyGraph;
     QThreadPool semanticAnalysisThreadPool;
     QThreadPool semanticRetirementThreadPool;
+    QTimer* workspaceRetirementTimer = nullptr;
+    std::vector<SemanticPublicationRetirementPayload> deferredWorkspaceRetirements;
     PublicationRetirementGateForTesting publicationRetirementGateForTesting;
     std::shared_ptr<std::atomic<int>> pendingPublicationRetirements =
         std::make_shared<std::atomic<int>>(0);
@@ -286,6 +294,7 @@ private:
         qint64 finalSnapshotMs);
     void retirePublicationState(
         SemanticPublicationRetirementPayload payload);
+    void flushDeferredWorkspaceRetirements();
     void waitForPublicationRetirements();
     QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();

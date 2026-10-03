@@ -199,8 +199,7 @@ bool ContextWorkspaceController::closeFloatingResource(const QString& key)
     auto* surface = surfaceWithResource(key);
     if (!surface) return false;
     activeFloatingSurface = surface;
-    closePeek();
-    return true;
+    return closePeek();
 }
 
 bool ContextWorkspaceController::pinFloatingResource(const QString& key, bool bottom, int index)

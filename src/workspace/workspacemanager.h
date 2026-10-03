@@ -82,6 +82,8 @@ public:
     std::uint64_t projectSnapshotMaterializationCountForTesting() const;
     void resetProjectSnapshotMaterializationCountForTesting();
     bool switchWorkspace(int index);
+    void setWorkspaceTransitionGuard(std::function<QString()> guard);
+    bool canChangeActiveWorkspace() const;
 
     // File management
     QStringList getAllFiles() const;
@@ -159,6 +161,7 @@ private:
     QList<WorkspaceEntry> workspaces;
     QList<WorkspaceEntry> recentWorkspaces;
     int activeIndex = -1;
+    std::function<QString()> workspaceTransitionGuard;
     WorkspaceFiles files;
     WorkspaceWatcher watcher;
     std::unique_ptr<ProjectModel> projectModel;

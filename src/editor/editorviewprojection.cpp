@@ -61,6 +61,32 @@ void EditorViewProjection::ensure(
     const int blockCount = editor->document()->blockCount();
     const int viewportHeight = editor->viewport()->height();
     const int viewportWidth = editor->viewport()->width();
+    if (collapsedRanges.isEmpty()) {
+        // An unfolded view uses Qt's lazy native layout. Asking for every
+        // block's height here would shape the entire document on first open.
+        const bool wasActive = projectionActive;
+        if (dirty || wasActive || editor->document() != cachedDocument
+            || blockCount != cachedBlockCount
+            || !cachedCollapsedRanges.isEmpty()) {
+            visibleSourceLines.clear();
+            sourceToVisibleRows.clear();
+            visibleRowTops.clear();
+            visibleRowHeights.clear();
+            projectedDocumentHeight = 0.0;
+            cachedCollapsedRanges.clear();
+            cachedRowHeight = -1.0;
+            ++metricValues.rebuilds;
+        }
+        projectionActive = false;
+        cachedDocument = editor->document();
+        cachedBlockCount = blockCount;
+        cachedViewportHeight = viewportHeight;
+        cachedViewportWidth = viewportWidth;
+        dirty = false;
+        if (wasActive)
+            restoreCanonicalVerticalScrollBar(editor);
+        return;
+    }
     QAbstractTextDocumentLayout* layout = editor->document()->documentLayout();
     const qreal rowHeight = blockHeight(layout,
                                         editor->document()->begin(),
@@ -89,6 +115,8 @@ bool EditorViewProjection::active() const
 
 bool EditorViewProjection::sourceLineVisible(int sourceLine) const
 {
+    if (!projectionActive)
+        return sourceLine >= 0 && sourceLine < cachedBlockCount;
     return sourceLine >= 0
         && sourceLine < sourceToVisibleRows.size()
         && sourceToVisibleRows.at(sourceLine) >= 0;
@@ -96,6 +124,8 @@ bool EditorViewProjection::sourceLineVisible(int sourceLine) const
 
 int EditorViewProjection::visibleRowForSourceLine(int sourceLine) const
 {
+    if (!projectionActive)
+        return sourceLineVisible(sourceLine) ? sourceLine : -1;
     return sourceLine >= 0 && sourceLine < sourceToVisibleRows.size()
         ? sourceToVisibleRows.at(sourceLine)
         : -1;
@@ -103,6 +133,8 @@ int EditorViewProjection::visibleRowForSourceLine(int sourceLine) const
 
 int EditorViewProjection::sourceLineForVisibleRow(int visibleRow) const
 {
+    if (!projectionActive)
+        return sourceLineVisible(visibleRow) ? visibleRow : -1;
     return visibleRow >= 0 && visibleRow < visibleSourceLines.size()
         ? visibleSourceLines.at(visibleRow)
         : -1;
@@ -110,7 +142,7 @@ int EditorViewProjection::sourceLineForVisibleRow(int visibleRow) const
 
 int EditorViewProjection::visibleRowCount() const
 {
-    return visibleSourceLines.size();
+    return projectionActive ? visibleSourceLines.size() : qMax(0, cachedBlockCount);
 }
 
 QTextBlock EditorViewProjection::nextVisibleBlock(
@@ -119,6 +151,8 @@ QTextBlock EditorViewProjection::nextVisibleBlock(
 {
     if (!editor || !editor->document() || !block.isValid())
         return {};
+    if (!projectionActive)
+        return block.next();
     const auto next = std::upper_bound(visibleSourceLines.cbegin(),
                                        visibleSourceLines.cend(),
                                        block.blockNumber());
@@ -303,6 +337,8 @@ int EditorViewProjection::rowAtViewportY(MyCodeEditor* editor, int y) const
 QTextBlock EditorViewProjection::firstVisibleBlock(
     MyCodeEditor* editor) const
 {
+    if (editor && !projectionActive)
+        return editor->firstVisibleBlock();
     if (!editor || !editor->document() || visibleSourceLines.isEmpty())
         return {};
     return editor->document()->findBlockByNumber(
@@ -314,6 +350,10 @@ EditorProjectionGeometry EditorViewProjection::blockGeometry(
     int sourceLine) const
 {
     EditorProjectionGeometry result;
+    if (editor && !projectionActive) {
+        const auto geometry = editor->blockGeometry(sourceLine);
+        return {geometry.top, geometry.height};
+    }
     if (!editor || visibleSourceLines.isEmpty())
         return result;
     const int row = visibleRowForSourceLine(sourceLine);
@@ -337,6 +377,8 @@ QRectF EditorViewProjection::blockBoundingGeometry(
     MyCodeEditor* editor,
     const QTextBlock& block) const
 {
+    if (editor && !projectionActive)
+        return editor->blockBoundingGeometry(block);
     const int row = visibleRowForSourceLine(block.blockNumber());
     if (row < 0)
         return QRectF(0.0, blockGeometry(editor, block.blockNumber()).top,
@@ -351,6 +393,8 @@ QRectF EditorViewProjection::blockBoundingRect(
     MyCodeEditor* editor,
     const QTextBlock& block) const
 {
+    if (editor && !projectionActive)
+        return editor->blockBoundingRect(block);
     const int row = visibleRowForSourceLine(block.blockNumber());
     return QRectF(0.0,
                   0.0,
@@ -360,6 +404,8 @@ QRectF EditorViewProjection::blockBoundingRect(
 
 QPointF EditorViewProjection::contentOffset(MyCodeEditor* editor) const
 {
+    if (editor && !projectionActive)
+        return editor->contentOffset();
     if (!editor || visibleSourceLines.isEmpty())
         return {};
     const int first = firstVisibleRow(editor);
@@ -379,6 +425,8 @@ QTextCursor EditorViewProjection::cursorForPosition(
 {
     if (!editor || !editor->document())
         return {};
+    if (!projectionActive)
+        return editor->cursorForPosition(position);
     const int row = rowAtViewportY(editor, position.y());
     const int sourceLine = sourceLineForVisibleRow(row);
     QTextBlock block = editor->document()->findBlockByNumber(sourceLine);
@@ -415,6 +463,8 @@ QRect EditorViewProjection::cursorRect(
 {
     if (!editor || !editor->document() || cursor.isNull())
         return {};
+    if (!projectionActive)
+        return editor->cursorRect(cursor);
     const QTextBlock block = cursor.block();
     int row = visibleRowForSourceLine(block.blockNumber());
     if (row < 0)

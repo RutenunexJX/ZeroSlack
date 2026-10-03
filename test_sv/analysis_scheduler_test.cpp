@@ -3351,6 +3351,98 @@ void runRelationshipReplacementUsesEvidenceOwner()
            remainingInstantiationCount == 1);
 }
 
+void runWorkspaceClearRetiresSnapshotWithoutPublishingStaleState()
+{
+    std::atomic_bool releaseRetirement{false};
+    SymbolAnalyzer analyzer;
+    auto* index = SemanticIndex::getInstance();
+    index->clearSemanticState();
+    SemanticSymbolRecord record;
+    record.name = QStringLiteral("retired_workspace_symbol");
+    record.location.fileName = QStringLiteral("retired_workspace.sv");
+    record.localHandle = 1;
+    auto snapshot = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords({record}));
+    const std::weak_ptr<const SemanticIndexSnapshot> retired = snapshot;
+    index->setSnapshot(snapshot);
+    snapshot.reset();
+    const auto revision = index->snapshotRevision();
+    analyzer.setPublicationRetirementGateForTesting([&]() {
+        while (!releaseRetirement.load(std::memory_order_acquire))
+            QThread::msleep(2);
+    });
+    const int enqueuedBeforeClear =
+        analyzer.publicationRetirementEnqueueCountForTesting();
+    analyzer.clearSemanticIndex();
+    expect("workspace clear invalidates index before old snapshot destruction",
+           !index->snapshot() && index->getSymbolRecords().isEmpty()
+               && index->snapshotRevision() > revision
+               && !retired.expired()
+               && analyzer.pendingPublicationRetirementsForTesting() == 1);
+    expect("workspace retirement waits until after the synchronous transition",
+           analyzer.publicationRetirementEnqueueCountForTesting()
+               == enqueuedBeforeClear);
+
+    record.name = QStringLiteral("current_workspace_symbol");
+    auto current = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords({record}));
+    index->setSnapshot(current);
+    releaseRetirement.store(true, std::memory_order_release);
+    expect("workspace snapshot retirement drains on its owned pool",
+           waitUntil([&]() {
+               return analyzer.pendingPublicationRetirementsForTesting() == 0;
+           }, 5000) && retired.expired());
+    expect("retiring old workspace cannot replace current publication",
+           index->snapshot() == current
+               && index->getSymbolRecordsByName(QStringLiteral("retired_workspace_symbol")).isEmpty()
+               && index->getSymbolRecordsByName(QStringLiteral("current_workspace_symbol")).size() == 1);
+    analyzer.shutdown();
+    const int enqueued = analyzer.publicationRetirementEnqueueCountForTesting();
+    analyzer.clearSemanticIndex();
+    expect("workspace clear after shutdown cannot enqueue new retirement",
+           !index->snapshot() && analyzer.pendingPublicationRetirementsForTesting() == 0
+               && analyzer.publicationRetirementEnqueueCountForTesting() == enqueued
+               && analyzer.rejectedPublicationRetirementsForTesting() == 0);
+}
+
+void runWorkspaceRetirementDrainsWithoutAnotherGuiTurn()
+{
+    SymbolAnalyzer analyzer;
+    auto* index = SemanticIndex::getInstance();
+    index->clearSemanticState();
+    std::vector<std::weak_ptr<const SemanticIndexSnapshot>> retired;
+    for (int i = 0; i < 2; ++i) {
+        SemanticSymbolRecord record;
+        record.name = QStringLiteral("deferred_workspace_%1").arg(i);
+        record.location.fileName = QStringLiteral("deferred_workspace.sv");
+        record.localHandle = 1;
+        auto snapshot = std::make_shared<const SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolRecords({record}));
+        retired.push_back(snapshot);
+        index->setSnapshot(std::move(snapshot));
+        analyzer.clearSemanticIndex();
+    }
+    expect("successive workspace clears retain both old states without stale visibility",
+           !index->snapshot() && index->getSymbolRecords().isEmpty()
+               && !retired[0].expired() && !retired[1].expired()
+               && analyzer.pendingPublicationRetirementsForTesting() == 2
+               && analyzer.publicationRetirementEnqueueCountForTesting() == 0);
+    // No processEvents / qWait: teardown must dispatch and drain pending
+    // zero-delay work itself, then cancel its timer before sealing the pool.
+    analyzer.shutdown();
+    expect("shutdown before timer delivery drains every deferred workspace state",
+           retired[0].expired() && retired[1].expired()
+               && analyzer.pendingPublicationRetirementsForTesting() == 0
+               && analyzer.publicationRetirementEnqueueCountForTesting() == 2
+               && analyzer.rejectedPublicationRetirementsForTesting() == 0);
+    const auto revision = index->snapshotRevision();
+    QCoreApplication::processEvents();
+    expect("a stopped workspace retirement timer cannot enqueue or republish after shutdown",
+           !index->snapshot() && index->snapshotRevision() == revision
+               && analyzer.publicationRetirementEnqueueCountForTesting() == 2
+               && analyzer.rejectedPublicationRetirementsForTesting() == 0);
+}
+
 void runPreparedPublicationRetirementIsOrderedAndShutdownSafe()
 {
     QTemporaryDir directory;
@@ -4027,6 +4119,93 @@ void runEditIdleLargeFileMeasurement()
            && fixture.declarationMatchesText(QStringLiteral("selected_signal")));
 }
 
+void runWorkerNormalizedPathLookup()
+{
+    QTemporaryDir directory;
+    SemanticAnalysisRequest request;
+    request.generation = 1;
+    request.reason = SemanticAnalysisReason::WorkspaceOpen;
+    request.impactHint = SemanticChangeImpact::WorkspaceConfig;
+    request.project.workspaceRoot = directory.path();
+    request.project.includeDirs = {directory.path()};
+    bool written = directory.isValid();
+    for (int index = 0; index < 12; ++index) {
+        const QString name = QStringLiteral("unit_%1").arg(index);
+        const QString fileName = directory.filePath(name + QStringLiteral(".sv"));
+        const QByteArray text = QStringLiteral(
+            "module %1(input logic a, output logic y);\n"
+            "  assign y = a;\nendmodule\n").arg(name).toUtf8();
+        QFile file(fileName);
+        written = written && file.open(QIODevice::WriteOnly)
+            && file.write(text) == text.size();
+        request.project.systemVerilogFiles.append(fileName);
+    }
+    expect("worker path lookup fixtures are writable", written);
+    if (!written)
+        return;
+    request.project.allFiles = request.project.systemVerilogFiles;
+    request.changedFiles = request.project.systemVerilogFiles;
+    const auto reference = IncrementalSemanticAnalysisWorker::analyze(request, {}, {}, {});
+    expect("worker canonical path fixture completes",
+           reference.preparedSnapshot && reference.error.isEmpty() && !reference.cancelled);
+    if (!reference.preparedSnapshot)
+        return;
+    for (QString& fileName : request.project.systemVerilogFiles) {
+        fileName = QFileInfo(fileName).absolutePath() + QStringLiteral("/./")
+            + QFileInfo(fileName).fileName();
+#ifdef Q_OS_WIN
+        fileName = QDir::toNativeSeparators(fileName.toUpper());
+#endif
+    }
+    request.project.allFiles = request.project.systemVerilogFiles;
+    request.changedFiles = request.project.systemVerilogFiles;
+    ++request.generation;
+    const auto aliased = IncrementalSemanticAnalysisWorker::analyze(request, {}, {}, {});
+    expect("worker aliased path fixture completes",
+           aliased.preparedSnapshot && aliased.error.isEmpty() && !aliased.cancelled);
+    if (!aliased.preparedSnapshot)
+        return;
+    const auto recordSignature = [](const SemanticSymbolRecord& record) {
+        QString file = QDir::cleanPath(QDir::fromNativeSeparators(record.location.fileName));
+#ifdef Q_OS_WIN
+        file = file.toCaseFolded();
+#endif
+        return QStringLiteral("%1|%2|%3|%4|%5|%6|%7")
+            .arg(file, record.name, record.owner.name)
+            .arg(int(record.declarationKind)).arg(record.location.startLine)
+            .arg(record.location.startColumn).arg(record.location.length);
+    };
+    const auto signatures = [&](const SemanticIndexSnapshot& snapshot) {
+        QStringList symbols, relationships;
+        for (const auto& record : snapshot.symbolRecordsView())
+            symbols.append(recordSignature(record));
+        for (const auto& edge : snapshot.relationshipsView()) {
+            relationships.append(QStringLiteral("%1>%2|%3|%4|%5")
+                .arg(recordSignature(snapshot.getSymbolRecordByStableKey(edge.fromStableKey)),
+                     recordSignature(snapshot.getSymbolRecordByStableKey(edge.toStableKey)))
+                .arg(int(edge.type)).arg(int(edge.provenance)).arg(edge.evidenceText));
+        }
+        symbols.sort();
+        relationships.sort();
+        return qMakePair(symbols, relationships);
+    };
+    const auto expected = signatures(*reference.preparedSnapshot);
+    const auto actual = signatures(*aliased.preparedSnapshot);
+    expect("normalized worker lookup retains all declaration positions",
+           !expected.first.isEmpty() && expected.first == actual.first);
+    expect("normalized worker lookup retains relationship endpoints and evidence",
+           !expected.second.isEmpty() && expected.second == actual.second);
+    expect("normalized worker lookup retains per-file source content",
+           reference.preparedSnapshot->getCachedFileContent(request.changedFiles.first())
+               == aliased.preparedSnapshot->getCachedFileContent(request.changedFiles.first())
+               && reference.preparedSnapshot->fileContents().size()
+                   == aliased.preparedSnapshot->fileContents().size());
+    const auto cancelled = IncrementalSemanticAnalysisWorker::analyze(
+        request, {}, {}, [] { return true; });
+    expect("cancelled indexed worker cannot produce a publishable snapshot",
+           cancelled.cancelled && !cancelled.preparedSnapshot);
+}
+
 void runSavedTextMatchingSnapshotSkipsAnalysis()
 {
     QTemporaryDir directory;
@@ -4126,9 +4305,12 @@ int main(int argc, char** argv)
     runTriviaSaveRemapsSourceLocationsWithoutSlang();
     runRelationshipReplacementUsesEvidenceOwner();
     runDesignHierarchyTopologyFingerprint();
+    runWorkspaceClearRetiresSnapshotWithoutPublishingStaleState();
+    runWorkspaceRetirementDrainsWithoutAnotherGuiTurn();
     runPreparedPublicationRetirementIsOrderedAndShutdownSafe();
     runFailedAnalysisRetainsLastValidSnapshot();
     runSavedTextMatchingSnapshotSkipsAnalysis();
+    runWorkerNormalizedPathLookup();
     runEditIdleTriviaAllowsDirtyBuffer();
     runEditIdleDeclarationLineMatchesEditedText();
     runEditIdleSeparatedTriviaMapsMiddleSymbol();

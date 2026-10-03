@@ -91,11 +91,12 @@ public:
     bool unpinResource(const QString& resourceKey,
                        QString* failureReason = nullptr);
     bool closePinnedResource(const QString& resourceKey);
-    void closePeek();
+    bool closePeek();
+    bool canCloseResources(QString* failureReason = nullptr) const;
 
     QString workspaceRoot() const;
-    void setWorkspaceRoot(const QString& root);
-    void clearResources();
+    bool setWorkspaceRoot(const QString& root);
+    bool clearResources();
     ContextWorkspaceState captureState() const;
     ContextWorkspaceRestoreResult restoreState(
         const ContextWorkspaceState& state,
@@ -109,6 +110,7 @@ signals:
     void activeResourceChanged(const ContextResource& resource);
     void fullViewRequested(const ContextResource& resource);
     void workspaceStateChanged();
+    void resourceCloseRejected(const QString& reason);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -169,6 +171,7 @@ private:
     int preferredDockWidthValue =
         ContextWorkspaceState::kDefaultDockWidth;
     bool restoringState = false;
+    bool destroying = false;
     bool applyingDockWidth = false;
     bool applyingBottomHeight = false;
 
@@ -178,6 +181,7 @@ private:
         const QString& providerId) const;
     void disposeView(const ContextResource& resource,
                      QWidget* view);
+    bool allowClose(const ContextResource& resource, QWidget* view);
     void handleViewResourceChanged(
         QWidget* view,
         const ContextResource& resource);

@@ -8,6 +8,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileSystemWatcher>
+#include <QElapsedTimer>
 #include <QSignalSpy>
 #include <QStandardPaths>
 #include <QTabWidget>
@@ -47,6 +49,57 @@ bool writeFile(const QString& path, const QByteArray& content)
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
     return file.write(content) == content.size();
+}
+
+void checkRestoredWorkspaceWatches()
+{
+    QTemporaryDir root;
+    const QString a = root.filePath(QStringLiteral("a"));
+    const QString b = root.filePath(QStringLiteral("b"));
+    const QString aFile = a + QStringLiteral("/rtl/a.sv");
+    const QString bFile = b + QStringLiteral("/rtl/b.sv");
+    check(root.isValid() && writeFile(aFile, "module a; endmodule\n")
+              && writeFile(bFile, "module b; endmodule\n"),
+          "watch restoration fixtures are writable");
+    WorkspaceManager manager;
+    manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+    auto waitFor = [](const std::function<bool()>& ready) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!ready() && timer.elapsed() < 5000)
+            QTest::qWait(10);
+        return ready();
+    };
+    auto scanFinished = [&] {
+        const auto entries = manager.workspaceEntries();
+        const int active = manager.activeWorkspaceIndex();
+        return active >= 0 && entries.at(active).scanComplete;
+    };
+    check(manager.openWorkspace(a) && waitFor(scanFinished)
+              && manager.openWorkspace(b) && waitFor(scanFinished)
+              && manager.switchWorkspace(0),
+          "loaded workspace watch restoration succeeds");
+    auto* watcher = manager.findChild<QFileSystemWatcher*>();
+    check(watcher && watcher->files().contains(cleanPath(aFile))
+              && !watcher->files().contains(cleanPath(bFile)),
+          "restored watches immediately belong to the active workspace");
+    QSignalSpy changed(&manager, &WorkspaceManager::fileChanged);
+    check(writeFile(aFile, "module a; logic changed; endmodule\n")
+              && waitFor([&] { return !changed.isEmpty(); }),
+          "restored file watch still reports external edits");
+    const QString added = a + QStringLiteral("/rtl/added.sv");
+    check(writeFile(added, "module added; endmodule\n")
+              && waitFor([&] {
+                     return manager.getSystemVerilogFiles().contains(cleanPath(added));
+                 }),
+          "restored directory watch still discovers new source files");
+    check(manager.switchWorkspace(1) && manager.switchWorkspace(0)
+              && manager.closeWorkspace(0),
+          "rapid switch and close keep the remaining workspace active");
+    check(watcher && watcher->files().contains(cleanPath(bFile))
+              && !watcher->files().contains(cleanPath(aFile))
+              && !watcher->files().contains(cleanPath(added)),
+          "quick close cannot leave watches on the retired workspace");
 }
 
 void setCursor(MyCodeEditor* editor, int line, int column)
@@ -318,6 +371,7 @@ int main(int argc, char* argv[])
 
     check(!lastStatus.isEmpty(),
           "coordinator reports user-visible lifecycle status");
+    checkRestoredWorkspaceWatches();
     std::cout << (checks - failures) << "/" << checks
               << " workspace session coordinator checks passed\n";
     return failures == 0 ? 0 : 1;

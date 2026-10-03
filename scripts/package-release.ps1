@@ -4,6 +4,8 @@ param(
     [string]$OutputDirectory = '',
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
+    [string]$XipsPackageDirectory = '',
+    [string]$SimDockPackageDirectory = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
@@ -41,16 +43,80 @@ foreach ($name in $binaries) {
 }
 New-Item -ItemType Directory -Path $outputRoot | Out-Null
 foreach ($name in $binaries) { Copy-Item -LiteralPath (Join-Path $buildRoot $name) -Destination $outputRoot }
+$deployTargets = @($binaries | ForEach-Object { Join-Path $outputRoot $_ })
+$nativeComponents = [ordered]@{}
+foreach ($component in @(
+    @{ id='xips'; package=$XipsPackageDirectory; setting='ZEROSLACK_XIPS_COMPONENT_DIR'; files=@('xips-browser.dll','xips-browser-impl.dll','XipsEla.dll') },
+    @{ id='simdock'; package=$SimDockPackageDirectory; setting='ZEROSLACK_SIMDOCK_COMPONENT_DIR'; files=@('simdock-workbench.dll','SimDockEla.dll','simdock-workbench.json') }
+)) {
+    $configured = $cache | Where-Object { $_ -match "^$($component.setting):[^=]+=(.+)$" }
+    $componentRoot = if ($component.package) {
+        (Resolve-Path -LiteralPath $component.package).Path
+    } else { Join-Path $buildRoot "components/$($component.id)" }
+    if (-not (Test-Path -LiteralPath $componentRoot -PathType Container)) {
+        if ($configured) { throw "Configured native component is missing: $componentRoot" }
+        continue
+    }
+    $componentFiles = @($component.files)
+    if ($component.id -eq 'simdock') {
+        $workbench = Get-Content -LiteralPath (Join-Path $componentRoot 'simdock-workbench.json') -Raw | ConvertFrom-Json
+        $hasWave = Test-Path -LiteralPath (Join-Path $componentRoot 'wavewidgets.dll')
+        if ($hasWave -or (Test-Path -LiteralPath (Join-Path $componentRoot 'WaveWorkbenchEla.dll'))) {
+            $componentFiles += @('wavewidgets.dll', 'WaveWorkbenchEla.dll')
+        }
+    }
+    $componentTarget = Join-Path $outputRoot "components/$($component.id)"
+    New-Item -ItemType Directory -Path $componentTarget | Out-Null
+    foreach ($name in $componentFiles) {
+        $source = Join-Path $componentRoot $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing native runtime: $source" }
+        $target = Join-Path $componentTarget $name
+        Copy-Item -LiteralPath $source -Destination $target
+        if ($name.EndsWith('.dll')) { $deployTargets += $target }
+    }
+    $componentInfo = $null
+    $infoPath = Join-Path $componentRoot 'build-info.json'
+    if (Test-Path -LiteralPath $infoPath -PathType Leaf) {
+        $componentInfo = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json
+        if ($Formal -and ($componentInfo.channel -ne 'formal' -or $componentInfo.dirty -or $componentInfo.sourceDirty)) {
+            throw "Native component package is not a clean formal release: $componentRoot"
+        }
+        Copy-Item -LiteralPath $infoPath -Destination $componentTarget
+    } elseif ($Formal -and $component.package) {
+        throw "Native component package has no build-info.json: $componentRoot"
+    }
+    foreach ($name in @('xips-capabilities.json')) {
+        $path = Join-Path $componentRoot $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) { Copy-Item -LiteralPath $path -Destination $componentTarget }
+    }
+    $componentNotices = Join-Path $outputRoot "licenses/components/$($component.id)"
+    foreach ($name in @('licenses', 'vendor', 'THIRD-PARTY-NOTICES.md')) {
+        $path = Join-Path $componentRoot $name
+        if (Test-Path -LiteralPath $path) {
+            New-Item -ItemType Directory -Path $componentNotices -Force | Out-Null
+            Copy-Item -LiteralPath $path -Destination $componentNotices -Recurse
+        }
+    }
+    $nativeComponents[$component.id] = [ordered]@{
+        directory="components/$($component.id)"; files=$componentFiles
+        version=$(if ($componentInfo) { $componentInfo.version } else { $null })
+        revision=$(if ($componentInfo.revision) { $componentInfo.revision } elseif ($componentInfo.sourceCommit) { $componentInfo.sourceCommit } else { $null })
+    }
+}
 & (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
-    --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot `
-    (Join-Path $outputRoot 'ZeroSlack.exe') (Join-Path $outputRoot 'libzeroslack_core.dll') `
-    (Join-Path $outputRoot 'ElaWidgetTools.dll') (Join-Path $outputRoot 'zeroslack-cli.exe')
+    --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot @deployTargets
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
+if ($nativeComponents.Contains('xips')) {
+    $sqlDrivers = Join-Path $outputRoot 'sqldrivers'
+    New-Item -ItemType Directory -Path $sqlDrivers -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $QtDirectory 'bin/Qt6Sql.dll') -Destination $outputRoot -Force
+    Copy-Item -LiteralPath (Join-Path $QtDirectory 'plugins/sqldrivers/qsqlite.dll') -Destination $sqlDrivers -Force
+}
 foreach ($name in @('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll')) {
     Copy-Item -LiteralPath (Join-Path $CompilerDirectory "bin/$name") -Destination $outputRoot
 }
 $licenseRoot = Join-Path $outputRoot 'licenses'
-New-Item -ItemType Directory -Path $licenseRoot | Out-Null
+New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
 $licenses = [ordered]@{
     'slang-MIT.txt' = 'thirdparty/slang/LICENSE'
     'tree-sitter-MIT.txt' = 'thirdparty/tree_sitter/LICENSE'
@@ -91,7 +157,8 @@ if ($Formal -and -not $dirty) {
     if ($matchingTags -contains "v$version") { $releaseTag = "v$version" }
 }
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
-    releaseTag=$releaseTag; backend='ela'; qt='6.10.2';
+    releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
+    appSuiteEnabled=$false; distribution='standalone';
     upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 Get-ChildItem -LiteralPath $outputRoot -File -Recurse | Sort-Object FullName | ForEach-Object {

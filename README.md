@@ -1,6 +1,12 @@
 # ZeroSlack
 
-Current version: `v0.31.18`
+Current version: `v0.31.19`
+
+This release embeds xIPs and SimDock as native workspace panels without requiring
+the SuiteApp SDK, and retains the editor, search and workspace-response changes.
+Known limitation: full workspace readiness still has an unresolved performance
+regression. The unsuccessful dependency-facts cache has been withdrawn; this
+release does not claim that end-to-end analysis performance is fixed.
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and

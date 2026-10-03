@@ -107,25 +107,20 @@ bool loadContents(const QStringList& files,
     return true;
 }
 
-QString contentByFile(const QHash<QString, QString>& contents,
-                      const QString& fileName)
+template<typename Value>
+QHash<QString, const Value*> indexByNormalizedPath(
+    const QHash<QString, Value>& values)
 {
-    const QString target = normalizedWorkerPath(fileName);
-    for (auto it = contents.constBegin(); it != contents.constEnd(); ++it) {
-        if (normalizedWorkerPath(it.key()) == target)
-            return it.value();
+    QHash<QString, const Value*> indexed;
+    indexed.reserve(values.size());
+    for (auto it = values.constBegin(); it != values.constEnd(); ++it) {
+        const QString key = normalizedWorkerPath(it.key());
+        // Keep the same first match as the former per-file linear lookup.
+        // The owner stays immutable throughout this analysis request.
+        if (!indexed.contains(key))
+            indexed.insert(key, &it.value());
     }
-    return QString();
-}
-
-bool containsFile(const QStringList& files, const QString& fileName)
-{
-    const QString target = normalizedWorkerPath(fileName);
-    for (const QString& candidate : files) {
-        if (normalizedWorkerPath(candidate) == target)
-            return true;
-    }
-    return false;
+    return indexed;
 }
 
 QList<SemanticSymbolRecord> recordsWithRevisions(
@@ -175,18 +170,6 @@ QList<SemanticRelationship> semanticRelationships(
         result.append(std::move(item));
     }
     return result;
-}
-
-const RelationshipExtractionInfo* relationshipInfoForFile(
-    const QHash<QString, RelationshipExtractionInfo>& infoByFile,
-    const QString& fileName)
-{
-    const QString target = normalizedWorkerPath(fileName);
-    for (auto it = infoByFile.constBegin(); it != infoByFile.constEnd(); ++it) {
-        if (normalizedWorkerPath(it.key()) == target)
-            return &it.value();
-    }
-    return nullptr;
 }
 
 std::uint64_t documentRevisionForFile(
@@ -505,9 +488,12 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
 
     QList<SemanticFileSymbolUpdate> updates;
     QList<SemanticDiagnostic> affectedDiagnostics;
+    QSet<QString> affectedFileKeys;
+    affectedFileKeys.reserve(result.incrementalPlan.affectedFiles.size());
+    for (const QString& fileName : result.incrementalPlan.affectedFiles)
+        affectedFileKeys.insert(normalizedWorkerPath(fileName));
     for (WorkspaceFileAnalysis& fileResult : grouped.files) {
-        if (!containsFile(result.incrementalPlan.affectedFiles,
-                          fileResult.fileName)) {
+        if (!affectedFileKeys.contains(normalizedWorkerPath(fileResult.fileName))) {
             continue;
         }
         const std::uint64_t documentRevision =
@@ -534,8 +520,7 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
                 fileResult.content));
     }
     for (const SemanticDiagnostic& diagnostic : allDiagnostics) {
-        if (containsFile(result.incrementalPlan.affectedFiles,
-                         diagnostic.fileName)) {
+        if (affectedFileKeys.contains(normalizedWorkerPath(diagnostic.fileName))) {
             SemanticDiagnostic current = diagnostic;
             current.computationRevision = computationRevision;
             current.documentRevision =
@@ -578,22 +563,25 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         [&preliminary](const QString& fileName) {
             return preliminary.getSymbolRecords(fileName);
         });
+    const auto contentsByKey = indexByNormalizedPath(compilationContents);
+    const auto infoByKey = indexByNormalizedPath(infoByFile);
     QList<SemanticRelationship> newRelationships;
     for (const QString& fileName : result.incrementalPlan.relationshipFiles) {
         if (cancelled()) {
             relationshipBuilder.cancelAnalysis();
             return finishCancelled();
         }
-        const QString content = contentByFile(compilationContents, fileName);
+        const QString fileKey = normalizedWorkerPath(fileName);
+        const QString* content = contentsByKey.value(fileKey, nullptr);
         const QVector<RelationshipToAdd> computed =
             relationshipBuilder.computeRelationships(
                 fileName,
-                content,
+                content ? *content : QString(),
                 preliminary.getSymbolRecords(fileName),
                 &preliminary,
                 request.project.includeDirs,
                 request.project.defines,
-                relationshipInfoForFile(infoByFile, fileName));
+                infoByKey.value(fileKey, nullptr));
         newRelationships.append(semanticRelationships(computed));
     }
     result.relationshipBuildMs = stageTimer.elapsed();

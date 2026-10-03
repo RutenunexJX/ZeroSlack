@@ -223,6 +223,7 @@ private:
         const QString& moduleName,
         const QString& signalAccessPath);
     LiveInsightToolContext activeLiveInsightToolContext() const;
+    LiveInsightToolContext activeLiveInsightToolContext(bool includeDocumentText) const;
     // Runs the editor-side target picker for one insight kind and hands the
     // chosen target back to the section that asked.
     bool beginLiveInsightTargetPick(

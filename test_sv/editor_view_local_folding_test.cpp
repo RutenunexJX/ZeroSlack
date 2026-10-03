@@ -493,6 +493,79 @@ void exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection()
            allBlocksCanonicalVisible(editor.document()));
 }
 
+void exerciseLargeUnfoldedViewKeepsNativeLayout()
+{
+    QString text = QStringLiteral("module unfolded;\ninitial begin\n");
+    for (int line = 0; line < 10000; ++line)
+        text += QStringLiteral("// untouched line %1\n").arg(line);
+    text += QStringLiteral("end\nendmodule\n// editable tail ")
+        + QString(200, QLatin1Char('a'));
+
+    ProjectionTestEditor editor;
+    editor.resize(720, 420);
+    editor.show();
+    editor.setPlainText(text);
+    editor.acceptLoadedTextAsSemanticBaseline();
+    expect("large unfolded open does not scan source rows for a projection",
+           !editor.viewProjectionActive()
+               && editor.viewProjectionMetricsForTest()
+                      .sourceRowsVisitedDuringRebuild == 0);
+    QTextCursor cursor(editor.document());
+    cursor.movePosition(QTextCursor::End);
+    editor.setTextCursor(cursor);
+    editor.ensureCursorVisible();
+    cursor.beginEditBlock();
+    for (int index = 0; index < 100; ++index)
+        editor.insertPlainText(QStringLiteral("x"));
+    cursor.endEditBlock();
+    renderEditor(&editor);
+    expect("100 unfolded edits keep lazy layout and the final row visible",
+           editor.viewProjectionMetricsForTest()
+                   .sourceRowsVisitedDuringRebuild == 0
+               && editor.sourceLineVisible(editor.document()->blockCount() - 1)
+               && !editor.sourceLineVisible(editor.document()->blockCount()));
+    editor.undo();
+    expect("unfolded input retains undo", editor.toPlainText() == text);
+    editor.redo();
+    expect("unfolded input retains redo",
+           editor.toPlainText() == text + QString(100, QLatin1Char('x')));
+
+    editor.setLineWrapMode(QPlainTextEdit::WidgetWidth);
+    editor.resize(420, 300);
+    QFont font = editor.font();
+    if (font.pointSize() > 0)
+        font.setPointSize(font.pointSize() + 2);
+    else
+        font.setPixelSize(qMax(12, font.pixelSize()) + 2);
+    editor.setFont(font);
+    editor.ensureCursorVisible();
+    pumpEvents();
+    const QRect nativeCursor =
+        editor.QPlainTextEdit::cursorRect(editor.textCursor());
+    expect("unfolded wrapping and font changes retain native cursor geometry",
+           !nativeCursor.isEmpty() && editor.cursorRect() == nativeCursor
+               && editor.cursorForPosition(nativeCursor.center()).position()
+                   == editor.QPlainTextEdit::cursorForPosition(
+                          nativeCursor.center()).position());
+    expect("unfolded resize and font changes do not scan the projection",
+           editor.viewProjectionMetricsForTest()
+                   .sourceRowsVisitedDuringRebuild == 0);
+
+    expect("lazy unfolded view can still collapse a large fold",
+           editor.toggleFoldAtLineForTest(1)
+               && editor.viewProjectionActive()
+               && !editor.sourceLineVisible(2));
+    expect("expanding the last fold restores native line visibility",
+           editor.toggleFoldAtLineForTest(1)
+               && !editor.viewProjectionActive()
+               && editor.sourceLineVisible(2)
+               && editor.sourceLineVisible(editor.document()->blockCount() - 1));
+    editor.setPlainText(QStringLiteral("module replacement;\nendmodule\n"));
+    expect("unfolded document replacement updates identity mapping bounds",
+           editor.sourceLineVisible(2) && !editor.sourceLineVisible(3)
+               && allBlocksCanonicalVisible(editor.document()));
+}
+
 void exerciseDrawerHistoryRestoresPerEntryFolds()
 {
     QTemporaryDir temporaryDirectory;
@@ -650,6 +723,7 @@ int main(int argc, char** argv)
     exerciseTwoViewsOwnTheirFoldPresentation();
     exerciseFoldAnchorBoundariesAndFindReveal();
     exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection();
+    exerciseLargeUnfoldedViewKeepsNativeLayout();
     exerciseDrawerHistoryRestoresPerEntryFolds();
     exerciseShiftWheelHorizontalScroll();
     std::printf("Checks: %d, Failures: %d\n", checks, failures);

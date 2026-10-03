@@ -131,8 +131,13 @@ void WorkspaceManager::WorkspaceWatcher::updatePaths(
 
     QSet<QString> desiredDirectories;
     QSet<QString> desiredFiles;
-    const auto addDirectory = [&desiredDirectories](const QString& path) {
-        const QFileInfo info(path);
+    QSet<QString> checkedDirectories;
+    const auto addDirectory = [&desiredDirectories, &checkedDirectories](const QString& path) {
+        const QString candidate = QDir::cleanPath(path);
+        if (checkedDirectories.contains(candidate))
+            return;
+        checkedDirectories.insert(candidate);
+        const QFileInfo info(candidate);
         if (info.exists() && info.isDir())
             desiredDirectories.insert(QDir::cleanPath(info.absoluteFilePath()));
     };
@@ -140,8 +145,8 @@ void WorkspaceManager::WorkspaceWatcher::updatePaths(
     for (const QString& directory : directories)
         addDirectory(directory);
     for (const QString& file : files) {
-        addDirectory(QFileInfo(file).absolutePath());
         const QFileInfo info(file);
+        addDirectory(info.absolutePath());
         if (info.exists() && info.isFile()
             && (!owner || owner->isSystemVerilogFile(file))) {
             desiredFiles.insert(
@@ -323,6 +328,7 @@ bool WorkspaceManager::openWorkspaceInternal(
         : defaultWorkspaceAlias(pathToOpen);
     if (alias.isEmpty())
         return false;
+    if (!canChangeActiveWorkspace()) return false;
 
     timer.restart();
     ActivityLogService::getInstance()->append(
@@ -369,6 +375,8 @@ void WorkspaceManager::closeWorkspace()
         return;
     }
 
+    if (!canChangeActiveWorkspace()) return;
+
     cancelDirectoryScan();
     stopFileWatching();
     ++workspaceActivationGeneration;
@@ -395,6 +403,7 @@ bool WorkspaceManager::closeWorkspace(int index)
 
     const WorkspaceEntry closingEntry = workspaces.at(index);
     const bool closingActive = index == activeIndex;
+    if (closingActive && !canChangeActiveWorkspace()) return false;
     const bool activateReplacement = closingActive && workspaces.size() > 1;
 
     if (closingActive) {
@@ -748,11 +757,26 @@ bool WorkspaceManager::switchWorkspace(int index)
         return true;
     }
 
+    if (!canChangeActiveWorkspace()) return false;
+
     const bool activated =
         activateWorkspacePath(entry.path, entry.alias, index, false);
     if (activated)
         rememberRecentWorkspace(entry);
     return activated;
+}
+
+void WorkspaceManager::setWorkspaceTransitionGuard(std::function<QString()> guard)
+{
+    workspaceTransitionGuard = std::move(guard);
+}
+
+bool WorkspaceManager::canChangeActiveWorkspace() const
+{
+    const QString error = workspaceTransitionGuard ? workspaceTransitionGuard() : QString();
+    if (error.isEmpty()) return true;
+    ActivityLogService::getInstance()->append(QStringLiteral("Workspace"), ActivityLogLevel::Info, error);
+    return false;
 }
 
 QStringList WorkspaceManager::getAllFiles() const
@@ -1082,8 +1106,11 @@ bool WorkspaceManager::applyWorkspaceConfiguration(
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     updateActiveEntryConfiguration(clean);
-    updateFileWatcher();
     if (notify) {
+        // Activation applies configuration before installing the final watch
+        // set in startFileWatching(). Registering here would immediately be
+        // cleared and repeated, while workspacePath still names the old root.
+        updateFileWatcher();
         emit filesScanned(files.systemVerilogFiles);
         emit workspaceListChanged();
         ActivityLogService::getInstance()->append(

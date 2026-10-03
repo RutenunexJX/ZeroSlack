@@ -6,17 +6,18 @@ class QWidget;
 class QObject;
 
 // Native surface v1. Load only when the ABI string matches the host's Qt,
-// pointer size, compiler and shared Ela capabilities. Keep the library loaded
-// until its widgets die.
+// pointer size, compiler and Ela capabilities. Deploy private XipsEla.dll with
+// the component and keep both loaded for the process lifetime.
 // The returned QWidget exposes these public Qt invokables:
 // setContext(QString library, QString workspace), collectPaths(QStringList),
-// revealAsset(QString), refresh(), saveState()->QVariantMap,
+// isCatalogBusy()->bool, revealAsset(QString), refresh(), saveState()->QVariantMap,
 // restoreState(QVariantMap).
 // Optional host invokables: destinationError(QString)->QString,
 // exportCompleted(QVariantMap)->QString (empty on success),
 // collectionSources()->QStringList (saved source files, empty on cancellation).
 using XipsCreateBrowserV1 = QWidget *(*)(QWidget *, QObject *);
 using XipsBrowserAbiV1 = const char *(*)();
+using XipsBrowserCapabilitiesV1 = const char *(*)();
 
 inline QByteArray xipsExpectedBrowserAbi()
 {

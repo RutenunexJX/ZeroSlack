@@ -1,7 +1,6 @@
 #pragma once
 #include "../../ui/contextcontentprovider.h"
 #include "zeroslackexport.h"
-#include <QLibrary>
 #include <QObject>
 #include <QPointer>
 
@@ -32,15 +31,13 @@ class ZEROSLACK_API XipsContextProvider final : public IContextContentProvider
     ContextResource activationResource(const QString &workspaceId) const override;
     QWidget *createView(const ContextResource &resource, QWidget *parent) override;
     bool activateView(QWidget *view, const ContextResource &resource) override;
+    bool canCloseView(QWidget *view, QString *error) const override;
+    void deactivateView(QWidget *view) override;
     ContextViewCapabilities capabilities(const ContextResource &) const override;
     QVariantMap saveViewState(QWidget *view) const override;
     void restoreViewState(QWidget *view, const QVariantMap &state) override;
 
   private:
-    bool loadLibrary(QString *error);
-    QLibrary library;
-    bool compatible = false;
-    QString loadError;
     QPointer<TabManager> tabs;
     QPointer<WorkspaceManager> workspaces;
 };

@@ -2,13 +2,16 @@
 #include <QtTest>
 #include <algorithm>
 #include <cstdio>
+#include <functional>
 #include <memory>
 
 #define private public
 #include "semanticindexsnapshot.h"
+#include "semanticdependencygraph.h"
 #undef private
 #include "completionsemanticquery.h"
 #include "completionservice.h"
+#include "completionmodel.h"
 #include "editorcoordinator.h"
 #include "mycodeeditor.h"
 #include "pinloomcodelinkstore.h"
@@ -359,6 +362,212 @@ void testDiagnostics(const QString& file)
            edited.getSymbolRecords(file).isEmpty() && scoped.symbolRecordCount() == records.size()
                && querySignature(snapshot, file) == before && scoped.getCachedFileContent(file) == source);
 }
+
+void testBoundedModuleTemplates(const QString& file)
+{
+    QString source;
+    for (int i = 0; i < 80; ++i) {
+        source += QStringLiteral(
+            "module module_%1 #(parameter int W = 8)"
+            "(input logic [W-1:0] data, output logic valid); endmodule\n")
+                      .arg(i, 3, 10, QLatin1Char('0'));
+    }
+    install(file, source);
+    auto* index = SemanticIndex::getInstance();
+    auto candidates = index->getSymbolRecordsByDeclarationKind(
+        SymbolTaxonomy::DeclarationKind::Module);
+    expect("module popup fixture exceeds visible cap", candidates.size() == 80);
+    if (candidates.size() != 80)
+        return;
+    candidates.append(candidates.first());
+    CompletionService service;
+    CompletionModel model;
+    for (const QString prefix : {QString(), QStringLiteral("module_"),
+                                 QStringLiteral("module_079")}) {
+        // Compare the retained rows with the eager service result, including
+        // its original score ties and first-wins duplicate policy.
+        QList<CompletionModel::CompletionItem> expected;
+        CompletionModel::CompletionItem header;
+        header.score = 1000;
+        expected.append(header);
+        QSet<QString> seen;
+        for (const auto& record : candidates) {
+            const auto payload = service.commandSymbolCompletionItem(
+                record, CompletionCommandKind::Module, prefix);
+            if (seen.contains(payload.uniqueKey))
+                continue;
+            seen.insert(payload.uniqueKey);
+            CompletionModel::CompletionItem item;
+            item.text = payload.text;
+            item.score = payload.score;
+            item.defaultValue = payload.defaultValue;
+            item.templateSlots = payload.templateSlots;
+            item.selectionStart = payload.selectionStart;
+            item.selectionLength = payload.selectionLength;
+            expected.append(item);
+        }
+        std::sort(expected.begin(), expected.end(), [](const auto& a, const auto& b) {
+            return a.score > b.score;
+        });
+        expected = expected.mid(0, 32);
+        model.updateSymbolRecordCompletions(candidates, prefix, CompletionCommandKind::Module);
+        bool same = model.rowCount() == expected.size();
+        for (int row = 0; same && row < expected.size(); ++row) {
+            const auto actual = model.getItem(model.index(row, 0));
+            const auto& eager = expected.at(row);
+            if (eager.text.isEmpty()) {
+                same = !actual.selectable;
+                continue;
+            }
+            same = actual.text == eager.text && actual.score == eager.score
+                && actual.defaultValue == eager.defaultValue
+                && actual.selectionStart == eager.selectionStart
+                && actual.selectionLength == eager.selectionLength
+                && actual.templateSlots.size() == eager.templateSlots.size();
+            for (int slot = 0; same && slot < eager.templateSlots.size(); ++slot) {
+                same = actual.templateSlots.at(slot).start == eager.templateSlots.at(slot).start
+                    && actual.templateSlots.at(slot).length == eager.templateSlots.at(slot).length;
+            }
+        }
+        expect("bounded module popup preserves eager ranking and insertion payload", same);
+    }
+    auto first = model.getItem(model.firstSelectableIndex());
+    expect("exact module match survives cap even at end of candidates", first.text == "module_079");
+    const QString changed = QString(source).replace("data", "fresh_data");
+    install(file, changed);
+    model.updateSymbolRecordCompletions(
+        index->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Module),
+        "module_079", CompletionCommandKind::Module);
+    first = model.getItem(model.firstSelectableIndex());
+    expect("next popup uses newly published module ports",
+           first.defaultValue.contains(".fresh_data(") && !first.defaultValue.contains(".data("));
+    model.updateSymbolRecordCompletions({}, "module_079", CompletionCommandKind::Module, false);
+    expect("empty module query retains non-executable no-match row", !model.firstSelectableIndex().isValid());
+    index->clearSemanticState();
+}
+
+void testWideDependencyTraversal(const QString& file)
+{
+    QString source = QStringLiteral("module wide;\n");
+    for (int i = 0; i < 10000; ++i)
+        source += QStringLiteral("logic signal_%1;\n").arg(i);
+    source += QStringLiteral("endmodule\n");
+    QElapsedTimer timer;
+    timer.start();
+    const auto facts = SemanticDependencyGraph::extractFacts(file, source);
+    const qint64 elapsed = timer.elapsed();
+    std::printf("perf.dependency.wide_10000_declarations_ms=%lld\n",
+                static_cast<long long>(elapsed));
+    expect("wide dependency traversal preserves every identifier",
+           !facts.parseError && facts.moduleDeclarations.contains("wide")
+               && facts.symbolReferences.size() == 10001
+               && facts.symbolReferences.contains("signal_0")
+               && facts.symbolReferences.contains("signal_9999"));
+    expect("wide dependency traversal avoids repeated ancestor/sibling scans", elapsed < 2500);
+}
+
+void testLineCommentEdits()
+{
+    auto treeShape = [](const TSDocument& document) {
+        QByteArray result;
+        std::function<void(TSNode)> append = [&](TSNode node) {
+            result += ts_node_type(node);
+            result += ':' + QByteArray::number(ts_node_start_byte(node));
+            result += ':' + QByteArray::number(ts_node_end_byte(node));
+            result += ts_node_is_missing(node) ? '?' : ';';
+            for (uint32_t i = 0; i < ts_node_child_count(node); ++i)
+                append(ts_node_child(node, i));
+        };
+        append(document.rootNode());
+        return result;
+    };
+    auto edit = [](TSDocument& document, QString& text, int position,
+                   int removed, const QString& inserted) {
+        DocumentChange change;
+        change.position = position;
+        change.removedLength = removed;
+        change.removedText = text.mid(position, removed);
+        change.insertedText = inserted;
+        change.oldLength = text.size();
+        change.newLength = text.size() - removed + inserted.size();
+        change.startLine = text.left(position).count(QLatin1Char('\n'));
+        change.startColumn = position - text.lastIndexOf(QLatin1Char('\n'), position - 1) - 1;
+        change.oldEndLine = change.startLine + change.removedText.count(QLatin1Char('\n'));
+        change.newEndLine = change.startLine + inserted.count(QLatin1Char('\n'));
+        change.lineDelta = change.newEndLine - change.oldEndLine;
+        document.applyEdit(change);
+        text.replace(position, removed, inserted);
+    };
+    struct Case { const char* name; QString marked; int removed; QString inserted; bool fast; };
+    const QList<Case> cases{
+        {"comment interior", "module m; // ab|cd\nlogic x; endmodule\n", 0, " / * endmodule 中文", true},
+        {"comment end", "module m; // text|\nlogic x; endmodule\n", 0, "more", true},
+        {"comment at EOF", "module m; endmodule // text|", 0, "more", true},
+        {"empty comment", "module m; //|\nendmodule\n", 0, "text", true},
+        {"delete comment body", "module m; //|text\nendmodule\n", 4, "", true},
+        {"replace comment text", "module m; // a|bc\nendmodule\n", 2, "logic x;", true},
+        {"newline reparses", "module m; // a|bc\nendmodule\n", 0, "\nlogic x;", false},
+        {"CR reparses", "module m; // a|bc\nendmodule\n", 0, "\r", false},
+        {"slash boundary reparses", "module m; /|/ text\nendmodule\n", 1, "", false},
+        {"block comment reparses", "module m; /* a|bc */ endmodule\n", 0, "d", false},
+        {"continuation reparses", "module m; // a|bc\nendmodule\n", 0, "\\", false},
+        {"existing backslash reparses", "module m; // a\\b|c\nendmodule\n", 0, "d", false}
+    };
+    for (const auto& value : cases) {
+        QString text = value.marked;
+        const int position = text.indexOf(QLatin1Char('|'));
+        text.remove(position, 1);
+        TSDocument document;
+        document.setText(text);
+        document.resetTextStorageMetricsForTest();
+        edit(document, text, position, value.removed, value.inserted);
+        const auto metrics = document.textStorageMetricsForTest();
+        TSDocument fresh;
+        fresh.setText(text);
+        expect(value.name, document.text() == text && treeShape(document) == treeShape(fresh)
+            && metrics.structurePreservingEditCount == (value.fast ? 1u : 0u)
+            && metrics.syntaxParseCount == (value.fast ? 0u : 1u));
+    }
+
+    QString text = QStringLiteral("module m; // text\nlogic value; endmodule\n");
+    const QString original = text;
+    int position = text.indexOf(QLatin1Char('\n'));
+    TSDocument document;
+    document.setText(text);
+    document.resetTextStorageMetricsForTest();
+    for (int i = 0; i < 100; ++i)
+        edit(document, text, position++, 0, QStringLiteral("a"));
+    for (int i = 0; i < 100; ++i)
+        edit(document, text, --position, 1, QString());
+    TSDocument fresh;
+    fresh.setText(original);
+    expect("comment typing and deletion retain an exact live syntax tree",
+           text == original && treeShape(document) == treeShape(fresh)
+               && document.textStorageMetricsForTest().structurePreservingEditCount == 200
+               && document.textStorageMetricsForTest().syntaxParseCount == 0);
+    edit(document, text, position, 0, QStringLiteral("\nlogic added;"));
+    fresh.setText(text);
+    expect("structural edit after comment burst matches a fresh parse",
+           treeShape(document) == treeShape(fresh));
+
+    MyCodeEditor editor;
+    editor.setPlainText(original);
+    QTextCursor cursor(editor.document());
+    cursor.setPosition(original.indexOf(QLatin1Char('\n')));
+    editor.setTextCursor(cursor);
+    QTest::keyClicks(&editor, "comment typing");
+    const QString typed = editor.toPlainText();
+    editor.undo();
+    fresh.setText(original);
+    expect("comment typing remains one undo group", editor.toPlainText() == original
+        && treeShape(*editor.syntaxDocument()) == treeShape(fresh));
+    editor.redo();
+    fresh.setText(typed);
+    expect("comment redo restores text and comment classification",
+           editor.toPlainText() == typed
+               && editor.syntaxDocument()->isCommentAt(original.indexOf("//") + 3)
+               && treeShape(*editor.syntaxDocument()) == treeShape(fresh));
+}
 }
 int main(int argc, char** argv)
 {
@@ -367,6 +576,9 @@ int main(int argc, char** argv)
     testMarkers();
     testTypeQueries(workspace.filePath("types.sv"));
     testDiagnostics(workspace.filePath("diagnostics.sv"));
+    testBoundedModuleTemplates(workspace.filePath("module_templates.sv"));
+    testWideDependencyTraversal(workspace.filePath("wide.sv"));
+    testLineCommentEdits();
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

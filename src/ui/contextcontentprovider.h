@@ -59,6 +59,15 @@ public:
         return {};
     }
 
+    // Queried before removing a live view or changing its workspace. A veto
+    // must not mutate the view; moving/reparenting a view does not close it.
+    virtual bool canCloseView(QWidget*, QString*) const
+    {
+        return true;
+    }
+
+    virtual void deactivateView(QWidget*) {}
+
     virtual void observeViewResourceChanges(
         QWidget*,
         QObject*,

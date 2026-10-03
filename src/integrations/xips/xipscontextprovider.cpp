@@ -2,22 +2,15 @@
 #include "tabmanager.h"
 #include "uicontrols.h"
 #include "workspacemanager.h"
-#include "xipsbrowserapi.h"
-#include <QCoreApplication>
+#include "../native/nativecontextview.h"
 #include <QDir>
 #include <QFile>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QLabel>
 #include <QLockFile>
-#include <QProcess>
-#include <QPushButton>
 #include <QSaveFile>
-#include <QSettings>
-#include <QVBoxLayout>
 
 namespace
 {
@@ -41,10 +34,6 @@ bool linked(const QString &path)
             return false;
         current = parent;
     }
-}
-QWidget *browser(QWidget *view)
-{
-    return view ? view->findChild<QWidget *>(QStringLiteral("xipsBrowser")) : nullptr;
 }
 } // namespace
 XipsHostBridge::XipsHostBridge(TabManager *tabs, WorkspaceManager *workspaces, QObject *parent)
@@ -137,7 +126,7 @@ QString XipsHostBridge::exportCompleted(const QVariantMap &receipt)
 XipsContextProvider::XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces)
     : tabs(tabs), workspaces(workspaces)
 {
-    library.setLoadHints(QLibrary::PreventUnloadHint);
+
 }
 QString XipsContextProvider::providerId() const
 {
@@ -162,145 +151,35 @@ ContextResource XipsContextProvider::activationResource(const QString &workspace
     resource.workspaceId = workspaceId;
     return resource;
 }
-bool XipsContextProvider::loadLibrary(QString *error)
-{
-    if (library.isLoaded())
-    {
-        *error = loadError;
-        return compatible;
-    }
-    const QDir app(QCoreApplication::applicationDirPath());
-    const QStringList candidates{qEnvironmentVariable("XIPS_BROWSER_LIBRARY"),
-                                 app.filePath(QStringLiteral("xips-browser.dll")),
-                                 app.filePath(QStringLiteral("../xIPs/xips-browser.dll")),
-                                 app.filePath(QStringLiteral("../xIPs/bin/xips-browser.dll")),
-                                 QSettings(QStringLiteral("xIPs"), QStringLiteral("xIPs"))
-                                     .value(QStringLiteral("runtime/browserLibrary"))
-                                     .toString()};
-    for (const auto &path : candidates)
-    {
-        if (path.isEmpty() || !QFileInfo::exists(path))
-            continue;
-        library.setFileName(path);
-        if (!library.load())
-        {
-            *error = library.errorString();
-            continue;
-        }
-        const auto abi = reinterpret_cast<XipsBrowserAbiV1>(library.resolve("xips_browser_abi_v1"));
-        const auto create =
-            reinterpret_cast<XipsCreateBrowserV1>(library.resolve("xips_create_browser_v1"));
-        if (!abi || !create || QByteArray(abi()) != xipsExpectedBrowserAbi())
-        {
-            loadError = QStringLiteral("Install matching xIPs and ZeroSlack builds, then restart "
-                                       "ZeroSlack. You can also open xIPs separately.");
-            *error = loadError;
-            return false;
-        }
-        compatible = true;
-        return true;
-    }
-    return false;
-}
 QWidget *XipsContextProvider::createView(const ContextResource &resource, QWidget *parent)
 {
-    auto *host = new QWidget(parent);
-    auto *layout = new QVBoxLayout(host);
-    layout->setContentsMargins(0, 0, 0, 0);
-    if (workspaces)
-    {
-        const auto updateContext = [this, host]
-        {
-            if (auto *panel = browser(host))
-            {
-                const QString root = workspaces && workspaces->isWorkspaceOpen()
-                                         ? workspaces->getWorkspacePath()
-                                         : QString();
-                QMetaObject::invokeMethod(panel, "setContext", Q_ARG(QString, QString()),
-                                          Q_ARG(QString, root));
-            }
+    auto *host = new NativeContextView(NativeContextView::Kind::Xips, parent);
+    host->setHostBridge(new XipsHostBridge(tabs, workspaces, host));
+    if (workspaces) {
+        const QPointer<WorkspaceManager> manager = workspaces;
+        const auto update = [host, manager] {
+            if (host->property("nativeComponentRetired").toBool()) return;
+            host->setWorkspace(manager && manager->isWorkspaceOpen() ? manager->getWorkspacePath() : QString());
         };
-        QObject::connect(workspaces, &WorkspaceManager::workspaceActivated, host, updateContext);
-        QObject::connect(workspaces, &WorkspaceManager::workspaceClosed, host, updateContext);
+        QObject::connect(workspaces, &WorkspaceManager::workspaceActivated, host, update);
+        QObject::connect(workspaces, &WorkspaceManager::workspaceClosed, host, update);
     }
-    QString error;
-    if (loadLibrary(&error))
-    {
-        auto create =
-            reinterpret_cast<XipsCreateBrowserV1>(library.resolve("xips_create_browser_v1"));
-        auto *bridge = new XipsHostBridge(tabs, workspaces, host);
-        layout->addWidget(create(host, bridge));
-        activateView(host, resource);
-    }
-    else
-    {
-        auto *label = UiControls::label(host);
-        label->setWordWrap(true);
-        label->setText(
-            QStringLiteral("Start the new xIPs application once, then reopen this panel.\n%1")
-                .arg(error));
-        layout->addWidget(label);
-        auto *retry = UiControls::pushButton(QStringLiteral("Reload xIPs"), host);
-        layout->addWidget(retry);
-        auto *open = UiControls::pushButton(QStringLiteral("Open xIPs…"), host);
-        layout->addWidget(open);
-        layout->addStretch();
-        QObject::connect(
-            retry, &QPushButton::clicked, host,
-            [this, host, layout, label, retry, open, resource]
-            {
-                QString error;
-                if (!loadLibrary(&error))
-                {
-                    label->setText(
-                        QStringLiteral("Launch xIPs once, then click Reload xIPs.\n%1").arg(error));
-                    return;
-                }
-                auto create = reinterpret_cast<XipsCreateBrowserV1>(
-                    library.resolve("xips_create_browser_v1"));
-                auto *bridge = new XipsHostBridge(tabs, workspaces, host);
-                auto *panel = create(host, bridge);
-                if (!panel)
-                {
-                    label->setText(QStringLiteral("The xIPs panel could not be created."));
-                    return;
-                }
-                label->hide();
-                retry->hide();
-                open->hide();
-                delete layout->takeAt(layout->count() - 1);
-                layout->addWidget(panel);
-                activateView(host, resource);
-            });
-        QObject::connect(
-            open, &QPushButton::clicked, host,
-            [host, label]
-            {
-                const auto installed = QSettings(QStringLiteral("xIPs"), QStringLiteral("xIPs"))
-                                           .value(QStringLiteral("runtime/browserLibrary"))
-                                           .toString();
-                QString executable =
-                    QDir(QFileInfo(installed).absolutePath()).filePath(QStringLiteral("xips.exe"));
-                if (installed.isEmpty() || !QFileInfo::exists(executable))
-                    executable = QFileDialog::getOpenFileName(
-                        host, QStringLiteral("Locate xIPs"), {}, QStringLiteral("xIPs (xips.exe)"));
-                if (!executable.isEmpty() && !QProcess::startDetached(executable, {}))
-                    label->setText(QStringLiteral("Could not launch xIPs."));
-            });
-    }
+    host->activate(resource);
     return host;
 }
 bool XipsContextProvider::activateView(QWidget *view, const ContextResource &resource)
 {
-    auto *panel = browser(view);
-    if (!panel)
-        return false;
-    const QString workspace =
-        workspaces && workspaces->isWorkspaceOpen() ? workspaces->getWorkspacePath() : QString();
-    QMetaObject::invokeMethod(panel, "setContext", Qt::DirectConnection, Q_ARG(QString, QString()),
-                              Q_ARG(QString, workspace));
-    restoreViewState(view, resource.state);
-    return true;
+    auto *host = qobject_cast<NativeContextView *>(view);
+    return host && host->activate(resource);
+}
+bool XipsContextProvider::canCloseView(QWidget *view, QString *error) const
+{
+    auto *host = qobject_cast<NativeContextView *>(view);
+    return !host || host->canClose(error);
+}
+void XipsContextProvider::deactivateView(QWidget *view)
+{
+    if (auto *host = qobject_cast<NativeContextView *>(view)) host->retire();
 }
 ContextViewCapabilities XipsContextProvider::capabilities(const ContextResource &) const
 {
@@ -314,15 +193,10 @@ ContextViewCapabilities XipsContextProvider::capabilities(const ContextResource 
 }
 QVariantMap XipsContextProvider::saveViewState(QWidget *view) const
 {
-    QVariantMap result;
-    if (auto *panel = browser(view))
-        QMetaObject::invokeMethod(panel, "saveState", Qt::DirectConnection,
-                                  Q_RETURN_ARG(QVariantMap, result));
-    return result;
+    const auto *host = qobject_cast<NativeContextView *>(view);
+    return host ? host->saveState() : QVariantMap{};
 }
 void XipsContextProvider::restoreViewState(QWidget *view, const QVariantMap &state)
 {
-    if (auto *panel = browser(view))
-        QMetaObject::invokeMethod(panel, "restoreState", Qt::DirectConnection,
-                                  Q_ARG(QVariantMap, state));
+    if (auto *host = qobject_cast<NativeContextView *>(view)) host->restoreState(state);
 }

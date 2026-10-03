@@ -1,4 +1,10 @@
-ZeroSlack v0.31.18 Windows package
+ZeroSlack v0.31.19 Windows package
+
+Release 0.31.19 includes native xIPs and SimDock workspace panels and their
+private runtime dependencies. SuiteApp SDK registration remains disabled on
+this machine; native embedding is available independently. Full workspace
+readiness still has an unresolved performance regression. The unsuccessful
+dependency-facts cache was withdrawn; this package does not claim that fix.
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release

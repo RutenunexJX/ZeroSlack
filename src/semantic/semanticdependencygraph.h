@@ -100,8 +100,8 @@ private:
     static QString projectKey(const ProjectSnapshot& project);
     static QString normalizedPath(const QString& fileName);
     void rebuildEdges();
-    void addDependency(const QString& dependentFile,
-                       const QString& dependencyFile,
+    void addDependency(const QString& dependentKey,
+                       const QString& dependencyKey,
                        SemanticDependencyKind kind);
     QStringList orderedFiles(const QSet<QString>& normalizedFiles) const;
     QString resolveInclude(const QString& sourceFile,

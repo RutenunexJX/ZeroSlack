@@ -551,6 +551,39 @@ bool preservesSimpleIdentifierStructure(
     return isSimpleIdentifierText(newIdentifier);
 }
 
+bool preservesLineCommentStructure(
+    const TSTree* tree,
+    const TSUTF16Text& text,
+    const DocumentChange& change)
+{
+    if (!tree || !change.changesText() || change.position < 2
+        || change.oldEnd() > text.size()) {
+        return false;
+    }
+    for (const QString& fragment : {change.removedText, change.insertedText}) {
+        if (fragment.contains(QLatin1Char('\n'))
+            || fragment.contains(QLatin1Char('\r'))
+            || fragment.contains(QLatin1Char('\\'))) {
+            return false;
+        }
+    }
+
+    const uint32_t probe = static_cast<uint32_t>(change.position - 1) * 2u;
+    const TSNode node = ts_node_named_descendant_for_byte_range(
+        ts_tree_root_node(tree), probe, probe);
+    if (ts_node_is_null(node)
+        || std::strcmp(ts_node_type(node), "one_line_comment") != 0
+        || ts_node_start_point(node).row != ts_node_end_point(node).row) {
+        return false;
+    }
+    const int start = static_cast<int>(ts_node_start_byte(node) / 2u);
+    const int end = static_cast<int>(ts_node_end_byte(node) / 2u);
+    // Preserve both slashes and the line boundary. Escaped/preprocessor lines
+    // retain the normal parser path, including edits next to a continuation.
+    return change.position >= start + 2 && change.oldEnd() <= end
+        && !text.mid(start, end - start).contains(QLatin1Char('\\'));
+}
+
 QList<TSChangedRange> localChangedRanges(
     const DocumentChange& change)
 {
@@ -574,8 +607,8 @@ QList<TSChangedRange> TSDocument::applyEdit(
         0, change.removedLength, m_text.size() - position);
     const bool structurePreserving =
         !deferSyntaxReparse
-        && preservesSimpleIdentifierStructure(
-            m_tree, m_text, change);
+        && (preservesLineCommentStructure(m_tree, m_text, change)
+            || preservesSimpleIdentifierStructure(m_tree, m_text, change));
 
     TSInputEdit edit{};
     edit.start_byte = static_cast<uint32_t>(position) * 2u;

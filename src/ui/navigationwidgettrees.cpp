@@ -169,15 +169,15 @@ void NavigationWidget::populateFileTree()
     }
 
     QHash<QString, QString> sourceFilesByIdentity;
-    sourceFilesByIdentity.reserve(sourceFiles.size());
-    for (const QString& filePath :
-         std::as_const(sourceFiles)) {
-        const QString key =
-            EditorFileIdentity::lookupKey(filePath);
-        if (!key.isEmpty()
-            && !sourceFilesByIdentity.contains(key)) {
-            sourceFilesByIdentity.insert(
-                key, filePath);
+    QHash<QString, QString> sourceIdentitiesByPath;
+    if (!virtualSourceGroups.isEmpty()) {
+        sourceFilesByIdentity.reserve(sourceFiles.size());
+        sourceIdentitiesByPath.reserve(sourceFiles.size());
+        for (const QString& filePath : std::as_const(sourceFiles)) {
+            const QString key = EditorFileIdentity::lookupKey(filePath);
+            sourceIdentitiesByPath.insert(filePath, key);
+            if (!key.isEmpty() && !sourceFilesByIdentity.contains(key))
+                sourceFilesByIdentity.insert(key, filePath);
         }
     }
 
@@ -238,9 +238,8 @@ void NavigationWidget::populateFileTree()
         ? commonNavigationFileTreeRoot(sourceFiles)
         : workspaceFileTreeRootPath;
     for (const QString& filePath : std::as_const(sourceFiles)) {
-        if (virtuallyGroupedFiles.contains(
-                EditorFileIdentity::lookupKey(
-                    filePath))) {
+        if (!virtuallyGroupedFiles.isEmpty()
+            && virtuallyGroupedFiles.contains(sourceIdentitiesByPath.value(filePath))) {
             continue;
         }
         if (!navigationFileMatchesFilter(filePath, fileSearchFilter))
@@ -394,8 +393,7 @@ void NavigationWidget::appendVirtualSourceGroupItems()
         groupItem->setText(0, group.name);
         groupItem->setIcon(
             0,
-            fileTreeWidget->style()->standardIcon(
-                QStyle::SP_DirLinkIcon));
+            getDirectoryIcon(true));
         groupItem->setData(
             0,
             FileTreeKindRole,
@@ -470,7 +468,7 @@ QTreeWidgetItem* NavigationWidget::appendDirectoryTreeItem(
         if (!dirItem) {
             dirItem = new QTreeWidgetItem();
             dirItem->setText(0, navigationDirectoryDisplayName(cumulativeDir));
-            dirItem->setIcon(0, fileTreeWidget->style()->standardIcon(QStyle::SP_DirIcon));
+            dirItem->setIcon(0, getDirectoryIcon());
             dirItem->setExpanded(true);
             const QString absoluteDirectory =
                 normalizedNavigationPath(

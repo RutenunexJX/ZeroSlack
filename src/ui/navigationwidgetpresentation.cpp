@@ -71,6 +71,20 @@ QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
     return icon;
 }
 
+QIcon NavigationWidget::getDirectoryIcon(bool virtualGroup)
+{
+    // SourceRole keys are nonnegative. Directory icons share the existing
+    // theme-scoped cache so native shell icon lookup is not repeated per row.
+    const int cacheKey = virtualGroup ? -2 : -1;
+    const auto cached = fileIconCache.constFind(cacheKey);
+    if (cached != fileIconCache.constEnd())
+        return cached.value();
+    const QIcon icon = fileTreeWidget->style()->standardIcon(
+        virtualGroup ? QStyle::SP_DirLinkIcon : QStyle::SP_DirIcon);
+    fileIconCache.insert(cacheKey, icon);
+    return icon;
+}
+
 void NavigationWidget::refreshThemePresentation()
 {
     fileIconCache.clear();
@@ -114,13 +128,11 @@ void NavigationWidget::refreshFileTreeIcons()
         } else if (kind == DirectoryItem) {
             item->setIcon(
                 0,
-                fileTreeWidget->style()->standardIcon(
-                    QStyle::SP_DirIcon));
+                getDirectoryIcon());
         } else if (kind == VirtualSourceGroupItem) {
             item->setIcon(
                 0,
-                fileTreeWidget->style()->standardIcon(
-                    QStyle::SP_DirLinkIcon));
+                getDirectoryIcon(true));
         }
         for (int index = 0; index < item->childCount(); ++index)
             self(item->child(index), self);

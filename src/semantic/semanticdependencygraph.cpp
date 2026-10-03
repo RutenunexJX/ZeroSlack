@@ -32,18 +32,6 @@ bool identifierType(const QString& type)
         || type == QLatin1String("text_macro_identifier");
 }
 
-bool hasAncestorType(TSNode node, const char* expected)
-{
-    node = ts_node_parent(node);
-    while (!ts_node_is_null(node)) {
-        const char* type = ts_node_type(node);
-        if (type && std::strcmp(type, expected) == 0)
-            return true;
-        node = ts_node_parent(node);
-    }
-    return false;
-}
-
 QString firstIdentifier(const QString& text, TSNode node)
 {
     if (ts_node_is_null(node))
@@ -396,13 +384,26 @@ bool apiDeclarationType(const QString& type)
 void collectFacts(const QString& text,
                   TSNode node,
                   SemanticFileDependencyFacts* facts,
-                  const QString& ownerName = QString())
+                  const QString& ownerName = QString(),
+                  bool insideIfdefCondition = false)
 {
     if (!facts || ts_node_is_null(node))
         return;
     const QString type = typeOf(node);
-    const QString identifier =
-        semanticDeclarationIdentifier(text, node, type);
+    const bool apiDeclaration = apiDeclarationType(type);
+    const bool needsIdentifier = apiDeclaration
+        || type == QLatin1String("module_declaration")
+        || type == QLatin1String("interface_declaration")
+        || type == QLatin1String("program_declaration")
+        || type == QLatin1String("package_declaration")
+        || type == QLatin1String("text_macro_definition")
+        || type == QLatin1String("package_import_item")
+        || type == QLatin1String("package_scope")
+        || type == QLatin1String("class_type")
+        || type == QLatin1String("class_scope")
+        || type == QLatin1String("text_macro_usage");
+    const QString identifier = needsIdentifier
+        ? semanticDeclarationIdentifier(text, node, type) : QString();
 
     QString nestedOwner = ownerName;
     if (type == QLatin1String("module_declaration")
@@ -446,14 +447,14 @@ void collectFacts(const QString& text,
     const bool macroConditionIdentifier =
         (type == QLatin1String("simple_identifier")
          || type == QLatin1String("escaped_identifier"))
-        && hasAncestorType(node, "ifdef_condition");
+        && insideIfdefCondition;
     if (macroConditionIdentifier) {
         const QString macroName = textOf(text, node).trimmed();
         if (!macroName.isEmpty())
             facts->macroUses.insert(macroName);
     }
 
-    if (apiDeclarationType(type) && !identifier.isEmpty())
+    if (apiDeclaration && !identifier.isEmpty())
         facts->apiDeclarations.insert(identifier);
     if (identifierType(type) && !macroConditionIdentifier) {
         const QString reference = textOf(text, node).trimmed();
@@ -461,9 +462,20 @@ void collectFacts(const QString& text,
             facts->symbolReferences.insert(reference);
     }
 
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i)
-        collectFacts(text, ts_node_named_child(node, i), facts, nestedOwner);
+    // A cursor carries sibling/ancestor state. Looking up each child by index
+    // and rediscovering every identifier's parents repeatedly scans wide RTL
+    // declaration lists, making dependency extraction quadratic.
+    const bool nestedIfdef = insideIfdefCondition
+        || type == QLatin1String("ifdef_condition");
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor)) {
+        do {
+            const TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child))
+                collectFacts(text, child, facts, nestedOwner, nestedIfdef);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
 }
 
 template <typename T>
@@ -534,19 +546,19 @@ SemanticDependencyGraph SemanticDependencyGraph::build(
     SemanticDependencyGraph graph;
     graph.graphProject = project;
     graph.projectIdentity = projectKey(project);
+    QHash<QString, QString> contentByKey;
+    contentByKey.reserve(contents.size());
+    for (auto it = contents.constBegin(); it != contents.constEnd(); ++it) {
+        const QString key = normalizedPath(it.key());
+        if (!contentByKey.contains(key))
+            contentByKey.insert(key, it.value());
+    }
     for (const QString& fileName : project.systemVerilogFiles) {
         const QString key = normalizedPath(fileName);
         if (key.isEmpty())
             continue;
         graph.originalPathByKey.insert(key, fileName);
-        QString content;
-        for (auto it = contents.constBegin(); it != contents.constEnd(); ++it) {
-            if (normalizedPath(it.key()) == key) {
-                content = it.value();
-                break;
-            }
-        }
-        graph.factsByFile.insert(key, extractFacts(fileName, content));
+        graph.factsByFile.insert(key, extractFacts(fileName, contentByKey.value(key)));
     }
     graph.rebuildEdges();
     return graph;
@@ -586,16 +598,17 @@ bool SemanticDependencyGraph::hasParseError(const QString& fileName) const
 }
 
 void SemanticDependencyGraph::addDependency(
-    const QString& dependentFile,
-    const QString& dependencyFile,
+    const QString& dependentKey,
+    const QString& dependencyKey,
     SemanticDependencyKind kind)
 {
-    const QString from = normalizedPath(dependentFile);
-    const QString to = normalizedPath(dependencyFile);
-    if (from.isEmpty() || to.isEmpty() || from == to)
+    // All callers already have graph keys. Sharing those strings keeps a dense
+    // dependency graph from allocating another pair of full paths per edge.
+    if (dependentKey.isEmpty() || dependencyKey.isEmpty()
+        || dependentKey == dependencyKey)
         return;
-    dependencies[from][to] |= kind;
-    dependents[to][from] |= kind;
+    dependencies[dependentKey][dependencyKey] |= kind;
+    dependents[dependencyKey][dependentKey] |= kind;
 }
 
 QString SemanticDependencyGraph::resolveInclude(
@@ -648,38 +661,30 @@ void SemanticDependencyGraph::rebuildEdges()
         for (const QString& name : it->includeNames) {
             const QString dependency = resolveInclude(dependentFile, name);
             if (!dependency.isEmpty())
-                addDependency(dependentFile, dependency,
+                addDependency(dependentKey, normalizedPath(dependency),
                               SemanticDependencyKind::Include);
         }
         for (const QString& name : it->macroUses) {
             for (const QString& dependencyKey : macros.value(name)) {
-                addDependency(dependentFile,
-                              originalPathByKey.value(dependencyKey,
-                                                      dependencyKey),
+                addDependency(dependentKey, dependencyKey,
                               SemanticDependencyKind::Macro);
             }
         }
         for (const QString& name : it->importedPackages) {
             for (const QString& dependencyKey : packages.value(name)) {
-                addDependency(dependentFile,
-                              originalPathByKey.value(dependencyKey,
-                                                      dependencyKey),
+                addDependency(dependentKey, dependencyKey,
                               SemanticDependencyKind::Package);
             }
         }
         for (const QString& name : it->instantiatedModules) {
             for (const QString& dependencyKey : modules.value(name)) {
-                addDependency(dependentFile,
-                              originalPathByKey.value(dependencyKey,
-                                                      dependencyKey),
+                addDependency(dependentKey, dependencyKey,
                               SemanticDependencyKind::Instantiation);
             }
         }
         for (const QString& name : it->symbolReferences) {
             for (const QString& dependencyKey : api.value(name)) {
-                addDependency(dependentFile,
-                              originalPathByKey.value(dependencyKey,
-                                                      dependencyKey),
+                addDependency(dependentKey, dependencyKey,
                               SemanticDependencyKind::TypeOrApi);
             }
         }
@@ -708,8 +713,7 @@ void SemanticDependencyGraph::rebuildEdges()
             }
         }
         for (const QString& descendant : std::as_const(activeDescendants)) {
-            addDependency(topFile,
-                          originalPathByKey.value(descendant, descendant),
+            addDependency(topKey, descendant,
                           SemanticDependencyKind::ActiveTop);
         }
     }

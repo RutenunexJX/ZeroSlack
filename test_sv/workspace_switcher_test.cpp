@@ -453,7 +453,8 @@ private slots:
             auto* more = controller->rail()->findChild<QAction*>("contextRail.toolbox"); QVERIFY(more);
             auto ids = controller->rail()->entryIds();
             ids.removeAll(QStringLiteral("toolbox"));
-            QCOMPARE(ids.size(), 7);
+            QCOMPARE(ids.size(), 8);
+            QVERIFY(ids.contains(QStringLiteral("simdock")));
             QCOMPARE(ids.size(), controller->providerIds().size());
             for (const auto& id : ids) {
                 auto* entry = controller->rail()->findChild<QAction*>("contextRail." + id); QVERIFY(entry);
