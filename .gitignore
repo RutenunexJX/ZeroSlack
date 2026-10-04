@@ -33,6 +33,7 @@ cmake_install.cmake
 CMakeLists.txt.user
 CMakeLists.txt.user.*
 *.cmake
+!cmake/SlangSourceCapture.cmake
 !cmake/source_layout.cmake
 !cmake/NativeComponents.cmake
 !thirdparty/qlementine/cmake/*.cmake

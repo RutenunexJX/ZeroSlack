@@ -60,12 +60,14 @@ public:
     void cancelWorkspaceAnalysis();
     void requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceRelationshipAnalysis();
+    void handleSemanticInputsChanged(const QString& root);
     void handleExternalFileChanged(const QString& fileName, int debounceMs);
     void handleDocumentClosed(const QString& fileName);
     DocumentSemanticStatus semanticStatus(const QString& fileName) const;
     bool isSemanticAnalysisActive() const;
 
 signals:
+    void semanticInputWatchPathsChanged(const QString& root, const QStringList& files, const QStringList& directories);
     void documentRefreshRequested(const QString& fileName);
     void diagnosticsRefreshRequested(const QString& fileName);
     void relationshipDataInvalidated();

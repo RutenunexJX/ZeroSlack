@@ -123,8 +123,33 @@ bool EditorFoldingController::applyDocumentChange(
     // the session ends, so existing fold facts are authoritative during the
     // overlay. Re-querying that intentionally unparsed tree can select the
     // root node and turn a local keystroke into a full-tree traversal.
-    if (document->hasDeferredSyntaxEdits()
+    if ((document->hasDeferredSyntaxEdits() || document->lastEditPreservedStructure()
+         || changedRanges.isEmpty())
         && change.lineDelta == 0) {
+        return false;
+    }
+    if (document->hasDeferredSyntaxEdits() || changedRanges.isEmpty()) {
+        // Until the sliced parser finishes, remap existing fold anchors using
+        // the same text delta. Never query an intentionally unfinished tree.
+        QList<TSFoldRange> remapped;
+        QSet<int> collapsed;
+        for (auto range : std::as_const(ranges)) {
+            const bool wasCollapsed = collapsedStartLines.contains(range.startLine);
+            const auto start = remappedFoldLine(range.startLine, change);
+            const auto end = remappedFoldLine(range.endLine, change);
+            if (foldRangeFullyDeleted(range, change) || !start.survives || !end.survives)
+                continue;
+            range.startLine = start.line;
+            range.endLine = qMax(start.line, end.line);
+            remapped.append(range);
+            if (wasCollapsed)
+                collapsed.insert(range.startLine);
+        }
+        ranges = std::move(remapped);
+        collapsedStartLines = std::move(collapsed);
+        rebuildCollapsedRangesCache();
+        if (collapsedRangesCache != previousCollapsedRanges)
+            markPresentationChanged(editor);
         return false;
     }
 

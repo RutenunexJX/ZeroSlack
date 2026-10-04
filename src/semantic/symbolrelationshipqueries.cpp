@@ -1,7 +1,21 @@
 #include "symbolrelationshipengine.h"
+#include "semanticindexsnapshot.h"
 
 QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationType type, bool outgoing) const
 {
+    if (querySnapshot) {
+        const auto record = querySnapshot->getSymbolRecordByLocalHandle(symbolId);
+        QList<int> result;
+        QSet<int> seen;
+        for (const auto& relationship : querySnapshot->relationshipsForStableKey(record.stableKey, outgoing)) {
+            const int target = outgoing ? relationship.toId : relationship.fromId;
+            if (target != symbolId && relationship.type == type && !seen.contains(target)) {
+                seen.insert(target);
+                result.append(target);
+            }
+        }
+        return result;
+    }
     const QString cacheKey = QStringLiteral("%1:%2:%3")
                                  .arg(symbolId)
                                  .arg(static_cast<int>(type))
@@ -35,6 +49,8 @@ QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationTyp
 }
 bool SymbolRelationshipEngine::hasRelationship(int fromSymbolId, int toSymbolId, RelationType type) const
 {
+    if (querySnapshot)
+        return fromSymbolId != toSymbolId && getRelationshipMetadata(fromSymbolId, toSymbolId, type).found;
     if (!relationshipGraph.contains(fromSymbolId))
         return false;
 
@@ -51,6 +67,8 @@ bool SymbolRelationshipEngine::hasRelationship(int fromSymbolId, int toSymbolId,
 
 int SymbolRelationshipEngine::getRelationshipCount() const
 {
+    if (querySnapshot)
+        return querySnapshot->relationshipEndpointCount();
     int count = 0;
     for (auto it = relationshipGraph.begin(); it != relationshipGraph.end(); ++it) {
         count += it.value().outgoingEdges.size();

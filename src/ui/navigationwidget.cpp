@@ -7,6 +7,7 @@
 #include <QHeaderView>
 #include <QMenu>
 #include <QSignalBlocker>
+#include <QTreeWidgetItemIterator>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
     : QWidget(parent)
@@ -215,10 +216,44 @@ void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report
     populateDesignTree();
 }
 
-void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report)
+void NavigationWidget::setDesignHierarchyPending(bool pending)
+{
+    if (designTreeWidget)
+        designTreeWidget->setEnabled(!pending);
+    if (pending && designTopLabel)
+        designTopLabel->setText(tr("Updating design hierarchy…"));
+    else
+        refreshDesignHeader();
+}
+
+void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged)
 {
     currentDesignHierarchy = report;
-    designTreeRefreshPending = true;
+    if (!structureChanged && designTreeWidget) {
+        QHash<QString, DesignHierarchyNode> nodes;
+        for (const auto& node : report.nodes) nodes.insert(node.id, node);
+        for (QTreeWidgetItemIterator it(designTreeWidget); *it; ++it) {
+            const int payloadId = (*it)->data(0, Qt::UserRole + 1).toInt();
+            auto payload = designItemPayloads.find(payloadId);
+            if (payload == designItemPayloads.end()) continue;
+            const auto next = nodes.constFind(payload->id);
+            if (next == nodes.cend()) continue;
+            const bool moved = payload->definitionFile != next->definitionFile
+                || payload->definitionLine != next->definitionLine
+                || payload->instanceFile != next->instanceFile || payload->instanceLine != next->instanceLine;
+            payload.value() = next.value();
+            if (moved) {
+                const QString location = next->isTop
+                    ? QStringLiteral("%1:%2").arg(next->definitionFile).arg(next->definitionLine)
+                    : QStringLiteral("instance %1:%2\nmodule %3:%4").arg(next->instanceFile).arg(next->instanceLine)
+                          .arg(next->definitionFile).arg(next->definitionLine);
+                (*it)->setToolTip(0, next->unresolved ? location + '\n' + next->unresolvedReason : location);
+                (*it)->setToolTip(1, (*it)->toolTip(0));
+            }
+        }
+    }
+    setDesignHierarchyPending(false);
+    designTreeRefreshPending |= structureChanged;
     designParticipatingFiles = report.participatingFiles;
     designTopFiles.clear();
     for (const auto& node : report.nodes) {
@@ -236,6 +271,7 @@ void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report)
 void NavigationWidget::clearDesignHierarchy()
 {
     currentDesignHierarchy = {};
+    setDesignHierarchyPending(false);
     designParticipatingFiles.clear();
     designTopFiles.clear();
     refreshDesignHeader();

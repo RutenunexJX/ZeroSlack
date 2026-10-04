@@ -37,9 +37,6 @@ private:
     QMap<QString, QString> lastContentByFile;
     std::function<QString(const QString&)> contentProvider;
 
-    static bool contentDiffersBeyondWhitespace(
-        const QString& oldContent,
-        const QString& newContent);
 };
 
 #endif // RELATIONSHIPANALYSISQUEUE_H

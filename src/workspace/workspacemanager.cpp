@@ -2,6 +2,7 @@
 #include "workspacemanager.h"
 
 #include "slangparseoptions.h"
+#include "semanticanalysisinput.h"
 #include "activitylogservice.h"
 #include "workspaceignoreservice.h"
 #include <QFileDialog>
@@ -16,6 +17,8 @@
 #include <QSettings>
 #include <QSet>
 #include <QTimer>
+#include <QtConcurrent/QtConcurrent>
+#include <QThread>
 #include <algorithm>
 #include <utility>
 
@@ -34,6 +37,9 @@ WorkspaceManager::WorkspaceManager(QObject *parent)
           std::make_unique<WorkspaceConfigurationService>())
 {
     qRegisterMetaType<WorkspaceManager::WorkspaceEntry>("WorkspaceManager::WorkspaceEntry");
+    directoryThreadPool.setMaxThreadCount(1);
+    directoryThreadPool.setThreadPriority(QThread::LowPriority);
+    directoryThreadPool.setObjectName(QStringLiteral("ZeroSlackWorkspaceDirectory"));
     files.reserveDefaults();
     loadRecentWorkspaces();
     workspaceAliasSelector = [](QWidget* dialogParent,
@@ -86,8 +92,10 @@ void WorkspaceManager::WorkspaceWatcher::ensure(WorkspaceManager* owner)
     this->owner = owner;
     if (watcher)
         return;
-
     watcher = std::make_unique<QFileSystemWatcher>(owner);
+    continuation = std::make_unique<QTimer>();
+    continuation->setSingleShot(true);
+    QObject::connect(continuation.get(), &QTimer::timeout, owner, [this] { advance(); });
     QObject::connect(watcher.get(), &QFileSystemWatcher::fileChanged,
                      owner, &WorkspaceManager::onFileChanged);
     QObject::connect(watcher.get(), &QFileSystemWatcher::directoryChanged,
@@ -96,173 +104,81 @@ void WorkspaceManager::WorkspaceWatcher::ensure(WorkspaceManager* owner)
 
 void WorkspaceManager::WorkspaceWatcher::clear()
 {
-    if (!watcher)
-        return;
-
-    const QStringList watchedFiles = watcher->files();
-    const QStringList watchedDirs = watcher->directories();
-
-    if (!watchedFiles.isEmpty())
-        watcher->removePaths(watchedFiles);
-    if (!watchedDirs.isEmpty())
-        watcher->removePaths(watchedDirs);
-    directorySnapshots.clear();
+    installed = {};
+    apply({});
 }
 
-void WorkspaceManager::WorkspaceWatcher::watchWorkspace(
-    const QString& workspacePath,
-    const QStringList& files,
-    const QStringList& directories)
+void WorkspaceManager::WorkspaceWatcher::apply(const PreparedPaths& prepared,
+                                               std::function<void()> completion)
 {
     if (!watcher)
         return;
-
-    clear();
-    updatePaths(workspacePath, files, directories);
-}
-
-void WorkspaceManager::WorkspaceWatcher::updatePaths(
-    const QString& workspacePath,
-    const QStringList& files,
-    const QStringList& directories)
-{
-    if (!watcher)
-        return;
-
-    QSet<QString> desiredDirectories;
-    QSet<QString> desiredFiles;
-    QSet<QString> checkedDirectories;
-    const auto addDirectory = [&desiredDirectories, &checkedDirectories](const QString& path) {
-        const QString candidate = QDir::cleanPath(path);
-        if (checkedDirectories.contains(candidate))
-            return;
-        checkedDirectories.insert(candidate);
-        const QFileInfo info(candidate);
-        if (info.exists() && info.isDir())
-            desiredDirectories.insert(QDir::cleanPath(info.absoluteFilePath()));
-    };
-    addDirectory(workspacePath);
-    for (const QString& directory : directories)
-        addDirectory(directory);
-    for (const QString& file : files) {
-        const QFileInfo info(file);
-        addDirectory(info.absolutePath());
-        if (info.exists() && info.isFile()
-            && (!owner || owner->isSystemVerilogFile(file))) {
-            desiredFiles.insert(
-                QDir::cleanPath(info.absoluteFilePath()));
-        }
-    }
-
-    const QStringList watchedFileList = watcher->files();
-    const QSet<QString> watchedFiles(watchedFileList.cbegin(),
-                                     watchedFileList.cend());
-    QStringList removedFiles;
-    for (const QString& file : watchedFiles) {
-        if (!desiredFiles.contains(file))
-            removedFiles.append(file);
-    }
-    if (!removedFiles.isEmpty())
-        watcher->removePaths(removedFiles);
-
-    QStringList addedFiles;
-    for (const QString& file : desiredFiles) {
-        if (!watchedFiles.contains(file))
-            addedFiles.append(file);
-    }
-    if (!addedFiles.isEmpty())
-        watcher->addPaths(addedFiles);
-
-    const QStringList watchedDirectoryList = watcher->directories();
-    const QSet<QString> watchedDirectories(
-        watchedDirectoryList.cbegin(),
-        watchedDirectoryList.cend());
-    QStringList removed;
-    for (const QString& directory : watchedDirectories) {
-        if (!desiredDirectories.contains(directory))
-            removed.append(directory);
-    }
-    if (!removed.isEmpty())
-        watcher->removePaths(removed);
-
-    QStringList added;
-    for (const QString& directory : desiredDirectories) {
-        if (!watchedDirectories.contains(directory))
-            added.append(directory);
-    }
-    if (!added.isEmpty())
-        watcher->addPaths(added);
-
-    directorySnapshots.clear();
-    for (const QString& directory : desiredDirectories) {
-        directorySnapshots.insert(
-            directory, snapshotDirectory(directory));
-    }
-}
-
-WorkspaceManager::WorkspaceWatcher::DirectoryDelta
-WorkspaceManager::WorkspaceWatcher::refreshDirectory(
-    const QString& path)
-{
-    DirectoryDelta delta;
-    const QString normalized = QDir::cleanPath(
-        QFileInfo(path).absoluteFilePath());
-    const QHash<QString, EntryStamp> previous =
-        directorySnapshots.value(normalized);
-    const QHash<QString, EntryStamp> current =
-        snapshotDirectory(normalized);
-
-    if (previous.size() != current.size()) {
-        delta.membershipChanged = true;
-    } else {
-        for (auto it = previous.cbegin(); it != previous.cend(); ++it) {
-            const auto currentIt = current.constFind(it.key());
-            if (currentIt == current.cend()
-                || currentIt->directory != it->directory) {
-                delta.membershipChanged = true;
-                break;
+    if (completion)
+        installed = std::move(completion);
+    // Windows paths from captured input are case folded; directory enumeration
+    // keeps display case. Reconcile by the same identity to avoid registering
+    // the complete workspace a second time after semantic publication.
+    const auto key = SemanticInputCapture::pathKey;
+    QHash<QString, QString> current;
+    for (const auto& path : watcher->files()) current.insert(key(path), path);
+    for (const auto& path : watcher->directories()) current.insert(key(path), path);
+    desiredFiles.clear();
+    desiredDirectories.clear();
+    for (const auto& path : prepared.directories) desiredDirectories.insert(key(path), path);
+    for (const auto& path : prepared.files) desiredFiles.insert(key(path), path);
+    removals.clear();
+    additions.clear();
+    for (auto it = current.cbegin(); it != current.cend(); ++it)
+        if (!desiredFiles.contains(it.key()) && !desiredDirectories.contains(it.key()))
+            removals.append(it.value());
+    // Ancestor directories are watched before their files. Input publication
+    // waits for this bounded reconciliation to finish before capturing sources.
+    QSet<QString> queued;
+    for (const auto& paths : {prepared.directories, prepared.files})
+        for (const auto& path : paths) {
+            const auto identity = key(path);
+            if (!current.contains(identity) && !queued.contains(identity)) {
+                additions.append(path);
+                queued.insert(identity);
             }
         }
-    }
-
-    directorySnapshots.insert(normalized, current);
-    return delta;
+    continuation->start(0);
 }
 
-QHash<QString, WorkspaceManager::WorkspaceWatcher::EntryStamp>
-WorkspaceManager::WorkspaceWatcher::snapshotDirectory(
-    const QString& path) const
+void WorkspaceManager::WorkspaceWatcher::advance()
 {
-    QHash<QString, EntryStamp> result;
-    const QDir directory(path);
-    const QFileInfoList entries = directory.entryInfoList(
-        QDir::AllEntries | QDir::NoDotAndDotDot,
-        QDir::Name | QDir::DirsFirst);
-    result.reserve(entries.size());
-    for (const QFileInfo& entry : entries) {
-        if (!entry.isDir()
-            && owner
-            && !owner->isSystemVerilogFile(entry.fileName())) {
-            continue;
-        }
-        EntryStamp stamp;
-        stamp.directory = entry.isDir();
-        result.insert(entry.fileName(), stamp);
+    QElapsedTimer budget;
+    budget.start();
+    int operations = 0;
+    while ((!removals.isEmpty() || !additions.isEmpty())
+           && operations < 8 && budget.elapsed() < 4) {
+        if (!removals.isEmpty()) watcher->removePath(removals.takeLast());
+        else watcher->addPath(additions.takeFirst());
+        ++operations;
     }
-    return result;
+    if (!removals.isEmpty() || !additions.isEmpty()) {
+        continuation->start(0);
+        return;
+    }
+    auto completion = std::move(installed);
+    installed = {};
+    if (completion) completion();
 }
 
-void WorkspaceManager::WorkspaceWatcher::rewatchFile(
-    const QString& path)
+QString WorkspaceManager::WorkspaceWatcher::rewatchFile(const QString& path)
 {
     if (!watcher)
-        return;
-    const QFileInfo info(path);
-    if (!info.exists() || !info.isFile())
-        return;
-    const QString normalized = QDir::cleanPath(info.absoluteFilePath());
-    if (!watcher->files().contains(normalized))
-        watcher->addPath(normalized);
+        return {};
+    const QString ownedPath = desiredFiles.value(SemanticInputCapture::pathKey(path));
+    if (ownedPath.isEmpty())
+        return {};
+    // QFileSystemWatcher removes a replaced file. Re-establish coverage using
+    // current desired ownership, not the native watcher's delayed state. Use
+    // its registered spelling for Windows case/separator aliases, including
+    // external includes, without filesystem queries in this callback.
+    if (!additions.contains(ownedPath)) additions.append(ownedPath);
+    continuation->start(0);
+    return ownedPath;
 }
 
 bool WorkspaceManager::WorkspaceWatcher::active() const
@@ -272,6 +188,10 @@ bool WorkspaceManager::WorkspaceWatcher::active() const
 
 WorkspaceManager::~WorkspaceManager()
 {
+    cancelDirectoryScan();
+    if (scanWatcher)
+        disconnect(scanWatcher, nullptr, this, nullptr);
+    directoryThreadPool.waitForDone();
 }
 
 bool WorkspaceManager::openWorkspace(const QString& folderPath)
@@ -422,6 +342,8 @@ bool WorkspaceManager::closeWorkspace(int index)
     }
 
     workspaces.removeAt(index);
+    if (projectModel)
+        projectModel->notifyWorkspaceClosed(closingEntry.path);
     if (!closingActive && index < activeIndex)
         --activeIndex;
 
@@ -684,7 +606,7 @@ bool WorkspaceManager::restoreSessionScanState(const QStringList& scannedFiles,
     existingFiles.reserve(scannedFiles.size());
     for (const QString& file : scannedFiles) {
         const QString path = normalizeWorkspacePath(file);
-        if (path.isEmpty() || !QFileInfo(path).isFile())
+        if (path.isEmpty())
             continue;
         const QString rootPrefix = workspacePath.endsWith(QLatin1Char('/'))
             ? workspacePath
@@ -704,9 +626,10 @@ bool WorkspaceManager::restoreSessionScanState(const QStringList& scannedFiles,
         }
     }
     existingFiles.removeDuplicates();
-    existingFiles.sort(Qt::CaseInsensitive);
 
-    files.setScannedFiles(projectModel.get(), existingFiles);
+    projectModel->setScannedFiles(existingFiles, false);
+    files.allFiles = projectModel->allFiles();
+    files.systemVerilogFiles = projectModel->systemVerilogFiles();
     if (activeIndex >= 0 && activeIndex < workspaces.size()
         && workspaces.at(activeIndex).path == workspacePath) {
         workspaces[activeIndex].scannedFiles = existingFiles;
@@ -715,7 +638,6 @@ bool WorkspaceManager::restoreSessionScanState(const QStringList& scannedFiles,
         workspaces[activeIndex].scanComplete = scanComplete;
     }
 
-    updateFileWatcher();
     emit filesScanned(files.systemVerilogFiles);
     emit workspaceListChanged();
     // A completed session scan is only a cache snapshot. Files may have been
@@ -824,110 +746,247 @@ void WorkspaceManager::startFileWatching()
     if (!isWorkspaceOpen()) return;
 
     watcher.ensure(this);
-    watcher.watchWorkspace(
-        workspacePath, files.allFiles, scannedDirectories);
+    WorkspaceWatcher::PreparedPaths rootWatch;
+    rootWatch.directories = {workspacePath};
+    semanticWatchPaths = {};
+    preparedWatchPaths = rootWatch;
+    watcher.apply(rootWatch);
 }
 
 void WorkspaceManager::stopFileWatching()
 {
+    directoryMembership.clear();
+    semanticWatchPaths = {};
+    preparedWatchPaths = {};
     watcher.clear();
+}
+
+void WorkspaceManager::applySemanticWatchPaths(const QString& root,
+    const QStringList& files, const QStringList& directories)
+{
+    if (normalizeWorkspacePath(root) != workspacePath || !isWorkspaceOpen())
+        return;
+    QSet<QString> previous;
+    for (const auto& paths : {preparedWatchPaths.files, preparedWatchPaths.directories,
+                             semanticWatchPaths.files, semanticWatchPaths.directories})
+        for (const auto& path : paths) previous.insert(SemanticInputCapture::pathKey(path));
+    bool extendsCoverage = false;
+    for (const auto& paths : {files, directories})
+        for (const auto& path : paths)
+            extendsCoverage |= !previous.contains(SemanticInputCapture::pathKey(path));
+    semanticWatchPaths.files = files;
+    semanticWatchPaths.directories = directories;
+    applyCombinedWatchPaths();
+    if (extendsCoverage) {
+        // An include may have changed between capture and watch installation.
+        // Revalidate once AFTER new coverage is installed. Unchanged desired
+        // coverage does not schedule another request, so this cannot loop.
+        auto previousCompletion = std::move(watcher.installed);
+        watcher.installed = [self = QPointer<WorkspaceManager>(this), root,
+                             previousCompletion = std::move(previousCompletion)] {
+            if (previousCompletion) previousCompletion();
+            if (self && self->isWorkspaceOpen()
+                && self->normalizeWorkspacePath(root) == self->workspacePath)
+                emit self->semanticInputsChanged(root);
+        };
+    }
+}
+
+void WorkspaceManager::applyCombinedWatchPaths()
+{
+    auto paths = preparedWatchPaths;
+    paths.files.append(semanticWatchPaths.files);
+    paths.directories.append(semanticWatchPaths.directories);
+    paths.files.removeDuplicates();
+    paths.directories.removeDuplicates();
+    watcher.apply(paths);
 }
 
 void WorkspaceManager::onFileChanged(const QString& path)
 {
-    watcher.rewatchFile(path);
-    if (!isSystemVerilogFile(path)) return;
+    const QString ownedPath = watcher.rewatchFile(path);
+    if (ownedPath.isEmpty())
+        return;
+    const QString identity = SemanticInputCapture::pathKey(ownedPath);
+    if (std::any_of(semanticWatchPaths.files.cbegin(), semanticWatchPaths.files.cend(),
+            [&](const QString& file) { return SemanticInputCapture::pathKey(file) == identity; })) {
+        emit semanticInputsChanged(workspacePath);
+        return;
+    }
+    if (!isSystemVerilogFile(ownedPath)) return;
 
-    emit fileChanged(path);
+    emit fileChanged(ownedPath);
 }
 
 void WorkspaceManager::onDirectoryChanged(const QString& path)
 {
     if (!isWorkspaceOpen())
         return;
+    const QString key = SemanticInputCapture::pathKey(path);
+    const QString ownedPath = watcher.desiredDirectories.value(key);
+    if (ownedPath.isEmpty())
+        return;
 
-    const WorkspaceWatcher::DirectoryDelta delta =
-        watcher.refreshDirectory(path);
-    if (delta.membershipChanged) {
-        startDirectoryScan(workspacePath);
-    }
+    QPointer<WorkspaceManager> self(this);
+    const auto activation = workspaceActivationGeneration;
+    if (std::any_of(semanticWatchPaths.directories.cbegin(), semanticWatchPaths.directories.cend(),
+            [&](const QString& directory) { return SemanticInputCapture::pathKey(directory) == key; }))
+        emit semanticInputsChanged(workspacePath);
+    if (!self || activation != workspaceActivationGeneration
+        || (ownedPath.compare(workspacePath, Qt::CaseInsensitive) != 0
+            && !ownedPath.startsWith(workspacePath + '/', Qt::CaseInsensitive)))
+        return;
+    // Coalesced into one worker plus one latest request. No directory listing
+    // or membership comparison runs in the GUI notification handler.
+    startDirectoryScan(workspacePath,
+        (!directoryScanPending || membershipProbeDirectory == key)
+                && directoryMembership.contains(key) ? ownedPath : QString());
 }
 
-void WorkspaceManager::startDirectoryScan(const QString& path)
+void WorkspaceManager::startDirectoryScan(const QString& path, const QString& membershipDirectory)
 {
     cancelDirectoryScan();
-    pendingScannedFiles.clear();
-    pendingScannedDirectories.clear();
-    pendingScannedDirectories.append(
-        normalizeWorkspacePath(path));
-    pendingScannedFiles.reserve(qMax(500, files.allFiles.size()));
     scanningPath = normalizeWorkspacePath(path);
     if (scanningPath.isEmpty() || scanningPath != workspacePath)
         return;
-
-    const std::uint64_t generation = scanGeneration;
-    const QString requestedPath = scanningPath;
-
-    scanIterator =
-        std::make_unique<QDirIterator>(scanningPath,
-                                       QDir::AllEntries
-                                           | QDir::NoDotAndDotDot,
-                                       QDirIterator::Subdirectories);
+    directoryScanPending = true;
+    membershipProbeDirectory = SemanticInputCapture::pathKey(membershipDirectory);
+    pendingScanRequest = DirectoryScanRequest{scanningPath,
+        projectModel ? projectModel->snapshot() : ProjectSnapshot{}, scanGeneration,
+        membershipDirectory, directoryMembership.value(SemanticInputCapture::pathKey(membershipDirectory))};
     if (!scanTimer) {
         scanTimer = new QTimer(this);
-        scanTimer->setSingleShot(false);
-        connect(scanTimer,
-                &QTimer::timeout,
-                this,
-                &WorkspaceManager::processDirectoryScanChunk);
+        scanTimer->setInterval(50);
+        connect(scanTimer, &QTimer::timeout, this, &WorkspaceManager::processDirectoryScanChunk);
     }
-
+    if (membershipDirectory.isEmpty())
+        scanTimer->start();
+    const auto generation = scanGeneration;
+    const auto requestedPath = scanningPath;
     QPointer<WorkspaceManager> self(this);
-    emit workspaceScanStarted(requestedPath);
-    if (!self || !directoryScanIsCurrent(generation, requestedPath))
+    if (membershipDirectory.isEmpty())
+        emit workspaceScanStarted(requestedPath);
+    if (self && directoryScanIsCurrent(generation, requestedPath))
+        launchPendingDirectoryScan();
+}
+
+void WorkspaceManager::launchPendingDirectoryScan()
+{
+    if (scanWatcher || !pendingScanRequest)
         return;
-    scanTimer->start(0);
+    const auto request = *pendingScanRequest;
+    pendingScanRequest.reset();
+    auto cancellation = std::make_shared<std::atomic_bool>(false);
+    auto progress = std::make_shared<std::atomic<int>>(0);
+    scanCancellation = cancellation;
+    scanProgress = progress;
+    auto* watcher = new QFutureWatcher<DirectoryScanResult>(this);
+    scanWatcher = watcher;
+    connect(watcher, &QFutureWatcher<DirectoryScanResult>::finished, this,
+        [this, watcher, request, cancellation] {
+            auto result = watcher->future().takeResult();
+            scanWatcher = nullptr;
+            watcher->deleteLater();
+            if (scanCancellation == cancellation)
+                scanCancellation.reset();
+            if (!result.cancelled && directoryScanIsCurrent(request.generation, request.path)) {
+                if (result.membershipProbe) {
+                    directoryScanPending = false;
+                    scanningPath.clear();
+                    scanProgress.reset();
+                    QPointer<WorkspaceManager> self(this);
+                    if (result.membershipChanged)
+                        startDirectoryScan(request.path);
+                    if (self)
+                        launchPendingDirectoryScan();
+                    return;
+                }
+                pendingScannedFiles = std::move(result.files);
+                pendingScannedDirectories = std::move(result.directories);
+                directoryMembership = std::move(result.membership);
+                preparedWatchPaths = std::move(result.watches);
+                QPointer<WorkspaceManager> self(this);
+                finishDirectoryScan(request.generation, request.path);
+                if (!self)
+                    return;
+            }
+            launchPendingDirectoryScan();
+        });
+    watcher->setFuture(QtConcurrent::run(&directoryThreadPool, [request, cancellation, progress] {
+        DirectoryScanResult result;
+        if (!request.membershipDirectory.isEmpty()) {
+            result.membershipProbe = true;
+            QStringList children;
+            const auto entries = QDir(request.membershipDirectory).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot);
+            for (const auto& entry : entries) {
+                if (cancellation->load(std::memory_order_relaxed)) {
+                    result.cancelled = true;
+                    return result;
+                }
+                children.append(SemanticInputCapture::pathKey(entry.absoluteFilePath()));
+            }
+            children.sort(Qt::CaseSensitive);
+            result.membershipChanged = children != request.expectedChildren;
+            return result;
+        }
+        result.directories.append(request.path);
+        result.membership.insert(SemanticInputCapture::pathKey(request.path), {});
+        auto normalized = [](const QString& path) {
+            return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
+        };
+        auto sourceFile = [&](const QString& path) {
+            QString suffix = QFileInfo(path).suffix().toLower();
+            for (QString extension : request.project.fileExtensions) {
+                if (extension.startsWith('.'))
+                    extension.remove(0, 1);
+                if (extension.compare(suffix, Qt::CaseInsensitive) == 0)
+                    return true;
+            }
+            return false;
+        };
+        auto ignored = [&](const QString& path) {
+            for (const QString& prefix : request.project.ignoredPaths)
+                if (path.compare(prefix, Qt::CaseInsensitive) == 0
+                    || path.startsWith(prefix + '/', Qt::CaseInsensitive))
+                    return true;
+            return false;
+        };
+        QDirIterator iterator(request.path, QDir::AllEntries | QDir::NoDotAndDotDot,
+                              QDirIterator::Subdirectories);
+        while (iterator.hasNext()) {
+            if (cancellation->load(std::memory_order_relaxed)) {
+                result.cancelled = true;
+                return result;
+            }
+            const QString path = normalized(iterator.next());
+            const QFileInfo entry = iterator.fileInfo();
+            result.membership[SemanticInputCapture::pathKey(entry.absolutePath())]
+                .append(SemanticInputCapture::pathKey(path));
+            if (entry.isDir()) {
+                result.directories.append(path);
+                result.membership[SemanticInputCapture::pathKey(path)];
+            } else {
+                result.files.append(path);
+                progress->store(result.files.size(), std::memory_order_relaxed);
+            }
+            if (!entry.isDir() && sourceFile(path) && !ignored(path))
+                result.watches.files.append(path);
+        }
+        result.files.sort(Qt::CaseInsensitive);
+        result.directories.sort(Qt::CaseInsensitive);
+        result.watches.files.sort(Qt::CaseInsensitive);
+        result.watches.directories = result.directories;
+        for (auto it = result.membership.begin(); it != result.membership.end(); ++it)
+            it->sort(Qt::CaseSensitive);
+        return result;
+    }));
 }
 
 void WorkspaceManager::processDirectoryScanChunk()
 {
-    const std::uint64_t generation = scanGeneration;
-    const QString requestedPath = scanningPath;
-    if (!directoryScanIsCurrent(generation, requestedPath))
-        return;
-
-    QElapsedTimer chunkTimer;
-    chunkTimer.start();
-    int entriesThisChunk = 0;
-    int filesThisChunk = 0;
-    constexpr int kMaxEntriesPerChunk = 256;
-    constexpr qint64 kMaxChunkMs = 8;
-    while (scanIterator->hasNext()) {
-        const QString entryPath = scanIterator->next();
-        const QFileInfo entry = scanIterator->fileInfo();
-        if (entry.isDir())
-            pendingScannedDirectories.append(entryPath);
-        else {
-            pendingScannedFiles.append(entryPath);
-            ++filesThisChunk;
-        }
-        ++entriesThisChunk;
-        if (entriesThisChunk >= kMaxEntriesPerChunk
-            || chunkTimer.elapsed() >= kMaxChunkMs) {
-            break;
-        }
-    }
-
-    if (filesThisChunk > 0) {
-        QPointer<WorkspaceManager> self(this);
-        emit workspaceScanProgress(requestedPath,
-                                   pendingScannedFiles.size());
-        if (!self || !directoryScanIsCurrent(generation, requestedPath))
-            return;
-    }
-
-    if (!scanIterator->hasNext())
-        finishDirectoryScan(generation, requestedPath);
+    // Progress polling reads only an atomic counter. It never advances an IO iterator.
+    if (directoryScanPending && scanProgress)
+        emit workspaceScanProgress(scanningPath, scanProgress->load(std::memory_order_relaxed));
 }
 
 void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
@@ -936,9 +995,28 @@ void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
     if (!directoryScanIsCurrent(generation, path))
         return;
 
+    QPointer<WorkspaceManager> self(this);
+    emit workspaceScanProgress(path, pendingScannedFiles.size());
+    if (!self || !directoryScanIsCurrent(generation, path))
+        return;
+
+    auto paths = preparedWatchPaths;
+    paths.files.append(semanticWatchPaths.files);
+    paths.directories.append(semanticWatchPaths.directories);
+    watcher.apply(paths, [self, generation, path] {
+        if (self) self->publishDirectoryScan(generation, path);
+    });
+}
+
+void WorkspaceManager::publishDirectoryScan(std::uint64_t generation,
+                                            const QString& path)
+{
+    if (!directoryScanIsCurrent(generation, path))
+        return;
+
     if (scanTimer)
         scanTimer->stop();
-    scanIterator.reset();
+    directoryScanPending = false;
     scanningPath.clear();
     const QString finishedPath = path;
     const QStringList scannedFiles = pendingScannedFiles;
@@ -967,7 +1045,6 @@ void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
             projectModel ? projectModel->ignoredPaths() : QStringList();
         workspaces[activeIndex].scanComplete = true;
     }
-    updateFileWatcher();
 
     if (files.allFiles != oldFiles) {
         emit filesScanned(files.systemVerilogFiles);
@@ -997,9 +1074,13 @@ void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
 void WorkspaceManager::cancelDirectoryScan()
 {
     ++scanGeneration;
+    if (scanCancellation)
+        scanCancellation->store(true, std::memory_order_relaxed);
+    pendingScanRequest.reset();
+    scanProgress.reset();
     if (scanTimer)
         scanTimer->stop();
-    scanIterator.reset();
+    directoryScanPending = false;
     pendingScannedFiles.clear();
     pendingScannedDirectories.clear();
     scanningPath.clear();
@@ -1010,7 +1091,7 @@ bool WorkspaceManager::directoryScanIsCurrent(
     const QString& path) const
 {
     return generation == scanGeneration
-        && scanIterator
+        && directoryScanPending
         && !path.isEmpty()
         && scanningPath == path
         && workspacePath == path;
@@ -1020,8 +1101,7 @@ void WorkspaceManager::updateFileWatcher()
 {
     if (!watcher.active() || !isWorkspaceOpen()) return;
 
-    watcher.updatePaths(
-        workspacePath, files.allFiles, scannedDirectories);
+    startDirectoryScan(workspacePath);
 }
 
 bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
@@ -1030,23 +1110,13 @@ bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
         return false;
 
     const WorkspaceEntry entry = workspaces.at(index);
-    projectModel->setWorkspaceState(entry.path, entry.scannedFiles);
     WorkspaceConfiguration configuration = loadConfigurationForWorkspace(entry.path);
-    if (!entry.includeDirs.isEmpty())
-        configuration.includeDirs = entry.includeDirs;
-    if (!entry.fileExtensions.isEmpty())
-        configuration.fileExtensions = entry.fileExtensions;
-    if (!entry.defines.isEmpty())
-        configuration.defines = entry.defines;
-    if (!entry.topModule.isEmpty())
-        configuration.topModule = entry.topModule;
-    if (!entry.ignoredDirectories.isEmpty())
-        configuration.ignoredDirs = entry.ignoredDirectories;
-    if (!entry.virtualSourceGroups.isEmpty()) {
-        configuration.virtualSourceGroups =
-            entry.virtualSourceGroups;
-    }
-    applyWorkspaceConfiguration(configuration, false, nullptr, false);
+    // Portable configuration is authoritative on every activation, including
+    // removed/cleared settings. Session entries cache navigation state only;
+    // replaying their old non-empty fields hid external configuration edits.
+    if (!applyWorkspaceConfiguration(configuration, false, nullptr, false,
+                                     &entry.scannedFiles, false))
+        return false;
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     return true;
@@ -1065,7 +1135,9 @@ bool WorkspaceManager::applyWorkspaceConfiguration(
     const WorkspaceConfiguration& configuration,
     bool persist,
     QString* errorMessage,
-    bool notify)
+    bool notify,
+    const QStringList* activatingFiles,
+    bool discoveryComplete)
 {
     if (errorMessage)
         errorMessage->clear();
@@ -1098,11 +1170,24 @@ bool WorkspaceManager::applyWorkspaceConfiguration(
         return false;
     }
 
-    projectModel->setWorkspaceConfiguration(clean.includeDirs,
+    if (activatingFiles) {
+        ProjectSnapshot workspace;
+        workspace.sourceDiscoveryComplete = discoveryComplete;
+        workspace.workspaceRoot = clean.workspaceRoot;
+        workspace.allFiles = *activatingFiles;
+        workspace.includeDirs = clean.includeDirs;
+        workspace.defines = clean.defines;
+        workspace.fileExtensions = clean.fileExtensions;
+        workspace.topModule = clean.topModule;
+        workspace.ignoredPaths = clean.ignoredDirs;
+        projectModel->setWorkspaceState(workspace);
+    } else {
+        projectModel->setWorkspaceConfiguration(clean.includeDirs,
                                             clean.defines,
                                             clean.fileExtensions,
                                             clean.topModule,
                                             clean.ignoredDirs);
+    }
     files.allFiles = projectModel->allFiles();
     files.systemVerilogFiles = projectModel->systemVerilogFiles();
     updateActiveEntryConfiguration(clean);
@@ -1165,15 +1250,12 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     } else {
         files.clear();
         if (projectModel) {
-            projectModel->setWorkspaceState(normalizedPath, {});
             WorkspaceConfiguration configuration =
                 loadConfigurationForWorkspace(normalizedPath);
-            if (index >= 0 && index < workspaces.size()
-                && !workspaces.at(index).ignoredDirectories.isEmpty()) {
-                configuration.ignoredDirs =
-                    workspaces.at(index).ignoredDirectories;
-            }
-            applyWorkspaceConfiguration(configuration, false, nullptr, false);
+            const QStringList emptyFiles;
+            if (!applyWorkspaceConfiguration(configuration, false, nullptr,
+                                             false, &emptyFiles, false))
+                return false;
         }
     }
 
@@ -1204,7 +1286,7 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     // Reconcile every activation; finishDirectoryScan only republishes files
     // when the resulting set actually differs.
     const bool scanAlreadyStarted =
-        scanIterator
+        directoryScanPending
         && scanningPath == activatedPath;
     if (!scanAlreadyStarted)
         startDirectoryScan(workspacePath);

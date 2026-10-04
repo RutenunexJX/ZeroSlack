@@ -14,6 +14,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <atomic>
+#include <optional>
+#include <QThreadPool>
+#include <QFutureWatcher>
 
 class QDirIterator;
 class QTimer;
@@ -44,6 +48,7 @@ public:
 
     explicit WorkspaceManager(QObject *parent = nullptr);
     ~WorkspaceManager();
+    bool isWorkspaceScanActive() const { return directoryScanPending; }
 
     // Workspace operations
     bool openWorkspace(const QString& folderPath);
@@ -95,8 +100,11 @@ public:
     // File watching
     void startFileWatching();
     void stopFileWatching();
+    void applySemanticWatchPaths(const QString& root, const QStringList& files,
+                                const QStringList& directories);
 
 signals:
+    void semanticInputsChanged(const QString& root);
     void workspaceOpened(const QString& path);
     void workspaceClosed();
     void workspaceListChanged();
@@ -127,33 +135,46 @@ private:
     };
 
     struct WorkspaceWatcher {
-        struct EntryStamp {
-            bool directory = false;
-        };
-
-        struct DirectoryDelta {
-            bool membershipChanged = false;
+        struct PreparedPaths {
+            QStringList files;
+            QStringList directories;
         };
 
         std::unique_ptr<QFileSystemWatcher> watcher;
         WorkspaceManager* owner = nullptr;
-        QHash<QString, QHash<QString, EntryStamp>> directorySnapshots;
+        std::unique_ptr<QTimer> continuation;
+        QStringList additions;
+        QStringList removals;
+        // Desired ownership changes immediately; native registrations follow
+        // in bounded batches and may still deliver obsolete notifications.
+        QHash<QString, QString> desiredFiles;
+        QHash<QString, QString> desiredDirectories;
+        std::function<void()> installed;
 
         void ensure(WorkspaceManager* owner);
         void clear();
-        void watchWorkspace(const QString& workspacePath,
-                            const QStringList& files,
-                            const QStringList& directories);
-        void updatePaths(const QString& workspacePath,
-                         const QStringList& files,
-                         const QStringList& directories);
-        DirectoryDelta refreshDirectory(const QString& path);
-        void rewatchFile(const QString& path);
+        void apply(const PreparedPaths& paths, std::function<void()> completion = {});
+        void advance();
+        QString rewatchFile(const QString& path);
         bool active() const;
 
-    private:
-        QHash<QString, EntryStamp> snapshotDirectory(
-            const QString& path) const;
+    };
+
+    struct DirectoryScanRequest {
+        QString path;
+        ProjectSnapshot project;
+        std::uint64_t generation = 0;
+        QString membershipDirectory;
+        QStringList expectedChildren;
+    };
+    struct DirectoryScanResult {
+        QStringList files;
+        QStringList directories;
+        WorkspaceWatcher::PreparedPaths watches;
+        bool cancelled = false;
+        bool membershipProbe = false;
+        bool membershipChanged = false;
+        QHash<QString, QStringList> membership;
     };
 
     QString workspacePath;
@@ -166,10 +187,20 @@ private:
     WorkspaceWatcher watcher;
     std::unique_ptr<ProjectModel> projectModel;
     std::unique_ptr<WorkspaceConfigurationService> workspaceConfigurationService;
-    std::unique_ptr<QDirIterator> scanIterator;
+    QThreadPool directoryThreadPool;
+    QFutureWatcher<DirectoryScanResult>* scanWatcher = nullptr;
+    std::optional<DirectoryScanRequest> pendingScanRequest;
+    std::shared_ptr<std::atomic_bool> scanCancellation;
+    std::shared_ptr<std::atomic<int>> scanProgress;
+    bool directoryScanPending = false;
+    WorkspaceWatcher::PreparedPaths preparedWatchPaths;
+    WorkspaceWatcher::PreparedPaths semanticWatchPaths;
+    void applyCombinedWatchPaths();
     QStringList pendingScannedFiles;
     QStringList pendingScannedDirectories;
     QStringList scannedDirectories;
+    QHash<QString, QStringList> directoryMembership;
+    QString membershipProbeDirectory;
     QString scanningPath;
     std::uint64_t workspaceActivationGeneration = 0;
     std::uint64_t scanGeneration = 0;
@@ -179,9 +210,11 @@ private:
     bool recentWorkspacePersistenceEnabled = true;
 
     // Helper methods
-    void startDirectoryScan(const QString& path);
+    void startDirectoryScan(const QString& path, const QString& membershipDirectory = {});
+    void launchPendingDirectoryScan();
     void finishDirectoryScan(std::uint64_t generation,
                              const QString& path);
+    void publishDirectoryScan(std::uint64_t generation, const QString& path);
     void cancelDirectoryScan();
     bool directoryScanIsCurrent(std::uint64_t generation,
                                 const QString& path) const;
@@ -197,7 +230,9 @@ private:
         const WorkspaceConfiguration& configuration,
         bool persist,
         QString* errorMessage = nullptr,
-        bool notify = true);
+        bool notify = true,
+        const QStringList* activatingFiles = nullptr,
+        bool discoveryComplete = true);
     void updateActiveEntryConfiguration(
         const WorkspaceConfiguration& configuration);
     void loadRecentWorkspaces();

@@ -1,5 +1,6 @@
 #include "symbolrelationshipengine.h"
 #include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -62,6 +63,7 @@ void SymbolRelationshipEngine::addRelationship(int fromSymbolId,
                                                int confidence,
                                                const SemanticSourceRange& evidenceRange)
 {
+    materializeLegacyGraph();
     if (fromSymbolId == toSymbolId) return;
 
     if (hasRelationship(fromSymbolId, toSymbolId, type)) {
@@ -96,6 +98,7 @@ void SymbolRelationshipEngine::emitRelationshipAddedQueued(int fromSymbolId, int
 
 void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
 {
+    materializeLegacyGraph();
     if (!relationshipGraph.contains(symbolId)) return;
 
     const RelationshipNode& node = relationshipGraph[symbolId];
@@ -136,6 +139,7 @@ void SymbolRelationshipEngine::removeAllRelationships(int symbolId)
 
 void SymbolRelationshipEngine::clearAllRelationships()
 {
+    querySnapshot.reset();
     relationshipGraph.clear();
     relationshipsByType.clear();
     symbolsByFile.clear();
@@ -151,6 +155,19 @@ SymbolRelationshipEngine::getRelationshipMetadata(
     RelationType type) const
 {
     RelationshipEdgeMetadata metadata;
+    if (querySnapshot) {
+        const auto record = querySnapshot->getSymbolRecordByLocalHandle(fromSymbolId);
+        for (const auto& relationship : querySnapshot->relationshipsForStableKey(record.stableKey)) {
+            if (relationship.toId == toSymbolId && relationship.type == type) {
+                metadata.found = true;
+                metadata.context = relationship.evidenceText;
+                metadata.confidence = relationship.confidence;
+                metadata.evidenceRange = relationship.evidenceRange;
+                break;
+            }
+        }
+        return metadata;
+    }
     if (!relationshipGraph.contains(fromSymbolId))
         return metadata;
 
@@ -169,6 +186,7 @@ SymbolRelationshipEngine::getRelationshipMetadata(
 
 void SymbolRelationshipEngine::beginUpdate()
 {
+    materializeLegacyGraph();
     ++updateDepth;
 }
 
@@ -212,6 +230,7 @@ void SymbolRelationshipEngine::buildFileRelationships(const QString& fileName)
 
 void SymbolRelationshipEngine::invalidateFileRelationships(const QString& fileName)
 {
+    materializeLegacyGraph();
     if (!symbolsByFile.contains(fileName)) return;
 
     const QSet<int>& fileSymbolIds = symbolsByFile[fileName];
@@ -302,12 +321,13 @@ SymbolRelationshipEngine::prepareRelationshipState(
 
 std::shared_ptr<SymbolRelationshipEngine::PreparedRelationshipState>
 SymbolRelationshipEngine::installPreparedRelationshipState(
-    std::shared_ptr<PreparedRelationshipState> state)
+    std::shared_ptr<PreparedRelationshipState> state, bool notify)
 {
     if (!state)
         return {};
 
     auto retiredState = std::make_shared<PreparedRelationshipState>();
+    retiredState->snapshot = std::exchange(querySnapshot, state->snapshot);
     retiredState->relationshipGraph = std::move(relationshipGraph);
     retiredState->relationshipsByType = std::move(relationshipsByType);
     retiredState->symbolsByFile = std::move(symbolsByFile);
@@ -317,8 +337,20 @@ SymbolRelationshipEngine::installPreparedRelationshipState(
     symbolsByFile = std::move(state->symbolsByFile);
     queryCache = std::move(state->queryCache);
     cacheValid = true;
-    emit relationshipsReplaced();
+    if (notify)
+        emit relationshipsReplaced();
     return retiredState;
+}
+
+void SymbolRelationshipEngine::materializeLegacyGraph()
+{
+    if (!querySnapshot)
+        return;
+    // Compatibility writes are uncommon. The workspace publication path only
+    // installs an immutable reference and never creates this redundant graph.
+    auto snapshot = std::exchange(querySnapshot, {});
+    installPreparedRelationshipState(prepareRelationshipState(
+        snapshot->symbolRecordsView(), snapshot->relationshipsView()));
 }
 
 void SymbolRelationshipEngine::replaceRelationshipsForFilesFromSnapshot(

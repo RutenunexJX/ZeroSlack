@@ -85,7 +85,8 @@ enum class SemanticAnalysisRequestDisposition {
     Invalidated,
     Cancelled,
     Expired,
-    TriviaGateRejected
+    TriviaGateRejected,
+    InputChanged
 };
 
 struct SourceTextDelta {
@@ -121,6 +122,7 @@ struct IncrementalAnalysisPlan {
     bool fullWorkspace = false;
     bool authoritativeWorkspaceReplace = false;
     QString fallbackReason;
+    QString compilationContextReason;
 
     bool isValid() const
     {
@@ -146,10 +148,17 @@ struct SemanticAnalysisRequest {
     // semantically inert. Requests that fail the gate are dropped without any
     // Slang work and leave the document state untouched.
     bool triviaOnlyGate = false;
+    int inputRetryCount = 0;
+    // Compatibility callers use the same worker/publication slot but do not
+    // complete the scheduler's independently numbered logical request.
+    bool compatibilityRequest = false;
+    QStringList compatibilityCompletionFiles;
+    bool relationshipProjectionRequested = false;
 
     bool isValid() const
     {
         return generation > 0
+            && project.sourceDiscoveryComplete
             && (project.isOpen() || !triggerFile.isEmpty());
     }
 };

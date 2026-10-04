@@ -11,10 +11,8 @@
 
 #include <QDir>
 #include <QElapsedTimer>
-#include <QFile>
 #include <QFileInfo>
 #include <QSet>
-#include <QTextStream>
 
 #include <utility>
 
@@ -31,14 +29,24 @@ QString normalizedWorkerPath(const QString& fileName)
     return path;
 }
 
-bool readWorkerFile(const QString& fileName, QString* content)
+bool snapshotInputsCoveredBy(const SemanticIndexSnapshot& snapshot,
+                             const SemanticAnalysisInput& input)
 {
-    if (!content)
-        return false;
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return false;
-    *content = QTextStream(&file).readAll();
+    // A retained workspace can contain a later standalone overlay. Its whole
+    // snapshot is restorable only when every owned input was recaptured too.
+    for (const QString& file : snapshot.symbolFiles())
+        if (!input.sources.contains(file))
+            return false;
+    const auto& contents = snapshot.fileContentsView();
+    for (auto it = contents.cbegin(); it != contents.cend(); ++it) {
+        const auto source = input.sources.constFind(it.key());
+        if (source == input.sources.cend() || !source->readable || source->text != it.value())
+            return false;
+    }
+    for (const auto& diagnostic : snapshot.rawDiagnostics())
+        if (!diagnostic.fileName.isEmpty()
+            && !input.sources.contains(normalizedWorkerPath(diagnostic.fileName)))
+            return false;
     return true;
 }
 
@@ -52,59 +60,6 @@ QHash<QString, QString> normalizedContents(
             result.insert(key, it.value());
     }
     return result;
-}
-
-QString sourceForFile(
-    const QString& fileName,
-    const QHash<QString, QString>& overrides,
-    const QHash<QString, QString>& snapshotContents,
-    bool* ok)
-{
-    const QString key = normalizedWorkerPath(fileName);
-    if (overrides.contains(key)) {
-        if (ok)
-            *ok = true;
-        return overrides.value(key);
-    }
-    if (snapshotContents.contains(key)) {
-        if (ok)
-            *ok = true;
-        return snapshotContents.value(key);
-    }
-    QString content;
-    const bool read = readWorkerFile(fileName, &content);
-    if (ok)
-        *ok = read;
-    return content;
-}
-
-bool loadContents(const QStringList& files,
-                  const QHash<QString, QString>& overrides,
-                  const QHash<QString, QString>& snapshotContents,
-                  const std::function<bool()>& cancelled,
-                  QHash<QString, QString>* contents,
-                  QString* error)
-{
-    if (!contents)
-        return false;
-    for (const QString& fileName : files) {
-        if (cancelled && cancelled())
-            return false;
-        bool ok = false;
-        const QString content = sourceForFile(fileName,
-                                              overrides,
-                                              snapshotContents,
-                                              &ok);
-        if (!ok) {
-            if (error) {
-                *error = QStringLiteral("Unable to read semantic source: %1")
-                             .arg(fileName);
-            }
-            return false;
-        }
-        contents->insert(fileName, content);
-    }
-    return true;
 }
 
 template<typename Value>
@@ -194,25 +149,25 @@ void prepareRelationshipDelta(WorkspaceAnalysisResult* result)
     QElapsedTimer timer;
     timer.start();
 
-    // Relationship extraction and owner-scoped replacement remain
-    // incremental in the prepared immutable snapshot. Build the derived query
-    // graph from that final snapshot on the worker so GUI publication is a
-    // pure state swap even for a one-file delta.
-    result->preparedRelationshipState =
-        SymbolRelationshipEngine::prepareRelationshipState(
-            result->preparedSnapshot->symbolRecordsView(),
-            result->preparedSnapshot->relationshipsView());
+    // The engine is a query adapter over the authoritative shard indexes.
+    // There is no second workspace-wide graph to rebuild or synchronize.
+    result->preparedRelationshipState = std::make_shared<
+        SymbolRelationshipEngine::PreparedRelationshipState>();
+    result->preparedRelationshipState->snapshot = result->preparedSnapshot;
     result->relationshipDeltaPrepared = true;
     result->relationshipStateBuildMs = timer.elapsed();
 }
 }
 
 WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
-    const SemanticAnalysisRequest& request,
+    const SemanticAnalysisRequest& originalRequest,
     std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
     const SemanticDependencyGraph& dependencyGraph,
-    const std::function<bool()>& isCancelled)
+    const std::function<bool()>& isCancelled,
+    std::shared_ptr<const SemanticAnalysisInput> baseInput,
+    std::shared_ptr<const PublishedWorkspaceSemanticState> retainedState)
 {
+    SemanticAnalysisRequest request = originalRequest;
     QElapsedTimer workerTimer;
     workerTimer.start();
     WorkspaceAnalysisResult result;
@@ -240,79 +195,132 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         return finish();
     }
 
-    const QHash<QString, QString> overrides =
-        normalizedContents(request.sourceOverrides);
-    const QHash<QString, QString> baselineSnapshotContents = baseSnapshot
-        ? normalizedContents(baseSnapshot->fileContents())
-        : QHash<QString, QString>();
-    QHash<QString, QString> sourceSnapshotContents =
-        baselineSnapshotContents;
-    if (request.reason == SemanticAnalysisReason::WorkspaceOpen
-        || request.reason == SemanticAnalysisReason::WorkspaceConfiguration
-        || request.impactHint == SemanticChangeImpact::WorkspaceConfig) {
-        sourceSnapshotContents.clear();
-    } else {
-        for (const QString& changedFile : request.changedFiles)
-            sourceSnapshotContents.remove(normalizedWorkerPath(changedFile));
+    SemanticInputCapture input(request);
+    if (!input.capture(request.project.systemVerilogFiles, cancelled)
+        || !input.capture(request.changedFiles, cancelled)
+        || (baseInput && !input.capture(baseInput->sources.keys(), cancelled)))
+        return finishCancelled();
+    QHash<QString, QString> allContents = input.contents();
+    const bool replacesWorkspace = request.project.isOpen()
+        && (request.reason == SemanticAnalysisReason::WorkspaceOpen
+            || request.reason == SemanticAnalysisReason::WorkspaceConfiguration
+            || request.impactHint == SemanticChangeImpact::WorkspaceConfig);
+    if (!request.triviaOnlyGate && retainedState
+        && retainedState->input && retainedState->snapshot
+        && baseSnapshot == retainedState->snapshot
+        && retainedState->policy.enabled == request.runtimePolicy.enabled
+        && retainedState->policy.planningMode == request.runtimePolicy.planningMode
+        && (!replacesWorkspace
+            || snapshotInputsCoveredBy(*baseSnapshot, input.input()))
+        && EffectiveValueService::getInstance()->isComputationCurrent(
+            request.project.systemVerilogFiles, retainedState->analysisRevision)
+        && input.input().equivalentTo(*retainedState->input)
+        && input.stillMatchesDisk(cancelled)) {
+        result.preparedSnapshot = retainedState->snapshot;
+        result.dependencyGraph = retainedState->dependencyGraph;
+        result.preparedEffectiveFactsState = retainedState->facts;
+        result.analysisRevision = retainedState->analysisRevision;
+        result.request.computationRevision = result.analysisRevision;
+        result.totalSymbols = result.preparedSnapshot->symbolRecordCount();
+        result.incrementalPlan.reason = request.reason;
+        result.incrementalPlan.impact = SemanticChangeImpact::WorkspaceConfig;
+        result.incrementalPlan.affectedFiles = request.project.systemVerilogFiles;
+        result.incrementalPlan.changedFiles = request.changedFiles;
+        result.incrementalPlan.authoritativeWorkspaceReplace = replacesWorkspace;
+        result.input = input.seal();
+        result.reusedWorkspace = true;
+        // Common preparation reselects this snapshot's own raw diagnostics,
+        // including when only the requested display limit has changed.
+        prepareRelationshipDelta(&result);
+        return finish();
     }
-
+    // The selected base owns its uncapped diagnostics. A retained scope may
+    // supply inputs/graph while referring to a different, older publication;
+    // it must never overwrite diagnostics of the current visible baseline.
+    const QHash<QString, QString> baselineSnapshotContents = baseSnapshot
+        ? normalizedContents(baseSnapshot->fileContents()) : QHash<QString, QString>{};
+    bool workspaceWideRequest = !baseSnapshot
+        || request.reason == SemanticAnalysisReason::WorkspaceConfiguration
+        || request.impactHint == SemanticChangeImpact::WorkspaceConfig
+        || request.reason == SemanticAnalysisReason::WorkspaceOpen;
     QStringList semanticChangedFiles = request.changedFiles;
     if (semanticChangedFiles.isEmpty() && !request.triggerFile.isEmpty())
         semanticChangedFiles.append(request.triggerFile);
-    const bool workspaceWideRequest =
-        request.impactHint == SemanticChangeImpact::WorkspaceConfig
-        || request.reason == SemanticAnalysisReason::WorkspaceOpen
-        || request.reason == SemanticAnalysisReason::WorkspaceConfiguration;
-    QHash<QString, QString> changedTextByFile;
-    if (!workspaceWideRequest) {
-        for (const QString& changedFile : semanticChangedFiles) {
-            bool newTextOk = false;
-            const QString changedText = sourceForFile(
-                changedFile,
-                overrides,
-                sourceSnapshotContents,
-                &newTextOk);
-            if (!newTextOk) {
-                result.error = QStringLiteral(
-                    "Unable to capture changed source: %1")
-                                   .arg(changedFile);
-                return finish();
-            }
-            changedTextByFile.insert(normalizedWorkerPath(changedFile),
-                                     changedText);
+    bool externalLookupChanged = false;
+    if (baseInput) {
+        QSet<QString> listed;
+        for (const QString& file : request.project.systemVerilogFiles)
+            listed.insert(normalizedWorkerPath(file));
+        for (auto it = baseInput->sources.cbegin(); it != baseInput->sources.cend(); ++it) {
+            const auto& fresh = input.source(it.key());
+            if (fresh.readable == it->readable && fresh.text == it->text)
+                continue;
+            if (!listed.contains(it.key()))
+                externalLookupChanged = true;
+            if (!semanticChangedFiles.contains(it.key()))
+                semanticChangedFiles.append(it.key());
         }
     }
-
-    QString classificationFile = request.triggerFile;
-    if (classificationFile.isEmpty() && !semanticChangedFiles.isEmpty())
-        classificationFile = semanticChangedFiles.constFirst();
-    const QString newText = changedTextByFile.value(
-        normalizedWorkerPath(classificationFile));
-    const QString oldText = baselineSnapshotContents.value(
-        normalizedWorkerPath(classificationFile));
-
-    SemanticChangeClassification classification;
-    if (workspaceWideRequest) {
-        classification.impact = SemanticChangeImpact::WorkspaceConfig;
-    } else if (semanticChangedFiles.size() > 1) {
-        classification.impact = SemanticChangeImpact::FullFallback;
-        classification.fallbackReason = QStringLiteral(
-            "Multiple pending clean changes were coalesced conservatively");
-    } else if (!baseSnapshot
-               || !baselineSnapshotContents.contains(
-                   normalizedWorkerPath(classificationFile))) {
-        classification.impact = SemanticChangeImpact::FullFallback;
-        classification.fallbackReason =
-            QStringLiteral("No authoritative baseline snapshot is available");
-    } else {
-        classification = SemanticChangeClassifier().classify(
-            classificationFile, oldText, newText);
+    // Read all configured sources once per request. Watch events are hints;
+    // missed external changes must not leave a dependent shard current.
+    for (const QString& file : request.project.systemVerilogFiles) {
+        const QString key = normalizedWorkerPath(file);
+        if (!input.source(key).readable) {
+            result.error = QStringLiteral("Unable to capture semantic source: %1").arg(file);
+            return finish();
+        }
+        if (baseSnapshot && baselineSnapshotContents.value(key) != allContents.value(key)
+            && !semanticChangedFiles.contains(file))
+            semanticChangedFiles.append(file);
     }
+    QSet<QString> changedKeys;
+    QStringList uniqueChanges;
+    for (const QString& file : semanticChangedFiles) {
+        const QString key = normalizedWorkerPath(file);
+        if (!key.isEmpty() && !changedKeys.contains(key)) {
+            changedKeys.insert(key);
+            uniqueChanges.append(file);
+        }
+    }
+    semanticChangedFiles = std::move(uniqueChanges);
+    request.changedFiles = semanticChangedFiles;
+    QHash<QString, SemanticChangeClassification> classifications;
+    const QString classificationFile = request.triggerFile.isEmpty()
+        ? semanticChangedFiles.value(0) : request.triggerFile;
+    const QString oldText = baselineSnapshotContents.value(normalizedWorkerPath(classificationFile));
+    const QString newText = allContents.value(normalizedWorkerPath(classificationFile));
+    for (const QString& file : semanticChangedFiles) {
+        const QString key = normalizedWorkerPath(file);
+        SemanticChangeClassification current;
+        if (workspaceWideRequest) {
+            current.impact = SemanticChangeImpact::WorkspaceConfig;
+        } else if (externalLookupChanged) {
+            current.impact = SemanticChangeImpact::FullFallback;
+            current.fallbackReason = QStringLiteral("An include lookup or indirect source changed");
+        } else if (!baselineSnapshotContents.contains(key)) {
+            current.impact = SemanticChangeImpact::FullFallback;
+            current.fallbackReason = QStringLiteral("No authoritative baseline exists for the changed source");
+        } else {
+            current = SemanticChangeClassifier().classify(file,
+                baselineSnapshotContents.value(key), allContents.value(key), cancelled);
+            if (cancelled()) return finishCancelled();
+            if (current.impact == SemanticChangeImpact::HeaderMacro) {
+                current.impact = SemanticChangeImpact::FullFallback;
+                current.fallbackReason = QStringLiteral("Preprocessor state can affect later ordered compilation-unit sources");
+            }
+        }
+        classifications.insert(key, current);
+    }
+    const auto classification = classifications.value(normalizedWorkerPath(classificationFile));
+    if (!workspaceWideRequest && request.triggerFile.isEmpty() && semanticChangedFiles.size() == 1)
+        request.triggerFile = classificationFile;
+    result.request = request;
 
     // Reject before dependency extraction, computation registration or Slang.
     // Even the ordinary trivia path must never publish a fallback position map.
     if ((request.triviaOnlyGate
-         && (classification.impact != SemanticChangeImpact::TriviaOnly
+         && (semanticChangedFiles.size() != 1
+             || classification.impact != SemanticChangeImpact::TriviaOnly
              || classification.oldTreeHasErrors
              || classification.newTreeHasErrors))
         || (classification.impact == SemanticChangeImpact::TriviaOnly
@@ -323,42 +331,12 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         return finish();
     }
 
-    QHash<QString, QString> allContents;
-    SemanticDependencyGraph nextGraph = dependencyGraph;
-    if (workspaceWideRequest) {
-        if (!loadContents(request.project.systemVerilogFiles,
-                          overrides,
-                          sourceSnapshotContents,
-                          cancelled,
-                          &allContents,
-                          &result.error)) {
-            return cancelled() ? finishCancelled() : finish();
-        }
-        nextGraph = SemanticDependencyGraph::build(request.project,
-                                                   allContents);
-    } else if (!nextGraph.isValidFor(request.project)) {
-        if (!loadContents(request.project.systemVerilogFiles,
-                          overrides,
-                          sourceSnapshotContents,
-                          cancelled,
-                          &allContents,
-                          &result.error)) {
-            return cancelled() ? finishCancelled() : finish();
-        }
-        nextGraph = SemanticDependencyGraph::build(request.project,
-                                                   allContents);
-    } else {
-        for (const QString& changedFile : semanticChangedFiles) {
-            nextGraph = nextGraph.withUpdatedFile(
-                request.project,
-                changedFile,
-                changedTextByFile.value(normalizedWorkerPath(changedFile)));
-        }
-    }
+    SemanticDependencyGraph nextGraph = dependencyGraph.isValidFor(request.project)
+        ? dependencyGraph.withUpdatedFiles(request.project, allContents, semanticChangedFiles, cancelled)
+        : SemanticDependencyGraph::build(request.project, allContents, cancelled);
     result.dependencyGraph = nextGraph;
-    result.incrementalPlan = IncrementalAnalysisPlanService().plan(
-        request, classification, dependencyGraph, nextGraph);
-
+    result.incrementalPlan = IncrementalAnalysisPlanService().planChanges(
+        request, classifications, dependencyGraph, nextGraph);
     std::uint64_t computationRevision = request.computationRevision;
 
     if (cancelled())
@@ -376,8 +354,8 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         // computation revision; registration intentionally makes older facts
         // stale for normal semantic recomputation.
         QList<EffectiveValueFact> facts =
-            EffectiveValueService::getInstance()->factsForDocument(
-                request.triggerFile, oldText);
+            EffectiveValueService::capturedFacts(
+                retainedState ? retainedState->facts : nullptr, request.triggerFile, oldText);
         if (computationRevision == 0) {
             computationRevision =
                 EffectiveValueService::getInstance()->beginComputation(
@@ -391,7 +369,8 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
             oldText,
             newText,
             classification.delta,
-            revision);
+            revision,
+            computationRevision);
         result.effectiveFactsByFile.insert(
             request.triggerFile,
             factsWithRevisions(
@@ -410,6 +389,12 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         result.totalSymbols = result.preparedSnapshot
             ? result.preparedSnapshot->symbolRecordCount()
             : 0;
+        if (!input.stillMatchesDisk(cancelled)) {
+            result.preparedSnapshot.reset();
+            result.disposition = SemanticAnalysisRequestDisposition::InputChanged;
+            return cancelled() ? finishCancelled() : finish();
+        }
+        result.input = input.seal();
         prepareRelationshipDelta(&result);
         return finish();
     }
@@ -422,71 +407,89 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
     result.analysisRevision = computationRevision;
     result.request.computationRevision = computationRevision;
 
-    if (result.incrementalPlan.fullWorkspace
-        && allContents.size() < request.project.systemVerilogFiles.size()) {
-        if (!loadContents(request.project.systemVerilogFiles,
-                          overrides,
-                          sourceSnapshotContents,
-                          cancelled,
-                          &allContents,
-                          &result.error)) {
-            return cancelled() ? finishCancelled() : finish();
-        }
-    }
-
-    QHash<QString, QString> compilationContents;
-    if (!loadContents(result.incrementalPlan.compilationFiles,
-                      overrides,
-                      sourceSnapshotContents,
-                      cancelled,
-                      &compilationContents,
-                      &result.error)) {
-        return cancelled() ? finishCancelled() : finish();
-    }
-    result.slangInvoked = true;
+    // fromBuffers is one ordered compilation unit. Recompile its complete
+    // context to preserve CU imports/directives/macros; publication remains a
+    // dependency-planned delta. Included headers are not added as root buffers.
+    result.incrementalPlan.compilationFiles = request.project.systemVerilogFiles;
+    if (result.incrementalPlan.compilationFiles.isEmpty() && !request.project.isOpen())
+        result.incrementalPlan.compilationFiles = request.changedFiles;
+    result.incrementalPlan.compilationContextReason = QStringLiteral(
+        "Preserve the existing ordered Slang compilation unit; publish only affected shards");
+    result.slangInvoked = !result.incrementalPlan.compilationFiles.isEmpty();
 
     QElapsedTimer stageTimer;
     stageTimer.start();
-    SlangManager symbolManager;
-    QList<EffectiveValueFact> allFacts;
-    const QList<SemanticSymbolRecord> allRecords =
-        symbolManager.extractOverlayWorkspaceSymbolRecords(
-            compilationContents,
-            request.project.includeDirs,
-            request.project.defines,
-            cancelled,
-            &allFacts,
-            result.incrementalPlan.compilationFiles);
+    SlangManager slang;
+    auto compiled = slang.analyzeCapturedWorkspace(input,
+        result.incrementalPlan.compilationFiles, request.project.includeDirs,
+        request.project.defines, request.project.topModule, cancelled);
+    if (compiled.cancelled)
+        return finishCancelled();
+    if (!compiled.error.isEmpty()) {
+        result.error = compiled.error;
+        return finish();
+    }
+    const auto& allRecords = compiled.symbols;
+    const auto& allFacts = compiled.effectiveFacts;
     result.symbolExtractionMs = stageTimer.elapsed();
     if (cancelled())
         return finishCancelled();
 
+    // Only buffers actually used by this compilation become semantic files.
+    // The input envelope also retains negative lookup observations for reuse
+    // validation, without publishing those candidates as empty source files.
+    const auto compilationContents = input.contents();
+    QStringList assemblyFiles = result.incrementalPlan.compilationFiles;
+    QSet<QString> rootKeys;
+    for (const QString& file : assemblyFiles)
+        rootKeys.insert(normalizedWorkerPath(file));
+    QStringList includedFiles;
+    for (auto it = compiled.includesByFile.cbegin(); it != compiled.includesByFile.cend(); ++it)
+        if (!rootKeys.contains(it.key()))
+            includedFiles.append(it.key());
+    includedFiles.sort(Qt::CaseSensitive);
+    assemblyFiles.append(includedFiles);
+    for (const QString& file : includedFiles) {
+        if (!result.incrementalPlan.affectedFiles.contains(file))
+            result.incrementalPlan.affectedFiles.append(file);
+        if (!result.incrementalPlan.relationshipFiles.contains(file))
+            result.incrementalPlan.relationshipFiles.append(file);
+    }
+    QStringList removedIncludes;
+    if (baseSnapshot) {
+        for (const QString& file : baseSnapshot->symbolFiles()) {
+            // A normal delta owns its captured scope, not every row currently
+            // visible. Only workspace activation/configuration removes all.
+            const bool belongsToScope = result.incrementalPlan.authoritativeWorkspaceReplace
+                || (baseInput && baseInput->sources.contains(file)
+                    && baseInput->sources.value(file).readable);
+            if (belongsToScope && !rootKeys.contains(file) && !compiled.includesByFile.contains(file)) {
+                removedIncludes.append(file);
+                result.incrementalPlan.affectedFiles.append(file);
+                result.incrementalPlan.relationshipFiles.append(file);
+            }
+        }
+    }
     stageTimer.restart();
     WorkspaceAnalysisResult grouped =
         SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
-            result.incrementalPlan.compilationFiles,
-            allRecords,
-            allFacts,
-            cancelled,
-            compilationContents);
+            assemblyFiles, allRecords, allFacts, cancelled, compilationContents);
     result.resultAssemblyMs = stageTimer.elapsed();
     if (cancelled() || grouped.cancelled)
         return finishCancelled();
 
-    stageTimer.restart();
-    SlangManager diagnosticManager;
-    const QList<SemanticDiagnostic> allDiagnostics =
-        diagnosticManager.extractOverlayWorkspaceDiagnostics(
-            compilationContents,
-            request.project.includeDirs,
-            request.project.defines,
-            cancelled,
-            result.incrementalPlan.compilationFiles);
-    result.diagnosticsExtractionMs = stageTimer.elapsed();
-    if (cancelled())
-        return finishCancelled();
+    const auto& allDiagnostics = compiled.diagnostics;
 
     QList<SemanticFileSymbolUpdate> updates;
+    for (const QString& file : removedIncludes) {
+        SemanticFileSymbolUpdate removal;
+        removal.fileName = file;
+        removal.removed = true;
+        updates.append(std::move(removal));
+        result.effectiveFactsByFile.insert(file, {});
+        result.effectiveContentFingerprintsByFile.insert(file,
+            EffectiveValueService::documentContentFingerprint({}));
+    }
     QList<SemanticDiagnostic> affectedDiagnostics;
     QSet<QString> affectedFileKeys;
     affectedFileKeys.reserve(result.incrementalPlan.affectedFiles.size());
@@ -543,28 +546,18 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
         result.incrementalPlan.relationshipFiles,
         {});
 
-    stageTimer.restart();
-    SlangManager relationshipSlang;
-    const QHash<QString, RelationshipExtractionInfo> infoByFile =
-        relationshipSlang.extractOverlayWorkspaceRelationshipInfo(
-            compilationContents,
-            request.project.includeDirs,
-            request.project.defines,
-            cancelled,
-            result.incrementalPlan.compilationFiles);
-    result.relationshipExtractionMs = stageTimer.elapsed();
-    if (cancelled())
-        return finishCancelled();
+    const auto& infoByFile = compiled.relationships;
 
     stageTimer.restart();
     SmartRelationshipBuilder relationshipBuilder(
         nullptr,
-        &relationshipSlang,
+        &slang,
         [&preliminary](const QString& fileName) {
             return preliminary.getSymbolRecords(fileName);
         });
     const auto contentsByKey = indexByNormalizedPath(compilationContents);
     const auto infoByKey = indexByNormalizedPath(infoByFile);
+    const RelationshipExtractionInfo emptyRelationshipInfo;
     QList<SemanticRelationship> newRelationships;
     for (const QString& fileName : result.incrementalPlan.relationshipFiles) {
         if (cancelled()) {
@@ -572,6 +565,8 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
             return finishCancelled();
         }
         const QString fileKey = normalizedWorkerPath(fileName);
+        if (removedIncludes.contains(fileKey))
+            continue;
         const QString* content = contentsByKey.value(fileKey, nullptr);
         const QVector<RelationshipToAdd> computed =
             relationshipBuilder.computeRelationships(
@@ -581,7 +576,7 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
                 &preliminary,
                 request.project.includeDirs,
                 request.project.defines,
-                infoByKey.value(fileKey, nullptr));
+                infoByKey.value(fileKey, &emptyRelationshipInfo));
         newRelationships.append(semanticRelationships(computed));
     }
     result.relationshipBuildMs = stageTimer.elapsed();
@@ -590,6 +585,30 @@ WorkspaceAnalysisResult IncrementalSemanticAnalysisWorker::analyze(
             preliminary.withRelationshipsReplacingFiles(
                 result.incrementalPlan.relationshipFiles,
                 newRelationships));
+    // Include buffers are now complete, including indirect and macro-generated
+    // includes. Extract dependency facts from exactly the bytes Slang saw.
+    QHash<QString, QString> semanticContents;
+    for (const QString& file : assemblyFiles) {
+        const QString key = normalizedWorkerPath(file);
+        semanticContents.insert(key, compilationContents.value(key));
+    }
+    QStringList changedSources = removedIncludes;
+    const auto knownFacts = nextGraph.fileFacts();
+    for (auto it = semanticContents.cbegin(); it != semanticContents.cend(); ++it)
+        if (!knownFacts.contains(it.key()))
+            changedSources.append(it.key());
+    for (auto it = knownFacts.cbegin(); it != knownFacts.cend(); ++it)
+        if (!semanticContents.contains(it.key()) && !changedSources.contains(it.key()))
+            changedSources.append(it.key());
+    result.dependencyGraph = nextGraph.withUpdatedFiles(request.project, semanticContents, changedSources)
+        .withObservedIncludes(compiled.includesByFile);
+    result.totalSymbols = result.preparedSnapshot->symbolRecordCount();
+    if (!input.stillMatchesDisk(cancelled)) {
+        result.preparedSnapshot.reset();
+        result.disposition = SemanticAnalysisRequestDisposition::InputChanged;
+        return cancelled() ? finishCancelled() : finish();
+    }
+    result.input = input.seal();
     prepareRelationshipDelta(&result);
     return finish();
 }

@@ -1,16 +1,12 @@
 #include "symbolanalyzer.h"
 
-#include <QCryptographicHash>
 #include <QDir>
 #include <QFileInfo>
 
 void SymbolAnalyzer::invalidateCache()
 {
     lastAnalyzedContent.clear();
-    fileAnalysisGenerations.clear();
-    overlayWorkspaceFiles.clear();
-    overlayWorkspaceIncludeDirs.clear();
-    overlayWorkspaceDefines.clear();
+    overlayProject = {};
     ++workspaceEpoch;
     ++workspaceAnalysisGeneration;
     EffectiveValueService::getInstance()->clearPublishedFacts();
@@ -30,14 +26,6 @@ void SymbolAnalyzer::setMaxPublishedDiagnostics(int maxDiagnostics)
 int SymbolAnalyzer::maxPublishedDiagnostics() const
 {
     return publishedDiagnosticLimit;
-}
-
-QString SymbolAnalyzer::contentHash(const QString& content) const
-{
-    return QString::fromLatin1(
-        QCryptographicHash::hash(content.toUtf8(),
-                                 QCryptographicHash::Sha256)
-            .toHex());
 }
 
 static bool lineContainsKeywordAsWord(const QString& line, const QString& keyword)

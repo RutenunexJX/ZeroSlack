@@ -2,6 +2,8 @@
 
 #include "documentmodel.h"
 #include "symbolanalyzer.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
 
 WorkspaceSymbolAnalysisController::WorkspaceSymbolAnalysisController(
     QObject* parent)
@@ -57,10 +59,19 @@ void WorkspaceSymbolAnalysisController::setSymbolAnalyzer(
                                                      totalFiles);
             });
     connect(symbolAnalyzer,
-            &SymbolAnalyzer::batchAnalysisCompleted,
+            &SymbolAnalyzer::semanticAnalysisCommitted,
             this,
-            &WorkspaceSymbolAnalysisController::
-                onWorkspaceSymbolAnalysisCompleted);
+            [this](const SemanticAnalysisRequest& request, const SemanticSnapshotToken& publication) {
+                const auto current = SemanticIndex::getInstance()->snapshotToken();
+                if (request.compatibilityRequest || !workspaceAnalysisActive
+                    || activeSemanticRequest.generation != request.generation
+                    || activeSemanticRequest.project.semanticIdentity() != request.project.semanticIdentity()
+                    || !publication.snapshot || current.snapshot != publication.snapshot
+                    || current.revision != publication.revision)
+                    return;
+                onWorkspaceSymbolAnalysisCompleted(activeIncrementalPlan.affectedFiles.size(),
+                                                    publication.snapshot->symbolRecordCount());
+            });
     connect(symbolAnalyzer,
             &SymbolAnalyzer::workspaceAnalysisExpired,
             this,
@@ -86,10 +97,22 @@ void WorkspaceSymbolAnalysisController::setSymbolAnalyzer(
             this,
             [this](const SemanticAnalysisRequest& request,
                    SemanticAnalysisRequestDisposition disposition) {
-                if (!workspaceAnalysisActive
+                if (request.compatibilityRequest || !workspaceAnalysisActive
                     || activeSemanticRequest.generation != request.generation)
                     return;
-                notifyActiveRequestDropped(disposition);
+                if (disposition == SemanticAnalysisRequestDisposition::InputChanged
+                    && !hasPendingSemanticRequest && request.inputRetryCount < 1) {
+                    pendingSemanticRequest = request;
+                    ++pendingSemanticRequest.inputRetryCount;
+                    pendingSemanticRequest.computationRevision = 0;
+                    pendingSemanticRequest.expectedSnapshotRevision = 0;
+                    hasPendingSemanticRequest = true;
+                    // The logical request remains pending while a fresh capture
+                    // is made. The retry cannot recursively retry forever.
+                    activeSemanticRequestDropNotified = true;
+                } else {
+                    notifyActiveRequestDropped(disposition);
+                }
                 onWorkspaceSymbolAnalysisExpired();
             });
     connect(symbolAnalyzer,

@@ -28,6 +28,8 @@
 #include "incrementalanalysisplanservice.h"
 #include "mycodeeditor.h"
 #include "navigationmanager.h"
+#include "navigationwidget.h"
+#include <QTreeWidget>
 #include "navigationservice.h"
 #include "semanticchangeclassifier.h"
 #include "semanticdependencygraph.h"
@@ -180,9 +182,9 @@ void runAnalysisRuntimePolicyPlanning()
             request,
             classification,
             graph);
-    expect("disabled incremental policy forces authoritative full plan",
+    expect("disabled incremental policy compiles full scope without claiming unrelated publications",
            forcedFull.fullWorkspace
-               && forcedFull.authoritativeWorkspaceReplace
+               && !forcedFull.authoritativeWorkspaceReplace
                && forcedFull.compilationFiles.size()
                       == project.systemVerilogFiles.size()
                && forcedFull.fallbackReason.contains(
@@ -1905,6 +1907,7 @@ void runIncrementalEffectiveFactsKeepInstanceContext()
         QStringLiteral("data_o = data_i[0]"),
         QStringLiteral("data_o = ~data_i[0]"));
     childEditor.setPlainText(localBodyText);
+    expect("child save persists changed source", writeSource(child, localBodyText));
     documents.markSaved(&childEditor);
     expect("child LocalBody save completes",
            waitUntil([&]() { return finishedSpy.size() == 2; }, 10000));
@@ -1929,6 +1932,7 @@ void runIncrementalEffectiveFactsKeepInstanceContext()
         QStringLiteral(".P(4'h2)"),
         QStringLiteral(".P(4'h4)"));
     topEditor.setPlainText(changedTopText);
+    expect("parent save persists changed source", writeSource(top, changedTopText));
     documents.markSaved(&topEditor);
     expect("parent override save completes",
            waitUntil([&]() { return finishedSpy.size() == 3; }, 10000));
@@ -3063,11 +3067,16 @@ void runDesignHierarchyTopologyFingerprint()
     expect("topology fixture opens top tab", tabs.openFileInTab(topFile));
     expect("topology fixture opens child tab", tabs.openFileInTab(childFile));
     expect("topology fixture opens other tab", tabs.openFileInTab(otherFile));
+    NavigationWidget view;
+    view.show();
     NavigationManager navigation;
+    navigation.setNavigationWidget(&view);
     navigation.connectToTabManager(&tabs);
     navigation.setNavigationService(&service);
     index.setSnapshot(topologySnapshot(0, QStringLiteral("child")));
     navigation.setActiveView(NavigationManager::DesignHierarchyView);
+    QSignalSpy refreshed(&navigation, &NavigationManager::dataRefreshed);
+    expect("initial visible Design hierarchy becomes ready", waitUntil([&] { return !refreshed.isEmpty(); }, 5000));
     QStringList refreshDetails;
     QObject::connect(
         &navigation,
@@ -3080,13 +3089,18 @@ void runDesignHierarchyTopologyFingerprint()
     index.setSnapshot(topologySnapshot(10, QStringLiteral("child")));
     navigation.onBatchSymbolAnalysisCompleted(1, 4);
     expect("non-topology snapshot generation causes zero hierarchy rebuild",
-           !refreshDetails.isEmpty()
+           waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(
                    QStringLiteral("hierarchyRebuild=0")));
+    auto* designTree = view.findChild<QTreeWidget*>(QStringLiteral("navigationDesignTree"));
+    expect("source-only Design publication refreshes navigation anchors",
+           designTree && designTree->topLevelItemCount() > 0
+               && designTree->topLevelItem(0)->toolTip(0).contains(QStringLiteral(":11")));
+    refreshDetails.clear();
     index.setSnapshot(topologySnapshot(10, QStringLiteral("other")));
     navigation.onBatchSymbolAnalysisCompleted(1, 4);
     expect("real instance topology change causes one hierarchy rebuild",
-           !refreshDetails.isEmpty()
+           waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(
                    QStringLiteral("hierarchyRebuild=1")));
 }
@@ -3399,9 +3413,9 @@ void runWorkspaceClearRetiresSnapshotWithoutPublishingStaleState()
     analyzer.shutdown();
     const int enqueued = analyzer.publicationRetirementEnqueueCountForTesting();
     analyzer.clearSemanticIndex();
-    expect("workspace clear after shutdown cannot enqueue new retirement",
-           !index->snapshot() && analyzer.pendingPublicationRetirementsForTesting() == 0
-               && analyzer.publicationRetirementEnqueueCountForTesting() == enqueued
+    expect("workspace clear after shutdown drains late immutable state safely",
+           !index->snapshot() && waitUntil([&] { return analyzer.pendingPublicationRetirementsForTesting() == 0; }, 5000)
+               && analyzer.publicationRetirementEnqueueCountForTesting() == enqueued + 1
                && analyzer.rejectedPublicationRetirementsForTesting() == 0);
 }
 

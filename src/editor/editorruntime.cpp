@@ -1166,6 +1166,14 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 {
     semantic.init();
     syntax.init();
+    syntax.setReparseFinishedCallback([this, owner = QPointer<MyCodeEditor>(editor)] {
+        if (!owner || rebindingDocument)
+            return;
+        folding.refresh(owner, syntax.tsDocument());
+        ++hotPathMetrics.fullFoldingRebuilds;
+        refreshDerivedEditorState(owner, true);
+        owner->viewport()->update();
+    });
     gutter.init(editor);
     identity.set(QString());
     semanticRevisionText.setText(QString());

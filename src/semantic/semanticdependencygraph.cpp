@@ -385,9 +385,10 @@ void collectFacts(const QString& text,
                   TSNode node,
                   SemanticFileDependencyFacts* facts,
                   const QString& ownerName = QString(),
-                  bool insideIfdefCondition = false)
+                  bool insideIfdefCondition = false,
+                  const std::function<bool()>& cancelled = {})
 {
-    if (!facts || ts_node_is_null(node))
+    if (!facts || ts_node_is_null(node) || (cancelled && cancelled()))
         return;
     const QString type = typeOf(node);
     const bool apiDeclaration = apiDeclarationType(type);
@@ -470,26 +471,16 @@ void collectFacts(const QString& text,
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (ts_tree_cursor_goto_first_child(&cursor)) {
         do {
+            if (cancelled && cancelled()) break;
             const TSNode child = ts_tree_cursor_current_node(&cursor);
             if (ts_node_is_named(child))
-                collectFacts(text, child, facts, nestedOwner, nestedIfdef);
+                collectFacts(text, child, facts, nestedOwner, nestedIfdef, cancelled);
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
     ts_tree_cursor_delete(&cursor);
 }
 
-template <typename T>
-void rememberDeclarations(QHash<QString, QSet<QString>>* filesByName,
-                          const QString& file,
-                          const T& names)
-{
-    if (!filesByName)
-        return;
-    for (const QString& name : names) {
-        if (!name.isEmpty())
-            (*filesByName)[name].insert(file);
-    }
-}
+
 }
 
 QString SemanticDependencyGraph::normalizedPath(const QString& fileName)
@@ -506,60 +497,42 @@ QString SemanticDependencyGraph::normalizedPath(const QString& fileName)
 
 QString SemanticDependencyGraph::projectKey(const ProjectSnapshot& project)
 {
-    QStringList files;
-    for (const QString& file : project.systemVerilogFiles)
-        files.append(normalizedPath(file));
-    QStringList includes;
-    for (const QString& include : project.includeDirs)
-        includes.append(normalizedPath(include));
-    QStringList defineKeys = project.defines.keys();
-    defineKeys.sort(Qt::CaseSensitive);
-    QStringList defineParts;
-    for (const QString& key : defineKeys)
-        defineParts.append(key + QLatin1Char('=') + project.defines.value(key));
-    return QStringLiteral("%1\n%2\n%3\n%4\n%5")
-        .arg(normalizedPath(project.workspaceRoot),
-             files.join(QLatin1Char('\n')),
-             includes.join(QLatin1Char('\n')),
-             defineParts.join(QLatin1Char('\n')),
-             project.topModule);
+    return project.semanticIdentity();
 }
 
 SemanticFileDependencyFacts SemanticDependencyGraph::extractFacts(
     const QString& fileName,
-    const QString& content)
+    const QString& content, const std::function<bool()>& cancelled)
 {
     SemanticFileDependencyFacts facts;
     facts.fileName = fileName;
     TSDocument document;
-    document.setText(content);
+    if (!document.setText(content, cancelled)) {
+        facts.parseError = true;
+        return facts;
+    }
     facts.parseError = document.hasError();
-    collectFacts(content, document.rootNode(), &facts);
+    collectFacts(content, document.rootNode(), &facts, {}, false, cancelled);
     facts.includeNames.removeDuplicates();
     return facts;
 }
 
 SemanticDependencyGraph SemanticDependencyGraph::build(
     const ProjectSnapshot& project,
-    const QHash<QString, QString>& contents)
+    const QHash<QString, QString>& contents, const std::function<bool()>& cancelled)
 {
     SemanticDependencyGraph graph;
     graph.graphProject = project;
     graph.projectIdentity = projectKey(project);
-    QHash<QString, QString> contentByKey;
-    contentByKey.reserve(contents.size());
-    for (auto it = contents.constBegin(); it != contents.constEnd(); ++it) {
+    for (auto it = contents.cbegin(); it != contents.cend(); ++it) {
         const QString key = normalizedPath(it.key());
-        if (!contentByKey.contains(key))
-            contentByKey.insert(key, it.value());
-    }
-    for (const QString& fileName : project.systemVerilogFiles) {
-        const QString key = normalizedPath(fileName);
         if (key.isEmpty())
             continue;
-        graph.originalPathByKey.insert(key, fileName);
-        graph.factsByFile.insert(key, extractFacts(fileName, contentByKey.value(key)));
+        if (cancelled && cancelled()) return {};
+        graph.originalPathByKey.insert(key, it.key());
+        graph.factsByFile.insert(key, extractFacts(it.key(), it.value(), cancelled));
     }
+    if (cancelled && cancelled()) return {};
     graph.rebuildEdges();
     return graph;
 }
@@ -569,19 +542,88 @@ SemanticDependencyGraph SemanticDependencyGraph::withUpdatedFile(
     const QString& fileName,
     const QString& content) const
 {
-    if (!isValidFor(project)) {
-        QHash<QString, QString> contents;
-        contents.insert(fileName, content);
-        return build(project, contents);
-    }
+    return withUpdatedFiles(project, {{fileName, content}}, {fileName});
+}
 
+SemanticDependencyGraph SemanticDependencyGraph::withUpdatedFiles(
+    const ProjectSnapshot& project, const QHash<QString, QString>& contents,
+    const QStringList& changedFiles, const std::function<bool()>& cancelled) const
+{
+    if (!isValidFor(project))
+        return build(project, contents, cancelled);
     SemanticDependencyGraph result = *this;
-    const QString key = normalizedPath(fileName);
-    if (!key.isEmpty()) {
-        result.originalPathByKey.insert(key, fileName);
-        result.factsByFile.insert(key, extractFacts(fileName, content));
+    QSet<QString> affected;
+    bool topChanged = false;
+    for (const QString& file : changedFiles) {
+        if (cancelled && cancelled()) return {};
+        const QString key = normalizedPath(file);
+        const auto old = result.factsByFile.value(key);
+        auto content = contents.constFind(key);
+        if (content == contents.cend())
+            content = contents.constFind(file);
+        const auto next = content == contents.cend()
+            ? SemanticFileDependencyFacts{} : extractFacts(file, content.value(), cancelled);
+        QSet<QString> declarations;
+        if (old.moduleDeclarations != next.moduleDeclarations)
+            declarations |= old.moduleDeclarations | next.moduleDeclarations;
+        if (old.packageDeclarations != next.packageDeclarations)
+            declarations |= old.packageDeclarations | next.packageDeclarations;
+        if (old.macroDefinitions != next.macroDefinitions)
+            declarations |= old.macroDefinitions | next.macroDefinitions;
+        if (old.apiDeclarations != next.apiDeclarations)
+            declarations |= old.apiDeclarations | next.apiDeclarations;
+        for (const QString& name : declarations)
+            for (const auto& user : result.usersByName.value(name)) affected.insert(user);
+        topChanged |= old.moduleDeclarations != next.moduleDeclarations
+            || old.instantiatedModules != next.instantiatedModules;
+        if (old.includeNames != next.includeNames)
+            result.observedIncludes.remove(key);
+        // Literal include users may still refer to a removed provider until
+        // this same capture's resolved include edges replace their rows.
+        if (content == contents.cend()) {
+            const auto incoming = result.dependents.value(key);
+            for (auto it = incoming.cbegin(); it != incoming.cend(); ++it)
+                affected.insert(it.key());
+        }
+        result.indexFacts(key, old, false);
+        if (content == contents.cend()) {
+            result.factsByFile.remove(key);
+            result.originalPathByKey.remove(key);
+            result.observedIncludes.remove(key);
+        } else {
+            result.factsByFile.insert(key, next);
+            result.originalPathByKey.insert(key, file);
+            result.indexFacts(key, next, true);
+        }
+        for (const QString& name : declarations)
+            for (const auto& user : result.usersByName.value(name)) affected.insert(user);
+        affected.insert(key);
     }
-    result.rebuildEdges();
+    // Only rows whose own facts or referenced declarations changed are rebuilt.
+    for (const QString& key : affected) {
+        result.removeFileEdges(key);
+        if (result.factsByFile.contains(key))
+            result.rebuildFileEdges(key);
+    }
+    if (topChanged || affected.contains(normalizedPath(topFile)))
+        result.rebuildActiveTop();
+    return result;
+}
+
+SemanticDependencyGraph SemanticDependencyGraph::withObservedIncludes(
+    const QHash<QString, QStringList>& includesByFile) const
+{
+    SemanticDependencyGraph result = *this;
+    for (auto it = includesByFile.cbegin(); it != includesByFile.cend(); ++it) {
+        const QString key = normalizedPath(it.key());
+        if (result.observedIncludes.contains(key) && result.observedIncludes.value(key) == it.value())
+            continue;
+        result.observedIncludes.insert(key, it.value());
+        result.removeFileEdges(key);
+        if (result.factsByFile.contains(key))
+            result.rebuildFileEdges(key);
+    }
+    result.rebuildActiveTop();
     return result;
 }
 
@@ -589,12 +631,27 @@ bool SemanticDependencyGraph::isValidFor(const ProjectSnapshot& project) const
 {
     return !projectIdentity.isEmpty()
         && projectIdentity == projectKey(project)
-        && factsByFile.size() == project.systemVerilogFiles.size();
+        && std::all_of(project.systemVerilogFiles.cbegin(), project.systemVerilogFiles.cend(),
+            [this](const QString& file) { return factsByFile.contains(normalizedPath(file)); });
 }
 
 bool SemanticDependencyGraph::hasParseError(const QString& fileName) const
 {
     return factsByFile.value(normalizedPath(fileName)).parseError;
+}
+
+qsizetype SemanticDependencyGraph::logicalBytes() const
+{
+    qsizetype bytes = factsByFile.size() * 2048;
+    for (auto it = factsByFile.cbegin(); it != factsByFile.cend(); ++it) {
+        bytes += it->symbolReferences.size() * 128 + it->moduleInstantiations.size() * 512;
+        bytes += dependencies.value(it.key()).size() * 256;
+    }
+    for (auto it = api.cbegin(); it != api.cend(); ++it)
+        bytes += 128 + it->size() * 64;
+    for (auto it = apiUsersByName.cbegin(); it != apiUsersByName.cend(); ++it)
+        bytes += 128 + it->size() * 64;
+    return bytes;
 }
 
 void SemanticDependencyGraph::addDependency(
@@ -629,94 +686,125 @@ QString SemanticDependencyGraph::resolveInclude(
     return QString();
 }
 
+void SemanticDependencyGraph::indexFacts(const QString& key,
+    const SemanticFileDependencyFacts& facts, bool add)
+{
+    auto update = [&](QHash<QString, QStringList>& index, const QSet<QString>& names) {
+        for (const QString& name : names) {
+            if (name.isEmpty())
+                continue;
+            if (add)
+                index[name].append(key);
+            else {
+                auto it = index.find(name);
+                if (it != index.end() && it->removeAll(key) && it->isEmpty())
+                    index.erase(it);
+            }
+        }
+    };
+    update(modules, facts.moduleDeclarations);
+    update(packages, facts.packageDeclarations);
+    update(macros, facts.macroDefinitions);
+    update(api, facts.apiDeclarations);
+    update(apiUsersByName, facts.symbolReferences);
+    update(usersByName, facts.macroUses | facts.importedPackages
+        | facts.instantiatedModules | facts.symbolReferences);
+}
+
+void SemanticDependencyGraph::removeFileEdges(const QString& key)
+{
+    const auto old = dependencies.take(key);
+    for (auto it = old.cbegin(); it != old.cend(); ++it) {
+        auto reverse = dependents.find(it.key());
+        if (reverse != dependents.end()) {
+            reverse->remove(key);
+            if (reverse->isEmpty())
+                dependents.erase(reverse);
+        }
+    }
+}
+
+void SemanticDependencyGraph::rebuildFileEdges(const QString& key)
+{
+    const auto facts = factsByFile.value(key);
+    if (observedIncludes.contains(key)) {
+        for (const QString& file : observedIncludes.value(key))
+            addDependency(key, normalizedPath(file), SemanticDependencyKind::Include);
+    } else {
+        for (const QString& name : facts.includeNames) {
+            const QString file = resolveInclude(originalPathByKey.value(key, key), name);
+            if (!file.isEmpty())
+                addDependency(key, normalizedPath(file), SemanticDependencyKind::Include);
+        }
+    }
+    auto bind = [&](const QSet<QString>& names,
+                    const QHash<QString, QStringList>& providers,
+                    SemanticDependencyKind kind) {
+        for (const QString& name : names)
+            for (const QString& provider : providers.value(name))
+                addDependency(key, provider, kind);
+    };
+    bind(facts.macroUses, macros, SemanticDependencyKind::Macro);
+    bind(facts.importedPackages, packages, SemanticDependencyKind::Package);
+    bind(facts.instantiatedModules, modules, SemanticDependencyKind::Instantiation);
+    // TypeOrApi is resolved through the name incidence indexes by queries;
+    // do not expand a conservative complete bipartite relation here.
+}
+
+void SemanticDependencyGraph::rebuildActiveTop()
+{
+    const QString oldTop = normalizedPath(topFile);
+    if (!oldTop.isEmpty()) {
+        auto edges = dependencies.value(oldTop);
+        for (auto it = edges.cbegin(); it != edges.cend(); ++it) {
+            const auto kinds = it.value() & ~SemanticDependencyKinds(SemanticDependencyKind::ActiveTop);
+            if (kinds) {
+                dependencies[oldTop][it.key()] = kinds;
+                dependents[it.key()][oldTop] = kinds;
+            } else {
+                dependencies[oldTop].remove(it.key());
+                dependents[it.key()].remove(oldTop);
+            }
+        }
+    }
+    topFile.clear();
+    if (!graphProject.topModule.isEmpty()) {
+        const auto providers = modules.value(graphProject.topModule);
+        const QStringList candidates = orderedFiles(QSet<QString>(providers.cbegin(), providers.cend()));
+        if (!candidates.isEmpty())
+            topFile = candidates.first();
+    }
+    if (topFile.isEmpty())
+        return;
+    const QString topKey = normalizedPath(topFile);
+    QSet<QString> descendants;
+    QQueue<QString> queue;
+    queue.enqueue(topKey);
+    while (!queue.isEmpty()) {
+        const auto edges = dependencies.value(queue.dequeue());
+        for (auto it = edges.cbegin(); it != edges.cend(); ++it) {
+            if (!(it.value() & SemanticDependencyKind::Instantiation) || descendants.contains(it.key()))
+                continue;
+            descendants.insert(it.key());
+            queue.enqueue(it.key());
+        }
+    }
+    for (const QString& key : descendants)
+        addDependency(topKey, key, SemanticDependencyKind::ActiveTop);
+}
+
 void SemanticDependencyGraph::rebuildEdges()
 {
     dependencies.clear();
     dependents.clear();
+    modules.clear(); packages.clear(); macros.clear(); api.clear(); usersByName.clear();
+    apiUsersByName.clear();
     topFile.clear();
-
-    QHash<QString, QSet<QString>> modules;
-    QHash<QString, QSet<QString>> packages;
-    QHash<QString, QSet<QString>> macros;
-    QHash<QString, QSet<QString>> api;
-    for (auto it = factsByFile.constBegin(); it != factsByFile.constEnd(); ++it) {
-        rememberDeclarations(&modules, it.key(), it->moduleDeclarations);
-        rememberDeclarations(&packages, it.key(), it->packageDeclarations);
-        rememberDeclarations(&macros, it.key(), it->macroDefinitions);
-        rememberDeclarations(&api, it.key(), it->apiDeclarations);
-    }
-
-    if (!graphProject.topModule.isEmpty()) {
-        const QSet<QString> topFiles = modules.value(graphProject.topModule);
-        if (!topFiles.isEmpty()) {
-            const QString key = *topFiles.constBegin();
-            topFile = originalPathByKey.value(key, key);
-        }
-    }
-
-    for (auto it = factsByFile.constBegin(); it != factsByFile.constEnd(); ++it) {
-        const QString dependentKey = it.key();
-        const QString dependentFile = originalPathByKey.value(dependentKey,
-                                                               it->fileName);
-        for (const QString& name : it->includeNames) {
-            const QString dependency = resolveInclude(dependentFile, name);
-            if (!dependency.isEmpty())
-                addDependency(dependentKey, normalizedPath(dependency),
-                              SemanticDependencyKind::Include);
-        }
-        for (const QString& name : it->macroUses) {
-            for (const QString& dependencyKey : macros.value(name)) {
-                addDependency(dependentKey, dependencyKey,
-                              SemanticDependencyKind::Macro);
-            }
-        }
-        for (const QString& name : it->importedPackages) {
-            for (const QString& dependencyKey : packages.value(name)) {
-                addDependency(dependentKey, dependencyKey,
-                              SemanticDependencyKind::Package);
-            }
-        }
-        for (const QString& name : it->instantiatedModules) {
-            for (const QString& dependencyKey : modules.value(name)) {
-                addDependency(dependentKey, dependencyKey,
-                              SemanticDependencyKind::Instantiation);
-            }
-        }
-        for (const QString& name : it->symbolReferences) {
-            for (const QString& dependencyKey : api.value(name)) {
-                addDependency(dependentKey, dependencyKey,
-                              SemanticDependencyKind::TypeOrApi);
-            }
-        }
-    }
-
-    // Preserve active-top reachability as an explicit dependency kind. The
-    // ordinary instantiation edges remain the source of truth; this derived
-    // closure lets planners and diagnostics distinguish active-design impact
-    // from unrelated module declarations without reparsing hierarchy in UI
-    // code.
-    if (!topFile.isEmpty()) {
-        const QString topKey = normalizedPath(topFile);
-        QSet<QString> activeDescendants;
-        QQueue<QString> queue;
-        queue.enqueue(topKey);
-        while (!queue.isEmpty()) {
-            const QString current = queue.dequeue();
-            const auto edges = dependencies.value(current);
-            for (auto edge = edges.constBegin(); edge != edges.constEnd(); ++edge) {
-                if (!(edge.value() & SemanticDependencyKind::Instantiation)
-                    || activeDescendants.contains(edge.key())) {
-                    continue;
-                }
-                activeDescendants.insert(edge.key());
-                queue.enqueue(edge.key());
-            }
-        }
-        for (const QString& descendant : std::as_const(activeDescendants)) {
-            addDependency(topKey, descendant,
-                          SemanticDependencyKind::ActiveTop);
-        }
-    }
+    for (auto it = factsByFile.cbegin(); it != factsByFile.cend(); ++it)
+        indexFacts(it.key(), it.value(), true);
+    for (auto it = factsByFile.cbegin(); it != factsByFile.cend(); ++it)
+        rebuildFileEdges(it.key());
+    rebuildActiveTop();
 }
 
 QStringList SemanticDependencyGraph::orderedFiles(
@@ -742,28 +830,7 @@ QStringList SemanticDependencyGraph::dependenciesOf(
     SemanticDependencyKinds kinds,
     bool recursive) const
 {
-    QSet<QString> result;
-    QQueue<QString> queue;
-    for (const QString& file : files)
-        queue.enqueue(normalizedPath(file));
-    QSet<QString> visited;
-    while (!queue.isEmpty()) {
-        const QString current = queue.dequeue();
-        if (current.isEmpty() || visited.contains(current))
-            continue;
-        visited.insert(current);
-        const auto edges = dependencies.value(current);
-        for (auto it = edges.constBegin(); it != edges.constEnd(); ++it) {
-            if (!(it.value() & kinds))
-                continue;
-            if (!result.contains(it.key())) {
-                result.insert(it.key());
-                if (recursive)
-                    queue.enqueue(it.key());
-            }
-        }
-    }
-    return orderedFiles(result);
+    return reachableFiles(files, kinds, recursive, false);
 }
 
 QStringList SemanticDependencyGraph::dependentsOf(
@@ -771,24 +838,57 @@ QStringList SemanticDependencyGraph::dependentsOf(
     SemanticDependencyKinds kinds,
     bool recursive) const
 {
+    return reachableFiles(files, kinds, recursive, true);
+}
+
+QStringList SemanticDependencyGraph::reachableFiles(
+    const QStringList& files, SemanticDependencyKinds kinds,
+    bool recursive, bool reverse) const
+{
     QSet<QString> result;
     QQueue<QString> queue;
     for (const QString& file : files)
         queue.enqueue(normalizedPath(file));
     QSet<QString> visited;
+    QSet<QString> expandedApiNames;
+    // The first source of a name cannot acquire a self edge. A second source
+    // does make it reachable, exactly as in the expanded bipartite relation.
+    QHash<QString, QString> firstApiSource;
+    const auto& adjacency = reverse ? dependents : dependencies;
+    const auto& apiTargets = reverse ? apiUsersByName : api;
     while (!queue.isEmpty()) {
         const QString current = queue.dequeue();
         if (current.isEmpty() || visited.contains(current))
             continue;
         visited.insert(current);
-        const auto edges = dependents.value(current);
+        auto append = [&](const QString& target) {
+            if (target != current && !result.contains(target)) {
+                result.insert(target);
+                if (recursive)
+                    queue.enqueue(target);
+            }
+        };
+        const auto edges = adjacency.value(current);
         for (auto it = edges.constBegin(); it != edges.constEnd(); ++it) {
             if (!(it.value() & kinds))
                 continue;
-            if (!result.contains(it.key())) {
-                result.insert(it.key());
-                if (recursive)
-                    queue.enqueue(it.key());
+            append(it.key());
+        }
+        if (kinds & SemanticDependencyKind::TypeOrApi) {
+            const auto facts = factsByFile.value(current);
+            const auto& names = reverse ? facts.apiDeclarations : facts.symbolReferences;
+            for (const QString& name : names) {
+                const auto targets = apiTargets.value(name);
+                if (!expandedApiNames.contains(name)) {
+                    expandedApiNames.insert(name);
+                    firstApiSource.insert(name, current);
+                    for (const QString& target : targets)
+                        append(target);
+                } else {
+                    const QString first = firstApiSource.value(name);
+                    if (targets.contains(first))
+                        append(first);
+                }
             }
         }
     }

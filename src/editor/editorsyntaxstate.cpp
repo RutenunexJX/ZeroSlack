@@ -8,6 +8,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QTextDocument>
+#include <QTimer>
 
 namespace {
 constexpr int kLargeFileCharacters = 2 * 1024 * 1024;
@@ -26,17 +27,42 @@ syntaxHighlighterRegistry()
 }
 }
 
-EditorSyntaxState::EditorSyntaxState() = default;
+EditorSyntaxState::EditorSyntaxState()
+    : parseContinuation(std::make_unique<QTimer>())
+{
+    parseContinuation->setSingleShot(true);
+    QObject::connect(parseContinuation.get(), &QTimer::timeout, [this] {
+        if (!document || !document->hasPendingEdits())
+            return;
+        if (!document->finishPendingEdits(3000)) {
+            parseContinuation->start(1);
+            return;
+        }
+        const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
+        if (registration.owner == this && registration.highlighter)
+            registration.highlighter->requestDeferredRefresh();
+        if (reparseFinished)
+            reparseFinished();
+    });
+}
+
+void EditorSyntaxState::setReparseFinishedCallback(std::function<void()> callback)
+{
+    reparseFinished = std::move(callback);
+}
 
 EditorSyntaxState::~EditorSyntaxState()
 {
+    parseContinuation->stop();
     detachHighlighter();
 }
 
 void EditorSyntaxState::init()
 {
+    parseContinuation->stop();
     detachHighlighter();
     document = std::make_unique<TSDocument>();
+    document->setSynchronousParseBudget(3000);
     largeDocument = false;
     fullBuildCount = 0;
     incrementalEditCount = 0;
@@ -66,7 +92,10 @@ void EditorSyntaxState::recordChangedRanges(
 
 void EditorSyntaxState::syncText(const QString& text)
 {
+    parseContinuation->stop();
     document->setText(text);
+    if (document->hasPendingEdits())
+        parseContinuation->start(1);
     largeDocument =
         text.size() > kLargeFileCharacters;
     ++fullBuildCount;
@@ -156,6 +185,7 @@ QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
     const TSUTF16Text& currentText,
     bool deferSyntaxReparse)
 {
+    parseContinuation->stop();
     if (document->text().size() != change.oldLength
         || document->text().mid(change.position, change.removedLength)
                != change.removedText) {
@@ -183,6 +213,8 @@ QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
 
     QList<TSChangedRange> ranges = document->applyEdit(
         change, deferSyntaxReparse);
+    if (!deferSyntaxReparse && document->hasPendingEdits())
+        parseContinuation->start(25);
     ++incrementalEditCount;
     largeDocument =
         document->text().size()
@@ -196,12 +228,26 @@ QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
         range.endLine = qMax(change.startLine, change.newEndLine);
         ranges.append(range);
     }
+    const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
+    if (registration.owner == this && registration.highlighter) {
+        for (const auto& range : ranges)
+            registration.highlighter->requestDeferredRefresh(range.startChar, range.endChar);
+    }
     return ranges;
 }
 
 void EditorSyntaxState::flushPendingEdits()
 {
+    parseContinuation->stop();
+    const bool pending = document->hasPendingEdits();
     document->flushPendingEdits();
+    if (pending) {
+        const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
+        if (registration.owner == this && registration.highlighter)
+            registration.highlighter->requestDeferredRefresh();
+        if (reparseFinished)
+            reparseFinished();
+    }
 }
 
 QString EditorSyntaxState::moduleNameAt(int charPos) const

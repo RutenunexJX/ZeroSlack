@@ -22,8 +22,14 @@ struct ProjectSnapshot {
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
     QString topModule;
     QStringList ignoredPaths;
+    // Cached/loading file lists are useful for navigation but are not yet a
+    // complete semantic input. A completed empty scan is authoritative.
+    bool sourceDiscoveryComplete = true;
 
     bool isOpen() const { return !workspaceRoot.isEmpty(); }
+    // Ordered source/include paths are semantic inputs, not sets. The key is
+    // shared by request scheduling, dependency graphs and retained workspaces.
+    QString semanticIdentity() const;
     QStringList filesForSourceRole(SymbolTaxonomy::SourceRole role) const;
     QStringList designSourceFiles() const;
     QStringList headerSourceFiles() const;
@@ -40,9 +46,11 @@ public:
     void setWorkspaceRoot(const QString& rootPath);
     void setWorkspaceState(const QString& rootPath,
                            const QStringList& scannedFiles);
+    void setWorkspaceState(const ProjectSnapshot& workspace);
     void closeProject();
+    void notifyWorkspaceClosed(const QString& rootPath);
 
-    void setScannedFiles(const QStringList& files);
+    void setScannedFiles(const QStringList& files, bool discoveryComplete = true);
     void setIgnoredPaths(const QStringList& paths);
     void setWorkspaceConfiguration(const QStringList& includeDirs,
                                    const QHash<QString, QString>& defines,
@@ -66,6 +74,7 @@ public:
 signals:
     void projectChanged(const ProjectSnapshot& snapshot);
     void projectClosed();
+    void workspaceDiscarded(const QString& rootPath);
 
 private:
     struct ProjectPathRules {

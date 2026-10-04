@@ -40,14 +40,93 @@ MyHighlighter::MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc)
     : QSyntaxHighlighter(parent), m_tsdoc(tsdoc)
 {
     initFormats();
+    deferredRefresh.setSingleShot(true);
+    connect(&deferredRefresh, &QTimer::timeout, this, [this] {
+        QElapsedTimer slice;
+        slice.start();
+        int blocks = 0;
+        while (nextRefreshBlock >= 0 && blocks++ < 64) {
+            const auto block = document()->findBlockByNumber(nextRefreshBlock);
+            if (!block.isValid()) { nextRefreshBlock = lastRefreshBlock = -1; break; }
+            if (nextRefreshBlock >= lastRefreshBlock)
+                nextRefreshBlock = lastRefreshBlock = -1;
+            else
+                ++nextRefreshBlock;
+            applyingRefresh = true;
+            rehighlightBlock(block);
+            applyingRefresh = false;
+            if (slice.nsecsElapsed() >= 2'000'000)
+                break;
+        }
+        if (nextRefreshBlock >= 0)
+            deferredRefresh.start(1);
+    });
     QObject::connect(
         &ApplicationThemeManager::instance(),
         &ApplicationThemeManager::themeChanged,
         this,
         [this](ThemeMode) {
             initFormats();
-            rehighlight();
+            if (document() && document()->blockCount() <= 64)
+                rehighlight();
+            else
+                requestDeferredRefresh();
         });
+    connect(parent, &QTextDocument::contentsChange, this,
+        [this](int position, int removed, int added) {
+            if (removed || added)
+                requestDeferredRefresh(position, position + added);
+        });
+    requestDeferredRefresh();
+}
+
+MyHighlighter::~MyHighlighter()
+{
+    deferredRefresh.stop();
+    // QSyntaxHighlighter's base destructor edits the document's formats and
+    // can emit contentsChange. Disconnect while our timer/blocks still live.
+    if (document()) disconnect(document(), nullptr, this, nullptr);
+    setDocument(nullptr);
+}
+
+void MyHighlighter::rehighlight()
+{
+    // Preserve the explicit synchronous API. Automatic document updates and
+    // large theme changes use the bounded range queue above.
+    applyingRefresh = true;
+    QSyntaxHighlighter::rehighlight();
+    applyingRefresh = false;
+}
+
+void MyHighlighter::requestDeferredRefresh()
+{
+    if (document())
+        requestDeferredRefresh(0, document()->characterCount() - 1);
+}
+
+void MyHighlighter::requestDeferredRefresh(int firstCharacter, int lastCharacter)
+{
+    if (!document())
+        return;
+    const int end = qMax(0, document()->characterCount() - 1);
+    const auto first = document()->findBlock(qBound(0, firstCharacter, end));
+    const auto last = document()->findBlock(qBound(0, lastCharacter, end));
+    // QTextDocument::clear invalidates cached QTextBlock nodes before its
+    // contentsChange callbacks finish. Retain line numbers between slices
+    // and only inspect newly resolved blocks from the current document.
+    if (!first.isValid() || !last.isValid()) return;
+    const int firstLine = first.blockNumber(), lastLine = last.blockNumber();
+    const int blockCount = document()->blockCount();
+    const int delta = blockCount - refreshBlockCount;
+    if (nextRefreshBlock > firstLine)
+        nextRefreshBlock = qMax(firstLine, nextRefreshBlock + delta);
+    if (lastRefreshBlock >= firstLine)
+        lastRefreshBlock = qMax(firstLine, lastRefreshBlock + delta);
+    refreshBlockCount = blockCount;
+    nextRefreshBlock = nextRefreshBlock < 0 ? firstLine : qMin(nextRefreshBlock, firstLine);
+    lastRefreshBlock = qMin(blockCount - 1, qMax(lastRefreshBlock, lastLine));
+    if (!deferredRefresh.isActive())
+        deferredRefresh.start(0);
 }
 
 void MyHighlighter::initFormats()
@@ -89,6 +168,12 @@ const QTextCharFormat* MyHighlighter::formatFor(HlCategory category) const
 
 void MyHighlighter::highlightBlock(const QString &text)
 {
+    // Qt also calls this for its initial whole-document pass and changed
+    // blocks. Only our bounded refresh reads the syntax tree. In particular,
+    // Qt's block-state propagation must not turn one rehighlightBlock into
+    // an unbounded multiline-comment refresh.
+    if (!applyingRefresh)
+        return;
     QElapsedTimer blockTimer;
     blockTimer.start();
     const bool trace = qEnvironmentVariableIsSet(
@@ -121,8 +206,8 @@ void MyHighlighter::highlightBlock(const QString &text)
                   text.size() - lineCommentStart,
                   commentFormat);
 
-    // Propagate multi-line block-comment state so following blocks re-highlight when a /* */ opens.
-    setCurrentBlockState(m_tsdoc->blockEndCommentState(blockStart, text.length()));
+    // Tree-sitter supplies multiline context; its changed ranges schedule
+    // following blocks explicitly, without Qt's synchronous state cascade.
     m_tsdoc->recordHighlightBlockForTest(
         static_cast<std::uint64_t>(blockTimer.nsecsElapsed()));
     if (trace) {

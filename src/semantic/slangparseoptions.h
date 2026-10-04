@@ -17,7 +17,7 @@
 
 namespace slang_parse_options {
 
-inline QStringList uniqueSortedIncludeDirs(QStringList dirs)
+inline QStringList uniqueOrderedIncludeDirs(QStringList dirs)
 {
     QSet<QString> seen;
     QStringList result;
@@ -28,7 +28,8 @@ inline QStringList uniqueSortedIncludeDirs(QStringList dirs)
         seen.insert(clean);
         result.append(clean);
     }
-    result.sort(Qt::CaseInsensitive);
+    // Include search order is observable when two directories contain the
+    // same header. Keep configured paths before inferred ancestor paths.
     return result;
 }
 
@@ -52,7 +53,7 @@ inline QStringList effectiveIncludeDirsForFile(const QString& fileName,
 {
     QStringList dirs = includeDirs;
     dirs.append(ancestorIncludeDirsForFile(fileName));
-    return uniqueSortedIncludeDirs(dirs);
+    return uniqueOrderedIncludeDirs(dirs);
 }
 
 inline QStringList effectiveIncludeDirsForFiles(const QStringList& fileNames,
@@ -61,7 +62,7 @@ inline QStringList effectiveIncludeDirsForFiles(const QStringList& fileNames,
     QStringList dirs = includeDirs;
     for (const QString& fileName : fileNames)
         dirs.append(ancestorIncludeDirsForFile(fileName));
-    return uniqueSortedIncludeDirs(dirs);
+    return uniqueOrderedIncludeDirs(dirs);
 }
 
 inline slang::Bag makeSyntaxOptions(const QStringList& includeDirs,

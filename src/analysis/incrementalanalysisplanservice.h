@@ -7,6 +7,11 @@
 class IncrementalAnalysisPlanService
 {
 public:
+    IncrementalAnalysisPlan planChanges(
+        const SemanticAnalysisRequest& request,
+        const QHash<QString, SemanticChangeClassification>& classifications,
+        const SemanticDependencyGraph& previousGraph,
+        const SemanticDependencyGraph& nextGraph) const;
     IncrementalAnalysisPlan plan(
         const SemanticAnalysisRequest& request,
         const SemanticChangeClassification& classification,

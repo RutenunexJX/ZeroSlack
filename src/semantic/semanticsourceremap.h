@@ -19,7 +19,8 @@ public:
         const QString& oldText,
         const QString& newText,
         const SourceTextDelta& delta,
-        std::uint64_t documentRevision = 0);
+        std::uint64_t documentRevision = 0,
+        std::uint64_t computationRevision = 0);
 
     static QList<EffectiveValueFact> remapEffectiveFacts(
         QList<EffectiveValueFact> facts,

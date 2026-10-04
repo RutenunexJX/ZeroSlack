@@ -51,9 +51,9 @@ bool bodyOnlyNode(const QString& type)
 void appendStructuralNode(QByteArray* bytes,
                           const QString& text,
                           TSNode node,
-                          bool omitBodies)
+                          bool omitBodies, const std::function<bool()>& cancelled)
 {
-    if (!bytes || ts_node_is_null(node) || isCommentNode(node))
+    if (!bytes || ts_node_is_null(node) || isCommentNode(node) || (cancelled && cancelled()))
         return;
 
     const QString type = nodeType(node);
@@ -67,22 +67,25 @@ void appendStructuralNode(QByteArray* bytes,
         bytes->append(':');
         bytes->append(nodeSource(text, node).toUtf8());
     } else {
-        for (uint32_t i = 0; i < childCount; ++i)
-            appendStructuralNode(bytes,
-                                 text,
-                                 ts_node_child(node, i),
-                                 omitBodies);
+        TSTreeCursor cursor = ts_tree_cursor_new(node);
+        if (ts_tree_cursor_goto_first_child(&cursor)) {
+            do {
+                if (cancelled && cancelled()) break;
+                appendStructuralNode(bytes, text, ts_tree_cursor_current_node(&cursor), omitBodies, cancelled);
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        }
+        ts_tree_cursor_delete(&cursor);
     }
     bytes->append(')');
 }
 
-QByteArray structuralDigest(const TSDocument& document)
+QByteArray structuralDigest(const TSDocument& document, const std::function<bool()>& cancelled)
 {
     QByteArray bytes;
     appendStructuralNode(&bytes,
                          document.text(),
                          document.rootNode(),
-                         false);
+                         false, cancelled);
     return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
 }
 
@@ -215,9 +218,9 @@ bool belongsToSignature(TSNode node, SignatureKind kind)
 void collectSignatureTokens(QStringList* tokens,
                             const QString& text,
                             TSNode node,
-                            SignatureKind kind)
+                            SignatureKind kind, const std::function<bool()>& cancelled)
 {
-    if (!tokens || ts_node_is_null(node) || isCommentNode(node))
+    if (!tokens || ts_node_is_null(node) || isCommentNode(node) || (cancelled && cancelled()))
         return;
     const QString type = nodeType(node);
     if (signatureNode(type, kind) && belongsToSignature(node, kind)) {
@@ -225,7 +228,7 @@ void collectSignatureTokens(QStringList* tokens,
         appendStructuralNode(&bytes,
                              text,
                              node,
-                             false);
+                             false, cancelled);
         tokens->append(QString::fromLatin1(
             QCryptographicHash::hash(bytes, QCryptographicHash::Sha256)
                 .toHex()));
@@ -234,22 +237,24 @@ void collectSignatureTokens(QStringList* tokens,
         return;
     }
 
-    const uint32_t count = ts_node_named_child_count(node);
-    for (uint32_t i = 0; i < count; ++i) {
-        collectSignatureTokens(tokens,
-                               text,
-                               ts_node_named_child(node, i),
-                               kind);
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor)) {
+        do {
+            if (cancelled && cancelled()) break;
+            const auto child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child)) collectSignatureTokens(tokens, text, child, kind, cancelled);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
+    ts_tree_cursor_delete(&cursor);
 }
 
-QByteArray signatureDigest(const TSDocument& document, SignatureKind kind)
+QByteArray signatureDigest(const TSDocument& document, SignatureKind kind, const std::function<bool()>& cancelled)
 {
     QStringList tokens;
     collectSignatureTokens(&tokens,
                            document.text(),
                            document.rootNode(),
-                           kind);
+                           kind, cancelled);
     std::sort(tokens.begin(), tokens.end());
     return QCryptographicHash::hash(tokens.join(QLatin1Char('\n')).toUtf8(),
                                     QCryptographicHash::Sha256);
@@ -263,17 +268,23 @@ struct StructuralLeaf {
 
 void collectStructuralLeaves(QList<StructuralLeaf>* leaves,
                              const QString& text,
-                             TSNode node)
+                             TSNode node, const std::function<bool()>& cancelled)
 {
-    if (!leaves || ts_node_is_null(node) || isCommentNode(node))
+    if (!leaves || ts_node_is_null(node) || isCommentNode(node) || (cancelled && cancelled()))
         return;
     const uint32_t count = ts_node_child_count(node);
     if (count == 0) {
         leaves->append({nodeType(node), nodeSource(text, node), node});
         return;
     }
-    for (uint32_t i = 0; i < count; ++i)
-        collectStructuralLeaves(leaves, text, ts_node_child(node, i));
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor)) {
+        do {
+            if (cancelled && cancelled()) break;
+            collectStructuralLeaves(leaves, text, ts_tree_cursor_current_node(&cursor), cancelled);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
 }
 
 bool sameStructuralLeaf(const StructuralLeaf& lhs,
@@ -314,16 +325,16 @@ bool isProvenLocalBodyLeaf(TSNode node)
 }
 
 bool changeIsProvenLocalBody(const TSDocument& oldDocument,
-                             const TSDocument& newDocument)
+                             const TSDocument& newDocument, const std::function<bool()>& cancelled)
 {
     QList<StructuralLeaf> oldLeaves;
     QList<StructuralLeaf> newLeaves;
     collectStructuralLeaves(&oldLeaves,
                             oldDocument.text(),
-                            oldDocument.rootNode());
+                            oldDocument.rootNode(), cancelled);
     collectStructuralLeaves(&newLeaves,
                             newDocument.text(),
-                            newDocument.rootNode());
+                            newDocument.rootNode(), cancelled);
 
     int prefix = 0;
     const int commonCount = qMin(oldLeaves.size(), newLeaves.size());
@@ -390,7 +401,7 @@ SourceTextDelta SemanticChangeClassifier::textDelta(
 SemanticChangeClassification SemanticChangeClassifier::classify(
     const QString& fileName,
     const QString& oldText,
-    const QString& newText) const
+    const QString& newText, const std::function<bool()>& cancelled) const
 {
     SemanticChangeClassification result;
     result.delta = textDelta(oldText, newText);
@@ -401,12 +412,12 @@ SemanticChangeClassification SemanticChangeClassifier::classify(
 
     TSDocument oldDocument;
     TSDocument newDocument;
-    oldDocument.setText(oldText);
-    newDocument.setText(newText);
+    if (!oldDocument.setText(oldText, cancelled) || !newDocument.setText(newText, cancelled))
+        return result;
     result.oldTreeHasErrors = oldDocument.hasError();
     result.newTreeHasErrors = newDocument.hasError();
 
-    if (structuralDigest(oldDocument) == structuralDigest(newDocument)) {
+    if (structuralDigest(oldDocument, cancelled) == structuralDigest(newDocument, cancelled)) {
         result.impact = SemanticChangeImpact::TriviaOnly;
         return result;
     }
@@ -419,29 +430,29 @@ SemanticChangeClassification SemanticChangeClassifier::classify(
     }
 
     if (isHeaderFile(fileName)
-        || signatureDigest(oldDocument, SignatureKind::HeaderMacro)
-               != signatureDigest(newDocument, SignatureKind::HeaderMacro)) {
+        || signatureDigest(oldDocument, SignatureKind::HeaderMacro, cancelled)
+               != signatureDigest(newDocument, SignatureKind::HeaderMacro, cancelled)) {
         result.impact = SemanticChangeImpact::HeaderMacro;
         return result;
     }
 
-    if (signatureDigest(oldDocument, SignatureKind::PackageApi)
-        != signatureDigest(newDocument, SignatureKind::PackageApi)) {
+    if (signatureDigest(oldDocument, SignatureKind::PackageApi, cancelled)
+        != signatureDigest(newDocument, SignatureKind::PackageApi, cancelled)) {
         result.impact = SemanticChangeImpact::PackageApi;
         return result;
     }
 
-    if (signatureDigest(oldDocument, SignatureKind::ModuleInterface)
+    if (signatureDigest(oldDocument, SignatureKind::ModuleInterface, cancelled)
             != signatureDigest(newDocument,
-                               SignatureKind::ModuleInterface)
-        || signatureDigest(oldDocument, SignatureKind::InstanceTopology)
+                               SignatureKind::ModuleInterface, cancelled)
+        || signatureDigest(oldDocument, SignatureKind::InstanceTopology, cancelled)
                != signatureDigest(newDocument,
-                                  SignatureKind::InstanceTopology)) {
+                                  SignatureKind::InstanceTopology, cancelled)) {
         result.impact = SemanticChangeImpact::ModuleInterface;
         return result;
     }
 
-    if (changeIsProvenLocalBody(oldDocument, newDocument)) {
+    if (changeIsProvenLocalBody(oldDocument, newDocument, cancelled)) {
         result.impact = SemanticChangeImpact::LocalBody;
         return result;
     }

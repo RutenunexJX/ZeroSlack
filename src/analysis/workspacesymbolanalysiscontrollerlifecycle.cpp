@@ -3,8 +3,10 @@
 #include "effectivevalueservice.h"
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
+#include "semanticanalysisinput.h"
 
 #include <QFileInfo>
+#include <QSet>
 
 namespace {
 bool sameSemanticFile(const QString& first, const QString& second)
@@ -109,9 +111,31 @@ void WorkspaceSymbolAnalysisController::requestSemanticAnalysis(
     if (workspaceAnalysisActive || symbolAnalyzer->hasWorkspaceAnalysisInFlight()) {
         // clear/cancel can retire the logical request before the old watcher
         // exits. Keep the replacement pending until that slot is really free.
-        dropPendingRequest(
-            SemanticAnalysisRequestDisposition::Superseded);
-        pendingSemanticRequest = request;
+        SemanticAnalysisRequest merged = request;
+        QSet<QString> changedKeys;
+        for (const auto& file : merged.changedFiles)
+            changedKeys.insert(SemanticInputCapture::pathKey(file));
+        const QString mergedIdentity = merged.project.semanticIdentity();
+        auto mergeChanges = [&](const SemanticAnalysisRequest& previous) {
+            if (previous.project.semanticIdentity() != mergedIdentity)
+                return;
+            for (const QString& file : previous.changedFiles) {
+                const auto key = SemanticInputCapture::pathKey(file);
+                if (!changedKeys.contains(key)) {
+                    changedKeys.insert(key);
+                    merged.changedFiles.append(file);
+                }
+            }
+            if (previous.impactHint == SemanticChangeImpact::WorkspaceConfig)
+                merged.impactHint = SemanticChangeImpact::WorkspaceConfig;
+            merged.triviaOnlyGate = merged.triviaOnlyGate && previous.triviaOnlyGate;
+        };
+        if (hasPendingSemanticRequest)
+            mergeChanges(pendingSemanticRequest);
+        if (workspaceAnalysisActive && !activeSemanticRequestDropNotified)
+            mergeChanges(activeSemanticRequest);
+        dropPendingRequest(SemanticAnalysisRequestDisposition::Superseded);
+        pendingSemanticRequest = std::move(merged);
         hasPendingSemanticRequest = true;
         if (request.project.isOpen())
             requestQueue.queueLatest(request.project);
@@ -196,7 +220,7 @@ void WorkspaceSymbolAnalysisController::invalidateSemanticAnalysis(
 void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
     const ProjectSnapshot& project)
 {
-    if (!project.isOpen() || project.systemVerilogFiles.isEmpty())
+    if (!project.isOpen())
         return;
 
     SemanticAnalysisRequest request;
@@ -209,10 +233,14 @@ void WorkspaceSymbolAnalysisController::requestWorkspaceAnalysis(
 }
 
 void WorkspaceSymbolAnalysisController::startSemanticAnalysis(
-    const SemanticAnalysisRequest& request)
+    const SemanticAnalysisRequest& originalRequest)
 {
-    if (!symbolAnalyzer || !request.isValid())
+    if (!symbolAnalyzer || !originalRequest.isValid())
         return;
+    SemanticAnalysisRequest request = originalRequest;
+    // A pending request can outlive a preceding standalone publication.
+    // Bind its base revision when acquiring the real execution slot.
+    request.expectedSnapshotRevision = SemanticIndex::getInstance()->snapshotRevision();
 
     ++workspaceStartGeneration;
     activeSemanticRequest = request;
@@ -235,7 +263,8 @@ void WorkspaceSymbolAnalysisController::startSemanticAnalysis(
 
 void WorkspaceSymbolAnalysisController::startPendingSemanticAnalysis()
 {
-    if (!hasPendingSemanticRequest)
+    if (!hasPendingSemanticRequest
+        || (symbolAnalyzer && symbolAnalyzer->hasWorkspaceAnalysisInFlight()))
         return;
     const SemanticAnalysisRequest request = pendingSemanticRequest;
     pendingSemanticRequest = SemanticAnalysisRequest();
@@ -357,7 +386,7 @@ void WorkspaceSymbolAnalysisController::onSemanticAnalysisFailed(
     const SemanticAnalysisRequest& request,
     const QString& error)
 {
-    if (!workspaceAnalysisActive
+    if (request.compatibilityRequest || !workspaceAnalysisActive
         || activeSemanticRequest.generation != request.generation) {
         return;
     }

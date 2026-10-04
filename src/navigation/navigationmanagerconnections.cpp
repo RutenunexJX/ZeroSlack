@@ -1,6 +1,8 @@
 #include "uicontrols.h"
 #include <memory>
 #include "navigationmanager.h"
+#include <QDir>
+#include <QFileInfo>
 
 #include "navigationservice.h"
 #include "navigationwidget.h"
@@ -69,9 +71,17 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
         disconnect(connectedWorkspaceManager, nullptr, this, nullptr);
     }
 
+    disconnect(workspaceDiscardConnection);
     connectedWorkspaceManager = workspaceManager;
 
     if (connectedWorkspaceManager) {
+        workspaceDiscardConnection = connect(connectedWorkspaceManager->getProjectModel(),
+            &ProjectModel::workspaceDiscarded, this, [this](const QString& root) {
+                const QString key = QStringLiteral("workspace:%1").arg(
+                    QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(root).absoluteFilePath())).toCaseFolded());
+                designHierarchyCacheByScope.remove(key);
+                designCacheLru.removeAll(key);
+            });
         // Wire workspace events into navigation refreshes.
         connect(connectedWorkspaceManager,
                 &WorkspaceManager::workspaceActivated,
@@ -92,6 +102,9 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     caches.clearFileList();
                     caches.clearDesignHierarchy();
                     designHierarchyCacheByScope.clear();
+                    designCacheLru.clear();
+                    ++designRequestGeneration;
+                    pendingDesignRequest.reset();
                     caches.designTopModule.clear();
                     caches.designTopInferred = true;
                     if (navigationWidget)

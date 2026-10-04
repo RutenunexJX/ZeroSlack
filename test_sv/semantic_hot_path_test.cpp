@@ -320,14 +320,8 @@ void testDiagnostics(const QString& file)
         expect("diagnostic snapshot reuses records and indexes",
                next.symbolRecordsView().constData() == snapshot.symbolRecordsView().constData()
                    && next.relationshipsView().constData() == snapshot.relationshipsView().constData()
-                   && next.m_symbolRecordIndexesByFile.isSharedWith(snapshot.m_symbolRecordIndexesByFile)
-                   && next.m_symbolRecordIndexesByName.isSharedWith(snapshot.m_symbolRecordIndexesByName)
-                   && next.m_symbolRecordIndexesByOwner.isSharedWith(snapshot.m_symbolRecordIndexesByOwner)
-                   && next.m_symbolRecordIndexesByDeclarationKind.isSharedWith(snapshot.m_symbolRecordIndexesByDeclarationKind)
-                   && next.m_symbolRecordIndexByStableKey.isSharedWith(snapshot.m_symbolRecordIndexByStableKey)
-                   && next.m_symbolRecordIndexByLocalHandle.isSharedWith(snapshot.m_symbolRecordIndexByLocalHandle)
-                   && next.m_relationshipIndexesByFromStableKey.isSharedWith(snapshot.m_relationshipIndexesByFromStableKey)
-                   && next.m_relationshipIndexesByToStableKey.isSharedWith(snapshot.m_relationshipIndexesByToStableKey));
+                   && next.m_symbolsByFile.isSharedWith(snapshot.m_symbolsByFile)
+                   && next.m_relationshipsByOwner.isSharedWith(snapshot.m_relationshipsByOwner));
     };
     const auto scoped = snapshot.withReplacedDiagnostics(
         {QDir::toNativeSeparators(QFileInfo(file).path() + "/./" + QFileInfo(file).fileName())},
@@ -335,7 +329,8 @@ void testDiagnostics(const QString& file)
     expect("scoped replacement preserves other and global diagnostics",
            scoped.diagnostics().size() == 3 && scoped.getDiagnostics(file).size() == 1
                && scoped.getDiagnostics(file).first().message == "replacement"
-               && scoped.diagnostics().first().message == "old second");
+               && scoped.getDiagnostics(file + ".other").first().message == "old second"
+               && scoped.rawDiagnostics().first().message == "global");
     unchanged(scoped);
     const auto cleared = snapshot.withReplacedDiagnostics({file}, {});
     expect("scoped clear removes only target diagnostics",
@@ -466,6 +461,75 @@ void testWideDependencyTraversal(const QString& file)
     expect("wide dependency traversal avoids repeated ancestor/sibling scans", elapsed < 2500);
 }
 
+void testFactoredDependencyQueries(const QString& root)
+{
+    ProjectSnapshot project;
+    project.workspaceRoot = root;
+    QHash<QString, QString> contents;
+    for (int i = 0; i < 12; ++i) {
+        const QString file = QDir(root).filePath(QStringLiteral("graph_%1.sv").arg(i));
+        project.systemVerilogFiles.append(file);
+        contents.insert(file, QStringLiteral(
+            "module m%1; parameter SHARED = %2; typedef logic type_%3; "
+            "type_%4 value; localparam V = SHARED; endmodule\n")
+            .arg(i).arg(i + 1).arg(i % 4).arg((i + 1) % 4));
+    }
+    project.allFiles = project.systemVerilogFiles;
+    auto graph = SemanticDependencyGraph::build(project, contents);
+    auto matchesExpanded = [&](const SemanticDependencyGraph& candidate) {
+        auto expanded = candidate;
+        for (auto it = expanded.factsByFile.cbegin(); it != expanded.factsByFile.cend(); ++it)
+            for (const auto& name : it->symbolReferences)
+                for (const auto& provider : expanded.api.value(name))
+                    expanded.addDependency(it.key(), provider, SemanticDependencyKind::TypeOrApi);
+        const QList<SemanticDependencyKinds> masks{SemanticDependencyKind::All,
+            SemanticDependencyKind::TypeOrApi, SemanticDependencyKind::Instantiation,
+            SemanticDependencyKind::Package | SemanticDependencyKind::TypeOrApi};
+        for (bool reverse : {false, true}) for (bool recursive : {false, true})
+            for (auto mask : masks) for (int count : {1, 2, 12}) {
+                const auto files = project.systemVerilogFiles.mid(0, count);
+                QSet<QString> expected, visited;
+                QStringList queue;
+                for (const auto& file : files) queue.append(expanded.normalizedPath(file));
+                const auto& edges = reverse ? expanded.dependents : expanded.dependencies;
+                while (!queue.isEmpty()) {
+                    const auto file = queue.takeFirst();
+                    if (visited.contains(file)) continue;
+                    visited.insert(file);
+                    const auto row = edges.value(file);
+                    for (auto edge = row.cbegin(); edge != row.cend(); ++edge)
+                        if ((edge.value() & mask) && !expected.contains(edge.key())) {
+                            expected.insert(edge.key());
+                            if (recursive) queue.append(edge.key());
+                        }
+                }
+                if (candidate.reachableFiles(files, mask, recursive, reverse)
+                    != candidate.orderedFiles(expected)) return false;
+            }
+        return true;
+    };
+    expect("factored API incidence equals expanded edges for both directions, cycles and multiple roots",
+           matchesExpanded(graph));
+    const QString changed = project.systemVerilogFiles.at(1);
+    contents[changed] = "module replacement; parameter UNIQUE = 3; endmodule\n";
+    const auto updated = graph.withUpdatedFiles(project, contents, {changed});
+    expect("factored API incidence preserves replacement invalidation", matchesExpanded(updated));
+    expect("dependency graph updates preserve prior immutable graph", matchesExpanded(graph)
+           && graph.fileFacts().value(graph.normalizedPath(changed)).apiDeclarations.contains("SHARED"));
+
+    SemanticShardDirectory<QString, QSet<QString>> memberships;
+    memberships.insert("common", {"a", "b"});
+    const auto previous = memberships;
+    memberships.mutate("common", [](auto& files) { files.remove("a"); files.insert("c"); return true; });
+    memberships.mutate("new", [](auto& files) { files.insert("d"); return true; });
+    expect("in-place membership update detaches the publication bucket and nested set",
+           previous.value("common") == QSet<QString>{"a", "b"} && !previous.contains("new")
+           && memberships.value("common") == QSet<QString>{"b", "c"});
+    memberships.mutate("common", [](auto&) { return false; });
+    expect("removing an empty membership never mutates an older publication",
+           !memberships.contains("common") && previous.contains("common"));
+}
+
 void testLineCommentEdits()
 {
     auto treeShape = [](const TSDocument& document) {
@@ -579,6 +643,7 @@ int main(int argc, char** argv)
     testBoundedModuleTemplates(workspace.filePath("module_templates.sv"));
     testWideDependencyTraversal(workspace.filePath("wide.sv"));
     testLineCommentEdits();
+    testFactoredDependencyQueries(workspace.path());
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

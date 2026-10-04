@@ -165,6 +165,7 @@ void populateIntegerLiteralResult(
 
 struct EffectiveValueService::PreparedFactsState {
     QHash<QString, PublishedFacts> factsByFile;
+    QSet<QString> removedFiles;
     std::uint64_t computationRevision = 0;
 };
 
@@ -365,6 +366,10 @@ EffectiveValueService::prepareDocumentFactsState(
         if (normalized.isEmpty())
             continue;
 
+        if (!normalizedContents.contains(normalized) && it.value().isEmpty()) {
+            state->removedFiles.insert(normalized);
+            continue;
+        }
         PublishedFacts publication;
         publication.facts = std::move(it.value());
         publication.computationRevision = computationRevision;
@@ -381,10 +386,11 @@ EffectiveValueService::prepareDocumentFactsState(
     return state;
 }
 
-std::shared_ptr<EffectiveValueService::RetiredFactsState>
+EffectiveValueService::PreparedFactsInstallResult
 EffectiveValueService::installPreparedDocumentFacts(
     std::shared_ptr<PreparedFactsState> state,
-    bool replaceAll)
+    bool replaceAll,
+    const std::function<bool()>& commit)
 {
     if (!state || state->computationRevision == 0)
         return {};
@@ -394,41 +400,113 @@ EffectiveValueService::installPreparedDocumentFacts(
     for (auto it = state->factsByFile.constBegin();
          it != state->factsByFile.constEnd(); ++it) {
         if (requestedRevisionByFile.value(it.key(), 0)
-            > state->computationRevision) {
+                > state->computationRevision
+            || (factsByFile.contains(it.key())
+                && factsByFile.value(it.key()).computationRevision > state->computationRevision)) {
             return {};
         }
     }
 
+    for (const QString& file : state->removedFiles) {
+        if (requestedRevisionByFile.value(file, 0) > state->computationRevision
+            || (factsByFile.contains(file)
+                && factsByFile.value(file).computationRevision > state->computationRevision))
+            return {};
+    }
+    // No state has changed on either side if the publication identity fails.
+    // beginComputation / invalidation cannot interleave between this commit
+    // and the facts swap, and neither operation calls an observer.
+    if (!commit || !commit())
+        return {};
     if (replaceAll) {
         retired->factsByFile = std::move(factsByFile);
-        factsByFile = std::move(state->factsByFile);
+        factsByFile = state->factsByFile;
         for (auto it = factsByFile.constBegin();
              it != factsByFile.constEnd(); ++it) {
             requestedRevisionByFile[it.key()] =
-                state->computationRevision;
+                it->computationRevision;
         }
-        return retired;
+        for (const QString& file : state->removedFiles)
+            requestedRevisionByFile[file] = state->computationRevision;
+        return {true, std::move(retired)};
     }
 
-    for (auto it = state->factsByFile.begin();
-         it != state->factsByFile.end(); ++it) {
-        const auto existing = factsByFile.constFind(it.key());
-        if (existing != factsByFile.constEnd()
-            && existing->computationRevision
-                   > state->computationRevision) {
-            continue;
+    for (const QString& file : state->removedFiles) {
+        auto old = factsByFile.find(file);
+        if (old != factsByFile.end()) {
+            retired->factsByFile.insert(file, std::move(old.value()));
+            factsByFile.erase(old);
         }
+        requestedRevisionByFile[file] = state->computationRevision;
+    }
+    for (auto it = state->factsByFile.cbegin();
+         it != state->factsByFile.cend(); ++it) {
         auto existingMutable = factsByFile.find(it.key());
         if (existingMutable != factsByFile.end()) {
             retired->factsByFile.insert(
                 it.key(), std::move(existingMutable.value()));
-            existingMutable.value() = std::move(it.value());
+            existingMutable.value() = it.value();
         } else {
-            factsByFile.insert(it.key(), std::move(it.value()));
+            factsByFile.insert(it.key(), it.value());
         }
-        requestedRevisionByFile[it.key()] = state->computationRevision;
+        requestedRevisionByFile[it.key()] = it->computationRevision;
     }
-    return retired;
+    return {true, std::move(retired)};
+}
+
+std::shared_ptr<EffectiveValueService::PreparedFactsState>
+EffectiveValueService::mergedFactsState(
+    const std::shared_ptr<PreparedFactsState>& base,
+    const std::shared_ptr<PreparedFactsState>& delta)
+{
+    if (!base)
+        return delta;
+    if (!delta)
+        return base;
+    auto result = std::make_shared<PreparedFactsState>(*base);
+    result->computationRevision = delta->computationRevision;
+    result->removedFiles.clear();
+    for (const QString& file : delta->removedFiles)
+        result->factsByFile.remove(file);
+    for (auto it = delta->factsByFile.cbegin(); it != delta->factsByFile.cend(); ++it)
+        result->factsByFile.insert(it.key(), it.value());
+    return result;
+}
+
+std::shared_ptr<EffectiveValueService::PreparedFactsState>
+EffectiveValueService::capturePublishedFacts() const
+{
+    QReadLocker lock(&factsLock);
+    auto state = std::make_shared<PreparedFactsState>();
+    state->factsByFile = factsByFile;
+    // A compatibility publication can precede construction of an analyzer.
+    // Capture only current rows before a new computation invalidates them.
+    for (auto it = factsByFile.cbegin(); it != factsByFile.cend(); ++it)
+        if (requestedRevisionByFile.value(it.key()) != it->computationRevision)
+            state->factsByFile.remove(it.key());
+    return state;
+}
+
+QList<EffectiveValueFact> EffectiveValueService::capturedFacts(
+    const std::shared_ptr<PreparedFactsState>& state,
+    const QString& fileName, const QString& content)
+{
+    if (!state)
+        return {};
+    const auto found = state->factsByFile.constFind(normalizedFileName(fileName));
+    if (found == state->factsByFile.cend()
+        || found->contentFingerprint != documentContentFingerprint(content))
+        return {};
+    return found->facts;
+}
+
+qsizetype EffectiveValueService::logicalFactsBytes(const std::shared_ptr<PreparedFactsState>& state)
+{
+    qsizetype bytes = 0;
+    if (state)
+        for (auto it = state->factsByFile.cbegin(); it != state->factsByFile.cend(); ++it)
+            bytes += it->facts.size() * 2048 + 256;
+    return bytes;
 }
 
 QList<EffectiveValueFact> EffectiveValueService::factsForDocument(

@@ -4,40 +4,18 @@
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "effectivevalueservice.h"
+#include "relationshipanalysisworker.h"
 
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QTimer>
+#include <QPointer>
+#include <QScopeGuard>
 #include <algorithm>
 #include <utility>
 
 namespace {
-QString normalizedSymbolAnalyzerFileName(const QString& fileName)
-{
-    if (fileName.isEmpty())
-        return QString();
-    QString result = QDir::cleanPath(
-        QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-#ifdef Q_OS_WIN
-    result = result.toCaseFolded();
-#endif
-    return result;
-}
-
-QList<SemanticSymbolRecord> recordsWithRevisions(
-    const QList<SemanticSymbolRecord>& records,
-    std::uint64_t computationRevision,
-    std::uint64_t documentRevision)
-{
-    QList<SemanticSymbolRecord> result = records;
-    for (SemanticSymbolRecord& record : result) {
-        record.presentation.computationRevision = computationRevision;
-        record.presentation.documentRevision = documentRevision;
-    }
-    return result;
-}
-
 int diagnosticLimitForResult(const WorkspaceAnalysisResult& result,
                              int fallbackLimit)
 {
@@ -46,73 +24,110 @@ int diagnosticLimitForResult(const WorkspaceAnalysisResult& result,
     return qMax(1, fallbackLimit);
 }
 
-void applyDiagnosticPublicationPolicy(WorkspaceAnalysisResult* result,
-                                      int fallbackLimit)
+} // namespace
+
+void SymbolAnalyzer::prepareWorkspaceDiagnostics(WorkspaceAnalysisResult* result, int fallbackLimit)
 {
-    if (!result)
+    if (!result || !result->preparedSnapshot || result->diagnosticsPrepared)
         return;
-
     const int limit = diagnosticLimitForResult(*result, fallbackLimit);
-    if (result->preparedSnapshot) {
-        const QList<SemanticDiagnostic> produced =
-            result->preparedSnapshot->diagnostics();
-        const DiagnosticPublicationSelection selection =
-            DiagnosticPublicationPolicy::select(produced, limit);
-        QStringList diagnosticFiles =
-            result->incrementalPlan.affectedFiles;
-        for (const SemanticDiagnostic& diagnostic : produced) {
-            if (!diagnostic.fileName.isEmpty()
-                && !diagnosticFiles.contains(diagnostic.fileName,
-                                             Qt::CaseInsensitive)) {
-                diagnosticFiles.append(diagnostic.fileName);
-            }
-        }
-        result->preparedSnapshot =
-            std::make_shared<const SemanticIndexSnapshot>(
-                result->preparedSnapshot->withReplacedDiagnostics(
-                    diagnosticFiles,
-                    selection.diagnostics));
-        result->diagnostics = selection.diagnostics;
-        result->diagnosticsProduced = selection.producedCount;
-        result->diagnosticsPublished = selection.publishedCount;
-        result->diagnosticsSuppressed = selection.suppressedCount;
-        return;
-    }
-
-    const DiagnosticPublicationSelection selection =
-        DiagnosticPublicationPolicy::select(result->diagnostics, limit);
-    result->diagnostics = selection.diagnostics;
-    result->diagnosticsProduced = selection.producedCount;
-    result->diagnosticsPublished = selection.publishedCount;
-    result->diagnosticsSuppressed = selection.suppressedCount;
+    if (result->preparedSnapshot->diagnosticDisplayLimit() != limit)
+        result->preparedSnapshot = std::make_shared<const SemanticIndexSnapshot>(
+            result->preparedSnapshot->withDiagnosticDisplayLimit(limit));
+    result->diagnostics = result->preparedSnapshot->diagnostics();
+    result->diagnosticsProduced = result->preparedSnapshot->rawDiagnosticCount();
+    result->diagnosticsPublished = result->diagnostics.size();
+    result->diagnosticsSuppressed = result->preparedSnapshot->suppressedDiagnosticCount();
+    result->diagnosticsPrepared = true;
 }
 
-} // namespace
+void SymbolAnalyzer::forgetWorkspace(const QString& root)
+{
+    forgetRetainedState(SemanticInputCapture::pathKey(root));
+}
+
+void SymbolAnalyzer::forgetRetainedState(const QString& key)
+{
+    // Callers can pass the LRU's first element. Keep an owning copy before
+    // removing that element, otherwise the lookup below uses a dead reference.
+    const QString stateKey = key;
+    retainedWorkspaceLru.removeAll(stateKey);
+    SemanticPublicationRetirementPayload retired;
+    retired.workspaceState = retainedWorkspaces.take(stateKey);
+    if (activeWorkspaceState && SemanticInputCapture::pathKey(activeWorkspaceState->project.workspaceRoot) == stateKey) {
+        if (!retired.workspaceState)
+            retired.workspaceState = activeWorkspaceState;
+        activeWorkspaceState.reset();
+    }
+    retirePublicationState(std::move(retired));
+}
+
+void SymbolAnalyzer::rememberWorkspace(std::shared_ptr<const PublishedWorkspaceSemanticState> state)
+{
+    if (!state || !state->input || !state->snapshot)
+        return;
+    const QString key = state->scopeKey;
+    forgetRetainedState(key);
+    if (state->project.isOpen())
+        activeWorkspaceState = state;
+    if (state->logicalBytes > maximumRetainedWorkspaceBytes)
+        return;
+    retainedWorkspaces.insert(key, std::move(state));
+    retainedWorkspaceLru.append(key);
+    auto retainedBytes = [&] {
+        qsizetype bytes = 0;
+        for (auto it = retainedWorkspaces.cbegin(); it != retainedWorkspaces.cend(); ++it)
+            bytes += it.value()->logicalBytes;
+        return bytes;
+    };
+    while (retainedWorkspaceLru.size() > maximumRetainedWorkspaces
+           || retainedBytes() > maximumRetainedWorkspaceBytes)
+        forgetRetainedState(retainedWorkspaceLru.first());
+}
+
+void SymbolAnalyzer::retireWorkspaceResult(WorkspaceAnalysisResult result)
+{
+    SemanticPublicationRetirementPayload retired;
+    retired.analysisResult = std::make_unique<WorkspaceAnalysisResult>(std::move(result));
+    retirePublicationState(std::move(retired));
+}
+
+bool SymbolAnalyzer::bindPublishedRelationships(SymbolRelationshipEngine* engine,
+                                                 const SemanticSnapshotToken& publication)
+{
+    const auto current = SemanticIndex::getInstance()->snapshotToken();
+    if (shutdownStarted || !engine || !publication.snapshot
+        || current.snapshot != publication.snapshot || current.revision != publication.revision)
+        return false;
+    if (engine != SemanticIndex::getInstance()->relationshipEngine()) {
+        auto state = std::make_shared<SymbolRelationshipEngine::PreparedRelationshipState>();
+        state->snapshot = publication.snapshot;
+        SemanticPublicationRetirementPayload retired;
+        retired.semanticIndex.relationshipState = engine->installPreparedRelationshipState(std::move(state), false);
+        retirePublicationState(std::move(retired));
+        emit engine->relationshipsReplaced();
+    }
+    return true;
+}
 
 void SymbolAnalyzer::retirePublicationState(
     SemanticPublicationRetirementPayload payload)
 {
     if (payload.isEmpty())
         return;
-    if (!publicationRetirementQueueOpen) {
-        rejectedPublicationRetirements.fetch_add(1,
-                                                 std::memory_order_acq_rel);
-        Q_ASSERT_X(false,
-                   "SymbolAnalyzer::retirePublicationState",
-                   "publication retirement submitted after shutdown seal");
-        return;
-    }
-    const PublicationRetirementGateForTesting gate =
-        publicationRetirementGateForTesting;
+    const PublicationRetirementGateForTesting gate = publicationRetirementQueueOpen
+        ? publicationRetirementGateForTesting : PublicationRetirementGateForTesting{};
     const std::shared_ptr<std::atomic<int>> pending =
         pendingPublicationRetirements;
+    const QPointer<SymbolAnalyzer> owner(this);
     publicationRetirementEnqueueCount.fetch_add(1,
                                                 std::memory_order_acq_rel);
     pending->fetch_add(1, std::memory_order_acq_rel);
     semanticRetirementThreadPool.start(
         [payload = std::move(payload),
          gate,
-         pending]() mutable {
+         pending,
+         owner]() mutable {
             if (gate)
                 gate();
             // Results retain per-file symbols, facts and dependency edges even
@@ -123,7 +138,15 @@ void SymbolAnalyzer::retirePublicationState(
             payload.effectiveFacts.reset();
             payload.semanticIndex.relationshipState.reset();
             payload.semanticIndex.snapshot.reset();
+            payload.semanticIndex.nativeStore.reset();
+            payload.workspaceState.reset();
             pending->fetch_sub(1, std::memory_order_acq_rel);
+            if (owner) {
+                QMetaObject::invokeMethod(owner, [owner] {
+                    if (owner && !owner->shutdownStarted)
+                        emit owner->workspaceAnalysisExpired();
+                }, Qt::QueuedConnection);
+            }
         },
         -1);
 }
@@ -147,14 +170,19 @@ void SymbolAnalyzer::waitForPublicationRetirements()
 
 void SymbolAnalyzer::clearSemanticIndex()
 {
+    ++workspaceEpoch;
+    ++workspaceAnalysisGeneration;
+    overlayProject = {};
     auto* index = SemanticIndex::getInstance();
-    if (shutdownStarted || !publicationRetirementQueueOpen) {
-        index->clearSemanticState();
-        return;
-    }
     SemanticPublicationRetirementPayload retirement;
     retirement.semanticIndex.snapshot = index->snapshot();
+    retirement.semanticIndex.nativeStore = index->takeNativeStoreForRetirement();
+    retirement.workspaceState = std::exchange(activeWorkspaceState, {});
     index->clearSemanticState();
+    if (shutdownStarted) {
+        retirePublicationState(std::move(retirement));
+        return;
+    }
     if (!retirement.isEmpty()) {
         // Let workspace activation finish registering watches and notifying
         // views before bulk destruction competes with those GUI allocations.
@@ -164,259 +192,49 @@ void SymbolAnalyzer::clearSemanticIndex()
     }
 }
 
-void SymbolAnalyzer::publishOpenDocumentResults(
-    const QStringList& fileNames,
-    const QList<SemanticDiagnostic>& diagnostics)
+bool SymbolAnalyzer::isWorkspacePublicationCurrent(const WorkspaceAnalysisResult& result,
+                                                  bool checkExternalCancellation) const
 {
-    const DiagnosticPublicationSelection selection =
-        DiagnosticPublicationPolicy::select(
-            diagnostics,
-            publishedDiagnosticLimit);
-    SemanticIndex::getInstance()->publishSnapshotReplacingDiagnostics(
-        fileNames,
-        selection.diagnostics);
+    const auto* index = SemanticIndex::getInstance();
+    return !shutdownStarted
+        && (!checkExternalCancellation || !result.publicationCancelled || !result.publicationCancelled())
+        && result.deliveryGeneration == workspaceAnalysisGeneration
+        && result.workspaceEpoch == workspaceEpoch
+        && result.generation == result.request.generation
+        && result.publicationProjectIdentity == result.request.project.semanticIdentity()
+        && result.basePublication.revision == result.request.expectedSnapshotRevision
+        && index->snapshotRevision() == result.basePublication.revision
+        && index->snapshot() == result.basePublication.snapshot;
 }
 
-void SymbolAnalyzer::updateFileSymbols(
-    const QString& fileName,
-    const QString& content,
-    const QList<SemanticSymbolRecord>& symbolRecords,
-    const QList<EffectiveValueFact>& effectiveValueFacts,
-    std::uint64_t computationRevision,
-    std::uint64_t documentRevision)
+bool SymbolAnalyzer::startWorkspacePublication(
+    WorkspaceAnalysisResult result, int totalFiles, const QString& workspacePath)
 {
-    const std::uint64_t revision = computationRevision > 0
-        ? computationRevision
-        : EffectiveValueService::getInstance()->beginComputation({fileName});
-    EffectiveValueService* values =
-        EffectiveValueService::getInstance();
-    if (!values->isComputationCurrent(fileName, revision))
-        return;
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
-        fileName,
-        recordsWithRevisions(symbolRecords, revision, documentRevision),
-        content);
-    values->publishDocumentFacts(
-        fileName,
-        content,
-        effectiveValueFacts,
-        revision,
-        documentRevision);
-}
-
-void SymbolAnalyzer::publishFileAnalysisResult(
-    const QString& fileName,
-    const QString& content,
-    const QList<SemanticSymbolRecord>& symbolRecords,
-    const QList<SemanticDiagnostic>& diagnostics,
-    const QList<EffectiveValueFact>& effectiveValueFacts,
-    std::uint64_t computationRevision,
-    std::uint64_t documentRevision)
-{
-    const std::uint64_t revision = computationRevision > 0
-        ? computationRevision
-        : EffectiveValueService::getInstance()->beginComputation({fileName});
-    EffectiveValueService* values =
-        EffectiveValueService::getInstance();
-    if (!values->isComputationCurrent(fileName, revision))
-        return;
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    const DiagnosticPublicationSelection selection =
-        DiagnosticPublicationPolicy::select(
-            diagnostics,
-            publishedDiagnosticLimit);
-    semanticIndex->updateSymbolRecordsForFile(
-        fileName,
-        recordsWithRevisions(symbolRecords, revision, documentRevision),
-        content);
-    semanticIndex->publishSnapshotReplacingDiagnostics(
-        {fileName},
-        selection.diagnostics);
-    values->publishDocumentFacts(
-        fileName,
-        content,
-        effectiveValueFacts,
-        revision,
-        documentRevision);
-}
-
-void SymbolAnalyzer::publishOverlayAnalysisResult(
-    const FileAnalysisResult& result)
-{
-    if (result.workspaceFiles.isEmpty()) {
-        publishFileAnalysisResult(result.fileName,
-                                  result.content,
-                                  result.symbolRecords,
-                                  result.diagnostics,
-                                  result.effectiveValueFacts,
-                                  result.analysisRevision,
-                                  result.documentRevision);
-        return;
+    // This is also the rejection boundary after synchronous worker observers.
+    // Never replace an independently newer pending publication.
+    if (!isWorkspacePublicationCurrent(result)
+        || !result.preparedSnapshot || !result.preparedRelationshipState
+        || !result.preparedEffectiveFactsState) {
+        const auto request = result.request;
+        retireWorkspaceResult(std::move(result));
+        emit semanticAnalysisDropped(request, SemanticAnalysisRequestDisposition::Expired);
+        if (!shutdownStarted) {
+            emit workspaceAnalysisExpired();
+        }
+        return false;
     }
-
-    QStringList publicationFiles;
-    publicationFiles.reserve(result.workspaceFiles.size());
-    for (const WorkspaceFileAnalysis& fileResult : result.workspaceFiles)
-        publicationFiles.append(fileResult.fileName);
-    EffectiveValueService* values =
-        EffectiveValueService::getInstance();
-    if (!values->isComputationCurrent(publicationFiles,
-                                      result.analysisRevision)) {
-        return;
+    if (pendingWorkspacePublication) {
+        const auto request = result.request;
+        retireWorkspaceResult(std::move(result));
+        emit semanticAnalysisDropped(request, SemanticAnalysisRequestDisposition::Superseded);
+        return false;
     }
-
-    QList<SemanticFileSymbolUpdate> updates;
-    updates.reserve(result.workspaceFiles.size());
-    for (const WorkspaceFileAnalysis& fileResult : result.workspaceFiles) {
-        SemanticFileSymbolUpdate update;
-        update.fileName = fileResult.fileName;
-        update.content = fileResult.content;
-        const QString normalizedFile =
-            normalizedSymbolAnalyzerFileName(fileResult.fileName);
-        update.symbolRecords = recordsWithRevisions(
-            fileResult.symbolRecords,
-            result.analysisRevision,
-            result.documentRevisionsByFile.value(normalizedFile, 0));
-        updates.append(std::move(update));
-    }
-
-    // A full overlay compilation is authoritative for all instance maps.
-    // Publish it in one GUI-thread turn and never merge presentations from
-    // an older workspace snapshot.
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    semanticIndex->updateSymbolRecordsForFiles(updates, false);
-    for (const WorkspaceFileAnalysis& fileResult : result.workspaceFiles) {
-        values->publishDocumentFacts(
-            fileResult.fileName,
-            fileResult.content,
-            fileResult.effectiveValueFacts,
-            result.analysisRevision,
-            result.documentRevisionsByFile.value(
-                normalizedSymbolAnalyzerFileName(fileResult.fileName), 0));
-    }
-    const DiagnosticPublicationSelection selection =
-        DiagnosticPublicationPolicy::select(
-            result.diagnostics,
-            publishedDiagnosticLimit);
-    semanticIndex->publishSnapshotReplacingDiagnostics(
-        result.diagnosticFiles.isEmpty()
-            ? QStringList{result.fileName}
-            : result.diagnosticFiles,
-        selection.diagnostics);
-}
-
-int SymbolAnalyzer::publishWorkspaceAnalysisResult(
-    const WorkspaceAnalysisResult& result,
-    int totalFiles,
-    WorkspaceAnalysisTelemetry* telemetry)
-{
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    semanticIndex->setWorkspaceFileAnalysisBands(result.fileAnalysisBands);
-    const std::uint64_t revision = result.analysisRevision > 0
-        ? result.analysisRevision
-        : result.generation;
-    QList<SemanticFileSymbolUpdate> updates;
-    updates.reserve(result.files.size());
-    QStringList diagnosticFiles;
-    diagnosticFiles.reserve(result.files.size());
-    QList<SemanticDiagnostic> diagnostics;
-    for (const WorkspaceFileAnalysis& fileResult : result.files) {
-        SemanticFileSymbolUpdate update;
-        update.fileName = fileResult.fileName;
-        update.content = fileResult.content;
-        update.symbolRecords = recordsWithRevisions(
-            fileResult.symbolRecords,
-            revision,
-            result.documentRevisionsByFile.value(
-                normalizedSymbolAnalyzerFileName(fileResult.fileName), 0));
-        updates.append(std::move(update));
-        diagnosticFiles.append(fileResult.fileName);
-    }
-
-    const DiagnosticPublicationSelection diagnosticSelection =
-        DiagnosticPublicationPolicy::select(
-            result.diagnostics,
-            diagnosticLimitForResult(result,
-                                     publishedDiagnosticLimit));
-    diagnostics = diagnosticSelection.diagnostics;
-    if (telemetry) {
-        telemetry->diagnostics = diagnosticSelection.publishedCount;
-        telemetry->diagnosticsProduced =
-            diagnosticSelection.producedCount;
-        telemetry->diagnosticsSuppressed =
-            diagnosticSelection.suppressedCount;
-    }
-
-    QElapsedTimer updateTimer;
-    updateTimer.start();
-    semanticIndex->updateSymbolRecordsForFiles(updates, false);
-    EffectiveValueService* values = EffectiveValueService::getInstance();
-    for (const WorkspaceFileAnalysis& fileResult : result.files) {
-        values->publishDocumentFacts(
-            fileResult.fileName,
-            fileResult.content,
-            fileResult.effectiveValueFacts,
-            revision,
-            result.documentRevisionsByFile.value(
-                normalizedSymbolAnalyzerFileName(fileResult.fileName), 0));
-    }
-    if (telemetry)
-        telemetry->publicationUpdateMs += updateTimer.elapsed();
-
-    QElapsedTimer finalSnapshotTimer;
-    finalSnapshotTimer.start();
-    semanticIndex->publishSnapshotReplacingDiagnostics(diagnosticFiles,
-                                                       diagnostics);
-    if (telemetry)
-        telemetry->finalSnapshotMs += finalSnapshotTimer.elapsed();
-    int filesAnalyzed = 0;
-    for (const WorkspaceFileAnalysis& fileResult : result.files) {
-        ++filesAnalyzed;
-        emit batchProgress(filesAnalyzed, totalFiles, fileResult.fileName);
-    }
-    return filesAnalyzed;
-}
-
-void SymbolAnalyzer::startWorkspacePublication(
-    WorkspaceAnalysisResult result,
-    int totalFiles,
-    const QString& workspacePath)
-{
-    if (shutdownStarted)
-        return;
-    cancelWorkspacePublication();
-    applyDiagnosticPublicationPolicy(&result,
-                                     publishedDiagnosticLimit);
-
-    QStringList publicationFiles = result.preparedSnapshot
-        ? result.incrementalPlan.affectedFiles
-        : QStringList{};
-    if (!result.preparedSnapshot) {
-        publicationFiles.reserve(result.files.size());
-        for (const WorkspaceFileAnalysis& fileResult : result.files)
-            publicationFiles.append(fileResult.fileName);
-    }
-    if (!EffectiveValueService::getInstance()->isComputationCurrent(
-            publicationFiles, result.analysisRevision)) {
-        emit workspaceAnalysisExpired();
-        return;
-    }
-
-    pendingWorkspacePublication =
-        std::make_unique<WorkspaceAnalysisResult>(std::move(result));
+    pendingWorkspacePublication = std::make_unique<WorkspaceAnalysisResult>(std::move(result));
     pendingWorkspacePublicationTotalFiles = totalFiles;
     pendingWorkspacePublicationPath = workspacePath;
-    pendingWorkspacePublicationDiagnostics =
-        pendingWorkspacePublication->diagnostics;
-    pendingWorkspacePublicationTimer.restart();
-    pendingWorkspacePublicationUpdateMs = 0;
-    pendingWorkspacePublicationFinalSnapshotMs = 0;
-
-    SemanticIndex::getInstance()->setWorkspaceFileAnalysisBands(
-        pendingWorkspacePublication->fileAnalysisBands);
-
     if (workspacePublicationTimer)
         workspacePublicationTimer->start(0);
+    return true;
 }
 
 void SymbolAnalyzer::cancelWorkspacePublication()
@@ -425,213 +243,158 @@ void SymbolAnalyzer::cancelWorkspacePublication()
         workspacePublicationTimer->stop();
     SemanticPublicationRetirementPayload retirement;
     retirement.analysisResult = std::move(pendingWorkspacePublication);
+    const auto request = retirement.analysisResult
+        ? retirement.analysisResult->request : SemanticAnalysisRequest{};
     pendingWorkspacePublicationPath.clear();
     pendingWorkspacePublicationTotalFiles = 0;
-    pendingWorkspacePublicationFilesAnalyzed = 0;
-    pendingWorkspacePublicationUpdateMs = 0;
-    pendingWorkspacePublicationFinalSnapshotMs = 0;
-    pendingWorkspacePublicationDiagnostics.clear();
-    // shutdown() calls cancellation before sealing this owned queue, then
-    // joins it. No result or future-owned Qt value is leaked past shutdown.
-    if (publicationRetirementQueueOpen)
-        retirePublicationState(std::move(retirement));
+    retirePublicationState(std::move(retirement));
+    if (request.isValid())
+        emit semanticAnalysisDropped(request, SemanticAnalysisRequestDisposition::Expired);
 }
 
 void SymbolAnalyzer::publishPendingWorkspaceAnalysis()
 {
-    if (shutdownStarted) {
-        cancelWorkspacePublication();
+    if (!pendingWorkspacePublication)
         return;
-    }
-    if (!pendingWorkspacePublication) {
-        if (workspacePublicationTimer)
-            workspacePublicationTimer->stop();
-        return;
-    }
-
-    QStringList publicationFiles = pendingWorkspacePublication->preparedSnapshot
-        ? pendingWorkspacePublication->incrementalPlan.affectedFiles
-        : QStringList{};
-    if (!pendingWorkspacePublication->preparedSnapshot) {
-        publicationFiles.reserve(pendingWorkspacePublication->files.size());
-        for (const WorkspaceFileAnalysis& fileResult :
-             std::as_const(pendingWorkspacePublication->files)) {
-            publicationFiles.append(fileResult.fileName);
-        }
-    }
-    if (!EffectiveValueService::getInstance()->isComputationCurrent(
-            publicationFiles,
-            pendingWorkspacePublication->analysisRevision)) {
-        cancelWorkspacePublication();
-        emit workspaceAnalysisExpired();
-        return;
-    }
-
-    if (pendingWorkspacePublication->preparedSnapshot) {
-        const WorkspaceAnalysisResult& result =
-            *pendingWorkspacePublication;
-        const QStringList affectedFiles = result.incrementalPlan.affectedFiles;
-        const auto snapshot = result.preparedSnapshot;
-        QElapsedTimer publicationTimer;
-        publicationTimer.start();
-        QElapsedTimer stageTimer;
-        stageTimer.start();
-        EffectiveValueService* values = EffectiveValueService::getInstance();
-        std::shared_ptr<EffectiveValueService::RetiredFactsState>
-            retiredFacts = values->installPreparedDocumentFacts(
-            result.preparedEffectiveFactsState,
-            result.incrementalPlan.authoritativeWorkspaceReplace);
-        const qint64 effectiveFactsMs = stageTimer.elapsed();
-        stageTimer.restart();
-        SemanticIndexRetirementPayload retiredIndex =
-            SemanticIndex::getInstance()->installPreparedSnapshot(
-            snapshot,
-            affectedFiles,
-            result.preparedRelationshipHandlesByFile,
-            result.preparedRelationships,
-            result.relationshipDeltaPrepared,
-            result.preparedRelationshipState,
-            result.preparedAnalysisBandReport);
-        SemanticPublicationRetirementPayload retirement;
-        retirement.semanticIndex = std::move(retiredIndex);
-        retirement.effectiveFacts = std::move(retiredFacts);
-        if (result.dependencyGraph.isValidFor(result.request.project)) {
-            retirement.dependencyGraph = std::move(semanticDependencyGraph);
-            semanticDependencyGraph = result.dependencyGraph;
-        }
+    // Detach ownership before any notification. An observer may enqueue a new
+    // request; finishing this transaction must never cancel that new request.
+    SemanticPublicationRetirementPayload retirement;
+    retirement.analysisResult = std::move(pendingWorkspacePublication);
+    const QString workspacePath = std::exchange(pendingWorkspacePublicationPath, {});
+    const int totalFiles = std::exchange(pendingWorkspacePublicationTotalFiles, 0);
+    const auto request = retirement.analysisResult->request;
+    bool requestNotified = false;
+    workspacePublicationActive = true;
+    const auto completion = qScopeGuard([this, &retirement, &requestNotified, &request] {
         retirePublicationState(std::move(retirement));
-        const qint64 snapshotInstallMs = stageTimer.elapsed();
-        const qint64 publicationMs = publicationTimer.elapsed();
-        const int totalSymbols = result.totalSymbols;
-        const int totalFiles = pendingWorkspacePublicationTotalFiles;
-        const QString workspacePath = pendingWorkspacePublicationPath;
-        const QString completionFile = result.request.triggerFile.isEmpty()
-            ? workspacePath
-            : result.request.triggerFile;
-
-        SemanticAnalysisTelemetry stageTelemetry;
-        stageTelemetry.generation = result.request.generation;
-        stageTelemetry.stage = SemanticAnalysisStage::Publication;
-        stageTelemetry.reason = result.request.reason;
-        stageTelemetry.impact = result.incrementalPlan.impact;
-        stageTelemetry.files = affectedFiles;
-        stageTelemetry.changedFiles = result.incrementalPlan.changedFiles;
-        stageTelemetry.workerMs = result.workerElapsedMs;
-        stageTelemetry.publicationMs = publicationMs;
-        stageTelemetry.effectiveFactsMs = effectiveFactsMs;
-        stageTelemetry.snapshotInstallMs = snapshotInstallMs;
-        stageTelemetry.diagnosticsProduced =
-            result.diagnosticsProduced;
-        stageTelemetry.diagnosticsPublished =
-            result.diagnosticsPublished;
-        stageTelemetry.diagnosticsSuppressed =
-            result.diagnosticsSuppressed;
-        stageTelemetry.slangInvoked = result.slangInvoked;
-        stageTelemetry.detail = QStringLiteral(
-            "publish changedFiles=%1 effectiveFactsMs=%2 snapshotInstallMs=%3 diagnostics=%4 suppressed=%5")
-                                    .arg(affectedFiles.join(','))
-                                    .arg(effectiveFactsMs)
-                                    .arg(snapshotInstallMs)
-                                    .arg(result.diagnosticsPublished)
-                                    .arg(result.diagnosticsSuppressed);
-        emit semanticAnalysisTelemetry(stageTelemetry);
-        emitWorkspaceAnalysisTelemetry(workspacePath,
-                                       result,
-                                       totalFiles,
-                                       affectedFiles.size(),
-                                       publicationMs,
-                                       publicationMs,
-                                       0);
-        cancelWorkspacePublication();
-
-        if (!affectedFiles.isEmpty()) {
-            emit batchProgress(affectedFiles.size(),
-                               totalFiles,
-                               affectedFiles.constLast());
+        workspacePublicationActive = false;
+        if (!requestNotified)
+            emit semanticAnalysisDropped(request, SemanticAnalysisRequestDisposition::Expired);
+        if (!shutdownStarted) {
+            emit workspaceAnalysisExpired();
         }
-        emit batchAnalysisCompleted(affectedFiles.size(), totalSymbols);
-        emit analysisCompleted(completionFile, totalSymbols);
+    });
+    const WorkspaceAnalysisResult& result = *retirement.analysisResult;
+    auto reject = [&] {
+        requestNotified = true;
+        emit semanticAnalysisDropped(result.request, SemanticAnalysisRequestDisposition::Expired);
+    };
+    if (!isWorkspacePublicationCurrent(result)) {
+        reject();
         return;
     }
 
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    QList<SemanticFileSymbolUpdate> updates;
-    updates.reserve(pendingWorkspacePublication->files.size());
-    QList<const WorkspaceFileAnalysis*> factPublications;
-    factPublications.reserve(pendingWorkspacePublication->files.size());
-    QList<QPair<int, QString>> progressEvents;
-    progressEvents.reserve(pendingWorkspacePublication->files.size());
-    const std::uint64_t revision =
-        pendingWorkspacePublication->analysisRevision > 0
-        ? pendingWorkspacePublication->analysisRevision
-        : pendingWorkspacePublication->generation;
-    QStringList diagnosticFiles;
-    diagnosticFiles.reserve(pendingWorkspacePublication->files.size());
-    for (const WorkspaceFileAnalysis& fileResult :
-         std::as_const(pendingWorkspacePublication->files)) {
-        SemanticFileSymbolUpdate update;
-        update.fileName = fileResult.fileName;
-        update.symbolRecords = recordsWithRevisions(
-            fileResult.symbolRecords,
-            revision,
-            pendingWorkspacePublication->documentRevisionsByFile.value(
-                normalizedSymbolAnalyzerFileName(fileResult.fileName), 0));
-        update.content = fileResult.content;
-        updates.append(std::move(update));
-        factPublications.append(&fileResult);
-        ++pendingWorkspacePublicationFilesAnalyzed;
-        progressEvents.append(
-            {pendingWorkspacePublicationFilesAnalyzed,
-             fileResult.fileName});
-        diagnosticFiles.append(fileResult.fileName);
+    QElapsedTimer timer;
+    timer.start();
+    auto* index = SemanticIndex::getInstance();
+    qint64 snapshotInstallMs = 0;
+    // The facts write lock spans final validation and BOTH quiet installs.
+    // No signals/logging are allowed inside this callback. A rejected facts
+    // state therefore cannot publish any symbols, diagnostics or relationships.
+    auto facts = EffectiveValueService::getInstance()->installPreparedDocumentFacts(
+        result.preparedEffectiveFactsState,
+        result.incrementalPlan.authoritativeWorkspaceReplace,
+        [&] {
+            if (!isWorkspacePublicationCurrent(result, false))
+                return false;
+            QElapsedTimer snapshotTimer;
+            snapshotTimer.start();
+            retirement.semanticIndex = index->installPreparedSnapshot(
+                result.preparedSnapshot, result.incrementalPlan.affectedFiles,
+                result.preparedRelationshipHandlesByFile, result.preparedRelationships,
+                result.relationshipDeltaPrepared, result.preparedRelationshipState,
+                result.preparedAnalysisBandReport, false);
+            snapshotInstallMs = snapshotTimer.elapsed();
+            return true;
+        });
+    if (!facts.accepted) {
+        reject();
+        return;
+    }
+    retirement.effectiveFacts = std::move(facts.retired);
+    const qint64 effectiveFactsMs = timer.elapsed() - snapshotInstallMs;
+    index->setWorkspaceFileAnalysisBands(result.fileAnalysisBands);
+    rememberWorkspace(result.publishedState);
+    const std::uint64_t committedRevision = index->snapshotRevision();
+    auto stillCurrent = [&] {
+        return !shutdownStarted
+            && result.deliveryGeneration == workspaceAnalysisGeneration
+            && result.workspaceEpoch == workspaceEpoch
+            && index->snapshotRevision() == committedRevision
+            && index->snapshot() == result.preparedSnapshot;
+    };
+    const qint64 publicationMs = timer.elapsed();
+    index->notifyPreparedSnapshotPublished(committedRevision, result.incrementalPlan.affectedFiles);
+    if (!stillCurrent())
+        return;
+    if (result.input && result.request.project.isOpen()) {
+        QStringList observedFiles = result.input->watchFiles;
+        QSet<QString> roots;
+        for (const QString& file : result.request.project.systemVerilogFiles)
+            roots.insert(SemanticInputCapture::pathKey(file));
+        observedFiles.removeIf([&](const QString& file) { return roots.contains(file); });
+        emit semanticInputWatchPathsChanged(result.request.project.workspaceRoot,
+                                           observedFiles, result.input->watchDirectories);
+        if (!stillCurrent())
+            return;
     }
 
-    QElapsedTimer updateTimer;
-    updateTimer.start();
-    semanticIndex->updateSymbolRecordsForFiles(updates, false);
-    for (const WorkspaceFileAnalysis* fileResult :
-         std::as_const(factPublications)) {
-        if (!fileResult)
-            continue;
-        EffectiveValueService::getInstance()->publishDocumentFacts(
-            fileResult->fileName,
-            fileResult->content,
-            fileResult->effectiveValueFacts,
-            revision,
-            pendingWorkspacePublication->documentRevisionsByFile.value(
-                normalizedSymbolAnalyzerFileName(fileResult->fileName), 0));
+    SemanticAnalysisTelemetry telemetry;
+    telemetry.generation = result.request.generation;
+    telemetry.stage = SemanticAnalysisStage::Publication;
+    telemetry.reason = result.request.reason;
+    telemetry.impact = result.incrementalPlan.impact;
+    telemetry.files = result.incrementalPlan.affectedFiles;
+    telemetry.changedFiles = result.incrementalPlan.changedFiles;
+    telemetry.workerMs = result.workerElapsedMs;
+    telemetry.publicationMs = publicationMs;
+    telemetry.effectiveFactsMs = effectiveFactsMs;
+    telemetry.snapshotInstallMs = snapshotInstallMs;
+    telemetry.diagnosticsProduced = result.diagnosticsProduced;
+    telemetry.diagnosticsPublished = result.diagnosticsPublished;
+    telemetry.diagnosticsSuppressed = result.diagnosticsSuppressed;
+    telemetry.slangInvoked = result.slangInvoked;
+    telemetry.detail = QStringLiteral("Committed semantic publication revision=%1").arg(committedRevision);
+    emit semanticAnalysisTelemetry(telemetry);
+    if (!stillCurrent())
+        return;
+    emitWorkspaceAnalysisTelemetry(workspacePath, result, totalFiles,
+        result.incrementalPlan.affectedFiles.size(), publicationMs, publicationMs, 0);
+    if (!stillCurrent())
+        return;
+    if (result.request.project.isOpen() && !result.incrementalPlan.affectedFiles.isEmpty()) {
+        emit batchProgress(result.incrementalPlan.affectedFiles.size(), totalFiles,
+                           result.incrementalPlan.affectedFiles.constLast());
+        if (!stillCurrent())
+            return;
     }
-    pendingWorkspacePublicationUpdateMs += updateTimer.elapsed();
-
-    const int filesAnalyzed = pendingWorkspacePublicationFilesAnalyzed;
-    const int totalSymbols = pendingWorkspacePublication->totalSymbols;
-    const int totalFiles = pendingWorkspacePublicationTotalFiles;
-    const QString workspacePath = pendingWorkspacePublicationPath;
-
-    QElapsedTimer finalSnapshotTimer;
-    finalSnapshotTimer.start();
-    semanticIndex->publishSnapshotReplacingDiagnostics(
-        diagnosticFiles,
-        pendingWorkspacePublicationDiagnostics);
-    pendingWorkspacePublicationFinalSnapshotMs += finalSnapshotTimer.elapsed();
-    const qint64 publicationMs = pendingWorkspacePublicationTimer.elapsed();
-    emitWorkspaceAnalysisTelemetry(
-        workspacePath,
-        *pendingWorkspacePublication,
-        pendingWorkspacePublicationTotalFiles,
-        filesAnalyzed,
-        publicationMs,
-        pendingWorkspacePublicationUpdateMs,
-        pendingWorkspacePublicationFinalSnapshotMs);
-    cancelWorkspacePublication();
-
-    for (const auto& progressEvent : std::as_const(progressEvents)) {
-        emit batchProgress(progressEvent.first,
-                           totalFiles,
-                           progressEvent.second);
+    requestNotified = true;
+    emit semanticAnalysisCommitted(result.request, index->snapshotToken());
+    if (!stillCurrent())
+        return;
+    if (result.relationshipProjection) {
+        result.relationshipProjection->baseSnapshot = index->snapshotToken();
+        requestNotified = true;
+        emit relationshipAnalysisCommitted(result.request, *result.relationshipProjection);
+        if (!stillCurrent())
+            return;
     }
-    emit batchAnalysisCompleted(filesAnalyzed, totalSymbols);
-    emit analysisCompleted(workspacePath, totalSymbols);
+    if (result.request.project.isOpen()) {
+        requestNotified = true;
+        emit batchAnalysisCompleted(result.incrementalPlan.affectedFiles.size(), result.totalSymbols);
+        if (!stillCurrent())
+            return;
+    }
+    if (!result.request.compatibilityCompletionFiles.isEmpty()) {
+        for (const auto& file : result.request.compatibilityCompletionFiles) {
+            emit analysisCompleted(file, result.preparedSnapshot->symbolRecordCount(file));
+            if (!stillCurrent())
+                return;
+        }
+    } else {
+        emit analysisCompleted(result.request.triggerFile.isEmpty() ? workspacePath : result.request.triggerFile,
+                               result.totalSymbols);
+    }
 }
 
 void SymbolAnalyzer::emitWorkspaceAnalysisTelemetry(

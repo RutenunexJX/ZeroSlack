@@ -19,99 +19,57 @@ QString normalizedSnapshotQueryFileName(const QString& fileName)
 #endif
     return normalized;
 }
-
-SemanticSymbolRecord snapshotRecordByLocalHandle(
-    const SemanticIndexSnapshot& snapshot,
-    int localHandle)
-{
-    if (localHandle >= 0) {
-        for (const SemanticSymbolRecord& record : snapshot.getSymbolRecords()) {
-            if (record.localHandle == localHandle)
-                return record;
-        }
-    }
-
-    return {};
 }
 
-SymbolStableKey relationshipEndpointStableKey(
-    const SemanticIndexSnapshot& snapshot,
-    const SemanticRelationship& relationship,
-    bool fromEndpoint)
-{
-    const SymbolStableKey stableKey = fromEndpoint
-        ? relationship.fromStableKey
-        : relationship.toStableKey;
-    if (stableKey.isValid())
-        return stableKey;
-
-    const SemanticSymbolRecord record =
-        snapshotRecordByLocalHandle(snapshot,
-                                    fromEndpoint
-                                        ? relationship.fromId
-                                        : relationship.toId);
-    return record.stableKey;
-}
-}
-
-QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(
-    const QString& fileName) const
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecords(const QString& fileName) const
 {
     if (fileName.isEmpty())
-        return m_symbolRecords;
-
-    QList<SemanticSymbolRecord> result;
-    const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    const QList<int> indexes =
-        m_symbolRecordIndexesByFile.value(normalizedTarget);
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index >= 0 && index < m_symbolRecords.size())
-            result.append(m_symbolRecords.at(index));
-    }
-    return result;
+        return symbolRecordsView();
+    const auto shard = m_symbolsByFile.value(normalizedSnapshotQueryFileName(fileName));
+    return shard ? shard->records : QList<SemanticSymbolRecord>{};
 }
 
-QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(
-    const QString& name) const
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(const QString& name) const
 {
+    QList<SemanticSymbolRecord> result;
     if (name.isEmpty())
-        return {};
-
-    QList<SemanticSymbolRecord> result;
-    const QList<int> indexes = m_symbolRecordIndexesByName.value(name);
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index >= 0 && index < m_symbolRecords.size())
-            result.append(m_symbolRecords.at(index));
+        return result;
+    const auto files = m_filesByName.value(name);
+    for (const QString& file : m_fileOrder) {
+        if (!files.contains(file))
+            continue;
+        const auto shard = m_symbolsByFile.value(file);
+        for (int index : shard->byName.value(name))
+            result.append(shard->records.at(index));
     }
     return result;
 }
 
-QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByOwner(
-    const QString& ownerName) const
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByOwner(const QString& owner) const
 {
     QList<SemanticSymbolRecord> result;
-    const QList<int> indexes = m_symbolRecordIndexesByOwner.value(ownerName);
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index >= 0 && index < m_symbolRecords.size())
-            result.append(m_symbolRecords.at(index));
+    const auto files = m_filesByOwner.value(owner);
+    for (const QString& file : m_fileOrder) {
+        if (!files.contains(file))
+            continue;
+        const auto shard = m_symbolsByFile.value(file);
+        for (int index : shard->byOwner.value(owner))
+            result.append(shard->records.at(index));
     }
     return result;
 }
 
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByDeclarationKind(
-    SymbolTaxonomy::DeclarationKind declarationKind) const
+    SymbolTaxonomy::DeclarationKind kind) const
 {
     QList<SemanticSymbolRecord> result;
-    const QList<int> indexes =
-        m_symbolRecordIndexesByDeclarationKind.value(
-            static_cast<int>(declarationKind));
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index >= 0 && index < m_symbolRecords.size())
-            result.append(m_symbolRecords.at(index));
+    const auto files = m_filesByKind.value(int(kind));
+    for (const QString& file : m_fileOrder) {
+        if (!files.contains(file))
+            continue;
+        const auto shard = m_symbolsByFile.value(file);
+        for (int index : shard->byKind.value(int(kind)))
+            result.append(shard->records.at(index));
     }
     return result;
 }
@@ -127,85 +85,59 @@ SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
 {
     if (!key.isValid())
         return {};
+    const auto shard = m_symbolsByFile.value(normalizedSnapshotQueryFileName(key.fileName));
+    const int index = shard ? shard->byStableKey.value(symbolStableKeyText(key), -1) : -1;
+    return index >= 0 ? shard->records.at(index) : SemanticSymbolRecord{};
+}
 
-    const int index =
-        m_symbolRecordIndexByStableKey.value(symbolStableKeyText(key), -1);
-    if (index >= 0 && index < m_symbolRecords.size())
-        return m_symbolRecords.at(index);
-    return {};
+SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByLocalHandle(int handle) const
+{
+    const auto address = m_recordsByHandle.value(handle);
+    const auto shard = m_symbolsByFile.value(address.file);
+    return shard && address.index >= 0 && address.index < shard->records.size()
+        ? shard->records.at(address.index) : SemanticSymbolRecord{};
 }
 
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::findDefinitionRecords(
-    const QString& name,
-    const SemanticQueryContext& context) const
+    const QString& name, const SemanticQueryContext& context) const
 {
-    if (name.isEmpty())
-        return {};
-
-    QList<SemanticSymbolRecord> result;
-    const QList<int> indexes = m_symbolRecordIndexesByName.value(name);
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index < 0 || index >= m_symbolRecords.size())
-            continue;
-        const SemanticSymbolRecord& record = m_symbolRecords.at(index);
-        if (SymbolTaxonomy::isDefinitionCandidate(
-                semanticMetadataForSymbolRecord(record))) {
-            result.append(record);
-        }
-    }
+    auto result = getSymbolRecordsByName(name);
+    result.removeIf([](const SemanticSymbolRecord& record) {
+        return !SymbolTaxonomy::isDefinitionCandidate(semanticMetadataForSymbolRecord(record));
+    });
     return sortedDefinitionRecords(result, context);
 }
 
-SemanticRelationship SemanticIndexSnapshot::rebindRelationship(
-    const SemanticRelationship& relationship) const
+SemanticRelationship SemanticIndexSnapshot::rebindRelationship(const SemanticRelationship& relationship) const
 {
-    SemanticRelationship rebound = relationship;
-
-    if (!rebound.fromStableKey.isValid()) {
-        const int index =
-            m_symbolRecordIndexByLocalHandle.value(rebound.fromId, -1);
-        if (index >= 0 && index < m_symbolRecords.size())
-            rebound.fromStableKey = m_symbolRecords.at(index).stableKey;
-    }
-    if (!rebound.toStableKey.isValid()) {
-        const int index =
-            m_symbolRecordIndexByLocalHandle.value(rebound.toId, -1);
-        if (index >= 0 && index < m_symbolRecords.size())
-            rebound.toStableKey = m_symbolRecords.at(index).stableKey;
-    }
-
-    int index =
-        m_symbolRecordIndexByStableKey.value(
-            symbolStableKeyText(rebound.fromStableKey),
-            -1);
-    if (index >= 0 && index < m_symbolRecords.size())
-        rebound.fromId = m_symbolRecords.at(index).localHandle;
-
-    index =
-        m_symbolRecordIndexByStableKey.value(
-            symbolStableKeyText(rebound.toStableKey),
-            -1);
-    if (index >= 0 && index < m_symbolRecords.size())
-        rebound.toId = m_symbolRecords.at(index).localHandle;
-
+    auto rebound = relationship;
+    auto endpoint = [this](SymbolStableKey& key, int& handle) {
+        auto record = getSymbolRecordByStableKey(key);
+        if (!record.stableKey.isValid()) {
+            const auto byHandle = getSymbolRecordByLocalHandle(handle);
+            const auto& current = byHandle.stableKey;
+            const bool sameIdentity = key.isValid() && current.isValid()
+                && normalizedSnapshotQueryFileName(key.fileName) == normalizedSnapshotQueryFileName(current.fileName)
+                && key.symbolName == current.symbolName && key.declarationKind == current.declarationKind
+                && key.ownerScope == current.ownerScope;
+            if (!key.isValid() || sameIdentity)
+                record = byHandle;
+        }
+        if (record.stableKey.isValid()) {
+            key = record.stableKey;
+            handle = record.localHandle;
+        } else {
+            handle = -1;
+        }
+    };
+    endpoint(rebound.fromStableKey, rebound.fromId);
+    endpoint(rebound.toStableKey, rebound.toId);
     return rebound;
 }
 
 QString SemanticIndexSnapshot::getCachedFileContent(const QString& fileName) const
 {
-    if (fileName.isEmpty())
-        return QString();
-
-    if (m_fileContents.contains(fileName))
-        return m_fileContents.value(fileName);
-
-    const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    for (auto it = m_fileContents.constBegin(); it != m_fileContents.constEnd(); ++it) {
-        if (normalizedSnapshotQueryFileName(it.key()) == normalizedTarget)
-            return it.value();
-    }
-    return QString();
+    return m_fileContents.value(normalizedSnapshotQueryFileName(fileName));
 }
 
 QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
@@ -251,63 +183,69 @@ QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,
 }
 
 QList<SemanticRelationship> SemanticIndexSnapshot::relationshipsForStableKey(
-    const SymbolStableKey& key,
-    bool outgoing) const
+    const SymbolStableKey& key, bool outgoing) const
 {
     QList<SemanticRelationship> result;
     if (!key.isValid())
         return result;
-
-    const QString keyText = symbolStableKeyText(key);
-    if (keyText.isEmpty())
-        return result;
-
-    const QList<int> indexes = outgoing
-        ? m_relationshipIndexesByFromStableKey.value(keyText)
-        : m_relationshipIndexesByToStableKey.value(keyText);
-    result.reserve(indexes.size());
-    for (int index : indexes) {
-        if (index >= 0 && index < m_relationships.size())
-            result.append(m_relationships.at(index));
+    const QString text = symbolStableKeyText(key);
+    QStringList owners = m_relationshipOwnersByEndpoint.value(
+        normalizedSnapshotQueryFileName(key.fileName)).values();
+    owners.sort(Qt::CaseSensitive);
+    for (const QString& owner : owners) {
+        const auto shard = m_relationshipsByOwner.value(owner);
+        const auto indexes = outgoing ? shard->outgoing.value(text) : shard->incoming.value(text);
+        for (int index : indexes)
+            result.append(shard->records.at(index));
     }
     return result;
 }
 
 QList<SemanticDiagnostic> SemanticIndexSnapshot::getDiagnostics(const QString& fileName) const
 {
-    if (fileName.isEmpty())
-        return m_diagnostics;
+    if (m_diagnosticView)
+        return fileName.isEmpty() ? m_diagnosticView->diagnostics
+            : m_diagnosticView->byFile.value(normalizedSnapshotQueryFileName(fileName));
+    return rawDiagnostics(fileName);
+}
 
+QList<SemanticDiagnostic> SemanticIndexSnapshot::rawDiagnostics(const QString& fileName) const
+{
+    if (!fileName.isEmpty())
+        return m_rawDiagnosticsByFile.value(normalizedSnapshotQueryFileName(fileName));
     QList<SemanticDiagnostic> result;
-    const QString normalizedTarget = normalizedSnapshotQueryFileName(fileName);
-    for (const SemanticDiagnostic& diagnostic : m_diagnostics) {
-        if (diagnostic.fileName == fileName
-            || normalizedSnapshotQueryFileName(diagnostic.fileName) == normalizedTarget) {
-            result.append(diagnostic);
-        }
-    }
+    QStringList files = m_rawDiagnosticsByFile.keys();
+    files.sort(Qt::CaseSensitive);
+    for (const QString& file : files)
+        result.append(m_rawDiagnosticsByFile.value(file));
     return result;
 }
 
-QList<SemanticRelationship> SemanticIndexSnapshot::relationships() const
+int SemanticIndexSnapshot::diagnosticDisplayLimit() const
 {
-    return m_relationships;
+    return m_diagnosticView ? m_diagnosticView->limit : 0;
 }
 
-QList<SemanticDiagnostic> SemanticIndexSnapshot::diagnostics() const
+int SemanticIndexSnapshot::rawDiagnosticCount() const
 {
-    return m_diagnostics;
+    if (m_diagnosticView)
+        return m_diagnosticView->producedCount;
+    int count = 0;
+    for (auto it = m_rawDiagnosticsByFile.cbegin(); it != m_rawDiagnosticsByFile.cend(); ++it)
+        count += it.value().size();
+    return count;
 }
 
-QHash<QString, QString> SemanticIndexSnapshot::fileContents() const
+int SemanticIndexSnapshot::suppressedDiagnosticCount() const
 {
-    return m_fileContents;
+    return m_diagnosticView
+        ? m_diagnosticView->producedCount - m_diagnosticView->diagnostics.size() : 0;
 }
 
-const QHash<QString, QString>& SemanticIndexSnapshot::fileContentsView() const
-{
-    return m_fileContents;
-}
+QList<SemanticRelationship> SemanticIndexSnapshot::relationships() const { return relationshipsView(); }
+QList<SemanticDiagnostic> SemanticIndexSnapshot::diagnostics() const { return getDiagnostics(); }
+QHash<QString, QString> SemanticIndexSnapshot::fileContents() const { return m_fileContents; }
+const QHash<QString, QString>& SemanticIndexSnapshot::fileContentsView() const { return m_fileContents; }
 
 QList<SemanticSymbolRecord> SemanticIndexSnapshot::sortedDefinitionRecords(
     const QList<SemanticSymbolRecord>& records,

@@ -3,11 +3,14 @@
 #include "shareddocument.h"
 #include "tabmanager.h"
 #include "temporaryeditorsession.h"
+#include "tsdocument.h"
+#include "insightvisualstyle.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
 #include <QEventLoop>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QImage>
 #include <QInputMethodEvent>
@@ -18,6 +21,7 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTextLayout>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QWheelEvent>
@@ -551,6 +555,12 @@ void exerciseLargeUnfoldedViewKeepsNativeLayout()
            editor.viewProjectionMetricsForTest()
                    .sourceRowsVisitedDuringRebuild == 0);
 
+    QElapsedTimer syntaxReady;
+    syntaxReady.start();
+    while (editor.syntaxDocument()->hasPendingEdits() && syntaxReady.elapsed() < 5000)
+        QTest::qWait(2);
+    expect("deferred syntax becomes current before fold commands",
+           !editor.syntaxDocument()->hasPendingEdits());
     expect("lazy unfolded view can still collapse a large fold",
            editor.toggleFoldAtLineForTest(1)
                && editor.viewProjectionActive()
@@ -716,6 +726,52 @@ void exerciseShiftWheelHorizontalScroll()
 }
 }
 
+static void exerciseDeferredWholeDocumentHighlighting()
+{
+    MyCodeEditor editor;
+    QString source = QStringLiteral("module highlight_large;\n");
+    for (int i = 0; i < 8000; ++i)
+        source += QStringLiteral("logic signal_%1;\n").arg(i);
+    source += QStringLiteral("endmodule\n");
+    auto hasColor = [&](int position, const QColor& color) {
+        const auto block = editor.document()->findBlock(position);
+        if (!block.isValid() || !block.layout()) return false;
+        for (const auto& format : block.layout()->formats())
+            if (position - block.position() >= format.start
+                && position - block.position() < format.start + format.length)
+                return format.format.foreground().color() == color;
+        return false;
+    };
+    auto settles = [&](int position, const QColor& color) {
+        QElapsedTimer timer; timer.start();
+        while (timer.elapsed() < 10000) {
+            if (!editor.syntaxDocument()->hasPendingEdits() && hasColor(position, color)) return true;
+            QTest::qWait(2);
+        }
+        return false;
+    };
+    const int endKeyword = source.lastIndexOf(QStringLiteral("endmodule"));
+    editor.setPlainText(source);
+    expect("deferred initial parse and highlighting reach the last large-file block",
+        settles(endKeyword, InsightVisualStyle::theme().syntax.keyword));
+    QTextCursor edit(editor.document());
+    edit.beginEditBlock();
+    edit.movePosition(QTextCursor::End); edit.insertText(QStringLiteral("\n*/"));
+    edit.movePosition(QTextCursor::Start); edit.insertText(QStringLiteral("/*\n"));
+    edit.endEditBlock();
+    expect("multiline comment refresh reaches distant blocks after budgeted parsing",
+        settles(endKeyword + 3, InsightVisualStyle::theme().syntax.comment));
+    edit.beginEditBlock();
+    edit.movePosition(QTextCursor::End);
+    edit.movePosition(QTextCursor::Left, QTextCursor::KeepAnchor, 3); edit.removeSelectedText();
+    edit.movePosition(QTextCursor::Start);
+    edit.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, 3); edit.removeSelectedText();
+    edit.endEditBlock();
+    expect("removing multiline comment restores distant syntax without losing text",
+        editor.toPlainText() == source
+            && settles(endKeyword, InsightVisualStyle::theme().syntax.keyword));
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
@@ -726,6 +782,7 @@ int main(int argc, char** argv)
     exerciseLargeUnfoldedViewKeepsNativeLayout();
     exerciseDrawerHistoryRestoresPerEntryFolds();
     exerciseShiftWheelHorizontalScroll();
+    exerciseDeferredWholeDocumentHighlighting();
     std::printf("Checks: %d, Failures: %d\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

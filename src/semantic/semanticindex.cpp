@@ -306,4 +306,9 @@ SemanticIndex::SemanticIndex()
 {
 }
 
+SemanticIndex::SemanticIndex(const SemanticSnapshotToken& token)
+    : m_snapshot(token.snapshot), m_snapshotAuthoritative(true), m_snapshotRevision(token.revision)
+{
+}
+
 SemanticIndex::~SemanticIndex() = default;

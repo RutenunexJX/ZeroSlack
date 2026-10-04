@@ -130,17 +130,156 @@ WorkspaceManager + ProjectModel       TabManager + DocumentModel
 
 ## Threading and incremental-analysis boundaries
 
-Editor-local Tree-sitter updates are synchronous on the GUI thread. Workspace
-scanning and semantic/relationship analysis may run asynchronously. Requests
-carry workspace identity, generation, document revision, and cancellation
-state; publication is accepted only when those values still match the active
-snapshot. An edit invalidates stale work and queues analysis from the latest
-complete open-buffer overlay rather than publishing partial semantic truth.
+`ProjectModel::setWorkspaceState(ProjectSnapshot)` installs a workspace root,
+ordered source list and complete configuration in one publication. The common
+`ProjectSnapshot::semanticIdentity()` includes ordered source/include paths,
+case-sensitive defines, top, extensions and ignored paths. Directory discovery
+uses one owned worker and one latest pending request. The worker enumerates and
+prepares watch paths; the GUI only installs the resulting model and native
+`QFileSystemWatcher` registrations after generation/root checks. Session scan
+lists are provisional and are reconciled by that worker.
+`WorkspaceWatcher` changes its desired file/directory identities before native
+registration batches run. Both notification delivery and atomic-replacement
+rewatching consult that ownership, so a late event cannot resurrect an inactive
+workspace or removed semantic input. Identity uses the same lexical path/case
+normalization as source capture; external include files and directories remain
+valid members independently of the workspace root.
 
-GUI objects and panels are updated on the GUI thread. Workers receive copied
-snapshots and must not retain editor widgets, `MainWindow`, or mutable project
-models. Shutdown cancels and joins analysis while the semantic runtime remains
-alive.
+An open workspace with no SystemVerilog roots is an authoritative transition,
+including deletion/exclusion of the last source. Scheduler and compatibility
+entries accept it. Empty shards/facts/diagnostics/relationships and semantic watch
+paths replace the previous state. Prepared installation retires the old mutable
+symbol overlay as well, so a later legacy document update cannot resurrect it.
+The existing standalone-document refresh reacquires TEMP buffers independently;
+it does not append them to the empty workspace's compilation roots.
+
+`SemanticInputCapture` is owned by one semantic worker. Root sources, saved or
+explicit overlay text, indirect includes and failed include-search candidates
+are captured once. Dependency extraction and Slang consume that same content.
+Final disk comparison rejects changed inputs; the controller permits one fresh
+capture retry, then leaves the request stale. No IO-based validity claim relies
+only on timestamps. Resolved inputs and nearest existing parent directories of
+lookup candidates extend the existing workspace watcher; notifications trigger
+recapture, including external includes and newly created higher-priority files.
+File watchers remain hints: reuse requires an exact comparison of captured
+content/readability, document revisions, configuration and runtime policy.
+
+`SlangManager::analyzeCapturedWorkspace` creates one worker-local SourceManager,
+syntax tree and Compilation for symbols, effective values, diagnostics and
+relationship facts. Existing extractors are thin adapters to this context.
+`cmake/SlangSourceCapture.cmake` generates a SourceManager loader overlay from the
+pinned submodule without editing it. Its anchor checks intentionally reject an
+unreviewed upstream change. Every Slang consumer inherits the overlay header;
+only independent value records escape the compilation's lifetime.
+
+The current Slang `fromBuffers` entry represents one ordered compilation unit.
+Non-trivia work recompiles that complete unit to preserve CU imports, directives
+and macros. Include buffers are not appended as independent roots. The compiler
+is not claimed to be incremental: dependency planning narrows **publication**
+and subsequent indexes. Multi-file requests merge individual classifications;
+preprocessor changes, uncertain syntax or changed indirect lookups retain
+explicit conservative fallbacks. Verified trivia uses positional remapping.
+
+`SemanticDependencyGraph` updates changed facts, declaration/user indexes and
+affected forward/reverse edge rows. `SemanticIndexSnapshot` owns immutable file
+symbol shards and relationship-owner shards. Bucketed lookup directories detach
+only touched buckets; deltas replace affected shards, preserve local handles for
+matching declarations, rebind cross-file references and remove absent endpoints.
+The immutable snapshot owns uncapped diagnostics by file, alongside its source
+contents. Its display limit derives a severity-selected view using the existing
+publication policy; changing that limit never overwrites the raw values. File
+replacement/removal invalidates old diagnostics for changed inputs and rebuilds
+the view. Trivia remapping also reads raw values, including suppressed entries.
+Retained workspace/document states keep the snapshot, not another diagnostic
+table: ordinary deltas use the visible baseline's diagnostics even when their
+retained input/graph came from an older publication. Native document publication
+preserves raw diagnostics only for unchanged inputs and applies its display cap
+after the file delta. Both raw data and the derived view count toward the existing
+retention budget. Effective facts use the same publication's per-file revisions
+and explicit removals.
+
+Workspace restoration can reuse a retained snapshot only after recapturing its
+inputs, including every file owned by that snapshot. A snapshot containing an
+independent overlay outside the retained input set takes the existing full
+workspace reconstruction path. Ordinary workspace and standalone deltas remove
+only inputs owned by their captured scope; negative include lookups do not own
+file rows. A full-compilation policy does not grant authority to clear other
+scopes. Configuration/activation (including zero roots) remains an authoritative
+replacement and starts from an empty snapshot, preventing old diagnostics from
+returning through display reselection.
+
+Final publication is a quiet transaction. The result retains the visible base
+snapshot pointer/revision, delivery generation, workspace epoch and project
+identity across worker completion and the publication timer. After preparation,
+the facts write lock covers facts validation, a final identity check and quiet
+snapshot/relationship installation. An explicit accepted result controls commit;
+no observer, log or external cancellation callback runs inside that boundary.
+Notifications follow installation and recheck the committed identity after each
+synchronous emission. Delivery detaches its result from the pending slot, so an
+older completion cannot cancel a reentrantly queued successor. Scheduler
+completion consumes the typed request/publication signal and checks its identity,
+instead of treating any compatibility batch completion as its own request.
+`SymbolRelationshipEngine` reads snapshot indexes in the main pipeline. Its
+legacy mutable graph is materialized only on explicit compatibility writes;
+whole-workspace list APIs remain lazy adapters for consumers that require them.
+
+`SymbolAnalyzer` retains up to three workspace/isolated-document publications within 768 MiB of
+logical accounting units (not allocator RSS). The visible active state can exceed
+that retention budget; it is then excluded from inactive retention. Closing a
+workspace discards its retained state, configuration mismatches prevent reuse,
+and switching clears visible bindings while keeping bounded inactive states.
+Independent TEMP documents keep their existing isolated semantics.
+
+The owned semantic pool has one slot. The controller holds one latest merged
+request; the legacy workspace adapter has at most one pending request. File
+compatibility requests keep at most 32 latest document buffers / 64 MiB pending,
+with explicit rejection on overflow, and only one file watcher may execute.
+Logical cancellation uses flags and generations, with cooperative checks in the
+generated Slang overlay. Finished results, replaced states and abandoned results
+are released by one owned retirement pool. Four pending retirements apply
+backpressure to new semantic jobs; one already-owned publication may enqueue its
+bounded result/cache/index retirement batch above that watermark. Shutdown closes
+entry points, flags cancellation, joins real workers, transfers their final
+results, flushes deferred ownership, disables retirement test gates and drains
+the owned pool. A synchronous notification can call shutdown before its own
+stack releases a detached result; late disposal is still accepted by that pool,
+and destruction drains it again. Shutdown never reopens semantic work.
+An accepted request remains owned by the worker watcher, pending slot or detached
+publication until that owner delivers exactly one committed/dropped/failed
+terminal. A cancelling join takes the watcher's request before disconnecting it;
+shutdown suppresses new work, not the terminal needed by an already waiting
+synchronous adapter. Publication validity checks still reject obsolete results,
+and reentrant shutdown during notification completes the detached owner's terminal.
+
+Relationship compatibility controllers borrow neither a builder nor a separate
+pool. They submit revisioned requests to the same semantic slot, preserving
+project source/include order and runtime policy. Cancellation only flags that
+request; the analyzer owns completion and retirement. Legacy relationship result
+shapes are projected on the semantic worker from its prepared immutable snapshot;
+the GUI adapter only verifies the committed token and notifies consumers.
+`RelationshipAnalysisWorker` is now a read-only projection adapter, and
+`RelationshipResultPublisher` cannot install a relationship-only snapshot or
+rebuild a second graph. All lookup/coalescing keys use `SemanticInputCapture`'s
+path key. Empty text is valid, and only identical pending bytes are coalesced;
+requested or whitespace-stripped text does not establish semantic currency.
+
+Design derivation uses one owned worker and one latest request with an immutable
+`SemanticSnapshotToken` and a read-only SemanticIndex facade. It queries module,
+interface and instance indexes rather than flattening all symbols. Workspace,
+file scope, selected top, generation, snapshot pointer/revision and visibility
+must still match before GUI consumption. Hidden panels suspend new work. Cached
+reports are candidates until a worker verifies their structure and source
+locations; a pending same-scope tree is marked updating and is inert. Equivalent
+presentations reuse existing rows. Retention is limited to three reports / 100,000
+nodes. Worker completion, publication and navigation application are distinct
+telemetry stages; navigation completion is emitted only after GUI application.
+
+Editor-local Tree-sitter documents remain on the GUI thread. Semantic workers
+never retain editor widgets, mutable models or Slang objects in published state.
+SimDock/xIPs hosting and high-risk editing workflow boundaries are unchanged.
+These are source-level design contracts. Runtime correctness and performance
+evidence is version-specific; use the bound source/runtime manifests and raw
+regression and benchmark logs in the corresponding validation delivery.
 
 ## Extension constraints
 

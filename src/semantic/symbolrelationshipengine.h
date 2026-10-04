@@ -17,6 +17,7 @@
 
 struct SemanticSymbolRecord;
 struct SemanticRelationship;
+class SemanticIndexSnapshot;
 
 class ZEROSLACK_API SymbolRelationshipEngine : public QObject
 {
@@ -79,6 +80,7 @@ public:
     };
 
     struct PreparedRelationshipState {
+        std::shared_ptr<const SemanticIndexSnapshot> snapshot;
         QHash<int, RelationshipNode> relationshipGraph;
         QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
         QHash<QString, QSet<int>> symbolsByFile;
@@ -127,7 +129,7 @@ public:
         const QList<SemanticSymbolRecord>& symbolRecords,
         const QList<SemanticRelationship>& relationships);
     std::shared_ptr<PreparedRelationshipState> installPreparedRelationshipState(
-        std::shared_ptr<PreparedRelationshipState> state);
+        std::shared_ptr<PreparedRelationshipState> state, bool notify = true);
 
     int getRelationshipCount() const;
 
@@ -140,6 +142,8 @@ private slots:
     void emitRelationshipAddedQueued(int fromSymbolId, int toSymbolId, int typeAsInt);
 
 private:
+    std::shared_ptr<const SemanticIndexSnapshot> querySnapshot;
+    void materializeLegacyGraph();
     QHash<int, RelationshipNode> relationshipGraph;
     QHash<RelationType, QList<QPair<int, int>>> relationshipsByType;
     QHash<QString, QSet<int>> symbolsByFile;

@@ -40,6 +40,9 @@ struct SingleFileRelationshipAnalysisResult {
 class RelationshipAnalysisWorker
 {
 public:
+    // Source-compatible immutable projections. Callers needing analysis submit
+    // through RelationshipAnalysisController / the unified semantic pipeline.
+    // No source, include lookup, compilation or snapshot mutation occurs here.
     static SingleFileRelationshipAnalysisResult analyzeSingleFile(
         SmartRelationshipBuilder* relationshipBuilder,
         const QString& fileName,
@@ -51,7 +54,8 @@ public:
         const ProjectSnapshot& project,
         const SemanticSnapshotToken& baseSnapshot,
         std::uint64_t requestGeneration = 0,
-        const QString& projectKey = QString());
+        const QString& projectKey = QString(),
+        const std::function<bool()>& isCancelled = {});
 };
 
 #endif // RELATIONSHIPANALYSISWORKER_H

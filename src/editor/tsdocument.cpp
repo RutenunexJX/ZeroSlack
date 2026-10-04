@@ -426,26 +426,72 @@ const char* readTSUTF16Text(void* payload,
 
 void TSDocument::reparse(TSTree* oldTree)
 {
+    TSTree* newTree = parseWithBudget(oldTree, 0);
+    if (m_tree)
+        ts_tree_delete(m_tree);
+    m_tree = newTree;
+}
+
+TSTree* TSDocument::parseWithBudget(TSTree* oldTree, int microseconds,
+                                      const std::function<bool()>* cancelled)
+{
     const TSInput input{
         &m_text,
         readTSUTF16Text,
         TSInputEncodingUTF16LE,
         nullptr
     };
-    TSTree* newTree =
-        ts_parser_parse(m_parser, oldTree, input);
-
-    if (m_tree)
-        ts_tree_delete(m_tree);
-    m_tree = newTree;
+    struct Budget { QElapsedTimer timer; qint64 nanoseconds; const std::function<bool()>* cancelled; } budget;
+    budget.timer.start();
+    budget.nanoseconds = qint64(microseconds) * 1000;
+    budget.cancelled = cancelled;
+    TSParseOptions options{};
+    if (microseconds > 0 || (cancelled && *cancelled)) {
+        options.payload = &budget;
+        options.progress_callback = [](TSParseState* state) {
+            const auto* budget = static_cast<Budget*>(state->payload);
+            return (budget->nanoseconds > 0 && budget->timer.nsecsElapsed() >= budget->nanoseconds)
+                || (budget->cancelled && *budget->cancelled && (*budget->cancelled)());
+        };
+    }
+    TSTree* tree = ts_parser_parse_with_options(m_parser, oldTree, input, options);
+    m_parseSuspended = !tree;
+    return tree;
 }
 
 void TSDocument::setText(const QString& text)
 {
+    ts_parser_reset(m_parser);
+    m_parseSuspended = false;
+    m_lastEditPreservedStructure = false;
     m_text.setText(text);
-    reparse(nullptr);
+    TSTree* tree = parseWithBudget(nullptr, m_parseBudgetUs);
+    m_hasPendingEdits = !tree;
+    m_fullParsePending = !tree;
+    if (!tree) {
+        // Queries keep a valid, empty tree while the initial parse resumes.
+        // Never expose a tree from the previously bound document.
+        TSDocument empty;
+        tree = ts_tree_copy(empty.m_tree);
+    }
+    if (m_tree) ts_tree_delete(m_tree);
+    m_tree = tree;
+    m_hasDeferredSyntaxEdits = false;
+}
+
+bool TSDocument::setText(const QString& text, const std::function<bool()>& cancelled)
+{
+    m_fullParsePending = false;
+    ts_parser_reset(m_parser);
+    m_parseSuspended = false;
+    m_lastEditPreservedStructure = false;
+    m_text.setText(text);
+    auto* tree = cancelled && cancelled() ? nullptr : parseWithBudget(nullptr, 0, &cancelled);
+    if (m_tree) ts_tree_delete(m_tree);
+    m_tree = tree;
     m_hasPendingEdits = false;
     m_hasDeferredSyntaxEdits = false;
+    return m_tree != nullptr;
 }
 
 namespace {
@@ -607,8 +653,17 @@ QList<TSChangedRange> TSDocument::applyEdit(
         0, change.removedLength, m_text.size() - position);
     const bool structurePreserving =
         !deferSyntaxReparse
+        && !m_hasDeferredSyntaxEdits
         && (preservesLineCommentStructure(m_tree, m_text, change)
             || preservesSimpleIdentifierStructure(m_tree, m_text, change));
+    m_lastEditPreservedStructure = structurePreserving;
+    // Tree-sitter can resume only with the exact same input. A later edit
+    // supersedes that parse, while the edited old tree remains positional.
+    if (m_parseSuspended) {
+        ts_parser_reset(m_parser);
+        m_parseSuspended = false;
+    }
+    m_fullParsePending = false;
 
     TSInputEdit edit{};
     edit.start_byte = static_cast<uint32_t>(position) * 2u;
@@ -655,15 +710,8 @@ QList<TSChangedRange> TSDocument::applyEdit(
         return changedRanges;
     }
 
-    const TSInput input{
-        &m_text,
-        readTSUTF16Text,
-        TSInputEncodingUTF16LE,
-        nullptr
-    };
     phaseTimer.restart();
-    TSTree* newTree =
-        ts_parser_parse(m_parser, m_tree, input);
+    TSTree* newTree = parseWithBudget(m_tree, m_parseBudgetUs);
     ++m_text.m_metrics.syntaxParseCount;
     m_text.m_metrics.parseNanoseconds +=
         static_cast<std::uint64_t>(
@@ -706,37 +754,39 @@ QList<TSChangedRange> TSDocument::applyEdit(
         m_hasDeferredSyntaxEdits = false;
     } else {
         m_hasPendingEdits = true;
+        m_hasDeferredSyntaxEdits = true;
     }
     return changedRanges;
 }
 
 void TSDocument::flushPendingEdits()
 {
+    finishPendingEdits(0);
+}
+
+bool TSDocument::finishPendingEdits(int microseconds)
+{
     if (!m_hasPendingEdits || !m_tree)
-        return;
-    const TSInput input{
-        &m_text,
-        readTSUTF16Text,
-        TSInputEncodingUTF16LE,
-        nullptr
-    };
+        return true;
     QElapsedTimer timer;
     timer.start();
-    TSTree* newTree = ts_parser_parse(m_parser, m_tree, input);
+    TSTree* newTree = parseWithBudget(m_fullParsePending ? nullptr : m_tree, microseconds);
     ++m_text.m_metrics.syntaxParseCount;
     ++m_text.m_metrics.deferredSyntaxFlushCount;
     m_text.m_metrics.parseNanoseconds +=
         static_cast<std::uint64_t>(timer.nsecsElapsed());
     if (!newTree)
-        return;
+        return false;
 
     timer.restart();
     ts_tree_delete(m_tree);
     m_text.m_metrics.treeDeleteNanoseconds +=
         static_cast<std::uint64_t>(timer.nsecsElapsed());
     m_tree = newTree;
+    m_fullParsePending = false;
     m_hasPendingEdits = false;
     m_hasDeferredSyntaxEdits = false;
+    return true;
 }
 
 TSNode TSDocument::rootNode() const
@@ -3824,11 +3874,19 @@ void collectSyntaxFoldSubtree(TSNode node,
 {
     if (ts_node_is_null(node))
         return;
-    appendSyntaxFoldNode(node, ranges, seen);
-
-    const uint32_t childCount = ts_node_child_count(node);
-    for (uint32_t index = 0; index < childCount; ++index) {
-        collectSyntaxFoldSubtree(ts_node_child(node, index), ranges, seen);
+    // Indexed child lookup repeatedly walks wide sibling lists. A single
+    // cursor visits each node once, including very large module bodies.
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    for (;;) {
+        appendSyntaxFoldNode(ts_tree_cursor_current_node(&cursor), ranges, seen);
+        if (ts_tree_cursor_goto_first_child(&cursor))
+            continue;
+        while (!ts_tree_cursor_goto_next_sibling(&cursor)) {
+            if (!ts_tree_cursor_goto_parent(&cursor)) {
+                ts_tree_cursor_delete(&cursor);
+                return;
+            }
+        }
     }
 }
 
@@ -5773,28 +5831,16 @@ void collectSpans(TSNode node, uint32_t startByte, uint32_t endByte,
         return;  // highlight unit - do not descend
     }
 
-    const uint32_t childCount = ts_node_child_count(node);
-    uint32_t low = 0;
-    uint32_t high = childCount;
-    while (low < high) {
-        const uint32_t middle = low + (high - low) / 2;
-        const TSNode child = ts_node_child(node, middle);
-        if (ts_node_end_byte(child) <= startByte)
-            low = middle + 1;
-        else
-            high = middle;
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child_for_byte(&cursor, startByte) >= 0) {
+        do {
+            const TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_start_byte(child) >= endByte)
+                break;
+            collectSpans(child, startByte, endByte, blockStartChar, out);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
-
-    for (uint32_t index = low; index < childCount; ++index) {
-        const TSNode child = ts_node_child(node, index);
-        if (ts_node_start_byte(child) >= endByte)
-            break;
-        collectSpans(child,
-                     startByte,
-                     endByte,
-                     blockStartChar,
-                     out);
-    }
+    ts_tree_cursor_delete(&cursor);
 }
 } // namespace
 

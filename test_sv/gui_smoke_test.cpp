@@ -2034,7 +2034,7 @@ static void runWorkspaceCachedSwitchRegression()
                true);
     expectBool("workspace unchanged reconciliation stays passive",
                waitUntil([&]() {
-                   return !workspace.scanIterator
+                   return !workspace.isWorkspaceScanActive()
                        && workspace.scanningPath.isEmpty();
                }, 2000)
                    && workspace.getSystemVerilogFiles()
@@ -2111,13 +2111,13 @@ static void runWorkspaceScanSignalReentrancyRegression()
                        == expectedPath
                 && workspace.getSystemVerilogFiles()
                        == QStringList{expectedSource}
-                && workspace.scanIterator
+                && workspace.isWorkspaceScanActive()
                 && workspace.scanningPath == expectedPath,
             true);
         expectBool(
             "workspace activation reconciliation completes",
             waitUntil([&]() {
-                return !workspace.scanIterator
+                return !workspace.isWorkspaceScanActive()
                     && workspace.scanningPath.isEmpty();
             }, 2000),
             true);
@@ -2134,13 +2134,13 @@ static void runWorkspaceScanSignalReentrancyRegression()
                 && workspace.workspaceEntries().size() == 1
                 && workspace.getSystemVerilogFiles()
                        == QStringList{expectedSource}
-                && workspace.scanIterator
+                && workspace.isWorkspaceScanActive()
                 && workspace.scanningPath == expectedPath,
             true);
         expectBool(
             "workspace reopened reconciliation completes",
             waitUntil([&]() {
-                return !workspace.scanIterator
+                return !workspace.isWorkspaceScanActive()
                     && workspace.scanningPath.isEmpty();
             }, 2000),
             true);
@@ -2176,7 +2176,7 @@ static void runWorkspaceScanSignalReentrancyRegression()
         expectBool("workspace scan-start close cancels synchronously",
                    closedFromStarted
                        && !workspace.isWorkspaceOpen()
-                       && !workspace.scanIterator
+                       && !workspace.isWorkspaceScanActive()
                        && workspace.scanningPath.isEmpty()
                        && workspace.scanTimer
                        && !workspace.scanTimer->isActive(),
@@ -2228,14 +2228,14 @@ static void runWorkspaceScanSignalReentrancyRegression()
         expectBool("workspace scan-start switch reconciles cached workspace",
                    switchedFromStarted
                        && workspace.getWorkspacePath() == cachedPath
-                       && workspace.scanIterator
+                       && workspace.isWorkspaceScanActive()
                        && workspace.scanningPath == cachedPath
                        && workspace.scanTimer
                        && workspace.scanTimer->isActive(),
                    true);
         expectBool("workspace switched reconciliation completes",
                    waitUntil([&]() {
-                       return !workspace.scanIterator
+                       return !workspace.isWorkspaceScanActive()
                            && workspace.scanningPath.isEmpty()
                            && workspace.scanTimer
                            && !workspace.scanTimer->isActive();
@@ -2273,7 +2273,7 @@ static void runWorkspaceScanSignalReentrancyRegression()
         expectBool("workspace scan-progress close survives callback",
                    waitUntil([&]() { return closedFromProgress; }, 2000)
                        && !workspace.isWorkspaceOpen()
-                       && !workspace.scanIterator
+                       && !workspace.isWorkspaceScanActive()
                        && workspace.scanningPath.isEmpty()
                        && workspace.scanTimer
                        && !workspace.scanTimer->isActive(),
@@ -2323,11 +2323,11 @@ static void runWorkspaceScanSignalReentrancyRegression()
                    workspace.openWorkspace(scanningDirectory.path()),
                    true);
         expectBool("workspace scan-progress switch survives callback",
-                   waitUntil([&]() { return switchedFromProgress; }, 2000)
+                   waitUntil([&]() { return switchedFromProgress && !workspace.isWorkspaceScanActive(); }, 2000)
                        && workspace.getWorkspacePath() == cachedPath
                        && workspace.getSystemVerilogFiles()
                               == QStringList{normalizedPath(cachedSource)}
-                       && !workspace.scanIterator
+                       && !workspace.isWorkspaceScanActive()
                        && workspace.scanningPath.isEmpty()
                        && workspace.scanTimer
                        && !workspace.scanTimer->isActive(),
@@ -4988,6 +4988,10 @@ static void runEditorCtrlClickNavigationRegression()
         sourceFixturePath(
             QStringLiteral("test_sv/huge_prj/" ZS_FIXTURE_TOP_CTL_FILE));
     QFile file(path);
+    if (!file.exists() && qEnvironmentVariableIsSet("ZEROSLACK_SKIP_LOCAL_FIXTURES")) {
+        printf("[SKIP] Copyright-restricted Ctrl-click fixture is not installed\n");
+        return;
+    }
     expectBool("vendor ctrl-click fixture opens",
                file.open(QIODevice::ReadOnly | QIODevice::Text),
                true);
@@ -7470,6 +7474,7 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
     index.setSnapshot(snapshotFromRecords({aTop, bTop}));
     NavigationService service(&index);
     NavigationWidget widget;
+    widget.show();
     WorkspaceManager workspace;
     NavigationManager manager;
     manager.setNavigationService(&service);
@@ -7487,6 +7492,7 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
                }, 2000),
                true);
     manager.setActiveView(NavigationManager::DesignHierarchyView);
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("navigation design cache builds A once",
                manager.caches.designHierarchyValid
                    && manager.caches.designHierarchy.topModule
@@ -7508,6 +7514,7 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
                }, 2000),
                true);
     manager.setActiveView(NavigationManager::DesignHierarchyView);
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("navigation design cache builds B once",
                manager.caches.designHierarchyValid
                    && manager.caches.designHierarchy.topModule
@@ -7518,7 +7525,8 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
     expectBool("navigation design cache switches back to A",
                workspace.switchWorkspace(0),
                true);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    manager.warmDesignHierarchyCache();
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("navigation design cache restores A without rebuild",
                manager.caches.designHierarchyValid
                    && manager.caches.designHierarchy.topModule
@@ -7530,7 +7538,8 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
     expectBool("navigation design cache close A activates B",
                workspace.closeWorkspace(0),
                true);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
+    manager.warmDesignHierarchyCache();
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("navigation design cache restores B after close",
                manager.caches.designHierarchyValid
                    && manager.caches.designHierarchy.topModule
@@ -7570,6 +7579,7 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
     manager.onSymbolAnalysisCompleted(fileB, 1);
     manager.onSymbolAnalysisCompleted(fileA, 1);
     manager.onSymbolAnalysisCompleted(fileB, 1);
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("presentation-only snapshot does not rebuild Design tree",
                presentationRowsInsertedSpy.isEmpty()
                    && presentationRowsRemovedSpy.isEmpty(),
@@ -7617,6 +7627,7 @@ static void runNavigationDesignCacheWorkspaceActivationRegression()
     manager.onSymbolAnalysisCompleted(fileB, 4);
     manager.onSymbolAnalysisCompleted(fileA, 1);
     manager.onBatchSymbolAnalysisCompleted(2, 4);
+    waitUntil([&] { return manager.caches.designHierarchyValid; }, 2000);
     expectBool("changed Design structure rebuilds once per snapshot",
                structureRefreshSpy.count() == 1,
                true);
@@ -11684,6 +11695,12 @@ int main(int argc, char** argv)
     runSemanticStateUiRegression();
     runEditorContextMenuGroupingRegression();
 
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--self-contained-only")) {
+        printf("[SKIP] Local copyright-fixture GUI section was not requested\n");
+        printf("%d checks, %d failed\n", g_checks, g_fails);
+        return g_fails == 0 ? 0 : 1;
+    }
+
     const QString workspaceFixturePath = (argc > 1)
         ? QString::fromLocal8Bit(argv[1])
         : QDir::current().absoluteFilePath(QStringLiteral("test_sv/new"));
@@ -14174,7 +14191,7 @@ int main(int argc, char** argv)
                        && window.analysisScheduler
                        && window.analysisScheduler->symbolAnalyzer
                        && window.analysisScheduler->symbolAnalyzer
-                              ->fileAnalysisWatchers.isEmpty();
+                              ->hasWorkspaceAnalysisInFlight() == false;
                }, 15000),
                true);
     expectBool("problems tree exists", problemsTree(window) != nullptr, true);

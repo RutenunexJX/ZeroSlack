@@ -1,8 +1,41 @@
 #include "projectmodel.h"
 
 #include <QDir>
+#include <QDataStream>
+#include <QIODevice>
 #include <QFileInfo>
 #include <QSet>
+
+QString ProjectSnapshot::semanticIdentity() const
+{
+    auto pathKey = [](const QString& path) {
+        if (path.isEmpty())
+            return QString();
+        QString key = QDir::cleanPath(QDir::fromNativeSeparators(
+            QFileInfo(path).absoluteFilePath()));
+#ifdef Q_OS_WIN
+        key = key.toCaseFolded();
+#endif
+        return key;
+    };
+    auto pathKeys = [&](const QStringList& paths) {
+        QStringList keys;
+        for (const QString& path : paths)
+            keys.append(pathKey(path));
+        return keys;
+    };
+    QByteArray bytes;
+    QDataStream stream(&bytes, QIODevice::WriteOnly);
+    stream.setVersion(QDataStream::Qt_6_0);
+    stream << pathKey(workspaceRoot) << pathKeys(systemVerilogFiles)
+           << pathKeys(includeDirs) << topModule << fileExtensions
+           << pathKeys(ignoredPaths) << sourceDiscoveryComplete;
+    QStringList keys = defines.keys();
+    keys.sort(Qt::CaseSensitive);
+    for (const QString& key : keys)
+        stream << key << defines.value(key);
+    return QString::fromLatin1(bytes.toBase64());
+}
 
 QStringList ProjectSnapshot::filesForSourceRole(
     SymbolTaxonomy::SourceRole role) const
@@ -83,6 +116,7 @@ void ProjectModel::closeProject()
     if (!current.isOpen())
         return;
 
+    notifyWorkspaceClosed(current.workspaceRoot);
     current = ProjectSnapshot();
     rawScannedFiles.clear();
     includeDirsExplicit = false;
@@ -90,22 +124,43 @@ void ProjectModel::closeProject()
     publishChanged();
 }
 
-void ProjectModel::setScannedFiles(const QStringList& files)
+void ProjectModel::notifyWorkspaceClosed(const QString& rootPath)
 {
-    applyScannedFiles(files);
+    emit workspaceDiscarded(pathRules.normalizePath(rootPath));
+}
+
+void ProjectModel::setWorkspaceState(const ProjectSnapshot& workspace)
+{
+    // A workspace activation publishes exactly one fully configured revision.
+    current = ProjectSnapshot();
+    current.workspaceRoot = pathRules.normalizePath(workspace.workspaceRoot);
+    current.sourceDiscoveryComplete = workspace.sourceDiscoveryComplete;
+    rawScannedFiles = pathRules.uniquePreservingOrder(
+        pathRules.normalizePathList(workspace.allFiles));
+    setWorkspaceConfiguration(workspace.includeDirs, workspace.defines,
+                              workspace.fileExtensions, workspace.topModule,
+                              workspace.ignoredPaths);
+}
+
+void ProjectModel::setScannedFiles(const QStringList& files, bool discoveryComplete)
+{
+    const auto normalized = pathRules.uniquePreservingOrder(pathRules.normalizePathList(files));
+    if (rawScannedFiles == normalized && current.sourceDiscoveryComplete == discoveryComplete)
+        return;
+    current.sourceDiscoveryComplete = discoveryComplete;
+    applyScannedFiles(normalized);
     publishChanged();
 }
 
 void ProjectModel::applyScannedFiles(const QStringList& files)
 {
-    rawScannedFiles = pathRules.uniqueSorted(pathRules.normalizePathList(files));
+    rawScannedFiles = pathRules.uniquePreservingOrder(pathRules.normalizePathList(files));
     QStringList acceptedFiles;
     acceptedFiles.reserve(rawScannedFiles.size());
     for (const QString& filePath : std::as_const(rawScannedFiles)) {
         if (!pathRules.isIgnored(filePath, current.ignoredPaths))
             acceptedFiles.append(filePath);
     }
-    acceptedFiles = pathRules.uniqueSorted(acceptedFiles);
 
     QStringList svFiles;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
@@ -132,7 +187,9 @@ void ProjectModel::setIgnoredPaths(const QStringList& paths)
 {
     current.ignoredPaths =
         pathRules.uniqueSorted(pathRules.normalizePathList(paths));
-    setScannedFiles(rawScannedFiles);
+    // Filtering changes even when the discovery list itself is unchanged.
+    applyScannedFiles(rawScannedFiles);
+    publishChanged();
 }
 
 void ProjectModel::setWorkspaceConfiguration(

@@ -1,256 +1,148 @@
 #include "symbolanalyzer.h"
-
-#include "slangmanager.h"
-#include "symbolanalyzerworkspace.h"
 #include "workspacemanager.h"
+#include "semanticindexsnapshot.h"
+#include <QEventLoop>
+#include <QFileInfo>
+#include <QScopeGuard>
 
-#include <QElapsedTimer>
-#include <QFile>
-#include <QTextStream>
-#include <utility>
-
-void SymbolAnalyzer::analyzeOpenDocuments(
-    const QList<OpenDocumentContent>& documents)
+SemanticAnalysisRequest SymbolAnalyzer::projectRequest(
+    const ProjectSnapshot& project, const QList<OpenDocumentContent>& documents)
 {
-    if (shutdownStarted)
-        return;
-    emit analysisStarted("open_tabs");
-
-    // Multiple open buffers can depend on one another (for example, a dirty
-    // package and a module that imports it). They must be compiled and
-    // published as one overlay workspace even before a ProjectModel has
-    // populated overlayWorkspaceFiles.
-    if (!overlayWorkspaceFiles.isEmpty() || documents.size() > 1) {
-        analyzeOverlayDocumentsAsync(documents);
-        return;
-    }
-
-    QStringList svFiles;
-    int symbolsFromOpenFiles = 0;
-    QList<SemanticDiagnostic> diagnostics;
-    QStringList analyzedDocumentFiles;
-    for (const OpenDocumentContent& document : documents) {
-        if (isSystemVerilogFile(document.fileName)
-            && !document.content.isNull()) {
-            analyzedDocumentFiles.append(document.fileName);
+    SemanticAnalysisRequest request;
+    request.generation = ++compatibilityAnalysisGeneration;
+    request.compatibilityRequest = true;
+    request.reason = SemanticAnalysisReason::ExplicitRequest;
+    request.impactHint = SemanticChangeImpact::WorkspaceConfig;
+    request.project = project;
+    request.changedFiles = project.systemVerilogFiles;
+    request.runtimePolicy.maxDiagnostics = publishedDiagnosticLimit;
+    QSet<QString> roots;
+    for (const QString& file : project.systemVerilogFiles)
+        roots.insert(SemanticInputCapture::pathKey(file));
+    for (const auto& document : documents) {
+        if (roots.contains(SemanticInputCapture::pathKey(document.fileName)) && !document.content.isNull()) {
+            request.sourceOverrides.insert(document.fileName, document.content);
+            request.documentRevisions.insert(document.fileName, document.documentRevision);
         }
     }
-    const std::uint64_t computationRevision =
-        EffectiveValueService::getInstance()->beginComputation(
-            analyzedDocumentFiles);
-
-    for (const OpenDocumentContent& document : documents) {
-        const QString& fileName = document.fileName;
-        const QString& content = document.content;
-        if (!isSystemVerilogFile(fileName) || content.isNull())
-            continue;
-
-        svFiles.append(fileName);
-        SlangManager symbolAnalyzer;
-        QList<EffectiveValueFact> effectiveValueFacts;
-        const QList<SemanticSymbolRecord> records =
-            symbolAnalyzer.extractSymbolRecords(fileName,
-                                                content,
-                                                {},
-                                                {},
-                                                &effectiveValueFacts);
-        updateFileSymbols(fileName,
-                          content,
-                          records,
-                          effectiveValueFacts,
-                          computationRevision,
-                          document.documentRevision);
-        SlangManager diagnosticsAnalyzer;
-        diagnostics.append(
-            diagnosticsAnalyzer.extractDiagnostics(fileName, content));
-        symbolsFromOpenFiles += records.size();
-    }
-
-    publishOpenDocumentResults(svFiles, diagnostics);
-    emit analysisCompleted("open_tabs", symbolsFromOpenFiles);
+    return request;
 }
 
-void SymbolAnalyzer::analyzeWorkspace(
-    WorkspaceManager* workspaceManager,
-    std::function<bool()> isCancelled)
+SemanticAnalysisRequest SymbolAnalyzer::documentRequest(
+    const QList<OpenDocumentContent>& documents, bool standalone, bool includePublishedDocuments)
 {
-    if (shutdownStarted || !workspaceManager
-        || !workspaceManager->isWorkspaceOpen())
-        return;
-    analyzeProject(workspaceManager->projectSnapshot(), std::move(isCancelled));
+    SemanticAnalysisRequest request;
+    request.generation = ++compatibilityAnalysisGeneration;
+    request.compatibilityRequest = true;
+    request.reason = SemanticAnalysisReason::ExplicitRequest;
+    request.runtimePolicy.maxDiagnostics = publishedDiagnosticLimit;
+    request.project = standalone ? ProjectSnapshot{} : overlayProject;
+    if (includePublishedDocuments && !standalone && request.project.systemVerilogFiles.isEmpty()) {
+        // Compatibility callers can publish an explicit in-memory document set
+        // before attaching a WorkspaceManager. Preserve that set as the input
+        // context for an overlay; TEMP requests deliberately have no such scope.
+        // Configured workspaces always use their complete project above.
+        const auto snapshot = SemanticIndex::getInstance()->snapshot();
+        if (snapshot) {
+            request.sourceOverrides = snapshot->fileContentsView();
+            request.project.systemVerilogFiles = request.sourceOverrides.keys();
+            request.project.systemVerilogFiles.sort(Qt::CaseSensitive);
+            for (const auto& file : request.project.systemVerilogFiles) {
+                const auto records = snapshot->getSymbolRecords(file);
+                if (!records.isEmpty())
+                    request.documentRevisions.insert(file, records.first().presentation.documentRevision);
+            }
+        }
+    }
+    QHash<QString, OpenDocumentContent> byKey;
+    for (const auto& document : documents)
+        if (isSystemVerilogFile(document.fileName))
+            byKey.insert(SemanticInputCapture::pathKey(document.fileName), document);
+    auto keys = byKey.keys();
+    keys.sort(Qt::CaseSensitive);
+    QSet<QString> roots;
+    for (const QString& file : request.project.systemVerilogFiles)
+        roots.insert(SemanticInputCapture::pathKey(file));
+    for (const auto& key : keys) {
+        const auto& document = byKey[key];
+        if (!roots.contains(key)) {
+            request.project.systemVerilogFiles.append(document.fileName);
+            roots.insert(key);
+        }
+        request.changedFiles.append(document.fileName);
+        request.compatibilityCompletionFiles.append(document.fileName);
+        if (!document.content.isNull())
+            request.sourceOverrides.insert(key, document.content);
+        request.documentRevisions.remove(key);
+        request.documentRevisions.insert(document.fileName, document.documentRevision);
+    }
+    request.triggerFile = request.changedFiles.value(request.changedFiles.size() - 1);
+    if (!request.project.isOpen()) {
+        request.project.allFiles = request.project.systemVerilogFiles;
+        for (const auto& file : request.project.systemVerilogFiles) {
+            const auto directory = QFileInfo(file).absolutePath();
+            if (!request.project.includeDirs.contains(directory))
+                request.project.includeDirs.append(directory);
+        }
+    }
+    return request;
 }
 
-void SymbolAnalyzer::analyzeProject(
-    const ProjectSnapshot& project,
-    std::function<bool()> isCancelled)
+void SymbolAnalyzer::runSemanticAnalysisBlocking(
+    const SemanticAnalysisRequest& request, std::function<bool()> cancelled)
 {
-    if (shutdownStarted || !project.isOpen())
+    if (shutdownStarted || !request.isValid() || (cancelled && cancelled()))
         return;
-
-    cancelWorkspacePublication();
-    cancelAllFileAnalysesAndWait();
-    cancelWorkspaceAnalysisAndWait();
-    overlayWorkspaceFiles = project.systemVerilogFiles;
-    overlayWorkspaceIncludeDirs = project.includeDirs;
-    overlayWorkspaceDefines = project.defines;
-    QStringList svFiles = project.systemVerilogFiles;
-    const std::uint64_t epoch = ++workspaceEpoch;
-    const std::uint64_t analysisRevision =
-        EffectiveValueService::getInstance()->beginComputation(svFiles);
-
-    QElapsedTimer totalTimer;
-    totalTimer.start();
-    emit analysisStarted(project.workspaceRoot);
-
-    const int totalFiles = svFiles.size();
-    if (totalFiles == 0) {
-        emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(project.workspaceRoot, 0);
-        return;
-    }
-
-    SlangManager symbolAnalyzer;
-    QList<EffectiveValueFact> effectiveValueFacts;
-    QHash<QString, QString> analyzedFileContents;
-    QElapsedTimer stageTimer;
-    stageTimer.start();
-    const auto allRecords =
-        symbolAnalyzer.extractWorkspaceSymbolRecords(svFiles,
-                                                     project.includeDirs,
-                                                     project.defines,
-                                                     isCancelled,
-                                                     &effectiveValueFacts,
-                                                     &analyzedFileContents);
-    const qint64 symbolExtractionMs = stageTimer.elapsed();
-    if (isCancelled && isCancelled()) {
-        emit workspaceAnalysisExpired();
-        emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(project.workspaceRoot, 0);
-        return;
-    }
-
-    stageTimer.restart();
-    WorkspaceAnalysisResult result =
-        SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
-            svFiles,
-            allRecords,
-            effectiveValueFacts,
-            isCancelled,
-            analyzedFileContents);
-    result.symbolExtractionMs = symbolExtractionMs;
-    result.resultAssemblyMs = stageTimer.elapsed();
-    result.fileAnalysisBands = workspaceFileAnalysisBands;
-    result.generation = ++workspaceAnalysisGeneration;
-    result.workspaceEpoch = epoch;
-    result.analysisRevision = analysisRevision;
-    if (result.cancelled || (isCancelled && isCancelled())) {
-        result.cancelled = true;
-        emit workspaceAnalysisExpired();
-        emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(project.workspaceRoot, 0);
-        return;
-    }
-    SlangManager diagnosticsAnalyzer;
-    stageTimer.restart();
-    result.diagnostics =
-        diagnosticsAnalyzer.extractOverlayWorkspaceDiagnostics(
-            analyzedFileContents,
-            project.includeDirs,
-            project.defines,
-            isCancelled,
-            svFiles);
-    result.diagnosticsExtractionMs = stageTimer.elapsed();
-    result.workerElapsedMs = totalTimer.elapsed();
-    if (isCancelled && isCancelled()) {
-        emit workspaceAnalysisExpired();
-        emit batchAnalysisCompleted(0, 0);
-        emit analysisCompleted(project.workspaceRoot, 0);
-        return;
-    }
-    WorkspaceAnalysisTelemetry telemetry;
-    stageTimer.restart();
-    const int filesAnalyzed =
-        publishWorkspaceAnalysisResult(result, totalFiles, &telemetry);
-    const qint64 publicationMs = stageTimer.elapsed();
-    emitWorkspaceAnalysisTelemetry(project.workspaceRoot,
-                                   result,
-                                   totalFiles,
-                                   filesAnalyzed,
-                                   publicationMs,
-                                   telemetry.publicationUpdateMs,
-                                   telemetry.finalSnapshotMs);
-    emit batchAnalysisCompleted(filesAnalyzed, result.totalSymbols);
-    emit analysisCompleted(project.workspaceRoot, result.totalSymbols);
+    // The CLI / synchronous compatibility API waits for the SAME worker and
+    // transaction as asynchronous callers. Parsing and result disposal still
+    // belong to the analyzer's pools. GUI editing uses the asynchronous API.
+    QEventLoop loop;
+    bool completed = false;
+    auto finish = [&](const SemanticAnalysisRequest& delivered) {
+        if (delivered.compatibilityRequest && delivered.generation == request.generation) {
+            completed = true;
+            loop.quit();
+        }
+    };
+    const auto committed = connect(this, &SymbolAnalyzer::semanticAnalysisCommitted, &loop,
+        [&](const auto& delivered, const auto&) { finish(delivered); });
+    const auto dropped = connect(this, &SymbolAnalyzer::semanticAnalysisDropped, &loop,
+        [&](const auto& delivered, auto) { finish(delivered); });
+    const auto failed = connect(this, &SymbolAnalyzer::semanticAnalysisFailed, &loop,
+        [&](const auto& delivered, const auto&) { finish(delivered); });
+    const auto cleanup = qScopeGuard([&] { disconnect(committed); disconnect(dropped); disconnect(failed); });
+    startSemanticAnalysisAsync(request, std::move(cancelled));
+    if (!completed)
+        loop.exec();
 }
 
-void SymbolAnalyzer::analyzeFile(const QString& filePath)
+void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& documents)
 {
-    if (shutdownStarted || !isSystemVerilogFile(filePath))
-        return;
-
-    emit analysisStarted(filePath);
-
-    QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-        emit analysisCompleted(filePath, 0);
-        return;
-    }
-    QString content = QTextStream(&file).readAll();
-    file.close();
-
-    if (!overlayWorkspaceFiles.isEmpty()) {
-        analyzeFileContentAsync(filePath, content);
-        return;
-    }
-
-    SlangManager symbolAnalyzer;
-    QList<EffectiveValueFact> effectiveValueFacts;
-    const QList<SemanticSymbolRecord> records =
-        symbolAnalyzer.extractSymbolRecords(filePath,
-                                            content,
-                                            {},
-                                            {},
-                                            &effectiveValueFacts);
-    SlangManager diagnosticsAnalyzer;
-    QList<SemanticDiagnostic> diagnostics =
-        diagnosticsAnalyzer.extractDiagnostics(filePath, content);
-    publishFileAnalysisResult(filePath,
-                              content,
-                              records,
-                              diagnostics,
-                              effectiveValueFacts);
-    emit analysisCompleted(filePath, records.size());
+    runSemanticAnalysisBlocking(documentRequest(documents, false));
 }
 
-void SymbolAnalyzer::analyzeFileContent(
-    const QString& fileName,
-    const QString& content,
-    std::uint64_t documentRevision)
+void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* manager, std::function<bool()> cancelled)
 {
-    if (shutdownStarted || fileName.isEmpty()
-        || !isSystemVerilogFile(fileName))
-        return;
-    if (!overlayWorkspaceFiles.isEmpty()) {
-        analyzeFileContentAsync(fileName, content, documentRevision);
-        return;
-    }
-    SlangManager symbolAnalyzer;
-    QList<EffectiveValueFact> effectiveValueFacts;
-    const QList<SemanticSymbolRecord> records =
-        symbolAnalyzer.extractSymbolRecords(fileName,
-                                            content,
-                                            {},
-                                            {},
-                                            &effectiveValueFacts);
-    SlangManager diagnosticsAnalyzer;
-    QList<SemanticDiagnostic> diagnostics =
-        diagnosticsAnalyzer.extractDiagnostics(fileName, content);
-    publishFileAnalysisResult(fileName,
-                              content,
-                              records,
-                              diagnostics,
-                              effectiveValueFacts,
-                              0,
-                              documentRevision);
-    emit analysisCompleted(fileName, records.size());
+    if (manager && manager->isWorkspaceOpen())
+        analyzeProject(manager->projectSnapshot(), std::move(cancelled));
+}
+
+void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::function<bool()> cancelled)
+{
+    if (project.isOpen())
+        runSemanticAnalysisBlocking(projectRequest(project, {}), std::move(cancelled));
+}
+
+void SymbolAnalyzer::analyzeFile(const QString& path)
+{
+    // A null override means capture disk on the worker; empty editor buffers
+    // use a non-null empty QString and remain valid authoritative inputs.
+    runSemanticAnalysisBlocking(documentRequest({{path, QString(), 0}}, false));
+}
+
+void SymbolAnalyzer::analyzeFileContent(const QString& file, const QString& content,
+                                      std::uint64_t revision)
+{
+    runSemanticAnalysisBlocking(documentRequest(
+        {{file, content.isNull() ? QStringLiteral("") : content, revision}}, false));
 }

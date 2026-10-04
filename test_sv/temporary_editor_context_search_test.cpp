@@ -273,6 +273,29 @@ int main(int argc, char** argv)
     compactProvider.setSemanticRecords(catalogIndex.getSymbolRecords());
     expect("compact semantic records preserve complete search results and navigation",
            compactProvider.query(QStringLiteral("dplct")) == indexedCandidates);
+    TemporaryEditorSearchProvider publishedProvider;
+    publishedProvider.setWorkspaceFiles(
+        {QStringLiteral("/workspace/a/duplicate.sv"),
+         QStringLiteral("/workspace/b/duplicate.sv"),
+         QStringLiteral("/workspace/unrelated.sv")}, QStringLiteral("/workspace"));
+    const auto publishedCatalog = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(catalogIndex.getSymbolRecords()));
+    publishedProvider.setSemanticSnapshot(publishedCatalog);
+    QElapsedTimer catalogWait;
+    catalogWait.start();
+    while (!publishedProvider.semanticCatalogReady() && catalogWait.elapsed() < 5000)
+        pumpEvents(2);
+    expect("snapshot catalog preserves complete search and navigation",
+        publishedProvider.semanticCatalogReady()
+            && publishedProvider.query(QStringLiteral("dplct")) == indexedCandidates);
+    publishedProvider.setSemanticSnapshot(publishedCatalog);
+    publishedProvider.setSemanticSnapshot(std::make_shared<const SemanticIndexSnapshot>());
+    catalogWait.restart();
+    while (!publishedProvider.semanticCatalogReady() && catalogWait.elapsed() < 5000)
+        pumpEvents(2);
+    expect("latest empty publication discards obsolete symbol catalog",
+        publishedProvider.semanticCatalogReady()
+            && publishedProvider.query(QStringLiteral("dplct")).size() < indexedCandidates.size());
     compactProvider.setWorkspaceFiles({}, QStringLiteral("/workspace/rtl"));
     TemporaryEditorSearchProvider rebasedCatalogProvider;
     rebasedCatalogProvider.setWorkspaceFiles({}, QStringLiteral("/workspace/rtl"));

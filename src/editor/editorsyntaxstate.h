@@ -9,12 +9,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <functional>
 
 class MyCodeEditor;
 class MyHighlighter;
 class QTextDocument;
 class TSDocument;
 class TSUTF16Text;
+class QTimer;
 struct TSChangedRange;
 struct TSPortAppendTarget;
 struct TSSignalInsertTarget;
@@ -79,6 +81,7 @@ public:
         const TSUTF16Text& currentText,
         bool deferSyntaxReparse = false);
     void flushPendingEdits();
+    void setReparseFinishedCallback(std::function<void()> callback);
     QString moduleNameAt(int charPos) const;
     TSPortAppendTarget portAppendTargetAt(int charPos) const;
     TSSignalInsertTarget signalInsertTargetAt(int charPos) const;
@@ -127,6 +130,8 @@ public:
 
 private:
     std::unique_ptr<TSDocument> document;
+    std::unique_ptr<QTimer> parseContinuation;
+    std::function<void()> reparseFinished;
     QPointer<QTextDocument> highlighterDocument;
     bool largeDocument = false;
     std::uint64_t fullBuildCount = 0;

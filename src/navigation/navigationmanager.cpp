@@ -7,6 +7,9 @@
 
 #include <QElapsedTimer>
 #include <QSignalBlocker>
+#include <QEvent>
+#include <QTimer>
+#include <QThread>
 
 namespace {
 QString navigationViewName(NavigationManager::NavigationView view)
@@ -29,19 +32,47 @@ NavigationManager::NavigationManager(QObject *parent)
               WorkspaceFileOperationService>())
 {
     navigationService = NavigationService::getInstance();
+    designThreadPool.setMaxThreadCount(1);
+    designThreadPool.setThreadPriority(QThread::LowPriority);
+    designThreadPool.setObjectName(QStringLiteral("ZeroSlackDesignDerivation"));
 }
 
 NavigationManager::~NavigationManager()
 {
+    designShuttingDown = true;
+    ++designRequestGeneration;
+    pendingDesignRequest.reset();
+    if (designWatcher)
+        disconnect(designWatcher, nullptr, this, nullptr);
+    designThreadPool.waitForDone();
+}
+
+bool NavigationManager::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == navigationWidget) {
+        if (event->type() == QEvent::Hide) {
+            ++designRequestGeneration;
+            pendingDesignRequest.reset();
+        } else if (event->type() == QEvent::Show) {
+            QTimer::singleShot(0, this, [this] {
+                refreshCurrentView();
+                warmDesignHierarchyCache();
+            });
+        }
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void NavigationManager::setNavigationWidget(NavigationWidget* widget)
 {
     if (navigationWidget == widget) return;
 
+    if (navigationWidget)
+        navigationWidget->removeEventFilter(this);
     navigationWidget = widget;
     designHierarchyWidgetValid = false;
     if (navigationWidget) {
+        navigationWidget->installEventFilter(this);
         navigationWidget->setWorkspaceRoot(
             context.currentWorkspacePath);
         setupConnections();
@@ -93,9 +124,13 @@ void NavigationManager::refreshFileHierarchy()
 
 void NavigationManager::refreshDesignHierarchy(bool force)
 {
+    if (!navigationWidget || !navigationWidget->isVisible())
+        return;
     QElapsedTimer timer;
     timer.start();
     const bool changed = updateDesignHierarchyData(force);
+    if (!caches.designHierarchyValid)
+        return;
     const bool refreshWidget = navigationWidget
         && (changed || force || !designHierarchyWidgetValid);
 
@@ -238,6 +273,8 @@ void NavigationManager::onTabChanged(const QString& fileName)
 void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 {
     saveDesignHierarchyCache();
+    ++designRequestGeneration;
+    pendingDesignRequest.reset();
     context.setCurrentWorkspacePath(workspacePath);
     semanticAnalysisContext = {};
     if (navigationWidget)
@@ -249,7 +286,7 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
     restoreDesignHierarchyCache();
     designHierarchyWidgetValid = false;
     if (navigationWidget)
-        navigationWidget->updateDesignSummary(caches.designHierarchy);
+        navigationWidget->clearDesignHierarchy();
 
     refreshCurrentView();
 }
@@ -288,13 +325,6 @@ void NavigationManager::onBatchSymbolAnalysisCompleted(
 {
     Q_UNUSED(filesAnalyzed)
     Q_UNUSED(totalSymbols)
-
-    if (semanticAnalysisContext.impact
-            == SemanticChangeImpact::TriviaOnly
-        || semanticAnalysisContext.impact
-               == SemanticChangeImpact::LocalBody) {
-        return;
-    }
 
     if (currentView == DesignHierarchyView) {
         if (navigationService

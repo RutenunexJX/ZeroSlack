@@ -160,7 +160,7 @@ QString fingerprintToken(const QStringList& fields)
     return token;
 }
 
-QString designRecordFingerprintToken(const SemanticSymbolRecord& record)
+QString designRecordFingerprintToken(const SemanticSymbolRecord& record, bool includeSourceLocations)
 {
     const SymbolTaxonomy::SemanticMetadata metadata =
         semanticMetadataForSymbolRecord(record);
@@ -170,6 +170,10 @@ QString designRecordFingerprintToken(const SemanticSymbolRecord& record)
         normalizedDesignFingerprintFileName(record.location.fileName),
         QString::number(static_cast<int>(record.declarationKind)),
         record.name,
+        includeSourceLocations ? QString::number(record.location.startLine) : QString(),
+        includeSourceLocations ? QString::number(record.location.startColumn) : QString(),
+        includeSourceLocations ? QString::number(record.location.endLine) : QString(),
+        includeSourceLocations ? QString::number(record.location.endColumn) : QString(),
         QString::number(static_cast<int>(record.owner.kind)),
         record.owner.name,
         instance ? record.type.resolvedTypeName : QString(),
@@ -351,7 +355,7 @@ DesignHierarchyReport NavigationService::findDesignHierarchy(
 
 QByteArray NavigationService::designStructureFingerprint(
     const QSet<QString>& fileScope,
-    const QString& activeTop) const
+    const QString& activeTop, bool includeSourceLocations) const
 {
     if (!index)
         return {};
@@ -373,7 +377,10 @@ QByteArray NavigationService::designStructureFingerprint(
                                     activeTop}));
     QSet<QString> moduleStableKeys;
     QHash<QString, QString> identitiesByStableKey;
-    const QList<SemanticSymbolRecord> records = index->getSymbolRecords();
+    QList<SemanticSymbolRecord> records;
+    for (auto kind : {SymbolTaxonomy::DeclarationKind::Module, SymbolTaxonomy::DeclarationKind::Interface,
+                      SymbolTaxonomy::DeclarationKind::Instance})
+        records.append(index->getSymbolRecordsByDeclarationKind(kind));
     tokens.reserve(records.size());
     for (const SemanticSymbolRecord& record : records) {
         if (!designFingerprintScopeContains(normalizedFileScope,
@@ -391,7 +398,7 @@ QByteArray NavigationService::designStructureFingerprint(
         if (!module && !interfaceLike && !instance)
             continue;
 
-        const QString identity = designRecordFingerprintToken(record);
+        const QString identity = designRecordFingerprintToken(record, includeSourceLocations);
         tokens.append(identity);
         if (record.stableKey.isValid()) {
             identitiesByStableKey.insert(symbolStableKeyText(record.stableKey),
@@ -402,24 +409,9 @@ QByteArray NavigationService::designStructureFingerprint(
     }
 
     QList<SemanticRelationship> relationships;
-    const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
-        index->snapshot();
-    if (snapshot) {
-        relationships = snapshot->relationships();
-    } else {
-        for (const SemanticSymbolRecord& record : records) {
-            const SymbolTaxonomy::SemanticMetadata metadata =
-                semanticMetadataForSymbolRecord(record);
-            if (!SymbolTaxonomy::isModuleDeclaration(metadata)
-                || !record.stableKey.isValid()
-                || !moduleStableKeys.contains(
-                    symbolStableKeyText(record.stableKey))) {
-                continue;
-            }
-            relationships.append(
-                index->relationshipsForStableKey(record.stableKey, true));
-        }
-    }
+    for (const auto& record : records)
+        if (moduleStableKeys.contains(symbolStableKeyText(record.stableKey)))
+            relationships.append(index->relationshipsForStableKey(record.stableKey, true));
 
     for (const SemanticRelationship& relationship : relationships) {
         if (relationship.type != SymbolRelationshipEngine::INSTANTIATES)
@@ -440,6 +432,11 @@ QByteArray NavigationService::designStructureFingerprint(
 std::uint64_t NavigationService::semanticSnapshotRevision() const
 {
     return index ? index->snapshotRevision() : 0;
+}
+
+SemanticSnapshotToken NavigationService::semanticSnapshotToken() const
+{
+    return index ? index->snapshotToken() : SemanticSnapshotToken{};
 }
 
 QStringList NavigationService::modulesDefinedInFile(const QString& fileName) const

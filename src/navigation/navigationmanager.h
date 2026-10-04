@@ -11,6 +11,9 @@
 #include <QList>
 #include <functional>
 #include <memory>
+#include <optional>
+#include <QThreadPool>
+#include <QFutureWatcher>
 #include "actionregistry.h"
 #include "editorlocation.h"
 #include "hierarchyservice.h"
@@ -131,6 +134,7 @@ private slots:
     void onViewChanged(int index);
 
 private:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     struct NavigationContext {
         QString currentFileName;
         QString currentWorkspacePath;
@@ -152,6 +156,7 @@ private:
         QStringList designRootModules;
         QStringList designFileScope;
         QByteArray designStructureFingerprint;
+        QByteArray designAnchorFingerprint;
         std::uint64_t designSnapshotGeneration = 0;
         bool fileListValid = false;
         bool fileHierarchyValid = false;
@@ -168,6 +173,7 @@ private:
         QStringList rootModules;
         QStringList fileScope;
         QByteArray structureFingerprint;
+        QByteArray anchorFingerprint;
         std::uint64_t snapshotGeneration = 0;
         bool hierarchyValid = false;
         bool topInferred = true;
@@ -179,6 +185,7 @@ private:
 
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
+    QMetaObject::Connection workspaceDiscardConnection;
     std::unique_ptr<WorkspaceFileOperationService>
         fileOperationService;
     std::function<bool(const EditorLocation&)>
@@ -187,8 +194,37 @@ private:
     NavigationContext context;
     NavigationCaches caches;
     QHash<QString, DesignHierarchyCacheEntry> designHierarchyCacheByScope;
+    QStringList designCacheLru;
+    static constexpr int maximumDesignCaches = 3;
+    static constexpr qsizetype maximumRetainedDesignNodes = 100000;
     bool designHierarchyWidgetValid = false;
     SemanticAnalysisTelemetry semanticAnalysisContext;
+    struct DesignWorkRequest {
+        SemanticSnapshotToken token;
+        QStringList files;
+        QString selectedTop;
+        QString workspace;
+        SemanticAnalysisTelemetry telemetry;
+        std::uint64_t generation = 0;
+        DesignHierarchyReport previousHierarchy;
+        QByteArray previousFingerprint;
+        QByteArray previousAnchorFingerprint;
+        bool force = false;
+    };
+    struct DesignWorkResult {
+        DesignHierarchyReport hierarchy;
+        QByteArray fingerprint;
+        QByteArray anchorFingerprint;
+        bool reusedStructure = false;
+        QStringList roots;
+    };
+    QThreadPool designThreadPool;
+    QFutureWatcher<DesignWorkResult>* designWatcher = nullptr;
+    std::optional<DesignWorkRequest> pendingDesignRequest;
+    std::optional<DesignWorkRequest> activeDesignRequest;
+    std::uint64_t designRequestGeneration = 0;
+    bool designShuttingDown = false;
+    void launchPendingDesignWork();
 
     // Helper methods
     void setupConnections();

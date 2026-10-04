@@ -10,6 +10,7 @@
 
 class QTimer;
 class SymbolRelationshipEngine;
+class SymbolAnalyzer;
 
 class ZEROSLACK_API RelationshipResultPublisher : public QObject
 {
@@ -19,8 +20,8 @@ public:
     explicit RelationshipResultPublisher(QObject* parent = nullptr);
 
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
-    bool applySingleFileResult(const SingleFileRelationshipAnalysisResult& result);
-    bool applyWorkspaceResult(const WorkspaceRelationshipAnalysisResult& result);
+    bool applySingleFileResult(const SingleFileRelationshipAnalysisResult& result, SymbolAnalyzer* owner = nullptr);
+    bool applyWorkspaceResult(const WorkspaceRelationshipAnalysisResult& result, SymbolAnalyzer* owner = nullptr);
     void clearAllRelationships();
     void invalidateFileRelationships(const QString& fileName);
 

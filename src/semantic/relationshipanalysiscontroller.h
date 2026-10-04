@@ -8,7 +8,10 @@
 #include "relationshipanalysisworker.h"
 #include "relationshipresultpublisher.h"
 
-#include <QFutureWatcher>
+#include "semanticanalysisrequest.h"
+
+#include <atomic>
+#include <memory>
 #include <QObject>
 #include <QPointer>
 #include <cstdint>
@@ -33,8 +36,11 @@ public:
     void setRelationshipQueue(RelationshipAnalysisQueue* queue);
     void setResultPublisher(RelationshipResultPublisher* publisher);
     bool hasRelationshipBuilder() const;
+    void setRuntimePolicy(const SemanticAnalysisRuntimePolicy& policy);
 
-    void requestSingleFileAnalysis(const QString& fileName, const QString& content);
+    void requestSingleFileAnalysis(const QString& fileName, const QString& content,
+                                   const ProjectSnapshot& project = {},
+                                   std::uint64_t documentRevision = 0);
     void cancelSingleFileAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
     void cancelWorkspaceAnalysis();
@@ -60,31 +66,21 @@ signals:
 
 private:
     QPointer<SymbolAnalyzer> symbolAnalyzer;
-    // Workers still capture a raw pointer only after the controller has
-    // established a join-before-detach lifetime boundary. The controller-side
-    // handle is guarded so an externally owned builder that is destroyed
-    // first cannot leave shutdown dereferencing freed QObject storage.
     QPointer<SmartRelationshipBuilder> relationshipBuilder;
     QPointer<RelationshipAnalysisQueue> relationshipQueue;
     QPointer<RelationshipResultPublisher> resultPublisher;
-    QFutureWatcher<SingleFileRelationshipAnalysisResult>* singleFileWatcher = nullptr;
-    QFutureWatcher<WorkspaceRelationshipAnalysisResult>* workspaceWatcher = nullptr;
+    enum class RequestKind { None, SingleFile, Workspace };
+    RequestKind activeKind = RequestKind::None;
+    SemanticAnalysisRequest activeRequest;
+    SemanticAnalysisRuntimePolicy runtimePolicy;
+    std::shared_ptr<std::atomic_bool> cancellation;
     WorkspaceWorkerStartGateForTesting workspaceWorkerStartGateForTesting;
-    std::uint64_t singleFileRequestGeneration = 0;
-    std::uint64_t activeSingleFileRequestGeneration = 0;
-    QString activeSingleFileKey;
-    std::uint64_t workspaceRequestGeneration = 0;
-    std::uint64_t activeWorkspaceRequestGeneration = 0;
-    QString activeWorkspaceProjectKey;
 
-    void handleSingleFileFinished(
-        QFutureWatcher<SingleFileRelationshipAnalysisResult>* watcher,
-        std::uint64_t requestGeneration,
-        const QString& fileKey);
-    void handleWorkspaceFinished(
-        QFutureWatcher<WorkspaceRelationshipAnalysisResult>* watcher,
-        std::uint64_t requestGeneration,
-        const QString& projectKey);
+    void submit(SemanticAnalysisRequest request, RequestKind kind);
+    void finish(const SemanticAnalysisRequest& request,
+                const WorkspaceRelationshipAnalysisResult& publication);
+    bool matches(const SemanticAnalysisRequest& request) const;
+    void cancel(RequestKind kind);
 };
 
 #endif // RELATIONSHIPANALYSISCONTROLLER_H

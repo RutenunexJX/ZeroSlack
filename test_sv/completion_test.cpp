@@ -2898,98 +2898,103 @@ int main(int argc, char** argv) {
         !cpldTopFixture.isEmpty()
         && cpldTopFile.open(
             QIODevice::ReadOnly | QFile::Text);
-    expectBool("Formatter real cpld_top fixture opens",
-               cpldTopOpened,
-               true);
-    const QString cpldTopInput =
-        cpldTopOpened
-            ? QString::fromUtf8(cpldTopFile.readAll())
-            : QString();
-    const FormatterReport cpldTopReport =
-        FormatterService::getInstance()->formatDocument(
-            cpldTopInput);
-    const int cpldHeaderStart =
-        cpldTopReport.formattedText.indexOf(
-            QStringLiteral("module cpld_top("));
-    const int cpldHeaderEnd =
-        cpldTopReport.formattedText.indexOf(
-            QStringLiteral(");"),
-            cpldHeaderStart);
-    const QString cpldHeader =
-        cpldHeaderStart >= 0 && cpldHeaderEnd >= cpldHeaderStart
-            ? cpldTopReport.formattedText.mid(
-                  cpldHeaderStart,
-                  cpldHeaderEnd - cpldHeaderStart + 2)
-            : QString();
-    const QStringList cpldHeaderLines =
-        cpldHeader.split(QLatin1Char('\n'));
-    bool cpldHeaderWhitespaceClean =
-        !cpldHeader.isEmpty()
-        && !cpldHeader.contains(QLatin1Char('\t'))
-        && cpldHeaderLines.first()
-               == QStringLiteral("module cpld_top(")
-        && cpldHeaderLines.last()
-               == QStringLiteral(");");
-    for (const QString& line : cpldHeaderLines) {
-        cpldHeaderWhitespaceClean =
-            cpldHeaderWhitespaceClean
-            && !line.endsWith(QLatin1Char(' '));
-    }
-    expectBool("Formatter real cpld_top header whitespace clean",
-               cpldHeaderWhitespaceClean,
-               true);
-    const auto cpldHeaderLineContaining =
-        [&cpldHeaderLines](const QString& text) {
+    if (!cpldTopOpened && qEnvironmentVariableIsSet("ZEROSLACK_SKIP_LOCAL_FIXTURES")) {
+        printf("[SKIP] Copyright-restricted cpld_top formatter fixture is not installed\n");
+    } else {
+        expectBool("Formatter real cpld_top fixture opens",
+                   cpldTopOpened,
+                   true);
+        const QString cpldTopInput =
+            cpldTopOpened
+                ? QString::fromUtf8(cpldTopFile.readAll())
+                : QString();
+        const FormatterReport cpldTopReport =
+            FormatterService::getInstance()->formatDocument(
+                cpldTopInput);
+        const int cpldHeaderStart =
+            cpldTopReport.formattedText.indexOf(
+                QStringLiteral("module cpld_top("));
+        const int cpldHeaderEnd =
+            cpldTopReport.formattedText.indexOf(
+                QStringLiteral(");"),
+                cpldHeaderStart);
+        const QString cpldHeader =
+            cpldHeaderStart >= 0 && cpldHeaderEnd >= cpldHeaderStart
+                ? cpldTopReport.formattedText.mid(
+                      cpldHeaderStart,
+                      cpldHeaderEnd - cpldHeaderStart + 2)
+                : QString();
+        const QStringList cpldHeaderLines =
+            cpldHeader.split(QLatin1Char('\n'));
+        bool cpldHeaderWhitespaceClean =
+            !cpldHeader.isEmpty()
+            && !cpldHeader.contains(QLatin1Char('\t'))
+            && cpldHeaderLines.first()
+                   == QStringLiteral("module cpld_top(")
+            && cpldHeaderLines.last()
+                   == QStringLiteral(");");
         for (const QString& line : cpldHeaderLines) {
-            if (line.contains(text))
-                return line;
+            cpldHeaderWhitespaceClean =
+                cpldHeaderWhitespaceClean
+                && !line.endsWith(QLatin1Char(' '));
         }
-        return QString();
-    };
-    const QString cpldClockLine =
-        cpldHeaderLineContaining(
-            QStringLiteral("clk_main"));
-    const QString cpldTypedLine =
-        cpldHeaderLineContaining(
-            QStringLiteral("chl0_active_inj_layer"));
-    const QString cpldInterfaceLine =
-        cpldHeaderLineContaining(
-            QStringLiteral("s0_oc_ctrl_if"));
-    const int cpldNameColumn =
-        cpldClockLine.lastIndexOf(
-            QStringLiteral("clk_main"));
-    expectBool("Formatter real cpld_top port columns align",
-               cpldNameColumn > 0
-                   && cpldTypedLine.lastIndexOf(
-                          QStringLiteral(
-                              "chl0_active_inj_layer"))
-                      == cpldNameColumn
-                   && cpldInterfaceLine.lastIndexOf(
-                          QStringLiteral("s0_oc_ctrl_if"))
-                      == cpldNameColumn
-                   && cpldClockLine.indexOf(
-                          QLatin1Char(','))
-                      == cpldTypedLine.indexOf(
-                          QLatin1Char(','))
-                   && cpldClockLine.indexOf(
-                          QStringLiteral("//"))
-                      == cpldInterfaceLine.indexOf(
-                          QStringLiteral("//")),
-               true);
-    expectBool("Formatter real cpld_top token stream invariant",
-               StructuredWhitespaceFormatter::
-                   hasIdenticalNonWhitespaceStream(
-                       cpldTopInput,
-                       cpldTopReport.formattedText),
-               true);
-    const FormatterReport cpldTopStable =
-        FormatterService::getInstance()->formatDocument(
-            cpldTopReport.formattedText);
-    expectBool("Formatter real cpld_top idempotent",
-               !cpldTopStable.changed
-                   && cpldTopStable.formattedText
-                      == cpldTopReport.formattedText,
-               true);
+        expectBool("Formatter real cpld_top header whitespace clean",
+                   cpldHeaderWhitespaceClean,
+                   true);
+        const auto cpldHeaderLineContaining =
+            [&cpldHeaderLines](const QString& text) {
+            for (const QString& line : cpldHeaderLines) {
+                if (line.contains(text))
+                    return line;
+            }
+            return QString();
+        };
+        const QString cpldClockLine =
+            cpldHeaderLineContaining(
+                QStringLiteral("clk_main"));
+        const QString cpldTypedLine =
+            cpldHeaderLineContaining(
+                QStringLiteral("chl0_active_inj_layer"));
+        const QString cpldInterfaceLine =
+            cpldHeaderLineContaining(
+                QStringLiteral("s0_oc_ctrl_if"));
+        const int cpldNameColumn =
+            cpldClockLine.lastIndexOf(
+                QStringLiteral("clk_main"));
+        expectBool("Formatter real cpld_top port columns align",
+                   cpldNameColumn > 0
+                       && cpldTypedLine.lastIndexOf(
+                              QStringLiteral(
+                                  "chl0_active_inj_layer"))
+                          == cpldNameColumn
+                       && cpldInterfaceLine.lastIndexOf(
+                              QStringLiteral("s0_oc_ctrl_if"))
+                          == cpldNameColumn
+                       && cpldClockLine.indexOf(
+                              QLatin1Char(','))
+                          == cpldTypedLine.indexOf(
+                              QLatin1Char(','))
+                       && cpldClockLine.indexOf(
+                              QStringLiteral("//"))
+                          == cpldInterfaceLine.indexOf(
+                              QStringLiteral("//")),
+                   true);
+        expectBool("Formatter real cpld_top token stream invariant",
+                   StructuredWhitespaceFormatter::
+                       hasIdenticalNonWhitespaceStream(
+                           cpldTopInput,
+                           cpldTopReport.formattedText),
+                   true);
+        const FormatterReport cpldTopStable =
+            FormatterService::getInstance()->formatDocument(
+                cpldTopReport.formattedText);
+        expectBool("Formatter real cpld_top idempotent",
+                   !cpldTopStable.changed
+                       && cpldTopStable.formattedText
+                          == cpldTopReport.formattedText,
+                   true);
+
+    }
 
     const QString formatterStructuredInstanceInput =
         QStringLiteral(
@@ -4662,6 +4667,8 @@ int main(int argc, char** argv) {
              externalCurrentPlan.bandSummaryText(),
              QStringLiteral("bands current 0, dirty 1, open 0, background 3"));
 
+    const auto beforeSchedulingRecords =
+        SemanticIndex::getInstance()->getSymbolRecords();
     QTemporaryDir foregroundWorkspace;
     expectBool("Workspace foreground temp dir valid",
                foregroundWorkspace.isValid(),
@@ -4732,6 +4739,7 @@ int main(int argc, char** argv) {
                true);
     foregroundAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
 
+    const auto beforeExecutorRegression = SemanticIndex::getInstance()->snapshot();
     WorkspaceSymbolAnalysisController cachedWorkspaceController;
     SymbolAnalyzer cachedWorkspaceAnalyzer;
     cachedWorkspaceController.setSymbolAnalyzer(&cachedWorkspaceAnalyzer);
@@ -4750,7 +4758,10 @@ int main(int argc, char** argv) {
                          ++cachedRelationshipCancels;
                      });
     cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
-    cachedWorkspaceAnalyzer.batchAnalysisCompleted(1, 1);
+    expectBool("Workspace executor completes a real common request",
+               waitForEventPredicate([&] {
+                   return !cachedWorkspaceAnalyzer.hasWorkspaceAnalysisInFlight();
+               }, 5000), true);
     cachedWorkspaceController.requestWorkspaceAnalysis(foregroundProject);
     expectBool("Workspace executor accepts only explicit scheduler requests",
                cachedWorkspaceStarts == 2,
@@ -4760,6 +4771,7 @@ int main(int argc, char** argv) {
                true);
     cachedWorkspaceController.cancelWorkspaceAnalysis();
     cachedWorkspaceAnalyzer.cancelWorkspaceAnalysisAndInvalidate();
+    SemanticIndex::getInstance()->setSnapshot(beforeExecutorRegression);
 
     SmartRelationshipBuilder foregroundRelationshipBuilder(nullptr, nullptr);
     foregroundScheduler.setRelationshipBuilder(&foregroundRelationshipBuilder);
@@ -4803,6 +4815,14 @@ int main(int argc, char** argv) {
     expectBool("Controller shutdown survives builder-first destruction",
                true,
                true);
+
+    foregroundAnalyzer.cancelAllAnalysesAndWait();
+    // The workspace transaction retires the preceding native store. Restore
+    // this fixture in that same mode; later navigation cases clear snapshots
+    // and must still see the original completion records.
+    SemanticIndex::getInstance()->clearSnapshot();
+    SemanticIndex::getInstance()->updateSymbolRecordsForFile(
+        path, beforeSchedulingRecords, content);
 
     WorkspaceAnalysisRequestQueue requestQueue;
     ProjectSnapshot queueFirst = planProject;
@@ -10367,52 +10387,20 @@ int main(int argc, char** argv) {
     };
     atomicProject.includeDirs = {atomicPublicationWorkspace.path()};
     SymbolAnalyzer atomicAnalyzer;
-    bool firstProgressSeesAtomicSnapshot = false;
-    bool secondProgressSeesAtomicSnapshot = false;
-    QObject::connect(&atomicAnalyzer,
-                     &SymbolAnalyzer::batchProgress,
-                     &atomicAnalyzer,
-                     [&](int filesDone,
-                         int totalFiles,
-                         const QString& currentFileName) {
-                         if (filesDone != 1
-                             && filesDone != 2) {
-                             return;
-                         }
-                         if (totalFiles != 3)
-                             return;
-                         const auto snapshot =
-                             SemanticIndex::getInstance()->snapshot();
-                         if (filesDone == 1
-                             && currentFileName == atomicCurrentFile) {
-                             firstProgressSeesAtomicSnapshot =
-                                 snapshotContainsModule(snapshot,
-                                                        atomicCurrentModule)
-                                 && snapshotContainsModule(snapshot,
-                                                           atomicOpenModule)
-                                 && snapshotContainsModule(
-                                     snapshot,
-                                     atomicBackgroundModule);
-                         }
-                         if (filesDone == 2
-                             && currentFileName == atomicOpenFile) {
-                             secondProgressSeesAtomicSnapshot =
-                                 snapshotContainsModule(snapshot,
-                                                        atomicCurrentModule)
-                                 && snapshotContainsModule(snapshot,
-                                                           atomicOpenModule)
-                                 && snapshotContainsModule(
-                                     snapshot,
-                                     atomicBackgroundModule);
-                         }
-                     });
+    int progressEvents = 0;
+    bool progressSeesAtomicSnapshot = false;
+    QObject::connect(&atomicAnalyzer, &SymbolAnalyzer::batchProgress, &atomicAnalyzer,
+                     [&](int filesDone, int totalFiles, const QString&) {
+        ++progressEvents;
+        const auto current = SemanticIndex::getInstance()->snapshot();
+        progressSeesAtomicSnapshot = filesDone == 3 && totalFiles == 3
+            && snapshotContainsModule(current, atomicCurrentModule)
+            && snapshotContainsModule(current, atomicOpenModule)
+            && snapshotContainsModule(current, atomicBackgroundModule);
+    });
     atomicAnalyzer.analyzeProject(atomicProject);
-    expectBool("Workspace first progress observes atomic snapshot",
-               firstProgressSeesAtomicSnapshot,
-               true);
-    expectBool("Workspace later progress preserves atomic snapshot",
-               secondProgressSeesAtomicSnapshot,
-               true);
+    expectBool("Workspace progress observes one complete atomic publication",
+               progressEvents == 1 && progressSeesAtomicSnapshot, true);
     const auto finalAtomicSnapshot = SemanticIndex::getInstance()->snapshot();
     expectBool("Workspace final publication includes background symbols",
                snapshotContainsModule(finalAtomicSnapshot,
@@ -10476,7 +10464,7 @@ int main(int argc, char** argv) {
     });
     expectBool("Workspace cancellation expires before publication",
                cancelExpired
-                   && cancelCompletionSymbols == 0
+                   && cancelCompletionSymbols == -1
                    && !SemanticIndex::getInstance()->snapshot(),
                true);
     expectBool("Workspace cancellation provider reached Slang boundary",

@@ -17,7 +17,7 @@ void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
                                                      int delayMs)
 {
     if (fileName.isEmpty()
-        || content.isEmpty()
+        || content.isNull()
         || !relationshipAnalysis
         || !relationshipAnalysis->hasRelationshipBuilder()) {
         return;
@@ -43,8 +43,16 @@ bool AnalysisScheduler::hasScheduledRelationshipAnalysis(
 
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
 {
-    if (relationshipAnalysis)
-        relationshipAnalysis->requestSingleFileAnalysis(fileName, content);
+    if (shuttingDown || !semanticRuntimePolicy.enabled)
+        return;
+    if (relationshipAnalysis) {
+        const auto document = documentModel
+            ? documentModel->cachedDocumentForFile(fileName) : DocumentSnapshot{};
+        relationshipAnalysis->requestSingleFileAnalysis(fileName, content,
+            belongsToActiveWorkspace(fileName) && projectModel && projectModel->isOpen()
+                ? projectForAnalysis(fileName) : ProjectSnapshot{},
+            document.textVersion);
+    }
 }
 
 void AnalysisScheduler::cancelRelationshipAnalysis()
@@ -55,8 +63,7 @@ void AnalysisScheduler::cancelRelationshipAnalysis()
 
 void AnalysisScheduler::requestWorkspaceRelationshipAnalysis(const ProjectSnapshot& project)
 {
-    if (!project.isOpen()
-        || project.systemVerilogFiles.isEmpty()
+    if (shuttingDown || !semanticRuntimePolicy.enabled || !project.isOpen()
         || !relationshipAnalysis
         || !relationshipAnalysis->hasRelationshipBuilder()) {
         return;

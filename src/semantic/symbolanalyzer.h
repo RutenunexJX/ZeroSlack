@@ -20,8 +20,10 @@
 #include "effectivevalueservice.h"
 #include "semanticanalysisrequest.h"
 #include "semanticdependencygraph.h"
+#include "semanticanalysisinput.h"
 #include "projectmodel.h"
 #include "semanticindex.h"
+#include "relationshipanalysisworker.h"
 
 class WorkspaceManager;
 class SemanticIndexSnapshot;
@@ -42,6 +44,18 @@ struct WorkspaceFileAnalysis {
     QList<EffectiveValueFact> effectiveValueFacts;
 };
 
+struct PublishedWorkspaceSemanticState {
+    QString scopeKey;
+    ProjectSnapshot project;
+    SemanticAnalysisRuntimePolicy policy;
+    std::shared_ptr<const SemanticAnalysisInput> input;
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot;
+    SemanticDependencyGraph dependencyGraph;
+    std::shared_ptr<EffectiveValueService::PreparedFactsState> facts;
+    std::uint64_t analysisRevision = 0;
+    qsizetype logicalBytes = 0;
+};
+
 struct WorkspaceAnalysisResult {
     QVector<WorkspaceFileAnalysis> files;
     QList<SemanticDiagnostic> diagnostics;
@@ -52,6 +66,10 @@ struct WorkspaceAnalysisResult {
     int totalSymbols = 0;
     std::uint64_t generation = 0;
     std::uint64_t workspaceEpoch = 0;
+    std::uint64_t deliveryGeneration = 0;
+    SemanticSnapshotToken basePublication;
+    QString publicationProjectIdentity;
+    std::function<bool()> publicationCancelled;
     std::uint64_t analysisRevision = 0;
     qint64 workerElapsedMs = 0;
     qint64 symbolExtractionMs = 0;
@@ -66,6 +84,7 @@ struct WorkspaceAnalysisResult {
     SemanticAnalysisRequest request;
     IncrementalAnalysisPlan incrementalPlan;
     SemanticDependencyGraph dependencyGraph;
+    std::shared_ptr<const SemanticAnalysisInput> input;
     std::shared_ptr<const SemanticIndexSnapshot> preparedSnapshot;
     QHash<QString, QList<EffectiveValueFact>> effectiveFactsByFile;
     QHash<QString, QString> effectiveContentFingerprintsByFile;
@@ -78,6 +97,10 @@ struct WorkspaceAnalysisResult {
         SymbolRelationshipEngine::PreparedRelationshipState>
         preparedRelationshipState;
     bool relationshipDeltaPrepared = false;
+    bool reusedWorkspace = false;
+    bool diagnosticsPrepared = false;
+    std::shared_ptr<const PublishedWorkspaceSemanticState> publishedState;
+    std::shared_ptr<WorkspaceRelationshipAnalysisResult> relationshipProjection;
     QString error;
     bool slangInvoked = false;
 };
@@ -100,33 +123,17 @@ struct WorkspaceAnalysisTelemetry {
     qint64 totalElapsedMs = 0;
 };
 
-struct FileAnalysisResult {
-    QString fileName;
-    QString content;
-    QString contentHash;
-    QList<SemanticSymbolRecord> symbolRecords;
-    QList<SemanticDiagnostic> diagnostics;
-    QList<EffectiveValueFact> effectiveValueFacts;
-    QVector<WorkspaceFileAnalysis> workspaceFiles;
-    QHash<QString, std::uint64_t> dependencyGenerations;
-    QHash<QString, std::uint64_t> documentRevisionsByFile;
-    QStringList diagnosticFiles;
-    std::uint64_t generation = 0;
-    std::uint64_t workspaceEpoch = 0;
-    std::uint64_t analysisRevision = 0;
-    std::uint64_t documentRevision = 0;
-    bool cancelled = false;
-};
-
 struct SemanticPublicationRetirementPayload {
     SemanticIndexRetirementPayload semanticIndex;
     std::shared_ptr<EffectiveValueService::RetiredFactsState> effectiveFacts;
     std::unique_ptr<WorkspaceAnalysisResult> analysisResult;
     SemanticDependencyGraph dependencyGraph;
+    std::shared_ptr<const PublishedWorkspaceSemanticState> workspaceState;
 
     bool isEmpty() const
     {
-        return semanticIndex.isEmpty() && !effectiveFacts && !analysisResult && dependencyGraph.isEmpty();
+        return semanticIndex.isEmpty() && !effectiveFacts && !analysisResult
+            && dependencyGraph.isEmpty() && !workspaceState;
     }
 };
 
@@ -150,7 +157,9 @@ public:
         const ProjectSnapshot& project,
         std::function<bool()> isCancelled = nullptr,
         const QList<OpenDocumentContent>& openDocuments = {});
-    void startSemanticAnalysisAsync(const SemanticAnalysisRequest& request);
+    void startSemanticAnalysisAsync(const SemanticAnalysisRequest& request,
+                                    std::function<bool()> externalCancellation = {});
+    std::uint64_t nextCompatibilityRequestGeneration() { return ++compatibilityAnalysisGeneration; }
     void analyzeFile(const QString& filePath);
     void analyzeFileContent(
         const QString& fileName,
@@ -171,7 +180,9 @@ public:
     // retires it. Cancellation of the logical request does not free this slot.
     bool hasWorkspaceAnalysisInFlight() const
     {
-        return workspaceAnalysisWatcher || pendingWorkspacePublication;
+        return workspaceAnalysisWatcher || pendingWorkspacePublication || workspacePublicationActive
+            || pendingPublicationRetirements->load(std::memory_order_acquire)
+                >= maximumPendingRetirements;
     }
     void expireWorkspaceAnalysis();
     // Broadcast cancellation without joining worker threads. Shutdown callers
@@ -185,6 +196,9 @@ public:
     // Clear visible index state now, then dispatch the former snapshot to the
     // owned retirement pool after this GUI turn. Shutdown drains both queues.
     void clearSemanticIndex();
+    bool bindPublishedRelationships(SymbolRelationshipEngine* engine,
+                                    const SemanticSnapshotToken& publication);
+    void forgetWorkspace(const QString& workspaceRoot);
     void cancelWorkspaceAnalysisAndInvalidate();
     // Test-only gate. Runs on the worker thread and must return once the
     // supplied cancellation predicate becomes true.
@@ -201,6 +215,12 @@ public:
     void invalidateCache();
 
 signals:
+    void relationshipAnalysisCommitted(const SemanticAnalysisRequest& request,
+                                      const WorkspaceRelationshipAnalysisResult& publication);
+    void semanticAnalysisCommitted(const SemanticAnalysisRequest& request,
+                                   const SemanticSnapshotToken& publication);
+    void semanticInputWatchPathsChanged(const QString& root, const QStringList& files, const QStringList& directories);
+    void fileAnalysisRejected(const QString& fileName, std::uint64_t documentRevision, const QString& reason);
     void semanticAnalysisDropped(
         const SemanticAnalysisRequest& request,
         SemanticAnalysisRequestDisposition disposition);
@@ -219,17 +239,35 @@ private slots:
     void publishPendingWorkspaceAnalysis();
 
 private:
+    static void prepareWorkspaceDiagnostics(WorkspaceAnalysisResult* result, int limit);
+    static constexpr int maximumRetainedWorkspaces = 3;
+    static constexpr qsizetype maximumRetainedWorkspaceBytes = 768 * 1024 * 1024;
+    static constexpr int maximumPendingRetirements = 4;
+    QHash<QString, std::shared_ptr<const PublishedWorkspaceSemanticState>> retainedWorkspaces;
+    QStringList retainedWorkspaceLru;
+    std::shared_ptr<const PublishedWorkspaceSemanticState> activeWorkspaceState;
+    void rememberWorkspace(std::shared_ptr<const PublishedWorkspaceSemanticState> state);
+    void forgetRetainedState(const QString& key);
     // Analysis state tracking
     QHash<QString, QString> lastAnalyzedContent;
-    QHash<QString, std::uint64_t> fileAnalysisGenerations;
     QHash<QString, std::shared_ptr<std::atomic_bool>>
         fileAnalysisCancelFlags;
-    QSet<QFutureWatcher<FileAnalysisResult>*> fileAnalysisWatchers;
-    QStringList overlayWorkspaceFiles;
-    QStringList overlayWorkspaceIncludeDirs;
-    QHash<QString, QString> overlayWorkspaceDefines;
+    struct PendingFileDocument {
+        OpenDocumentContent document;
+        bool standalone = false;
+        std::uint64_t epoch = 0;
+    };
+    static constexpr int maximumPendingFileDocuments = 32;
+    static constexpr qsizetype maximumPendingFileBytes = 64 * 1024 * 1024;
+    std::optional<SemanticAnalysisRequest> pendingCompatibilityRequest;
+    std::function<bool()> pendingCompatibilityCancellation;
+    std::uint64_t compatibilityAnalysisGeneration = 0;
+    QHash<QString, PendingFileDocument> pendingFileDocuments;
+    QStringList pendingFileOrder;
+    void launchPendingFileAnalysis();
+    void retireWorkspaceResult(WorkspaceAnalysisResult result);
+    ProjectSnapshot overlayProject;
     QHash<QString, SemanticAnalysisBandMetadata> workspaceFileAnalysisBands;
-    SemanticDependencyGraph semanticDependencyGraph;
     QThreadPool semanticAnalysisThreadPool;
     QThreadPool semanticRetirementThreadPool;
     QTimer* workspaceRetirementTimer = nullptr;
@@ -246,41 +284,24 @@ private:
     int publishedDiagnosticLimit = 2000;
 
     QFutureWatcher<WorkspaceAnalysisResult>* workspaceAnalysisWatcher = nullptr;
+    // The watcher owns this accepted request until normal result handoff or a
+    // cancelling join. A future's result may be absent after cancellation.
+    std::optional<SemanticAnalysisRequest> workspaceAnalysisRequest;
     std::shared_ptr<std::atomic_bool> workspaceAnalysisCancelFlag;
     WorkspaceWorkerStartGateForTesting workspaceWorkerStartGateForTesting;
     QTimer* workspacePublicationTimer = nullptr;
     std::unique_ptr<WorkspaceAnalysisResult> pendingWorkspacePublication;
+    bool workspacePublicationActive = false;
     QString pendingWorkspacePublicationPath;
     int pendingWorkspacePublicationTotalFiles = 0;
-    int pendingWorkspacePublicationFilesAnalyzed = 0;
-    QElapsedTimer pendingWorkspacePublicationTimer;
-    qint64 pendingWorkspacePublicationUpdateMs = 0;
-    qint64 pendingWorkspacePublicationFinalSnapshotMs = 0;
-    QList<SemanticDiagnostic> pendingWorkspacePublicationDiagnostics;
 
-    void publishOpenDocumentResults(
-        const QStringList& fileNames,
-        const QList<SemanticDiagnostic>& diagnostics);
-    void updateFileSymbols(
-        const QString& fileName,
-        const QString& content,
-        const QList<SemanticSymbolRecord>& symbolRecords,
-        const QList<EffectiveValueFact>& effectiveValueFacts = {},
-        std::uint64_t computationRevision = 0,
-        std::uint64_t documentRevision = 0);
-    void publishFileAnalysisResult(
-        const QString& fileName,
-        const QString& content,
-        const QList<SemanticSymbolRecord>& symbolRecords,
-        const QList<SemanticDiagnostic>& diagnostics,
-        const QList<EffectiveValueFact>& effectiveValueFacts = {},
-        std::uint64_t computationRevision = 0,
-        std::uint64_t documentRevision = 0);
-    int publishWorkspaceAnalysisResult(
-        const WorkspaceAnalysisResult& result,
-        int totalFiles,
-        WorkspaceAnalysisTelemetry* telemetry = nullptr);
-    void startWorkspacePublication(WorkspaceAnalysisResult result,
+    SemanticAnalysisRequest projectRequest(const ProjectSnapshot& project, const QList<OpenDocumentContent>& documents);
+    SemanticAnalysisRequest documentRequest(const QList<OpenDocumentContent>& documents, bool standalone,
+                                             bool includePublishedDocuments = false);
+    void runSemanticAnalysisBlocking(const SemanticAnalysisRequest& request, std::function<bool()> cancelled = {});
+    bool isWorkspacePublicationCurrent(const WorkspaceAnalysisResult& result,
+                                       bool checkExternalCancellation = true) const;
+    bool startWorkspacePublication(WorkspaceAnalysisResult result,
                                    int totalFiles,
                                    const QString& workspacePath);
     void cancelWorkspacePublication();
@@ -296,12 +317,9 @@ private:
         SemanticPublicationRetirementPayload payload);
     void flushDeferredWorkspaceRetirements();
     void waitForPublicationRetirements();
-    QString contentHash(const QString& content) const;
     void cancelWorkspaceAnalysisAndWait();
-    void cancelAllFileAnalysesAndWait();
     void analyzeOverlayDocumentsAsync(
         const QList<OpenDocumentContent>& documents, bool standalone = false);
-    void publishOverlayAnalysisResult(const FileAnalysisResult& result);
     bool isSystemVerilogFile(const QString &fileName) const;
 };
 

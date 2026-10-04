@@ -2,6 +2,7 @@
 
 #include "semanticindex.h"
 #include "symbolrelationshipengine.h"
+#include "symbolanalyzer.h"
 
 #include <QTimer>
 
@@ -55,63 +56,33 @@ void RelationshipResultPublisher::setRelationshipEngine(
 }
 
 bool RelationshipResultPublisher::applySingleFileResult(
-    const SingleFileRelationshipAnalysisResult& result)
+    const SingleFileRelationshipAnalysisResult& result, SymbolAnalyzer* owner)
 {
-    if (!relationshipEngine)
+    const auto current = SemanticIndex::getInstance()->snapshotToken();
+    if (!relationshipEngine || !result.semanticSnapshot
+        || current.snapshot != result.semanticSnapshot
+        || current.snapshot != result.baseSnapshot.snapshot
+        || current.revision != result.baseSnapshot.revision)
         return false;
-
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
-                                                 result.semanticSnapshot)) {
+    // The main engine already owns this exact transaction. A compatibility
+    // consumer can attach the same immutable query view; its old state is
+    // reclaimed by the common analyzer, without a second compilation/publication.
+    if (relationshipEngine != SemanticIndex::getInstance()->relationshipEngine()
+        && (!owner || !owner->bindPublishedRelationships(relationshipEngine, current)))
         return false;
-    }
-
-    relationshipEngine->beginUpdate();
-    for (const RelationshipToAdd& relationship : result.relationships) {
-        if (relationship.fromId < 0 || relationship.toId < 0)
-            continue;
-        relationshipEngine->addRelationship(relationship.fromId,
-                                            relationship.toId,
-                                            relationship.type,
-                                            relationship.context,
-                                            relationship.confidence,
-                                            relationship.evidenceRange);
-    }
-    relationshipEngine->endUpdate();
-
     scheduleRelationshipDataRefresh();
     return true;
 }
 
 bool RelationshipResultPublisher::applyWorkspaceResult(
-    const WorkspaceRelationshipAnalysisResult& result)
+    const WorkspaceRelationshipAnalysisResult& result, SymbolAnalyzer* owner)
 {
-    if (!relationshipEngine || result.cancelled)
+    if (result.cancelled)
         return false;
-
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    if (!semanticIndex->publishSnapshotIfCurrent(result.baseSnapshot,
-                                                 result.semanticSnapshot)) {
-        return false;
-    }
-
-    relationshipEngine->beginUpdate();
-    for (const auto& pair : result.fileRelationships) {
-        for (const RelationshipToAdd& relationship : pair.second) {
-            if (relationship.fromId < 0 || relationship.toId < 0)
-                continue;
-            relationshipEngine->addRelationship(relationship.fromId,
-                                                relationship.toId,
-                                                relationship.type,
-                                                relationship.context,
-                                                relationship.confidence,
-                                                relationship.evidenceRange);
-        }
-    }
-    relationshipEngine->endUpdate();
-
-    scheduleRelationshipDataRefresh();
-    return true;
+    SingleFileRelationshipAnalysisResult publication;
+    publication.baseSnapshot = result.baseSnapshot;
+    publication.semanticSnapshot = result.semanticSnapshot;
+    return applySingleFileResult(publication, owner);
 }
 
 void RelationshipResultPublisher::clearAllRelationships()

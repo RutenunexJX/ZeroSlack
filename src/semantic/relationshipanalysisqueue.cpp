@@ -1,4 +1,5 @@
 #include "relationshipanalysisqueue.h"
+#include "semanticanalysisinput.h"
 
 RelationshipAnalysisQueue::RelationshipAnalysisQueue(QObject* parent)
     : QObject(parent)
@@ -13,7 +14,7 @@ void RelationshipAnalysisQueue::setContentProvider(
 
 QString RelationshipAnalysisQueue::lastContent(const QString& fileName) const
 {
-    return lastContentByFile.value(fileName);
+    return lastContentByFile.value(SemanticInputCapture::pathKey(fileName));
 }
 
 void RelationshipAnalysisQueue::rememberRequestedContent(
@@ -21,22 +22,5 @@ void RelationshipAnalysisQueue::rememberRequestedContent(
     const QString& content)
 {
     if (!fileName.isEmpty())
-        lastContentByFile.insert(fileName, content);
-}
-
-bool RelationshipAnalysisQueue::contentDiffersBeyondWhitespace(
-    const QString& oldContent,
-    const QString& newContent)
-{
-    auto withoutWhitespace = [](const QString& content) {
-        QString compact;
-        compact.reserve(content.size());
-        for (QChar ch : content) {
-            if (!ch.isSpace())
-                compact.append(ch);
-        }
-        return compact;
-    };
-
-    return withoutWhitespace(oldContent) != withoutWhitespace(newContent);
+        lastContentByFile.insert(SemanticInputCapture::pathKey(fileName), content);
 }

@@ -11,6 +11,7 @@
 #include <QStringList>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 
 enum class EffectiveValueStatus {
@@ -146,6 +147,10 @@ class EffectiveValueService
 public:
     struct PreparedFactsState;
     struct RetiredFactsState;
+    struct PreparedFactsInstallResult {
+        bool accepted = false;
+        std::shared_ptr<RetiredFactsState> retired;
+    };
     struct DocumentSnapshot;
 
     static EffectiveValueService* getInstance();
@@ -177,9 +182,20 @@ public:
         const QHash<QString, QString>& contentFingerprintsByFile,
         const QHash<QString, std::uint64_t>& documentRevisionsByFile,
         std::uint64_t computationRevision);
-    std::shared_ptr<RetiredFactsState> installPreparedDocumentFacts(
+    static std::shared_ptr<PreparedFactsState> mergedFactsState(
+        const std::shared_ptr<PreparedFactsState>& base,
+        const std::shared_ptr<PreparedFactsState>& delta);
+    std::shared_ptr<PreparedFactsState> capturePublishedFacts() const;
+    static QList<EffectiveValueFact> capturedFacts(
+        const std::shared_ptr<PreparedFactsState>& state,
+        const QString& fileName, const QString& content);
+    static qsizetype logicalFactsBytes(const std::shared_ptr<PreparedFactsState>& state);
+    // commit must not emit signals or call back into this service. It runs
+    // after facts validation under the same lock as the facts installation.
+    PreparedFactsInstallResult installPreparedDocumentFacts(
         std::shared_ptr<PreparedFactsState> state,
-        bool replaceAll);
+        bool replaceAll,
+        const std::function<bool()>& commit);
     QList<EffectiveValueFact> factsForDocument(
         const QString& fileName,
         const QString& documentText,

@@ -68,7 +68,7 @@ IncrementalAnalysisPlan fullPlan(
     plan.relationshipFiles = plan.affectedFiles;
     plan.fullWorkspace = true;
     plan.authoritativeWorkspaceReplace =
-        impact == SemanticChangeImpact::WorkspaceConfig;
+        request.project.isOpen() && impact == SemanticChangeImpact::WorkspaceConfig;
     plan.fallbackReason = fallbackReason;
     return plan;
 }
@@ -153,6 +153,60 @@ QStringList graphDependencies(
 }
 }
 
+IncrementalAnalysisPlan IncrementalAnalysisPlanService::planChanges(
+    const SemanticAnalysisRequest& request,
+    const QHash<QString, SemanticChangeClassification>& classifications,
+    const SemanticDependencyGraph& previousGraph,
+    const SemanticDependencyGraph& nextGraph) const
+{
+    // A configuration/policy decision already covers the complete ordered
+    // scope. Planning it once per changed source repeatedly normalized and
+    // merged the same N files N times on workspace activation.
+    if (!request.triviaOnlyGate
+        && (request.runtimePolicy.planningMode == SemanticAnalysisPlanningMode::FullWorkspace
+            || request.impactHint == SemanticChangeImpact::WorkspaceConfig
+            || request.reason == SemanticAnalysisReason::WorkspaceOpen
+            || request.reason == SemanticAnalysisReason::WorkspaceConfiguration)) {
+        return plan(request, classifications.value(normalizedPlanPath(request.triggerFile)),
+                    previousGraph, nextGraph);
+    }
+    IncrementalAnalysisPlan merged;
+    merged.reason = request.reason;
+    merged.triggerFile = request.triggerFile;
+    merged.impact = SemanticChangeImpact::TriviaOnly;
+    for (const QString& file : request.changedFiles) {
+        SemanticAnalysisRequest individual = request;
+        individual.changedFiles = {file};
+        individual.triggerFile = file;
+        auto classification = classifications.value(normalizedPlanPath(file));
+        // Multiple positional remaps are compiled as a merged local delta.
+        // They do not require a full-workspace fallback just for being batched.
+        if (request.changedFiles.size() > 1 && classification.impact == SemanticChangeImpact::TriviaOnly)
+            classification.impact = SemanticChangeImpact::LocalBody;
+        const auto current = plan(individual, classification, previousGraph, nextGraph);
+        merged.changedFiles = orderedUnion(request.project, merged.changedFiles, current.changedFiles);
+        merged.affectedFiles = orderedUnion(request.project, merged.affectedFiles, current.affectedFiles);
+        merged.compilationFiles = orderedUnion(request.project, merged.compilationFiles, current.compilationFiles);
+        merged.relationshipFiles = orderedUnion(request.project, merged.relationshipFiles, current.relationshipFiles);
+        merged.fullWorkspace |= current.fullWorkspace;
+        merged.authoritativeWorkspaceReplace |= current.authoritativeWorkspaceReplace;
+        if (int(current.impact) > int(merged.impact))
+            merged.impact = current.impact;
+        if (!current.fallbackReason.isEmpty() && !merged.fallbackReason.contains(current.fallbackReason)) {
+            if (!merged.fallbackReason.isEmpty())
+                merged.fallbackReason += QStringLiteral("; ");
+            merged.fallbackReason += current.fallbackReason;
+        }
+    }
+    // Empty configured workspaces still publish an authoritative empty state.
+    if (request.changedFiles.isEmpty()) {
+        SemanticChangeClassification configuration;
+        configuration.impact = SemanticChangeImpact::WorkspaceConfig;
+        return plan(request, configuration, previousGraph, nextGraph);
+    }
+    return merged;
+}
+
 IncrementalAnalysisPlan IncrementalAnalysisPlanService::plan(
     const SemanticAnalysisRequest& request,
     const SemanticChangeClassification& classification,
@@ -195,7 +249,8 @@ IncrementalAnalysisPlan IncrementalAnalysisPlanService::plan(
                 : SemanticChangeImpact::FullFallback,
             QStringLiteral(
                 "Full workspace analysis required by runtime policy"));
-        result.authoritativeWorkspaceReplace = true;
+        // Full compilation is still a delta within the request's scope.
+        // Only a workspace configuration/activation owns the whole baseline.
         return result;
     }
 

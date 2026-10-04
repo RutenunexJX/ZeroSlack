@@ -11,6 +11,7 @@
 #include <QFileSystemWatcher>
 #include <QElapsedTimer>
 #include <QSignalSpy>
+#include <QSaveFile>
 #include <QStandardPaths>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -77,12 +78,13 @@ void checkRestoredWorkspaceWatches()
     };
     check(manager.openWorkspace(a) && waitFor(scanFinished)
               && manager.openWorkspace(b) && waitFor(scanFinished)
-              && manager.switchWorkspace(0),
+              && manager.switchWorkspace(0)
+              && waitFor([&] { return !manager.isWorkspaceScanActive(); }),
           "loaded workspace watch restoration succeeds");
     auto* watcher = manager.findChild<QFileSystemWatcher*>();
     check(watcher && watcher->files().contains(cleanPath(aFile))
               && !watcher->files().contains(cleanPath(bFile)),
-          "restored watches immediately belong to the active workspace");
+          "restored watches belong to the active workspace before scan readiness");
     QSignalSpy changed(&manager, &WorkspaceManager::fileChanged);
     check(writeFile(aFile, "module a; logic changed; endmodule\n")
               && waitFor([&] { return !changed.isEmpty(); }),
@@ -94,12 +96,132 @@ void checkRestoredWorkspaceWatches()
                  }),
           "restored directory watch still discovers new source files");
     check(manager.switchWorkspace(1) && manager.switchWorkspace(0)
-              && manager.closeWorkspace(0),
+              && manager.closeWorkspace(0)
+              && waitFor([&] { return !manager.isWorkspaceScanActive(); }),
           "rapid switch and close keep the remaining workspace active");
     check(watcher && watcher->files().contains(cleanPath(bFile))
               && !watcher->files().contains(cleanPath(aFile))
               && !watcher->files().contains(cleanPath(added)),
           "quick close cannot leave watches on the retired workspace");
+}
+
+void checkWatchNotificationOwnership()
+{
+    QTemporaryDir root;
+    const QString a = root.filePath("a"), b = root.filePath("b");
+    const QString aFile = a + "/a.sv", bFile = b + "/b.sv";
+    const QString includeDir = root.filePath("external");
+    const QString include = includeDir + "/config.svh";
+    check(root.isValid() && writeFile(aFile, "module a; endmodule\n")
+              && writeFile(bFile, "module b; endmodule\n")
+              && writeFile(include, "`define CONFIG 1\n"),
+          "watch ownership fixtures are writable");
+    WorkspaceManager manager;
+    manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+    auto waitFor = [](const std::function<bool()>& ready) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!ready() && timer.elapsed() < 5000) QTest::qWait(5);
+        return ready();
+    };
+    check(manager.openWorkspace(a) && waitFor([&] { return !manager.isWorkspaceScanActive(); }),
+          "watch ownership A is ready");
+    auto* watcher = manager.findChild<QFileSystemWatcher*>();
+    if (!watcher) { check(false, "native watcher exists"); return; }
+    auto watched = [&](const QString& file) {
+        return watcher->files().contains(cleanPath(file), Qt::CaseInsensitive);
+    };
+    QSignalSpy changed(&manager, &WorkspaceManager::fileChanged);
+    QSignalSpy semanticChanged(&manager, &WorkspaceManager::semanticInputsChanged);
+    auto deliverFile = [&](const QString& file, Qt::ConnectionType connection = Qt::DirectConnection) {
+        return QMetaObject::invokeMethod(&manager, "onFileChanged", connection, Q_ARG(QString, file));
+    };
+    check(manager.openWorkspace(b) && deliverFile(aFile) && changed.isEmpty(),
+          "obsolete A notification is rejected before native watch removal finishes");
+    check(waitFor([&] { return !manager.isWorkspaceScanActive() && watched(bFile) && !watched(aFile); }),
+          "watch ownership transfers to B");
+    check(deliverFile(aFile, Qt::QueuedConnection), "late A callback is queued");
+    QTest::qWait(30);
+    check(changed.isEmpty() && !watched(aFile),
+          "late A callback neither restores its watch nor emits a file change");
+
+    QString alias = b + "/./b.sv";
+#ifdef Q_OS_WIN
+    alias = QDir::toNativeSeparators(alias.toUpper());
+#endif
+    check(deliverFile(alias) && changed.size() == 1 && changed.first().first().toString() == bFile,
+          "current Windows case and separator aliases retain the owned path");
+    QTest::qWait(20);
+    check(watched(bFile), "alias callback preserves current native coverage");
+
+    manager.applySemanticWatchPaths(b, {include}, {includeDir});
+    check(waitFor([&] { return watched(include) && !semanticChanged.isEmpty(); }),
+          "external semantic input watch is installed and revalidated");
+    semanticChanged.clear();
+    changed.clear();
+    check(writeFile(include, "`define CONFIG 2\n")
+              && waitFor([&] { return !semanticChanged.isEmpty(); }) && changed.isEmpty(),
+          "real external include edits still invalidate semantics");
+    semanticChanged.clear();
+    check(writeFile(includeDir + "/previously_missing.svh", "`define FOUND 1\n")
+              && waitFor([&] { return !semanticChanged.isEmpty(); }),
+          "external include directory creation retains negative-lookup coverage");
+
+    auto replace = [](const QString& file, const QByteArray& text) {
+        // Windows can briefly deny replacement while a file observer is
+        // querying metadata. Retry only fixture creation's rename/permission
+        // errors; notification and rewatch assertions still run separately.
+        for (int attempt = 0; attempt < 5; ++attempt) {
+            QSaveFile saved(file);
+            if (saved.open(QIODevice::WriteOnly) && saved.write(text) == text.size() && saved.commit())
+                return true;
+            std::cerr << "Atomic fixture save attempt " << (attempt + 1) << " failed: "
+                      << qPrintable(file) << ": " << qPrintable(saved.errorString())
+                      << " (error " << saved.error() << ")\n";
+#ifdef Q_OS_WIN
+            if (saved.error() == QFileDevice::RenameError || saved.error() == QFileDevice::PermissionsError) {
+                QTest::qWait(20);
+                continue;
+            }
+#endif
+            return false;
+        }
+        return false;
+    };
+    changed.clear();
+    check(replace(bFile, "module b; logic replaced; endmodule\n")
+              && waitFor([&] { return !changed.isEmpty() && watched(bFile); }),
+          "atomic replacement restores the current workspace file watch");
+    changed.clear();
+    check(writeFile(bFile, "module b; logic edited_again; endmodule\n")
+              && waitFor([&] { return !changed.isEmpty(); }),
+          "restored workspace watch reports the next real edit");
+    semanticChanged.clear();
+    check(replace(include, "`define CONFIG 3\n")
+              && waitFor([&] { return !semanticChanged.isEmpty() && watched(include); }),
+          "atomic replacement restores an external include watch");
+    semanticChanged.clear();
+    check(writeFile(include, "`define CONFIG 4\n")
+              && waitFor([&] { return !semanticChanged.isEmpty(); }),
+          "restored include watch reports the next real edit");
+
+    manager.applySemanticWatchPaths(b, {}, {});
+    semanticChanged.clear();
+    check(deliverFile(include) && semanticChanged.isEmpty(),
+          "retired external include loses notification ownership immediately");
+    check(waitFor([&] { return !watched(include); }), "retired include native watch is removed");
+    check(manager.closeWorkspace(0), "inactive A closes before final workspace closure");
+    manager.closeWorkspace();
+    changed.clear();
+    semanticChanged.clear();
+    check(deliverFile(bFile) && deliverFile(include), "callbacks after close are delivered to the guard");
+    check(QMetaObject::invokeMethod(&manager, "onDirectoryChanged", Qt::QueuedConnection,
+                                   Q_ARG(QString, b)), "late closed directory callback is queued");
+    QTest::qWait(30);
+    check(!manager.isWorkspaceOpen() && changed.isEmpty() && semanticChanged.isEmpty()
+              && watcher->files().isEmpty() && watcher->directories().isEmpty()
+              && !manager.isWorkspaceScanActive(),
+          "close rejects late file and directory events without restoring retired coverage");
 }
 
 void setCursor(MyCodeEditor* editor, int line, int column)
@@ -372,6 +494,7 @@ int main(int argc, char* argv[])
     check(!lastStatus.isEmpty(),
           "coordinator reports user-visible lifecycle status");
     checkRestoredWorkspaceWatches();
+    checkWatchNotificationOwnership();
     std::cout << (checks - failures) << "/" << checks
               << " workspace session coordinator checks passed\n";
     return failures == 0 ? 0 : 1;

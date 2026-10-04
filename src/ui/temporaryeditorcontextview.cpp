@@ -81,6 +81,14 @@ void TemporaryEditorContextView::setSearchProvider(
     searchProvider = std::move(provider);
 }
 
+void TemporaryEditorContextView::refreshSearchResults()
+{
+    if (!searchEdit || !searchPopup || !isVisible()) return;
+    const QString query = searchEdit->text();
+    searchPopup->setCandidates(searchProvider && !query.trimmed().isEmpty()
+        ? searchProvider(query) : EditorSearchCandidates{}, query);
+}
+
 bool TemporaryEditorContextView::openLocation(
     const EditorLocation& location)
 {
@@ -119,6 +127,7 @@ void TemporaryEditorContextView::showEvent(QShowEvent* event)
     QWidget::showEvent(event);
     if (searchPopup)
         searchPopup->synchronizeGeometry();
+    refreshSearchResults();
 }
 
 void TemporaryEditorContextView::buildUi()
@@ -194,13 +203,7 @@ void TemporaryEditorContextView::buildUi()
     connect(searchEdit,
             &QLineEdit::textChanged,
             this,
-            [this](const QString& query) {
-                const EditorSearchCandidates candidates =
-                    searchProvider && !query.trimmed().isEmpty()
-                    ? searchProvider(query)
-                    : EditorSearchCandidates{};
-                searchPopup->setCandidates(candidates, query);
-            });
+            [this](const QString&) { refreshSearchResults(); });
 }
 
 void TemporaryEditorContextView::connectSession()

@@ -1,10 +1,18 @@
-ZeroSlack v0.31.19 Windows package
+ZeroSlack v0.31.20 Windows package
 
-Release 0.31.19 includes native xIPs and SimDock workspace panels and their
-private runtime dependencies. SuiteApp SDK registration remains disabled on
-this machine; native embedding is available independently. Full workspace
-readiness still has an unresolved performance regression. The unsuccessful
-dependency-facts cache was withdrawn; this package does not claim that fix.
+Release 0.31.20 unifies semantic requests and publication, reuses validated
+workspace states within a bounded budget, and cancels obsolete Slang work.
+Directory/watch, Design, search and editor updates avoid unnecessary synchronous
+work. Cancellation and workspace switches preserve request completion and watch
+ownership. Five paired runs of a generated 1,026-file workspace measured complete
+readiness at 15–16 seconds, revisits at about 1.9 seconds and peak private memory
+at 3.13 GiB (medians); real project costs vary. True semantic changes still need
+full ordered compilation. Ordinary key medians increased by 2–3 ms and first
+visible Design readiness by about 0.10 seconds.
+
+Native xIPs and SimDock panels and their private runtimes remain included.
+SuiteApp SDK registration remains disabled on this machine; native embedding
+is available independently.
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release

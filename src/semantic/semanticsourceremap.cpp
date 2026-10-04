@@ -183,7 +183,8 @@ SemanticSourceRemapper::remapSnapshot(
     const QString& oldText,
     const QString& newText,
     const SourceTextDelta& delta,
-    std::uint64_t documentRevision)
+    std::uint64_t documentRevision,
+    std::uint64_t computationRevision)
 {
     if (!snapshot || fileName.isEmpty())
         return snapshot;
@@ -194,7 +195,7 @@ SemanticSourceRemapper::remapSnapshot(
     const TriviaPositionMap positionMap(oldText, newText, delta);
     if (!positionMap.isCompatible())
         return nullptr;
-    QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords();
+    QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords(fileName);
     for (SemanticSymbolRecord& record : records) {
         remapStableKey(&record.stableKey, fileMatcher, positionMap);
         remapStableKey(&record.owner.stableKey, fileMatcher, positionMap);
@@ -208,9 +209,17 @@ SemanticSourceRemapper::remapSnapshot(
                       positionMap);
         if (documentRevision > 0)
             record.presentation.documentRevision = documentRevision;
+        if (computationRevision > 0)
+            record.presentation.computationRevision = computationRevision;
     }
 
-    QList<SemanticRelationship> relationships = snapshot->relationships();
+    QStringList owners = snapshot->relationshipOwnersTouchingFiles({fileName});
+    if (!owners.contains(fileName))
+        owners.append(fileName);
+    owners.removeDuplicates();
+    QList<SemanticRelationship> relationships;
+    for (const QString& owner : owners)
+        relationships.append(snapshot->relationshipsOwnedByFile(owner));
     for (SemanticRelationship& relationship : relationships) {
         remapStableKey(&relationship.fromStableKey, fileMatcher, positionMap);
         remapStableKey(&relationship.toStableKey, fileMatcher, positionMap);
@@ -221,7 +230,7 @@ SemanticSourceRemapper::remapSnapshot(
                          positionMap);
     }
 
-    QList<SemanticDiagnostic> diagnostics = snapshot->diagnostics();
+    QList<SemanticDiagnostic> diagnostics = snapshot->rawDiagnostics(fileName);
     for (SemanticDiagnostic& diagnostic : diagnostics) {
         if (!fileMatcher.matches(diagnostic.fileName))
             continue;
@@ -245,24 +254,16 @@ SemanticSourceRemapper::remapSnapshot(
         }
         if (documentRevision > 0)
             diagnostic.documentRevision = documentRevision;
+        if (computationRevision > 0)
+            diagnostic.computationRevision = computationRevision;
     }
 
-    QHash<QString, QString> contents = snapshot->fileContents();
-    bool replaced = false;
-    for (auto it = contents.begin(); it != contents.end(); ++it) {
-        if (fileMatcher.matches(it.key())) {
-            it.value() = newText;
-            replaced = true;
-        }
-    }
-    if (!replaced)
-        contents.insert(fileName, newText);
-
-    return std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(std::move(records),
-                                                 std::move(relationships),
-                                                 std::move(diagnostics),
-                                                 std::move(contents)));
+    SemanticFileSymbolUpdate update;
+    update.fileName = fileName;
+    update.content = newText;
+    update.symbolRecords = std::move(records);
+    return std::make_shared<const SemanticIndexSnapshot>(snapshot->withReplacedFiles(
+        {update}, {fileName}, diagnostics, owners, relationships));
 }
 
 QList<EffectiveValueFact> SemanticSourceRemapper::remapEffectiveFacts(

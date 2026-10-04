@@ -1,6 +1,7 @@
 #include "navigationmanager.h"
 
 #include "navigationservice.h"
+#include "workspacemanager.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -86,6 +87,7 @@ void NavigationManager::NavigationCaches::clearDesignHierarchy()
     designRootModules.clear();
     designFileScope.clear();
     designStructureFingerprint.clear();
+    designAnchorFingerprint.clear();
     designSnapshotGeneration = 0;
     designHierarchyValid = false;
 }
@@ -106,6 +108,14 @@ QString NavigationManager::designHierarchyCacheKey() const
 
 void NavigationManager::saveDesignHierarchyCache()
 {
+    if (connectedWorkspaceManager && !context.currentWorkspacePath.isEmpty()) {
+        bool open = false;
+        for (const auto& workspace : connectedWorkspaceManager->workspaceEntries())
+            open |= normalizedNavigationCachePath(workspace.path)
+                == normalizedNavigationCachePath(context.currentWorkspacePath);
+        if (!open)
+            return;
+    }
     const QString key = designHierarchyCacheKey();
     if (key.isEmpty())
         return;
@@ -121,10 +131,24 @@ void NavigationManager::saveDesignHierarchyCache()
     entry.rootModules = caches.designRootModules;
     entry.fileScope = caches.designFileScope;
     entry.structureFingerprint = caches.designStructureFingerprint;
+    entry.anchorFingerprint = caches.designAnchorFingerprint;
     entry.snapshotGeneration = caches.designSnapshotGeneration;
     entry.hierarchyValid = caches.designHierarchyValid;
     entry.topInferred = caches.designTopInferred;
+    designHierarchyCacheByScope.remove(key);
+    designCacheLru.removeAll(key);
+    if (entry.hierarchy.nodes.size() > maximumRetainedDesignNodes)
+        return;
     designHierarchyCacheByScope.insert(key, entry);
+    designCacheLru.append(key);
+    auto nodeCount = [&] {
+        qsizetype count = 0;
+        for (auto it = designHierarchyCacheByScope.cbegin(); it != designHierarchyCacheByScope.cend(); ++it)
+            count += it->hierarchy.nodes.size();
+        return count;
+    };
+    while (designCacheLru.size() > maximumDesignCaches || nodeCount() > maximumRetainedDesignNodes)
+        designHierarchyCacheByScope.remove(designCacheLru.takeFirst());
 }
 
 void NavigationManager::restoreDesignHierarchyCache()
@@ -147,16 +171,23 @@ void NavigationManager::restoreDesignHierarchyCache()
     caches.designRootModules = entry.rootModules;
     caches.designFileScope = entry.fileScope;
     caches.designStructureFingerprint = entry.structureFingerprint;
+    caches.designAnchorFingerprint = entry.anchorFingerprint;
     caches.designSnapshotGeneration = entry.snapshotGeneration;
-    caches.designHierarchyValid = entry.hierarchyValid;
+    // Cached reports are candidates only; the worker must verify their
+    // structural fingerprint against the current immutable snapshot.
+    caches.designHierarchyValid = false;
+    designCacheLru.removeAll(key);
+    designCacheLru.append(key);
     caches.designTopInferred = entry.topInferred;
 }
 
 void NavigationManager::invalidateCurrentDesignHierarchyCache()
 {
     const QString key = designHierarchyCacheKey();
-    if (!key.isEmpty())
+    if (!key.isEmpty()) {
         designHierarchyCacheByScope.remove(key);
+        designCacheLru.removeAll(key);
+    }
     // Keep the last report and its structural fingerprint available until the
     // next authoritative snapshot arrives. A symbol/presentation publication
     // can invalidate the transaction without changing the module-instance

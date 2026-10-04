@@ -1,4 +1,6 @@
 #include "slangmanager.h"
+#include "slangcompilationcollectors.h"
+#include "semanticanalysisinput.h"
 #include "slangparseoptions.h"
 #include "slangrelationshiphelpers.h"
 
@@ -289,11 +291,11 @@ auto makeRelationshipVisitor(RelationshipExtractionInfo& result,
 }
 
 bool collectWorkspaceRelationships(
-    const std::shared_ptr<slang::syntax::SyntaxTree>& tree,
+    Compilation& compilation,
     QHash<QString, RelationshipExtractionInfo>* grouped,
     const std::function<bool()>& isCancelled)
 {
-    if (!tree || !grouped)
+    if (!grouped)
         return false;
     auto cancelled = [&]() {
         return isCancelled && isCancelled();
@@ -301,10 +303,6 @@ bool collectWorkspaceRelationships(
     if (cancelled())
         return false;
 
-    slang::Bag compilationOptions =
-        slang_parse_options::makeCompilationOptions();
-    Compilation compilation(compilationOptions);
-    compilation.addSyntaxTree(tree);
     if (cancelled())
         return false;
 
@@ -375,172 +373,45 @@ bool collectWorkspaceRelationships(
     return true;
 }
 
-QString relationshipSourceLookupKey(const QString& path)
-{
-    QString key = normalizedSourceFileName(path);
-#ifdef Q_OS_WIN
-    key = key.toCaseFolded();
-#endif
-    return key;
-}
-
 } // namespace
 
-QHash<QString, RelationshipExtractionInfo> SlangManager::extractWorkspaceRelationshipInfo(
-    const QStringList& filePaths,
-    const QStringList& includeDirs,
-    const QHash<QString, QString>& defines,
-    std::function<bool()> isCancelled)
+QHash<QString, RelationshipExtractionInfo> slang_collectors::relationships(
+    Compilation& compilation, const std::function<bool()>& cancelled)
 {
     QHash<QString, RelationshipExtractionInfo> grouped;
-    for (const QString& filePath : filePaths)
-        grouped.insert(normalizedSourceFileName(filePath), RelationshipExtractionInfo{});
-    if (filePaths.isEmpty())
-        return grouped;
-    auto cancelled = [&]() {
-        return isCancelled && isCancelled();
-    };
-    if (cancelled())
-        return grouped;
-
-    {
-        std::vector<std::string> pathStrs;
-        pathStrs.reserve(filePaths.size());
-        for (const QString& path : filePaths) {
-            if (cancelled())
-                return grouped;
-            pathStrs.push_back(path.toStdString());
-        }
-
-        std::vector<std::string_view> pathViews;
-        pathViews.reserve(pathStrs.size());
-        for (const std::string& path : pathStrs) {
-            if (cancelled())
-                return grouped;
-            pathViews.push_back(path);
-        }
-
-        const QStringList effectiveIncludeDirs =
-            slang_parse_options::effectiveIncludeDirsForFiles(filePaths, includeDirs);
-        if (cancelled())
-            return grouped;
-
-        slang::SourceManager sourceManager;
-        slang::syntax::SyntaxTree::TreeOrError treeOrErr =
-            effectiveIncludeDirs.isEmpty() && defines.isEmpty()
-                ? slang::syntax::SyntaxTree::fromFiles(pathViews, sourceManager)
-                : slang::syntax::SyntaxTree::fromFiles(
-                    pathViews,
-                    sourceManager,
-                    slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs, defines));
-        if (cancelled())
-            return grouped;
-        if (!treeOrErr)
-            return grouped;
-
-        std::shared_ptr<slang::syntax::SyntaxTree> tree = std::move(*treeOrErr);
-        if (!tree)
-            return grouped;
-        collectWorkspaceRelationships(tree, &grouped, isCancelled);
-    }
+    if (!collectWorkspaceRelationships(compilation, &grouped, cancelled))
+        return {};
     return grouped;
 }
 
-QHash<QString, RelationshipExtractionInfo>
-SlangManager::extractOverlayWorkspaceRelationshipInfo(
-    const QHash<QString, QString>& fileContents,
-    const QStringList& includeDirs,
-    const QHash<QString, QString>& defines,
-    std::function<bool()> isCancelled,
+QHash<QString, RelationshipExtractionInfo> SlangManager::extractWorkspaceRelationshipInfo(
+    const QStringList& filePaths, const QStringList& includeDirs,
+    const QHash<QString, QString>& defines, std::function<bool()> isCancelled)
+{
+    SemanticInputCapture input(SemanticAnalysisRequest{});
+    auto result = analyzeCapturedWorkspace(input, filePaths, includeDirs, defines, {},
+                                           isCancelled, {false, false, true}).relationships;
+    for (const auto& file : filePaths) {
+        const auto key = SemanticInputCapture::pathKey(file);
+        const auto display = normalizedSourceFileName(file);
+        if (key != display && result.contains(key))
+            result.insert(display, result.take(key));
+    }
+    return result;
+}
+
+QHash<QString, RelationshipExtractionInfo> SlangManager::extractOverlayWorkspaceRelationshipInfo(
+    const QHash<QString, QString>& contents, const QStringList& includeDirs,
+    const QHash<QString, QString>& defines, std::function<bool()> isCancelled,
     const QStringList& orderedFilePaths)
 {
-    QHash<QString, QString> contentsByKey;
-    QHash<QString, QString> pathsByKey;
-    for (auto it = fileContents.constBegin();
-         it != fileContents.constEnd();
-         ++it) {
-        const QString path = normalizedSourceFileName(it.key());
-        const QString key = relationshipSourceLookupKey(path);
-        if (key.isEmpty())
-            continue;
-        pathsByKey.insert(key, path);
-        contentsByKey.insert(key, it.value());
+    auto result = analyzeOverlayWorkspace(contents, orderedFilePaths, includeDirs, defines,
+                                          isCancelled, {false, false, true}).relationships;
+    for (auto it = contents.cbegin(); it != contents.cend(); ++it) {
+        const auto key = SemanticInputCapture::pathKey(it.key());
+        const auto display = normalizedSourceFileName(it.key());
+        if (key != display && result.contains(key))
+            result.insert(display, result.take(key));
     }
-
-    QStringList fileNames;
-    QSet<QString> added;
-    for (const QString& requestedPath : orderedFilePaths) {
-        const QString key = relationshipSourceLookupKey(requestedPath);
-        if (key.isEmpty() || added.contains(key)
-            || !contentsByKey.contains(key)) {
-            continue;
-        }
-        added.insert(key);
-        fileNames.append(normalizedSourceFileName(requestedPath));
-    }
-    QStringList remainingKeys = contentsByKey.keys();
-    remainingKeys.sort(Qt::CaseInsensitive);
-    for (const QString& key : std::as_const(remainingKeys)) {
-        if (added.contains(key))
-            continue;
-        added.insert(key);
-        fileNames.append(pathsByKey.value(key));
-    }
-
-    QHash<QString, RelationshipExtractionInfo> grouped;
-    for (const QString& fileName : std::as_const(fileNames))
-        grouped.insert(normalizedSourceFileName(fileName),
-                       RelationshipExtractionInfo{});
-    if (fileNames.isEmpty())
-        return grouped;
-
-    auto cancelled = [&]() {
-        return isCancelled && isCancelled();
-    };
-    if (cancelled())
-        return grouped;
-
-    const QStringList effectiveIncludeDirs =
-        slang_parse_options::effectiveIncludeDirsForFiles(fileNames,
-                                                          includeDirs);
-    const slang::Bag syntaxOptions =
-        slang_parse_options::makeSyntaxOptions(effectiveIncludeDirs,
-                                               defines);
-    slang::SourceManager sourceManager;
-    sourceManager.setDisableProximatePaths(true);
-    std::vector<std::string> pathStrings;
-    std::vector<slang::SourceBuffer> sourceBuffers;
-    pathStrings.reserve(static_cast<std::size_t>(fileNames.size()));
-    sourceBuffers.reserve(static_cast<std::size_t>(fileNames.size()));
-    for (const QString& fileName : std::as_const(fileNames)) {
-        if (cancelled())
-            return grouped;
-        const QString key = relationshipSourceLookupKey(fileName);
-        const QByteArray sourceBytes = contentsByKey.value(key).toUtf8();
-        pathStrings.push_back(fileName.toUtf8().toStdString());
-        slang::SourceBuffer sourceBuffer = sourceManager.assignText(
-            std::string_view(pathStrings.back()),
-            std::string_view(sourceBytes.constData(),
-                             static_cast<std::size_t>(sourceBytes.size())));
-        // Bind facts back to the exact absolute workspace identity instead of
-        // the temporary in-memory buffer's basename.
-        sourceManager.addLineDirective(
-            slang::SourceLocation(sourceBuffer.id, 0),
-            2,
-            std::string_view(pathStrings.back()),
-            0);
-        sourceBuffers.push_back(sourceBuffer);
-    }
-    if (sourceBuffers.empty() || cancelled())
-        return grouped;
-
-    std::shared_ptr<slang::syntax::SyntaxTree> tree =
-        slang::syntax::SyntaxTree::fromBuffers(sourceBuffers,
-                                               sourceManager,
-                                               syntaxOptions);
-    if (!tree || cancelled())
-        return grouped;
-
-    collectWorkspaceRelationships(tree, &grouped, isCancelled);
-    return grouped;
+    return result;
 }

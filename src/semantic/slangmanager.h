@@ -64,6 +64,22 @@ struct RelationshipExtractionInfo {
     QVector<TimingSignalInfo> timingSignals;
 };
 
+class SemanticInputCapture;
+struct SlangAnalysisOutputs {
+    bool symbols = true;
+    bool diagnostics = true;
+    bool relationships = true;
+};
+struct SlangWorkspaceAnalysis {
+    QList<SemanticSymbolRecord> symbols;
+    QList<EffectiveValueFact> effectiveFacts;
+    QList<SemanticDiagnostic> diagnostics;
+    QHash<QString, RelationshipExtractionInfo> relationships;
+    QHash<QString, QStringList> includesByFile;
+    QString error;
+    bool cancelled = false;
+};
+
 /// Manages Slang parsing/elaboration for semantic analysis (e.g. module instantiations, symbol extraction).
 /// Tree-sitter remains used for UI (highlighting, outline); Slang is used here for accuracy.
 class SlangManager
@@ -71,6 +87,16 @@ class SlangManager
 public:
     SlangManager() = default;
     ~SlangManager() = default;
+
+    SlangWorkspaceAnalysis analyzeCapturedWorkspace(
+        SemanticInputCapture& input, const QStringList& orderedFiles,
+        const QStringList& includeDirs, const QHash<QString, QString>& defines,
+        const QString& topModule = {}, const std::function<bool()>& cancelled = {},
+        SlangAnalysisOutputs outputs = {});
+    SlangWorkspaceAnalysis analyzeOverlayWorkspace(
+        const QHash<QString, QString>& contents, const QStringList& orderedFiles,
+        const QStringList& includeDirs, const QHash<QString, QString>& defines,
+        const std::function<bool()>& cancelled, SlangAnalysisOutputs outputs);
 
     /// Parses all workspace files together and returns relationship facts grouped
     /// by normalized source file path. This preserves cross-compilation-unit

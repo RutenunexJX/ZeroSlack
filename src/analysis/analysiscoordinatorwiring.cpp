@@ -146,6 +146,13 @@ void AnalysisCoordinator::connectWorkspaceSignals()
     if (!dependencies.hasWorkspaceFileWatcher())
         return;
 
+    if (auto* scheduler = dependencies.schedulerObject()) {
+        connect(scheduler, &AnalysisScheduler::semanticInputWatchPathsChanged,
+                dependencies.workspaceManagerObject(), &WorkspaceManager::applySemanticWatchPaths);
+        connect(dependencies.workspaceManagerObject(), &WorkspaceManager::semanticInputsChanged,
+                scheduler, &AnalysisScheduler::handleSemanticInputsChanged);
+    }
+
     connect(dependencies.workspaceManagerObject(),
             &WorkspaceManager::fileChanged,
             this, [this](const QString& filePath) {

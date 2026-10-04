@@ -203,6 +203,7 @@ set(SLANG_USE_MIMALLOC OFF CACHE BOOL "" FORCE)
 
 # Add Slang submodule.
 add_subdirectory(thirdparty/slang)
+include(cmake/SlangSourceCapture.cmake)
 # MinGW/GCC: use large COFF objects for large Slang translation units.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(slang_slang PRIVATE -Wa,-mbig-obj)
@@ -474,6 +475,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/signalusagehotspotservice.cpp
     src/insights/signalkernelgraphpanelcoordinator.cpp
     src/semantic/slangmanagerdiagnostics.cpp
+    src/semantic/slangcompilationcontext.cpp
+    src/semantic/semanticanalysisinput.cpp
     src/semantic/slangrelationshiphelpers.cpp
     src/semantic/smartrelationshipbuilderanalysis.cpp
     src/semantic/smartrelationshipbuilder.cpp
@@ -1643,6 +1646,16 @@ if(BUILD_TESTING)
         test_sv/analysis_scheduler_test.cpp
         test_sv/large_file_semantic_fixture.h)
     target_link_libraries(analysis_scheduler_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(semantic_pipeline_contract_test test_sv/semantic_pipeline_contract_test.cpp)
+    target_link_libraries(semantic_pipeline_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME semantic_pipeline_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:semantic_pipeline_contract_test>)
+    set_tests_properties(semantic_pipeline_contract_test PROPERTIES TIMEOUT 120)
+
 
     if(ZEROSLACK_SHARED_CORE)
         add_executable(shared_core_runtime_test

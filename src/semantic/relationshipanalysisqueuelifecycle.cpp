@@ -1,4 +1,5 @@
 #include "relationshipanalysisqueue.h"
+#include "semanticanalysisinput.h"
 
 #include <QTimer>
 
@@ -15,47 +16,41 @@ void RelationshipAnalysisQueue::schedule(
     const QString& content,
     int delayMs)
 {
-    if (fileName.isEmpty() || content.isEmpty())
+    if (fileName.isEmpty() || content.isNull())
         return;
-
-    const QString pending = pendingContent.value(fileName);
-    const QString lastContent = pending.isNull()
-        ? lastContentByFile.value(fileName)
-        : pending;
-    if (!lastContent.isNull()
-        && !contentDiffersBeyondWhitespace(lastContent, content)) {
+    const QString key = SemanticInputCapture::pathKey(fileName);
+    // Coalesce only an identical pending request. A requested-but-cancelled
+    // publication is not evidence that these bytes have been analyzed.
+    if (timers.contains(key) && pendingContent.value(key) == content)
         return;
-    }
-
-    pendingContent.insert(fileName, content);
-
     cancel(fileName);
+    pendingContent.insert(key, content);
 
     QTimer* timer = new QTimer(this);
     timer->setSingleShot(true);
     timer->setInterval(delayMs);
-    connect(timer, &QTimer::timeout, this, [this, fileName, timer]() {
-        if (timers.value(fileName) == timer)
-            timers.remove(fileName);
+    connect(timer, &QTimer::timeout, this, [this, fileName, key, timer]() {
+        if (timers.value(key) != timer)
+            return;
+        timers.remove(key);
         timer->deleteLater();
 
         const QString content = contentProvider
             ? contentProvider(fileName)
-            : QString();
-        pendingContent.remove(fileName);
+            : pendingContent.value(key);
+        pendingContent.remove(key);
         if (!content.isNull())
             emit relationshipAnalysisRequested(fileName, content);
     });
-    timers[fileName] = timer;
+    timers[key] = timer;
     timer->start();
 }
 
 void RelationshipAnalysisQueue::cancel(const QString& fileName)
 {
-    if (!timers.contains(fileName))
-        return;
-
-    QTimer* timer = timers.take(fileName);
+    const QString key = SemanticInputCapture::pathKey(fileName);
+    pendingContent.remove(key);
+    QTimer* timer = timers.take(key);
     if (timer) {
         timer->stop();
         timer->deleteLater();
@@ -73,12 +68,12 @@ void RelationshipAnalysisQueue::cancelAll()
 void RelationshipAnalysisQueue::clearFile(const QString& fileName)
 {
     cancel(fileName);
-    pendingContent.remove(fileName);
-    lastContentByFile.remove(fileName);
+    pendingContent.remove(SemanticInputCapture::pathKey(fileName));
+    lastContentByFile.remove(SemanticInputCapture::pathKey(fileName));
 }
 
 bool RelationshipAnalysisQueue::hasScheduled(const QString& fileName) const
 {
-    QTimer* timer = timers.value(fileName, nullptr);
+    QTimer* timer = timers.value(SemanticInputCapture::pathKey(fileName), nullptr);
     return timer && timer->isActive();
 }

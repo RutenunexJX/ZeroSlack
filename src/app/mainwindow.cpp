@@ -718,7 +718,7 @@ void MainWindow::refreshTemporaryEditorFileCatalog()
         ? workspaceManager->getWorkspacePath()
         : QString{};
     temporaryEditorSearchProvider->setWorkspaceFiles(
-        cachedFiles, workspaceRoot);
+        cachedFiles, workspaceRoot, true);
 }
 
 void MainWindow::refreshTemporaryEditorSemanticCatalog()
@@ -733,8 +733,10 @@ void MainWindow::refreshTemporaryEditorSemanticCatalog()
         && temporaryEditorCatalogSnapshotRevision == revision) {
         return;
     }
-    temporaryEditorSearchProvider->setSemanticRecords(
-        index->getSymbolRecords());
+    if (index->snapshot())
+        temporaryEditorSearchProvider->setSemanticSnapshot(index->snapshot());
+    else
+        temporaryEditorSearchProvider->setSemanticRecords(index->getSymbolRecords());
     temporaryEditorCatalogSnapshotRevision = index->snapshot() ? revision : 0;
 }
 

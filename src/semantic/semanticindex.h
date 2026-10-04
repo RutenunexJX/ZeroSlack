@@ -6,6 +6,7 @@
 #include "symboltaxonomy.h"
 
 #include <QHash>
+#include <QMap>
 #include <QList>
 #include <QSet>
 #include <QString>
@@ -14,6 +15,7 @@
 #include <memory>
 
 class SemanticIndexSnapshot;
+class SemanticIndex;
 class SlangManager;
 class SmartRelationshipBuilder;
 class QObject;
@@ -273,9 +275,11 @@ struct SemanticSymbolPresentation {
     std::uint64_t computationRevision = 0;
     std::uint64_t documentRevision = 0;
     SemanticElaboratedSymbolInfo defaultInfo;
-    QHash<QString, SemanticElaboratedSymbolInfo> instanceInfoByPath;
+    // Usually one or two large values. QHash's minimum 48 value slots per
+    // populated span dominated retained workspace memory for these rows.
+    QMap<QString, SemanticElaboratedSymbolInfo> instanceInfoByPath;
     SemanticDeclaredTypeFacts defaultDeclaredTypeFacts;
-    QHash<QString, SemanticDeclaredTypeFacts>
+    QMap<QString, SemanticDeclaredTypeFacts>
         declaredTypeFactsByPath;
 };
 
@@ -407,6 +411,7 @@ struct SemanticFileSymbolUpdate {
     QString fileName;
     QList<SemanticSymbolRecord> symbolRecords;
     QString content;
+    bool removed = false;
 };
 
 struct SemanticSymbolSearchQuery {
@@ -473,13 +478,14 @@ QString semanticRelationshipStableKeyText(
     const SemanticRelationship& relationship);
 
 struct SemanticIndexRetirementPayload {
+    std::shared_ptr<SemanticIndex> nativeStore;
     std::shared_ptr<const SemanticIndexSnapshot> snapshot;
     std::shared_ptr<SymbolRelationshipEngine::PreparedRelationshipState>
         relationshipState;
 
     bool isEmpty() const
     {
-        return !snapshot && !relationshipState;
+        return !nativeStore && !snapshot && !relationshipState;
     }
 };
 
@@ -490,6 +496,9 @@ public:
     static SemanticIndex* getInstance();
 
     SemanticIndex();
+    // Worker-local read facade. No singleton access, logging or mutable query
+    // mirrors; every service bound to it reads the same immutable publication.
+    explicit SemanticIndex(const SemanticSnapshotToken& token);
     ~SemanticIndex();
 
     void setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot);
@@ -502,12 +511,17 @@ public:
         std::shared_ptr<
             SymbolRelationshipEngine::PreparedRelationshipState>
             relationshipState = {},
-        const SemanticAnalysisBandReport& analysisBandReport = {});
+        const SemanticAnalysisBandReport& analysisBandReport = {},
+        bool notify = true);
+    void notifyPreparedSnapshotPublished(std::uint64_t revision,
+                                         const QStringList& changedFiles,
+                                         bool notifyRelationships = true);
     // Clears only the published snapshot. Native/open-document records remain
     // available to callers that intentionally fall back to the live store.
     void clearSnapshot();
     // Clears all index-owned state for a closed or replaced workspace.
     void clearSemanticState();
+    std::shared_ptr<SemanticIndex> takeNativeStoreForRetirement();
     std::shared_ptr<const SemanticIndexSnapshot> snapshot() const;
     bool hasSymbolRecords() const;
     std::uint64_t snapshotRevision() const;
@@ -519,13 +533,17 @@ public:
     void updateSymbolRecordsForFiles(
         const QList<SemanticFileSymbolUpdate>& updates,
         bool buildRelationships = true);
+    // Accept uncapped diagnostics. -1 preserves the current display limit;
+    // zero exposes the uncapped compatibility view, positive values select it.
     void publishSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
-        const QList<SemanticDiagnostic>& diagnostics);
+        const QList<SemanticDiagnostic>& diagnostics,
+        int diagnosticDisplayLimit = -1);
     std::shared_ptr<const SemanticIndexSnapshot> captureSnapshotPreservingDiagnostics() const;
     std::shared_ptr<const SemanticIndexSnapshot> captureSnapshotReplacingDiagnostics(
         const QStringList& fileNames,
-        const QList<SemanticDiagnostic>& diagnostics) const;
+        const QList<SemanticDiagnostic>& diagnostics,
+        int diagnosticDisplayLimit = -1) const;
     SemanticSnapshotToken beginRelationshipAnalysisSnapshot();
     std::shared_ptr<const SemanticIndexSnapshot> snapshotWithAdditionalRelationships(
         std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
@@ -615,6 +633,7 @@ public:
     QList<SemanticDiagnostic> getDiagnostics(const QString& fileName = QString()) const;
 
 private:
+    SemanticIndexSnapshot captureSnapshotWithRawDiagnostics() const;
     SymbolRelationshipEngine* m_relationshipEngine = nullptr;
     std::shared_ptr<const SemanticIndexSnapshot> m_snapshot;
     bool m_snapshotAuthoritative = false;

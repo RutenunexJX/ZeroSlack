@@ -1,12 +1,21 @@
 # ZeroSlack
 
-Current version: `v0.31.19`
+Current version: `v0.31.20`
 
-This release embeds xIPs and SimDock as native workspace panels without requiring
-the SuiteApp SDK, and retains the editor, search and workspace-response changes.
-Known limitation: full workspace readiness still has an unresolved performance
-regression. The unsuccessful dependency-facts cache has been withdrawn; this
-release does not claim that end-to-end analysis performance is fixed.
+This release unifies workspace analysis and publication, retains validated
+workspace states within a bounded cache, and cancels obsolete work inside Slang.
+Directory watching, Design updates, search catalogs and editor syntax work now
+avoid unnecessary synchronous processing. Cancellation and workspace switching
+preserve request completion and file-watch ownership.
+
+Five paired runs on a generated 1,026-file workspace reduced median complete
+readiness from 45–55 seconds to 15–16 seconds, revisits from about 56 seconds to
+1.9 seconds, and peak private memory from 10.02 GiB to 3.13 GiB. These are fixture
+measurements, not guarantees for arbitrary projects. True semantic changes still
+require full ordered compilation; ordinary key medians increased by 2–3 ms and
+first visible Design readiness by about 0.10 seconds.
+
+Native xIPs and SimDock workspace panels remain available without the SuiteApp SDK.
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
 Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and

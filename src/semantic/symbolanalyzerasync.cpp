@@ -15,6 +15,8 @@
 #include <QTextStream>
 #include <QThread>
 #include <QTimer>
+#include <QPointer>
+#include <QScopeGuard>
 #include <algorithm>
 #include <utility>
 
@@ -29,18 +31,6 @@ QString normalizedAsyncAnalysisFileName(const QString& fileName)
     result = result.toCaseFolded();
 #endif
     return result;
-}
-
-bool readAsyncAnalysisFile(const QString& fileName, QString* content)
-{
-    if (!content)
-        return false;
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text))
-        return false;
-    QTextStream stream(&file);
-    *content = stream.readAll();
-    return stream.status() == QTextStream::Ok;
 }
 }
 
@@ -59,6 +49,27 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
     workspaceRetirementTimer->setSingleShot(true);
     connect(workspaceRetirementTimer, &QTimer::timeout,
             this, &SymbolAnalyzer::flushDeferredWorkspaceRetirements);
+    connect(this, &SymbolAnalyzer::workspaceAnalysisExpired,
+            this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::batchAnalysisCompleted,
+            this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::semanticAnalysisDropped,
+            this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
+    connect(this, &SymbolAnalyzer::semanticAnalysisFailed,
+            this, &SymbolAnalyzer::launchPendingFileAnalysis, Qt::QueuedConnection);
+    auto completeFiles = [this](const SemanticAnalysisRequest& request, const QString& error) {
+        for (const auto& file : request.compatibilityCompletionFiles) {
+            fileAnalysisCancelFlags.remove(normalizedAsyncAnalysisFileName(file));
+            if (!error.isEmpty())
+                emit fileAnalysisRejected(file, request.documentRevisions.value(file), error);
+        }
+    };
+    connect(this, &SymbolAnalyzer::semanticAnalysisCommitted, this,
+        [completeFiles](const auto& request, const auto&) { completeFiles(request, {}); });
+    connect(this, &SymbolAnalyzer::semanticAnalysisFailed, this,
+        [completeFiles](const auto& request, const auto& error) { completeFiles(request, error); });
+    connect(this, &SymbolAnalyzer::semanticAnalysisDropped, this,
+        [completeFiles](const auto& request, auto) { completeFiles(request, QStringLiteral("Semantic request expired")); });
     workspacePublicationTimer = new QTimer(this);
     workspacePublicationTimer->setSingleShot(true);
     connect(workspacePublicationTimer,
@@ -70,6 +81,9 @@ SymbolAnalyzer::SymbolAnalyzer(QObject *parent)
 SymbolAnalyzer::~SymbolAnalyzer()
 {
     shutdown();
+    // A synchronous publication observer can call shutdown before its caller
+    // hands the detached result to the pool. Drain these late releases too.
+    waitForPublicationRetirements();
 }
 
 void SymbolAnalyzer::setWorkspaceWorkerStartGateForTesting(
@@ -105,206 +119,9 @@ void SymbolAnalyzer::startAnalyzeProjectAsync(
     std::function<bool()> isCancelled,
     const QList<OpenDocumentContent>& openDocuments)
 {
-    if (shutdownStarted || !project.isOpen())
+    if (shutdownStarted || !project.isOpen() || (isCancelled && isCancelled()))
         return;
-    cancelWorkspacePublication();
-    cancelAllFileAnalysesAndWait();
-    cancelWorkspaceAnalysisAndWait();
-
-    const QStringList svFiles = project.systemVerilogFiles;
-    const QStringList includeDirs = project.includeDirs;
-    const QHash<QString, QString> defines = project.defines;
-    overlayWorkspaceFiles = svFiles;
-    overlayWorkspaceIncludeDirs = includeDirs;
-    overlayWorkspaceDefines = defines;
-    const QString workspacePath = project.workspaceRoot;
-    const int totalFiles = svFiles.size();
-    const std::uint64_t epoch = ++workspaceEpoch;
-    const std::uint64_t generation = ++workspaceAnalysisGeneration;
-    QHash<QString, OpenDocumentContent> openDocumentsByKey;
-    QHash<QString, std::uint64_t> documentRevisionsByFile;
-    for (const OpenDocumentContent& document : openDocuments) {
-        if (!isSystemVerilogFile(document.fileName)
-            || document.content.isNull()) {
-            continue;
-        }
-        const QString key =
-            normalizedAsyncAnalysisFileName(document.fileName);
-        if (key.isEmpty())
-            continue;
-        openDocumentsByKey.insert(key, document);
-        documentRevisionsByFile.insert(key, document.documentRevision);
-    }
-    // The workspace compilation, including every captured open-buffer
-    // overlay, is one semantic transaction. Advancing every dependency here
-    // prevents either a later edit or a standalone overlay task from
-    // accepting a mixed workspace result.
-    const QStringList revisionFiles = svFiles;
-    const std::uint64_t analysisRevision =
-        EffectiveValueService::getInstance()->beginComputation(revisionFiles);
-    const auto cancellation = std::make_shared<std::atomic_bool>(false);
-    workspaceAnalysisCancelFlag = cancellation;
-    const QHash<QString, SemanticAnalysisBandMetadata> fileAnalysisBands =
-        workspaceFileAnalysisBands;
-    const WorkspaceWorkerStartGateForTesting workerStartGate =
-        workspaceWorkerStartGateForTesting;
-
-    emit analysisStarted(workspacePath);
-
-    QFuture<WorkspaceAnalysisResult> future = QtConcurrent::run([svFiles, includeDirs, defines, isCancelled, cancellation, generation, epoch, analysisRevision, fileAnalysisBands, workerStartGate, openDocumentsByKey = std::move(openDocumentsByKey), documentRevisionsByFile]() {
-        QElapsedTimer workerTimer;
-        workerTimer.start();
-        auto applyResultMetadata =
-            [generation,
-             epoch,
-             analysisRevision,
-             &fileAnalysisBands,
-             &documentRevisionsByFile](
-                WorkspaceAnalysisResult* result) {
-                if (!result)
-                    return;
-                result->fileAnalysisBands = fileAnalysisBands;
-                result->generation = generation;
-                result->workspaceEpoch = epoch;
-                result->analysisRevision = analysisRevision;
-                result->documentRevisionsByFile =
-                    documentRevisionsByFile;
-            };
-        auto cancelled = [&isCancelled, &cancellation]() {
-            return cancellation->load(std::memory_order_relaxed)
-                || (isCancelled && isCancelled());
-        };
-        if (workerStartGate)
-            workerStartGate(cancelled);
-        WorkspaceAnalysisResult result;
-        if (cancelled()) {
-            result.cancelled = true;
-            result.workerElapsedMs = workerTimer.elapsed();
-            applyResultMetadata(&result);
-            return result;
-        }
-
-        SlangManager symbolAnalyzer;
-        QList<EffectiveValueFact> effectiveValueFacts;
-        QHash<QString, QString> analyzedFileContents;
-        for (const QString& fileName : svFiles) {
-            if (cancelled()) {
-                result.cancelled = true;
-                result.workerElapsedMs = workerTimer.elapsed();
-                applyResultMetadata(&result);
-                return result;
-            }
-            const QString key =
-                normalizedAsyncAnalysisFileName(fileName);
-            QString content;
-            const auto overlay = openDocumentsByKey.constFind(key);
-            if (overlay != openDocumentsByKey.constEnd()) {
-                content = overlay->content;
-            } else if (!readAsyncAnalysisFile(fileName, &content)) {
-                // An incomplete workspace cannot be published atomically.
-                result.cancelled = true;
-                result.workerElapsedMs = workerTimer.elapsed();
-                applyResultMetadata(&result);
-                return result;
-            }
-            analyzedFileContents.insert(fileName, content);
-        }
-        QElapsedTimer stageTimer;
-        stageTimer.start();
-        const auto records =
-            symbolAnalyzer.extractOverlayWorkspaceSymbolRecords(
-                analyzedFileContents,
-                includeDirs,
-                defines,
-                cancelled,
-                &effectiveValueFacts,
-                svFiles);
-        const qint64 symbolExtractionMs = stageTimer.elapsed();
-        if (cancelled()) {
-            result.cancelled = true;
-            result.symbolExtractionMs = symbolExtractionMs;
-            result.workerElapsedMs = workerTimer.elapsed();
-            applyResultMetadata(&result);
-            return result;
-        }
-
-        stageTimer.restart();
-        result =
-            SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
-                svFiles,
-                records,
-                effectiveValueFacts,
-                cancelled,
-                analyzedFileContents);
-        result.symbolExtractionMs = symbolExtractionMs;
-        result.resultAssemblyMs = stageTimer.elapsed();
-        applyResultMetadata(&result);
-        if (result.cancelled || cancelled()) {
-            result.cancelled = true;
-            result.workerElapsedMs = workerTimer.elapsed();
-            return result;
-        }
-
-        SlangManager diagnosticsAnalyzer;
-        stageTimer.restart();
-        result.diagnostics =
-            diagnosticsAnalyzer.extractOverlayWorkspaceDiagnostics(
-                analyzedFileContents,
-                includeDirs,
-                defines,
-                cancelled,
-                svFiles);
-        result.diagnosticsExtractionMs = stageTimer.elapsed();
-        result.workerElapsedMs = workerTimer.elapsed();
-        if (cancelled()) {
-            result.cancelled = true;
-            result.diagnostics.clear();
-            result.workerElapsedMs = workerTimer.elapsed();
-        }
-        return result;
-    });
-
-    auto* watcher = new QFutureWatcher<WorkspaceAnalysisResult>(this);
-    workspaceAnalysisWatcher = watcher;
-    connect(watcher,
-            &QFutureWatcher<WorkspaceAnalysisResult>::finished,
-            this,
-            [this,
-             watcher,
-             workspacePath,
-             totalFiles,
-             generation,
-             epoch,
-             analysisRevision,
-             revisionFiles]() {
-                const bool watcherCancelled = watcher->isCanceled();
-                WorkspaceAnalysisResult result;
-                if (!watcherCancelled)
-                    // Take the single result so deferred watcher deletion
-                    // cannot retain a second bulk payload on the GUI thread.
-                    result = watcher->future().takeResult();
-                if (workspaceAnalysisWatcher == watcher)
-                    workspaceAnalysisWatcher = nullptr;
-                watcher->deleteLater();
-
-                if (watcherCancelled
-                    || generation != workspaceAnalysisGeneration
-                    || epoch != workspaceEpoch
-                    || result.generation != generation
-                    || result.workspaceEpoch != epoch
-                    || result.analysisRevision != analysisRevision
-                    || !EffectiveValueService::getInstance()
-                            ->isComputationCurrent(revisionFiles,
-                                                   analysisRevision)
-                    || result.cancelled) {
-                    emit workspaceAnalysisExpired();
-                    return;
-                }
-                startWorkspacePublication(std::move(result),
-                                          totalFiles,
-                                          workspacePath);
-            });
-    watcher->setFuture(future);
+    startSemanticAnalysisAsync(projectRequest(project, openDocuments), std::move(isCancelled));
 }
 
 void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
@@ -318,13 +135,22 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndWait()
 
     QFutureWatcher<WorkspaceAnalysisResult>* watcher =
         workspaceAnalysisWatcher;
+    const auto request = std::exchange(workspaceAnalysisRequest, std::nullopt);
+    const auto cancellation = workspaceAnalysisCancelFlag;
     workspaceAnalysisWatcher = nullptr;
     disconnect(watcher, nullptr, this, nullptr);
     QFuture<WorkspaceAnalysisResult> future = watcher->future();
-    watcher->cancel();
     future.waitForFinished();
+    if (future.resultCount() > 0)
+        retireWorkspaceResult(future.takeResult());
     delete watcher;
-    workspaceAnalysisCancelFlag.reset();
+    if (workspaceAnalysisCancelFlag == cancellation)
+        workspaceAnalysisCancelFlag.reset();
+    // Disconnecting the watcher transfers its terminal obligation here. Send
+    // it after releasing the slot, including during shutdown, so a synchronous
+    // adapter can leave its nested event loop without waiting for global exit.
+    if (request)
+        emit semanticAnalysisDropped(*request, SemanticAnalysisRequestDisposition::Cancelled);
 }
 
 void SymbolAnalyzer::expireWorkspaceAnalysis()
@@ -332,16 +158,16 @@ void SymbolAnalyzer::expireWorkspaceAnalysis()
     ++workspaceAnalysisGeneration;
     const bool hadPendingPublication =
         pendingWorkspacePublication != nullptr;
-    cancelWorkspacePublication();
     if (workspaceAnalysisCancelFlag)
         workspaceAnalysisCancelFlag->store(true, std::memory_order_relaxed);
+    cancelWorkspacePublication();
     if (!workspaceAnalysisWatcher || !workspaceAnalysisWatcher->isRunning()) {
         if (hadPendingPublication)
             emit workspaceAnalysisExpired();
         return;
     }
 
-    workspaceAnalysisWatcher->future().cancel();
+    // Cancellation is cooperative. Keep the actual result available for retirement.
 }
 
 void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
@@ -352,6 +178,7 @@ void SymbolAnalyzer::cancelWorkspaceAnalysisAndInvalidate()
 
 void SymbolAnalyzer::requestCancelAllAnalyses()
 {
+    const auto pendingRequest = pendingCompatibilityRequest;
     ++workspaceAnalysisGeneration;
     ++workspaceEpoch;
     if (workspaceAnalysisCancelFlag)
@@ -361,23 +188,19 @@ void SymbolAnalyzer::requestCancelAllAnalyses()
         if (cancellation)
             cancellation->store(true, std::memory_order_relaxed);
     }
-    overlayWorkspaceFiles.clear();
-    overlayWorkspaceIncludeDirs.clear();
-    overlayWorkspaceDefines.clear();
+    overlayProject = {};
+    pendingCompatibilityRequest.reset();
+    pendingCompatibilityCancellation = {};
+    pendingFileDocuments.clear();
+    pendingFileOrder.clear();
     cancelWorkspacePublication();
-    if (workspaceAnalysisWatcher)
-        workspaceAnalysisWatcher->future().cancel();
-    for (QFutureWatcher<FileAnalysisResult>* watcher :
-         std::as_const(fileAnalysisWatchers)) {
-        if (watcher)
-            watcher->future().cancel();
-    }
+    if (pendingRequest)
+        emit semanticAnalysisDropped(*pendingRequest, SemanticAnalysisRequestDisposition::Cancelled);
 }
 
 void SymbolAnalyzer::cancelAllAnalysesAndWait()
 {
     requestCancelAllAnalyses();
-    cancelAllFileAnalysesAndWait();
     cancelWorkspaceAnalysisAndWait();
     waitForPublicationRetirements();
 }
@@ -391,15 +214,24 @@ void SymbolAnalyzer::shutdown()
     // or publication while teardown drains already-owned work.
     shutdownStarted = true;
     requestCancelAllAnalyses();
-    cancelAllFileAnalysesAndWait();
     cancelWorkspaceAnalysisAndWait();
+    const QStringList retainedKeys = retainedWorkspaceLru;
+    for (const QString& key : retainedKeys)
+        forgetRetainedState(key);
+    if (activeWorkspaceState) {
+        SemanticPublicationRetirementPayload retired;
+        retired.workspaceState = std::exchange(activeWorkspaceState, {});
+        retirePublicationState(std::move(retired));
+    }
 
     // Shutdown may precede the next GUI turn. Dispatch still-owned workspace
     // snapshots before sealing, so cancellation never destroys them inline or
     // leaves their release dependent on another event-loop iteration.
     flushDeferredWorkspaceRetirements();
     // Worker watchers and both zero-delay timers are detached or cancelled.
-    // A retirement submitted after this point is a teardown ordering defect.
+    // Sealing disables worker gates and new semantic work. A publication
+    // observer may still hand its detached result back after this call unwinds;
+    // the owned retirement pool accepts that disposal and is drained at destruction.
     publicationRetirementQueueOpen = false;
     waitForPublicationRetirements();
     publicationRetirementGateForTesting = {};
@@ -438,293 +270,41 @@ void SymbolAnalyzer::analyzeOverlayDocumentsAsync(
     if (overlays.isEmpty())
         return;
 
-    const auto cancellation = std::make_shared<std::atomic_bool>(false);
-    QHash<QString, OpenDocumentContent> overlaysByKey;
-    QStringList overlayKeys;
-    for (const OpenDocumentContent& overlay : std::as_const(overlays)) {
-        const QString key =
-            normalizedAsyncAnalysisFileName(overlay.fileName);
-        if (key.isEmpty())
-            continue;
-        if (!overlaysByKey.contains(key))
-            overlayKeys.append(key);
-        overlaysByKey.insert(key, overlay);
-    }
-    overlayKeys.sort(Qt::CaseSensitive);
-    if (overlayKeys.isEmpty())
-        return;
-
-    // DocumentModel stores editors in a QHash. Pick a deterministic delivery
-    // key, then publish completion for every overlay below; no consumer may
-    // depend on an arbitrary QHash iteration order.
-    const OpenDocumentContent primaryDocument =
-        overlaysByKey.value(overlayKeys.constLast());
-    const QString fileName = primaryDocument.fileName;
-    const QString content = primaryDocument.content;
-    const std::uint64_t documentRevision =
-        primaryDocument.documentRevision;
-    const QString analysisKey = normalizedAsyncAnalysisFileName(fileName);
-
-    QString requestFingerprint;
-    for (const QString& key : std::as_const(overlayKeys)) {
-        const OpenDocumentContent overlay = overlaysByKey.value(key);
-        requestFingerprint += key;
-        requestFingerprint += QLatin1Char('\n');
-        requestFingerprint += QString::number(overlay.documentRevision);
-        requestFingerprint += QLatin1Char('\n');
-        requestFingerprint += overlay.content;
-        requestFingerprint += QChar(u'\0');
-        if (const auto previous = fileAnalysisCancelFlags.value(key))
-            previous->store(true, std::memory_order_relaxed);
-        fileAnalysisGenerations.insert(
-            key, fileAnalysisGenerations.value(key, 0) + 1);
-        fileAnalysisCancelFlags.insert(key, cancellation);
-    }
-    const std::uint64_t generation =
-        fileAnalysisGenerations.value(analysisKey, 0);
-    const QString expectedContentHash = contentHash(requestFingerprint);
-    const std::uint64_t taskWorkspaceEpoch = workspaceEpoch;
-    QHash<QString, QString> cachedContentsByKey;
-    const std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot =
-        SemanticIndex::getInstance()->snapshot();
-    if (!standalone && semanticSnapshot) {
-        const QHash<QString, QString> cachedContents =
-            semanticSnapshot->fileContents();
-        for (auto it = cachedContents.constBegin();
-             it != cachedContents.constEnd();
-             ++it) {
-            cachedContentsByKey.insert(
-                normalizedAsyncAnalysisFileName(it.key()), it.value());
-        }
-    }
-    QStringList workspaceFiles = standalone ? QStringList() : overlayWorkspaceFiles;
-    if (!standalone && workspaceFiles.isEmpty() && semanticSnapshot) {
-        workspaceFiles = semanticSnapshot->fileContents().keys();
-        workspaceFiles.sort(Qt::CaseInsensitive);
-    }
-    QSet<QString> workspaceKeys;
-    for (const QString& workspaceFile : std::as_const(workspaceFiles)) {
-        workspaceKeys.insert(
-            normalizedAsyncAnalysisFileName(workspaceFile));
-    }
-    for (const OpenDocumentContent& overlay : std::as_const(overlays)) {
-        const QString key =
-            normalizedAsyncAnalysisFileName(overlay.fileName);
-        if (!workspaceKeys.contains(key)) {
-            workspaceFiles.append(overlay.fileName);
-            workspaceKeys.insert(key);
-        }
-    }
-    if (!standalone && (workspaceAnalysisWatcher || pendingWorkspacePublication))
-        expireWorkspaceAnalysis();
-    const std::uint64_t analysisRevision =
-        EffectiveValueService::getInstance()->beginComputation(
-            workspaceFiles);
-    const QStringList includeDirs = standalone ? QStringList{QFileInfo(fileName).absolutePath()}
-                                              : overlayWorkspaceIncludeDirs;
-    const QHash<QString, QString> defines = standalone ? QHash<QString, QString>() : overlayWorkspaceDefines;
-
-    QHash<QString, std::uint64_t> dependencyGenerations;
-    for (const QString& workspaceFile : std::as_const(workspaceFiles)) {
-        const QString key = normalizedAsyncAnalysisFileName(workspaceFile);
-        dependencyGenerations.insert(
-            key, fileAnalysisGenerations.value(key, 0));
-    }
-
-    // Keep the parse task self-contained; the watcher owns only delivery back to this QObject.
-    auto* watcher =
-        new QFutureWatcher<FileAnalysisResult>(this);
-    watcher->setProperty("analysisKey", analysisKey);
-    watcher->setProperty("analysisKeys", overlayKeys);
-    fileAnalysisWatchers.insert(watcher);
-    connect(watcher,
-            &QFutureWatcher<FileAnalysisResult>::finished,
-            this,
-            [this,
-             fileName,
-             analysisKey,
-             expectedContentHash,
-             generation,
-             taskWorkspaceEpoch,
-             analysisRevision,
-             workspaceFiles,
-             overlayKeys,
-             standalone,
-             cancellation,
-             watcher]() {
-                const auto result = watcher->result();
-                fileAnalysisWatchers.remove(watcher);
-                watcher->deleteLater();
-                for (const QString& key : overlayKeys) {
-                    if (fileAnalysisCancelFlags.value(key) == cancellation)
-                        fileAnalysisCancelFlags.remove(key);
-                }
-                if (cancellation->load(std::memory_order_relaxed)
-                    || result.cancelled) {
-                    return;
-                }
-                if (fileAnalysisGenerations.value(analysisKey, 0) != generation)
-                    return;
-                if (result.generation != generation
-                    || result.contentHash != expectedContentHash
-                    || result.workspaceEpoch != taskWorkspaceEpoch
-                    || workspaceEpoch != taskWorkspaceEpoch
-                    || result.analysisRevision != analysisRevision) {
-                    return;
-                }
-                for (auto it = result.dependencyGenerations.constBegin();
-                     it != result.dependencyGenerations.constEnd();
-                     ++it) {
-                    if (fileAnalysisGenerations.value(it.key(), 0)
-                        != it.value()) {
-                        return;
-                    }
-                }
-                if (!EffectiveValueService::getInstance()
-                         ->isComputationCurrent(workspaceFiles,
-                                                analysisRevision)) {
-                    return;
-                }
-                if (standalone)
-                    publishFileAnalysisResult(result.fileName, result.content, result.symbolRecords,
-                        result.diagnostics, result.effectiveValueFacts, result.analysisRevision, result.documentRevision);
-                else
-                    publishOverlayAnalysisResult(result);
-
-                QHash<QString, int> symbolsByFile;
-                for (const WorkspaceFileAnalysis& fileResult :
-                     result.workspaceFiles) {
-                    symbolsByFile.insert(
-                        normalizedAsyncAnalysisFileName(fileResult.fileName),
-                        fileResult.symbolRecords.size());
-                }
-                QSet<QString> completedFiles;
-                for (const QString& completedFile : result.diagnosticFiles) {
-                    const QString key =
-                        normalizedAsyncAnalysisFileName(completedFile);
-                    if (key.isEmpty() || completedFiles.contains(key))
-                        continue;
-                    completedFiles.insert(key);
-                    emit analysisCompleted(completedFile,
-                                           symbolsByFile.value(key, 0));
-                }
-            });
-    watcher->setFuture(QtConcurrent::run([
-        fileName,
-        content,
-        expectedContentHash,
-        generation,
-        taskWorkspaceEpoch,
-        analysisRevision,
-        documentRevision,
-        cancellation,
-        includeDirs,
-        defines,
-        workspaceFiles,
-        dependencyGenerations,
-        overlaysByKey = std::move(overlaysByKey),
-        cachedContentsByKey = std::move(cachedContentsByKey)]() {
-        FileAnalysisResult result;
-        result.fileName = fileName;
-        result.content = content;
-        result.contentHash = expectedContentHash;
-        result.generation = generation;
-        result.workspaceEpoch = taskWorkspaceEpoch;
-        result.analysisRevision = analysisRevision;
-        result.documentRevision = documentRevision;
-        result.dependencyGenerations = dependencyGenerations;
-        for (auto it = overlaysByKey.constBegin();
-             it != overlaysByKey.constEnd();
-             ++it) {
-            result.documentRevisionsByFile.insert(
-                it.key(), it->documentRevision);
-            result.diagnosticFiles.append(it->fileName);
-        }
-        auto cancelled = [&cancellation]() {
-            return cancellation->load(std::memory_order_relaxed);
-        };
-        if (cancelled()) {
-            result.cancelled = true;
-            return result;
-        }
-        QHash<QString, QString> overlayWorkspaceContents;
-        for (const QString& workspaceFile : workspaceFiles) {
-            if (cancelled()) {
-                result.cancelled = true;
-                return result;
-            }
-            const QString key =
-                normalizedAsyncAnalysisFileName(workspaceFile);
-            QString source;
-            const auto overlay = overlaysByKey.constFind(key);
-            if (overlay != overlaysByKey.constEnd()) {
-                source = overlay->content;
-            } else if (cachedContentsByKey.contains(key)
-                       && !cachedContentsByKey.value(key).isNull()) {
-                source = cachedContentsByKey.value(key);
-            } else if (!readAsyncAnalysisFile(workspaceFile, &source)) {
-                result.cancelled = true;
-                return result;
-            }
-            overlayWorkspaceContents.insert(workspaceFile, source);
-        }
-        SlangManager symbolAnalyzer;
-        QList<EffectiveValueFact> workspaceFacts;
-        const QList<SemanticSymbolRecord> workspaceRecords =
-            symbolAnalyzer.extractOverlayWorkspaceSymbolRecords(
-                overlayWorkspaceContents,
-                includeDirs,
-                defines,
-                cancelled,
-                &workspaceFacts,
-                workspaceFiles);
-        if (cancelled()) {
-            result.cancelled = true;
-            result.symbolRecords.clear();
-            result.workspaceFiles.clear();
-            return result;
-        }
-        const WorkspaceAnalysisResult workspaceResult =
-            SymbolAnalyzerWorkspace::buildWorkspaceAnalysisResult(
-                workspaceFiles,
-                workspaceRecords,
-                workspaceFacts,
-                cancelled,
-                overlayWorkspaceContents);
-        result.workspaceFiles = workspaceResult.files;
-        const QString target = normalizedAsyncAnalysisFileName(fileName);
-        for (const WorkspaceFileAnalysis& fileResult :
-             std::as_const(result.workspaceFiles)) {
-            if (normalizedAsyncAnalysisFileName(fileResult.fileName)
-                != target) {
+    if (hasWorkspaceAnalysisInFlight()) {
+        qsizetype queuedBytes = 0;
+        for (auto it = pendingFileDocuments.cbegin(); it != pendingFileDocuments.cend(); ++it)
+            queuedBytes += it->document.content.size() * qsizetype(sizeof(QChar));
+        for (const auto& document : overlays) {
+            const QString key = normalizedAsyncAnalysisFileName(document.fileName);
+            if (const auto previous = fileAnalysisCancelFlags.value(key))
+                previous->store(true, std::memory_order_relaxed);
+            const qsizetype oldBytes = pendingFileDocuments.value(key).document.content.size() * qsizetype(sizeof(QChar));
+            const qsizetype newBytes = document.content.size() * qsizetype(sizeof(QChar));
+            if ((!pendingFileDocuments.contains(key) && pendingFileDocuments.size() >= maximumPendingFileDocuments)
+                || queuedBytes - oldBytes + newBytes > maximumPendingFileBytes) {
+                emit fileAnalysisRejected(document.fileName, document.documentRevision,
+                    QStringLiteral("Semantic request queue budget exceeded"));
                 continue;
             }
-            result.symbolRecords = fileResult.symbolRecords;
-            result.effectiveValueFacts = fileResult.effectiveValueFacts;
-            break;
+            queuedBytes += newBytes - oldBytes;
+            if (!pendingFileDocuments.contains(key))
+                pendingFileOrder.append(key);
+            pendingFileDocuments.insert(key, {document, standalone, workspaceEpoch});
         }
-        SlangManager diagnosticsAnalyzer;
-        const QList<SemanticDiagnostic> workspaceDiagnostics =
-            diagnosticsAnalyzer.extractOverlayWorkspaceDiagnostics(
-                overlayWorkspaceContents,
-                includeDirs,
-                defines,
-                cancelled,
-                workspaceFiles);
-        for (const SemanticDiagnostic& diagnostic : workspaceDiagnostics) {
-            if (cancelled())
-                break;
-            if (overlaysByKey.contains(
-                    normalizedAsyncAnalysisFileName(diagnostic.fileName))) {
-                result.diagnostics.append(diagnostic);
-            }
-        }
-        if (cancelled()) {
-            result.cancelled = true;
-            result.diagnostics.clear();
-        }
-        return result;
-    }));
+        return;
+    }
+
+    const auto cancellation = std::make_shared<std::atomic_bool>(false);
+    for (const auto& overlay : overlays) {
+        const auto key = normalizedAsyncAnalysisFileName(overlay.fileName);
+        if (const auto previous = fileAnalysisCancelFlags.value(key))
+            previous->store(true, std::memory_order_relaxed);
+        fileAnalysisCancelFlags.insert(key, cancellation);
+    }
+    const auto request = documentRequest(overlays, standalone, true);
+    startSemanticAnalysisAsync(request, [cancellation] {
+        return cancellation->load(std::memory_order_relaxed);
+    });
 }
 
 void SymbolAnalyzer::cancelFileAnalysis(const QString& fileName)
@@ -734,62 +314,45 @@ void SymbolAnalyzer::cancelFileAnalysis(const QString& fileName)
     if (analysisKey.isEmpty())
         return;
 
-    fileAnalysisGenerations.insert(
-        analysisKey,
-        fileAnalysisGenerations.value(analysisKey, 0) + 1);
     if (const auto cancellation =
             fileAnalysisCancelFlags.value(analysisKey)) {
         cancellation->store(true, std::memory_order_relaxed);
     }
 
-    QList<QFutureWatcher<FileAnalysisResult>*> matching;
-    QSet<QString> cancelledKeys;
-    for (QFutureWatcher<FileAnalysisResult>* watcher :
-         std::as_const(fileAnalysisWatchers)) {
-        if (!watcher)
-            continue;
-        QStringList watcherKeys =
-            watcher->property("analysisKeys").toStringList();
-        if (watcherKeys.isEmpty())
-            watcherKeys.append(
-                watcher->property("analysisKey").toString());
-        if (watcherKeys.contains(analysisKey)) {
-            matching.append(watcher);
-            for (const QString& key : std::as_const(watcherKeys))
-                cancelledKeys.insert(key);
-        }
-    }
-    for (QFutureWatcher<FileAnalysisResult>* watcher : matching) {
-        fileAnalysisWatchers.remove(watcher);
-        disconnect(watcher, nullptr, this, nullptr);
-        QFuture<FileAnalysisResult> future = watcher->future();
-        watcher->cancel();
-        future.waitForFinished();
-        delete watcher;
-    }
-    for (const QString& key : std::as_const(cancelledKeys))
-        fileAnalysisCancelFlags.remove(key);
+    pendingFileDocuments.remove(analysisKey);
+    pendingFileOrder.removeAll(analysisKey);
 }
 
-void SymbolAnalyzer::cancelAllFileAnalysesAndWait()
+void SymbolAnalyzer::launchPendingFileAnalysis()
 {
-    for (const auto& cancellation :
-         std::as_const(fileAnalysisCancelFlags)) {
-        if (cancellation)
-            cancellation->store(true, std::memory_order_relaxed);
+    if (shutdownStarted || hasWorkspaceAnalysisInFlight())
+        return;
+    if (pendingCompatibilityRequest) {
+        auto request = std::exchange(pendingCompatibilityRequest, std::nullopt);
+        auto cancelled = std::exchange(pendingCompatibilityCancellation, {});
+        startSemanticAnalysisAsync(*request, std::move(cancelled));
+        return;
     }
-
-    const QList<QFutureWatcher<FileAnalysisResult>*> watchers =
-        fileAnalysisWatchers.values();
-    fileAnalysisWatchers.clear();
-    for (QFutureWatcher<FileAnalysisResult>* watcher : watchers) {
-        if (!watcher)
+    QList<OpenDocumentContent> documents;
+    bool standalone = false;
+    while (!pendingFileOrder.isEmpty()) {
+        const QString key = pendingFileOrder.takeFirst();
+        const auto next = pendingFileDocuments.take(key);
+        if (!next.standalone && next.epoch != workspaceEpoch) {
+            emit fileAnalysisRejected(next.document.fileName, next.document.documentRevision,
+                QStringLiteral("Workspace changed before semantic analysis"));
             continue;
-        disconnect(watcher, nullptr, this, nullptr);
-        QFuture<FileAnalysisResult> future = watcher->future();
-        watcher->cancel();
-        future.waitForFinished();
-        delete watcher;
+        }
+        if (!documents.isEmpty() && next.standalone) {
+            pendingFileOrder.prepend(key);
+            pendingFileDocuments.insert(key, next);
+            break;
+        }
+        standalone = next.standalone;
+        documents.append(next.document);
+        if (standalone)
+            break;
     }
-    fileAnalysisCancelFlags.clear();
+    if (!documents.isEmpty())
+        analyzeOverlayDocumentsAsync(documents, standalone);
 }

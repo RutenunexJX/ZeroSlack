@@ -5,6 +5,8 @@
 
 #include <QSyntaxHighlighter>
 #include <QTextCharFormat>
+#include <QTimer>
+#include <QTextBlock>
 #include "tsdocument.h"
 
 class QTextDocument;
@@ -19,6 +21,10 @@ class ZEROSLACK_API MyHighlighter : public QSyntaxHighlighter
 
 public:
     MyHighlighter(QTextDocument *parent, const TSDocument *tsdoc);
+    ~MyHighlighter() override;
+    void rehighlight();
+    void requestDeferredRefresh();
+    void requestDeferredRefresh(int firstCharacter, int lastCharacter);
 
 protected:
     void highlightBlock(const QString &text) override;
@@ -34,6 +40,11 @@ private:
     QTextCharFormat errorFormat;
 
     const TSDocument *m_tsdoc = nullptr;   // owned by the editor; kept in sync before we run
+    QTimer deferredRefresh;
+    int nextRefreshBlock = -1;
+    int lastRefreshBlock = -1;
+    int refreshBlockCount = 0;
+    bool applyingRefresh = false;
 };
 
 #endif // MYHIGHLIGHTER_H

@@ -17,6 +17,7 @@
 #include "moduleblockdiagramservice.h"
 #include "navigationservice.h"
 #include "relationshipanalysisworker.h"
+#include "incrementalsemanticanalysisworker.h"
 #include "relationshipresultpublisher.h"
 #include "relationshipservice.h"
 #include "searchservice.h"
@@ -135,8 +136,10 @@ static void runAnalysisSchedulerDependencyLifetimeFixture()
                true);
 
     SlangManager slang;
+    auto relationshipAnalyzer = std::make_unique<SymbolAnalyzer>();
     auto relationshipController =
         std::make_unique<RelationshipAnalysisController>();
+    relationshipController->setSymbolAnalyzer(relationshipAnalyzer.get());
     auto relationshipBuilder =
         std::make_unique<SmartRelationshipBuilder>(nullptr, &slang);
     std::atomic_bool workerGateEntered{false};
@@ -166,11 +169,12 @@ static void runAnalysisSchedulerDependencyLifetimeFixture()
                workerGateEntered.load(std::memory_order_acquire),
                true);
 
-    // Direct external destruction must cancel and join the leased worker
-    // before the builder's derived members are released.
+    // Compatibility work borrows no builder. Destroying the adapter flags its
+    // request; the shared analyzer owns and drains the actual worker.
     relationshipBuilder.reset();
     relationshipController.reset();
-    expectBool("relationship builder waits for active worker lease",
+    relationshipAnalyzer.reset();
+    expectBool("relationship adapter releases work through analyzer ownership",
                true,
                true);
 }
@@ -3394,7 +3398,13 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const auto previousGlobalSnapshot = SemanticIndex::getInstance()->snapshot();
     SemanticIndex::getInstance()->setSnapshot(snapshot);
 
+    SymbolAnalyzer relationshipAnalyzer;
+    ProjectModel relationshipProject;
+    relationshipProject.setWorkspaceRoot(fixtureDir.absolutePath());
+    relationshipProject.setScannedFiles(paths);
     AnalysisScheduler scheduler;
+    scheduler.setProjectModel(&relationshipProject);
+    scheduler.setSymbolAnalyzer(&relationshipAnalyzer);
     scheduler.setRelationshipEngine(&engine);
     scheduler.setRelationshipBuilder(&fixtureBuilder);
     SingleFileRelationshipAnalysisResult singleFileSchedulerResult;
@@ -3511,9 +3521,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     workspaceMergeProject.setWorkspaceRoot(workspaceMergeDir.path());
     workspaceMergeProject.setScannedFiles({workspaceMergePath});
     workspaceMergeAnalyzer.analyzeProject(workspaceMergeProject.snapshot());
-    expectBool("workspace publish preserves external diagnostics",
+    expectBool("authoritative workspace publication clears retired scope diagnostics",
                SemanticIndex::getInstance()->snapshot()
-                   && !SemanticIndex::getInstance()
+                   && SemanticIndex::getInstance()
                            ->snapshot()
                            ->getDiagnostics(workspaceMergeExternalPath)
                            .isEmpty(),
@@ -9876,6 +9886,11 @@ static void runRealWorkspaceIncludeFixture()
     const QString workspaceRoot = normalizedPath(
         QFileInfo(QString::fromLocal8Bit(__FILE__)).dir()
             .filePath(QStringLiteral("new")));
+    if (!QFileInfo(workspaceRoot).isDir()
+        && qEnvironmentVariableIsSet("ZEROSLACK_SKIP_LOCAL_FIXTURES")) {
+        printf("[SKIP] Copyright-restricted real workspace include fixture is not installed\n");
+        return;
+    }
     expectBool("real workspace fixture exists",
                QFileInfo(workspaceRoot).isDir(),
                true);
@@ -11581,8 +11596,8 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
                overlayCancelChecks >= 5 && cancelledOverlayFactsEmpty,
                true);
 
-    // Deliberately omit fallbackPath from fileContents. The worker must use
-    // the captured overlay for overlayPath and disk only for the absent file.
+    // Omit fallbackPath from explicit overrides: the unified capture owns its
+    // disk read. The compatibility projection must perform no additional IO.
     SemanticIndex assignedRecordIndex;
     for (const QString& fileName : files) {
         QList<SemanticSymbolRecord> fileRecords;
@@ -11619,10 +11634,20 @@ static void runWorkspaceRelationshipOverlaySnapshotFixture()
     project.systemVerilogFiles = files;
     project.includeDirs = {relationshipDir.path()};
 
+    SemanticAnalysisRequest semanticRequest;
+    semanticRequest.generation = baseToken.revision;
+    semanticRequest.reason = SemanticAnalysisReason::ExplicitRequest;
+    semanticRequest.impactHint = SemanticChangeImpact::WorkspaceConfig;
+    semanticRequest.project = project;
+    semanticRequest.changedFiles = files;
+    semanticRequest.sourceOverrides = baseSnapshot->fileContents();
+    const auto semanticResult = IncrementalSemanticAnalysisWorker::analyze(
+        semanticRequest, baseSnapshot, {}, {});
+    expectBool("unified overlay worker prepares immutable relationship input",
+               semanticResult.preparedSnapshot != nullptr && semanticResult.error.isEmpty(), true);
+    const SemanticSnapshotToken projectionToken{semanticResult.preparedSnapshot, baseToken.revision};
     const WorkspaceRelationshipAnalysisResult result =
-        RelationshipAnalysisWorker::analyzeWorkspace(&builder,
-                                                     project,
-                                                     baseToken);
+        RelationshipAnalysisWorker::analyzeWorkspace(&builder, project, projectionToken);
     expectBool("relationship overlay worker is not cancelled",
                result.cancelled,
                false);

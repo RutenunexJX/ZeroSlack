@@ -8,6 +8,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 
 #include "documentchange.h"
 
@@ -678,6 +679,7 @@ public:
 
     // Full (re)parse of the entire text from scratch.
     void setText(const QString& text);
+    bool setText(const QString& text, const std::function<bool()>& cancelled);
 
     // Applies one UTF-16 delta to the owned text and updates the live tree.
     // A caller may defer reparsing for a transient non-language overlay; the
@@ -686,6 +688,12 @@ public:
         const DocumentChange& change,
         bool deferSyntaxReparse = false);
     void flushPendingEdits();
+    // Editor input gets a bounded parser slice; other consumers retain the
+    // synchronous default. An unchanged input can resume on a later GUI turn.
+    void setSynchronousParseBudget(int microseconds) { m_parseBudgetUs = microseconds; }
+    bool finishPendingEdits(int microseconds);
+    bool hasPendingEdits() const { return m_hasPendingEdits; }
+    bool lastEditPreservedStructure() const { return m_lastEditPreservedStructure; }
     bool hasDeferredSyntaxEdits() const
     {
         return m_hasDeferredSyntaxEdits;
@@ -863,12 +871,18 @@ public:
 
 private:
     void reparse(TSTree* oldTree);
+    TSTree* parseWithBudget(TSTree* oldTree, int microseconds,
+                            const std::function<bool()>* cancelled = nullptr);
 
     TSParser* m_parser = nullptr;  // owned
     TSTree*   m_tree   = nullptr;  // owned
     TSUTF16Text m_text;            // current document text (UTF-16)
     bool m_hasPendingEdits = false;
     bool m_hasDeferredSyntaxEdits = false;
+    bool m_lastEditPreservedStructure = false;
+    bool m_parseSuspended = false;
+    bool m_fullParsePending = false;
+    int m_parseBudgetUs = 0;
 };
 
 // Map a tree-sitter token type to a highlight category. isNamed distinguishes grammar tokens

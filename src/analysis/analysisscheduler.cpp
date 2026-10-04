@@ -102,6 +102,11 @@ void AnalysisScheduler::setProjectModel(ProjectModel* model)
             &ProjectModel::projectClosed,
             this,
             &AnalysisScheduler::onProjectClosed);
+    connect(projectModel, &ProjectModel::workspaceDiscarded, this,
+            [this](const QString& root) {
+                if (symbolAnalyzer)
+                    symbolAnalyzer->forgetWorkspace(root);
+            });
     if (projectModel->isOpen())
         onProjectChanged(projectModel->snapshot());
 }
@@ -117,8 +122,24 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     standaloneAnalysisRevisions.clear();
     symbolAnalyzer = analyzer;
     if (symbolAnalyzer) {
+        connect(symbolAnalyzer, &SymbolAnalyzer::semanticInputWatchPathsChanged,
+                this, &AnalysisScheduler::semanticInputWatchPathsChanged);
+        connect(symbolAnalyzer, &SymbolAnalyzer::semanticAnalysisCommitted, this,
+                [this](const SemanticAnalysisRequest& request, const SemanticSnapshotToken&) {
+            if (request.compatibilityRequest && request.project.isOpen())
+                QTimer::singleShot(0, this, &AnalysisScheduler::refreshStandaloneDocuments);
+        });
         symbolAnalyzer->setMaxPublishedDiagnostics(
             semanticRuntimePolicy.maxDiagnostics);
+        connect(symbolAnalyzer, &SymbolAnalyzer::fileAnalysisRejected, this,
+                [this](const QString& fileName, std::uint64_t revision, const QString& reason) {
+            const QString key = normalizedFileName(fileName);
+            if (!standaloneAnalysisRevisions.contains(key)
+                || standaloneAnalysisRevisions.value(key) != revision)
+                return;
+            standaloneAnalysisRevisions.remove(key);
+            setDocumentSemanticState(fileName, DocumentSemanticState::Failed, revision, 0, reason);
+        });
         connect(symbolAnalyzer, &SymbolAnalyzer::analysisCompleted, this,
                 [this](const QString& fileName, int) {
             const QString key = normalizedFileName(fileName);
@@ -135,8 +156,10 @@ void AnalysisScheduler::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
     }
     if (workspaceSymbolAnalysis)
         workspaceSymbolAnalysis->setSymbolAnalyzer(analyzer);
-    if (relationshipAnalysis)
+    if (relationshipAnalysis) {
         relationshipAnalysis->setSymbolAnalyzer(analyzer);
+        relationshipAnalysis->setRuntimePolicy(semanticRuntimePolicy);
+    }
 }
 
 void AnalysisScheduler::setOpenFileContentProvider(std::function<QString(const QString&)> provider)
@@ -174,6 +197,8 @@ void AnalysisScheduler::setSemanticAnalysisRuntimePolicy(
     const bool disabling =
         semanticRuntimePolicy.enabled && !normalized.enabled;
     semanticRuntimePolicy = normalized;
+    if (relationshipAnalysis)
+        relationshipAnalysis->setRuntimePolicy(normalized);
     if (symbolAnalyzer) {
         symbolAnalyzer->setMaxPublishedDiagnostics(
             semanticRuntimePolicy.maxDiagnostics);
@@ -186,6 +211,9 @@ void AnalysisScheduler::setSemanticAnalysisRuntimePolicy(
                 timer->stop();
         }
         cancelWorkspaceAnalysis();
+        cancelAllScheduledRelationshipAnalyses();
+        if (symbolAnalyzer)
+            symbolAnalyzer->requestCancelAllAnalyses();
         stabilizeSemanticStatesWhenDisabled();
     }
     emit semanticAnalysisRuntimePolicyChanged(semanticRuntimePolicy);

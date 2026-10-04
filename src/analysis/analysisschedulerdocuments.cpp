@@ -17,26 +17,63 @@
 #include <utility>
 
 namespace {
+struct RequestedOpenDocument {
+    QString requestedFile;
+    DocumentSnapshot snapshot;
+};
+
+QList<RequestedOpenDocument> requestedOpenDocuments(
+    DocumentModel* model, const QStringList& files)
+{
+    // Document status belongs to open buffers. Looking up every project file
+    // through DocumentRegistry performs filesystem identity IO even when no
+    // such buffer exists. Select from the existing document set instead.
+    const auto documents = model ? model->cachedOpenDocuments()
+                                 : QList<DocumentSnapshot>();
+    QList<RequestedOpenDocument> result;
+    if (documents.isEmpty() || files.isEmpty())
+        return result;
+    auto pathKey = [](const QString& file) {
+        QString key = EditorFileIdentity::normalized(file);
+#ifdef Q_OS_WIN
+        key = key.toCaseFolded();
+#endif
+        return key;
+    };
+    QHash<QString, QString> requestedPaths;
+    for (const auto& file : files)
+        requestedPaths.insert(pathKey(file), file);
+    QHash<QString, QString> requestedIdentities;
+    bool identitiesResolved = false;
+    QSet<QString> selectedDocuments;
+    for (const auto& snapshot : documents) {
+        if (snapshot.fileName.isEmpty()
+            || selectedDocuments.contains(snapshot.documentId))
+            continue;
+        QString requested = requestedPaths.value(pathKey(snapshot.fileName));
+        if (requested.isEmpty()) {
+            // Keep symlink/junction aliases correct. Only an open document
+            // without a lexical match needs this uncommon filesystem pass;
+            // it is shared by all unmatched buffers in this transaction.
+            if (!identitiesResolved) {
+                for (const auto& file : files)
+                    requestedIdentities.insert(EditorFileIdentity::lookupKey(file), file);
+                identitiesResolved = true;
+            }
+            requested = requestedIdentities.value(
+                EditorFileIdentity::lookupKey(snapshot.fileName));
+        }
+        if (requested.isEmpty())
+            continue;
+        selectedDocuments.insert(snapshot.documentId);
+        result.append({requested, snapshot});
+    }
+    return result;
+}
+
 QString projectAnalysisSignature(const ProjectSnapshot& project)
 {
-    QStringList files = project.systemVerilogFiles;
-    QStringList includeDirs = project.includeDirs;
-    QStringList extensions = project.fileExtensions;
-    QStringList defineKeys = project.defines.keys();
-    files.sort(Qt::CaseInsensitive);
-    includeDirs.sort(Qt::CaseInsensitive);
-    extensions.sort(Qt::CaseInsensitive);
-    defineKeys.sort(Qt::CaseInsensitive);
-    QStringList defines;
-    for (const QString& key : defineKeys)
-        defines.append(key + QLatin1Char('=') + project.defines.value(key));
-    return QStringLiteral("%1\n%2\n%3\n%4\n%5\n%6")
-        .arg(project.workspaceRoot,
-             files.join(QLatin1Char('\n')),
-             includeDirs.join(QLatin1Char('\n')),
-             defines.join(QLatin1Char('\n')),
-             extensions.join(QLatin1Char('\n')),
-             project.topModule);
+    return project.semanticIdentity();
 }
 
 bool isSystemVerilogSource(const QString& fileName)
@@ -230,7 +267,7 @@ void AnalysisScheduler::requestSemanticAnalysis(
     const ProjectSnapshot project = requestedProject.isOpen()
         ? requestedProject
         : projectForAnalysis(triggerFile);
-    if (!project.isOpen() || project.systemVerilogFiles.isEmpty())
+    if (!project.isOpen())
         return;
 
     if (!semanticRuntimePolicy.enabled) {
@@ -375,10 +412,9 @@ void AnalysisScheduler::requestSemanticAnalysis(
         request.sourceOverrides.insert(it.key(), it.value());
     }
 
-    for (const QString& fileName : request.changedFiles) {
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(fileName)
-            : DocumentSnapshot();
+    for (const auto& document : requestedOpenDocuments(documentModel, request.changedFiles)) {
+        const auto& fileName = document.requestedFile;
+        const auto& snapshot = document.snapshot;
         if (!snapshot.fileName.isEmpty()) {
             const DocumentSemanticStatus current = semanticStatus(fileName);
             if (current.analysisGeneration > request.generation)
@@ -429,6 +465,17 @@ bool AnalysisScheduler::isSelfWriteWatcherEvent(const QString& fileName) const
     return info.exists()
         && info.size() == stamp.size
         && info.lastModified().toMSecsSinceEpoch() == stamp.modifiedMs;
+}
+
+void AnalysisScheduler::handleSemanticInputsChanged(const QString& root)
+{
+    if (shuttingDown || !projectModel || !projectModel->isOpen()
+        || normalizedFileName(projectModel->workspaceRoot()) != normalizedFileName(root))
+        return;
+    // Include search precedence or an indirect file may have changed. The
+    // worker validates all recorded reads; the controller coalesces requests.
+    requestSemanticAnalysis(SemanticAnalysisReason::ExternalFileChange,
+                            SemanticChangeImpact::FullFallback, {}, {}, projectModel->snapshot());
 }
 
 void AnalysisScheduler::handleExternalFileChanged(const QString& fileName,
@@ -676,9 +723,14 @@ void AnalysisScheduler::onProjectChanged(const ProjectSnapshot& project)
     }
     lastProjectSignature = signature;
     lastScheduledProject = project;
+    if (!project.sourceDiscoveryComplete) {
+        // The activation already invalidated the old scope above. Wait for
+        // one complete configuration/scan, including a genuinely empty scan.
+        // Keep WorkspaceOpen as the reason so retained state can be restored.
+        return;
+    }
     if (project.systemVerilogFiles.isEmpty()) {
         QTimer::singleShot(0, this, &AnalysisScheduler::refreshStandaloneDocuments);
-        return;
     }
 
     const SemanticAnalysisReason reason = workspaceInitialAnalysisScheduled
@@ -741,10 +793,9 @@ void AnalysisScheduler::refreshStandaloneDocuments()
 void AnalysisScheduler::onSemanticAnalysisStarted(
     const SemanticAnalysisRequest& request)
 {
-    for (const QString& fileName : request.changedFiles) {
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(fileName)
-            : DocumentSnapshot();
+    for (const auto& document : requestedOpenDocuments(documentModel, request.changedFiles)) {
+        const auto& fileName = document.requestedFile;
+        const auto& snapshot = document.snapshot;
         if (!snapshot.fileName.isEmpty()) {
             const DocumentSemanticStatus current = semanticStatus(fileName);
             if (current.analysisGeneration > request.generation)
@@ -787,10 +838,9 @@ void AnalysisScheduler::onSemanticAnalysisFinished(
         }
         return std::uint64_t{0};
     };
-    for (const QString& fileName : plan.affectedFiles) {
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(fileName)
-            : DocumentSnapshot();
+    for (const auto& document : requestedOpenDocuments(documentModel, plan.affectedFiles)) {
+        const auto& fileName = document.requestedFile;
+        const auto& snapshot = document.snapshot;
         if (snapshot.fileName.isEmpty())
             continue;
         const DocumentSemanticStatus current = semanticStatus(fileName);
@@ -847,10 +897,9 @@ void AnalysisScheduler::onSemanticAnalysisFailed(
     const SemanticAnalysisRequest& request,
     const QString& error)
 {
-    for (const QString& fileName : request.changedFiles) {
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(fileName)
-            : DocumentSnapshot();
+    for (const auto& document : requestedOpenDocuments(documentModel, request.changedFiles)) {
+        const auto& fileName = document.requestedFile;
+        const auto& snapshot = document.snapshot;
         const DocumentSemanticStatus current = semanticStatus(fileName);
         if (!snapshot.fileName.isEmpty() && !snapshot.dirty
             && current.analysisGeneration <= request.generation) {
@@ -869,13 +918,12 @@ void AnalysisScheduler::onSemanticAnalysisDropped(
     SemanticAnalysisRequestDisposition disposition)
 {
     Q_UNUSED(disposition)
-    for (const QString& fileName : request.changedFiles) {
+    for (const auto& document : requestedOpenDocuments(documentModel, request.changedFiles)) {
+        const auto& fileName = document.requestedFile;
+        const auto& snapshot = document.snapshot;
         const DocumentSemanticStatus current = semanticStatus(fileName);
         if (current.analysisGeneration != request.generation)
             continue;
-        const DocumentSnapshot snapshot = documentModel
-            ? documentModel->cachedDocumentForFile(fileName)
-            : DocumentSnapshot();
         if (snapshot.fileName.isEmpty())
             continue;
         if (snapshot.dirty) {

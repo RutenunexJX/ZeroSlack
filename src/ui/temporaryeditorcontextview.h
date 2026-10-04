@@ -45,6 +45,7 @@ public:
     QToolButton* forwardButton() const;
 
     void setSearchProvider(SearchProvider provider);
+    void refreshSearchResults();
     bool openLocation(const EditorLocation& location);
     bool saveCurrent(bool forceSaveAs = false);
     QVariantMap saveState() const;

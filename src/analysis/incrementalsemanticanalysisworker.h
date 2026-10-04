@@ -15,7 +15,9 @@ public:
         const SemanticAnalysisRequest& request,
         std::shared_ptr<const SemanticIndexSnapshot> baseSnapshot,
         const SemanticDependencyGraph& dependencyGraph,
-        const std::function<bool()>& isCancelled);
+        const std::function<bool()>& isCancelled,
+        std::shared_ptr<const SemanticAnalysisInput> baseInput = {},
+        std::shared_ptr<const PublishedWorkspaceSemanticState> retainedState = {});
 };
 
 #endif // INCREMENTALSEMANTICANALYSISWORKER_H

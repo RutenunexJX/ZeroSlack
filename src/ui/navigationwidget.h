@@ -65,7 +65,8 @@ public:
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
     void setDesignParticipatingFiles(const QSet<QString>& fileNames);
-    void updateDesignSummary(const DesignHierarchyReport& report);
+    void updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged = true);
+    void setDesignHierarchyPending(bool pending);
 
     void highlightFile(const QString& filePath);
 

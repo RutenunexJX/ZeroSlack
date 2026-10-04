@@ -8,6 +8,15 @@
 #include <functional>
 
 namespace {
+QList<SemanticSymbolRecord> designRecords(SemanticIndex* index)
+{
+    QList<SemanticSymbolRecord> result;
+    for (auto kind : {SymbolTaxonomy::DeclarationKind::Module, SymbolTaxonomy::DeclarationKind::Interface,
+                      SymbolTaxonomy::DeclarationKind::Instance})
+        result.append(index->getSymbolRecordsByDeclarationKind(kind));
+    return result;
+}
+
 QString reportNotFoundReasonDisplayName(HierarchyReportNotFoundReason reason)
 {
     switch (reason) {
@@ -414,7 +423,7 @@ QStringList HierarchyService::modulesDefinedInFile(const QString& fileName) cons
         return {};
 
     QSet<QString> moduleNames;
-    const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    const QList<SemanticSymbolRecord> records = designRecords(semanticIndex());
     for (const SemanticSymbolRecord& record : records) {
         if (!isDesignModuleDeclaration(record))
             continue;
@@ -449,7 +458,7 @@ QStringList HierarchyService::inferDesignTopModules(
 {
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
-    const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    const QList<SemanticSymbolRecord> records = designRecords(semanticIndex());
     const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
     for (const SemanticSymbolRecord& record : records)
         appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
@@ -611,7 +620,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
 
     QHash<QString, SemanticSymbolRecord> modulesByName;
     QList<SemanticSymbolRecord> modules;
-    const QList<SemanticSymbolRecord> records = semanticIndex()->getSymbolRecords();
+    const QList<SemanticSymbolRecord> records = designRecords(semanticIndex());
     const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
     for (const SemanticSymbolRecord& record : records)
         appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);

@@ -1007,9 +1007,9 @@ void runInitialWorkspaceOverlayAtomicRegression()
         });
     int expiredCount = 0;
     QObject::connect(&analyzer,
-                     &SymbolAnalyzer::workspaceAnalysisExpired,
+                     &SymbolAnalyzer::semanticAnalysisDropped,
                      &controller,
-                     [&]() { ++expiredCount; });
+                     [&](const SemanticAnalysisRequest&, SemanticAnalysisRequestDisposition) { ++expiredCount; });
     ProjectSnapshot editedProject = project;
     editedProject.defines.insert(QStringLiteral("OVERLAY_PASS"),
                                  QStringLiteral("1"));

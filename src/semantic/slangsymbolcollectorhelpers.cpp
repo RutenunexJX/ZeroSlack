@@ -57,6 +57,7 @@ struct SourcePositionMap {
 struct SourcePositionCache {
     const slang::SourceManager* sourceManager = nullptr;
     QHash<uint32_t, SourcePositionMap> maps;
+    QHash<uint32_t, QString> physicalFileNames;
 };
 
 SourcePositionCache*& sourcePositionCacheSlot()
@@ -167,6 +168,7 @@ void resetQTextDocumentSourcePositionCache(
     SourcePositionCache& cache = sourcePositionCache();
     cache.sourceManager = sourceManager;
     cache.maps.clear();
+    cache.physicalFileNames.clear();
 }
 
 QString sourceIdentityFileName(
@@ -180,6 +182,14 @@ QString sourceIdentityFileName(
         sourceManager->getFullyExpandedLoc(location);
     if (!fileLocation.valid())
         return QString();
+
+    auto& cache = sourcePositionCache();
+    if (cache.sourceManager != sourceManager)
+        resetQTextDocumentSourcePositionCache(sourceManager);
+    const auto bufferId = fileLocation.buffer().getId();
+    const auto known = cache.physicalFileNames.constFind(bufferId);
+    if (known != cache.physicalFileNames.cend())
+        return *known;
 
     const std::filesystem::path& physicalPath =
         sourceManager->getFullPath(fileLocation.buffer());
@@ -198,7 +208,12 @@ QString sourceIdentityFileName(
         fileName = QString::fromStdString(std::string(
             sourceManager->getFileName(fileLocation)));
     }
-    return QDir::cleanPath(QDir::fromNativeSeparators(fileName));
+    fileName = QDir::cleanPath(QDir::fromNativeSeparators(fileName));
+    // Logical names can vary within a buffer because of `line directives.
+    // A physical absolute path, however, is stable for its SourceManager.
+    if (!physicalPath.empty() && physicalPath.is_absolute())
+        cache.physicalFileNames.insert(bufferId, fileName);
+    return fileName;
 }
 
 QTextDocumentSourcePosition qTextDocumentSourcePosition(

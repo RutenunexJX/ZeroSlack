@@ -2,10 +2,17 @@
 
 #include "symboltaxonomy.h"
 #include "workspacemanager.h"
+#include "semanticindexsnapshot.h"
 
 #include <QDir>
 #include <QFileInfo>
 #include <QSet>
+#include <QPointer>
+#include <QFutureWatcher>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrent>
+#include <atomic>
+#include <optional>
 
 #include <algorithm>
 #include <utility>
@@ -108,6 +115,182 @@ bool candidateMetadataLess(const EditorSearchCandidate& lhs,
 }
 }
 
+// A single owned worker and one replaceable pending input. Publications share
+// unchanged per-file projections, rather than materializing all semantic records
+// in MainWindow's completion handler. The worker also releases retired shards.
+struct TemporaryEditorSearchProvider::AsyncCatalog {
+    struct File {
+        QList<SemanticSymbolRecord> source;
+        QList<IndexedCandidate> candidates;
+        QHash<QString, QString> fileIdentities;
+    };
+    struct Result {
+        QString root;
+        QStringList sourceFiles;
+        QList<IndexedCandidate> fileCandidates;
+        QHash<QString, std::shared_ptr<const File>> files;
+        QHash<QString, const IndexedCandidate*> uniqueCandidates;
+    };
+    struct Request {
+        std::shared_ptr<const SemanticIndexSnapshot> snapshot;
+        QString root;
+        std::uint64_t generation = 0;
+        QStringList workspaceFiles;
+    };
+    TemporaryEditorSearchProvider* owner;
+    QObject context;
+    QThreadPool pool;
+    QFutureWatcher<std::shared_ptr<const Result>>* watcher = nullptr;
+    std::optional<Request> pending;
+    std::shared_ptr<const Result> current;
+    std::weak_ptr<const SemanticIndexSnapshot> latestSnapshot;
+    QStringList requestedFiles;
+    std::shared_ptr<std::atomic<bool>> cancel;
+    std::uint64_t generation = 0;
+    bool ready = true;
+
+    explicit AsyncCatalog(TemporaryEditorSearchProvider* provider) : owner(provider) {
+        pool.setMaxThreadCount(1);
+        pool.setThreadPriority(QThread::LowPriority);
+        pool.setObjectName(QStringLiteral("ZeroSlackSearchCatalog"));
+    }
+    ~AsyncCatalog() {
+        if (cancel) cancel->store(true);
+        if (watcher) QObject::disconnect(watcher, nullptr, &context, nullptr);
+        pool.start([old = std::move(current), request = std::move(pending)] {});
+        pool.waitForDone();
+    }
+    void reset() {
+        ++generation;
+        if (cancel) cancel->store(true);
+        auto old = std::exchange(current, {});
+        auto request = std::exchange(pending, {});
+        if (old || request)
+            pool.start([old = std::move(old), request = std::move(request)] {});
+        latestSnapshot.reset();
+        ready = true;
+    }
+    void launch() {
+        if (watcher || !pending) return;
+        const Request request = std::move(*pending);
+        pending.reset();
+        const auto previous = current;
+        const auto cancelled = std::make_shared<std::atomic<bool>>(false);
+        cancel = cancelled;
+        auto* observed = new QFutureWatcher<std::shared_ptr<const Result>>(&context);
+        watcher = observed;
+        QObject::connect(observed, &QFutureWatcher<std::shared_ptr<const Result>>::finished,
+            &context, [this, observed, requested = request.generation] {
+                auto result = observed->future().takeResult();
+                watcher = nullptr;
+                observed->deleteLater();
+                if (result && requested == generation) {
+                    auto old = std::exchange(current, std::move(result));
+                    if (old) pool.start([old = std::move(old)] {});
+                    ready = true;
+                    const QPointer<QObject> alive(&context);
+                    if (owner->catalogChanged) owner->catalogChanged();
+                    if (!alive) return;
+                } else if (result) {
+                    pool.start([old = std::move(result)] {});
+                }
+                launch();
+            });
+        observed->setFuture(QtConcurrent::run(&pool, [request, previous, cancelled]() -> std::shared_ptr<const Result> {
+            auto result = std::make_shared<Result>();
+            result->root = request.root;
+            result->sourceFiles = request.workspaceFiles;
+            if (previous && previous->root == request.root
+                && previous->sourceFiles == request.workspaceFiles) {
+                result->fileCandidates = previous->fileCandidates;
+            } else {
+                TemporaryEditorSearchProvider builder;
+                builder.cancellationCheck = [cancelled] { return cancelled->load(); };
+                builder.setWorkspaceFiles(request.workspaceFiles, request.root);
+                result->fileCandidates = std::move(builder.indexedFileCandidates);
+            }
+            if (cancelled->load()) return {};
+            if (!request.snapshot) return result;
+            QHash<QString, QString> currentFileIdentities;
+            auto identityFor = [&currentFileIdentities](const QString& path) {
+                auto found = currentFileIdentities.constFind(path);
+                if (found != currentFileIdentities.cend()) return found.value();
+                const auto identity = EditorFileIdentity::lookupKey(path);
+                currentFileIdentities.insert(path, identity);
+                return identity;
+            };
+            for (const auto& file : request.snapshot->symbolFiles()) {
+                if (cancelled->load()) return {};
+                const auto records = request.snapshot->getSymbolRecords(file);
+                const auto reusable = previous && previous->root == request.root
+                    ? previous->files.value(file) : std::shared_ptr<const File>{};
+                bool sameAliases = bool(reusable);
+                if (reusable)
+                    for (auto it = reusable->fileIdentities.cbegin(); it != reusable->fileIdentities.cend(); ++it) {
+                        if (cancelled->load()) return {};
+                        if (identityFor(it.key()) != it.value()) { sameAliases = false; break; }
+                    }
+                if (reusable && sameAliases && reusable->source.constData() == records.constData()) {
+                    result->files.insert(file, reusable);
+                    continue;
+                }
+                TemporaryEditorSearchProvider builder;
+                builder.workspaceRootValue = request.root;
+                builder.cancellationCheck = [cancelled] { return cancelled->load(); };
+                builder.setSemanticRecords(records);
+                if (cancelled->load()) return {};
+                auto prepared = std::make_shared<File>();
+                prepared->source = records;
+                prepared->candidates = std::move(builder.indexedSemanticCandidates);
+                for (const auto& entry : prepared->candidates)
+                    prepared->fileIdentities.insert(entry.candidate.location.filePath,
+                        identityFor(entry.candidate.location.filePath));
+                result->files.insert(file, std::move(prepared));
+            }
+            // Resolve aliases before fuzzy matching, exactly as the existing
+            // catalog does. Pointers refer to immutable, owned file shards.
+            for (const auto& file : result->files)
+                for (const auto& entry : file->candidates) {
+                    if (cancelled->load()) return {};
+                    const auto previous = result->uniqueCandidates.value(entry.identity);
+                    if (!previous || candidateMetadataLess(entry.candidate, previous->candidate))
+                        result->uniqueCandidates.insert(entry.identity, &entry);
+                }
+            return result;
+        }));
+    }
+};
+
+TemporaryEditorSearchProvider::TemporaryEditorSearchProvider() = default;
+TemporaryEditorSearchProvider::~TemporaryEditorSearchProvider() = default;
+
+void TemporaryEditorSearchProvider::setSemanticSnapshot(
+    std::shared_ptr<const SemanticIndexSnapshot> snapshot)
+{
+    if (!asyncCatalog) {
+        asyncCatalog = std::make_unique<AsyncCatalog>(this);
+        asyncCatalog->requestedFiles = cachedWorkspaceFiles;
+    }
+    asyncCatalog->latestSnapshot = snapshot;
+    if (asyncCatalog->cancel) asyncCatalog->cancel->store(true);
+    asyncCatalog->pending = AsyncCatalog::Request{
+        std::move(snapshot), workspaceRootValue, ++asyncCatalog->generation,
+        asyncCatalog->requestedFiles};
+    asyncCatalog->ready = false;
+    asyncCatalog->launch();
+    if (catalogChanged) catalogChanged();
+}
+
+bool TemporaryEditorSearchProvider::semanticCatalogReady() const
+{
+    return !asyncCatalog || asyncCatalog->ready;
+}
+
+void TemporaryEditorSearchProvider::setCatalogChangedHandler(std::function<void()> handler)
+{
+    catalogChanged = std::move(handler);
+}
+
 QMetaObject::Connection connectTemporaryEditorFileCatalogRefresh(
     WorkspaceManager* workspaceManager,
     QObject* context,
@@ -126,15 +309,26 @@ QMetaObject::Connection connectTemporaryEditorFileCatalogRefresh(
 
 void TemporaryEditorSearchProvider::setWorkspaceFiles(
     const QStringList& filePaths,
-    const QString& workspaceRoot)
+    const QString& workspaceRoot,
+    bool deferred)
 {
+    const QString previousRoot = workspaceRootValue;
     workspaceRootValue = workspaceRoot.trimmed().isEmpty()
         ? QString()
         : QDir::cleanPath(workspaceRoot);
+    if (deferred) {
+        if (!asyncCatalog) asyncCatalog = std::make_unique<AsyncCatalog>(this);
+        asyncCatalog->requestedFiles = filePaths;
+        indexedFileCandidates.clear();
+        setSemanticSnapshot(previousRoot == workspaceRootValue
+            ? asyncCatalog->latestSnapshot.lock() : nullptr);
+        return;
+    }
     cachedWorkspaceFiles.clear();
     cachedWorkspaceFiles.reserve(filePaths.size());
     QSet<QString> seen;
     for (const QString& filePath : filePaths) {
+        if (cancellationCheck && cancellationCheck()) return;
         const QString trimmed = filePath.trimmed();
         if (trimmed.isEmpty())
             continue;
@@ -153,11 +347,18 @@ void TemporaryEditorSearchProvider::setWorkspaceFiles(
         });
     rebuildFileCatalog();
     rebuildSemanticCatalog();
+    if (asyncCatalog && (previousRoot != workspaceRootValue
+                        || asyncCatalog->requestedFiles != cachedWorkspaceFiles)) {
+        asyncCatalog->requestedFiles = cachedWorkspaceFiles;
+        if (auto snapshot = asyncCatalog->latestSnapshot.lock())
+            setSemanticSnapshot(std::move(snapshot));
+    }
 }
 
 void TemporaryEditorSearchProvider::setSemanticCatalog(
     const QList<SearchResult>& semanticCatalog)
 {
+    if (asyncCatalog) asyncCatalog->reset();
     semanticSourceCatalog.clear();
     semanticSourceCatalog.reserve(semanticCatalog.size());
     for (const SearchResult& match : semanticCatalog) {
@@ -171,11 +372,13 @@ void TemporaryEditorSearchProvider::setSemanticCatalog(
 void TemporaryEditorSearchProvider::setSemanticRecords(
     const QList<SemanticSymbolRecord>& records)
 {
+    if (asyncCatalog) asyncCatalog->reset();
     // Search needs only presentation and navigation fields. Retaining complete
     // records keeps large semantic payloads alive until a GUI-thread clear.
     semanticSourceCatalog.clear();
     semanticSourceCatalog.reserve(records.size());
     for (const SemanticSymbolRecord& record : records) {
+        if (cancellationCheck && cancellationCheck()) return;
         const RtlInsightCodeLink link{
             record.location.fileName,
             record.location.startLine,
@@ -217,25 +420,37 @@ EditorSearchCandidates TemporaryEditorSearchProvider::query(
     if (query.isEmpty())
         return {};
 
-    EditorSearchCandidates candidates;
-    candidates.reserve(
-        indexedFileCandidates.size()
-        + indexedSemanticCandidates.size());
-    const auto appendMatches = [&candidates, &query](
-                                   const QList<IndexedCandidate>& catalog) {
-        for (const IndexedCandidate& indexed : catalog) {
+    QHash<QString, EditorSearchCandidate> matches;
+    const auto appendMatch = [&matches, &query](const IndexedCandidate& indexed) {
             const int score = qMax(
                 fuzzyScoreFolded(indexed.foldedTitle, query),
                 fuzzyScoreFolded(indexed.foldedSearchText, query) - 200);
             if (score < 0)
-                continue;
+                return;
             EditorSearchCandidate candidate = indexed.candidate;
             candidate.score = score;
-            candidates.append(candidate);
-        }
+            const auto previous = matches.constFind(indexed.identity);
+            if (previous == matches.cend() || candidate.score > previous->score
+                || (candidate.score == previous->score && candidateMetadataLess(candidate, *previous)))
+                matches.insert(indexed.identity, std::move(candidate));
     };
-    appendMatches(indexedFileCandidates);
-    appendMatches(indexedSemanticCandidates);
+    const auto appendMatches = [&appendMatch](const QList<IndexedCandidate>& catalog) {
+        for (const auto& indexed : catalog) appendMatch(indexed);
+    };
+    if (asyncCatalog && asyncCatalog->current
+        && asyncCatalog->current->root == workspaceRootValue
+        && asyncCatalog->current->sourceFiles == asyncCatalog->requestedFiles)
+        appendMatches(asyncCatalog->current->fileCandidates);
+    else
+        appendMatches(indexedFileCandidates);
+    if (asyncCatalog && asyncCatalog->current) {
+        if (asyncCatalog->ready)
+            for (const auto* indexed : asyncCatalog->current->uniqueCandidates)
+                appendMatch(*indexed);
+    } else if (semanticCatalogReady()) {
+        appendMatches(indexedSemanticCandidates);
+    }
+    EditorSearchCandidates candidates = matches.values();
 
     std::sort(
         candidates.begin(),
@@ -254,6 +469,7 @@ void TemporaryEditorSearchProvider::rebuildFileCatalog()
     indexedFileCandidates.clear();
     indexedFileCandidates.reserve(cachedWorkspaceFiles.size());
     for (const QString& filePath : cachedWorkspaceFiles) {
+        if (cancellationCheck && cancellationCheck()) return;
         const QString title = QFileInfo(filePath).fileName();
         const QString relative = normalizedRelativePath(
             filePath, workspaceRootValue);
@@ -264,6 +480,7 @@ void TemporaryEditorSearchProvider::rebuildFileCatalog()
         candidate.disambiguation = relative;
         IndexedCandidate indexed;
         indexed.candidate = candidate;
+        indexed.identity = candidateIdentity(candidate, EditorFileIdentity::lookupKey(filePath));
         indexed.foldedTitle = title.toCaseFolded();
         indexed.foldedSearchText =
             QStringLiteral("%1 %2 file")
@@ -279,6 +496,7 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
     rebuilt.reserve(semanticSourceCatalog.size());
     QHash<QString, QString> relativePaths;
     for (const SemanticCatalogEntry& entry : semanticSourceCatalog) {
+        if (cancellationCheck && cancellationCheck()) return;
         if (entry.location.filePath.trimmed().isEmpty())
             continue;
         const QString& title = entry.title;
@@ -331,6 +549,7 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
     // rebuild only, so a later catalog refresh observes changed aliases.
     QHash<QString, QString> fileIdentities;
     for (const IndexedCandidate& indexed : rebuilt) {
+        if (cancellationCheck && cancellationCheck()) return;
         const QString& path = indexed.candidate.location.filePath;
         auto fileIdentity = fileIdentities.constFind(path);
         if (fileIdentity == fileIdentities.cend()) {
@@ -342,6 +561,8 @@ void TemporaryEditorSearchProvider::rebuildSemanticCatalog()
         if (seen.contains(identity))
             continue;
         seen.insert(identity);
-        indexedSemanticCandidates.append(indexed);
+        auto unique = indexed;
+        unique.identity = identity;
+        indexedSemanticCandidates.append(std::move(unique));
     }
 }

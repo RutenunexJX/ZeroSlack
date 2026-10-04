@@ -1,81 +1,49 @@
 #include "relationshipanalysiscontroller.h"
-
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
-
-#include <exception>
-#include <QDir>
-#include <QPointer>
-#include <utility>
-
-namespace {
-QString normalizedFinishedRelationshipPath(const QString& path)
-{
-    QString normalized = QDir::cleanPath(QDir::fromNativeSeparators(path));
-#ifdef Q_OS_WIN
-    normalized = normalized.toCaseFolded();
-#endif
-    return normalized;
-}
-}
+#include "semanticanalysisinput.h"
+#include <QScopeGuard>
 
 void RelationshipAnalysisController::setSymbolAnalyzer(SymbolAnalyzer* analyzer)
 {
+    if (symbolAnalyzer == analyzer)
+        return;
+    requestCancelAllAnalyses();
+    if (symbolAnalyzer)
+        disconnect(symbolAnalyzer, nullptr, this, nullptr);
     symbolAnalyzer = analyzer;
+    if (!symbolAnalyzer)
+        return;
+    connect(symbolAnalyzer, &SymbolAnalyzer::relationshipAnalysisCommitted,
+            this, &RelationshipAnalysisController::finish);
+    connect(symbolAnalyzer, &SymbolAnalyzer::semanticAnalysisDropped, this,
+            [this](const SemanticAnalysisRequest& request, SemanticAnalysisRequestDisposition) {
+                if (matches(request))
+                    cancel(activeKind);
+            });
+    connect(symbolAnalyzer, &SymbolAnalyzer::semanticAnalysisFailed, this,
+            [this](const SemanticAnalysisRequest& request, const QString& error) {
+                if (!matches(request))
+                    return;
+                activeKind = RequestKind::None;
+                activeRequest = {};
+                cancellation.reset();
+                emit relationshipAnalysisError(request.triggerFile, error);
+            });
 }
 
-void RelationshipAnalysisController::setRelationshipBuilder(
-    SmartRelationshipBuilder* builder)
+void RelationshipAnalysisController::setRelationshipBuilder(SmartRelationshipBuilder* builder)
 {
-    if (relationshipBuilder == builder)
-        return;
-    if (relationshipBuilder) {
-        // A worker captures the builder as a raw pointer. Join it before the
-        // old builder can be detached or destroyed.
-        QPointer<RelationshipAnalysisController> self(this);
-        SmartRelationshipBuilder* const previousBuilder =
-            relationshipBuilder;
-        QPointer<SmartRelationshipBuilder> oldBuilder(previousBuilder);
-        requestCancelAllAnalyses();
-        if (!self)
-            return;
-        waitForAllAnalyses();
-        if (!self)
-            return;
-        // A synchronous cancellation observer may have installed a newer
-        // builder. The reentrant request is authoritative; never detach it or
-        // overwrite it from this older call.
-        if (relationshipBuilder != previousBuilder)
-            return;
-        if (!oldBuilder) {
-            relationshipBuilder = nullptr;
-            return;
-        }
-        disconnect(oldBuilder.data(), nullptr, this, nullptr);
-    }
-
+    // Kept as an API capability handle; workers never borrow this QObject.
     relationshipBuilder = builder;
-    if (!relationshipBuilder)
-        return;
-
-    connect(relationshipBuilder,
-            &SmartRelationshipBuilder::analysisError,
-            this,
-            &RelationshipAnalysisController::relationshipAnalysisError);
-    connect(relationshipBuilder,
-            &SmartRelationshipBuilder::analysisCancelled,
-            this,
-            &RelationshipAnalysisController::relationshipAnalysisCancelled);
 }
 
-void RelationshipAnalysisController::setRelationshipQueue(
-    RelationshipAnalysisQueue* queue)
+void RelationshipAnalysisController::setRelationshipQueue(RelationshipAnalysisQueue* queue)
 {
     relationshipQueue = queue;
 }
 
-void RelationshipAnalysisController::setResultPublisher(
-    RelationshipResultPublisher* publisher)
+void RelationshipAnalysisController::setResultPublisher(RelationshipResultPublisher* publisher)
 {
     resultPublisher = publisher;
 }
@@ -85,114 +53,87 @@ bool RelationshipAnalysisController::hasRelationshipBuilder() const
     return relationshipBuilder != nullptr;
 }
 
+void RelationshipAnalysisController::setRuntimePolicy(const SemanticAnalysisRuntimePolicy& policy)
+{
+    runtimePolicy = policy.normalized();
+    if (!runtimePolicy.enabled)
+        requestCancelAllAnalyses();
+}
+
 void RelationshipAnalysisController::setWorkspaceWorkerStartGateForTesting(
     WorkspaceWorkerStartGateForTesting gate)
 {
     workspaceWorkerStartGateForTesting = std::move(gate);
 }
 
-void RelationshipAnalysisController::handleSingleFileFinished(
-    QFutureWatcher<SingleFileRelationshipAnalysisResult>* watcher,
-    std::uint64_t requestGeneration,
-    const QString& fileKey)
+bool RelationshipAnalysisController::matches(const SemanticAnalysisRequest& request) const
 {
-    if (!watcher)
-        return;
-    if (watcher->isCanceled())
-        return;
-
-    SingleFileRelationshipAnalysisResult result;
-    try {
-        result = watcher->result();
-    } catch (const std::exception& error) {
-        emit relationshipAnalysisError(
-            QString(), QString::fromUtf8(error.what()));
-        return;
-    } catch (...) {
-        emit relationshipAnalysisError(
-            QString(),
-            QStringLiteral("Relationship analysis failed with an unknown exception."));
-        return;
-    }
-    if (singleFileRequestGeneration != requestGeneration
-        || normalizedFinishedRelationshipPath(result.fileName) != fileKey) {
-        return;
-    }
-    QPointer<RelationshipAnalysisController> self(this);
-    RelationshipResultPublisher* publisher = resultPublisher;
-    if (!publisher || !publisher->applySingleFileResult(result))
-        return;
-    if (!self || singleFileRequestGeneration != requestGeneration)
-        return;
-
-    emit relationshipAnalysisProgress(
-        result.fileName,
-        result.relationships.size());
-    if (!self || singleFileRequestGeneration != requestGeneration)
-        return;
-    emit relationshipAnalysisFinished(result);
+    return activeKind != RequestKind::None && request.compatibilityRequest
+        && request.generation == activeRequest.generation
+        && request.project.semanticIdentity() == activeRequest.project.semanticIdentity();
 }
 
-void RelationshipAnalysisController::handleWorkspaceFinished(
-    QFutureWatcher<WorkspaceRelationshipAnalysisResult>* watcher,
-    std::uint64_t requestGeneration,
-    const QString& projectKey)
+void RelationshipAnalysisController::finish(
+    const SemanticAnalysisRequest& request, const WorkspaceRelationshipAnalysisResult& publication)
 {
-    if (!watcher)
+    if (!matches(request) || !cancellation
+        || cancellation->load(std::memory_order_relaxed))
         return;
-    if (watcher->isCanceled()) {
-        emit workspaceRelationshipAnalysisCancelled();
-        return;
-    }
-
-    WorkspaceRelationshipAnalysisResult result;
-    try {
-        result = watcher->result();
-    } catch (const std::exception& error) {
-        emit relationshipAnalysisError(
-            QStringLiteral("workspace"),
-            QString::fromUtf8(error.what()));
-        return;
-    } catch (...) {
-        emit relationshipAnalysisError(
-            QStringLiteral("workspace"),
-            QStringLiteral("Workspace relationship analysis failed with an unknown exception."));
-        return;
-    }
-    if (result.requestGeneration != requestGeneration
-        || result.projectKey != projectKey) {
-        return;
-    }
-    if (workspaceRequestGeneration != requestGeneration)
-        return;
+    const auto generation = activeRequest.generation;
+    const auto kind = activeKind;
+    const QString file = activeRequest.triggerFile;
     QPointer<RelationshipAnalysisController> self(this);
-    if (result.cancelled) {
-        emit workspaceRelationshipAnalysisCancelled();
-        return;
-    }
-    RelationshipResultPublisher* publisher = resultPublisher;
-    if (!publisher || !publisher->applyWorkspaceResult(result))
-        return;
-    if (!self || workspaceRequestGeneration != requestGeneration)
-        return;
-
-    const int totalFiles = result.totalFiles > 0
-        ? result.totalFiles
-        : result.fileRelationships.size();
-    int processedFiles = 0;
-    for (const auto& pair : result.fileRelationships) {
-        ++processedFiles;
-        emit relationshipAnalysisProgress(pair.first, pair.second.size());
-        if (!self || workspaceRequestGeneration != requestGeneration)
+    bool completed = false;
+    const auto completion = qScopeGuard([this, self, generation, &completed] {
+        if (!self || activeRequest.generation != generation)
             return;
-        emit workspaceRelationshipAnalysisProgress(pair.first,
-                                                   pair.second.size(),
-                                                   processedFiles,
-                                                   totalFiles);
-        if (!self || workspaceRequestGeneration != requestGeneration)
+        if (!completed) {
+            cancel(activeKind);
             return;
-    }
-    if (workspaceRequestGeneration != requestGeneration)
+        }
+        activeKind = RequestKind::None;
+        activeRequest = {};
+        cancellation.reset();
+    });
+    auto current = [&] {
+        const auto token = SemanticIndex::getInstance()->snapshotToken();
+        return self && activeRequest.generation == generation
+            && token.revision == publication.baseSnapshot.revision
+            && token.snapshot == publication.semanticSnapshot;
+    };
+    if (!current())
         return;
-    emit workspaceRelationshipAnalysisFinished(result);
+    if (kind == RequestKind::SingleFile) {
+        SingleFileRelationshipAnalysisResult result;
+        result.fileName = file;
+        result.baseSnapshot = publication.baseSnapshot;
+        result.semanticSnapshot = publication.semanticSnapshot;
+        for (const auto& item : publication.fileRelationships)
+            if (SemanticInputCapture::pathKey(item.first) == SemanticInputCapture::pathKey(file)) {
+                result.relationships = item.second;
+                break;
+            }
+        if (resultPublisher && !resultPublisher->applySingleFileResult(result, symbolAnalyzer))
+            return;
+        emit relationshipAnalysisProgress(file, result.relationships.size());
+        if (!current())
+            return;
+        completed = true;
+        emit relationshipAnalysisFinished(result);
+    } else {
+        if (resultPublisher && !resultPublisher->applyWorkspaceResult(publication, symbolAnalyzer))
+            return;
+        int processed = 0;
+        for (const auto& item : publication.fileRelationships) {
+            emit relationshipAnalysisProgress(item.first, item.second.size());
+            if (!current())
+                return;
+            emit workspaceRelationshipAnalysisProgress(item.first, item.second.size(),
+                                                        ++processed, publication.totalFiles);
+            if (!current())
+                return;
+        }
+        completed = true;
+        emit workspaceRelationshipAnalysisFinished(publication);
+    }
 }
