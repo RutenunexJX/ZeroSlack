@@ -4,7 +4,6 @@
 #include "zeroslackexport.h"
 
 #include "projectmodel.h"
-#include "relationshipanalysisqueue.h"
 #include "relationshipanalysisworker.h"
 #include "relationshipresultpublisher.h"
 
@@ -33,7 +32,6 @@ public:
 
     void setSymbolAnalyzer(SymbolAnalyzer* analyzer);
     void setRelationshipBuilder(SmartRelationshipBuilder* builder);
-    void setRelationshipQueue(RelationshipAnalysisQueue* queue);
     void setResultPublisher(RelationshipResultPublisher* publisher);
     bool hasRelationshipBuilder() const;
     void setRuntimePolicy(const SemanticAnalysisRuntimePolicy& policy);
@@ -67,7 +65,6 @@ signals:
 private:
     QPointer<SymbolAnalyzer> symbolAnalyzer;
     QPointer<SmartRelationshipBuilder> relationshipBuilder;
-    QPointer<RelationshipAnalysisQueue> relationshipQueue;
     QPointer<RelationshipResultPublisher> resultPublisher;
     enum class RequestKind { None, SingleFile, Workspace };
     RequestKind activeKind = RequestKind::None;

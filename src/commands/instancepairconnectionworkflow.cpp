@@ -47,119 +47,6 @@ bool sameSemanticToken(
         && left.snapshot == right.snapshot;
 }
 
-bool sameBaselines(
-    const std::vector<rtledit::DocumentBaseline>& left,
-    const std::vector<rtledit::DocumentBaseline>& right)
-{
-    if (left.size() != right.size())
-        return false;
-    for (std::size_t index = 0;
-         index < left.size();
-         ++index) {
-        if (left[index].filePath
-                != right[index].filePath
-            || left[index].version
-                != right[index].version) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool sameEdit(
-    const rtledit::WorkspaceTextEdit& left,
-    const rtledit::WorkspaceTextEdit& right)
-{
-    return left.filePath == right.filePath
-        && left.expectedDocumentVersion
-            == right.expectedDocumentVersion
-        && left.range.start == right.range.start
-        && left.range.end == right.range.end
-        && left.expectedText == right.expectedText
-        && left.newText == right.newText;
-}
-
-bool sameSemanticObject(
-    const rtledit::SemanticObjectId& left,
-    const rtledit::SemanticObjectId& right)
-{
-    return left.kind == right.kind
-        && left.qualifiedName == right.qualifiedName
-        && left.ownerScope == right.ownerScope
-        && left.filePath == right.filePath
-        && left.range.start == right.range.start
-        && left.range.end == right.range.end
-        && left.signatureHash == right.signatureHash;
-}
-
-bool sameProvenance(
-    const rtledit::TextEditProvenance& left,
-    const rtledit::TextEditProvenance& right)
-{
-    return left.editIndex == right.editIndex
-        && left.actionId == right.actionId
-        && left.anchorName == right.anchorName
-        && left.description == right.description
-        && left.anchor.source == right.anchor.source
-        && left.anchor.resolver == right.anchor.resolver
-        && left.anchor.semanticSnapshotId
-            == right.anchor.semanticSnapshotId
-        && left.signalQualifiedName
-            == right.signalQualifiedName
-        && left.sourceInstancePath
-            == right.sourceInstancePath
-        && left.hierarchyStepIndex
-            == right.hierarchyStepIndex
-        && left.sourceFilePath == right.sourceFilePath
-        && left.sourceRange.start
-            == right.sourceRange.start
-        && left.sourceRange.end
-            == right.sourceRange.end;
-}
-
-bool samePlan(
-    const rtledit::WorkspaceEditPlan& left,
-    const rtledit::WorkspaceEditPlan& right)
-{
-    if (left.intent.kind != right.intent.kind
-        || !sameSemanticObject(
-            left.intent.target, right.intent.target)
-        || left.semanticSnapshot.id
-            != right.semanticSnapshot.id
-        || left.semanticIndexFilePaths
-            != right.semanticIndexFilePaths
-        || left.riskLevel != right.riskLevel
-        || left.previewPolicy != right.previewPolicy
-        || left.hasMixedDocumentVersions
-            != right.hasMixedDocumentVersions
-        || !sameBaselines(
-            left.baselines, right.baselines)
-        || left.edits.size() != right.edits.size()
-        || left.provenance.size()
-            != right.provenance.size()) {
-        return false;
-    }
-    for (std::size_t index = 0;
-         index < left.edits.size();
-         ++index) {
-        if (!sameEdit(
-                left.edits[index],
-                right.edits[index])) {
-            return false;
-        }
-    }
-    for (std::size_t index = 0;
-         index < left.provenance.size();
-         ++index) {
-        if (!sameProvenance(
-                left.provenance[index],
-                right.provenance[index])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 bool sameStaleStatus(
     const rtledit::EditPlanStaleStatus& left,
     const rtledit::EditPlanStaleStatus& right)
@@ -312,10 +199,10 @@ bool sameProposalIdentity(
             == right.transaction.preview.semanticSnapshot.id
         && left.transaction.preview.semanticIndexFilePaths
             == right.transaction.preview.semanticIndexFilePaths
-        && samePlan(
+        && rtledit::sameWorkspaceEditPlan(
             left.workspaceEdit,
             right.workspaceEdit)
-        && samePlan(
+        && rtledit::sameWorkspaceEditPlan(
             left.transaction.plan,
             right.transaction.plan)
         && sameSourceDiff(
@@ -1136,7 +1023,7 @@ InstancePairConnectionWorkflow::preflight(
         || proposal->transaction.plan.previewPolicy
             != rtledit::PreviewPolicy::Diff
         || proposal->transaction.previewConfirmed
-        || !samePlan(
+        || !rtledit::sameWorkspaceEditPlan(
             proposal->workspaceEdit,
             proposal->transaction.plan)
         || !sameSourceDiff(

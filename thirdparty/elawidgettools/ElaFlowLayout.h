@@ -23,6 +23,7 @@ public:
     Qt::Orientations expandingDirections() const override;
     bool hasHeightForWidth() const override;
     int heightForWidth(int) const override;
+    int minimumHeightForWidth(int width) const override { return heightForWidth(width); }
     int count() const override;
     QLayoutItem* itemAt(int index) const override;
     QSize minimumSize() const override;

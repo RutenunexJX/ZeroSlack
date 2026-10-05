@@ -61,6 +61,19 @@ int main(int argc, char* argv[])
     QApplication::setQuitOnLastWindowClosed(false);
 
     EditorLineOperationController controller;
+
+    for (bool up : {false,true}) {
+        QTextDocument document;
+        const QString original=QStringLiteral("alpha\nbeta\ngamma");
+        resetDocument(document,original);
+        auto cursor=cursorAt(document,up ? 12 : 7);
+        const auto result=controller.execute(up ? EditorLineOperation::MoveLinesUp : EditorLineOperation::MoveLinesDown,cursor);
+        expect("moving across an unterminated final line retains both logical lines",
+            result.succeeded && document.toPlainText()==QStringLiteral("alpha\ngamma\nbeta"));
+        expect("unterminated line movement preserves cursor column",
+            cursor.position()-cursor.block().position()==1);
+        expect("unterminated line movement is one undo transaction",oneUndoRestores(document,original));
+    }
     QClipboard* clipboard = QApplication::clipboard();
 
     {

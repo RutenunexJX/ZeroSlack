@@ -2,6 +2,18 @@ if(NOT DEFINED ZEROSLACK_SOURCE_DIR)
     message(FATAL_ERROR "ZEROSLACK_SOURCE_DIR is required")
 endif()
 
+
+# A source compatibility header forwards to its domain's actual public
+# contract. Apply the same legacy policy to that contract after relocation.
+function(zeroslack_read_contract path output)
+    file(READ "${path}" text)
+    if(text MATCHES "// Internal source compatibility;"
+       AND text MATCHES "#include <(zeroslack/[^>]+)>")
+        file(READ "${ZEROSLACK_SOURCE_DIR}/include/${CMAKE_MATCH_1}" text)
+    endif()
+    set(${output} "${text}" PARENT_SCOPE)
+endfunction()
+
 set(PROTECTED_BOUNDARY_FILES
     src/analysis/analysiscoordinator.cpp
     src/analysis/analysiscoordinatordependencies.cpp
@@ -190,7 +202,7 @@ foreach(entry IN LISTS FULL_AUDIT_PASSIVE_FULL_SCAN_PATTERNS)
         message(FATAL_ERROR
             "Passive full-scan guard references missing file: ${relative_path}")
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH "${pattern}" match "${content}")
     if(match)
         list(APPEND full_audit_passive_full_scan_violations
@@ -227,7 +239,7 @@ foreach(entry IN LISTS FULL_AUDIT_REMOVED_BROAD_COMPILATION_UNIT_PATTERNS)
     string(REPLACE "|" ";" parts "${entry}")
     list(GET parts 0 relative_path)
     list(GET parts 1 pattern)
-    file(READ "${ZEROSLACK_SOURCE_DIR}/${relative_path}" content)
+    zeroslack_read_contract("${ZEROSLACK_SOURCE_DIR}/${relative_path}" content)
     string(REGEX MATCH "${pattern}" match "${content}")
     if(match)
         message(FATAL_ERROR
@@ -245,7 +257,7 @@ foreach(entry IN LISTS FULL_AUDIT_REMOVED_TEST_ONLY_SCHEDULER_PATTERNS)
         message(FATAL_ERROR
             "Test-only scheduler API guard references missing file: ${relative_path}")
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH "${pattern}" match "${content}")
     if(match)
         list(APPEND full_audit_test_only_scheduler_violations
@@ -760,7 +772,7 @@ foreach(relative_path IN LISTS PROTECTED_BOUNDARY_FILES)
         continue()
     endif()
 
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCHALL
         "\\.(symbolId|symbolType|moduleScope|dataType)([^A-Za-z0-9_]|$)"
         field_matches
@@ -804,7 +816,7 @@ foreach(relative_path IN LISTS RECORD_FIRST_METADATA_FILES)
         continue()
     endif()
 
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCHALL
         "\\.(moduleScope|dataType)([^A-Za-z0-9_]|$)"
         record_first_field_matches
@@ -836,7 +848,7 @@ foreach(relative_path IN LISTS STABLE_KEY_MIGRATED_SERVICE_FILES)
         continue()
     endif()
 
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCHALL
         "findSymbolId[ \t\r\n]*\\([^\\)]*symbolStableKey"
         stable_key_find_id_matches
@@ -876,7 +888,7 @@ foreach(relative_path IN LISTS RECORD_METADATA_HELPER_FILES)
         continue()
     endif()
 
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCHALL
         "\\.(rawCollectorKind)([^A-Za-z0-9_]|$)"
         record_metadata_raw_matches
@@ -908,7 +920,7 @@ foreach(relative_path IN LISTS RECORD_NATIVE_SERVICE_FILES)
         continue()
     endif()
 
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCHALL
         "semanticSymbolInfoCarrier(sForRecords|ForRecord)?[ \t\r\n]*\\("
         record_native_carrier_matches
@@ -939,7 +951,7 @@ foreach(relative_path IN LISTS PHASE_I1_RECORD_NATIVE_ANALYZER_FILES)
         list(APPEND phase_i1_analyzer_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(semanticSymbolRecordsForCollectedSymbols|semanticSymbolRecordsForSymbols|extractSymbols|extractWorkspaceSymbols)[ \t\r\n]*\\("
         legacy_analyzer_match
@@ -971,7 +983,7 @@ foreach(relative_path IN LISTS PHASE_I1_RECORD_NATIVE_COLLECTOR_FILES)
         list(APPEND phase_i1_collector_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(semanticSymbolRecordsForCollectedSymbols|semanticSymbolRecordsForSymbols|collectSymbols|fillSymbolInfo|emitEnumValues|emitStructMembers|variableOrNetTypeToSymType|portDirectionToSymType)[ \t\r\n]*\\("
         legacy_collector_match
@@ -1003,7 +1015,7 @@ foreach(relative_path IN LISTS PHASE_I1_RECORD_NATIVE_MANAGER_FILES)
         list(APPEND phase_i1_manager_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(^|[^A-Za-z0-9_])(extractSymbols|extractWorkspaceSymbols|collectSymbols)[ \t\r\n]*\\("
         legacy_manager_match
@@ -1035,7 +1047,7 @@ foreach(relative_path IN LISTS PHASE_I2_NATIVE_STORE_PUBLICATION_FILES)
         list(APPEND phase_i2_publication_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles)[ \t\r\n]*\\("
         legacy_store_match
@@ -1067,7 +1079,7 @@ foreach(relative_path IN LISTS PHASE_I2_REMOVED_LEGACY_REFRESH_FILES)
         list(APPEND phase_i2_removed_refresh_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "refreshStructTypedefEnumForFile[ \t\r\n]*\\("
         legacy_refresh_match
@@ -1099,7 +1111,7 @@ foreach(relative_path IN LISTS PHASE_I2_NATIVE_STORE_BRIDGE_FILES)
         list(APPEND phase_i2_bridge_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "symbolDatabase[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*->[ \t\r\n]*refreshStructTypedefEnumForFile[ \t\r\n]*\\("
         legacy_bridge_match
@@ -1131,7 +1143,7 @@ foreach(relative_path IN LISTS PHASE_I2_NATIVE_STORE_QUERY_FILES)
         list(APPEND phase_i2_query_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "((semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles)[ \t\r\n]*\\(|symbolDatabase[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*->[ \t\r\n]*(getCachedFileContent|contentAffectsSymbols)[ \t\r\n]*\\()"
         legacy_query_match
@@ -1163,7 +1175,7 @@ foreach(relative_path IN LISTS PHASE_I2_REMOVED_GENERIC_BRIDGE_FILES)
         list(APPEND phase_i2_generic_bridge_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "updateSymbolDatabaseRecordsForFile[ \t\r\n]*\\("
         generic_bridge_match
@@ -1195,7 +1207,7 @@ foreach(relative_path IN LISTS PHASE_I3_RECORD_NATIVE_RELATIONSHIP_BUILDER_FILES
         list(APPEND phase_i3_relationship_builder_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(semanticcollectoradapter\\.h|semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles|sym_list[ \t\r\n]*\\*)"
         legacy_relationship_builder_match
@@ -1227,7 +1239,7 @@ foreach(relative_path IN LISTS PHASE_I3_RECORD_NATIVE_RELATIONSHIP_ENGINE_FILES)
         list(APPEND phase_i3_relationship_engine_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(semanticcollectoradapter\\.h|semanticSymbolRecordsForDatabase|semanticSymbolRecordsForDatabaseExcludingFiles|symbols[ \t\r\n]*\\([ \t\r\n]*\\)[ \t\r\n]*(const)?[ \t\r\n]*(;|\\{)|sym_list)"
         legacy_relationship_engine_match
@@ -1259,7 +1271,7 @@ foreach(relative_path IN LISTS PHASE_I3_NATIVE_RELATIONSHIP_OWNER_FILES)
         list(APPEND phase_i3_relationship_owner_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(getRelationshipEngine|setRelationshipEngine)[ \t\r\n]*\\("
         legacy_relationship_owner_match
@@ -1291,7 +1303,7 @@ foreach(relative_path IN LISTS PHASE_I3_NATIVE_CONTAINMENT_FORWARDING_FILES)
         list(APPEND phase_i3_containment_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(analyzeModuleContainment|getRelationshipEngine[ \t\r\n]*\\(|setRelationshipEngine[ \t\r\n]*\\(|buildSymbolRelationships[ \t\r\n]*\\(|rebuildAllRelationships[ \t\r\n]*\\(|relationshipEngine[ \t\r\n]*->[ \t\r\n]*addRelationship[ \t\r\n]*\\(|SymbolRelationshipEngine::CONTAINS)"
         legacy_containment_match
@@ -1323,7 +1335,7 @@ foreach(relative_path IN LISTS PHASE_I3_REMOVED_LEGACY_RELATIONSHIP_MIRROR_FILES
         list(APPEND phase_i3_relationship_mirror_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(mirrorSemanticRecordsToLegacyRelationshipDatabase|legacyRelationshipSymbolForSemanticRecord|setSymbolsForFile[ \t\r\n]*\\()"
         legacy_relationship_mirror_match
@@ -1397,7 +1409,7 @@ file(GLOB phase_i4_test_sources
 set(phase_i4_legacy_collector_adapter_include_violations)
 foreach(relative_path IN LISTS phase_i4_test_sources)
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "semanticcollectoradapter\\.h"
         legacy_collector_adapter_include_match
@@ -1418,7 +1430,7 @@ endif()
 set(phase_i4_legacy_taxonomy_include_violations)
 foreach(relative_path IN LISTS phase_i4_test_sources)
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "symboltaxonomylegacy\\.h"
         legacy_taxonomy_include_match
@@ -1440,13 +1452,14 @@ file(GLOB_RECURSE phase_i4_legacy_taxonomy_include_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
 )
 set(phase_i4_global_legacy_taxonomy_include_violations)
 foreach(relative_path IN LISTS phase_i4_legacy_taxonomy_include_sources)
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "symboltaxonomylegacy\\.h"
         global_legacy_taxonomy_include_match
@@ -1483,6 +1496,7 @@ file(GLOB_RECURSE phase_j_repo_sources
     "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
     "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.h"
     "${ZEROSLACK_SOURCE_DIR}/test_sv/*.sv"
@@ -1496,7 +1510,7 @@ foreach(relative_path IN LISTS phase_j_repo_sources)
     endif()
 
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     foreach(pattern IN LISTS PHASE_J_FIXTURE_CLEANUP_PATTERNS)
         string(REGEX MATCH "${pattern}" match "${content}")
         if(match)
@@ -1530,6 +1544,7 @@ file(GLOB_RECURSE phase_l_production_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
 )
 
 set(phase_l_regex_spread_violations)
@@ -1540,7 +1555,7 @@ foreach(relative_path IN LISTS phase_l_production_sources)
     endif()
 
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     foreach(pattern IN LISTS PHASE_L_REGEX_CLEANUP_PATTERNS)
         string(REGEX MATCH "${pattern}" match "${content}")
         if(match)
@@ -1564,7 +1579,7 @@ foreach(relative_path IN LISTS PHASE_I4_NATIVE_SEMANTIC_INDEX_FILES)
         list(APPEND phase_i4_semantic_index_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(setSymbolDatabase[ \t\r\n]*\\(|symbolDatabase[ \t\r\n]*\\([ \t\r\n]*\\)|m_symbolDatabase|SemanticIndex[ \t\r\n]*\\([ \t\r\n]*sym_list[ \t\r\n]*\\*)"
         legacy_semantic_index_match
@@ -1612,7 +1627,7 @@ foreach(relative_path IN LISTS phase_i4_sym_store_surface_files)
         list(APPEND phase_i4_sym_store_surface_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(getAllSymbols[ \t\r\n]*\\(|addSymbol[ \t\r\n]*\\(|setSymbolsForFile[ \t\r\n]*\\(|clearSymbolsForFile[ \t\r\n]*\\(|symbolsForFileSnapshot[ \t\r\n]*\\(|rebuildScopeAndRelationshipsForFile[ \t\r\n]*\\(|getScopeManager[ \t\r\n]*\\(|symbolDatabase|fileNameIndex|symbolIdToIndex|lineBasedSymbols|symbolDbLock|allocateSymbolId[ \t\r\n]*\\(|detectChangedLines[ \t\r\n]*\\(|clearSymbolsForLines[ \t\r\n]*\\(|updateLineBasedSymbols[ \t\r\n]*\\(|rebuildAllIndexes[ \t\r\n]*\\(|addToIndexes[ \t\r\n]*\\(|removeFromIndexes[ \t\r\n]*\\()"
         legacy_sym_store_match
@@ -1644,7 +1659,7 @@ foreach(relative_path IN LISTS PHASE_I3_REMOVED_LEGACY_MODULE_LOOKUP_FILES)
         list(APPEND phase_i3_module_lookup_missing_files "${relative_path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     string(REGEX MATCH
         "(getCurrentModuleScope[ \t\r\n]*\\(|findEndModuleLine[ \t\r\n]*\\([^\\)]*SymbolInfo)"
         legacy_module_lookup_match
@@ -1686,6 +1701,7 @@ file(GLOB_RECURSE h0_first_party_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
     "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
 )
 
 set(h0_legacy_core_violations)
@@ -1696,7 +1712,7 @@ foreach(relative_path IN LISTS h0_first_party_sources)
     endif()
 
     set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     foreach(pattern IN LISTS H0_LEGACY_CORE_PATTERNS)
         string(REGEX MATCH "${pattern}" match "${content}")
         if(match)
@@ -1718,6 +1734,7 @@ if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
         "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
         "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
         "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
     )
     file(GLOB_RECURSE phase_j_zero_test_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
@@ -1735,7 +1752,7 @@ if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
     set(phase_j_zero_legacy_violations)
     foreach(relative_path IN LISTS phase_j_zero_repo_sources)
         set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-        file(READ "${path}" content)
+        zeroslack_read_contract("${path}" content)
         foreach(pattern IN LISTS PHASE_J_ZERO_TARGET_PATTERNS)
             string(REGEX MATCH "${pattern}" match "${content}")
             if(match)
@@ -1757,6 +1774,7 @@ if(ZEROSLACK_PHASE_L_ZERO_TARGET)
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
         "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
         "${ZEROSLACK_SOURCE_DIR}/src/*.h"
+        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
     )
     file(GLOB_RECURSE phase_l_zero_test_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
@@ -1771,7 +1789,7 @@ if(ZEROSLACK_PHASE_L_ZERO_TARGET)
     set(phase_l_zero_regex_violations)
     foreach(relative_path IN LISTS phase_l_zero_sources)
         set(path "${ZEROSLACK_SOURCE_DIR}/${relative_path}")
-        file(READ "${path}" content)
+        zeroslack_read_contract("${path}" content)
         foreach(pattern IN LISTS PHASE_L_REGEX_CLEANUP_PATTERNS)
             string(REGEX MATCH "${pattern}" match "${content}")
             if(match)
@@ -1798,7 +1816,7 @@ foreach(entry IN LISTS F3_REMOVED_COMPATIBILITY_PATTERNS)
     if(NOT EXISTS "${path}")
         continue()
     endif()
-    file(READ "${path}" content)
+    zeroslack_read_contract("${path}" content)
     foreach(pattern IN LISTS patterns)
         string(REGEX MATCH "${pattern}" match "${content}")
         if(match)

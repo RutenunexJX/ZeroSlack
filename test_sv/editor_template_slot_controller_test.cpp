@@ -487,6 +487,7 @@ int main(int argc, char* argv[])
                    && onlyVisibleRows);
     }
 
+    QPointer<MyHighlighter> documentHighlighter;
     {
         SharedDocument shared(
             QStringLiteral("shared-highlighter-lifecycle"),
@@ -504,6 +505,7 @@ int main(int argc, char* argv[])
             initialHighlighters.isEmpty()
                 ? nullptr
                 : initialHighlighters.constFirst();
+        documentHighlighter = initialHighlighter;
         expect("shared document installs exactly one syntax highlighter",
                initialHighlighters.size() == 1
                    && initialHighlighter);
@@ -512,23 +514,26 @@ int main(int argc, char* argv[])
         const QList<MyHighlighter*> transferredHighlighters =
             shared.textDocument()->findChildren<MyHighlighter*>(
                 QString(), Qt::FindDirectChildrenOnly);
-        expect("closing the highlighter owner transfers one replacement",
-               initialHighlighter.isNull()
-                   && transferredHighlighters.size() == 1);
+        expect("closing the first view retains the document-owned highlighter",
+               initialHighlighter
+                   && transferredHighlighters.size() == 1
+                   && transferredHighlighters.constFirst() == initialHighlighter);
 
         const QString replacement =
             QStringLiteral("module replacement;\nlogic value;\nendmodule\n");
         remainingView->setPlainText(replacement);
-        expect("transferred highlighter keeps the remaining syntax cache current",
+        expect("document highlighter keeps the remaining syntax cache current",
                remainingView->syntaxTextForTest() == replacement);
 
         remainingView.reset();
-        expect("closing the last view removes the shared highlighter",
+        expect("closing the last view preserves syntax while the document is alive",
                shared.textDocument()
                    ->findChildren<MyHighlighter*>(
                        QString(), Qt::FindDirectChildrenOnly)
-                   .isEmpty());
+                   .size() == 1 && initialHighlighter);
     }
+    expect("destroying the document releases its shared highlighter",
+           documentHighlighter.isNull());
 
     {
         SemanticIndex* semanticIndex =

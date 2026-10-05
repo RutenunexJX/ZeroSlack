@@ -3,7 +3,6 @@
 #include "contextcontentprovider.h"
 #include "contextdockhost.h"
 #include "contextdocktransition.h"
-#include "panelcompositor.h"
 #include "panellayoutcontroller.h"
 #include "contextfloatingwindow.h"
 #include "contextpeekhost.h"
@@ -79,7 +78,7 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
         pinFloatingResourceInArea(key, area, index);
     });
     connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
-        if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
+        if (dockTransition) dockTransition->finish();
         host->setProperty("contextDockInsertionIndex", -1);
     });
     connect(host, &ContextFloatingWindow::titleDragMoved, this, [this, host](const QPoint& position) {
@@ -105,7 +104,6 @@ ContextFloatingWindow* ContextWorkspaceController::availableFloatingWindow()
 #else
     connect(host, &ContextFloatingWindow::titleDragStarted, this, [this, host] {
         if (!dockTransition || !host->canDock()) return;
-        PanelCompositor::forWindow(window)->settle();
         dockTransition->finish();
         floatingDragSource = host;
     });

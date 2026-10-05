@@ -1,0 +1,61 @@
+#ifndef RELATIONSHIPANALYSISWORKER_H
+#define RELATIONSHIPANALYSISWORKER_H
+
+#include <zeroslack/semantic/projectsnapshot.h>
+#include <zeroslack/semantic/semanticindexsnapshot.h>
+#include <zeroslack/semantic/smartrelationshipbuilder.h>
+
+#include <QPair>
+#include <QString>
+#include <QtGlobal>
+#include <QVector>
+#include <cstdint>
+#include <memory>
+
+struct WorkspaceRelationshipAnalysisResult {
+    std::uint64_t requestGeneration = 0;
+    QString projectKey;
+    QVector<QPair<QString, QVector<RelationshipToAdd>>> fileRelationships;
+    SemanticSnapshotToken baseSnapshot;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+    bool cancelled = false;
+    int totalFiles = 0;
+    int processedFiles = 0;
+    int relationshipCount = 0;
+    qint64 elapsedMs = -1;
+    qint64 extractionMs = -1;
+    qint64 fileReadMs = 0;
+    qint64 computeMs = 0;
+    qint64 conversionMs = 0;
+    qint64 snapshotMergeMs = -1;
+};
+
+struct SingleFileRelationshipAnalysisResult {
+    QString fileName;
+    QVector<RelationshipToAdd> relationships;
+    SemanticSnapshotToken baseSnapshot;
+    std::shared_ptr<const SemanticIndexSnapshot> semanticSnapshot;
+};
+
+class RelationshipAnalysisWorker
+{
+public:
+    // Source-compatible immutable projections. Callers needing analysis submit
+    // through RelationshipAnalysisController / the unified semantic pipeline.
+    // No source, include lookup, compilation or snapshot mutation occurs here.
+    static SingleFileRelationshipAnalysisResult analyzeSingleFile(
+        SmartRelationshipBuilder* relationshipBuilder,
+        const QString& fileName,
+        const QString& content,
+        const SemanticSnapshotToken& baseSnapshot);
+
+    static WorkspaceRelationshipAnalysisResult analyzeWorkspace(
+        SmartRelationshipBuilder* relationshipBuilder,
+        const ProjectSnapshot& project,
+        const SemanticSnapshotToken& baseSnapshot,
+        std::uint64_t requestGeneration = 0,
+        const QString& projectKey = QString(),
+        const std::function<bool()>& isCancelled = {});
+};
+
+#endif // RELATIONSHIPANALYSISWORKER_H

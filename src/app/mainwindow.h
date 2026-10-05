@@ -43,6 +43,7 @@ class PinloomHostClient;
 class EditorCoordinator;
 class EditorActionContextService;
 class FileCommandCoordinator;
+class DocumentReviewCoordinator;
 class GlobalControlCoordinator;
 class SemanticDockCoordinator;
 class SemanticRuntimeCoordinator;
@@ -150,34 +151,7 @@ private:
     QAction* closeActiveWorkspaceAction = nullptr;
     QMenu* toolsMenu = nullptr;
     QMenu* userTemplatesMenu = nullptr;
-    QDialog* crashRecoveryReviewDialog = nullptr;
-    QTreeWidget* crashRecoveryCandidateList = nullptr;
-    QPlainTextEdit* crashRecoverySourceText = nullptr;
-    QPlainTextEdit* crashRecoveryRecoveredText = nullptr;
-    QLabel* crashRecoveryReviewStatus = nullptr;
-    QPushButton* crashRecoveryRestoreButton = nullptr;
-    QPushButton* crashRecoveryDiscardButton = nullptr;
-    std::unique_ptr<CrashRecoveryCandidate>
-        reviewedCrashRecoveryCandidate;
-    QHash<QString, QString>
-        crashRecoveryNotificationWorkspaces;
-    QHash<QString, QString>
-        externalConflictNotificationFiles;
-    QHash<QString, int>
-        crashRecoveryIsolatedRecordCounts;
-    QSet<QString> handledCrashRecoveryCandidates;
-    QString crashRecoveryReviewWorkspace;
-    QWidget* externalConflictReviewBar = nullptr;
-    QLabel* externalConflictReviewTitle = nullptr;
-    QLabel* externalConflictReviewStatus = nullptr;
-    QPlainTextEdit* externalConflictLocalText = nullptr;
-    QPlainTextEdit* externalConflictDiskText = nullptr;
-    QPushButton* externalConflictKeepLocalButton = nullptr;
-    QPushButton* externalConflictReloadButton = nullptr;
-    QPushButton* externalConflictSaveAsButton = nullptr;
-    std::unique_ptr<ExternalDocumentConflictReview>
-        reviewedExternalConflict;
-    QPointer<QWidget> externalConflictPreviousFocus;
+    std::unique_ptr<DocumentReviewCoordinator> documentReviewCoordinator;
     QStackedWidget* centralContentStack = nullptr;
     QWidget* editorCentralPage = nullptr;
     QWidget* editorSplitHost = nullptr;
@@ -228,6 +202,8 @@ private:
     // chosen target back to the section that asked.
     bool beginLiveInsightTargetPick(
         LiveInsightKind kind,
+        LiveInsightsContextView* sourceView,
+        LiveInsightSession* graphSession,
         std::function<void(const LiveInsightsContextView::TargetCandidate&)>
             picked);
     void setupViewMenu();
@@ -236,28 +212,6 @@ private:
     void activateWorkspace(int index);
     void closeActiveWorkspace();
     void setupToolsMenu();
-    void setupCrashRecoveryReviewUi();
-    void notifyCrashRecoveryCandidates(
-        const QString& workspaceRoot,
-        int candidateCount,
-        int isolatedRecordCount);
-    void postCrashRecoveryFailure(
-        const QString& documentId,
-        const QString& failureReason);
-    void openCrashRecoveryReview(
-        const QString& workspaceRoot = QString());
-    void reloadCrashRecoveryReview(
-        const QString& preferredRecoveryId = QString());
-    void reviewCrashRecoverySelection();
-    void applyReviewedCrashRecovery();
-    void discardReviewedCrashRecovery();
-    void refreshCrashRecoveryAvailability(
-        const QString& workspaceRoot);
-    QString crashRecoveryNotificationKey(
-        const QString& workspaceRoot) const;
-    QString crashRecoveryHandledKey(
-        const QString& workspaceRoot,
-        const QString& recoveryId) const;
     void openGlobalUserTemplates();
     void openWorkspaceUserTemplates();
     void reloadUserTemplates();
@@ -308,18 +262,6 @@ private:
     void setupEditorCentralArea();
     void refreshTemporaryEditorFileCatalog();
     void refreshTemporaryEditorSemanticCatalog();
-    void setupExternalConflictReviewUi(
-        QVBoxLayout* editorLayout,
-        QWidget* parent);
-    void openExternalConflictReview(
-        const QString& fileName);
-    void closeExternalConflictReview();
-    void keepReviewedExternalConflict();
-    void reloadReviewedExternalConflict();
-    void saveReviewedExternalConflictAs();
-    void postExternalConflictActionFailure(
-        const QString& fileName,
-        const QString& failureReason);
     void setupWorkspaceActivity();
     void refreshWorkspaceScope();
     void refreshActiveEditorDiagnosticHighlights(

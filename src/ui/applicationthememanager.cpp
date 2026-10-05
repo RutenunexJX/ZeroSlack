@@ -69,11 +69,13 @@ bool ApplicationThemeManager::elaAvailable()
 
 void ApplicationThemeManager::setAnimationsEnabled(bool enabled)
 {
+    if (animateControls == enabled) return;
     animateControls = enabled;
 #ifdef ZEROSLACK_ENABLE_QLEMENTINE
     if (backendStyle && currentBackend == UiStyleBackend::Qlementine)
         QlementineBackend::applyTheme(backendStyle, currentMode, enabled);
 #endif
+    emit animationsEnabledChanged(enabled);
 }
 
 void ApplicationThemeManager::preserveClassicSurface(QWidget* root)

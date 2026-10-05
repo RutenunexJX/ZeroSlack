@@ -38,6 +38,7 @@ void ElaFlowLayout::addItem(QLayoutItem* item)
 {
     Q_D(ElaFlowLayout);
     d->_itemList.append(item);
+    invalidate();
 }
 
 int ElaFlowLayout::horizontalSpacing() const
@@ -49,7 +50,7 @@ int ElaFlowLayout::horizontalSpacing() const
     }
     else
     {
-        return d->_smartSpacing(QStyle::PM_LayoutHorizontalSpacing);
+        return spacing() >= 0 ? spacing() : d->_smartSpacing(QStyle::PM_LayoutHorizontalSpacing);
     }
 }
 
@@ -62,7 +63,7 @@ int ElaFlowLayout::verticalSpacing() const
     }
     else
     {
-        return d->_smartSpacing(QStyle::PM_LayoutVerticalSpacing);
+        return spacing() >= 0 ? spacing() : d->_smartSpacing(QStyle::PM_LayoutVerticalSpacing);
     }
 }
 int ElaFlowLayout::count() const
@@ -82,7 +83,10 @@ QLayoutItem* ElaFlowLayout::takeAt(int index)
     Q_D(ElaFlowLayout);
     if (index >= 0 && index < d->_itemList.size())
     {
-        return d->_itemList.takeAt(index);
+        auto* item = d->_itemList.takeAt(index);
+        delete d->_animations.take(item).data();
+        invalidate();
+        return item;
     }
     return nullptr;
 }
@@ -90,7 +94,9 @@ QLayoutItem* ElaFlowLayout::takeAt(int index)
 void ElaFlowLayout::setIsAnimation(bool isAnimation)
 {
     Q_D(ElaFlowLayout);
+    if (d->_isAnimation == isAnimation) return;
     d->_isAnimation = isAnimation;
+    if (!isAnimation) setGeometry(geometry());
 }
 
 Qt::Orientations ElaFlowLayout::expandingDirections() const
@@ -127,7 +133,7 @@ QSize ElaFlowLayout::minimumSize() const
     QSize size;
     for (const QLayoutItem* item: d->_itemList)
     {
-        size = size.expandedTo(item->minimumSize());
+        if (!item->isEmpty()) size = size.expandedTo(item->minimumSize());
     }
     const QMargins margins = contentsMargins();
     size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom());

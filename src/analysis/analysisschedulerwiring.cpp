@@ -4,17 +4,7 @@
 
 void AnalysisScheduler::setupRelationshipAnalysis()
 {
-    relationshipAnalysisQueue = new RelationshipAnalysisQueue(this);
-    relationshipAnalysisQueue->setContentProvider([this](const QString& fileName) {
-        return contentForOpenFile(fileName);
-    });
-    connect(relationshipAnalysisQueue,
-            &RelationshipAnalysisQueue::relationshipAnalysisRequested,
-            this,
-            &AnalysisScheduler::requestRelationshipAnalysis);
-
     relationshipAnalysis = new RelationshipAnalysisController(this);
-    relationshipAnalysis->setRelationshipQueue(relationshipAnalysisQueue);
     connect(relationshipAnalysis,
             &RelationshipAnalysisController::relationshipAnalysisProgress,
             this,

@@ -326,14 +326,12 @@ int main(int argc, char* argv[])
         int validatorCalls = 0;
         auto validator = [&validatorCalls](
                              const EditorInsightTargetCandidate& candidate,
-                             QString* reason) {
+                             EditorInsightTargetPickController::ValidationReply reply)
+                             -> EditorInsightTargetPickController::ValidationCancel {
             ++validatorCalls;
-            if (candidate.name == QStringLiteral("state_q"))
-                return true;
-            if (reason)
-                *reason = QStringLiteral("%1 drives no state register")
-                              .arg(candidate.name);
-            return false;
+            const bool accepted = candidate.name == QStringLiteral("state_q");
+            reply(accepted, accepted ? QString() : QStringLiteral("%1 drives no state register").arg(candidate.name));
+            return {};
         };
         auto handler = [&pickedCount, &pickedName](
                            const EditorInsightTargetCandidate& candidate) {

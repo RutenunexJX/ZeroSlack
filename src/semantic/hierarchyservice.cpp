@@ -320,3 +320,12 @@ QList<SymbolRelationshipEngine::RelationType> HierarchyService::effectiveTypes(
         return query.types;
     return {SymbolRelationshipEngine::INSTANTIATES};
 }
+
+HierarchyService::HierarchyService(SemanticSnapshotToken snapshot)
+    : HierarchyService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+HierarchyService::HierarchyService(std::shared_ptr<SemanticIndex> owner)
+    : HierarchyService(owner.get())
+{
+    ownedIndex = std::move(owner);
+}

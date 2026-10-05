@@ -1,6 +1,8 @@
 #include "semanticruntimecoordinator.h"
 
 #include "semanticindex.h"
+#include "activitylogservice.h"
+#include <QPointer>
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "symbolanalyzer.h"
@@ -13,6 +15,12 @@ SemanticRuntimeCoordinator::SemanticRuntimeCoordinator(QObject* parent)
     symbolAnalyzerInstance = std::make_unique<SymbolAnalyzer>(this);
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    semanticIndex->setPublicationObserver([owner = QPointer<SemanticRuntimeCoordinator>(this)](
+        std::uint64_t revision, int symbols, int relationships, const QStringList& changedFiles) {
+        if (owner) ActivityLogService::getInstance()->append(QStringLiteral("SemanticIndex"), ActivityLogLevel::Info,
+            QStringLiteral("Published snapshot gen=%1 symbols=%2 relationships=%3 changedFiles=%4")
+                .arg(revision).arg(symbols).arg(relationships).arg(changedFiles.join(QLatin1Char(','))));
+    });
     configureQueryServices(semanticIndex);
     semanticIndex->attachRelationshipEngine(relationshipEngineInstance.get());
 
@@ -29,6 +37,7 @@ SemanticRuntimeCoordinator::~SemanticRuntimeCoordinator()
         if (semanticIndex->relationshipEngine()
             == relationshipEngineInstance.get()) {
             semanticIndex->attachRelationshipEngine(nullptr);
+            semanticIndex->setPublicationObserver({});
         }
     }
 }

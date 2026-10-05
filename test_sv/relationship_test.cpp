@@ -25,6 +25,7 @@
 #include "semanticdiffservice.h"
 #include "semanticdecorationservice.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "live_insight_test_utils.h"
 #include "signalkernelgraphservice.h"
 #include "signaljourneyservice.h"
 #include "signalusagehotspotservice.h"
@@ -3383,9 +3384,12 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     const QList<SemanticSymbolRecord> restoredStageDefs =
         snapshotIndex.findDefinitionRecords(QStringLiteral("rel_stage"),
                                             queryContext);
-    expectBool("semantic snapshot clear restores live index",
-               !restoredStageDefs.isEmpty()
-                   && restoredStageDefs.first().localHandle == stageId,
+    expectBool("semantic snapshot clear removes the sole publication",
+               restoredStageDefs.isEmpty() && !snapshotIndex.snapshot(),
+               true);
+    snapshotIndex.setSnapshot(snapshot);
+    expectBool("explicit publication restores stable semantic query",
+               snapshotIndex.getSymbolRecordByStableKey(stageStableKey).localHandle == stageId,
                true);
 
     engine.clearAllRelationships();
@@ -4121,6 +4125,9 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
             SemanticIndex::getInstance()->clearSnapshot();
     }
 
+    // Query services consume the publication, never the builder's mutable
+    // scratch engine. Reuse the captured fixture after scheduler mutations.
+    index.setSnapshot(snapshot);
     RelationshipService relationshipService(&index);
 
     RelationshipQuery relationshipQuery;
@@ -4922,20 +4929,30 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&wrappedIndex);
     QWidget wrappedPanelHost;
     RtlInsightsPanelCoordinator wrappedPanel(&wrappedPanelHost);
+    wrappedPanel.setGraphSnapshot(wrappedIndex.snapshotToken());
     wrappedPanel.showModuleBlockDiagramForModule(
         wrappedTopPath,
         QStringLiteral("wrapped_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(wrappedPanel), true);
     wrappedPanelHost.resize(1000, 700);
     wrappedPanelHost.show();
     QCoreApplication::processEvents();
+    const quint64 beforeViewportReflow = wrappedPanel.graphBuildGenerationForTest();
     wrappedPanel.graphView()->resize(802, 602);
-    QCoreApplication::processEvents();
+    QElapsedTimer viewportWait;
+    viewportWait.start();
+    while (wrappedPanel.graphBuildGenerationForTest() == beforeViewportReflow
+           && viewportWait.elapsed() < 5000) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
+        QThread::msleep(1);
+    }
     expectBool("module block diagram fixture has a wide viewport",
                wrappedPanel.graphView()->viewport()->width() >= 800,
                true);
     wrappedPanel.showModuleBlockDiagramForModule(
         wrappedTopPath,
         QStringLiteral("wrapped_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(wrappedPanel), true);
     const QStringList wrappedSummaries =
         wrappedPanel.graphElementSummariesForTest();
     QGraphicsView* wrappedGraphView = wrappedPanel.graphView();
@@ -4999,6 +5016,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
     QWidget moduleBlockPanelHost;
     RtlInsightsPanelCoordinator moduleBlockPanel(&moduleBlockPanelHost);
+    moduleBlockPanel.setGraphSnapshot(index.snapshotToken());
     QString moduleBlockNavigatedFileName;
     int moduleBlockNavigatedLine = 0;
     int moduleBlockNavigatedColumn = 0;
@@ -5012,6 +5030,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
         QStringLiteral("rel_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(moduleBlockPanel), true);
     QGraphicsView* moduleBlockGraphView = moduleBlockPanel.graphView();
     expectBool("module block diagram panel renders module-only report",
                moduleBlockGraphView
@@ -5057,6 +5076,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
         QStringLiteral("rel_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(moduleBlockPanel), true);
     const bool restoredStageSelection =
         moduleBlockPanel.selectGraphItemForTest(
             QStringLiteral("module"),
@@ -5104,6 +5124,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     moduleBlockPanel.showModuleBlockDiagramForModule(
         topPath,
         QStringLiteral("rel_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(moduleBlockPanel), true);
     moduleBlockNavigatedFileName.clear();
     moduleBlockNavigatedLine = 0;
     moduleBlockNavigatedColumn = 0;
@@ -5122,6 +5143,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 1,
                true);
     moduleBlockPanel.showModuleBlockDiagramForModule(stagePath, QStringLiteral("rel_stage"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(moduleBlockPanel), true);
     expectBool("module block diagram leaf uses compact content bounds",
                moduleBlockPanel.graphNodeItemCountForTest() == 1
                    && moduleBlockPanel.graphEdgeItemCountForTest() == 0
@@ -5132,6 +5154,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&blackboxIndex);
     QWidget blackboxPanelHost;
     RtlInsightsPanelCoordinator blackboxPanel(&blackboxPanelHost);
+    blackboxPanel.setGraphSnapshot(blackboxIndex.snapshotToken());
     QString blackboxNavigatedFileName;
     int blackboxNavigatedLine = 0;
     int blackboxNavigatedColumn = 0;
@@ -5145,6 +5168,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     blackboxPanel.showModuleBlockDiagramForModule(
         blackboxTopPath,
         QStringLiteral("blackbox_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(blackboxPanel), true);
     const bool invokedBlackboxNavigation =
         blackboxPanel.triggerGraphNavigationForTest(
             QStringLiteral("module"),
@@ -5213,9 +5237,11 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
                                   SymbolRelationshipEngine::INSTANTIATES,
                                   QStringLiteral("diagram_stage instantiates diagram_leaf"));
 
+    diagramIndex.setSnapshot(diagramIndex.captureSnapshotPreservingDiagnostics());
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&diagramIndex);
     QWidget drillPanelHost;
     RtlInsightsPanelCoordinator drillPanel(&drillPanelHost);
+    drillPanel.setGraphSnapshot(diagramIndex.snapshotToken());
     QString drillNavigatedFileName;
     int drillNavigatedLine = 0;
     int drillNavigatedColumn = 0;
@@ -5229,6 +5255,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
     drillPanel.showModuleBlockDiagramForModule(
         diagramTopPath,
         QStringLiteral("diagram_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(drillPanel), true);
     expectBool("module block diagram renders nested container graph",
                drillPanel.graphNodeItemCountForTest() == 3
                    && drillPanel.graphEdgeItemCountForTest() == 2,
@@ -5370,6 +5397,7 @@ static void runMultiFileRelationshipFixture(SlangManager& slang,
 
     engine.addRelationship(stageId, topId, SymbolRelationshipEngine::INSTANTIATES,
                            QStringLiteral("cycle guard probe"));
+    index.setSnapshot(index.captureSnapshotPreservingDiagnostics());
     HierarchyQuery cycleQuery;
     cycleQuery.symbolStableKey = topStableKey;
     cycleQuery.maxDepth = 4;
@@ -8158,9 +8186,11 @@ static void runFsmGraphServiceFixture()
     FsmGraphService::getInstance()->setSemanticIndex(&index);
     QWidget fsmPanelHost;
     RtlInsightsPanelCoordinator fsmPanel(&fsmPanelHost);
+    fsmPanel.setGraphSnapshot(index.snapshotToken());
     fsmPanel.updateModuleContext(fileName, QStringLiteral("fsm_top"));
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(&index);
     fsmPanel.showModuleBlockDiagramForModule(fileName, QStringLiteral("fsm_top"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(fsmPanel), true);
     ModuleBlockDiagramService::getInstance()->setSemanticIndex(SemanticIndex::getInstance());
     QWidget* sharedInspector = fsmPanel.dock()->findChild<QWidget*>(
         QStringLiteral("rtlGraphInspectorPanel"));
@@ -8178,6 +8208,7 @@ static void runFsmGraphServiceFixture()
             : nullptr;
     if (fsmGraphButton)
         fsmGraphButton->click();
+    expectBool("FSM button awaits its report", waitForLiveInsightReports(fsmPanel), true);
     QGraphicsView* fsmGraphView = fsmPanel.graphView();
     expectBool("fsm graph panel button available",
                fsmGraphButton && fsmGraphButton->isEnabled(),
@@ -8437,6 +8468,7 @@ static void runFsmGraphServiceFixture()
     QWidget stateTransitionPanelHost;
     RtlInsightsPanelCoordinator stateTransitionPanel(
         &stateTransitionPanelHost);
+    stateTransitionPanel.setGraphSnapshot(index.snapshotToken());
     QString navigatedFileName;
     int navigatedLine = 0;
     int navigatedColumn = 0;
@@ -8451,6 +8483,7 @@ static void runFsmGraphServiceFixture()
         dualFileName,
         QStringLiteral("dual_fsm_top"),
         QStringLiteral("next_state"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(stateTransitionPanel), true);
     QGraphicsView* stateTransitionGraphView = stateTransitionPanel.graphView();
     expectBool("state transition panel keeps graph surface",
                stateTransitionGraphView && stateTransitionGraphView->scene(),
@@ -8477,6 +8510,7 @@ static void runFsmGraphServiceFixture()
         dualFileName,
         QStringLiteral("dual_fsm_top"),
         QStringLiteral("current_state"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(stateTransitionPanel), true);
     expectBool("state transition current-state rejection reason visible",
                stateTransitionPanel.graphNodeItemCountForTest() == 0
                    && stateTransitionPanel.graphTextItemsForTest()
@@ -8504,10 +8538,12 @@ static void runFsmGraphServiceFixture()
     StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
     QWidget complexStatePanelHost;
     RtlInsightsPanelCoordinator complexStatePanel(&complexStatePanelHost);
+    complexStatePanel.setGraphSnapshot(index.snapshotToken());
     complexStatePanel.showStateTransitionGraphForSignal(
         complexFileName,
         QStringLiteral("complex_fsm_top"),
         QStringLiteral("state_d"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(complexStatePanel), true);
     expectBool("complex fsm panel draws layout",
                complexStatePanel.graphNodeItemCountForTest() > 0
                    && complexStatePanel.graphEdgeItemCountForTest() > 0,
@@ -8547,10 +8583,12 @@ static void runFsmGraphServiceFixture()
 
     QWidget deadStatePanelHost;
     RtlInsightsPanelCoordinator deadStatePanel(&deadStatePanelHost);
+    deadStatePanel.setGraphSnapshot(index.snapshotToken());
     deadStatePanel.showStateTransitionGraphForSignal(
         deadFileName,
         QStringLiteral("dead_fsm_top"),
         QStringLiteral("state_d"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(deadStatePanel), true);
     expectBool("dead state panel draws layout",
                deadStatePanel.graphNodeItemCountForTest() > 0
                    && deadStatePanel.graphEdgeItemCountForTest() > 0,
@@ -10819,10 +10857,12 @@ static void runRealWorkspaceIncludeFixture()
     StateTransitionGraphService::getInstance()->setSemanticIndex(&index);
     QWidget realStatePanelHost;
     RtlInsightsPanelCoordinator realStatePanel(&realStatePanelHost);
+    realStatePanel.setGraphSnapshot(index.snapshotToken());
     realStatePanel.showStateTransitionGraphForSignal(
         chlCtrlPath,
         QStringLiteral("chl_ctrl"),
         QStringLiteral("phy_pass_thrg_cfg_ns"));
+    expectBool("asynchronous graph report is ready", waitForLiveInsightReports(realStatePanel), true);
     expectBool("real workspace fsm panel draws layout",
                realStatePanel.graphNodeItemCountForTest() > 0
                    && realStatePanel.graphEdgeItemCountForTest() > 0,
@@ -11952,12 +11992,10 @@ static void runSemanticIndexStoreLifecycleFixture()
     index.clearSnapshot();
     const QList<SemanticSymbolRecord> nativeAfterSnapshotClear =
         index.getSymbolRecords(nativeFile);
-    expectBool("snapshot-only clear preserves native semantic state",
+    expectBool("snapshot clear cannot reveal superseded mutable state",
                !index.snapshot()
-                   && nativeAfterSnapshotClear.size() == 1
-                   && nativeAfterSnapshotClear.first().name
-                          == QStringLiteral("native_value")
-                   && index.getCachedFileContent(nativeFile) == nativeContent
+                   && nativeAfterSnapshotClear.isEmpty()
+                   && index.getCachedFileContent(nativeFile).isEmpty()
                    && index.analysisBandForFile(nativeFile).isValid(),
                true);
 

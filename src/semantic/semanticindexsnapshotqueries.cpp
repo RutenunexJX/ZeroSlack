@@ -90,7 +90,7 @@ SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByStableKey(
     return index >= 0 ? shard->records.at(index) : SemanticSymbolRecord{};
 }
 
-SemanticSymbolRecord SemanticIndexSnapshot::getSymbolRecordByLocalHandle(int handle) const
+SemanticSymbolRecord SemanticIndexSnapshot::recordForProjectionHandle(int handle) const
 {
     const auto address = m_recordsByHandle.value(handle);
     const auto shard = m_symbolsByFile.value(address.file);
@@ -114,7 +114,7 @@ SemanticRelationship SemanticIndexSnapshot::rebindRelationship(const SemanticRel
     auto endpoint = [this](SymbolStableKey& key, int& handle) {
         auto record = getSymbolRecordByStableKey(key);
         if (!record.stableKey.isValid()) {
-            const auto byHandle = getSymbolRecordByLocalHandle(handle);
+            const auto byHandle = recordForProjectionHandle(handle);
             const auto& current = byHandle.stableKey;
             const bool sameIdentity = key.isValid() && current.isValid()
                 && normalizedSnapshotQueryFileName(key.fileName) == normalizedSnapshotQueryFileName(current.fileName)

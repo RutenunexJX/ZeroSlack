@@ -7,6 +7,7 @@
 #include <QVBoxLayout>
 #include "signalusagehotspotpanel.h"
 #include "compactlayout.h"
+#include "semanticindex.h"
 
 // Owns a typed renderer. Reports and view-specific interaction stay inside the panel.
 class InsightViewSurface final {
@@ -58,14 +59,19 @@ public:
             kernelValue->showSignalKernelGraphForSymbol(c.signalName,c.fileName,c.moduleName,c.signalAccessPath);
             return;
         }
-        rtlValue->updateModuleContext(c.fileName,c.moduleName,c.signalName);
+        rtlValue->setGraphContext(c, SemanticIndex::getInstance()->snapshotToken());
+        // The explicit show methods set their own context. Passing through
+        // the action list first would cancel a ready target-picker report.
         switch (kindValue) {
         case InsightWorkbenchViewKind::Block:
             rtlValue->showModuleBlockDiagramForModule(c.fileName,c.moduleName); break;
         case InsightWorkbenchViewKind::Hotspot:
             rtlValue->showSignalUsageHotspotForSignal(c.fileName,c.moduleName,c.signalName,c.signalAccessPath); break;
         case InsightWorkbenchViewKind::StateTransition:
-            if (c.signalName.isEmpty()) rtlValue->showFsmGraph();
+            if (c.signalName.isEmpty()) {
+                rtlValue->updateModuleContext(c.fileName,c.moduleName,c.signalName);
+                rtlValue->showFsmGraph();
+            }
             else rtlValue->showStateTransitionGraphForSignal(c.fileName,c.moduleName,c.signalName);
             break;
         default: break;

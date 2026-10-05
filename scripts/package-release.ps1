@@ -37,7 +37,8 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $sourceRoot 'build/pac
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 # Verify the new staging directory before replacing the installed package.
 if (Test-Path -LiteralPath $outputRoot) { throw 'Output must be a new directory.' }
-$binaries = @('ZeroSlack.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll', 'ElaWidgetTools.dll')
+$binaries = @('ZeroSlack.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll',
+    'libzeroslack_semantic.dll', 'libzeroslack_documents.dll', 'ElaWidgetTools.dll')
 foreach ($name in $binaries) {
     if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name) -PathType Leaf)) { throw "Missing binary: $name" }
 }

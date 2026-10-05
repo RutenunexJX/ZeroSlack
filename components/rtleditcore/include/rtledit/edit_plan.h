@@ -84,6 +84,11 @@ struct WorkspaceEditPlan {
     std::vector<TextEditProvenance> provenance;
 };
 
+// Identity of the complete previewed plan, including semantic provenance.
+// Ordered edit and provenance sequences are part of the contract.
+bool sameWorkspaceEditPlan(const WorkspaceEditPlan& left,
+                           const WorkspaceEditPlan& right);
+
 enum class EditPlanValidationIssue {
     None,
     EmptyFilePath,

@@ -269,6 +269,19 @@ void LiveInsightsContextView::ensureSurface()
         QStringLiteral("liveInsightSurface_%1")
             .arg(liveInsightKindId(selected)));
     surfaceValue->setCompactChrome(true);
+    if (selected == LiveInsightKind::Module || selected == LiveInsightKind::State) {
+        surfaceSession = surfaceValue->graphSession();
+        if (surfaceSession) {
+            connect(surfaceSession, &LiveInsightSession::snapshotChanged, this,
+                [this](LiveInsightKind kind, const LiveInsightSnapshot& snapshot) {
+                    if (kind != selected) return;
+                    const int index = indexForKind(kind);
+                    renderedSnapshots.at(index) = snapshot;
+                    hasRenderedSnapshot.at(index) = true;
+                    renderSnapshot(kind, snapshot);
+                });
+        }
+    }
     surfaceValue->setNavigationHandler(navigationHandler);
     if (QLabel* summary = cards.at(index).summary)
         summary->hide();
@@ -440,9 +453,12 @@ bool LiveInsightsContextView::requestScopePick()
 {
     if (!targetPickRequest)
         return false;
+    ensureSurface();
     const QPointer<LiveInsightsContextView> guard(this);
     return targetPickRequest(
         selected,
+        this,
+        surfaceSession,
         [guard](const TargetCandidate& candidate) {
             // The section that asked may have been closed while the user was
             // picking; a stale reply must not resurrect it.
@@ -685,6 +701,7 @@ void LiveInsightsContextView::showEvent(QShowEvent* event)
 
 void LiveInsightsContextView::hideEvent(QHideEvent* event)
 {
+    emit targetPickCancelled();
     if (sessionValue) {
         sessionValue->setConsumerVisible(
             this, selected, false);
@@ -842,6 +859,10 @@ void LiveInsightsContextView::refreshSnapshot(
     const int index = indexForKind(kind);
     if (index < 0 || (fixedKindValue && kind != selected))
         return;
+    if (surfaceSession && kind == selected) {
+        renderSurface();
+        return;
+    }
     renderedSnapshots.at(index) = snapshot;
     hasRenderedSnapshot.at(index) = true;
     renderSnapshot(kind, snapshot);
@@ -910,7 +931,8 @@ void LiveInsightsContextView::refreshAllFromSession()
         return;
     for (int index = 0; index < static_cast<int>(cards.size()); ++index) {
         const LiveInsightKind kind = kindForIndex(index);
-        const LiveInsightSnapshot snapshot = sessionValue->snapshot(kind);
+        const LiveInsightSnapshot snapshot = surfaceSession && kind == selected
+            ? surfaceSession->snapshot(kind) : sessionValue->snapshot(kind);
         renderedSnapshots.at(index) = snapshot;
         hasRenderedSnapshot.at(index) = true;
         renderSnapshot(kind, snapshot);
@@ -929,3 +951,5 @@ void LiveInsightsContextView::updateSessionVisibility(
     sessionValue->setConsumerVisible(
         this, nextKind, true);
 }
+
+void LiveInsightsContextView::refreshToolContext() { renderSurface(); }

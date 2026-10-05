@@ -3,7 +3,6 @@
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
 #include "contextdocktransition.h"
-#include "panelcompositor.h"
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDragHandle.h"
@@ -154,6 +153,8 @@ ContextDockHost::ContextDockHost(QWidget* parent) : QWidget(parent)
             emit sectionLayoutChanged();
         });
     }
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        this, [this](bool enabled) { if (!enabled) { settleMotion(); arrangeSections(); } });
     insertionMarker = new QWidget(stack);
     insertionMarker->setObjectName(QStringLiteral("contextSectionInsertion"));
     insertionMarker->setAutoFillBackground(true);
@@ -179,10 +180,6 @@ ContextDockHost::~ContextDockHost()
     if (leftScroll) leftScroll->viewport()->removeEventFilter(this);
     if (scroll) scroll->viewport()->removeEventFilter(this);
     if (bottomScroll) bottomScroll->viewport()->removeEventFilter(this);
-    if (auto* host = qobject_cast<QMainWindow*>(window())) {
-        if (auto* compositor = host->findChild<PanelCompositor*>())
-            for (auto* section : sections) compositor->settleFor(section->frame);
-    }
     for (auto* section : sections) {
         disconnect(section->frame, nullptr, this, nullptr);
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -529,7 +526,15 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
 {
     auto* section = sections.value(key);
     if (!section) return false;
-    if (section->collapsed == collapsed) return true;
+    animate = animate && ApplicationThemeManager::instance().animationsEnabled();
+    if (auto* host = qobject_cast<QMainWindow*>(window()))
+        if (auto* transition = host->findChild<ContextDockTransition*>()) transition->finish();
+    if (section->collapsed == collapsed) {
+#ifdef ZEROSLACK_ENABLE_ELA
+        if (!animate && section->drawer) section->drawer->finishDrawerAnimation();
+#endif
+        return true;
+    }
 #ifdef ZEROSLACK_ENABLE_ELA
     if (section->drawer) {
         for (auto* other : sections) other->retainedHeight = 0;
@@ -590,7 +595,6 @@ void ContextDockHost::settleMotion()
 #endif
     if (auto* host = qobject_cast<QMainWindow*>(window())) {
         if (auto* transfer = host->findChild<ContextDockTransition*>()) transfer->finish();
-        if (auto* compositor = host->findChild<PanelCompositor*>()) compositor->settle();
     }
 }
 

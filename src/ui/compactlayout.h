@@ -1,6 +1,7 @@
 #pragma once
 
 #include "uicontrols.h"
+#include "ElaFlowLayout.h"
 
 #include <QBoxLayout>
 #include <QLabel>
@@ -28,26 +29,9 @@ protected:
 };
 
 // A toolbar wraps at control boundaries instead of shrinking button labels.
-class CompactFlowLayout : public QLayout {
+class CompactFlowLayout : public ElaFlowLayout {
 public:
-    explicit CompactFlowLayout(int gap = 4) { setContentsMargins(0,0,0,0); setSpacing(gap); }
-    ~CompactFlowLayout() override { while (auto* item=takeAt(0)) delete item; }
-    void addItem(QLayoutItem* item) override { items.append(item); }
-    int count() const override { return items.size(); }
-    QLayoutItem* itemAt(int i) const override { return items.value(i); }
-    QLayoutItem* takeAt(int i) override { return i>=0 && i<items.size() ? items.takeAt(i) : nullptr; }
-    Qt::Orientations expandingDirections() const override { return {}; }
-    bool hasHeightForWidth() const override { return true; }
-    int heightForWidth(int width) const override { return arrange(QRect(0,0,width,0),false); }
-    int minimumHeightForWidth(int width) const override { return heightForWidth(width); }
-    QSize sizeHint() const override { return minimumSize(); }
-    QSize minimumSize() const override {
-        QSize size;
-        for (auto* item:items) if (!item->isEmpty()) size=size.expandedTo(item->minimumSize());
-        const auto m=contentsMargins();
-        return size+QSize(m.left()+m.right(),m.top()+m.bottom());
-    }
-    void setGeometry(const QRect& rect) override { QLayout::setGeometry(rect); arrange(rect,true); }
+    explicit CompactFlowLayout(int gap = 4) : ElaFlowLayout(0) { setSpacing(gap); }
     static void replaceRows(QVBoxLayout* root) {
         if (!root) return;
         for (int i=0;i<root->count();++i) {
@@ -88,46 +72,6 @@ public:
         auto* outer = new QVBoxLayout(panel);
         outer->setContentsMargins(0, 0, 0, 0);
         outer->addWidget(scroll);
-    }
-private:
-    QList<QLayoutItem*> items;
-    int arrange(const QRect& rect,bool apply) const {
-        const auto m=contentsMargins();
-        const QRect area=rect.marginsRemoved(m);
-        int naturalWidth=0, controls=0, stretches=0;
-        for (auto* item:items) {
-            if (item->spacerItem()) { ++stretches; continue; }
-            if (item->isEmpty()) continue;
-            naturalWidth+=preferredSize(item).width();
-            ++controls;
-        }
-        naturalWidth+=qMax(0,controls-1)*spacing();
-        // Preserve the original alignment when the complete row fits.
-        const int stretchWidth=stretches>0 && naturalWidth<=area.width()
-            ? (area.width()-naturalWidth)/stretches : 0;
-        int x=area.x(), y=area.y(), lineHeight=0;
-        for (auto* item:items) {
-            if (item->spacerItem()) { x+=stretchWidth; continue; }
-            if (item->isEmpty()) continue;
-            QSize size=preferredSize(item);
-            auto* widget = item->widget();
-            if (!qobject_cast<QAbstractButton*>(widget)) {
-                const int minimum = widget ? qMax(0, widget->minimumSizeHint().width()) : 0;
-                size.setWidth(qMax(minimum, qMin(size.width(), qMax(0, area.width()))));
-            }
-            if (x>area.x() && x+size.width()>area.x()+area.width()) {
-                x=area.x(); y+=lineHeight+spacing(); lineHeight=0;
-            }
-            if (apply) item->setGeometry(QRect(QPoint(x,y),size));
-            x+=size.width()+spacing(); lineHeight=qMax(lineHeight,size.height());
-        }
-        return y+lineHeight-rect.y()+m.bottom();
-    }
-    static QSize preferredSize(QLayoutItem* item) {
-        QSize size=item->sizeHint().expandedTo(item->minimumSize());
-        if (auto* widget=item->widget(); widget && widget->sizePolicy().horizontalPolicy()==QSizePolicy::Ignored)
-            size.setWidth(qMax(size.width(),widget->sizeHint().width()));
-        return size;
     }
 };
 

@@ -1,6 +1,5 @@
 #include "semanticindex.h"
 
-#include "activitylogservice.h"
 #include "semanticindexsnapshot.h"
 
 #include <QDir>
@@ -243,7 +242,6 @@ SemanticIndexSnapshot publicationSnapshotFromSemanticRecords(
 void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> snapshot)
 {
     m_snapshot = std::move(snapshot);
-    m_snapshotAuthoritative = false;
     m_preparedAnalysisBandReport = {};
     m_preparedAnalysisBandReportValid = false;
     ++m_snapshotRevision;
@@ -253,13 +251,8 @@ void SemanticIndex::setSnapshot(std::shared_ptr<const SemanticIndexSnapshot> sna
                 m_snapshot->getSymbolRecords(),
                 m_snapshot->relationships());
         }
-        ActivityLogService::getInstance()->append(
-            QStringLiteral("SemanticIndex"),
-            ActivityLogLevel::Info,
-            QStringLiteral("Published snapshot gen=%1 symbols=%2 relationships=%3")
-                .arg(m_snapshotRevision)
-                .arg(m_snapshot->symbolRecordCount())
-                .arg(m_snapshot->relationshipCount()));
+        if (m_publicationObserver)
+            m_publicationObserver(m_snapshotRevision, m_snapshot->symbolRecordCount(), m_snapshot->relationshipCount(), {});
     }
 }
 
@@ -283,11 +276,6 @@ SemanticIndexRetirementPayload SemanticIndex::installPreparedSnapshot(
     SemanticIndexRetirementPayload retired;
     const bool relationshipsInstalledQuietly = bool(relationshipState);
     retired.snapshot = std::exchange(m_snapshot, std::move(snapshot));
-    // Legacy document writes may opt back into the mutable overlay store.
-    // Retaining its old workspace rows would resurrect deleted/excluded files.
-    retired.nativeStore = takeNativeStoreForRetirement();
-    m_nextNativeLocalHandle = m_snapshot->nextAvailableLocalHandle();
-    m_snapshotAuthoritative = true;
     m_preparedAnalysisBandReport = analysisBandReport;
     m_preparedAnalysisBandReportValid = true;
     ++m_snapshotRevision;
@@ -322,21 +310,13 @@ void SemanticIndex::notifyPreparedSnapshotPublished(
         emit m_relationshipEngine->relationshipsReplaced();
     if (m_snapshotRevision != revision || !m_snapshot)
         return;
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("SemanticIndex"),
-        ActivityLogLevel::Info,
-        QStringLiteral(
-            "Published prepared snapshot gen=%1 symbols=%2 relationships=%3 changedFiles=%4")
-            .arg(m_snapshotRevision)
-            .arg(m_snapshot->symbolRecordCount())
-            .arg(m_snapshot->relationshipCount())
-            .arg(changedFiles.join(QLatin1Char(','))));
+    if (m_publicationObserver)
+        m_publicationObserver(m_snapshotRevision, m_snapshot->symbolRecordCount(), m_snapshot->relationshipCount(), changedFiles);
 }
 
 void SemanticIndex::clearSnapshot()
 {
     m_snapshot.reset();
-    m_snapshotAuthoritative = false;
     m_preparedAnalysisBandReport = {};
     m_preparedAnalysisBandReportValid = false;
     ++m_snapshotRevision;
@@ -345,40 +325,9 @@ void SemanticIndex::clearSnapshot()
 void SemanticIndex::clearSemanticState()
 {
     clearSnapshot();
-    m_nativeSymbolRecords.clear();
-    m_nativeRecordIndexesByFile.clear();
-    m_nativeRecordIndexesByName.clear();
-    m_nativeRecordIndexesByOwner.clear();
-    m_nativeRecordIndexesByDeclarationKind.clear();
-    m_nativeFileContents.clear();
-    m_nativeFileStates.clear();
-    m_nativeStableKeyIndexes.clear();
-    m_nativeRecordHandlesByAnalysisFile.clear();
-    m_nativeCoveredFiles.clear();
     m_workspaceFileAnalysisBands.clear();
-    m_nextNativeLocalHandle = 1;
     if (m_relationshipEngine)
         m_relationshipEngine->clearAllRelationships();
-}
-
-std::shared_ptr<SemanticIndex> SemanticIndex::takeNativeStoreForRetirement()
-{
-    if (m_nativeCoveredFiles.isEmpty() && m_nativeSymbolRecords.isEmpty()
-        && m_nativeFileContents.isEmpty())
-        return {};
-    auto retired = std::make_shared<SemanticIndex>();
-    retired->m_nativeSymbolRecords.swap(m_nativeSymbolRecords);
-    retired->m_nativeRecordIndexesByFile.swap(m_nativeRecordIndexesByFile);
-    retired->m_nativeRecordIndexesByName.swap(m_nativeRecordIndexesByName);
-    retired->m_nativeRecordIndexesByOwner.swap(m_nativeRecordIndexesByOwner);
-    retired->m_nativeRecordIndexesByDeclarationKind.swap(m_nativeRecordIndexesByDeclarationKind);
-    retired->m_nativeFileContents.swap(m_nativeFileContents);
-    retired->m_nativeFileStates.swap(m_nativeFileStates);
-    retired->m_nativeStableKeyIndexes.swap(m_nativeStableKeyIndexes);
-    retired->m_nativeRecordHandlesByAnalysisFile.swap(m_nativeRecordHandlesByAnalysisFile);
-    retired->m_nativeCoveredFiles.swap(m_nativeCoveredFiles);
-    m_nextNativeLocalHandle = m_snapshot ? m_snapshot->nextAvailableLocalHandle() : 1;
-    return retired;
 }
 
 std::shared_ptr<const SemanticIndexSnapshot> SemanticIndex::snapshot() const
@@ -412,31 +361,11 @@ void SemanticIndex::publishSnapshotReplacingDiagnostics(
 
 SemanticIndexSnapshot SemanticIndex::captureSnapshotWithRawDiagnostics() const
 {
-    QHash<QString, QString> fileContents = m_snapshot
-        ? m_snapshot->fileContents() : QHash<QString, QString>{};
-    QList<SemanticDiagnostic> diagnostics = m_snapshot
-        ? m_snapshot->rawDiagnostics() : QList<SemanticDiagnostic>{};
-    if (!m_snapshotAuthoritative) {
-        QSet<QString> changedInputs;
-        for (const QString& file : m_nativeCoveredFiles) {
-            const auto content = m_nativeFileContents.constFind(file);
-            if (content == m_nativeFileContents.cend()) {
-                fileContents.remove(file);
-                changedInputs.insert(file);
-            } else {
-                if (!fileContents.contains(file) || fileContents.value(file) != content.value())
-                    changedInputs.insert(file);
-                fileContents.insert(file, content.value());
-            }
-        }
-        // Reuse only this baseline's diagnostics for unchanged inputs. New
-        // diagnostics are installed by the caller after stale values are gone.
-        diagnostics.erase(std::remove_if(diagnostics.begin(), diagnostics.end(),
-            [&changedInputs](const SemanticDiagnostic& diagnostic) {
-                return changedInputs.contains(normalizedPublicationFileName(diagnostic.fileName));
-            }), diagnostics.end());
-    }
-    return publicationSnapshotFromSemanticRecords(this, std::move(diagnostics), std::move(fileContents));
+    if (!m_relationshipEngine)
+        return m_snapshot ? *m_snapshot : SemanticIndexSnapshot{};
+    return publicationSnapshotFromSemanticRecords(this,
+        m_snapshot ? m_snapshot->rawDiagnostics() : QList<SemanticDiagnostic>{},
+        m_snapshot ? m_snapshot->fileContents() : QHash<QString, QString>{});
 }
 
 std::shared_ptr<const SemanticIndexSnapshot>

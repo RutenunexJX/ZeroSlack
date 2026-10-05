@@ -33,9 +33,11 @@ _REQUIRED_EXPORTS = {
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--domain", choices=["core", "semantic", "documents"], default="core")
     parser.add_argument("--dlltool", required=True, type=pathlib.Path)
     parser.add_argument("--output", required=True, type=pathlib.Path)
     parser.add_argument("--link-response", required=True, type=pathlib.Path)
+    parser.add_argument("--objects-manifest", type=pathlib.Path)
     parser.add_argument(
         "--link-working-directory", required=True, type=pathlib.Path
     )
@@ -83,14 +85,22 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
 
     link_response = args.link_response.resolve()
-    if not link_response.is_file():
+    if args.objects_manifest:
+        objects = sorted({pathlib.Path(line).resolve() for line in
+                          args.objects_manifest.read_text(encoding="utf-8").splitlines()
+                          if line.strip()}, key=lambda path: path.as_posix().casefold())
+        if any(not path.is_file() for path in objects):
+            print("a current target object is missing", file=sys.stderr)
+            return 2
+    elif not link_response.is_file():
         print(f"link response file was not found: {link_response}", file=sys.stderr)
         return 2
-    objects = _object_files(
-        link_response,
-        args.link_working_directory.resolve(),
-        args.object_root,
-    )
+    else:
+        objects = _object_files(
+            link_response,
+            args.link_working_directory.resolve(),
+            args.object_root,
+        )
     if not objects:
         print("no MinGW objects found for export generation", file=sys.stderr)
         return 2
@@ -148,16 +158,21 @@ def main() -> int:
         qualifiers = match.group("qualifiers").split()
         exports[symbol] = "DATA" in qualifiers
 
-    missing = sorted(_REQUIRED_EXPORTS.difference(exports))
+    required = {
+        "core": _REQUIRED_EXPORTS,
+        "semantic": {"_ZN13SemanticIndex11getInstanceEv", "_ZN24SymbolRelationshipEngine16staticMetaObjectE"},
+        "documents": {"_ZN14DocumentBuffer16staticMetaObjectE", "ts_parser_new"},
+    }[args.domain]
+    missing = sorted(required.difference(exports))
     if missing:
         print(
-            "required shared-core exports are missing: " + ", ".join(missing),
+            "required domain exports are missing: " + ", ".join(missing),
             file=sys.stderr,
         )
         return 3
-    if not 1_000 <= len(exports) < 65_000:
+    if not 1 <= len(exports) < 65_000:
         print(
-            f"unsafe MinGW export count: {len(exports)} (expected 1000..64999)",
+            f"unsafe MinGW export count: {len(exports)} (expected 1..64999)",
             file=sys.stderr,
         )
         return 4

@@ -33,8 +33,6 @@ QList<QList<SemanticSymbolRecord>> CompletionSemanticQuery::commandSymbolRecordG
         }
     }
     if (!moduleKinds.isEmpty()) {
-        semanticIndex->refreshStructTypedefEnumForFile(
-            query.fileName, query.documentText);
         const auto groups = semanticIndex->getModuleContextSymbolRecordGroups(
             query.moduleName, query.fileName, moduleKinds, query.prefix);
         for (qsizetype i = 0; i < modulePositions.size(); ++i)

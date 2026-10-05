@@ -897,3 +897,12 @@ void SemanticDiffService::sortDiagnosticChanges(
                   return changeKindName(lhs.kind) < changeKindName(rhs.kind);
               });
 }
+
+SemanticDiffService::SemanticDiffService(SemanticSnapshotToken snapshot)
+    : SemanticDiffService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+SemanticDiffService::SemanticDiffService(std::shared_ptr<SemanticIndex> owner)
+    : SemanticDiffService(owner.get())
+{
+    ownedIndex = std::move(owner);
+}

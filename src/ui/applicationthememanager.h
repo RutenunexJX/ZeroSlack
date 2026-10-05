@@ -57,6 +57,7 @@ signals:
     void themeAboutToChange(ThemeMode previousMode,
                             ThemeMode nextMode);
     void themeChanged(ThemeMode mode);
+    void animationsEnabledChanged(bool enabled);
 
 private:
     ApplicationThemeManager();

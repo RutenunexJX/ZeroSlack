@@ -1,3 +1,4 @@
+#include "candidatepopupnavigation.h"
 #include "applicationthememanager.h"
 #include "completionmodel.h"
 #include "editorcompletionui.h"
@@ -41,6 +42,39 @@ void capture(QWidget* widget, const QString& name) {
 class UiPopupContractTest final : public QObject {
     Q_OBJECT
 private slots:
+    void candidateNavigationSkipsUnavailableRowsAndClampsBounds() {
+        QListWidget list;
+        list.addItems({QStringLiteral("first"),QStringLiteral("disabled"),QStringLiteral("hidden"),QStringLiteral("last")});
+        list.item(1)->setFlags(Qt::NoItemFlags);
+        list.item(2)->setHidden(true);
+        list.setCurrentRow(0);
+        CandidatePopupNavigation::moveSelection(&list,1);
+        QCOMPARE(list.currentRow(),3);
+        CandidatePopupNavigation::moveSelection(&list,1);
+        QCOMPARE(list.currentRow(),3);
+        CandidatePopupNavigation::moveSelection(&list,-1);
+        QCOMPARE(list.currentRow(),0);
+        list.setCurrentRow(-1);
+        CandidatePopupNavigation::moveSelection(&list,-1,true);
+        QCOMPARE(list.currentRow(),3);
+        list.item(3)->setFlags(Qt::NoItemFlags);
+        QVERIFY(!CandidatePopupNavigation::canActivate(&list));
+        list.clear();
+        CandidatePopupNavigation::moveSelection(&list,1);
+        QCOMPARE(list.currentRow(),-1);
+        const QRect bounds(-100,20,240,120);
+        for (const auto desired : {QRect(-200,0,500,300),QRect(120,100,100,100),QRect(-80,30,20,20)})
+            QVERIFY(bounds.contains(CandidatePopupNavigation::fitToBounds(desired,bounds)));
+        int confirmed=0, cancelled=0, moved=0;
+        const auto dispatch = [&](int key) {
+            QKeyEvent event(QEvent::KeyPress,key,Qt::NoModifier);
+            return CandidatePopupNavigation::handleKey(&event,[&](int d){moved+=d;},[&]{++confirmed;return true;},[&]{++cancelled;});
+        };
+        QVERIFY(dispatch(Qt::Key_Down)); QVERIFY(dispatch(Qt::Key_Up));
+        QVERIFY(dispatch(Qt::Key_Enter)); QVERIFY(dispatch(Qt::Key_Return));
+        QVERIFY(dispatch(Qt::Key_Escape)); QVERIFY(!dispatch(Qt::Key_Tab));
+        QCOMPARE(moved,0); QCOMPARE(confirmed,2); QCOMPARE(cancelled,1);
+    }
     void cleanup() { UiToolTips::hideText(); }
 
     void completionPopupRetainsModelAndSelection() {

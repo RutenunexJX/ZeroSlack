@@ -3,7 +3,6 @@
 #include "slangmanager.h"
 #include "semanticindexsnapshot.h"
 #include "symbolanalyzerworkspace.h"
-#include "workspacemanager.h"
 
 #include <QtConcurrent/QtConcurrent>
 #include <QElapsedTimer>

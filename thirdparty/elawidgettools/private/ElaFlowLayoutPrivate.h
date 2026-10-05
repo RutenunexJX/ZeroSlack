@@ -2,7 +2,9 @@
 #define ELAWORKSPACE_ELAWIDGETTOOLS_PRIVATE_ELAFLOWLAYOUTPRIVATE_H_
 
 #include <QLayout>
-#include <QMap>
+#include <QHash>
+#include <QPointer>
+#include <QPropertyAnimation>
 #include <QObject>
 #include <QStyle>
 
@@ -20,7 +22,8 @@ public:
 private:
     int _doLayout(const QRect& rect, bool testOnly) const;
     int _smartSpacing(QStyle::PixelMetric pm) const;
-    mutable QMap<QLayoutItem*, QPoint> _lastGeometryMap;
+    void _applyGeometry(QLayoutItem* item, const QRect& geometry) const;
+    mutable QHash<QLayoutItem*, QPointer<QPropertyAnimation>> _animations;
     QList<QLayoutItem*> _itemList;
     bool _isAnimation{false};
     int _hSpacing;

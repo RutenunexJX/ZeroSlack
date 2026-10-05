@@ -36,6 +36,9 @@ CMakeLists.txt.user.*
 !cmake/SlangSourceCapture.cmake
 !cmake/source_layout.cmake
 !cmake/NativeComponents.cmake
+!cmake/DomainSources.cmake
+!cmake/DomainTargets.cmake
+!cmake/CliTargets.cmake
 !thirdparty/qlementine/cmake/*.cmake
 !scripts/suite_ui_pilot/*.cmake
 

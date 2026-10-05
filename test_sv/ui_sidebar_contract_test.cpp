@@ -3,7 +3,6 @@
 #include "navigationwidget.h"
 #include "testuistyle.h"
 #include "workspacechrome.h"
-#include "panelcompositor.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaNavigationBar.h"
 #endif
@@ -24,7 +23,7 @@ void settle() { QApplication::processEvents(); QTest::qWait(30); }
 class UiSidebarContractTest final : public QObject {
     Q_OBJECT
 private slots:
-    void compositedSidebarMatchesLiveFrame() {
+    void nativeSidebarReturnsToTheSameFrame() {
 #ifdef ZEROSLACK_ENABLE_ELA
         if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) QSKIP("Ela backend only");
         QMainWindow host;
@@ -41,24 +40,15 @@ private slots:
         host.resize(900, 620); host.show(); settle();
         const auto dockSize = dock->size();
         const auto expected = host.grab(dock->geometry()).toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
-        PanelCompositor compositor(&host);
-        for (bool collapsed : {false, true}) {
-            if (collapsed) {
-                bar->setDisplayMode(ElaNavigationType::Minimal, false);
-                dock->hide(); settle();
-                QCOMPARE(bar->width(), 0);
-            }
-            // Hold the expanded endpoint, also when captured from a zero-width
-            // collapsed bar. Include the frame outside the custom content body.
-            QVERIFY(compositor.begin(dock, bar, dockSize.width(), dockSize.width(), 1, [] {}));
-            QTest::qWait(20);
-            const auto actual = compositor.grab(QRect(QPoint(), dockSize)).toImage()
-                                    .convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            QCOMPARE(actual, expected);
-            bar->setDisplayMode(ElaNavigationType::Maximal, false);
-            dock->show(); host.resizeDocks({dock}, {dockSize.width()}, Qt::Horizontal);
-            compositor.finish(); settle();
-            QCOMPARE(compositor.snapshotBytes(), 0);
+        for (int cycle=0; cycle<2; ++cycle) {
+            bar->setDisplayMode(ElaNavigationType::Minimal, true);
+            QTRY_VERIFY(!bar->isDisplayModeAnimating());
+            QCOMPARE(bar->width(),0);
+            bar->setDisplayMode(ElaNavigationType::Maximal, true);
+            QTRY_VERIFY(!bar->isDisplayModeAnimating());
+            host.resizeDocks({dock}, {dockSize.width()}, Qt::Horizontal); settle();
+            const auto actual=host.grab(dock->geometry()).toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            QCOMPARE(actual,expected);
         }
 #else
         QSKIP("Ela backend not built");
@@ -82,15 +72,11 @@ private slots:
         const int contentWidth = body->width();
         QVERIFY(expanded >= 200 && expanded <= 400);
         pane->setExpanded(false);
-        QVERIFY(!pane->isExpanded()); QVERIFY(pane->isAnimating());
-        auto* compositor = host.findChild<PanelCompositor*>();
-        if (compositor) {
-            QVERIFY(compositor->isActive());
-            QVERIFY(compositor->snapshotBytes() > 0);
-            QTRY_VERIFY_WITH_TIMEOUT(compositor->extent() < expanded * 3 / 4 && compositor->extent() > 0, 200);
-        } else {
+        QVERIFY(!pane->isExpanded());
+        const bool nativeMotion = ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
+        QCOMPARE(pane->isAnimating(),nativeMotion);
+        if (nativeMotion)
             QTRY_VERIFY_WITH_TIMEOUT(dock->width() < expanded * 3 / 4 && dock->width() > 0, 200);
-        }
         QCOMPARE(body->width(), contentWidth);
         QVERIFY(editor->width() > editorWidth);
         QTRY_VERIFY(!pane->isAnimating());
@@ -110,10 +96,9 @@ private slots:
         for (int i = 0; i < 4; ++i) {
             pane->setExpanded(false);
             QTest::qWait(45);
-            const qreal partialWidth = compositor ? compositor->extent() : dock->width();
+            const qreal partialWidth = dock->isVisible() ? dock->width() : 0;
             QVERIFY(partialWidth < 340);
             pane->setExpanded(true);
-            if (compositor) QVERIFY(qAbs(compositor->extent() - partialWidth) <= 3);
             QTRY_VERIFY(!pane->isAnimating());
             QCOMPARE(dock->width(), 340);
         }
@@ -125,10 +110,6 @@ private slots:
         QCOMPARE(dock->width(), 340);
         QCOMPARE(editor->toPlainText(), QString("module counter;\nendmodule\n"));
         QVERIFY(!editor->document()->isModified());
-        if (compositor) {
-            QVERIFY(!compositor->isActive());
-            QCOMPARE(compositor->snapshotBytes(), 0);
-        }
 #ifdef ZEROSLACK_ENABLE_ELA
         if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
             auto* bar = qobject_cast<ElaNavigationBar*>(dock->widget()); QVERIFY(bar);
@@ -152,7 +133,6 @@ private slots:
         host.addDockWidget(Qt::LeftDockWidgetArea, pane->dock());
         host.resize(700, 600); host.show(); host.activateWindow(); settle();
         auto* bar = host.findChild<ElaNavigationBar*>(); QVERIFY(bar);
-        QVERIFY(!host.findChild<PanelCompositor*>());
         pane->setExpanded(false, false); settle();
         struct Resizes final : QObject {
             int count = 0;

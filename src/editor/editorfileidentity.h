@@ -1,20 +1,3 @@
-#ifndef EDITORFILEIDENTITY_H
-#define EDITORFILEIDENTITY_H
-
-#include <QString>
-
-class EditorFileIdentity
-{
-public:
-    static QString normalized(QString fileName);
-    static QString lookupKey(QString fileName);
-    static bool same(const QString& lhs, const QString& rhs);
-
-    bool set(QString nextFileName);
-    QString current() const;
-
-private:
-    QString fileName;
-};
-
-#endif // EDITORFILEIDENTITY_H
+#pragma once
+// Internal source compatibility; the public contract belongs to documents.
+#include <zeroslack/documents/editorfileidentity.h>

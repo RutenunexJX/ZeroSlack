@@ -418,8 +418,9 @@ void runEditDoesNotScheduleSemanticWork()
     editor.insertPlainText(triviaBurst);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    expect("ordinary edit does not create relationship debounce",
-           !scheduler.hasScheduledRelationshipAnalysis(fileName));
+    expect("ordinary edit does not queue common semantic analysis",
+           scheduler.semanticStatus(fileName).state != DocumentSemanticState::Queued
+               && scheduler.semanticStatus(fileName).state != DocumentSemanticState::Analyzing);
     waitForDuration(2200);
     expect("ordinary edit starts no delayed semantic worker",
            workerStartSpy.isEmpty() && completionSpy.isEmpty());

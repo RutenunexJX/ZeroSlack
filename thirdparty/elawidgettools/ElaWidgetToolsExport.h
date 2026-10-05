@@ -3,7 +3,9 @@
 
 #include <QtCore/qglobal.h>
 
-#ifdef ELAWIDGETTOOLS_LIBRARY
+#if defined(ELAWIDGETTOOLS_STATIC)
+#define ELA_EXPORT
+#elif defined(ELAWIDGETTOOLS_LIBRARY)
 #define ELA_EXPORT Q_DECL_EXPORT
 #else
 #define ELA_EXPORT Q_DECL_IMPORT

@@ -45,7 +45,10 @@ bool mouseButton(bool down) {
 #ifdef Q_OS_WIN
     INPUT event{}; event.type = INPUT_MOUSE;
     event.mi.dwFlags = down ? MOUSEEVENTF_LEFTDOWN : MOUSEEVENTF_LEFTUP;
-    return SendInput(1, &event, sizeof(event)) == 1;
+    SetLastError(ERROR_SUCCESS);
+    const bool sent = SendInput(1, &event, sizeof(event)) == 1;
+    if (!sent) qWarning() << "Win32 mouse input rejected:" << GetLastError();
+    return sent;
 #else
     Q_UNUSED(down); return false;
 #endif
@@ -58,7 +61,10 @@ void movePointer(const QPoint& destination) {
     }
 }
 bool drag(QWidget* handle, const QPoint& destination, const std::function<void()>& held = {}) {
-    if (!handle || !handle->isVisible()) return false;
+    if (!handle || !handle->isVisible()) {
+        qWarning() << "Unavailable drag handle:" << handle;
+        return false;
+    }
     auto* top = handle->window(); top->raise(); top->activateWindow();
     QTest::qWait(50);
     const QPoint start = handle->mapToGlobal(QPoint(qMin(24, handle->width() / 2), handle->height() / 2));

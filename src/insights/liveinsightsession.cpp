@@ -194,7 +194,9 @@ public:
         Channel& current = channel(kind);
         current.debounceTimer->stop();
         current.debounceWindowStart = -1;
-        if (!current.hasRequest || !current.snapshot.dirty)
+        if (!current.hasRequest || !current.snapshot.dirty
+            || (current.snapshot.phase == LiveInsightPhase::Building
+                && current.activeGeneration == current.pendingRequest.generation))
             return;
         if (!visible(current)) {
             markHiddenDirty(current);
@@ -431,6 +433,13 @@ quint64 LiveInsightSession::requestUpdate(
     const QVariantMap& input)
 {
     LiveInsightSessionPrivate::Channel& current = d->channel(key.kind);
+    if (current.hasRequest && current.pendingRequest.key == key
+        && current.pendingRequest.input == input
+        && current.snapshot.phase != LiveInsightPhase::Error) {
+        if (current.snapshot.phase == LiveInsightPhase::HiddenDirty && d->visible(current))
+            d->schedule(current, false);
+        return current.pendingRequest.generation;
+    }
     const bool preserveDebounceWindow =
         current.debounceTimer->isActive()
         && current.snapshot.phase == LiveInsightPhase::Debouncing;

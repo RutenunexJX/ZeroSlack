@@ -2,6 +2,8 @@
 #define FILECOMMANDCOORDINATOR_H
 
 #include "zeroslackexport.h"
+#include "actionregistry.h"
+#include <QStringList>
 
 #include <QObject>
 #include <QString>
@@ -31,6 +33,11 @@ public:
     void setWorkspaceDirectorySelector(WorkspaceDirectorySelector selector);
     void setWorkspaceOpenHandler(WorkspaceOpenHandler handler);
 
+    static QStringList lineActionRoutes();
+    static bool isLineAction(const QString& route);
+    static ActionExecutionResult executeLineAction(const QString& route, TabManager* documents,
+        const QString& preferredViewId = {}, MyCodeEditor* preferredEditor = nullptr);
+    ActionExecutionResult executeLineAction(const QString& route, const QString& preferredViewId = {}) const;
     void newFile();
     void openFile();
     void saveFile();

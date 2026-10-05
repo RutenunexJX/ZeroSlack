@@ -17,6 +17,7 @@ class QTextDocument;
 class TSDocument;
 class TSUTF16Text;
 class QTimer;
+struct EditorDocumentSyntax;
 struct TSChangedRange;
 struct TSPortAppendTarget;
 struct TSSignalInsertTarget;
@@ -45,6 +46,8 @@ struct EditorLargeFileSyntaxSnapshot {
     bool fullDocumentSyntax = false;
     std::uint64_t fullBuildCount = 0;
     std::uint64_t incrementalEditCount = 0;
+    std::uintptr_t syntaxIdentity = 0;
+    int sharedViewCount = 0;
     // Raw ranges returned by Tree-sitter for the most recent parse. These do
     // not include the local repaint range synthesized when the tree shape is
     // unchanged.
@@ -72,14 +75,16 @@ public:
 
     void init();
     QString packageNameAt(int charPos) const;
-    void syncText(const QString& text);
-    void createHighlighter(QTextDocument* textDocument);
+    void createHighlighter(QTextDocument* textDocument, std::uint64_t revision = 0);
     void detachHighlighter();
     void attachToEditor(MyCodeEditor* editor);
-    QList<TSChangedRange> applyDocumentChange(
-        const DocumentChange& change,
-        const TSUTF16Text& currentText,
-        bool deferSyntaxReparse = false);
+    const TSUTF16Text& text() const;
+    const DocumentChange& lastChange() const;
+    QPair<int, int> oldChangedLineBounds() const;
+    const QList<TSChangedRange>& changedRanges() const;
+    std::uint64_t revision() const;
+    void setRevision(std::uint64_t revision);
+    void setDeferredParsing(bool deferred);
     void flushPendingEdits();
     void setReparseFinishedCallback(std::function<void()> callback);
     QString moduleNameAt(int charPos) const;
@@ -127,22 +132,12 @@ public:
     const TSDocument* tsDocument() const;
     EditorLargeFileSyntaxSnapshot largeFileSnapshotForTest() const;
     bool isLargeDocument() const;
+    static int liveDocumentCountForTest();
 
 private:
-    std::unique_ptr<TSDocument> document;
-    std::unique_ptr<QTimer> parseContinuation;
+    friend struct EditorDocumentSyntax;
+    std::shared_ptr<EditorDocumentSyntax> shared;
     std::function<void()> reparseFinished;
-    QPointer<QTextDocument> highlighterDocument;
-    bool largeDocument = false;
-    std::uint64_t fullBuildCount = 0;
-    std::uint64_t incrementalEditCount = 0;
-    int lastChangedRangeCount = 0;
-    int lastChangedCharacterCount = 0;
-
-    QList<TSChangedRange> fullDocumentRange(
-        const QString& text) const;
-    void recordChangedRanges(
-        const QList<TSChangedRange>& ranges);
 };
 
 #endif // EDITORSYNTAXSTATE_H

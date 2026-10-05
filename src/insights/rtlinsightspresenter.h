@@ -2,6 +2,9 @@
 #define RTLINSIGHTSPRESENTER_H
 
 #include "rtlinsightlink.h"
+#include "liveinsightgraphreport.h"
+#include "rtlinsightviewplugins.h"
+#include <QPointer>
 
 #include <QString>
 
@@ -17,6 +20,11 @@ public:
     RtlInsightsPresenter(
         RtlInsightsPanelViewState& state,
         RtlInsightsGraphController& graphController);
+
+    LiveInsightSession* graphSession() const { return reportSession; }
+    void setGraphContext(const InsightViewContext& context,
+                         const SemanticSnapshotToken& snapshot);
+    void setGraphSnapshot(const SemanticSnapshotToken& snapshot);
 
     void updateModuleContext(
         const QString& fileName,
@@ -64,6 +72,14 @@ private:
     RtlInsightsPanelViewState& state;
     RtlInsightsGraphController& graphController;
     quint64 graphBuildRequestCount = 0;
+    QPointer<LiveInsightSession> reportSession;
+    InsightViewContext reportContext;
+    SemanticSnapshotToken reportSnapshot;
+    LiveInsightRequestKey currentReportKey;
+    quint64 appliedReportGeneration = 0;
+    void requestGraph(LiveInsightGraphMode mode);
+    void applyGraphSnapshot(const LiveInsightSnapshot& snapshot);
+    void cancelGraphRequests();
 
     void logReportStart(const QString& reportName) const;
     void logReportDone(const QString& reportName,

@@ -9,6 +9,121 @@
 #include <utility>
 
 namespace rtledit {
+
+bool sameBaselines(
+    const std::vector<DocumentBaseline>& left,
+    const std::vector<DocumentBaseline>& right)
+{
+    if (left.size() != right.size())
+        return false;
+    for (std::size_t index = 0;
+         index < left.size();
+         ++index) {
+        if (left[index].filePath
+                != right[index].filePath
+            || left[index].version
+                != right[index].version) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool sameEdit(
+    const WorkspaceTextEdit& left,
+    const WorkspaceTextEdit& right)
+{
+    return left.filePath == right.filePath
+        && left.expectedDocumentVersion
+            == right.expectedDocumentVersion
+        && left.range.start == right.range.start
+        && left.range.end == right.range.end
+        && left.expectedText == right.expectedText
+        && left.newText == right.newText;
+}
+
+bool sameSemanticObject(
+    const SemanticObjectId& left,
+    const SemanticObjectId& right)
+{
+    return left.kind == right.kind
+        && left.qualifiedName == right.qualifiedName
+        && left.ownerScope == right.ownerScope
+        && left.filePath == right.filePath
+        && left.range.start == right.range.start
+        && left.range.end == right.range.end
+        && left.signatureHash == right.signatureHash;
+}
+
+bool sameProvenance(
+    const TextEditProvenance& left,
+    const TextEditProvenance& right)
+{
+    return left.editIndex == right.editIndex
+        && left.actionId == right.actionId
+        && left.anchorName == right.anchorName
+        && left.description == right.description
+        && left.anchor.source == right.anchor.source
+        && left.anchor.resolver == right.anchor.resolver
+        && left.anchor.semanticSnapshotId
+            == right.anchor.semanticSnapshotId
+        && left.signalQualifiedName
+            == right.signalQualifiedName
+        && left.sourceInstancePath
+            == right.sourceInstancePath
+        && left.hierarchyStepIndex
+            == right.hierarchyStepIndex
+        && left.sourceFilePath == right.sourceFilePath
+        && left.sourceRange.start
+            == right.sourceRange.start
+        && left.sourceRange.end
+            == right.sourceRange.end;
+}
+
+bool sameWorkspaceEditPlan(
+    const WorkspaceEditPlan& left,
+    const WorkspaceEditPlan& right)
+{
+    if (left.intent.kind != right.intent.kind
+        || !sameSemanticObject(
+            left.intent.target, right.intent.target)
+        || left.semanticSnapshot.id
+            != right.semanticSnapshot.id
+        || left.semanticIndexFilePaths
+            != right.semanticIndexFilePaths
+        || left.riskLevel != right.riskLevel
+        || left.previewPolicy != right.previewPolicy
+        || left.hasMixedDocumentVersions
+            != right.hasMixedDocumentVersions
+        || !sameBaselines(
+            left.baselines, right.baselines)
+        || left.edits.size() != right.edits.size()
+        || left.provenance.size()
+            != right.provenance.size()) {
+        return false;
+    }
+    for (std::size_t index = 0;
+         index < left.edits.size();
+         ++index) {
+        if (!sameEdit(
+                left.edits[index],
+                right.edits[index])) {
+            return false;
+        }
+    }
+    for (std::size_t index = 0;
+         index < left.provenance.size();
+         ++index) {
+        if (!sameProvenance(
+                left.provenance[index],
+                right.provenance[index])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
 namespace {
 
 std::string mixedDocumentVersionFile(

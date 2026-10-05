@@ -2,7 +2,11 @@
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
 #include "nativepanelcomposition.h"
-#include "panelcompositor.h"
+#include "applicationthememanager.h"
+#ifdef ZEROSLACK_ENABLE_ELA
+#include "ElaDrawerArea.h"
+#include "ElaNavigationBar.h"
+#endif
 #include <QApplication>
 #include <QDockWidget>
 #include <QLayout>
@@ -95,7 +99,8 @@ ContextDockTransition::ContextDockTransition(QMainWindow* window, ContextDockHos
     rasterTimer.setTimerType(Qt::PreciseTimer);
     connect(&completionTimer, &QTimer::timeout, this, &ContextDockTransition::finish);
     connect(&rasterTimer, &QTimer::timeout, this, qOverload<>(&QWidget::update));
-    connect(PanelCompositor::forWindow(window), &PanelCompositor::started, this, &ContextDockTransition::finish);
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        this, [this](bool enabled) { if (!enabled) finish(); });
     hide();
 }
 ContextDockTransition::~ContextDockTransition()
@@ -173,9 +178,17 @@ qreal ContextDockTransition::progress() const
 bool ContextDockTransition::transfer(ContextFloatingWindow* source, const QString& key, const std::function<bool()>& apply)
 {
     finish(); clearPreview();
-    if (!source || !host || !dock || !host->isVisible() || !source->isVisible()) return apply();
+    if (!ApplicationThemeManager::instance().animationsEnabled()
+        || !source || !host || !dock || !host->isVisible() || !source->isVisible()) return apply();
     native->warmUp();
-    PanelCompositor::forWindow(host)->settle();
+#ifdef ZEROSLACK_ENABLE_ELA
+    for (auto* drawer : host->findChildren<ElaDrawerArea*>()) drawer->finishDrawerAnimation();
+    for (auto* navigation : host->findChildren<ElaNavigationBar*>()) {
+        if (navigation->isDisplayModeAnimating()) navigation->setDisplayMode(navigation->getDisplayMode(), false);
+        if (navigation->isOverlayAnimating())
+            navigation->setOverlayExpanded(navigation->isOverlayExpanded(), navigation->geometry(), false);
+    }
+#endif
     const QScopedValueRollback<bool> guard(preparing, true);
     winId();
     windowHandle()->setScreen(host->screen());

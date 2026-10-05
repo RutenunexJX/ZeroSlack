@@ -12,35 +12,6 @@ void AnalysisScheduler::setRelationshipBuilder(SmartRelationshipBuilder* builder
         relationshipAnalysis->setRelationshipBuilder(builder);
 }
 
-void AnalysisScheduler::scheduleRelationshipAnalysis(const QString& fileName,
-                                                     const QString& content,
-                                                     int delayMs)
-{
-    if (fileName.isEmpty()
-        || content.isNull()
-        || !relationshipAnalysis
-        || !relationshipAnalysis->hasRelationshipBuilder()) {
-        return;
-    }
-
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->schedule(fileName, content, delayMs);
-}
-
-void AnalysisScheduler::cancelAllScheduledRelationshipAnalyses()
-{
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->cancelAll();
-}
-
-bool AnalysisScheduler::hasScheduledRelationshipAnalysis(
-    const QString& fileName) const
-{
-    return relationshipAnalysisQueue
-        ? relationshipAnalysisQueue->hasScheduled(fileName)
-        : false;
-}
-
 void AnalysisScheduler::requestRelationshipAnalysis(const QString& fileName, const QString& content)
 {
     if (shuttingDown || !semanticRuntimePolicy.enabled)

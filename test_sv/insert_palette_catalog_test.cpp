@@ -260,33 +260,39 @@ void runCatalogAndPanelRegression(const QString& path)
             path, index->getSymbolRecords().size());
     };
     notifyBatch();
-    // Keep the implicitly shared list alive so a second rebuild cannot reuse
-    // its buffer and accidentally look like the same catalog.
-    const auto firstCatalog = provider->semanticSourceCatalog;
-    expect("workspace notification publishes a nonempty catalog", !firstCatalog.isEmpty());
+    expect("workspace notification publishes a nonempty catalog",
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && !provider->query("palette_child").isEmpty(); }));
+    const auto firstRevision = window.temporaryEditorCatalogSnapshotRevision;
     notifyFile();
     expect("one publication's two notifications reuse one catalog",
-           provider->semanticSourceCatalog.constData() == firstCatalog.constData());
+           provider->semanticCatalogReady()
+               && window.temporaryEditorCatalogSnapshotRevision == firstRevision);
     const QString updated = source + "\nmodule added_later; endmodule\n";
     installSource(path, updated);
     notifyBatch();
-    const auto secondCatalog = provider->semanticSourceCatalog;
     expect("a new publication replaces the catalog",
-           secondCatalog.constData() != firstCatalog.constData()
-               && !provider->query("added_later").isEmpty());
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && !provider->query("added_later").isEmpty(); })
+               && window.temporaryEditorCatalogSnapshotRevision > firstRevision);
+    const auto secondRevision = window.temporaryEditorCatalogSnapshotRevision;
     notifyFile();
     expect("the next publication is also rebuilt only once",
-           provider->semanticSourceCatalog.constData() == secondCatalog.constData());
+           provider->semanticCatalogReady()
+               && window.temporaryEditorCatalogSnapshotRevision == secondRevision);
     index->setSnapshot(index->snapshot());
     notifyBatch();
     expect("republishing the same snapshot object is a new revision",
-           provider->semanticSourceCatalog.constData() != secondCatalog.constData());
+           window.temporaryEditorCatalogSnapshotRevision > secondRevision
+               && waitUntil([&] { return provider->semanticCatalogReady()
+                   && !provider->query("added_later").isEmpty(); }));
 
     window.analysisScheduler->symbolAnalyzer->analyzeFileContent(
         path, QStringLiteral("module single_file_new; endmodule\n"));
     expect("standalone file completion refreshes new published data",
-           !provider->query("single_file_new").isEmpty()
-               && provider->query("added_later").isEmpty());
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && !provider->query("single_file_new").isEmpty()
+               && provider->query("added_later").isEmpty(); }));
 
     // Exercise the actual Ctrl+Space coordinator, panel and Enter dispatch.
     expect("editor file opens", writeText(path, source)
@@ -334,15 +340,17 @@ void runCatalogAndPanelRegression(const QString& path)
     index->updateSymbolRecordsForFile(
         path, slang.extractSymbolRecords(path, nativeA), nativeA);
     notifyFile();
-    expect("unpublished native records remain refreshable",
-           !provider->query("native_first").isEmpty());
+    expect("compatibility writes publish refreshable records",
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && !provider->query("native_first").isEmpty(); }));
     const QString nativeB = QStringLiteral("module native_second; endmodule\n");
     index->updateSymbolRecordsForFile(
         path, slang.extractSymbolRecords(path, nativeB), nativeB);
     notifyFile();
-    expect("native updates without snapshot revisions are not skipped",
-           !provider->query("native_second").isEmpty()
-               && provider->query("native_first").isEmpty());
+    expect("compatibility writes advance the publication and replace old records",
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && !provider->query("native_second").isEmpty()
+               && provider->query("native_first").isEmpty(); }));
 
     QTemporaryDir workspaces;
     QDir root(workspaces.path());
@@ -352,9 +360,9 @@ void runCatalogAndPanelRegression(const QString& path)
            writeText(root.filePath("a/a.sv"), "module catalog_a; endmodule\n")
                && writeText(root.filePath("b/b.sv"), "module catalog_b; endmodule\n"));
     const auto containsName = [&](const QString& name) {
-        return std::any_of(provider->semanticSourceCatalog.cbegin(),
-                           provider->semanticSourceCatalog.cend(),
-                           [&](const auto& result) { return result.symbolRecord.name == name; });
+        const auto candidates = provider->query(name);
+        return std::any_of(candidates.cbegin(), candidates.cend(),
+                           [&](const auto& result) { return result.title == name; });
     };
     auto* sessions = window.findChild<WorkspaceSessionCoordinator*>();
     const auto ready = [&](const QString& name) {

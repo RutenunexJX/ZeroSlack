@@ -10,6 +10,7 @@
 #include <memory>
 
 class RtlInsightWorkbench;
+class LiveInsightSession;
 class QMainWindow;
 class QHideEvent;
 class QShowEvent;
@@ -63,6 +64,7 @@ public:
         return currentContext;
     }
 
+    LiveInsightSession* graphSession() const;
     RtlInsightWorkbench* workbenchForTest() const;
     QMainWindow* detachToWindow();
     QMainWindow* detachedWindowForTest() const;

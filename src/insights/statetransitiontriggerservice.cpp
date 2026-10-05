@@ -13,8 +13,8 @@ StateTransitionTriggerService* StateTransitionTriggerService::getInstance()
     return instance.get();
 }
 
-StateTransitionTriggerService::StateTransitionTriggerService()
-    : index(SemanticIndex::getInstance())
+StateTransitionTriggerService::StateTransitionTriggerService(SemanticIndex* semanticIndex)
+    : index(semanticIndex ? semanticIndex : SemanticIndex::getInstance())
 {
 }
 
@@ -28,7 +28,8 @@ void StateTransitionTriggerService::setSemanticIndex(
 
 StateTransitionTriggerReport
 StateTransitionTriggerService::triggerForSymbol(
-    const StateTransitionTriggerQuery& query) const
+    const StateTransitionTriggerQuery& query,
+    const FsmGraphReport* graphReport) const
 {
     StateTransitionTriggerReport report;
     report.symbolName = query.symbolName;
@@ -43,10 +44,12 @@ StateTransitionTriggerService::triggerForSymbol(
 
     FsmGraphService fsmService(index);
     FsmGraphQuery fsmQuery;
+    fsmQuery.isCancelled = query.isCancelled;
     fsmQuery.fileName = query.fileName;
     fsmQuery.moduleName = query.moduleName;
-    const FsmSymbolRoleReport role =
-        fsmService.roleForSymbol(fsmQuery, query.symbolName);
+    const FsmSymbolRoleReport role = graphReport
+        ? FsmGraphService::roleForSymbol(*graphReport, query.symbolName)
+        : fsmService.probeRoleForSymbol(fsmQuery, query.symbolName);
     if (role.role == FsmSymbolRole::NextState) {
         report.available = true;
         return report;
@@ -62,4 +65,13 @@ StateTransitionTriggerService::triggerForSymbol(
             ? QStringLiteral("Selected symbol is not part of a discovered FSM")
             : role.reasonDisplayName;
     return report;
+}
+
+StateTransitionTriggerService::StateTransitionTriggerService(SemanticSnapshotToken snapshot)
+    : StateTransitionTriggerService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+StateTransitionTriggerService::StateTransitionTriggerService(std::shared_ptr<SemanticIndex> owner)
+    : StateTransitionTriggerService(owner.get())
+{
+    ownedIndex = std::move(owner);
 }

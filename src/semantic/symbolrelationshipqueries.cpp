@@ -4,7 +4,7 @@
 QList<int> SymbolRelationshipEngine::getRelatedSymbols(int symbolId, RelationType type, bool outgoing) const
 {
     if (querySnapshot) {
-        const auto record = querySnapshot->getSymbolRecordByLocalHandle(symbolId);
+        const auto record = querySnapshot->recordForProjectionHandle(symbolId);
         QList<int> result;
         QSet<int> seen;
         for (const auto& relationship : querySnapshot->relationshipsForStableKey(record.stableKey, outgoing)) {

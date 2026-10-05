@@ -52,10 +52,12 @@ public:
     // per publish instead of a service call per identifier.
     using NameSetResolver =
         std::function<QList<QString>(EditorInsightTargetClass)>;
-    // Second-stage check on the chosen candidate. Returning false keeps the
-    // mode running and shows the reason; it must never be silently dropped.
-    using Validator = std::function<bool(
-        const EditorInsightTargetCandidate&, QString* reason)>;
+    // Complete on the editor thread. Rejection keeps the mode and its reason;
+    // the returned cancellation action releases a pending asynchronous check.
+    using ValidationReply = std::function<void(bool, const QString&)>;
+    using ValidationCancel = std::function<void()>;
+    using Validator = std::function<ValidationCancel(
+        const EditorInsightTargetCandidate&, ValidationReply)>;
     using PickedHandler =
         std::function<void(const EditorInsightTargetCandidate&)>;
     using SyntaxSource = std::function<const TSDocument*()>;
@@ -97,6 +99,9 @@ private:
     SyntaxSource syntaxSource;
     NameSetResolver nameSetResolver;
     Validator validatorValue;
+    ValidationCancel cancelValidation;
+    quint64 validationGeneration = 0;
+    QString validationKey;
     PickedHandler pickedHandler;
     EditorInsightTargetClass classValue = EditorInsightTargetClass::Signal;
     QList<EditorInsightTargetCandidate> candidateList;
@@ -115,6 +120,9 @@ private:
     void select(MyCodeEditor* editor, int index);
     void step(MyCodeEditor* editor, int delta);
     bool commit(MyCodeEditor* editor, int index);
+    void cancelPendingValidation();
+    void finishValidation(MyCodeEditor* editor, const EditorInsightTargetCandidate& candidate,
+                          bool accepted, const QString& reason);
     void refreshPresentation(MyCodeEditor* editor);
     void updateModePresentation();
     void ensureBlinkTimer(MyCodeEditor* editor);

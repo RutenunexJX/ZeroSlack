@@ -4,6 +4,8 @@
 #include "graphexportui.h"
 #include "mycodeeditor.h"
 #include "rtlinsightspanelcoordinator.h"
+#include "live_insight_test_utils.h"
+#include "rtlinsightviewplugins.h"
 #include "semantic_fixture_records.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
@@ -25,6 +27,7 @@
 #include <algorithm>
 #include <iostream>
 #include <memory>
+#include <thread>
 
 namespace {
 
@@ -164,6 +167,7 @@ int main(int argc, char** argv)
 
     QWidget host;
     RtlInsightsPanelCoordinator panel(&host);
+    panel.setGraphSnapshot(index.snapshotToken());
     RtlInsightSourceLocation initial;
     initial.fileName = fileName;
     initial.line = 4;
@@ -179,6 +183,7 @@ int main(int argc, char** argv)
     initial.documentRevision = 7;
     panel.syncSourceLocation(initial);
     panel.showFsmGraph();
+    check(waitForLiveInsightReports(panel), "initial captured FSM report completes");
     QApplication::processEvents();
 
     check(panel.graphNodeItemCountForTest() >= 3,
@@ -400,9 +405,10 @@ int main(int argc, char** argv)
     const QStringList beforeRefreshSelection =
         panel.graphSelectedElementSummariesForTest();
     panel.refresh();
+    check(waitForLiveInsightReports(panel), "pinned refresh completes");
     check(panel.graphBuildGenerationForTest()
-              == pinnedGeneration + 1,
-          "an explicit graph refresh remains available while pinned");
+              == pinnedGeneration,
+          "pinned refresh reuses unchanged report inputs");
     check(panel.isPinned(),
           "explicit refresh does not silently clear pin state");
     const QPointF afterRefreshCenter = refreshGraphView
@@ -581,7 +587,7 @@ int main(int argc, char** argv)
           "registered Set Top Action reports unavailable outside module-block mode");
     RtlInsightSourceLocation stale = activated;
     stale.graphGeneration =
-        linkedGeneration - 1;
+        linkedGeneration + 1;
     check(!panel.syncSourceLocation(stale),
           "stale graph-generation source selection is rejected");
     check(panel.graphBuildGenerationForTest()
@@ -668,6 +674,68 @@ int main(int argc, char** argv)
               && panel.graphModeForTest()
                      == QStringLiteral("fsm"),
           "pure editor scrolling leaves graph build generation unchanged");
+
+    {
+        QWidget independentHost;
+        QList<LiveInsightSession::Task> leftTasks, rightTasks;
+        auto left = std::make_unique<RtlInsightsPanelCoordinator>(&independentHost);
+        RtlInsightsPanelCoordinator right(&independentHost);
+        auto* leftSession = left->graphSession();
+        auto* rightSession = right.graphSession();
+        leftSession->setTaskExecutor([&](auto task) { leftTasks.append(std::move(task)); });
+        rightSession->setTaskExecutor([&](auto task) { rightTasks.append(std::move(task)); });
+        InsightViewContext context;
+        context.workspaceId = QStringLiteral("isolated");
+        context.documentId = QStringLiteral("document");
+        context.fileName = fileName;
+        context.moduleName = QStringLiteral("fsm_top");
+        context.documentRevision = 41;
+        left->setGraphContext(context, index.snapshotToken());
+        left->showModuleBlockDiagramForModule(fileName, context.moduleName);
+        leftSession->flushPending(LiveInsightKind::Module);
+        context.documentRevision = 42;
+        left->setGraphContext(context, index.snapshotToken());
+        left->showModuleBlockDiagramForModule(fileName, context.moduleName);
+        leftSession->flushPending(LiveInsightKind::Module);
+        right.setGraphContext(context, index.snapshotToken());
+        right.updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
+        right.showFsmGraph();
+        rightSession->flushPending(LiveInsightKind::State);
+        check(leftTasks.size() == 2 && rightTasks.size() == 1,
+              "independent graph surfaces capture their own actual report tasks");
+        const auto runWorker = [](LiveInsightSession::Task task) {
+            std::thread worker(std::move(task));
+            worker.join();
+            QApplication::processEvents();
+        };
+        if (leftTasks.size() == 2 && rightTasks.size() == 1) {
+            runWorker(leftTasks.takeLast());
+            const auto published = leftSession->snapshot(LiveInsightKind::Module);
+            check(published.phase == LiveInsightPhase::Ready
+                      && published.publishedKey.documentRevision == 42
+                      && left->graphNodeItemCountForTest() == 1,
+                  "latest captured document revision owns the applied module report");
+            runWorker(leftTasks.takeFirst());
+            check(leftSession->snapshot(LiveInsightKind::Module).publishedGeneration == published.publishedGeneration,
+                  "old report completion cannot overwrite the current UI");
+            runWorker(rightTasks.takeFirst());
+            check(rightSession->snapshot(LiveInsightKind::State).phase == LiveInsightPhase::Ready
+                      && right.graphNodeItemCountForTest() == panel.graphNodeItemCountForTest(),
+                  "independent FSM surface finishes while the module surface changes");
+            left->showModuleBlockDiagramForModule(fileName, context.moduleName);
+            leftSession->flushPending(LiveInsightKind::Module);
+            check(leftTasks.isEmpty(), "repeated UI requests reuse the current completed report");
+            ++context.documentRevision;
+            left->setGraphContext(context, index.snapshotToken());
+            left->showModuleBlockDiagramForModule(fileName, context.moduleName);
+            leftSession->flushPending(LiveInsightKind::Module);
+            QPointer<LiveInsightSession> lifetime(leftSession);
+            left.reset();
+            for (auto& task : leftTasks) runWorker(std::move(task));
+            check(lifetime.isNull() && rightSession->snapshot(LiveInsightKind::State).phase == LiveInsightPhase::Ready,
+                  "closing one graph consumer cancels its work and preserves the other consumer");
+        }
+    }
 
     FsmGraphService::getInstance()
         ->setSemanticIndex(

@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFileInfo>
+#include <stdexcept>
 #include <QHash>
 #include <QSet>
 #include <algorithm>
@@ -411,6 +412,11 @@ ModuleBlockDiagramReport
 ModuleBlockDiagramService::buildModuleBlockDiagram(
     const ModuleBlockDiagramQuery& query) const
 {
+    const auto checkCancellation = [&query] {
+        if (query.isCancelled && query.isCancelled())
+            throw std::runtime_error("Module report cancelled");
+    };
+    checkCancellation();
     ModuleBlockDiagramReport report;
     report.groupDisplayName = QStringLiteral("Module Block Diagram");
 
@@ -448,6 +454,7 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
                          int depth,
                          QSet<QString> path,
                          bool unreachable) {
+        checkCancellation();
         if ((maxDepth >= 0 && depth >= maxDepth) || !parentRecord.stableKey.isValid())
             return;
 
@@ -575,6 +582,7 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
         }
         std::sort(children.begin(), children.end(), moduleBlockChildLess);
         for (ModuleBlockChildInstance child : std::as_const(children)) {
+            checkCancellation();
             const QString childPathKey =
                 child.definitionRecord.stableKey.toString();
             const bool cyclic = child.definitionRecord.isValid()
@@ -634,4 +642,13 @@ ModuleBlockDiagramService::buildModuleBlockDiagram(
 SemanticIndex* ModuleBlockDiagramService::semanticIndex() const
 {
     return index ? index : SemanticIndex::getInstance();
+}
+
+ModuleBlockDiagramService::ModuleBlockDiagramService(SemanticSnapshotToken snapshot)
+    : ModuleBlockDiagramService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+ModuleBlockDiagramService::ModuleBlockDiagramService(std::shared_ptr<SemanticIndex> owner)
+    : ModuleBlockDiagramService(owner.get())
+{
+    ownedIndex = std::move(owner);
 }

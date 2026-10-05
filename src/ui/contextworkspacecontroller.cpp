@@ -11,7 +11,6 @@
 #include "contexttoolbox.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
-#include "panelcompositor.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDockWidget.h"
 #include "ElaDrawerArea.h"
@@ -112,6 +111,14 @@ ContextWorkspaceController::ContextWorkspaceController(
 {
     Q_ASSERT(mainWindow);
     Q_ASSERT(editorRegion);
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        this, [this](bool enabled) {
+#ifdef ZEROSLACK_ENABLE_ELA
+            if (!enabled && sideDrawer) sideDrawer->finishDrawerAnimation();
+#else
+            Q_UNUSED(enabled)
+#endif
+        });
 
     railValue = new ContextRail(mainWindow);
     mainWindow->addToolBar(Qt::RightToolBarArea, railValue);
@@ -386,7 +393,6 @@ ContextWorkspaceController::~ContextWorkspaceController()
 #endif
     if (dockTransition) dockTransition->finish();
     restoringState = true;
-    if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settleFor(dockValue);
     for (auto* surface : floatingSurfaces()) {
         activeFloatingSurface = surface;
         closePeek();
@@ -1123,7 +1129,6 @@ bool ContextWorkspaceController::clearResources()
     }
     floatingDragSource.clear();
     if (dockTransition) dockTransition->finish();
-    if (window) if (auto* compositor = window->findChild<PanelCompositor*>()) compositor->settle();
     const bool previousRestoring = restoringState;
     restoringState = true;
 #ifdef ZEROSLACK_ENABLE_ELA
@@ -1899,6 +1904,7 @@ void ContextWorkspaceController::settleDockTopology()
 void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPreferredWidth, bool animate)
 {
     if (!dockValue || !window) return;
+    if (dockTransition) dockTransition->finish();
 #ifdef ZEROSLACK_ENABLE_ELA
     if (sideDrawer) {
         const auto area = window->dockWidgetArea(dockValue);
@@ -1948,26 +1954,11 @@ void ContextWorkspaceController::applyDockVisibility(bool visible, bool applyPre
 #endif
     const bool changesVisibility = dockValue->isVisible() != visible;
     if (!changesVisibility && !applyPreferredWidth) return;
-    auto* compositor = window->findChild<PanelCompositor*>();
-    const auto apply = [this, visible, applyPreferredWidth] {
-        QScopedValueRollback<bool> guard(applyingDockWidth, true);
-        dockValue->setVisible(visible);
-        if (visible) dockValue->raise();
-        if (visible && applyPreferredWidth && !dockValue->isFloating())
-            window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
-    };
-    const auto area = window->dockWidgetArea(dockValue);
-    if (changesVisibility && animate && !restoringState && window->isVisible() && !dockValue->isFloating()
-        && window->tabifiedDockWidgets(dockValue).isEmpty()
-        && (area == Qt::RightDockWidgetArea || area == Qt::LeftDockWidgetArea)
-        && ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        if (!compositor) compositor = PanelCompositor::forWindow(window);
-        compositor->reveal(dockValue, area == Qt::RightDockWidgetArea ? Qt::RightEdge : Qt::LeftEdge,
-                           visible, [this] { return dockValue->geometry(); }, apply);
-    } else {
-        if (compositor) compositor->settle();
-        apply();
-    }
+    QScopedValueRollback<bool> guard(applyingDockWidth, true);
+    dockValue->setVisible(visible);
+    if (visible) dockValue->raise();
+    if (visible && applyPreferredWidth && !dockValue->isFloating())
+        window->resizeDocks({dockValue}, {boundedDockWidthForWindow(preferredDockWidthValue)}, Qt::Horizontal);
 }
 
 void ContextWorkspaceController::notifyWorkspaceStateChanged()

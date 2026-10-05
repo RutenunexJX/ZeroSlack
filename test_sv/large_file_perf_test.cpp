@@ -282,7 +282,6 @@ static void drainRelationshipWork(MainWindow& window)
     if (builder)
         builder->cancelAnalysis();
     if (window.analysisScheduler) {
-        window.analysisScheduler->cancelAllScheduledRelationshipAnalyses();
         window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     }
@@ -293,13 +292,14 @@ static QString normalizedPath(const QString& fileName)
     return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
 }
 
-static bool hasActiveRelationshipDebounce(MainWindow& window, const QString& fileName)
+static bool hasQueuedSemanticAnalysis(MainWindow& window, const QString& fileName)
 {
     if (!window.analysisScheduler)
         return false;
 
-    return window.analysisScheduler->hasScheduledRelationshipAnalysis(
-        normalizedPath(fileName));
+    const auto status = window.analysisScheduler->semanticStatus(normalizedPath(fileName));
+    return status.state == DocumentSemanticState::Queued
+        || status.state == DocumentSemanticState::Analyzing;
 }
 
 static bool containsFile(const QStringList& files, const QString& fileName)
@@ -808,7 +808,7 @@ int main(int argc, char** argv)
                        >= beforeLength + triviaBurst.size(),
                    true);
         expectBool("whitespace edit does not start relationship debounce",
-                   hasActiveRelationshipDebounce(window, largeFile),
+                   hasQueuedSemanticAnalysis(window, largeFile),
                    false);
         expectInt("whitespace burst schedules exactly one idle classification",
                   symbolAnalysisStarted.count(), 1);
@@ -820,7 +820,7 @@ int main(int argc, char** argv)
         QTest::keyClicks(editor, "x");
         waitUntil([]() { return false; }, 2200);
         expectBool("ordinary edit does not start relationship debounce",
-                    hasActiveRelationshipDebounce(window, largeFile),
+                    hasQueuedSemanticAnalysis(window, largeFile),
                     false);
         expectInt("ordinary edit schedules exactly one more idle classification",
                   symbolAnalysisStarted.count(), 2);

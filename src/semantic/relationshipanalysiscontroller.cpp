@@ -38,11 +38,6 @@ void RelationshipAnalysisController::setRelationshipBuilder(SmartRelationshipBui
     relationshipBuilder = builder;
 }
 
-void RelationshipAnalysisController::setRelationshipQueue(RelationshipAnalysisQueue* queue)
-{
-    relationshipQueue = queue;
-}
-
 void RelationshipAnalysisController::setResultPublisher(RelationshipResultPublisher* publisher)
 {
     resultPublisher = publisher;

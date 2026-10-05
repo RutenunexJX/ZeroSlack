@@ -15,6 +15,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <memory>
 #include <utility>
 
 namespace {
@@ -132,6 +133,7 @@ void EditorInsightTargetPickController::clear(MyCodeEditor* editor,
     if (clearing)
         return;
     clearing = true;
+    cancelPendingValidation();
     const bool wasActive = active();
     candidateList.clear();
     activeKey.clear();
@@ -333,6 +335,7 @@ void EditorInsightTargetPickController::refreshCandidates(
                   return left.startChar < right.startChar;
               });
     if (indexForKey(activeKey) < 0) {
+        cancelPendingValidation();
         activeKey = candidateList.isEmpty()
             ? QString()
             : candidateKey(candidateList.first());
@@ -469,6 +472,8 @@ void EditorInsightTargetPickController::select(MyCodeEditor* editor,
 {
     if (index < 0 || index >= candidateList.size())
         return;
+    if (activeKey != candidateKey(candidateList.at(index)))
+        cancelPendingValidation();
     activeKey = candidateKey(candidateList.at(index));
     refreshPresentation(editor);
     updateModePresentation();
@@ -502,8 +507,50 @@ bool EditorInsightTargetPickController::commit(MyCodeEditor* editor,
     if (index < 0 || index >= candidateList.size())
         return false;
     const EditorInsightTargetCandidate candidate = candidateList.at(index);
-    QString reason;
-    if (validatorValue && !validatorValue(candidate, &reason)) {
+    const QString key = candidateKey(candidate);
+    if (cancelValidation && validationKey == key)
+        return true;
+    cancelPendingValidation();
+    activeKey = key;
+    validationKey = key;
+    if (!validatorValue) {
+        finishValidation(editor, candidate, true, {});
+        return true;
+    }
+    const auto generation = validationGeneration;
+    const QPointer<MyCodeEditor> guard(editor);
+    const auto pending = std::make_shared<bool>(true);
+    const Validator validator = validatorValue;
+    auto cancel = validator(candidate, [this, guard, candidate, generation, pending](bool accepted, const QString& reason) {
+        if (!*pending) return;
+        *pending = false;
+        if (!guard || generation != validationGeneration || !active()) return;
+        cancelValidation = {};
+        validationKey.clear();
+        finishValidation(guard, candidate, accepted, reason);
+    });
+    if (*pending) {
+        if (guard && generation == validationGeneration && active())
+            cancelValidation = std::move(cancel);
+        else if (cancel)
+            cancel();
+    }
+    return true;
+}
+
+void EditorInsightTargetPickController::cancelPendingValidation()
+{
+    ++validationGeneration;
+    validationKey.clear();
+    const auto cancel = std::exchange(cancelValidation, {});
+    if (cancel) cancel();
+}
+
+void EditorInsightTargetPickController::finishValidation(
+    MyCodeEditor* editor, const EditorInsightTargetCandidate& candidate,
+    bool accepted, const QString& reason)
+{
+    if (!accepted) {
         // A rejected target keeps the mode alive with its reason on screen:
         // only the service that builds the view knows whether a symbol works,
         // and the user should be able to try the next one straight away.
@@ -514,13 +561,12 @@ bool EditorInsightTargetPickController::commit(MyCodeEditor* editor,
                           "%1 cannot be this insight's target").arg(candidate.name)
                     : reason);
         }
-        return false;
+        return;
     }
     const PickedHandler handler = pickedHandler;
     clear(editor, QString(), EditorModeExitReason::Completed);
     if (handler)
         handler(candidate);
-    return true;
 }
 
 bool EditorInsightTargetPickController::handleKeyPress(

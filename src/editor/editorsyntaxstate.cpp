@@ -1,49 +1,160 @@
 #include "editorsyntaxstate.h"
-
 #include "mycodeeditor.h"
 #include "myhighlighter.h"
 #include "tsdocument.h"
-
 #include <QHash>
-#include <QObject>
-#include <QPointer>
+#include <QSet>
+#include <QTextBlock>
+#include <QTextCursor>
 #include <QTextDocument>
 #include <QTimer>
 
 namespace {
 constexpr int kLargeFileCharacters = 2 * 1024 * 1024;
+}
 
-struct SyntaxHighlighterRegistration {
-    QList<EditorSyntaxState*> syntaxStates;
-    EditorSyntaxState* owner = nullptr;
+// One owner per QTextDocument, independent of any editor's lifetime. Views
+// only keep callbacks and local interaction/projection state.
+struct EditorDocumentSyntax : std::enable_shared_from_this<EditorDocumentSyntax> {
+    std::unique_ptr<TSDocument> document = std::make_unique<TSDocument>();
+    std::unique_ptr<QTimer> continuation = std::make_unique<QTimer>();
+    QPointer<QTextDocument> source;
     QPointer<MyHighlighter> highlighter;
+    QList<EditorSyntaxState*> views;
+    QSet<EditorSyntaxState*> deferredViews;
+    DocumentChange change;
+    QPair<int, int> oldLineBounds;
+    QList<TSChangedRange> ranges;
+    std::uint64_t revision = 0;
+    std::uint64_t fullBuildCount = 0;
+    std::uint64_t incrementalEditCount = 0;
+    int lastChangedRangeCount = 0;
+    int lastChangedCharacterCount = 0;
+
+    EditorDocumentSyntax()
+    {
+        document->setSynchronousParseBudget(3000);
+        continuation->setSingleShot(true);
+    }
+
+    void notifyReparsed()
+    {
+        const auto registered = views;
+        if (highlighter)
+            highlighter->requestDeferredRefresh();
+        for (auto* view : registered) {
+            if (!views.contains(view))
+                continue;
+            const auto callback = view->reparseFinished;
+            if (callback)
+                callback();
+        }
+    }
+
+    void bind(QTextDocument* textDocument, std::uint64_t initialRevision)
+    {
+        source = textDocument;
+        revision = initialRevision;
+        document->setText(source->toPlainText());
+        ++fullBuildCount;
+        const auto weak = weak_from_this();
+        QObject::connect(continuation.get(), &QTimer::timeout, continuation.get(), [weak] {
+            const auto self = weak.lock();
+            if (!self || !self->source || !self->document->hasPendingEdits())
+                return;
+            if (!self->document->finishPendingEdits(3000)) {
+                self->continuation->start(1);
+                return;
+            }
+            self->notifyReparsed();
+        });
+        QObject::connect(source, &QTextDocument::contentsChange, continuation.get(),
+            [weak](int position, int removed, int added) {
+                if (const auto self = weak.lock())
+                    self->applyChange(position, removed, added);
+            });
+        // Register after the document-owned parser; every view observes the
+        // same revision, and formatting cannot read a view's obsolete tree.
+        highlighter = new MyHighlighter(source, document.get());
+        if (document->hasPendingEdits())
+            continuation->start(1);
+    }
+
+    void applyChange(int position, int removed, int added)
+    {
+        if (!source)
+            return;
+        const auto& oldText = document->text();
+        DocumentChange next;
+        next.oldLength = oldText.size();
+        next.newLength = qMax(0, source->characterCount() - 1);
+        next.position = qBound(0, position, next.oldLength);
+        next.removedLength = qBound(0, removed, next.oldLength - next.position);
+        next.removedText = oldText.mid(next.position, next.removedLength);
+        int inserted = next.newLength - (next.oldLength - next.removedLength);
+        if (inserted < 0 || next.position + inserted > next.newLength)
+            inserted = qBound(0, added, next.newLength - qMin(next.position, next.newLength));
+        QTextCursor cursor(source);
+        cursor.setPosition(qMin(next.position, next.newLength));
+        cursor.setPosition(qMin(next.position + inserted, next.newLength), QTextCursor::KeepAnchor);
+        next.insertedText = cursor.selectedText()
+            .replace(QChar::ParagraphSeparator, QLatin1Char('\n'))
+            .replace(QChar::LineSeparator, QLatin1Char('\n'));
+        if (!next.changesText() && next.oldLength == next.newLength) {
+            change = {};
+            return;
+        }
+        const auto block = source->findBlock(qMin(next.position, next.newLength));
+        next.startLine = block.isValid() ? block.blockNumber() : 0;
+        next.startColumn = block.isValid() ? next.position - block.position() : next.position;
+        next.oldEndLine = next.startLine + next.removedText.count(QLatin1Char('\n'));
+        next.newEndLine = next.startLine + next.insertedText.count(QLatin1Char('\n'));
+        next.lineDelta = next.newEndLine - next.oldEndLine;
+        next.revision = ++revision;
+        oldLineBounds.first = next.position <= 0 ? 0
+            : oldText.lastIndexOf(QLatin1Char('\n'), next.position - 1) + 1;
+        const int oldBreak = oldText.indexOf(QStringLiteral("\n"), next.oldEnd());
+        oldLineBounds.second = oldBreak < 0 ? oldText.size() : oldBreak;
+        continuation->stop();
+        const bool defer = !deferredViews.isEmpty();
+        ranges = document->applyEdit(next, defer);
+        ++incrementalEditCount;
+        change = next;
+        lastChangedRangeCount = ranges.size();
+        lastChangedCharacterCount = 0;
+        for (const auto& range : ranges)
+            lastChangedCharacterCount += qMax(0, range.endChar - range.startChar);
+        if (ranges.isEmpty()) {
+            TSChangedRange local;
+            local.startChar = change.position;
+            local.endChar = change.newEnd();
+            local.startLine = change.startLine;
+            local.endLine = qMax(change.startLine, change.newEndLine);
+            ranges.append(local);
+        }
+        if (!defer && document->hasPendingEdits())
+            continuation->start(25);
+        if (highlighter)
+            for (const auto& range : ranges)
+                highlighter->requestDeferredRefresh(range.startChar, range.endChar);
+    }
 };
 
-QHash<QTextDocument*, SyntaxHighlighterRegistration>&
-syntaxHighlighterRegistry()
+namespace {
+QHash<QTextDocument*, std::shared_ptr<EditorDocumentSyntax>>& documentSyntaxRegistry()
 {
-    static QHash<QTextDocument*, SyntaxHighlighterRegistration> registry;
+    static QHash<QTextDocument*, std::shared_ptr<EditorDocumentSyntax>> registry;
     return registry;
 }
 }
 
-EditorSyntaxState::EditorSyntaxState()
-    : parseContinuation(std::make_unique<QTimer>())
+EditorSyntaxState::EditorSyntaxState() : shared(std::make_shared<EditorDocumentSyntax>()) {}
+EditorSyntaxState::~EditorSyntaxState() { detachHighlighter(); }
+
+void EditorSyntaxState::init()
 {
-    parseContinuation->setSingleShot(true);
-    QObject::connect(parseContinuation.get(), &QTimer::timeout, [this] {
-        if (!document || !document->hasPendingEdits())
-            return;
-        if (!document->finishPendingEdits(3000)) {
-            parseContinuation->start(1);
-            return;
-        }
-        const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
-        if (registration.owner == this && registration.highlighter)
-            registration.highlighter->requestDeferredRefresh();
-        if (reparseFinished)
-            reparseFinished();
-    });
+    detachHighlighter();
+    shared = std::make_shared<EditorDocumentSyntax>();
 }
 
 void EditorSyntaxState::setReparseFinishedCallback(std::function<void()> callback)
@@ -51,128 +162,38 @@ void EditorSyntaxState::setReparseFinishedCallback(std::function<void()> callbac
     reparseFinished = std::move(callback);
 }
 
-EditorSyntaxState::~EditorSyntaxState()
+void EditorSyntaxState::createHighlighter(QTextDocument* source, std::uint64_t revision)
 {
-    parseContinuation->stop();
-    detachHighlighter();
-}
-
-void EditorSyntaxState::init()
-{
-    parseContinuation->stop();
-    detachHighlighter();
-    document = std::make_unique<TSDocument>();
-    document->setSynchronousParseBudget(3000);
-    largeDocument = false;
-    fullBuildCount = 0;
-    incrementalEditCount = 0;
-    lastChangedRangeCount = 0;
-    lastChangedCharacterCount = 0;
-}
-
-QList<TSChangedRange> EditorSyntaxState::fullDocumentRange(
-    const QString& text) const
-{
-    TSChangedRange range;
-    range.endChar = text.size();
-    range.endLine = text.count(QLatin1Char('\n'));
-    return {range};
-}
-
-void EditorSyntaxState::recordChangedRanges(
-    const QList<TSChangedRange>& ranges)
-{
-    lastChangedRangeCount = ranges.size();
-    lastChangedCharacterCount = 0;
-    for (const TSChangedRange& range : ranges) {
-        lastChangedCharacterCount +=
-            qMax(0, range.endChar - range.startChar);
-    }
-}
-
-void EditorSyntaxState::syncText(const QString& text)
-{
-    parseContinuation->stop();
-    document->setText(text);
-    if (document->hasPendingEdits())
-        parseContinuation->start(1);
-    largeDocument =
-        text.size() > kLargeFileCharacters;
-    ++fullBuildCount;
-    lastChangedRangeCount = 0;
-    lastChangedCharacterCount = 0;
-}
-
-void EditorSyntaxState::createHighlighter(QTextDocument* textDocument)
-{
-    detachHighlighter();
-    if (!textDocument || !document)
+    if (!source || (shared->source == source && shared->views.contains(this)))
         return;
-
-    auto& registry = syntaxHighlighterRegistry();
-    auto registrationIt = registry.find(textDocument);
-    const bool inserted = registrationIt == registry.end();
-    if (inserted) {
-        registrationIt = registry.insert(
-            textDocument,
-            SyntaxHighlighterRegistration{});
+    detachHighlighter();
+    auto& registry = documentSyntaxRegistry();
+    auto it = registry.find(source);
+    if (it == registry.end()) {
+        auto owner = std::make_shared<EditorDocumentSyntax>();
+        it = registry.insert(source, owner);
+        owner->bind(source, revision);
+        QObject::connect(source, &QObject::destroyed, [source] {
+            const auto owner = documentSyntaxRegistry().take(source);
+            if (owner) {
+                owner->continuation->stop();
+                owner->source.clear();
+                delete owner->highlighter.data();
+            }
+        });
     }
-    SyntaxHighlighterRegistration& registration =
-        registrationIt.value();
-    if (inserted) {
-        QObject::connect(
-            textDocument,
-            &QObject::destroyed,
-            [](QObject* destroyedDocument) {
-                syntaxHighlighterRegistry().remove(
-                    static_cast<QTextDocument*>(destroyedDocument));
-            });
-    }
-
-    registration.syntaxStates.append(this);
-    highlighterDocument = textDocument;
-    if (!registration.highlighter) {
-        registration.owner = this;
-        registration.highlighter =
-            new MyHighlighter(textDocument, document.get());
-    }
+    shared = it.value();
+    shared->views.append(this);
 }
 
 void EditorSyntaxState::detachHighlighter()
 {
-    QTextDocument* textDocument = highlighterDocument.data();
-    highlighterDocument.clear();
-    if (!textDocument)
+    if (!shared)
         return;
-
-    auto& registry = syntaxHighlighterRegistry();
-    auto registrationIt = registry.find(textDocument);
-    if (registrationIt == registry.end())
-        return;
-
-    SyntaxHighlighterRegistration& registration =
-        registrationIt.value();
-    registration.syntaxStates.removeAll(this);
-    if (registration.owner == this) {
-        delete registration.highlighter.data();
-        registration.highlighter.clear();
-        registration.owner = nullptr;
-    }
-
-    if (registration.syntaxStates.isEmpty()) {
-        delete registration.highlighter.data();
-        registry.erase(registrationIt);
-        return;
-    }
-
-    if (!registration.highlighter) {
-        EditorSyntaxState* replacement =
-            registration.syntaxStates.constFirst();
-        registration.owner = replacement;
-        registration.highlighter = new MyHighlighter(
-            textDocument,
-            replacement->document.get());
-    }
+    shared->views.removeAll(this);
+    shared->deferredViews.remove(this);
+    if (shared->deferredViews.isEmpty() && shared->document->hasPendingEdits() && shared->source)
+        shared->continuation->start(1);
 }
 
 void EditorSyntaxState::attachToEditor(MyCodeEditor* editor)
@@ -180,113 +201,67 @@ void EditorSyntaxState::attachToEditor(MyCodeEditor* editor)
     createHighlighter(editor->document());
 }
 
-QList<TSChangedRange> EditorSyntaxState::applyDocumentChange(
-    const DocumentChange& change,
-    const TSUTF16Text& currentText,
-    bool deferSyntaxReparse)
+const TSUTF16Text& EditorSyntaxState::text() const { return shared->document->text(); }
+const DocumentChange& EditorSyntaxState::lastChange() const { return shared->change; }
+QPair<int, int> EditorSyntaxState::oldChangedLineBounds() const { return shared->oldLineBounds; }
+const QList<TSChangedRange>& EditorSyntaxState::changedRanges() const { return shared->ranges; }
+std::uint64_t EditorSyntaxState::revision() const { return shared->revision; }
+void EditorSyntaxState::setRevision(std::uint64_t revision) { shared->revision = revision; }
+void EditorSyntaxState::setDeferredParsing(bool deferred)
 {
-    parseContinuation->stop();
-    if (document->text().size() != change.oldLength
-        || document->text().mid(change.position, change.removedLength)
-               != change.removedText) {
-        QString recoveredText;
-        if (currentText.size() == change.newLength) {
-            recoveredText = currentText.materialized();
-        } else if (document->text().size() == change.oldLength
-                   && change.position >= 0
-                   && change.position + change.removedLength
-                          <= document->text().size()) {
-            recoveredText = document->text();
-            recoveredText.replace(change.position,
-                                  change.removedLength,
-                                  change.insertedText);
-        }
-        if (recoveredText.size() != change.newLength)
-            return {};
-
-        syncText(recoveredText);
-        const QList<TSChangedRange> ranges =
-            fullDocumentRange(recoveredText);
-        recordChangedRanges(ranges);
-        return ranges;
-    }
-
-    QList<TSChangedRange> ranges = document->applyEdit(
-        change, deferSyntaxReparse);
-    if (!deferSyntaxReparse && document->hasPendingEdits())
-        parseContinuation->start(25);
-    ++incrementalEditCount;
-    largeDocument =
-        document->text().size()
-        > kLargeFileCharacters;
-    recordChangedRanges(ranges);
-    if (ranges.isEmpty()) {
-        TSChangedRange range;
-        range.startChar = change.position;
-        range.endChar = change.newEnd();
-        range.startLine = change.startLine;
-        range.endLine = qMax(change.startLine, change.newEndLine);
-        ranges.append(range);
-    }
-    const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
-    if (registration.owner == this && registration.highlighter) {
-        for (const auto& range : ranges)
-            registration.highlighter->requestDeferredRefresh(range.startChar, range.endChar);
-    }
-    return ranges;
+    if (deferred)
+        shared->deferredViews.insert(this);
+    else
+        shared->deferredViews.remove(this);
 }
 
 void EditorSyntaxState::flushPendingEdits()
 {
-    parseContinuation->stop();
-    const bool pending = document->hasPendingEdits();
-    document->flushPendingEdits();
-    if (pending) {
-        const auto registration = syntaxHighlighterRegistry().value(highlighterDocument);
-        if (registration.owner == this && registration.highlighter)
-            registration.highlighter->requestDeferredRefresh();
-        if (reparseFinished)
-            reparseFinished();
-    }
+    const auto owner = shared;
+    owner->continuation->stop();
+    const bool pending = owner->document->hasPendingEdits();
+    owner->document->flushPendingEdits();
+    if (pending)
+        owner->notifyReparsed();
 }
 
 QString EditorSyntaxState::moduleNameAt(int charPos) const
 {
-    return document->enclosingModuleName(charPos < 0 ? 0 : charPos);
+    return shared->document->enclosingModuleName(charPos < 0 ? 0 : charPos);
 }
 QString EditorSyntaxState::packageNameAt(int charPos) const
 {
-    return document->enclosingPackageName(charPos < 0 ? 0 : charPos);
+    return shared->document->enclosingPackageName(charPos < 0 ? 0 : charPos);
 }
 
 
 TSPortAppendTarget EditorSyntaxState::portAppendTargetAt(int charPos) const
 {
-    return document->portAppendTarget(charPos < 0 ? 0 : charPos);
+    return shared->document->portAppendTarget(charPos < 0 ? 0 : charPos);
 }
 
 TSSignalInsertTarget EditorSyntaxState::signalInsertTargetAt(int charPos) const
 {
-    return document->signalInsertTarget(charPos < 0 ? 0 : charPos);
+    return shared->document->signalInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
 TSSignalInsertTarget
 EditorSyntaxState::blockSignalInsertTargetAt(int charPos) const
 {
-    return document->blockSignalInsertTarget(
+    return shared->document->blockSignalInsertTarget(
         charPos < 0 ? 0 : charPos);
 }
 
 TSParameterInsertTarget EditorSyntaxState::parameterInsertTargetAt(
     int charPos) const
 {
-    return document->parameterInsertTarget(charPos < 0 ? 0 : charPos);
+    return shared->document->parameterInsertTarget(charPos < 0 ? 0 : charPos);
 }
 
 TSModuleEndNavigationTarget EditorSyntaxState::moduleEndNavigationTargetAt(
     int charPos) const
 {
-    return document->moduleEndNavigationTarget(charPos < 0 ? 0 : charPos);
+    return shared->document->moduleEndNavigationTarget(charPos < 0 ? 0 : charPos);
 }
 
 TSAlwaysScopeTarget EditorSyntaxState::alwaysScopeTargetAt(
@@ -294,7 +269,7 @@ TSAlwaysScopeTarget EditorSyntaxState::alwaysScopeTargetAt(
     int selectionStartChar,
     int selectionEndChar) const
 {
-    return document->alwaysScopeTarget(
+    return shared->document->alwaysScopeTarget(
         cursorChar < 0 ? 0 : cursorChar,
         selectionStartChar,
         selectionEndChar);
@@ -305,7 +280,7 @@ TSModuleScopeTarget EditorSyntaxState::moduleScopeTargetAt(
     int selectionStartChar,
     int selectionEndChar) const
 {
-    return document->moduleScopeTarget(
+    return shared->document->moduleScopeTarget(
         cursorChar < 0 ? 0 : cursorChar,
         selectionStartChar,
         selectionEndChar);
@@ -314,7 +289,7 @@ TSModuleScopeTarget EditorSyntaxState::moduleScopeTargetAt(
 TSBeginEndInsideTarget EditorSyntaxState::beginEndInsideTargetAt(
     int cursorChar) const
 {
-    return document->beginEndInsideTarget(cursorChar < 0 ? 0 : cursorChar);
+    return shared->document->beginEndInsideTarget(cursorChar < 0 ? 0 : cursorChar);
 }
 
 TSStructuralNewlineTarget
@@ -322,7 +297,7 @@ EditorSyntaxState::structuralNewlineTargetAt(
     int cursorChar,
     int indentWidth) const
 {
-    return document->structuralNewlineTarget(
+    return shared->document->structuralNewlineTarget(
         cursorChar < 0 ? 0 : cursorChar,
         indentWidth);
 }
@@ -332,7 +307,7 @@ EditorSyntaxState::uniqueKeywordCompletionAt(
     int cursorChar,
     int minimumPrefixLength) const
 {
-    return document->uniqueKeywordCompletionAt(
+    return shared->document->uniqueKeywordCompletionAt(
         cursorChar < 0 ? 0 : cursorChar,
         minimumPrefixLength);
 }
@@ -341,26 +316,26 @@ TSKeywordPairTarget
 EditorSyntaxState::matchingKeywordPairAt(
     int cursorChar) const
 {
-    return document->matchingKeywordPairAt(
+    return shared->document->matchingKeywordPairAt(
         cursorChar < 0 ? 0 : cursorChar);
 }
 
 TSIdentifierTarget EditorSyntaxState::identifierAt(int cursorChar) const
 {
-    return document->identifierAt(cursorChar < 0 ? 0 : cursorChar);
+    return shared->document->identifierAt(cursorChar < 0 ? 0 : cursorChar);
 }
 
 TSExpressionAtomTarget EditorSyntaxState::expressionAtomAt(
     int cursorChar) const
 {
-    return document->expressionAtomAt(
+    return shared->document->expressionAtomAt(
         cursorChar < 0 ? 0 : cursorChar);
 }
 
 TSCompletionContextTarget EditorSyntaxState::completionContextAt(
     int cursorChar) const
 {
-    return document->completionContextAt(
+    return shared->document->completionContextAt(
         cursorChar < 0 ? 0 : cursorChar);
 }
 
@@ -368,7 +343,7 @@ TSIdentifierOccurrenceSet
 EditorSyntaxState::identifierOccurrencesAt(
     int cursorChar) const
 {
-    return document->identifierOccurrencesAt(
+    return shared->document->identifierOccurrencesAt(
         cursorChar < 0 ? 0 : cursorChar);
 }
 
@@ -377,7 +352,7 @@ EditorSyntaxState::assignmentNavigationTargetAt(
     int cursorChar,
     bool previous) const
 {
-    return document->assignmentNavigationTarget(
+    return shared->document->assignmentNavigationTarget(
         cursorChar < 0 ? 0 : cursorChar,
         previous);
 }
@@ -387,7 +362,7 @@ EditorSyntaxState::conditionalBranchNavigationTargetAt(
     int cursorChar,
     bool previous) const
 {
-    return document->conditionalBranchNavigationTarget(
+    return shared->document->conditionalBranchNavigationTarget(
         cursorChar < 0 ? 0 : cursorChar,
         previous);
 }
@@ -397,7 +372,7 @@ EditorSyntaxState::structuralNavigationTargetAt(
     int cursorChar,
     TSStructuralNavigationDirection direction) const
 {
-    return document->structuralNavigationTarget(
+    return shared->document->structuralNavigationTarget(
         cursorChar < 0 ? 0 : cursorChar,
         direction);
 }
@@ -405,40 +380,47 @@ EditorSyntaxState::structuralNavigationTargetAt(
 TSInstantiationTarget EditorSyntaxState::instantiationAt(
     int cursorChar) const
 {
-    return document->instantiationAt(cursorChar < 0 ? 0 : cursorChar);
+    return shared->document->instantiationAt(cursorChar < 0 ? 0 : cursorChar);
 }
 
 TSUndefinedSignalContext
 EditorSyntaxState::undefinedSignalContextAt(int cursorChar) const
 {
-    return document->undefinedSignalContextAt(
+    return shared->document->undefinedSignalContextAt(
         cursorChar < 0 ? 0 : cursorChar);
 }
 
 const TSDocument* EditorSyntaxState::tsDocument() const
 {
-    return document.get();
+    return shared->document.get();
 }
 
 EditorLargeFileSyntaxSnapshot
 EditorSyntaxState::largeFileSnapshotForTest() const
 {
     EditorLargeFileSyntaxSnapshot snapshot;
-    if (!largeDocument || !document)
+    snapshot.syntaxIdentity = reinterpret_cast<std::uintptr_t>(shared->document.get());
+    snapshot.sharedViewCount = shared->views.size();
+    snapshot.fullBuildCount = shared->fullBuildCount;
+    snapshot.incrementalEditCount = shared->incrementalEditCount;
+    if (!isLargeDocument())
         return snapshot;
 
-    snapshot.endPosition = document->text().size();
-    snapshot.documentLength = document->text().size();
-    snapshot.syntaxTextLength = document->text().size();
+    snapshot.endPosition = shared->document->text().size();
+    snapshot.documentLength = shared->document->text().size();
+    snapshot.syntaxTextLength = shared->document->text().size();
     snapshot.fullDocumentSyntax = true;
-    snapshot.fullBuildCount = fullBuildCount;
-    snapshot.incrementalEditCount = incrementalEditCount;
-    snapshot.lastChangedRangeCount = lastChangedRangeCount;
-    snapshot.lastChangedCharacterCount = lastChangedCharacterCount;
+    snapshot.lastChangedRangeCount = shared->lastChangedRangeCount;
+    snapshot.lastChangedCharacterCount = shared->lastChangedCharacterCount;
     return snapshot;
 }
 
 bool EditorSyntaxState::isLargeDocument() const
 {
-    return largeDocument;
+    return shared->document->text().size() > kLargeFileCharacters;
+}
+
+int EditorSyntaxState::liveDocumentCountForTest()
+{
+    return documentSyntaxRegistry().size();
 }

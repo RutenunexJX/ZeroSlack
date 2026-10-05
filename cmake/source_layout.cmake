@@ -23,8 +23,6 @@ foreach(module IN LISTS ZEROSLACK_SOURCE_MODULES)
         "${CMAKE_CURRENT_SOURCE_DIR}/src/${module}")
 endforeach()
 
-# Also cover the small standalone tests that intentionally do not link the core.
-include_directories(${ZEROSLACK_MODULE_INCLUDE_DIRS})
 set(CMAKE_AUTOUIC_SEARCH_PATHS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/app"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/editor")

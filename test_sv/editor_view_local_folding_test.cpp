@@ -4,6 +4,7 @@
 #include "tabmanager.h"
 #include "temporaryeditorsession.h"
 #include "tsdocument.h"
+#include "editorsyntaxstate.h"
 #include "insightvisualstyle.h"
 
 #include <QApplication>
@@ -772,10 +773,67 @@ static void exerciseDeferredWholeDocumentHighlighting()
             && settles(endKeyword, InsightVisualStyle::theme().syntax.keyword));
 }
 
+void exerciseDocumentOwnedSyntax()
+{
+    const int ownersBefore = EditorSyntaxState::liveDocumentCountForTest();
+    {
+        SharedDocument document(QStringLiteral("syntax-owner"), QStringLiteral("owner.sv"),
+            QStringLiteral("module owner;\ninitial begin\n logic x;\nend\nendmodule\n"));
+        MyCodeEditor first;
+        auto second = std::make_unique<MyCodeEditor>();
+        document.attachView(&first);
+        document.attachView(second.get());
+        const auto initial = first.largeFileSyntaxSnapshotForTest();
+        expect("split views share the actual syntax tree and its one initial parse",
+            initial.syntaxIdentity == second->largeFileSyntaxSnapshotForTest().syntaxIdentity
+                && initial.sharedViewCount == 2 && initial.fullBuildCount == 1);
+        const auto revision = first.semanticDocumentRevision();
+        QTextCursor edit(document.textDocument());
+        edit.setPosition(0);
+        edit.insertText(QStringLiteral("// shared edit\n"));
+        expect("one document edit advances the shared parser and revision once",
+            first.largeFileSyntaxSnapshotForTest().incrementalEditCount == initial.incrementalEditCount + 1
+                && second->largeFileSyntaxSnapshotForTest().incrementalEditCount == initial.incrementalEditCount + 1
+                && first.semanticDocumentRevision() == revision + 1
+                && first.semanticDocumentRevision() == second->semanticDocumentRevision()
+                && first.syntaxTextForTest() == second->syntaxTextForTest());
+        second.reset();
+        expect("closing a split preserves the remaining tree without reparsing",
+            first.largeFileSyntaxSnapshotForTest().syntaxIdentity == initial.syntaxIdentity
+                && first.largeFileSyntaxSnapshotForTest().sharedViewCount == 1
+                && first.largeFileSyntaxSnapshotForTest().fullBuildCount == 1);
+        document.detachView(&first);
+        auto replacement = std::make_unique<MyCodeEditor>();
+        document.attachView(replacement.get());
+        expect("a retained document keeps its syntax after its last view detaches",
+            replacement->largeFileSyntaxSnapshotForTest().syntaxIdentity == initial.syntaxIdentity
+                && replacement->largeFileSyntaxSnapshotForTest().fullBuildCount == 1);
+        SharedDocument other(QStringLiteral("other-owner"), QStringLiteral("other.sv"),
+            QStringLiteral("module other; endmodule\n"));
+        other.attachView(&first);
+        expect("rebinding selects the new document owner and leaves old views intact",
+            first.largeFileSyntaxSnapshotForTest().syntaxIdentity != initial.syntaxIdentity
+                && first.syntaxTextForTest() == other.textDocument()->toPlainText()
+                && replacement->syntaxTextForTest() == document.textDocument()->toPlainText());
+        for (int i = 0; i < 20; ++i) {
+            edit.insertText(QStringLiteral("// burst\n"));
+            edit.deletePreviousChar();
+        }
+        expect("rapid shared edits keep the owned text current after view destruction",
+            replacement->syntaxTextForTest() == document.textDocument()->toPlainText()
+                && first.syntaxTextForTest() == other.textDocument()->toPlainText());
+        other.detachView(&first);
+    }
+    pumpEvents();
+    expect("destroying documents releases every document-owned parser",
+           EditorSyntaxState::liveDocumentCountForTest() == ownersBefore);
+}
+
 int main(int argc, char** argv)
 {
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     QApplication application(argc, argv);
+    exerciseDocumentOwnedSyntax();
     exerciseTwoViewsOwnTheirFoldPresentation();
     exerciseFoldAnchorBoundariesAndFindReveal();
     exerciseLargeFoldOrdinaryInputDoesNotRebuildProjection();

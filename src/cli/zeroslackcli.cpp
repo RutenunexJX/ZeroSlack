@@ -1,16 +1,14 @@
 #include "zeroslackcli.h"
 
-#include "pinloomcodelinkstore.h"
-#include "projectmodel.h"
-#include "semanticindex.h"
-#include "semanticindexsnapshot.h"
-#include "semanticstableidentity.h"
-#include "slangmanager.h"
-#include "smartrelationshipbuilder.h"
-#include "suitecontextcatalog.h"
-#include "symbolanalyzer.h"
-#include "symboltaxonomy.h"
-#include "workspaceconfigurationservice.h"
+#include <zeroslack/semantic/pinloomcodelinkstore.h>
+#include <zeroslack/semantic/projectsnapshot.h>
+#include <zeroslack/semantic/semanticindex.h>
+#include <zeroslack/semantic/semanticindexsnapshot.h>
+#include <zeroslack/semantic/semanticstableidentity.h>
+#include <zeroslack/semantic/incrementalsemanticanalysisworker.h>
+#include <zeroslack/semantic/suitecontextcatalog.h>
+#include <zeroslack/semantic/symboltaxonomy.h>
+#include <zeroslack/semantic/workspaceconfigurationservice.h>
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -40,7 +38,7 @@ namespace {
 
 constexpr auto kSchema = "zeroslack.cli/v1";
 constexpr auto kCacheSchema = "ZeroSlack.CliSemanticIndex";
-constexpr int kCacheVersion = 1;
+constexpr int kCacheVersion = 2;
 
 struct SourceFileState {
     QString absolutePath;
@@ -476,13 +474,7 @@ QJsonObject symbolJson(const SemanticSymbolRecord& record,
     };
 }
 
-QString relationshipLookupKey(const QString& fileName)
-{
-    return pathKey(fileName);
-}
-
-QJsonObject buildSemanticIndex(const WorkspaceState& state,
-                               QString* failureReason)
+ProjectSnapshot projectForWorkspace(const WorkspaceState& state)
 {
     ProjectSnapshot project;
     project.revision = 1;
@@ -500,21 +492,67 @@ QJsonObject buildSemanticIndex(const WorkspaceState& state,
             SymbolTaxonomy::sourceRoleForFileName(file.absolutePath));
     }
 
-    SemanticIndex* semanticIndex = SemanticIndex::getInstance();
-    semanticIndex->clearSemanticState();
-    SymbolAnalyzer analyzer;
-    std::shared_ptr<const SemanticIndexSnapshot> snapshot;
-    if (project.systemVerilogFiles.isEmpty()) {
-        snapshot = std::make_shared<const SemanticIndexSnapshot>(
-            SemanticIndexSnapshot::fromSymbolRecords({}));
-        semanticIndex->setSnapshot(snapshot);
-    } else {
-        analyzer.analyzeProject(project);
-        snapshot = semanticIndex->snapshot();
+    return project;
+}
+
+QJsonObject dependencyEvidenceJson(const SemanticAnalysisInput& input)
+{
+    const auto fingerprint = input.fingerprint();
+    QJsonArray sources;
+    QStringList paths = fingerprint.sources.keys();
+    paths.sort(Qt::CaseSensitive);
+    for (const auto& path : paths) {
+        const auto source = fingerprint.sources.value(path);
+        sources.append(QJsonObject{
+            {QStringLiteral("path"), path},
+            {QStringLiteral("readable"), source.readable},
+            {QStringLiteral("sha256"), QString::fromLatin1(source.sha256.toHex())}});
     }
-    if (!snapshot) {
+    return {{QStringLiteral("projectIdentity"), fingerprint.projectIdentity},
+            {QStringLiteral("sources"), sources}};
+}
+
+bool dependencyEvidenceCurrent(const QJsonObject& evidence,
+                               const ProjectSnapshot& project)
+{
+    if (!evidence.value(QStringLiteral("sources")).isArray())
+        return false;
+    SemanticInputFingerprint fingerprint;
+    fingerprint.projectIdentity = evidence.value(QStringLiteral("projectIdentity")).toString();
+    for (const auto& value : evidence.value(QStringLiteral("sources")).toArray()) {
+        const auto source = value.toObject();
+        const QString path = source.value(QStringLiteral("path")).toString();
+        const auto readable = source.value(QStringLiteral("readable"));
+        const QByteArray hex = source.value(QStringLiteral("sha256")).toString().toLatin1();
+        if (path.isEmpty() || !readable.isBool()
+            || (readable.toBool() ? hex.size() != 64 : !hex.isEmpty())
+            || fingerprint.sources.contains(path))
+            return false;
+        fingerprint.sources.insert(path, {readable.toBool(), QByteArray::fromHex(hex)});
+    }
+    for (const auto& root : project.systemVerilogFiles)
+        if (!fingerprint.sources.contains(SemanticInputCapture::pathKey(root)))
+            return false;
+    return SemanticInputCapture::matchesFingerprint(fingerprint, project);
+}
+
+QJsonObject buildSemanticIndex(const WorkspaceState& state,
+                               QString* failureReason)
+{
+    SemanticAnalysisRequest request;
+    request.generation = 1;
+    request.computationRevision = 1;
+    request.reason = SemanticAnalysisReason::WorkspaceOpen;
+    request.project = projectForWorkspace(state);
+    request.changedFiles = request.project.systemVerilogFiles;
+    // The CLI owns a value-only result from the same worker used by the GUI.
+    // It neither publishes to the GUI singleton nor performs another compile.
+    const auto result = IncrementalSemanticAnalysisWorker::analyze(request, {}, {}, {});
+    const auto snapshot = result.preparedSnapshot;
+    if (!snapshot || !result.input || result.cancelled || !result.error.isEmpty()) {
         if (failureReason)
-            *failureReason = QStringLiteral("Semantic analysis produced no snapshot.");
+            *failureReason = result.error.isEmpty()
+                ? QStringLiteral("Semantic analysis produced no current snapshot.") : result.error;
         return {};
     }
 
@@ -544,32 +582,7 @@ QJsonObject buildSemanticIndex(const WorkspaceState& state,
 
     QJsonArray relationships;
     QSet<QString> relationshipKeys;
-    SlangManager relationshipSlang;
-    SmartRelationshipBuilder builder(nullptr, &relationshipSlang);
-    const QHash<QString, RelationshipExtractionInfo> precomputed =
-        builder.extractWorkspaceRelationshipInfo(
-            project.systemVerilogFiles, project.includeDirs, project.defines);
-    QHash<QString, RelationshipExtractionInfo> precomputedByKey;
-    for (auto it = precomputed.cbegin(); it != precomputed.cend(); ++it)
-        precomputedByKey.insert(relationshipLookupKey(it.key()), it.value());
-
-    for (const SourceFileState& file : state.files) {
-        const QList<SemanticSymbolRecord> fileRecords =
-            snapshot->getSymbolRecords(file.absolutePath);
-        const auto infoIt = precomputedByKey.constFind(
-            relationshipLookupKey(file.absolutePath));
-        const RelationshipExtractionInfo* info =
-            infoIt == precomputedByKey.cend() ? nullptr : &infoIt.value();
-        const QVector<RelationshipToAdd> computed =
-            builder.computeRelationships(
-                file.absolutePath,
-                QString::fromUtf8(file.content),
-                fileRecords,
-                snapshot.get(),
-                project.includeDirs,
-                project.defines,
-                info);
-        for (const RelationshipToAdd& relationship : computed) {
+    for (const SemanticRelationship& relationship : snapshot->relationshipsView()) {
             const QString fromId = stableIdByHandle.value(relationship.fromId);
             const QString toId = stableIdByHandle.value(relationship.toId);
             if (fromId.isEmpty() || toId.isEmpty())
@@ -587,13 +600,12 @@ QJsonObject buildSemanticIndex(const WorkspaceState& state,
                 {QStringLiteral("to"), toId},
                 {QStringLiteral("type"), type},
                 {QStringLiteral("confidence"), relationship.confidence},
-                {QStringLiteral("evidence"), relationship.context},
+                {QStringLiteral("evidence"), relationship.evidenceText},
                 {QStringLiteral("range"),
                  sourceRangeJson(relationship.evidenceRange, state.root)},
                 {QStringLiteral("exactValueForward"),
                  relationship.exactValueForward},
             });
-        }
     }
 
     QJsonArray diagnostics;
@@ -614,12 +626,12 @@ QJsonObject buildSemanticIndex(const WorkspaceState& state,
         });
     }
 
-    analyzer.shutdown();
     return {
         {QStringLiteral("schema"), QString::fromLatin1(kCacheSchema)},
         {QStringLiteral("version"), kCacheVersion},
         {QStringLiteral("workspaceRoot"), state.root},
         {QStringLiteral("workspaceRevision"), state.revision},
+        {QStringLiteral("dependencyEvidence"), dependencyEvidenceJson(*result.input)},
         {QStringLiteral("generatedAtUtc"),
          QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)},
         {QStringLiteral("configurationSource"),
@@ -727,7 +739,10 @@ PreparedIndex prepareIndex(const ZeroSlackCliRequest& request,
             == pathKey(prepared.workspace.root)
         && prepared.index.value(
                QStringLiteral("workspaceRevision")).toString()
-            == prepared.workspace.revision;
+            == prepared.workspace.revision
+        && dependencyEvidenceCurrent(prepared.index.value(
+               QStringLiteral("dependencyEvidence")).toObject(),
+               projectForWorkspace(prepared.workspace));
 
     if (statusOnly)
         return prepared;

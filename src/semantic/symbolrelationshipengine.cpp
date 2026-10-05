@@ -156,7 +156,7 @@ SymbolRelationshipEngine::getRelationshipMetadata(
 {
     RelationshipEdgeMetadata metadata;
     if (querySnapshot) {
-        const auto record = querySnapshot->getSymbolRecordByLocalHandle(fromSymbolId);
+        const auto record = querySnapshot->recordForProjectionHandle(fromSymbolId);
         for (const auto& relationship : querySnapshot->relationshipsForStableKey(record.stableKey)) {
             if (relationship.toId == toSymbolId && relationship.type == type) {
                 metadata.found = true;

@@ -1,5 +1,4 @@
 #include "symbolanalyzer.h"
-#include "workspacemanager.h"
 #include "semanticindexsnapshot.h"
 #include <QEventLoop>
 #include <QFileInfo>
@@ -121,11 +120,6 @@ void SymbolAnalyzer::analyzeOpenDocuments(const QList<OpenDocumentContent>& docu
     runSemanticAnalysisBlocking(documentRequest(documents, false));
 }
 
-void SymbolAnalyzer::analyzeWorkspace(WorkspaceManager* manager, std::function<bool()> cancelled)
-{
-    if (manager && manager->isWorkspaceOpen())
-        analyzeProject(manager->projectSnapshot(), std::move(cancelled));
-}
 
 void SymbolAnalyzer::analyzeProject(const ProjectSnapshot& project, std::function<bool()> cancelled)
 {

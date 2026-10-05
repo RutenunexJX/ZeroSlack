@@ -213,6 +213,14 @@ RtlInsightsPresenter::RtlInsightsPresenter(
     : state(viewState),
       graphController(graph)
 {
+    reportSession = new LiveInsightSession(state.graphCallbackContext);
+    configureLiveInsightGraphReports(*reportSession);
+    QObject::connect(reportSession, &LiveInsightSession::snapshotChanged,
+        state.graphCallbackContext, [this](LiveInsightKind, const LiveInsightSnapshot& snapshot) {
+            applyGraphSnapshot(snapshot);
+        });
+    QObject::connect(reportSession, &LiveInsightSession::buildDispatched,
+        state.graphCallbackContext, [this](const LiveInsightBuildRequest&) { ++graphBuildRequestCount; });
 }
 void RtlInsightsPresenter::refresh()
 {
@@ -245,6 +253,7 @@ void RtlInsightsPresenter::refresh()
 
 void RtlInsightsPresenter::renderNoContext()
 {
+    cancelGraphRequests();
     if (!state.insightsTree)
         return;
     graphController.showTreeSurface();
@@ -258,6 +267,7 @@ void RtlInsightsPresenter::renderNoContext()
 
 void RtlInsightsPresenter::renderActionList()
 {
+    cancelGraphRequests();
     if (!state.insightsTree)
         return;
     graphController.showTreeSurface();
@@ -293,94 +303,12 @@ void RtlInsightsPresenter::showSignalUsageHotspot()
 
 void RtlInsightsPresenter::showFsmGraph()
 {
-    if (!state.insightsGraphScene)
-        return;
-
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("FSM Graph"));
-    FsmGraphReport report;
-    try {
-        ++graphBuildRequestCount;
-        FsmGraphQuery query;
-        query.fileName = state.currentFileName;
-        query.moduleName = state.currentModuleName;
-        report = FsmGraphService::getInstance()->buildFsmGraph(query);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("FSM Graph"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("FSM Graph"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-    graphController.renderFsmGraphScene(
-        report,
-        QStringLiteral("FSM Graph %1").arg(state.currentModuleName));
-    if (state.insightsDock)
-        state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: FSM Graph %1")
-                                         .arg(state.currentModuleName));
-    if (state.statusMessageHandler)
-        state.statusMessageHandler(QStringLiteral("Rendered FSM graph"), 1500);
-    logReportDone(QStringLiteral("FSM Graph"),
-                  static_cast<int>(timer.elapsed()));
+    requestGraph(LiveInsightGraphMode::Fsm);
 }
 
 void RtlInsightsPresenter::showModuleBlockDiagram()
 {
-    if (!state.insightsGraphScene)
-        return;
-
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("Module Block Diagram"));
-    ModuleBlockDiagramReport report;
-    try {
-        ++graphBuildRequestCount;
-        ModuleBlockDiagramQuery query;
-        query.fileName = state.currentFileName;
-        query.moduleName = state.currentModuleName;
-        report = ModuleBlockDiagramService::getInstance()
-            ->buildModuleBlockDiagram(query);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("Module Block Diagram"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("Module Block Diagram"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-
-    graphController.mapModuleBlockDiagram(report);
-    if (state.insightsDock) {
-        state.insightsDock->setWindowTitle(
-            QStringLiteral("RTL Insights: Module Block Diagram %1")
-                .arg(state.currentModuleName));
-        state.insightsDock->show();
-        state.insightsDock->raise();
-    }
-    if (state.statusMessageHandler) {
-        state.statusMessageHandler(
-            report.found
-                ? QStringLiteral("Rendered module block diagram for %1")
-                      .arg(report.root.moduleDisplayName)
-                : report.notFoundReasonDisplayName,
-            1500);
-    }
-    logReportDone(QStringLiteral("Module Block Diagram"),
-                  static_cast<int>(timer.elapsed()));
+    requestGraph(LiveInsightGraphMode::Module);
 }
 
 void RtlInsightsPresenter::updateActionState()
@@ -586,54 +514,7 @@ void RtlInsightsPresenter::showStateTransitionGraphForSignal(
     const QString& signalName)
 {
     setContextDirect(fileName, moduleName, signalName);
-    if (!state.insightsGraphScene)
-        return;
-
-    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
-        renderNoContext();
-        return;
-    }
-
-    QElapsedTimer timer;
-    timer.start();
-    logReportStart(QStringLiteral("State Transition Graph"));
-    StateTransitionGraphReport report;
-    try {
-        ++graphBuildRequestCount;
-        StateTransitionGraphQuery query;
-        query.fileName = state.currentFileName;
-        query.moduleName = state.currentModuleName;
-        query.symbolName = state.currentSignalName;
-        report = StateTransitionGraphService::getInstance()
-            ->buildStateTransitionGraph(query);
-    } catch (const std::exception& error) {
-        logReportError(QStringLiteral("State Transition Graph"),
-                       QString::fromLocal8Bit(error.what()));
-        return;
-    } catch (...) {
-        logReportError(QStringLiteral("State Transition Graph"),
-                       QStringLiteral("unknown error"));
-        return;
-    }
-
-    graphController.renderStateTransitionGraphScene(report);
-    if (state.insightsDock) {
-        state.insightsDock->setWindowTitle(
-            QStringLiteral("RTL Insights: State Transition Graph %1")
-                .arg(signalName.isEmpty() ? moduleName : signalName));
-        state.insightsDock->show();
-        state.insightsDock->raise();
-    }
-    if (state.statusMessageHandler) {
-        state.statusMessageHandler(
-            report.found
-                ? QStringLiteral("Rendered state transition graph for %1")
-                      .arg(report.selectedSignalDisplayName)
-                : report.notFoundReasonDisplayName,
-            1500);
-    }
-    logReportDone(QStringLiteral("State Transition Graph"),
-                  static_cast<int>(timer.elapsed()));
+    requestGraph(LiveInsightGraphMode::StateTransition);
 }
 
 void RtlInsightsPresenter::showSignalUsageHotspotForSignal(
@@ -643,6 +524,7 @@ void RtlInsightsPresenter::showSignalUsageHotspotForSignal(
     const QString& signalAccessPath)
 {
     setContextDirect(fileName, moduleName, signalName);
+    cancelGraphRequests();
     graphController.showHotspotSurface();
     if (!state.signalUsageHotspotPanel)
         return;
@@ -683,6 +565,7 @@ void RtlInsightsPresenter::showSemanticDiff(
     const QString& beforeFileName,
     const QString& afterFileName)
 {
+    cancelGraphRequests();
     if (!state.insightsTree)
         return;
     graphController.showTreeSurface();
@@ -744,4 +627,110 @@ void RtlInsightsPresenter::showSemanticDiff(
 quint64 RtlInsightsPresenter::graphBuildRequestCountForTest() const
 {
     return graphBuildRequestCount;
+}
+
+void RtlInsightsPresenter::setGraphContext(const InsightViewContext& context,
+                                          const SemanticSnapshotToken& snapshot)
+{
+    reportContext = context;
+    reportSnapshot = snapshot;
+    state.currentSourceLocation.documentRevision = context.documentRevision;
+}
+
+void RtlInsightsPresenter::setGraphSnapshot(const SemanticSnapshotToken& snapshot)
+{
+    reportSnapshot = snapshot;
+}
+
+void RtlInsightsPresenter::cancelGraphRequests()
+{
+    currentReportKey = {};
+    if (!reportSession) return;
+    reportSession->cancel(LiveInsightKind::Module);
+    reportSession->cancel(LiveInsightKind::State);
+}
+
+void RtlInsightsPresenter::requestGraph(LiveInsightGraphMode mode)
+{
+    if (!state.insightsGraphScene || !reportSession) return;
+    if (state.currentFileName.isEmpty() || state.currentModuleName.isEmpty()) {
+        renderNoContext();
+        return;
+    }
+    LiveInsightGraphInput input;
+    input.mode = mode;
+    input.semantic = reportSnapshot.isValid() ? reportSnapshot
+        : SemanticIndex::getInstance()->snapshotToken();
+    input.fileName = state.currentFileName;
+    input.moduleName = state.currentModuleName;
+    input.signalName = state.currentSignalName;
+    const auto key = liveInsightGraphRequestKey(input, reportContext.workspaceId,
+        reportContext.fileName == input.fileName ? reportContext.documentId : input.fileName,
+        reportContext.fileName == input.fileName
+            ? reportContext.documentRevision : state.currentSourceLocation.documentRevision);
+    if (currentReportKey != key) appliedReportGeneration = 0;
+    currentReportKey = key;
+    state.currentGraphMode = mode == LiveInsightGraphMode::Module ? QStringLiteral("module-block")
+        : mode == LiveInsightGraphMode::Fsm ? QStringLiteral("fsm") : QStringLiteral("state-transition");
+    reportSession->cancel(key.kind == LiveInsightKind::Module ? LiveInsightKind::State : LiveInsightKind::Module);
+    if (state.insightsDock) { state.insightsDock->show(); state.insightsDock->raise(); }
+    reportSession->setConsumerVisible(state.graphCallbackContext, key.kind, true);
+    reportSession->requestUpdate(key, {{QStringLiteral("graphInput"), QVariant::fromValue(input)}});
+    applyGraphSnapshot(reportSession->snapshot(key.kind));
+}
+
+void RtlInsightsPresenter::applyGraphSnapshot(const LiveInsightSnapshot& snapshot)
+{
+    if (!currentReportKey.isValid() || snapshot.requestedKey != currentReportKey) return;
+    if (state.insightsGraphPanel) state.insightsGraphPanel->setEnabled(!snapshot.stale);
+    if (snapshot.phase == LiveInsightPhase::Error) {
+        logReportError(QStringLiteral("Graph"), snapshot.errorText);
+        return;
+    }
+    if (snapshot.phase != LiveInsightPhase::Ready || snapshot.stale
+        || snapshot.publishedKey != currentReportKey
+        || snapshot.publishedGeneration == appliedReportGeneration) return;
+    const auto report = snapshot.payload.value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>();
+    if (!report) return;
+    appliedReportGeneration = snapshot.publishedGeneration;
+    state.currentSourceLocation.documentRevision = snapshot.publishedKey.documentRevision;
+    QElapsedTimer applyTimer;
+    applyTimer.start();
+    QString name;
+    QString message;
+    switch (report->mode) {
+    case LiveInsightGraphMode::Module: {
+        const auto& value = std::get<ModuleBlockDiagramReport>(report->value);
+        graphController.mapModuleBlockDiagram(value);
+        name = QStringLiteral("Module Block Diagram %1").arg(state.currentModuleName);
+        message = value.found ? QStringLiteral("Rendered module block diagram for %1").arg(value.root.moduleDisplayName)
+            : value.notFoundReasonDisplayName;
+        break;
+    }
+    case LiveInsightGraphMode::Fsm: {
+        const auto& value = std::get<FsmGraphReport>(report->value);
+        name = QStringLiteral("FSM Graph %1").arg(state.currentModuleName);
+        graphController.renderFsmGraphScene(value, name);
+        message = value.found ? QStringLiteral("Rendered FSM graph") : value.notFoundReasonDisplayName;
+        break;
+    }
+    case LiveInsightGraphMode::StateTransition: {
+        const auto& value = std::get<StateTransitionGraphReport>(report->value);
+        graphController.renderStateTransitionGraphScene(value);
+        name = QStringLiteral("State Transition Graph %1").arg(state.currentSignalName);
+        message = value.found ? QStringLiteral("Rendered state transition graph for %1").arg(value.selectedSignalDisplayName)
+            : value.notFoundReasonDisplayName;
+        break;
+    }
+    }
+    if (state.insightsDock) {
+        state.insightsDock->setWindowTitle(QStringLiteral("RTL Insights: %1").arg(name));
+        state.insightsDock->setProperty("liveInsightReportBuildNs", report->computationNs);
+        state.insightsDock->setProperty("liveInsightApplyNs", applyTimer.nsecsElapsed());
+    }
+    if (state.statusMessageHandler) state.statusMessageHandler(message, 1500);
+    ActivityLogService::getInstance()->append(QStringLiteral("RTL Insights"), ActivityLogLevel::Info,
+        QStringLiteral("%1 report=%2 ms Qt apply=%3 ms").arg(name)
+            .arg(report->computationNs / 1000000.0, 0, 'f', 3)
+            .arg(applyTimer.nsecsElapsed() / 1000000.0, 0, 'f', 3));
 }

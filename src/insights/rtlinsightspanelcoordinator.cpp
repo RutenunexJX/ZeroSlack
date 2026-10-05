@@ -501,6 +501,11 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                          viewState->graphTable->selectRow(row);
                          graphController->navigateSelectedItem();
                      });
+    QObject::connect(viewState->insightsDock, &QDockWidget::visibilityChanged,
+        viewState->graphCallbackContext, [this](bool visible) {
+            for (auto kind : {LiveInsightKind::Module, LiveInsightKind::State})
+                presenter->graphSession()->setConsumerVisible(viewState->graphCallbackContext, kind, visible);
+        });
     presenter->renderNoContext();
 }
 
@@ -759,3 +764,9 @@ void RtlInsightsPanelCoordinator::focusInspector()
 {
     graphController->focusInspector();
 }
+
+LiveInsightSession* RtlInsightsPanelCoordinator::graphSession() const { return presenter->graphSession(); }
+void RtlInsightsPanelCoordinator::setGraphContext(const InsightViewContext& context, const SemanticSnapshotToken& snapshot)
+{ presenter->setGraphContext(context, snapshot); }
+void RtlInsightsPanelCoordinator::setGraphSnapshot(const SemanticSnapshotToken& snapshot)
+{ presenter->setGraphSnapshot(snapshot); }

@@ -107,6 +107,9 @@ bool ElaWinShadowHelper::initWinAPI()
 
 void ElaWinShadowHelper::setWindowShadow(quint64 hwnd)
 {
+    // A dock can also be embedded in a Qt/classic host without native Ela setup.
+    if (!hwnd || !_dwmExtendFrameIntoClientArea)
+        return;
     static const MARGINS shadow = {1, 0, 0, 0};
     _dwmExtendFrameIntoClientArea((HWND)hwnd, &shadow);
 }

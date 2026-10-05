@@ -1470,8 +1470,16 @@ void exerciseGutterHitTestingBound()
     editor.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
-    expect("large syntax fold collapses for gutter probe",
-           editor.toggleFoldAtLineForTest(0));
+    // Shared syntax delivery is budgeted across event turns for this file.
+    // Wait for the actual fold before measuring hidden-block hit testing.
+    QElapsedTimer foldReady;
+    foldReady.start();
+    bool collapsed = editor.toggleFoldAtLineForTest(0);
+    while (!collapsed && foldReady.elapsed() < 2000) {
+        QTest::qWait(5);
+        collapsed = editor.toggleFoldAtLineForTest(0);
+    }
+    expect("large syntax fold collapses for gutter probe", collapsed);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
 
     QWidget* gutter = editor.findChild<QWidget*>(
@@ -1541,6 +1549,23 @@ void exerciseNumericHoverDoesNotMaterializeDocument()
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--self-contained-only")) {
+        // These synthetic lifecycle / mutation contracts do not open the
+        // copyright-restricted workspaces used by the separate latency run.
+        exerciseAnchoredRangeIndex();
+        exerciseDenseAnnotationRemap();
+        exerciseDeltaCorrectness();
+        exerciseFoldGhostAndSlotState();
+        exerciseRepeatedReplacementStability();
+        exercisePassiveUiSignals();
+        exerciseSynchronousEditTransactions();
+        exerciseOccurrenceIndexRemap();
+        exerciseOccurrenceIndexStorageBound();
+        exerciseGutterHitTestingBound();
+        exerciseNumericHoverDoesNotMaterializeDocument();
+        std::printf("self-contained checks=%d failures=%d\n", checks, failures);
+        return failures == 0 ? 0 : 1;
+    }
     if (argc == 2) {
         const QString mode = QString::fromLocal8Bit(argv[1]);
         bool handled = true;

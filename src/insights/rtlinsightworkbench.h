@@ -2,6 +2,7 @@
 #define RTLINSIGHTWORKBENCH_H
 
 #include "graphexportservice.h"
+#include "liveinsightsession.h"
 #include "insightgraphcore.h"
 #include "rtlinsightviewplugins.h"
 #include "zeroslackexport.h"
@@ -15,6 +16,7 @@
 #include <memory>
 
 class InsightCanvas;
+class LiveInsightSession;
 class InsightViewSurface;
 class RtlInsightsPanelCoordinator;
 class SignalKernelGraphPanelCoordinator;
@@ -47,6 +49,7 @@ public:
         std::function<bool(const QString&, int, int)> handler);
 
     void setStatusHandler(std::function<void(const QString&, int)> handler);
+    LiveInsightSession* graphSession() const;
     RtlInsightsPanelCoordinator* rtlSurfaceForTest() const;
     SignalKernelGraphPanelCoordinator* kernelSurfaceForTest() const;
     InsightGraphCore* graphCore();
@@ -69,9 +72,14 @@ public:
 
 protected:
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
     void fitNewSurface();
+    void applyGraphSnapshot(const LiveInsightSnapshot& snapshot);
+    LiveInsightSession* reportSession = nullptr;
+    LiveInsightRequestKey reportKey;
+    quint64 appliedReportGeneration = 0;
     bool surfaceNeedsFit = true;
     struct ViewState {
         QString searchText;

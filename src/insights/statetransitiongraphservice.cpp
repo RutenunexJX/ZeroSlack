@@ -46,7 +46,8 @@ StateTransitionGraphService::StateTransitionGraphService(
     SemanticIndex* semanticIndex,
     StateTransitionTriggerService* triggerService)
     : fsmGraphService(semanticIndex)
-    , trigger(triggerService)
+    , ownedTrigger(semanticIndex)
+    , trigger(triggerService ? triggerService : &ownedTrigger)
 {
     this->triggerService()->setSemanticIndex(semanticIndex);
 }
@@ -66,11 +67,18 @@ StateTransitionGraphService::buildStateTransitionGraph(
     StateTransitionGraphReport report;
     report.groupDisplayName = QStringLiteral("State Transition Graph");
 
+    FsmGraphQuery fsmQuery;
+    fsmQuery.isCancelled = query.isCancelled;
+    fsmQuery.fileName = query.fileName;
+    fsmQuery.moduleName = query.moduleName;
+    const FsmGraphReport fsmReport = fsmGraphService.buildFsmGraph(fsmQuery);
+
     StateTransitionTriggerQuery triggerQuery;
+    triggerQuery.isCancelled = query.isCancelled;
     triggerQuery.symbolName = query.symbolName;
     triggerQuery.fileName = query.fileName;
     triggerQuery.moduleName = query.moduleName;
-    report.trigger = triggerService()->triggerForSymbol(triggerQuery);
+    report.trigger = triggerService()->triggerForSymbol(triggerQuery, &fsmReport);
     if (!report.trigger.available) {
         report.notFoundReason =
             StateTransitionGraphNotFoundReason::TriggerRejected;
@@ -81,10 +89,6 @@ StateTransitionGraphService::buildStateTransitionGraph(
         return report;
     }
 
-    FsmGraphQuery fsmQuery;
-    fsmQuery.fileName = report.trigger.fileName;
-    fsmQuery.moduleName = report.trigger.moduleName;
-    const FsmGraphReport fsmReport = fsmGraphService.buildFsmGraph(fsmQuery);
     if (!fsmReport.found) {
         report.notFoundReason = StateTransitionGraphNotFoundReason::NoFsmGraph;
         report.notFoundReasonDisplayName =
@@ -120,5 +124,14 @@ StateTransitionGraphService::buildStateTransitionGraph(
 StateTransitionTriggerService*
 StateTransitionGraphService::triggerService() const
 {
-    return trigger ? trigger : StateTransitionTriggerService::getInstance();
+    return trigger;
+}
+
+StateTransitionGraphService::StateTransitionGraphService(SemanticSnapshotToken snapshot)
+    : StateTransitionGraphService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+StateTransitionGraphService::StateTransitionGraphService(std::shared_ptr<SemanticIndex> owner)
+    : StateTransitionGraphService(owner.get())
+{
+    ownedIndex = std::move(owner);
 }

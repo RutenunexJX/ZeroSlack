@@ -1,3 +1,4 @@
+#include "candidatepopupnavigation.h"
 #include "uicontrols.h"
 #include <QShowEvent>
 #include <QHideEvent>
@@ -142,15 +143,11 @@ void GlobalControlPanel::showAt(QWidget* anchor,
     const QRect available = screen
         ? screen->availableGeometry()
         : QRect(globalAnchor, size());
-    const int maxX = qMax(available.left(), available.right() - width() + 1);
-    const int maxY = qMax(available.top(), available.bottom() - height() + 1);
-    const int x = qBound(available.left(), globalAnchor.x(), maxX);
     int y = globalAnchor.y() + 8;
     if (y + height() > available.bottom() + 1)
         y = globalAnchor.y() - height() - 8;
-    y = qBound(available.top(), y, maxY);
-    const QPoint pos(x, y);
-    move(pos);
+    setGeometry(CandidatePopupNavigation::fitToBounds(
+        QRect(QPoint(globalAnchor.x(), y), size()), available));
     show();
     raise();
     focusSearch(false);
@@ -204,24 +201,13 @@ bool GlobalControlPanel::eventFilter(QObject* watched, QEvent* event)
 
 bool GlobalControlPanel::handleKey(QKeyEvent* event)
 {
-    if (!event)
-        return false;
-    if (event->key() == Qt::Key_Escape) {
-        hide();
-    } else if (event->key() == Qt::Key_Return
-               || event->key() == Qt::Key_Enter) {
-        activateCurrentItem();
-    } else if (event->key() == Qt::Key_Down) {
-        moveSelection(1);
-    } else if (event->key() == Qt::Key_Up) {
-        moveSelection(-1);
-    } else if (event->key() == Qt::Key_Tab) {
+    if (CandidatePopupNavigation::handleKey(event, [this](int delta) { moveSelection(delta); },
+        [this] { activateCurrentItem(); return true; }, [this] { hide(); })) return true;
+    if (!event) return false;
+    if (event->key() == Qt::Key_Tab)
         moveCategory(event->modifiers().testFlag(Qt::ShiftModifier) ? -1 : 1);
-    } else if (event->key() == Qt::Key_Backtab) {
-        moveCategory(-1);
-    } else {
-        return false;
-    }
+    else if (event->key() == Qt::Key_Backtab) moveCategory(-1);
+    else return false;
     event->accept();
     return true;
 }
@@ -229,7 +215,7 @@ bool GlobalControlPanel::handleKey(QKeyEvent* event)
 void GlobalControlPanel::activateCurrentItem()
 {
     const int row = resultList ? resultList->currentRow() : -1;
-    if (row < 0 || row >= currentItems.size())
+    if (!CandidatePopupNavigation::canActivate(resultList) || row < 0 || row >= currentItems.size())
         return;
     const GlobalControlItem selected = currentItems.at(row);
     if (selected.kind == GlobalControlItemKind::Domain && searchEdit) {
@@ -245,11 +231,7 @@ void GlobalControlPanel::activateCurrentItem()
 
 void GlobalControlPanel::moveSelection(int delta)
 {
-    if (!resultList || resultList->count() == 0)
-        return;
-    const int next = qBound(0, resultList->currentRow() + delta,
-                            resultList->count() - 1);
-    resultList->setCurrentRow(next);
+    CandidatePopupNavigation::moveSelection(resultList, delta);
 }
 
 void GlobalControlPanel::moveCategory(int delta)

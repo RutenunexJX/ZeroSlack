@@ -1,8 +1,10 @@
-#include "pinloomcodelinkstore.h"
-#include "semanticstableidentity.h"
-#include "slangmanager.h"
-#include "suitecontextcatalog.h"
+#include <zeroslack/semantic/pinloomcodelinkstore.h>
+#include <zeroslack/semantic/semanticstableidentity.h>
+#include <zeroslack/semantic/slangmanager.h>
+#include <zeroslack/semantic/suitecontextcatalog.h>
 #include "zeroslackcli.h"
+#include <zeroslack/semantic/workspaceconfigurationservice.h>
+#include <QDateTime>
 
 #include <QCryptographicHash>
 #include <QDir>
@@ -149,6 +151,88 @@ private:
     }
 
 private slots:
+    void cacheTracksTopAndConfiguration()
+    {
+        QTemporaryDir fixture;
+        QVERIFY(fixture.isValid());
+        const QString root = fixture.filePath(QStringLiteral("workspace"));
+        QVERIFY(writeText(QDir(root).filePath(QStringLiteral("tops.sv")),
+            QStringLiteral("module first; endmodule\nmodule second; endmodule\n")));
+        WorkspaceConfigurationService configurationService;
+        auto configuration = configurationService.defaultConfiguration(root);
+        configuration.topModule = QStringLiteral("first");
+        QVERIFY(configurationService.save(configuration));
+        ZeroSlackCliService service;
+        ZeroSlackCliRequest request;
+        request.command = QStringLiteral("scan");
+        request.workspaceRoot = root;
+        request.cacheDirectory = fixture.filePath(QStringLiteral("cache"));
+        QCOMPARE(service.execute(request).exitCode, 0);
+        request.command = QStringLiteral("status");
+        QVERIFY(service.execute(request).envelope.value(QStringLiteral("data"))
+            .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+        configuration.topModule = QStringLiteral("second");
+        QVERIFY(configurationService.save(configuration));
+        QVERIFY(!service.execute(request).envelope.value(QStringLiteral("data"))
+            .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+        request.command = QStringLiteral("summary");
+        QVERIFY(service.execute(request).envelope.value(QStringLiteral("cacheRebuilt")).toBool());
+        configuration.defines.insert(QStringLiteral("MODE"), QStringLiteral("2"));
+        QVERIFY(configurationService.save(configuration));
+        request.command = QStringLiteral("status");
+        QVERIFY(!service.execute(request).envelope.value(QStringLiteral("data"))
+            .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+    }
+
+    void cacheTracksExternalAndMissingIncludes()
+    {
+        for (bool initiallyMissing : {false, true}) {
+            QTemporaryDir fixture;
+            QVERIFY(fixture.isValid());
+            const QString root = fixture.filePath(QStringLiteral("workspace"));
+            const QString header = fixture.filePath(QStringLiteral("external/decls.svh"));
+            const QString top = QDir(root).filePath(QStringLiteral("top.sv"));
+            QVERIFY(writeText(top, QStringLiteral(
+                "module top;\n`include \"../external/decls.svh\"\nendmodule\n")));
+            if (!initiallyMissing)
+                QVERIFY(writeText(header, QStringLiteral("logic dep_old;\n")));
+            const auto oldTime = QFileInfo(header).lastModified();
+            const auto topHash = fileHash(top);
+            ZeroSlackCliService service;
+            ZeroSlackCliRequest request;
+            request.command = QStringLiteral("scan");
+            request.workspaceRoot = root;
+            request.cacheDirectory = fixture.filePath(QStringLiteral("cache"));
+            const auto scanned = service.execute(request);
+            QCOMPARE(scanned.exitCode, 0);
+            request.command = QStringLiteral("status");
+            QVERIFY(service.execute(request).envelope.value(QStringLiteral("data"))
+                .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+            QVERIFY(writeText(header, QStringLiteral("logic dep_new;\n")));
+            if (!initiallyMissing) {
+                QFile changed(header);
+                QVERIFY(changed.open(QIODevice::ReadWrite));
+                QVERIFY(changed.setFileTime(oldTime, QFileDevice::FileModificationTime));
+            }
+            QCOMPARE(fileHash(top), topHash);
+            QVERIFY(!service.execute(request).envelope.value(QStringLiteral("data"))
+                .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+            request.command = QStringLiteral("symbol");
+            request.symbol = QStringLiteral("dep_new");
+            request.allowRefresh = false;
+            QCOMPARE(service.execute(request).exitCode, 3);
+            request.allowRefresh = true;
+            const auto refreshed = service.execute(request);
+            QCOMPARE(refreshed.exitCode, 0);
+            QVERIFY(refreshed.envelope.value(QStringLiteral("cacheRebuilt")).toBool());
+            QVERIFY(!refreshed.envelope.value(QStringLiteral("data"))
+                .toObject().value(QStringLiteral("matches")).toArray().isEmpty());
+            const auto warm = service.execute(request);
+            QCOMPARE(warm.exitCode, 0);
+            QVERIFY(!warm.envelope.value(QStringLiteral("cacheRebuilt")).toBool());
+        }
+    }
+
     void stableIdentitySurvivesLineMovement()
     {
         QTemporaryDir directory;

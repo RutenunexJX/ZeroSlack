@@ -1,7 +1,7 @@
 #ifndef SYMBOLANALYZERWORKSPACE_H
 #define SYMBOLANALYZERWORKSPACE_H
 
-#include "symbolanalyzer.h"
+#include "semanticanalysisresult.h"
 
 #include <functional>
 

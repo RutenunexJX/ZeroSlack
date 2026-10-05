@@ -2,6 +2,7 @@
 #include "contextfloatingwindow.h"
 #include "contextdockhost.h"
 #include "testuistyle.h"
+#include "live_insight_test_utils.h"
 #include "contextrail.h"
 #include "insightcanvas.h"
 #include "insightgraphcore.h"
@@ -10,6 +11,10 @@
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsightsession.h"
+#include "liveinsightgraphreport.h"
+#include "tabmanager.h"
+#include "workspacemanager.h"
+#include "mycodeeditor.h"
 #include "liveinsighttoolpage.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "rtlinsightworkbench.h"
@@ -188,6 +193,8 @@ private slots:
     void sidebarSectionTeardownReleasesFocusedControls();
     void moduleDiagramAdaptsAndNavigatesInstances();
     void moduleDiagramIncludesDeepDescendantsAndTerminatesCycles();
+    void ordinaryAndSpecializedModuleDepthsDiffer();
+    void stateTargetPickerUsesRenderSession();
     void catppuccinPalettes();
     void windowChromeSupportsNativeSnap();
     void realWindowChromeButtons();
@@ -501,6 +508,10 @@ void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
         QPointer<QWidget> view = controller.viewForResource(resource.stableKey());
         QVERIFY(view);
         QCoreApplication::processEvents();
+        auto* page = qobject_cast<LiveInsightsContextView*>(view.data())->surfaceForTest();
+        QVERIFY(page && page->graphSession());
+        page->graphSession()->flushPending(LiveInsightKind::Module);
+        QTRY_COMPARE(page->graphSession()->snapshot(LiveInsightKind::Module).phase, LiveInsightPhase::Ready);
         auto* depth = view->findChild<QSpinBox*>(QStringLiteral("rtlModuleBlockDepthSpin"));
         auto* breadcrumbs = view->findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
         auto* more = view->findChild<QToolButton*>(QStringLiteral("rtlModuleMoreButton"));
@@ -625,6 +636,7 @@ void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
     window.resize(1120, 700);
     window.show();
     panel.showModuleBlockDiagramForModule(file, QStringLiteral("top"));
+    QVERIFY(waitForLiveInsightReports(panel));
     auto* graph = panel.graphView();
     auto* breadcrumb = window.findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
     auto* toolbar = window.findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
@@ -809,6 +821,7 @@ void RtlInsightWorkbenchTest::moduleDiagramIncludesDeepDescendantsAndTerminatesC
     cycleIndex.attachRelationshipEngine(&relationships);
     relationships.addRelationship(a.localHandle, b.localHandle, SymbolRelationshipEngine::INSTANTIATES, "a to b");
     relationships.addRelationship(b.localHandle, a.localHandle, SymbolRelationshipEngine::INSTANTIATES, "b to a");
+    cycleIndex.setSnapshot(cycleIndex.captureSnapshotPreservingDiagnostics());
     ModuleBlockDiagramService cycleService(&cycleIndex);
     query.moduleName = QStringLiteral("cycle_a");
     query.maxDepth = -1;
@@ -1014,7 +1027,8 @@ void RtlInsightWorkbenchTest::sidebarRegistersFourDistinctIconsAndResources()
             std::make_unique<LiveInsightsContextProvider>(kind, &session)));
     }
     QCOMPARE(stableKeys.size(), 4);
-    QCOMPARE(controller.rail()->entryIds().size(), 4);
+    QCOMPARE(controller.rail()->entryIds().size(), 5);
+    QVERIFY(controller.rail()->entryIds().contains(QStringLiteral("toolbox")));
 
     QList<QImage> images;
     for (LiveInsightKind kind : kinds) {
@@ -1119,6 +1133,173 @@ void RtlInsightWorkbenchTest::legacyBottomDockDoesNotCarryStateWhenDisabled()
     const QString mode = panel.graphModeForTest();
     panel.showFsmGraph();
     QCOMPARE(panel.graphModeForTest(), mode);
+}
+
+void RtlInsightWorkbenchTest::ordinaryAndSpecializedModuleDepthsDiffer()
+{
+    const QString file = QDir::temp().filePath("depth_contract.sv");
+    const QString source = "module m4; endmodule\nmodule m3; m4 u(); endmodule\n"
+        "module m2; m3 u(); endmodule\nmodule m1; m2 u(); endmodule\nmodule top; m1 u(); endmodule\n";
+    auto* index = SemanticIndex::getInstance();
+    const auto previous = index->snapshot();
+    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
+    SlangManager slang;
+    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
+        slang.extractSymbolRecords(file, source), {}, {}, {{file, source}})));
+    InsightViewContext context;
+    context.workspaceId = "workspace"; context.documentId = file; context.fileName = file;
+    context.moduleName = "top"; context.documentRevision = 1;
+    context.semanticRevision = index->snapshotToken().revision;
+    for (bool specialized : {false, true}) {
+        RtlInsightWorkbench workbench(nullptr, specialized);
+        workbench.setViewKind(InsightWorkbenchViewKind::Block);
+        workbench.show();
+        workbench.setContext(context);
+        auto* session = workbench.graphSession();
+        QVERIFY(session);
+        session->flushPending(LiveInsightKind::Module);
+        QTRY_COMPARE(session->snapshot(LiveInsightKind::Module).phase, LiveInsightPhase::Ready);
+        const auto graph = session->snapshot(LiveInsightKind::Module).payload.value("graphReport").value<LiveInsightGraphReportPtr>();
+        QVERIFY(graph);
+        QCOMPARE(std::get<ModuleBlockDiagramReport>(graph->value).moduleCount, specialized ? 5 : 3);
+    }
+    const auto legacy = ModuleBlockInsightViewPlugin().build(context);
+    QVERIFY(legacy.available);
+    int deepest = 0;
+    for (const auto& node : legacy.draft.nodes) deepest = qMax(deepest, node.attributes.value("depth").toInt());
+    QCOMPARE(deepest, 2);
+}
+
+void RtlInsightWorkbenchTest::stateTargetPickerUsesRenderSession()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString file = directory.filePath("picker.sv");
+    const QString source = "module top(input logic clk, rst_n, go);\n"
+        "typedef enum logic [1:0] {S0=0,S1=1} state_t;\nstate_t state_q;\nstate_t state_d;\nstate_t other_q;\nstate_t other_d;\nlogic unused;\n"
+        "always_ff @(posedge clk or negedge rst_n) begin\n"
+        "if (!rst_n) state_q <= S0;\nelse state_q <= state_d;\nend\n"
+        "always_comb begin\nstate_d = state_q;\ncase(state_q)\n"
+        "S0: begin\nif (go) state_d = S1;\nend\nS1: begin\nstate_d = S0;\nend\n"
+        "default: state_d = S0;\nendcase\nend\n"
+        "always_ff @(posedge clk or negedge rst_n) begin\nif (!rst_n) other_q <= S0;\nelse other_q <= other_d;\nend\n"
+        "always_comb begin\nother_d = other_q;\ncase(other_q)\n"
+        "S0: begin\nother_d = S1;\nend\nS1: begin\nother_d = S0;\nend\n"
+        "default: other_d = S0;\nendcase\nend\nendmodule\n";
+    QFile output(file); QVERIFY(output.open(QIODevice::WriteOnly)); output.write(source.toUtf8()); output.close();
+    auto* index = SemanticIndex::getInstance();
+    const auto previous = index->snapshot();
+    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
+    MainWindow window;
+    window.resize(1200, 800); window.show();
+    auto* tabs = window.findChild<TabManager*>(); QVERIFY(tabs);
+    QVERIFY(tabs->openFileInTab(file));
+    auto* editor = tabs->getCurrentEditor(); QVERIFY(editor);
+    QTest::qWait(100);
+    SlangManager slang;
+    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
+        slang.extractSymbolRecords(file, source), {}, {}, {{file, source}})));
+    QTextCursor cursor(editor->document()); cursor.setPosition(source.indexOf("state_t state_q"));
+    editor->setTextCursor(cursor);
+    auto* workspace = window.findChild<ContextWorkspaceController*>(); QVERIFY(workspace);
+    auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::State, "standalone");
+    QVERIFY(workspace->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}));
+    QPointer<LiveInsightsContextView> view = qobject_cast<LiveInsightsContextView*>(workspace->viewForResource(resource.stableKey())); QVERIFY(view);
+    QTRY_VERIFY(view->surfaceForTest());
+    auto* session = view->surfaceForTest()->graphSession(); QVERIFY(session);
+    session->flushPending(LiveInsightKind::State);
+    QTRY_COMPARE(session->snapshot(LiveInsightKind::State).phase, LiveInsightPhase::Ready);
+    QList<LiveInsightSession::Task> tasks;
+    session->setTaskExecutor([&](auto task) { tasks.append(std::move(task)); });
+    int builds = 0;
+    bool allOffUi = true;
+    session->setBuilder(LiveInsightKind::State, [&](const LiveInsightBuildRequest& request, const LiveInsightCancellationToken& token) {
+        ++builds;
+        allOffUi = allOffUi && QThread::currentThread() != qApp->thread();
+        const auto graph = buildLiveInsightGraphReport(request.input.value("graphInput").value<LiveInsightGraphInput>(), token);
+        return LiveInsightBuildResult::success(request, {{"graphReport", QVariant::fromValue(graph)}});
+    });
+    const auto choose = [&](const QString& name) {
+        editor->publishInsightTargetAnnotationsForTest(0, editor->blockCount() - 1);
+        for (int guard = 0; guard < 100; ++guard) {
+            const auto candidates = editor->insightTargetCandidatesForTest();
+            const int active = editor->insightTargetActiveIndexForTest();
+            if (active >= 0 && candidates.at(active).name == name) return true;
+            QKeyEvent event(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+            QApplication::sendEvent(editor, &event);
+        }
+        return false;
+    };
+    const auto enter = [&] { QKeyEvent event(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier); QApplication::sendEvent(editor, &event); };
+    const auto work = [&] {
+        // The production executor uses Qt threads. Keep their TLS lifetime
+        // here while holding only the queued UI delivery for race coverage.
+        std::unique_ptr<QThread> worker(QThread::create([task = tasks.takeFirst()]() mutable { task(); }));
+        worker->start(); worker->wait();
+    };
+    QVERIFY(view->requestScopePick()); QVERIFY(choose("state_d")); enter();
+    QVERIFY(editor->insightTargetPickModeActive());
+    QCOMPARE(builds, 0); QCOMPARE(tasks.size(), 1);
+    work();
+    QTRY_VERIFY(!editor->insightTargetPickModeActive());
+    QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(), QString("state_d"));
+    session->flushPending(LiveInsightKind::State);
+    QVERIFY(tasks.isEmpty()); QCOMPARE(builds, 1); QVERIFY(allOffUi);
+    const auto accepted = session->snapshot(LiveInsightKind::State).payload.value("graphReport").value<LiveInsightGraphReportPtr>();
+    QVERIFY(accepted);
+    // Selecting the same valid target reuses this exact session publication.
+    QVERIFY(view->requestScopePick()); QVERIFY(choose("state_d")); enter();
+    QVERIFY(!editor->insightTargetPickModeActive()); QVERIFY(tasks.isEmpty()); QCOMPARE(builds, 1);
+    QCOMPARE(session->snapshot(LiveInsightKind::State).payload.value("graphReport").value<LiveInsightGraphReportPtr>(), accepted);
+
+    QSignalSpy statuses(editor, &MyCodeEditor::editorStatusMessageRequested);
+    QVERIFY(view->requestScopePick()); QVERIFY(choose("clk")); enter(); QCOMPARE(tasks.size(), 1);
+    work(); QTRY_COMPARE(session->snapshot(LiveInsightKind::State).phase, LiveInsightPhase::Ready);
+    QVERIFY(!statuses.isEmpty());
+    const QString reason = statuses.last().first().toString();
+    QVERIFY(reason.startsWith("clk:") || reason.startsWith("clk has"));
+    QVERIFY(editor->insightTargetPickModeActive());
+    QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(), QString("state_d"));
+    editor->cancelInsightTargetPickMode();
+
+    // Finish the computation off-thread but hold queued delivery until each
+    // lifecycle change. A completed old worker must never select its target.
+    for (int action = 0; action < 4; ++action) {
+        QVERIFY(view->requestScopePick()); QVERIFY(choose("other_d")); enter();
+        QCOMPARE(tasks.size(), 1); work();
+        if (action == 0) { QKeyEvent event(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier); QApplication::sendEvent(editor, &event); }
+        if (action == 1) editor->cancelInsightTargetPickMode();
+        if (action == 2) { QTextCursor edit(editor->document()); edit.movePosition(QTextCursor::End); edit.insertText("\n"); }
+        if (action == 3) QMetaObject::invokeMethod(tabs, "activeTabChanged", Qt::DirectConnection, Q_ARG(MyCodeEditor*, nullptr));
+        QCoreApplication::processEvents();
+        QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(), QString("state_d"));
+        editor->cancelInsightTargetPickMode();
+    }
+    QVERIFY(view->requestScopePick()); QVERIFY(choose("other_d")); enter();
+    QCOMPARE(tasks.size(), 1); work();
+    workspace->clearResources();
+    QVERIFY(!editor->insightTargetPickModeActive());
+    QCoreApplication::processEvents();
+    if (view) QVERIFY(view->saveState().value("target").toMap().value("signalName").toString() != "other_d");
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(!editor->insightTargetPickModeActive());
+    QVERIFY(!view);
+    // Reopen the actual consumer, then deliver the workspace transition while
+    // its next validation result is queued for the UI thread.
+    QVERIFY(workspace->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}));
+    view = qobject_cast<LiveInsightsContextView*>(workspace->viewForResource(resource.stableKey())); QVERIFY(view);
+    QTRY_VERIFY(view->surfaceForTest());
+    session = view->surfaceForTest()->graphSession(); QVERIFY(session);
+    session->flushPending(LiveInsightKind::State);
+    QTRY_COMPARE(session->snapshot(LiveInsightKind::State).phase, LiveInsightPhase::Ready);
+    session->setTaskExecutor([&](auto task) { tasks.append(std::move(task)); });
+    QVERIFY(view->requestScopePick()); QVERIFY(choose("other_d")); enter();
+    QCOMPARE(tasks.size(), 1); work();
+    auto* manager = window.findChild<WorkspaceManager*>(); QVERIFY(manager);
+    QMetaObject::invokeMethod(manager, "workspaceClosed", Qt::DirectConnection);
+    QCoreApplication::processEvents();
+    QVERIFY(!editor->insightTargetPickModeActive());
+    if (view) QVERIFY(view->saveState().value("target").toMap().value("signalName").toString() != "other_d");
 }
 
 int main(int argc, char** argv)

@@ -19,6 +19,9 @@
 #include <memory>
 
 class InsightGraphView;
+class LiveInsightSession;
+struct SemanticSnapshotToken;
+struct InsightViewContext;
 class QAction;
 class SemanticIndexSnapshot;
 class SignalUsageHotspotPanel;
@@ -50,6 +53,9 @@ public:
     void setRegisteredActionRequestHandler(
         RegisteredActionRequestHandler handler);
 
+    LiveInsightSession* graphSession() const;
+    void setGraphContext(const InsightViewContext& context, const SemanticSnapshotToken& snapshot);
+    void setGraphSnapshot(const SemanticSnapshotToken& snapshot);
     void updateModuleContext(
         const QString& fileName,
         const QString& moduleName,

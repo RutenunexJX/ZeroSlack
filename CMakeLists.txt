@@ -37,6 +37,8 @@ set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
 
+option(ZEROSLACK_CLI_ONLY "Build the independent semantic/document CLI without Widgets or Ela" OFF)
+
 option(ZEROSLACK_SHARED_CORE
     "Build zeroslack_core as a shared library (disable only for compatibility comparisons)"
     ON)
@@ -217,7 +219,10 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
 # Required Qt modules.
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Concurrent Svg Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+if(NOT ZEROSLACK_CLI_ONLY)
+    find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Svg Network)
+endif()
 find_package(SuiteApp 1 CONFIG QUIET)
 
 # =========================================================
@@ -246,10 +251,10 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/codetemplatecontextanalyzer.cpp
     src/completion/codetemplateservice.cpp
     src/completion/customabbreviationservice.cpp
+    src/app/applicationwindow.cpp
     src/app/mainwindow.cpp
     src/app/mainwindowcontextworkspace.cpp
     src/insights/rtlactioncoordinator.cpp
-    src/insights/moduleblockdiagramservice.cpp
     src/insights/moduleblockdiagramtoolbar.cpp
     src/completion/completioncommandmode.cpp
     src/completion/completioncontexthelper.cpp
@@ -277,8 +282,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documentregistryreader.cpp
     src/documents/documentregistrystate.cpp
     src/documents/shareddocument.cpp
-    src/documents/crashrecoveryservice.cpp
     src/documents/externaldocumentsynccontroller.cpp
+    src/documents/documentreviewcoordinator.cpp
+    src/documents/documentreviewcoordinator.h
     src/documents/documentsessionqueries.cpp
     src/documents/documentsessionstate.cpp
     src/documents/documentsessionversions.cpp
@@ -288,7 +294,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorcompletionquery.cpp
     src/editor/editorcompletionui.cpp
     src/editor/editorcompletionworkflow.cpp
-    src/semantic/effectivevalueservice.cpp
       src/editor/editorcompletionworkflowkeys.cpp
       src/editor/editorcoordinator.cpp
       src/editor/editorcolumnmodecontroller.cpp
@@ -330,7 +335,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editormodecontroller.cpp
     src/workspace/filecommandcoordinator.cpp
     src/insights/fsmgraphlayout.cpp
-    src/insights/fsmgraphservice.cpp
     src/editor/formattercursoranchor.cpp
     src/editor/formatterservice.cpp
     src/settings/settingscenterschema.cpp
@@ -340,18 +344,16 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/ghostannotationservice.cpp
     src/insights/graphexportservice.cpp
     src/settings/workspaceconfigurationdialog.cpp
-    src/settings/workspaceconfigurationservice.cpp
     src/workspace/workspacesessioncoordinator.cpp
     src/workspace/workspacesessionstateservice.cpp
     src/commands/globalcontrolcoordinator.cpp
     src/ui/globalcontrolpanel.cpp
     src/commands/globalcontrolservice.cpp
-    src/semantic/hierarchyservice.cpp
-    src/semantic/hierarchyservicetraversal.cpp
     src/insights/insightgraphview.cpp
     src/insights/insightgraphcore.cpp
     src/insights/insightcanvas.cpp
     src/ui/insightvisualstyle.cpp
+    src/insights/liveinsightgraphreport.cpp
     src/insights/liveinsightsession.cpp
     src/insights/liveinsightscontextview.cpp
     src/insights/liveinsightscontextprovider.cpp
@@ -360,8 +362,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/rtlinsightworkbench.cpp
     src/commands/inlinecommandmode.cpp
     src/navigation/sourcenavigationservice.cpp
-    src/insights/statetransitiongraphservice.cpp
-    src/insights/statetransitiontriggerservice.cpp
     src/ui/contextresource.cpp
     src/ui/contextfloatingwindow.cpp
     src/ui/contextrail.cpp
@@ -374,18 +374,14 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextworkspacefloating.cpp
     src/ui/contextworkspacedocuments.cpp
     src/integrations/pinloom/pinloomhostclient.cpp
-    src/integrations/pinloom/pinloomcodelinkstore.cpp
     src/integrations/pinloom/pinloomcodelinkcoordinator.cpp
     src/integrations/pinloom/pinloomcontextview.cpp
     src/integrations/pinloom/pinloomcontextprovider.cpp
-    src/integrations/suite/suitecontextcatalog.cpp
     src/ui/temporaryeditorsession.cpp
     src/ui/temporaryeditorcontextview.cpp
     src/ui/temporaryeditorcontextprovider.cpp
     src/ui/temporaryeditorsearchpopup.cpp
     src/ui/temporaryeditorsearchprovider.cpp
-    src/editor/triviapositionmap.cpp
-    src/editor/tsdocument.cpp
     src/documents/unsaveddocumentmanager.cpp
     src/editor/mycodeeditor.cpp
     src/editor/myhighlighter.cpp
@@ -396,7 +392,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/navigation/navigationmanagerfileoperations.cpp
     src/navigation/navigationmanagerstate.cpp
     src/ui/navigationpanecoordinator.cpp
-    src/ui/panelcompositor.cpp
     src/ui/nativepanelcomposition.cpp
     src/ui/panellayoutcontroller.cpp
     src/commands/packagetoolservice.cpp
@@ -408,13 +403,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/notificationcenter.cpp
     src/ui/problemspanelcoordinator.cpp
     src/workspace/projectmodel.cpp
-    src/semantic/relationshipservice.cpp
-    src/semantic/relationshipserviceordering.cpp
-    src/semantic/relationshipanalysisqueue.cpp
-    src/semantic/relationshipanalysisqueuelifecycle.cpp
+    src/workspace/symbolanalyzerworkspaceadapter.cpp
     src/semantic/relationshipanalysiscontroller.cpp
     src/semantic/relationshipanalysiscontrollerasync.cpp
-    src/semantic/relationshipanalysisworker.cpp
     src/semantic/relationshipresultpublisher.cpp
     src/insights/rtlinsightspanelactions.cpp
     src/insights/rtlinsightspanelcoordinator.cpp
@@ -440,65 +431,24 @@ set(ZEROSLACK_CORE_SOURCES
     src/commands/scopedsearchpanel.cpp
     src/commands/scopedreplaceworkflow.cpp
     src/commands/searchservice.cpp
-    src/semantic/semanticdiffservice.cpp
-    src/semantic/semanticanalysisrequest.cpp
-    src/semantic/semanticchangeclassifier.cpp
-    src/semantic/semanticdependencygraph.cpp
-    src/analysis/incrementalanalysisplanservice.cpp
-    src/analysis/incrementalsemanticanalysisworker.cpp
-    src/semantic/semanticsourceremap.cpp
     src/semantic/semanticdecorationservice.cpp
     src/semantic/semanticpanelutils.cpp
     src/semantic/semanticpanelrefreshpanels.cpp
     src/semantic/semanticpanelrefreshcoordinator.cpp
     src/semantic/semanticdockcoordinator.cpp
-    src/semantic/semanticindex.cpp
-    src/semantic/semanticindexcompletion.cpp
-    src/semantic/semanticindexcompletiontypequeries.cpp
-    src/semantic/semanticindexcompletioncontext.cpp
-    src/semantic/semanticindexlookup.cpp
-    src/semantic/semanticindexlookuphelpers.cpp
-    src/semantic/semanticindexmodulecontext.cpp
-    src/semantic/semanticindexmodulecontexthelpers.cpp
-    src/semantic/semanticindexrelationships.cpp
-    src/semantic/semanticindexstore.cpp
-    src/semantic/semanticindexsnapshot.cpp
-    src/semantic/semanticindexsnapshotqueries.cpp
-    src/semantic/semanticindexsnapshotpublication.cpp
     src/semantic/semanticruntimecoordinator.cpp
     src/semantic/semanticruntimewiring.cpp
-    src/semantic/semanticstableidentity.cpp
-    src/semantic/signaljourneyservice.cpp
     src/insights/signalkernelgraphservice.cpp
     src/insights/signalusagehotspotpanel.cpp
     src/insights/signalusagehotspotpanelactions.cpp
     src/insights/signalusagehotspotservice.cpp
     src/insights/signalkernelgraphpanelcoordinator.cpp
-    src/semantic/slangmanagerdiagnostics.cpp
-    src/semantic/slangcompilationcontext.cpp
-    src/semantic/semanticanalysisinput.cpp
-    src/semantic/slangrelationshiphelpers.cpp
-    src/semantic/smartrelationshipbuilderanalysis.cpp
-    src/semantic/smartrelationshipbuilder.cpp
-    src/semantic/smartrelationshipbuildercontext.cpp
-    src/semantic/smartrelationshipbuildertiming.cpp
     src/semantic/symbolanalyzer.cpp
     src/semantic/symbolanalyzerasync.cpp
     src/semantic/symbolanalyzerincremental.cpp
     src/semantic/symbolanalyzerpublication.cpp
     src/semantic/symbolanalyzerslang.cpp
-    src/semantic/symbolanalyzerworkspace.cpp
     src/semantic/symbolhoverservice.cpp
-    src/semantic/symbolpresentationservice.cpp
-    src/semantic/symbolrelationshipqueries.cpp
-    src/semantic/symbolrelationshipengine.cpp
-    src/semantic/symboltaxonomy.cpp
-    src/semantic/slangsymbolcollector.cpp
-    src/semantic/slangsymbolcollectorhelpers.cpp
-    src/semantic/slangsymbolpresentation.cpp
-    src/semantic/slangmanagerrelationships.cpp
-    src/semantic/slangmanagersymbols.cpp
-    src/semantic/slangpreprocessorfacts.cpp
     src/documents/tabdocumentqueries.cpp
     src/documents/tabfileio.cpp
     src/documents/tabmanager.cpp
@@ -536,7 +486,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/roundedicons.h
     src/ui/insightcontrolstyle.h
     src/ui/uitypography.h
-    src/insights/moduleblockdiagramservice.h
     src/completion/completioncommandmode.h
     src/completion/completioncommandkindadapter.h
     version.h.in
@@ -555,7 +504,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/diagnosticsrefreshcontroller.h
     src/documents/documentmodel.h
     src/documents/documentregistry.h
-    src/documents/documentsnapshot.h
     src/documents/documentsessionstate.h
     src/documents/shareddocument.h
     src/settings/editorappearance.h
@@ -564,7 +512,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorcompletionquery.h
     src/editor/editorcompletionui.h
     src/editor/editorcompletionworkflow.h
-    src/semantic/effectivevalueservice.h
       src/editor/editorcoordinator.h
       src/editor/editorcursornavigation.h
       src/editor/editorlexicalboundary.h
@@ -595,12 +542,10 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editormodecontroller.h
     src/workspace/filecommandcoordinator.h
     src/insights/fsmgraphlayout.h
-    src/insights/fsmgraphservice.h
     src/editor/formattercursoranchor.h
     src/editor/formatterservice.h
     src/editor/ghostannotationservice.h
     src/settings/workspaceconfigurationdialog.h
-    src/settings/workspaceconfigurationservice.h
     src/workspace/workspacesessioncoordinator.h
     src/workspace/workspacesessionstateservice.h
     src/workspace/workspaceeditdocumentmanager.h
@@ -608,11 +553,11 @@ set(ZEROSLACK_CORE_SOURCES
     src/commands/globalcontrolcoordinator.h
     src/ui/globalcontrolpanel.h
     src/commands/globalcontrolservice.h
-    src/semantic/hierarchyservice.h
     src/insights/insightgraphview.h
     src/insights/insightgraphcore.h
     src/insights/insightcanvas.h
     src/ui/insightvisualstyle.h
+    src/insights/liveinsightgraphreport.h
     src/insights/liveinsighttypes.h
     src/insights/liveinsightsession.h
     src/insights/liveinsightscontextview.h
@@ -623,8 +568,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/editorsearchcandidate.h
     src/commands/inlinecommandmode.h
     src/navigation/sourcenavigationservice.h
-    src/insights/statetransitiongraphservice.h
-    src/insights/statetransitiontriggerservice.h
     src/ui/contextresource.h
     src/ui/contextplacement.h
     src/ui/contextfloatingsurface.h
@@ -635,6 +578,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/contextpeekhost.h
     src/ui/contextdockhost.h
     src/ui/compactlayout.h
+    src/ui/candidatepopupnavigation.h
     src/ui/deferredpanel.h
     src/ui/contextworkspacecontroller.h
     src/ui/temporaryeditorsession.h
@@ -642,8 +586,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/temporaryeditorcontextprovider.h
     src/ui/temporaryeditorsearchpopup.h
     src/ui/temporaryeditorsearchprovider.h
-    src/editor/triviapositionmap.h
-    src/editor/tsdocument.h
     src/editor/mycodeeditor.h
     src/editor/myhighlighter.h
     src/semantic/modulehierarchymodel.h
@@ -655,11 +597,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/navigationwidget.h
     src/ui/problemspanelcoordinator.h
     src/workspace/projectmodel.h
-    src/semantic/relationshipservice.h
-    src/semantic/relationshipserviceordering.h
-    src/semantic/relationshipanalysisqueue.h
     src/semantic/relationshipanalysiscontroller.h
-    src/semantic/relationshipanalysisworker.h
     src/semantic/relationshipresultpublisher.h
     src/insights/rtlinsightspanelcoordinator.h
     src/insights/rtlactioncoordinator.h
@@ -667,47 +605,21 @@ set(ZEROSLACK_CORE_SOURCES
     src/commands/saferenameservice.h
     src/commands/scopedsearchpanel.h
     src/commands/searchservice.h
-    src/semantic/semanticdiffservice.h
-    src/semantic/semanticanalysisrequest.h
-    src/semantic/semanticchangeclassifier.h
-    src/semantic/semanticdependencygraph.h
-    src/analysis/incrementalanalysisplanservice.h
-    src/analysis/incrementalsemanticanalysisworker.h
-    src/semantic/semanticsourceremap.h
     src/semantic/semanticdecorationservice.h
     src/semantic/semanticpanelutils.h
     src/semantic/semanticpanelrefreshcoordinator.h
     src/semantic/semanticdockcoordinator.h
-    src/semantic/semanticindex.h
-    src/semantic/semanticsourcerange.h
     src/semantic/semanticindexcompletionfilters.h
-    src/semantic/semanticindexlookuphelpers.h
-    src/semantic/semanticindexmodulecontexthelpers.h
-    src/semantic/semanticindexsnapshot.h
     src/semantic/semanticruntimecoordinator.h
-    src/semantic/semanticstableidentity.h
-    src/semantic/signaljourneyservice.h
     src/insights/signalkernelgraphservice.h
     src/insights/signalusagehotspotpanel.h
     src/insights/signalusagehotspotservice.h
     src/insights/signalkernelgraphpanelcoordinator.h
-    src/semantic/slangmanager.h
-    src/semantic/slangpreprocessorfacts.h
     src/semantic/slangparseoptions.h
-    src/semantic/slangrelationshiphelpers.h
-    src/semantic/slangsymbolcollector.h
-    src/semantic/slangsymbolcollectorhelpers.h
-    src/semantic/slangsymbolpresentation.h
-    src/semantic/smartrelationshipbuilder.h
     src/semantic/symbolanalyzer.h
-    src/semantic/symbolanalyzerworkspace.h
     src/semantic/symbolhoverreports.h
     src/semantic/symbolhoverservice.h
-    src/semantic/symbolpresentationservice.h
-    src/semantic/symbolrelationshipengine.h
     src/semantic/symboloutlinemodel.h
-    src/semantic/symbolsemanticmetadata.h
-    src/semantic/symboltaxonomy.h
     src/documents/tabdocumentqueries.h
     src/documents/tabfileio.h
     src/documents/tabmanager.h
@@ -743,10 +655,21 @@ if(ZEROSLACK_SHARED_CORE)
 endif()
 
 include(cmake/source_layout.cmake)
+include(cmake/DomainTargets.cmake)
+include(cmake/CliTargets.cmake)
+if(ZEROSLACK_CLI_ONLY)
+    if(BUILD_TESTING)
+        find_package(Qt6 REQUIRED COMPONENTS Test)
+        add_executable(zeroslack_cli_test test_sv/zeroslack_cli_test.cpp)
+        target_link_libraries(zeroslack_cli_test PRIVATE zeroslack_cli_support ZeroSlack::Semantic Qt6::Test)
+        add_test(NAME zeroslack_cli_test COMMAND zeroslack_cli_test)
+        zeroslack_domain_test_runtime(zeroslack_cli_test)
+    endif()
+    return()
+endif()
 
 add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
-    ${ZEROSLACK_CORE_SOURCES}
-    $<TARGET_OBJECTS:zeroslack_tree_sitter>)
+    ${ZEROSLACK_CORE_SOURCES})
 
 if(ZEROSLACK_SHARED_CORE)
     target_compile_definitions(zeroslack_core PUBLIC
@@ -775,8 +698,6 @@ if(ZEROSLACK_SHARED_CORE AND WIN32)
                 --link-working-directory "${CMAKE_CURRENT_BINARY_DIR}"
                 --object-root
                     "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/zeroslack_core.dir"
-                --object-root
-                    "${CMAKE_CURRENT_BINARY_DIR}/cmake/tree_sitter_runtime/CMakeFiles/zeroslack_tree_sitter.dir"
             BYPRODUCTS
                 "${ZEROSLACK_CORE_EXPORT_DEF}"
                 "${ZEROSLACK_CORE_EXPORT_DEF}.raw"
@@ -833,6 +754,17 @@ if(ZEROSLACK_ENABLE_ELA)
     # consumer must see the same class layout and link its base-class symbols.
     target_link_libraries(zeroslack_core PUBLIC Ela::WidgetTools)
     target_compile_definitions(zeroslack_core PUBLIC ZEROSLACK_ENABLE_ELA=1)
+else()
+    # Classic Qt hosts consume the same layout owner without the Ela backend.
+    add_library(zeroslack_flow_layout STATIC
+        thirdparty/elawidgettools/ElaFlowLayout.cpp
+        thirdparty/elawidgettools/ElaFlowLayout.h
+        thirdparty/elawidgettools/private/ElaFlowLayoutPrivate.cpp
+        thirdparty/elawidgettools/private/ElaFlowLayoutPrivate.h)
+    target_compile_definitions(zeroslack_flow_layout PUBLIC ELAWIDGETTOOLS_STATIC=1)
+    target_include_directories(zeroslack_flow_layout PUBLIC thirdparty/elawidgettools)
+    target_link_libraries(zeroslack_flow_layout PUBLIC Qt6::Widgets)
+    target_link_libraries(zeroslack_core PUBLIC zeroslack_flow_layout)
 endif()
 set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
 if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
@@ -869,25 +801,6 @@ if(ZEROSLACK_ENABLE_ELA)
     set_target_properties(demo PROPERTIES OUTPUT_NAME "ZeroSlack")
 endif()
 
-# Read-only machine interface for AI and automation. The support layer links
-# the existing semantic core, while the executable itself remains a console
-# application and initializes only QCoreApplication.
-add_library(zeroslack_cli_support STATIC
-    src/cli/zeroslackcli.cpp
-    src/cli/zeroslackcli.h)
-target_link_libraries(zeroslack_cli_support PUBLIC
-    zeroslack_core
-    Qt6::Core)
-if(SuiteApp_FOUND)
-    target_link_libraries(zeroslack_cli_support PRIVATE SuiteApp::suiteapp)
-    target_compile_definitions(zeroslack_cli_support PRIVATE
-        ZEROSLACK_CLI_HAS_SUITEAPP=1)
-endif()
-add_executable(zeroslack_cli src/cli/zeroslackclimain.cpp)
-set_target_properties(zeroslack_cli PROPERTIES
-    OUTPUT_NAME "zeroslack-cli")
-target_link_libraries(zeroslack_cli PRIVATE zeroslack_cli_support)
-
 # Build a Windows GUI app without a console window.
 if(WIN32)
     set_property(SOURCE resources/windows/zeroslack.rc APPEND PROPERTY OBJECT_DEPENDS
@@ -900,7 +813,7 @@ endif()
 # 6. Include Paths and Libraries
 # =========================================================
 # Project include paths.
-target_include_directories(zeroslack_core PUBLIC
+target_include_directories(zeroslack_core PRIVATE
     ${ZEROSLACK_MODULE_INCLUDE_DIRS}
     ${ZEROSLACK_GENERATED_INCLUDE_DIR}
     thirdparty/tree_sitter/lib/include
@@ -910,7 +823,7 @@ target_include_directories(zeroslack_core PUBLIC
 # Keep the repository root available for project-local "..." includes without
 # letting root VERSION shadow the C++20 <version> standard header on Windows.
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(zeroslack_core PUBLIC
+    target_compile_options(zeroslack_core PRIVATE
         "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
 endif()
 
@@ -921,9 +834,10 @@ target_link_libraries(zeroslack_core PUBLIC
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
-    Qt6::Concurrent
-    Qt6::Svg
+    zeroslack_semantic
+    zeroslack_documents
     rtledit::core
+    PRIVATE Qt6::Concurrent Qt6::Svg
 )
 target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
 if(WIN32)
@@ -933,8 +847,7 @@ endif()
 
 if(ZEROSLACK_SHARED_CORE)
     target_link_libraries(zeroslack_core PRIVATE slang::slang)
-    target_link_libraries(zeroslack_core INTERFACE
-        "$<BUILD_INTERFACE:$<COMPILE_ONLY:slang::slang>>")
+
 else()
     target_link_libraries(zeroslack_core PUBLIC slang::slang)
 endif()
@@ -1552,7 +1465,7 @@ if(BUILD_TESTING)
     add_executable(zeroslack_cli_test
         test_sv/zeroslack_cli_test.cpp)
     target_link_libraries(zeroslack_cli_test
-        PRIVATE zeroslack_cli_support Qt6::Test)
+        PRIVATE zeroslack_cli_support ZeroSlack::Semantic Qt6::Test)
 
     add_executable(editor_view_local_folding_test
         test_sv/editor_view_local_folding_test.cpp)
@@ -2497,6 +2410,12 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/new/elec_phy_import/top/rtl_top.sv
             ${CMAKE_CURRENT_SOURCE_DIR}/test_sv/huge_prj
     )
+    add_test(NAME editor_incremental_self_contained_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:editor_incremental_test> --self-contained-only)
+    set_tests_properties(editor_incremental_self_contained_test PROPERTIES TIMEOUT 180)
     add_test(NAME editor_structural_input_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2606,3 +2525,21 @@ if(BUILD_TESTING)
         TIMEOUT 120
     )
 endif()
+
+# Internal application and regression clients deliberately inspect private UI
+# contracts. Keep that access local to these executable targets, never PUBLIC
+# on the reusable semantic/document libraries or the UI owner.
+get_property(zeroslack_local_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+foreach(target IN LISTS zeroslack_local_targets)
+    get_target_property(kind ${target} TYPE)
+    if(kind STREQUAL "EXECUTABLE" AND NOT target STREQUAL "zeroslack_cli"
+       AND NOT target STREQUAL "domain_contract_test"
+       AND NOT target STREQUAL "zeroslack_cli_test")
+        target_include_directories(${target} PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS}
+            ${ZEROSLACK_GENERATED_INCLUDE_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        target_link_libraries(${target} PRIVATE "$<COMPILE_ONLY:slang::slang>")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(${target} PRIVATE "-iquote${CMAKE_CURRENT_SOURCE_DIR}")
+        endif()
+    endif()
+endforeach()

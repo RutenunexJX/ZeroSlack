@@ -4,6 +4,7 @@
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
+#include "live_insight_test_utils.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "rtlinsightworkbench.h"
 #include "settingscenterpanel.h"
@@ -184,9 +185,36 @@ QJsonObject audit(QWidget* window, const QString& name)
             fullyVisible = fullyVisible && viewport.contains(rect);
             viewports.append(QJsonObject{{"scroll", id(scroll)}, {"rect", rectJson(viewport)}});
         }
-        unreachable += !fullyVisible;
+        // An item view can be taller than its outer viewport on a small
+        // screen. Its two ends must both be reachable by scrolling; buttons
+        // and inputs still have to fit and be wholly visible at once.
+        bool topReachable = fullyVisible, bottomReachable = fullyVisible;
+        if (!fullyVisible && qobject_cast<QAbstractItemView*>(widget)) {
+            const auto revealEnd = [&](bool bottom) {
+                for (auto* scroll : ancestors) {
+                    const QRect target = rectIn(widget, window);
+                    const QRect viewport = rectIn(scroll->viewport(), window);
+                    const int dy = bottom ? target.bottom() - viewport.bottom()
+                                          : target.top() - viewport.top();
+                    scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->value() + dy);
+                    QApplication::processEvents();
+                }
+                const QRect target = rectIn(widget, window);
+                const int y = bottom ? target.bottom() : target.top();
+                const QRect edge(target.left(), y, target.width(), 1);
+                bool reached = window->contentsRect().contains(edge);
+                for (auto* scroll : ancestors)
+                    reached = reached && rectIn(scroll->viewport(), window).contains(edge);
+                return reached;
+            };
+            topReachable = revealEnd(false);
+            bottomReachable = revealEnd(true);
+        }
+        const bool reachable = fullyVisible || (topReachable && bottomReachable);
+        unreachable += !reachable;
         reachability.append(QJsonObject{{"widget", id(widget)}, {"rect", rectJson(rect)},
-            {"viewports", viewports}, {"fullyVisible", fullyVisible}});
+            {"viewports", viewports}, {"fullyVisible", fullyVisible},
+            {"topReachable", topReachable}, {"bottomReachable", bottomReachable}, {"reachable", reachable}});
     }
     for (auto it = scrollPositions.cbegin(); it != scrollPositions.cend(); ++it) {
         it.key()->horizontalScrollBar()->setValue(it.value().x());
@@ -279,8 +307,10 @@ void runCases(const QString& fixture, const QString& settingsDir)
 
     RtlInsightsPanelCoordinator rtl(&owner);
     rtl.showModuleBlockDiagramForModule(fixture, "dpi_top");
+    if (!waitForLiveInsightReports(rtl)) ++failures;
     capture(rtl.dock()->widget(), "rtl-module", [&] { rtl.focusFit(); });
     rtl.showStateTransitionGraphForSignal(fixture, "dpi_top", "next_state");
+    if (!waitForLiveInsightReports(rtl)) ++failures;
     capture(rtl.dock()->widget(), "rtl-state", [&] { rtl.focusFit(); });
     RtlInsightWorkbench generic;
     capture(&generic, "workbench");
@@ -311,7 +341,7 @@ void runCases(const QString& fixture, const QString& settingsDir)
         auto current = context;
         if (kind == LiveInsightKind::State) current.signalName = "next_state";
         view->setToolContextSource([&] { return current; });
-        view->setTargetPickRequest([](LiveInsightKind, std::function<void(const LiveInsightsContextView::TargetCandidate&)>) { return false; });
+        view->setTargetPickRequest([](LiveInsightKind, LiveInsightsContextView*, LiveInsightSession*, std::function<void(const LiveInsightsContextView::TargetCandidate&)>) { return false; });
         if (!sidebar.addResource(resource, view, true)) qFatal("Cannot add actual sidebar section");
         // Reproduce construction on a non-current stack page before the real sidebar width is known.
         QStackedWidget pages;
@@ -326,6 +356,11 @@ void runCases(const QString& fixture, const QString& settingsDir)
         pages.hide();
         capture(&sidebar, "sidebar-" + liveInsightKindId(kind), [&] {
             sidebar.setSectionHeight(resource.stableKey(), sidebar.height());
+            if (kind == LiveInsightKind::Module || kind == LiveInsightKind::State) {
+                auto* page = view->surfaceForTest();
+                auto* panel = page ? page->workbenchForTest()->rtlSurfaceForTest() : nullptr;
+                if (!panel || !waitForLiveInsightReports(*panel)) ++failures;
+            }
         });
         if (!view->surfaceForTest()) { ++failures; continue; }
         auto* workbench = view->surfaceForTest()->workbenchForTest();

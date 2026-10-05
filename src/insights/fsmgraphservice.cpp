@@ -5,10 +5,16 @@
 
 #include <QSet>
 #include <algorithm>
+#include <stdexcept>
 
 std::unique_ptr<FsmGraphService> FsmGraphService::instance = nullptr;
 
 namespace {
+void checkReportCancellation(const std::function<bool()>& isCancelled)
+{
+    if (isCancelled && isCancelled())
+        throw std::runtime_error("FSM report cancelled");
+}
 struct FsmPairCandidate {
     SemanticSymbolRecord currentState;
     SemanticSymbolRecord nextState;
@@ -326,14 +332,16 @@ QList<FsmPairCandidate> discoverStructuralFsmPairs(
     const SemanticSymbolRecord& moduleRecord,
     const QList<SemanticSymbolRecord>& moduleRecords,
     const QList<SemanticSymbolRecord>& allRecords,
-    const QString& content);
+    const QString& content,
+    const std::function<bool()>& isCancelled);
 QList<SemanticSymbolRecord> structuralStateValues(
     const SemanticSymbolRecord& moduleRecord,
     const QList<SemanticSymbolRecord>& moduleRecords,
     const QList<SemanticSymbolRecord>& allRecords,
     const SemanticSymbolRecord& stateRegister,
     const SemanticSymbolRecord& nextStateSignal,
-    const QString& content);
+    const QString& content,
+    const std::function<bool()>& isCancelled);
 QString stateDetailDisplayName(const SemanticSymbolRecord& state);
 void sortRecords(QList<SemanticSymbolRecord>& records);
 }
@@ -359,6 +367,7 @@ void FsmGraphService::setSemanticIndex(SemanticIndex* semanticIndex)
 
 FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
 {
+    checkReportCancellation(query.isCancelled);
     FsmGraphReport report;
     report.groupDisplayName = QStringLiteral("FSM Graphs");
     const SemanticSymbolRecord moduleRecord =
@@ -379,8 +388,9 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
         discoverStructuralFsmPairs(moduleRecord,
                                    moduleRecords,
                                    allRecords,
-                                   content);
+                                   content, query.isCancelled);
     for (const FsmPairCandidate& candidate : candidates) {
+        checkReportCancellation(query.isCancelled);
         FsmGraph graph;
         const SemanticSymbolRecord& stateRegister = candidate.currentState;
         const SemanticSymbolRecord& nextState = candidate.nextState;
@@ -388,7 +398,7 @@ FsmGraphReport FsmGraphService::buildFsmGraph(const FsmGraphQuery& query) const
         QList<FsmTransition> transitions = parseTransitions(moduleRecord,
                                                             stateRegister,
                                                             nextState,
-                                                            states);
+                                                            states, query.isCancelled);
         if (states.isEmpty() || transitions.isEmpty())
             continue;
         QSet<QString> stateNames;
@@ -444,6 +454,49 @@ FsmSymbolRoleReport FsmGraphService::roleForSymbol(
     const FsmGraphQuery& query,
     const QString& symbolName) const
 {
+    if (symbolName.isEmpty())
+        return roleForSymbol(FsmGraphReport{}, symbolName);
+    return roleForSymbol(buildFsmGraph(query), symbolName);
+}
+
+FsmSymbolRoleReport FsmGraphService::probeRoleForSymbol(
+    const FsmGraphQuery& query, const QString& symbolName) const
+{
+    if (symbolName.isEmpty())
+        return roleForSymbol(FsmGraphReport{}, symbolName);
+    checkReportCancellation(query.isCancelled);
+    FsmSymbolRoleReport result;
+    FsmGraphNotFoundReason reason;
+    const auto module = resolveModule(query, &reason);
+    if (!module.isValid()) {
+        result.reasonDisplayName = notFoundReasonDisplayName(reason);
+        return result;
+    }
+    const auto candidates = discoverStructuralFsmPairs(module, symbolsInModule(module),
+        semanticIndex()->getSymbolRecords(),
+        semanticIndex()->getCachedFileContent(module.location.fileName), query.isCancelled);
+    for (const auto& candidate : candidates) {
+        checkReportCancellation(query.isCancelled);
+        const bool next = candidate.nextState.name == symbolName;
+        if (!next && candidate.currentState.name != symbolName) continue;
+        if (candidate.states.isEmpty()
+            || parseTransitions(module, candidate.currentState, candidate.nextState,
+                                candidate.states, query.isCancelled).isEmpty()) continue;
+        result.inFsm = true;
+        result.role = next ? FsmSymbolRole::NextState : FsmSymbolRole::CurrentState;
+        if (!next)
+            result.reasonDisplayName = QStringLiteral("Please select the next-state signal for this FSM");
+        return result;
+    }
+    result.reasonDisplayName = candidates.isEmpty()
+        ? notFoundReasonDisplayName(FsmGraphNotFoundReason::NoFsmGraph)
+        : QStringLiteral("symbol is not part of a discovered FSM");
+    return result;
+}
+
+FsmSymbolRoleReport FsmGraphService::roleForSymbol(
+    const FsmGraphReport& graphReport, const QString& symbolName)
+{
     FsmSymbolRoleReport roleReport;
     if (symbolName.isEmpty()) {
         roleReport.reasonDisplayName =
@@ -451,7 +504,6 @@ FsmSymbolRoleReport FsmGraphService::roleForSymbol(
         return roleReport;
     }
 
-    const FsmGraphReport graphReport = buildFsmGraph(query);
     if (!graphReport.found) {
         roleReport.reasonDisplayName =
             graphReport.notFoundReasonDisplayName.isEmpty()
@@ -558,7 +610,8 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
     const SemanticSymbolRecord& moduleRecord,
     const SemanticSymbolRecord& stateRegister,
     const SemanticSymbolRecord& nextStateSignal,
-    const QList<SemanticSymbolRecord>& states) const
+    const QList<SemanticSymbolRecord>& states,
+    const std::function<bool()>& isCancelled) const
 {
     QList<FsmTransition> transitions;
     if (states.isEmpty())
@@ -593,6 +646,7 @@ QList<FsmTransition> FsmGraphService::parseTransitions(
     QString pendingIfCondition;
     QSet<QString> seenTransitions;
     for (int i = startIndex; i <= endIndex; ++i) {
+        checkReportCancellation(isCancelled);
         const QString code = stripLineComment(lines.at(i));
         if (!inCase) {
             if (caseSelector(code) == stateRegister.name) {
@@ -880,7 +934,8 @@ QList<SemanticSymbolRecord> structuralStateValues(
     const QList<SemanticSymbolRecord>& allRecords,
     const SemanticSymbolRecord& stateRegister,
     const SemanticSymbolRecord& nextStateSignal,
-    const QString& content)
+    const QString& content,
+    const std::function<bool()>& isCancelled)
 {
     QSet<QString> stateNames;
     const QString stateRegisterType = rawTypeTextForRecord(stateRegister);
@@ -906,6 +961,7 @@ QList<SemanticSymbolRecord> structuralStateValues(
 
     bool inCase = false;
     for (int i = startIndex; i <= endIndex; ++i) {
+        checkReportCancellation(isCancelled);
         const QString code = stripLineCommentText(lines.at(i));
         if (!inCase && caseSelector(code) == stateRegister.name)
             inCase = true;
@@ -970,7 +1026,8 @@ QList<FsmPairCandidate> discoverStructuralFsmPairs(
     const SemanticSymbolRecord& moduleRecord,
     const QList<SemanticSymbolRecord>& moduleRecords,
     const QList<SemanticSymbolRecord>& allRecords,
-    const QString& content)
+    const QString& content,
+    const std::function<bool()>& isCancelled)
 {
     QList<FsmPairCandidate> candidates;
     if (content.isEmpty())
@@ -993,6 +1050,7 @@ QList<FsmPairCandidate> discoverStructuralFsmPairs(
     int processStartLine = -1;
     QSet<QString> seenPairs;
     for (int i = startIndex; i <= endIndex; ++i) {
+        checkReportCancellation(isCancelled);
         const QString code = stripLineCommentText(lines.at(i));
         if (!inClockedProcess && isClockedProcessStart(code)) {
             inClockedProcess = true;
@@ -1024,7 +1082,7 @@ QList<FsmPairCandidate> discoverStructuralFsmPairs(
                                                              allRecords,
                                                              currentState,
                                                              nextState,
-                                                             content);
+                                                             content, isCancelled);
                     candidates.append(candidate);
                     seenPairs.insert(pairKey);
                 }
@@ -1402,4 +1460,13 @@ void FsmGraphService::sortTransitions(QList<FsmTransition>& transitions)
                       return lhs.toState < rhs.toState;
                   return lhs.assignmentTarget < rhs.assignmentTarget;
               });
+}
+
+FsmGraphService::FsmGraphService(SemanticSnapshotToken snapshot)
+    : FsmGraphService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+FsmGraphService::FsmGraphService(std::shared_ptr<SemanticIndex> owner)
+    : FsmGraphService(owner.get())
+{
+    ownedIndex = std::move(owner);
 }

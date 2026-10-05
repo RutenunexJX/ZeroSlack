@@ -138,7 +138,6 @@ void SymbolAnalyzer::retirePublicationState(
             payload.effectiveFacts.reset();
             payload.semanticIndex.relationshipState.reset();
             payload.semanticIndex.snapshot.reset();
-            payload.semanticIndex.nativeStore.reset();
             payload.workspaceState.reset();
             pending->fetch_sub(1, std::memory_order_acq_rel);
             if (owner) {
@@ -176,7 +175,6 @@ void SymbolAnalyzer::clearSemanticIndex()
     auto* index = SemanticIndex::getInstance();
     SemanticPublicationRetirementPayload retirement;
     retirement.semanticIndex.snapshot = index->snapshot();
-    retirement.semanticIndex.nativeStore = index->takeNativeStoreForRetirement();
     retirement.workspaceState = std::exchange(activeWorkspaceState, {});
     index->clearSemanticState();
     if (shutdownStarted) {

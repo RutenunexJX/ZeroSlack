@@ -1,3 +1,4 @@
+#include "candidatepopupnavigation.h"
 #include "uicontrols.h"
 #include "temporaryeditorsearchpopup.h"
 
@@ -193,25 +194,10 @@ bool TemporaryEditorSearchPopup::eventFilter(
         return QFrame::eventFilter(watched, event);
     }
 
-    auto* keyEvent = static_cast<QKeyEvent*>(event);
-    switch (keyEvent->key()) {
-    case Qt::Key_Down:
-        moveSelection(1);
-        return true;
-    case Qt::Key_Up:
-        moveSelection(-1);
-        return true;
-    case Qt::Key_Return:
-    case Qt::Key_Enter:
-        return activateCurrentOrUniqueExact();
-    case Qt::Key_Escape:
-        hide();
-        list->setCurrentRow(-1);
-        list->clearSelection();
-        return true;
-    default:
-        break;
-    }
+    if (CandidatePopupNavigation::handleKey(static_cast<QKeyEvent*>(event),
+        [this](int delta) { moveSelection(delta); },
+        [this] { return activateCurrentOrUniqueExact(); },
+        [this] { hide(); list->setCurrentRow(-1); list->clearSelection(); })) return true;
     return QFrame::eventFilter(watched, event);
 }
 
@@ -245,7 +231,7 @@ void TemporaryEditorSearchPopup::repositionBelowSearchField()
               below.y(),
               0,
               qMax(0, parentWidget()->height() - height));
-    setGeometry(popupX, popupY, width, height);
+    setGeometry(CandidatePopupNavigation::fitToBounds(QRect(popupX, popupY, width, height), parentWidget()->rect()));
 }
 
 void TemporaryEditorSearchPopup::moveSelection(int delta)
@@ -257,14 +243,7 @@ void TemporaryEditorSearchPopup::moveSelection(int delta)
         show();
         raise();
     }
-    int row = list->currentRow();
-    const int candidateCount = static_cast<int>(candidatesValue.size());
-    if (row < 0)
-        row = delta > 0 ? 0 : candidateCount - 1;
-    else
-        row = std::clamp(row + delta, 0, candidateCount - 1);
-    list->setCurrentRow(row);
-    list->scrollToItem(list->item(row));
+    CandidatePopupNavigation::moveSelection(list, delta, true);
 }
 
 bool TemporaryEditorSearchPopup::activateCurrentOrUniqueExact()
@@ -285,8 +264,8 @@ bool TemporaryEditorSearchPopup::activateCurrentOrUniqueExact()
 
 void TemporaryEditorSearchPopup::activateRow(int row)
 {
-    if (row < 0 || row >= static_cast<int>(candidatesValue.size()))
-        return;
+    if (row < 0 || row >= static_cast<int>(candidatesValue.size())
+        || !CandidatePopupNavigation::selectable(list->item(row))) return;
     const EditorSearchCandidate selected = candidatesValue.at(row);
     clearCandidates();
     if (activationHandler)

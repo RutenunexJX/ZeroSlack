@@ -62,6 +62,8 @@ public:
     // rather than a broadcast. Returns false when no editor can be picked in.
     using TargetPickRequest = std::function<bool(
         LiveInsightKind kind,
+        LiveInsightsContextView* sourceView,
+        LiveInsightSession* graphSession,
         std::function<void(const TargetCandidate&)> picked)>;
 
     explicit LiveInsightsContextView(
@@ -81,6 +83,7 @@ public:
     void setWorkspaceId(const QString& workspaceId);
     void setFullViewHandler(FullViewHandler handler);
     void setToolContextSource(ToolContextSource source);
+    void refreshToolContext();
     void setNavigationHandler(LiveInsightToolPage::NavigationHandler handler);
     Q_INVOKABLE void fitGraph();
     void setTargetPickRequest(TargetPickRequest request);
@@ -102,6 +105,7 @@ public:
     bool hasFixedKind() const;
 
 signals:
+    void targetPickCancelled();
     void selectedKindChanged(LiveInsightKind kind);
     void targetChanged();
     void openFullViewRequested(LiveInsightKind kind);
@@ -118,6 +122,7 @@ private:
     };
 
     QPointer<LiveInsightSession> sessionValue;
+    QPointer<LiveInsightSession> surfaceSession;
     std::array<CardWidgets, 4> cards;
     std::array<LiveInsightSnapshot, 4> renderedSnapshots;
     std::array<bool, 4> hasRenderedSnapshot{};

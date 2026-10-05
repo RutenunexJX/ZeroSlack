@@ -750,3 +750,12 @@ void SignalJourneyService::sortItems(QList<SignalJourneyItem>& items)
                       < rhs.peerStableKey.toString();
               });
 }
+
+SignalJourneyService::SignalJourneyService(SemanticSnapshotToken snapshot)
+    : SignalJourneyService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+SignalJourneyService::SignalJourneyService(std::shared_ptr<SemanticIndex> owner)
+    : SignalJourneyService(owner.get())
+{
+    ownedIndex = std::move(owner);
+}

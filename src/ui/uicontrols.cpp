@@ -442,6 +442,8 @@ QWidget* UiControls::pageStack(QStackedWidget*& stack, QWidget* parent) {
         auto* surface = new ElaCentralStackedWidget(parent);
         surface->setIsTransparent(true);
         surface->setIsHasRadius(false);
+        QObject::connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+            surface, [surface](bool enabled) { if (!enabled) surface->finishStackSwitch(); });
         stack = surface->getContainerStackedWidget();
         return surface;
     }
@@ -451,6 +453,7 @@ QWidget* UiControls::pageStack(QStackedWidget*& stack, QWidget* parent) {
 }
 void UiControls::selectPage(QStackedWidget* stack, int index, bool animate) {
     if (!stack || index < 0 || index >= stack->count()) return;
+    animate = animate && ApplicationThemeManager::instance().animationsEnabled();
 #ifdef ZEROSLACK_ENABLE_ELA
     if (auto* surface = qobject_cast<ElaCentralStackedWidget*>(stack->parentWidget())) {
         surface->doWindowStackSwitch(animate ? ElaWindowType::Popup : ElaWindowType::None, index, false);

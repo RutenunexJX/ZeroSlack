@@ -87,6 +87,7 @@
 
 #define private public
 #include "mainwindow.h"
+#include "documentreviewcoordinator.h"
 #include "insightvisualstyle.h"
 #include "panellayoutcontroller.h"
 #include "analysiscoordinator.h"
@@ -161,7 +162,7 @@
 #include "liveinsightscontextprovider.h"
 #include "liveinsightscontextview.h"
 #include "liveinsighttoolpage.h"
-#include "panelcompositor.h"
+#include "live_insight_test_utils.h"
 #include "rtlinsightworkbench.h"
 #include "tabfileio.h"
 #include "temporaryeditorcontextprovider.h"
@@ -2589,7 +2590,12 @@ static void runWorkspaceWatcherIncrementalRegression()
                    nullptr,
                    source,
                    QStringLiteral(
-                       "module watch_top; logic changed; endmodule\n")),
+                       "module watch_top; logic changed; endmodule\n"), nullptr, nullptr, nullptr,
+                   [&](QString*) {
+                       QFile baseline(source);
+                       return baseline.open(QIODevice::ReadOnly)
+                           && baseline.readAll().replace("\r\n", "\n") == QByteArray("module watch_top; endmodule\n");
+                   }),
                true);
     expectBool("workspace watcher publishes one-file content change",
                waitUntil([&]() {
@@ -2712,8 +2718,8 @@ static void runExternalConflictReviewRegression()
                    && notification.actions.size() == 4,
                true);
     expectBool("conflict detection is non-blocking and layout neutral",
-               window.externalConflictReviewBar
-                   && !window.externalConflictReviewBar
+               window.documentReviewCoordinator->externalConflictReviewBar
+                   && !window.documentReviewCoordinator->externalConflictReviewBar
                            ->isVisible()
                    && QApplication::focusWidget()
                           == originalFocus
@@ -2742,18 +2748,18 @@ static void runExternalConflictReviewRegression()
         QEventLoop::AllEvents,
         50);
     expectBool("comparison is embedded and preserves focus",
-               window.externalConflictReviewBar
-                   && window.externalConflictReviewBar
+               window.documentReviewCoordinator->externalConflictReviewBar
+                   && window.documentReviewCoordinator->externalConflictReviewBar
                           ->isVisible()
-                   && window.externalConflictReviewBar
+                   && window.documentReviewCoordinator->externalConflictReviewBar
                           ->window()
                           == &window
-                   && window.externalConflictLocalText
+                   && window.documentReviewCoordinator->externalConflictLocalText
                           ->toPlainText()
                           .contains(
                               QStringLiteral(
                                   "local dirty text"))
-                   && window.externalConflictDiskText
+                   && window.documentReviewCoordinator->externalConflictDiskText
                           ->toPlainText()
                           == firstExternalText
                    && QApplication::focusWidget()
@@ -2771,7 +2777,7 @@ static void runExternalConflictReviewRegression()
         QEventLoop::AllEvents,
         50);
     expectBool("open comparison refreshes to the latest generation",
-               window.externalConflictDiskText
+               window.documentReviewCoordinator->externalConflictDiskText
                    ->toPlainText()
                    == secondExternalText
                    && document->dirty()
@@ -2791,7 +2797,7 @@ static void runExternalConflictReviewRegression()
         50);
     expectBool("comparison cancellation preserves dirty text and focus",
                closeButton
-                   && !window.externalConflictReviewBar
+                   && !window.documentReviewCoordinator->externalConflictReviewBar
                            ->isVisible()
                    && document->dirty()
                    && editor->toPlainText().contains(
@@ -2819,7 +2825,7 @@ static void runExternalConflictReviewRegression()
                           == SharedDocumentExternalState::Current
                    && editor->toPlainText()
                           == secondExternalText
-                   && !window.externalConflictReviewBar
+                   && !window.documentReviewCoordinator->externalConflictReviewBar
                            ->isVisible()
                    && QApplication::focusWidget()
                           == originalFocus
@@ -2973,7 +2979,7 @@ static void runCrashRecoveryReviewRegression()
         window.notificationCenter
         && window.notificationCenter
                ->notificationByKey(
-                   window.crashRecoveryNotificationKey(
+                   window.documentReviewCoordinator->crashRecoveryNotificationKey(
                        workspaceDir.path()),
                    &availability);
     expectBool("recovery discovery posts actionable notification",
@@ -2987,7 +2993,7 @@ static void runCrashRecoveryReviewRegression()
                                   ReviewCrashRecovery),
                true);
     expectBool("recovery discovery does not create or show review UI",
-               window.crashRecoveryReviewDialog == nullptr
+               window.documentReviewCoordinator->crashRecoveryReviewDialog == nullptr
                    && activityDock
                    && !activityDock->isVisible(),
                true);
@@ -3008,25 +3014,25 @@ static void runCrashRecoveryReviewRegression()
         50);
     expectBool("notification action opens centralized review",
                reviewRequested
-                   && window.crashRecoveryReviewDialog
-                   && window.crashRecoveryReviewDialog
+                   && window.documentReviewCoordinator->crashRecoveryReviewDialog
+                   && window.documentReviewCoordinator->crashRecoveryReviewDialog
                           ->isVisible()
-                   && window.crashRecoveryCandidateList
-                   && window.crashRecoveryCandidateList
+                   && window.documentReviewCoordinator->crashRecoveryCandidateList
+                   && window.documentReviewCoordinator->crashRecoveryCandidateList
                           ->topLevelItemCount() == 2,
                true);
     expectBool("recovery review is nonmodal non-topmost",
-               window.crashRecoveryReviewDialog
-                   && !window.crashRecoveryReviewDialog
+               window.documentReviewCoordinator->crashRecoveryReviewDialog
+                   && !window.documentReviewCoordinator->crashRecoveryReviewDialog
                            ->isModal()
-                   && window.crashRecoveryReviewDialog
+                   && window.documentReviewCoordinator->crashRecoveryReviewDialog
                           ->windowModality()
                           == Qt::NonModal
-                   && !window.crashRecoveryReviewDialog
+                   && !window.documentReviewCoordinator->crashRecoveryReviewDialog
                            ->windowFlags()
                            .testFlag(
                                Qt::WindowStaysOnTopHint)
-                   && window.crashRecoveryReviewDialog
+                   && window.documentReviewCoordinator->crashRecoveryReviewDialog
                           ->testAttribute(
                               Qt::WA_ShowWithoutActivating),
                true);
@@ -3037,15 +3043,15 @@ static void runCrashRecoveryReviewRegression()
 
     const auto candidateItem =
         [&](const QString& recoveryId) {
-            if (!window.crashRecoveryCandidateList)
+            if (!window.documentReviewCoordinator->crashRecoveryCandidateList)
                 return static_cast<QTreeWidgetItem*>(
                     nullptr);
             for (int row = 0;
-                 row < window.crashRecoveryCandidateList
+                 row < window.documentReviewCoordinator->crashRecoveryCandidateList
                            ->topLevelItemCount();
                  ++row) {
                 QTreeWidgetItem* item =
-                    window.crashRecoveryCandidateList
+                    window.documentReviewCoordinator->crashRecoveryCandidateList
                         ->topLevelItem(row);
                 if (item
                     && item->data(
@@ -3063,7 +3069,7 @@ static void runCrashRecoveryReviewRegression()
     QTreeWidgetItem* firstItem =
         candidateItem(firstWrite.recoveryId);
     if (firstItem) {
-        window.crashRecoveryCandidateList
+        window.documentReviewCoordinator->crashRecoveryCandidateList
             ->setCurrentItem(firstItem);
     }
     QCoreApplication::processEvents(
@@ -3071,17 +3077,17 @@ static void runCrashRecoveryReviewRegression()
         20);
     expectBool("review shows source and recovered snapshot side by side",
                firstItem
-                   && window.crashRecoverySourceText
-                   && window.crashRecoverySourceText
+                   && window.documentReviewCoordinator->crashRecoverySourceText
+                   && window.documentReviewCoordinator->crashRecoverySourceText
                           ->toPlainText()
                           == firstSource
-                   && window.crashRecoveryRecoveredText
-                   && window.crashRecoveryRecoveredText
+                   && window.documentReviewCoordinator->crashRecoveryRecoveredText
+                   && window.documentReviewCoordinator->crashRecoveryRecoveredText
                           ->toPlainText()
                           == firstRecovered
-                   && window.crashRecoveryRestoreButton
+                   && window.documentReviewCoordinator->crashRecoveryRestoreButton
                           ->isEnabled()
-                   && window.crashRecoveryDiscardButton
+                   && window.documentReviewCoordinator->crashRecoveryDiscardButton
                           ->isEnabled(),
                true);
 
@@ -3094,7 +3100,7 @@ static void runCrashRecoveryReviewRegression()
     expectBool("recovery fixture can change after review",
                changedAfterReview.succeeded(),
                true);
-    window.crashRecoveryRestoreButton->click();
+    window.documentReviewCoordinator->crashRecoveryRestoreButton->click();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents,
         50);
@@ -3115,15 +3121,15 @@ static void runCrashRecoveryReviewRegression()
                           .isEmpty(),
                true);
     expectBool("failed restore refreshes comparison before retry",
-               window.reviewedCrashRecoveryCandidate
-                   && window.reviewedCrashRecoveryCandidate
+               window.documentReviewCoordinator->reviewedCrashRecoveryCandidate
+                   && window.documentReviewCoordinator->reviewedCrashRecoveryCandidate
                           ->documentRevision == 8
-                   && window.crashRecoveryRecoveredText
+                   && window.documentReviewCoordinator->crashRecoveryRecoveredText
                           ->toPlainText()
                           == firstRecoveredUpdated,
                true);
 
-    window.crashRecoveryRestoreButton->click();
+    window.documentReviewCoordinator->crashRecoveryRestoreButton->click();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents,
         50);
@@ -3146,7 +3152,7 @@ static void runCrashRecoveryReviewRegression()
     QTreeWidgetItem* secondItem =
         candidateItem(secondWrite.recoveryId);
     if (secondItem) {
-        window.crashRecoveryCandidateList
+        window.documentReviewCoordinator->crashRecoveryCandidateList
             ->setCurrentItem(secondItem);
     }
     QCoreApplication::processEvents(
@@ -3154,14 +3160,14 @@ static void runCrashRecoveryReviewRegression()
         20);
     expectBool("second recovery candidate is independently reviewed",
                secondItem
-                   && window.crashRecoverySourceText
+                   && window.documentReviewCoordinator->crashRecoverySourceText
                           ->toPlainText()
                           == secondSource
-                   && window.crashRecoveryRecoveredText
+                   && window.documentReviewCoordinator->crashRecoveryRecoveredText
                           ->toPlainText()
                           == secondRecovered,
                true);
-    window.crashRecoveryDiscardButton->click();
+    window.documentReviewCoordinator->crashRecoveryDiscardButton->click();
     QCoreApplication::processEvents(
         QEventLoop::AllEvents,
         50);
@@ -3174,13 +3180,13 @@ static void runCrashRecoveryReviewRegression()
     expectBool("discard removes only the selected snapshot",
                discarded.status
                        == CrashRecoveryStatus::NotFound
-                   && window.crashRecoveryCandidateList
+                   && window.documentReviewCoordinator->crashRecoveryCandidateList
                           ->topLevelItemCount() == 0,
                true);
     expectBool("handled recovery notification is dismissed",
                !window.notificationCenter
                     ->notificationByKey(
-                        window.crashRecoveryNotificationKey(
+                        window.documentReviewCoordinator->crashRecoveryNotificationKey(
                             workspaceDir.path()),
                         &remainingAvailability),
                true);
@@ -6909,7 +6915,11 @@ static void runRtlInsightsOnDemandRegression()
                    && panel.tree()->topLevelItem(0)->text(0).contains(QStringLiteral("Ready")),
                true);
 
+    SemanticIndex snapshotIndex;
+    snapshotIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>());
+    panel.setGraphSnapshot(snapshotIndex.snapshotToken());
     panel.showModuleBlockDiagram();
+    expectBool("on-demand graph report completed", waitForLiveInsightReports(panel), true);
     bool sawGraphLog = false;
     for (const ActivityLogEvent& event : service->events()) {
         sawGraphLog = sawGraphLog
@@ -7155,7 +7165,6 @@ static void drainRelationshipWork(MainWindow& window)
     if (builder)
         builder->cancelAnalysis();
     if (window.analysisScheduler) {
-        window.analysisScheduler->cancelAllScheduledRelationshipAnalyses();
         window.analysisScheduler->cancelRelationshipAnalysis();
         window.analysisScheduler->cancelWorkspaceRelationshipAnalysis();
     }
@@ -11643,6 +11652,65 @@ void runInsightFocusIntegrationRegression(
                true);
 }
 
+static void runSharedLineCommandRoutesRegression()
+{
+    MainWindow window;
+    window.show(); window.activateWindow();
+    window.tabManager->createNewTab();
+    auto* target = window.tabManager->getCurrentEditor();
+    window.tabManager->createNewTab();
+    auto* active = window.tabManager->getCurrentEditor();
+    const QString original = QStringLiteral("alpha\nbeta\ngamma");
+    const QString id = target->property("editorViewId").toString();
+    const QVariantMap parameters{{QStringLiteral("editorViewId"),id}};
+    const auto reset = [&] {
+        for (auto* editor : {target,active}) {
+            editor->setReadOnly(false); editor->setPlainText(original);
+            QTextCursor cursor(editor->document()); cursor.setPosition(7); editor->setTextCursor(cursor);
+            editor->document()->clearUndoRedoStacks();
+        }
+        active->setFocus(); QApplication::processEvents();
+    };
+    struct Case { const char* id; const char* expected; Qt::Key key; Qt::KeyboardModifiers modifiers; };
+    for (const auto& item : {
+        Case{"edit.duplicateLines","alpha\nbeta\nbeta\ngamma",Qt::Key_D,Qt::ControlModifier},
+        Case{"edit.deleteLines","alpha\ngamma",Qt::Key_D,Qt::ControlModifier|Qt::ShiftModifier},
+        Case{"edit.joinLines","alpha\nbeta gamma",Qt::Key_J,Qt::ControlModifier|Qt::ShiftModifier},
+        Case{"edit.moveLinesUp","beta\nalpha\ngamma",Qt::Key_Up,Qt::AltModifier},
+        Case{"edit.moveLinesDown","alpha\ngamma\nbeta",Qt::Key_Down,Qt::AltModifier}}) {
+        const QString action = QString::fromLatin1(item.id);
+        const QString expected = QString::fromLatin1(item.expected);
+        reset();
+        const auto result = window.executeRegisteredUiAction(action,parameters);
+        expectBool("registry line action resolves the requested view", result.succeeded
+            && target->toPlainText()==expected && active->toPlainText()==original,true);
+        target->undo(); expectBool("shared line command remains one undo",target->toPlainText()==original,true);
+        reset();
+        expectBool("palette line action accepts its registered route",
+            window.commandLayerCoordinator->executePaletteCommand(action,parameters),true);
+        expectBool("palette targets the requested view",target->toPlainText()==expected && active->toPlainText()==original,true);
+        reset();
+        QTest::keyClick(active,item.key,item.modifiers);
+        expectBool("shortcut targets active editor once",active->toPlainText()==expected && target->toPlainText()==original,true);
+        reset(); target->setReadOnly(true);
+        const auto blocked=window.executeRegisteredUiAction(action,parameters);
+        expectBool("read-only line action reports failure without edits",blocked.handled && !blocked.succeeded
+            && !blocked.failureReason.isEmpty() && target->toPlainText()==original,true);
+        window.commandLayerCoordinator->executePaletteCommand(action,parameters);
+        expectBool("palette preserves read-only target",target->toPlainText()==original && active->toPlainText()==original,true);
+        reset();
+        const auto stale=window.executeRegisteredUiAction(action,{{QStringLiteral("editorViewId"),QStringLiteral("closed-view")}});
+        expectBool("closed view cannot fall back to the active editor",!stale.succeeded && !stale.failureReason.isEmpty()
+            && target->toPlainText()==original && active->toPlainText()==original,true);
+    }
+    const auto empty=FileCommandCoordinator::executeLineAction(QStringLiteral("editor.lines.delete"),nullptr);
+    expectBool("no document has a useful line action failure",empty.handled && !empty.succeeded && !empty.failureReason.isEmpty(),true);
+    reset(); QTextCursor end(target->document());end.movePosition(QTextCursor::End);target->setTextCursor(end);
+    const auto edge=window.executeRegisteredUiAction(QStringLiteral("edit.joinLines"),parameters);
+    expectBool("invalid line operation preserves the document",!edge.succeeded && !edge.failureReason.isEmpty() && target->toPlainText()==original,true);
+    for(auto* editor:{target,active})editor->document()->setModified(false);
+}
+
 int main(int argc, char** argv)
 {
     ScopedGuiTestSettingsRoot isolatedSettings;
@@ -11671,6 +11739,7 @@ int main(int argc, char** argv)
     runStructuralEditingRegression();
     runEditorColumnEditRegression();
     runEditorLineActionRegression();
+    runSharedLineCommandRoutesRegression();
     runEditorCtrlClickNavigationRegression();
     runSignalKernelGraphPopupInteractionRegression();
     runEditorFormatterRegression();
@@ -11696,6 +11765,13 @@ int main(int argc, char** argv)
     runEditorContextMenuGroupingRegression();
 
     if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--self-contained-only")) {
+        MainWindow commandWindow;
+        QTemporaryDir commandFixture;
+        const QString commandFile=commandFixture.filePath(QStringLiteral("commands.sv"));
+        expectBool("standalone command fixture written",writeTextFile(commandFile,QStringLiteral("module commands; endmodule\n")),true);
+        expectBool("standalone command fixture opened",commandWindow.tabManager->openFileInTab(commandFile),true);
+        commandWindow.show();
+        runCommandLayerRegression(commandWindow);
         printf("[SKIP] Local copyright-fixture GUI section was not requested\n");
         printf("%d checks, %d failed\n", g_checks, g_fails);
         return g_fails == 0 ? 0 : 1;
@@ -11852,10 +11928,8 @@ int main(int argc, char** argv)
                    && !window.menuBar()->isVisible(), true);
     const int sidebarWidth = projectSidebar->width();
     const int editorWidthWithSidebar = window.centralWidget()->width();
-    auto* sidebarCompositor = window.findChild<PanelCompositor*>();
     const auto visibleSidebarWidth = [&]() -> qreal {
-        return sidebarCompositor && sidebarCompositor->isActiveFor(projectSidebar)
-            ? sidebarCompositor->extent() : projectSidebar->width();
+        return projectSidebar->width();
     };
     saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-expanded.png"));
     collapseSidebar->click();

@@ -4,6 +4,7 @@
 #include "contextworkspacecontroller.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightsession.h"
+#include "liveinsightgraphreport.h"
 #include "liveinsighttoolpage.h"
 #include "navigationcommandcoordinator.h"
 #include "panellayoutcontroller.h"
@@ -169,8 +170,6 @@ void MainWindow::setupContextWorkspace()
     };
     for (LiveInsightKind kind : {
              LiveInsightKind::Kernel,
-             LiveInsightKind::Module,
-             LiveInsightKind::State,
              LiveInsightKind::Hotspot}) {
         liveInsightSession->setBuilder(kind, summaryBuilder);
     }
@@ -209,10 +208,12 @@ void MainWindow::setupContextWorkspace()
             });
         provider->setTargetPickRequest(
             [this](LiveInsightKind kind,
+                   LiveInsightsContextView* sourceView,
+                   LiveInsightSession* graphSession,
                    std::function<void(
                        const LiveInsightsContextView::TargetCandidate&)>
                        picked) {
-                return beginLiveInsightTargetPick(kind, std::move(picked));
+                return beginLiveInsightTargetPick(kind, sourceView, graphSession, std::move(picked));
             });
         provider->setNavigationHandler(
             [this](const QString& fileName, int line, int column) {
@@ -365,6 +366,8 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocu
 
 bool MainWindow::beginLiveInsightTargetPick(
     LiveInsightKind kind,
+    LiveInsightsContextView* sourceView,
+    LiveInsightSession* graphSession,
     std::function<void(const LiveInsightsContextView::TargetCandidate&)>
         picked)
 {
@@ -396,29 +399,96 @@ bool MainWindow::beginLiveInsightTargetPick(
 
     EditorInsightTargetPickController::Validator validator;
     if (kind == LiveInsightKind::State) {
-        // Only the graph service knows whether a register actually drives an
-        // FSM, so that answer is fetched once, for the chosen candidate.
-        validator = [fileName, moduleName](
+        if (!graphSession) return false;
+        const QPointer<LiveInsightSession> session(graphSession);
+        const QPointer<MyCodeEditor> sourceEditor(editor);
+        const QPointer<LiveInsightsContextView> targetView(sourceView);
+        validator = [this, session, sourceEditor, targetView, context, fileName, moduleName](
                         const EditorInsightTargetCandidate& candidate,
-                        QString* reason) {
-            StateTransitionGraphQuery query;
-            query.symbolName = candidate.name;
-            query.fileName = fileName;
-            query.moduleName = moduleName;
-            const StateTransitionGraphReport report =
-                StateTransitionGraphService::getInstance()
-                    ->buildStateTransitionGraph(query);
-            if (report.found)
-                return true;
-            if (reason) {
-                const QString detail =
-                    report.notFoundReasonDisplayName.trimmed();
-                *reason = detail.isEmpty()
-                    ? QStringLiteral(
-                          "%1 has no state transition graph.").arg(candidate.name)
-                    : QStringLiteral("%1: %2").arg(candidate.name, detail);
+                        EditorInsightTargetPickController::ValidationReply reply)
+                        -> EditorInsightTargetPickController::ValidationCancel {
+            if (!session || !sourceEditor || !targetView) {
+                reply(false, QStringLiteral("The graph view was closed."));
+                return {};
             }
-            return false;
+            LiveInsightGraphInput input;
+            input.mode = LiveInsightGraphMode::StateTransition;
+            input.semantic = SemanticIndex::getInstance()->snapshotToken();
+            input.fileName = fileName;
+            input.moduleName = moduleName;
+            input.signalName = candidate.name;
+            const auto key = liveInsightGraphRequestKey(input, context.workspaceId,
+                context.documentId, context.documentRevision);
+            const QPointer<QObject> operation(new QObject(sourceEditor));
+            const auto generation = std::make_shared<quint64>(0);
+            const auto finish = [operation, session, reply](bool accepted, const QString& reason) {
+                if (!operation || operation->property("finished").toBool()) return;
+                operation->setProperty("finished", true);
+                if (session) session->setConsumerVisible(operation, LiveInsightKind::State, false);
+                operation->deleteLater();
+                reply(accepted, reason);
+            };
+            const auto contextCurrent = [this, sourceEditor, key] {
+                const auto current = activeLiveInsightToolContext(false);
+                return sourceEditor && tabManager && tabManager->getCurrentEditor() == sourceEditor
+                    && current.workspaceId == key.workspaceId && current.documentId == key.documentId
+                    && current.documentRevision == key.documentRevision
+                    && current.semanticRevision == key.semanticRevision;
+            };
+            const auto consume = [finish, contextCurrent, generation, key, candidate](
+                                     LiveInsightKind kind, const LiveInsightSnapshot& snapshot) {
+                if (kind != LiveInsightKind::State || *generation == 0) return;
+                if (!contextCurrent() || snapshot.requestedKey != key) {
+                    finish(false, QStringLiteral("The target context changed; choose a target again."));
+                    return;
+                }
+                if (snapshot.requestedGeneration != *generation) return;
+                if (snapshot.phase == LiveInsightPhase::Error) {
+                    finish(false, snapshot.errorText);
+                    return;
+                }
+                if (snapshot.phase != LiveInsightPhase::Ready || snapshot.stale
+                    || snapshot.publishedGeneration != *generation || snapshot.publishedKey != key) return;
+                const auto report = snapshot.payload.value(QStringLiteral("graphReport"))
+                    .value<LiveInsightGraphReportPtr>();
+                if (!report || report->mode != LiveInsightGraphMode::StateTransition) return;
+                const auto& state = std::get<StateTransitionGraphReport>(report->value);
+                const QString detail = state.notFoundReasonDisplayName.trimmed();
+                finish(state.found, state.found ? QString() : detail.isEmpty()
+                    ? QStringLiteral("%1 has no state transition graph.").arg(candidate.name)
+                    : QStringLiteral("%1: %2").arg(candidate.name, detail));
+            };
+            connect(session, &LiveInsightSession::snapshotChanged, operation, consume);
+            connect(session, &QObject::destroyed, operation, [sourceEditor] {
+                if (sourceEditor) sourceEditor->cancelInsightTargetPickMode();
+            });
+            connect(targetView, &LiveInsightsContextView::targetPickCancelled, operation, [sourceEditor] {
+                if (sourceEditor) sourceEditor->cancelInsightTargetPickMode();
+            });
+            connect(tabManager.get(), &TabManager::activeTabChanged, operation, [sourceEditor](MyCodeEditor* active) {
+                if (sourceEditor && active != sourceEditor) sourceEditor->cancelInsightTargetPickMode();
+            });
+            if (workspaceManager) {
+                const auto cancelPick = [sourceEditor] {
+                    if (sourceEditor) sourceEditor->cancelInsightTargetPickMode();
+                };
+                connect(workspaceManager.get(), &WorkspaceManager::workspaceOpened, operation, cancelPick);
+                connect(workspaceManager.get(), &WorkspaceManager::workspaceClosed, operation, cancelPick);
+            }
+            session->setConsumerVisible(operation, LiveInsightKind::State, true);
+            *generation = session->requestUpdate(key, {{QStringLiteral("graphInput"), QVariant::fromValue(input)}});
+            consume(LiveInsightKind::State, session->snapshot(LiveInsightKind::State));
+            session->flushPending(LiveInsightKind::State);
+            // Success remains in the renderer's own session. Applying the
+            // selected context requests this exact input and reuses its report.
+            return [operation, session, generation] {
+                if (!operation || operation->property("finished").toBool()) return;
+                operation->setProperty("finished", true);
+                if (session && session->snapshot(LiveInsightKind::State).requestedGeneration == *generation)
+                    session->cancel(LiveInsightKind::State);
+                if (session) session->setConsumerVisible(operation, LiveInsightKind::State, false);
+                operation->deleteLater();
+            };
         };
     }
     // Kernel, Hotspot and Module have no second stage of their own: the
@@ -468,6 +538,14 @@ void MainWindow::requestLiveInsightUpdates()
 {
     if (!liveInsightSession || !tabManager)
         return;
+    // Each fixed/pinned/detached graph owns its own request stream. Refresh
+    // inputs here; its LiveInsightSession debounces the actual report build.
+    for (auto* view : findChildren<LiveInsightsContextView*>()) {
+        if (view->selectedKind() == LiveInsightKind::Module || view->selectedKind() == LiveInsightKind::State)
+            view->refreshToolContext();
+    }
+    refreshLiveInsightToolPages(static_cast<int>(LiveInsightKind::Module));
+    refreshLiveInsightToolPages(static_cast<int>(LiveInsightKind::State));
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor) {
         for (LiveInsightKind kind : {
@@ -515,8 +593,6 @@ void MainWindow::requestLiveInsightUpdates()
 
     for (LiveInsightKind kind : {
              LiveInsightKind::Kernel,
-             LiveInsightKind::Module,
-             LiveInsightKind::State,
              LiveInsightKind::Hotspot}) {
         LiveInsightRequestKey key;
         key.kind = kind;
@@ -545,24 +621,7 @@ void MainWindow::requestLiveInsightUpdates()
                           .arg(context.signalName));
             break;
         case LiveInsightKind::Module:
-            input.insert(QStringLiteral("title"),
-                         QStringLiteral("Module Diagram"));
-            input.insert(
-                QStringLiteral("summary"),
-                context.moduleName.trimmed().isEmpty()
-                    ? QStringLiteral("No module scope selected.")
-                    : QStringLiteral("%1 · hierarchy and connectivity")
-                          .arg(context.moduleName));
-            break;
         case LiveInsightKind::State:
-            input.insert(QStringLiteral("title"),
-                         QStringLiteral("State Diagram"));
-            input.insert(
-                QStringLiteral("summary"),
-                context.moduleName.trimmed().isEmpty()
-                    ? QStringLiteral("No FSM scope selected.")
-                    : QStringLiteral("%1 · state transitions")
-                          .arg(context.moduleName));
             break;
         case LiveInsightKind::Hotspot:
             input.insert(QStringLiteral("title"),

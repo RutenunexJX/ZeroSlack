@@ -1,4 +1,5 @@
 #include "rtlinsightviewplugins.h"
+#include "liveinsightgraphreport.h"
 
 #include "fsmgraphservice.h"
 #include "moduleblockdiagramservice.h"
@@ -146,30 +147,15 @@ QString ModuleBlockInsightViewPlugin::iconKey() const
 InsightViewBuildResult ModuleBlockInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    if (context.moduleName.trimmed().isEmpty()) {
-        return unavailable(
-            context,
-            pluginId(),
-            QStringLiteral("block"),
-            QStringLiteral("Select a module to build its block diagram."));
-    }
-    ModuleBlockDiagramQuery query;
-    query.moduleName = context.moduleName;
-    query.fileName = context.fileName;
-    query.maxDepth = 2;
-    const ModuleBlockDiagramReport report =
-        ModuleBlockDiagramService::getInstance()->buildModuleBlockDiagram(query);
-    InsightViewBuildResult result;
-    result.draft = InsightGraphCore::fromModuleBlockDiagram(report);
-    stampDraft(result.draft, context, pluginId());
-    result.available = report.found;
-    result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
-    result.summary = report.found
-        ? QStringLiteral("%1 modules, %2 connections")
-              .arg(report.moduleCount)
-              .arg(report.edgeCount)
-        : result.errorText;
-    return result;
+    LiveInsightGraphInput input;
+    input.mode = LiveInsightGraphMode::Module;
+    input.maxDepth = 2;
+    input.semantic = SemanticIndex::getInstance()->snapshotToken();
+    input.fileName = context.fileName;
+    input.moduleName = context.moduleName;
+    if (!input.semantic.isValid() || context.moduleName.trimmed().isEmpty())
+        return unavailable(context, pluginId(), QStringLiteral("block"), QStringLiteral("Select an analyzed module to build its block diagram."));
+    return insightViewFromGraphReport(*buildLiveInsightGraphReport(input), context, pluginId());
 }
 
 InsightWorkbenchViewKind SignalHotspotInsightViewPlugin::kind() const
@@ -245,52 +231,48 @@ QString StateTransitionInsightViewPlugin::iconKey() const
 InsightViewBuildResult StateTransitionInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    if (context.moduleName.trimmed().isEmpty()) {
-        return unavailable(
-            context,
-            pluginId(),
-            QStringLiteral("state"),
-            QStringLiteral("Select an RTL module to discover its FSM."));
-    }
+    LiveInsightGraphInput input;
+    input.mode = context.signalName.isEmpty() ? LiveInsightGraphMode::Fsm : LiveInsightGraphMode::StateTransition;
+    input.semantic = SemanticIndex::getInstance()->snapshotToken();
+    input.fileName = context.fileName;
+    input.moduleName = context.moduleName;
+    input.signalName = context.signalName;
+    if (!input.semantic.isValid() || context.moduleName.trimmed().isEmpty())
+        return unavailable(context, pluginId(), QStringLiteral("state"), QStringLiteral("Select an analyzed RTL module to discover its FSM."));
+    return insightViewFromGraphReport(*buildLiveInsightGraphReport(input), context, pluginId());
+}
+
+InsightViewBuildResult insightViewFromGraphReport(const LiveInsightGraphReport& graphReport,
+    const InsightViewContext& context, const QString& pluginId)
+{
     InsightViewBuildResult result;
-    if (!context.signalName.trimmed().isEmpty()) {
-        StateTransitionGraphQuery query;
-        query.symbolName = context.signalName;
-        query.fileName = context.fileName;
-        query.moduleName = context.moduleName;
-        const StateTransitionGraphReport report =
-            StateTransitionGraphService::getInstance()
-                ->buildStateTransitionGraph(query);
+    int nodes = 0, edges = 0;
+    if (graphReport.mode == LiveInsightGraphMode::Module) {
+        const auto& report = std::get<ModuleBlockDiagramReport>(graphReport.value);
+        result.draft = InsightGraphCore::fromModuleBlockDiagram(report);
+        result.available = report.found;
+        result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
+        nodes = report.moduleCount;
+        edges = report.edgeCount;
+    } else if (graphReport.mode == LiveInsightGraphMode::StateTransition) {
+        const auto& report = std::get<StateTransitionGraphReport>(graphReport.value);
         result.draft = InsightGraphCore::fromStateTransitionGraph(report);
         result.available = report.found;
         result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
-        result.summary = report.found
-            ? QStringLiteral("%1 states, %2 transitions")
-                  .arg(report.stateCount)
-                  .arg(report.transitionCount)
-            : result.errorText;
+        nodes = report.stateCount;
+        edges = report.transitionCount;
     } else {
-        FsmGraphQuery query;
-        query.fileName = context.fileName;
-        query.moduleName = context.moduleName;
-        const FsmGraphReport report =
-            FsmGraphService::getInstance()->buildFsmGraph(query);
+        const auto& report = std::get<FsmGraphReport>(graphReport.value);
         result.draft = InsightGraphCore::fromFsmGraph(report);
         result.available = report.found;
         result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
-        int stateCount = 0;
-        int transitionCount = 0;
-        for (const FsmGraph& graph : report.graphs) {
-            stateCount += graph.stateCount;
-            transitionCount += graph.transitionCount;
-        }
-        result.summary = report.found
-            ? QStringLiteral("%1 states, %2 transitions")
-                  .arg(stateCount)
-                  .arg(transitionCount)
-            : result.errorText;
+        for (const auto& graph : report.graphs) { nodes += graph.stateCount; edges += graph.transitionCount; }
     }
-    stampDraft(result.draft, context, pluginId());
+    result.summary = result.available
+        ? (graphReport.mode == LiveInsightGraphMode::Module ? QStringLiteral("%1 modules, %2 connections")
+                                                          : QStringLiteral("%1 states, %2 transitions")).arg(nodes).arg(edges)
+        : result.errorText;
+    stampDraft(result.draft, context, pluginId);
     return result;
 }
 

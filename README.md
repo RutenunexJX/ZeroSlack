@@ -1,8 +1,18 @@
 # ZeroSlack
 
-Current version: `v0.31.20`
+Current version: `v0.31.21`
 
-This release unifies workspace analysis and publication, retains validated
+Release 0.31.21 separates the reusable Documents and Semantic libraries from the
+UI and keeps the CLI independent of Widgets and Ela. Editor views share document
+parsing; graph reports and target validation run through one background session.
+Document commands, edit transactions, popup navigation, Ela flow layout and
+animation policy now reuse shared owners instead of parallel implementations.
+Measured three-view event-loop stalls decreased; single-view completed-work
+time remained about 2.4–2.6% above the previous baseline. See the
+[accepted architecture review](docs/architecture-redundancy-backlog.md) for scope
+and measurement limits. These timings describe the accepted development build.
+
+Release 0.31.20 unified workspace analysis and publication, retaining validated
 workspace states within a bounded cache, and cancels obsolete work inside Slang.
 Directory watching, Design updates, search catalogs and editor syntax work now
 avoid unnecessary synchronous processing. Cancellation and workspace switching

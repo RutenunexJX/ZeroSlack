@@ -592,8 +592,6 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
     standaloneAnalysisRevisions.remove(key);
     if (symbolAnalyzer) symbolAnalyzer->cancelFileAnalysis(fileName);
     selfWriteStamps.remove(key);
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->clearFile(fileName);
 }
 
 void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
@@ -655,8 +653,6 @@ void AnalysisScheduler::onDocumentOpened(const DocumentSnapshot& snapshot)
 void AnalysisScheduler::onDocumentEdited(const DocumentSnapshot& snapshot)
 {
     pendingCleanSemanticChanges.remove(normalizedFileName(snapshot.fileName));
-    if (relationshipAnalysisQueue)
-        relationshipAnalysisQueue->clearFile(snapshot.fileName);
     if (workspaceSymbolAnalysis) {
         workspaceSymbolAnalysis->invalidateSemanticAnalysis(
             snapshot.fileName,

@@ -1,5 +1,6 @@
 #include "semanticanalysisinput.h"
 #include <QDir>
+#include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
 #include <QTextStream>
@@ -9,6 +10,35 @@ bool SemanticAnalysisInput::equivalentTo(const SemanticAnalysisInput& other) con
 {
     return projectIdentity == other.projectIdentity
         && documentRevisions == other.documentRevisions && sources == other.sources;
+}
+
+namespace {
+SemanticSourceFingerprint fingerprintFor(const SemanticCapturedSource& source)
+{
+    return {source.readable, source.readable
+        ? QCryptographicHash::hash(source.text.toUtf8(), QCryptographicHash::Sha256)
+        : QByteArray{}};
+}
+}
+
+SemanticInputFingerprint SemanticAnalysisInput::fingerprint() const
+{
+    SemanticInputFingerprint result;
+    result.projectIdentity = projectIdentity;
+    for (auto it = sources.cbegin(); it != sources.cend(); ++it)
+        result.sources.insert(it.key(), fingerprintFor(it.value()));
+    return result;
+}
+
+bool SemanticInputCapture::matchesFingerprint(
+    const SemanticInputFingerprint& fingerprint, const ProjectSnapshot& project)
+{
+    if (fingerprint.projectIdentity != project.semanticIdentity())
+        return false;
+    for (auto it = fingerprint.sources.cbegin(); it != fingerprint.sources.cend(); ++it)
+        if (fingerprintFor(read(it.key())) != it.value())
+            return false;
+    return true;
 }
 
 qsizetype SemanticAnalysisInput::logicalBytes() const

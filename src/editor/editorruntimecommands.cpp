@@ -702,7 +702,7 @@ void MyCodeEditorState::refreshSemanticPresentation(MyCodeEditor* editor)
 
 std::uint64_t MyCodeEditorState::semanticDocumentRevision() const
 {
-    return semanticTextRevision;
+    return syntax.revision();
 }
 
 QString MyCodeEditorState::materializeDocumentText(
@@ -718,66 +718,26 @@ const QString& MyCodeEditorState::cachedDocumentText()
         ++hotPathMetrics.inlineFilterOverlayForcedTextReads;
     finishInlineFilterTextOverlay();
     const std::uint64_t before =
-        semanticRevisionText.metricsForTest().materializationCount;
-    const QString& text = semanticRevisionText.materialized();
+        syntax.text().metricsForTest().materializationCount;
+    const QString& text = syntax.text().materialized();
     const std::uint64_t after =
-        semanticRevisionText.metricsForTest().materializationCount;
+        syntax.text().metricsForTest().materializationCount;
     hotPathMetrics.fullTextMaterializations += after - before;
     return text;
 }
 
 int MyCodeEditorState::cachedDocumentLength() const
 {
-    if (!inlineFilterTextOverlayActive)
-        return semanticRevisionText.size();
-    return semanticRevisionText.size()
-        - inlineFilterTextOverlayOriginalLength
-        + inlineFilterTextOverlayCurrentText.size();
+    return syntax.text().size();
 }
 
 QString MyCodeEditorState::cachedDocumentSlice(int position, int length)
 {
-    const int documentLength = cachedDocumentLength();
-    const int boundedPosition = qBound(0, position, documentLength);
-    const int boundedLength = qBound(0,
-                                     length,
-                                     documentLength - boundedPosition);
+    const int boundedPosition = qBound(0, position, syntax.text().size());
+    const int boundedLength = qBound(0, length, syntax.text().size() - boundedPosition);
     ++hotPathMetrics.cachedTextSliceReads;
-    hotPathMetrics.cachedTextSliceCharacters +=
-        static_cast<std::uint64_t>(boundedLength);
-    if (!inlineFilterTextOverlayActive)
-        return semanticRevisionText.mid(boundedPosition, boundedLength);
-
-    const int requestEnd = boundedPosition + boundedLength;
-    const int overlayStart = inlineFilterTextOverlayStart;
-    const int overlayEnd =
-        overlayStart + inlineFilterTextOverlayCurrentText.size();
-    QString result;
-    result.reserve(boundedLength);
-    int cursor = boundedPosition;
-    if (cursor < overlayStart) {
-        const int beforeEnd = qMin(requestEnd, overlayStart);
-        result += semanticRevisionText.mid(
-            cursor, beforeEnd - cursor);
-        cursor = beforeEnd;
-    }
-    if (cursor < requestEnd && cursor < overlayEnd) {
-        const int currentStart = qMax(cursor, overlayStart);
-        const int currentEnd = qMin(requestEnd, overlayEnd);
-        result += inlineFilterTextOverlayCurrentText.mid(
-            currentStart - overlayStart,
-            currentEnd - currentStart);
-        cursor = currentEnd;
-    }
-    if (cursor < requestEnd) {
-        const int baseStart =
-            cursor
-            - inlineFilterTextOverlayCurrentText.size()
-            + inlineFilterTextOverlayOriginalLength;
-        result += semanticRevisionText.mid(
-            baseStart, requestEnd - cursor);
-    }
-    return result;
+    hotPathMetrics.cachedTextSliceCharacters += static_cast<std::uint64_t>(boundedLength);
+    return syntax.text().mid(boundedPosition, boundedLength);
 }
 
 bool MyCodeEditorState::beginInlineFilterTextOverlay(
@@ -793,16 +753,17 @@ bool MyCodeEditorState::beginInlineFilterTextOverlay(
     if (!syntax.isLargeDocument()
         || startPosition < 0
         || endPosition < startPosition
-        || endPosition > semanticRevisionText.size()) {
+        || endPosition > syntax.text().size()) {
         return false;
     }
 
     inlineFilterTextOverlayActive = true;
+    syntax.setDeferredParsing(true);
     inlineFilterTextOverlayStart = startPosition;
     inlineFilterTextOverlayOriginalLength =
         endPosition - startPosition;
     inlineFilterTextOverlayOriginalText =
-        semanticRevisionText.mid(
+        syntax.text().mid(
             startPosition,
             inlineFilterTextOverlayOriginalLength);
     inlineFilterTextOverlayCurrentText =
@@ -815,13 +776,10 @@ void MyCodeEditorState::finishInlineFilterTextOverlay()
 {
     if (!inlineFilterTextOverlayActive)
         return;
+    syntax.setDeferredParsing(false);
     syntax.flushPendingEdits();
     if (inlineFilterTextOverlayCurrentText
         != inlineFilterTextOverlayOriginalText) {
-        semanticRevisionText.replace(
-            inlineFilterTextOverlayStart,
-            inlineFilterTextOverlayOriginalLength,
-            inlineFilterTextOverlayCurrentText);
         ++hotPathMetrics.inlineFilterOverlayMaterializations;
     }
     inlineFilterTextOverlayActive = false;
@@ -835,7 +793,7 @@ void MyCodeEditorState::acceptLoadedTextAsSemanticBaseline(
     const MyCodeEditor* editor)
 {
     Q_UNUSED(editor)
-    semanticTextRevision = 0;
+    syntax.setRevision(0);
 }
 
 EditorHotPathMetrics MyCodeEditorState::hotPathMetricsForTest() const
@@ -846,7 +804,7 @@ EditorHotPathMetrics MyCodeEditorState::hotPathMetricsForTest() const
 TSTextStorageMetrics
 MyCodeEditorState::cachedTextStorageMetricsForTest() const
 {
-    return semanticRevisionText.metricsForTest();
+    return syntax.text().metricsForTest();
 }
 bool MyCodeEditorState::inlineFilterTextOverlayActiveForTest() const
 {
@@ -869,7 +827,7 @@ QList<int> MyCodeEditorState::occurrencePositionsForTest(
 void MyCodeEditorState::resetHotPathMetricsForTest()
 {
     hotPathMetrics = {};
-    semanticRevisionText.resetMetricsForTest();
+    syntax.text().resetMetricsForTest();
     hotPathTimingEnabled = true;
 }
 

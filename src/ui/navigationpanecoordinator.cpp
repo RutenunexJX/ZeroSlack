@@ -14,7 +14,7 @@
 #include <QMainWindow>
 #include <QLayout>
 #include <QResizeEvent>
-#include <QVariantAnimation>
+#include "contextdocktransition.h"
 #include <QVBoxLayout>
 
 class NavigationViewport final : public QWidget
@@ -64,6 +64,8 @@ private:
 NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     : QObject(parent)
 {
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        this, [this](bool enabled) { if (!enabled) setExpanded(isExpanded(), false); });
 #ifdef ZEROSLACK_ENABLE_ELA
     navigationDock = new ElaDockWidget("Navigation", parent);
 #else
@@ -120,34 +122,6 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     navigationDock->resize(expandedWidth, navigationDock->height());
     navigationDock->installEventFilter(this);
 
-    widthAnimation = new QVariantAnimation(this);
-    widthAnimation->setDuration(180);
-    widthAnimation->setEasingCurve(QEasingCurve::OutCubic);
-    connect(widthAnimation, &QVariantAnimation::valueChanged,
-            this, [this](const QVariant& value) {
-                const int width = qMax(0, value.toInt());
-                navigationDock->setMaximumWidth(width);
-                if (auto* window = qobject_cast<QMainWindow*>(
-                        navigationDock->parentWidget())) {
-                    window->resizeDocks({navigationDock}, {qMax(1, width)},
-                                        Qt::Horizontal);
-                }
-            });
-    connect(widthAnimation, &QVariantAnimation::finished,
-            this, [this]() {
-                if (!expanded)
-                    navigationDock->hide();
-                navigationDock->setMaximumWidth(400);
-                navigationDock->setMinimumWidth(200);
-                if (expanded) {
-                    if (auto* window = qobject_cast<QMainWindow*>(
-                            navigationDock->parentWidget())) {
-                        window->resizeDocks({navigationDock},
-                                            {expandedWidth}, Qt::Horizontal);
-                    }
-                }
-                transitioning = false;
-            });
     connect(navigationDock, &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (!transitioning)
@@ -215,7 +189,7 @@ bool NavigationPaneCoordinator::isAnimating() const
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar) return elaNavigationBar->isOverlayAnimating() || elaNavigationBar->isDisplayModeAnimating();
 #endif
-    return transitioning;
+    return false;
 }
 
 void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
@@ -224,6 +198,8 @@ void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
     // An overlay is reparented into the central widget, which can be destroyed
     // before this sibling coordinator during window teardown or replacement.
     if (!navigationDock || !navigationWidget) return;
+    if (auto* host = navigationDock->parentWidget())
+        if (auto* transition = host->findChild<ContextDockTransition*>()) transition->finish();
 #ifdef ZEROSLACK_ENABLE_ELA
     if (elaNavigationBar) {
         auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget());
@@ -254,45 +230,22 @@ void NavigationPaneCoordinator::setExpanded(bool open, bool animate)
         return;
     }
 #endif
-    if (!navigationDock
-        || (expanded == open && !transitioning
-            && navigationDock->isVisible() == open))
-        return;
-    if (widthAnimation->state() == QAbstractAnimation::Running)
-        widthAnimation->stop();
-
-    const int currentWidth = navigationDock->isVisible()
-        ? navigationDock->width() : 0;
-    if (navigationDock->isVisible() && !transitioning
-        && currentWidth >= 180) {
-        expandedWidth = qBound(200, currentWidth, 400);
+    if (expanded == open && navigationDock->isVisible() == open) return;
+    if (navigationDock->isVisible() && navigationDock->width() >= 180) {
+        expandedWidth = qBound(200, navigationDock->width(), 400);
         viewport->setContentWidth(expandedWidth);
     }
     expanded = open;
-    auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget());
-    if (!animate || !window || !window->isVisible()) {
-        transitioning = true;
-        navigationDock->setMaximumWidth(400);
-        navigationDock->setMinimumWidth(200);
-        navigationDock->setVisible(open);
-        if (open && window)
-            window->resizeDocks({navigationDock}, {expandedWidth},
-                                Qt::Horizontal);
-        transitioning = false;
-        return;
-    }
-
     transitioning = true;
-    navigationDock->setMinimumWidth(0);
+    navigationDock->setMaximumWidth(400);
+    navigationDock->setMinimumWidth(200);
+    navigationDock->setVisible(open);
     if (open) {
-        navigationDock->setMaximumWidth(qMax(1, currentWidth));
-        navigationDock->show();
-        navigationDock->raise();
+        if (auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget()))
+            window->resizeDocks({navigationDock}, {expandedWidth}, Qt::Horizontal);
     }
-    widthAnimation->setStartValue(open ? qMax(1, currentWidth)
-                                       : currentWidth);
-    widthAnimation->setEndValue(open ? expandedWidth : 0);
-    widthAnimation->start();
+    transitioning = false;
+    emit expandedChanged(open);
 }
 
 void NavigationPaneCoordinator::setHeaderWidget(QWidget* header)

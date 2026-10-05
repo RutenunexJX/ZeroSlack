@@ -1,4 +1,8 @@
 #include "liveinsightsession.h"
+#include "liveinsightgraphreport.h"
+#include "semanticindexsnapshot.h"
+#include "slangmanager.h"
+#include <QDir>
 
 #include <QElapsedTimer>
 #include <QObject>
@@ -41,6 +45,9 @@ class LiveInsightSessionTest final : public QObject
 
 private slots:
     void requestKeyRoundTrips();
+    void realReportUsesCapturedSnapshotAndReusesRequests();
+    void graphDepthIsPartOfFrozenInput();
+    void graphQueriesCooperateWithCancellation();
     void boundedDebounceCoalescesContinuousEdits();
     void idempotentVisibilityDoesNotRepublish();
     void latestGenerationWinsAgainstRunningWorker();
@@ -361,6 +368,120 @@ void LiveInsightSessionTest::destroyingHostCancelsQueuedWorkSafely()
     delete disposableSession;
     runTask(tasks.takeFirst());
     QVERIFY(!builderCalled);
+}
+
+void LiveInsightSessionTest::realReportUsesCapturedSnapshotAndReusesRequests()
+{
+    const QString file = QDir::temp().filePath(QStringLiteral("captured_graph.sv"));
+    const QString source = QStringLiteral("module leaf; endmodule\nmodule top; leaf u(); endmodule\n");
+    SlangManager slang;
+    auto publication = std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(slang.extractSymbolRecords(file, source), {}, {}, {{file, source}}));
+    LiveInsightGraphInput input;
+    input.semantic = {publication, 7};
+    input.fileName = file;
+    input.moduleName = QStringLiteral("top");
+    LiveInsightSession session;
+    configureLiveInsightGraphReports(session);
+    QObject view;
+    session.setConsumerVisible(&view, LiveInsightKind::Module, true);
+    QList<LiveInsightSession::Task> tasks;
+    session.setTaskExecutor([&](auto task) { tasks.append(std::move(task)); });
+    const auto key = requestKey(LiveInsightKind::Module, 1, 7);
+    const QVariantMap payload{{QStringLiteral("graphInput"), QVariant::fromValue(input)}};
+    const auto generation = session.requestUpdate(key, payload);
+    QCOMPARE(session.requestUpdate(key, payload), generation);
+    session.flushPending(LiveInsightKind::Module);
+    QCOMPARE(tasks.size(), 1);
+    QCOMPARE(session.requestUpdate(key, payload), generation);
+    session.flushPending(LiveInsightKind::Module);
+    QCOMPARE(tasks.size(), 1);
+    // Retaining input must be sufficient even after the source owner releases it.
+    publication.reset();
+    std::thread worker([task = tasks.takeFirst()]() mutable { task(); });
+    worker.join();
+    QTRY_COMPARE(session.snapshot(LiveInsightKind::Module).phase, LiveInsightPhase::Ready);
+    const auto first = session.snapshot(LiveInsightKind::Module).payload
+        .value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>();
+    QVERIFY(first);
+    const auto& report = std::get<ModuleBlockDiagramReport>(first->value);
+    QVERIFY(report.found);
+    QCOMPARE(report.moduleCount, 2);
+    QVERIFY(first->computationNs > 0);
+    QCOMPARE(session.requestUpdate(key, payload), generation);
+    session.flushPending(LiveInsightKind::Module);
+    QVERIFY(tasks.isEmpty());
+    QCOMPARE(session.snapshot(LiveInsightKind::Module).payload
+        .value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>(), first);
+
+    input.moduleName = QStringLiteral("leaf");
+    const auto next = session.requestUpdate(requestKey(LiveInsightKind::Module, 2, 7, QStringLiteral("leaf")),
+        {{QStringLiteral("graphInput"), QVariant::fromValue(input)}});
+    QVERIFY(next > generation);
+    session.flushPending(LiveInsightKind::Module);
+    QCOMPARE(tasks.size(), 1);
+    session.cancel(LiveInsightKind::Module);
+    runTask(tasks.takeFirst());
+    QCOMPARE(session.snapshot(LiveInsightKind::Module).publishedGeneration, generation);
+}
+
+void LiveInsightSessionTest::graphDepthIsPartOfFrozenInput()
+{
+    const QString file = QDir::temp().filePath(QStringLiteral("depth_graph.sv"));
+    const QString source = QStringLiteral("module m4; endmodule\nmodule m3; m4 u(); endmodule\n"
+        "module m2; m3 u(); endmodule\nmodule m1; m2 u(); endmodule\nmodule top; m1 u(); endmodule\n");
+    SlangManager slang;
+    LiveInsightGraphInput input;
+    input.semantic = {std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
+        slang.extractSymbolRecords(file, source), {}, {}, {{file, source}})), 3};
+    input.fileName = file;
+    input.moduleName = QStringLiteral("top");
+    input.maxDepth = 2;
+    const auto shallowKey = liveInsightGraphRequestKey(input, "workspace", file, 1);
+    LiveInsightSession session;
+    configureLiveInsightGraphReports(session);
+    QObject host;
+    session.setConsumerVisible(&host, LiveInsightKind::Module, true);
+    QList<LiveInsightSession::Task> tasks;
+    session.setTaskExecutor([&](auto task) { tasks.append(std::move(task)); });
+    const auto generation = session.requestUpdate(shallowKey, {{"graphInput", QVariant::fromValue(input)}});
+    session.flushPending(LiveInsightKind::Module);
+    QCOMPARE(tasks.size(), 1);
+    runTask(tasks.takeFirst());
+    const auto shallow = session.snapshot(LiveInsightKind::Module).payload.value("graphReport").value<LiveInsightGraphReportPtr>();
+    QVERIFY(shallow);
+    QCOMPARE(std::get<ModuleBlockDiagramReport>(shallow->value).moduleCount, 3);
+    const auto original = input;
+    input.maxDepth = -1;
+    QVERIFY(!(input == original));
+    QVERIFY(liveInsightGraphRequestKey(input, "workspace", file, 1) != shallowKey);
+    // Even a caller supplying the old key cannot reuse unequal frozen input.
+    QVERIFY(session.requestUpdate(shallowKey, {{"graphInput", QVariant::fromValue(input)}}) > generation);
+    session.flushPending(LiveInsightKind::Module);
+    QCOMPARE(tasks.size(), 1);
+    runTask(tasks.takeFirst());
+    const auto deep = session.snapshot(LiveInsightKind::Module).payload.value("graphReport").value<LiveInsightGraphReportPtr>();
+    QVERIFY(deep && deep != shallow);
+    QCOMPARE(std::get<ModuleBlockDiagramReport>(deep->value).moduleCount, 5);
+}
+
+void LiveInsightSessionTest::graphQueriesCooperateWithCancellation()
+{
+    SemanticIndex index;
+    ModuleBlockDiagramQuery module;
+    module.isCancelled = [] { return true; };
+    QVERIFY_EXCEPTION_THROWN(ModuleBlockDiagramService(&index).buildModuleBlockDiagram(module), std::runtime_error);
+    FsmGraphQuery fsm;
+    fsm.isCancelled = [] { return true; };
+    QVERIFY_EXCEPTION_THROWN(FsmGraphService(&index).buildFsmGraph(fsm), std::runtime_error);
+    // A local state service must not overwrite the singleton trigger context.
+    StateTransitionGraphService local(&index);
+    StateTransitionGraphQuery state;
+    state.fileName = QStringLiteral("capture.sv");
+    state.moduleName = QStringLiteral("top");
+    state.symbolName = QStringLiteral("next_state");
+    state.isCancelled = [] { return true; };
+    QVERIFY_EXCEPTION_THROWN(local.buildStateTransitionGraph(state), std::runtime_error);
 }
 
 QTEST_GUILESS_MAIN(LiveInsightSessionTest)

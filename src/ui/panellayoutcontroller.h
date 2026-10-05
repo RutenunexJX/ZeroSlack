@@ -20,7 +20,6 @@ class QMainWindow;
 class QStackedWidget;
 class QSplitter;
 class QToolButton;
-class PanelCompositor;
 #ifdef ZEROSLACK_ENABLE_ELA
 class ElaDrawerArea;
 #endif
@@ -148,7 +147,6 @@ private:
     QPointer<QWidget> bottomCompanion;
     QByteArray retainedBottomSplitState;
     QPointer<QFrame> bottomButtonBar;
-    QPointer<PanelCompositor> compositor;
 #ifdef ZEROSLACK_ENABLE_ELA
     QPointer<ElaDrawerArea> contentDrawer;
     int expandedContentHeight = kDefaultContentHeight;

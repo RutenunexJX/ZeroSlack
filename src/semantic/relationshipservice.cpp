@@ -606,3 +606,12 @@ bool RelationshipService::typeMatches(
 {
     return allowedTypes.isEmpty() || allowedTypes.contains(type);
 }
+
+RelationshipService::RelationshipService(SemanticSnapshotToken snapshot)
+    : RelationshipService(std::make_shared<SemanticIndex>(std::move(snapshot))) {}
+
+RelationshipService::RelationshipService(std::shared_ptr<SemanticIndex> owner)
+    : RelationshipService(owner.get())
+{
+    ownedIndex = std::move(owner);
+}

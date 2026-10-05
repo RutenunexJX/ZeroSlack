@@ -34,8 +34,6 @@ void RelationshipAnalysisController::requestSingleFileAnalysis(
         request.project.systemVerilogFiles = {fileName};
         request.project.includeDirs = {QFileInfo(fileName).absolutePath()};
     }
-    if (relationshipQueue)
-        relationshipQueue->rememberRequestedContent(fileName, content);
     submit(std::move(request), RequestKind::SingleFile);
 }
 

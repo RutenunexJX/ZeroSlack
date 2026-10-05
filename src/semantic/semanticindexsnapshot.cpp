@@ -289,7 +289,7 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(
         }
         referencingFiles |= m_symbolFilesByReference.value(file);
         for (const auto& old : getSymbolRecords(file)) {
-            const auto current = result.getSymbolRecordByLocalHandle(old.localHandle);
+            const auto current = result.recordForProjectionHandle(old.localHandle);
             // A missing target removes the reference. A reused handle has the
             // same declaration identity and can carry a relocated source key.
             relocatedKeys.insert(symbolStableKeyText(old.stableKey), current.stableKey);

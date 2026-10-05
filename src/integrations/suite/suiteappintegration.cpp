@@ -194,10 +194,10 @@ QJsonObject resolvedSource(MainWindow* window, const SourceTarget& target)
 
 } // namespace
 
-ZeroSlackSuiteIntegration::ZeroSlackSuiteIntegration(MainWindow* windowValue,
+ZeroSlackSuiteIntegration::ZeroSlackSuiteIntegration(QMainWindow* windowValue,
                                                      QObject* parent)
     : QObject(parent)
-    , window(windowValue)
+    , window(qobject_cast<MainWindow*>(windowValue))
 {
 }
 

@@ -254,24 +254,6 @@ SemanticDiagnostic::Severity annotationDiagnosticSeverity(
     return static_cast<SemanticDiagnostic::Severity>(value);
 }
 
-QString insertedDocumentText(QTextDocument* document,
-                             int position,
-                             int length)
-{
-    if (!document || length <= 0)
-        return QString();
-    const int documentEnd = qMax(0, document->characterCount() - 1);
-    const int start = qBound(0, position, documentEnd);
-    const int end = qBound(start, position + length, documentEnd);
-    QTextCursor cursor(document);
-    cursor.setPosition(start);
-    cursor.setPosition(end, QTextCursor::KeepAnchor);
-    QString text = cursor.selectedText();
-    text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
-    text.replace(QChar::LineSeparator, QLatin1Char('\n'));
-    return text;
-}
-
 QString insightScopeKey(const MyCodeEditorState& state,
                             const MyCodeEditor* editor)
 {
@@ -1176,7 +1158,6 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
     });
     gutter.init(editor);
     identity.set(QString());
-    semanticRevisionText.setText(QString());
     inlineFilterTextOverlayActive = false;
     inlineFilterTextOverlayStart = -1;
     inlineFilterTextOverlayOriginalLength = 0;
@@ -1351,6 +1332,8 @@ void MyCodeEditorState::attachDocumentConnection(
     documentContentsChangeConnection = {};
     if (!editor || !editor->document())
         return;
+    if (lifecycleDiagnosticRank < 0 || lifecycleDiagnosticRank >= 7)
+        syntax.createHighlighter(editor->document());
     documentContentsChangeConnection = QObject::connect(
         editor->document(),
         &QTextDocument::contentsChange,
@@ -1377,8 +1360,7 @@ void MyCodeEditorState::attachToEditor(MyCodeEditor* editor)
         if (lifecycleDiagnosticRank >= 3) {
             gutter.init(editor);
             identity.set(QString());
-            semanticRevisionText.setText(QString());
-            inlineFilterTextOverlayActive = false;
+                    inlineFilterTextOverlayActive = false;
             inlineFilterTextOverlayStart = -1;
             inlineFilterTextOverlayOriginalLength = 0;
             inlineFilterTextOverlayOriginalText.clear();
@@ -1481,7 +1463,7 @@ void MyCodeEditorState::rebindDocument(
     if (!editor || !document)
         return;
     if (editor->document() == document) {
-        semanticTextRevision = textRevision;
+        syntax.setRevision(textRevision);
         return;
     }
 
@@ -1506,8 +1488,6 @@ void MyCodeEditorState::rebindDocument(
     multiCursor.resetToEditorCursor();
 
     const QString text = document->toPlainText();
-    semanticRevisionText.setText(text);
-    semanticTextRevision = textRevision;
     inlineFilterTextOverlayActive = false;
     inlineFilterTextOverlayStart = -1;
     inlineFilterTextOverlayOriginalLength = 0;
@@ -1524,12 +1504,8 @@ void MyCodeEditorState::rebindDocument(
     editor->setProperty(kDiagnosticsEmptyProperty, true);
     editor->setProperty(kSemanticDecorationsEmptyProperty, true);
 
-    syntax.syncText(text);
-    // QTextDocument invokes direct connections in registration order. Keep
-    // the syntax model current before the highlighter reads it after a shared
-    // document edit.
+    syntax.createHighlighter(document, textRevision);
     attachDocumentConnection(editor);
-    syntax.createHighlighter(document);
     selections.resetDocumentText(editor, text);
     selections.highlightDiagnostics(editor, {});
     selections.highlightSemanticDecorations(editor, {});
@@ -1596,45 +1572,15 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
 
-    const int oldLength = cachedDocumentLength();
-    const int newLength = qMax(0, editor->document()->characterCount() - 1);
-    const int boundedPosition = qBound(0, position, oldLength);
-    const int removedLength = qBound(0,
-                                     charsRemoved,
-                                     oldLength - boundedPosition);
-    int insertedLength = newLength - (oldLength - removedLength);
-    if (insertedLength < 0
-        || boundedPosition + insertedLength > newLength) {
-        insertedLength = qBound(0,
-                                charsAdded,
-                                newLength - qMin(boundedPosition,
-                                                 newLength));
-    }
-
-    DocumentChange change;
-    change.position = boundedPosition;
-    change.removedLength = removedLength;
-    change.removedText = cachedDocumentSlice(
-        boundedPosition, removedLength);
-    change.insertedText = insertedDocumentText(editor->document(),
-                                               boundedPosition,
-                                               insertedLength);
-    change.oldLength = oldLength;
-    change.newLength = newLength;
-    if (!change.changesText() && oldLength == newLength)
+    Q_UNUSED(position)
+    Q_UNUSED(charsRemoved)
+    Q_UNUSED(charsAdded)
+    const DocumentChange change = syntax.lastChange();
+    if (!change.changesText() && change.oldLength == change.newLength)
         return;
-
-    const QTextBlock startBlock = editor->document()->findBlock(
-        qBound(0, boundedPosition, newLength));
-    change.startLine = startBlock.isValid() ? startBlock.blockNumber() : 0;
-    change.startColumn = startBlock.isValid()
-        ? boundedPosition - startBlock.position()
-        : boundedPosition;
-    change.oldEndLine = change.startLine
-        + change.removedText.count(QLatin1Char('\n'));
-    change.newEndLine = change.startLine
-        + change.insertedText.count(QLatin1Char('\n'));
-    change.lineDelta = change.newEndLine - change.oldEndLine;
+    if (insightTargetPick.active())
+        insightTargetPick.clear(editor, QString(), EditorModeExitReason::DocumentChanged);
+    const int newLength = change.newLength;
 
     const QTextBlock changedBlock = editor->document()->findBlock(
         qBound(0, change.position, newLength));
@@ -1667,11 +1613,7 @@ void MyCodeEditorState::handleDocumentContentsChange(
                 change.position - inlineFilterTextOverlayStart,
                 change.removedLength,
                 change.insertedText);
-            const int nextLength =
-                semanticRevisionText.size()
-                - inlineFilterTextOverlayOriginalLength
-                + nextOverlay.size();
-            if (nextLength == change.newLength) {
+            {
                 inlineFilterTextOverlayCurrentText =
                     std::move(nextOverlay);
                 appliedToInlineOverlay = true;
@@ -1699,39 +1641,28 @@ void MyCodeEditorState::handleDocumentContentsChange(
                         - change.characterDelta());
             useLocalOccurrenceLine = true;
         } else {
-            const int oldLineStart = change.position <= 0
-                ? 0
-                : semanticRevisionText.lastIndexOf(
-                      QLatin1Char('\n'), change.position - 1) + 1;
-            const int oldLineBreak = semanticRevisionText.indexOf(
-                QStringLiteral("\n"), change.oldEnd());
-            const int oldLineEnd = oldLineBreak < 0
-                ? semanticRevisionText.size()
-                : oldLineBreak;
+            const auto oldLineBounds = syntax.oldChangedLineBounds();
+            const int oldLineStart = oldLineBounds.first;
+            const int oldLineEnd = oldLineBounds.second;
             occurrenceContext = selections.prepareDocumentLineChange(
                 change, oldLineStart, oldLineEnd);
         }
-        semanticRevisionText.replace(change.position,
-                                     change.removedLength,
-                                     change.insertedText);
         if (!localLineChange && !occurrenceContext.rebuild) {
             occurrenceNewLineStart = change.position <= 0
                 ? 0
-                : semanticRevisionText.lastIndexOf(
+                : syntax.text().lastIndexOf(
                       QLatin1Char('\n'), change.position - 1) + 1;
-            const int newLineBreak = semanticRevisionText.indexOf(
+            const int newLineBreak = syntax.text().indexOf(
                 QStringLiteral("\n"), change.newEnd());
             const int newLineEnd = newLineBreak < 0
-                ? semanticRevisionText.size()
+                ? syntax.text().size()
                 : newLineBreak;
-            occurrenceNewLineText = semanticRevisionText.mid(
+            occurrenceNewLineText = syntax.text().mid(
                 occurrenceNewLineStart,
                 newLineEnd - occurrenceNewLineStart);
             useLocalOccurrenceLine = true;
         }
     }
-    ++semanticTextRevision;
-    change.revision = semanticTextRevision;
     if (!diagnostics.isEmpty())
         clearDiagnosticHighlights(editor);
     ++hotPathMetrics.documentChanges;
@@ -1744,9 +1675,7 @@ void MyCodeEditorState::handleDocumentContentsChange(
         return;
 
     const QList<TSChangedRange> changedRanges =
-        syntax.applyDocumentChange(change,
-                                   semanticRevisionText,
-                                   appliedToInlineOverlay);
+        syntax.changedRanges();
     finishDocumentChangePhase(
         hotPathMetrics.documentChangeSyntaxNanoseconds);
     lifecycleTrace("change.syntax");
@@ -3468,7 +3397,7 @@ void MyCodeEditorState::handleContextMenu(
         request.actionContext.moduleName =
             currentModuleName(editor);
         request.actionContext.semanticState =
-            !semanticRevisionText.isEmpty()
+            !syntax.text().isEmpty()
                 && cachedDocumentText() == editor->toPlainText()
                 ? EditorActionSemanticState::Current
                 : EditorActionSemanticState::Stale;

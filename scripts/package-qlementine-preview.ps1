@@ -35,17 +35,20 @@ if (Test-Path -LiteralPath $outputRoot) {
         throw 'Refusing to overwrite a directory not marked as this independent preview.'
     }
 }
-foreach ($name in @('ZeroSlack-Qlementine-Preview.exe', 'libzeroslack_core.dll')) {
+$binaries = @('ZeroSlack-Qlementine-Preview.exe', 'libzeroslack_core.dll',
+    'libzeroslack_semantic.dll', 'libzeroslack_documents.dll')
+foreach ($name in $binaries) {
     if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name))) { throw "Missing build output: $name" }
 }
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 Set-Content -LiteralPath $marker -Value 'ZeroSlack isolated Qlementine preview' -Encoding ascii
-foreach ($name in @('ZeroSlack-Qlementine-Preview.exe', 'libzeroslack_core.dll')) {
+foreach ($name in $binaries) {
     Copy-Item -LiteralPath (Join-Path $buildRoot $name) -Destination (Join-Path $outputRoot $name)
 }
+$deployTargets = @($binaries | ForEach-Object { Join-Path $outputRoot $_ })
 & (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
     --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot `
-    (Join-Path $outputRoot 'ZeroSlack-Qlementine-Preview.exe') (Join-Path $outputRoot 'libzeroslack_core.dll')
+    @deployTargets
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
 foreach ($name in @('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dll')) {
     Copy-Item -LiteralPath (Join-Path $CompilerDirectory "bin/$name") -Destination $outputRoot

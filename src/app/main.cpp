@@ -1,5 +1,5 @@
-#include "mainwindow.h"
-#include "tabmanager.h"
+#include <zeroslack/ui/applicationwindow.h>
+
 #include "applicationthememanager.h"
 #include "symbolrelationshipengine.h"
 #include "version.h"
@@ -85,7 +85,8 @@ int main(int argc, char *argv[])
 
     qRegisterMetaType<SymbolRelationshipEngine::RelationType>();
 
-    MainWindow w;
+    auto applicationWindow = ZeroSlack::createApplicationWindow();
+    QMainWindow& w = *applicationWindow;
 #if defined(ZEROSLACK_ELA_BUILD)
     w.setWindowTitle(QStringLiteral("ZeroSlack — %1").arg(QString::fromLatin1(APP_VERSION)));
 #elif defined(ZEROSLACK_PREVIEW_BUILD)
@@ -95,7 +96,7 @@ int main(int argc, char *argv[])
     const QStringList files = parser.positionalArguments();
     QTimer::singleShot(0, &w, [&w, files] {
         for (const QString& file : files)
-            w.tabManager->openFileInTab(QFileInfo(file).absoluteFilePath());
+            ZeroSlack::openApplicationDocument(w, QFileInfo(file).absoluteFilePath());
     });
 #ifdef ZEROSLACK_HAS_SUITEAPP
     ZeroSlackSuiteIntegration suiteIntegration(&w);

@@ -1,3 +1,5 @@
+#include "candidatepopupnavigation.h"
+#include "filecommandcoordinator.h"
 #include "uitypography.h"
 #include "uicontrols.h"
 #include "commandlayercoordinator.h"
@@ -983,24 +985,12 @@ void CommandLayerCoordinator::registerActionExecutionRoutes()
         QStringLiteral("editor.mode.signalSelection"),
         &MyCodeEditor::startSignalSelectionMode,
         QStringLiteral("Signal selection is unavailable"));
-    bindEditor(QStringLiteral("editor.lines.delete"),
-               &MyCodeEditor::deleteLines,
-               QStringLiteral("No logical line is available"));
-    bindEditor(
-        QStringLiteral("editor.lines.join"),
-        &MyCodeEditor::joinLines,
-        QStringLiteral(
-            "At least two logical lines are required"));
-    bindEditor(
-        QStringLiteral("editor.lines.moveUp"),
-        &MyCodeEditor::moveLinesUp,
-        QStringLiteral(
-            "The selected logical lines cannot move upward"));
-    bindEditor(
-        QStringLiteral("editor.lines.moveDown"),
-        &MyCodeEditor::moveLinesDown,
-        QStringLiteral(
-            "The selected logical lines cannot move downward"));
+    for (const auto& route : FileCommandCoordinator::lineActionRoutes()) {
+        bind(route, [this, route](const ActionDescriptor&, const ActionInvocation& invocation) {
+            return FileCommandCoordinator::executeLineAction(route, tabManager,
+                invocation.parameters.value(QStringLiteral("editorViewId")).toString(), executingActionEditor);
+        });
+    }
     bindEditor(
         QStringLiteral(
             "editor.multicursor.addNextOccurrence"),
@@ -1949,10 +1939,8 @@ void CommandLayerPickerPanel::showFor(QWidget* anchorWidget)
         rect = target->geometry();
     else if (QScreen* screen = QGuiApplication::primaryScreen())
         rect = screen->availableGeometry();
-    move(qBound(available.left(), rect.center().x() - width() / 2,
-                available.right() - width() + 1),
-         qBound(available.top(), rect.top() + rect.height() / 5,
-                available.bottom() - height() + 1));
+    setGeometry(CandidatePopupNavigation::fitToBounds(
+        QRect(QPoint(rect.center().x() - width() / 2, rect.top() + rect.height() / 5), size()), available));
     show();
     raise();
     focusSearch();
@@ -2001,7 +1989,7 @@ void CommandLayerPickerPanel::keyPressEvent(QKeyEvent* event)
 void CommandLayerPickerPanel::activateCurrentItem()
 {
     const int row = resultList ? resultList->currentRow() : -1;
-    if (row < 0 || row >= currentItems.size())
+    if (!CandidatePopupNavigation::canActivate(resultList) || row < 0 || row >= currentItems.size())
         return;
     const CommandLayerPickerItem item = currentItems.at(row);
     hide();
@@ -2018,38 +2006,11 @@ void CommandLayerPickerPanel::cancel()
 
 void CommandLayerPickerPanel::moveSelection(int delta)
 {
-    if (!resultList || currentItems.isEmpty())
-        return;
-    resultList->setCurrentRow(
-        qBound(0,
-               resultList->currentRow() + delta,
-               currentItems.size() - 1));
+    CandidatePopupNavigation::moveSelection(resultList, delta);
 }
 
 bool CommandLayerPickerPanel::handleKey(QKeyEvent* event)
 {
-    if (!event)
-        return false;
-    if (event->key() == Qt::Key_Escape) {
-        cancel();
-        event->accept();
-        return true;
-    }
-    if (event->key() == Qt::Key_Return
-        || event->key() == Qt::Key_Enter) {
-        activateCurrentItem();
-        event->accept();
-        return true;
-    }
-    if (event->key() == Qt::Key_Down) {
-        moveSelection(1);
-        event->accept();
-        return true;
-    }
-    if (event->key() == Qt::Key_Up) {
-        moveSelection(-1);
-        event->accept();
-        return true;
-    }
-    return false;
+    return CandidatePopupNavigation::handleKey(event, [this](int delta) { moveSelection(delta); },
+        [this] { activateCurrentItem(); return true; }, [this] { cancel(); });
 }

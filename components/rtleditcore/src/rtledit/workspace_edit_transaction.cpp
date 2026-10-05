@@ -41,6 +41,11 @@ WorkspaceEditTransactionResult simpleResult(
 
 }  // namespace
 
+bool PreparedWorkspaceEditTransaction::matchesPreviewedPlan() const {
+    return previewedPlan && dryRun == previewedDryRun
+        && sameWorkspaceEditPlan(plan, *previewedPlan);
+}
+
 const char* transactionStatusName(TransactionStatus status) {
     switch (status) {
     case TransactionStatus::Applied:
@@ -90,6 +95,8 @@ WorkspaceEditTransactionCoordinator::prepare(
     prepared.status =
         prepareStatus(prepared.preview, prepared.sourceDiff);
     prepared.dryRun = dryRun;
+    prepared.previewedPlan = std::make_shared<const WorkspaceEditPlan>(prepared.plan);
+    prepared.previewedDryRun = dryRun;
     return prepared;
 }
 
@@ -108,12 +115,14 @@ WorkspaceEditTransactionCoordinator::prepare(
     prepared.status =
         prepareStatus(prepared.preview, prepared.sourceDiff);
     prepared.dryRun = dryRun;
+    prepared.previewedPlan = std::make_shared<const WorkspaceEditPlan>(prepared.plan);
+    prepared.previewedDryRun = dryRun;
     return prepared;
 }
 
 bool WorkspaceEditTransactionCoordinator::confirmPreview(
     PreparedWorkspaceEditTransaction* prepared) const {
-    if (!prepared || !prepared->ready())
+    if (!prepared || !prepared->ready() || !prepared->matchesPreviewedPlan())
         return false;
     prepared->previewConfirmed = true;
     return true;
@@ -361,6 +370,10 @@ WorkspaceEditTransactionCoordinator::applyPrepared(
                 ? TransactionStatus::Stale
                 : TransactionStatus::InvalidPreparation,
             "Workspace edit transaction is not ready.");
+    }
+    if (!prepared.matchesPreviewedPlan()) {
+        return simpleResult(TransactionStatus::InvalidPreparation,
+            "The edit plan changed after preview; prepare a new preview.");
     }
     if (prepared.plan.riskLevel == RiskLevel::High &&
         !prepared.previewConfirmed) {

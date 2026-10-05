@@ -1,4 +1,15 @@
-ZeroSlack v0.31.20 Windows package
+ZeroSlack v0.31.21 Windows package
+
+Release 0.31.21 separates Documents and Semantic runtime libraries from the UI;
+the CLI no longer depends on Widgets or Ela. Editor views share document parsing.
+Graph reports and target validation use one background session. Common document
+commands, edit transactions, popup navigation, Ela flow layout and animation
+policy replace duplicate implementations and retired queues/compositor code.
+The accepted development measurements improved three-view event responsiveness;
+single-view completed-work time remained about 2.4-2.6% above baseline. These
+measurements do not describe desktop frame rates or every real project.
+Both libzeroslack_documents.dll and libzeroslack_semantic.dll are required and
+included alongside libzeroslack_core.dll.
 
 Release 0.31.20 unifies semantic requests and publication, reuses validated
 workspace states within a bounded budget, and cancels obsolete Slang work.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,15 @@ struct PreparedWorkspaceEditTransaction {
         return status == TransactionPrepareStatus::Ready &&
             preview.built() && sourceDiff.built();
     }
+
+    bool matchesPreviewedPlan() const;
+
+private:
+    // Copies of a prepared transaction share an immutable preview identity.
+    // Callers may adjust their proposal, but must prepare it again before apply.
+    std::shared_ptr<const WorkspaceEditPlan> previewedPlan;
+    bool previewedDryRun = false;
+    friend class WorkspaceEditTransactionCoordinator;
 };
 
 enum class TransactionStatus {

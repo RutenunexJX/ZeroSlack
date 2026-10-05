@@ -1,5 +1,6 @@
 #include "rtlinsightworkbench.h"
 #include "uicontrols.h"
+#include "liveinsightgraphreport.h"
 #include "compactlayout.h"
 
 #include "graphexportui.h"
@@ -19,6 +20,8 @@
 #include <QVBoxLayout>
 #include <QTimer>
 #include <QShowEvent>
+#include <QHideEvent>
+#include <QElapsedTimer>
 
 #include <utility>
 
@@ -32,10 +35,19 @@ RtlInsightWorkbench::RtlInsightWorkbench(QWidget* parent, bool specialized)
         registerPlugin(std::move(plugin));
     }
     buildUi();
+    if (!specializedViews) {
+        reportSession = new LiveInsightSession(this);
+        configureLiveInsightGraphReports(*reportSession);
+        connect(reportSession, &LiveInsightSession::snapshotChanged, this,
+            [this](LiveInsightKind, const LiveInsightSnapshot& snapshot) { applyGraphSnapshot(snapshot); });
+    }
     setViewKind(InsightWorkbenchViewKind::Kernel);
 }
 
-RtlInsightWorkbench::~RtlInsightWorkbench() = default;
+RtlInsightWorkbench::~RtlInsightWorkbench()
+{
+    delete reportSession;
+}
 
 bool RtlInsightWorkbench::registerPlugin(
     std::unique_ptr<IInsightViewPlugin> plugin)
@@ -77,6 +89,11 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
     IInsightViewPlugin* plugin = pluginForKind(kind);
     if (!plugin)
         return false;
+    if (currentKind != kind && reportSession) {
+        reportKey = {};
+        reportSession->cancel(LiveInsightKind::Module);
+        reportSession->cancel(LiveInsightKind::State);
+    }
     if (canvasValue && currentKind != kind)
         saveCurrentViewState();
     if (specializedViews && (!surface || currentKind != kind)) {
@@ -154,6 +171,26 @@ bool RtlInsightWorkbench::refresh()
     saveCurrentViewState();
     const BuildOverride overrideBuilder =
         buildOverrides.value(static_cast<int>(currentKind));
+    if (!overrideBuilder && reportSession
+        && (dynamic_cast<ModuleBlockInsightViewPlugin*>(plugin)
+            || dynamic_cast<StateTransitionInsightViewPlugin*>(plugin))) {
+        LiveInsightGraphInput input;
+        input.mode = currentKind == InsightWorkbenchViewKind::Block ? LiveInsightGraphMode::Module
+            : currentContext.signalName.isEmpty() ? LiveInsightGraphMode::Fsm : LiveInsightGraphMode::StateTransition;
+        input.semantic = SemanticIndex::getInstance()->snapshotToken();
+        input.fileName = currentContext.fileName;
+        input.moduleName = currentContext.moduleName;
+        input.signalName = currentContext.signalName;
+        if (input.mode == LiveInsightGraphMode::Module) input.maxDepth = 2;
+        const auto key = liveInsightGraphRequestKey(input, currentContext.workspaceId,
+            currentContext.documentId, currentContext.documentRevision);
+        if (reportKey != key) appliedReportGeneration = 0;
+        reportKey = key;
+        reportSession->setConsumerVisible(this, key.kind, isVisible());
+        reportSession->requestUpdate(key, {{QStringLiteral("graphInput"), QVariant::fromValue(input)}});
+        applyGraphSnapshot(reportSession->snapshot(key.kind));
+        return true;
+    }
     const InsightViewBuildResult result = overrideBuilder
         ? overrideBuilder(currentContext)
         : plugin->build(currentContext);
@@ -420,7 +457,38 @@ SignalKernelGraphPanelCoordinator* RtlInsightWorkbench::kernelSurfaceForTest() c
 void RtlInsightWorkbench::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
+    if (reportSession && reportKey.isValid()) reportSession->setConsumerVisible(this, reportKey.kind, true);
     fitNewSurface();
+}
+
+void RtlInsightWorkbench::hideEvent(QHideEvent* event)
+{
+    if (reportSession && reportKey.isValid()) reportSession->setConsumerVisible(this, reportKey.kind, false);
+    QWidget::hideEvent(event);
+}
+
+void RtlInsightWorkbench::applyGraphSnapshot(const LiveInsightSnapshot& snapshot)
+{
+    if (!reportKey.isValid() || snapshot.requestedKey != reportKey || !canvasValue) return;
+    canvasValue->setEnabled(!snapshot.stale);
+    if (snapshot.phase == LiveInsightPhase::Error) {
+        if (statusLabel) statusLabel->setText(snapshot.errorText);
+        return;
+    }
+    if (snapshot.phase != LiveInsightPhase::Ready || snapshot.stale
+        || snapshot.publishedKey != reportKey || snapshot.publishedGeneration == appliedReportGeneration) return;
+    const auto report = snapshot.payload.value(QStringLiteral("graphReport")).value<LiveInsightGraphReportPtr>();
+    if (!report) return;
+    const auto result = insightViewFromGraphReport(*report, currentContext, currentPluginId());
+    appliedReportGeneration = snapshot.publishedGeneration;
+    QElapsedTimer timer;
+    timer.start();
+    currentUpdate = core.update(currentPluginId(), result.draft);
+    canvasValue->applyUpdate(currentUpdate);
+    restoreCurrentViewState();
+    updatePresentation(result);
+    setProperty("liveInsightReportBuildNs", report->computationNs);
+    setProperty("liveInsightApplyNs", timer.nsecsElapsed());
 }
 
 void RtlInsightWorkbench::fitNewSurface()
@@ -435,4 +503,10 @@ void RtlInsightWorkbench::fitNewSurface()
             surfaceNeedsFit = false;
         }
     });
+}
+
+LiveInsightSession* RtlInsightWorkbench::graphSession() const
+{
+    auto* panel = surface ? surface->rtl() : nullptr;
+    return panel ? panel->graphSession() : reportSession;
 }

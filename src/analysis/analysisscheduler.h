@@ -7,7 +7,6 @@
 #include "projectmodel.h"
 #include "semanticanalysisrequest.h"
 #include "relationshipanalysiscontroller.h"
-#include "relationshipanalysisqueue.h"
 #include "relationshipresultpublisher.h"
 #include "relationshipanalysisworker.h"
 #include "workspacesymbolanalysiscontroller.h"
@@ -48,11 +47,6 @@ public:
     void setRelationshipEngine(SymbolRelationshipEngine* engine);
     void setRelationshipBuilder(SmartRelationshipBuilder* builder);
 
-    void scheduleRelationshipAnalysis(const QString& fileName,
-                                      const QString& content,
-                                      int delayMs);
-    void cancelAllScheduledRelationshipAnalyses();
-    bool hasScheduledRelationshipAnalysis(const QString& fileName) const;
     void requestRelationshipAnalysis(const QString& fileName, const QString& content);
     void cancelRelationshipAnalysis();
     void requestWorkspaceAnalysis(const ProjectSnapshot& project);
@@ -117,7 +111,6 @@ private:
     QPointer<ProjectModel> projectModel;
     QPointer<SymbolAnalyzer> symbolAnalyzer;
     RelationshipAnalysisController* relationshipAnalysis = nullptr;
-    RelationshipAnalysisQueue* relationshipAnalysisQueue = nullptr;
     RelationshipResultPublisher* relationshipResultPublisher = nullptr;
     WorkspaceSymbolAnalysisController* workspaceSymbolAnalysis = nullptr;
     DiagnosticsRefreshController* diagnosticsRefresh = nullptr;

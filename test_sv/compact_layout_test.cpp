@@ -1,4 +1,10 @@
 #include "applicationthememanager.h"
+#include "compactlayout.h"
+#include <QLineEdit>
+#include <QPushButton>
+#include "live_insight_test_utils.h"
+#include "semanticindexsnapshot.h"
+#include <QScopeGuard>
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
 #include "contextdockhost.h"
@@ -92,13 +98,60 @@ Counts audit(QWidget* root) {
 class CompactLayoutTest : public QObject {
     Q_OBJECT
 private slots:
+    void commonFlowLayoutHandlesVisibilityStretchAndResize() {
+        QWidget host;
+        auto* flow = new CompactFlowLayout(6);
+        host.setLayout(flow);
+        auto* first = new QPushButton(QStringLiteral("First"));
+        auto* last = new QPushButton(QStringLiteral("Last"));
+        auto* hidden = new QPushButton(QStringLiteral("Hidden control with a very long label"));
+        flow->addWidget(first);
+        flow->addItem(new QSpacerItem(0,0,QSizePolicy::Expanding,QSizePolicy::Minimum));
+        flow->addWidget(last);
+        flow->addWidget(hidden);
+        hidden->hide();
+        host.resize(480,160); host.show();
+        flow->setGeometry(QRect(0,0,480,160));
+        QCOMPARE(first->y(), last->y());
+        QCOMPARE(last->geometry().right(), 479);
+        const int visibleHeight = flow->heightForWidth(180);
+        hidden->show();
+        QVERIFY(flow->heightForWidth(180) > visibleHeight);
+        hidden->hide();
+        QCOMPARE(flow->heightForWidth(180), visibleHeight);
+        const auto before = last->geometry();
+        flow->heightForWidth(20);
+        QCOMPARE(last->geometry(), before);
+        flow->setGeometry(QRect(0,0,90,160));
+        QVERIFY(last->y() > first->y());
+        QCOMPARE(flow->minimumHeightForWidth(90), flow->heightForWidth(90));
+        auto* field = new QLineEdit;
+        field->setMinimumWidth(0);
+        field->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        flow->addWidget(field);
+        field->show();
+        flow->setGeometry(QRect(0,0,120,160));
+        QVERIFY(field->width() <= 120);
+        const auto smallFontHeight = flow->heightForWidth(180);
+        auto font = host.font(); font.setPointSizeF(font.pointSizeF() * 1.5);
+        host.setFont(font); flow->invalidate();
+        QVERIFY(flow->heightForWidth(180) >= smallFontHeight);
+        flow->setGeometry(QRect(0,0,480,200));
+        QCOMPARE(last->height(), last->sizeHint().height());
+        delete flow->takeAt(flow->count()-1);
+        delete field;
+        flow->setGeometry(QRect(0,0,480,160));
+        QCOMPARE(flow->count(), 4);
+    }
     void mainWindowGeometry() {
         MainWindow window;
         window.show(); window.resize(1160,900); QTest::qWait(100);
         auto* context=window.findChild<ContextDockHost*>();QVERIFY(context);
         auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
         QVERIFY(context->addResource(resource,new LiveInsightsContextView(nullptr,LiveInsightKind::Hotspot),true));
-        auto* contextDock=qobject_cast<QDockWidget*>(context->parentWidget());QVERIFY(contextDock);contextDock->show();
+        QWidget* ancestor=context;
+        while (ancestor && !qobject_cast<QDockWidget*>(ancestor)) ancestor=ancestor->parentWidget();
+        auto* contextDock=qobject_cast<QDockWidget*>(ancestor);QVERIFY(contextDock);contextDock->show();
         const auto groups=window.findChildren<QTabWidget*>(QRegularExpression("editorTabGroup.*"));QVERIFY(!groups.isEmpty());
         auto* group=groups.first();
         group->setCurrentIndex(group->addTab(new LiveInsightToolPage(LiveInsightKind::Hotspot),"Signal Hotspot"));
@@ -190,6 +243,10 @@ private slots:
     void insightSectionHeights() {
         // Three sections share the dock proportionally. Equal saved weights
         // must not change their sizes or leave the canvas below usable size.
+        auto* index = SemanticIndex::getInstance();
+        const auto previous = index->snapshotToken();
+        const auto restore = qScopeGuard([&] { index->setSnapshot(previous.snapshot); });
+        index->setSnapshot(std::make_shared<SemanticIndexSnapshot>());
         const QRect available=QApplication::primaryScreen()->availableGeometry();
         const int hostHeight=available.height();
         const int width=qMin(480,available.width());
@@ -214,6 +271,13 @@ private slots:
                 keys.append(resource.stableKey());
             }
             host.setFixedWidth(width); host.resize(width,hostHeight); host.show(); QTest::qWait(30);
+            for (const auto& key : keys) {
+                auto* view = qobject_cast<LiveInsightsContextView*>(host.viewForResource(key));
+                auto* surface = view ? view->surfaceForTest() : nullptr;
+                auto* panel = surface ? surface->workbenchForTest()->rtlSurfaceForTest() : nullptr;
+                if (panel && !QTest::qVerify(waitForLiveInsightReports(*panel),
+                    "graph report ready before geometry measurement", "", __FILE__, __LINE__)) return {};
+            }
             if (suggested>0) { for (const QString& key : keys) host.setSectionHeight(key,suggested); }
             QTest::qWait(30);
             const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");

@@ -2,7 +2,7 @@
 #include "panellayoutcontroller.h"
 #include "uicontrols.h"
 #include "deferredpanel.h"
-#include "panelcompositor.h"
+#include "contextdocktransition.h"
 #include "applicationthememanager.h"
 #ifdef ZEROSLACK_ENABLE_ELA
 #include "ElaDockWidget.h"
@@ -123,9 +123,8 @@ PanelLayoutController::PanelLayoutController(
         window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
     }
     buildDrawer();
-#ifndef ZEROSLACK_ENABLE_ELA
-    if (animationsEnabledValue) compositor = PanelCompositor::forWindow(window);
-#endif
+    connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        this, [this](bool enabled) { if (!enabled) applyDrawerState(false); });
     if (qApp)
         qApp->installEventFilter(this);
     if (window)
@@ -137,7 +136,6 @@ PanelLayoutController::~PanelLayoutController()
 #ifdef ZEROSLACK_ENABLE_ELA
     if (contentDrawer) disconnect(contentDrawer, nullptr, this, nullptr);
 #endif
-    if (compositor) compositor->settleFor(this);
     if (qApp)
         qApp->removeEventFilter(this);
 }
@@ -737,7 +735,6 @@ bool PanelLayoutController::setPanelHeight(
     const QString& panelId,
     int height)
 {
-    if (compositor) compositor->settleFor(this);
     PanelEntry* entry = entryForId(panelId);
     if (!entry)
         return false;
@@ -831,21 +828,12 @@ void PanelLayoutController::setStateChangedHandler(
 void PanelLayoutController::setAnimationsEnabled(bool enabled)
 {
     animationsEnabledValue = enabled;
-#ifdef ZEROSLACK_ENABLE_ELA
-    if (!enabled && contentDrawer) {
-        contentDrawer->finishDrawerAnimation();
-        applyDrawerState(false);
-    }
-#endif
-    if (!enabled && compositor && compositor->isActiveFor(this)) {
-        compositor->settle();
-        applyDrawerState(false);
-    }
+    if (!enabled) applyDrawerState(false);
 }
 
 bool PanelLayoutController::animationsEnabled() const
 {
-    return animationsEnabledValue;
+    return animationsEnabledValue && ApplicationThemeManager::instance().animationsEnabled();
 }
 
 QDockWidget* PanelLayoutController::drawerDock() const
@@ -1024,7 +1012,6 @@ void PanelLayoutController::activatePanel(
 #ifdef ZEROSLACK_ENABLE_ELA
     if (activePanel != entry.id && contentDrawer) contentDrawer->finishDrawerAnimation();
 #endif
-    if (activePanel != entry.id && compositor) compositor->settleFor(this);
     if (entry.id == QStringLiteral("connections") && mainAreaRequest && entry.content) {
         mainAreaRequest(entry.content, bottomContentStack);
         return;
@@ -1051,35 +1038,23 @@ void PanelLayoutController::applyDrawerState(bool animate)
         return;
     PanelEntry* entry = entryForId(activePanel);
     if (!collapsed && !entry) return;
+    if (auto* transition = window->findChild<ContextDockTransition*>()) transition->finish();
 #ifdef ZEROSLACK_ENABLE_ELA
     if (contentDrawer) {
         bottomDrawerDock->show();
         if (entry) expandedContentHeight = boundedContentHeight(entry->height);
         bottomContentRow->show();
         applyDrawerProgress(contentDrawer->drawerProgress());
-        contentDrawer->setExpanded(!collapsed, animate && animationsEnabledValue && window->isVisible());
+        contentDrawer->setExpanded(!collapsed, animate && animationsEnabled() && window->isVisible());
         if (!contentDrawer->isDrawerAnimating()) applyDrawerProgress(collapsed ? 0 : 1);
         return;
     }
 #endif
-    const bool wasOpen = visibleContentHeight() > 0;
     const int target = collapsed ? 0 : boundedContentHeight(entry->height);
-    const auto apply = [this, target] {
-        bottomDrawerDock->show();
-        bottomContentRow->setVisible(target > 0);
-        bottomResizeHandle->setVisible(target > 0);
-        applyContentHeight(target);
-    };
-    if (animate && animationsEnabledValue && compositor && window->isVisible()
-        && (wasOpen != !collapsed || compositor->isActiveFor(this))) {
-        compositor->reveal(this, Qt::BottomEdge, !collapsed, [this] {
-            return QRect(bottomDrawerRoot->mapTo(window, QPoint()),
-                         QSize(bottomDrawerRoot->width(), bottomDrawerRoot->height() - bottomButtonBar->height()));
-        }, apply, bottomButtonBar->height());
-    } else {
-        if (compositor) compositor->settle();
-        apply();
-    }
+    bottomDrawerDock->show();
+    bottomContentRow->setVisible(target > 0);
+    bottomResizeHandle->setVisible(target > 0);
+    applyContentHeight(target);
 }
 
 void PanelLayoutController::applyContentHeight(

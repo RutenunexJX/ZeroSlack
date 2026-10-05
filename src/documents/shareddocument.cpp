@@ -34,32 +34,14 @@ int boundedDocumentPosition(QTextDocument* document, int position)
 }
 }
 
-SharedDocument::SharedDocument(const QString& documentId,
-                               const QString& fileName,
-                               const QString& initialText,
-                               QObject* parent)
-    : QObject(parent)
-    , id(documentId.isEmpty() ? newUntitledDocumentId()
-                              : documentId)
-    , normalizedFileName(EditorFileIdentity::normalized(fileName))
-    , document(new QTextDocument(this))
+SharedDocument::SharedDocument(const QString& documentId, const QString& fileName,
+                               const QString& initialText, QObject* parent)
+    : DocumentBuffer(documentId, fileName, initialText, parent, [] {
+        auto* result = new QTextDocument;
+        result->setDocumentLayout(new QPlainTextDocumentLayout(result));
+        return result;
+    }())
 {
-    document->setDocumentLayout(
-        new QPlainTextDocumentLayout(document));
-    document->setUndoRedoEnabled(true);
-    resetText(initialText);
-    connect(document,
-            &QTextDocument::contentsChange,
-            this,
-            [this](int, int, int) {
-                handleContentsChange();
-            });
-    connect(document,
-            &QTextDocument::modificationChanged,
-            this,
-            [this](bool) {
-                publishDirtyIfChanged();
-            });
 }
 
 SharedDocument::~SharedDocument()
@@ -67,81 +49,6 @@ SharedDocument::~SharedDocument()
     const QList<MyCodeEditor*> attachedViews = views();
     for (MyCodeEditor* editor : attachedViews)
         detachView(editor, true);
-}
-
-QString SharedDocument::documentId() const
-{
-    return id;
-}
-
-QString SharedDocument::fileName() const
-{
-    return normalizedFileName;
-}
-
-QTextDocument* SharedDocument::textDocument() const
-{
-    return document;
-}
-
-std::uint64_t SharedDocument::textRevision() const
-{
-    return revision;
-}
-
-std::uint64_t SharedDocument::savedTextRevision() const
-{
-    return savedRevision;
-}
-
-QByteArray SharedDocument::savedBaselineSha256() const
-{
-    return savedBaselineDigest;
-}
-
-QDateTime SharedDocument::savedBaselineModifiedUtc() const
-{
-    return savedBaselineModifiedTimeUtc;
-}
-
-bool SharedDocument::dirty() const
-{
-    return document && document->isModified();
-}
-
-bool SharedDocument::readOnly() const
-{
-    return readOnlyState;
-}
-
-SharedDocumentExternalState SharedDocument::externalState() const
-{
-    return externalFileState;
-}
-
-void SharedDocument::resetText(const QString& text,
-                               std::uint64_t nextRevision,
-                               bool markClean)
-{
-    if (!document)
-        return;
-
-    const bool previousDirty = dirty();
-    loadingText = true;
-    document->setUndoRedoEnabled(false);
-    document->setPlainText(text);
-    document->setUndoRedoEnabled(true);
-    revision = nextRevision;
-    if (markClean) {
-        savedRevision = revision;
-        document->setModified(false);
-        captureSavedBaseline();
-    }
-    loadingText = false;
-    lastDirtyState = dirty();
-    if (previousDirty != lastDirtyState)
-        emit dirtyChanged(lastDirtyState);
-    emit textRevisionChanged(revision);
 }
 
 bool SharedDocument::reloadCleanText(const QString& text)
@@ -288,62 +195,11 @@ bool SharedDocument::restoreUnsavedText(
     return true;
 }
 
-void SharedDocument::restoreSavedBaseline(
-    const QByteArray& sha256,
-    const QDateTime& modifiedUtc)
-{
-    if (sha256.size() == 32)
-        savedBaselineDigest = sha256;
-    savedBaselineModifiedTimeUtc =
-        modifiedUtc.isValid()
-        ? modifiedUtc.toUTC()
-        : QDateTime();
-}
-
-void SharedDocument::markSaved()
-{
-    if (!document)
-        return;
-    savedRevision = revision;
-    document->setModified(false);
-    captureSavedBaseline();
-    publishDirtyIfChanged();
-    setExternalState(SharedDocumentExternalState::Current);
-    emit statusChanged();
-}
-
-void SharedDocument::markSaved(const QByteArray& sha256,
-                               const QDateTime& modifiedUtc)
-{
-    if (!document)
-        return;
-    savedRevision = revision;
-    document->setModified(false);
-    restoreSavedBaseline(sha256, modifiedUtc);
-    publishDirtyIfChanged();
-    setExternalState(SharedDocumentExternalState::Current);
-    emit statusChanged();
-}
-
 void SharedDocument::setReadOnly(bool nextReadOnly)
 {
-    if (readOnlyState == nextReadOnly)
-        return;
-    readOnlyState = nextReadOnly;
-    for (MyCodeEditor* editor : views()) {
-        if (editor)
-            editor->setReadOnly(readOnlyState);
-    }
-    emit statusChanged();
-}
-
-void SharedDocument::setExternalState(
-    SharedDocumentExternalState state)
-{
-    if (externalFileState == state)
-        return;
-    externalFileState = state;
-    emit statusChanged();
+    if (readOnlyState == nextReadOnly) return;
+    DocumentBuffer::setReadOnly(nextReadOnly);
+    for (MyCodeEditor* editor : views()) if (editor) editor->setReadOnly(nextReadOnly);
 }
 
 QString SharedDocument::attachView(
@@ -504,59 +360,6 @@ void SharedDocument::captureViewState(MyCodeEditor* editor)
     if (const QScrollBar* bar = editor->horizontalScrollBar())
         found->state.horizontalScrollValue = bar->value();
     found->state.folding = editor->foldingViewState();
-}
-
-void SharedDocument::handleContentsChange()
-{
-    if (loadingText)
-        return;
-    ++revision;
-    emit textRevisionChanged(revision);
-    publishDirtyIfChanged();
-}
-
-void SharedDocument::publishDirtyIfChanged()
-{
-    if (loadingText)
-        return;
-    const bool currentDirty = dirty();
-    if (lastDirtyState == currentDirty)
-        return;
-    lastDirtyState = currentDirty;
-    emit dirtyChanged(currentDirty);
-    emit statusChanged();
-}
-
-void SharedDocument::captureSavedBaseline()
-{
-    if (!document)
-        return;
-    if (normalizedFileName.isEmpty()) {
-        savedBaselineDigest =
-            QCryptographicHash::hash(
-                document->toPlainText().toUtf8(),
-                QCryptographicHash::Sha256);
-        savedBaselineModifiedTimeUtc = QDateTime();
-        return;
-    }
-    const QFileInfo source(normalizedFileName);
-    QFile sourceFile(normalizedFileName);
-    if (source.isFile()
-        && sourceFile.open(QIODevice::ReadOnly)) {
-        savedBaselineDigest =
-            QCryptographicHash::hash(
-                sourceFile.readAll(),
-                QCryptographicHash::Sha256);
-    } else {
-        savedBaselineDigest =
-            QCryptographicHash::hash(
-                document->toPlainText().toUtf8(),
-                QCryptographicHash::Sha256);
-    }
-    savedBaselineModifiedTimeUtc =
-        source.isFile()
-        ? source.lastModified().toUTC()
-        : QDateTime();
 }
 
 void SharedDocument::applyViewState(

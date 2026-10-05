@@ -12,6 +12,58 @@
 
 #include <utility>
 
+namespace {
+struct LineActionBinding {
+    const char* route;
+    bool (MyCodeEditor::*execute)(QString*);
+};
+const LineActionBinding lineActions[] = {
+    {"editor.lines.duplicate", &MyCodeEditor::duplicateLines},
+    {"editor.lines.delete", &MyCodeEditor::deleteLines},
+    {"editor.lines.join", &MyCodeEditor::joinLines},
+    {"editor.lines.moveUp", &MyCodeEditor::moveLinesUp},
+    {"editor.lines.moveDown", &MyCodeEditor::moveLinesDown},
+};
+const LineActionBinding* lineAction(const QString& route) {
+    for (const auto& binding : lineActions) if (route == QLatin1String(binding.route)) return &binding;
+    return nullptr;
+}
+}
+QStringList FileCommandCoordinator::lineActionRoutes()
+{
+    QStringList result;
+    for (const auto& binding : lineActions) result.append(QString::fromLatin1(binding.route));
+    return result;
+}
+bool FileCommandCoordinator::isLineAction(const QString& route) { return lineAction(route); }
+ActionExecutionResult FileCommandCoordinator::executeLineAction(
+    const QString& route, const QString& preferredViewId) const
+{
+    return executeLineAction(route, targets.tabManager, preferredViewId);
+}
+ActionExecutionResult FileCommandCoordinator::executeLineAction(const QString& route,
+    TabManager* documents, const QString& preferredViewId, MyCodeEditor* preferredEditor)
+{
+    const auto* binding = lineAction(route);
+    if (!binding) return {};
+    ActionExecutionResult result;
+    result.handled = true;
+    auto* editor = !preferredViewId.isEmpty()
+        ? (documents ? documents->editorActionTarget(preferredViewId) : nullptr)
+        : preferredEditor ? preferredEditor : documents ? documents->editorActionTarget() : nullptr;
+    if (!editor) {
+        result.failureReason = preferredViewId.isEmpty() ? QStringLiteral("No editor tab is available.")
+            : QStringLiteral("The requested editor view is no longer available.");
+    } else if (editor->isReadOnly()) {
+        result.failureReason = QStringLiteral("The editor is read-only.");
+    } else {
+        result.succeeded = (editor->*binding->execute)(&result.failureReason);
+        if (!result.succeeded && result.failureReason.isEmpty())
+            result.failureReason = QStringLiteral("The selected logical lines cannot perform this action.");
+    }
+    return result;
+}
+
 FileCommandCoordinator::FileCommandCoordinator(TabManager* tabManager,
                                                WorkspaceManager* workspaceManager,
                                                QObject* parent)

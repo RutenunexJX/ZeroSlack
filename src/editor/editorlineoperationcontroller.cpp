@@ -629,61 +629,31 @@ EditorLineOperationController::moveLines(
     const int start = range.firstBlock.position();
     const int end = lineMoveBlockEnd(
         document, range.lastBlock);
-    if (start < 0 || end <= start || end > text.size()) {
+    if (start < 0 || end < start || end > text.size()) {
         return failureResult(
             QStringLiteral(
                 "The selected logical-line range is invalid."));
     }
 
-    const QString movedText = text.mid(
-        start, end - start);
-    const int originalFirstLine =
-        range.firstBlock.blockNumber();
+    // Swap logical bodies, keeping the separator after the complete range.
+    // Moving past a final line without a newline must not concatenate bodies.
+    const int bodyEnd = range.lastBlock.position() + range.lastBlock.text().size();
+    const QString movedBody = text.mid(start, bodyEnd - start);
+    const QTextBlock neighbor = up ? range.firstBlock.previous() : range.lastBlock.next();
+    const int replacementStart = up ? neighbor.position() : start;
+    const int replacementEnd = up ? end : lineMoveBlockEnd(document, neighbor);
+    const bool trailingSeparator = (up ? range.lastBlock : neighbor).next().isValid();
+    const QString replacement = (up ? movedBody + QLatin1Char('\n') + neighbor.text()
+                                     : neighbor.text() + QLatin1Char('\n') + movedBody)
+        + (trailingSeparator ? QStringLiteral("\n") : QString());
+    const int originalFirstLine = range.firstBlock.blockNumber();
+    const int cursorDelta = (neighbor.text().size() + 1) * (up ? -1 : 1);
     QTextCursor edit(document);
-    if (up) {
-        const QTextBlock previousBlock =
-            range.firstBlock.previous();
-        const int previousStart =
-            previousBlock.position();
-        const int previousLength =
-            start - previousStart;
-        edit.beginEditBlock();
-        edit.setPosition(start);
-        edit.setPosition(
-            end, QTextCursor::KeepAnchor);
-        edit.removeSelectedText();
-        edit.setPosition(previousStart);
-        edit.insertText(movedText);
-        edit.endEditBlock();
-        restoreLineMoveCursor(
-            cursor,
-            range,
-            originalFirstLine - 1,
-            -previousLength);
-    } else {
-        const QTextBlock nextBlock =
-            range.lastBlock.next();
-        const int nextEnd = lineMoveBlockEnd(
-            document, nextBlock);
-        if (nextEnd <= end || nextEnd > text.size()) {
-            return failureResult(
-                QStringLiteral(
-                    "The next logical line is unavailable."));
-        }
-        const int nextLength = nextEnd - end;
-        edit.beginEditBlock();
-        edit.setPosition(nextEnd);
-        edit.insertText(movedText);
-        edit.setPosition(start);
-        edit.setPosition(
-            end, QTextCursor::KeepAnchor);
-        edit.removeSelectedText();
-        edit.endEditBlock();
-        restoreLineMoveCursor(
-            cursor,
-            range,
-            originalFirstLine + 1,
-            nextLength);
-    }
+    edit.beginEditBlock();
+    edit.setPosition(replacementStart);
+    edit.setPosition(replacementEnd, QTextCursor::KeepAnchor);
+    edit.insertText(replacement);
+    edit.endEditBlock();
+    restoreLineMoveCursor(cursor, range, originalFirstLine + (up ? -1 : 1), cursorDelta);
     return successResult(true);
 }

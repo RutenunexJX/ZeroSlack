@@ -33,6 +33,11 @@ struct ZEROSLACK_API InsightViewBuildResult {
     bool available = false;
 };
 
+struct LiveInsightGraphReport;
+ZEROSLACK_API InsightViewBuildResult insightViewFromGraphReport(
+    const LiveInsightGraphReport& report, const InsightViewContext& context,
+    const QString& pluginId);
+
 class ZEROSLACK_API IInsightViewPlugin
 {
 public:

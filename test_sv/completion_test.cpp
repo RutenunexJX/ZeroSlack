@@ -4817,9 +4817,8 @@ int main(int argc, char** argv) {
                true);
 
     foregroundAnalyzer.cancelAllAnalysesAndWait();
-    // The workspace transaction retires the preceding native store. Restore
-    // this fixture in that same mode; later navigation cases clear snapshots
-    // and must still see the original completion records.
+    // Restore this fixture as an explicit publication after the workspace
+    // transaction. Later sections remove only their own temporary files.
     SemanticIndex::getInstance()->clearSnapshot();
     SemanticIndex::getInstance()->updateSymbolRecordsForFile(
         path, beforeSchedulingRecords, content);
@@ -7727,7 +7726,8 @@ int main(int argc, char** argv) {
         navPath,
         {},
         QString());
-    SemanticIndex::getInstance()->clearSnapshot();
+    expectBool("removing a temporary fixture preserves the main publication",
+               !SemanticIndex::getInstance()->getSymbolRecords(path).isEmpty(), true);
 
     EditorSourceSymbolShortcutContext sourceShortcutContext;
     sourceShortcutContext.key = Qt::Key_F12;
@@ -8124,7 +8124,8 @@ int main(int argc, char** argv) {
         fsmPairPath,
         {},
         QString());
-    SemanticIndex::getInstance()->clearSnapshot();
+    expectBool("removing a temporary fixture preserves the main publication",
+               !SemanticIndex::getInstance()->getSymbolRecords(path).isEmpty(), true);
     const QString moduleBlockMenuPath =
         QStringLiteral("module_block_menu_target.sv");
     const SemanticSymbolRecord moduleBlockMenuRecord =
@@ -8184,7 +8185,8 @@ int main(int argc, char** argv) {
         moduleBlockMenuPath,
         {},
         QString());
-    SemanticIndex::getInstance()->clearSnapshot();
+    expectBool("removing a temporary fixture preserves the main publication",
+               !SemanticIndex::getInstance()->getSymbolRecords(path).isEmpty(), true);
     EditorSemanticContext unavailableSourceSymbolContext;
     unavailableSourceSymbolContext.lineText = sourceSymbolContext.lineText;
     unavailableSourceSymbolContext.column = sourceSymbolContext.column;

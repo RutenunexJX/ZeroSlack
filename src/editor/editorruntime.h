@@ -199,12 +199,10 @@ struct MyCodeEditorState
     // Semantic publications are keyed to text content, not QTextDocument's
     // formatting revision. Appearance and syntax highlighting can advance the
     // latter without changing any source text.
-    std::uint64_t semanticTextRevision = 0;
     std::uint64_t ghostQueryGeneration = 0;
     // Keep the live editor cache in the same incremental UTF-16 piece storage
     // used by Tree-sitter. Ordinary typing must not move the untouched suffix
     // of a multi-megabyte document merely to keep cachedDocumentText current.
-    TSUTF16Text semanticRevisionText;
     bool inlineFilterTextOverlayActive = false;
     int inlineFilterTextOverlayStart = -1;
     int inlineFilterTextOverlayOriginalLength = 0;

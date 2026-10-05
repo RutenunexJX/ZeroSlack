@@ -1,6 +1,7 @@
 #include "liveinsighttoolpage.h"
 
 #include "rtlinsightworkbench.h"
+#include "rtlinsightspanelcoordinator.h"
 
 #include <QDockWidget>
 #include <QHideEvent>
@@ -225,4 +226,9 @@ void LiveInsightToolPage::notifyVisibility()
 {
     if (visibilityHandler)
         visibilityHandler(hasVisibleSurface());
+}
+
+LiveInsightSession* LiveInsightToolPage::graphSession() const
+{
+    return workbench ? workbench->graphSession() : nullptr;
 }

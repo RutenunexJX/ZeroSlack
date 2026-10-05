@@ -49,7 +49,6 @@ void AnalysisScheduler::shutdown()
         workspaceSymbolAnalysis->setCancelProvider({});
         workspaceSymbolAnalysis->setCurrentFileProvider({});
     }
-    cancelAllScheduledRelationshipAnalyses();
 
     // Phase one is deliberately non-blocking. Every worker family must see
     // cancellation before shutdown joins any future: with a saturated global
@@ -211,7 +210,6 @@ void AnalysisScheduler::setSemanticAnalysisRuntimePolicy(
                 timer->stop();
         }
         cancelWorkspaceAnalysis();
-        cancelAllScheduledRelationshipAnalyses();
         if (symbolAnalyzer)
             symbolAnalyzer->requestCancelAllAnalyses();
         stabilizeSemanticStatesWhenDisabled();

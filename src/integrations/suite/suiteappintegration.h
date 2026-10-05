@@ -6,6 +6,7 @@
 #include <memory>
 
 class MainWindow;
+class QMainWindow;
 
 namespace SuiteApp {
 class Provider;
@@ -14,7 +15,7 @@ class Provider;
 class ZeroSlackSuiteIntegration final : public QObject
 {
 public:
-    explicit ZeroSlackSuiteIntegration(MainWindow* window,
+    explicit ZeroSlackSuiteIntegration(QMainWindow* window,
                                        QObject* parent = nullptr);
     ~ZeroSlackSuiteIntegration() override;
 

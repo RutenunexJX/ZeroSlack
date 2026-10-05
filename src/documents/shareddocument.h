@@ -2,6 +2,7 @@
 #define SHAREDDOCUMENT_H
 
 #include "zeroslackexport.h"
+#include "documentbuffer.h"
 
 #include "editorfoldviewstate.h"
 
@@ -28,13 +29,7 @@ struct SharedDocumentViewState {
     EditorFoldViewState folding;
 };
 
-enum class SharedDocumentExternalState {
-    Current,
-    ExternallyModified,
-    Conflict
-};
-
-class ZEROSLACK_API SharedDocument : public QObject
+class ZEROSLACK_API SharedDocument : public DocumentBuffer
 {
     Q_OBJECT
 
@@ -45,20 +40,6 @@ public:
                             QObject* parent = nullptr);
     ~SharedDocument() override;
 
-    QString documentId() const;
-    QString fileName() const;
-    QTextDocument* textDocument() const;
-    std::uint64_t textRevision() const;
-    std::uint64_t savedTextRevision() const;
-    QByteArray savedBaselineSha256() const;
-    QDateTime savedBaselineModifiedUtc() const;
-    bool dirty() const;
-    bool readOnly() const;
-    SharedDocumentExternalState externalState() const;
-
-    void resetText(const QString& text,
-                   std::uint64_t revision = 0,
-                   bool markClean = true);
     bool reloadCleanText(const QString& text);
     // Applies a user-confirmed external generation as one undoable
     // replacement. Unlike automatic clean reload, this entry point may
@@ -68,14 +49,7 @@ public:
     bool restoreUnsavedText(
         const QString& text,
         std::uint64_t recoveredRevision);
-    void restoreSavedBaseline(
-        const QByteArray& sha256,
-        const QDateTime& modifiedUtc);
-    void markSaved();
-    void markSaved(const QByteArray& sha256,
-                   const QDateTime& modifiedUtc);
-    void setReadOnly(bool readOnly);
-    void setExternalState(SharedDocumentExternalState state);
+    void setReadOnly(bool readOnly) override;
 
     QString attachView(
         MyCodeEditor* editor,
@@ -88,15 +62,8 @@ public:
     void captureViewState(MyCodeEditor* editor);
 
 signals:
-    void textRevisionChanged(std::uint64_t revision);
-    void dirtyChanged(bool dirty);
-    void identityChanged(const QString& previousDocumentId,
-                         const QString& previousFileName,
-                         const QString& documentId,
-                         const QString& fileName);
     void viewAttached(const QString& viewId);
     void viewDetached(const QString& viewId);
-    void statusChanged();
 
 private:
     friend class SharedDocumentRegistry;
@@ -107,23 +74,8 @@ private:
         QList<QMetaObject::Connection> connections;
     };
 
-    QString id;
-    QString normalizedFileName;
-    QTextDocument* document = nullptr;
-    std::uint64_t revision = 0;
-    std::uint64_t savedRevision = 0;
-    QByteArray savedBaselineDigest;
-    QDateTime savedBaselineModifiedTimeUtc;
-    bool loadingText = false;
-    bool readOnlyState = false;
-    bool lastDirtyState = false;
-    SharedDocumentExternalState externalFileState =
-        SharedDocumentExternalState::Current;
     QHash<MyCodeEditor*, ViewBinding> viewBindings;
 
-    void handleContentsChange();
-    void publishDirtyIfChanged();
-    void captureSavedBaseline();
     void applyViewState(MyCodeEditor* editor,
                         const SharedDocumentViewState& state) const;
     void disconnectViewBinding(ViewBinding* binding);

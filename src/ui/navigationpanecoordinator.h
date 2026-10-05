@@ -13,7 +13,6 @@ class TabManager;
 class QWidget;
 class WorkspaceManager;
 class NavigationViewport;
-class QVariantAnimation;
 class QEvent;
 class ElaNavigationBar;
 
@@ -57,7 +56,6 @@ private:
     void finishOverlay();
     QPointer<NavigationWidget> navigationWidget;
     NavigationManager* navigationManager = nullptr;
-    QVariantAnimation* widthAnimation = nullptr;
     int expandedWidth = 280;
     bool expanded = true;
     bool transitioning = false;

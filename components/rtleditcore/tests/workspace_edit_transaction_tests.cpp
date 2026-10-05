@@ -288,10 +288,50 @@ bool failedUndoVerificationRollsBackAtomically() {
     return true;
 }
 
+bool changedPreviewPlanCannotApply() {
+    const std::vector<std::function<void(WorkspaceEditPlan&)>> mutations = {
+        [](auto& p) { p.edits.front().newText = "changed"; },
+        [](auto& p) { p.edits.front().expectedText = "changed"; },
+        [](auto& p) { p.edits.front().range.end.column++; },
+        [](auto& p) { p.edits.front().expectedDocumentVersion.value++; },
+        [](auto& p) { p.intent.target.signatureHash = "changed"; },
+        [](auto& p) { p.intent.target.range.end.column++; },
+        [](auto& p) { p.semanticSnapshot.id = "changed"; },
+        [](auto& p) { p.semanticIndexFilePaths.push_back("changed.sv"); },
+        [](auto& p) { p.baselines.front().version.value++; },
+        [](auto& p) { p.provenance.front().anchor.resolver = "changed"; },
+        [](auto& p) { p.provenance.front().anchor.semanticSnapshotId = "changed"; },
+        [](auto& p) { p.provenance.front().sourceRange.end.column++; },
+        [](auto& p) { p.provenance.front().sourceInstancePath = "changed"; },
+        [](auto& p) { p.provenance.front().hierarchyStepIndex = 2; },
+        [](auto& p) { p.riskLevel = RiskLevel::Low; }
+    };
+    for (const auto& mutate : mutations) {
+        MockWorkspaceDocumentManager documents;
+        documents.openDocument("a.sv", "alpha\n");
+        documents.openDocument("b.sv", "beta\n");
+        WorkspaceEditTransactionCoordinator coordinator;
+        auto prepared = coordinator.prepare(twoFilePlan(), documents);
+        require(prepared.matchesPreviewedPlan(), "fresh preparation identity missing");
+        auto changedBeforeConfirmation = prepared;
+        mutate(changedBeforeConfirmation.plan);
+        require(!coordinator.confirmPreview(&changedBeforeConfirmation),
+            "mutated plan was confirmed");
+        require(coordinator.confirmPreview(&prepared), "fixture confirmation failed");
+        mutate(prepared.plan);
+        require(coordinator.apply(prepared, documents).status == TransactionStatus::InvalidPreparation,
+            "mutated preview plan reached the patch engine");
+        require(documents.text("a.sv") == "alpha\n" && documents.text("b.sv") == "beta\n"
+            && !coordinator.canUndo(), "rejected transaction mutated documents or history");
+    }
+    return true;
+}
+
 }  // namespace
 
 int main() {
     const std::vector<std::pair<std::string, std::function<bool()>>> tests = {
+        {"changedPreviewPlanCannotApply", changedPreviewPlanCannotApply},
         {"previewIsMandatoryForHighRiskApply",
          previewIsMandatoryForHighRiskApply},
         {"oneUndoAndRedoRestoresEveryFile",
