@@ -680,8 +680,7 @@ InstancePairConnectionWorkflow::confirm(
             applied.status);
     }
 
-    const bool restored =
-        restoreAfterFailedApply(*before);
+    const bool restored = applied.residualFiles.empty();
     discardPendingProposal();
     if (!restored) {
         return fail(
@@ -811,13 +810,11 @@ bool InstancePairConnectionWorkflow::hasPendingPreview() const
 bool InstancePairConnectionWorkflow::
 canUndoAppliedTransaction() const
 {
-    return currentState
-            == InstancePairConnectionWorkflowState::Applied
-        && workflowUndoAvailable
+    return workflowUndoAvailable
         && transactionService
-        && transactionService->canUndo()
-        && transactionService->historyGeneration()
-               == appliedTransactionGeneration;
+        && documentManager
+        && transactionService->undoCapabilities(
+            appliedTransactionGeneration, *documentManager).canRetry;
 }
 
 void InstancePairConnectionWorkflow::connectPanelSignals()
@@ -896,9 +893,7 @@ InstancePairConnectionWorkflow::publish(
             message,
             state
                 == InstancePairConnectionWorkflowState::Applied,
-            state
-                    == InstancePairConnectionWorkflowState::Applied
-                && workflowUndoAvailable);
+            canUndoAppliedTransaction());
     }
     emit stateChanged(currentResult);
     return currentResult;
@@ -1114,44 +1109,6 @@ InstancePairConnectionWorkflow::capturePlanDocuments(
                 baseline.filePath, *snapshot});
     }
     return result;
-}
-
-bool InstancePairConnectionWorkflow::
-restoreAfterFailedApply(
-    const std::vector<CapturedDocument>& before)
-{
-    if (!documentManager)
-        return false;
-
-    bool restoredEveryDocument = true;
-    for (const CapturedDocument& captured :
-         before) {
-        const auto current =
-            documentManager->snapshot(
-                captured.filePath);
-        if (current
-            && current->text
-                == captured.snapshot.text) {
-            continue;
-        }
-        if (!documentManager->restoreSnapshot(
-                captured.filePath,
-                captured.snapshot)) {
-            restoredEveryDocument = false;
-        }
-    }
-    for (const CapturedDocument& captured :
-         before) {
-        const auto current =
-            documentManager->snapshot(
-                captured.filePath);
-        if (!current
-            || current->text
-                != captured.snapshot.text) {
-            restoredEveryDocument = false;
-        }
-    }
-    return restoredEveryDocument;
 }
 
 InstancePairConnectionWorkflowFailure

@@ -13,12 +13,17 @@ public:
 
     std::optional<rtledit::WorkspaceDocumentSnapshot> snapshot(
         const std::string& filePath) const override;
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<rtledit::WorkspaceTextEdit>& edits) override;
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult applyPreparedTextEdits(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expected,
+        const std::vector<rtledit::IndexedWorkspaceTextEdit>& edits) override;
+    rtledit::DocumentMutationResult restoreSnapshot(
+        const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot& snapshot) override;
 
 private:

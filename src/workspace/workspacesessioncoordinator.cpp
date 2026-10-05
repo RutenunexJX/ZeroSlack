@@ -259,8 +259,17 @@ bool WorkspaceSessionCoordinator::restoreSession()
         return false;
     }
 
-    WorkspaceSessionRestoreResult result =
-        stateService.load(workspaceRoot);
+    WorkspaceSessionRestoreResult result;
+    const auto pending = pendingSaves.constFind(rootKey);
+    const bool restoredPending = pending != pendingSaves.cend();
+    if (restoredPending) {
+        // A failed write is still this process's newest owned session. Both
+        // activation and explicit Restore consume it; Reset clears it.
+        result.loaded = true;
+        result.state = pending->state;
+    } else {
+        result = stateService.load(workspaceRoot);
+    }
     bool importedLegacy = false;
     if (!result.loaded
         && WorkspaceSessionStateService::legacySessionFileExists(
@@ -316,6 +325,7 @@ bool WorkspaceSessionCoordinator::restoreSession()
     }
 
     QStringList notes;
+    if (restoredPending) notes.append(QStringLiteral("latest pending session; not yet persisted"));
     if (!scanRestored)
         notes.append(QStringLiteral("scan list skipped"));
     if (!uiResult.geometryRestored

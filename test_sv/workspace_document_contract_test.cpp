@@ -1,8 +1,17 @@
 #include "tabmanager.h"
 #include "workspaceeditdocumentmanager.h"
 #include "documentregistry.h"
+#include "editorfileidentity.h"
+#include "workspaceconfigurationdialog.h"
+#include "workspacemanager.h"
+#include "rtlhighriskeditpanel.h"
+#include "workspaceedittransactionservice.h"
+#include "semanticindexsnapshot.h"
+#include <QPushButton>
 #include <zeroslack/documents/documentfileread.h>
 #include <rtledit/workspace_edit_transaction.h>
+#include <rtledit/patch_engine.h>
+#include <rtledit/text_edit.h>
 #include <QApplication>
 #include <QCryptographicHash>
 #include <QFile>
@@ -66,11 +75,411 @@ rtledit::PreparedWorkspaceEditTransaction preparePrefix(
     coordinator.confirmPreview(&result);
     return result;
 }
+
+class InterleavingDocuments final : public rtledit::WorkspaceDocumentManager {
+public:
+    WorkspaceEditDocumentManager& real;
+    std::function<void(const std::string&)> afterApply, beforeRestore, afterRestore;
+    std::string failAfterModification;
+    std::vector<std::string> restoreCalls;
+    explicit InterleavingDocuments(WorkspaceEditDocumentManager& real) : real(real) {}
+    std::optional<rtledit::WorkspaceDocumentSnapshot> snapshot(const std::string& path) const override {
+        return real.snapshot(path);
+    }
+    rtledit::DocumentMutationResult applyTextEdits(const std::string& path, rtledit::DocumentVersion version,
+        const std::vector<rtledit::WorkspaceTextEdit>& edits) override {
+        auto result = real.applyTextEdits(path, version, edits);
+        if (result && afterApply) afterApply(path);
+        if (result && path == failAfterModification) result.applied = false;
+        return result;
+    }
+    rtledit::DocumentMutationResult applyPreparedTextEdits(const std::string& path,
+        const rtledit::WorkspaceDocumentSnapshot& expected, const std::vector<rtledit::IndexedWorkspaceTextEdit>& edits) override {
+        auto result = real.applyPreparedTextEdits(path, expected, edits);
+        if (result && afterApply) afterApply(path);
+        if (result && path == failAfterModification) result.applied = false;
+        return result;
+    }
+    rtledit::DocumentMutationResult restoreSnapshot(const std::string& path,
+        const rtledit::WorkspaceDocumentSnapshot& expected, const rtledit::WorkspaceDocumentSnapshot& target) override {
+        restoreCalls.push_back(path);
+        if (beforeRestore) beforeRestore(path);
+        auto result = real.restoreSnapshot(path, expected, target);
+        if (result && afterRestore) afterRestore(path);
+        return result;
+    }
+};
+
+rtledit::PreparedWorkspaceEditTransaction preparePair(rtledit::WorkspaceEditTransactionCoordinator& coordinator,
+    rtledit::WorkspaceDocumentManager& documents, const std::string& a, const std::string& b) {
+    std::vector<rtledit::WorkspaceTextEdit> edits;
+    for (const auto& path : {a, b}) {
+        const auto state = documents.snapshot(path);
+        if (!state) return {};
+        edits.push_back({path, state->version, {{0,0},{0,0}}, "", "// transaction\n"});
+    }
+    auto result = coordinator.prepare(rtledit::makeWorkspaceEditPlan({}, rtledit::RiskLevel::High,
+        rtledit::PreviewPolicy::Diff, edits), documents);
+    coordinator.confirmPreview(&result); return result;
+}
 }
 
 class WorkspaceDocumentContractTest : public QObject {
     Q_OBJECT
 private slots:
+    void reentrantEditIsNotClaimedForRollback() {
+        QTemporaryDir temp; const auto path = temp.filePath("reentrant.sv");
+        QVERIFY(writeBytes(path, "module m; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temp.filePath("recovery")));
+        QVERIFY(tabs.openFileInTab(path));
+        auto* document = tabs.getCurrentEditor()->document();
+        bool injected = false;
+        const auto connection = QObject::connect(document, &QTextDocument::contentsChanged, document, [&] {
+            if (injected) return;
+            injected = true; QTextCursor cursor(document); cursor.insertText("// external observer\n");
+        });
+        WorkspaceEditDocumentManager adapter(&tabs);
+        rtledit::WorkspaceEditTransactionCoordinator coordinator;
+        const auto result = coordinator.apply(preparePrefix(coordinator, adapter, path, "// transaction\n"), adapter);
+        QObject::disconnect(connection);
+        QVERIFY(injected);
+        QVERIFY(!result.succeeded());
+        QCOMPARE(result.residualFiles, std::vector<std::string>{path.toUtf8().toStdString()});
+        QVERIFY(document->toPlainText().contains("// external observer"));
+        QVERIFY(!coordinator.canUndo());
+        document->setModified(false);
+    }
+
+    void realPanelRetainsRetryAndRetirement() {
+        QTemporaryDir temp;
+        const auto path = temp.filePath("panel.sv");
+        QVERIFY(writeBytes(path, "module target; endmodule\n"));
+        QTabWidget widget;
+        TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temp.filePath("recovery")));
+        QVERIFY(tabs.openFileInTab(path));
+        WorkspaceEditDocumentManager documents(&tabs);
+        WorkspaceEditTransactionService service;
+        SemanticIndex index;
+        index.setSnapshot(std::make_shared<SemanticIndexSnapshot>());
+        const auto token = index.snapshotToken();
+        auto rename = std::make_unique<RtlRenameWorkflow>(
+            [path, token](const RtlRenamePlanQuery& query, const rtledit::WorkspaceDocumentManager& docs) {
+                const auto file = path.toUtf8().toStdString();
+                const auto snapshot = docs.snapshot(file);
+                RtlRenameProposal proposal;
+                if (!snapshot) return proposal;
+                proposal.status = RtlRenamePlanStatus::Ready;
+                proposal.dryRun = query.dryRun;
+                proposal.workspaceEdit = rtledit::makeWorkspaceEditPlan({}, rtledit::RiskLevel::High,
+                    rtledit::PreviewPolicy::Diff, {{file, snapshot->version, {{0, 0}, {0, 0}}, "", "// plan\n"}});
+                proposal.workspaceEdit.semanticSnapshot.id = std::to_string(token.revision);
+                proposal.workspaceEdit.semanticIndexFilePaths = {file};
+                return proposal;
+            }, &index, &documents, &service);
+        QWidget parent;
+        RtlHighRiskEditPanelCoordinator panel(&parent, std::move(rename), nullptr);
+        RtlRenamePanelSession session;
+        session.baseQuery.dryRun = false;
+        session.baseQuery.semanticToken = token;
+        session.baseQuery.subjectStableKey.fileName = path;
+        session.baseQuery.subjectStableKey.symbolName = "target";
+        session.baseQuery.subjectStableKey.declarationKind = SymbolTaxonomy::DeclarationKind::Module;
+        session.oldName = "target";
+        session.suggestedNewName = "renamed";
+        QVERIFY(panel.beginRename(session));
+        auto* undo = panel.panel()->findChild<QPushButton*>("rtlHighRiskUndoButton");
+        auto* retire = panel.panel()->findChild<QPushButton*>("rtlHighRiskRetireButton");
+        auto* preview = panel.panel()->findChild<QPushButton*>("rtlHighRiskPreviewButton");
+        auto* confirm = panel.panel()->findChild<QPushButton*>("rtlHighRiskConfirmButton");
+        QVERIFY(undo && retire && preview && confirm);
+        preview->click();
+        QVERIFY2(panel.lastOutcome().canConfirm, qPrintable(panel.lastOutcome().message));
+        confirm->click();
+        QVERIFY2(panel.lastOutcome().canUndo, qPrintable(panel.lastOutcome().message));
+        auto* doc = tabs.sharedDocumentForEditor(tabs.getCurrentEditor());
+        doc->setReadOnly(true);
+        undo->click();
+        QCOMPARE(panel.lastOutcome().failure, RtlHighRiskEditWorkflowFailure::UndoFailed);
+        QVERIFY(panel.hasProtectedUndoPosition());
+        QVERIFY(undo->isEnabled() && retire->isEnabled() && !preview->isEnabled());
+        QVERIFY(!panel.beginRename(session));
+        doc->setReadOnly(false);
+        undo->click();
+        QCOMPARE(panel.lastOutcome().workflowState, RtlHighRiskEditWorkflowState::Undone);
+        QVERIFY(!panel.hasProtectedUndoPosition());
+        QCOMPARE(doc->textDocument()->toPlainText(), QString("module target; endmodule\n"));
+
+        // A same-buffer external edit invalidates retry but keeps the release action.
+        QVERIFY(panel.beginRename(session));
+        preview->click(); confirm->click();
+        QTextCursor cursor(doc->textDocument()); cursor.insertText("// external\n");
+        undo->click();
+        QCOMPARE(panel.lastOutcome().failure, RtlHighRiskEditWorkflowFailure::UndoConflict);
+        QVERIFY(panel.hasProtectedUndoPosition() && !undo->isEnabled() && retire->isEnabled());
+        const auto externalText = doc->textDocument()->toPlainText();
+        retire->click();
+        QVERIFY(!panel.hasProtectedUndoPosition() && preview->isEnabled());
+        QCOMPARE(doc->textDocument()->toPlainText(), externalText);
+        QVERIFY(panel.beginRename(session));
+        preview->click(); confirm->click();
+        const auto oldSession = panel.activeSessionId();
+        panel.resetForWorkspaceClose();
+        QVERIFY(!panel.hasProtectedUndoPosition());
+        doc->textDocument()->setModified(false);
+        QVERIFY(tabs.closeAllTabs());
+        QVERIFY(tabs.openFileInTab(path));
+        QVERIFY(panel.beginRename(session));
+        QCOMPARE(panel.undo(oldSession).failure, RtlHighRiskEditWorkflowFailure::InvalidState);
+        preview->click(); confirm->click();
+        QVERIFY(panel.lastOutcome().canUndo);
+        // Another successful shared transaction cannot be undone by this owner.
+        const auto file = path.toUtf8().toStdString();
+        const auto current = documents.snapshot(file);
+        auto plan = rtledit::makeWorkspaceEditPlan({}, rtledit::RiskLevel::High, rtledit::PreviewPolicy::Diff,
+            {{file, current->version, {{0, 0}, {0, 0}}, "", "// newer\n"}});
+        auto prepared = service.prepare(plan, {}, documents);
+        QVERIFY(service.applyConfirmed(prepared, {}, documents).succeeded());
+        const auto newest = documents.snapshot(file)->text;
+        undo->click();
+        QCOMPARE(panel.lastOutcome().failure, RtlHighRiskEditWorkflowFailure::TransactionGenerationConflict);
+        QCOMPARE(documents.snapshot(file)->text, newest);
+        QVERIFY(!panel.hasProtectedUndoPosition());
+        tabs.sharedDocumentForEditor(tabs.getCurrentEditor())->textDocument()->setModified(false);
+    }
+
+    void rejectedUnopenedDocumentIsNeverRestored() {
+        QTemporaryDir fixture;
+        const auto a = fixture.filePath("a.sv"), b = fixture.filePath("b.sv");
+        QVERIFY(writeBytes(a, "module a; endmodule\n")); QVERIFY(writeBytes(b, "module b; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        WorkspaceEditDocumentManager real(&tabs); InterleavingDocuments documents(real);
+        rtledit::WorkspaceEditTransactionCoordinator coordinator;
+        const auto prepared = preparePair(coordinator, documents, a.toStdString(), b.toStdString());
+        QVERIFY(prepared.ready()); QCOMPARE(tabs.editorCount(), 0);
+        const QByteArray external("module external_b; endmodule\n");
+        documents.afterApply = [&](const std::string& path) { if (path == a.toStdString()) QVERIFY(writeBytes(b, external)); };
+        const auto result = coordinator.apply(prepared, documents);
+        QCOMPARE(result.status, rtledit::TransactionStatus::ApplyFailed);
+        QVERIFY(result.residualFiles.empty());
+        QCOMPARE(documents.restoreCalls, std::vector<std::string>{a.toStdString()});
+        QCOMPARE(readDocumentFile(b).rawBytes, external);
+        QVERIFY(!tabs.getDocumentModel()->editorForFile(b));
+        QCOMPARE(real.snapshot(a.toStdString())->text, std::string("module a; endmodule\n"));
+        QVERIFY(tabs.openFileInTab(b));
+        const auto* bDocument = tabs.sharedDocumentForEditor(tabs.getCurrentEditor());
+        QCOMPARE(bDocument->textDocument()->toPlainText(), QString::fromUtf8(external));
+        QCOMPARE(bDocument->savedBaselineSha256(), QCryptographicHash::hash(external, QCryptographicHash::Sha256));
+        QVERIFY(!bDocument->dirty()); QVERIFY(!coordinator.canUndo());
+        tabs.clearCrashRecoveryAfterNormalClose();
+    }
+    void partialFailureRollsBackOnlyOwnedVersions_data() {
+        QTest::addColumn<bool>("externalDuringRollback");
+        QTest::newRow("owned-rollback") << false;
+        QTest::newRow("external-during-rollback") << true;
+    }
+    void partialFailureRollsBackOnlyOwnedVersions() {
+        QFETCH(bool, externalDuringRollback);
+        QTemporaryDir fixture; const auto a = fixture.filePath("a.sv"), b = fixture.filePath("b.sv");
+        QVERIFY(writeBytes(a, "module a; endmodule\n")); QVERIFY(writeBytes(b, "module b; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        WorkspaceEditDocumentManager real(&tabs); InterleavingDocuments documents(real);
+        rtledit::WorkspaceEditTransactionCoordinator coordinator;
+        const auto prepared = preparePair(coordinator, documents, a.toStdString(), b.toStdString());
+        documents.failAfterModification = b.toStdString();
+        documents.beforeRestore = [&](const std::string& path) {
+            if (externalDuringRollback && path == a.toStdString()) {
+                auto* editor = tabs.getDocumentModel()->editorForFile(a);
+                QVERIFY(editor); QTextCursor cursor(editor->document()); cursor.insertText("// external edit\n");
+            }
+        };
+        const auto result = coordinator.apply(prepared, documents);
+        QCOMPARE(result.status, rtledit::TransactionStatus::ApplyFailed);
+        QCOMPARE(documents.restoreCalls, (std::vector<std::string>{b.toStdString(), a.toStdString()}));
+        QCOMPARE(real.snapshot(b.toStdString())->text, std::string("module b; endmodule\n"));
+        if (externalDuringRollback) {
+            QCOMPARE(result.residualFiles, std::vector<std::string>{a.toStdString()});
+            QVERIFY(real.snapshot(a.toStdString())->text.find("external edit") != std::string::npos);
+        } else {
+            QVERIFY(result.residualFiles.empty());
+            QCOMPARE(real.snapshot(a.toStdString())->text, std::string("module a; endmodule\n"));
+        }
+        tabs.clearCrashRecoveryAfterNormalClose();
+    }
+    void undoRevalidatesEachFileAtWrite() {
+        QTemporaryDir fixture; const auto a = fixture.filePath("a.sv"), b = fixture.filePath("b.sv");
+        QVERIFY(writeBytes(a, "module a; endmodule\n")); QVERIFY(writeBytes(b, "module b; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        WorkspaceEditDocumentManager real(&tabs); InterleavingDocuments documents(real);
+        rtledit::WorkspaceEditTransactionCoordinator coordinator;
+        QVERIFY(coordinator.apply(preparePair(coordinator, documents, a.toStdString(), b.toStdString()), documents).succeeded());
+        const auto appliedA = real.snapshot(a.toStdString())->text, appliedB = real.snapshot(b.toStdString())->text;
+        bool changed = false;
+        const QByteArray external("module external_b; endmodule\n");
+        documents.afterRestore = [&](const std::string& path) {
+            if (!changed && path == a.toStdString()) { changed = true; QVERIFY(writeBytes(b, external)); }
+        };
+        const auto result = coordinator.undo(documents);
+        QCOMPARE(result.status, rtledit::TransactionStatus::Conflict);
+        QCOMPARE(real.snapshot(a.toStdString())->text, appliedA);
+        QCOMPARE(real.snapshot(b.toStdString())->text, appliedB);
+        QCOMPARE(readDocumentFile(b).rawBytes, external);
+        QCOMPARE(documents.restoreCalls, (std::vector<std::string>{a.toStdString(), b.toStdString(), a.toStdString()}));
+        QVERIFY(coordinator.canUndo());
+        tabs.clearCrashRecoveryAfterNormalClose();
+    }
+    void restoreRejectsSameTextNewRevisionAndReopen() {
+        QTemporaryDir fixture; const auto path = fixture.filePath("a.sv");
+        QVERIFY(writeBytes(path, "module a; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        QVERIFY(tabs.openFileInTab(path)); WorkspaceEditDocumentManager real(&tabs);
+        const auto captured = *real.snapshot(path.toStdString());
+        QTextCursor cursor(tabs.getCurrentEditor()->document()); cursor.insertText("x"); cursor.deletePreviousChar();
+        QCOMPARE(real.snapshot(path.toStdString())->text, captured.text);
+        QVERIFY(!real.restoreSnapshot(path.toStdString(), captured, captured));
+        tabs.getCurrentEditor()->document()->setModified(false); QVERIFY(tabs.closeAllTabs());
+        QVERIFY(tabs.openFileInTab(path));
+        QVERIFY(!real.restoreSnapshot(path.toStdString(), captured, captured));
+        tabs.clearCrashRecoveryAfterNormalClose();
+    }
+    void indexedUnicodeBatchUsesLogicalCoordinates() {
+        QTemporaryDir fixture; const auto path = fixture.filePath("unicode.sv");
+        const QString text = QStringLiteral("// 中文😀\n") + QString(50000, ' ') + QStringLiteral("\nlogic 变量;\nlogic other;\n");
+        QVERIFY(writeBytes(path, encodeDocumentText(text, {QStringConverter::Utf8, true, "\r\n"})));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        WorkspaceEditDocumentManager real(&tabs);
+        const auto before = *real.snapshot(path.toStdString());
+        const auto file = path.toStdString();
+        rtledit::PatchEngine engine(real);
+        const std::vector<rtledit::WorkspaceTextEdit> edits{
+            {file, before.version, {{2,6},{2,12}}, "变量", "信号😀"},
+            {file, before.version, {{3,6},{3,11}}, "other", "changed"},
+            {file, before.version, {{3,0},{3,0}}, "", "// first\n"},
+            {file, before.version, {{3,0},{3,0}}, "", "// second\n"}};
+        QVERIFY(engine.apply(edits).applied());
+        const auto after = real.snapshot(file);
+        QVERIFY(after); QVERIFY(QString::fromStdString(after->text).contains("logic 信号😀;\n// first\n// second\nlogic changed;"));
+        QVERIFY(real.restoreSnapshot(file, *after, before));
+        QCOMPARE(real.snapshot(file)->text, before.text);
+        const auto current = *real.snapshot(file);
+        const auto splitUtf8 = current.text.substr(3, 1);
+        QVERIFY(!engine.apply({{file, current.version, {{0,3},{0,4}}, splitUtf8, "x"}}).applied());
+        QCOMPARE(real.snapshot(file)->text, before.text);
+        tabs.clearCrashRecoveryAfterNormalClose();
+    }
+    void configurationDialogRetainsStaleDraft() {
+        QTemporaryDir fixture;
+        QVERIFY(writeBytes(fixture.filePath("unit.sv"), "module unit; endmodule\n"));
+        WorkspaceConfigurationService service;
+        auto initial = service.defaultConfiguration(fixture.path());
+        QVERIFY(service.save(initial));
+        WorkspaceManager manager; manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+        QVERIFY(manager.openWorkspace(fixture.path()));
+        WorkspaceConfigurationDialog dialog;
+        auto draft = manager.workspaceConfiguration();
+        draft.topModule = "local_draft";
+        dialog.setConfiguration(draft);
+        auto external = service.load(fixture.path()); external.defines.insert("EXTERNAL", "1");
+        QVERIFY(service.save(external));
+        const auto project = WorkspaceConfigurationService::projectFilePath(fixture.path());
+        QFile saved(project); QVERIFY(saved.open(QIODevice::ReadOnly)); const auto bytes = saved.readAll(); saved.close();
+        QString reason;
+        QVERIFY(!manager.setWorkspaceConfiguration(dialog.configuration(), &reason));
+        QVERIFY(reason.contains("changed"));
+        QCOMPARE(dialog.configuration().topModule, QString("local_draft"));
+        QCOMPARE(dialog.configuration().storageRevision, draft.storageRevision);
+        QVERIFY(saved.open(QIODevice::ReadOnly)); QCOMPARE(saved.readAll(), bytes); saved.close();
+        // Explicit Reload pairs the external fields with their new baseline.
+        dialog.setConfiguration(service.load(fixture.path()));
+        auto reloaded = dialog.configuration(); reloaded.topModule = "after_reload";
+        dialog.setConfiguration(reloaded);
+        QVERIFY(manager.setWorkspaceConfiguration(dialog.configuration(), &reason));
+        QCOMPARE(service.load(fixture.path()).defines.value("EXTERNAL"), QString("1"));
+        QCOMPARE(manager.workspaceConfiguration().storageRevision, service.load(fixture.path()).storageRevision);
+    }
+    void ordinarySaveRejectsReboundAlias_data() {
+        QTest::addColumn<bool>("sameContent"); QTest::addColumn<bool>("otherOpen");
+        QTest::newRow("same-unopened") << true << false;
+        QTest::newRow("same-open") << true << true;
+        QTest::newRow("different-unopened") << false << false;
+        QTest::newRow("different-open") << false << true;
+    }
+    void ordinarySaveRejectsReboundAlias() {
+        QFETCH(bool, sameContent); QFETCH(bool, otherOpen);
+        AliasFixture fixture; QVERIFY(fixture.prepare());
+        if (sameContent) QVERIFY(writeBytes(fixture.replacement + "/unit.sv", "module original; endmodule\n"));
+        const auto originalBytes = readDocumentFile(fixture.source()).rawBytes;
+        const auto replacementBytes = readDocumentFile(fixture.replacement + "/unit.sv").rawBytes;
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.root.filePath("recovery")));
+        tabs.setWorkspaceScope({fixture.root.path()}, fixture.root.path());
+        QVERIFY(tabs.openFileInTab(fixture.viaAlias()));
+        auto* view = tabs.getCurrentEditor(); auto* document = tabs.sharedDocumentForEditor(view);
+        QTextCursor cursor(view->document()); cursor.insertText("// owned dirty\n");
+        tabs.flushCrashRecovery();
+        const auto before = tabs.listCrashRecoveryCandidates(fixture.root.path());
+        QCOMPARE(before.candidates.size(), 1);
+        const auto recoveryId = before.candidates.first().recoveryId;
+        QVERIFY(fixture.moveAlias()); QVERIFY(fixture.link(fixture.replacement));
+        if (otherOpen) QVERIFY(tabs.openFileInTab(fixture.viaAlias()));
+        QSignalSpy failures(&tabs, &TabManager::fileSaveFailed);
+        QVERIFY(!tabs.saveEditorView(view));
+        QCOMPARE(failures.size(), 1); QVERIFY(document->dirty());
+        QCOMPARE(readDocumentFile(fixture.source()).rawBytes, originalBytes);
+        QCOMPARE(readDocumentFile(fixture.replacement + "/unit.sv").rawBytes, replacementBytes);
+        tabs.flushCrashRecovery();
+        const auto after = tabs.listCrashRecoveryCandidates(fixture.root.path());
+        QCOMPARE(after.candidates.size(), 1);
+        QCOMPARE(after.candidates.first().recoveryId, recoveryId);
+        QCOMPARE(EditorFileIdentity::lookupKey(after.candidates.first().canonicalFileIdentity),
+                 EditorFileIdentity::lookupKey(fixture.source()));
+        const auto saveAs = fixture.root.filePath("safe-save-as.sv");
+        QVERIFY(tabs.saveEditorView(view, true, saveAs));
+        QVERIFY(!document->dirty());
+        QVERIFY(tabs.listCrashRecoveryCandidates(fixture.root.path()).candidates.isEmpty());
+        QCOMPARE(readDocumentFile(saveAs).text, view->toPlainText());
+        QCOMPARE(readDocumentFile(fixture.replacement + "/unit.sv").rawBytes, replacementBytes);
+        QVERIFY(tabs.closeAllTabs());
+    }
+    void pathMutationUsesPreparedAliasViews() {
+        AliasFixture fixture; QVERIFY(fixture.prepare());
+        QTabWidget widget; QWidget auxiliaryHost; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.root.filePath("recovery")));
+        QVERIFY(tabs.openFileInTab(fixture.viaAlias()));
+        auto* document = tabs.sharedDocumentForEditor(tabs.getCurrentEditor());
+        QVERIFY(tabs.createAuxiliaryView(document->documentId(), fixture.viaAlias(), &auxiliaryHost));
+        WorkspacePathMutation prepared;
+        QString reason;
+        QVERIFY(tabs.prepareWorkspacePathMutation(fixture.original, true, &prepared, nullptr, &reason));
+        QCOMPARE(prepared.documents.size(), 1);
+        QCOMPARE(prepared.documents.first().views.size(), 2);
+        // The rename is bounded to immediate children of the retained fixture.
+        QVERIFY(QDir(fixture.root.path()).rename("original", "renamed-original"));
+        QVERIFY(!QFileInfo(fixture.viaAlias()).isFile());
+        QPointer<SharedDocument> alive(document);
+        QVERIFY2(tabs.finalizeWorkspacePathMutation(prepared, &reason), qPrintable(reason));
+        QCOMPARE(tabs.editorCount(), 0); QVERIFY(tabs.auxiliaryViews().isEmpty()); QVERIFY(!alive);
+    }
+    void pathMutationRejectsChangesAfterPreparation() {
+        QTemporaryDir root; const auto path = root.filePath("unit.sv");
+        QVERIFY(writeBytes(path, "module unit; endmodule\n"));
+        QTabWidget widget; TabManager tabs(&widget);
+        tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(root.filePath("recovery")));
+        QVERIFY(tabs.openFileInTab(path)); WorkspacePathMutation prepared;
+        QVERIFY(tabs.prepareWorkspacePathMutation(path, false, &prepared));
+        QTextCursor cursor(tabs.getCurrentEditor()->document()); cursor.insertText("// changed\n");
+        QVERIFY(!tabs.validateWorkspacePathMutation(prepared));
+        QVERIFY(!tabs.finalizeWorkspacePathMutation(prepared));
+        QCOMPARE(tabs.editorCount(), 1);
+        tabs.getCurrentEditor()->document()->setModified(false);
+        QVERIFY(tabs.closeAllTabs());
+    }
     void opaqueSharedIdRetainsItsFileLookup() {
         QTemporaryDir fixture;
         const auto path = fixture.filePath("unit.sv");

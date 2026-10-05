@@ -388,7 +388,7 @@ QString TabManager::recoveryWorkspaceForDocument(
     if (document && !document->fileName().isEmpty()) {
         const QString matchingRoot =
             workspaceRootForFile(
-                document->fileName(),
+                document->documentId(),
                 scopedWorkspaceRoots);
         if (!matchingRoot.isEmpty())
             return lexicalPath(matchingRoot);
@@ -433,7 +433,7 @@ TabManager::recoveryKeyForDocument(
             document->documentId();
     } else {
         key.originalFilePath =
-            document->fileName();
+            document->documentId();
     }
     return key;
 }
@@ -507,6 +507,15 @@ void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySna
             }
         }
         found->obsoleteKeys = std::move(failed);
+        QList<CrashRecoveryCandidate> retainedClaims;
+        for (const auto& candidate : std::as_const(found->claimedRecords)) {
+            // Retire an abandoned generation only after our replacement is
+            // durably committed. Failed writes keep the original recoverable.
+            if (candidate.recoveryId == result.recoveryId) continue;
+            const auto cleanup = crashRecoveryService->discard(candidate.workspacePath, candidate.recoveryId);
+            if (!cleanup.succeeded()) retainedClaims.append(candidate);
+        }
+        found->claimedRecords = std::move(retainedClaims);
         return;
     }
     if (result.status == CrashRecoveryStatus::StaleRecord
@@ -548,7 +557,7 @@ void TabManager::clearRecoverySnapshot(
     keys.append(state.obsoleteKeys);
     if (state.hasSnapshot)
         keys.append(state.key);
-    if (keys.isEmpty()
+    if (keys.isEmpty() && state.claimedRecords.isEmpty()
         && !includeUntrackedCurrent) {
         return;
     }
@@ -579,6 +588,13 @@ void TabManager::clearRecoverySnapshot(
             emit crashRecoveryOperationFailed(
                 document->documentId(),
                 result.reason);
+        }
+    }
+    for (const auto& candidate : state.claimedRecords) {
+        const auto cleanup = crashRecoveryService->discard(candidate.workspacePath, candidate.recoveryId);
+        if (!cleanup.succeeded()) {
+            allCleared = false;
+            emit crashRecoveryOperationFailed(document->documentId(), cleanup.reason);
         }
     }
     if (allCleared)
@@ -765,6 +781,13 @@ TabManager::applyCrashRecoveryCandidate(
             document->textRevision() + 1,
             comparison.candidate
                 .documentRevision);
+    const auto claimed = crashRecoveryService->recoverText(
+        comparison.candidate.workspacePath, comparison.candidate.recoveryId);
+    if (!claimed.succeeded() || !sameReviewedRecoveryCandidate(comparison.candidate, claimed.candidate)) {
+        result.status = claimed.succeeded() ? CrashRecoveryStatus::IdentityMismatch : claimed.status;
+        result.reason = claimed.reason;
+        return result;
+    }
     document->restoreSavedBaseline(
         comparison.candidate
             .savedBaselineSha256,
@@ -790,6 +813,7 @@ TabManager::applyCrashRecoveryCandidate(
         documentModel->refreshEditorState(view);
     updateTitlesForDocument(document);
     applyWorkspaceScope();
+    recoveryDocumentStates[document].claimedRecords.append(claimed.candidate);
     writeRecoverySnapshot(document, true);
 
     result.status = CrashRecoveryStatus::Success;
@@ -827,11 +851,11 @@ TabManager::discardCrashRecoveryCandidate(
         keys.append(it->key);
         for (const auto& key : keys) {
             if (identityKey(key.workspacePath) == identityKey(workspace)
-                && CrashRecoveryService::recoveryIdForDocument(key) == recoveryId) {
+                && crashRecoveryService->recoveryIdForDocument(key) == recoveryId) {
                 matched.append(it.key());
                 if (recoveryQueue) recoveryQueue->cancel(it.key(), [&](const auto& queuedKey) {
                     return identityKey(queuedKey.workspacePath) == identityKey(workspace)
-                        && CrashRecoveryService::recoveryIdForDocument(queuedKey) == recoveryId;
+                        && crashRecoveryService->recoveryIdForDocument(queuedKey) == recoveryId;
                 });
                 break;
             }
@@ -843,14 +867,14 @@ TabManager::discardCrashRecoveryCandidate(
     if (result.succeeded()) {
         for (auto* document : matched) {
             auto& state = recoveryDocumentStates[document];
-            if (CrashRecoveryService::recoveryIdForDocument(state.key) == recoveryId) {
+            if (crashRecoveryService->recoveryIdForDocument(state.key) == recoveryId) {
                 state.hasSnapshot = false;
                 state.retryNeeded = false;
                 state.discarded = true;
                 state.snapshotRevision = document->textRevision();
             }
             state.obsoleteKeys.removeIf([&](const auto& key) {
-                return CrashRecoveryService::recoveryIdForDocument(key) == recoveryId;
+                return crashRecoveryService->recoveryIdForDocument(key) == recoveryId;
             });
         }
     }
@@ -1813,12 +1837,14 @@ bool TabManager::resolvePendingDocuments(
 bool TabManager::prepareWorkspacePathMutation(
     const QString& sourcePath,
     bool recursive,
+    WorkspacePathMutation* prepared,
     QWidget* dialogParent,
     QString* failureReason)
 {
+    if (prepared) *prepared = {};
     if (failureReason)
         failureReason->clear();
-    if (!sharedDocuments || sourcePath.isEmpty()) {
+    if (!prepared || !sharedDocuments || sourcePath.isEmpty()) {
         if (failureReason) {
             *failureReason =
                 QStringLiteral("The selected path is unavailable.");
@@ -1831,7 +1857,7 @@ bool TabManager::prepareWorkspacePathMutation(
          sharedDocuments->documents()) {
         if (!document
             || !documentPathMatchesMutation(
-                document->fileName(),
+                document->documentId(),
                 sourcePath,
                 recursive)) {
             continue;
@@ -1859,48 +1885,52 @@ bool TabManager::prepareWorkspacePathMutation(
         }
         return false;
     }
+    prepared->owner = this;
+    for (auto* document : affectedDocuments) {
+        // Save As may have deliberately moved a pending document away.
+        if (!documentPathMatchesMutation(document->documentId(), sourcePath, recursive)) continue;
+        WorkspacePathMutation::Document entry;
+        entry.document = document;
+        entry.identity = document->documentId();
+        entry.revision = document->textRevision();
+        for (auto* view : document->views()) entry.views.append(view);
+        prepared->documents.append(std::move(entry));
+    }
+    return validateWorkspacePathMutation(*prepared, failureReason);
+}
+
+bool TabManager::validateWorkspacePathMutation(const WorkspacePathMutation& prepared,
+                                              QString* failureReason) const
+{
+    if (failureReason) failureReason->clear();
+    const auto fail = [&] {
+        if (failureReason) *failureReason = QStringLiteral(
+            "An affected document or view changed after path-operation preparation. Review it again.");
+        return false;
+    };
+    if (prepared.owner != this) return fail();
+    for (const auto& entry : prepared.documents) {
+        if (!entry.document || entry.document->documentId() != entry.identity
+            || entry.document->textRevision() != entry.revision
+            || entry.document->views().size() != entry.views.size()) return fail();
+        for (const auto& view : entry.views) {
+            if (!view || sharedDocumentForEditor(view) != entry.document || isTabLocked(view)) return fail();
+        }
+    }
     return true;
 }
 
-bool TabManager::finalizeWorkspacePathMutation(
-    const QString& sourcePath,
-    bool recursive,
-    QString* failureReason)
+bool TabManager::finalizeWorkspacePathMutation(const WorkspacePathMutation& prepared,
+                                              QString* failureReason)
 {
-    if (failureReason)
-        failureReason->clear();
-    if (!sharedDocuments || sourcePath.isEmpty())
-        return true;
-
-    QList<MyCodeEditor*> affectedEditors;
-    for (SharedDocument* document :
-         sharedDocuments->documents()) {
-        if (!document
-            || !documentPathMatchesMutation(
-                document->fileName(),
-                sourcePath,
-                recursive)) {
-            continue;
-        }
-        for (MyCodeEditor* view : document->views()) {
-            if (!view)
-                continue;
-            if (isTabLocked(view)) {
-                if (failureReason) {
-                    *failureReason = QStringLiteral(
-                        "A tab became locked while the path operation "
-                        "was being applied.");
-                }
-                return false;
-            }
-            affectedEditors.append(view);
-        }
-    }
+    if (!validateWorkspacePathMutation(prepared, failureReason)) return false;
+    QList<QPointer<MyCodeEditor>> affectedEditors;
+    for (const auto& entry : prepared.documents) affectedEditors.append(entry.views);
 
     closingBatch = true;
     bool closedAll = true;
-    for (MyCodeEditor* editor :
-         std::as_const(affectedEditors)) {
+    for (const auto& guardedEditor : std::as_const(affectedEditors)) {
+        auto* editor = guardedEditor.data();
         if (!editor)
             continue;
         const bool closed = isAuxiliaryView(editor)
@@ -2488,6 +2518,15 @@ bool TabManager::saveEditor(
         sharedDocumentForEditor(editor);
     if (!editor || !document)
         return false;
+    if (!forceSaveAs && !document->fileName().isEmpty()
+        && (explicitFileName.isEmpty() || sameLexicalPath(explicitFileName, document->fileName()))) {
+        QString reason;
+        if (!document->validateSourcePath(&reason)) {
+            writeRecoverySnapshot(document, true);
+            emit fileSaveFailed(document->fileName(), reason);
+            return false;
+        }
+    }
     if (document->readOnly() && !forceSaveAs)
         forceSaveAs = true;
     if (!forceSaveAs
@@ -2520,10 +2559,7 @@ bool TabManager::saveEditor(
         return false;
     }
     const bool overwritesCurrentSource =
-        !document->fileName().isEmpty()
-        && EditorFileIdentity::same(
-            fileName,
-            document->fileName());
+        document->matchesSourcePath(fileName);
     QString overwriteFailure;
     // Validate immediately before the first atomic attempt; recovery from a
     // Windows rename conflict must validate again before any later attempt.
@@ -2545,15 +2581,20 @@ bool TabManager::saveEditor(
     const QString& savedText = editor->cachedDocumentText();
     QByteArray savedRawFingerprint;
     QByteArray savedLogicalFingerprint;
-    std::function<bool(QString*)> revalidateOverwrite;
-    if (overwritesCurrentSource && externalDocumentSync) {
-        revalidateOverwrite = [this, document](QString* reason) {
-            return externalDocumentSync->canOverwriteDocument(document, reason);
-        };
-    }
+    // Bind the selected target once. The atomic writer uses this physical
+    // path, so a rebound display alias cannot redirect its temporary file.
+    const QString writePath = EditorFileIdentity::physicalPath(fileName);
+    const auto revalidateOverwrite = [this, document, fileName, writePath, overwritesCurrentSource](QString* reason) {
+        if (!sameLexicalPath(EditorFileIdentity::physicalPath(fileName), writePath)) {
+            if (reason) *reason = QStringLiteral("The selected save target changed. Choose it again.");
+            return false;
+        }
+        return !overwritesCurrentSource || !externalDocumentSync
+            || externalDocumentSync->canOverwriteDocument(document, reason);
+    };
     if (!fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
-            fileName,
+            writePath,
             savedText,
             &saveFailure,
             &savedRawFingerprint,
@@ -2567,7 +2608,12 @@ bool TabManager::saveEditor(
                 : saveFailure);
         return false;
     }
-    const bool renamedDocument = !sameLexicalPath(
+    if (!sameLexicalPath(EditorFileIdentity::physicalPath(fileName), writePath)) {
+        writeRecoverySnapshot(document, true);
+        emit fileSaveFailed(fileName, QStringLiteral("The save target changed during commit. Review the saved file before continuing."));
+        return false;
+    }
+    const bool renamedDocument = !document->matchesSourcePath(fileName) || !sameLexicalPath(
         fileName,
         document->fileName());
     if (renamedDocument) {

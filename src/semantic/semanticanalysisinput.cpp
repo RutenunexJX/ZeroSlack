@@ -1,4 +1,5 @@
 #include "semanticanalysisinput.h"
+#include <zeroslack/text/sourcetext.h>
 #include <QDir>
 #include <QCryptographicHash>
 #include <QFile>
@@ -64,10 +65,13 @@ SemanticCapturedSource SemanticInputCapture::read(const QString& path)
 {
     SemanticCapturedSource result;
     QFile file(path);
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream stream(&file);
-        result.text = stream.readAll();
-        result.readable = file.error() == QFileDevice::NoError && stream.status() == QTextStream::Ok;
+    if (file.open(QIODevice::ReadOnly)) {
+        const auto bytes = file.readAll();
+        const auto decoded = decodeSourceText(bytes);
+        result.text = decoded.text;
+        result.readable = file.error() == QFileDevice::NoError && decoded.valid;
+        if (result.readable)
+            result.rawSha256 = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
     }
     return result;
 }

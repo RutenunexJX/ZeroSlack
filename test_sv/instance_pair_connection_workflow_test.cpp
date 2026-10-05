@@ -102,7 +102,7 @@ public:
             found->second.text};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -113,13 +113,13 @@ public:
         if (found == docs.end()
             || found->second.version
                 != expectedVersion) {
-            return false;
+            return {};
         }
         const auto after =
             rtledit::applyTextEditsToString(
                 found->second.text, edits);
         if (!after)
-            return false;
+            return {};
 
         if (failApplyCall > 0
             && applyCalls == failApplyCall) {
@@ -127,25 +127,30 @@ public:
                 found->second.text = *after;
                 found->second.version.value += 100;
             }
-            return false;
+            return mutateBeforeFailure ? rtledit::DocumentMutationResult::failedAfterModification(*this->snapshot(filePath)) : rtledit::DocumentMutationResult{};
         }
 
         found->second.text = *after;
         found->second.version.value += 100;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshot) override
     {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         ++restoreCalls;
         if (failRestore)
-            return false;
+            return {};
         docs[filePath] = {
-            snapshot.version, snapshot.text};
-        return true;
+            rtledit::DocumentVersion{currentBefore->version.value + (currentBefore->text != snapshot.text ? 1 : 0)}, snapshot.text};
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshot.text);
     }
 
     int applyCalls = 0;
@@ -635,28 +640,27 @@ void undoConflictPreservesRetry()
         QStringLiteral("external change\n"));
     const auto conflicted =
         fixture.workflow->undo();
-    const bool remainedRetryable =
+    const bool retainedConflict =
         conflicted.state
                 == InstancePairConnectionWorkflowState::Applied
             && conflicted.failure
                 == InstancePairConnectionWorkflowFailure::UndoFailed
             && conflicted.transactionStatus
                 == rtledit::TransactionStatus::Conflict
-            && fixture.workflow
-                   ->canUndoAppliedTransaction();
+            && fixture.transactions.canUndo()
+            && !fixture.workflow->canUndoAppliedTransaction();
 
     fixture.documents.replace(
         fixture.leftFile,
-        111,
+        1000,
         QStringLiteral("// connected-left\n")
             + fixture.leftBefore);
     const auto retried = fixture.workflow->undo();
     expect(
-        "undo conflict preserves the applied transaction for one retry",
-        remainedRetryable
-            && retried.state
-                == InstancePairConnectionWorkflowState::Undone
-            && fixture.sourcesUnchanged()
+        "undo conflict retains history but same-text new revision cannot retry",
+        retainedConflict
+            && retried.transactionStatus == rtledit::TransactionStatus::Conflict
+            && fixture.transactions.canUndo()
             && !fixture.workflow
                     ->canUndoAppliedTransaction());
 }

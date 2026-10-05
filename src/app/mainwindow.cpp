@@ -387,6 +387,7 @@ MainWindow::~MainWindow()
     for (auto* floating : findChildren<ContextFloatingWindow*>())
         floating->cancelDockDrag();
     ++semanticDecorationGeneration;
+    semanticDecorationPending = false;
     if (semanticDecorationCancellation)
         semanticDecorationCancellation->store(true);
     // The semantic runtime owns the shared Slang relationship builder and is
@@ -1137,6 +1138,7 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor) {
         ++semanticDecorationGeneration;
+        semanticDecorationPending = false;
         if (semanticDecorationCancellation)
             semanticDecorationCancellation->store(true);
         return;
@@ -1145,6 +1147,7 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
     const DocumentSnapshot document = tabManager->getCurrentDocumentMetadata();
     if (document.fileName.isEmpty()) {
         ++semanticDecorationGeneration;
+        semanticDecorationPending = false;
         if (semanticDecorationCancellation)
             semanticDecorationCancellation->store(true);
         editor->setSemanticDecorations({});
@@ -1156,13 +1159,19 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
             return;
     }
 
+    const std::uint64_t generation = ++semanticDecorationGeneration;
+    if (semanticDecorationCancellation)
+        semanticDecorationCancellation->store(true);
+    if (semanticDecorationRunning) {
+        semanticDecorationPending = true;
+        return;
+    }
+    semanticDecorationPending = false;
+    semanticDecorationRunning = true;
     SemanticDecorationQuery query;
     query.fileName = document.fileName;
     query.documentText = editor->cachedDocumentText();
     const std::uint64_t documentRevision = editor->semanticDocumentRevision();
-    const std::uint64_t generation = ++semanticDecorationGeneration;
-    if (semanticDecorationCancellation)
-        semanticDecorationCancellation->store(true);
     const std::shared_ptr<std::atomic_bool> cancellation =
         std::make_shared<std::atomic_bool>(false);
     semanticDecorationCancellation = cancellation;
@@ -1188,7 +1197,8 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
          fileName = query.fileName]() {
             const SemanticDecorationBuildResult result = watcher->result();
             watcher->deleteLater();
-            if (cancellation->load()
+            semanticDecorationRunning = false;
+            const bool stale = cancellation->load()
                 || generation != semanticDecorationGeneration
                 || !guardedEditor
                 || !tabManager
@@ -1196,9 +1206,8 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
                 || !EditorFileIdentity::same(
                     guardedEditor->documentFileName(), fileName)
                 || guardedEditor->semanticDocumentRevision()
-                    != documentRevision) {
-                return;
-            }
+                    != documentRevision;
+            if (!stale) {
             guardedEditor->setSemanticDecorations(
                 result.report.decorations);
             ActivityLogService::getInstance()->append(
@@ -1209,6 +1218,11 @@ void MainWindow::refreshActiveEditorSemanticDecorations(
                     .arg(generation)
                     .arg(result.elapsedMs)
                     .arg(result.report.decorations.size()));
+            }
+            // Do this even for a cancelled or stale result. A pending request
+            // owns no old editor text and is captured only at this boundary.
+            if (semanticDecorationPending)
+                refreshActiveEditorSemanticDecorations();
         });
     watcher->setFuture(QtConcurrent::run(
         [query, snapshot, cancellation]() {
@@ -3671,18 +3685,17 @@ void MainWindow::showWorkspaceConfigurationDialog()
 
     WorkspaceConfigurationDialog dialog(this);
     dialog.setConfiguration(workspaceManager->workspaceConfiguration());
-    if (dialog.exec() != QDialog::Accepted)
-        return;
-
-    QString errorMessage;
-    if (!workspaceManager->setWorkspaceConfiguration(dialog.configuration(),
-                                                     &errorMessage)) {
+    while (true) {
+        if (dialog.exec() != QDialog::Accepted) return;
+        QString errorMessage;
+        if (workspaceManager->setWorkspaceConfiguration(dialog.configuration(), &errorMessage)) break;
         if (errorMessage.isEmpty())
             errorMessage = QStringLiteral("Failed to apply workspace configuration.");
         UiDialogs::warning(this,
                              tr("Workspace Configuration"),
                              errorMessage);
-        return;
+        // Reopen the same dialog and baseline so a rejected draft is retained.
+        // Reload is an explicit user action; no automatic rebase overwrites it.
     }
 
     {

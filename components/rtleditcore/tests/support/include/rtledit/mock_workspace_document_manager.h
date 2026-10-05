@@ -24,14 +24,15 @@ public:
     std::optional<WorkspaceDocumentSnapshot> snapshot(
         const std::string& filePath) const override;
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         DocumentVersion expectedVersion,
         const std::vector<WorkspaceTextEdit>& editsInApplicationOrder) override;
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
-        const WorkspaceDocumentSnapshot& snapshot) override;
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+        const rtledit::WorkspaceDocumentSnapshot& snapshot) override;
 
 private:
     struct DocumentRecord {

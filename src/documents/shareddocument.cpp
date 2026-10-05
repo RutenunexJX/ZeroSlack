@@ -419,6 +419,21 @@ void SharedDocument::disconnectViewBinding(ViewBinding* binding)
     binding->connections.clear();
 }
 
+bool SharedDocument::matchesSourcePath(const QString& path) const
+{
+    return !fileName().isEmpty() && !path.isEmpty()
+        && registeredFileKey(EditorFileIdentity::physicalPath(path)) == registeredFileKey(documentId());
+}
+
+bool SharedDocument::validateSourcePath(QString* failureReason) const
+{
+    if (failureReason) failureReason->clear();
+    if (matchesSourcePath(fileName()) && QFileInfo(fileName()).isFile()) return true;
+    if (failureReason) *failureReason = QStringLiteral(
+        "The source path no longer identifies this document. Use Save As to choose a destination.");
+    return false;
+}
+
 void SharedDocument::setFileIdentity(
     const QString& documentId,
     const QString& fileName)

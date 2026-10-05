@@ -170,6 +170,10 @@ private:
         editorAnnotationDisplayOptions;
     std::uint64_t semanticDecorationGeneration = 0;
     std::shared_ptr<std::atomic_bool> semanticDecorationCancellation;
+    // One submitted worker retains input; pending is only a request to capture
+    // the then-current editor/publication after that worker finishes.
+    bool semanticDecorationRunning = false;
+    bool semanticDecorationPending = false;
 
     static const int kFileChangeDebounceMs = 350;
 

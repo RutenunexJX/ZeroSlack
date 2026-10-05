@@ -52,6 +52,17 @@ inline bool operator!=(DocumentVersion lhs, DocumentVersion rhs) {
     return !(lhs == rhs);
 }
 
+struct WorkspaceDocumentSnapshot {
+    DocumentVersion version;
+    std::string text;
+};
+
+struct DocumentMutationReceipt {
+    std::string filePath;
+    WorkspaceDocumentSnapshot before;
+    WorkspaceDocumentSnapshot after;
+};
+
 struct WorkspaceTextEdit {
     std::string filePath;
     DocumentVersion expectedDocumentVersion;
@@ -101,6 +112,9 @@ struct ApplyResult {
     ApplyStatus status = ApplyStatus::Applied;
     std::string message;
     std::vector<std::string> changedFiles;
+    // Only states produced by this operation, never a later blind snapshot.
+    std::vector<DocumentMutationReceipt> documentChanges{};
+    std::vector<DocumentMutationReceipt> rolledBackChanges{};
 
     bool applied() const {
         return status == ApplyStatus::Applied;

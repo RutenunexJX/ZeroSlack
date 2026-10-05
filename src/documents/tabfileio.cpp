@@ -95,6 +95,7 @@ bool TabFileIo::writeTextFile(
 
     QElapsedTimer recoveryTimer;
     for (int attempt = 0; ; ++attempt) {
+        if (revalidateOverwrite && !revalidateOverwrite(failureReason)) return false;
         QSaveFile file(fileName);
         const auto reportFailure = [&](const char* stage) {
             const auto error = file.error();
@@ -118,6 +119,10 @@ bool TabFileIo::writeTextFile(
         }
         if (written != logicalBytes.size())
             return reportFailure("write");
+        if (revalidateOverwrite && !revalidateOverwrite(failureReason)) {
+            file.cancelWriting();
+            return false;
+        }
         if (file.commit()) break;
         const auto error = file.error();
         reportFailure("commit");

@@ -12,6 +12,17 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QUuid>
+#include <QLockFile>
+#include <QMutex>
+#include <QMutexLocker>
+#include <QHash>
+
+struct CrashRecoveryService::Session {
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QMutex mutex;
+    std::unique_ptr<QLockFile> lease;
+    QHash<QString, std::shared_ptr<QLockFile>> claims;
+};
 
 namespace {
 constexpr const char* kSchema =
@@ -61,7 +72,9 @@ QString expectedRecoveryId(
                      + pathIdentityKey(
                            candidate.canonicalFileIdentity)
                : QStringLiteral("untitled:")
-                     + candidate.untitledDocumentId);
+                     + candidate.untitledDocumentId)
+        + (candidate.ownerSessionId.isEmpty() ? QString()
+            : QStringLiteral("\nsession:") + candidate.ownerSessionId);
     return QString::fromLatin1(
         CrashRecoveryService::sha256(
             identityText.toUtf8())
@@ -112,6 +125,8 @@ QString statusReason(CrashRecoveryStatus status)
         return QStringLiteral("The snapshot identity is inconsistent.");
     case CrashRecoveryStatus::Cancelled:
         return QStringLiteral("The recovery snapshot was cancelled.");
+    case CrashRecoveryStatus::OwnedByAnotherSession:
+        return QStringLiteral("This recovery snapshot belongs to another active editing session.");
     }
     return QStringLiteral("Unknown recovery status.");
 }
@@ -228,6 +243,7 @@ QJsonObject recordObject(
     object.insert(
         QStringLiteral("version"),
         CrashRecoveryService::kSchemaVersion);
+    object.insert(QStringLiteral("ownerSessionId"), candidate.ownerSessionId);
     object.insert(
         QStringLiteral("workspacePath"),
         candidate.workspacePath);
@@ -297,8 +313,8 @@ CrashRecoveryStatus parseRecord(
     const QJsonObject object = document.object();
     if (object.value(QStringLiteral("schema")).toString()
             != QString::fromLatin1(kSchema)
-        || object.value(QStringLiteral("version")).toInt()
-               != CrashRecoveryService::kSchemaVersion) {
+        || (object.value(QStringLiteral("version")).toInt() != 1
+            && object.value(QStringLiteral("version")).toInt() != CrashRecoveryService::kSchemaVersion)) {
         if (reason) {
             *reason =
                 QStringLiteral(
@@ -308,6 +324,14 @@ CrashRecoveryStatus parseRecord(
     }
 
     StoredRecoveryRecord parsed;
+    if (object.value(QStringLiteral("version")).toInt() >= 2) {
+        parsed.candidate.ownerSessionId = object.value(QStringLiteral("ownerSessionId")).toString();
+        if (QUuid(parsed.candidate.ownerSessionId).isNull()
+            || QUuid(parsed.candidate.ownerSessionId).toString(QUuid::WithoutBraces) != parsed.candidate.ownerSessionId) {
+            if (reason) *reason = QStringLiteral("The recovery session identity is invalid.");
+            return CrashRecoveryStatus::CorruptRecord;
+        }
+    }
     parsed.candidate.workspacePath =
         object.value(QStringLiteral("workspacePath")).toString();
     parsed.candidate.workspaceIdentity =
@@ -578,7 +602,68 @@ CrashRecoveryService::CrashRecoveryService(
               : normalizePath(
                     recoveryRoot,
                     false))
+    , session(std::make_shared<Session>())
 {
+}
+
+QString CrashRecoveryService::sessionId() const { return session->id; }
+
+bool CrashRecoveryService::ensureSession(QString* reason) const
+{
+    QMutexLocker guard(&session->mutex);
+    if (session->lease && session->lease->isLocked()) return true;
+    const QString directory = QDir(configuredRecoveryRoot).filePath("sessions");
+    if (!configuredRecoveryRoot.isEmpty() && QDir().mkpath(directory)) {
+        auto lease = std::make_unique<QLockFile>(QDir(directory).filePath(session->id + ".lock"));
+        lease->setStaleLockTime(0); // Process liveness, never elapsed writing time.
+        if (lease->tryLock(0)) { session->lease = std::move(lease); return true; }
+    }
+    if (reason) *reason = QStringLiteral("Recovery session ownership could not be established.");
+    return false;
+}
+
+bool CrashRecoveryService::otherSessionActive(const QString& owner) const
+{
+    if (owner.isEmpty() || owner == session->id || QUuid(owner).isNull()
+        || QUuid(owner).toString(QUuid::WithoutBraces) != owner) return false;
+    const QString path = QDir(configuredRecoveryRoot).filePath("sessions/" + owner + ".lock");
+    if (!QFileInfo::exists(path)) return false;
+    QLockFile lease(path); lease.setStaleLockTime(0);
+    return !lease.tryLock(0);
+}
+
+bool CrashRecoveryService::claimRecord(const QString& path, const QString& owner, QString* reason) const
+{
+    if (otherSessionActive(owner)) {
+        if (reason) *reason = statusReason(CrashRecoveryStatus::OwnedByAnotherSession);
+        return false;
+    }
+    QMutexLocker guard(&session->mutex);
+    if (session->claims.contains(path)) return true;
+    auto claim = std::make_shared<QLockFile>(path + ".claim");
+    claim->setStaleLockTime(0);
+    if (!claim->tryLock(0)) {
+        if (reason) *reason = QStringLiteral("Another session has claimed this recovery snapshot.");
+        return false;
+    }
+    session->claims.insert(path, std::move(claim));
+    return true;
+}
+
+CrashRecoveryIsolatedRecord CrashRecoveryService::isolateRecord(const QString& root,
+    const QString& workspaceIdentity, const QString& path, CrashRecoveryStatus status, const QString& reason) const
+{
+    QByteArray bytes;
+    readBytes(path, &bytes, nullptr);
+    const auto owner = QJsonDocument::fromJson(bytes).object().value("ownerSessionId").toString();
+    QString ownershipReason;
+    if (!claimRecord(path, owner, &ownershipReason)) {
+        return {path, {}, CrashRecoveryStatus::OwnedByAnotherSession, ownershipReason};
+    }
+    auto result = ::isolateRecord(root, workspaceIdentity, path, status, reason);
+    QMutexLocker guard(&session->mutex);
+    session->claims.remove(path);
+    return result;
 }
 
 QString CrashRecoveryService::recoveryRootPath() const
@@ -586,7 +671,7 @@ QString CrashRecoveryService::recoveryRootPath() const
     return configuredRecoveryRoot;
 }
 
-QString CrashRecoveryService::recoveryIdForDocument(const CrashRecoveryDocumentKey& document)
+QString CrashRecoveryService::recoveryIdForDocument(const CrashRecoveryDocumentKey& document) const
 {
     const auto resolved = resolveDocumentKey(document);
     return resolved.valid() ? resolved.recoveryId : QString();
@@ -618,6 +703,11 @@ CrashRecoveryService::writeSnapshot(
         result.status =
             CrashRecoveryStatus::StorageUnavailable;
         result.reason = statusReason(result.status);
+        return result;
+    }
+
+    if (!ensureSession(&result.reason)) {
+        result.status = CrashRecoveryStatus::StorageUnavailable;
         return result;
     }
 
@@ -676,6 +766,7 @@ CrashRecoveryService::writeSnapshot(
     }
 
     CrashRecoveryCandidate candidate;
+    candidate.ownerSessionId = session->id;
     candidate.recoveryId = key.recoveryId;
     candidate.workspacePath = key.workspacePath;
     candidate.workspaceIdentity =
@@ -891,6 +982,7 @@ CrashRecoveryService::listCandidates(
 
         record.candidate.storagePath =
             info.absoluteFilePath();
+        record.candidate.ownerActive = otherSessionActive(record.candidate.ownerSessionId);
         applySourceSnapshot(
             source,
             &record.candidate);
@@ -1033,6 +1125,7 @@ CrashRecoveryService::readComparison(
     }
 
     record.candidate.storagePath = path;
+    record.candidate.ownerActive = otherSessionActive(record.candidate.ownerSessionId);
     applySourceSnapshot(
         source,
         &record.candidate);
@@ -1062,6 +1155,18 @@ CrashRecoveryService::recoverText(
     result.candidate = read.candidate;
     if (!read.succeeded())
         return result;
+
+    if (!claimRecord(read.candidate.storagePath, read.candidate.ownerSessionId, &result.reason)) {
+        result.status = CrashRecoveryStatus::OwnedByAnotherSession;
+        return result;
+    }
+    const auto claimed = readComparison(workspacePath, recoveryId);
+    if (!claimed.succeeded() || claimed.candidate.recoveredTextSha256 != read.candidate.recoveredTextSha256
+        || claimed.candidate.documentRevision != read.candidate.documentRevision) {
+        result.status = claimed.succeeded() ? CrashRecoveryStatus::IdentityMismatch : claimed.status;
+        result.reason = QStringLiteral("The recovery snapshot changed while being claimed; review it again.");
+        return result;
+    }
 
     result.text = read.recoveredText;
     result.reason =
@@ -1113,6 +1218,16 @@ CrashRecoveryService::discard(
                 "The recovery snapshot was already absent.");
         return result;
     }
+    QByteArray bytes;
+    QString readFailure;
+    if (!readBytes(path, &bytes, &readFailure)) {
+        result.status = CrashRecoveryStatus::IoError; result.reason = readFailure; return result;
+    }
+    const auto owner = QJsonDocument::fromJson(bytes).object().value("ownerSessionId").toString();
+    if (!claimRecord(path, owner, &result.reason)) {
+        result.status = CrashRecoveryStatus::OwnedByAnotherSession;
+        return result;
+    }
     if (!QFile::remove(path)) {
         result.status = CrashRecoveryStatus::IoError;
         result.reason =
@@ -1121,6 +1236,10 @@ CrashRecoveryService::discard(
         return result;
     }
     result.status = CrashRecoveryStatus::Success;
+    {
+        QMutexLocker guard(&session->mutex);
+        session->claims.remove(path);
+    }
     result.reason =
         QStringLiteral(
             "The recovery snapshot was explicitly discarded.");
@@ -1185,7 +1304,7 @@ QString CrashRecoveryService::identityDigest(
 
 CrashRecoveryService::ResolvedDocumentKey
 CrashRecoveryService::resolveDocumentKey(
-    const CrashRecoveryDocumentKey& document)
+    const CrashRecoveryDocumentKey& document) const
 {
     ResolvedDocumentKey result;
     result.workspacePath =
@@ -1247,7 +1366,8 @@ CrashRecoveryService::resolveDocumentKey(
             QStringLiteral("workspace:")
             + result.workspaceIdentity
             + QLatin1Char('\n')
-            + identityText);
+            + identityText
+            + QStringLiteral("\nsession:") + session->id);
     return result;
 }
 
@@ -1311,7 +1431,33 @@ CrashRecoveryService::clearDocument(
         recordPath(
             key.workspaceIdentity,
             key.recoveryId);
-    if (!QFileInfo::exists(path)) {
+    QStringList ownedPaths{path};
+    {
+        QMutexLocker guard(&session->mutex);
+        for (auto it = session->claims.cbegin(); it != session->claims.cend(); ++it) {
+            QByteArray bytes; StoredRecoveryRecord record;
+            if (readBytes(it.key(), &bytes, nullptr)
+                && parseRecord(bytes, &record, nullptr) == CrashRecoveryStatus::Success
+                && record.candidate.workspaceIdentity == key.workspaceIdentity
+                && pathIdentityKey(record.candidate.canonicalFileIdentity) == pathIdentityKey(key.canonicalFileIdentity)
+                && record.candidate.untitledDocumentId == key.untitledDocumentId)
+                ownedPaths.append(it.key());
+        }
+    }
+    ownedPaths.removeDuplicates();
+    bool removed = false;
+    for (const auto& ownedPath : ownedPaths) {
+        if (!QFileInfo::exists(ownedPath)) continue;
+        if (!QFile::remove(ownedPath)) {
+            result.status = CrashRecoveryStatus::IoError;
+            result.reason = QStringLiteral("The owned recovery snapshot could not be removed.");
+            return result;
+        }
+        removed = true;
+        QMutexLocker guard(&session->mutex);
+        session->claims.remove(ownedPath);
+    }
+    if (!removed) {
         result.status =
             CrashRecoveryStatus::AlreadyClean;
         result.reason =
@@ -1319,14 +1465,6 @@ CrashRecoveryService::clearDocument(
                 "No recovery snapshot remained to clean.");
         return result;
     }
-    if (!QFile::remove(path)) {
-        result.status = CrashRecoveryStatus::IoError;
-        result.reason =
-            QStringLiteral(
-                "The recovery snapshot could not be removed.");
-        return result;
-    }
-
     result.status = CrashRecoveryStatus::Success;
     result.reason = successReason;
     return result;

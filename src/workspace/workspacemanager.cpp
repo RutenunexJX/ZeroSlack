@@ -515,6 +515,7 @@ WorkspaceConfiguration WorkspaceManager::workspaceConfiguration() const
         configuration.virtualSourceGroups =
             workspaces.at(activeIndex)
                 .virtualSourceGroups;
+        configuration.storageRevision = workspaces.at(activeIndex).configurationRevision;
     }
     return workspaceConfigurationService
         ? workspaceConfigurationService->normalized(configuration)
@@ -1123,11 +1124,13 @@ bool WorkspaceManager::applyWorkspaceConfiguration(
     }
     clean.ignoredDirs = ignoreReport.ignoredDirectories;
 
-    if (persist && workspaceConfigurationService
-        && !workspaceConfigurationService->save(clean)) {
-        if (errorMessage)
-            *errorMessage = QStringLiteral("Failed to save workspace configuration.");
-        return false;
+    if (persist && workspaceConfigurationService) {
+        const auto saved = workspaceConfigurationService->saveWithResult(clean);
+        if (!saved.saved) {
+            if (errorMessage) *errorMessage = saved.message;
+            return false;
+        }
+        clean.storageRevision = saved.revision;
     }
 
     if (activatingFiles) {
@@ -1178,6 +1181,7 @@ void WorkspaceManager::updateActiveEntryConfiguration(
     if (entry.path != configuration.workspaceRoot)
         return;
     entry.ignoredDirectories = configuration.ignoredDirs;
+    entry.configurationRevision = configuration.storageRevision;
     entry.includeDirs = configuration.includeDirs;
     entry.defines = configuration.defines;
     entry.fileExtensions = configuration.fileExtensions;

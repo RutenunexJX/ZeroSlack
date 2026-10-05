@@ -33,6 +33,7 @@ public:
                               const QString& suggestedAlias)>;
 
     struct WorkspaceEntry {
+        QString configurationRevision = QStringLiteral("missing");
         QString alias;
         QString path;
         QStringList scannedFiles;

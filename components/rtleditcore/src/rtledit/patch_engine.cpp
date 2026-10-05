@@ -14,7 +14,7 @@ namespace {
 struct FilePlan {
     DocumentVersion expectedVersion;
     WorkspaceDocumentSnapshot snapshot;
-    std::vector<WorkspaceTextEdit> applicationEdits;
+    std::vector<IndexedWorkspaceTextEdit> applicationEdits;
 };
 
 ApplyResult failure(ApplyStatus status, std::string message) {
@@ -87,6 +87,7 @@ ApplyResult PatchEngine::apply(const std::vector<WorkspaceTextEdit>& edits) {
         std::vector<IndexedWorkspaceTextEdit> indexedEdits;
         indexedEdits.reserve(fileEdits.size());
 
+        const TextCoordinateIndex coordinateIndex(snapshot->text);
         for (std::size_t i = 0; i < fileEdits.size(); ++i) {
             const auto& edit = fileEdits[i];
             if (edit.range.end < edit.range.start) {
@@ -95,7 +96,7 @@ ApplyResult PatchEngine::apply(const std::vector<WorkspaceTextEdit>& edits) {
                     "Edit range end precedes start in " + filePath);
             }
 
-            const auto offsets = rangeToOffsets(snapshot->text, edit.range);
+            const auto offsets = coordinateIndex.offsets(edit.range);
             if (!offsets) {
                 return failure(
                     ApplyStatus::RangeOutOfBounds,
@@ -138,62 +139,36 @@ ApplyResult PatchEngine::apply(const std::vector<WorkspaceTextEdit>& edits) {
         plans[filePath] = FilePlan{
             expectedVersion,
             *snapshot,
-            buildTextEditApplicationOrder(std::move(indexedEdits))};
+            buildIndexedTextEditApplicationOrder(std::move(indexedEdits))};
     }
 
     std::vector<std::string> changedFiles;
-    changedFiles.reserve(plans.size());
-
+    std::vector<DocumentMutationReceipt> receipts;
     for (const auto& [filePath, plan] : plans) {
-        if (!documentManager_.applyTextEdits(
-                filePath,
-                plan.expectedVersion,
-                plan.applicationEdits)) {
-            std::vector<std::string> restoreFailedFiles;
-            auto restore = [&](const std::string& restoreFilePath) {
-                const auto planIt = plans.find(restoreFilePath);
-                if (planIt != plans.end() &&
-                    documentManager_.restoreSnapshot(
-                        restoreFilePath,
-                        planIt->second.snapshot)) {
-                    const auto restored = documentManager_.snapshot(restoreFilePath);
-                    if (restored && restored->text == planIt->second.snapshot.text) return;
+        const auto mutation = documentManager_.applyPreparedTextEdits(filePath, plan.snapshot, plan.applicationEdits);
+        if (mutation.ownedState && mutation.modified)
+            receipts.push_back({filePath, plan.snapshot, *mutation.ownedState});
+        if (!mutation || !mutation.ownedState) {
+            ApplyResult result = failure(ApplyStatus::DocumentApplyFailed,
+                "Document manager rejected edits for " + filePath);
+            if (mutation.modified && !mutation.ownedState) result.changedFiles.push_back(filePath);
+            for (auto it = receipts.rbegin(); it != receipts.rend(); ++it) {
+                const auto restored = documentManager_.restoreSnapshot(it->filePath, it->after, it->before);
+                const auto verified = restored && restored.ownedState ? documentManager_.snapshot(it->filePath) : std::nullopt;
+                if (verified && verified->version == restored.ownedState->version
+                    && verified->text == restored.ownedState->text && verified->text == it->before.text) {
+                    result.rolledBackChanges.push_back({it->filePath, it->before, *verified});
+                } else {
+                    result.changedFiles.push_back(it->filePath);
                 }
-                if (std::find(
-                        restoreFailedFiles.begin(),
-                        restoreFailedFiles.end(),
-                        restoreFilePath) == restoreFailedFiles.end()) {
-                    restoreFailedFiles.push_back(restoreFilePath);
-                }
-            };
-
-            // applyTextEdits() is permitted to detect a final consistency
-            // failure after mutating its document. Restore the current
-            // preflight snapshot before rolling back prior successful files.
-            restore(filePath);
-            for (auto it = changedFiles.rbegin(); it != changedFiles.rend(); ++it) {
-                restore(*it);
             }
-
-            std::string message =
-                "Document manager rejected edits for " + filePath;
-            if (restoreFailedFiles.empty()) {
-                message +=
-                    "; restored the current document and rolled back "
-                    "all prior document changes.";
-            } else {
-                message += "; snapshot restore failed for: " +
-                    joinedFilePaths(restoreFailedFiles) +
-                    "; residual changed files: " +
-                    joinedFilePaths(restoreFailedFiles) + ".";
-            }
-
-            return ApplyResult{
-                ApplyStatus::DocumentApplyFailed,
-                std::move(message),
-                std::move(restoreFailedFiles)};
+            result.documentChanges = std::move(receipts);
+            result.message += result.changedFiles.empty()
+                ? "; rolled back every state modified by this transaction."
+                : "; rollback could not restore owned states; residual changed files: " + joinedFilePaths(result.changedFiles) + ".";
+            return result;
         }
-        changedFiles.push_back(filePath);
+        if (mutation.modified) changedFiles.push_back(filePath);
     }
 
     std::ostringstream message;
@@ -207,7 +182,9 @@ ApplyResult PatchEngine::apply(const std::vector<WorkspaceTextEdit>& edits) {
     }
     message << ".";
 
-    return ApplyResult{ApplyStatus::Applied, message.str(), std::move(changedFiles)};
+    ApplyResult result{ApplyStatus::Applied, message.str(), std::move(changedFiles)};
+    result.documentChanges = std::move(receipts);
+    return result;
 }
 
 }  // namespace rtledit

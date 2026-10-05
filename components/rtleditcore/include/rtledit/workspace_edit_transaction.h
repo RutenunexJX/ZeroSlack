@@ -98,6 +98,7 @@ public:
         WorkspaceDocumentManager& documents);
 
     bool canUndo() const;
+    bool undoMatches(const WorkspaceDocumentManager& documents) const;
     bool canRedo() const;
     std::size_t undoDepth() const;
     std::size_t redoDepth() const;

@@ -18,6 +18,9 @@ struct WorkspaceVirtualSourceGroup {
 };
 
 struct WorkspaceConfiguration {
+    // Editing baseline, never serialized as product configuration. New drafts
+    // can create a missing file; loaded drafts carry the exact input revision.
+    QString storageRevision = QStringLiteral("missing");
     QString workspaceRoot;
     QStringList includeDirs;
     QHash<QString, QString> defines;
@@ -29,6 +32,13 @@ struct WorkspaceConfiguration {
     bool isValid() const {
         return !workspaceRoot.isEmpty();
     }
+};
+
+struct WorkspaceConfigurationSaveResult {
+    bool saved = false;
+    bool conflict = false;
+    QString revision;
+    QString message;
 };
 
 enum class WorkspaceConfigurationSource {
@@ -82,6 +92,7 @@ public:
         const QString& workspaceRoot) const;
     bool save(
         const WorkspaceConfiguration& configuration) const;
+    WorkspaceConfigurationSaveResult saveWithResult(const WorkspaceConfiguration& configuration) const;
     bool clear(const QString& workspaceRoot) const;
 
     WorkspaceConfiguration normalized(

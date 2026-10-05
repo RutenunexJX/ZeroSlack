@@ -12,6 +12,8 @@
 #include <QSemaphore>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QProcess>
+#include <QTextStream>
 #include <thread>
 
 #include <cstdio>
@@ -94,9 +96,100 @@ CrashRecoverySnapshotRequest untitledRequest(
 }
 }
 
+int recoveryPeer(const QStringList& args)
+{
+    CrashRecoveryService service(args.at(2));
+    auto request = fileRequest(args.at(3), args.at(4), {}, 1, readFile(args.at(4)), QFileInfo(args.at(4)).lastModified());
+    QTextStream input(stdin), output(stdout);
+    while (true) {
+        const auto line = input.readLine();
+        if (line.isNull() || line == "quit") break;
+        QJsonObject response;
+        if (line == "clear") {
+            response.insert("ok", service.clearAfterNormalSave(request.document).succeeded());
+        } else {
+            request.text = line; ++request.documentRevision;
+            const auto write = service.writeSnapshot(request);
+            response.insert("ok", write.succeeded()); response.insert("id", write.recoveryId);
+            response.insert("path", write.storagePath);
+        }
+        output << QJsonDocument(response).toJson(QJsonDocument::Compact) << Qt::endl;
+    }
+    return 0;
+}
+
+void checkIndependentEditingSessions()
+{
+    QTemporaryDir temp;
+    const auto root = temp.filePath("recovery");
+    const auto workspace = temp.filePath("workspace");
+    const auto source = workspace + "/unit.sv";
+    expect("multi-process source exists", replaceFile(source, "module base; endmodule\n"));
+    QProcess p, q;
+    const QStringList args{"--recovery-peer", root, workspace, source};
+    p.start(QCoreApplication::applicationFilePath(), args);
+    q.start(QCoreApplication::applicationFilePath(), args);
+    const bool started = p.waitForStarted(5000) && q.waitForStarted(5000);
+    expect("two independent recovery processes start", started);
+    if (!started) return;
+    const auto ask = [&](QProcess& peer, const QByteArray& command) {
+        peer.write(command + '\n'); peer.waitForBytesWritten(5000);
+        while (!peer.canReadLine() && peer.waitForReadyRead(5000)) {}
+        return QJsonDocument::fromJson(peer.readLine()).object();
+    };
+    const auto firstP = ask(p, "P generation 1");
+    const auto firstQ = ask(q, "Q generation 1");
+    const auto secondP = ask(p, "P generation 2");
+    const auto secondQ = ask(q, "Q generation 2");
+    const auto pId = firstP.value("id").toString(), qId = firstQ.value("id").toString();
+    expect("sequential interleaved writes retain distinct owners", firstP.value("ok").toBool()
+        && firstQ.value("ok").toBool() && !pId.isEmpty() && pId != qId
+        && pId == secondP.value("id").toString() && qId == secondQ.value("id").toString());
+    CrashRecoveryService observer(root);
+    expect("enumeration keeps both live candidates", observer.listCandidates(workspace).candidates.size() == 2);
+    expect("each process retains its newest text", observer.readComparison(workspace, pId).recoveredText == "P generation 2"
+        && observer.readComparison(workspace, qId).recoveredText == "Q generation 2");
+    expect("live foreign records cannot be claimed or discarded",
+        observer.recoverText(workspace, qId).status == CrashRecoveryStatus::OwnedByAnotherSession
+        && observer.discard(workspace, qId).status == CrashRecoveryStatus::OwnedByAnotherSession);
+    expect("P normal save leaves Q intact", ask(p, "clear").value("ok").toBool()
+        && !QFileInfo::exists(firstP.value("path").toString())
+        && observer.readComparison(workspace, qId).recoveredText == "Q generation 2");
+    CrashRecoveryDocumentKey key{workspace, source, {}};
+    expect("unrelated session close cannot clear Q", observer.clearAfterNormalClose(key).succeeded()
+        && QFileInfo::exists(firstQ.value("path").toString()));
+    // Terminate only this test's child, simulating an ungraceful owner exit.
+    q.kill(); q.waitForFinished(5000);
+    expect("later session can claim crash survivor", observer.recoverText(workspace, qId).text == "Q generation 2");
+    CrashRecoveryService competitor(root);
+    expect("claim is exclusive across independent services", competitor.recoverText(workspace, qId).status
+        == CrashRecoveryStatus::OwnedByAnotherSession);
+    expect("claim owner can explicitly retire recovered record", observer.discard(workspace, qId).succeeded());
+    const auto lastP = ask(p, "P survives normal application exit");
+    p.write("quit\n"); p.waitForBytesWritten(5000); p.waitForFinished(5000);
+    expect("normal process exit preserves unclean snapshot", observer.recoverText(workspace,
+        lastP.value("id").toString()).text == "P survives normal application exit");
+
+    // A version-1 record has no editing-session component in its digest.
+    auto legacy = QJsonDocument::fromJson(readFile(lastP.value("path").toString())).object();
+    const auto identity = "workspace:" + legacy.value("workspaceIdentity").toString()
+        + "\nfile:" + legacy.value("canonicalFileIdentity").toString();
+    const auto legacyId = QString::fromLatin1(CrashRecoveryService::sha256(identity.toUtf8()).toHex());
+    legacy.insert("version", 1); legacy.remove("ownerSessionId"); legacy.insert("recoveryId", legacyId);
+    const auto legacyPath = QFileInfo(lastP.value("path").toString()).absolutePath() + '/' + legacyId + ".json";
+    expect("legacy ownerless candidate remains readable and claimable",
+        replaceFile(legacyPath, QJsonDocument(legacy).toJson()) && competitor.recoverText(workspace, legacyId).succeeded());
+    CrashRecoveryService unrelated(root);
+    expect("automatic cleanup never sweeps unclaimed legacy", unrelated.clearAfterNormalSave(key).succeeded()
+        && QFileInfo::exists(legacyPath));
+    expect("explicitly claimed legacy is retired by its recovering session", competitor.clearAfterNormalSave(key).succeeded()
+        && !QFileInfo::exists(legacyPath));
+}
+
 int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
+    if (application.arguments().value(1) == "--recovery-peer") return recoveryPeer(application.arguments());
     QCoreApplication::setOrganizationName(
         QStringLiteral("ZeroSlackTest"));
     QCoreApplication::setApplicationName(
@@ -145,16 +238,16 @@ int main(int argc, char** argv)
             .lastModified()
             .toUTC();
 
-    CrashRecoveryService service(recoveryRoot);
+    auto service = std::make_unique<CrashRecoveryService>(recoveryRoot);
     const CrashRecoveryService defaultService;
     const QString applicationLocalData =
         QDir::cleanPath(
             QStandardPaths::writableLocation(
                 QStandardPaths::AppLocalDataLocation));
     expect("injected storage is outside workspace metadata",
-           service.recoveryRootPath()
+           service->recoveryRootPath()
                    == QDir::cleanPath(recoveryRoot)
-               && !service.recoveryRootPath().startsWith(
+               && !service->recoveryRootPath().startsWith(
                    QDir(workspaceA).absoluteFilePath(
                        QStringLiteral(".zs"))));
     expect("production default uses application local data",
@@ -173,7 +266,7 @@ int main(int argc, char** argv)
             baseline,
             baselineTime);
     const CrashRecoveryWriteResult firstWrite =
-        service.writeSnapshot(request);
+        service->writeSnapshot(request);
     expect("dirty snapshot is atomically committed",
            firstWrite.succeeded()
                && firstWrite.status
@@ -181,14 +274,14 @@ int main(int argc, char** argv)
                && hasExplicitResult(firstWrite)
                && QFileInfo(firstWrite.storagePath).isFile()
                && firstWrite.storagePath.startsWith(
-                   service.recoveryRootPath()));
+                   service->recoveryRootPath()));
     expect("snapshot creation never changes source",
            readFile(sourcePath) == baseline);
 
     request.text = secondDirtyText;
     request.documentRevision = 42;
     const CrashRecoveryWriteResult secondWrite =
-        service.writeSnapshot(request);
+        service->writeSnapshot(request);
     const QByteArray committedBytes =
         readFile(secondWrite.storagePath);
     const QJsonDocument committedDocument =
@@ -226,6 +319,7 @@ int main(int argc, char** argv)
                       .size()
                       == 1);
 
+    service.reset(); // The previous editing session has exited.
     CrashRecoveryService restartedService(
         recoveryRoot);
     const CrashRecoveryListResult restartedList =
@@ -608,6 +702,7 @@ int main(int argc, char** argv)
             && !QFileInfo::exists(initial.storagePath));
     }
 
+    checkIndependentEditingSessions();
     std::printf(
         "Crash recovery service checks: %d, failures: %d\n",
         checks,

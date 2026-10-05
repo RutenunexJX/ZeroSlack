@@ -52,25 +52,25 @@ std::optional<WorkspaceDocumentSnapshot> MockWorkspaceDocumentManager::snapshot(
     return WorkspaceDocumentSnapshot{it->second.version, it->second.text};
 }
 
-bool MockWorkspaceDocumentManager::applyTextEdits(
+rtledit::DocumentMutationResult MockWorkspaceDocumentManager::applyTextEdits(
     const std::string& filePath,
     DocumentVersion expectedVersion,
     const std::vector<WorkspaceTextEdit>& editsInApplicationOrder) {
     auto rejectIt = rejectedApplyCounts_.find(filePath);
     if (rejectIt != rejectedApplyCounts_.end() && rejectIt->second > 0) {
         --rejectIt->second;
-        return false;
+        return {};
     }
 
     auto it = documents_.find(filePath);
     if (it == documents_.end() || it->second.version != expectedVersion) {
-        return false;
+        return {};
     }
 
     auto& text = it->second.text;
     const auto newText = applyTextEditsToString(text, editsInApplicationOrder);
     if (!newText) {
-        return false;
+        return {};
     }
     text = *newText;
 
@@ -78,22 +78,27 @@ bool MockWorkspaceDocumentManager::applyTextEdits(
         ++it->second.version.value;
     }
 
-    return true;
+    return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
 }
 
-bool MockWorkspaceDocumentManager::restoreSnapshot(
+rtledit::DocumentMutationResult MockWorkspaceDocumentManager::restoreSnapshot(
     const std::string& filePath,
-    const WorkspaceDocumentSnapshot& snapshot) {
+    const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+        const rtledit::WorkspaceDocumentSnapshot& snapshot) {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
     auto it = documents_.find(filePath);
     if (it == documents_.end()) {
-        return false;
+        return {};
     }
 
     if (it->second.text != snapshot.text) {
         it->second.text = snapshot.text;
         ++it->second.version.value;
     }
-    return true;
+    return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshot.text);
 }
 
 }  // namespace rtledit

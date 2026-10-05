@@ -889,6 +889,7 @@ int main(int argc, char** argv)
                && pendingDocument->viewCount() == 2);
 
     QString mutationFailure;
+    WorkspacePathMutation preparedMutation;
     expect("locked affected tab blocks path mutation",
            pendingEditor
                && tabManager.setTabLocked(
@@ -897,6 +898,7 @@ int main(int argc, char** argv)
                        .prepareWorkspacePathMutation(
                            pendingDirectory,
                            true,
+                   &preparedMutation,
                            nullptr,
                            &mutationFailure)
                && mutationFailure.contains(
@@ -928,6 +930,7 @@ int main(int argc, char** argv)
                 .prepareWorkspacePathMutation(
                     pendingDirectory,
                     true,
+                   &preparedMutation,
                     nullptr,
                     &mutationFailure)
                && sawConflict
@@ -948,6 +951,7 @@ int main(int argc, char** argv)
                .prepareWorkspacePathMutation(
                    pendingDirectory,
                    true,
+                   &preparedMutation,
                    nullptr,
                    &mutationFailure));
     const QString renamedPendingDirectory =
@@ -962,8 +966,7 @@ int main(int argc, char** argv)
     expect("Rename finalization closes tab and auxiliary views through the drawer controller",
            tabManager
                    .finalizeWorkspacePathMutation(
-                       pendingDirectory,
-                       true,
+                       preparedMutation,
                        &mutationFailure)
                && tabManager.editorCount() == 0
                && tabManager.auxiliaryViews().isEmpty()
@@ -993,6 +996,7 @@ int main(int argc, char** argv)
                && tabManager.prepareWorkspacePathMutation(
                    deleteDrawerPath,
                    false,
+                   &preparedMutation,
                    nullptr,
                    &mutationFailure));
     QPointer<SharedDocument> deleteDrawerDocument(
@@ -1002,8 +1006,7 @@ int main(int argc, char** argv)
            QFile::remove(deleteDrawerPath));
     expect("Delete finalization synchronously clears drawer history and the old path binding",
            tabManager.finalizeWorkspacePathMutation(
-               deleteDrawerPath,
-               false,
+                       preparedMutation,
                &mutationFailure)
                && tabManager.auxiliaryViews().isEmpty()
                && !temporarySession.isOpen()

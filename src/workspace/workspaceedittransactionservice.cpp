@@ -85,6 +85,14 @@ bool WorkspaceEditTransactionService::canRedo() const
     return transactions.canRedo();
 }
 
+WorkspaceUndoCapabilities WorkspaceEditTransactionService::undoCapabilities(
+    std::uint64_t expectedGeneration,
+    const rtledit::WorkspaceDocumentManager& documents) const
+{
+    const bool owns = expectedGeneration == generation && transactions.canUndo();
+    return {owns, owns && transactions.undoMatches(documents)};
+}
+
 std::uint64_t
 WorkspaceEditTransactionService::historyGeneration() const
 {

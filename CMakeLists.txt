@@ -939,6 +939,12 @@ if(BUILD_TESTING)
     add_executable(semantic_hot_path_test test_sv/semantic_hot_path_test.cpp)
     target_link_libraries(semantic_hot_path_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(semantic_decoration_scheduler_test test_sv/semantic_decoration_scheduler_test.cpp)
+    target_link_libraries(semantic_decoration_scheduler_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME semantic_decoration_scheduler_test COMMAND semantic_decoration_scheduler_test)
+    zeroslack_domain_test_runtime(semantic_decoration_scheduler_test)
+    set_tests_properties(semantic_decoration_scheduler_test PROPERTIES TIMEOUT 120)
+
     add_executable(formatter_cursor_anchor_test
         test_sv/formatter_cursor_anchor_test.cpp)
     target_link_libraries(formatter_cursor_anchor_test

@@ -1,6 +1,15 @@
 # ZeroSlack
 
-Current version: `v0.31.22`
+Current version: `v0.31.23`
+
+Release 0.31.23 extends stable document identity to saving, recovery and file
+operations. Edit rollback preserves changes owned by other writers; independent
+processes retain separate recovery records, and configuration commits detect
+conflicting drafts. Failed undo remains recoverable, pending sessions survive
+reopening, and CLI output uses consistent inputs and complete output budgets.
+Batch edits reuse computed positions and semantic decorations bound queued work.
+The accepted ten-item scope, measured development builds and existing test
+limitations are recorded in the [architecture backlog](docs/architecture-redundancy-backlog.md).
 
 Release 0.31.22 reduces repeated work in recovery snapshots, document view
 updates, temporary search, formatting and template filtering. Document identity

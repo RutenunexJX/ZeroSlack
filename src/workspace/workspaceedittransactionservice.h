@@ -5,6 +5,11 @@
 
 #include <cstdint>
 
+struct WorkspaceUndoCapabilities {
+    bool ownsPosition = false;
+    bool canRetry = false;
+};
+
 class WorkspaceEditTransactionService
 {
 public:
@@ -25,6 +30,9 @@ public:
         rtledit::WorkspaceDocumentManager& documents);
     bool canUndo() const;
     bool canRedo() const;
+    WorkspaceUndoCapabilities undoCapabilities(
+        std::uint64_t expectedGeneration,
+        const rtledit::WorkspaceDocumentManager& documents) const;
     std::uint64_t historyGeneration() const;
     void clearHistory();
 

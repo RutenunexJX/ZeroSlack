@@ -22,6 +22,7 @@ public:
     WorkspaceConfiguration configuration() const;
 
 private:
+    QString storageRevision;
     QString workspaceRoot;
     QListWidget* includeDirsList = nullptr;
     QTableWidget* definesTable = nullptr;

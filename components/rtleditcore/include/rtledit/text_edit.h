@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <string_view>
 
 #include "rtledit/core_types.h"
 
@@ -19,6 +20,16 @@ struct IndexedWorkspaceTextEdit {
     TextOffsetRange offsets;
 };
 
+class TextCoordinateIndex {
+public:
+    explicit TextCoordinateIndex(std::string_view text);
+    std::optional<std::size_t> offset(SourcePosition position) const;
+    std::optional<TextOffsetRange> offsets(const SourceRange& range) const;
+private:
+    std::string_view text;
+    std::vector<std::size_t> lineStarts;
+};
+
 std::optional<std::size_t> positionToOffset(
     const std::string& text,
     SourcePosition position);
@@ -33,6 +44,10 @@ bool textEditRangesOverlap(
 
 std::vector<WorkspaceTextEdit> buildTextEditApplicationOrder(
     std::vector<IndexedWorkspaceTextEdit> indexedEdits);
+std::vector<IndexedWorkspaceTextEdit> buildIndexedTextEditApplicationOrder(
+    std::vector<IndexedWorkspaceTextEdit> indexedEdits);
+std::optional<std::string> applyIndexedTextEditsToString(
+    std::string text, const std::vector<IndexedWorkspaceTextEdit>& edits);
 
 std::optional<std::string> applyTextEditsToString(
     std::string text,

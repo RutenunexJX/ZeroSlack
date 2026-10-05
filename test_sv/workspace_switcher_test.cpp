@@ -230,7 +230,7 @@ private slots:
         int guards = 0;
         QVERIFY(!TabFileIo().writeTextFile(nullptr, directory, "replacement", &reason, &raw, &logical,
             [&](QString*) { ++guards; return true; }));
-        QCOMPARE(guards, 0); // Opening errors never enter rename recovery.
+        QCOMPARE(guards, 1); // The initial identity check runs; opening errors never retry.
 #endif
     }
 

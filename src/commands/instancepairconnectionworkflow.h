@@ -178,8 +178,7 @@ private:
     std::optional<std::vector<CapturedDocument>>
         capturePlanDocuments(
             const InstancePairConnectionProposal& proposal) const;
-    bool restoreAfterFailedApply(
-        const std::vector<CapturedDocument>& before);
+
     static InstancePairConnectionWorkflowFailure
         workflowFailure(
             InstancePairConnectionFailure failure,

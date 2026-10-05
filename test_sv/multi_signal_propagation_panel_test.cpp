@@ -51,23 +51,24 @@ public:
         return std::nullopt;
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string&,
         rtledit::DocumentVersion,
         const std::vector<
             rtledit::WorkspaceTextEdit>&) override
     {
         ++applyCalls;
-        return false;
+        return {};
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string&,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&)
         override
     {
         ++restoreCalls;
-        return false;
+        return {};
     }
 
     int applyCalls = 0;
@@ -99,7 +100,7 @@ public:
                   found->second);
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -109,25 +110,31 @@ public:
         if (found == files.end()
             || found->second.version
                    != expectedVersion) {
-            return false;
+            return {};
         }
         const auto after =
             rtledit::applyTextEditsToString(
                 found->second.text, edits);
         if (!after)
-            return false;
+            return {};
         found->second.text = *after;
         ++found->second.version.value;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshotValue) override
     {
-        files[filePath] = snapshotValue;
-        return true;
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
+        files[filePath].text = snapshotValue.text;
+        files[filePath].version.value = currentBefore->version.value + (currentBefore->text != snapshotValue.text ? 1 : 0);
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshotValue.text);
     }
 
     std::string text(

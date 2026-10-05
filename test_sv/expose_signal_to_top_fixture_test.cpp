@@ -84,7 +84,7 @@ public:
             found->text.toUtf8().toStdString()};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& path,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<rtledit::WorkspaceTextEdit>& edits) override
@@ -92,26 +92,31 @@ public:
         auto found = docs.find(norm(QString::fromStdString(path)));
         if (found == docs.end()
             || found->version != expectedVersion.value) {
-            return false;
+            return {};
         }
         const std::string utf8 = found->text.toUtf8().toStdString();
         const auto edited =
             rtledit::applyTextEditsToString(utf8, edits);
         if (!edited)
-            return false;
+            return {};
         found->text = QString::fromUtf8(
             edited->data(), static_cast<qsizetype>(edited->size()));
         ++found->version;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& path,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot& snapshot) override
     {
+        const auto currentBefore = this->snapshot(path);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         auto found = docs.find(norm(QString::fromStdString(path)));
         if (found == docs.end())
-            return false;
+            return {};
         const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(snapshot.text.size()));
@@ -119,7 +124,7 @@ public:
             found->text = restored;
             ++found->version;
         }
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path), currentBefore->text != snapshot.text);
     }
 };
 

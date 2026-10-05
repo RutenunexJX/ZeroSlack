@@ -472,6 +472,9 @@ bool ExternalDocumentSyncController::canOverwriteDocument(
     if (!document)
         return false;
 
+    // Content equality is insufficient when a junction/symlink was rebound.
+    if (!document->validateSourcePath(failureReason)) return false;
+
     auto found = trackedDocuments.find(document);
     if (found == trackedDocuments.end())
         return true;

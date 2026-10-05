@@ -100,7 +100,7 @@ void configurationActivation(const QString& root){
  WorkspaceManager manager;manager.setRecentWorkspacePersistenceEnabledForTesting(false);
  expect("actual workspace A discovers files",manager.openWorkspace(a.workspaceRoot)&&waitFor([&]{return !manager.isWorkspaceScanActive();}));
  expect("actual workspace B discovers files",manager.openWorkspace(b.workspaceRoot)&&waitFor([&]{return !manager.isWorkspaceScanActive();}));
- configuration.defines={{"AFTER","2"}};configuration.topModule="a";expect("external project configuration saved",service.save(configuration));
+ configuration=service.load(a.workspaceRoot);configuration.defines={{"AFTER","2"}};configuration.topModule="a";expect("external project configuration saved",service.save(configuration));
  expect("reactivation reloads external configuration atomically",manager.switchWorkspace(0)&&waitFor([&]{return !manager.isWorkspaceScanActive();})&&manager.projectSnapshot().defines==configuration.defines&&manager.projectSnapshot().topModule=="a");
  manager.switchWorkspace(1);waitFor([&]{return !manager.isWorkspaceScanActive();});expect("external configuration removed",service.clear(a.workspaceRoot));
  expect("removing configuration does not revive cached settings",manager.switchWorkspace(0)&&waitFor([&]{return !manager.isWorkspaceScanActive();})&&manager.projectSnapshot().defines.isEmpty()&&manager.projectSnapshot().topModule.isEmpty());

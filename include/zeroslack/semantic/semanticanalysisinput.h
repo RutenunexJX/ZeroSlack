@@ -13,6 +13,7 @@ struct SemanticCapturedSource {
     QString text;
     bool readable = false;
     bool overridden = false;
+    QByteArray rawSha256; // Present only for disk captures, from the same read.
     bool operator==(const SemanticCapturedSource&) const = default;
 };
 

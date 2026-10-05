@@ -134,6 +134,9 @@ public:
     void setWorkspaceRoot(const QString& workspaceRoot);
     QString workspaceRoot() const;
     QString storagePath() const;
+    QString storageRevision() const {
+        return loadedFileExists ? QString::fromLatin1(loadedContentHash.toHex()) : QStringLiteral("missing");
+    }
     QString loadFailureReason() const;
     PinloomCodeLinkLoadState loadState() const;
     bool reload(QString* failureReason = nullptr);

@@ -758,12 +758,14 @@ NavigationManager::executeActionRoute(
             == WorkspaceFileOperationKind::Rename
         || plan.kind
                == WorkspaceFileOperationKind::Delete;
+    WorkspacePathMutation preparedMutation;
     if (pathMutation && connectedTabManager) {
         QString pendingFailure;
         if (!connectedTabManager
                  ->prepareWorkspacePathMutation(
                      plan.sourcePath,
                      plan.sourceDirectory,
+                     &preparedMutation,
                      navigationWidget,
                      &pendingFailure)) {
             actionResult.failureReason =
@@ -781,6 +783,10 @@ NavigationManager::executeActionRoute(
         }
     }
 
+    if (pathMutation && connectedTabManager
+        && !connectedTabManager->validateWorkspacePathMutation(preparedMutation, &actionResult.failureReason))
+        return actionResult;
+
     const WorkspaceFileOperationResult result =
         fileOperationService->apply(plan);
     if (!result.succeeded) {
@@ -793,8 +799,7 @@ NavigationManager::executeActionRoute(
     if (pathMutation && connectedTabManager) {
         connectedTabManager
             ->finalizeWorkspacePathMutation(
-                plan.sourcePath,
-                plan.sourceDirectory,
+                preparedMutation,
                 &closeFailure);
     }
 

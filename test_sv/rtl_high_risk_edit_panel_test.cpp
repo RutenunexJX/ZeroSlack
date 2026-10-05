@@ -19,6 +19,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -77,7 +78,7 @@ public:
             found->second.text};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -88,32 +89,39 @@ public:
         if (found == documents.end()
             || found->second.version
                 != expectedVersion) {
-            return false;
+            return {};
         }
         const auto after =
             rtledit::applyTextEditsToString(
                 found->second.text, edits);
         if (!after)
-            return false;
+            return {};
         found->second.text = *after;
         ++found->second.version.value;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshotValue) override
     {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         ++restoreCalls;
+        if (failedRestoreCalls.count(restoreCalls)) return {};
         documents[filePath] = {
-            snapshotValue.version,
+            rtledit::DocumentVersion{currentBefore->version.value + (currentBefore->text != snapshotValue.text ? 1 : 0)},
             snapshotValue.text};
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshotValue.text);
     }
 
     int applyCalls = 0;
     int restoreCalls = 0;
+    std::set<int> failedRestoreCalls;
 
 private:
     std::map<std::string, Document> documents;
@@ -304,7 +312,7 @@ int main(int argc, char* argv[])
                  "rtl.renamePort")](
                 const RtlRenamePlanQuery& query,
                 const rtledit::
-                    WorkspaceDocumentManager&) {
+                    WorkspaceDocumentManager& currentDocuments) {
                 ++observed.renameCalls;
                 observed.newName = query.newName;
                 observed.renameDryRun =
@@ -317,6 +325,9 @@ int main(int argc, char* argv[])
                         "Rename preview ready.");
                 proposal.dryRun = query.dryRun;
                 proposal.workspaceEdit = plan;
+                for (auto& edit : proposal.workspaceEdit.edits)
+                    edit.expectedDocumentVersion = currentDocuments.snapshot(edit.filePath)->version;
+                proposal.workspaceEdit.baselines = rtledit::collectDocumentBaselines(proposal.workspaceEdit.edits);
                 return proposal;
             },
             &index,
@@ -335,7 +346,7 @@ int main(int argc, char* argv[])
                 const RtlConnectionTransformRequest&
                     request,
                 const rtledit::
-                    WorkspaceDocumentManager&) {
+                    WorkspaceDocumentManager& currentDocuments) {
                 ++observed.connectionCalls;
                 observed.connection = request;
                 RtlConnectionTransformReport report;
@@ -349,6 +360,9 @@ int main(int argc, char* argv[])
                     QStringLiteral(
                         "Connection preview ready.");
                 report.workspaceEdit = plan;
+                for (auto& edit : report.workspaceEdit.edits)
+                    edit.expectedDocumentVersion = currentDocuments.snapshot(edit.filePath)->version;
+                report.workspaceEdit.baselines = rtledit::collectDocumentBaselines(report.workspaceEdit.edits);
                 return report;
             },
             &index,
@@ -472,6 +486,14 @@ int main(int argc, char* argv[])
             && panel->state()
                 == RtlHighRiskEditPanelState::Applied);
 
+    documents.failedRestoreCalls = {documents.restoreCalls + 2};
+    const auto retryableFailure = coordinator.undo();
+    expect("failed undo with verified rollback keeps panel ownership and retry",
+        retryableFailure.failure == RtlHighRiskEditWorkflowFailure::UndoFailed
+        && retryableFailure.canUndo && retryableFailure.canRetire
+        && !retryableFailure.canPreview && coordinator.hasProtectedUndoPosition()
+        && documents.text("a.sv") == "alpha renamed\n" && documents.text("b.sv") == "beta renamed\n");
+    documents.failedRestoreCalls.clear();
     const RtlHighRiskEditPanelOutcome undone =
         coordinator.undo();
     const RtlHighRiskEditPanelOutcome secondUndo =
@@ -587,6 +609,19 @@ int main(int argc, char* argv[])
             && documents.text("b.sv")
                 == "beta target\n");
 
+    expect("fresh rename session after rejected preview", coordinator.beginRename(renameSession(token, false)));
+    coordinator.requestPreview();
+    const auto residualSetup = coordinator.confirm();
+    documents.failedRestoreCalls = {documents.restoreCalls + 2, documents.restoreCalls + 3};
+    const auto residual = coordinator.undo();
+    expect("residual rollback conflict keeps the release action but disables retry",
+        residualSetup.canUndo && residual.failure == RtlHighRiskEditWorkflowFailure::AtomicRollbackFailed
+        && !residual.canUndo && residual.canRetire && !residual.canPreview
+        && coordinator.hasProtectedUndoPosition() && transactions.canUndo());
+    const auto retired = coordinator.retireUndoPosition(coordinator.activeSessionId());
+    expect("explicitly releasing a failed undo permits a new preview without restoring text",
+        !coordinator.hasProtectedUndoPosition() && retired.canPreview
+        && documents.text("a.sv") == "alpha target\n" && documents.text("b.sv") == "beta renamed\n");
     coordinator.resetForWorkspaceClose();
     expect(
         "workspace reset clears the reusable page session",

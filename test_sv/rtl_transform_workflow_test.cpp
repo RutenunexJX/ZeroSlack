@@ -79,7 +79,7 @@ public:
             found->second.text};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -90,36 +90,41 @@ public:
         if (found == documents.end()
             || found->second.version
                 != expectedVersion) {
-            return false;
+            return {};
         }
         const auto after =
             rtledit::applyTextEditsToString(
                 found->second.text, edits);
         if (!after)
-            return false;
+            return {};
         if (applyCalls == failApplyCall) {
             if (mutateBeforeApplyFailure) {
                 found->second.text = *after;
                 ++found->second.version.value;
             }
-            return false;
+            return mutateBeforeApplyFailure ? rtledit::DocumentMutationResult::failedAfterModification(*this->snapshot(filePath)) : rtledit::DocumentMutationResult{};
         }
         found->second.text = *after;
         ++found->second.version.value;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshot) override
     {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         ++restoreCalls;
         if (failRestore)
-            return false;
+            return {};
         documents[filePath] =
-            Document{snapshot.version, snapshot.text};
-        return true;
+            Document{rtledit::DocumentVersion{currentBefore->version.value + (currentBefore->text != snapshot.text ? 1 : 0)}, snapshot.text};
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshot.text);
     }
 
     int applyCalls = 0;

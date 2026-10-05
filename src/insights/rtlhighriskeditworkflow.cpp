@@ -487,8 +487,6 @@ RtlHighRiskEditWorkflow::confirm(
             rtledit::TransactionStatus::Stale);
     }
 
-    const std::vector<CapturedDocument> before =
-        capturedDocuments;
     const RtlHighRiskEditPreview acceptedPreview =
         *currentPreview;
     rtledit::PreparedWorkspaceEditTransaction prepared =
@@ -558,9 +556,7 @@ RtlHighRiskEditWorkflow::confirm(
             applied.status);
     }
 
-    QString residualFile;
-    if (!restoreTouchedDocuments(
-            before, &residualFile)) {
+    if (!applied.residualFiles.empty()) {
         return fail(
             RtlHighRiskEditWorkflowFailure::
                 AtomicRollbackFailed,
@@ -569,7 +565,7 @@ RtlHighRiskEditWorkflow::confirm(
                 "Atomic apply failed and at least one document could "
                 "not be restored."),
             applied.status,
-            residualFile);
+            fromUtf8(applied.residualFiles.front()));
     }
     return fail(
         RtlHighRiskEditWorkflowFailure::ApplyFailed,
@@ -615,9 +611,7 @@ RtlHighRiskEditWorkflow::undo()
                 "The RTL workspace transaction service is "
                 "unavailable."));
     }
-    if (currentState
-            != RtlHighRiskEditWorkflowState::Applied
-        || !workflowUndoAvailable) {
+    if (!workflowUndoAvailable) {
         workflowUndoAvailable = false;
         return fail(
             RtlHighRiskEditWorkflowFailure::NothingToUndo,
@@ -695,9 +689,7 @@ RtlHighRiskEditWorkflow::undo()
 RtlHighRiskEditWorkflowResult
 RtlHighRiskEditWorkflow::retireUndoPosition()
 {
-    if (currentState
-            != RtlHighRiskEditWorkflowState::Applied
-        || !workflowUndoAvailable) {
+    if (!workflowUndoAvailable) {
         return publish(
             currentState,
             RtlHighRiskEditWorkflowFailure::InvalidState,
@@ -818,12 +810,10 @@ bool RtlHighRiskEditWorkflow::
 canUndoAppliedTransaction() const
 {
     return workflowUndoAvailable
-        && currentState
-            == RtlHighRiskEditWorkflowState::Applied
         && transactionService
-        && transactionService->canUndo()
-        && transactionService->historyGeneration()
-            == appliedTransactionGeneration;
+        && documentManager
+        && transactionService->undoCapabilities(
+            appliedTransactionGeneration, *documentManager).canRetry;
 }
 
 RtlHighRiskEditWorkflowResult
@@ -1146,54 +1136,6 @@ RtlHighRiskEditWorkflow::preflight() const
             fromUtf8(stale.filePath));
     }
     return {};
-}
-
-bool RtlHighRiskEditWorkflow::
-restoreTouchedDocuments(
-    const std::vector<CapturedDocument>& before,
-    QString* firstResidualFile)
-{
-    bool restored = true;
-    for (const CapturedDocument& captured : before) {
-        if (!captured.touched)
-            continue;
-        const auto current =
-            documentManager->snapshot(
-                captured.filePath);
-        if (current
-            && current->text
-                == captured.snapshot.text) {
-            continue;
-        }
-        if (!documentManager->restoreSnapshot(
-                captured.filePath,
-                captured.snapshot)) {
-            restored = false;
-            if (firstResidualFile
-                && firstResidualFile->isEmpty()) {
-                *firstResidualFile =
-                    captured.normalizedFileName;
-            }
-        }
-    }
-    for (const CapturedDocument& captured : before) {
-        if (!captured.touched)
-            continue;
-        const auto current =
-            documentManager->snapshot(
-                captured.filePath);
-        if (!current
-            || current->text
-                != captured.snapshot.text) {
-            restored = false;
-            if (firstResidualFile
-                && firstResidualFile->isEmpty()) {
-                *firstResidualFile =
-                    captured.normalizedFileName;
-            }
-        }
-    }
-    return restored;
 }
 
 QString RtlHighRiskEditWorkflow::

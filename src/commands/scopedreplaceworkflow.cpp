@@ -28,9 +28,10 @@ public:
         const auto it = values.find(path);
         return it == values.end() ? std::nullopt : std::optional(it->second);
     }
-    bool applyTextEdits(const std::string&, rtledit::DocumentVersion,
-        const std::vector<rtledit::WorkspaceTextEdit>&) override { return false; }
-    bool restoreSnapshot(const std::string&, const rtledit::WorkspaceDocumentSnapshot&) override { return false; }
+    rtledit::DocumentMutationResult applyTextEdits(const std::string&, rtledit::DocumentVersion,
+        const std::vector<rtledit::WorkspaceTextEdit>&) override { return {}; }
+    rtledit::DocumentMutationResult restoreSnapshot(const std::string&, const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+        const rtledit::WorkspaceDocumentSnapshot&) override { return {}; }
 };
 
 std::string utf8String(const QString& text)

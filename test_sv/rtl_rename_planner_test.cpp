@@ -81,7 +81,7 @@ public:
             found->text.toUtf8().toStdString()};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -99,27 +99,32 @@ public:
             || (!failApplyFile.isEmpty()
                 && normalized(failApplyFile)
                        == file)) {
-            return false;
+            return {};
         }
         const auto next =
             rtledit::applyTextEditsToString(
                 found->text.toUtf8().toStdString(),
                 edits);
         if (!next)
-            return false;
+            return {};
         found->text = QString::fromUtf8(
             next->data(),
             static_cast<qsizetype>(
                 next->size()));
         ++found->revision;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshot) override
     {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         const QString file = normalized(
             QString::fromUtf8(
                 filePath.data(),
@@ -127,7 +132,7 @@ public:
                     filePath.size())));
         auto found = docs.find(file);
         if (found == docs.end())
-            return false;
+            return {};
         const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(
@@ -136,7 +141,7 @@ public:
             found->text = restored;
             ++found->revision;
         }
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshot.text);
     }
 };
 

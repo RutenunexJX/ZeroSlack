@@ -87,6 +87,7 @@ struct RtlHighRiskEditPanelOutcome {
     bool canConfirm = false;
     bool canCancel = false;
     bool canUndo = false;
+    bool canRetire = false;
     rtledit::WorkspaceEditPreview structuredPreview;
     rtledit::WorkspaceEditSourceDiff sourceDiff;
     QString renderedDiff;
@@ -160,6 +161,7 @@ signals:
     void confirmRequested(std::uint64_t sessionId);
     void cancelRequested(std::uint64_t sessionId);
     void undoRequested(std::uint64_t sessionId);
+    void retireRequested(std::uint64_t sessionId);
 
 private:
     RtlHighRiskEditKind currentKind =
@@ -194,6 +196,7 @@ private:
     QPushButton* confirmButton = nullptr;
     QPushButton* cancelButton = nullptr;
     QPushButton* undoButton = nullptr;
+    QPushButton* retireButton = nullptr;
 
     void setupUi();
     void emitDraftChanged();
@@ -259,6 +262,7 @@ public:
     RtlHighRiskEditPanelOutcome undo();
     RtlHighRiskEditPanelOutcome undo(
         std::uint64_t sessionId);
+    RtlHighRiskEditPanelOutcome retireUndoPosition(std::uint64_t sessionId);
     void resetForWorkspaceClose();
 
 signals:

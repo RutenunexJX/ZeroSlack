@@ -2,19 +2,358 @@
 
 - 记录日期：2026-10-04；最近更新：2026-10-05。
 - 历史审查基线（AR-01 至 AR-11）：ZeroSlack 0.31.20，提交 `9198d9a3116226a4640e11e8fc72651c665366d4`。
-- 新一轮审查基线（AR-12 起）：ZeroSlack 0.31.21，提交 `de7ce08b01d2f9e287f8643b204f87032074eb5a`。
-- 用户最新指示（2026-10-05）：**执行所有待办，即 AR-12 至 AR-28 共 17 项。**
-- 当前状态（2026-10-05）：**AR-01 至 AR-11 已随 0.31.21 发布；AR-12 至 AR-28 共 17 项全部完成，并通过统筹最终验收。** AR-13 首交的别名视图索引回归已返修闭环。用户确认全部完成后发布，统筹正在准备 0.31.22。
+- 历史审查基线（AR-12 至 AR-28 首次发现）：ZeroSlack 0.31.21，提交 `de7ce08b01d2f9e287f8643b204f87032074eb5a`。
+- 最新审查基线：提交 `3f51c1bfdce116c1089a2fcd4c100ec212b28b53`（0.31.22）加已验收的 71 个实施文件，源码集合 `f9cc94bb281c0ca68cdcb3bacaf45e3ee554e599f86b48ac9b7bbf917a9d1c29`；仍是未提交工作区，不能把本轮发现描述为正式包的新回归。
+- 当前授权（2026-10-05）：用户要求 **“先 push 并打包正式包，之后执行所有 6 项待修改项”**。先将已验收十项定版为 0.31.23，暂存包验证、push 并替换本机坚果云后，再执行 AR-34/35/36、AR-27 增补、AR-37/38。发布记录目录为 `build/validation/20261005-followup-ten-release/`；六项实施任务目录为 `build/coordination/20261005-zeroslack-followup-six/`。此处授权不表示六项已经实施或验收。
+- 上一阶段指示（2026-10-05）：**“记录；继续分析”。** 本轮仅阅读源码、测试断言、本机 Qt 文档与既有记录并更新本文，未修改产品、构建、运行测试、派发或发布。前批 10 项已经统筹验收通过，任务与验收仍见 `build/coordination/20261005-zeroslack-followup-ten/`，不将本轮新增场景倒写为其已覆盖范围。
+- 发布状态：AR-01 至 AR-11 已随 0.31.21 发布；AR-12 至 AR-28 原约定实施范围已完成并通过验收，0.31.22 已 push 并替换本机坚果云正式包。发布记录为 `build/validation/20261005-all-backlog-release/RELEASE.md`。
+- 本批完成：AR-01、AR-13、AR-19 的新调用链缺口，AR-16 的同根因优化，AR-22 的恢复风险，以及新增 AR-29 至 AR-33，共 10 项已开发并验收通过。发现时分级为 7 项确定缺陷、1 项待验证风险、2 项可选优化；AR-22 已经故障注入确认并修复。原验收记录及其所验证场景保留，不将新证据倒写为旧测试已经覆盖，也不把所有新发现称为本版引入的回归。
+- 接续分析：新增 AR-34 至 AR-36 三项确定缺陷（源码推导），给 AR-27 增补同次上下文采集的可选复用优化。原 AR-27 的过滤缓存及失效修复保持已验收状态。本轮无新增运行证据、无性能收益声明，全部新增工作待实施授权。
+- 本次继续记录：上述四项保留；新增 AR-37（新建文件缺少排他创建约束，确定缺陷）和 AR-38（导航失败后历史已被消费，恢复策略待验证）。补查浮动面板关闭及模板模式生命周期，未将缺少产品触发路径的假设计入缺陷。
 - 首次统筹核对与返修证据：`build/coordination/20261005-zeroslack-all-backlog/coordinator-review/REVIEW-01.md`、`REWORK-01.md`；原探针冻结基线通过、本轮首交失败。此问题并入 AR-13，不另增同根因待办。
-- 本轮实施任务与验收条件：`build/coordination/20261005-zeroslack-all-backlog/TASK.md`。以下覆盖与发现保留授权前的静态审查基线；“未运行复现”等仅描述发现时的证据，实施结果另行记录，不提前标为解决。
+- 上一轮实施任务与验收条件：`build/coordination/20261005-zeroslack-all-backlog/TASK.md`。历史章节保留授权前的静态审查基线；其中“未运行复现”等描述发现时的证据。最新章节则按 0.31.22 当前源码重新记录。
 - 规则：`C:/Users/14971/.codex/skills/appsuite-scoped-execution/SKILL.md` v1.3，已通知六个执行侧。规则通知不派发开发任务。
 - 上轮执行及验收任务：`build/coordination/20261004-zeroslack-eleven-architecture/TASK.md`；发布记录：`build/validation/20261005-ela-architecture-release/RELEASE.md`。
 - 证据边界：AR-01 至 AR-11 的“发现与影响”“代码依据”保留 0.31.20 基线的静态记录，其完成状态依据完整验收及发布记录。AR-12 起的初始发现依据 0.31.21 源码调用链，当时仅阅读测试替身与断言；授权后的实施已构建、回归及测量。“确定缺陷”表示源码存在完整可达的违约路径，初始静态记录不代表已经复现；实施后的实测结果与限制见本轮验收记录。
-- 完整验收记录：`build/coordination/20261004-zeroslack-eleven-architecture/coordinator-review/ACCEPTANCE.md`；逐项证据及最终源码/二进制身份见同目录的 `acceptance.json` 和 `accepted-source-runtime-identity.json`。
+- 完整验收记录：AR-01 至 AR-11 见 `build/coordination/20261004-zeroslack-eleven-architecture/coordinator-review/ACCEPTANCE.md`，AR-12 至 AR-28 原实施范围见 `build/coordination/20261005-zeroslack-all-backlog/coordinator-review/ACCEPTANCE.md`；本批 10 项补充场景见 `build/coordination/20261005-zeroslack-followup-ten/coordinator-review/ACCEPTANCE.md`。逐项证据及源码/二进制身份见各目录的 `acceptance.json` 和 `accepted-source-runtime-identity.json`；各自证据只覆盖对应任务范围。
 
 历史观察：主语义流水线已经收敛，部分调用方仍重复计算、维护状态或实现规则；当时 CLI 在取得统一快照后仍额外分析关系。AR-01 至 AR-11 已按上轮验收结果处理，不代表当前实现仍存在这些问题。后续发现从 AR-12 起单独记录，不能据其“新发现”推断由最近修改引入。
 
-## 固定清单覆盖记录（v1.3，全局遍历）
+## 接续静态审查：文件创建、导航恢复与界面生命周期（2026-10-05，第二轮）
+
+承接 AR-34 至 AR-36 和 AR-27 增补，补查上轮明确留下的创建文件与失败恢复、导航历史、跨窗口生命周期。基线仍为文首的 0.31.22 已验收工作区；本次源码身份和 71 个实施文件对照另存 `build/coordination/20261005-zeroslack-postacceptance-static-review/source-identity-02.json`，不覆盖前一份证据。
+
+| 条目 | 类别 / 优先级 | 当前结论 |
+| --- | --- | --- |
+| AR-37 | 确定缺陷 / 高 | 三条“新建”链使用先检查存在、后覆盖式写入；并发创建同名文件时可能覆盖其他写入者的内容 |
+| AR-38 | 待验证风险 / 中 | 后退/前进在打开目标前就转移历史，忽略失败返回；目标临时不可读时丢失可重试位置，永久失效项的产品策略尚需明确 |
+
+两项均来自源码推导，未运行复现，不据此声称发生频率或新增性能收益。文件创建的三处重复归为一个共同约束问题；不把它们拆成三项，也不将已验收的普通保存身份保护、文件树预检及配置冲突处理重新判为失败。
+
+### 模块与六维覆盖增量
+
+| 固定维度 | 本次具体调用链 / 状态组合 | 覆盖状态与边界 |
+| --- | --- | --- |
+| 职责与依赖 | 文件树命令 → WorkspaceFileOperationService；模板插入 → EditorCoordinator 创建头文件；用户模板命令 → MainWindow 初始化文件 | 该范围已审。三条入口各自实现“若不存在则创建”，没有统一的新建 I/O 语义；见 AR-37。模板、头文件内容规则仍属各自服务 |
+| 数据归属与复用 | 不存在的目标路径与新文件所有权；back/forward 栈和当前导航位置；模板槽位的视图状态 | 文件创建、历史栈范围已审。模板槽位只补查当前视图切换、文档重绑、关闭和键盘撤销；辅助编辑视图与其他写入者交错尚未闭合 |
+| 状态转换 | 新建预检通过 → 其他进程创建目标 → 本次提交；目标关闭/不可读 → 后退失败 → 目标恢复可读 | 该范围已审，分别形成 AR-37/38。没有把整次 apply 调用前的变化检查误当作提交时的排他保障 |
+| 异步生命周期 | 浮动面板关闭 → provider 停用 → 延迟销毁；拖放定时回调与窗口代次；主窗口产品创建入口 | 所列范围已审。现有关闭许可、QObject 回调上下文和拖放代次保护有效；未证实跨窗口悬空调用。SDK 内部任务及全部重入排列未审 |
+| 持久化 | QSaveFile 新建、QFile 模板初始化与本机 Qt 6.10.2 API 契约；已有保存及路径计划检查的边界 | 该范围已审，见 AR-37。普通覆盖保存和排他创建需要不同操作；没有提出用一个 NewOnly 标志直接替换所有保存 |
+| 撤销与恢复 | 历史目标打开失败；模板 Slot Mode 的 Ctrl+Z 退出；面板拒绝关闭后保留原视图 | 导航列 AR-38 风险；键盘撤销及关闭保护路径已审。创建成功但后续开 tab/插入失败的全部恢复组合、辅助视图模板联动、菜单与程序化撤销尚属部分已审 |
+
+本次没有列为新增问题的检查：
+
+- 正式 `main` 只通过窗口工厂创建一个主窗口（`src/app/main.cpp:88`、`src/app/applicationwindow.cpp:6`）。浮动面板不是第二个 MainWindow；不能仅因存在全局服务就断言当前产品必然发生多个主窗口之间的状态覆盖。
+- 浮动关闭从 `ContextFloatingWindow::closeEvent` 发出请求，经 `closeFloatingResource` → `closePeek` 先检查 provider 是否允许关闭，再取出、停用并延迟删除 view。拖放提交定时器有对象上下文和 `dockGeneration` 检查，滚动位置恢复回调绑定到 view（`src/ui/contextfloatingwindow.cpp:378`、`:388`、`:477`、`:517`；`src/ui/contextworkspacefloating.cpp:64`、`:195`；`src/ui/contextworkspacecontroller.cpp:1085`、`:1583`）。这仅支持所列路径，没有宣称全部销毁/重入组合无缺陷。
+- `unregisterProvider` 当前只有测试调用，不能把其实现疑点直接写成现行产品动态卸载缺陷。Global Control 的 Symbol 分支没有 Templates 那样完整的身份字段，但面板为 Popup，普通 tab 点击会收回；尚未闭合“面板仍打开却换成另一编辑器”的真实产品路径，故本轮不列确定缺陷。
+- 主 tab 切换和辅助视图重绑/关闭会退出交互模式，模板槽位键盘 Undo/Redo 先 clear；既有 linked-slot 测试也是键盘 Ctrl+Z（`src/documents/tabmanager.cpp:1166`、`:1197`、`:3110`；`src/editor/editortemplateslotcontroller.cpp:567`；`test_sv/completion_test.cpp:7301`）。不将这些保护误报为缺失，也不外推为所有其他写入来源均受保护。
+
+后续优先缺口：辅助编辑视图与模板联动/程序化撤销的交错；补全候选身份与真正可达的面板上下文变化；其余补全类型推导与排序；新建文件后的开 tab/插入失败恢复。其他 CLI 边界、平台实际呈现仍未重新全面审查。其他五个应用、热点/果核图内部重构、缺失 SDK 及被排除的私有测试资料继续在范围外。
+
+### AR-37：新建文件与覆盖保存共用写入语义，缺少排他创建
+
+**确定缺陷；高优先级；未实施；源码推导。** 三条产品入口都明确要求目标尚不存在，但最后一段写入没有保留这一前置条件：
+
+1. 文件树创建命令进入 `WorkspaceFileOperationService::apply`。它会重新生成计划、检查 revisionToken，`planCreate` 也拒绝已存在目标；随后却用 `QSaveFile(目标).open(WriteOnly)` 和 `commit()` 提交空文件。
+2. 插入工具的 CreateHeader 进入 `EditorCoordinator::createIncludeNewHeader`，检查目标不存在，再用 QSaveFile 写模板正文并提交。
+3. 打开全局/工作区用户模板的入口，在 `ensureUserTemplateJsonFile` 中检查不存在，再以 `QFile::WriteOnly | Truncate` 写入初始空模板 JSON。
+
+可达交错：本进程完成最后一次“不存在”检查；另一个进程或同步工具创建同名可写文件；本进程随后打开/提交。前两条使用覆盖保存设备，第三条明确截断已有内容，因此会把对方的文件替换成空文件、头文件模板或空模板 JSON。既有重算计划可以拒绝**在重算前**到达的目标，不能关闭重算和实际创建/提交之间的窗口。进程内同步执行也不能排除另一个写入者。
+
+本机 Qt 6.10.2 文档已核对：QSaveFile 的用途是暂存后提交整个文件，并不支持 NewOnly；QFile 的 NewOnly 才明确提供操作系统保证的“不存在才创建”。因此修复不能只是给 QSaveFile 加 NewOnly，也不能再补一次 exists。无需把普通文档保存改成“禁止覆盖”，两类业务语义应分开。
+
+架构归属：在已有工作区文件操作/I/O 边界提供可复用的排他创建操作，携带初始字节并返回有类型的存在冲突/写入失败；文件树、创建头文件、模板文件初始化共同消费。模板内容生成及默认存放位置仍由原领域所有者决定，不能强迫全局模板经过只允许工作区内路径的计划器。若需要临时文件和失败清理，还应明确本次创建的所有权，避免清理其他写入者的新文件。正常覆盖保存保持原有内容与身份护栏。
+
+依据：`src/navigation/navigationmanagerfileoperations.cpp:653`、`:790`；`src/workspace/workspacefileoperationservice.cpp:273`、`:321`、`:493`；`src/editor/editorcoordinator.cpp:728`、`:762`、`:775`；`src/app/mainwindow.cpp:3528`、`:3552`、`:3580`、`:3613`。API 依据为本机 `D:/Qt6/Docs/Qt-6.10.2/qtcore/qsavefile.html:149` 和 `qiodevicebase.html:88`。
+
+现有 `test_sv/workspace_file_operation_test.cpp:246` 验证正常创建；`test_sv/gui_smoke_test.cpp:3439` 的“不覆盖”断言只覆盖调用前就已存在的文件。后续验证应在最后检查与实际创建/提交之间注入竞争，覆盖三个真实入口，确认对方内容保留并明确报告冲突，同时保留首次成功、预先已存在、写入失败的行为。这与 AR-30 已有配置的编辑基线冲突不同：本项要求取得原本不存在文件的创建权；也与 AR-34 的源编辑器只读约束不同。
+
+### AR-38：导航历史先提交状态，后执行可能失败的跳转
+
+**待验证风险；中优先级；未实施；源码推导。** 当前 `navigateBack` 先从 backStack 移除目标、把当前位置加到 forwardStack，再调用 `applyLocation`；前进方向完全对称。`applyLocation` 会因为工作区不匹配、目标文件打不开或定位失败返回 false，但调用方忽略该值。
+
+源码能够闭合的后果：从 A 导航到 B 后关闭 A 的 tab，A 因临时缺失或不可读而无法重新打开；在 B 后退会消费 A 并将 B 放入前进栈，实际编辑器仍在 B。A 随后恢复可读，原后退项已经丢失，普通重试不能回到它。真实适配器确实把 `activateOpenFile || openFileInTab` 的失败传回；TabFileIo 会显示打开失败提示，所以本条不声称错误完全静默。
+
+仍列风险的原因：代码后果明确，但产品尚未定义“永久删除的历史项应跳过还是保留”，不能直接把所有失败项都必须回滚当成既定规则。需要先明确临时不可用、永久失效及用户取消分别如何处理，再验证真实 Back/Forward 入口。
+
+建议由既有 NavigationCommandCoordinator 持有一次历史跳转的候选和结果；成功后再提交双栈变化，或按明确的失效策略丢弃并继续查找。不要在 TabManager 新建另一套历史，也不要仅恢复一个栈而留下另一个栈的假当前位置。工作区切换时是否清空历史是另一项产品政策，本轮没有据此新增缺陷。
+
+依据：`src/editor/editorcoordinator.cpp:495`；`src/navigation/navigationcommandcoordinator.cpp:69`、`:264`、`:280`、`:316`；`src/documents/tabfileio.cpp:66`。现有 `test_sv/gui_smoke_test.cpp:968` 验证同文件成功跳转后的实例上下文恢复，不覆盖打开失败及恢复可读后的重试；折叠视图的 Back 测试属于另一种历史，不能代替此链。后续需验证成功/失败/恢复后的两个栈、当前编辑器和实例上下文。
+
+## 接续静态审查：插入工具、源码导航与预览（2026-10-05）
+
+本轮优先补上历史覆盖表中的 completion/navigation/editor 消费者链，基于上方已验收工作区分析。71 个实施文件摘要仍与交付一致；本轮证据文件及 Git 基线对照见 `build/coordination/20261005-zeroslack-postacceptance-static-review/source-identity.json`。AR-34 至 AR-36 的关键消费者代码在本次十项实施中没有改动；这是补查发现，不据此推断为最新修改引入。
+
+| 条目 | 类别 / 优先级 | 当前结论 |
+| --- | --- | --- |
+| AR-34 | 确定缺陷 / 高 | 插入工具的操作分支绕过统一可写性检查，只读编辑器仍能执行 include/import 写入及创建头文件 |
+| AR-35 | 确定缺陷 / 中 | 导航继续使用独立的行文本词法规则，截断完整标识符，并把字符串中的 import 识别成导航目标 |
+| AR-36 | 确定缺陷 / 中 | 预览把空的已打开文档当作不存在，并把旧语义位置与新缓冲区拼接；两个预览服务复制相同来源选择逻辑 |
+| AR-27 增补 | 可选优化 / 中 | 过滤缓存已生效，但一次新的模板上下文采集中仍独立解析两次同一份原始文本；待评估共享语法输入 |
+
+验证方式统一为**源码调用链推导**，没有运行这些新增场景。确定缺陷意味着条件、入口与违背的约束在代码中闭合，不等于已实测发生频率或完成修复。
+
+### 模块与六维覆盖
+
+模块及调用链：Global Control → EditorInsertPaletteService → MainWindow 分支派发 → MyCodeEditor / EditorCompletionWorkflow → PackageToolService、EditorCoordinator；编辑器 Ctrl+点击/预览 → SourceNavigationService / DefinitionService → SemanticIndex；DefinitionPreviewService / CodePreviewService → DocumentModel → DocumentRegistry，并补查语义失效调度和相关测试断言。
+
+| 固定维度 | 本轮具体范围 | 覆盖状态与边界 |
+| --- | --- | --- |
+| 职责与依赖 | 插入计划、产品派发、编辑器写入、文件创建；导航词法识别与现有 TSDocument | 该范围已审。发现可写性检查分散、部分消费者绕过现有语法能力。没有重新审计所有命令路由及构建 ABI |
+| 数据归属与复用 | 文档内容/存在状态、语义位置、当前修订；模板上下文原文与 probe 文本 | 该范围已审。预览丢失来源及版本契约；模板采集中原文重复解析。未全面审查补全排序和全部类型查询 |
+| 状态转换 | 普通/只读编辑器、正常代码/字符串/完整特殊标识符、非空/清空/插行后的缓冲区 | 该范围已审。分别形成 AR-34/35/36。普通点击的 Tree-sitter 注释保护已存在，未将其误报为缺失 |
+| 异步生命周期 | 文档编辑 → Dirty → 编辑空闲定时分析；旧语义快照与当前预览的衔接 | 该范围已审。预览未消费该状态/版本。没有本轮桌面交互或线程调度测量；跨窗口销毁后的所有单例使用仅部分已审 |
+| 持久化 | create-header 写盘与随后插入入口；正常文档只读装配、保存仍转另存为 | 部分已审。确认创建副作用前缺少源编辑器可写性门禁；未把缓冲区可改夸大成绕过系统文件权限。新建文件与插入的全部部分失败恢复组合尚未闭合 |
+| 撤销与恢复 | 结构化插入的 QTextCursor edit block、预览在目标变化后的拒绝/降级边界 | 部分已审。只读情况下不应产生修改或撤销步；高风险批量事务本轮未重审。导航前进/后退遇到目标打不开的产品策略尚未确认，不列确定缺陷 |
+
+未审或仅部分已审：其余补全类型推导/排名、导航历史的失败策略、所有跨窗口单例销毁组合、其他 CLI 命令边界和平台实际动画呈现。其他五个应用、热点/果核图内部算法、缺失 SDK 及已排除版权/私有资料仍在范围外；共享代码预览的来源契约属于本轮范围。
+
+### AR-34：插入分支未统一执行可写性约束
+
+**确定缺陷；高优先级；未实施。** 普通 `insertCompletionText` 在入口拒绝 `isReadOnly()`；结构化 import/include/create-header 则通过另外三个方法进入工作流，没有同样的检查。
+
+可达路径：打开只读源文件 → Ctrl+Space 的 Templates 中选择已有 include / 合法位置的 package import → `MainWindow` 检查文档修订、实例和模板目录后直接调用操作方法 → `MyCodeEditorState` 转发 → `applyStructuredInsertionPlan` 仅检查计划有效性，使用 `QTextCursor(editor->document())` 插入并返回成功。QPlainTextEdit 的只读交互状态没有成为这条程序化写入路径的前置条件。已有内存文本会被修改并产生撤销步。
+
+同一派发中的 CreateHeader 还会先经 `EditorCoordinator::createIncludeNewHeader` 提交新头文件、打开新 tab，然后回到源编辑器插入 include；源文件只读、所在目录可写时，并没有在创建之前拒绝该操作。`PackageToolService::inlineRangeIsEditable` 只检查范围、注释/字符串语法位置，它不接收文档可写状态，不能替代权限门禁。
+
+架构归属：在既有编辑器命令应用边界统一核对目标实例、修订和可写能力，再允许写入文档或创建关联文件；纯文本计划服务继续负责语法，不让它承担 UI 状态。普通插入、结构化插入和创建再插入消费同一约束，不能只给一个 palette 分支加判断。源文件保存仍有只读转 Save As 保护，本条不声称受保护的原磁盘文件必然被覆盖。
+
+依据：`src/app/mainwindow.cpp:1578`、`:1622`、`:1659`；`src/editor/mycodeeditor.cpp:857`、`:1078`；`src/editor/editorruntimecommands.cpp:851`；`src/editor/editorcompletionworkflow.cpp:672`、`:706`、`:732`；`src/commands/packagetoolservice.cpp:259`；`src/editor/editorcoordinator.cpp:728`；`src/documents/tabmanager.cpp:2501`、`:2530`。已有 `test_sv/gui_smoke_test.cpp:3327` 覆盖正常插入和注入创建回调，`:11695` 的只读断言针对行操作，不能覆盖这三个结构化入口。未来应从真实 palette 及公共编辑器 API 各验证只读拒绝、内容/撤销栈不变、无创建副作用，并保留可写成功场景。
+
+### AR-35：导航重复实现不完整的源码识别规则
+
+**确定缺陷；中优先级；未实施。** 编辑器已公开现有 `TSDocument` 的精确标识符、注释和字符串查询；导航却把上下文压缩为一行 QString，再通过另一组 `isIdentifierStart/isIdentifierPart` 和 `indexOf("import")` 识别目标。
+
+两个可达组合属于同一识别契约缺口：
+
+1. `logic ready$next;` 及其使用处，点击 `$` 前后的部分，`SourceNavigationService::identifierAtColumn` 只把字母、数字和下划线当作标识符字符，得到 `ready` 或 `next`，后续定义查询以这个截断名称执行；转义标识符 `\ready.next ` 同样会被分段。仓库所带语法的 `simple_identifier` 明确接受后续 `$`，`TSDocument::identifierAt` 已能返回 simple/escaped_identifier 完整节点。
+2. 合法字符串 `string msg = "import p::*;";` 中 Ctrl+点击 `p`，UI 的 `syntaxCommentAt` 不会拒绝字符串；`targetAtColumn` 先匹配 package import，跳过普通 `identifierAtColumn` 的字符串检查，于是把字符串中的 `p` 当作 package 导航目标。当对应 package 可解析时会尝试跳转。
+
+架构归属：由编辑器已有语法文档提供精确 token/指令及所在上下文，导航消费该结果；保留真正 include 路径字符串的特殊语义。无语法上下文的行级接口若仍需要保留，应明确有限用途并复用公共 token 规则。需要区分注释、普通字符串、include 字符串、普通及转义标识符，不能只向一个字符集合补 `$`。
+
+依据：`src/editor/editorsourcenavigation.cpp:505`；`src/editor/editorsourcenavigationquery.cpp:286`；`src/navigation/sourcenavigationservice.cpp:113`、`:164`、`:307`、`:312`、`:381`；`src/editor/editorcoordinator.cpp:854`；`src/editor/tsdocument.cpp:1042`、`:3072`；`src/editor/mycodeeditor.cpp:767`。测试 `test_sv/completion_test.cpp:7648` 验证普通 include 和普通名称，`test_sv/source_structural_navigation_test.cpp:93` 验证的是另一条结构化赋值导航的注释保护，不证明本链的特殊名称和 import 字符串处理正确。未来需把真实 UI 入口与共享查询都纳入上述组合。
+
+### AR-36：预览丢失文本来源和位置版本的对应关系
+
+**确定缺陷；中优先级；未实施。** `DefinitionPreviewService` 与 `CodePreviewService` 都实现了一份相同策略：向 DocumentModel 要 QString，仅在非空时使用；否则回退 SemanticIndex 缓存。`documentTextForFile` 返回的空文本不能区分“已打开且内容为空”和“没有该文档”，但现有 `documentForFile`/`editorForFile` 可以表达存在状态。
+
+可达路径：先有语义分析结果，再把目标文件的打开缓冲区清空，尚未发布新语义结果时从其他文件触发定义预览 → 空缓冲区被当作未打开 → 展示旧缓存里的定义。若在目标定义之前插入多行，预览则选择新缓冲区，却仍按旧 SemanticSymbolRecord 的行列截取、突出显示，并标记 available。文本来源与坐标来源因而不是同一版本。CodePreview 的 preciseRange 也只检查文件名/行等字段，没有文本版本证据。
+
+这一窗口由正常编辑链即可形成：DocumentModel 立即发布新文档状态；AnalysisScheduler 先标 Dirty，再定时刷新语义。失效逻辑主要取消过期在途请求，保留已发布快照；预览服务没有检查目标文件的语义状态或相应修订。不能把“后台有过期结果检查”当作“UI 可以任意混用旧位置和新文本”。
+
+架构归属：复用文档模型已有存在/身份/修订信息，统一预览输入选择及片段截取；把来源、版本、内容（包括有效空文本）和坐标证据作为一组数据。对不匹配的位置重新解析或明确标注/拒绝过期预览。两个服务仍可分别负责标题和呈现，不能各保留一套有不同失效语义的来源回退规则。
+
+依据：`src/navigation/definitionpreviewservice.cpp:81`、`:89`、`:113`；`src/navigation/codepreviewservice.cpp:112`、`:134`、`:155`；`src/documents/documentmodel.cpp:72`、`:104`；`src/documents/documentregistryqueries.cpp:55`、`:73`；`src/analysis/analysisschedulerdocuments.cpp:533`、`:653`；`src/analysis/workspacesymbolanalysiscontrollerlifecycle.cpp:152`。现有 `test_sv/gui_smoke_test.cpp:5408` 只在定义同一行追加 dirty marker，验证“优先非空未保存文本”，未覆盖清空、行移位及等待新语义时的版本对应。未来需使用真实 DocumentModel、已发布快照和编辑后的缓冲区验证这些组合。
+
+### AR-27 增补：一次新上下文仍有可复用的原文解析
+
+**可选优化；中优先级；尚未实测，原过滤缓存验收保留。** `EditorInsertPaletteService::query` 的 sameContext 缓存确实避免重复过滤时重算；一次新上下文中，`CodeTemplateContextAnalyzer::analyze` 会新建 TSDocument 解析全文，随后 `PackageToolService::analyzePackageImportSite` 再新建一个 TSDocument 解析相同原文，还会对加入 import probe 的预览文本另做解析。
+
+前两次原文解析有共享输入的空间，编辑器本身也已经持有同修订的语法文档；第三次处理的是变换后的文本，承担合法性验证，不应简单删除。建议给既有分析服务提供按修订绑定的只读语法输入或一次上下文构建结果，保留必要的 probe/插入后验证，避免全局长期缓存。这里只确认重复工作，不能承诺可感知提速。
+
+依据：`src/editor/editorinsertpaletteservice.cpp:469`、`:481`、`:487`；`src/completion/codetemplatecontextanalyzer.cpp:443`；`src/commands/packagetoolservice.cpp:357`；`src/editor/mycodeeditor.cpp:767`。`test_sv/insert_palette_catalog_test.cpp:405` 的 contextAnalyses 统计的是上下文构建次数，不是内部解析次数；其重复过滤与目录失效断言仍然有效。后续若实施，需分别计数原文/变换文本解析并测首开与过滤阶段，不把更改后的验证算作冗余。
+
+建议处理次序：先 AR-34，再 AR-36 和 AR-35；AR-27 增补仅在上述共享输入归属明确后评估。当前没有派发开发。
+
+## 本批 10 项最终验收（2026-10-05）
+
+10 项按 TASK 约定范围验收通过，未发现需返修的阻断项。执行源码集合为 `f9cc94bb281c0ca68cdcb3bacaf45e3ee554e599f86b48ac9b7bbf917a9d1c29`，共 71 个实施文件；基线仍为 `3f51c1bf`，正式包未替换。
+
+- 统筹独立复跑 GUI/CLI 构建、13 项关键回归和独立 CLI-only 1 项测试，全部通过。交付源码、产物和证据哈希核对一致。
+- 执行侧 39 个受影响目标为 35 通过、2 个复现基线失败、2 个排除夹具限制；编辑器自包含 134/134 通过。两项旧失败的 18/15 个断言与重建基线逐条一致，不计为通过。本批没有声明全部 219 个测试目标通过。
+- 30 份性能样本独立重算一致：两种大文件各 400 处批量编辑的总耗时中位数分别从 1900.384/2814.314 ms 降为 60.096/80.605 ms。语义装饰拥塞期间捕获从 160 次降为 1 次、实际启动从 160 次降为 2 次；最后后台排空中位数从 41.899 增至 46.741 ms，作为取舍保留。上述数据不外推整个应用倍率或桌面帧率。
+- 真实适配器、核心和替身已统一核对；多进程恢复/配置、部分编辑失败、重入、撤销失败及重试、pending 重开和 CLI 中途修改都有专项证据。配置协作写入边界、进程内 pending 和外部竞争校验点的限制保留。
+
+本批验收及完整限制见 `build/coordination/20261005-zeroslack-followup-ten/coordinator-review/ACCEPTANCE.md`。以下 0.31.22 章节保留实施前的发现依据与覆盖情况，其中的“当前/待实施/未实测”均指当时基线，不替代上面的最终状态。
+
+## 0.31.22 继续审查：历史发现与覆盖（实施前）
+
+以下证据均对应 `3f51c1bf`。验证方式是读取实际入口、共享实现、真实适配器、测试替身和有关历史差异，没有运行复现、性能测量或故障注入。七项确定缺陷指源码能够给出完整的条件和违约路径；发生频率尚未实测。接续分析本次补入 AR-01 的输入一致性缺口，以及 AR-32、AR-33 两个新条目；同一根因没有按多个触发场景重复计数。
+
+### 当前发现总表
+
+| 条目 | 分级 / 优先级 | 新证据及处理状态 |
+| --- | --- | --- |
+| AR-13 补充 | 确定缺陷 / 高 | 稳定文档身份未传到普通保存、恢复键和文件树操作收尾；重新打开，仍归原身份根因 |
+| AR-19 补充 | 确定缺陷 / 高 | 因版本过期而完全未编辑的文件，也被当作本事务已修改文件恢复；重新打开，仍归事务恢复契约 |
+| AR-29 | 确定缺陷 / 高 | 多个应用进程共用同一恢复记录，互相覆盖及清理；新根因，待实施授权 |
+| AR-30 | 确定缺陷 / 高 | 工程配置缺少编辑基线冲突检查，设置的检查与提交也未共同串行；新根因，待实施授权 |
+| AR-22 补充 | 待验证风险 / 中 | 失败后保留的待存会话没有参加重开恢复来源选择；待验证，不撤销原范围的验收 |
+| AR-31 | 可选优化 / 中 | 批量编辑反复扫描和转换文本坐标，已求得的偏移被丢弃；待评估，未声称性能收益 |
+| AR-16 补充 | 可选优化 / 中 | 语义装饰仍每轮提交全局线程池任务，缺少跨轮次的运行/待处理上限；并回原根因 |
+| AR-01 补充 | 确定缺陷 / 高 | CLI 源码片段、清单和语义结果分次捕获，单次输出可能混用版本；重新打开原输入/缓存契约 |
+| AR-32 | 确定缺陷 / 高 | RTL 高风险编辑撤销失败后，事务历史、工作流标记和面板归属脱节；新增恢复状态根因 |
+| AR-33 | 确定缺陷 / 中 | CLI bundle 的固定头部及首个链接块未按完整输出扣预算；新增输出边界根因 |
+
+### 模块、调用链与六维覆盖
+
+本轮复用既有模块清单，优先深入上轮未闭合的状态组合。没有重读整个仓库，也不据本轮发现数量宣称全局审查穷尽。
+
+| 固定维度 | 本轮具体核对范围 / 主要所有者 | 覆盖结论与剩余边界 |
+| --- | --- | --- |
+| 职责与依赖 | `app/main` 与窗口工厂；TabManager → ExternalDocumentSyncController / TabFileIo；命令 → rtleditcore → WorkspaceEditDocumentManager | 所列链已审。文档身份归属和回滚权限没有完整传到下游。未重新审计所有 CMake 边界、SDK 或外部 ABI |
+| 数据归属与复用 | SharedDocument 的稳定 documentId 与显示路径；恢复记录键；IndexedWorkspaceTextEdit 与 Qt 坐标转换 | 所列链已审，见 AR-13/29/31。语义、编辑器、搜索各坐标类型不同，不主张直接跨域复用 Qt 私有类型 |
+| 状态转换 | 别名重绑后普通保存/另存为；文件树重命名后关视图；预检后文件变化；会话保存失败后关闭、重开 | 前三组已审；会话恢复读取受 QSettings 缓存和失败类型影响，列 AR-22 风险。一般工作区切换已保留内存 UI，不把它误报为必然回退 |
+| 异步生命周期 | 恢复队列提交门、取消、清理；多进程独立队列共享磁盘；主动编辑器刷新 → 装饰 worker | 所列链已审，见 AR-29/16。现有代次/存活/修订校验仍有效；未实测桌面帧率、线程池饱和或跨应用 IPC 负载 |
+| 持久化 | 普通保存内容护栏；恢复快照保存/清理；工程配置对话框 → 项目存储；Settings Center 保存 | 所列链已审，见 AR-13/29/30。Pinloom 链接的锁内重载可供借鉴；各文件领域语义仍应归原服务。文件系统 syscall 间的所有外部竞争未穷尽 |
+| 撤销与恢复 | PatchEngine 预检/逐文件应用/失败回滚；真实 restoreSnapshot；历史 restoreAtomically；失败会话的重开来源 | 所列调用链已审，见 AR-19/22；连续撤销的旧版本衔接修复仍保留。未运行中途改文件注入或新的端到端回归 |
+
+接续分析的六维覆盖增量：
+
+| 固定维度 | 本次补查的调用链 / 状态组合 | 结论与边界 |
+| --- | --- | --- |
+| 职责与依赖 | CLI inspect → shared worker → context/bundle；RTL 面板 → 工作流 → 事务服务 → 真实文档适配器 | 所列链已审，新增证据见 AR-01/32；工作流恢复策略与核心事务不一致，不以重复代码行数代替缺陷 |
+| 数据归属与复用 | CLI 原始字节、语义逻辑文本、输入指纹、链接定位；工作流 undo 标记和面板 appliedOwner | 所列链已审。原始字节与解码文本不能直接比较摘要；同一命令仍须绑定同一批输入。跨工作区历史保留政策不据此判错 |
+| 状态转换 | 应用成功 → 文件只读 → 撤销失败 → 恢复可写 → 重试/新预览/关闭工作区；输出预算边界 | 所列链已审，见 AR-32/33；未穷尽各 RTL 计划器的算法组合、所有面板状态 |
+| 异步生命周期 | CLI 扫描与 worker 再捕获之间的外部修改；worker 完成时输入校验；持久面板在关闭工作区后的存活 | 已区分外部写入与本进程线程并发。worker 自身已有 stillMatchesDisk；CLI 第一份输入未纳入该检查。未执行时序注入 |
+| 持久化 | 新建 CLI 缓存中的清单/依赖证据配对、cacheCurrent 标记、下一次调用失效 | 所列链已审；下一次调用能拒绝不一致缓存，不修复本次已经返回的混合结果。未将一般缓存写入竞争判为数据丢失 |
+| 撤销与恢复 | 核心失败保留历史 → 服务代次不变 → 工作流 Failed → 面板丢失 owner；同类工作流的状态映射 | 所列链已审，见 AR-32；单文件只读场景可从真实适配器闭合，不只依赖故障替身。未运行桌面重现 |
+
+当前目录覆盖：`app/documents/workspace/settings` 的上述状态链较深入；`commands/components/rtleditcore` 覆盖事务入口、适配器、坐标处理及高风险面板失败恢复；`editor/navigation` 覆盖身份和文件树边界；`semantic/analysis/ui` 补读装饰刷新、队列及面板生命周期；`cli` 本次深入输入捕获、context/bundle 组合输出和预算；`integrations` 核对现有锁内重载参考及 CLI 链接读取。`completion`、其余 CLI 命令的全部边界、各 RTL 计划器算法、平台动画呈现仍没有重新全面审阅，不能把旧验收泛化为这些范围在当前基线已重新通过。热点/果核图内部重构、其他五个应用和缺失 SDK/版权资料仍按既有安排列范围外。
+
+### AR-13 补充：稳定身份停留在索引层，保存等消费者仍解析可变路径
+
+**确定缺陷；高优先级；重新打开原条目。** 原反向索引移除、代表视图接替、Save As 和视图释放修复不否定；本次补到普通保存及操作收尾消费者。
+
+可达普通保存路径：
+
+1. 通过 `alias/unit.sv` 打开真实目录 A 的文件。SharedDocument 用 A 的物理路径作为稳定 documentId，同时保留 alias 显示路径。
+2. 编辑该缓冲区，然后把目录别名指向 B。B 的同名文件内容与最初基线相同，且尚未在 ZeroSlack 中打开。
+3. 普通保存仍把 alias 当作写入目标。`documentForFile(alias)` 查 B，未找到另一打开文档，因此冲突文档检查不拦截；`same(fileName, document->fileName())` 比较的又是同一条当前 alias。
+4. `canOverwriteDocument` 只比较读到的逻辑内容摘要与已观察/已保存摘要。B 恰好同内容，且没有不可用/冲突状态时会放行；没有比较 B 的物理身份与稳定 documentId。
+5. `TabFileIo` 按 alias 写 B；词法路径没改，后面不执行 renameDocument，文档仍绑定 A 却被标为已保存。不是仅导航显示不准，而是存在写错目标和错误清除未保存状态的路径。
+
+相关消费者还有两处同源断层：恢复键从 `document->fileName()` 再解析物理路径，会跟着重绑后的 alias 走；文件树预检虽然收集了受影响文档，却不把这个集合交给收尾，收尾又从已发生变化的文件系统解析一次。例如通过指向 `rtl` 的目录联接打开文件，再从文件树将真实 `rtl` 改名，联接失效后收尾可能找不到原先受影响的视图。
+
+依据：`src/documents/shareddocument.cpp:456`；`src/documents/tabmanager.cpp:2504`、`:2513`、`:2522`、`:2570`、`:423`、`:1813`、`:1865`；`src/documents/externaldocumentsynccontroller.cpp:241`、`:466`；`src/documents/tabfileio.cpp:98`；`src/editor/editorfileidentity.cpp:96`。现有 `test_sv/workspace_document_contract_test.cpp:172` 验证了重绑后 Save As 且另一个文档已打开，不等同于上述普通保存组合；文件树测试 `test_sv/workspace_file_operation_test.cpp:945` 使用的是普通目录路径。
+
+修改归属建议：由既有文档所有者提供稳定的来源身份和可验证 I/O 目标，将显示路径变化、来源替换、明确 Save As 区分开；外部同步和恢复服务消费同一身份契约。路径操作携带预检中确认的文档/视图集合及有效性证据，收尾不依赖变更后的路径重新猜测。不能仅给 Ctrl+S 加一条特判，也不能静默改存到另一个路径。
+
+后续验证应覆盖同内容/异内容的新目标、另一目标已打开/未打开、普通保存/另存为、恢复写入/清理，以及真实目录改名导致联接失效后的主视图和辅助视图收尾。此处描述的是当前源码推导，不声称这些组合已复现。
+
+### AR-19 补充：拒绝编辑也触发无条件恢复，回滚缺少改动归属
+
+**确定缺陷；高优先级；重新打开原条目。** 这是恢复契约的新增失败组合，已修复的单调修订与连续撤销保持有效。`PatchEngine` 对失败当前文件调用 restore 的分支在 `de7ce08` 已存在；不把它直接归为 0.31.22 新引入。
+
+预检 A、B 后先应用 A；外部工具此时改了尚未打开的 B。轮到 B，真实适配器 `applyTextEdits` 的最新 snapshot 与 expectedVersion 不匹配，尚未编辑便返回 false。`PatchEngine` 仍先对 B 调用 `restoreSnapshot`；后者没有“当前应处于哪个版本”的参数，取得/加载 B 的新内容后将它替换成预检旧文本，再回滚 A。B 因此成为包含旧文本的未保存缓冲区。磁盘在这一步未被直接写回，但后续保存可能覆盖外部更新。
+
+根因是 `bool applyTextEdits` 无法表达“未改动而拒绝”和“修改后失败”，恢复接口也不能证明当前状态确由本事务产生。`restoreAtomically` 另有先全量检查、再逐文件 restore 的阶段划分，同样没有把逐文件的预期当前状态带入写入接口。
+
+依据：`components/rtleditcore/include/rtledit/workspace_document_manager.h:23`；`components/rtleditcore/src/rtledit/patch_engine.cpp:147`、`:170`；`src/workspace/workspaceeditdocumentmanager.cpp:115`、`:196`；`components/rtleditcore/src/rtledit/workspace_edit_transaction.cpp:314`、`:339`、`:360`。核心替身支持修改后返回 false，但不能据此证明真实适配器的“过期且未改”分支也应恢复（`components/rtleditcore/tests/patch_engine_tests.cpp:92`）。
+
+建议在现有文档事务协议内表达应用结果、是否发生本事务改动、改后身份/版本和恢复前置条件。回滚只恢复本事务拥有的状态，外部新状态保留并报告冲突/残留；主线程同步执行不等于磁盘没有其他写入者。后续验证必须把外部修改放在预检与 B 实际应用之间，并检查失败后 B 缓冲区、磁盘与保存基线，而非只在整次调用前修改 B。
+
+### AR-29：恢复记录缺少进程/编辑会话所有权
+
+**确定缺陷；高优先级；新条目。** 与 AR-12 的界面线程开销、同一队列取消顺序分开：这里即使所有操作严格串行也会出错。
+
+独立正式程序的入口和窗口工厂没有单实例拦截。两个进程打开同一工作区、同一文件时，恢复根目录相同，recoveryId 也只取决于工作区和物理文件身份：P 写自己的未保存文本，Q 再写自己的未保存文本，会覆盖同一个 JSON；随后 P 保存或放弃关闭，又会按相同 recoveryId 删除 Q 的记录。Q 的缓冲区仍未保存，崩溃后却可能失去恢复副本。
+
+依据：`src/app/main.cpp:24`、`:88`；`src/app/applicationwindow.cpp:6`；`src/documents/crashrecoveryservice.cpp:541`、`:1217`、`:1245`、`:1272`、`:1290`；`src/documents/tabmanager.cpp:536`。AR-12 的取消/提交门使用队列内 QMutex，只保护本进程任务（`src/documents/documentrecoveryqueue.cpp:14`）；当前恢复测试的提交竞态也是同一门保护下的清理，见 `test_sv/crash_recovery_service_test.cpp:578`。
+
+建议让现有恢复服务明确记录所有者和编辑会话代次，保留多个所有者的候选，保存/关闭只清理本会话有权清理的记录；重启后的遗留候选仍须能识别并恢复。仅加磁盘写锁不能解决串行覆盖问题；也不未经产品决策就禁止应用多开。验证应包含两个独立进程交替写入、某一进程正常保存/关闭、另一进程退出后的候选保留。
+
+### AR-30：配置提交没有统一的基线冲突语义
+
+**确定缺陷；高优先级；新条目。** AR-21 管草稿与层级，AR-28 管损坏/不兼容输入；本项针对仍然合法但已更新的配置。
+
+普通工程配置对话框从 WorkspaceManager 拿一份配置；在对话框打开期间，另一个 ZeroSlack 进程或外部编辑器合法更新 `project.json`。当前对话框接受后，`WorkspaceConfigurationService::save` 只确认最新文件仍 usable，就用旧草稿重新序列化全部已知字段，没有检查读取时的内容版本。外部加入的 defines/includeDirs 等可被旧草稿覆盖。无需两个写入动作发生在同一个毫秒。
+
+Settings Center 已有 expectedRevision，但“检查版本”和 `QSaveFile::commit` 分开，两进程都可以先通过同一旧版本检查，再各自提交；全局 QSettings 保存也在应用层版本检查之后写入整组自有字段。原子替换能保证单次文件完整，不能替代这一整段业务冲突判断。Pinloom 链接与 xIPs 回执已有锁内重读方式，可借鉴其顺序，不能把其中的业务合并规则原样搬给设置。
+
+依据：`src/app/mainwindow.cpp:3672`；`src/workspace/workspacemanager.cpp:1126`；`include/zeroslack/semantic/workspaceconfigurationservice.h:83`；`src/settings/workspaceconfigurationservice.cpp:635`；`src/settings/settingscenterservice.cpp:303`、`:394`、`:463`；`src/settings/settingscenterpanel.cpp:393`。参考保护为 `src/integrations/pinloom/pinloomcodelinkstore.cpp:975`、`:982`，及 `src/integrations/xips/xipscontextprovider.cpp:84`。Settings Center 现有顺序冲突测试只覆盖保存调用前磁盘已经改变，不能证明同时提交安全。
+
+建议由各现有存储服务持有读取基线，并把协作写入的加锁、锁内重读、版本判断和提交作为一个流程；合法新配置冲突应可见，保留用户草稿。外部编辑器不遵守应用锁的情况需要单独定义边界，不能声称一个 QLockFile 消除了所有文件系统竞争。验证优先覆盖“打开对话框→外部更新合法配置→接受”，再覆盖两个写入者和写入失败。
+
+### AR-22 补充：待存会话与重新打开的恢复来源未统一
+
+**待验证风险；中优先级；不新增编号。** 本轮确认 `pendingSaves` 保留失败快照，但 `restoreSession()` 始终从 stateService 读取，并未参与待存快照选择；关闭工作区又会移除 liveWorkspaceUi 和 activatedWorkspaceRoots，重开进入恢复路径。
+
+需要验证的组合是：旧会话已落盘→新会话保存失败并耗尽重试→关闭、在同进程重开→恢复存储后再保存。界面是否读回旧会话、后续保存是否替换更晚的待存快照，取决于实际失败类型及 QSettings 同进程缓存行为，当前不直接断言已丢失。普通切换仍有 liveWorkspaceUi，因此不泛化为“切换就丢布局”；文件正文由文档保存/恢复保护，不属于这个会话问题。
+
+依据：`src/workspace/workspacesessioncoordinator.cpp:183`、`:238`、`:262`、`:480`、`:520`；`src/workspace/workspacesessionstateservice.cpp:814`、`:870`。现有测试覆盖重试、清理取消和两个工作区各保留一份 pending，没有证明上述关闭后重开组合。后续先确认恢复来源与用户显式 Restore 的产品含义，再补失败恢复验证，不擅自改变已接受的退出尽力保存策略。
+
+### AR-31：批量编辑丢弃坐标计算结果，多层再次全文扫描
+
+**可选优化；中优先级；新条目。** 与 AR-20 已完成的按范围/文件捕获分开，本项发生在拿到同一文本之后。
+
+`positionToOffset` 每次从文本开头扫描；每个 range 调两次。PatchEngine 已计算每个编辑的偏移，用于范围校验和排序，却在 `buildTextEditApplicationOrder` 输出时退回仅包含行列的 WorkspaceTextEdit。真实 Qt 适配器再次逐项求偏移，又为每个编辑构造、解码从文件开头到起止位置的 UTF-8 前缀；预计结果的 `applyTextEditsToString` 再扫描一遍。靠后的大量匹配时，坐标准备可接近编辑数 × 文本长度，另有反复临时字符串分配。
+
+依据：`components/rtleditcore/src/rtledit/text_edit.cpp:7`、`:33`、`:62`、`:107`；`components/rtleditcore/src/rtledit/patch_engine.cpp:87`、`:138`；`src/workspace/workspaceeditdocumentmanager.cpp:127`、`:139`、`:157`。仓库已有搜索行首表和语义重映射行索引（`src/commands/searchservice.cpp:144`；`src/semantic/semanticsourceremap.cpp:55`），但它们使用 Qt/UTF-16 语义，不能直接依赖进无 Qt 的 rtleditcore。
+
+建议由现有文本编辑核心按固定文本版本保留纯 C++ 行/字节索引或已验证偏移；Qt 适配器按同一版本批量做 UTF-8→UTF-16 映射。保留应用前的新鲜度检查、Unicode 边界校验、倒序编辑和同点插入合并规则，减少的是重复定位。当前没有新的毫秒数或收益比例；未来用相同文件和编辑集合分别测坐标准备、校验、实际应用，并检查非 ASCII、换行和输出一致性。
+
+### AR-16 补充：语义装饰生产者仍未采用跨轮次有界提交
+
+**可选优化；中优先级；并回 AR-16，不重复计数。** `scheduleActiveEditorPassiveRefresh` 已合并同一事件轮次的通知；`refreshActiveEditorSemanticDecorations` 也有取消标志、generation、QPointer、当前编辑器及修订校验，worker 内含取消点。不能将其描述成没有取消或能任意发布过期结果。
+
+剩余差异是每次实际刷新仍新建 watcher、捕获文本/语义快照并提交全局 QtConcurrent；上一轮任务未完成时也继续提交，没有“一个运行任务加一个最新待处理输入”的跨轮次上限。旧任务即使启动后立刻取消，排队对象、捕获和 watcher 仍已创建；阻塞/饱和时可能持有多代输入。当前未证明常态卡顿或具体资源峰值。
+
+依据：`src/app/mainwindow.cpp:835`、`:879`、`:1015`、`:1131`、`:1177`、`:1213`；`src/semantic/semanticdecorationservice.cpp:805`。建议在现有装饰任务所有者收敛运行/待处理/取消，参考已落实的按所有者有界队列；是否提取小型共同调度器应由真实复用对象决定，不额外搭全局任务框架。验证应区分同轮合并和多轮快速切换，并观察启动数、峰值保留输入和最终可见结果。
+
+### AR-01 补充：CLI 的清单、源码片段与语义结果来自不同次捕获
+
+**确定缺陷；高优先级；重新打开原条目。** 原来重复编译、关系未复用、外部 include 缓存失效的问题已处理；本次发现的是 CLI 消费者没有与共享 worker 绑定同一批输入，不重新报告已删除的第二次编译。
+
+可达路径为一次需要重建缓存的 `context` 或 `bundle` 调用：
+
+1. `inspectWorkspace` 读取源码字节 S0，保存 content、sha256 和 workspaceRevision；context 的行数/片段及 bundle 的片段使用这份内容。
+2. 在 inspect 完成之后、worker 捕获之前，外部生成器或编辑器把一个源码文件改为 S1，然后保持不变。
+3. `projectForWorkspace` 只传路径和配置，没有把 S0 交给 worker。`SemanticInputCapture` 再读磁盘，语义索引和 dependencyEvidence 来自 S1。
+4. worker 的 `stillMatchesDisk` 能确认 S1 自身在分析期间未变，但并不知道 CLI 保留的 S0。序列化又把 S0 的 workspaceRevision/files 与 S1 的 symbols/relationships/diagnostics 放进同一个缓存。
+5. `prepareIndex` 重建后直接标记 cacheCurrent=true；本次成功输出于是可能包含 S0 的代码及摘要、S1 的符号和位置。下次调用可能因 revision 不符重建，这不能修正本次已返回的不一致结果。
+
+同根因消费者还有 `anchorsJson`：它按链接文件再次读磁盘，没有复用命令已捕获的源码。文件在前两次读取之后改变时，context/bundle 中的链接位置可能来自又一个版本。这里只要求同一源码的版本一致，不要求外部 Pinloom 元数据和源码采用同一业务版本号。
+
+依据：`src/cli/zeroslackcli.cpp:321`、`:477`、`:539`、`:629`、`:723`、`:865`、`:1217`、`:1480`；`src/semantic/semanticanalysisinput.cpp:75`、`:85`；`src/analysis/incrementalsemanticanalysisworker.cpp:198`、`:606`。现有 CLI 测试在两次 execute 之间改变 include，验证下一次失效（`test_sv/zeroslack_cli_test.cpp:258`），以及静态输入下的 context/bundle；不覆盖一次 execute 内 S0/S1 分裂。
+
+建议让现有语义输入所有者向 CLI 提供同一版本的语义结果与源码证据，清单、摘要、片段和链接定位统一消费；或者发现两次输入不一致时整体重取/明确失败。保留原始字节与逻辑文本的编码、BOM、换行契约，不能直接比较这两类摘要；也不能简单伪装成编辑器 override 而跳过磁盘新鲜度检查。顺带消除重复读取应在这个归属边界内完成，尚未测量耗时收益。后续验证需要把修改精确放在扫描与捕获之间，并检查本次输出、落盘缓存和下一次命中行为。
+
+### AR-32：高风险编辑失败后的事务能力与界面状态相互矛盾
+
+**确定缺陷；高优先级；新条目。** 与 AR-19 的底层恢复权限分开：这里即使底层历史正确保留，调用方也会失去恢复入口。与 AR-06 已完成的计划一致性校验相邻，但根因是工作流和面板重复持有、推导恢复状态，不能只补一个按钮。
+
+可达的真实适配器场景：在一个文件内完成 RTL 重命名，保持文档打开且内容不变；将文件变成只读后，从高风险编辑面板撤销。
+
+1. snapshot 的版本由文本修订、磁盘字节摘要和文档实例组成，不包含写权限。因此预检可以通过；`restoreSnapshot` 随后因只读返回 false，尚未改动该文件。回滚同样可因只读失败，核心返回 RestoreFailed 并保留历史。单文件未改动时，解除只读后底层的版本条件仍可满足，具备重试基础。
+2. `RtlHighRiskEditWorkflow::undo` 对非 Conflict 的失败发布 Failed，却保留 workflowUndoAvailable=true；所以 canStartPreview=false，而 canUndoAppliedTransaction 又因状态不是 Applied 返回 false。
+3. 面板 `undo` 看到 canUndo=false，清掉 appliedOwner。随后按钮状态不再提供撤销；新预览表面可点击，但工作流因仍持有 undo 标记拒绝。
+4. 再点预览虽然会让工作流回到 Applied/InvalidState，面板只在 Applied 且 failure=None 时重建 owner，因此仍不能通过该面板撤销。关闭工作区的 reset 又只为仍有 owner 的工作流 retire；它不会重建 workflow 对象，无法清掉这个孤立标记。已审查的重开、预览、关闭路径均未闭合恢复。
+
+此外，普通 UndoConflict 在工作流层仍保留 Applied，但面板先转成 Conflict，再只允许 Applied 面板状态启用 Undo；这也说明错误展示状态与操作能力被耦合。不能反向把所有失败都无条件开放撤销：发生真实残留或新事务替换时，应由事务所有者明确给出允许重试、需解决冲突、可放弃该工作流位置等能力。
+
+依据：`src/workspace/workspaceeditdocumentmanager.cpp:83`、`:196`；`components/rtleditcore/src/rtledit/workspace_edit_transaction.cpp:191`、`:302`；`src/workspace/workspaceedittransactionservice.cpp:53`；`src/insights/rtlhighriskeditworkflow.cpp:608`、`:674`、`:696`、`:722`、`:812`；`src/insights/rtlhighriskeditpanel.cpp:826`、`:1163`、`:1366`、`:1413`、`:1519`、`:1628`；`src/semantic/semanticdockcoordinator.cpp:77`、`:177`。
+
+同类实例连线和多信号传播对撤销失败均保留工作流 Applied（`src/commands/instancepairconnectionworkflow.cpp:759`；`src/commands/multisignalpropagationpanel.cpp:1142`），但这不代表它们所有界面组合已经验收。高风险面板现有测试替身 restoreSnapshot 永远成功（`test_sv/rtl_high_risk_edit_panel_test.cpp:103`）；核心的失败后重试测试也不等于该面板入口可重试。
+
+建议在既有事务/工作流边界统一恢复能力与归属，面板只展示错误和消费操作能力；保留单步撤销产品语义、共享历史代次防串用以及真实残留处理。后续覆盖真实只读解除、失败但回滚成功、残留冲突、新事务占用、重试、显式放弃和关闭重开。当前没有运行 UI 复现；相关状态映射在 0.31.21 已存在，不认定为 0.31.22 引入。
+
+### AR-33：CLI bundle 的输出预算没有覆盖完整候选块
+
+**确定缺陷；中优先级；新条目。** 这是输出边界约束，与 AR-01 的源码版本一致性分开。结论仅针对 bundle 自身声明的 UTF-8/4 估算预算，不把估算差异、外层 JSON 元数据或其他模型的真实 tokenizer 当作错误。
+
+两处同根因遗漏：固定 Markdown 头部直接包含完整 query，初始化 tokens 后没有检查是否已经超过内部 budget；足够长但合法的查询可以在没有追加任何符号前超额。首个 Pinloom 链接则先检查 tokens+anchorTokens，再单独检查 tokens+headingTokens；两项分别放得下，并不保证标题和链接一起放得下，后续追加前没有组合检查。
+
+依据：`src/cli/zeroslackcli.cpp:1116`、`:1445`、`:1466`、`:1544`；命令行 `--query` 使用普通字符串输入，服务只要求非空。现有测试只用 query=q、budget=512 检查总估算（`test_sv/zeroslack_cli_test.cpp:427`），没有覆盖长查询固定开销和首个链接的边界组合。对照 `suiteContextData` 已先检查 payload 骨架，并对完整候选 payload 判断预算（同文件 `:2144`、`:2194`），不能把它误报为相同缺陷。
+
+建议在 CLI 输出组装层对固定内容先计费，随后以完整块（首次标题加正文）做一次预算判断；最低可表达内容超过预算时明确拒绝或采用约定的截断表示。复用小型预算规则即可，Markdown 和 JSON 的计量范围仍分别明确，无需重建输出框架。后续验证恰好相等/超出一单位、长查询、首个链接及多字节文本。源码已足以证明分支遗漏，本轮未执行测试；这些代码在 0.31.21 已存在。
+
+### 本轮排除的误报与下一步边界
+
+- Qt 适配器并非自行忘记倒序编辑：PatchEngine 已通过 `buildTextEditApplicationOrder` 排序后调用它，不报告编辑顺序错误。
+- 搜索产生事务位置时已将 UTF-16 行内前缀转成 UTF-8 字节列，不报告中文列坐标完全未转换。
+- 事务历史有默认 32 条上限，不报告历史条数无限增长。跨工作区历史保留本身仍是产品策略，不据此直接判错。
+- Pinloom 链接写入已有锁内重载；恢复队列已有进程内取消/提交门；语义装饰有过期结果保护。新问题不能覆盖掉这些真实保护。
+- 历史对比表明，失败当前文件的无条件 restore、配置保存缺少内容基线、坐标重复扫描等路径并非本轮才出现。会话 pending 是上一轮新增机制，当前仅记录它与旧恢复路径组合的风险，尚未判定运行回归。
+- CLI worker 已检查它自己捕获的输入是否仍与磁盘相符；外部 include 的下一次缓存失效也有已有证据。AR-01 补充针对本次调用跨两份输入的组合，不能改写成 worker 完全没有新鲜度校验。
+- 高风险工作流有共享历史 generation 防串用；本次发现不是后一个事务会被前一个工作流任意撤销。核心保留历史、业务保留标记、面板丢弃 owner 是三个不同层次，必须分别描述。
+- suite-context 明确只给 payload 计预算，并检查完整候选 payload；不能因外层 envelope 超过 maxTokens 就与 bundle 的组合遗漏混为一谈。
+
+本次实施分组：文档/持久化组包含 AR-13/29/30；事务及恢复组包含 AR-19/32，AR-22 先确认风险；CLI 组包含 AR-01/33；性能组包含 AR-31/16，需以同输入基线评估收益。用户随后已明确“开始执行吧”，当前 10 项均已进入授权范围；发现分级与原证据保留，未验收前不标为完成。统筹拥有本记录，执行侧交付自己的实施及自测记录。
+
+下一轮优先补当前缺口：各 RTL 计划器自身的输入/拒绝组合、completion 生命周期与复用、其余 CLI 查询边界和非身份类 UI 状态。跨工作区历史保留的产品政策仍待明确，不因保留本身判错。当前已沿撤销失败和 CLI 混合输入闭合新增证据，停止扩读这些已足够的路径；不以继续凑条目宣称全局审查穷尽。
+
+## 历史固定清单覆盖记录（0.31.21，v1.3，全局遍历）
 
 **范围与结论**
 
@@ -70,7 +409,7 @@
 
 **上述全局模块边界遍历已完成；上表未审组合仍明确保留。** 不把目录清点或静态推导称为完整运行验收，不用新增条目数量衡量审查充分性。该静态审查阶段未实施条目，也未运行产品测试、性能测量或故障注入；其后用户已授权全部 17 项实施与必要验证。
 
-## 结论分级
+## 历史结论分级（0.31.21 首次发现）
 
 优先级与结论类别独立：高优先级的性能优化也不自动等于功能故障。以下类别均与验证方式分开记录。
 
@@ -80,13 +419,13 @@
 | 待验证风险 | AR-22 | 自动会话保存失败传播缺口由源码确认；实际存储失败后的重开影响及所需切换策略待验证 |
 | 可选优化 | AR-12、AR-13、AR-14、AR-15、AR-16、AR-17、AR-20、AR-23、AR-27 | 重复工作、同步路径、任务资源或无产品调用入口由源码确认；不声称已实测卡顿或改善收益 |
 
-当前 AR-12 至 AR-28 共 17 项：**7 项确定缺陷、1 项待验证风险、9 项可选优化**。本轮新增的是 AR-24 至 AR-28（4 项缺陷、1 项优化），并扩充既有根因；没有把新增场景再次计数，也没有将静态确认写成运行复现。
+0.31.21 首次记录的 AR-12 至 AR-28 共 17 项：**7 项确定缺陷、1 项待验证风险、9 项可选优化**。当时新增的是 AR-24 至 AR-28（4 项缺陷、1 项优化），并扩充既有根因；没有把新增场景再次计数，也没有将静态确认写成运行复现。0.31.22 的新证据与当前分级见本文前部。
 
 ## 待办总览
 
 | 编号 | 待修改项 | 优先级 | 状态 |
 | --- | --- | --- | --- |
-| AR-01 | CLI 重复分析及独立缓存有效性判断 | 高 | 已完成，统筹验收通过 |
+| AR-01 | CLI 统一分析、输入证据与组合输出一致性 | 高 | 原范围已发布；单次调用输入一致性补充已修复，本批验收通过 |
 | AR-02 | 同一文档的多个编辑视图重复解析 | 高 | 已完成，统筹验收通过；性能边界见下文 |
 | AR-03 | 图形刷新调度与实际计算归属分离 | 高 | 已完成，统筹验收通过 |
 | AR-04 | 旧兼容机制收敛不彻底 | 中 | 已完成，统筹验收通过 |
@@ -98,26 +437,34 @@
 | AR-10 | 原生 Ela 动画之外遗留的旧动画分支 | 中 | 已完成，统筹验收通过 |
 | AR-11 | 动画策略和开关归属分散 | 高 | 已完成，统筹验收通过 |
 | AR-12 | 恢复快照仍在界面线程同步持久化 | 高 | 已完成，统筹验收通过 |
-| AR-13 | 编辑变更通过全量视图扫描及物理路径查询定位关联视图 | 高 | 已完成，统筹验收通过；别名返修已闭环 |
+| AR-13 | 文档身份与索引、保存、恢复及路径操作消费者 | 高 | 原范围已发布；稳定身份进入 I/O 和路径操作消费者，本批验收通过 |
 | AR-14 | 临时编辑器搜索仍同步全量查询和创建结果项 | 高 | 已完成，统筹验收通过 |
 | AR-15 | 格式化各阶段缺少可复用的语法上下文 | 中 | 已完成，统筹验收通过 |
-| AR-16 | 部分后台任务的取消、排队上限及资源隔离不一致 | 中 | 已完成，统筹验收通过 |
+| AR-16 | 部分后台任务的取消、排队上限及资源隔离不一致 | 中 | 原范围已发布；装饰任务上限及合并完成，本批验收通过；排空阶段耗时边界见验收 |
 | AR-17 | 文件载入、保存基线和外部同步重复读取同一文件 | 中 | 已完成，统筹验收通过 |
 | AR-18 | 文档快照的文本契约在打开前后不一致 | 高 | 已完成，统筹验收通过 |
-| AR-19 | 连续撤销的历史基线与真实文档修订规则不一致 | 高 | 已完成，统筹验收通过 |
+| AR-19 | 事务恢复权限、历史基线与真实文档修订契约 | 高 | 原范围已发布；事务修改回执及条件恢复贯通真实适配器，本批验收通过 |
 | AR-20 | 搜索与替换的输入捕获未按范围和文件复用 | 高 | 已完成，统筹验收通过 |
 | AR-21 | 设置草稿生命周期与工作区激活、生效状态耦合 | 高 | 已完成，统筹验收通过 |
-| AR-22 | 自动会话保存失败缺少调用方处置与可见结果 | 中 | 已完成，统筹验收通过 |
+| AR-22 | 会话保存失败处置、待存快照与恢复来源 | 中 | 重开丢失 pending 风险已确认并修复，本批验收通过；进程终止边界保留 |
 | AR-23 | 无产品调用点的忽略目录接口重复维护配置提交规则 | 低 | 已完成，统筹验收通过 |
 | AR-24 | Pinloom 异步创建回调使用可变的当前链接来源 | 高 | 已完成，统筹验收通过 |
 | AR-25 | Pinloom 链接存储的加载失败与写入约束未闭环 | 高 | 已完成，统筹验收通过 |
 | AR-26 | CLI 按文本行解析 Git 文件名，遗漏被转义路径的关联 | 中 | 已完成，统筹验收通过 |
-| AR-27 | 模板面板筛选重复解析不变文档并读取模板文件 | 中 | 已完成，统筹验收通过 |
+| AR-27 | 模板面板输入复用及同次上下文采集 | 中 | 原过滤缓存及目录失效已验收；新增同次原文重复解析为可选优化，待评估 |
 | AR-28 | 工程配置加载失败被当作有效默认配置继续使用 | 高 | 已完成，统筹验收通过 |
+| AR-29 | 多进程恢复记录缺少编辑会话所有权 | 高 | 会话隔离、租约及认领完成，两进程回归通过；本批验收通过 |
+| AR-30 | 工程配置与设置提交的基线冲突语义不统一 | 高 | 草稿基线与协作锁内复查完成，两进程回归通过；本批验收通过 |
+| AR-31 | 批量编辑重复扫描、转换同一文本坐标 | 中 | 索引及偏移复用完成，本批验收通过；两组 400 处编辑实测约 31.6/34.9 倍 |
+| AR-32 | 高风险编辑的恢复能力、工作流状态与面板归属脱节 | 高 | 事务归属、重试及显式释放能力贯通面板，本批验收通过 |
+| AR-33 | CLI bundle 固定内容及首次链接块遗漏组合预算 | 中 | 完整组合预算及边界回归完成，本批验收通过 |
+| AR-34 | 结构化插入及关联文件创建绕过可写性约束 | 高 | 新发现，源码推导；未实施 |
+| AR-35 | 导航行级识别与共享语法的完整 token 契约不一致 | 中 | 新发现，源码推导；未实施 |
+| AR-36 | 预览文本来源、有效空内容与语义位置版本脱节 | 中 | 新发现，源码推导；未实施 |
 
-AR-01 至 AR-11 的执行范围已闭环。AR-12 至 AR-28 也已按本轮 TASK 全部闭环；后续原始用户回复“全部 17 项完成后发布”已核实，由统筹发布。
+AR-01 至 AR-11 及 AR-12 至 AR-28 原 TASK 的实施和验收记录均保留，已发布 0.31.22。前批授权的 10 项后续缺口、风险与优化已按范围关闭，修改仍在工作区、尚未发布。本轮新增 AR-34 至 AR-36 及 AR-27 优化增补仍待处理；旧失败或缺失夹具不记为通过。
 
-继续审查新增的 AR-18、AR-19 涉及文本与撤销正确性，建议执行时优先确认；AR-20 涉及输入准备的重复开销，AR-21 涉及设置草稿保留。AR-18 可与 AR-17 共用文档载入边界设计，但两者分别处理文本契约和重复 I/O，不合并成单纯的缓存优化。
+以下保留历史发现、原执行顺序及验收说明；当前完成状态以本页待办总览及本批最终验收为准。
 
 ## AR-12 至 AR-28 最终验收说明
 
@@ -552,7 +899,7 @@ GUI 的 `loadConfigurationForWorkspace → load` 丢弃 loaded/message，随后�
 
 依据：`include/zeroslack/semantic/workspaceconfigurationservice.h:29`、`:40`；`src/settings/workspaceconfigurationservice.cpp:398`、`:414`、`:501`、`:507`、`:587`；`src/workspace/workspacemanager.cpp:1125`、`:1229`；`src/cli/zeroslackcli.cpp:332`、`:337`、`:2391`。未来验证要分别覆盖文件缺失、非法 JSON、未知版本、读权限失败，检查 GUI 状态和 CLI exit/envelope/cache，而不是只检查返回了非空根目录。
 
-## 根因归并与后续处理顺序
+## 历史根因归并与当时处理顺序（0.31.21）
 
 本轮没有发现统一语义 worker、共享文档语法、图报告所有者或域构建边界需要因新证据推翻。遗留集中在这些所有者与消费者的衔接，后续不宜按每个页面各补一条判断。
 
@@ -565,7 +912,7 @@ GUI 的 `loadConfigurationForWorkspace → load` 丢弃 loaded/message，随后�
 | 任务调度与外部协议边界不完整 | AR-16/26；AR-24 的副作用结果归属 | 原请求所有者、机器协议适配器；只读查询与副作用操作分别处理 |
 | 旧入口保留第二套提交或交互规则 | AR-23 | 保留兼容用途时薄委托；确认无使用后删除，不因名字相似误删保护 |
 
-实施依赖建议：先处理会写错对象或覆盖旧资料的 AR-24/25/21，以及使整个工程分析配置失真的 AR-28；再一起设计 AR-18/19 的文档与历史契约，修复 AR-26 的明确协议错误；AR-22 明确失败策略后验证。性能条目按同一输入的基线测量安排，AR-23 随所有者收敛清理。当前全部 17 项已完成开发与验收，正式发布由统筹按用户后续确认处理。
+当时的实施依赖建议：先处理会写错对象或覆盖旧资料的 AR-24/25/21，以及使整个工程分析配置失真的 AR-28；再一起设计 AR-18/19 的文档与历史契约，修复 AR-26 的明确协议错误；AR-22 明确失败策略后验证。性能条目按同一输入的基线测量安排，AR-23 随所有者收敛清理。这 17 项原范围已开发、验收并发布 0.31.22；本次新证据与当前处理顺序见文首的继续审查章节。
 
 ## 后续更新规则
 

@@ -1,4 +1,5 @@
 #include "settingscenterservice.h"
+#include "workspaceconfigurationservice.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -8,6 +9,9 @@
 #include <QJsonObject>
 #include <QSettings>
 #include <QTemporaryDir>
+#include <QProcess>
+#include <QTextStream>
+#include <QLockFile>
 
 #include <iostream>
 
@@ -69,9 +73,76 @@ bool hasIssue(const QList<SettingsCenterValidationIssue>& issues,
 }
 }
 
+int settingsWriter(const QStringList& args)
+{
+    const auto mode = args.at(2), global = args.at(3), workspace = args.at(4), value = args.at(5);
+    SettingsCenterService service(global);
+    WorkspaceConfigurationService projects;
+    const auto snapshot = service.load(workspace);
+    auto project = projects.load(workspace);
+    QTextStream input(stdin), output(stdout);
+    output << "ready" << Qt::endl;
+    if (input.readLine() != "go") return 2;
+    bool saved = false, conflict = false;
+    if (mode == "project") {
+        project.topModule = value;
+        const auto result = projects.saveWithResult(project); saved = result.saved; conflict = result.conflict;
+    } else {
+        auto values = mode == "global" ? snapshot.globalValues : snapshot.workspaceValues;
+        values.insert("font.sizePt", value.toInt());
+        const auto result = mode == "global" ? service.saveGlobal(values, snapshot.globalRevision)
+            : service.saveWorkspace(workspace, values, snapshot.workspaceRevision);
+        saved = result.saved; conflict = result.conflict;
+    }
+    output << QJsonDocument(QJsonObject{{"saved", saved}, {"conflict", conflict}}).toJson(QJsonDocument::Compact) << Qt::endl;
+    return 0;
+}
+
+void checkConcurrentSettingsWriters()
+{
+    for (const auto& mode : {QString("project"), QString("workspace"), QString("global")}) {
+        QTemporaryDir fixture;
+        const auto root = fixture.filePath("workspace"), global = fixture.filePath("global.ini");
+        check(QDir().mkpath(root), "concurrent settings fixture exists");
+        QProcess first, second;
+        first.start(QCoreApplication::applicationFilePath(), {"--settings-writer", mode, global, root, "18"});
+        second.start(QCoreApplication::applicationFilePath(), {"--settings-writer", mode, global, root, "19"});
+        const auto readLine = [](QProcess& peer) {
+            while (!peer.canReadLine() && peer.waitForReadyRead(5000)) {}
+            return peer.readLine().trimmed();
+        };
+        const bool ready = first.waitForStarted(5000) && second.waitForStarted(5000)
+            && readLine(first) == "ready" && readLine(second) == "ready";
+        check(ready, "both processes capture the same editing baseline");
+        first.write("go\n"); second.write("go\n");
+        first.waitForBytesWritten(5000); second.waitForBytesWritten(5000);
+        const auto a = QJsonDocument::fromJson(readLine(first)).object();
+        const auto b = QJsonDocument::fromJson(readLine(second)).object();
+        check(a.value("saved").toBool() != b.value("saved").toBool()
+            && a.value("conflict").toBool() != b.value("conflict").toBool(),
+            "one cooperative commit succeeds and stale full draft conflicts");
+        first.waitForFinished(5000); second.waitForFinished(5000);
+    }
+    QTemporaryDir fixture; WorkspaceConfigurationService service;
+    const auto initial = service.load(fixture.path());
+    auto first = initial, second = initial; first.topModule = "one"; second.topModule = "two";
+    check(service.saveWithResult(first).saved && service.saveWithResult(second).conflict,
+        "independent loaded project drafts enforce a missing-file baseline");
+    const auto path = WorkspaceConfigurationService::projectFilePath(fixture.path());
+    const auto bytes = readBytes(path);
+    auto current = service.load(fixture.path()); current.topModule = "blocked";
+    QLockFile blocked(path + ".write.lock"); blocked.setStaleLockTime(0);
+    check(blocked.tryLock(0), "configuration cooperative lock acquired for fault");
+    check(!service.saveWithResult(current).saved && readBytes(path) == bytes,
+        "failed locked commit leaves stored configuration unchanged");
+    blocked.unlock();
+    check(service.saveWithResult(current).saved, "same draft retries after transient lock failure");
+}
+
 int main(int argc, char* argv[])
 {
     QCoreApplication app(argc, argv);
+    if (app.arguments().value(1) == "--settings-writer") return settingsWriter(app.arguments());
 
     const QList<SettingsCenterCategoryDescriptor>& categories =
         SettingsCenterSchema::categories();
@@ -454,6 +525,7 @@ int main(int argc, char* argv[])
                      == futureGlobalBytes,
           "unsupported global versions are read-only");
 
+    checkConcurrentSettingsWriters();
     std::cout << "settings_center_test: "
               << (checks - failures) << '/' << checks
               << " checks passed\n";

@@ -6,6 +6,7 @@
 #include <QList>
 #include <QString>
 #include <functional>
+#include <memory>
 
 enum class CrashRecoveryStatus {
     Success,
@@ -18,7 +19,8 @@ enum class CrashRecoveryStatus {
     StaleRecord,
     WorkspaceMismatch,
     IdentityMismatch,
-    Cancelled
+    Cancelled,
+    OwnedByAnotherSession
 };
 
 enum class CrashRecoverySourceState {
@@ -59,6 +61,8 @@ struct CrashRecoveryWriteResult :
 };
 
 struct CrashRecoveryCandidate {
+    QString ownerSessionId;
+    bool ownerActive = false;
     QString recoveryId;
     QString storagePath;
     QString workspacePath;
@@ -111,12 +115,13 @@ struct CrashRecoveryRecoverResult :
 class CrashRecoveryService
 {
 public:
-    static constexpr int kSchemaVersion = 1;
+    static constexpr int kSchemaVersion = 2;
 
     explicit CrashRecoveryService(
         const QString& recoveryRoot = QString());
 
     QString recoveryRootPath() const;
+    QString sessionId() const;
 
     CrashRecoveryWriteResult writeSnapshot(
         const CrashRecoverySnapshotRequest& request,
@@ -145,7 +150,7 @@ public:
         const CrashRecoveryDocumentKey& document) const;
 
     static QByteArray sha256(const QByteArray& bytes);
-    static QString recoveryIdForDocument(const CrashRecoveryDocumentKey& document);
+    QString recoveryIdForDocument(const CrashRecoveryDocumentKey& document) const;
 
 private:
     struct ResolvedDocumentKey {
@@ -162,6 +167,13 @@ private:
     };
 
     QString configuredRecoveryRoot;
+    struct Session;
+    std::shared_ptr<Session> session;
+    bool ensureSession(QString* reason) const;
+    bool otherSessionActive(const QString& owner) const;
+    bool claimRecord(const QString& path, const QString& owner, QString* reason) const;
+    CrashRecoveryIsolatedRecord isolateRecord(const QString& root, const QString& workspaceIdentity,
+        const QString& path, CrashRecoveryStatus status, const QString& reason) const;
 
     static QString normalizePath(
         const QString& path,
@@ -170,8 +182,8 @@ private:
         const QString& path);
     static QString identityDigest(
         const QString& value);
-    static ResolvedDocumentKey resolveDocumentKey(
-        const CrashRecoveryDocumentKey& document);
+    ResolvedDocumentKey resolveDocumentKey(
+        const CrashRecoveryDocumentKey& document) const;
     QString workspaceDirectory(
         const QString& workspaceIdentity) const;
     QString recordPath(

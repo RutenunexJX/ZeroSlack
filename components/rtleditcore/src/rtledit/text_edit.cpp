@@ -4,6 +4,26 @@
 
 namespace rtledit {
 
+TextCoordinateIndex::TextCoordinateIndex(std::string_view source) : text(source), lineStarts{0} {
+    for (std::size_t i = 0; i < text.size(); ++i)
+        if (text[i] == '\n') lineStarts.push_back(i + 1);
+}
+
+std::optional<std::size_t> TextCoordinateIndex::offset(SourcePosition position) const {
+    if (position.line >= lineStarts.size()) return std::nullopt;
+    const auto start = lineStarts[position.line];
+    const auto end = position.line + 1 < lineStarts.size() ? lineStarts[position.line + 1] - 1 : text.size();
+    if (position.column > end - start) return std::nullopt;
+    return start + position.column;
+}
+
+std::optional<TextOffsetRange> TextCoordinateIndex::offsets(const SourceRange& range) const {
+    if (range.end < range.start) return std::nullopt;
+    const auto start = offset(range.start), end = offset(range.end);
+    if (!start || !end) return std::nullopt;
+    return TextOffsetRange{*start, *end};
+}
+
 std::optional<std::size_t> positionToOffset(
     const std::string& text,
     SourcePosition position) {
@@ -61,6 +81,15 @@ bool textEditRangesOverlap(
 
 std::vector<WorkspaceTextEdit> buildTextEditApplicationOrder(
     std::vector<IndexedWorkspaceTextEdit> indexedEdits) {
+    auto indexed = buildIndexedTextEditApplicationOrder(std::move(indexedEdits));
+    std::vector<WorkspaceTextEdit> result;
+    result.reserve(indexed.size());
+    for (auto& edit : indexed) result.push_back(std::move(edit.edit));
+    return result;
+}
+
+std::vector<IndexedWorkspaceTextEdit> buildIndexedTextEditApplicationOrder(
+    std::vector<IndexedWorkspaceTextEdit> indexedEdits) {
     std::sort(indexedEdits.begin(), indexedEdits.end(),
         [](const IndexedWorkspaceTextEdit& lhs,
            const IndexedWorkspaceTextEdit& rhs) {
@@ -77,24 +106,25 @@ std::vector<WorkspaceTextEdit> buildTextEditApplicationOrder(
             return lhs.inputIndex < rhs.inputIndex;
         });
 
-    std::vector<WorkspaceTextEdit> ordered;
+    std::vector<IndexedWorkspaceTextEdit> ordered;
+    ordered.reserve(indexedEdits.size());
     for (std::size_t i = 0; i < indexedEdits.size();) {
         const auto& current = indexedEdits[i];
         const bool currentZero = current.offsets.start == current.offsets.end;
 
         if (!currentZero) {
-            ordered.push_back(current.edit);
+            ordered.push_back(current);
             ++i;
             continue;
         }
 
-        WorkspaceTextEdit merged = current.edit;
+        IndexedWorkspaceTextEdit merged = current;
         ++i;
 
         while (i < indexedEdits.size() &&
                indexedEdits[i].offsets.start == current.offsets.start &&
                indexedEdits[i].offsets.end == current.offsets.end) {
-            merged.newText += indexedEdits[i].edit.newText;
+            merged.edit.newText += indexedEdits[i].edit.newText;
             ++i;
         }
 
@@ -107,14 +137,28 @@ std::vector<WorkspaceTextEdit> buildTextEditApplicationOrder(
 std::optional<std::string> applyTextEditsToString(
     std::string text,
     const std::vector<WorkspaceTextEdit>& editsInApplicationOrder) {
+    TextCoordinateIndex index(text);
+    std::vector<IndexedWorkspaceTextEdit> indexed;
+    indexed.reserve(editsInApplicationOrder.size());
     for (const auto& edit : editsInApplicationOrder) {
-        const auto offsets = rangeToOffsets(text, edit.range);
+        const auto offsets = index.offsets(edit.range);
         if (!offsets) {
             return std::nullopt;
         }
-        text.replace(offsets->start, offsets->end - offsets->start, edit.newText);
+        indexed.push_back({edit, indexed.size(), *offsets});
     }
+    return applyIndexedTextEditsToString(std::move(text), indexed);
+}
 
+std::optional<std::string> applyIndexedTextEditsToString(
+    std::string text, const std::vector<IndexedWorkspaceTextEdit>& edits) {
+    auto previousStart = text.size();
+    for (const auto& indexed : edits) {
+        const auto& offsets = indexed.offsets;
+        if (offsets.end > previousStart || offsets.start > offsets.end || offsets.end > text.size()) return std::nullopt;
+        text.replace(offsets.start, offsets.end - offsets.start, indexed.edit.newText);
+        previousStart = offsets.start;
+    }
     return text;
 }
 

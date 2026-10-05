@@ -42,36 +42,42 @@ public:
         return found->second;
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& path,
         DocumentVersion expectedVersion,
         const std::vector<WorkspaceTextEdit>& edits) override {
         auto found = documents_.find(path);
         if (found == documents_.end() ||
             found->second.version != expectedVersion) {
-            return false;
+            return {};
         }
         const auto result =
             applyTextEditsToString(found->second.text, edits);
         if (!result) {
-            return false;
+            return {};
         }
         found->second.text = *result;
         if (!edits.empty()) {
             ++found->second.version.value;
         }
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& path,
-        const WorkspaceDocumentSnapshot& snapshot) override {
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+        const rtledit::WorkspaceDocumentSnapshot& snapshot) override {
+        const auto currentBefore = this->snapshot(path);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         const auto found = documents_.find(path);
         if (found == documents_.end()) {
-            return false;
+            return {};
         }
-        found->second = snapshot;
-        return true;
+        found->second.text = snapshot.text;
+        found->second.version.value = currentBefore->version.value + (currentBefore->text != snapshot.text ? 1 : 0);
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path), currentBefore->text != snapshot.text);
     }
 
 private:

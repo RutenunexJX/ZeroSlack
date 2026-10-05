@@ -54,31 +54,36 @@ public:
             {it->version}, it->text.toUtf8().toStdString()};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& path,
         rtledit::DocumentVersion version,
         const std::vector<rtledit::WorkspaceTextEdit>& edits) override
     {
         auto it = docs.find(norm(QString::fromStdString(path)));
         if (it == docs.end() || it->version != version.value)
-            return false;
+            return {};
         const auto result = rtledit::applyTextEditsToString(
             it->text.toUtf8().toStdString(), edits);
         if (!result)
-            return false;
+            return {};
         it->text = QString::fromUtf8(result->data(),
                                      static_cast<qsizetype>(result->size()));
         ++it->version;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& path,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot& snapshot) override
     {
+        const auto currentBefore = this->snapshot(path);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         auto it = docs.find(norm(QString::fromStdString(path)));
         if (it == docs.end())
-            return false;
+            return {};
         const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(snapshot.text.size()));
@@ -86,7 +91,7 @@ public:
             it->text = restored;
             ++it->version;
         }
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(path), currentBefore->text != snapshot.text);
     }
 };
 

@@ -976,12 +976,7 @@ MultiSignalPropagationWorkflow::publish(
         panelWidget->setTransactionOutcome(
             message,
             appliedState,
-            appliedState
-                && workflowUndoAvailable
-                && transactionService
-                && transactionService->canUndo()
-                && transactionService->historyGeneration()
-                       == appliedTransactionGeneration);
+            canUndoAppliedTransaction());
     }
     emit stateChanged(currentResult);
     return currentResult;
@@ -1176,11 +1171,9 @@ MultiSignalPropagationWorkflow::lastResult() const
 bool MultiSignalPropagationWorkflow::
 canUndoAppliedTransaction() const
 {
-    return currentResult.state
-            == MultiSignalPropagationWorkflowState::Applied
-        && workflowUndoAvailable
+    return workflowUndoAvailable
         && transactionService
-        && transactionService->canUndo()
-        && transactionService->historyGeneration()
-               == appliedTransactionGeneration;
+        && documentManager
+        && transactionService->undoCapabilities(
+            appliedTransactionGeneration, *documentManager).canRetry;
 }

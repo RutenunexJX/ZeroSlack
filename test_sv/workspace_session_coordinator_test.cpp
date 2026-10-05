@@ -332,10 +332,60 @@ void checkFailedSaveTransitionsAndBoundedRetries()
     check(coordinator.saveBeforeWorkspaceTransition(), "cleaned skip is a successful transition disposition");
 }
 
+void checkPendingSessionReopen()
+{
+    QTemporaryDir temp;
+    const auto workspace = temp.filePath("workspace");
+    const auto storage = temp.filePath("state");
+    const auto backup = temp.filePath("state-backup");
+    const auto store = storage + "/session.ini";
+    check(writeFile(workspace + "/top.sv", "module top; endmodule\n"), "pending reopen fixture created");
+    WorkspaceManager manager; manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+    QTabWidget widget; TabManager tabs(&widget);
+    tabs.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temp.filePath("recovery")));
+    QByteArray geometry("old-persisted");
+    WorkspaceSessionUiBridge bridge;
+    bridge.captureUiState = [&](bool) { WorkspaceSessionUiState state; state.mainWindowGeometry = geometry; return state; };
+    bridge.restoreUiState = [&](const WorkspaceSessionUiState& state, bool) {
+        geometry = state.mainWindowGeometry; return WorkspaceSessionUiRestoreResult{};
+    };
+    WorkspaceSessionCoordinator coordinator(&manager, &tabs, nullptr, bridge, store, 25);
+    coordinator.setRestoreOnActivation(false);
+    check(coordinator.openWorkspace(workspace), "pending reopen workspace opens");
+    QTest::qWait(50);
+    check(coordinator.saveSession(), "older session persists before fault");
+    // All move endpoints are immediate children of this isolated fixture.
+    check(QFileInfo(storage).absolutePath() == temp.path() && QFileInfo(backup).absolutePath() == temp.path()
+        && QDir(temp.path()).rename("state", "state-backup") && writeFile(storage, "storage blocker"),
+        "fault prevents QSettings construction without touching its cached state");
+    geometry = "new-pending";
+    check(!coordinator.saveSession(false), "newer session fails persistence");
+    QTest::qWait(450);
+    check(coordinator.pendingSaveCount() == 1, "bounded retry retains newest pending");
+    check(coordinator.closeWorkspace(0), "pending workspace closes");
+    geometry = "empty-after-close";
+    coordinator.setRestoreOnActivation(true);
+    check(coordinator.openWorkspace(workspace), "pending workspace reopens while storage unavailable");
+    check(geometry == "new-pending", "reopen restores pending rather than empty or old UI");
+    check(QFile::remove(storage) && QDir(temp.path()).rename("state-backup", "state"), "old on-disk storage restored");
+    WorkspaceSessionStateService service(store);
+    check(savedGeometryMarker(service, workspace) == "old-persisted", "old disk snapshot coexists with newer pending");
+    check(coordinator.restoreSession() && geometry == "new-pending", "explicit Restore also chooses latest owned pending");
+    check(coordinator.saveSession() && coordinator.pendingSaveCount() == 0
+        && savedGeometryMarker(service, workspace) == "new-pending", "recovered storage persists latest restored state");
+    coordinator.clearSession();
+    check(!coordinator.restoreSession() && !service.sessionExists(workspace), "explicit Reset discards pending and persisted source");
+}
+
 int main(int argc, char* argv[])
 {
     QStandardPaths::setTestModeEnabled(true);
     QApplication app(argc, argv);
+    if (app.arguments().contains("--pending-reopen-only")) {
+        checkPendingSessionReopen();
+        std::cout << (checks - failures) << "/" << checks << " pending reopen checks passed\n";
+        return failures == 0 ? 0 : 1;
+    }
 
     QTemporaryDir temp;
     check(temp.isValid(), "temporary root is valid");
@@ -577,6 +627,7 @@ int main(int argc, char* argv[])
     checkRestoredWorkspaceWatches();
     checkAutomaticSaveFailureAndRecovery();
     checkFailedSaveTransitionsAndBoundedRetries();
+    checkPendingSessionReopen();
     checkWatchNotificationOwnership();
     std::cout << (checks - failures) << "/" << checks
               << " workspace session coordinator checks passed\n";

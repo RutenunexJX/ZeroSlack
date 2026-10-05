@@ -100,128 +100,140 @@ WorkspaceEditDocumentManager::snapshot(
     return rtledit::WorkspaceDocumentSnapshot{combinedVersion(0, fingerprint), utf8String(source.text)};
 }
 
-bool WorkspaceEditDocumentManager::applyTextEdits(
-    const std::string& filePath,
-    rtledit::DocumentVersion expectedVersion,
+rtledit::DocumentMutationResult WorkspaceEditDocumentManager::applyTextEdits(
+    const std::string& filePath, rtledit::DocumentVersion expectedVersion,
     const std::vector<rtledit::WorkspaceTextEdit>& edits)
 {
-    if (!tabs)
-        return false;
-    const QString fileName = EditorFileIdentity::normalized(
-        fromUtf8String(filePath));
-    if (fileName.isEmpty() || fileReadOnly(fileName))
-        return false;
-    if (!tabs->sharedDocuments) return false;
     const auto current = snapshot(filePath);
-    if (!current || current->version != expectedVersion)
-        return false;
-
-    const std::string& before = current->text;
-    struct QtEdit {
-        int start = 0;
-        int end = 0;
-        QString replacement;
-    };
-    QList<QtEdit> qtEdits;
-    qtEdits.reserve(static_cast<qsizetype>(edits.size()));
+    if (!current || current->version != expectedVersion) return {};
+    rtledit::TextCoordinateIndex index(current->text);
+    std::vector<rtledit::IndexedWorkspaceTextEdit> indexed;
+    indexed.reserve(edits.size());
     for (const auto& edit : edits) {
-        const auto offsets =
-            rtledit::rangeToOffsets(before, edit.range);
-        if (!offsets
-            || offsets->start
-                > static_cast<std::size_t>(
-                    std::numeric_limits<int>::max())
-            || offsets->end
-                > static_cast<std::size_t>(
-                    std::numeric_limits<int>::max())) {
-            return false;
-        }
-        const QByteArray startBytes(
-            before.data(), static_cast<qsizetype>(offsets->start));
-        const QByteArray endBytes(
-            before.data(), static_cast<qsizetype>(offsets->end));
-        const QString startPrefix = QString::fromUtf8(startBytes);
-        const QString endPrefix = QString::fromUtf8(endBytes);
-        if (startPrefix.toUtf8().size()
-                != static_cast<qsizetype>(offsets->start)
-            || endPrefix.toUtf8().size()
-                != static_cast<qsizetype>(offsets->end)) {
-            return false;
-        }
-        qtEdits.append(QtEdit{
-            static_cast<int>(startPrefix.size()),
-            static_cast<int>(endPrefix.size()),
-            fromUtf8String(edit.newText)});
+        const auto offsets = index.offsets(edit.range);
+        if (!offsets) return {};
+        indexed.push_back({edit, indexed.size(), *offsets});
     }
+    return applyPreparedTextEdits(filePath, *current, indexed);
+}
 
-    const auto expectedAfter =
-        rtledit::applyTextEditsToString(before, edits);
-    if (!expectedAfter)
-        return false;
-
+rtledit::DocumentMutationResult WorkspaceEditDocumentManager::applyPreparedTextEdits(
+    const std::string& filePath, const rtledit::WorkspaceDocumentSnapshot& expected,
+    const std::vector<rtledit::IndexedWorkspaceTextEdit>& edits)
+{
+    if (!tabs || !tabs->sharedDocuments) return {};
+    const QString fileName = EditorFileIdentity::normalized(fromUtf8String(filePath));
+    if (fileName.isEmpty() || fileReadOnly(fileName)) return {};
+    const auto current = snapshot(filePath);
+    if (!current || current->version != expected.version || current->text != expected.text) return {};
+    const auto& before = current->text;
+    struct QtEdit { int start = 0; int end = 0; QString replacement; };
+    struct Endpoint { std::size_t offset; std::size_t edit; bool end; };
+    std::vector<QtEdit> qtEdits(edits.size());
+    std::vector<Endpoint> endpoints; endpoints.reserve(edits.size() * 2);
+    for (std::size_t i = 0; i < edits.size(); ++i) {
+        const auto& indexed = edits[i];
+        if (indexed.offsets.start > indexed.offsets.end || indexed.offsets.end > before.size()
+            || before.compare(indexed.offsets.start, indexed.offsets.end - indexed.offsets.start,
+                              indexed.edit.expectedText) != 0) return {};
+        endpoints.push_back({indexed.offsets.start, i, false});
+        endpoints.push_back({indexed.offsets.end, i, true});
+        qtEdits[i].replacement = fromUtf8String(indexed.edit.newText);
+        if (qtEdits[i].replacement.toUtf8()
+            != QByteArrayView(indexed.edit.newText.data(), static_cast<qsizetype>(indexed.edit.newText.size()))) return {};
+    }
+    std::sort(endpoints.begin(), endpoints.end(), [](const auto& a, const auto& b) { return a.offset < b.offset; });
+    std::size_t previous = 0;
+    qsizetype utf16 = 0;
+    for (const auto& endpoint : endpoints) {
+        const auto count = static_cast<qsizetype>(endpoint.offset - previous);
+        const auto chunk = QString::fromUtf8(before.data() + previous, count);
+        // Reject split UTF-8 sequences and invalid byte input. Across all
+        // endpoints each byte is decoded once; no whole-prefix temporaries.
+        if (chunk.toUtf8() != QByteArrayView(before.data() + previous, count)) return {};
+        utf16 += chunk.size(); previous = endpoint.offset;
+        if (utf16 > std::numeric_limits<int>::max()) return {};
+        (endpoint.end ? qtEdits[endpoint.edit].end : qtEdits[endpoint.edit].start) = static_cast<int>(utf16);
+    }
+    const auto expectedAfter = rtledit::applyIndexedTextEditsToString(before, edits);
+    if (!expectedAfter) return {};
     auto* document = tabs->sharedDocuments->documentForFile(fileName);
     const bool newlyLoaded = !document;
     if (!document) document = tabs->acquireFileDocument(fileName);
-    if (!document || document->readOnly()) return false;
-    // First acquisition changes the buffer's lifetime identity, not its text.
-    // Recheck exact disk generation and logical text before accepting promotion.
+    if (!document || document->readOnly()) return {};
     const auto source = readDocumentFile(fileName);
-    const auto version = combinedVersion(document->textRevision(),
-        source.available ? contentFingerprint(source.rawBytes) : 0,
+    const auto diskFingerprint = source.available ? contentFingerprint(source.rawBytes) : 0;
+    const auto version = combinedVersion(document->textRevision(), diskFingerprint,
         newlyLoaded ? 0 : document->instanceSerial());
-    if (version != expectedVersion || utf8String(document->textDocument()->toPlainText()) != before
+    if (version != expected.version || utf8String(document->textDocument()->toPlainText()) != before
+        || !document->matchesSourcePath(fileName)
         || (newlyLoaded && (!source.available || document->textRevision() != 0))) {
         if (newlyLoaded) tabs->sharedDocuments->releaseIfUnused(document);
-        return false;
+        return {};
     }
+    const auto originalRevision = document->textRevision();
     {
         auto guards = guardViews(document);
-        QTextCursor cursor(document->textDocument());
-        cursor.beginEditBlock();
-        for (const QtEdit& edit : std::as_const(qtEdits)) {
-            cursor.setPosition(edit.start);
-            cursor.setPosition(edit.end, QTextCursor::KeepAnchor);
+        QTextCursor cursor(document->textDocument()); cursor.beginEditBlock();
+        for (const auto& edit : qtEdits) {
+            cursor.setPosition(edit.start); cursor.setPosition(edit.end, QTextCursor::KeepAnchor);
             cursor.insertText(edit.replacement);
         }
         cursor.endEditBlock();
     }
-    const bool applied = utf8String(document->textDocument()->toPlainText()) == *expectedAfter;
-    // Preserve the user-facing unsaved-file review after a successful edit.
-    // Invalid plans and snapshot access never create visible tabs.
+    rtledit::WorkspaceDocumentSnapshot owned{
+        combinedVersion(document->textRevision(), diskFingerprint, document->instanceSerial()),
+        utf8String(document->textDocument()->toPlainText())};
+    const bool applied = owned.text == *expectedAfter;
+    const bool modified = document->textRevision() != originalRevision;
+    // A reentrant observer may have edited the same buffer. Do not claim its
+    // text as our post-state merely because we can read it now.
+    if (!applied) return {false, modified, std::nullopt};
     if (applied && document->viewCount() == 0) tabs->openFileInTab(fileName);
     for (auto* view : document->views()) tabs->updateTabTitle(view);
-    return applied;
+    return {applied, modified, std::move(owned)};
 }
 
-bool WorkspaceEditDocumentManager::restoreSnapshot(
-    const std::string& filePath,
-    const rtledit::WorkspaceDocumentSnapshot& snapshot)
+rtledit::DocumentMutationResult WorkspaceEditDocumentManager::restoreSnapshot(
+    const std::string& filePath, const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+    const rtledit::WorkspaceDocumentSnapshot& target)
 {
-    if (!tabs)
-        return false;
-    const QString fileName = EditorFileIdentity::normalized(
-        fromUtf8String(filePath));
-    if (fileName.isEmpty() || !tabs->sharedDocuments || fileReadOnly(fileName)) return false;
+    if (!tabs || !tabs->sharedDocuments) return {};
+    const QString fileName = EditorFileIdentity::normalized(fromUtf8String(filePath));
+    if (fileName.isEmpty() || fileReadOnly(fileName)) return {};
+    const auto current = snapshot(filePath);
+    if (!current || current->version != expectedCurrent.version || current->text != expectedCurrent.text) return {};
     auto* document = tabs->sharedDocuments->documentForFile(fileName);
+    const bool newlyLoaded = !document;
     if (!document) document = tabs->acquireFileDocument(fileName);
-    if (!document || document->readOnly()) return false;
-    const auto restored = fromUtf8String(snapshot.text);
+    if (!document || document->readOnly()) return {};
+    const auto source = readDocumentFile(fileName);
+    const auto diskFingerprint = source.available ? contentFingerprint(source.rawBytes) : 0;
+    const auto version = combinedVersion(document->textRevision(), diskFingerprint,
+        newlyLoaded ? 0 : document->instanceSerial());
+    if (version != expectedCurrent.version || utf8String(document->textDocument()->toPlainText()) != expectedCurrent.text
+        || !document->matchesSourcePath(fileName)) {
+        if (newlyLoaded) tabs->sharedDocuments->releaseIfUnused(document);
+        return {};
+    }
+    const auto originalRevision = document->textRevision();
+    const auto restored = fromUtf8String(target.text);
     if (document->textDocument()->toPlainText() != restored) {
         auto guards = guardViews(document);
-        QTextCursor cursor(document->textDocument());
-        cursor.beginEditBlock();
-        cursor.select(QTextCursor::Document);
-        cursor.insertText(restored);
-        cursor.endEditBlock();
+        QTextCursor cursor(document->textDocument()); cursor.beginEditBlock();
+        cursor.select(QTextCursor::Document); cursor.insertText(restored); cursor.endEditBlock();
     }
     const bool succeeded = document->textDocument()->toPlainText() == restored;
+    const bool modified = document->textRevision() != originalRevision;
+    rtledit::WorkspaceDocumentSnapshot owned{
+        combinedVersion(document->textRevision(), diskFingerprint, document->instanceSerial()),
+        utf8String(document->textDocument()->toPlainText())};
+    if (!succeeded) return {false, modified, std::nullopt};
     for (auto* view : document->views()) tabs->updateTabTitle(view);
     if (succeeded && document->viewCount() == 0) {
-        // A failed apply may have acquired an unopened document without edits.
-        // Clean rollback is not an instruction to open a new presentation.
-        const auto disk = readDocumentFile(fileName);
-        if (disk.available && disk.text == restored) tabs->sharedDocuments->releaseIfUnused(document);
-        else tabs->openFileInTab(fileName);
+        if (source.available && source.text == restored) {
+            if (tabs->sharedDocuments->releaseIfUnused(document)) owned.version = combinedVersion(0, diskFingerprint);
+        } else tabs->openFileInTab(fileName);
     }
-    return succeeded;
+    return {succeeded, modified, std::move(owned)};
 }

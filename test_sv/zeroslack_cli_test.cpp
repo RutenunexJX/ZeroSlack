@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
+#include <QStringConverter>
 
 #include <algorithm>
 
@@ -153,6 +154,202 @@ private:
     }
 
 private slots:
+    void anchorsCaptureSourcesOutsideSemanticExtensions() {
+        auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
+        const auto file = QDir(fixture.workspace->path()).filePath("notes.txt");
+        const QString text = "module notes; logic selected; endmodule\n"; QVERIFY(writeText(file, text));
+        PinloomCodeLinkStore links; links.setWorkspaceRoot(fixture.workspace->path());
+        SlangManager slang;
+        const auto source = PinloomSourceSelection::fromSemanticSymbol(fixture.workspace->path(), text,
+            recordNamed(slang.extractSymbolRecords(file, text), "selected"));
+        QVERIFY(links.addLink(source, QUrl("pinloom://anchor/notes"), "notes", {}));
+        ZeroSlackCliRequest request; request.command = "anchors"; request.filePath = "notes.txt";
+        request.workspaceRoot = fixture.workspace->path(); request.cacheDirectory = fixture.cache->path();
+        const auto result = ZeroSlackCliService().execute(request); QVERIFY(result.succeeded());
+        const auto anchors = result.envelope.value("data").toObject().value("anchors").toArray();
+        QCOMPARE(anchors.size(), 1);
+        QCOMPARE(anchors.first().toObject().value("resolution").toString(), QString("exact"));
+        ZeroSlackCliService raced([&](auto stage) {
+            if (stage == ZeroSlackCliService::ObservationStage::BeforeOutput)
+                QVERIFY(writeText(file, "changed selection\n"));
+        });
+        QVERIFY(!raced.execute(request).succeeded());
+    }
+
+    void captureMismatchDoesNotPublishMixedInput_data() {
+        QTest::addColumn<QString>("command");
+        QTest::addColumn<bool>("late");
+        for (const auto& command : {QString("context"), QString("bundle"), QString("anchors")})
+            for (bool late : {false, true})
+                QTest::newRow(qPrintable(command + (late ? "-before-output" : "-before-worker"))) << command << late;
+    }
+    void captureMismatchDoesNotPublishMixedInput() {
+        QFETCH(QString, command); QFETCH(bool, late);
+        auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
+        ZeroSlackCliRequest request; request.command = command;
+        request.workspaceRoot = fixture.workspace->path(); request.cacheDirectory = fixture.cache->path();
+        request.filePath = "rtl/top.sv"; request.query = "top"; request.line = 2;
+        bool changed = false;
+        ZeroSlackCliService interrupted([&](ZeroSlackCliService::ObservationStage stage) {
+            if (stage == (late ? ZeroSlackCliService::ObservationStage::BeforeOutput
+                               : ZeroSlackCliService::ObservationStage::WorkspaceCaptured)) {
+                changed = writeText(fixture.topFile, QString("// new input\n")
+                    + QString(fixture.originalTop).replace("module top(", "module top_new("));
+            }
+        });
+        const auto result = interrupted.execute(request);
+        QVERIFY(changed); QVERIFY(!result.succeeded());
+        QVERIFY(!result.envelope.contains("data"));
+        QVERIFY(!QFileInfo::exists(interrupted.cachePathForWorkspace(request.workspaceRoot, request.cacheDirectory)));
+        ZeroSlackCliService service;
+        const auto next = service.execute(request); QVERIFY2(next.succeeded(), next.rendered.constData());
+        const auto cached = service.execute(request); QVERIFY(cached.succeeded());
+        QVERIFY(!cached.envelope.value("cacheRebuilt").toBool());
+        QCOMPARE(next.envelope.value("data"), cached.envelope.value("data"));
+        request.command = "status"; request.requireCurrent = true;
+        const auto status = service.execute(request); QVERIFY(status.succeeded());
+        QVERIFY(status.envelope.value("data").toObject().value("cacheCurrent").toBool());
+    }
+    void rawEncodingAndLogicalSnippetShareInput_data() {
+        QTest::addColumn<int>("encoding"); QTest::addColumn<QString>("ending");
+        QTest::newRow("utf8-bom-crlf") << int(QStringConverter::Utf8) << QString("\r\n");
+        QTest::newRow("utf16le-crlf") << int(QStringConverter::Utf16LE) << QString("\r\n");
+        QTest::newRow("utf16be-cr") << int(QStringConverter::Utf16BE) << QString("\r");
+        QTest::newRow("utf32le-lf") << int(QStringConverter::Utf32LE) << QString("\n");
+    }
+    void sameLogicalTextStillUsesRawCaptureIdentity() {
+        auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
+        ZeroSlackCliRequest request; request.command = "context"; request.filePath = "rtl/top.sv"; request.line = 2;
+        request.workspaceRoot = fixture.workspace->path(); request.cacheDirectory = fixture.cache->path();
+        ZeroSlackCliService service;
+        QVERIFY(service.execute(request).succeeded());
+        const auto cachePath = service.cachePathForWorkspace(request.workspaceRoot, request.cacheDirectory);
+        const auto oldCacheHash = fileHash(cachePath);
+        request.forceRefresh = true;
+        ZeroSlackCliService raced([&](auto stage) {
+            if (stage != ZeroSlackCliService::ObservationStage::WorkspaceCaptured) return;
+            QFile file(fixture.topFile); QVERIFY(file.open(QIODevice::WriteOnly));
+            const auto bytes = QByteArray::fromHex("efbbbf") + QString(fixture.originalTop).replace("\n", "\r\n").toUtf8();
+            QCOMPARE(file.write(bytes), bytes.size());
+        });
+        const auto rejected = raced.execute(request);
+        QVERIFY(!rejected.succeeded());
+        QVERIFY(rejected.envelope.value("error").toObject().value("message").toString().contains("between"));
+        QCOMPARE(fileHash(cachePath), oldCacheHash);
+        request.forceRefresh = false; request.command = "status"; request.requireCurrent = true;
+        QCOMPARE(service.execute(request).exitCode, 4);
+        request.command = "context";
+        QVERIFY(service.execute(request).succeeded());
+        const auto newCacheHash = fileHash(cachePath);
+        // A late change during a cache hit must also leave the coherent old cache intact.
+        ZeroSlackCliService late([&](auto stage) {
+            if (stage == ZeroSlackCliService::ObservationStage::BeforeOutput)
+                QVERIFY(writeText(fixture.topFile, "// late\n" + fixture.originalTop));
+        });
+        QVERIFY(!late.execute(request).succeeded());
+        QCOMPARE(fileHash(cachePath), newCacheHash);
+    }
+    void rawEncodingAndLogicalSnippetShareInput() {
+        QFETCH(int, encoding); QFETCH(QString, ending);
+        auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
+        const auto text = QString("// 中文 😀\n") + fixture.originalTop;
+        QStringEncoder encoder(static_cast<QStringConverter::Encoding>(encoding), QStringConverter::Flag::WriteBom);
+        const QByteArray bytes = encoder(QString(text).replace("\n", ending));
+        { QFile file(fixture.topFile); QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes), bytes.size()); }
+        ZeroSlackCliRequest request; request.command = "context";
+        request.workspaceRoot = fixture.workspace->path(); request.cacheDirectory = fixture.cache->path();
+        request.filePath = "rtl/top.sv"; request.line = 3;
+        const auto result = ZeroSlackCliService().execute(request);
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        const auto data = result.envelope.value("data").toObject();
+        QVERIFY(result.rendered.contains(QString("中文 😀").toUtf8()));
+        QVERIFY(!result.rendered.contains("\\r"));
+        QFile cache(ZeroSlackCliService().cachePathForWorkspace(request.workspaceRoot, request.cacheDirectory));
+        QVERIFY(cache.open(QIODevice::ReadOnly));
+        const auto index = QJsonDocument::fromJson(cache.readAll()).object();
+        bool matched = false;
+        for (const auto& value : index.value("files").toArray()) {
+            const auto file = value.toObject();
+            if (file.value("path").toString() == "rtl/top.sv") {
+                QCOMPARE(file.value("sha256").toString(), fileHash(fixture.topFile));
+                QCOMPARE(file.value("size").toInt(), bytes.size()); matched = true;
+            }
+        }
+        QVERIFY(matched);
+        QVERIFY(!data.value("anchors").toArray().isEmpty());
+    }
+    void externalDependencyChangeBeforeOutputIsRejected() {
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const auto root = fixture.filePath("root"), include = fixture.filePath("include");
+        QVERIFY(writeText(root + "/top.sv", "`include \"def.svh\"\nmodule top; logic [`W-1:0] q; endmodule\n"));
+        QVERIFY(writeText(include + "/def.svh", "`define W 8\n"));
+        WorkspaceConfigurationService config;
+        auto settings = config.load(root); settings.includeDirs = {include}; QVERIFY(config.save(settings));
+        ZeroSlackCliRequest request; request.command = "bundle"; request.query = "q";
+        request.workspaceRoot = root; request.cacheDirectory = fixture.filePath("cache");
+        ZeroSlackCliService service([&](auto stage) {
+            if (stage == ZeroSlackCliService::ObservationStage::BeforeOutput)
+                QVERIFY(writeText(include + "/def.svh", "`define W 16\n"));
+        });
+        QVERIFY(!service.execute(request).succeeded());
+        QVERIFY(!QFileInfo::exists(service.cachePathForWorkspace(root, request.cacheDirectory)));
+        QVERIFY(ZeroSlackCliService().execute(request).succeeded());
+        request.command = "status"; request.requireCurrent = true;
+        QVERIFY(ZeroSlackCliService().execute(request).succeeded());
+        QVERIFY(writeText(include + "/def.svh", "`define W 32\n"));
+        QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 4);
+    }
+    void bundleCountsCompleteMarkdown() {
+        auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
+        ZeroSlackCliRequest request; request.command = "bundle"; request.query = QString(700, 'x');
+        request.workspaceRoot = fixture.workspace->path(); request.cacheDirectory = fixture.cache->path();
+        ZeroSlackCliService service;
+        for (int i = 0; i < 3; ++i) {
+            const auto result = service.execute(request); QVERIFY(result.succeeded());
+            request.maxTokens = result.envelope.value("data").toObject().value("estimatedTokens").toInt();
+        }
+        auto result = service.execute(request); QVERIFY(result.succeeded());
+        auto data = result.envelope.value("data").toObject();
+        QCOMPARE(data.value("estimatedTokens").toInt(), request.maxTokens);
+        request.query += QString::fromUtf8("😀");
+        QVERIFY(!service.execute(request).succeeded());
+        request.query = QString(2000, 'x'); request.maxTokens = 128;
+        QVERIFY(!service.execute(request).succeeded());
+
+        request.query = QString(330, 'x') + QString::fromUtf8("中文😀"); request.maxTokens = 4000;
+        PinloomCodeLinkStore links; links.setWorkspaceRoot(fixture.workspace->path());
+        SlangManager slang;
+        const auto source = PinloomSourceSelection::fromSemanticSymbol(fixture.workspace->path(),
+            fixture.originalTop, recordNamed(slang.extractSymbolRecords(fixture.topFile, fixture.originalTop), "q"));
+        QVERIFY(links.addLink(source, QUrl("pinloom://anchor/boundary"), request.query, {}));
+        result = service.execute(request); QVERIFY(result.succeeded());
+        data = result.envelope.value("data").toObject();
+        QVERIFY(data.value("symbols").toArray().isEmpty());
+        QCOMPARE(data.value("anchors").toArray().size(), 1);
+        // Find the exact three-digit threshold so header's printed budget is stable.
+        int threshold = 0;
+        for (int budget = 128; budget < 300; ++budget) {
+            request.maxTokens = budget;
+            const auto bounded = service.execute(request);
+            if (!bounded.succeeded()) {
+                QVERIFY(bounded.envelope.value("error").toObject().value("message").toString().contains("header"));
+                continue;
+            }
+            const auto payload = bounded.envelope.value("data").toObject();
+            const auto markdown = payload.value("markdown").toString().toUtf8();
+            const int actual = (markdown.size() + 3) / 4;
+            QCOMPARE(payload.value("estimatedTokens").toInt(), actual);
+            QVERIFY(actual <= budget);
+            if (!payload.value("anchors").toArray().isEmpty()) { threshold = budget; break; }
+            QVERIFY(!markdown.contains("## Pinloom links"));
+        }
+        QVERIFY(threshold > 128);
+        request.maxTokens = threshold - 1;
+        data = service.execute(request).envelope.value("data").toObject();
+        QVERIFY(data.value("anchors").toArray().isEmpty());
+        QVERIFY(!data.value("markdown").toString().contains("## Pinloom links"));
+    }
+
     void changedUsesLiteralGitFileNames()
     {
         QVERIFY2(!QStandardPaths::findExecutable("git").isEmpty(), "Git is required for the changed command regression");
@@ -242,12 +439,14 @@ private slots:
         request.command = QStringLiteral("status");
         QVERIFY(service.execute(request).envelope.value(QStringLiteral("data"))
             .toObject().value(QStringLiteral("cacheCurrent")).toBool());
+        configuration = configurationService.load(root);
         configuration.topModule = QStringLiteral("second");
         QVERIFY(configurationService.save(configuration));
         QVERIFY(!service.execute(request).envelope.value(QStringLiteral("data"))
             .toObject().value(QStringLiteral("cacheCurrent")).toBool());
         request.command = QStringLiteral("summary");
         QVERIFY(service.execute(request).envelope.value(QStringLiteral("cacheRebuilt")).toBool());
+        configuration = configurationService.load(root);
         configuration.defines.insert(QStringLiteral("MODE"), QStringLiteral("2"));
         QVERIFY(configurationService.save(configuration));
         request.command = QStringLiteral("status");

@@ -1,4 +1,5 @@
 #include <zeroslack/documents/documentfileread.h>
+#include <zeroslack/text/sourcetext.h>
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -36,26 +37,16 @@ DocumentFileReadResult readDocumentFile(const QString& fileName)
         result.failureReason = QStringLiteral("File changed while it was being read.");
         return result;
     }
-    QTextStream stream(result.rawBytes);
-    result.text = stream.readAll();
-    result.format.encoding = stream.encoding();
-    if (stream.status() != QTextStream::Ok) {
+    const auto decoded = decodeSourceText(result.rawBytes);
+    if (!decoded.valid) {
         result.failureReason = QStringLiteral("Cannot decode the complete file.");
         return result;
     }
+    result.text = decoded.text;
+    result.format.encoding = decoded.encoding;
+    result.format.byteOrderMark = decoded.byteOrderMark;
+    result.format.lineEnding = decoded.lineEnding;
     const auto& raw = result.rawBytes;
-    result.format.byteOrderMark = raw.startsWith(QByteArray::fromHex("efbbbf"))
-        || raw.startsWith(QByteArray::fromHex("fffe")) || raw.startsWith(QByteArray::fromHex("feff"))
-        || raw.startsWith(QByteArray::fromHex("0000feff"));
-    if (result.text.contains(QStringLiteral("\r\n"))) result.format.lineEnding = QStringLiteral("\r\n");
-    else if (result.text.contains(QLatin1Char('\n'))) result.format.lineEnding = QStringLiteral("\n");
-    else if (result.text.contains(QLatin1Char('\r'))) result.format.lineEnding = QStringLiteral("\r");
-    result.text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-    result.text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
-    // Match QTextDocument::toPlainText for unopened and already opened buffers.
-    result.text.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
-    result.text.replace(QChar::LineSeparator, QLatin1Char('\n'));
-    result.text.replace(QChar::Nbsp, QLatin1Char(' '));
     result.rawSha256 = QCryptographicHash::hash(raw, QCryptographicHash::Sha256);
     result.logicalSha256 = QCryptographicHash::hash(result.text.toUtf8(), QCryptographicHash::Sha256);
     result.modifiedUtc = after.lastModified().toUTC();

@@ -1,4 +1,5 @@
 #include "zeroslackcli.h"
+#include <zeroslack/text/sourcetext.h>
 
 #include <zeroslack/semantic/pinloomcodelinkstore.h>
 #include <zeroslack/semantic/projectsnapshot.h>
@@ -38,12 +39,13 @@ namespace {
 
 constexpr auto kSchema = "zeroslack.cli/v1";
 constexpr auto kCacheSchema = "ZeroSlack.CliSemanticIndex";
-constexpr int kCacheVersion = 2;
+constexpr int kCacheVersion = 3;
 
 struct SourceFileState {
     QString absolutePath;
     QString relativePath;
     QByteArray content;
+    QString text;
     QString sha256;
     qint64 size = 0;
     qint64 modifiedMs = 0;
@@ -55,6 +57,8 @@ struct WorkspaceState {
     WorkspaceConfigurationSource configurationSource =
         WorkspaceConfigurationSource::Default;
     QList<SourceFileState> files;
+    PinloomCodeLinkStore linkStore;
+    QHash<QString, SemanticCapturedSource> linkSources;
     QString revision;
     QString failureReason;
 
@@ -355,10 +359,34 @@ WorkspaceState inspectWorkspace(const QString& requestedRoot)
         file.absolutePath = path;
         file.relativePath = relativePath(state.root, path);
         file.content = content;
+        const auto decoded = decodeSourceText(content);
+        if (!decoded.valid) {
+            state.failureReason = QStringLiteral("Cannot decode source: %1").arg(path);
+            return state;
+        }
+        file.text = decoded.text;
         file.sha256 = sha256(content);
-        file.size = info.size();
+        file.size = content.size();
         file.modifiedMs = info.lastModified().toMSecsSinceEpoch();
         state.files.append(std::move(file));
+    }
+
+    // Pinloom can also link to files outside the semantic extension set. Own
+    // their captured text and the store generation for this command as well.
+    state.linkStore.setWorkspaceRoot(state.root);
+    for (const auto& file : state.files)
+        state.linkSources.insert(pathKey(file.absolutePath), {file.text, true, false, QByteArray::fromHex(file.sha256.toLatin1())});
+    for (const auto& anchor : state.linkStore.anchors()) {
+        QString path = anchor.source.absoluteFilePath;
+        if (path.isEmpty() && !anchor.source.relativeFilePath.isEmpty())
+            path = QDir(state.root).absoluteFilePath(anchor.source.relativeFilePath);
+        if (path.isEmpty() || state.linkSources.contains(pathKey(path))) continue;
+        QString failure;
+        const auto bytes = readFileBytes(path, &failure);
+        const auto decoded = decodeSourceText(bytes);
+        const bool readable = failure.isEmpty() && decoded.valid;
+        state.linkSources.insert(pathKey(path), {readable ? decoded.text : QString(), readable, false,
+            readable ? QCryptographicHash::hash(bytes, QCryptographicHash::Sha256) : QByteArray()});
     }
 
     QCryptographicHash revisionHash(QCryptographicHash::Sha256);
@@ -375,6 +403,17 @@ WorkspaceState inspectWorkspace(const QString& requestedRoot)
     state.revision = QStringLiteral("sha256:")
         + QString::fromLatin1(revisionHash.result().toHex());
     return state;
+}
+
+bool workspaceStillCurrent(const WorkspaceState& state)
+{
+    // Compare a complete inventory, configuration and raw-byte identity. This
+    // is validation only; semantic compilation remains a single shared-worker run.
+    const auto current = inspectWorkspace(state.root);
+    return current.isValid() && current.revision == state.revision
+        && current.configuration.storageRevision == state.configuration.storageRevision
+        && current.linkStore.storageRevision() == state.linkStore.storageRevision()
+        && current.linkSources == state.linkSources;
 }
 
 QString configurationSourceName(WorkspaceConfigurationSource source)
@@ -556,6 +595,17 @@ QJsonObject buildSemanticIndex(const WorkspaceState& state,
         return {};
     }
 
+    for (const auto& file : state.files) {
+        const auto captured = result.input->sources.constFind(SemanticInputCapture::pathKey(file.absolutePath));
+        if (captured == result.input->sources.cend() || !captured->readable || captured->overridden
+            || QString::fromLatin1(captured->rawSha256.toHex()) != file.sha256
+            || captured->text != file.text) {
+            if (failureReason) *failureReason = QStringLiteral(
+                "Source changed between workspace inspection and semantic capture: %1").arg(file.relativePath);
+            return {};
+        }
+    }
+
     QList<SemanticSymbolRecord> records = snapshot->getSymbolRecords();
     std::sort(records.begin(), records.end(), [](const auto& left,
                                                   const auto& right) {
@@ -721,7 +771,7 @@ QString cachePath(const QString& workspaceRoot,
 }
 
 PreparedIndex prepareIndex(const ZeroSlackCliRequest& request,
-                           bool statusOnly)
+                           bool statusOnly, const ZeroSlackCliService::ObservationHook& observationHook)
 {
     PreparedIndex prepared;
     prepared.workspace = inspectWorkspace(request.workspaceRoot);
@@ -729,6 +779,7 @@ PreparedIndex prepareIndex(const ZeroSlackCliRequest& request,
         prepared.failureReason = prepared.workspace.failureReason;
         return prepared;
     }
+    if (observationHook) observationHook(ZeroSlackCliService::ObservationStage::WorkspaceCaptured);
     prepared.cachePath = cachePath(prepared.workspace.root,
                                    request.cacheDirectory);
     prepared.cacheExists = QFileInfo::exists(prepared.cachePath);
@@ -765,11 +816,7 @@ PreparedIndex prepareIndex(const ZeroSlackCliRequest& request,
             ? QStringLiteral("Semantic index build failed.") : failure;
         return prepared;
     }
-    if (!writeCache(prepared.cachePath, index, &failure)) {
-        prepared.failureReason = QStringLiteral("Semantic cache write failed: %1")
-            .arg(failure);
-        return prepared;
-    }
+    // Persist only after output has been built and every input revalidated.
     prepared.index = std::move(index);
     prepared.cacheExists = true;
     prepared.cacheCurrent = true;
@@ -865,8 +912,7 @@ QJsonObject resolvedAnchorJson(const ResolvedPinloomCodeLink& resolved,
 QJsonArray anchorsJson(const WorkspaceState& state,
                        const QString& requestedFile = {})
 {
-    PinloomCodeLinkStore store;
-    store.setWorkspaceRoot(state.root);
+    const auto& store = state.linkStore;
     const QList<PinloomCodeLinkAnchorRecord> stored = store.anchors();
     QHash<QString, QString> fileByKey;
     for (const PinloomCodeLinkAnchorRecord& anchor : stored) {
@@ -886,13 +932,12 @@ QJsonArray anchorsJson(const WorkspaceState& state,
     for (auto it = fileByKey.cbegin(); it != fileByKey.cend(); ++it) {
         if (!requestedKey.isEmpty() && it.key() != requestedKey)
             continue;
-        QString failure;
-        const QByteArray bytes = readFileBytes(it.value(), &failure);
-        if (!failure.isEmpty())
+        const auto text = state.linkSources.constFind(it.key());
+        if (text == state.linkSources.cend() || !text->readable)
             continue;
         const QList<ResolvedPinloomCodeLink> resolved =
             store.linksForDocument(
-                it.value(), QString::fromUtf8(bytes), nullptr);
+                it.value(), text->text, nullptr);
         for (const ResolvedPinloomCodeLink& anchor : resolved) {
             emitted.insert(anchor.anchor.id);
             result.append(resolvedAnchorJson(anchor, state.root));
@@ -1011,11 +1056,11 @@ const SourceFileState* findSourceFile(const WorkspaceState& state,
     return nullptr;
 }
 
-QString numberedSnippet(const QByteArray& content,
+QString numberedSnippet(const QString& content,
                         int firstLine,
                         int lastLine)
 {
-    const QStringList lines = QString::fromUtf8(content).split(
+    const QStringList lines = content.split(
         QLatin1Char('\n'));
     firstLine = qBound(1, firstLine, qMax(1, lines.size()));
     lastLine = qBound(firstLine, lastLine, qMax(firstLine, lines.size()));
@@ -1231,7 +1276,7 @@ QJsonObject contextData(const PreparedIndex& prepared,
             *failureReason = QStringLiteral("--line must be at least 1.");
         return {};
     }
-    const int totalLines = QString::fromUtf8(file->content)
+    const int totalLines = file->text
         .count(QLatin1Char('\n')) + 1;
     if (request.line > totalLines) {
         if (failureReason)
@@ -1277,7 +1322,7 @@ QJsonObject contextData(const PreparedIndex& prepared,
         {QStringLiteral("firstLine"), firstLine},
         {QStringLiteral("lastLine"), lastLine},
         {QStringLiteral("snippet"),
-         numberedSnippet(file->content, firstLine, lastLine)},
+         numberedSnippet(file->text, firstLine, lastLine)},
         {QStringLiteral("symbols"), symbols},
         {QStringLiteral("anchors"), nearbyAnchors},
     };
@@ -1472,6 +1517,20 @@ QJsonObject bundleData(const PreparedIndex& prepared,
              prepared.workspace.revision,
              QString::number(budget));
     int tokens = estimatedTokens(markdown);
+    if (tokens > budget) {
+        if (failureReason) *failureReason = QStringLiteral(
+            "The bundle header and query require %1 estimated tokens; budget is %2.").arg(tokens).arg(budget);
+        return {};
+    }
+    // The advertised budget covers the complete Markdown payload, including
+    // fixed headings. JSON metadata/envelope bytes are outside that contract.
+    const auto appendWithinBudget = [&](const QString& block) {
+        const int combinedTokens = estimatedTokens(markdown + block);
+        if (combinedTokens > budget) return false;
+        markdown += block;
+        tokens = combinedTokens;
+        return true;
+    };
     QJsonArray selected;
     QSet<QString> emittedRanges;
     for (const Candidate& candidate : std::as_const(candidates)) {
@@ -1485,7 +1544,7 @@ QJsonObject bundleData(const PreparedIndex& prepared,
         const int line = qMax(1, candidate.symbol.value(
             QStringLiteral("line")).toInt());
         const int first = qMax(1, line - 4);
-        const int totalLines = QString::fromUtf8(file->content)
+        const int totalLines = file->text
             .count(QLatin1Char('\n')) + 1;
         const int last = qMin(totalLines, qMax(
             line + 8,
@@ -1505,12 +1564,9 @@ QJsonObject bundleData(const PreparedIndex& prepared,
                  candidate.symbol.value(QStringLiteral("id")).toString(),
                  file->relativePath,
                  QString::number(line),
-                 numberedSnippet(file->content, first, last));
-        const int blockTokens = estimatedTokens(block);
-        if (tokens + blockTokens > budget)
+                 numberedSnippet(file->text, first, last));
+        if (!appendWithinBudget(block))
             continue;
-        markdown += block;
-        tokens += blockTokens;
         emittedRanges.insert(rangeKey);
         QJsonObject selectedSymbol = candidate.symbol;
         selectedSymbol.insert(QStringLiteral("score"), candidate.score);
@@ -1541,18 +1597,9 @@ QJsonObject bundleData(const PreparedIndex& prepared,
                      QStringLiteral("firstLine")).toInt()),
                  QString::number(anchor.value(
                      QStringLiteral("linkCount")).toInt()));
-        const int anchorTokens = estimatedTokens(anchorLine);
-        if (tokens + anchorTokens > budget)
-            break;
-        if (selectedAnchors.isEmpty()) {
-            const QString heading = QStringLiteral("## Pinloom links\n\n");
-            if (tokens + estimatedTokens(heading) > budget)
-                break;
-            markdown += heading;
-            tokens += estimatedTokens(heading);
-        }
-        markdown += anchorLine;
-        tokens += anchorTokens;
+        const QString block = (selectedAnchors.isEmpty()
+            ? QStringLiteral("## Pinloom links\n\n") : QString()) + anchorLine;
+        if (!appendWithinBudget(block)) break;
         selectedAnchors.append(anchor);
     }
     return {
@@ -2019,7 +2066,7 @@ QJsonObject suiteContextData(const PreparedIndex& prepared,
             return {};
         }
         filePath = sourceFile->absolutePath;
-        documentText = QString::fromUtf8(sourceFile->content);
+        documentText = sourceFile->text;
         if (request.lineSpecified || request.line != 0) {
             const int lineCount = documentText.count(QLatin1Char('\n')) + 1;
             if (request.line < 1 || request.line > lineCount) {
@@ -2390,7 +2437,7 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
     }
 
     const bool statusOnly = request.command == QStringLiteral("status");
-    PreparedIndex prepared = prepareIndex(request, statusOnly);
+    PreparedIndex prepared = prepareIndex(request, statusOnly, observationHook);
     if (!prepared.workspace.isValid() || !prepared.failureReason.isEmpty()) {
         result.exitCode = 3;
         result.envelope = errorEnvelope(
@@ -2403,7 +2450,16 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
         return result;
     }
 
+    if (observationHook) observationHook(ObservationStage::BeforeOutput);
+
     if (statusOnly) {
+        if (!workspaceStillCurrent(prepared.workspace)) {
+            result.exitCode = 3;
+            result.envelope = errorEnvelope(request, QStringLiteral("source_changed"),
+                QStringLiteral("Workspace changed while preparing this command."), &prepared.workspace);
+            result.rendered = render(result.envelope, request.format);
+            return result;
+        }
         const QJsonObject data{
             {QStringLiteral("cacheExists"), prepared.cacheExists},
             {QStringLiteral("cacheCurrent"), prepared.cacheCurrent},
@@ -2467,6 +2523,16 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
         data = suiteContextData(prepared, suiteRequest, &failure);
     }
 
+    if (failure.isEmpty()
+        && (!workspaceStillCurrent(prepared.workspace)
+            || !dependencyEvidenceCurrent(prepared.index.value(QStringLiteral("dependencyEvidence")).toObject(),
+                                          projectForWorkspace(prepared.workspace)))) {
+        failure = QStringLiteral("Source or dependency changed while preparing this command; retry with current input.");
+    }
+    if (failure.isEmpty() && prepared.rebuilt
+        && !writeCache(prepared.cachePath, prepared.index, &failure)) {
+        failure = QStringLiteral("Semantic cache write failed: %1").arg(failure);
+    }
     if (!failure.isEmpty()) {
         result.exitCode = 5;
         result.envelope = errorEnvelope(

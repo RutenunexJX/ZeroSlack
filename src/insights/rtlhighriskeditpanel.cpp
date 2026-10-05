@@ -321,11 +321,17 @@ void RtlHighRiskEditPanel::setupUi()
         QStringLiteral("Undo Applied Plan"), this);
     undoButton->setObjectName(
         QStringLiteral("rtlHighRiskUndoButton"));
+    retireButton = UiControls::pushButton(
+        QStringLiteral("Keep Changes / Release Undo"), this);
+    retireButton->setObjectName(QStringLiteral("rtlHighRiskRetireButton"));
+    connect(retireButton, &QPushButton::clicked, this,
+        [this]() { emit retireRequested(currentSessionId); });
     actionRow->addStretch(1);
     actionRow->addWidget(previewButton);
     actionRow->addWidget(confirmButton);
     actionRow->addWidget(cancelButton);
     actionRow->addWidget(undoButton);
+    actionRow->addWidget(retireButton);
     root->addLayout(actionRow);
 
     connect(
@@ -533,7 +539,9 @@ void RtlHighRiskEditPanel::presentOutcome(
     conflictLabel->setText(
         outcome.panelState
                 == RtlHighRiskEditPanelState::Conflict
-            ? (outcome.conflictFile.isEmpty()
+            ? (outcome.canRetire
+                   ? QStringLiteral("Review the conflict, then keep changes and release undo to prepare another plan.")
+                   : outcome.conflictFile.isEmpty()
                    ? QStringLiteral(
                          "Conflict: rebuild the preview from "
                          "the current workspace state.")
@@ -819,8 +827,7 @@ void RtlHighRiskEditPanel::updateInputAvailability(
             != RtlHighRiskEditPanelState::Preparing
         && outcome.panelState
             != RtlHighRiskEditPanelState::Confirming
-        && outcome.panelState
-            != RtlHighRiskEditPanelState::Applied;
+        && !outcome.canRetire;
     renameInputPage->setEnabled(inputEnabled);
     connectionInputPage->setEnabled(inputEnabled);
     previewButton->setEnabled(outcome.canPreview);
@@ -831,6 +838,7 @@ void RtlHighRiskEditPanel::updateInputAvailability(
             : QStringLiteral("Apply Confirmed Plan"));
     cancelButton->setEnabled(outcome.canCancel);
     undoButton->setEnabled(outcome.canUndo);
+    retireButton->setEnabled(outcome.canRetire);
 }
 
 QString RtlHighRiskEditPanel::renderHunk(
@@ -950,6 +958,8 @@ void RtlHighRiskEditPanelCoordinator::wirePanel()
 {
     if (!panelWidget)
         return;
+    connect(panelWidget, &RtlHighRiskEditPanel::retireRequested, this,
+        [this](std::uint64_t sessionId) { retireUndoPosition(sessionId); });
     connect(
         panelWidget,
         &RtlHighRiskEditPanel::draftChanged,
@@ -1401,11 +1411,22 @@ RtlHighRiskEditPanelCoordinator::undo(
             QStringLiteral(
                 "The owning RTL edit workflow is unavailable."));
     }
-    if (result.state
-            == RtlHighRiskEditWorkflowState::Undone
-        || !currentWorkflowCanUndo()) {
+    if (result.state == RtlHighRiskEditWorkflowState::Undone
+        || !currentTransactionWorkflow()->hasUndoPosition()) {
         appliedOwner = RtlHighRiskEditKind::None;
     }
+    return publish(result);
+}
+
+RtlHighRiskEditPanelOutcome RtlHighRiskEditPanelCoordinator::retireUndoPosition(
+    std::uint64_t sessionId)
+{
+    if (!sessionMatches(sessionId) || appliedOwner == RtlHighRiskEditKind::None)
+        return ignoredRequest(QStringLiteral("No owned undo position is available."));
+    auto* workflow = currentTransactionWorkflow();
+    if (!workflow) return ignoredRequest(QStringLiteral("The owning workflow is unavailable."));
+    const auto result = workflow->retireUndoPosition();
+    appliedOwner = RtlHighRiskEditKind::None;
     return publish(result);
 }
 
@@ -1519,7 +1540,9 @@ RtlHighRiskEditPanelCoordinator::publish(
     if (result.state
             == RtlHighRiskEditWorkflowState::Applied
         && result.failure
-            == RtlHighRiskEditWorkflowFailure::None) {
+            == RtlHighRiskEditWorkflowFailure::None
+        && currentTransactionWorkflow()
+        && currentTransactionWorkflow()->hasUndoPosition()) {
         appliedOwner = currentKind;
     } else if (
         result.state
@@ -1625,10 +1648,8 @@ RtlHighRiskEditPanelCoordinator::publish(
         pending
         && !pendingConfirmationToken.isEmpty();
     outcome.canCancel = outcome.canConfirm;
-    outcome.canUndo =
-        outcome.panelState
-            == RtlHighRiskEditPanelState::Applied
-        && currentWorkflowCanUndo();
+    outcome.canUndo = currentWorkflowCanUndo();
+    outcome.canRetire = appliedOwner != RtlHighRiskEditKind::None;
     outcome.canPreview =
         !pending
         && appliedOwner == RtlHighRiskEditKind::None

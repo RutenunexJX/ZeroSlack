@@ -40,6 +40,17 @@ struct CrashRecoveryApplyResult :
 
 class DocumentRecoveryQueue;
 
+struct WorkspacePathMutation {
+    struct Document {
+        QPointer<SharedDocument> document;
+        QString identity;
+        std::uint64_t revision = 0;
+        QList<QPointer<MyCodeEditor>> views;
+    };
+    QPointer<QObject> owner;
+    QList<Document> documents;
+};
+
 class ZEROSLACK_API TabManager : public QObject
 {
     Q_OBJECT
@@ -163,11 +174,13 @@ public:
     bool prepareWorkspacePathMutation(
         const QString& sourcePath,
         bool recursive,
+        WorkspacePathMutation* prepared,
         QWidget* dialogParent = nullptr,
         QString* failureReason = nullptr);
+    bool validateWorkspacePathMutation(const WorkspacePathMutation& prepared,
+                                       QString* failureReason = nullptr) const;
     bool finalizeWorkspacePathMutation(
-        const QString& sourcePath,
-        bool recursive,
+        const WorkspacePathMutation& prepared,
         QString* failureReason = nullptr);
     UnsavedDocumentManager*
     unsavedDocumentManagerForTesting() const;
@@ -254,6 +267,7 @@ private:
     struct RecoveryDocumentState {
         CrashRecoveryDocumentKey key;
         QList<CrashRecoveryDocumentKey> obsoleteKeys;
+        QList<CrashRecoveryCandidate> claimedRecords;
         QByteArray baseline;
         quint64 snapshotRevision = 0;
         bool hasSnapshot = false;

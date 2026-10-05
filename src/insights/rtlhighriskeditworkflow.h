@@ -130,6 +130,7 @@ public:
     bool hasPendingPreview() const;
     bool canStartPreview() const;
     bool canUndoAppliedTransaction() const;
+    bool hasUndoPosition() const { return workflowUndoAvailable; }
 
 private:
     struct CapturedDocument {
@@ -194,9 +195,7 @@ private:
     PreflightResult captureContext(
         const rtledit::WorkspaceEditPlan& plan);
     PreflightResult preflight() const;
-    bool restoreTouchedDocuments(
-        const std::vector<CapturedDocument>& before,
-        QString* firstResidualFile);
+
     QString buildConfirmationToken(
         const rtledit::PreparedWorkspaceEditTransaction& prepared,
         const QString& actionId,

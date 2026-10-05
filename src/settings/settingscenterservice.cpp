@@ -12,6 +12,8 @@
 #include <QJsonParseError>
 #include <QSaveFile>
 #include <QSettings>
+#include <QLockFile>
+#include <QStandardPaths>
 
 #include <memory>
 
@@ -20,6 +22,7 @@ constexpr const char* kSchema = "ZeroSlack.SettingsCenter";
 constexpr const char* kWorkspaceFile = "settings.json";
 
 struct JsonDocumentReadResult {
+    QString revision = QStringLiteral("missing");
     bool exists = false;
     bool valid = true;
     bool compatible = true;
@@ -117,6 +120,7 @@ JsonDocumentReadResult readWorkspaceDocument(const QString& path)
         return result;
     result.exists = true;
     if (!file.open(QIODevice::ReadOnly)) {
+        result.revision = QStringLiteral("unreadable");
         result.valid = false;
         result.message =
             QStringLiteral("Workspace settings could not be read.");
@@ -124,8 +128,13 @@ JsonDocumentReadResult readWorkspaceDocument(const QString& path)
     }
 
     QJsonParseError error;
-    const QJsonDocument document =
-        QJsonDocument::fromJson(file.readAll(), &error);
+    const auto bytes = file.readAll();
+    if (file.error() != QFileDevice::NoError) {
+        result.valid = false; result.revision = QStringLiteral("unreadable");
+        result.message = file.errorString(); return result;
+    }
+    result.revision = QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    const QJsonDocument document = QJsonDocument::fromJson(bytes, &error);
     if (error.error != QJsonParseError::NoError
         || !document.isObject()) {
         result.valid = false;
@@ -210,6 +219,18 @@ bool revisionMatches(const QString& expected,
 {
     return expected.isEmpty() || expected == current;
 }
+
+// Use a distinct cooperative lock, never QSettings' own .lock. Native
+// registry stores use a stable per-user lock keyed by their store identity.
+QString settingsWriteLockPath(const QSettings& settings)
+{
+    if (settings.format() == QSettings::IniFormat)
+        return settings.fileName() + QStringLiteral(".zeroslack-settings.lock");
+    const auto directory = QDir(QStandardPaths::writableLocation(QStandardPaths::GenericConfigLocation))
+        .filePath(QStringLiteral("ZeroSlack/settings-locks"));
+    return QDir(directory).filePath(QString::fromLatin1(QCryptographicHash::hash(
+        settings.fileName().toUtf8(), QCryptographicHash::Sha256).toHex()) + ".lock");
+}
 }
 
 QVariant SettingsCenterSnapshot::value(const QString& fieldId) const
@@ -239,12 +260,26 @@ SettingsCenterSnapshot SettingsCenterService::load(
     SettingsCenterSnapshot result;
     result.workspaceRoot = cleanAbsolutePath(workspaceRoot);
 
-    std::unique_ptr<QSettings> global =
-        makeGlobalSettings(globalSettingsFilePath);
-    result.globalStoragePath = global->fileName();
+    {
+    auto probe = makeGlobalSettings(globalSettingsFilePath);
+    result.globalStoragePath = probe->fileName();
+    const auto lockPath = settingsWriteLockPath(*probe);
+    probe.reset();
+    QDir().mkpath(QFileInfo(lockPath).absolutePath());
+    QLockFile lock(lockPath); lock.setStaleLockTime(0);
+    const bool locked = lock.tryLock(1000);
+    auto global = makeGlobalSettings(globalSettingsFilePath);
+    if (locked) {
+    global->sync();
     result.globalRevision = globalRevisionForSettings(*global);
-    result.globalCompatible =
-        globalDocumentCompatible(*global, &result.issues);
+    }
+    result.globalCompatible = locked && global->status() == QSettings::NoError
+        && globalDocumentCompatible(*global, &result.issues);
+    if (!locked || global->status() != QSettings::NoError) {
+        result.globalRevision = QStringLiteral("unreadable");
+        appendIssue(&result.issues, SettingsCenterScope::Global, SettingsCenterIssueKind::StorageError,
+            QString(), QStringLiteral("Global settings are busy or could not be read; reload before editing."));
+    }
     if (result.globalCompatible) {
         QVariantMap rawGlobal;
         for (const SettingsCenterFieldDescriptor& descriptor :
@@ -263,13 +298,13 @@ SettingsCenterSnapshot SettingsCenterService::load(
         result.globalValues = validation.values;
         result.issues.append(validation.issues);
     }
+    }
 
     result.workspaceStoragePath =
         workspaceSettingsFilePath(result.workspaceRoot);
-    result.workspaceRevision =
-        revisionForFile(result.workspaceStoragePath);
     const JsonDocumentReadResult workspace =
         readWorkspaceDocument(result.workspaceStoragePath);
+    result.workspaceRevision = workspace.revision;
     result.workspaceDocumentExists = workspace.exists;
     result.workspaceCompatible = workspace.valid && workspace.compatible;
     if (!workspace.valid || !workspace.compatible) {
@@ -305,9 +340,20 @@ SettingsCenterSaveResult SettingsCenterService::saveGlobal(
     const QString& expectedRevision) const
 {
     SettingsCenterSaveResult result;
-    std::unique_ptr<QSettings> settings =
-        makeGlobalSettings(globalSettingsFilePath);
-    result.storagePath = settings->fileName();
+    auto probe = makeGlobalSettings(globalSettingsFilePath);
+    result.storagePath = probe->fileName();
+    const auto lockPath = settingsWriteLockPath(*probe);
+    probe.reset();
+    QDir().mkpath(QFileInfo(lockPath).absolutePath());
+    QLockFile lock(lockPath); lock.setStaleLockTime(0);
+    if (!lock.tryLock(1000)) {
+        result.message = QStringLiteral("Another writer is updating global settings."); return result;
+    }
+    auto settings = makeGlobalSettings(globalSettingsFilePath);
+    settings->sync(); // Import another process's committed values under the lock.
+    if (settings->status() != QSettings::NoError) {
+        result.message = QStringLiteral("Global settings could not be reloaded before writing."); return result;
+    }
     const QString currentRevision =
         globalRevisionForSettings(*settings);
     if (!revisionMatches(expectedRevision, currentRevision)) {
@@ -391,8 +437,14 @@ SettingsCenterSaveResult SettingsCenterService::saveWorkspace(
         return result;
     }
 
-    const QString currentRevision =
-        revisionForFile(result.storagePath);
+    QDir().mkpath(QFileInfo(result.storagePath).absolutePath());
+    QLockFile lock(result.storagePath + QStringLiteral(".write.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(1000)) {
+        result.message = QStringLiteral("Another writer is updating workspace settings."); return result;
+    }
+    const JsonDocumentReadResult existing = readWorkspaceDocument(result.storagePath);
+    const QString currentRevision = existing.revision;
     if (!revisionMatches(expectedRevision, currentRevision)) {
         result.conflict = true;
         result.message =
@@ -406,8 +458,6 @@ SettingsCenterSaveResult SettingsCenterService::saveWorkspace(
         return result;
     }
 
-    const JsonDocumentReadResult existing =
-        readWorkspaceDocument(result.storagePath);
     if (!existing.valid || !existing.compatible) {
         result.message = existing.message;
         appendIssue(
@@ -482,6 +532,11 @@ SettingsCenterSaveResult SettingsCenterService::saveWorkspace(
                     SettingsCenterIssueKind::StorageError,
                     QString(),
                     result.message);
+        return result;
+    }
+    if (revisionForFile(result.storagePath) != currentRevision) {
+        file.cancelWriting(); result.conflict = true;
+        result.message = QStringLiteral("Workspace settings changed during preparation; the draft was not written.");
         return result;
     }
     if (!file.commit()) {

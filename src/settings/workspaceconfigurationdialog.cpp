@@ -296,8 +296,14 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
         });
 
     auto* buttons = UiDialogs::buttonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Reset,
         this);
+    buttons->button(QDialogButtonBox::Reset)->setText(tr("Reload"));
+    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, this, [this] {
+        const auto current = WorkspaceConfigurationService::getInstance()->loadWithResult(workspaceRoot);
+        if (current.usable()) setConfiguration(current.configuration);
+        else UiDialogs::warning(this, tr("Workspace Configuration"), current.message);
+    });
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     dialogLayout->addWidget(buttons);
@@ -312,6 +318,7 @@ void WorkspaceConfigurationDialog::setConfiguration(
     const WorkspaceConfiguration& configuration)
 {
     workspaceRoot = configuration.workspaceRoot;
+    storageRevision = configuration.storageRevision;
     setListValues(includeDirsList, configuration.includeDirs);
     setListValues(ignoredDirsList, configuration.ignoredDirs);
     setListValues(fileExtensionsList, configuration.fileExtensions);
@@ -338,6 +345,7 @@ WorkspaceConfiguration WorkspaceConfigurationDialog::configuration() const
 {
     WorkspaceConfiguration configuration;
     configuration.workspaceRoot = workspaceRoot;
+    configuration.storageRevision = storageRevision;
     configuration.includeDirs = listValues(includeDirsList);
     configuration.ignoredDirs = listValues(ignoredDirsList);
     configuration.fileExtensions = listValues(fileExtensionsList);

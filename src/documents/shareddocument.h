@@ -52,6 +52,10 @@ public:
         const QString& text,
         std::uint64_t recoveredRevision);
     void setReadOnly(bool readOnly) override;
+    // Compare a live I/O path with the source fixed when this document was
+    // acquired (or explicitly renamed). Never resolve the saved identity again.
+    bool matchesSourcePath(const QString& path) const;
+    bool validateSourcePath(QString* failureReason = nullptr) const;
 
     QString attachView(
         MyCodeEditor* editor,

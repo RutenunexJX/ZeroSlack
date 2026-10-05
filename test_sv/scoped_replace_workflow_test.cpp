@@ -116,7 +116,7 @@ public:
             found->second.text};
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         rtledit::DocumentVersion expectedVersion,
         const std::vector<
@@ -127,13 +127,13 @@ public:
         if (found == documents.end()
             || found->second.version
                 != expectedVersion) {
-            return false;
+            return {};
         }
         const auto after =
             rtledit::applyTextEditsToString(
                 found->second.text, edits);
         if (!after)
-            return false;
+            return {};
 
         if (failApplyCall > 0
             && applyCalls == failApplyCall) {
@@ -141,29 +141,34 @@ public:
                 found->second.text = *after;
                 ++found->second.version.value;
             }
-            return false;
+            return mutateBeforeFailure ? rtledit::DocumentMutationResult::failedAfterModification(*this->snapshot(filePath)) : rtledit::DocumentMutationResult{};
         }
 
         found->second.text = *after;
         ++found->second.version.value;
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath));
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
         const rtledit::WorkspaceDocumentSnapshot&
             snapshot) override
     {
+        const auto currentBefore = this->snapshot(filePath);
+        if (!currentBefore || currentBefore->version != expectedCurrent.version
+            || currentBefore->text != expectedCurrent.text) return {};
+
         ++restoreCalls;
         if (failRestore)
-            return false;
+            return {};
         auto found = documents.find(filePath);
-        if (found == documents.end()) return false;
+        if (found == documents.end()) return {};
         if (found->second.text != snapshot.text) {
             found->second.text = snapshot.text;
             ++found->second.version.value;
         }
-        return true;
+        return rtledit::DocumentMutationResult::completed(*this->snapshot(filePath), currentBefore->text != snapshot.text);
     }
 
     int applyCalls = 0;

@@ -1,4 +1,13 @@
-ZeroSlack v0.31.22 Windows package
+ZeroSlack v0.31.23 Windows package
+
+Release 0.31.23 protects document identity across saves, recovery and file-tree
+operations. Rollback respects edit ownership; recovery records are isolated by
+process session, and configuration commits reject stale drafts. Pending workspace
+sessions and failed undo retain recovery paths. Batch edits reuse source offsets,
+semantic decoration work is bounded, and CLI input/output contracts stay aligned.
+The ten-item delivery passed scoped acceptance. Existing baseline failures and
+excluded private fixtures remain documented; development performance samples are
+not measurements of every project or of this repackaged binary.
 
 Release 0.31.22 reduces repeated document, recovery, search, formatting and
 template work. Document identities survive path alias changes; transactions

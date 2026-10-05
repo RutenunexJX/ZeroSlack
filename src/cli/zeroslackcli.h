@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
+#include <functional>
 
 struct ZeroSlackCliRequest {
     QString command;
@@ -35,6 +36,11 @@ struct ZeroSlackCliResult {
 class ZeroSlackCliService
 {
 public:
+    enum class ObservationStage { WorkspaceCaptured, BeforeOutput };
+    // Deterministic interleaving for contract tests; no command-line switch or
+    // process-global callback can enable it in the shipped CLI.
+    using ObservationHook = std::function<void(ObservationStage)>;
+    explicit ZeroSlackCliService(ObservationHook hook = {}) : observationHook(std::move(hook)) {}
     static constexpr int kSchemaVersion = 1;
 
     ZeroSlackCliResult execute(const ZeroSlackCliRequest& request) const;
@@ -44,6 +50,8 @@ public:
     static QByteArray render(const QJsonObject& envelope,
                              const QString& format);
     static QString usageText();
+private:
+    ObservationHook observationHook;
 };
 
 #endif // ZEROSLACKCLI_H

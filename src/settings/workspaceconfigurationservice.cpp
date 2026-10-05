@@ -9,6 +9,8 @@
 #include <QJsonValue>
 #include <QSaveFile>
 #include <QSet>
+#include <QLockFile>
+#include <QCryptographicHash>
 
 namespace {
 constexpr const char* kProjectSchema =
@@ -539,6 +541,8 @@ WorkspaceConfigurationService::loadWithResult(
                         .toArray());
             result.configuration =
                 normalized(configuration);
+            result.configuration.storageRevision = QStringLiteral("project:")
+                + QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
             result.loaded = true;
             result.state = WorkspaceConfigurationLoadState::Loaded;
             result.source =
@@ -613,6 +617,8 @@ WorkspaceConfigurationService::loadWithResult(
             .trimmed();
     result.configuration =
         normalized(configuration);
+    result.configuration.storageRevision = QStringLiteral("legacy:")
+        + QString::fromLatin1(QCryptographicHash::hash(legacyBytes, QCryptographicHash::Sha256).toHex());
     result.loaded = true;
             result.state = WorkspaceConfigurationLoadState::Loaded;
     result.source =
@@ -635,10 +641,17 @@ WorkspaceConfigurationService::load(
 bool WorkspaceConfigurationService::save(
     const WorkspaceConfiguration& configuration) const
 {
+    return saveWithResult(configuration).saved;
+}
+
+WorkspaceConfigurationSaveResult WorkspaceConfigurationService::saveWithResult(
+    const WorkspaceConfiguration& configuration) const
+{
+    WorkspaceConfigurationSaveResult result;
+    const auto fail = [&](const QString& message) { result.message = message; return result; };
     const WorkspaceConfiguration clean =
         normalized(configuration);
-    if (!clean.isValid() || !loadWithResult(clean.workspaceRoot).usable())
-        return false;
+    if (!clean.isValid()) return fail(QStringLiteral("No workspace is open."));
 
     const QString filePath =
         effectiveProjectFilePath(
@@ -647,7 +660,17 @@ bool WorkspaceConfigurationService::save(
         || !QDir().mkpath(
             QFileInfo(filePath)
                 .absolutePath())) {
-        return false;
+        return fail(QStringLiteral("The configuration directory could not be created."));
+    }
+
+    QLockFile lock(filePath + QStringLiteral(".write.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(1000)) return fail(QStringLiteral("Another writer is updating this workspace configuration."));
+    const auto current = loadWithResult(clean.workspaceRoot);
+    if (!current.usable()) return fail(current.message);
+    if (clean.storageRevision.isEmpty() || current.configuration.storageRevision != clean.storageRevision) {
+        result.conflict = true;
+        return fail(QStringLiteral("Workspace configuration changed after this draft was loaded. Reload it before applying."));
     }
 
     QJsonObject object;
@@ -686,12 +709,24 @@ bool WorkspaceConfigurationService::save(
     const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Indented);
     QSaveFile file(filePath);
     file.setDirectWriteFallback(false);
-    if (!file.open(QIODevice::WriteOnly)) return false;
+    if (!file.open(QIODevice::WriteOnly)) return fail(file.errorString());
     if (file.write(bytes) != bytes.size()) {
         file.cancelWriting();
-        return false;
+        return fail(file.errorString());
     }
-    return file.commit();
+    // Cooperative writers share this lock. A non-cooperating external writer
+    // is detected when visible at revalidation; no syscall-level CAS is claimed.
+    const auto revalidated = loadWithResult(clean.workspaceRoot);
+    if (!revalidated.usable() || revalidated.configuration.storageRevision != clean.storageRevision) {
+        file.cancelWriting(); result.conflict = true;
+        return fail(QStringLiteral("Workspace configuration changed during preparation; the draft was not written."));
+    }
+    if (!file.commit()) return fail(file.errorString());
+    result.saved = true;
+    result.revision = QStringLiteral("project:")
+        + QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex());
+    result.message = QStringLiteral("Workspace configuration saved.");
+    return result;
 }
 
 bool WorkspaceConfigurationService::clear(
@@ -699,6 +734,10 @@ bool WorkspaceConfigurationService::clear(
 {
     const QString path =
         effectiveProjectFilePath(workspaceRoot);
+    if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath())) return false;
+    QLockFile lock(path + QStringLiteral(".write.lock"));
+    lock.setStaleLockTime(0);
+    if (!lock.tryLock(1000)) return false;
     return !path.isEmpty()
         && (!QFileInfo(path).exists()
             || QFile::remove(path));

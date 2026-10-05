@@ -90,7 +90,7 @@ public:
         return documents_.snapshot(filePath);
     }
 
-    bool applyTextEdits(
+    rtledit::DocumentMutationResult applyTextEdits(
         const std::string& filePath,
         DocumentVersion expectedVersion,
         const std::vector<WorkspaceTextEdit>& editsInApplicationOrder)
@@ -99,11 +99,12 @@ public:
             filePath, expectedVersion, editsInApplicationOrder);
     }
 
-    bool restoreSnapshot(
+    rtledit::DocumentMutationResult restoreSnapshot(
         const std::string& filePath,
-        const WorkspaceDocumentSnapshot& snapshot) override {
-        if (failedRestoreCalls.count(++restoreCalls)) return false;
-        const bool restored = documents_.restoreSnapshot(filePath, snapshot);
+        const rtledit::WorkspaceDocumentSnapshot& expectedCurrent,
+        const rtledit::WorkspaceDocumentSnapshot& snapshot) override {
+        if (failedRestoreCalls.count(++restoreCalls)) return {};
+        const auto restored = documents_.restoreSnapshot(filePath, expectedCurrent, snapshot);
         if (restored && restoresUntilSnapshotFailure_ > 0
             && --restoresUntilSnapshotFailure_ == 0) {
             rejectNextSnapshot_ = true;
@@ -389,7 +390,8 @@ bool restoreFailureSupportsRetryAndReportsResiduals() {
         auto prepared = coordinator.prepare(twoFilePlan(), documents);
         coordinator.confirmPreview(&prepared);
         require(coordinator.apply(prepared, documents).succeeded(), "fixture apply failed");
-        documents.failedRestoreCalls = residual ? std::set<int>{2, 4} : std::set<int>{2};
+        // B rejects without modification; only A is rolled back (call 3).
+        documents.failedRestoreCalls = residual ? std::set<int>{2, 3} : std::set<int>{2};
         const auto failed = coordinator.undo(documents);
         require(failed.status == TransactionStatus::RestoreFailed, "restore failure status missing");
         require(coordinator.undoDepth() == 1, "failure consumed history");

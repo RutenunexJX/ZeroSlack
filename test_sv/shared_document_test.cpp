@@ -1077,6 +1077,11 @@ int main(int argc, char** argv)
                           QStringLiteral(
                               "pending local change")));
 
+    // End the old storage session rather than merely constructing a second
+    // live owner. The original UI continues in a separate isolated namespace.
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(
+        temp.filePath(QStringLiteral("continuing-recovery"))));
+    manager.flushCrashRecovery();
     QTabWidget restartedRecoveryTabs;
     TabManager restartedRecoveryManager(
         &restartedRecoveryTabs);
@@ -1170,14 +1175,15 @@ int main(int argc, char** argv)
     restartedRecoveryManager.flushCrashRecovery();
     const CrashRecoveryOperationResult discarded =
         manager.discardCrashRecoveryCandidate(
-            pendingCandidate.recoveryId,
+            manager.listCrashRecoveryCandidates(temp.path()).candidates.value(0).recoveryId,
             temp.path());
-    expect("explicit discard removes the selected recovery only",
+    expect("owning-session discard leaves the recovered session intact",
            discarded.succeeded()
                && manager
                       .listCrashRecoveryCandidates(
                           temp.path())
-                      .candidates.isEmpty());
+                      .candidates.isEmpty()
+               && restartedRecoveryManager.listCrashRecoveryCandidates(temp.path()).candidates.size() == 1);
 
     QTextCursor firstRecoveryEdit(
         managedDocument->textDocument());
