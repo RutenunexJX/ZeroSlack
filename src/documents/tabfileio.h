@@ -4,6 +4,7 @@
 #include <QByteArray>
 #include <QString>
 #include <functional>
+#include <zeroslack/documents/documentfileread.h>
 
 class QWidget;
 
@@ -21,6 +22,7 @@ public:
         QWidget* parent,
         const QString& fileName,
         QString* text) const;
+    DocumentFileReadResult readFile(QWidget* parent, const QString& fileName) const;
     bool writeTextFile(
         QWidget* parent,
         const QString& fileName,
@@ -28,7 +30,8 @@ public:
         QString* failureReason = nullptr,
         QByteArray* rawSha256 = nullptr,
         QByteArray* logicalTextSha256 = nullptr,
-        const std::function<bool(QString*)>& revalidateOverwrite = {}) const;
+        const std::function<bool(QString*)>& revalidateOverwrite = {},
+        const DocumentFileFormat& format = {}) const;
 };
 
 #endif // TABFILEIO_H

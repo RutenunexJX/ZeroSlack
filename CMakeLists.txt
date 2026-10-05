@@ -282,6 +282,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documentregistryreader.cpp
     src/documents/documentregistrystate.cpp
     src/documents/shareddocument.cpp
+    src/documents/documentrecoveryqueue.cpp
+    src/documents/documentrecoveryqueue.h
     src/documents/externaldocumentsynccontroller.cpp
     src/documents/documentreviewcoordinator.cpp
     src/documents/documentreviewcoordinator.h
@@ -993,6 +995,11 @@ if(BUILD_TESTING)
     target_link_libraries(shared_document_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(workspace_document_contract_test test_sv/workspace_document_contract_test.cpp)
+    target_link_libraries(workspace_document_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME workspace_document_contract_test COMMAND workspace_document_contract_test)
+    zeroslack_domain_test_runtime(workspace_document_contract_test)
+
     add_executable(external_document_sync_test
         test_sv/external_document_sync_test.cpp)
     target_link_libraries(external_document_sync_test
@@ -1023,6 +1030,11 @@ if(BUILD_TESTING)
     endif()
     target_link_libraries(crash_recovery_service_test
         PRIVATE Qt6::Core)
+
+    add_executable(pinloom_host_transport_test
+        test_sv/pinloom_host_transport_test.cpp
+        src/integrations/pinloom/pinloomhostclient.h)
+    target_link_libraries(pinloom_host_transport_test PRIVATE Qt6::Core Qt6::Network Qt6::Concurrent Qt6::Test)
 
     add_executable(declare_signal_proposal_test
         test_sv/declare_signal_proposal_test.cpp
@@ -1673,6 +1685,9 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:crash_recovery_service_test>
     )
+    add_test(NAME pinloom_host_transport_test
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" $<TARGET_FILE:pinloom_host_transport_test>)
+    set_tests_properties(pinloom_host_transport_test PROPERTIES TIMEOUT 20)
     add_test(NAME declare_signal_proposal_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

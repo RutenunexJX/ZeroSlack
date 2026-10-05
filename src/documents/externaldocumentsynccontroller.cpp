@@ -41,7 +41,7 @@ ExternalDocumentSyncController::ExternalDocumentSyncController(
 ExternalDocumentSyncController::~ExternalDocumentSyncController() = default;
 
 void ExternalDocumentSyncController::trackDocument(
-    SharedDocument* document)
+    SharedDocument* document, const DocumentFileReadResult* initialFile)
 {
     if (!document)
         return;
@@ -93,23 +93,27 @@ void ExternalDocumentSyncController::trackDocument(
     tracked.pathKey = nextPathKey;
     tracked.directory =
         normalizedPath(QFileInfo(fileName).absolutePath());
-    tracked.savedFingerprint = textFingerprint(
+    tracked.savedFingerprint = initialFile && initialFile->available ? initialFile->logicalSha256 : textFingerprint(
         document->textDocument()
             ? document->textDocument()->toPlainText()
             : QString());
     tracked.observedFingerprint =
         tracked.savedFingerprint;
-    const DiskSnapshot snapshot =
-        readDiskSnapshot(fileName);
     // The first deterministic probe should publish an unavailable transition
     // if the path disappeared between opening and subscription.
     tracked.diskAvailable = true;
-    if (snapshot.available) {
+    if (initialFile && initialFile->available) {
+        tracked.savedFingerprint = initialFile->logicalSha256;
+        tracked.observedFingerprint = initialFile->logicalSha256;
+        document->setReadOnly(initialFile->readOnly);
+    } else if (QFileInfo(fileName).isFile()) {
         document->setReadOnly(!QFileInfo(fileName).isWritable());
     }
     trackedDocuments.insert(document, std::move(tracked));
     refreshSubscriptions();
-    processFileChange(fileName);
+    // Watch first, then check the captured generation's metadata. Later
+    // change probes and every overwrite guard still perform a complete read.
+    if (!initialFile || !initialFile->matchesDiskState()) processFileChange(fileName);
 }
 
 void ExternalDocumentSyncController::untrackDocument(
@@ -606,26 +610,8 @@ ExternalDocumentSyncController::DiskSnapshot
 ExternalDocumentSyncController::readDiskSnapshot(
     const QString& fileName)
 {
-    DiskSnapshot result;
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        result.failureReason = file.errorString();
-        if (result.failureReason.isEmpty()) {
-            result.failureReason =
-                QStringLiteral("File is unavailable.");
-        }
-        return result;
-    }
-    QTextStream stream(&file);
-    result.text = stream.readAll();
-    if (stream.status() != QTextStream::Ok) {
-        result.failureReason =
-            QStringLiteral("Failed to read the complete file.");
-        return result;
-    }
-    result.fingerprint = textFingerprint(result.text);
-    result.available = true;
-    return result;
+    const auto source = readDocumentFile(fileName);
+    return {source.available, source.text, source.logicalSha256, source.failureReason};
 }
 
 void ExternalDocumentSyncController::refreshSubscriptions()

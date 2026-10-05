@@ -109,6 +109,7 @@ signals:
     void workspaceClosed();
     void workspaceListChanged();
     void workspaceActivated(int index, const QString& alias, const QString& path);
+    void workspaceActivationFailed(const QString& path, const QString& reason);
     void fileChanged(const QString& filePath);
     void filesScanned(const QStringList& svFiles);
     void workspaceScanStarted(const QString& path);
@@ -222,10 +223,10 @@ private:
     bool activateWorkspacePath(const QString& path,
                                const QString& alias,
                                int index,
-                               bool openedNewWorkspace);
-    bool restoreWorkspaceFilesFromEntry(int index);
+                               bool openedNewWorkspace,
+                               const WorkspaceConfiguration* prepared = nullptr);
     WorkspaceConfiguration loadConfigurationForWorkspace(
-        const QString& path) const;
+        const QString& path);
     bool applyWorkspaceConfiguration(
         const WorkspaceConfiguration& configuration,
         bool persist,

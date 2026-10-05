@@ -12,8 +12,68 @@
 #include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QHideEvent>
+#include <QFutureWatcher>
+#include <QThreadPool>
+#include <QtConcurrent>
+#include <atomic>
+#include <optional>
 
 #include <utility>
+
+struct TemporaryEditorContextView::AsyncQuery {
+    struct Request { QString query; EditorSearchTask task; quint64 generation; };
+    TemporaryEditorContextView* owner;
+    QThreadPool pool;
+    QFutureWatcher<EditorSearchCandidates>* watcher = nullptr;
+    std::optional<Request> pending;
+    std::shared_ptr<std::atomic_bool> cancelled;
+    quint64 generation = 0;
+    explicit AsyncQuery(TemporaryEditorContextView* owner) : owner(owner) {
+        pool.setMaxThreadCount(1);
+        pool.setThreadPriority(QThread::LowPriority);
+    }
+    ~AsyncQuery() {
+        cancel();
+        if (watcher) QObject::disconnect(watcher, nullptr, owner, nullptr);
+        pool.waitForDone();
+    }
+    void cancel() {
+        ++generation;
+        if (cancelled) cancelled->store(true);
+        pending.reset();
+    }
+    void submit(const QString& query, EditorSearchTask task) {
+        cancel();
+        pending = Request{query, std::move(task), generation};
+        launch();
+    }
+    void launch() {
+        if (watcher || !pending) return;
+        auto request = std::move(*pending);
+        pending.reset();
+        auto token = std::make_shared<std::atomic_bool>(false);
+        cancelled = token;
+        auto* observed = new QFutureWatcher<EditorSearchCandidates>(owner);
+        watcher = observed;
+        QObject::connect(observed, &QFutureWatcher<EditorSearchCandidates>::finished, owner,
+            [this, observed, token, query = request.query, requested = request.generation] {
+                auto result = observed->future().takeResult();
+                watcher = nullptr;
+                observed->deleteLater();
+                const QPointer<TemporaryEditorContextView> alive(owner);
+                if (!token->load() && requested == generation && owner->isVisible()
+                    && owner->searchEdit->text() == query) {
+                    owner->searchPopup->setCandidates(result, query);
+                    emit owner->searchResultsReady(query, result.size());
+                }
+                if (alive) launch();
+            });
+        observed->setFuture(QtConcurrent::run(&pool, [task = std::move(request.task), token] {
+            return task && !token->load() ? task([token] { return token->load(); }) : EditorSearchCandidates{};
+        }));
+    }
+};
 
 TemporaryEditorContextView::TemporaryEditorContextView(
     TabManager* tabManager,
@@ -23,6 +83,7 @@ TemporaryEditorContextView::TemporaryEditorContextView(
           tabManager, this))
 {
     setObjectName(QStringLiteral("temporaryEditorContextView"));
+    asyncQuery = std::make_unique<AsyncQuery>(this);
     buildUi();
     session->setViewParent(contentHost);
     connectSession();
@@ -31,6 +92,7 @@ TemporaryEditorContextView::TemporaryEditorContextView(
 
 TemporaryEditorContextView::~TemporaryEditorContextView()
 {
+    asyncQuery.reset();
     if (session)
         session->close();
 }
@@ -78,15 +140,18 @@ QToolButton* TemporaryEditorContextView::forwardButton() const
 void TemporaryEditorContextView::setSearchProvider(
     SearchProvider provider)
 {
+    asyncQuery->cancel();
     searchProvider = std::move(provider);
+    if (searchPopup) searchPopup->clearCandidates();
 }
 
 void TemporaryEditorContextView::refreshSearchResults()
 {
     if (!searchEdit || !searchPopup || !isVisible()) return;
     const QString query = searchEdit->text();
-    searchPopup->setCandidates(searchProvider && !query.trimmed().isEmpty()
-        ? searchProvider(query) : EditorSearchCandidates{}, query);
+    searchPopup->clearCandidates();
+    if (!searchProvider || query.trimmed().isEmpty()) { asyncQuery->cancel(); return; }
+    asyncQuery->submit(query, searchProvider(query));
 }
 
 bool TemporaryEditorContextView::openLocation(
@@ -94,6 +159,8 @@ bool TemporaryEditorContextView::openLocation(
 {
     if (!session || !session->openLocation(location))
         return false;
+    asyncQuery->cancel();
+    searchPopup->clearCandidates();
     attachEditor();
     return true;
 }
@@ -128,6 +195,13 @@ void TemporaryEditorContextView::showEvent(QShowEvent* event)
     if (searchPopup)
         searchPopup->synchronizeGeometry();
     refreshSearchResults();
+}
+
+void TemporaryEditorContextView::hideEvent(QHideEvent* event)
+{
+    asyncQuery->cancel();
+    searchPopup->clearCandidates();
+    QWidget::hideEvent(event);
 }
 
 void TemporaryEditorContextView::buildUi()
@@ -177,6 +251,7 @@ void TemporaryEditorContextView::buildUi()
     root->addWidget(contentHost, 1);
 
     searchPopup = new TemporaryEditorSearchPopup(this);
+    searchPopup->setCancellationHandler([this] { asyncQuery->cancel(); });
     searchPopup->attachSearchField(searchEdit);
     searchPopup->setActivationHandler(
         [this](const EditorSearchCandidate& candidate) {

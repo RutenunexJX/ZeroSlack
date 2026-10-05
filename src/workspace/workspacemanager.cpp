@@ -260,16 +260,16 @@ bool WorkspaceManager::openWorkspaceInternal(
     entry.alias = alias;
     entry.path = pathToOpen;
     workspaces.append(entry);
-    activeIndex = workspaces.size() - 1;
-    rememberRecentWorkspace(entry);
-    emit workspaceListChanged();
-
-    if (!activateWorkspacePath(entry.path,
-                               entry.alias,
-                               activeIndex,
-                               true)) {
+    const int newIndex = workspaces.size() - 1;
+    if (!activateWorkspacePath(entry.path, entry.alias, newIndex, true)) {
+        // Failed preflight leaves the previous workspace and its scan intact.
+        if (newIndex < workspaces.size() && workspaces.at(newIndex).path == entry.path
+            && activeIndex != newIndex) workspaces.removeAt(newIndex);
+        emit workspaceListChanged();
         return false;
     }
+    rememberRecentWorkspace(entry);
+    emit workspaceListChanged();
 
     ActivityLogService::getInstance()->append(
         QStringLiteral("Workspace"),
@@ -325,6 +325,12 @@ bool WorkspaceManager::closeWorkspace(int index)
     const bool closingActive = index == activeIndex;
     if (closingActive && !canChangeActiveWorkspace()) return false;
     const bool activateReplacement = closingActive && workspaces.size() > 1;
+    WorkspaceConfiguration replacementConfiguration;
+    if (activateReplacement) {
+        const int replacementIndex = index + 1 < workspaces.size() ? index + 1 : index - 1;
+        replacementConfiguration = loadConfigurationForWorkspace(workspaces.at(replacementIndex).path);
+        if (!replacementConfiguration.isValid()) return false;
+    }
 
     if (closingActive) {
         ++workspaceActivationGeneration;
@@ -367,7 +373,7 @@ bool WorkspaceManager::closeWorkspace(int index)
             activateWorkspacePath(nextEntry.path,
                                   nextEntry.alias,
                                   nextIndex,
-                                  false);
+                                  false, &replacementConfiguration);
         if (activatedNext)
             rememberRecentWorkspace(nextEntry);
     }
@@ -544,47 +550,9 @@ bool WorkspaceManager::setVirtualSourceGroups(
 bool WorkspaceManager::setIgnoredDirectories(const QStringList& directories,
                                              QString* errorMessage)
 {
-    if (errorMessage)
-        errorMessage->clear();
-
-    const WorkspaceIgnoreReport report =
-        WorkspaceIgnoreService::getInstance()->normalizeIgnoredDirectories(
-            WorkspaceIgnoreQuery{workspacePath, directories});
-    if (!report.valid) {
-        if (errorMessage)
-            *errorMessage = report.failureReason;
-        return false;
-    }
-
-    if (!projectModel)
-        return false;
-
-    projectModel->setIgnoredPaths(report.ignoredDirectories);
-    files.allFiles = projectModel->allFiles();
-    files.systemVerilogFiles = projectModel->systemVerilogFiles();
-
-    if (activeIndex >= 0 && activeIndex < workspaces.size()
-        && workspaces.at(activeIndex).path == workspacePath) {
-        workspaces[activeIndex].ignoredDirectories = report.ignoredDirectories;
-    }
     WorkspaceConfiguration configuration = workspaceConfiguration();
-    configuration.ignoredDirs = report.ignoredDirectories;
-    if (workspaceConfigurationService)
-        workspaceConfigurationService->save(configuration);
-    updateActiveEntryConfiguration(configuration);
-
-    updateFileWatcher();
-    emit filesScanned(files.systemVerilogFiles);
-    emit workspaceListChanged();
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Workspace"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Ignored %1 workspace director%2")
-            .arg(report.ignoredDirectories.size())
-            .arg(report.ignoredDirectories.size() == 1
-                     ? QStringLiteral("y")
-                     : QStringLiteral("ies")));
-    return true;
+    configuration.ignoredDirs = directories;
+    return setWorkspaceConfiguration(configuration, errorMessage);
 }
 
 bool WorkspaceManager::setWorkspaceConfiguration(
@@ -1104,31 +1072,23 @@ void WorkspaceManager::updateFileWatcher()
     startDirectoryScan(workspacePath);
 }
 
-bool WorkspaceManager::restoreWorkspaceFilesFromEntry(int index)
+WorkspaceConfiguration WorkspaceManager::loadConfigurationForWorkspace(const QString& path)
 {
-    if (index < 0 || index >= workspaces.size() || !projectModel)
-        return false;
-
-    const WorkspaceEntry entry = workspaces.at(index);
-    WorkspaceConfiguration configuration = loadConfigurationForWorkspace(entry.path);
-    // Portable configuration is authoritative on every activation, including
-    // removed/cleared settings. Session entries cache navigation state only;
-    // replaying their old non-empty fields hid external configuration edits.
-    if (!applyWorkspaceConfiguration(configuration, false, nullptr, false,
-                                     &entry.scannedFiles, false))
-        return false;
-    files.allFiles = projectModel->allFiles();
-    files.systemVerilogFiles = projectModel->systemVerilogFiles();
-    return true;
-}
-
-WorkspaceConfiguration WorkspaceManager::loadConfigurationForWorkspace(
-    const QString& path) const
-{
-    if (workspaceConfigurationService)
-        return workspaceConfigurationService->load(path);
     WorkspaceConfigurationService fallback;
-    return fallback.defaultConfiguration(path);
+    const auto loaded = (workspaceConfigurationService ? workspaceConfigurationService.get() : &fallback)->loadWithResult(path);
+    if (!loaded.usable()) {
+        ActivityLogService::getInstance()->append(QStringLiteral("Workspace"), ActivityLogLevel::Error, loaded.message);
+        emit workspaceActivationFailed(path, loaded.message);
+        return {};
+    }
+    // Validate the same ignore policy before changing active ownership.
+    const auto ignored = WorkspaceIgnoreService::getInstance()->normalizeIgnoredDirectories(
+        WorkspaceIgnoreQuery{loaded.configuration.workspaceRoot, loaded.configuration.ignoredDirs});
+    if (!ignored.valid) {
+        emit workspaceActivationFailed(path, ignored.failureReason);
+        return {};
+    }
+    return loaded.configuration;
 }
 
 bool WorkspaceManager::applyWorkspaceConfiguration(
@@ -1229,11 +1189,15 @@ void WorkspaceManager::updateActiveEntryConfiguration(
 bool WorkspaceManager::activateWorkspacePath(const QString& path,
                                              const QString& alias,
                                              int index,
-                                             bool openedNewWorkspace)
+                                             bool openedNewWorkspace,
+                                             const WorkspaceConfiguration* prepared)
 {
     const QString normalizedPath = normalizeWorkspacePath(path);
     if (normalizedPath.isEmpty() || alias.trimmed().isEmpty())
         return false;
+
+    const auto configuration = prepared ? *prepared : loadConfigurationForWorkspace(normalizedPath);
+    if (!configuration.isValid()) return false;
 
     const std::uint64_t requestedActivationGeneration =
         ++workspaceActivationGeneration;
@@ -1244,20 +1208,10 @@ bool WorkspaceManager::activateWorkspacePath(const QString& path,
     workspaceAlias = alias.trimmed();
     activeIndex = index;
 
-    if (index >= 0 && index < workspaces.size()
-        && workspaces.at(index).scanComplete) {
-        restoreWorkspaceFilesFromEntry(index);
-    } else {
-        files.clear();
-        if (projectModel) {
-            WorkspaceConfiguration configuration =
-                loadConfigurationForWorkspace(normalizedPath);
-            const QStringList emptyFiles;
-            if (!applyWorkspaceConfiguration(configuration, false, nullptr,
-                                             false, &emptyFiles, false))
-                return false;
-        }
-    }
+    const QStringList activatingFiles = index >= 0 && index < workspaces.size()
+        && workspaces.at(index).scanComplete ? workspaces.at(index).scannedFiles : QStringList{};
+    if (projectModel && !applyWorkspaceConfiguration(configuration, false, nullptr,
+                                                       false, &activatingFiles, false)) return false;
 
     workspacePath = projectModel ? projectModel->workspaceRoot() : normalizedPath;
     startFileWatching();

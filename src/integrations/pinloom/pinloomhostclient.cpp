@@ -11,6 +11,8 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QThread>
+#include <QPointer>
+#include <QSet>
 #include <QUrlQuery>
 #include <QUuid>
 #include <QtConcurrent>
@@ -67,18 +69,27 @@ QString firstExistingExecutable(const QStringList& candidates)
 }
 
 RawReply exchangeRequest(const QJsonObject& request,
-                         const QString& executablePath)
+                         const QString& executablePath,
+                         const std::shared_ptr<std::atomic_bool>& token = {},
+                         const QString& serverName = kServer)
 {
-    const auto connect = []() {
+    const auto cancelled = [&] { return token && token->load(); };
+    const auto connect = [&]() {
+        if (cancelled()) return std::unique_ptr<QLocalSocket>();
         auto socket = std::make_unique<QLocalSocket>();
-        socket->connectToServer(kServer, QIODevice::ReadWrite);
-        if (!socket->waitForConnected(kConnectTimeoutMs))
-            return std::unique_ptr<QLocalSocket>();
-        return socket;
+        socket->connectToServer(serverName, QIODevice::ReadWrite);
+        QElapsedTimer deadline;
+        deadline.start();
+        while (!cancelled() && deadline.elapsed() < kConnectTimeoutMs) {
+            if (socket->state() == QLocalSocket::ConnectedState || socket->waitForConnected(25)) return socket;
+            if (socket->state() == QLocalSocket::UnconnectedState) break;
+        }
+        return std::unique_ptr<QLocalSocket>();
     };
 
     std::unique_ptr<QLocalSocket> socket = connect();
     if (!socket) {
+        if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
         if (executablePath.isEmpty()) {
             return {{}, QStringLiteral(
                 "Pinloom is not running and its executable was not found. "
@@ -92,7 +103,8 @@ RawReply exchangeRequest(const QJsonObject& request,
                             .arg(QDir::toNativeSeparators(executablePath))};
         }
         for (int attempt = 0; attempt < kLaunchAttempts && !socket; ++attempt) {
-            QThread::msleep(150);
+            for (int step = 0; step < 6 && !cancelled(); ++step) QThread::msleep(25);
+            if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
             socket = connect();
         }
         if (!socket) {
@@ -101,18 +113,27 @@ RawReply exchangeRequest(const QJsonObject& request,
         }
     }
 
+    if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
     QByteArray payload =
         QJsonDocument(request).toJson(QJsonDocument::Compact);
     payload.append('\n');
-    if (socket->write(payload) != payload.size()
-        || !socket->waitForBytesWritten(kResponseTimeoutMs)) {
+    if (socket->write(payload) != payload.size()) {
         return {{}, QStringLiteral("Unable to send the Pinloom request.")};
+    }
+    QElapsedTimer sending;
+    sending.start();
+    while (socket->bytesToWrite() > 0) {
+        if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
+        if (sending.elapsed() >= kResponseTimeoutMs || socket->state() != QLocalSocket::ConnectedState)
+            return {{}, QStringLiteral("Unable to send the Pinloom request.")};
+        socket->waitForBytesWritten(25);
     }
 
     QByteArray response;
     QElapsedTimer timer;
     timer.start();
     while (timer.elapsed() < kResponseTimeoutMs) {
+        if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
         response.append(socket->readAll());
         if (response.size() > kMaximumResponseBytes) {
             return {{}, QStringLiteral("Pinloom response exceeds the size limit.")};
@@ -143,8 +164,10 @@ RawReply exchangeRequest(const QJsonObject& request,
             }
             return {envelope.value(QStringLiteral("result")).toObject(), {}};
         }
+        if (socket->state() != QLocalSocket::ConnectedState)
+            return {{}, QStringLiteral("Pinloom closed the connection before answering.")};
         const int remaining = kResponseTimeoutMs - int(timer.elapsed());
-        if (remaining <= 0 || !socket->waitForReadyRead(qMin(100, remaining)))
+        if (remaining <= 0 || !socket->waitForReadyRead(qMin(25, remaining)))
             continue;
     }
     return {{}, QStringLiteral("Pinloom did not answer in time.")};
@@ -525,6 +548,73 @@ PinloomHostDocument PinloomHostDocument::fromJson(const QJsonObject& object)
     return result;
 }
 
+struct PinloomHostClient::ReadQueue {
+    struct Request {
+        QObject* key;
+        QPointer<QObject> consumer;
+        QString method;
+        QJsonObject envelope;
+        RawReplyHandler handler;
+        std::shared_ptr<std::atomic_bool> cancelled = std::make_shared<std::atomic_bool>(false);
+    };
+    PinloomHostClient* owner;
+    QList<std::shared_ptr<Request>> pending;
+    std::shared_ptr<Request> active;
+    QSet<QObject*> consumers;
+    explicit ReadQueue(PinloomHostClient* owner) : owner(owner) {}
+    ~ReadQueue() {
+        if (active) active->cancelled->store(true);
+        for (auto* consumer : std::as_const(consumers))
+            QObject::disconnect(consumer, &QObject::destroyed, owner, nullptr);
+    }
+    bool cancel(QObject* consumer) {
+        bool found = false;
+        if (active && active->key == consumer) { active->cancelled->store(true); found = true; }
+        found |= pending.removeIf([&](const auto& request) { return request->key == consumer; }) != 0;
+        return found;
+    }
+    void submit(QObject* consumer, const QString& method, QJsonObject envelope, RawReplyHandler handler) {
+        if (consumer != owner && !consumers.contains(consumer)) {
+            consumers.insert(consumer);
+            QObject::connect(consumer, &QObject::destroyed, owner, [this, consumer] {
+                cancel(consumer);
+                consumers.remove(consumer);
+            });
+        }
+        if (active && active->key == consumer && active->method == method) active->cancelled->store(true);
+        pending.removeIf([&](const auto& request) { return request->key == consumer && request->method == method; });
+        pending.append(std::make_shared<Request>(Request{consumer, consumer, method, std::move(envelope), std::move(handler)}));
+        start();
+    }
+    void start() {
+        if (active) return;
+        while (!pending.isEmpty() && !pending.first()->consumer) pending.removeFirst();
+        if (pending.isEmpty()) return;
+        auto request = pending.takeFirst();
+        active = request;
+        QPointer<PinloomHostClient> self(owner);
+        owner->sendEnvelope(std::move(request->envelope), [self, request](const QJsonObject& result, const QString& error) {
+            if (!self) return;
+            auto finish = [self, request, result, error] {
+                if (!self || !self->readQueue || self->readQueue->active != request) return;
+                self->readQueue->active.reset();
+                if (!request->cancelled->load() && request->consumer && request->handler)
+                    request->handler(result, error);
+                if (self) self->readQueue->start();
+            };
+            if (QThread::currentThread() == self->thread()) finish();
+            else QMetaObject::invokeMethod(self, std::move(finish), Qt::QueuedConnection);
+        }, request->cancelled);
+    }
+};
+
+PinloomHostClient::~PinloomHostClient() = default;
+
+bool PinloomHostClient::cancelReadRequests(QObject* consumer)
+{
+    return readQueue && readQueue->cancel(consumer ? consumer : this);
+}
+
 PinloomHostClient::PinloomHostClient(QObject* parent)
     : QObject(parent)
 {
@@ -552,7 +642,7 @@ void PinloomHostClient::setExecutablePath(const QString& path)
 
 void PinloomHostClient::search(const QString& query,
                                int limit,
-                               SearchHandler handler)
+                               SearchHandler handler, QObject* consumer)
 {
     request(QStringLiteral("search"),
             {{QStringLiteral("query"), query},
@@ -572,11 +662,11 @@ void PinloomHostClient::search(const QString& query,
                 }
                 if (handler)
                     handler(entries, error);
-            });
+            }, {}, consumer ? consumer : this);
 }
 
 void PinloomHostClient::resolve(const PinloomHostIdentity& identity,
-                                ResolveHandler handler)
+                                ResolveHandler handler, QObject* consumer)
 {
     if (!identity.isValid()) {
         if (handler)
@@ -594,7 +684,7 @@ void PinloomHostClient::resolve(const PinloomHostIdentity& identity,
                     : PinloomHostDocument{};
                 if (handler)
                     handler(document, error);
-            });
+            }, {}, consumer ? consumer : this);
 }
 
 void PinloomHostClient::open(const PinloomHostIdentity& identity,
@@ -622,7 +712,8 @@ void PinloomHostClient::open(const PinloomHostIdentity& identity,
 void PinloomHostClient::createSourceAnchor(
     const QVariantMap& source,
     const QString& title,
-    CreateSourceAnchorHandler handler)
+    CreateSourceAnchorHandler handler,
+    const QString& requestId)
 {
     QJsonObject params = QJsonObject::fromVariantMap(source);
     params.insert(
@@ -640,7 +731,7 @@ void PinloomHostClient::createSourceAnchor(
                     : PinloomHostEntry{};
                 if (handler)
                     handler(entry, error);
-            });
+            }, requestId);
 }
 
 void PinloomHostClient::capabilities(RawReplyHandler handler)
@@ -682,22 +773,34 @@ QString PinloomHostClient::discoverExecutablePath(
 
 void PinloomHostClient::request(const QString& method,
                                 const QJsonObject& params,
-                                RawReplyHandler handler)
+                                RawReplyHandler handler,
+                                const QString& requestId,
+                                QObject* readConsumer)
 {
     QJsonObject envelope{
         {QStringLiteral("protocol"), kProtocol},
         {QStringLiteral("requestId"),
-         QUuid::createUuid().toString(QUuid::WithoutBraces)},
+         requestId.isEmpty() ? QUuid::createUuid().toString(QUuid::WithoutBraces) : requestId},
         {QStringLiteral("method"), method},
         {QStringLiteral("params"), params},
     };
+    if (readConsumer) {
+        if (!readQueue) readQueue = std::make_unique<ReadQueue>(this);
+        readQueue->submit(readConsumer, method, std::move(envelope), std::move(handler));
+        return;
+    }
+    sendEnvelope(std::move(envelope), std::move(handler));
+}
+
+void PinloomHostClient::sendEnvelope(QJsonObject envelope, RawReplyHandler handler,
+                                    std::shared_ptr<std::atomic_bool> cancelled)
+{
     if (customTransport) {
         customTransport(envelope, std::move(handler));
         return;
     }
 
-    const QString executable =
-        discoverExecutablePath(configuredExecutablePath);
+    const QString configuredPath = configuredExecutablePath;
     auto* watcher = new QFutureWatcher<RawReply>(this);
     connect(watcher,
             &QFutureWatcher<RawReply>::finished,
@@ -709,7 +812,8 @@ void PinloomHostClient::request(const QString& method,
                     handler(reply.result, reply.error);
             });
     watcher->setFuture(QtConcurrent::run(
-        [envelope = std::move(envelope), executable]() {
-            return exchangeRequest(envelope, executable);
+        [envelope = std::move(envelope), configuredPath, cancelled]() {
+            if (cancelled && cancelled->load()) return RawReply{};
+            return exchangeRequest(envelope, discoverExecutablePath(configuredPath), cancelled);
         }));
 }

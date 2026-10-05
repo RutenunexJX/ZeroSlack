@@ -79,10 +79,13 @@ public:
         auto it = docs.find(norm(QString::fromStdString(path)));
         if (it == docs.end())
             return false;
-        it->text = QString::fromUtf8(
+        const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(snapshot.text.size()));
-        it->version = snapshot.version.value;
+        if (it->text != restored) {
+            it->text = restored;
+            ++it->version;
+        }
         return true;
     }
 };

@@ -9,6 +9,10 @@
 #include <QSaveFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QSemaphore>
+#include <QMutex>
+#include <QMutexLocker>
+#include <thread>
 
 #include <cstdio>
 
@@ -570,6 +574,39 @@ int main(int argc, char** argv)
                && hasExplicitResult(invalidDiscard)
                && readFile(sourcePath)
                       == sourceBeforeStaleScan);
+
+    {
+        CrashRecoverySnapshotRequest race;
+        race.document.workspacePath = workspaceA;
+        race.document.untitledDocumentId = "commit-race";
+        race.text = QString(100000, QLatin1Char('x'));
+        const auto initial = restartedService.writeSnapshot(race);
+        expect("commit gate race starts with a valid record", initial.succeeded());
+        QSemaphore prepared, release;
+        QMutex gate;
+        bool cancelled = false;
+        CrashRecoveryWriteResult late;
+        race.text += "changed";
+        std::thread worker([&] {
+            late = restartedService.writeSnapshot(race, [&](const std::function<bool()>& commit) {
+                prepared.release();
+                release.acquire();
+                QMutexLocker lock(&gate);
+                return !cancelled && commit();
+            });
+        });
+        const bool reached = prepared.tryAcquire(1, 5000);
+        {
+            QMutexLocker lock(&gate);
+            cancelled = true;
+        }
+        const auto cleared = restartedService.clearAfterNormalSave(race.document);
+        release.release();
+        worker.join();
+        expect("clear between serialization and commit prevents record resurrection",
+            reached && cleared.succeeded() && late.status == CrashRecoveryStatus::Cancelled
+            && !QFileInfo::exists(initial.storagePath));
+    }
 
     std::printf(
         "Crash recovery service checks: %d, failures: %d\n",

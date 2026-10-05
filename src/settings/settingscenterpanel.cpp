@@ -41,6 +41,39 @@
 namespace {
 constexpr int kCategoryIdRole = Qt::UserRole + 1;
 
+QString workspaceDraftKey(const QString& root)
+{
+    if (root.trimmed().isEmpty()) return {};
+    QString key = QDir::cleanPath(QFileInfo(root).absoluteFilePath());
+#ifdef Q_OS_WIN
+    key = key.toCaseFolded();
+#endif
+    return key;
+}
+
+void copySettingsLayer(SettingsCenterSnapshot& target,
+                       const SettingsCenterSnapshot& source,
+                       SettingsCenterScope scope)
+{
+    if (scope == SettingsCenterScope::Global) {
+        target.globalStoragePath = source.globalStoragePath;
+        target.globalRevision = source.globalRevision;
+        target.globalValues = source.globalValues;
+        target.globalCompatible = source.globalCompatible;
+    } else {
+        target.workspaceRoot = source.workspaceRoot;
+        target.workspaceStoragePath = source.workspaceStoragePath;
+        target.workspaceRevision = source.workspaceRevision;
+        target.workspaceValues = source.workspaceValues;
+        target.workspaceCompatible = source.workspaceCompatible;
+        target.workspaceDocumentExists = source.workspaceDocumentExists;
+    }
+    target.issues.removeIf([scope](const auto& issue) { return issue.scope == scope; });
+    for (const auto& issue : source.issues)
+        if (issue.scope == scope) target.issues.append(issue);
+    target.effectiveValues = SettingsCenterSchema::merge(target.globalValues, target.workspaceValues);
+}
+
 bool isErrorIssue(SettingsCenterIssueKind kind)
 {
     return kind == SettingsCenterIssueKind::InvalidValue
@@ -206,19 +239,50 @@ QString SettingsCenterPanel::stringMapModelObjectName(
 void SettingsCenterPanel::setWorkspaceRoot(
     const QString& workspaceRoot)
 {
-    if (activeWorkspaceRoot == workspaceRoot)
+    if (workspaceDraftKey(activeWorkspaceRoot) == workspaceDraftKey(workspaceRoot))
         return;
-    activeWorkspaceRoot = workspaceRoot;
+    auto latest = settingsService ? settingsService->load(workspaceRoot) : SettingsCenterSnapshot{};
+    latest.workspaceRoot = workspaceRoot;
+    setWorkspaceSnapshot(latest);
+}
+
+void SettingsCenterPanel::setWorkspaceSnapshot(const SettingsCenterSnapshot& snapshot)
+{
+    const auto previousKey = workspaceDraftKey(activeWorkspaceRoot);
+    const auto nextKey = workspaceDraftKey(snapshot.workspaceRoot);
+    if (previousKey == nextKey) return;
+    if (!previousKey.isEmpty() && isScopeDirty(SettingsCenterScope::Workspace))
+        workspaceDrafts.insert(previousKey, {loadedSnapshot, workspaceDraft});
+    else
+        workspaceDrafts.remove(previousKey);
+
+    auto next = snapshot;
+    if (isScopeDirty(SettingsCenterScope::Global))
+        copySettingsLayer(next, loadedSnapshot, SettingsCenterScope::Global);
+    else
+        globalDraft = next.globalValues;
+    if (workspaceDrafts.contains(nextKey)) {
+        const auto saved = workspaceDrafts.take(nextKey);
+        copySettingsLayer(next, saved.baseline, SettingsCenterScope::Workspace);
+        workspaceDraft = saved.values;
+    } else {
+        workspaceDraft = next.workspaceValues;
+    }
+    loadedSnapshot = std::move(next);
+    activeWorkspaceRoot = snapshot.workspaceRoot;
     if (activeWorkspaceRoot.trimmed().isEmpty()
         && activeScope == SettingsCenterScope::Workspace) {
         setScope(SettingsCenterScope::Global);
     }
     updateWorkspaceScopeAvailability();
-    reload();
+    populateFields();
+    reportIssues(loadedSnapshot.issues, tr("Workspace settings selected."),
+                 !loadedSnapshot.globalCompatible || !loadedSnapshot.workspaceCompatible);
 }
 
 void SettingsCenterPanel::reload()
 {
+    workspaceDrafts.remove(workspaceDraftKey(activeWorkspaceRoot));
     QPointer<QWidget> previousFocus = QApplication::focusWidget();
     if (!settingsService) {
         loadedSnapshot = {};
@@ -1133,7 +1197,9 @@ void SettingsCenterPanel::applyImmediateField(
                 rebasedDraft.remove(candidateField);
             }
         }
-        loadedSnapshot = std::move(latestSnapshot);
+        // A global retry must not replace the workspace revision paired with
+        // its existing draft. Its next Apply must still detect external edits.
+        copySettingsLayer(loadedSnapshot, latestSnapshot, SettingsCenterScope::Global);
         globalDraft = std::move(rebasedDraft);
         if (loadedSnapshot.globalCompatible) {
             QVariantMap retryValues =

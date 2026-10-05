@@ -413,55 +413,49 @@ TemporaryEditorSearchProvider::catalogEntry(
     return entry;
 }
 
-EditorSearchCandidates TemporaryEditorSearchProvider::query(
-    const QString& rawQuery) const
+EditorSearchCandidates TemporaryEditorSearchProvider::query(const QString& rawQuery) const
+{
+    return queryTask(rawQuery)({});
+}
+
+EditorSearchTask TemporaryEditorSearchProvider::queryTask(const QString& rawQuery) const
 {
     const QString query = rawQuery.trimmed().toCaseFolded();
-    if (query.isEmpty())
-        return {};
-
-    QHash<QString, EditorSearchCandidate> matches;
-    const auto appendMatch = [&matches, &query](const IndexedCandidate& indexed) {
-            const int score = qMax(
-                fuzzyScoreFolded(indexed.foldedTitle, query),
-                fuzzyScoreFolded(indexed.foldedSearchText, query) - 200);
-            if (score < 0)
-                return;
-            EditorSearchCandidate candidate = indexed.candidate;
-            candidate.score = score;
-            const auto previous = matches.constFind(indexed.identity);
-            if (previous == matches.cend() || candidate.score > previous->score
-                || (candidate.score == previous->score && candidateMetadataLess(candidate, *previous)))
-                matches.insert(indexed.identity, std::move(candidate));
+    const auto catalog = asyncCatalog ? asyncCatalog->current : nullptr;
+    const auto files = catalog && catalog->root == workspaceRootValue
+        && catalog->sourceFiles == asyncCatalog->requestedFiles ? catalog->fileCandidates : indexedFileCandidates;
+    const bool usePublished = catalog && asyncCatalog->ready;
+    const auto semantic = !catalog && semanticCatalogReady() ? indexedSemanticCandidates : QList<IndexedCandidate>{};
+    return [query, catalog, files, semantic, usePublished](const EditorSearchCancellation& cancelled) {
+        if (query.isEmpty() || (cancelled && cancelled())) return EditorSearchCandidates{};
+        struct Cancelled {};
+        try {
+            QHash<QString, EditorSearchCandidate> matches;
+            const auto append = [&](const IndexedCandidate& indexed) {
+                if (cancelled && cancelled()) throw Cancelled{};
+                const int score = qMax(fuzzyScoreFolded(indexed.foldedTitle, query),
+                    fuzzyScoreFolded(indexed.foldedSearchText, query) - 200);
+                if (score < 0) return;
+                auto candidate = indexed.candidate;
+                candidate.score = score;
+                const auto previous = matches.constFind(indexed.identity);
+                if (previous == matches.cend() || candidate.score > previous->score
+                    || (candidate.score == previous->score && candidateMetadataLess(candidate, *previous)))
+                    matches.insert(indexed.identity, std::move(candidate));
+            };
+            for (const auto& indexed : files) append(indexed);
+            if (usePublished)
+                for (const auto* indexed : catalog->uniqueCandidates) append(*indexed);
+            for (const auto& indexed : semantic) append(indexed);
+            auto candidates = matches.values();
+            quint64 comparisons = 0;
+            std::sort(candidates.begin(), candidates.end(), [&](const auto& left, const auto& right) {
+                if ((++comparisons & 255) == 0 && cancelled && cancelled()) throw Cancelled{};
+                return left.score != right.score ? left.score > right.score : candidateMetadataLess(left, right);
+            });
+            return cancelled && cancelled() ? EditorSearchCandidates{} : candidates;
+        } catch (const Cancelled&) { return EditorSearchCandidates{}; }
     };
-    const auto appendMatches = [&appendMatch](const QList<IndexedCandidate>& catalog) {
-        for (const auto& indexed : catalog) appendMatch(indexed);
-    };
-    if (asyncCatalog && asyncCatalog->current
-        && asyncCatalog->current->root == workspaceRootValue
-        && asyncCatalog->current->sourceFiles == asyncCatalog->requestedFiles)
-        appendMatches(asyncCatalog->current->fileCandidates);
-    else
-        appendMatches(indexedFileCandidates);
-    if (asyncCatalog && asyncCatalog->current) {
-        if (asyncCatalog->ready)
-            for (const auto* indexed : asyncCatalog->current->uniqueCandidates)
-                appendMatch(*indexed);
-    } else if (semanticCatalogReady()) {
-        appendMatches(indexedSemanticCandidates);
-    }
-    EditorSearchCandidates candidates = matches.values();
-
-    std::sort(
-        candidates.begin(),
-        candidates.end(),
-        [](const EditorSearchCandidate& lhs,
-           const EditorSearchCandidate& rhs) {
-            if (lhs.score != rhs.score)
-                return lhs.score > rhs.score;
-            return candidateMetadataLess(lhs, rhs);
-        });
-    return candidates;
 }
 
 void TemporaryEditorSearchProvider::rebuildFileCatalog()

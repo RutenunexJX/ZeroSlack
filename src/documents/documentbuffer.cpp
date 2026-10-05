@@ -6,17 +6,22 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QUuid>
+#include <atomic>
+#include <algorithm>
+
+namespace { std::atomic_uint64_t nextDocumentSerial{0}; }
 
 DocumentBuffer::DocumentBuffer(const QString& documentId, const QString& fileName,
-    const QString& initialText, QObject* parent, QTextDocument* ownedDocument)
-    : QObject(parent), id(documentId.isEmpty() ? QStringLiteral("untitled:")
+    const QString& initialText, QObject* parent, QTextDocument* ownedDocument,
+    const DocumentFileReadResult* initialFile)
+    : QObject(parent), serial(++nextDocumentSerial), id(documentId.isEmpty() ? QStringLiteral("untitled:")
         + QUuid::createUuid().toString(QUuid::WithoutBraces) : documentId),
       normalizedFileName(EditorFileIdentity::normalized(fileName)),
       document(ownedDocument ? ownedDocument : new QTextDocument)
 {
     document->setParent(this);
     document->setUndoRedoEnabled(true);
-    resetText(initialText);
+    resetText(initialText, 0, true, initialFile);
     connect(document, &QTextDocument::contentsChange, this,
             [this](int, int, int) { handleContentsChange(); });
     // Qt omits contentsChange until a layout is attached. Only use the broad
@@ -87,7 +92,8 @@ SharedDocumentExternalState DocumentBuffer::externalState() const
 
 void DocumentBuffer::resetText(const QString& text,
                                std::uint64_t nextRevision,
-                               bool markClean)
+                               bool markClean,
+                               const DocumentFileReadResult* source)
 {
     if (!document)
         return;
@@ -97,11 +103,17 @@ void DocumentBuffer::resetText(const QString& text,
     document->setUndoRedoEnabled(false);
     document->setPlainText(text);
     document->setUndoRedoEnabled(true);
-    revision = nextRevision;
+    revision = textInitialized ? std::max(nextRevision, revision + 1) : nextRevision;
+    textInitialized = true;
     if (markClean) {
         savedRevision = revision;
         document->setModified(false);
-        captureSavedBaseline();
+        if (source && source->available) {
+            restoreSavedBaseline(source->rawSha256, source->modifiedUtc);
+            format = source->format;
+        } else {
+            captureSavedBaseline();
+        }
     }
     loadingText = false;
     lastDirtyState = dirty();
@@ -189,22 +201,12 @@ void DocumentBuffer::captureSavedBaseline()
         savedBaselineModifiedTimeUtc = QDateTime();
         return;
     }
-    const QFileInfo source(normalizedFileName);
-    QFile sourceFile(normalizedFileName);
-    if (source.isFile()
-        && sourceFile.open(QIODevice::ReadOnly)) {
-        savedBaselineDigest =
-            QCryptographicHash::hash(
-                sourceFile.readAll(),
-                QCryptographicHash::Sha256);
+    const auto source = readDocumentFile(normalizedFileName);
+    if (source.available) {
+        restoreSavedBaseline(source.rawSha256, source.modifiedUtc);
+        format = source.format;
     } else {
-        savedBaselineDigest =
-            QCryptographicHash::hash(
-                document->toPlainText().toUtf8(),
-                QCryptographicHash::Sha256);
+        savedBaselineDigest = QCryptographicHash::hash(document->toPlainText().toUtf8(), QCryptographicHash::Sha256);
+        savedBaselineModifiedTimeUtc = {};
     }
-    savedBaselineModifiedTimeUtc =
-        source.isFile()
-        ? source.lastModified().toUTC()
-        : QDateTime();
 }

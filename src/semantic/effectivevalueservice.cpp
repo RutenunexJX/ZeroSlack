@@ -513,8 +513,10 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
     const QString& fileName,
     const QString& documentText,
     const HierarchyInstanceContext& instanceContext,
-    std::uint64_t documentRevision) const
+    std::uint64_t documentRevision,
+    const std::function<bool()>& cancelled) const
 {
+    if (cancelled && cancelled()) return {};
     const QString normalized = normalizedFileName(fileName);
     if (normalized.isEmpty())
         return {};
@@ -553,6 +555,7 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
         return {};
     }
     for (EffectiveValueFact fact : publication->facts) {
+        if (cancelled && cancelled()) return {};
         if (normalizedFileName(fact.fileName) != normalized)
             continue;
         if (bound && !isStaticScopeKind(fact.effectiveScopeKind)) {
@@ -579,6 +582,7 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
     QList<EffectiveValueFact> result;
     result.reserve(keyOrder.size());
     for (const QString& key : std::as_const(keyOrder)) {
+        if (cancelled && cancelled()) return {};
         const QList<EffectiveValueFact>& candidates =
             candidatesByKey.value(key);
         if (candidates.isEmpty())
@@ -588,6 +592,7 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
             int selected = 0;
             int selectedScore = -1;
             for (int i = 0; i < candidates.size(); ++i) {
+                if (cancelled && cancelled()) return {};
                 const EffectiveValueFact& fact = candidates.at(i);
                 const int score = effectiveFactAnchorPath(fact)
                                           == instanceContext.instancePath
@@ -604,19 +609,23 @@ QList<EffectiveValueFact> EffectiveValueService::factsForDocument(
 
         QList<int> preferred;
         for (int i = 0; i < candidates.size(); ++i) {
+            if (cancelled && cancelled()) return {};
             const EffectiveValueFact& fact = candidates.at(i);
             if (fact.defaultEvaluation || fact.instancePath.isEmpty())
                 preferred.append(i);
         }
         if (preferred.isEmpty()) {
-            for (int i = 0; i < candidates.size(); ++i)
+            for (int i = 0; i < candidates.size(); ++i) {
+                if (cancelled && cancelled()) return {};
                 preferred.append(i);
+            }
         }
 
         const EffectiveValueFact& reference =
             candidates.at(preferred.first());
         bool consistent = true;
         for (int i : std::as_const(preferred)) {
+            if (cancelled && cancelled()) return {};
             if (!sameEffectiveFactValue(reference, candidates.at(i))) {
                 consistent = false;
                 break;

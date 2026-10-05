@@ -434,6 +434,63 @@ int main(int argc, char* argv[])
             & Qt::WindowStaysOnTopHint),
           "settings center never requests an always-on-top window");
 
+    // Real two-layer revisions: an immediate global retry must leave the
+    // workspace draft paired with W0 even when the disk has advanced to W1.
+    {
+        const QString a = temporary.filePath("draft-a");
+        const QString b = temporary.filePath("draft-b");
+        QDir().mkpath(a); QDir().mkpath(b);
+        SettingsCenterService isolated(temporary.filePath("draft-global.ini"));
+        check(isolated.saveGlobal({{"font.sizePt", 14}}).saved
+                  && isolated.saveWorkspace(a, {{"font.sizePt", 20}}).saved,
+              "draft fixtures are persisted through the settings owner");
+        SettingsCenterPanel drafts(&isolated, a);
+        auto* font = qobject_cast<QSpinBox*>(drafts.fieldEditor("font.sizePt"));
+        auto* theme = qobject_cast<QComboBox*>(drafts.fieldEditor("appearance.theme"));
+        check(font && theme, "draft editors are available");
+        if (font && theme) {
+            const auto original = drafts.snapshot();
+            drafts.setScope(SettingsCenterScope::Workspace); font->setValue(21);
+            drafts.setScope(SettingsCenterScope::Global); font->setValue(18);
+            check(isolated.saveWorkspace(a, {{"font.sizePt", 25}}, original.workspaceRevision).saved
+                      && isolated.saveGlobal({{"font.sizePt", 19}}, original.globalRevision).saved,
+                  "external W1 and G1 are committed");
+            theme->setCurrentText("Dark");
+            check(drafts.snapshot().workspaceRevision == original.workspaceRevision
+                      && drafts.snapshot().workspaceValues.value("font.sizePt").toInt() == 20
+                      && drafts.draftValues(SettingsCenterScope::Workspace).value("font.sizePt").toInt() == 21
+                      && drafts.draftValues(SettingsCenterScope::Global).value("font.sizePt").toInt() == 18
+                      && isolated.load(a).globalValues.value("appearance.theme").toString() == "Dark",
+                  "global immediate retry preserves the complete W0 baseline and both drafts");
+            drafts.setScope(SettingsCenterScope::Workspace); drafts.applyCurrentScope();
+            check(hasIssue(drafts.currentIssues(), SettingsCenterIssueKind::Conflict)
+                      && isolated.load(a).workspaceValues.value("font.sizePt").toInt() == 25,
+                  "workspace Apply rejects stale W0 after global retry without overwriting W1");
+            drafts.setWorkspaceRoot(b);
+            check(drafts.draftValues(SettingsCenterScope::Global).value("font.sizePt").toInt() == 18
+                      && !drafts.isScopeDirty(SettingsCenterScope::Workspace),
+                  "workspace switch preserves global draft and starts a separate workspace draft");
+            auto* override = drafts.findChild<QCheckBox*>(SettingsCenterPanel::fieldOverrideObjectName("font.sizePt"));
+            if (override) override->setChecked(true);
+            font->setValue(23);
+            drafts.setWorkspaceRoot(a);
+            check(font->value() == 21 && drafts.snapshot().workspaceRevision == original.workspaceRevision,
+                  "returning to A restores its failed-save draft and original revision together");
+            drafts.setWorkspaceRoot({});
+            drafts.setWorkspaceRoot(b); drafts.setScope(SettingsCenterScope::Workspace);
+            check(font->value() == 23, "workspace drafts survive closing and reopening the selected workspace");
+            drafts.applyCurrentScope();
+            check(isolated.load(b).workspaceValues.value("font.sizePt").toInt() == 23
+                      && drafts.isScopeDirty(SettingsCenterScope::Global),
+                  "B applies independently while the global draft remains unapplied");
+            drafts.reload();
+            check(!drafts.isScopeDirty(SettingsCenterScope::Global), "explicit reload discards the selected global draft");
+            drafts.setWorkspaceRoot(a);
+            check(drafts.draftValues(SettingsCenterScope::Workspace).value("font.sizePt").toInt() == 21,
+                  "explicit reload of B does not discard A's draft");
+        }
+    }
+
     std::cout << "settings_center_panel_test: "
               << (checks - failures) << '/' << checks
               << " checks passed\n";

@@ -134,10 +134,10 @@ void MainWindow::setupContextWorkspace()
         });
     temporaryProvider->setSearchProvider(
         [this](const QString& rawQuery)
-            -> EditorSearchCandidates {
+            -> EditorSearchTask {
             return temporaryEditorSearchProvider
-                ? temporaryEditorSearchProvider->query(rawQuery)
-                : EditorSearchCandidates{};
+                ? temporaryEditorSearchProvider->queryTask(rawQuery)
+                : EditorSearchTask{};
         });
     contextWorkspaceController->registerProvider(
         std::move(temporaryProvider));
@@ -273,6 +273,15 @@ void MainWindow::setupContextWorkspace()
             }
             return pinloomCodeLinkCoordinator->attachLink(
                 sourceMap, entry, failureReason);
+        });
+    pinloomCodeLinkCoordinator->setCompletionNotice(
+        [this](const QString& message) { postActivityMessage(message, 8000); });
+    const QPointer<PinloomCodeLinkCoordinator> linkOwner(pinloomCodeLinkCoordinator.get());
+    const QPointer<PinloomHostClient> linkClient(pinloomHostClient.get());
+    pinloomProvider->setCreateLinkHandler(
+        [linkOwner, linkClient](const QVariantMap& source, const QString& title,
+            PinloomContextProvider::CreateLinkReply reply) {
+            if (linkOwner) linkOwner->createSourceAnchor(linkClient, source, title, std::move(reply));
         });
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));

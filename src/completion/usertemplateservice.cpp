@@ -1,4 +1,12 @@
 #include "usertemplateservice.h"
+#include <QSaveFile>
+#include <QDateTime>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include "codetemplateservice.h"
 
@@ -18,6 +26,28 @@
 std::unique_ptr<UserTemplateService> UserTemplateService::instance = nullptr;
 
 namespace {
+QString templateFileVersion(const QString& path)
+{
+    const QFileInfo info(path);
+    QString version = path + QLatin1Char('|') + QString::number(info.size())
+        + QLatin1Char('|') + QString::number(info.lastModified().toMSecsSinceEpoch())
+        + QLatin1Char('|') + QString::number(info.metadataChangeTime().toMSecsSinceEpoch());
+#ifdef Q_OS_WIN
+    const HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle != INVALID_HANDLE_VALUE) {
+        FILE_BASIC_INFO basic{};
+        BY_HANDLE_FILE_INFORMATION identity{};
+        if (GetFileInformationByHandleEx(handle, FileBasicInfo, &basic, sizeof(basic)))
+            version += QStringLiteral("|%1|%2").arg(basic.ChangeTime.QuadPart).arg(basic.LastWriteTime.QuadPart);
+        if (GetFileInformationByHandle(handle, &identity))
+            version += QStringLiteral("|%1|%2|%3").arg(identity.dwVolumeSerialNumber)
+                .arg(identity.nFileIndexHigh).arg(identity.nFileIndexLow);
+        CloseHandle(handle);
+    }
+#endif
+    return version;
+}
 constexpr const char* kUserTemplateFileName = "user_templates.json";
 constexpr const char* kUserTemplateWorkspaceDir = ".zeroslack";
 constexpr const char* kUserTemplateTemplates = "templates";
@@ -631,13 +661,18 @@ bool writeRecordsToJsonFile(const QString& filePath,
 
     QJsonObject root;
     root.insert(QString::fromLatin1(kUserTemplateTemplates), array);
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
+    QSaveFile file(filePath);
+    file.setDirectWriteFallback(false);
+    if (!file.open(QIODevice::WriteOnly)) {
         if (failureReason)
             *failureReason = QStringLiteral("Failed to write user template file.");
         return false;
     }
-    file.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    const auto bytes = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    if (file.write(bytes) != bytes.size() || !file.commit()) {
+        if (failureReason) *failureReason = QStringLiteral("Failed to commit user templates atomically: %1").arg(file.errorString());
+        return false;
+    }
     return true;
 }
 }
@@ -683,20 +718,25 @@ void UserTemplateService::setGlobalTemplateFilePath(const QString& filePath)
     globalTemplateFilePath = filePath.trimmed().isEmpty()
         ? defaultGlobalTemplatePath()
         : normalizePath(filePath);
+    cacheValid = false;
 }
 
 void UserTemplateService::setWorkspaceRoot(const QString& workspaceRoot)
 {
     workspaceTemplateFilePath = workspaceTemplatePathForRoot(workspaceRoot);
+    cacheValid = false;
 }
 
 void UserTemplateService::setWorkspaceTemplateFilePath(const QString& filePath)
 {
     workspaceTemplateFilePath = normalizePath(filePath);
+    cacheValid = false;
 }
 
 UserTemplateLoadReport UserTemplateService::reload() const
 {
+    const auto before = templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
+    fileReads += QFileInfo(globalTemplateFilePath).isFile() + QFileInfo(workspaceTemplateFilePath).isFile();
     UserTemplateLoadReport report;
     mergeLoadedRecords(&report,
                        readTemplateFile(globalTemplateFilePath,
@@ -711,22 +751,33 @@ UserTemplateLoadReport UserTemplateService::reload() const
                        workspaceTemplateFilePath,
                        UserTemplateScope::Workspace);
     report.valid = report.issues.isEmpty();
+    cachedReport = report;
+    cachedCatalog.clear();
+    for (const auto& record : report.records) cachedCatalog.append(itemFromRecord(record));
+    cachedFileVersion = before;
+    cacheValid = before == templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
+    ++revision;
     return report;
 }
 
+void UserTemplateService::ensureLoaded() const
+{
+    const auto current = templateFileVersion(globalTemplateFilePath) + QLatin1Char('\n') + templateFileVersion(workspaceTemplateFilePath);
+    if (!cacheValid || cachedFileVersion != current) reload();
+}
+
+quint64 UserTemplateService::catalogRevision() const { ensureLoaded(); return revision; }
+
 QList<UserTemplateRecord> UserTemplateService::records() const
 {
-    return reload().records;
+    ensureLoaded();
+    return cachedReport.records;
 }
 
 QList<CodeTemplateItem> UserTemplateService::catalog() const
 {
-    QList<CodeTemplateItem> result;
-    const QList<UserTemplateRecord> storedRecords = records();
-    result.reserve(storedRecords.size());
-    for (const UserTemplateRecord& record : storedRecords)
-        result.append(itemFromRecord(record));
-    return result;
+    ensureLoaded();
+    return cachedCatalog;
 }
 
 QList<CodeTemplateItem> UserTemplateService::matchingTemplates(
@@ -774,16 +825,19 @@ UserTemplateSaveReport UserTemplateService::setRecords(
                     report.failureReason);
         return report;
     }
+    cacheValid = false;
     return report;
 }
 
 UserTemplateSaveReport UserTemplateService::addOrUpdateRecord(
     const UserTemplateRecord& record) const
 {
+    UserTemplateLoadReport loaded;
     QList<UserTemplateRecord> nextRecords =
         readTemplateFile(globalTemplateFilePath,
                          UserTemplateScope::Global,
-                         nullptr);
+                         &loaded);
+    if (!loaded.issues.isEmpty()) return loaded;
     const QString targetId = normalizedTemplateId(record).toLower();
     bool updated = false;
     for (UserTemplateRecord& existing : nextRecords) {
@@ -806,10 +860,12 @@ bool UserTemplateService::removeRecord(const QString& id) const
 
     QList<UserTemplateRecord> nextRecords;
     bool removed = false;
+    UserTemplateLoadReport loaded;
     const QList<UserTemplateRecord> currentRecords =
         readTemplateFile(globalTemplateFilePath,
                          UserTemplateScope::Global,
-                         nullptr);
+                         &loaded);
+    if (!loaded.issues.isEmpty()) return false;
     for (const UserTemplateRecord& record : currentRecords) {
         if (normalizedTemplateId(record).toLower() == targetId) {
             removed = true;
@@ -825,6 +881,7 @@ bool UserTemplateService::removeRecord(const QString& id) const
 
 void UserTemplateService::clear() const
 {
+    cacheValid = false;
     if (!globalTemplateFilePath.isEmpty())
         QFile::remove(globalTemplateFilePath);
     if (!workspaceTemplateFilePath.isEmpty())

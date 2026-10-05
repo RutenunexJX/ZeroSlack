@@ -149,11 +149,13 @@ private:
         const std::vector<DocumentState>& target,
         TransactionStatus successStatus,
         WorkspaceDocumentManager& documents);
-    static WorkspaceEditTransactionResult applyPrepared(
+    WorkspaceEditTransactionResult applyPrepared(
         const PreparedWorkspaceEditTransaction& prepared,
         const SemanticIndexSnapshot* currentSemanticSnapshot,
         WorkspaceDocumentManager& documents,
         HistoryEntry* historyEntry);
+    void rebaseHistory(const std::vector<DocumentState>& previous,
+                       const std::vector<DocumentState>& restored);
     void pushUndo(HistoryEntry entry);
 };
 

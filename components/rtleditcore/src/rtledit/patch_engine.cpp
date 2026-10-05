@@ -156,7 +156,8 @@ ApplyResult PatchEngine::apply(const std::vector<WorkspaceTextEdit>& edits) {
                     documentManager_.restoreSnapshot(
                         restoreFilePath,
                         planIt->second.snapshot)) {
-                    return;
+                    const auto restored = documentManager_.snapshot(restoreFilePath);
+                    if (restored && restored->text == planIt->second.snapshot.text) return;
                 }
                 if (std::find(
                         restoreFailedFiles.begin(),

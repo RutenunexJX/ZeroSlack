@@ -38,6 +38,8 @@ struct CrashRecoveryApplyResult :
     bool openedView = false;
 };
 
+class DocumentRecoveryQueue;
+
 class ZEROSLACK_API TabManager : public QObject
 {
     Q_OBJECT
@@ -187,6 +189,10 @@ public:
         const QString& recoveryId,
         const QString& workspaceRoot = QString());
     void checkpointCrashRecovery();
+    // Explicit persistence boundary for shutdown and callers that need the
+    // latest queued snapshot on disk. Ordinary edits/checkpoints do not wait.
+    void flushCrashRecovery();
+    QVariantMap crashRecoveryMetricsForTesting() const;
     void clearCrashRecoveryAfterNormalClose();
     QList<WorkspaceSessionTabState> workspaceSessionTabs(
         const QString& workspaceRoot) const;
@@ -236,6 +242,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    friend class WorkspaceEditDocumentManager;
     struct ClosedTabState {
         QString fileName;
         QString text;
@@ -246,8 +253,12 @@ private:
 
     struct RecoveryDocumentState {
         CrashRecoveryDocumentKey key;
+        QList<CrashRecoveryDocumentKey> obsoleteKeys;
+        QByteArray baseline;
         quint64 snapshotRevision = 0;
         bool hasSnapshot = false;
+        bool retryNeeded = false;
+        bool discarded = false;
     };
 
     QTabWidget* tabWidget;
@@ -259,6 +270,11 @@ private:
         unsavedDocumentManager;
     std::unique_ptr<CrashRecoveryService>
         crashRecoveryService;
+    std::unique_ptr<DocumentRecoveryQueue> recoveryQueue;
+    bool recoveryClosing = false;
+    quint64 recoveryCaptures = 0;
+    qint64 recoveryCaptureNs = 0;
+    quint64 recoveryCaptureCharacters = 0;
     std::unique_ptr<EditorSplitController> splitController;
     TabFileIo fileIo;
     TabDocumentQueries documentQueries;
@@ -293,6 +309,8 @@ private:
     bool writeRecoverySnapshot(
         SharedDocument* document,
         bool force);
+    void completeRecoverySnapshot(QObject* document, const CrashRecoverySnapshotRequest& request,
+                                  const CrashRecoveryWriteResult& result);
     void clearRecoverySnapshot(
         SharedDocument* document,
         bool normalSave,
@@ -339,7 +357,7 @@ private:
                      bool confirmUnsaved = true,
                      bool remember = true);
     bool closePage(QTabWidget* group, int index);
-    void observeDocument(SharedDocument* document);
+    void observeDocument(SharedDocument* document, const DocumentFileReadResult* initialFile = nullptr);
     void updateTitlesForDocument(SharedDocument* document);
     void updateAllTabTitles();
     QString shortestDistinctTitle(

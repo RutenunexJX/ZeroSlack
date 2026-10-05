@@ -672,7 +672,7 @@ ScopedSearchPanelContext
 ScopedSearchPanel::currentContext() const
 {
     return contextProvider
-        ? contextProvider()
+        ? contextProvider(scope())
         : fallbackContext;
 }
 

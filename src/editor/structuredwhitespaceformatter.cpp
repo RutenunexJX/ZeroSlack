@@ -8,6 +8,7 @@
 #include <QVector>
 #include <algorithm>
 #include <cstring>
+#include <map>
 
 namespace StructuredWhitespaceFormatter {
 namespace {
@@ -468,17 +469,10 @@ LeafToken lastLeafText(const QList<LeafToken>& leaves,
 class TreeWhitespaceFormatter
 {
 public:
-    TreeWhitespaceFormatter(const QString& source, int indentWidth)
-        : m_source(source),
-          m_indentWidth(std::max(1, indentWidth))
-    {
-        m_document.setText(source);
-        m_lineStarts.append(0);
-        for (int position = 0; position < source.size(); ++position) {
-            if (source.at(position) == QLatin1Char('\n'))
-                m_lineStarts.append(position + 1);
-        }
-    }
+    TreeWhitespaceFormatter(const QString& source, int indentWidth, SyntaxContext& context)
+        : m_source(source), m_indentWidth(std::max(1, indentWidth)),
+          m_document(context.syntaxFor(source)), m_lineStarts(context.lineStartsFor(source)) {}
+
 
     QString run()
     {
@@ -3059,8 +3053,8 @@ private:
 
     const QString& m_source;
     int m_indentWidth = 4;
-    TSDocument m_document;
-    QVector<int> m_lineStarts;
+    const TSDocument& m_document;
+    const QVector<int>& m_lineStarts;
     QList<WhitespaceEdit> m_edits;
     QList<LineRange> m_conservativeRanges;
     bool m_indentConditionalBranches = true;
@@ -3070,62 +3064,74 @@ private:
     bool m_valid = true;
 };
 
-bool hasIdenticalImmutableLeafTokens(const QString& before,
-                                     const QString& after)
+bool hasIdenticalImmutableLeafTokens(const QString& before, const QString& after, SyntaxContext& context)
 {
-    TSDocument beforeDocument;
-    TSDocument afterDocument;
-    beforeDocument.setText(before);
-    afterDocument.setText(after);
-    const QList<LeafToken> beforeLeaves =
-        leavesOf(beforeDocument.rootNode(), before);
-    const QList<LeafToken> afterLeaves =
-        leavesOf(afterDocument.rootNode(), after);
-    if (beforeLeaves.size() != afterLeaves.size())
-        return false;
-    for (int index = 0; index < beforeLeaves.size(); ++index) {
-        const LeafToken& left = beforeLeaves.at(index);
-        const LeafToken& right = afterLeaves.at(index);
-        QString leftText = left.text;
-        QString rightText = right.text;
-        if (isCommentNode(left.node) && isCommentNode(right.node)) {
-            const auto trimLineEnds = [](QString text) {
-                QStringList lines =
-                    text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
-                for (QString& line : lines) {
-                    int contentLimit = line.size();
-                    if (contentLimit > 0
-                        && line.at(contentLimit - 1)
-                               == QLatin1Char('\r')) {
-                        --contentLimit;
-                    }
-                    int contentEnd = contentLimit;
-                    while (contentEnd > 0
-                           && (line.at(contentEnd - 1)
-                                   == QLatin1Char(' ')
-                               || line.at(contentEnd - 1)
-                                      == QLatin1Char('\t'))) {
-                        --contentEnd;
-                    }
-                    line.remove(contentEnd,
-                                contentLimit - contentEnd);
-                }
-                return lines.join(QLatin1Char('\n'));
-            };
-            leftText = trimLineEnds(leftText);
-            rightText = trimLineEnds(rightText);
-        }
-        if (leftText != rightText)
-            return false;
+    const auto& left = context.immutableTokensFor(before);
+    const auto& right = context.immutableTokensFor(after);
+    if (left.size() != right.size()) return false;
+    for (int i = 0; i < left.size(); ++i) {
+        const bool comments = left[i].comment && right[i].comment;
+        if ((comments ? left[i].trimmedComment : left[i].text)
+            != (comments ? right[i].trimmedComment : right[i].text)) return false;
     }
     return true;
 }
 
 } // namespace
 
+struct SyntaxContext::Impl {
+    struct Input {
+        TSDocument syntax;
+        QVector<int> lineStarts;
+        QList<Token> tokens;
+        bool tokensReady = false;
+    };
+    std::map<QString, std::unique_ptr<Input>> inputs;
+    quint64 hits = 0;
+    Input& input(const QString& text) {
+        const auto found = inputs.find(text);
+        if (found != inputs.end()) { ++hits; return *found->second; }
+        auto value = std::make_unique<Input>();
+        value->syntax.setText(text);
+        value->lineStarts.append(0);
+        for (int i = 0; i < text.size(); ++i)
+            if (text[i] == QLatin1Char('\n')) value->lineStarts.append(i + 1);
+        return *inputs.emplace(text, std::move(value)).first->second;
+    }
+};
+SyntaxContext::SyntaxContext() : data(std::make_unique<Impl>()) {}
+SyntaxContext::~SyntaxContext() = default;
+const TSDocument& SyntaxContext::syntaxFor(const QString& text) { return data->input(text).syntax; }
+const QVector<int>& SyntaxContext::lineStartsFor(const QString& text) { return data->input(text).lineStarts; }
+quint64 SyntaxContext::parseCount() const { return data->inputs.size(); }
+quint64 SyntaxContext::reuseCount() const { return data->hits; }
+const QList<SyntaxContext::Token>& SyntaxContext::immutableTokensFor(const QString& text)
+{
+    auto& input = data->input(text);
+    if (!input.tokensReady) {
+        for (const auto& leaf : leavesOf(input.syntax.rootNode(), text)) {
+            Token token{leaf.text, {}, isCommentNode(leaf.node)};
+            if (token.comment) {
+                auto lines = leaf.text.split(QLatin1Char('\n'), Qt::KeepEmptyParts);
+                for (auto& line : lines) {
+                    int limit = line.size();
+                    if (limit && line[limit - 1] == QLatin1Char('\r')) --limit;
+                    int end = limit;
+                    while (end && (line[end - 1] == QLatin1Char(' ') || line[end - 1] == QLatin1Char('\t'))) --end;
+                    line.remove(end, limit - end);
+                }
+                token.trimmedComment = lines.join(QLatin1Char('\n'));
+            }
+            input.tokens.append(std::move(token));
+        }
+        input.tokensReady = true;
+    }
+    return input.tokens;
+}
+
 QString normalizeLexicalWhitespaceTabs(const QString& text,
                                        int spacesPerTab,
-                                       QString* rejectionReason)
+                                       QString* rejectionReason, SyntaxContext* context)
 {
     if (rejectionReason)
         rejectionReason->clear();
@@ -3133,8 +3139,9 @@ QString normalizeLexicalWhitespaceTabs(const QString& text,
         || !text.contains(QLatin1Char('\t')))
         return text;
 
-    TSDocument document;
-    document.setText(text);
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
+    const auto& document = syntax.syntaxFor(text);
     QList<ProtectedTextRange> protectedRanges;
     collectTabProtectedRanges(
         document.rootNode(), &protectedRanges);
@@ -3173,7 +3180,7 @@ QString normalizeLexicalWhitespaceTabs(const QString& text,
             result.append(text.at(position));
         }
     }
-    if (!hasIdenticalNonWhitespaceStream(text, result)) {
+    if (!hasIdenticalNonWhitespaceStream(text, result, &syntax)) {
         if (rejectionReason) {
             *rejectionReason = QStringLiteral(
                 "Lexical Tab normalization was rejected because it changed the token stream.");
@@ -3190,20 +3197,22 @@ QString formatStructuralIndentation(
     bool indentCaseItemBodies,
     bool alignCaseItems,
     bool preservePreprocessorIndent,
-    QString* rejectionReason)
+    QString* rejectionReason, SyntaxContext* context)
 {
     if (rejectionReason)
         rejectionReason->clear();
     if (text.isEmpty())
         return text;
-    TreeWhitespaceFormatter formatter(text, indentWidth);
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
+    TreeWhitespaceFormatter formatter(text, indentWidth, syntax);
     const QString candidate =
         formatter.runStructuralIndentation(
             indentConditionalBranches,
             indentCaseItemBodies,
             alignCaseItems,
             preservePreprocessorIndent);
-    if (!hasIdenticalNonWhitespaceStream(text, candidate)) {
+    if (!hasIdenticalNonWhitespaceStream(text, candidate, &syntax)) {
         if (rejectionReason) {
             *rejectionReason = QStringLiteral(
                 "Structural indentation was rejected because it changed the token stream.");
@@ -3214,8 +3223,10 @@ QString formatStructuralIndentation(
 }
 
 bool hasIdenticalNonWhitespaceStream(const QString& before,
-                                     const QString& after)
+                                     const QString& after, SyntaxContext* context)
 {
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
     int left = 0;
     int right = 0;
     while (true) {
@@ -3228,7 +3239,7 @@ bool hasIdenticalNonWhitespaceStream(const QString& before,
         if (leftDone || rightDone) {
             return leftDone && rightDone
                 && hasIdenticalImmutableLeafTokens(
-                    before, after);
+                    before, after, syntax);
         }
         if (before.at(left) != after.at(right))
             return false;
@@ -3239,15 +3250,17 @@ bool hasIdenticalNonWhitespaceStream(const QString& before,
 
 QString format(const QString& text,
                int indentWidth,
-               QString* rejectionReason)
+               QString* rejectionReason, SyntaxContext* context)
 {
     if (rejectionReason)
         rejectionReason->clear();
     if (text.isEmpty())
         return text;
-    TreeWhitespaceFormatter formatter(text, indentWidth);
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
+    TreeWhitespaceFormatter formatter(text, indentWidth, syntax);
     const QString candidate = formatter.run();
-    if (!hasIdenticalNonWhitespaceStream(text, candidate)) {
+    if (!hasIdenticalNonWhitespaceStream(text, candidate, &syntax)) {
         if (rejectionReason) {
             *rejectionReason = QStringLiteral(
                 "Structured alignment was rejected because it changed the token stream.");
@@ -3258,11 +3271,13 @@ QString format(const QString& text,
 }
 
 QList<LineRange> conservativeLineRanges(const QString& text,
-                                        int indentWidth)
+                                        int indentWidth, SyntaxContext* context)
 {
     if (text.isEmpty())
         return {};
-    TreeWhitespaceFormatter formatter(text, indentWidth);
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
+    TreeWhitespaceFormatter formatter(text, indentWidth, syntax);
     formatter.run();
     QList<LineRange> ranges = formatter.conservativeRanges();
     std::sort(ranges.begin(),
@@ -3275,11 +3290,13 @@ QList<LineRange> conservativeLineRanges(const QString& text,
     return ranges;
 }
 
-QList<LineRange> syntaxErrorLineRanges(const QString& text)
+QList<LineRange> syntaxErrorLineRanges(const QString& text, SyntaxContext* context)
 {
     if (text.isEmpty())
         return {};
-    TreeWhitespaceFormatter formatter(text, 4);
+    SyntaxContext local;
+    auto& syntax = context ? *context : local;
+    TreeWhitespaceFormatter formatter(text, 4, syntax);
     QList<LineRange> ranges = formatter.syntaxErrorRanges();
     std::sort(ranges.begin(),
               ranges.end(),

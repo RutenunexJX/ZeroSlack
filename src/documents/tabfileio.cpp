@@ -58,20 +58,16 @@ bool TabFileIo::readTextFile(
     const QString& fileName,
     QString* text) const
 {
-    QFile file(fileName);
-    if (!file.open(QIODevice::ReadOnly | QFile::Text)) {
-        UiDialogs::warning(
-            parent,
-            "warning",
-            "can not open file:" + file.errorString());
-        return false;
-    }
+    const auto source = readFile(parent, fileName);
+    if (source.available && text) *text = source.text;
+    return source.available;
+}
 
-    QTextStream in(&file);
-    if (text)
-        *text = in.readAll();
-    file.close();
-    return true;
+DocumentFileReadResult TabFileIo::readFile(QWidget* parent, const QString& fileName) const
+{
+    auto result = readDocumentFile(fileName);
+    if (!result.available) UiDialogs::warning(parent, "warning", "can not open file:" + result.failureReason);
+    return result;
 }
 
 bool TabFileIo::writeTextFile(
@@ -81,7 +77,8 @@ bool TabFileIo::writeTextFile(
     QString* failureReason,
     QByteArray* rawSha256,
     QByteArray* logicalTextSha256,
-    const std::function<bool(QString*)>& revalidateOverwrite) const
+    const std::function<bool(QString*)>& revalidateOverwrite,
+    const DocumentFileFormat& format) const
 {
     Q_UNUSED(parent);
     if (failureReason)
@@ -91,14 +88,8 @@ bool TabFileIo::writeTextFile(
     if (logicalTextSha256)
         logicalTextSha256->clear();
 
-    QByteArray logicalBytes = text.toUtf8();
-    const QByteArray logicalDigest = QCryptographicHash::hash(
-        logicalBytes, QCryptographicHash::Sha256);
-#ifdef Q_OS_WIN
-    // Match QIODevice::Text's native newline conversion while retaining the
-    // exact bytes for the crash-recovery baseline digest.
-    logicalBytes.replace("\n", "\r\n");
-#endif
+    const QByteArray logicalDigest = QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256);
+    const QByteArray logicalBytes = encodeDocumentText(text, format);
     const QByteArray rawDigest = QCryptographicHash::hash(
         logicalBytes, QCryptographicHash::Sha256);
 

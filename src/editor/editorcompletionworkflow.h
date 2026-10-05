@@ -43,7 +43,6 @@ public:
     bool handleCompletionPopupKey(QKeyEvent* event);
     void handleCompletionActivated(const QModelIndex& index);
     void handleCursorPositionChanged();
-    bool handleInlineAbbreviationTab(QKeyEvent* event);
     void setIncludeFileProvider(IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(IncludeNewHeaderCreator creator);
     QStringList includeFileCandidates() const;

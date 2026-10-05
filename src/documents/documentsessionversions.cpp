@@ -15,11 +15,9 @@ DocumentSaveResult DocumentSessionState::markSaved(MyCodeEditor* editor)
         return result;
     }
 
-    const TrackedDocument previous = registry.value(editor);
     const QString savedText = editor->cachedDocumentText();
     const QList<MyCodeEditor*> views =
-        registry.editorsForDocumentId(
-            previous.snapshot.documentId);
+        registry.editorsForEditor(editor);
     TrackedDocument tracked;
     for (MyCodeEditor* view : views) {
         const TrackedDocument viewPrevious =
@@ -69,8 +67,7 @@ bool DocumentSessionState::applyChange(
         return false;
     }
     const QList<MyCodeEditor*> views =
-        registry.editorsForDocumentId(
-            tracked->snapshot.documentId);
+        registry.editorsForEditor(editor);
     for (MyCodeEditor* view : views) {
         TrackedDocument* viewTracked = registry.find(view);
         if (!viewTracked)

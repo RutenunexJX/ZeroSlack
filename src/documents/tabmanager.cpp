@@ -2,10 +2,12 @@
 
 #include "actionregistry.h"
 #include "documentmodel.h"
+#include "documentrecoveryqueue.h"
 #include "editorfileidentity.h"
 
 #include <QApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -341,6 +343,12 @@ TabManager::TabManager(QTabWidget* initialTabWidget, QObject* parent)
 
 TabManager::~TabManager()
 {
+    if (!recoveryClosing) {
+        checkpointCrashRecovery();
+        flushCrashRecovery();
+    }
+    recoveryQueue.reset();
+    recoveryClosing = true;
     const QList<MyCodeEditor*> auxiliary = auxiliaryViews();
     for (MyCodeEditor* editor : auxiliary)
         closeAuxiliaryView(editor);
@@ -357,11 +365,13 @@ TabManager::~TabManager()
 void TabManager::setCrashRecoveryService(
     std::unique_ptr<CrashRecoveryService> service)
 {
+    recoveryQueue.reset();
     crashRecoveryService =
         service
         ? std::move(service)
         : std::make_unique<CrashRecoveryService>();
     recoveryDocumentStates.clear();
+    recoveryClosing = false;
     recoveryScannedWorkspaceKeys.clear();
     checkpointCrashRecovery();
 }
@@ -428,75 +438,99 @@ TabManager::recoveryKeyForDocument(
     return key;
 }
 
-bool TabManager::writeRecoverySnapshot(
-    SharedDocument* document,
-    bool force)
+bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
 {
-    if (!crashRecoveryService || !document
-        || !document->dirty()
-        || !document->textDocument()) {
+    if (recoveryClosing || !crashRecoveryService || !document || !document->dirty() || !document->textDocument())
         return false;
-    }
-
-    RecoveryDocumentState& state =
-        recoveryDocumentStates[document];
-    const quint64 revision =
-        static_cast<quint64>(
-            document->textRevision());
-    if (!force && state.hasSnapshot
-        && revision
-               < state.snapshotRevision
-                   + kCrashRecoveryRevisionInterval) {
+    auto& state = recoveryDocumentStates[document];
+    const auto revision = static_cast<quint64>(document->textRevision());
+    const auto key = recoveryKeyForDocument(document);
+    const auto baseline = document->savedBaselineSha256();
+    if (state.discarded && state.snapshotRevision == revision
+        && sameRecoveryDocumentKey(state.key, key) && state.baseline == baseline) return true;
+    const bool sameInput = state.hasSnapshot && sameRecoveryDocumentKey(state.key, key) && state.baseline == baseline;
+    if (sameInput && !state.retryNeeded
+        && (revision == state.snapshotRevision || (!force && revision < state.snapshotRevision + kCrashRecoveryRevisionInterval)))
         return true;
+    if (!recoveryQueue) {
+        recoveryQueue = std::make_unique<DocumentRecoveryQueue>(*crashRecoveryService,
+            [this](QObject* owner, const auto& request, const auto& result) { completeRecoverySnapshot(owner, request, result); }, this);
     }
-
+    if (state.hasSnapshot && !sameRecoveryDocumentKey(state.key, key)) {
+        const auto remember = [&](const CrashRecoveryDocumentKey& old) {
+            if (std::none_of(state.obsoleteKeys.cbegin(), state.obsoleteKeys.cend(),
+                [&](const auto& existing) { return sameRecoveryDocumentKey(existing, old); }))
+                state.obsoleteKeys.append(old);
+        };
+        remember(state.key);
+        const auto cancelledKeys = recoveryQueue->cancel(document);
+        for (const auto& old : cancelledKeys)
+            remember(old);
+    }
     CrashRecoverySnapshotRequest request;
-    request.document =
-        recoveryKeyForDocument(document);
-    request.text =
-        document->textDocument()->toPlainText();
+    request.document = key;
+    QElapsedTimer capture;
+    capture.start();
+    request.text = document->textDocument()->toPlainText();
+    recoveryCaptureNs += capture.nsecsElapsed();
+    ++recoveryCaptures;
+    recoveryCaptureCharacters += request.text.size();
     request.documentRevision = revision;
-    request.savedBaselineSha256 =
-        document->savedBaselineSha256();
-    request.savedBaselineModifiedUtc =
-        document->savedBaselineModifiedUtc();
+    request.savedBaselineSha256 = baseline;
+    request.savedBaselineModifiedUtc = document->savedBaselineModifiedUtc();
+    state.key = key;
+    state.baseline = baseline;
+    state.snapshotRevision = revision;
+    state.hasSnapshot = true;
+    state.retryNeeded = false;
+    state.discarded = false;
+    recoveryQueue->enqueue(document, std::move(request));
+    return true;
+}
 
-    const CrashRecoveryWriteResult result =
-        crashRecoveryService->writeSnapshot(request);
+void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySnapshotRequest& request,
+                                         const CrashRecoveryWriteResult& result)
+{
+    auto* document = qobject_cast<SharedDocument*>(owner);
+    auto found = recoveryDocumentStates.find(document);
+    if (!document || found == recoveryDocumentStates.end()
+        || !sameRecoveryDocumentKey(found->key, request.document)) return;
     if (result.status == CrashRecoveryStatus::Success) {
-        const RecoveryDocumentState previous = state;
-        state.key = request.document;
-        state.snapshotRevision = revision;
-        state.hasSnapshot = true;
-        if (previous.hasSnapshot
-            && !sameRecoveryDocumentKey(
-                   previous.key,
-                   state.key)) {
-            const CrashRecoveryOperationResult cleanup =
-                crashRecoveryService
-                    ->clearAfterNormalClose(
-                        previous.key);
+        if (found->snapshotRevision == request.documentRevision) found->retryNeeded = false;
+        QList<CrashRecoveryDocumentKey> failed;
+        for (const auto& key : std::as_const(found->obsoleteKeys)) {
+            if (sameRecoveryDocumentKey(key, request.document)) continue;
+            const auto cleanup = crashRecoveryService->clearAfterNormalClose(key);
             if (!cleanup.succeeded()) {
-                emit crashRecoveryOperationFailed(
-                    document->documentId(),
-                    cleanup.reason);
+                failed.append(key);
+                emit crashRecoveryOperationFailed(document->documentId(), cleanup.reason);
             }
         }
-        return true;
+        found->obsoleteKeys = std::move(failed);
+        return;
     }
-
     if (result.status == CrashRecoveryStatus::StaleRecord
-        && CrashRecoveryService::sha256(
-               request.text.toUtf8())
-               == document->savedBaselineSha256()) {
+        && document->textRevision() == request.documentRevision
+        && document->savedBaselineSha256() == request.savedBaselineSha256) {
         clearRecoverySnapshot(document, true);
-        return true;
+        return;
     }
+    if (found->snapshotRevision == request.documentRevision) found->retryNeeded = true;
+    emit crashRecoveryOperationFailed(document->documentId(), result.reason);
+}
 
-    emit crashRecoveryOperationFailed(
-        document->documentId(),
-        result.reason);
-    return false;
+void TabManager::flushCrashRecovery()
+{
+    if (recoveryQueue) recoveryQueue->flush();
+}
+
+QVariantMap TabManager::crashRecoveryMetricsForTesting() const
+{
+    auto result = recoveryQueue ? recoveryQueue->metrics() : QVariantMap{};
+    result.insert("captures", qulonglong(recoveryCaptures));
+    result.insert("captureNs", recoveryCaptureNs);
+    result.insert("capturedCharacters", qulonglong(recoveryCaptureCharacters));
+    return result;
 }
 
 void TabManager::clearRecoverySnapshot(
@@ -507,9 +541,11 @@ void TabManager::clearRecoverySnapshot(
     if (!crashRecoveryService || !document)
         return;
 
-    QList<CrashRecoveryDocumentKey> keys;
+    QList<CrashRecoveryDocumentKey> keys = recoveryQueue
+        ? recoveryQueue->cancel(document) : QList<CrashRecoveryDocumentKey>{};
     const RecoveryDocumentState state =
         recoveryDocumentStates.value(document);
+    keys.append(state.obsoleteKeys);
     if (state.hasSnapshot)
         keys.append(state.key);
     if (keys.isEmpty()
@@ -785,40 +821,37 @@ TabManager::discardCrashRecoveryCandidate(
 
     const QString workspace =
         recoveryWorkspacePath(workspaceRoot);
-    const CrashRecoveryReadResult comparison =
-        crashRecoveryService->readComparison(
-            workspace,
-            recoveryId);
-    const CrashRecoveryOperationResult result =
-        crashRecoveryService->discard(
-            workspace,
-            recoveryId);
-    if (result.succeeded()
-        && comparison.status
-               == CrashRecoveryStatus::Success) {
-        for (auto it =
-                 recoveryDocumentStates.begin();
-             it != recoveryDocumentStates.end();
-             ++it) {
-            const CrashRecoveryDocumentKey& key =
-                it.value().key;
-            const bool sameDocument =
-                (!comparison.candidate
-                      .originalFilePath.isEmpty()
-                 && identityKey(key.originalFilePath)
-                        == identityKey(
-                            comparison.candidate
-                                .originalFilePath))
-                || (!comparison.candidate
-                         .untitledDocumentId.isEmpty()
-                    && key.untitledDocumentId
-                           == comparison.candidate
-                                  .untitledDocumentId);
-            if (sameDocument
-                && identityKey(key.workspacePath)
-                       == identityKey(workspace)) {
-                it.value().hasSnapshot = false;
+    QList<SharedDocument*> matched;
+    for (auto it = recoveryDocumentStates.begin(); it != recoveryDocumentStates.end(); ++it) {
+        QList<CrashRecoveryDocumentKey> keys = it->obsoleteKeys;
+        keys.append(it->key);
+        for (const auto& key : keys) {
+            if (identityKey(key.workspacePath) == identityKey(workspace)
+                && CrashRecoveryService::recoveryIdForDocument(key) == recoveryId) {
+                matched.append(it.key());
+                if (recoveryQueue) recoveryQueue->cancel(it.key(), [&](const auto& queuedKey) {
+                    return identityKey(queuedKey.workspacePath) == identityKey(workspace)
+                        && CrashRecoveryService::recoveryIdForDocument(queuedKey) == recoveryId;
+                });
+                break;
             }
+        }
+    }
+    // Cancellation shares the final commit gate with the worker. Once it
+    // returns, discard cannot be undone by a previously captured request.
+    const auto result = crashRecoveryService->discard(workspace, recoveryId);
+    if (result.succeeded()) {
+        for (auto* document : matched) {
+            auto& state = recoveryDocumentStates[document];
+            if (CrashRecoveryService::recoveryIdForDocument(state.key) == recoveryId) {
+                state.hasSnapshot = false;
+                state.retryNeeded = false;
+                state.discarded = true;
+                state.snapshotRevision = document->textRevision();
+            }
+            state.obsoleteKeys.removeIf([&](const auto& key) {
+                return CrashRecoveryService::recoveryIdForDocument(key) == recoveryId;
+            });
         }
     }
     return result;
@@ -835,6 +868,7 @@ void TabManager::checkpointCrashRecovery()
 
 void TabManager::clearCrashRecoveryAfterNormalClose()
 {
+    recoveryClosing = true;
     for (SharedDocument* document :
          std::as_const(observedDocuments)) {
         if (document)
@@ -2425,23 +2459,20 @@ SharedDocument* TabManager::acquireFileDocument(
             *loaded = true;
         return existing;
     }
-    QString text;
-    if (!fileIo.readTextFile(
-            qobject_cast<QWidget*>(parent()),
-            fileName,
-            &text)) {
+    const auto source = fileIo.readFile(qobject_cast<QWidget*>(parent()), fileName);
+    if (!source.available) {
         return nullptr;
     }
     SharedDocument* document =
         sharedDocuments->acquire(
             fileName,
-            text);
+            source.text, &source);
     if (document) {
         document->setReadOnly(
             !QFileInfo(
                  document->fileName())
                  .isWritable());
-        observeDocument(document);
+        observeDocument(document, &source);
         if (loaded)
             *loaded = true;
     }
@@ -2527,7 +2558,7 @@ bool TabManager::saveEditor(
             &saveFailure,
             &savedRawFingerprint,
             &savedLogicalFingerprint,
-            revalidateOverwrite)) {
+            revalidateOverwrite, document->fileFormat())) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,
@@ -2547,10 +2578,8 @@ bool TabManager::saveEditor(
         }
         for (MyCodeEditor* view :
              document->views()) {
+            view->setProperty("sharedDocumentId", document->documentId());
             documentModel->refreshEditorState(view);
-            view->setProperty(
-                "sharedDocumentId",
-                document->documentId());
         }
     }
     documentModel->markSaved(editor);
@@ -2701,13 +2730,13 @@ bool TabManager::closePage(QTabWidget* group, const int index)
 }
 
 void TabManager::observeDocument(
-    SharedDocument* document)
+    SharedDocument* document, const DocumentFileReadResult* initialFile)
 {
     if (!document || observedDocuments.contains(document))
         return;
     observedDocuments.insert(document);
     if (externalDocumentSync)
-        externalDocumentSync->trackDocument(document);
+        externalDocumentSync->trackDocument(document, initialFile);
     connect(document,
             &SharedDocument::statusChanged,
             this,
@@ -2765,6 +2794,7 @@ void TabManager::observeDocument(
             this,
             [this, document]() {
                 observedDocuments.remove(document);
+                if (recoveryQueue) recoveryQueue->cancel(document);
                 explicitExternalReloadDocuments.remove(
                     document);
                 recoveryDocumentStates.remove(

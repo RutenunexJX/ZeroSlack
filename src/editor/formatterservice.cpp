@@ -1820,14 +1820,13 @@ void flushAssignmentAlignmentBlock(QStringList* lines,
     }
 }
 
-void alignAssignmentBlocks(QStringList* lines)
+void alignAssignmentBlocks(QStringList* lines, StructuredWhitespaceFormatter::SyntaxContext& context)
 {
     if (!lines)
         return;
 
     const QString syntaxText = lines->join(QLatin1Char('\n'));
-    TSDocument syntax;
-    syntax.setText(syntaxText);
+    const auto& syntax = context.syntaxFor(syntaxText);
     QList<AssignmentAlignmentLine> parsedLines;
     parsedLines.reserve(lines->size());
     int absoluteLineStart = 0;
@@ -2080,6 +2079,14 @@ FormatterReport FormatterService::formatDocument(
     const QString& text,
     const FormatterOptions& options) const
 {
+    StructuredWhitespaceFormatter::SyntaxContext context;
+    return formatDocumentWithContext(text, options, context);
+}
+
+FormatterReport FormatterService::formatDocumentWithContext(
+    const QString& text, const FormatterOptions& options,
+    StructuredWhitespaceFormatter::SyntaxContext& context) const
+{
     FormatterReport report;
     if (text.isEmpty())
         return report;
@@ -2089,7 +2096,7 @@ FormatterReport FormatterService::formatDocument(
     const QString normalizedText =
         StructuredWhitespaceFormatter::
             normalizeLexicalWhitespaceTabs(
-                text, 4, &stageDiagnostic);
+                text, 4, &stageDiagnostic, &context);
     if (!stageDiagnostic.isEmpty())
         diagnostics.append(stageDiagnostic);
     const QString structurallyIndentedText =
@@ -2101,7 +2108,7 @@ FormatterReport FormatterService::formatDocument(
                 options.indentCaseItemBodies,
                 options.alignCaseItems,
                 options.preservePreprocessorIndent,
-                &stageDiagnostic);
+                &stageDiagnostic, &context);
     if (!stageDiagnostic.isEmpty())
         diagnostics.append(stageDiagnostic);
     const bool hadFinalNewline =
@@ -2119,7 +2126,7 @@ FormatterReport FormatterService::formatDocument(
     QList<StructuredWhitespaceFormatter::LineRange>
         conservativeRanges =
             StructuredWhitespaceFormatter::syntaxErrorLineRanges(
-                normalizedText);
+                normalizedText, &context);
     if (!conservativeRanges.isEmpty()) {
         diagnostics.append(QStringLiteral(
             "Formatting preserved syntax-error regions."));
@@ -2133,7 +2140,7 @@ FormatterReport FormatterService::formatDocument(
     if (options.alignEnumItems)
         alignEnumItemBlocks(&formatted, options.indentWidth);
     if (options.alignAssignments)
-        alignAssignmentBlocks(&formatted);
+        alignAssignmentBlocks(&formatted, context);
     if (options.alignContinuationOperators)
         alignContinuationOperatorLines(&formatted);
     if (options.alignCallArgumentContinuations)
@@ -2144,7 +2151,7 @@ FormatterReport FormatterService::formatDocument(
             structuredConservativeRanges =
             StructuredWhitespaceFormatter::
                 conservativeLineRanges(
-                    normalizedText, options.indentWidth);
+                    normalizedText, options.indentWidth, &context);
         if (!structuredConservativeRanges.isEmpty()) {
             diagnostics.append(QStringLiteral(
                 "Formatting preserved structurally incomplete regions."));
@@ -2160,6 +2167,8 @@ FormatterReport FormatterService::formatDocument(
         diagnostics.append(QStringLiteral(
             "Formatting was limited to lexical whitespace because the structural pass changed the line count."));
         report.diagnostic = diagnostics.join(QLatin1Char(' '));
+        report.syntaxParseCount = context.parseCount();
+        report.syntaxReuseCount = context.reuseCount();
         return report;
     }
     for (const auto& range : conservativeRanges) {
@@ -2181,7 +2190,7 @@ FormatterReport FormatterService::formatDocument(
         report.formattedText = StructuredWhitespaceFormatter::format(
             report.formattedText,
             options.indentWidth,
-            &stageDiagnostic);
+            &stageDiagnostic, &context);
         if (!stageDiagnostic.isEmpty())
             diagnostics.append(stageDiagnostic);
     }
@@ -2189,7 +2198,7 @@ FormatterReport FormatterService::formatDocument(
         restoreOriginalLineEndings(report.formattedText, text);
     if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
             text,
-            report.formattedText)) {
+            report.formattedText, &context)) {
         report.formattedText = normalizedText;
         diagnostics.append(QStringLiteral(
             "Formatting was limited to lexical whitespace because the structural result changed the token stream."));
@@ -2204,6 +2213,8 @@ FormatterReport FormatterService::formatDocument(
             ? FormatterOutcome::Applied
             : FormatterOutcome::Unchanged;
     }
+    report.syntaxParseCount = context.parseCount();
+    report.syntaxReuseCount = context.reuseCount();
     return report;
 }
 
@@ -2211,6 +2222,7 @@ FormatterReport FormatterService::formatSnippet(
     const QString& text,
     const FormatterOptions& options) const
 {
+    StructuredWhitespaceFormatter::SyntaxContext context;
     FormatterReport report;
     if (text.isEmpty())
         return report;
@@ -2219,7 +2231,7 @@ FormatterReport FormatterService::formatSnippet(
     const QString normalizedText =
         StructuredWhitespaceFormatter::
             normalizeLexicalWhitespaceTabs(
-                text, 4, &selectionDiagnostic);
+                text, 4, &selectionDiagnostic, &context);
     if (!selectionDiagnostic.isEmpty()) {
         report.outcome = FormatterOutcome::ConservativeFallback;
         report.diagnostic = selectionDiagnostic;
@@ -2245,7 +2257,7 @@ FormatterReport FormatterService::formatSnippet(
 
     const QString dedentedText =
         joinLinesPreservingFinalNewline(dedented, hadFinalNewline);
-    const FormatterReport inner = formatDocument(dedentedText, options);
+    const FormatterReport inner = formatDocumentWithContext(dedentedText, options, context);
     if (inner.outcome == FormatterOutcome::ConservativeFallback) {
         report.outcome = inner.outcome;
         if (!report.diagnostic.isEmpty())
@@ -2267,7 +2279,7 @@ FormatterReport FormatterService::formatSnippet(
         restoreOriginalLineEndings(report.formattedText, text);
     if (!StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(
             text,
-            report.formattedText)) {
+            report.formattedText, &context)) {
         report.formattedText = normalizedText;
         report.outcome = FormatterOutcome::ConservativeFallback;
         if (!report.diagnostic.isEmpty())
@@ -2282,5 +2294,7 @@ FormatterReport FormatterService::formatSnippet(
             ? FormatterOutcome::Applied
             : FormatterOutcome::Unchanged;
     }
+    report.syntaxParseCount = context.parseCount();
+    report.syntaxReuseCount = context.reuseCount();
     return report;
 }

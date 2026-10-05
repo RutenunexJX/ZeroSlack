@@ -3,6 +3,7 @@
 #include "rtledit/text_edit.h"
 
 #include <stdexcept>
+#include <algorithm>
 
 namespace rtledit {
 
@@ -10,6 +11,8 @@ void MockWorkspaceDocumentManager::openDocument(
     std::string filePath,
     std::string text,
     DocumentVersion version) {
+    const auto existing = documents_.find(filePath);
+    if (existing != documents_.end()) version.value = std::max(version.value, existing->second.version.value + 1);
     documents_[std::move(filePath)] = DocumentRecord{version, std::move(text)};
 }
 
@@ -86,7 +89,10 @@ bool MockWorkspaceDocumentManager::restoreSnapshot(
         return false;
     }
 
-    it->second = DocumentRecord{snapshot.version, snapshot.text};
+    if (it->second.text != snapshot.text) {
+        it->second.text = snapshot.text;
+        ++it->second.version.value;
+    }
     return true;
 }
 

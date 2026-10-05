@@ -837,6 +837,45 @@ int main(int argc, char* argv[])
                   legacyRoot),
           "legacy import creates separated project and local state");
 
+    {
+        const QString root = temp.filePath("configuration-failures");
+        QDir().mkpath(root);
+        const QString path = WorkspaceConfigurationService::projectFilePath(root);
+        const auto missing = projectService.loadWithResult(root);
+        check(missing.state == WorkspaceConfigurationLoadState::Missing && missing.usable(),
+              "missing configuration has an explicitly valid default state");
+        auto valid = projectService.defaultConfiguration(root);
+        valid.defines.insert("MODE", "1"); valid.topModule = "top";
+        const QList<QByteArray> invalidDocuments = {
+            "{broken", "[]",
+            R"({"schema":"ZeroSlack.ProjectConfiguration","version":99})",
+            R"({"schema":"ZeroSlack.ProjectConfiguration","version":1,"includeDirs":"wrong"})",
+            R"({"schema":"ZeroSlack.ProjectConfiguration","version":1,"defines":{"MODE":2}})"
+        };
+        for (const auto& bytes : invalidDocuments) {
+            check(writeFile(path, bytes), "invalid configuration fixture is written");
+            const auto failed = projectService.loadWithResult(root);
+            check(!failed.usable() && !failed.configuration.isValid() && !failed.message.isEmpty()
+                      && !projectService.save(valid) && readFile(path) == bytes,
+                  "failed configuration cannot become a valid default or be overwritten by Save");
+        }
+        QFile::remove(path); QDir().mkpath(path);
+        check(projectService.loadWithResult(root).state == WorkspaceConfigurationLoadState::ReadError
+                  && !projectService.save(valid) && QFileInfo(path).isDir(),
+              "read error is distinct from absence and protected from replacement");
+        QDir().rmdir(path);
+        check(projectService.save(valid) && projectService.loadWithResult(root).usable()
+                  && projectService.load(root).defines.value("MODE") == "1"
+                  && projectService.load(root).topModule == "top",
+              "corrected storage can again persist the requested semantic configuration");
+        QFile::remove(path);
+        const QString legacy = WorkspaceConfigurationService::legacyFilePath(root);
+        check(writeFile(legacy, "{broken"), "corrupt legacy fixture is written");
+        check(projectService.loadWithResult(root).state == WorkspaceConfigurationLoadState::Invalid
+                  && !projectService.save(valid) && readFile(legacy) == "{broken",
+              "corrupt legacy configuration is also protected");
+    }
+
     std::cout << (checks - failures) << "/"
               << checks
               << " workspace persistence checks passed\n";

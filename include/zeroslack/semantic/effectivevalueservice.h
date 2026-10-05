@@ -200,7 +200,8 @@ public:
         const QString& fileName,
         const QString& documentText,
         const HierarchyInstanceContext& instanceContext = {},
-        std::uint64_t documentRevision = 0) const;
+        std::uint64_t documentRevision = 0,
+        const std::function<bool()>& cancelled = {}) const;
     std::shared_ptr<const DocumentSnapshot> snapshotForDocument(
         const QString& fileName) const;
     void invalidateDocumentFacts(const QString& fileName);

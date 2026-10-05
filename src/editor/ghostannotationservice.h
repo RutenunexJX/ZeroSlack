@@ -46,6 +46,7 @@ struct GhostAnnotationQuery {
     QString documentText;
     HierarchyInstanceContext instanceContext;
     std::uint64_t documentRevision = 0;
+    std::function<bool()> cancelled;
 };
 
 struct GhostAnnotationReport {

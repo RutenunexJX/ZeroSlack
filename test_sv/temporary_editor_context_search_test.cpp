@@ -17,7 +17,9 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QLineEdit>
-#include <QListWidget>
+#include <QListView>
+#include <QSignalSpy>
+#include <atomic>
 #include <QPalette>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -152,14 +154,14 @@ int main(int argc, char** argv)
     popup.setCandidates(duplicateCandidates, field->text());
     pumpEvents();
 
-    QListWidget* results = popup.resultsList();
+    QListView* results = popup.resultsList();
     expect("mixed candidate taxonomy remains visible",
-           results && results->count() == duplicateCandidates.size()
-               && results->item(2)->data(Qt::UserRole).toInt()
+           results && results->model()->rowCount() == duplicateCandidates.size()
+               && results->model()->index(2, 0).data(Qt::UserRole).toInt()
                       == static_cast<int>(EditorSearchCandidateType::Module)
-               && results->item(3)->data(Qt::UserRole).toInt()
+               && results->model()->index(3, 0).data(Qt::UserRole).toInt()
                       == static_cast<int>(EditorSearchCandidateType::Package)
-               && results->item(4)->data(Qt::UserRole).toInt()
+               && results->model()->index(4, 0).data(Qt::UserRole).toInt()
                       == static_cast<int>(EditorSearchCandidateType::Symbol));
     expect("search popup is a child layer rather than a top-level window",
            popupHost.isAncestorOf(&popup) && !popup.isWindow()
@@ -177,7 +179,7 @@ int main(int argc, char** argv)
 
     field->setText(QStringLiteral("duplicate"));
     popup.setCandidates(duplicateCandidates, field->text());
-    const QRect symbolRect = results->visualItemRect(results->item(4));
+    const QRect symbolRect = results->visualRect(results->model()->index(4, 0));
     QTest::mouseClick(results->viewport(),
                       Qt::LeftButton,
                       Qt::NoModifier,
@@ -468,6 +470,7 @@ int main(int argc, char** argv)
         [&providerCalls, firstPath, secondPath, thirdPath](
             const QString& query) {
             ++providerCalls;
+            return [query, firstPath, secondPath, thirdPath](const EditorSearchCancellation&) {
             if (query != QStringLiteral("target"))
                 return EditorSearchCandidates{};
             return EditorSearchCandidates{
@@ -484,11 +487,16 @@ int main(int argc, char** argv)
                           thirdPath,
                           QStringLiteral("third owner")),
             };
+            };
         });
     QLineEdit* contextSearch = contextView->searchField();
     contextSearch->setFocus();
     contextSearch->setText(QStringLiteral("target"));
     pumpEvents();
+    expect("async search publishes candidates", QTest::qWaitFor([&] {
+        const auto* list = contextView->findChild<QListView*>("temporaryEditorSearchResults");
+        return list && list->model()->rowCount() == 3;
+    }, 1500));
     QTest::keyClick(contextSearch, Qt::Key_Return);
     expect("ambiguous context search preserves its current document",
            providerCalls == 1
@@ -503,6 +511,53 @@ int main(int argc, char** argv)
            EditorFileIdentity::same(
                contextView->currentLocation().filePath, thirdPath)
                && contextView->historyCount() == 2);
+
+    TemporaryEditorSearchProvider largeProvider;
+    QList<SearchResult> largeCatalog;
+    for (int i = 0; i < 25000; ++i)
+        largeCatalog.append(symbolResult(QStringLiteral("logic_item_%1").arg(i),
+            SymbolTaxonomy::DeclarationKind::Signal, firstPath, i + 1, QStringLiteral("owner")));
+    largeProvider.setSemanticCatalog(largeCatalog);
+    auto captured = largeProvider.queryTask("logic_item_");
+    int cancellationChecks = 0;
+    expect("candidate matching observes internal cancellation",
+        captured([&] { return ++cancellationChecks > 100; }).isEmpty() && cancellationChecks == 101);
+    int sortChecks = 0;
+    expect("candidate sorting observes internal cancellation",
+        captured([&] { return ++sortChecks > 25020; }).isEmpty());
+    std::atomic_int started{0};
+    contextView->setSearchProvider([&](const QString& query) {
+        auto task = largeProvider.queryTask(query);
+        return [task, &started](const EditorSearchCancellation& cancelled) {
+            ++started;
+            return task(cancelled);
+        };
+    });
+    QSignalSpy published(contextView, &TemporaryEditorContextView::searchResultsReady);
+    const auto* focusBefore = QApplication::focusWidget();
+    for (int i = 0; i < 200; ++i) contextSearch->setText(QStringLiteral("logic_item_%1").arg(i));
+    contextSearch->setText("logic_item_");
+    expect("rapid search completes only the latest query", QTest::qWaitFor([&] { return !published.isEmpty(); }, 5000)
+        && published.size() == 1 && published.first()[0].toString() == "logic_item_" && started <= 2);
+    auto* largeList = contextView->findChild<QListView*>("temporaryEditorSearchResults");
+    expect("all large-catalog matches remain directly accessible without focus loss",
+        largeList && largeList->model()->rowCount() == 25000
+        && largeList->model()->index(24999, 0).data().isValid() && QApplication::focusWidget() == focusBefore);
+    const auto complete = captured({});
+    largeProvider.setSemanticCatalog({});
+    expect("query task owns an immutable catalog across host replacement", captured({}) == complete
+        && largeProvider.query("logic_item_").isEmpty());
+    popup.setCandidates(complete, "logic_item_");
+    QTest::keyClick(field, Qt::Key_Up);
+    expect("Up reaches the last model row", results->currentIndex().row() == 24999);
+    popup.clearCandidates();
+    contextSearch->setText("closing");
+    contextView->hide();
+    const auto publishedBeforeHide = published.size();
+    QTest::qWait(50);
+    expect("hidden host rejects in-flight results", published.size() == publishedBeforeHide);
+    delete contextView;
+    pumpEvents();
 
     std::printf("temporary editor context search: %d checks, %d failed\n",
                 checks,

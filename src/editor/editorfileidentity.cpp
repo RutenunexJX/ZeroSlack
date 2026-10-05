@@ -149,6 +149,11 @@ QString EditorFileIdentity::lookupKey(QString fileName)
     return key;
 }
 
+QString EditorFileIdentity::physicalPath(QString fileName)
+{
+    return resolvedIdentityPath(fileName);
+}
+
 bool EditorFileIdentity::same(const QString& lhs, const QString& rhs)
 {
     const QString lhsKey = lookupKey(lhs);

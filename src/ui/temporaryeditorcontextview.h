@@ -26,8 +26,7 @@ class ZEROSLACK_API TemporaryEditorContextView final : public QWidget
     Q_OBJECT
 
 public:
-    using SearchProvider =
-        std::function<EditorSearchCandidates(const QString&)>;
+    using SearchProvider = EditorSearchTaskProvider;
 
     explicit TemporaryEditorContextView(
         TabManager* tabManager,
@@ -51,12 +50,14 @@ public:
     QVariantMap saveState() const;
 
 signals:
+    void searchResultsReady(const QString& query, int count);
     void currentLocationChanged(const EditorLocation& location);
     void openFailed(const EditorLocation& location);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
 private:
     QWidget* contentHost = nullptr;
@@ -67,6 +68,8 @@ private:
     TemporaryEditorSearchPopup* searchPopup = nullptr;
     std::unique_ptr<TemporaryEditorSession> session;
     SearchProvider searchProvider;
+    struct AsyncQuery;
+    std::unique_ptr<AsyncQuery> asyncQuery;
 
     void buildUi();
     void connectSession();

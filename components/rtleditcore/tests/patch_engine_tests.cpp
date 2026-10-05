@@ -125,7 +125,10 @@ public:
         if (found == documents_.end()) {
             return false;
         }
-        found->second = Document{snapshot.version, snapshot.text};
+        if (found->second.text != snapshot.text) {
+            found->second.text = snapshot.text;
+            ++found->second.version.value;
+        }
         return true;
     }
 
@@ -337,8 +340,8 @@ bool multiFileCommitFailureRollsBackPriorApplies() {
         documents.text("b.sv") == "beta\n",
         "rejected file should remain unchanged");
     require(
-        documents.version("a.sv") == DocumentVersion{1},
-        "prior successful apply version was not rolled back");
+        documents.version("a.sv").value > 2,
+        "rollback must advance the prior successful apply revision");
     require(
         documents.version("b.sv") == DocumentVersion{1},
         "rejected file version should remain unchanged");
@@ -366,11 +369,11 @@ bool partialCurrentFileFailureRollsBackCurrentThenPriorFiles() {
         "successful full rollback should report no changed files");
     require(
         documents.document("a.sv").text == "alpha\n" &&
-            documents.document("a.sv").version == DocumentVersion{1},
+            documents.document("a.sv").version.value > 2,
         "prior file was not restored after partial current-file failure");
     require(
         documents.document("b.sv").text == "beta\n" &&
-            documents.document("b.sv").version == DocumentVersion{1},
+            documents.document("b.sv").version.value > 2,
         "current failed file was not restored after partial mutation");
     require(
         documents.restoreCalls() ==

@@ -17,6 +17,7 @@ class QPlainTextEdit;
 class QStackedWidget;
 class QToolButton;
 class PinloomPreviewImageLabel;
+struct PinloomSourceLinkResult;
 
 class ZEROSLACK_API PinloomContextView final : public QWidget
 {
@@ -27,9 +28,12 @@ public:
         const QVariantMap&,
         const PinloomHostEntry&,
         QString*)>;
+    using CreateLinkReply = std::function<void(const PinloomSourceLinkResult&)>;
+    using CreateLinkHandler = std::function<void(const QVariantMap&, const QString&, CreateLinkReply)>;
 
     explicit PinloomContextView(PinloomHostClient* client,
                                 QWidget* parent = nullptr);
+    ~PinloomContextView() override;
 
     QVariantMap saveState() const;
     void restoreState(const QVariantMap& state);
@@ -44,12 +48,17 @@ public:
     QToolButton* copyLinkButton() const;
     QString statusText() const;
     void setLinkHandler(LinkHandler handler);
+    void setCreateLinkHandler(CreateLinkHandler handler);
     void setLinkSource(const QVariantMap& source);
     bool linkModeActive() const;
     bool boundModeActive() const;
 
 signals:
     void currentEntryChanged(const PinloomHostEntry& entry);
+
+protected:
+    void hideEvent(QHideEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
 private:
     QPointer<PinloomHostClient> clientValue;
@@ -78,7 +87,10 @@ private:
     QVariantMap activeLinkSource;
     QVariantList activeBoundEntries;
     bool boundMode = false;
+    bool resumeReadRequests = false;
     LinkHandler linkHandler;
+    CreateLinkHandler createLinkHandler;
+    quint64 linkSourceGeneration = 0;
 
     void buildUi();
     void startSearch();

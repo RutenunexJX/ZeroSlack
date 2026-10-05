@@ -15,9 +15,23 @@
 #include <QSet>
 
 #include <algorithm>
+#include <map>
 #include <utility>
 
 namespace {
+
+// This batch belongs only to one preview; confirmation still reads live state.
+class PreviewDocuments final : public rtledit::WorkspaceDocumentManager {
+public:
+    std::map<std::string, rtledit::WorkspaceDocumentSnapshot> values;
+    std::optional<rtledit::WorkspaceDocumentSnapshot> snapshot(const std::string& path) const override {
+        const auto it = values.find(path);
+        return it == values.end() ? std::nullopt : std::optional(it->second);
+    }
+    bool applyTextEdits(const std::string&, rtledit::DocumentVersion,
+        const std::vector<rtledit::WorkspaceTextEdit>&) override { return false; }
+    bool restoreSnapshot(const std::string&, const rtledit::WorkspaceDocumentSnapshot&) override { return false; }
+};
 
 std::string utf8String(const QString& text)
 {
@@ -175,6 +189,7 @@ ScopedReplaceWorkflow::preparePreview(
     QHash<QString, rtledit::DocumentVersion>
         liveVersionByIdentity;
     QSet<QString> capturedIdentities;
+    QHash<QString, rtledit::WorkspaceDocumentSnapshot> snapshotsByIdentity;
     capturedDocuments.clear();
 
     for (const rtledit::WorkspaceTextEdit& edit :
@@ -183,6 +198,7 @@ ScopedReplaceWorkflow::preparePreview(
             normalizedFileName(edit.filePath);
         const QString identity =
             documentIdentity(fileName);
+        if (capturedIdentities.contains(identity)) continue;
         const auto searchedIt =
             searchedByIdentity.constFind(identity);
         if (identity.isEmpty()
@@ -225,6 +241,7 @@ ScopedReplaceWorkflow::preparePreview(
 
         liveVersionByIdentity.insert(
             identity, live->version);
+        snapshotsByIdentity.insert(identity, *live);
         if (!capturedIdentities.contains(identity)) {
             capturedIdentities.insert(identity);
             capturedDocuments.push_back(
@@ -236,12 +253,14 @@ ScopedReplaceWorkflow::preparePreview(
         }
     }
 
+    PreviewDocuments previewDocuments;
     for (rtledit::WorkspaceTextEdit& edit :
          reboundPlan.edits) {
         const QString identity =
             documentIdentity(normalizedFileName(edit.filePath));
         edit.expectedDocumentVersion =
             liveVersionByIdentity.value(identity);
+        previewDocuments.values.emplace(edit.filePath, snapshotsByIdentity.value(identity));
     }
     reboundPlan.baselines =
         rtledit::collectDocumentBaselines(reboundPlan.edits);
@@ -253,7 +272,7 @@ ScopedReplaceWorkflow::preparePreview(
         transactionService->prepare(
             std::move(reboundPlan),
             semanticSnapshot,
-            *documentManager,
+            previewDocuments,
             dryRun);
     if (!prepared.ready()) {
         const ScopedReplaceWorkflowFailure failure =

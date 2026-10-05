@@ -14,9 +14,7 @@ QList<DocumentSnapshot> DocumentRegistry::snapshots() const
     for (auto iterator = documents.byEditor.constBegin();
          iterator != documents.byEditor.constEnd();
          ++iterator) {
-        const QString key =
-            EditorFileIdentity::lookupKey(
-                iterator.value().snapshot.documentId);
+        const QString key = indexes.documentKeyForEditor(iterator.key());
         if (key.isEmpty() || seen.contains(key))
             continue;
         seen.insert(key);

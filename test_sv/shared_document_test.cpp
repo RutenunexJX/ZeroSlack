@@ -292,10 +292,115 @@ static void runMetadataRefreshRegression()
                && saved.savedTextVersion == edited.textVersion);
 }
 
+void runRecoveryQueueRegression()
+{
+    QTemporaryDir source;
+    QTemporaryDir storage;
+    const QString path = source.filePath("queued.sv");
+    expect("queued recovery fixture", writeFixture(path, "module queued; endmodule\n"));
+    QTabWidget widget;
+    TabManager manager(&widget);
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(storage.path()));
+    manager.setWorkspaceScope({source.path()}, source.path());
+    expect("queued recovery document opens", manager.openFileInTab(path));
+    auto* editor = manager.getCurrentEditor();
+    auto* document = manager.sharedDocumentForEditor(editor);
+    auto edit = [&](const QString& text) {
+        QTextCursor cursor(document->textDocument());
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(text);
+    };
+    edit("// first dirty revision\n");
+    for (int i = 0; i < 40; ++i) manager.checkpointCrashRecovery();
+    manager.flushCrashRecovery();
+    auto metrics = manager.crashRecoveryMetricsForTesting();
+    expect("same revision forced checkpoints capture and commit once",
+        metrics.value("captures").toUInt() == 1 && metrics.value("committed").toUInt() == 1);
+    const auto started = metrics.value("started").toUInt();
+    for (int i = 0; i < 100; ++i) {
+        edit(QStringLiteral("// rapid %1\n").arg(i));
+        manager.checkpointCrashRecovery();
+    }
+    manager.flushCrashRecovery();
+    metrics = manager.crashRecoveryMetricsForTesting();
+    auto candidates = manager.listCrashRecoveryCandidates(source.path()).candidates;
+    expect("rapid edits merge into one pending revision and persist the newest text",
+        metrics.value("started").toUInt() - started <= 2
+        && metrics.value("maximumPending").toUInt() == 1
+        && candidates.size() == 1 && candidates.first().documentRevision == document->textRevision()
+        && manager.recoverCrashRecoveryText(candidates.first().recoveryId, source.path()).text
+            == document->textDocument()->toPlainText());
+    edit(QString(1000000, QLatin1Char(' ')));
+    manager.checkpointCrashRecovery();
+    expect("normal save succeeds with recovery work active", manager.saveCurrentTab());
+    manager.flushCrashRecovery();
+    expect("saved document cannot be resurrected by an old recovery write",
+        manager.listCrashRecoveryCandidates(source.path()).candidates.isEmpty());
+    edit("// before discard\n");
+    manager.flushCrashRecovery();
+    candidates = manager.listCrashRecoveryCandidates(source.path()).candidates;
+    expect("discard fixture has a persisted record", candidates.size() == 1);
+    if (!candidates.isEmpty()) {
+        edit("// pending during discard\n");
+        manager.checkpointCrashRecovery();
+        expect("discard cancels captured generations", manager.discardCrashRecoveryCandidate(candidates.first().recoveryId, source.path()).succeeded());
+        manager.checkpointCrashRecovery();
+        manager.flushCrashRecovery();
+        expect("discarded revision stays absent across checkpoints", manager.listCrashRecoveryCandidates(source.path()).candidates.isEmpty());
+    }
+    edit("// new edit after discard\n");
+    manager.flushCrashRecovery();
+    expect("a new edit may create a fresh recovery record", manager.listCrashRecoveryCandidates(source.path()).candidates.size() == 1);
+    edit("// closing\n");
+    manager.checkpointCrashRecovery();
+    manager.clearCrashRecoveryAfterNormalClose();
+    manager.checkpointCrashRecovery();
+    manager.flushCrashRecovery();
+    expect("normal close cancels pending writes and suppresses later checkpoints",
+        manager.listCrashRecoveryCandidates(source.path()).candidates.isEmpty());
+
+    const QString blocked = storage.filePath("blocked");
+    expect("recovery fault fixture blocks its storage root", writeFixture(blocked, "blocked"));
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(blocked));
+    QSignalSpy failuresSpy(&manager, &TabManager::crashRecoveryOperationFailed);
+    manager.flushCrashRecovery();
+    metrics = manager.crashRecoveryMetricsForTesting();
+    expect("storage failures are visible with one bounded retry",
+        failuresSpy.size() == 2 && metrics.value("started").toUInt() == 2 && metrics.value("retries").toUInt() == 1);
+    expect("fault storage can be repaired", QFile::remove(blocked) && QDir().mkpath(blocked));
+    manager.checkpointCrashRecovery();
+    manager.flushCrashRecovery();
+    expect("same revision retries after explicit checkpoint and storage repair",
+        manager.listCrashRecoveryCandidates(source.path()).candidates.size() == 1);
+    const auto oldWorkspaceCandidate = manager.listCrashRecoveryCandidates(source.path()).candidates.value(0);
+    manager.setWorkspaceScope({}, {});
+    manager.checkpointCrashRecovery();
+    expect("discarding an old workspace candidate preserves a distinct pending recovery key",
+        manager.discardCrashRecoveryCandidate(oldWorkspaceCandidate.recoveryId, source.path()).succeeded());
+    manager.flushCrashRecovery();
+    expect("workspace ownership migration removes the old recovery key after replacement succeeds",
+        manager.listCrashRecoveryCandidates(source.path()).candidates.isEmpty()
+        && manager.listCrashRecoveryCandidates().candidates.size() == 1);
+    manager.clearCrashRecoveryAfterNormalClose();
+
+    {
+        QTabWidget exitWidget;
+        TabManager exiting(&exitWidget);
+        exiting.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(storage.path()));
+        exiting.setWorkspaceScope({source.path()}, source.path());
+        exiting.openFileInTab(path);
+        exiting.getCurrentEditor()->insertPlainText("// retained on abnormal shutdown\n");
+    }
+    CrashRecoveryService restarted(storage.path());
+    expect("destruction without normal-close acceptance drains the newest dirty snapshot",
+        restarted.listCandidates(source.path()).candidates.size() == 1);
+}
+
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
     runMetadataRefreshRegression();
+    runRecoveryQueueRegression();
 
     SharedDocumentRegistry registry;
     const QString fileName =
@@ -929,6 +1034,7 @@ int main(int argc, char** argv)
     expect("centralized review preserves explicit state classes",
            sawUnsaved && sawExternal);
 
+    manager.flushCrashRecovery();
     CrashRecoveryListResult recoveryList =
         manager.listCrashRecoveryCandidates(temp.path());
     expect("dirty document has a deterministic recovery snapshot",
@@ -1061,6 +1167,7 @@ int main(int argc, char** argv)
                       == recoveredDocument
                              ->textRevision());
 
+    restartedRecoveryManager.flushCrashRecovery();
     const CrashRecoveryOperationResult discarded =
         manager.discardCrashRecoveryCandidate(
             pendingCandidate.recoveryId,
@@ -1077,6 +1184,7 @@ int main(int argc, char** argv)
     firstRecoveryEdit.movePosition(QTextCursor::End);
     firstRecoveryEdit.insertText(
         QStringLiteral("// recovery cycle first\n"));
+    manager.flushCrashRecovery();
     recoveryList =
         manager.listCrashRecoveryCandidates(
             temp.path());
@@ -1095,6 +1203,7 @@ int main(int argc, char** argv)
     const int editsBeforeCheckpoint =
         managerEditedSpy.size();
     manager.checkpointCrashRecovery();
+    manager.flushCrashRecovery();
     const CrashRecoveryListResult afterCheckpoint =
         manager.listCrashRecoveryCandidates(
             temp.path());

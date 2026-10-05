@@ -3,6 +3,7 @@
 
 #include <zeroslack/semantic/semanticapi.h>
 
+#include <QByteArray>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -13,6 +14,14 @@
 class TSDocument;
 struct SemanticSymbolRecord;
 struct TSBindableCodeAnchor;
+
+enum class PinloomCodeLinkLoadState {
+    Missing,
+    Loaded,
+    Invalid,
+    UnsupportedVersion,
+    ReadError
+};
 
 enum class PinloomCodeLinkResolution {
     Exact,
@@ -126,6 +135,8 @@ public:
     QString workspaceRoot() const;
     QString storagePath() const;
     QString loadFailureReason() const;
+    PinloomCodeLinkLoadState loadState() const;
+    bool reload(QString* failureReason = nullptr);
 
     bool addLink(const PinloomSourceSelection& source,
                  const QUrl& uri,
@@ -159,9 +170,12 @@ private:
     QList<PinloomCodeLinkAnchorRecord> anchorRecords;
     std::function<void()> changedHandler;
     QString loadFailureValue;
+    PinloomCodeLinkLoadState loadStateValue = PinloomCodeLinkLoadState::Missing;
+    QByteArray loadedContentHash;
+    bool loadedFileExists = false;
 
     bool load(QString* failureReason = nullptr);
-    bool save(QString* failureReason = nullptr) const;
+    bool save(QString* failureReason = nullptr);
 };
 
 #endif // PINLOOMCODELINKSTORE_H

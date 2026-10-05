@@ -1,6 +1,7 @@
 #include "uidialogs.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
+#include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
 
 #include "actionregistry.h"
@@ -583,6 +584,10 @@ void MainWindow::setupEditorCentralArea()
             [this]() {
                 refreshWorkspaceScope();
                 refreshWorkspaceActions();
+            });
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceActivationFailed,
+            this, [this](const QString& path, const QString& reason) {
+                postActivityMessage(tr("Cannot activate %1: %2").arg(path, reason), 10000);
             });
     connect(workspaceManager.get(),
             &WorkspaceManager::workspaceActivated,
@@ -1270,7 +1275,7 @@ void MainWindow::setupSemanticDocks()
                 scopedReplaceWorkflow.get());
         semanticDocks->scopedSearchPanelCoordinator()
             ->setContextProvider(
-                [this]() { return scopedSearchContext(); });
+                [this](ScopedSearchScope scope) { return scopedSearchContext(scope); });
         semanticDocks->scopedSearchPanelCoordinator()
             ->setNavigationHandler(
                 [this](const QString& fileName,
@@ -1292,7 +1297,7 @@ void MainWindow::setupSemanticDocks()
     }
 }
 
-ScopedSearchPanelContext MainWindow::scopedSearchContext() const
+ScopedSearchPanelContext MainWindow::scopedSearchContext(ScopedSearchScope scope) const
 {
     ScopedSearchPanelContext context;
     if (!tabManager)
@@ -1314,7 +1319,7 @@ ScopedSearchPanelContext MainWindow::scopedSearchContext() const
     }
 
     const QStringList workspaceFiles =
-        workspaceManager
+        scope == ScopedSearchScope::Workspace && workspaceManager
             && workspaceManager->isWorkspaceOpen()
         ? workspaceManager->getSystemVerilogFiles()
         : QStringList{};
@@ -1326,8 +1331,8 @@ ScopedSearchPanelContext MainWindow::scopedSearchContext() const
             workspaceFileIdentities.insert(identity);
     }
 
-    QList<MyCodeEditor*> editors =
-        tabManager->openEditors();
+    QList<MyCodeEditor*> editors = scope == ScopedSearchScope::Workspace
+        ? tabManager->openEditors() : QList<MyCodeEditor*>{};
     if (activeEditor) {
         editors.removeAll(activeEditor);
         editors.prepend(activeEditor);
@@ -1415,15 +1420,11 @@ ScopedSearchPanelContext MainWindow::scopedSearchContext() const
             continue;
         }
 
-        QFile file(fileName);
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-        const QString text =
-            QString::fromUtf8(file.readAll());
+        const auto source = readDocumentFile(fileName);
+        if (!source.available) continue;
+        const QString& text = source.text;
         const qint64 modifiedMilliseconds =
-            QFileInfo(fileName)
-                .lastModified()
-                .toMSecsSinceEpoch();
+            source.modifiedUtc.toMSecsSinceEpoch();
         context.workspaceDocuments.append(
             SearchDocumentSnapshot{
                 fileName,
@@ -1550,7 +1551,9 @@ void MainWindow::setupGlobalControl()
             }
             return result.handled;
         });
-    globalControlCoordinator->setOpeningHandler([this]() {
+    const auto insertPalette = std::make_shared<EditorInsertPaletteService>();
+    globalControlCoordinator->setOpeningHandler([this, insertPalette]() {
+        insertPalette->invalidate();
         if (MyCodeEditor* editor =
                 tabManager ? tabManager->getCurrentEditor() : nullptr) {
             editor->exitInteractionModes(
@@ -1585,14 +1588,16 @@ void MainWindow::setupGlobalControl()
         context.replacementStart = paletteContext.replacementStart;
         context.replacementLength = paletteContext.replacementLength;
         context.documentRevision = paletteContext.documentRevision;
+        if (const auto* shared = tabManager->sharedDocumentForEditor(editor))
+            context.documentInstance = shared->instanceSerial();
         context.memberAccess = paletteContext.memberAccess;
         return context;
     });
     globalControlCoordinator->setItemProvider(
-        [](GlobalControlCategory category,
+        [insertPalette](GlobalControlCategory category,
            const QString& text,
            const GlobalControlQueryContext& context) {
-            return EditorInsertPaletteService().query(
+            return insertPalette->query(
                 category, text, context);
         });
     globalControlCoordinator->setActionHandler(
@@ -1603,6 +1608,16 @@ void MainWindow::setupGlobalControl()
                     tabManager ? tabManager->getCurrentEditor() : nullptr;
                 QString failureReason;
                 bool inserted = false;
+                if (editor && item.kind == GlobalControlItemKind::Template) {
+                    const auto* shared = tabManager->sharedDocumentForEditor(editor);
+                    if (editor->document()->revision() != item.sourceDocumentRevision
+                        || editor->textCursor().position() != item.sourceCursorPosition
+                        || !shared || shared->instanceSerial() != item.sourceDocumentInstance
+                        || UserTemplateService::getInstance()->catalogRevision() != item.sourceTemplateCatalogRevision) {
+                        postActivityMessage(QStringLiteral("The document, cursor, or template catalog changed. Reopen the insertion palette."), 5000);
+                        return;
+                    }
+                }
                 if (editor) {
                     switch (item.operation) {
                     case GlobalControlItemOperation::InsertText:
@@ -2262,10 +2277,7 @@ void MainWindow::activateWorkspace(int index)
         return;
     }
 
-    if (workspaceSessionCoordinator->switchWorkspace(index)) {
-        refreshSettingsCenterWorkspace(
-            workspaceManager->getWorkspacePath());
-    }
+    workspaceSessionCoordinator->switchWorkspace(index);
 }
 
 void MainWindow::closeActiveWorkspace()
@@ -2279,10 +2291,7 @@ void MainWindow::closeActiveWorkspace()
     if (index < 0 || index >= entries.size())
         return;
 
-    if (workspaceSessionCoordinator->closeWorkspace(index)) {
-        refreshSettingsCenterWorkspace(
-            workspaceManager->getWorkspacePath());
-    }
+    workspaceSessionCoordinator->closeWorkspace(index);
 }
 
 void MainWindow::setupToolsMenu()
@@ -4310,7 +4319,7 @@ void MainWindow::ensureSettingsCenterPanel()
     settingsCenterDock->setWidget(settingsCenterPanel);
     connect(settingsCenterPanel, &SettingsCenterPanel::settingsApplied, this,
             [this](SettingsCenterScope) {
-                applySettingsCenterSnapshot(settingsCenterPanel->snapshot());
+                applySettingsCenterSnapshot(settingsCenterService->load(settingsCenterPanel->workspaceRoot()));
             });
 }
 
@@ -4446,16 +4455,11 @@ void MainWindow::applyRegisteredActionShortcuts()
 void MainWindow::refreshSettingsCenterWorkspace(
     const QString& workspaceRoot)
 {
-    if (!settingsCenterPanel) {
-        if (settingsCenterService)
-            applySettingsCenterSnapshot(settingsCenterService->load(workspaceRoot));
-        return;
-    }
-    if (settingsCenterPanel->workspaceRoot() == workspaceRoot)
-        settingsCenterPanel->reload();
-    else
-        settingsCenterPanel->setWorkspaceRoot(workspaceRoot);
-    applySettingsCenterSnapshot(settingsCenterPanel->snapshot());
+    if (!settingsCenterService) return;
+    const auto latest = settingsCenterService->load(workspaceRoot);
+    if (settingsCenterPanel)
+        settingsCenterPanel->setWorkspaceSnapshot(latest);
+    applySettingsCenterSnapshot(latest);
 }
 
 void MainWindow::setupEditorCoordinator()
@@ -4549,6 +4553,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
     if (event && event->isAccepted()
         && workspaceSessionCoordinator) {
         workspaceSessionCoordinator->saveBeforeWorkspaceTransition();
+        workspaceSessionCoordinator->flushPendingSaves();
     }
 }
 

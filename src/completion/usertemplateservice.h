@@ -53,6 +53,8 @@ public:
     UserTemplateLoadReport reload() const;
     QList<UserTemplateRecord> records() const;
     QList<CodeTemplateItem> catalog() const;
+    quint64 catalogRevision() const;
+    quint64 fileReadsForTesting() const { return fileReads; }
     QList<CodeTemplateItem> matchingTemplates(
         const QString& commandToken) const;
     CodeTemplateItem templateForCommand(const QString& commandToken) const;
@@ -69,6 +71,13 @@ public:
 private:
     QString globalTemplateFilePath;
     QString workspaceTemplateFilePath;
+    mutable QString cachedFileVersion;
+    mutable UserTemplateLoadReport cachedReport;
+    mutable QList<CodeTemplateItem> cachedCatalog;
+    mutable bool cacheValid = false;
+    mutable quint64 revision = 0;
+    mutable quint64 fileReads = 0;
+    void ensureLoaded() const;
 
     static std::unique_ptr<UserTemplateService> instance;
 };

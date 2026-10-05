@@ -1,6 +1,7 @@
 #include "documentregistry.h"
 
 #include "mycodeeditor.h"
+#include "editorfileidentity.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -26,7 +27,7 @@ QString DocumentSnapshotReader::documentIdForEditor(MyCodeEditor* editor) const
 
     const QString fileName = normalizedFileName(editor->documentFileName());
     if (!fileName.isEmpty())
-        return fileName;
+        return EditorFileIdentity::physicalPath(fileName);
 
     return QStringLiteral("untitled:%1")
         .arg(QString::number(reinterpret_cast<quintptr>(editor), 16));
@@ -39,10 +40,11 @@ void DocumentSnapshotReader::captureFileIdentity(
     if (!editor || !snapshot)
         return;
 
-    snapshot->fileName = normalizedFileName(editor->documentFileName());
-    snapshot->documentId = snapshot->fileName.isEmpty()
-        ? snapshot->documentId
-        : snapshot->fileName;
-    if (snapshot->documentId.isEmpty())
+    const auto fileName = normalizedFileName(editor->documentFileName());
+    const auto sharedId = editor->property("sharedDocumentId").toString();
+    if (!sharedId.isEmpty())
+        snapshot->documentId = sharedId;
+    else if (snapshot->documentId.isEmpty() || snapshot->fileName != fileName)
         snapshot->documentId = documentIdForEditor(editor);
+    snapshot->fileName = fileName;
 }

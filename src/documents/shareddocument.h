@@ -19,6 +19,7 @@
 
 class MyCodeEditor;
 class QTextDocument;
+class SharedDocumentRegistry;
 
 struct SharedDocumentViewState {
     QString viewId;
@@ -37,7 +38,8 @@ public:
     explicit SharedDocument(const QString& documentId,
                             const QString& fileName,
                             const QString& initialText,
-                            QObject* parent = nullptr);
+                            QObject* parent = nullptr,
+                            const DocumentFileReadResult* initialFile = nullptr);
     ~SharedDocument() override;
 
     bool reloadCleanText(const QString& text);
@@ -75,6 +77,7 @@ private:
     };
 
     QHash<MyCodeEditor*, ViewBinding> viewBindings;
+    SharedDocumentRegistry* registryOwner = nullptr;
 
     void applyViewState(MyCodeEditor* editor,
                         const SharedDocumentViewState& state) const;
@@ -89,9 +92,11 @@ class ZEROSLACK_API SharedDocumentRegistry : public QObject
 
 public:
     explicit SharedDocumentRegistry(QObject* parent = nullptr);
+    ~SharedDocumentRegistry() override;
 
     SharedDocument* acquire(const QString& fileName,
-                            const QString& initialText = QString());
+                            const QString& initialText = QString(),
+                            const DocumentFileReadResult* initialFile = nullptr);
     SharedDocument* createUntitled(
         const QString& initialText = QString());
     SharedDocument* acquireUntitled(
@@ -106,12 +111,15 @@ public:
     bool releaseIfUnused(SharedDocument* document);
 
 private:
+    friend class SharedDocument;
+    QHash<MyCodeEditor*, SharedDocument*> documentsByView;
     QHash<QString, SharedDocument*> documentsByIdentity;
     QHash<QString, SharedDocument*> documentsById;
 
     SharedDocument* createDocument(const QString& documentId,
                                    const QString& fileName,
-                                   const QString& initialText);
+                                   const QString& initialText,
+                                   const DocumentFileReadResult* initialFile = nullptr);
 };
 
 #endif // SHAREDDOCUMENT_H

@@ -43,6 +43,11 @@ WorkspaceSessionCoordinator::WorkspaceSessionCoordinator(
     saveTimer = new QTimer(this);
     saveTimer->setSingleShot(true);
     saveTimer->setInterval(qMax(1, saveDelayMs));
+    qRegisterMetaType<WorkspaceSessionSaveStatus>();
+    retryTimer = new QTimer(this);
+    retryTimer->setSingleShot(true);
+    retryTimer->setInterval(qMax(100, saveDelayMs));
+    connect(retryTimer, &QTimer::timeout, this, &WorkspaceSessionCoordinator::retryPendingSaves);
     connect(saveTimer,
             &QTimer::timeout,
             this,
@@ -81,6 +86,7 @@ WorkspaceSessionCoordinator::WorkspaceSessionCoordinator(
 WorkspaceSessionCoordinator::~WorkspaceSessionCoordinator()
 {
     cancelScheduledSave();
+    retryTimer->stop();
     if (panelLayoutController)
         panelLayoutController->setStateChangedHandler({});
 }
@@ -141,6 +147,11 @@ WorkspaceSessionCoordinator::captureSessionState() const
 
 bool WorkspaceSessionCoordinator::saveSession(bool showStatusMessage)
 {
+    return saveSessionResult(showStatusMessage).status == WorkspaceSessionSaveStatus::Saved;
+}
+
+WorkspaceSessionSaveOutcome WorkspaceSessionCoordinator::saveSessionResult(bool showStatusMessage)
+{
     if (!workspaceManager || !workspaceManager->isWorkspaceOpen()) {
         if (showStatusMessage) {
             showStatus(
@@ -148,8 +159,8 @@ bool WorkspaceSessionCoordinator::saveSession(bool showStatusMessage)
                     "Open a workspace before saving a session"),
                 3000);
         }
-        emit sessionSaveFinished(QString(), false);
-        return false;
+        return publishSaveOutcome({WorkspaceSessionSaveStatus::Skipped, {},
+            QStringLiteral("No workspace is open.")});
     }
 
     const QString workspaceRoot =
@@ -162,13 +173,29 @@ bool WorkspaceSessionCoordinator::saveSession(bool showStatusMessage)
     const QString rootKey = workspaceRootKey(workspaceRoot);
     if (cleanWorkspaceRoots.contains(rootKey)) {
         if (!showStatusMessage)
-            return false;
+            return publishSaveOutcome({WorkspaceSessionSaveStatus::Skipped, workspaceRoot,
+                QStringLiteral("Session was explicitly cleared; automatic save is suppressed.")});
         cleanWorkspaceRoots.remove(rootKey);
     }
+    return persistSession(captureSessionState(), showStatusMessage);
+}
 
-    const WorkspaceSessionSaveResult result =
-        stateService.save(captureSessionState());
-    if (showStatusMessage) {
+WorkspaceSessionSaveOutcome WorkspaceSessionCoordinator::persistSession(
+    const WorkspaceSessionState& state, bool showSuccess, int attempts, bool scheduleRetry)
+{
+    const QString key = workspaceRootKey(state.workspaceRoot);
+    const auto result = stateService.save(state);
+    QString message = result.message;
+    if (result.saved) {
+        pendingSaves.remove(key);
+    } else {
+        pendingSaves.insert(key, {state, attempts});
+        message += attempts < 3 && scheduleRetry
+            ? QStringLiteral(" The session is pending; it will be retried automatically.")
+            : QStringLiteral(" The session is still pending. Save Session or the next state change can retry; source files are unaffected.");
+        if (attempts < 3 && scheduleRetry) retryTimer->start();
+    }
+    if (showSuccess || !result.saved || attempts > 1) {
         showStatus(
             result.saved
                 ? QStringLiteral(
@@ -176,11 +203,36 @@ bool WorkspaceSessionCoordinator::saveSession(bool showStatusMessage)
                       ".zeroslack/project.json is unchanged")
                       .arg(QDir::toNativeSeparators(
                           result.storagePath))
-                : result.message,
+                : message,
             result.saved ? 3000 : 5000);
     }
-    emit sessionSaveFinished(workspaceRoot, result.saved);
-    return result.saved;
+    return publishSaveOutcome({result.saved ? WorkspaceSessionSaveStatus::Saved : WorkspaceSessionSaveStatus::Failed,
+        state.workspaceRoot, message});
+}
+
+WorkspaceSessionSaveOutcome WorkspaceSessionCoordinator::publishSaveOutcome(WorkspaceSessionSaveOutcome outcome)
+{
+    lastOutcome = outcome;
+    emit sessionSaveOutcome(outcome.workspaceRoot, outcome.status, outcome.reason);
+    if (outcome.status != WorkspaceSessionSaveStatus::Skipped)
+        emit sessionSaveFinished(outcome.workspaceRoot, outcome.status == WorkspaceSessionSaveStatus::Saved);
+    return outcome;
+}
+
+void WorkspaceSessionCoordinator::retryPendingSaves()
+{
+    const auto pending = pendingSaves;
+    for (const auto& entry : pending)
+        if (entry.attempts < 3)
+            persistSession(entry.state, false, entry.attempts + 1);
+}
+
+void WorkspaceSessionCoordinator::flushPendingSaves()
+{
+    retryTimer->stop();
+    const auto pending = pendingSaves;
+    for (const auto& entry : pending)
+        persistSession(entry.state, false, 3, false);
 }
 
 bool WorkspaceSessionCoordinator::restoreSession()
@@ -319,6 +371,7 @@ void WorkspaceSessionCoordinator::clearSession()
     const QString workspaceRoot =
         workspaceManager->getWorkspacePath();
     cancelScheduledSave();
+    pendingSaves.remove(workspaceRootKey(workspaceRoot));
     const bool cleared = stateService.clear(workspaceRoot);
     cleanWorkspaceRoots.insert(workspaceRootKey(workspaceRoot));
     showStatus(
@@ -388,7 +441,7 @@ bool WorkspaceSessionCoordinator::saveBeforeWorkspaceTransition()
     if (workspaceManager && workspaceManager->isWorkspaceOpen() && uiBridge.captureUiState)
         liveWorkspaceUi.insert(workspaceRootKey(workspaceManager->getWorkspacePath()),
                                captureSessionState().ui);
-    return saveSession(false);
+    return saveSessionResult(false).status != WorkspaceSessionSaveStatus::Failed;
 }
 
 bool WorkspaceSessionCoordinator::openWorkspace(

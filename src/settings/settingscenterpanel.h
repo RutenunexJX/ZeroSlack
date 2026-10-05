@@ -61,6 +61,7 @@ public:
 
 public slots:
     void setWorkspaceRoot(const QString& workspaceRoot);
+    void setWorkspaceSnapshot(const SettingsCenterSnapshot& snapshot);
     void reload();
     void setScope(SettingsCenterScope scope);
     void selectCategory(const QString& categoryId);
@@ -128,6 +129,11 @@ private:
     SettingsCenterSnapshot loadedSnapshot;
     QVariantMap globalDraft;
     QVariantMap workspaceDraft;
+    struct WorkspaceDraft {
+        SettingsCenterSnapshot baseline;
+        QVariantMap values;
+    };
+    QHash<QString, WorkspaceDraft> workspaceDrafts;
     QList<SettingsCenterValidationIssue> displayedIssues;
 
     QComboBox* scopeCombo = nullptr;

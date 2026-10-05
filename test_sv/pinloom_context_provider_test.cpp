@@ -8,6 +8,7 @@
 #include "pinloomcontextprovider.h"
 #include "pinloomcontextview.h"
 #include "pinloomhostclient.h"
+#include "tsdocument.h"
 
 #include <QApplication>
 #include <QAction>
@@ -15,6 +16,8 @@
 #include <QColor>
 #include <QDialog>
 #include <QDockWidget>
+#include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QImage>
 #include <QJsonArray>
@@ -352,6 +355,20 @@ int main(int argc, char* argv[])
                 && entry.identity.anchorId
                        == QStringLiteral("clock-reset");
         });
+    provider->setCreateLinkHandler(
+        [&client, &linkCalls](const QVariantMap& source, const QString& title,
+            PinloomContextProvider::CreateLinkReply reply) {
+            client.createSourceAnchor(source, title,
+                [source, &linkCalls, reply](const PinloomHostEntry& entry, const QString& error) {
+                    PinloomSourceLinkResult result;
+                    result.source = source;
+                    result.entry = entry;
+                    result.linked = error.isEmpty() && entry.isValid();
+                    result.message = error;
+                    if (result.linked) ++linkCalls;
+                    reply(result);
+                });
+        });
     check(controller.registerProvider(std::move(provider)),
           "Pinloom provider registers in Context Workspace");
     check(controller.providerIds().contains(QStringLiteral("pinloom"))
@@ -380,8 +397,11 @@ int main(int argc, char* argv[])
     if (!pinloomAction || !view)
         return 1;
     pinloomAction->trigger();
-    check(controller.dockWidget()->isVisible() && controller.dockHost()->isSectionCollapsed(controller.dockHost()->currentResource().stableKey()),
-          "second Pinloom rail click collapses its section while keeping the sidebar visible");
+    check(QTest::qWaitFor([&] { return !controller.dockWidget()->isVisible(); }, 1000)
+              && controller.dockHost()->resourceCount() == 1
+              && controller.dockHost()->viewForResource(
+                  controller.dockHost()->currentResource().stableKey()) == view,
+          "second Pinloom rail click hides the sidebar and retains its view");
     pinloomAction->trigger();
     check(controller.dockWidget()->isVisible()
               && controller.dockHost()->resourceCount() == 1
@@ -660,8 +680,13 @@ int main(int argc, char* argv[])
           "first binding starts one image resolve generation");
     delayedImageView.resultList()->setCurrentRow(1);
     QApplication::processEvents();
+    check(pendingImageResolves.size() == 1,
+          "switching bindings replaces a pending generation without another running request");
+    auto oldReply = pendingImageResolves.first().reply;
+    oldReply(rectangleDocumentJson(oldRectangleEntry,
+        readyPreviewJson(oldPreviewPath, QSize(320, 160), 6), 6), {});
     check(pendingImageResolves.size() == 2,
-          "switching bindings starts a new image resolve generation");
+          "the latest resolve starts when the cancelled worker releases its slot");
     if (pendingImageResolves.size() == 2) {
         pendingImageResolves[1].reply(
             rectangleDocumentJson(
@@ -681,7 +706,7 @@ int main(int argc, char* argv[])
                   && latestColor.blue() > latestColor.red(),
               "new binding response installs the matching image preview");
 
-        pendingImageResolves[0].reply(
+        oldReply(
             rectangleDocumentJson(
                 oldRectangleEntry,
                 readyPreviewJson(oldPreviewPath, QSize(320, 160), 6),
@@ -818,7 +843,7 @@ int main(int argc, char* argv[])
     createButton->click();
     check(createRequests == 1 && linkCalls == 2
               && !view->linkModeActive(),
-          "creating a Pinloom source anchor immediately persists its code link");
+          "source-anchor creation invokes the configured link operation and closes link mode");
 
     check(controller.pinPeek(&failureReason),
           "resolved Pinloom view can be pinned without recreation");
@@ -864,6 +889,143 @@ int main(int argc, char* argv[])
         {{QStringLiteral("entries"), QJsonArray{entryJson()}}}, {});
     check(true,
           "closing Pinloom view invalidates in-flight callbacks safely");
+
+    // Exercise the real operation owner and on-disk store, not just the UI's
+    // synchronous handler substitute above. Only the external host is faked.
+    {
+        QTemporaryDir origin, other;
+        check(origin.isValid() && other.isValid(), "isolated link workspaces exist");
+        const QString text = "module top;\nassign a = b;\nassign c = d;\nendmodule\n";
+        TSDocument syntax;
+        syntax.setText(text);
+        const auto sourceAt = [&](const QString& root, const QString& needle) {
+            return PinloomSourceSelection::fromSyntaxAnchor(root,
+                QDir(root).filePath("top.sv"), text,
+                syntax.bindableCodeAnchorAt(text.indexOf(needle))).toVariantMap();
+        };
+        const auto a = sourceAt(origin.path(), "assign a");
+        const auto b = sourceAt(origin.path(), "assign c");
+        struct Pending { QJsonObject request; PinloomHostClient::RawReplyHandler reply; };
+        QVector<Pending> operations;
+        int createCount = 0;
+        PinloomHostClient operationClient([&](const QJsonObject& request, PinloomHostClient::RawReplyHandler reply) {
+            if (request.value("method").toString() == "createSourceAnchor") {
+                ++createCount;
+                operations.append({request, std::move(reply)});
+            } else if (request.value("method").toString() == "search") {
+                reply({{"entries", QJsonArray{}}}, {});
+            } else {
+                reply({{"entry", entryJson()}, {"content", "preview"}}, {});
+            }
+        });
+        PinloomCodeLinkCoordinator owner(nullptr);
+        owner.setWorkspaceRoot(origin.path());
+        QStringList notices;
+        owner.setCompletionNotice([&](const QString& message) { notices.append(message); });
+        PinloomContextProvider operationProvider(&operationClient);
+        operationProvider.setCreateLinkHandler([&](const QVariantMap& source, const QString& title,
+            PinloomContextProvider::CreateLinkReply reply) {
+            owner.createSourceAnchor(&operationClient, source, title, std::move(reply));
+        });
+        auto resource = PinloomContextProvider::homeResource(origin.path());
+        resource.state["linkSource"] = a;
+        auto* operationView = qobject_cast<PinloomContextView*>(operationProvider.createView(resource, nullptr));
+        operationProvider.activateView(operationView, resource);
+        operationView->show();
+        auto* create = operationView->findChild<QToolButton*>("pinloomContextCreateAnchor");
+        create->click();
+        check(operations.size() == 1 && !operations.first().request.value("requestId").toString().isEmpty(),
+              "source creation captures a nonempty wire request identity");
+        resource.state["linkSource"] = b;
+        operationProvider.activateView(operationView, resource);
+        const auto replyEntry = [](const QString& name) {
+            auto entry = entryJson();
+            entry["uri"] = QString("pinloom://entry/%1").arg(name);
+            entry["title"] = name;
+            return QJsonObject{{"entry", entry}};
+        };
+        auto aReply = operations.takeFirst().reply;
+        aReply(replyEntry("created-A"), {});
+        check(owner.store()->records().size() == 1
+                  && owner.store()->records().first().source.selectedText == a.value("selectedText").toString()
+                  && operationView->linkModeActive()
+                  && operationView->findChild<QLabel*>("pinloomContextLinkSource")->text().contains(":3"),
+              "A reply after real provider activation of B persists A and leaves B's presentation intact");
+        aReply(replyEntry("duplicate-A"), {});
+        check(owner.store()->records().size() == 1 && notices.size() == 1,
+              "a duplicate transport completion cannot repeat the operation");
+        create->click();
+        check(operations.size() == 1, "B starts its own operation");
+        delete operationView;
+        operations.takeFirst().reply(replyEntry("created-B"), {});
+        check(owner.store()->records().size() == 2 && notices.size() == 2,
+              "closing the view preserves the completed remote result and announces its original association");
+        for (const bool closeWorkspace : {false, true}) {
+            owner.setWorkspaceRoot(origin.path());
+            PinloomSourceLinkResult completed;
+            owner.createSourceAnchor(&operationClient, a, "Original", [&](const PinloomSourceLinkResult& result) { completed = result; });
+            const auto requestId = operations.first().request.value("requestId").toString();
+            owner.setWorkspaceRoot(closeWorkspace ? QString() : other.path());
+            operations.takeFirst().reply(replyEntry(closeWorkspace ? "after-close" : "after-switch"), {});
+            check(completed.linked && completed.source == a && completed.requestId == requestId
+                      && owner.store()->records().isEmpty(),
+                  "switching or closing the workspace keeps source/request identity and does not bind into the new workspace");
+        }
+        PinloomCodeLinkStore persisted;
+        persisted.setWorkspaceRoot(origin.path());
+        check(persisted.records().size() == 4, "all four successful remote operations are retained in the original workspace");
+        owner.setWorkspaceRoot(other.path());
+        const auto otherSource = sourceAt(other.path(), "assign a");
+        PinloomSourceLinkResult failed;
+        owner.createSourceAnchor(&operationClient, otherSource, "Failure", [&](const PinloomSourceLinkResult& result) { failed = result; });
+        operations.takeFirst().reply({}, "remote failure");
+        check(!failed.linked && failed.message == "remote failure" && owner.store()->records().isEmpty(),
+              "remote failure does not create a local association");
+        owner.createSourceAnchor(&operationClient, otherSource, "Created but not linked", [&](const PinloomSourceLinkResult& result) { failed = result; });
+        const QString path = owner.store()->storagePath();
+        QDir().mkpath(QFileInfo(path).absolutePath());
+        QFile damaged(path);
+        check(damaged.open(QIODevice::WriteOnly) && damaged.write("{broken") == 7, "inject a store failure after remote creation starts");
+        damaged.close();
+        operations.takeFirst().reply(replyEntry("created-unlinked"), {});
+        QFile preserved(path);
+        check(preserved.open(QIODevice::ReadOnly) && preserved.readAll() == "{broken"
+                  && !failed.linked && failed.entry.isValid()
+                  && failed.message.contains("created-unlinked") && createCount == 6,
+              "a completed remote side effect remains visible when local association fails, without overwriting or retrying");
+    }
+
+    {
+        struct PendingRead { QJsonObject envelope; PinloomHostClient::RawReplyHandler reply; };
+        QList<PendingRead> sent;
+        int sideEffects = 0;
+        int published = 0;
+        PinloomHostClient bounded([&](const QJsonObject& envelope, PinloomHostClient::RawReplyHandler reply) {
+            if (envelope.value("method") == "open") { ++sideEffects; reply({}, {}); }
+            else sent.append({envelope, std::move(reply)});
+        });
+        auto consumer = std::make_unique<QObject>();
+        for (int i = 0; i < 300; ++i)
+            bounded.search(QString::number(i), 50, [&](const auto&, const auto&) { ++published; }, consumer.get());
+        check(sent.size() == 1, "rapid input retains one active read and replaces the pending query");
+        PinloomHostIdentity target;
+        target.entryId = "independent-open";
+        bounded.open(target, {});
+        check(sideEffects == 1, "side effects are independent of the read queue and never repeated");
+        const auto first = sent.first().reply;
+        first({}, {});
+        check(sent.size() == 2 && published == 0
+            && sent.last().envelope.value("params").toObject().value("query") == "299",
+            "only the newest query starts after cancellation completes");
+        sent.last().reply({}, {});
+        first({}, {});
+        check(published == 1, "cancelled and duplicate replies cannot publish");
+        bounded.search("closing", 50, [&](const auto&, const auto&) { ++published; }, consumer.get());
+        bounded.search("discarded-pending", 50, [&](const auto&, const auto&) { ++published; }, consumer.get());
+        consumer.reset();
+        sent.last().reply({}, {});
+        check(sent.size() == 3 && published == 1, "destroyed consumer cancels active and pending reads");
+    }
 
     if (failures == 0) {
         std::cout << "pinloom_context_provider_test: "

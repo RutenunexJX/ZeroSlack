@@ -10,6 +10,8 @@
 #include <QVariantMap>
 
 #include <functional>
+#include <atomic>
+#include <memory>
 
 struct ZEROSLACK_API PinloomHostIdentity {
     QString entryId;
@@ -105,20 +107,23 @@ public:
     explicit PinloomHostClient(QObject* parent = nullptr);
     explicit PinloomHostClient(RequestTransport transport,
                                QObject* parent = nullptr);
+    ~PinloomHostClient() override;
 
     QString executablePath() const;
     void setExecutablePath(const QString& path);
 
     void search(const QString& query,
                 int limit,
-                SearchHandler handler);
+                SearchHandler handler, QObject* consumer = nullptr);
     void resolve(const PinloomHostIdentity& identity,
-                 ResolveHandler handler);
+                 ResolveHandler handler, QObject* consumer = nullptr);
+    bool cancelReadRequests(QObject* consumer);
     void open(const PinloomHostIdentity& identity,
               CompletionHandler handler);
     void createSourceAnchor(const QVariantMap& source,
                             const QString& title,
-                            CreateSourceAnchorHandler handler);
+                            CreateSourceAnchorHandler handler,
+                            const QString& requestId = QString());
     void capabilities(RawReplyHandler handler);
 
     static QString protocolName();
@@ -129,7 +134,13 @@ public:
 private:
     void request(const QString& method,
                  const QJsonObject& params,
-                 RawReplyHandler handler);
+                 RawReplyHandler handler,
+                 const QString& requestId = QString(),
+                 QObject* readConsumer = nullptr);
+    void sendEnvelope(QJsonObject envelope, RawReplyHandler handler,
+                      std::shared_ptr<std::atomic_bool> cancelled = {});
+    struct ReadQueue;
+    std::unique_ptr<ReadQueue> readQueue;
 
     RequestTransport customTransport;
     QString configuredExecutablePath;

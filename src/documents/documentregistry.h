@@ -5,6 +5,7 @@
 
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QString>
 #include <cstdint>
 
@@ -26,12 +27,25 @@ struct TrackedDocument {
 
 struct DocumentIndexes {
     QHash<QString, MyCodeEditor*> byDocumentId;
+    QHash<QString, QSet<MyCodeEditor*>> viewsByDocumentId;
     QHash<QString, MyCodeEditor*> byFileName;
 
     void add(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
     void remove(MyCodeEditor* editor, const DocumentSnapshot& snapshot);
     MyCodeEditor* editorForDocumentId(const QString& documentId) const;
     MyCodeEditor* editorForFileName(const QString& fileName) const;
+    QString documentKeyForEditor(MyCodeEditor* editor) const;
+    QString documentKeyForId(const QString& documentId) const;
+
+private:
+    struct Registration {
+        QString documentId;
+        QString fileName;
+        QString documentKey;
+        QString fileKey;
+    };
+    QHash<MyCodeEditor*, Registration> registrations;
+    QHash<QString, QSet<MyCodeEditor*>> viewsByFileName;
 };
 
 struct DocumentStore {
@@ -72,6 +86,7 @@ struct DocumentRegistry {
     bool markSaved(MyCodeEditor* editor, TrackedDocument* tracked);
     QList<MyCodeEditor*> editorsForDocumentId(
         const QString& documentId) const;
+    QList<MyCodeEditor*> editorsForEditor(MyCodeEditor* editor) const;
     int viewCountForDocumentId(const QString& documentId) const;
     DocumentSnapshot replace(MyCodeEditor* editor,
                              const TrackedDocument& tracked,

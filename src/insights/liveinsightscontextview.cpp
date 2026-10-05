@@ -163,6 +163,10 @@ void LiveInsightsContextView::initialize()
 
 LiveInsightsContextView::~LiveInsightsContextView()
 {
+    // A surface consumer can emit a final snapshot while QWidget deletes its
+    // children, after the status labels have already been destroyed.
+    if (surfaceSession)
+        disconnect(surfaceSession, nullptr, this, nullptr);
     if (sessionValue) {
         disconnect(sessionValue, nullptr, this, nullptr);
         sessionValue->setConsumerVisible(

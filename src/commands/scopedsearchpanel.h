@@ -47,7 +47,7 @@ class ZEROSLACK_API ScopedSearchPanel : public QWidget
 
 public:
     using ContextProvider =
-        std::function<ScopedSearchPanelContext()>;
+        std::function<ScopedSearchPanelContext(ScopedSearchScope)>;
 
     explicit ScopedSearchPanel(
         const SearchService* service = nullptr,

@@ -107,6 +107,7 @@ public:
     snapshot(
         const std::string& filePath) const override
     {
+        ++snapshotCalls;
         const auto found = documents.find(filePath);
         if (found == documents.end())
             return std::nullopt;
@@ -156,12 +157,17 @@ public:
         ++restoreCalls;
         if (failRestore)
             return false;
-        documents[filePath] =
-            Document{snapshot.version, snapshot.text};
+        auto found = documents.find(filePath);
+        if (found == documents.end()) return false;
+        if (found->second.text != snapshot.text) {
+            found->second.text = snapshot.text;
+            ++found->second.version.value;
+        }
         return true;
     }
 
     int applyCalls = 0;
+    mutable int snapshotCalls = 0;
     int restoreCalls = 0;
     int failApplyCall = -1;
     bool mutateBeforeFailure = false;
@@ -307,6 +313,7 @@ void checkApplyAndSingleUndo()
                    .expectedDocumentVersion.value
                 == 1001);
 
+    expect("preview captures each live document once", documents.snapshotCalls == 2);
     const ScopedReplaceWorkflowResult applied =
         workflow.confirm();
     expect(
@@ -631,6 +638,27 @@ void checkHiddenDockDoesNotExpandOrStealFocus()
     window.hide();
 }
 
+void checkManyMatchesCaptureOneSnapshot()
+{
+    PreviewFixture fixture(QStringLiteral("memory/many.sv"));
+    fixture.firstBefore = QStringLiteral("logic target;\n").repeated(2000);
+    fixture.searchedDocuments[0].text = fixture.firstBefore;
+    std::vector<rtledit::WorkspaceTextEdit> edits;
+    for (std::size_t line = 0; line < 2000; ++line)
+        edits.push_back({utf8String(fixture.firstFile), {7}, {{line, 6}, {line, 12}}, "target", "renamed"});
+    fixture.preview.transactionPlan = rtledit::makeWorkspaceEditPlan({}, rtledit::RiskLevel::High,
+        rtledit::PreviewPolicy::Diff, std::move(edits));
+    MemoryDocuments documents;
+    documents.open(fixture.firstFile, 10, fixture.firstBefore);
+    ScopedReplaceWorkflow workflow(&documents, nullptr, nullptr);
+    const auto result = workflow.preparePreview(fixture.preview, fixture.searchedDocuments);
+    expect("2000 replacements capture one immutable live snapshot",
+        result.succeeded() && result.editCount == 2000 && documents.snapshotCalls == 1);
+    documents.open(fixture.firstFile, 11, fixture.firstBefore + QStringLiteral("// external edit\n"));
+    expect("confirmation still rejects edits after the captured batch",
+        !workflow.confirm().succeeded() && documents.applyCalls == 0);
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -639,6 +667,7 @@ int main(int argc, char* argv[])
     if (!initializeUiStyleForTest()) return 3;
 
     checkApplyAndSingleUndo();
+    checkManyMatchesCaptureOneSnapshot();
     checkStaleRevision();
     checkExternalModification();
     checkSecondFileFailureRollsBack();

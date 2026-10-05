@@ -18,6 +18,8 @@
 #include "applicationthememanager.h"
 #include "completionservice.h"
 #include "editorinsertpaletteservice.h"
+#include "usertemplateservice.h"
+#include "customabbreviationservice.h"
 #include "mycodeeditor.h"
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
@@ -384,6 +386,118 @@ void runCatalogAndPanelRegression(const QString& path)
                && waitUntil([&] { return provider->semanticSourceCatalog.isEmpty(); }));
     index->clearSemanticState();
 }
+void runTemplateCacheAndWriterRegression()
+{
+    QTemporaryDir temp;
+    const auto global = temp.filePath("global.json");
+    const auto workspace = temp.filePath("workspace.json");
+    auto* service = UserTemplateService::getInstance();
+    const auto previousGlobal = service->globalTemplateLocation();
+    const auto previousWorkspace = service->workspaceTemplateLocation();
+    service->setGlobalTemplateFilePath(global);
+    service->setWorkspaceTemplateFilePath(workspace);
+    UserTemplateRecord record;
+    record.id = "cache"; record.commandToken = ";;cache"; record.label = "Cache fixture";
+    record.insertText = "logic cached_a;";
+    expect("retained template writer commits valid input", service->setRecords({record}).valid);
+    auto context = queryContext(temp.filePath("fixture.sv"), fixtureText());
+    EditorInsertPaletteService palette;
+    const auto first = palette.query(GlobalControlCategory::Templates, "cache", context);
+    const auto reads = service->fileReadsForTesting();
+    for (int i = 0; i < 25; ++i) palette.query(GlobalControlCategory::Templates, "cache", context);
+    expect("repeated template filters reuse context and file contents",
+        !first.isEmpty() && palette.contextAnalysesForTesting() == 1 && service->fileReadsForTesting() == reads);
+    const auto revision = service->catalogRevision();
+    expect("external same-size template update writes",
+        writeText(global, QStringLiteral("{\"templates\":[{\"command\":\";;cache\",\"body\":\"logic cached_b;\"}]}")));
+    const auto updated = palette.query(GlobalControlCategory::Templates, "cache", context);
+    expect("external file version invalidates catalog without reparsing unchanged document",
+        service->catalogRevision() > revision && palette.contextAnalysesForTesting() == 1
+        && std::any_of(updated.cbegin(), updated.cend(), [](const auto& item) { return item.insertionText == "logic cached_b;"; }));
+    const auto beforeReload = service->fileReadsForTesting();
+    service->reload();
+    expect("manual Reload rereads the catalog", service->fileReadsForTesting() > beforeReload);
+    ++context.documentRevision;
+    palette.query(GlobalControlCategory::Templates, "cache", context);
+    --context.cursorPosition;
+    palette.query(GlobalControlCategory::Templates, "cache", context);
+    palette.invalidate();
+    palette.query(GlobalControlCategory::Templates, "cache", context);
+    expect("revision cursor and session invalidation refresh facts", palette.contextAnalysesForTesting() == 4);
+    expect("workspace templates can be added externally",
+        writeText(workspace, "[{\"command\":\";;workspace\",\"body\":\"logic workspace;\"}]"));
+    expect("new workspace file invalidates absence cache", service->matchingTemplates(";;workspace").size() == 1);
+    service->setWorkspaceRoot({});
+    expect("closing workspace removes its catalog", service->matchingTemplates(";;workspace").isEmpty());
+    expect("corrupt template fixture writes", writeText(global, "{broken"));
+    expect("append and removal preserve corrupt source bytes",
+        !service->addOrUpdateRecord(record).valid && !service->removeRecord("cache"));
+    QFile bad(global); expect("corrupt bytes remain readable", bad.open(QIODevice::ReadOnly));
+    expect("corrupt bytes were not replaced", bad.readAll() == QByteArray("{broken")); bad.close();
+    const auto blocked = temp.filePath("blocked");
+    expect("blocked writer fixture writes", writeText(blocked, "block"));
+    UserTemplateService blockedTemplates(blocked + "/templates.json");
+    expect("template atomic write failure is reported", !blockedTemplates.setRecords({record}).valid);
+    CustomAbbreviationService abbreviations(blocked + "/aliases.ini");
+    CustomAbbreviationRecord alias{"alias", "lg", ";l", "Logic", "Logic command"};
+    const auto failed = abbreviations.setRecords({alias});
+    expect("abbreviation write failure is reported", !failed.valid && !failed.failureReason.isEmpty());
+    service->setGlobalTemplateFilePath(previousGlobal);
+    service->setWorkspaceTemplateFilePath(previousWorkspace);
+}
+void runTemplateInsertionVersionGuards(const QString& path)
+{
+    QTemporaryDir templates;
+    auto* service = UserTemplateService::getInstance();
+    const auto previousGlobal = service->globalTemplateLocation();
+    const auto previousWorkspace = service->workspaceTemplateLocation();
+    MainWindow window;
+    window.workspaceSessionCoordinator->setRestoreOnActivation(false);
+    window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+    expect("template guard source is writable", writeText(path, "module guarded;\n\nendmodule\n"));
+    expect("template guard source opens", window.tabManager->openFileInTab(path));
+    service->setGlobalTemplateFilePath(templates.filePath("global.json"));
+    service->setWorkspaceTemplateFilePath(templates.filePath("workspace.json"));
+    auto* editor = window.tabManager->getCurrentEditor();
+    QTextCursor cursor(editor->document()); cursor.setPosition(16); editor->setTextCursor(cursor);
+    window.show();
+    window.activateWindow();
+    auto* coordinator = window.globalControlCoordinator.get();
+    auto capture = [&] {
+        editor->setFocus();
+        QApplication::processEvents();
+        const auto context = coordinator->contextProvider();
+        expect("production insertion context belongs to the focused document", context.editorAvailable
+            && context.documentInstance == window.tabManager->sharedDocumentForEditor(editor)->instanceSerial());
+        const auto items = coordinator->itemProvider(GlobalControlCategory::Templates, "", context);
+        const auto found = std::find_if(items.begin(), items.end(), [](const auto& item) {
+            return item.kind == GlobalControlItemKind::Template
+                && item.operation == GlobalControlItemOperation::InsertText && !item.insertionText.isEmpty();
+        });
+        expect("production template provider returns an insertion", found != items.end());
+        return found != items.end() ? *found : GlobalControlItem{};
+    };
+    auto item = capture();
+    auto before = editor->toPlainText();
+    service->reload();
+    coordinator->dispatch(item);
+    expect("manual template reload invalidates a captured insertion", editor->toPlainText() == before);
+    item = capture();
+    cursor = editor->textCursor(); cursor.movePosition(QTextCursor::NextCharacter); editor->setTextCursor(cursor);
+    coordinator->dispatch(item);
+    expect("cursor movement invalidates a captured template insertion", editor->toPlainText() == before);
+    item = capture();
+    editor->insertPlainText(" ");
+    before = editor->toPlainText();
+    coordinator->dispatch(item);
+    expect("document edit invalidates a captured template insertion", editor->toPlainText() == before);
+    item = capture();
+    coordinator->dispatch(item);
+    expect("fresh production template insertion still succeeds", editor->toPlainText() != before);
+    window.tabManager->clearCrashRecoveryAfterNormalClose();
+    service->setGlobalTemplateFilePath(previousGlobal);
+    service->setWorkspaceTemplateFilePath(previousWorkspace);
+}
 } // namespace
 
 int main(int argc, char** argv)
@@ -405,7 +519,9 @@ int main(int argc, char** argv)
     expect("isolated settings directory is available", settings.isValid());
     const QString path = settings.filePath("palette.sv");
     runPaletteRegression(path);
+    runTemplateCacheAndWriterRegression();
     runCatalogAndPanelRegression(path);
+    runTemplateInsertionVersionGuards(settings.filePath("guarded.sv"));
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }

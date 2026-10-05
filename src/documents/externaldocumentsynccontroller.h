@@ -74,7 +74,7 @@ public:
         QObject* parent = nullptr);
     ~ExternalDocumentSyncController() override;
 
-    void trackDocument(SharedDocument* document);
+    void trackDocument(SharedDocument* document, const DocumentFileReadResult* initialFile = nullptr);
     void untrackDocument(SharedDocument* document);
     void noteDocumentSaved(SharedDocument* document);
     void noteDocumentSaved(SharedDocument* document,

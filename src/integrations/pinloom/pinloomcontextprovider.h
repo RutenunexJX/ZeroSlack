@@ -10,6 +10,7 @@
 
 class PinloomContextView;
 struct PinloomCodeLinkAnchorRecord;
+struct PinloomSourceLinkResult;
 
 class ZEROSLACK_API PinloomContextProvider final
     : public IContextContentProvider
@@ -19,9 +20,12 @@ public:
         const QVariantMap&,
         const PinloomHostEntry&,
         QString*)>;
+    using CreateLinkReply = std::function<void(const PinloomSourceLinkResult&)>;
+    using CreateLinkHandler = std::function<void(const QVariantMap&, const QString&, CreateLinkReply)>;
 
     explicit PinloomContextProvider(PinloomHostClient* client);
     void setLinkHandler(LinkHandler handler);
+    void setCreateLinkHandler(CreateLinkHandler handler);
 
     static QString staticProviderId();
     static ContextResource homeResource(
@@ -67,6 +71,7 @@ public:
 private:
     QPointer<PinloomHostClient> clientValue;
     LinkHandler linkHandler;
+    CreateLinkHandler createLinkHandler;
 };
 
 #endif // PINLOOMCONTEXTPROVIDER_H

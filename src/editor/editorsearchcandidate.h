@@ -6,6 +6,7 @@
 #include <QList>
 #include <QMetaType>
 #include <QString>
+#include <functional>
 
 enum class EditorSearchCandidateType {
     File,
@@ -30,6 +31,9 @@ struct EditorSearchCandidate {
 };
 
 using EditorSearchCandidates = QList<EditorSearchCandidate>;
+using EditorSearchCancellation = std::function<bool()>;
+using EditorSearchTask = std::function<EditorSearchCandidates(const EditorSearchCancellation&)>;
+using EditorSearchTaskProvider = std::function<EditorSearchTask(const QString&)>;
 
 inline QString editorSearchCandidateTypeLabel(
     EditorSearchCandidateType type)

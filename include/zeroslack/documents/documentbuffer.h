@@ -1,5 +1,6 @@
 #pragma once
 #include <zeroslack/documents/documentsapi.h>
+#include <zeroslack/documents/documentfileread.h>
 #include <QObject>
 #include <QString>
 #include <QByteArray>
@@ -18,22 +19,26 @@ class ZEROSLACK_DOCUMENTS_API DocumentBuffer : public QObject {
     Q_OBJECT
 public:
     DocumentBuffer(const QString& documentId, const QString& fileName, const QString& initialText,
-                   QObject* parent = nullptr, QTextDocument* ownedDocument = nullptr);
+                   QObject* parent = nullptr, QTextDocument* ownedDocument = nullptr,
+                   const DocumentFileReadResult* initialFile = nullptr);
     ~DocumentBuffer() override = default;
     QString documentId() const;
     QString fileName() const;
     QTextDocument* textDocument() const;
     std::uint64_t textRevision() const;
+    std::uint64_t instanceSerial() const { return serial; }
     std::uint64_t savedTextRevision() const;
     QByteArray savedBaselineSha256() const;
     QDateTime savedBaselineModifiedUtc() const;
     bool dirty() const;
     bool readOnly() const;
+    DocumentFileFormat fileFormat() const { return format; }
     SharedDocumentExternalState externalState() const;
 
     void resetText(const QString& text,
                    std::uint64_t revision = 0,
-                   bool markClean = true);
+                   bool markClean = true,
+                   const DocumentFileReadResult* source = nullptr);
     void restoreSavedBaseline(
         const QByteArray& sha256,
         const QDateTime& modifiedUtc);
@@ -52,6 +57,7 @@ signals:
     void statusChanged();
 
 protected:
+    const std::uint64_t serial;
     QString id;
     QString normalizedFileName;
     QTextDocument* document = nullptr;
@@ -60,6 +66,8 @@ protected:
     QByteArray savedBaselineDigest;
     QDateTime savedBaselineModifiedTimeUtc;
     bool loadingText = false;
+    bool textInitialized = false;
+    DocumentFileFormat format;
     bool readOnlyState = false;
     bool lastDirtyState = false;
     SharedDocumentExternalState externalFileState =

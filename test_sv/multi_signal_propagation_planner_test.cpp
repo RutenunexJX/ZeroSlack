@@ -139,11 +139,14 @@ public:
         auto found = docs.find(fileName);
         if (found == docs.end())
             return false;
-        found->text = QString::fromUtf8(
+        const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(
                 snapshot.text.size()));
-        found->revision = snapshot.version.value;
+        if (found->text != restored) {
+            found->text = restored;
+            ++found->revision;
+        }
         return true;
     }
 };
@@ -719,6 +722,11 @@ int main(int argc, char** argv)
         planner.plan(
             dryRunQuery,
             fixture->documents);
+    if (!dryRun.ready()) {
+        std::printf("[DIAGNOSTIC] initial proposal: failure=%d, %s\n",
+                    static_cast<int>(dryRun.failure),
+                    dryRun.message.toUtf8().constData());
+    }
     expect("two-signal grouped ancestor proposal is high-risk dry-run",
            dryRun.ready()
                && dryRun.dryRun
@@ -1199,6 +1207,11 @@ int main(int argc, char** argv)
         planner.plan(
             staleRevision,
             fixture->documents);
+    if (staleDocument.failure != MultiSignalPropagationFailure::StaleDocumentRevision) {
+        std::printf("[DIAGNOSTIC] stale revision guard: failure=%d, %s\n",
+                    static_cast<int>(staleDocument.failure),
+                    staleDocument.message.toUtf8().constData());
+    }
     expect("old document revision is rejected even when text is unchanged",
            staleDocument.failure
                    == MultiSignalPropagationFailure::
@@ -1258,6 +1271,11 @@ int main(int argc, char** argv)
         planner.plan(
             syntaxError,
             fixture->documents);
+    if (brokenSyntax.failure != MultiSignalPropagationFailure::SyntaxError) {
+        std::printf("[DIAGNOSTIC] syntax guard: failure=%d, %s\n",
+                    static_cast<int>(brokenSyntax.failure),
+                    brokenSyntax.message.toUtf8().constData());
+    }
     expect("Tree-sitter syntax error rejects the whole batch",
            brokenSyntax.failure
                    == MultiSignalPropagationFailure::

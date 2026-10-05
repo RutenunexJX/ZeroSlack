@@ -110,6 +110,8 @@ QString statusReason(CrashRecoveryStatus status)
         return QStringLiteral("The snapshot belongs to another workspace.");
     case CrashRecoveryStatus::IdentityMismatch:
         return QStringLiteral("The snapshot identity is inconsistent.");
+    case CrashRecoveryStatus::Cancelled:
+        return QStringLiteral("The recovery snapshot was cancelled.");
     }
     return QStringLiteral("Unknown recovery status.");
 }
@@ -584,11 +586,26 @@ QString CrashRecoveryService::recoveryRootPath() const
     return configuredRecoveryRoot;
 }
 
+QString CrashRecoveryService::recoveryIdForDocument(const CrashRecoveryDocumentKey& document)
+{
+    const auto resolved = resolveDocumentKey(document);
+    return resolved.valid() ? resolved.recoveryId : QString();
+}
+
 CrashRecoveryWriteResult
 CrashRecoveryService::writeSnapshot(
-    const CrashRecoverySnapshotRequest& request) const
+    const CrashRecoverySnapshotRequest& request,
+    const std::function<bool(const std::function<bool()>&)>& commitIfCurrent,
+    const std::function<bool()>& isCancelled) const
 {
     CrashRecoveryWriteResult result;
+    const auto cancelled = [&] {
+        if (!isCancelled || !isCancelled()) return false;
+        result.status = CrashRecoveryStatus::Cancelled;
+        result.reason = statusReason(result.status);
+        return true;
+    };
+    if (cancelled()) return result;
     const ResolvedDocumentKey key =
         resolveDocumentKey(request.document);
     if (!key.valid()) {
@@ -647,6 +664,7 @@ CrashRecoveryService::writeSnapshot(
         request.text.toUtf8();
     const QByteArray textDigest =
         sha256(textBytes);
+    if (cancelled()) return result;
     if (!baselineDigest.isEmpty()
         && baselineDigest == textDigest) {
         result.status =
@@ -709,6 +727,7 @@ CrashRecoveryService::writeSnapshot(
                 .arg(file.errorString());
         return result;
     }
+    if (cancelled()) return result;
     const QByteArray payload =
         QJsonDocument(
             recordObject(
@@ -723,11 +742,14 @@ CrashRecoveryService::writeSnapshot(
         file.cancelWriting();
         return result;
     }
-    if (!file.commit()) {
-        result.status = CrashRecoveryStatus::IoError;
-        result.reason =
-            QStringLiteral("Cannot commit recovery snapshot: %1")
-                .arg(file.errorString());
+    bool attempted = false;
+    const auto commit = [&] { attempted = true; return file.commit(); };
+    if (!(commitIfCurrent ? commitIfCurrent(commit) : commit())) {
+        result.status = attempted ? CrashRecoveryStatus::IoError : CrashRecoveryStatus::Cancelled;
+        result.reason = attempted
+            ? QStringLiteral("Cannot commit recovery snapshot: %1").arg(file.errorString())
+            : statusReason(result.status);
+        if (!attempted) file.cancelWriting();
         return result;
     }
 

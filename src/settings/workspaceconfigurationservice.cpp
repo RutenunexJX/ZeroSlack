@@ -21,6 +21,49 @@ constexpr const char* kProjectFile =
     "project.json";
 constexpr const char* kLegacyFile = ".zs";
 
+bool validConfigurationFields(const QJsonObject& object, bool legacy)
+{
+    const auto pathsValid = [legacy](const QJsonValue& value) {
+        if (value.isUndefined()) return true;
+        if (!value.isArray()) return false;
+        for (const auto& item : value.toArray()) {
+            if (item.isString()) continue;
+            if (!legacy || !item.isObject()) return false;
+            const auto path = item.toObject();
+            if (!path.value("path").isString()
+                || (path.contains("relative") && !path.value("relative").isBool())) return false;
+        }
+        return true;
+    };
+    if (!pathsValid(object.value("includeDirs")) || !pathsValid(object.value("ignoredDirs"))) return false;
+    if (object.contains("fileExtensions")) {
+        if (!object.value("fileExtensions").isArray()) return false;
+        for (const auto& value : object.value("fileExtensions").toArray())
+            if (!value.isString()) return false;
+    }
+    if (object.contains("topModule") && !object.value("topModule").isString()) return false;
+    if (object.contains("defines")) {
+        if (!object.value("defines").isObject()) return false;
+        const auto defines = object.value("defines").toObject();
+        for (auto it = defines.begin(); it != defines.end(); ++it)
+            if (it.key().trimmed().isEmpty() || !it.value().isString()) return false;
+    }
+    if (object.contains("virtualSourceGroups")) {
+        if (!object.value("virtualSourceGroups").isArray()) return false;
+        QSet<QString> names;
+        for (const auto& value : object.value("virtualSourceGroups").toArray()) {
+            if (!value.isObject()) return false;
+            const auto group = value.toObject();
+            const auto name = group.value("name").toString().trimmed().toCaseFolded();
+            if (name.isEmpty() || names.contains(name) || !group.value("files").isArray()) return false;
+            names.insert(name);
+            for (const auto& file : group.value("files").toArray())
+                if (!file.isString()) return false;
+        }
+    }
+    return true;
+}
+
 QString pathKey(const QString& path)
 {
 #ifdef Q_OS_WIN
@@ -428,25 +471,32 @@ WorkspaceConfigurationService::loadWithResult(
         return result;
     }
 
+    const auto fail = [&result](WorkspaceConfigurationLoadState state, const QString& message) {
+        result.state = state;
+        result.loaded = false;
+        result.configuration = {};
+        result.message = message;
+        return result;
+    };
     QFile project(result.projectFilePath);
-    if (project.open(QIODevice::ReadOnly
-                     | QIODevice::Text)) {
-        const QJsonDocument document =
-            QJsonDocument::fromJson(
-                project.readAll());
-        project.close();
-        const QJsonObject object =
-            document.object();
-        if (document.isObject()
-            && object.value(
-                   QStringLiteral("schema"))
-                       .toString()
-                   == QString::fromLatin1(
-                       kProjectSchema)
-            && object.value(
-                   QStringLiteral("version"))
-                       .toInt()
-                   == kVersion) {
+    const QFileInfo projectInfo(result.projectFilePath);
+    if (projectInfo.exists() || projectInfo.isSymLink()) {
+        if (!project.open(QIODevice::ReadOnly))
+            return fail(WorkspaceConfigurationLoadState::ReadError,
+                        QStringLiteral("Cannot read project configuration %1: %2").arg(result.projectFilePath, project.errorString()));
+        const auto bytes = project.readAll();
+        if (project.error() != QFileDevice::NoError)
+            return fail(WorkspaceConfigurationLoadState::ReadError, project.errorString());
+        const auto document = QJsonDocument::fromJson(bytes);
+        const auto object = document.object();
+        if (!document.isObject())
+            return fail(WorkspaceConfigurationLoadState::Invalid, QStringLiteral("Project configuration is not a JSON object."));
+        if (object.value("schema").toString() != QString::fromLatin1(kProjectSchema)
+            || !object.value("version").isDouble() || object.value("version").toDouble() != kVersion)
+            return fail(WorkspaceConfigurationLoadState::Unsupported, QStringLiteral("Project configuration schema or version is unsupported."));
+        if (!validConfigurationFields(object, false))
+            return fail(WorkspaceConfigurationLoadState::Invalid, QStringLiteral("Project configuration fields are invalid."));
+        {
             WorkspaceConfiguration configuration;
             configuration.workspaceRoot =
                 result.configuration.workspaceRoot;
@@ -490,6 +540,7 @@ WorkspaceConfigurationService::loadWithResult(
             result.configuration =
                 normalized(configuration);
             result.loaded = true;
+            result.state = WorkspaceConfigurationLoadState::Loaded;
             result.source =
                 WorkspaceConfigurationSource::
                     ProjectFile;
@@ -498,41 +549,30 @@ WorkspaceConfigurationService::loadWithResult(
                     "Portable project configuration loaded.");
             return result;
         }
-        result.message =
-            QStringLiteral(
-                "Portable project configuration is invalid.");
-        return result;
     }
 
     QFile legacy(result.legacyFilePath);
-    if (!legacy.open(QIODevice::ReadOnly
-                     | QIODevice::Text)) {
-        result.message =
-            QStringLiteral(
-                "Using default workspace configuration.");
+    const QFileInfo legacyInfo(result.legacyFilePath);
+    if (!legacyInfo.exists() && !legacyInfo.isSymLink()) {
+        result.message = QStringLiteral("Using default workspace configuration.");
         return result;
     }
-    const QJsonDocument legacyDocument =
-        QJsonDocument::fromJson(
-            legacy.readAll());
-    legacy.close();
-    const QJsonObject legacyObject =
-        legacyDocument.object();
-    if (!legacyDocument.isObject()
-        || legacyObject.value(
-               QStringLiteral("schema"))
-                   .toString()
-               != QString::fromLatin1(
-                   kLegacySchema)
-        || legacyObject.value(
-               QStringLiteral("version"))
-                   .toInt()
-               != 1) {
-        result.message =
-            QStringLiteral(
-                "Legacy .zs configuration is unsupported.");
-        return result;
-    }
+    if (!legacy.open(QIODevice::ReadOnly))
+        return fail(WorkspaceConfigurationLoadState::ReadError,
+                    QStringLiteral("Cannot read legacy configuration %1: %2").arg(result.legacyFilePath, legacy.errorString()));
+    const auto legacyBytes = legacy.readAll();
+    if (legacy.error() != QFileDevice::NoError)
+        return fail(WorkspaceConfigurationLoadState::ReadError, legacy.errorString());
+    const auto legacyDocument = QJsonDocument::fromJson(legacyBytes);
+    const auto legacyObject = legacyDocument.object();
+    if (!legacyDocument.isObject())
+        return fail(WorkspaceConfigurationLoadState::Invalid, QStringLiteral("Legacy configuration is not a JSON object."));
+    if (legacyObject.value("schema").toString() != QString::fromLatin1(kLegacySchema)
+        || !legacyObject.value("version").isDouble() || legacyObject.value("version").toDouble() != 1)
+        return fail(WorkspaceConfigurationLoadState::Unsupported, QStringLiteral("Legacy configuration schema or version is unsupported."));
+    if ((legacyObject.contains("workspaceConfiguration") && !legacyObject.value("workspaceConfiguration").isObject())
+        || !validConfigurationFields(legacyObject.value("workspaceConfiguration").toObject(), true))
+        return fail(WorkspaceConfigurationLoadState::Invalid, QStringLiteral("Legacy configuration fields are invalid."));
 
     const QJsonObject object =
         legacyObject.value(
@@ -574,6 +614,7 @@ WorkspaceConfigurationService::loadWithResult(
     result.configuration =
         normalized(configuration);
     result.loaded = true;
+            result.state = WorkspaceConfigurationLoadState::Loaded;
     result.source =
         WorkspaceConfigurationSource::
             LegacySession;
@@ -596,7 +637,7 @@ bool WorkspaceConfigurationService::save(
 {
     const WorkspaceConfiguration clean =
         normalized(configuration);
-    if (!clean.isValid())
+    if (!clean.isValid() || !loadWithResult(clean.workspaceRoot).usable())
         return false;
 
     const QString filePath =
@@ -642,15 +683,11 @@ bool WorkspaceConfigurationService::save(
             clean.workspaceRoot,
             clean.virtualSourceGroups));
 
+    const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Indented);
     QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly
-                   | QIODevice::Text)) {
-        return false;
-    }
-    if (file.write(
-            QJsonDocument(object).toJson(
-                QJsonDocument::Indented))
-        < 0) {
+    file.setDirectWriteFallback(false);
+    if (!file.open(QIODevice::WriteOnly)) return false;
+    if (file.write(bytes) != bytes.size()) {
         file.cancelWriting();
         return false;
     }

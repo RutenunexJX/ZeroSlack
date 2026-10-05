@@ -1243,6 +1243,18 @@ int main(int argc, char** argv) {
     ghostQuery.documentText = ghostText;
     const GhostAnnotationReport ghostReport =
         ghostService.annotationsForDocument(ghostQuery);
+    auto cancelledGhostQuery = ghostQuery;
+    int ghostCheckpoints = 0;
+    cancelledGhostQuery.cancelled = [&] { ++ghostCheckpoints; return false; };
+    const auto checkpointReport = ghostService.annotationsForDocument(cancelledGhostQuery);
+    expectBool("Ghost cancellation checkpoints preserve complete results",
+        checkpointReport.annotations.size() == ghostReport.annotations.size() && ghostCheckpoints > 20, true);
+    const int cancelAfter = ghostCheckpoints / 2;
+    ghostCheckpoints = 0;
+    cancelledGhostQuery.cancelled = [&] { return ++ghostCheckpoints > cancelAfter; };
+    expectBool("Ghost cancellation exits internal computation without partial annotations",
+        ghostService.annotationsForDocument(cancelledGhostQuery).annotations.isEmpty()
+            && ghostCheckpoints <= cancelAfter + 2, true);
     expectGhostContains("Ghost port formal",
                         ghostReport,
                         GhostAnnotationKind::FormalPort,

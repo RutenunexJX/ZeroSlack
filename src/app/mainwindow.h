@@ -74,6 +74,7 @@ struct UserTemplateLoadReport;
 struct SemanticAnalysisTelemetry;
 struct SettingsCenterSnapshot;
 struct ScopedSearchPanelContext;
+enum class ScopedSearchScope;
 struct ContextResource;
 struct LiveInsightToolContext;
 
@@ -178,7 +179,7 @@ private:
     void applyModernShellStyle(bool applyApplicationTheme = true);
     void refreshThemePresentation();
     void setupSemanticDocks();
-    ScopedSearchPanelContext scopedSearchContext() const;
+    ScopedSearchPanelContext scopedSearchContext(ScopedSearchScope scope) const;
     void setupNavigationCommandCoordinator();
     void setupFileCommandCoordinator();
     void setupGlobalControl();

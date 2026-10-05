@@ -2,6 +2,7 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "pinloomcontextview.h"
+#include "pinloomcodelinkcoordinator.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -400,6 +401,30 @@ PinloomContextView::PinloomContextView(PinloomHostClient* client,
     buildUi();
 }
 
+PinloomContextView::~PinloomContextView()
+{
+    if (clientValue) clientValue->cancelReadRequests(this);
+}
+
+void PinloomContextView::hideEvent(QHideEvent* event)
+{
+    if (clientValue && clientValue->cancelReadRequests(this)) {
+        ++searchGeneration;
+        ++resolveGeneration;
+        resumeReadRequests = true;
+    }
+    QWidget::hideEvent(event);
+}
+
+void PinloomContextView::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    if (!resumeReadRequests) return;
+    resumeReadRequests = false;
+    if (boundMode && selectedEntry.isValid()) resolveEntry(selectedEntry.identity, false);
+    else startSearch();
+}
+
 QVariantMap PinloomContextView::saveState() const
 {
     QVariantMap state;
@@ -419,6 +444,10 @@ QVariantMap PinloomContextView::saveState() const
 
 void PinloomContextView::restoreState(const QVariantMap& state)
 {
+    if (clientValue) clientValue->cancelReadRequests(this);
+    ++searchGeneration;
+    ++resolveGeneration;
+    resumeReadRequests = false;
     activeBoundEntries =
         state.value(QStringLiteral("boundEntries")).toList();
     boundMode = !activeBoundEntries.isEmpty();
@@ -503,8 +532,14 @@ void PinloomContextView::setLinkHandler(LinkHandler handler)
     linkHandler = std::move(handler);
 }
 
+void PinloomContextView::setCreateLinkHandler(CreateLinkHandler handler)
+{
+    createLinkHandler = std::move(handler);
+}
+
 void PinloomContextView::setLinkSource(const QVariantMap& source)
 {
+    ++linkSourceGeneration;
     activeLinkSource = source;
     const bool active = !source.isEmpty()
         && !source.value(QStringLiteral("selectedText")).toString().isEmpty();
@@ -539,7 +574,7 @@ void PinloomContextView::setLinkSource(const QVariantMap& source)
     }
     linkTitleEdit->setText(title);
     attachEntryButton->setEnabled(selectedEntry.isValid());
-    createAnchorButton->setEnabled(clientValue);
+    createAnchorButton->setEnabled(bool(createLinkHandler));
 }
 
 bool PinloomContextView::linkModeActive() const
@@ -752,7 +787,7 @@ void PinloomContextView::startSearch()
             const QString& error) {
             if (self)
                 self->applySearchResults(entries, error, generation, preferred);
-        });
+        }, this);
 }
 
 void PinloomContextView::applyBoundEntries(
@@ -889,7 +924,7 @@ void PinloomContextView::resolveEntry(
             const QString& error) {
             if (self)
                 self->showDocument(document, error, generation, announceChange);
-        });
+        }, this);
 }
 
 void PinloomContextView::showDocument(
@@ -1044,7 +1079,7 @@ void PinloomContextView::attachCurrentEntry()
 
 void PinloomContextView::createSourceAnchor()
 {
-    if (!clientValue || !linkModeActive())
+    if (!createLinkHandler || !linkModeActive())
         return;
     attachEntryButton->setEnabled(false);
     createAnchorButton->setEnabled(false);
@@ -1052,25 +1087,20 @@ void PinloomContextView::createSourceAnchor()
     const QVariantMap source = activeLinkSource;
     const QString title = linkTitleEdit->text().trimmed();
     const QPointer<PinloomContextView> self(this);
-    clientValue->createSourceAnchor(
+    const quint64 generation = linkSourceGeneration;
+    createLinkHandler(
         source,
         title,
-        [self](const PinloomHostEntry& entry,
-               const QString& error) {
-            if (!self)
+        [self, generation](const PinloomSourceLinkResult& result) {
+            if (!self || generation != self->linkSourceGeneration)
                 return;
             self->createAnchorButton->setEnabled(true);
             self->attachEntryButton->setEnabled(
                 self->selectedEntry.isValid());
-            if (!error.isEmpty() || !entry.isValid()) {
-                self->setStatus(
-                    error.isEmpty()
-                        ? QStringLiteral("Pinloom did not return the created anchor.")
-                        : error);
-                return;
-            }
-            self->selectEntry(entry);
-            self->finishLink(entry);
+            if (result.entry.isValid()) self->selectEntry(result.entry);
+            if (!self || generation != self->linkSourceGeneration) return;
+            if (result.linked) self->setLinkSource({});
+            self->setStatus(result.message);
         });
 }
 

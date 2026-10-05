@@ -1,11 +1,27 @@
 #include "rtledit/workspace_edit_transaction.h"
 
 #include <algorithm>
+#include <map>
 #include <sstream>
 #include <utility>
 
 namespace rtledit {
 namespace {
+
+class PreviewSnapshotCache final : public WorkspaceDocumentManager {
+public:
+    explicit PreviewSnapshotCache(const WorkspaceDocumentManager& source) : source(source) {}
+    std::optional<WorkspaceDocumentSnapshot> snapshot(const std::string& path) const override {
+        const auto found = values.find(path);
+        if (found != values.end()) return found->second;
+        return values.emplace(path, source.snapshot(path)).first->second;
+    }
+    bool applyTextEdits(const std::string&, DocumentVersion, const std::vector<WorkspaceTextEdit>&) override { return false; }
+    bool restoreSnapshot(const std::string&, const WorkspaceDocumentSnapshot&) override { return false; }
+private:
+    const WorkspaceDocumentManager& source;
+    mutable std::map<std::string, std::optional<WorkspaceDocumentSnapshot>> values;
+};
 
 bool sameSnapshot(const WorkspaceDocumentSnapshot& left,
                   const WorkspaceDocumentSnapshot& right) {
@@ -86,12 +102,13 @@ WorkspaceEditTransactionCoordinator::prepare(
     WorkspaceEditPlan plan,
     const WorkspaceDocumentManager& documents,
     bool dryRun) const {
+    const PreviewSnapshotCache snapshots(documents);
     PreparedWorkspaceEditTransaction prepared;
     prepared.plan = std::move(plan);
     prepared.preview =
-        buildWorkspaceEditPreview(prepared.plan, documents);
+        buildWorkspaceEditPreview(prepared.plan, snapshots);
     prepared.sourceDiff =
-        buildWorkspaceEditSourceDiff(prepared.plan, documents);
+        buildWorkspaceEditSourceDiff(prepared.plan, snapshots);
     prepared.status =
         prepareStatus(prepared.preview, prepared.sourceDiff);
     prepared.dryRun = dryRun;
@@ -106,12 +123,13 @@ WorkspaceEditTransactionCoordinator::prepare(
     SemanticIndexSnapshot currentSemanticSnapshot,
     const WorkspaceDocumentManager& documents,
     bool dryRun) const {
+    const PreviewSnapshotCache snapshots(documents);
     PreparedWorkspaceEditTransaction prepared;
     prepared.plan = std::move(plan);
     prepared.preview = buildWorkspaceEditPreview(
-        prepared.plan, currentSemanticSnapshot, documents);
+        prepared.plan, currentSemanticSnapshot, snapshots);
     prepared.sourceDiff = buildWorkspaceEditSourceDiff(
-        prepared.plan, std::move(currentSemanticSnapshot), documents);
+        prepared.plan, std::move(currentSemanticSnapshot), snapshots);
     prepared.status =
         prepareStatus(prepared.preview, prepared.sourceDiff);
     prepared.dryRun = dryRun;
@@ -189,8 +207,12 @@ WorkspaceEditTransactionCoordinator::undo(
     result.message = restored.message;
     result.changedFiles = restored.changedFiles;
     result.residualFiles = restored.residualFiles;
-    if (!restored.restored())
+    if (!restored.restored()) {
+        rebaseHistory(entry.expectedCurrent, restored.resultingState);
         return result;
+    }
+    rebaseHistory(entry.before, restored.resultingState);
+    entry = undoEntries.back();
 
     undoEntries.pop_back();
     entry.expectedCurrent = restored.resultingState;
@@ -218,8 +240,12 @@ WorkspaceEditTransactionCoordinator::redo(
     result.message = restored.message;
     result.changedFiles = restored.changedFiles;
     result.residualFiles = restored.residualFiles;
-    if (!restored.restored())
+    if (!restored.restored()) {
+        rebaseHistory(entry.expectedCurrent, restored.resultingState);
         return result;
+    }
+    rebaseHistory(entry.after, restored.resultingState);
+    entry = redoEntries.back();
 
     redoEntries.pop_back();
     entry.expectedCurrent = restored.resultingState;
@@ -303,53 +329,38 @@ WorkspaceEditTransactionCoordinator::restoreAtomically(
         }
     }
 
-    std::size_t restoredCount = 0;
-    for (; restoredCount < target.size(); ++restoredCount) {
-        if (documents.restoreSnapshot(
-                target[restoredCount].filePath,
-                target[restoredCount].snapshot)) {
-            continue;
+    const auto verifiedStates = [&documents](const std::vector<DocumentState>& expected) {
+        auto actual = captureStates(expected, documents);
+        if (actual.size() != expected.size()) return std::vector<DocumentState>{};
+        for (std::size_t i = 0; i < actual.size(); ++i)
+            if (actual[i].snapshot.text != expected[i].snapshot.text) return std::vector<DocumentState>{};
+        return actual;
+    };
+    const auto rollback = [&](std::size_t attempted) {
+        RestoreResult failed;
+        for (std::size_t i = attempted; i-- > 0;) {
+            if (!documents.restoreSnapshot(expectedCurrent[i].filePath, expectedCurrent[i].snapshot))
+                failed.residualFiles.push_back(expectedCurrent[i].filePath);
         }
-
-        std::vector<std::string> residual;
-        auto rollback = [&](std::size_t index) {
-            if (!documents.restoreSnapshot(
-                    expectedCurrent[index].filePath,
-                    expectedCurrent[index].snapshot)) {
-                residual.push_back(expectedCurrent[index].filePath);
-            }
-        };
-        rollback(restoredCount);
-        while (restoredCount > 0) {
-            --restoredCount;
-            rollback(restoredCount);
-        }
-        result.status = TransactionStatus::RestoreFailed;
-        result.residualFiles = std::move(residual);
-        result.message =
-            "Atomic workspace transaction restore failed.";
-        return result;
-    }
-
-    result.resultingState = captureStates(target, documents);
-    if (result.resultingState.size() != target.size()) {
-        std::vector<std::string> residual;
-        for (std::size_t index = expectedCurrent.size(); index-- > 0;) {
-            if (!documents.restoreSnapshot(
-                    expectedCurrent[index].filePath,
-                    expectedCurrent[index].snapshot)) {
-                residual.push_back(expectedCurrent[index].filePath);
+        auto actual = captureStates(expectedCurrent, documents);
+        for (std::size_t i = 0; i < expectedCurrent.size(); ++i) {
+            if (actual.size() != expectedCurrent.size() || actual[i].snapshot.text != expectedCurrent[i].snapshot.text) {
+                const auto& path = expectedCurrent[i].filePath;
+                if (std::find(failed.residualFiles.begin(), failed.residualFiles.end(), path) == failed.residualFiles.end())
+                    failed.residualFiles.push_back(path);
             }
         }
-        result.status = TransactionStatus::RestoreFailed;
-        result.residualFiles = std::move(residual);
-        result.message = result.residualFiles.empty()
-            ? "Unable to verify all restored workspace documents; "
-              "restored the transaction's previous state."
-            : "Unable to verify all restored workspace documents; "
-              "rollback left residual files.";
-        return result;
-    }
+        if (failed.residualFiles.empty()) failed.resultingState = std::move(actual);
+        failed.status = TransactionStatus::RestoreFailed;
+        failed.message = failed.residualFiles.empty()
+            ? "Atomic restore failed; previous contents restored and history revisions advanced for retry."
+            : "Atomic restore failed; rollback left residual files.";
+        return failed;
+    };
+    for (std::size_t index = 0; index < target.size(); ++index)
+        if (!documents.restoreSnapshot(target[index].filePath, target[index].snapshot)) return rollback(index + 1);
+    result.resultingState = verifiedStates(target);
+    if (result.resultingState.size() != target.size()) return rollback(target.size());
     result.status = successStatus;
     result.changedFiles = filePaths(target);
     result.message = successStatus == TransactionStatus::Undone
@@ -400,6 +411,11 @@ WorkspaceEditTransactionCoordinator::applyPrepared(
               prepared.plan, *currentSemanticSnapshot, documents)
         : applyWorkspaceEditPlan(prepared.plan, documents);
     if (!applyResult.applied()) {
+        if (applyResult.patchResult.status == ApplyStatus::DocumentApplyFailed
+            && applyResult.patchResult.changedFiles.empty()) {
+            const auto rolledBack = captureStates(before, documents);
+            rebaseHistory(before, rolledBack);
+        }
         WorkspaceEditTransactionResult result;
         result.status =
             applyResult.status == PlanApplyStatus::Stale
@@ -425,6 +441,13 @@ WorkspaceEditTransactionCoordinator::applyPrepared(
         result.status = TransactionStatus::RestoreFailed;
         result.message =
             "Applied workspace edit but could not capture its undo state.";
+        const auto rolledBack = captureStates(before, documents);
+        for (std::size_t i = 0; i < before.size(); ++i) {
+            if ((rolledBack.size() != before.size() || rolledBack[i].snapshot.text != before[i].snapshot.text)
+                && std::find(residual.begin(), residual.end(), before[i].filePath) == residual.end())
+                residual.push_back(before[i].filePath);
+        }
+        if (residual.empty()) rebaseHistory(before, rolledBack);
         result.residualFiles = std::move(residual);
         result.applyResult = std::move(applyResult);
         return result;
@@ -442,6 +465,29 @@ WorkspaceEditTransactionCoordinator::applyPrepared(
     result.changedFiles = applyResult.patchResult.changedFiles;
     result.applyResult = std::move(applyResult);
     return result;
+}
+
+void WorkspaceEditTransactionCoordinator::rebaseHistory(
+    const std::vector<DocumentState>& previous,
+    const std::vector<DocumentState>& restored) {
+    if (previous.size() != restored.size()) return;
+    for (std::size_t i = 0; i < previous.size(); ++i)
+        if (previous[i].filePath != restored[i].filePath
+            || previous[i].snapshot.text != restored[i].snapshot.text) return;
+    const auto advance = [&](std::vector<DocumentState>& states) {
+        for (auto& state : states)
+            for (std::size_t i = 0; i < previous.size(); ++i)
+                if (state.filePath == previous[i].filePath && sameSnapshot(state.snapshot, previous[i].snapshot)) {
+                    state.snapshot = restored[i].snapshot;
+                    break;
+                }
+    };
+    // before/after carry the same state identities as expectedCurrent. Advance
+    // all three so future redo chains can recognize this exact restored state.
+    for (auto* stack : {&undoEntries, &redoEntries})
+        for (auto& entry : *stack) {
+            advance(entry.before); advance(entry.after); advance(entry.expectedCurrent);
+        }
 }
 
 void WorkspaceEditTransactionCoordinator::pushUndo(

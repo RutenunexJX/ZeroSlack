@@ -39,6 +39,7 @@ public:
     // entries. SemanticIndex traversal occurs only when the caller refreshes
     // the catalog; cached entries retain no complete semantic records.
     EditorSearchCandidates query(const QString& rawQuery) const;
+    EditorSearchTask queryTask(const QString& rawQuery) const;
 
 private:
     struct SemanticCatalogEntry {

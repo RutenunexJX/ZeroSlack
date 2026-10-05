@@ -47,6 +47,7 @@ private slots:
     void fixedKindSectionPublishesStatusAndTrimsChrome();
     void emptyFixedKindSectionOffersReachableTargets();
     void targetSurvivesDocumentSwitchAndReceivesFreshRevisions();
+    void surfaceNotificationDuringChildTeardownIsIgnored();
 };
 
 void LiveInsightsContextProviderTest::initTestCase()
@@ -673,6 +674,40 @@ void LiveInsightsContextProviderTest::targetSurvivesDocumentSwitchAndReceivesFre
     QCOMPARE(fullView.contextForTest().moduleName, QStringLiteral("uart"));
     QCOMPARE(fullView.contextForTest().documentRevision, 11);
     QCOMPARE(fullView.contextForTest().documentText, current.documentText);
+}
+
+void LiveInsightsContextProviderTest::surfaceNotificationDuringChildTeardownIsIgnored()
+{
+    LiveInsightSession session;
+    auto* view = new LiveInsightsContextView(&session, LiveInsightKind::Module);
+    const auto context = stubContext(QStringLiteral("uart"), {});
+    view->setToolContextSource([&] { return context; });
+    view->show();
+    QCoreApplication::processEvents();
+    QVERIFY(view->surfaceForTest());
+    QPointer<LiveInsightSession> surfaceSession = view->surfaceForTest()->graphSession();
+    QVERIFY(surfaceSession);
+    int teardownNotifications = 0;
+    int staleUiUpdates = 0;
+    QPointer<QLabel> status = view->kindStatusLabel(LiveInsightKind::Module);
+    QObject::connect(view->kindSummaryLabel(LiveInsightKind::Module), &QObject::destroyed, this,
+        [&] {
+            if (surfaceSession) {
+                ++teardownNotifications;
+                // Exercise the same reentrant notification as removing a
+                // visible graph consumer during child-widget destruction.
+                const QString before = status ? status->text() : QString();
+                auto snapshot = surfaceSession->snapshot(LiveInsightKind::Module);
+                snapshot.phase = LiveInsightPhase::Error;
+                snapshot.errorText = QStringLiteral("late teardown notification");
+                emit surfaceSession->snapshotChanged(LiveInsightKind::Module, snapshot);
+                if (status && status->text() != before) ++staleUiUpdates;
+            }
+        });
+    delete view;
+    QCOMPARE(teardownNotifications, 1);
+    QCOMPARE(staleUiUpdates, 0);
+    QVERIFY(!surfaceSession);
 }
 
 QTEST_MAIN(LiveInsightsContextProviderTest)

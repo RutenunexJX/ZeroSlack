@@ -3,8 +3,26 @@
 
 #include <QList>
 #include <QString>
+#include <QVector>
+#include <memory>
+class TSDocument;
 
 namespace StructuredWhitespaceFormatter {
+
+class SyntaxContext {
+public:
+    struct Token { QString text; QString trimmedComment; bool comment = false; };
+    SyntaxContext();
+    ~SyntaxContext();
+    const TSDocument& syntaxFor(const QString& text);
+    const QVector<int>& lineStartsFor(const QString& text);
+    const QList<Token>& immutableTokensFor(const QString& text);
+    quint64 parseCount() const;
+    quint64 reuseCount() const;
+private:
+    struct Impl;
+    std::unique_ptr<Impl> data;
+};
 
 struct LineRange {
     int firstLine = -1;
@@ -20,7 +38,8 @@ struct LineRange {
 // Tree-sitter comment and string ranges are immutable and remain byte-exact.
 QString normalizeLexicalWhitespaceTabs(const QString& text,
                                        int spacesPerTab,
-                                       QString* rejectionReason = nullptr);
+                                       QString* rejectionReason = nullptr,
+                                       SyntaxContext* context = nullptr);
 
 // Re-indents parsed SystemVerilog structure from Tree-sitter ownership.
 // Edits are limited to line-leading whitespace and case-label gaps.
@@ -31,30 +50,32 @@ QString formatStructuralIndentation(
     bool indentCaseItemBodies = true,
     bool alignCaseItems = true,
     bool preservePreprocessorIndent = true,
-    QString* rejectionReason = nullptr);
+    QString* rejectionReason = nullptr,
+    SyntaxContext* context = nullptr);
 
 // Formats module headers, ANSI parameter / port declarations, and module
 // instantiation associations from Tree-sitter spans. Every produced edit is
 // confined to a whitespace gap between immutable syntax tokens.
 QString format(const QString& text,
                int indentWidth,
-               QString* rejectionReason = nullptr);
+               QString* rejectionReason = nullptr,
+               SyntaxContext* context = nullptr);
 
 // Returns syntax regions that the structured formatter cannot update as one
 // complete whitespace-only transaction. FormatterService uses these ranges
 // to prevent the legacy line formatter from changing only part of a header or
 // instantiation before the structured formatter declines it.
 QList<LineRange> conservativeLineRanges(const QString& text,
-                                        int indentWidth);
+                                        int indentWidth, SyntaxContext* context = nullptr);
 
 // Returns only Tree-sitter ERROR / missing-node line ranges. Callers use
 // these ranges to keep later non-structural alignment passes conservative.
-QList<LineRange> syntaxErrorLineRanges(const QString& text);
+QList<LineRange> syntaxErrorLineRanges(const QString& text, SyntaxContext* context = nullptr);
 
 // The formatter's final safety gate. Whitespace may change, but every
 // non-whitespace code unit must remain byte-for-byte ordered and identical.
 bool hasIdenticalNonWhitespaceStream(const QString& before,
-                                     const QString& after);
+                                     const QString& after, SyntaxContext* context = nullptr);
 
 } // namespace StructuredWhitespaceFormatter
 

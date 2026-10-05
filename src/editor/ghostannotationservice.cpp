@@ -11,16 +11,22 @@ std::unique_ptr<GhostAnnotationService>
     GhostAnnotationService::instance = nullptr;
 
 namespace {
+struct Cancelled {};
+void checkpoint(const std::function<bool()>& cancelled)
+{
+    if (cancelled && cancelled()) throw Cancelled{};
+}
 struct LineInfo {
     QString text;
     int startPosition = 0;
 };
 
-QList<LineInfo> documentLines(const QString& text)
+QList<LineInfo> documentLines(const QString& text, const std::function<bool()>& cancelled)
 {
     QList<LineInfo> result;
     int start = 0;
     while (start <= text.size()) {
+        checkpoint(cancelled);
         int end = text.indexOf(QLatin1Char('\n'), start);
         if (end < 0)
             end = text.size();
@@ -154,7 +160,8 @@ QString stripFormalDeclarationSeparator(QString text)
 QList<SemanticSymbolRecord> matchingPortRecords(
     SemanticIndex* index,
     const QString& moduleName,
-    const QString& formalName)
+    const QString& formalName,
+    const std::function<bool()>& cancelled)
 {
     QList<SemanticSymbolRecord> result;
     if (!index || formalName.isEmpty())
@@ -162,6 +169,7 @@ QList<SemanticSymbolRecord> matchingPortRecords(
     QSet<QString> seenDeclarations;
     for (const SemanticSymbolRecord& record :
          index->getSymbolRecordsByName(formalName)) {
+        checkpoint(cancelled);
         if (!isPortRecord(record) || record.name != formalName)
             continue;
         if (!moduleName.isEmpty() && record.owner.name != moduleName)
@@ -227,13 +235,15 @@ void appendFormalPortAnnotations(
     const QList<SemanticSymbolRecord>& fileRecords,
     SemanticIndex* index,
     const HierarchyInstanceContext& instanceContext,
-    QList<GhostAnnotation>* output)
+    QList<GhostAnnotation>* output,
+    const std::function<bool()>& cancelled)
 {
     if (!output)
         return;
 
     QSet<QString> emittedAnnotationKeys;
     for (const SemanticSymbolRecord& instPin : fileRecords) {
+        checkpoint(cancelled);
         if (instPin.collectorKind
                 != SymbolTaxonomy::CollectorKind::InstPin
             || instPin.location.startLine <= 0
@@ -246,7 +256,7 @@ void appendFormalPortAnnotations(
             ? instPin.type.resolvedTypeName
             : instPin.type.rawTypeText;
         const QList<SemanticSymbolRecord> ports = matchingPortRecords(
-            index, moduleName, formalName);
+            index, moduleName, formalName, cancelled);
         if (ports.size() != 1)
             continue;
         const SemanticSymbolRecord& port = ports.first();
@@ -352,6 +362,7 @@ void appendSymbolEffectiveValueAnnotations(
         return;
 
     for (const SemanticSymbolRecord& record : records) {
+        checkpoint(query.cancelled);
         if (record.location.startLine <= 0
             || record.location.startLine > lines.size()) {
             continue;
@@ -437,11 +448,13 @@ QString bracketText(const QString& expression)
 
 void appendExpressionFactAnnotations(
     const QList<EffectiveValueFact>& facts,
-    QList<GhostAnnotation>* output)
+    QList<GhostAnnotation>* output,
+    const std::function<bool()>& cancelled)
 {
     if (!output)
         return;
     for (const EffectiveValueFact& fact : facts) {
+        checkpoint(cancelled);
         if (!fact.isValid()
             || fact.status == EffectiveValueStatus::Error
             || fact.status == EffectiveValueStatus::Stale) {
@@ -499,14 +512,19 @@ void appendExpressionFactAnnotations(
 }
 
 QList<GhostAnnotation> mergeLineTailAnnotations(
-    QList<GhostAnnotation> annotations)
+    QList<GhostAnnotation> annotations, const std::function<bool()>& cancelled)
 {
-    std::stable_sort(annotations.begin(), annotations.end(), startsBefore);
+    int comparisons = 0;
+    std::stable_sort(annotations.begin(), annotations.end(), [&](const auto& a, const auto& b) {
+        if ((++comparisons & 255) == 0) checkpoint(cancelled);
+        return startsBefore(a, b);
+    });
 
     QList<GhostAnnotation> merged;
     merged.reserve(annotations.size());
     QSet<QString> emittedGenerateLines;
     for (GhostAnnotation& annotation : annotations) {
+        checkpoint(cancelled);
         if (annotation.kind == GhostAnnotationKind::GenerateLoop
             && annotation.placement
                    == GhostAnnotationPlacement::RightOfLine) {
@@ -553,11 +571,13 @@ SemanticIndex* GhostAnnotationService::semanticIndex() const
 GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
     const GhostAnnotationQuery& query) const
 {
+    try {
+    checkpoint(query.cancelled);
     GhostAnnotationReport report;
     if (query.fileName.isEmpty() || query.documentText.isEmpty())
         return report;
 
-    const QList<LineInfo> lines = documentLines(query.documentText);
+    const QList<LineInfo> lines = documentLines(query.documentText, query.cancelled);
     SemanticIndex* activeIndex = semanticIndex();
     QList<SemanticSymbolRecord> fileRecords =
         activeIndex->getSymbolRecords(query.fileName);
@@ -574,30 +594,36 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
         query.fileName,
         query.documentText,
         query.instanceContext,
-        query.documentRevision);
+        query.documentRevision, query.cancelled);
+    checkpoint(query.cancelled);
 
     appendFormalPortAnnotations(lines,
                                 fileRecords,
                                 activeIndex,
                                 query.instanceContext,
-                                &report.annotations);
+                                &report.annotations, query.cancelled);
     appendSymbolEffectiveValueAnnotations(lines,
                                           fileRecords,
                                           valueReader,
                                           query,
                                           &report.annotations);
-    appendExpressionFactAnnotations(facts, &report.annotations);
+    appendExpressionFactAnnotations(facts, &report.annotations, query.cancelled);
 
     report.annotations.erase(
         std::remove_if(report.annotations.begin(),
                        report.annotations.end(),
-                       [](const GhostAnnotation& annotation) {
+                       [&](const GhostAnnotation& annotation) {
+                           checkpoint(query.cancelled);
                            return !annotation.isValid();
                        }),
         report.annotations.end());
     report.annotations = mergeLineTailAnnotations(
-        std::move(report.annotations));
+        std::move(report.annotations), query.cancelled);
+    checkpoint(query.cancelled);
     return report;
+    } catch (const Cancelled&) {
+        return {};
+    }
 }
 
 GhostNumericLiteralReport GhostAnnotationService::numericLiteralAt(

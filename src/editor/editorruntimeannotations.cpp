@@ -714,8 +714,15 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
+    ghostQueryPending = false;
     if (!editor || identity.current().isEmpty()) {
         setGhostAnnotations(editor, {});
+        return;
+    }
+    // Capture only when the previous worker has relinquished its immutable
+    // input. Repeated edits replace this pending request without pool backlog.
+    if (!ghostQueryWatchers.isEmpty()) {
+        ghostQueryPending = true;
         return;
     }
 
@@ -730,6 +737,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     const std::shared_ptr<std::atomic_bool> cancellation =
         std::make_shared<std::atomic_bool>(false);
     ghostQueryCancellation = cancellation;
+    query.cancelled = [cancellation] { return cancellation->load(); };
     const std::shared_ptr<const SemanticIndexSnapshot> snapshot =
         SemanticIndex::getInstance()->snapshot();
     if (!snapshot) {
@@ -755,13 +763,12 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
                         || candidate.data() == watcher;
                 });
             watcher->deleteLater();
-            if (cancellation->load()
-                || generation != ghostQueryGeneration
-                || identity.current() != query.fileName
-                || semanticDocumentRevision() != query.documentRevision) {
-                return;
-            }
-            setGhostAnnotations(editor, report.annotations);
+            if (!cancellation->load()
+                && generation == ghostQueryGeneration
+                && identity.current() == query.fileName
+                && semanticDocumentRevision() == query.documentRevision)
+                setGhostAnnotations(editor, report.annotations);
+            if (ghostQueryPending) refreshGhostAnnotations(editor);
         });
     watcher->setFuture(QtConcurrent::run(
         [query, snapshot, valueSnapshot, cancellation]() {
@@ -781,6 +788,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdownGhostQueries(MyCodeEditor* editor)
 {
+    ghostQueryPending = false;
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);

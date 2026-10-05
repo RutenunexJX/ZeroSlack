@@ -12,6 +12,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QSaveFile>
 #include <QSet>
 #include <QUuid>
@@ -641,6 +642,21 @@ PinloomCodeLinkAnchorRecord anchorFromJson(const QJsonObject& object)
     }
     return anchor;
 }
+
+QString validateAnchors(const QList<PinloomCodeLinkAnchorRecord>& anchors)
+{
+    if (anchors.size() > kMaximumAnchors)
+        return QStringLiteral("Pinloom code-link storage contains too many anchors (maximum 4096).");
+    QSet<QString> ids;
+    for (const auto& anchor : anchors) {
+        if (!anchor.isValid() || ids.contains(anchor.id))
+            return QStringLiteral("Pinloom code-link storage contains an invalid or duplicate source anchor.");
+        ids.insert(anchor.id);
+        if (anchor.links.size() > kMaximumLinksPerAnchor)
+            return QStringLiteral("A Pinloom source anchor contains too many links (maximum 128).");
+    }
+    return {};
+}
 }
 
 bool PinloomSourceSelection::isValid() const
@@ -872,7 +888,8 @@ bool PinloomCodeLinkAnchorRecord::isValid() const
 void PinloomCodeLinkStore::setWorkspaceRoot(
     const QString& workspaceRootValue)
 {
-    const QString normalized = normalizedPath(workspaceRootValue);
+    const QString normalized = workspaceRootValue.trimmed().isEmpty()
+        ? QString() : normalizedPath(workspaceRootValue);
     if (root == normalized)
         return;
     root = normalized;
@@ -898,6 +915,18 @@ QString PinloomCodeLinkStore::storagePath() const
 QString PinloomCodeLinkStore::loadFailureReason() const
 {
     return loadFailureValue;
+}
+
+PinloomCodeLinkLoadState PinloomCodeLinkStore::loadState() const
+{
+    return loadStateValue;
+}
+
+bool PinloomCodeLinkStore::reload(QString* failureReason)
+{
+    const bool result = load(failureReason);
+    if (changedHandler) changedHandler();
+    return result;
 }
 
 bool PinloomCodeLinkStore::addLink(
@@ -929,6 +958,28 @@ bool PinloomCodeLinkStore::addLink(
         }
         return false;
     }
+
+    // A failed read is not an empty store. Only an explicit successful reload
+    // may recover it; an add operation must never overwrite unread records.
+    if (loadStateValue != PinloomCodeLinkLoadState::Missing
+        && loadStateValue != PinloomCodeLinkLoadState::Loaded) {
+        if (failureReason) *failureReason = loadFailureValue;
+        return false;
+    }
+    const QString path = storagePath();
+    if (!storagePathIsSafe(root, path)
+        || !QDir().mkpath(QFileInfo(path).absolutePath())) {
+        if (failureReason) *failureReason = QStringLiteral("Pinloom code-link storage is unavailable or outside the workspace.");
+        return false;
+    }
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(0)) {
+        if (failureReason) *failureReason = QStringLiteral("Another operation is updating Pinloom code links. Try again.");
+        return false;
+    }
+    // Merge against the latest successful read while holding the same lock
+    // used by every writer, rather than replacing another instance's links.
+    if (!load(failureReason)) return false;
 
     auto anchorIt = anchorRecords.end();
     if (!sourceValue.anchorId.trimmed().isEmpty()) {
@@ -1156,104 +1207,74 @@ void PinloomCodeLinkStore::setChangedHandler(
 
 bool PinloomCodeLinkStore::load(QString* failureReason)
 {
-    if (failureReason)
-        failureReason->clear();
+    if (failureReason) failureReason->clear();
     anchorRecords.clear();
+    loadFailureValue.clear();
+    loadStateValue = PinloomCodeLinkLoadState::Missing;
+    loadedContentHash.clear();
+    loadedFileExists = false;
+    const auto fail = [&](PinloomCodeLinkLoadState state, const QString& reason) {
+        anchorRecords.clear();
+        loadStateValue = state;
+        loadFailureValue = reason;
+        if (failureReason) *failureReason = reason;
+        return false;
+    };
     const QString path = storagePath();
-    if (path.isEmpty() || !QFileInfo::exists(path))
-        return true;
-    if (!storagePathIsSafe(root, path)) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Pinloom code-link storage resolves outside the workspace.");
-        }
-        return false;
-    }
+    if (path.isEmpty() || !QFileInfo::exists(path)) return true;
+    if (!storagePathIsSafe(root, path))
+        return fail(PinloomCodeLinkLoadState::ReadError, QStringLiteral("Pinloom code-link storage resolves outside the workspace."));
     QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (failureReason)
-            *failureReason = file.errorString();
-        return false;
-    }
-    if (file.size() > kMaximumStoreBytes) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Pinloom code-link storage exceeds the 8 MiB safety limit.");
-        }
-        return false;
-    }
+    if (!file.open(QIODevice::ReadOnly))
+        return fail(PinloomCodeLinkLoadState::ReadError, file.errorString());
+    if (file.size() > kMaximumStoreBytes)
+        return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Pinloom code-link storage exceeds the 8 MiB safety limit."));
+    const QByteArray bytes = file.readAll();
+    if (file.error() != QFileDevice::NoError)
+        return fail(PinloomCodeLinkLoadState::ReadError, file.errorString());
+    if (bytes.size() > kMaximumStoreBytes)
+        return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Pinloom code-link storage exceeds the 8 MiB safety limit."));
+    loadedFileExists = true;
+    loadedContentHash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
     QJsonParseError parseError;
-    const QJsonDocument document =
-        QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError
-        || !document.isObject()) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Pinloom code-link file is invalid JSON.");
-        }
-        return false;
-    }
+    const QJsonDocument document = QJsonDocument::fromJson(bytes, &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject())
+        return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Pinloom code-link file is invalid JSON."));
     const QJsonObject rootObject = document.object();
-    if (rootObject.value(QStringLiteral("schema")).toString() != kSchema) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Pinloom code-link schema is unsupported.");
-        }
-        return false;
-    }
     const int version = rootObject.value(QStringLiteral("version")).toInt();
+    if (rootObject.value(QStringLiteral("schema")).toString() != kSchema
+        || (version != kVersion && version != 1))
+        return fail(PinloomCodeLinkLoadState::UnsupportedVersion, QStringLiteral("Pinloom code-link schema/version is unsupported."));
     if (version == kVersion) {
-        const QJsonArray anchors = rootObject.value(
-            QStringLiteral("anchors")).toArray();
-        if (anchors.size() > kMaximumAnchors) {
-            if (failureReason) {
-                *failureReason = QStringLiteral(
-                    "Pinloom code-link storage contains too many anchors.");
-            }
-            return false;
+        const auto storedAnchors = rootObject.value(QStringLiteral("anchors"));
+        if (!storedAnchors.isArray())
+            return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Pinloom code-link anchors must be an array."));
+        for (const auto& value : storedAnchors.toArray()) {
+            const auto object = value.toObject();
+            const auto links = object.value(QStringLiteral("links"));
+            const auto anchor = anchorFromJson(object);
+            if (!value.isObject() || !links.isArray() || !anchor.isValid()
+                || anchor.links.size() != links.toArray().size())
+                return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Pinloom code-link storage contains invalid records; the file was preserved."));
+            anchorRecords.append(anchor);
         }
-        for (const QJsonValue& value : anchors) {
-            if (!value.isObject())
-                continue;
-            if (value.toObject().value(
-                    QStringLiteral("links")).toArray().size()
-                > kMaximumLinksPerAnchor) {
-                anchorRecords.clear();
-                if (failureReason) {
-                    *failureReason = QStringLiteral(
-                        "A Pinloom source anchor contains too many links.");
-                }
-                return false;
-            }
-            const PinloomCodeLinkAnchorRecord anchor =
-                anchorFromJson(value.toObject());
-            if (anchor.isValid())
-                anchorRecords.append(anchor);
-        }
+        const auto reason = validateAnchors(anchorRecords);
+        if (!reason.isEmpty()) return fail(PinloomCodeLinkLoadState::Invalid, reason);
+        loadStateValue = PinloomCodeLinkLoadState::Loaded;
         return true;
-    }
-    if (version != 1) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Pinloom code-link schema is unsupported.");
-        }
-        return false;
     }
 
     // v1 records are migrated in memory without rewriting the workspace file.
     // The next explicit link change writes v2, preserving every legacy URI.
-    const QJsonArray legacyLinks = rootObject.value(
-        QStringLiteral("links")).toArray();
-    if (legacyLinks.size() > kMaximumLegacyLinks) {
-        if (failureReason) {
-            *failureReason = QStringLiteral(
-                "Legacy Pinloom code-link storage contains too many links.");
-        }
-        return false;
-    }
+    const auto storedLinks = rootObject.value(QStringLiteral("links"));
+    if (!storedLinks.isArray())
+        return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Legacy Pinloom links must be an array."));
+    const QJsonArray legacyLinks = storedLinks.toArray();
+    if (legacyLinks.size() > kMaximumLegacyLinks)
+        return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Legacy Pinloom code-link storage contains too many links."));
     for (const QJsonValue& value : legacyLinks) {
         if (!value.isObject())
-            continue;
+            return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Legacy Pinloom code-link record is invalid."));
         const QJsonObject object = value.toObject();
         PinloomCodeLinkRecord target = targetFromJson(object);
         target.source = PinloomSourceSelection::fromVariantMap(
@@ -1261,7 +1282,7 @@ bool PinloomCodeLinkStore::load(QString* failureReason)
                 .toObject().toVariantMap());
         target.source.anchorKind = PinloomCodeAnchorKind::LegacySelection;
         if (!target.isValid())
-            continue;
+            return fail(PinloomCodeLinkLoadState::Invalid, QStringLiteral("Legacy Pinloom code-link record is invalid."));
         auto existing = std::find_if(
             anchorRecords.begin(), anchorRecords.end(),
             [&target](const PinloomCodeLinkAnchorRecord& anchor) {
@@ -1288,10 +1309,13 @@ bool PinloomCodeLinkStore::load(QString* failureReason)
             existing->links.append(target);
         }
     }
+    const auto reason = validateAnchors(anchorRecords);
+    if (!reason.isEmpty()) return fail(PinloomCodeLinkLoadState::Invalid, reason);
+    loadStateValue = PinloomCodeLinkLoadState::Loaded;
     return true;
 }
 
-bool PinloomCodeLinkStore::save(QString* failureReason) const
+bool PinloomCodeLinkStore::save(QString* failureReason)
 {
     if (failureReason)
         failureReason->clear();
@@ -1324,17 +1348,40 @@ bool PinloomCodeLinkStore::save(QString* failureReason) const
         {QStringLiteral("version"), kVersion},
         {QStringLiteral("anchors"), anchorsValue},
     };
+    const QString invalid = validateAnchors(anchorRecords);
+    const QByteArray bytes = QJsonDocument(rootObject).toJson(QJsonDocument::Indented);
+    if (!invalid.isEmpty() || bytes.size() > kMaximumStoreBytes) {
+        if (failureReason) *failureReason = invalid.isEmpty()
+            ? QStringLiteral("Pinloom code-link storage exceeds the 8 MiB safety limit.") : invalid;
+        return false;
+    }
+    // Cooperating writers hold .lock throughout read/modify/write. Also reject
+    // an observed edit by a non-cooperating writer instead of replacing it.
+    QFile existing(path);
+    if (QFileInfo::exists(path) != loadedFileExists
+        || (loadedFileExists && (!existing.open(QIODevice::ReadOnly)
+            || existing.size() > kMaximumStoreBytes
+            || QCryptographicHash::hash(existing.readAll(), QCryptographicHash::Sha256) != loadedContentHash
+            || existing.error() != QFileDevice::NoError))) {
+        if (failureReason) *failureReason = QStringLiteral("Pinloom code links changed or became unreadable before saving. Reload and try again.");
+        return false;
+    }
+    existing.close();
     QSaveFile file(path);
+    file.setDirectWriteFallback(false);
     if (!file.open(QIODevice::WriteOnly)) {
         if (failureReason)
             *failureReason = file.errorString();
         return false;
     }
-    if (file.write(QJsonDocument(rootObject).toJson(QJsonDocument::Indented)) < 0
+    if (file.write(bytes) != bytes.size()
         || !file.commit()) {
         if (failureReason)
             *failureReason = file.errorString();
         return false;
     }
+    loadedFileExists = true;
+    loadedContentHash = QCryptographicHash::hash(bytes, QCryptographicHash::Sha256);
+    loadStateValue = PinloomCodeLinkLoadState::Loaded;
     return true;
 }

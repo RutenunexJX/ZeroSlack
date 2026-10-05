@@ -210,6 +210,7 @@ struct MyCodeEditorState
     QString inlineFilterTextOverlayCurrentText;
     std::shared_ptr<std::atomic_bool> ghostQueryCancellation;
     QList<QPointer<QObject>> ghostQueryWatchers;
+    bool ghostQueryPending = false;
     EditorHotPathMetrics hotPathMetrics;
     EditorVisibleDocumentRange presentedVisibleRange;
     QPointer<QTextDocument> presentedVisibleDocument;

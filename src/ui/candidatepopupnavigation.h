@@ -7,6 +7,22 @@
 // Shared candidate-list mechanics. Query/version ownership and activation stay
 // with each popup's domain controller.
 namespace CandidatePopupNavigation {
+inline void moveSelection(QListView* list, int delta, bool previousStartsAtEnd = false) {
+    if (!list || !list->model() || !delta) return;
+    const int count = list->model()->rowCount();
+    if (!count) return;
+    int step = delta > 0 ? 1 : -1;
+    const int current = list->currentIndex().row();
+    int row = current < 0 ? (previousStartsAtEnd && step < 0 ? count - 1 : 0)
+        : qBound(0, current + step, count - 1);
+    for (; row >= 0 && row < count; row += step) {
+        const auto index = list->model()->index(row, 0);
+        if (!index.flags().testFlag(Qt::ItemIsEnabled) || !index.flags().testFlag(Qt::ItemIsSelectable)) continue;
+        list->setCurrentIndex(index);
+        list->scrollTo(index);
+        return;
+    }
+}
 inline bool selectable(const QListWidgetItem* item) {
     return item && !item->isHidden() && item->flags().testFlag(Qt::ItemIsEnabled)
         && item->flags().testFlag(Qt::ItemIsSelectable);

@@ -4,10 +4,34 @@
 #include "mycodeeditor.h"
 
 #include <atomic>
+#include <QDir>
 
 namespace {
 std::atomic<std::uint64_t> fullTextCopyCount{0};
 std::atomic<std::uint64_t> copiedCharacterCount{0};
+
+QString stableIdKey(QString id)
+{
+#ifdef Q_OS_WIN
+    id = id.toCaseFolded();
+#endif
+    return id;
+}
+
+void removeRegisteredView(QHash<QString, QSet<MyCodeEditor*>>& groups,
+                          QHash<QString, MyCodeEditor*>& representatives,
+                          const QString& key, MyCodeEditor* editor)
+{
+    auto found = groups.find(key);
+    if (found == groups.end()) return;
+    found->remove(editor);
+    if (found->isEmpty()) {
+        groups.erase(found);
+        representatives.remove(key);
+    } else if (representatives.value(key) == editor) {
+        representatives[key] = *found->cbegin();
+    }
+}
 
 DocumentSnapshot materializedSnapshot(const TrackedDocument& tracked)
 {
@@ -49,9 +73,31 @@ void DocumentIndexes::add(
     if (!editor)
         return;
 
-    byDocumentId[EditorFileIdentity::lookupKey(snapshot.documentId)] = editor;
-    if (!snapshot.fileName.isEmpty())
-        byFileName[EditorFileIdentity::lookupKey(snapshot.fileName)] = editor;
+    const auto registered = registrations.constFind(editor);
+    if (registered != registrations.cend()
+        && registered->documentId == snapshot.documentId
+        && registered->fileName == snapshot.fileName) return;
+    remove(editor, snapshot);
+    Registration registration;
+    registration.documentId = snapshot.documentId;
+    registration.fileName = snapshot.fileName;
+    registration.documentKey = snapshot.fileName.isEmpty()
+        || !editor->property("sharedDocumentId").toString().isEmpty()
+        ? stableIdKey(snapshot.documentId)
+        : EditorFileIdentity::lookupKey(snapshot.documentId);
+    // The file belongs to the bound document. Its display path may already
+    // have been rebound before another view of that document is attached.
+    if (!snapshot.fileName.isEmpty()) {
+        registration.fileKey = QDir::isAbsolutePath(snapshot.documentId)
+            ? registration.documentKey : EditorFileIdentity::lookupKey(snapshot.fileName);
+    }
+    registrations.insert(editor, registration);
+    byDocumentId[registration.documentKey] = editor;
+    viewsByDocumentId[registration.documentKey].insert(editor);
+    if (!registration.fileKey.isEmpty()) {
+        byFileName[registration.fileKey] = editor;
+        viewsByFileName[registration.fileKey].insert(editor);
+    }
 }
 
 void DocumentIndexes::remove(
@@ -61,22 +107,32 @@ void DocumentIndexes::remove(
     if (!editor)
         return;
 
-    const QString documentKey =
-        EditorFileIdentity::lookupKey(snapshot.documentId);
-    const QString fileKey = EditorFileIdentity::lookupKey(snapshot.fileName);
-    if (byDocumentId.value(documentKey, nullptr) == editor)
-        byDocumentId.remove(documentKey);
-    if (!snapshot.fileName.isEmpty()
-        && byFileName.value(fileKey, nullptr) == editor) {
-        byFileName.remove(fileKey);
-    }
+    Q_UNUSED(snapshot);
+    const auto found = registrations.find(editor);
+    if (found == registrations.end()) return;
+    const auto registration = *found;
+    registrations.erase(found);
+    removeRegisteredView(viewsByDocumentId, byDocumentId, registration.documentKey, editor);
+    removeRegisteredView(viewsByFileName, byFileName, registration.fileKey, editor);
 }
 
 MyCodeEditor* DocumentIndexes::editorForDocumentId(
     const QString& documentId) const
 {
-    return byDocumentId.value(EditorFileIdentity::lookupKey(documentId),
-                              nullptr);
+    return byDocumentId.value(documentKeyForId(documentId), nullptr);
+}
+
+QString DocumentIndexes::documentKeyForEditor(MyCodeEditor* editor) const
+{
+    return registrations.value(editor).documentKey;
+}
+
+QString DocumentIndexes::documentKeyForId(const QString& documentId) const
+{
+    const auto key = stableIdKey(documentId);
+    // Published IDs are fixed identities. Only an unregistered path query
+    // needs to resolve its current filesystem target.
+    return viewsByDocumentId.contains(key) ? key : EditorFileIdentity::lookupKey(documentId);
 }
 
 MyCodeEditor* DocumentIndexes::editorForFileName(
@@ -167,18 +223,6 @@ TrackedDocument DocumentRegistry::take(MyCodeEditor* editor)
 {
     const TrackedDocument tracked = documents.take(editor);
     indexes.remove(editor, tracked.snapshot);
-    if (!tracked.snapshot.documentId.isEmpty()
-        && !indexes.editorForDocumentId(
-            tracked.snapshot.documentId)) {
-        const QList<MyCodeEditor*> remaining =
-            editorsForDocumentId(
-                tracked.snapshot.documentId);
-        if (!remaining.isEmpty()) {
-            const TrackedDocument fallback =
-                documents.value(remaining.first());
-            indexes.add(remaining.first(), fallback.snapshot);
-        }
-    }
     return tracked;
 }
 
@@ -200,20 +244,12 @@ const TrackedDocument* DocumentRegistry::find(MyCodeEditor* editor) const
 QList<MyCodeEditor*> DocumentRegistry::editorsForDocumentId(
     const QString& documentId) const
 {
-    QList<MyCodeEditor*> result;
-    const QString key =
-        EditorFileIdentity::lookupKey(documentId);
-    for (auto iterator = documents.byEditor.constBegin();
-         iterator != documents.byEditor.constEnd();
-         ++iterator) {
-        if (iterator.key()
-            && EditorFileIdentity::lookupKey(
-                   iterator.value().snapshot.documentId)
-                   == key) {
-            result.append(iterator.key());
-        }
-    }
-    return result;
+    return indexes.viewsByDocumentId.value(indexes.documentKeyForId(documentId)).values();
+}
+
+QList<MyCodeEditor*> DocumentRegistry::editorsForEditor(MyCodeEditor* editor) const
+{
+    return indexes.viewsByDocumentId.value(indexes.documentKeyForEditor(editor)).values();
 }
 
 int DocumentRegistry::viewCountForDocumentId(
@@ -227,8 +263,10 @@ DocumentSnapshot DocumentRegistry::replace(
     const TrackedDocument& tracked,
     const DocumentSnapshot& previous)
 {
+    Q_UNUSED(previous);
     documents.insert(editor, tracked);
-    indexes.remove(editor, previous);
+    // The index owner decides whether a binding changed using its own saved
+    // registration, never a re-resolved path or a caller's previous snapshot.
     indexes.add(editor, tracked.snapshot);
     return tracked.snapshot;
 }

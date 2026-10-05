@@ -472,6 +472,19 @@ void runPublicationRefreshesEditorOnce()
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     expect("one semantic publication performs one full ghost query",
            editor->hotPathMetricsForTest().fullGhostQueries == 1);
+    const auto previousGhostSnapshot = SemanticIndex::getInstance()->snapshot();
+    SemanticIndex::getInstance()->setSnapshot(std::make_shared<SemanticIndexSnapshot>());
+    editor->resetHotPathMetricsForTest();
+    for (int i = 0; i < 300; ++i) scheduler.documentRefreshRequested(fileName);
+    expect("rapid ghost refresh does not capture or queue 300 document copies",
+           editor->hotPathMetricsForTest().fullGhostQueries <= 1);
+    expect("the latest pending ghost refresh eventually starts", QTest::qWaitFor([&] {
+        return editor->hotPathMetricsForTest().fullGhostQueries >= 1;
+    }, 2000));
+    QTest::qWait(50);
+    expect("ghost work is bounded to the running and newest request",
+           editor->hotPathMetricsForTest().fullGhostQueries <= 2);
+    SemanticIndex::getInstance()->setSnapshot(previousGhostSnapshot);
     scheduler.shutdown();
 }
 

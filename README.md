@@ -1,6 +1,14 @@
 # ZeroSlack
 
-Current version: `v0.31.21`
+Current version: `v0.31.22`
+
+Release 0.31.22 reduces repeated work in recovery snapshots, document view
+updates, temporary search, formatting and template filtering. Document identity
+remains stable when path aliases change; edit transactions retain consistent
+text coordinates and monotonic revision checks. Settings drafts survive workspace
+switches, and invalid configuration or Pinloom link data is protected from writes.
+The completed AR-12 through AR-28 review, performance measurements and remaining
+test limitations are recorded in the [architecture backlog](docs/architecture-redundancy-backlog.md).
 
 Release 0.31.21 separates the reusable Documents and Semantic libraries from the
 UI and keeps the CLI independent of Widgets and Ela. Editor views share document

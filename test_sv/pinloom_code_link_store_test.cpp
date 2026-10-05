@@ -8,6 +8,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QTemporaryDir>
 #include <QTest>
 
@@ -23,7 +24,169 @@ private slots:
     void rejectsArbitraryNewSelections();
     void survivesSymbolMoveAndRename();
     void normalizesAnchorTextWithoutRegex();
+    void rejectsFailedLoadsWithoutOverwriting_data();
+    void rejectsFailedLoadsWithoutOverwriting();
+    void enforcesWriteCapacityAndKeepsBytes();
+    void mergesInstancesAndPreservesOnSaveFailure();
 };
+
+namespace {
+PinloomSourceSelection syntheticSource(const QString& root)
+{
+    const QString text = QStringLiteral("module top;\nassign a = b;\nendmodule\n");
+    TSDocument syntax;
+    syntax.setText(text);
+    return PinloomSourceSelection::fromSyntaxAnchor(root,
+        QDir(root).filePath(QStringLiteral("top.sv")), text,
+        syntax.bindableCodeAnchorAt(text.indexOf(QStringLiteral("assign"))));
+}
+
+QByteArray storeBytes(const QString& path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    return file.readAll();
+}
+
+bool writeStore(const QString& path, const QByteArray& bytes)
+{
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+}
+}
+
+void PinloomCodeLinkStoreTest::rejectsFailedLoadsWithoutOverwriting_data()
+{
+    QTest::addColumn<QByteArray>("bytes");
+    QTest::addColumn<int>("state");
+    QTest::newRow("invalid-json") << QByteArray("{broken") << int(PinloomCodeLinkLoadState::Invalid);
+    QTest::newRow("future-version") << QByteArray(R"({"schema":"ZeroSlack.PinloomCodeLinks","version":99,"anchors":[]})") << int(PinloomCodeLinkLoadState::UnsupportedVersion);
+    QTest::newRow("invalid-record") << QByteArray(R"({"schema":"ZeroSlack.PinloomCodeLinks","version":2,"anchors":[{}]})") << int(PinloomCodeLinkLoadState::Invalid);
+    QTest::newRow("oversized") << QByteArray(8*1024*1024+1, ' ') << int(PinloomCodeLinkLoadState::Invalid);
+}
+
+void PinloomCodeLinkStoreTest::rejectsFailedLoadsWithoutOverwriting()
+{
+    QFETCH(QByteArray, bytes);
+    QFETCH(int, state);
+    QTemporaryDir workspace;
+    QVERIFY(workspace.isValid());
+    const QString path = QDir(workspace.path()).filePath(".zeroslack/pinloom-links.json");
+    QVERIFY(writeStore(path, bytes));
+    PinloomCodeLinkStore store;
+    store.setWorkspaceRoot(workspace.path());
+    QCOMPARE(int(store.loadState()), state);
+    QVERIFY(!store.loadFailureReason().isEmpty());
+    QString failure;
+    QVERIFY(!store.addLink(syntheticSource(workspace.path()), QUrl("pinloom://entry/a"), "A", {}, &failure));
+    QVERIFY(!failure.isEmpty());
+    QCOMPARE(storeBytes(path), bytes);
+    QVERIFY(store.records().isEmpty());
+    // Repairing disk alone does not silently authorize replacing a failed load.
+    const QByteArray repaired(R"({"schema":"ZeroSlack.PinloomCodeLinks","version":2,"anchors":[]})");
+    QVERIFY(writeStore(path, repaired));
+    QVERIFY(!store.addLink(syntheticSource(workspace.path()), QUrl("pinloom://entry/a"), "A", {}, &failure));
+    QCOMPARE(storeBytes(path), repaired);
+    QVERIFY2(store.reload(&failure), qPrintable(failure));
+    QVERIFY2(store.addLink(syntheticSource(workspace.path()), QUrl("pinloom://entry/a"), "A", {}, &failure), qPrintable(failure));
+}
+
+void PinloomCodeLinkStoreTest::enforcesWriteCapacityAndKeepsBytes()
+{
+    QTemporaryDir workspace;
+    QVERIFY(workspace.isValid());
+    PinloomCodeLinkStore store;
+    store.setWorkspaceRoot(workspace.path());
+    QCOMPARE(store.loadState(), PinloomCodeLinkLoadState::Missing);
+    const auto source = syntheticSource(workspace.path());
+    QString failure;
+    QVERIFY2(store.addLink(source, QUrl("pinloom://entry/seed"), "Seed", {}, &failure), qPrintable(failure));
+    const QByteArray original = storeBytes(store.storagePath());
+    QVERIFY(!store.addLink(source, QUrl("pinloom://entry/large"), QString(8*1024*1024, 'x'), {}, &failure));
+    QVERIFY(failure.contains("8 MiB"));
+    QCOMPARE(storeBytes(store.storagePath()), original);
+    QCOMPARE(store.records().size(), 1);
+    auto root = QJsonDocument::fromJson(original).object();
+    auto anchor = root.value("anchors").toArray().first().toObject();
+    const auto seedLink = anchor.value("links").toArray().first().toObject();
+    QJsonArray links;
+    for (int n=0; n<128; ++n) {
+        auto link = seedLink;
+        link["id"] = QString::number(n);
+        link["uri"] = QString("pinloom://entry/%1").arg(n);
+        links.append(link);
+    }
+    anchor["links"] = links;
+    root["anchors"] = QJsonArray{anchor};
+    const QByteArray atLimit = QJsonDocument(root).toJson();
+    QVERIFY(writeStore(store.storagePath(), atLimit));
+    QVERIFY(store.reload(&failure));
+    QVERIFY(!store.addLink(source, QUrl("pinloom://entry/129"), "Overflow", {}, &failure));
+    QVERIFY(failure.contains("128"));
+    QCOMPARE(storeBytes(store.storagePath()), atLimit);
+    QCOMPARE(store.records().size(), 128);
+
+    anchor["links"] = QJsonArray{seedLink};
+    QJsonArray anchors;
+    for (int n=0; n<4096; ++n) {
+        auto copy = anchor;
+        copy["id"] = QString("anchor-%1").arg(n);
+        anchors.append(copy);
+    }
+    root["anchors"] = anchors;
+    const QByteArray full = QJsonDocument(root).toJson(QJsonDocument::Compact);
+    QVERIFY(full.size() <= 8*1024*1024);
+    QVERIFY(writeStore(store.storagePath(), full));
+    QVERIFY2(store.reload(&failure), qPrintable(failure));
+    QCOMPARE(store.anchors().size(), 4096);
+    auto other = source;
+    other.logicalKey += "-other";
+    QVERIFY(!store.addLink(other, QUrl("pinloom://entry/extra"), "Extra", {}, &failure));
+    QVERIFY(failure.contains("4096"));
+    QCOMPARE(storeBytes(store.storagePath()), full);
+    QCOMPARE(store.anchors().size(), 4096);
+}
+
+void PinloomCodeLinkStoreTest::mergesInstancesAndPreservesOnSaveFailure()
+{
+    QTemporaryDir workspace;
+    QVERIFY(workspace.isValid());
+    PinloomCodeLinkStore first, second;
+    first.setWorkspaceRoot(workspace.path());
+    second.setWorkspaceRoot(workspace.path());
+    const auto source = syntheticSource(workspace.path());
+    QString failure;
+    QVERIFY2(first.addLink(source, QUrl("pinloom://entry/first"), "First", {}, &failure), qPrintable(failure));
+    QVERIFY2(second.addLink(source, QUrl("pinloom://entry/second"), "Second", {}, &failure), qPrintable(failure));
+    QVERIFY(first.reload(&failure));
+    QCOMPARE(first.records().size(), 2);
+    const auto original = storeBytes(first.storagePath());
+    QLockFile lock(first.storagePath()+".lock");
+    QVERIFY(lock.tryLock(0));
+    QVERIFY(!first.addLink(source, QUrl("pinloom://entry/third"), "Third", {}, &failure));
+    QCOMPARE(storeBytes(first.storagePath()), original);
+    QCOMPARE(first.records().size(), 2);
+    lock.unlock();
+#ifdef Q_OS_WIN
+    const auto permissions = QFile::permissions(first.storagePath());
+    QVERIFY(QFile::setPermissions(first.storagePath(), permissions & ~(QFile::WriteOwner|QFile::WriteUser|QFile::WriteGroup|QFile::WriteOther)));
+    const bool saved = first.addLink(source, QUrl("pinloom://entry/third"), "Third", {}, &failure);
+    QVERIFY(QFile::setPermissions(first.storagePath(), permissions));
+    QVERIFY(!saved);
+    QCOMPARE(storeBytes(first.storagePath()), original);
+    QCOMPARE(first.records().size(), 2);
+#endif
+    QTemporaryDir unreadable;
+    QVERIFY(unreadable.isValid());
+    const QString directory = QDir(unreadable.path()).filePath(".zeroslack/pinloom-links.json");
+    QVERIFY(QDir().mkpath(directory));
+    PinloomCodeLinkStore denied;
+    denied.setWorkspaceRoot(unreadable.path());
+    QCOMPARE(denied.loadState(), PinloomCodeLinkLoadState::ReadError);
+    QVERIFY(!denied.addLink(syntheticSource(unreadable.path()), QUrl("pinloom://entry/a"), "A", {}, &failure));
+    QVERIFY(QFileInfo(directory).isDir());
+}
 
 void PinloomCodeLinkStoreTest::persistsAndRelocatesWorkspaceRelativeLinks()
 {

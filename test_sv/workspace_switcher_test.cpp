@@ -98,6 +98,51 @@ bool closeWorkspace(QTabBar* bar, const QString& path) {
 class WorkspaceSwitcherTest final : public QObject {
     Q_OBJECT
 private slots:
+    void legacyIgnoredDirectoriesUsesProtectedConfigurationCommit() {
+        QTemporaryDir fixture;
+        QVERIFY(write(fixture.filePath("top.sv"), "module top; endmodule\n"));
+        WorkspaceManager manager;
+        manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+        QVERIFY(manager.openWorkspace(fixture.path()));
+        manager.setIgnoredDirectories({"generated"});
+        const auto before = manager.ignoredDirectories();
+        const auto path = WorkspaceConfigurationService::projectFilePath(fixture.path());
+        QVERIFY(write(path, "{broken"));
+        manager.setIgnoredDirectories({"replacement"});
+        QCOMPARE(manager.ignoredDirectories(), before);
+        QFile preserved(path); QVERIFY(preserved.open(QIODevice::ReadOnly));
+        QCOMPARE(preserved.readAll(), QByteArray("{broken"));
+    }
+    void invalidConfigurationPreservesActiveWorkspace()
+    {
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const QString a = fixture.filePath("a"), b = fixture.filePath("b");
+        QVERIFY(write(a + "/a.sv", "module a; endmodule\n"));
+        QVERIFY(write(b + "/b.sv", "module b; endmodule\n"));
+        WorkspaceManager manager;
+        manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+        QVERIFY(manager.openWorkspace(a));
+        QSignalSpy errors(&manager, &WorkspaceManager::workspaceActivationFailed);
+        const auto path = WorkspaceConfigurationService::projectFilePath(b);
+        QVERIFY(write(path, "{broken"));
+        QVERIFY(!manager.openWorkspace(b));
+        QCOMPARE(manager.getWorkspacePath(), a);
+        QCOMPARE(manager.workspaceEntries().size(), 1);
+        QCOMPARE(errors.size(), 1);
+        QVERIFY(QFile::remove(path));
+        QVERIFY(manager.openWorkspace(b));
+        QVERIFY(manager.switchWorkspace(0));
+        QVERIFY(write(path, "{broken"));
+        QVERIFY(!manager.switchWorkspace(1));
+        QCOMPARE(manager.getWorkspacePath(), a);
+        QVERIFY(!manager.closeWorkspace(0));
+        QCOMPARE(manager.getWorkspacePath(), a);
+        QCOMPARE(manager.workspaceEntries().size(), 2);
+        QVERIFY(QFile::remove(path));
+        QVERIFY(manager.switchWorkspace(1));
+        QCOMPARE(manager.getWorkspacePath(), b);
+    }
+
     void atomicSaveReadLease_data() {
         QTest::addColumn<QString>("outcome");
         for (const auto* outcome : {"released", "persistent", "changed"})
@@ -140,12 +185,13 @@ private slots:
         QCOMPARE(editor->toPlainText(), localText);
         QFile onDisk(path); QVERIFY(onDisk.open(QIODevice::ReadOnly));
         const auto bytes = onDisk.readAll(); onDisk.close();
+        tabs.flushCrashRecovery();
         const auto recovery = tabs.listCrashRecoveryCandidates(tabs.temporaryRecoveryWorkspace());
         if (outcome == "released") {
             QVERIFY(succeeded);
             QCOMPARE(failed.count(), 0); QCOMPARE(saved.count(), 1);
             QVERIFY(!document->dirty());
-            QCOMPARE(bytes, localText.toUtf8().replace("\n", "\r\n"));
+            QCOMPARE(bytes, localText.toUtf8()); // Preserve the original LF encoding contract.
             QVERIFY(recovery.candidates.isEmpty());
         } else {
             QVERIFY(!succeeded);

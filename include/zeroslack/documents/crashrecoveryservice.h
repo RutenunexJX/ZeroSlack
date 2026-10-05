@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QList>
 #include <QString>
+#include <functional>
 
 enum class CrashRecoveryStatus {
     Success,
@@ -16,7 +17,8 @@ enum class CrashRecoveryStatus {
     CorruptRecord,
     StaleRecord,
     WorkspaceMismatch,
-    IdentityMismatch
+    IdentityMismatch,
+    Cancelled
 };
 
 enum class CrashRecoverySourceState {
@@ -117,7 +119,11 @@ public:
     QString recoveryRootPath() const;
 
     CrashRecoveryWriteResult writeSnapshot(
-        const CrashRecoverySnapshotRequest& request) const;
+        const CrashRecoverySnapshotRequest& request,
+        // The scheduler serializes this guard with invalidation/deletion.
+        // It may decline the final atomic commit; no source files are written.
+        const std::function<bool(const std::function<bool()>&)>& commitIfCurrent = {},
+        const std::function<bool()>& isCancelled = {}) const;
     CrashRecoveryListResult listCandidates(
         const QString& workspacePath) const;
     CrashRecoveryReadResult readComparison(
@@ -139,6 +145,7 @@ public:
         const CrashRecoveryDocumentKey& document) const;
 
     static QByteArray sha256(const QByteArray& bytes);
+    static QString recoveryIdForDocument(const CrashRecoveryDocumentKey& document);
 
 private:
     struct ResolvedDocumentKey {

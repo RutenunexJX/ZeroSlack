@@ -24,6 +24,14 @@ QString newUntitledDocumentId()
         + QUuid::createUuid().toString(QUuid::WithoutBraces);
 }
 
+QString registeredFileKey(QString physicalId)
+{
+#ifdef Q_OS_WIN
+    physicalId = physicalId.toCaseFolded();
+#endif
+    return physicalId;
+}
+
 int boundedDocumentPosition(QTextDocument* document, int position)
 {
     return qBound(0,
@@ -35,12 +43,13 @@ int boundedDocumentPosition(QTextDocument* document, int position)
 }
 
 SharedDocument::SharedDocument(const QString& documentId, const QString& fileName,
-                               const QString& initialText, QObject* parent)
+                               const QString& initialText, QObject* parent,
+                               const DocumentFileReadResult* initialFile)
     : DocumentBuffer(documentId, fileName, initialText, parent, [] {
         auto* result = new QTextDocument;
         result->setDocumentLayout(new QPlainTextDocumentLayout(result));
         return result;
-    }())
+    }(), initialFile)
 {
 }
 
@@ -208,6 +217,10 @@ QString SharedDocument::attachView(
 {
     if (!editor || !document)
         return QString();
+    if (registryOwner) {
+        auto* previous = registryOwner->documentsByView.value(editor);
+        if (previous && previous != this) previous->detachView(editor, false);
+    }
     const auto existing = viewBindings.constFind(editor);
     if (existing != viewBindings.constEnd())
         return existing->state.viewId;
@@ -236,6 +249,7 @@ QString SharedDocument::attachView(
         } while (viewIdInUse(binding.state.viewId));
     }
 
+    editor->setProperty("sharedDocumentId", id);
     editor->attachSharedDocument(document, revision);
     if (!normalizedFileName.isEmpty())
         editor->setDocumentFileName(normalizedFileName);
@@ -277,6 +291,7 @@ QString SharedDocument::attachView(
 
     const QString viewId = binding.state.viewId;
     viewBindings.insert(editor, std::move(binding));
+    if (registryOwner) registryOwner->documentsByView.insert(editor, this);
     captureViewState(editor);
     emit viewAttached(viewId);
     return viewId;
@@ -293,8 +308,14 @@ bool SharedDocument::detachView(
     if (preserveIndependentCopy && editor)
         captureViewState(editor);
     const SharedDocumentViewState state = found->state;
+    const QPointer<MyCodeEditor> attachedEditor = found->editor;
     disconnectViewBinding(&found.value());
     viewBindings.erase(found);
+    if (registryOwner && registryOwner->documentsByView.value(editor) == this)
+        registryOwner->documentsByView.remove(editor);
+
+    if (attachedEditor && attachedEditor->property("sharedDocumentId").toString() == id)
+        attachedEditor->setProperty("sharedDocumentId", QVariant());
 
     if (preserveIndependentCopy && editor && document) {
         auto* independentDocument = new QTextDocument(editor);
@@ -407,6 +428,9 @@ void SharedDocument::setFileIdentity(
     id = documentId;
     normalizedFileName =
         EditorFileIdentity::normalized(fileName);
+    // Publish the owner identity before any view emits fileNameChanged.
+    for (MyCodeEditor* editor : views())
+        editor->setProperty("sharedDocumentId", id);
     for (MyCodeEditor* editor : views()) {
         if (editor)
             editor->setDocumentFileName(normalizedFileName);
@@ -423,22 +447,29 @@ SharedDocumentRegistry::SharedDocumentRegistry(QObject* parent)
 {
 }
 
+SharedDocumentRegistry::~SharedDocumentRegistry()
+{
+    // QObject destroys child documents after this class's maps are destroyed.
+    for (auto* document : documentsById) document->registryOwner = nullptr;
+}
+
 SharedDocument* SharedDocumentRegistry::acquire(
     const QString& fileName,
-    const QString& initialText)
+    const QString& initialText,
+    const DocumentFileReadResult* initialFile)
 {
     const QString normalized =
         EditorFileIdentity::normalized(fileName);
     if (normalized.isEmpty())
         return createUntitled(initialText);
 
-    const QString identity =
-        EditorFileIdentity::lookupKey(normalized);
+    const QString documentId = EditorFileIdentity::physicalPath(normalized);
+    const QString identity = registeredFileKey(documentId);
     if (SharedDocument* existing =
             documentsByIdentity.value(identity, nullptr)) {
         return existing;
     }
-    return createDocument(normalized, normalized, initialText);
+    return createDocument(documentId, normalized, initialText, initialFile);
 }
 
 SharedDocument* SharedDocumentRegistry::createUntitled(
@@ -480,13 +511,7 @@ SharedDocument* SharedDocumentRegistry::documentForFile(
 SharedDocument* SharedDocumentRegistry::documentForView(
     MyCodeEditor* editor) const
 {
-    if (!editor)
-        return nullptr;
-    for (SharedDocument* document : documentsById) {
-        if (document && document->views().contains(editor))
-            return document;
-    }
-    return nullptr;
+    return documentsByView.value(editor, nullptr);
 }
 
 SharedDocument* SharedDocumentRegistry::documentById(
@@ -512,14 +537,14 @@ bool SharedDocumentRegistry::renameDocument(
     SharedDocument* sharedDocument,
     const QString& fileName)
 {
-    if (!sharedDocument || !documentsById.contains(
-            sharedDocument->documentId())) {
+    if (!sharedDocument || sharedDocument->registryOwner != this
+        || documentsById.value(sharedDocument->documentId()) != sharedDocument) {
         return false;
     }
     const QString normalized =
         EditorFileIdentity::normalized(fileName);
-    const QString identity =
-        EditorFileIdentity::lookupKey(normalized);
+    const QString documentId = EditorFileIdentity::physicalPath(normalized);
+    const QString identity = registeredFileKey(documentId);
     if (normalized.isEmpty() || identity.isEmpty())
         return false;
     SharedDocument* conflict =
@@ -528,28 +553,26 @@ bool SharedDocumentRegistry::renameDocument(
         return false;
 
     documentsById.remove(sharedDocument->documentId());
-    if (!sharedDocument->fileName().isEmpty()) {
-        documentsByIdentity.remove(
-            EditorFileIdentity::lookupKey(
-                sharedDocument->fileName()));
-    }
-    sharedDocument->setFileIdentity(normalized, normalized);
-    documentsById.insert(normalized, sharedDocument);
+    const auto previousIdentity = registeredFileKey(sharedDocument->documentId());
+    if (documentsByIdentity.value(previousIdentity) == sharedDocument)
+        documentsByIdentity.remove(previousIdentity);
+    documentsById.insert(documentId, sharedDocument);
     documentsByIdentity.insert(identity, sharedDocument);
+    sharedDocument->setFileIdentity(documentId, normalized);
     return true;
 }
 
 bool SharedDocumentRegistry::releaseIfUnused(
     SharedDocument* sharedDocument)
 {
-    if (!sharedDocument || sharedDocument->viewCount() != 0)
+    if (!sharedDocument || sharedDocument->registryOwner != this
+        || documentsById.value(sharedDocument->documentId()) != sharedDocument
+        || sharedDocument->viewCount() != 0)
         return false;
     documentsById.remove(sharedDocument->documentId());
-    if (!sharedDocument->fileName().isEmpty()) {
-        documentsByIdentity.remove(
-            EditorFileIdentity::lookupKey(
-                sharedDocument->fileName()));
-    }
+    const auto identity = registeredFileKey(sharedDocument->documentId());
+    if (documentsByIdentity.value(identity) == sharedDocument)
+        documentsByIdentity.remove(identity);
     delete sharedDocument;
     return true;
 }
@@ -557,16 +580,17 @@ bool SharedDocumentRegistry::releaseIfUnused(
 SharedDocument* SharedDocumentRegistry::createDocument(
     const QString& documentId,
     const QString& fileName,
-    const QString& initialText)
+    const QString& initialText,
+    const DocumentFileReadResult* initialFile)
 {
     auto* sharedDocument = new SharedDocument(
-        documentId, fileName, initialText, this);
+        documentId, fileName, initialText, this, initialFile);
+    sharedDocument->registryOwner = this;
     documentsById.insert(sharedDocument->documentId(),
                          sharedDocument);
     if (!sharedDocument->fileName().isEmpty()) {
         documentsByIdentity.insert(
-            EditorFileIdentity::lookupKey(
-                sharedDocument->fileName()),
+            registeredFileKey(documentId),
             sharedDocument);
     }
     return sharedDocument;

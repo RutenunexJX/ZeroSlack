@@ -8,7 +8,8 @@
 
 #include <functional>
 
-class QListWidget;
+class QListView;
+class TemporaryEditorSearchModel;
 class QLineEdit;
 
 class TemporaryEditorSearchPopup final : public QFrame
@@ -25,10 +26,11 @@ public:
                        const QString& query);
     void clearCandidates();
     void setActivationHandler(ActivationHandler handler);
+    void setCancellationHandler(std::function<void()> handler);
     void refreshTheme();
     void synchronizeGeometry();
 
-    QListWidget* resultsList() const;
+    QListView* resultsList() const;
     EditorSearchCandidates visibleCandidates() const;
 
 protected:
@@ -36,10 +38,11 @@ protected:
 
 private:
     QPointer<QLineEdit> searchField;
-    QListWidget* list = nullptr;
-    EditorSearchCandidates candidatesValue;
+    QListView* list = nullptr;
+    TemporaryEditorSearchModel* model = nullptr;
     QString queryValue;
     ActivationHandler activationHandler;
+    std::function<void()> cancellationHandler;
 
     void repositionBelowSearchField();
     void moveSelection(int delta);

@@ -407,25 +407,10 @@ void appendIncludeTemplates(QList<GlobalControlItem>* result,
 
 QList<GlobalControlItem> templateItems(
     const QString& text,
-    const GlobalControlQueryContext& context)
+    const GlobalControlQueryContext& context,
+    const QList<CodeTemplateItem>& templates,
+    const PackageImportSite& importSite)
 {
-    const CodeTemplateSignalContext signalContext =
-        context.editorAvailable
-        ? CodeTemplateContextAnalyzer::analyze(context.documentText,
-                                               context.cursorPosition)
-        : CodeTemplateSignalContext();
-
-    QList<CodeTemplateItem> templates;
-    for (const CodeTemplateItem& catalogItem :
-         CodeTemplateService::getInstance()->catalog()) {
-        templates.append(
-            CodeTemplateService::getInstance()->matchingTemplates(
-                catalogItem.commandToken,
-                QString(),
-                signalContext));
-    }
-    templates.append(UserTemplateService::getInstance()->catalog());
-
     QList<GlobalControlItem> result;
     for (const CodeTemplateItem& templateItem : templates) {
         if (!matchesTemplate(templateItem, text))
@@ -455,11 +440,6 @@ QList<GlobalControlItem> templateItems(
                             {QStringLiteral("module"),
                              QStringLiteral("instantiate")});
     if (context.editorAvailable && context.cursorPosition >= 0) {
-        const PackageImportSite importSite =
-            PackageToolService::analyzePackageImportSite(
-                context.documentText,
-                context.cursorPosition,
-                context.cursorPosition);
         if (importSite.valid) {
             appendSemanticTemplates(
                 &result,
@@ -485,8 +465,41 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
     switch (category) {
     case GlobalControlCategory::Symbols:
         return symbolItems(text, context);
-    case GlobalControlCategory::Templates:
-        return templateItems(text, context);
+    case GlobalControlCategory::Templates: {
+        const auto catalogRevision = UserTemplateService::getInstance()->catalogRevision();
+        const bool sameContext = captured && captured->context.fileName == context.fileName
+            && captured->context.documentInstance == context.documentInstance
+            && captured->context.documentRevision == context.documentRevision
+            && captured->context.cursorPosition == context.cursorPosition
+            && captured->context.editorAvailable == context.editorAvailable
+            && captured->context.documentText == context.documentText;
+        if (!sameContext) {
+            captured.emplace();
+            captured->context = context;
+            ++contextAnalyses;
+            const auto signalContext = context.editorAvailable
+                ? CodeTemplateContextAnalyzer::analyze(context.documentText, context.cursorPosition)
+                : CodeTemplateSignalContext{};
+            for (const auto& item : CodeTemplateService::getInstance()->catalog())
+                captured->templates.append(CodeTemplateService::getInstance()->matchingTemplates(
+                    item.commandToken, {}, signalContext));
+            if (context.editorAvailable && context.cursorPosition >= 0)
+                captured->importSite = PackageToolService::analyzePackageImportSite(
+                    context.documentText, context.cursorPosition, context.cursorPosition);
+        }
+        captured->catalogRevision = catalogRevision;
+        auto templates = captured->templates;
+        templates.append(UserTemplateService::getInstance()->catalog());
+        auto result = templateItems(text, context, templates, captured->importSite);
+        for (auto& item : result) {
+            item.sourceDocumentRevision = context.documentRevision;
+            item.sourceDocumentInstance = context.documentInstance;
+            item.sourceFileName = context.fileName;
+            item.sourceCursorPosition = context.cursorPosition;
+            item.sourceTemplateCatalogRevision = catalogRevision;
+        }
+        return result;
+    }
     case GlobalControlCategory::Commands:
         return {};
     }

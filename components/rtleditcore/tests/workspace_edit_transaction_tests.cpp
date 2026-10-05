@@ -4,6 +4,7 @@
 #include <functional>
 #include <iostream>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -57,6 +58,8 @@ WorkspaceEditPlan twoFilePlan() {
 class VerificationFailingDocumentManager final
     : public WorkspaceDocumentManager {
 public:
+    std::set<int> failedRestoreCalls;
+    int restoreCalls = 0;
     void openDocument(
         std::string filePath,
         std::string text,
@@ -99,6 +102,7 @@ public:
     bool restoreSnapshot(
         const std::string& filePath,
         const WorkspaceDocumentSnapshot& snapshot) override {
+        if (failedRestoreCalls.count(++restoreCalls)) return false;
         const bool restored = documents_.restoreSnapshot(filePath, snapshot);
         if (restored && restoresUntilSnapshotFailure_ > 0
             && --restoresUntilSnapshotFailure_ == 0) {
@@ -279,12 +283,16 @@ bool failedUndoVerificationRollsBackAtomically() {
             documents.text("b.sv") == "beta;\n",
         "failed verification did not restore the pre-undo document set");
     require(
-        documents.version("a.sv") == DocumentVersion{2} &&
-            documents.version("b.sv") == DocumentVersion{2},
-        "failed verification did not restore pre-undo revisions");
+        documents.version("a.sv").value > 2 &&
+            documents.version("b.sv").value > 2,
+        "failed verification rollback must advance revisions");
     require(
         coordinator.undoDepth() == 1 && coordinator.redoDepth() == 0,
         "failed verification consumed transaction history");
+    require(coordinator.undo(documents).status == TransactionStatus::Undone,
+        "verified rollback should allow an undo retry");
+    require(coordinator.redo(documents).status == TransactionStatus::Redone,
+        "retry should preserve redo");
     return true;
 }
 
@@ -327,10 +335,82 @@ bool changedPreviewPlanCannotApply() {
     return true;
 }
 
+bool consecutiveHistoryAndFailedApplyPreserveMonotonicRevisions() {
+    MockWorkspaceDocumentManager documents;
+    documents.openDocument("a.sv", "alpha\n");
+    documents.openDocument("b.sv", "beta\n");
+    WorkspaceEditTransactionCoordinator coordinator;
+    const auto prepare = [&] {
+        auto plan = twoFilePlan();
+        for (auto& edit : plan.edits) {
+            edit.expectedDocumentVersion = documents.version(edit.filePath);
+            edit.range = {{0, 0}, {0, 0}};
+            edit.newText = " ";
+        }
+        plan.baselines = rtledit::collectDocumentBaselines(plan.edits);
+        auto prepared = coordinator.prepare(plan, documents);
+        require(coordinator.confirmPreview(&prepared), "chain preview failed");
+        return prepared;
+    };
+    for (int i = 0; i < 3; ++i)
+        require(coordinator.apply(prepare(), documents).succeeded(), "chain apply failed");
+    auto revision = documents.version("a.sv").value;
+    for (int i = 0; i < 3; ++i) {
+        require(coordinator.undo(documents).status == TransactionStatus::Undone, "consecutive undo failed");
+        require(documents.version("a.sv").value > revision, "undo rewound revision");
+        revision = documents.version("a.sv").value;
+    }
+    require(documents.text("a.sv") == "alpha\n", "undo chain text differs");
+    for (int i = 0; i < 3; ++i) {
+        require(coordinator.redo(documents).status == TransactionStatus::Redone, "consecutive redo failed");
+        require(documents.version("a.sv").value > revision, "redo rewound revision");
+        revision = documents.version("a.sv").value;
+    }
+    auto rejected = prepare();
+    documents.rejectNextApplyTextEdits("b.sv");
+    const auto failed = coordinator.apply(rejected, documents);
+    require(failed.status == TransactionStatus::ApplyFailed && failed.applyResult.patchResult.changedFiles.empty(),
+        "patch failure should roll back all changed files");
+    require(coordinator.undo(documents).status == TransactionStatus::Undone,
+        "patch rollback invalidated earlier transaction history");
+    // A user edit that happens to restore identical text is still a new state.
+    documents.openDocument("a.sv", documents.text("a.sv"));
+    require(coordinator.redo(documents).status == TransactionStatus::Conflict,
+        "same-text user edit must not rebase history");
+    return true;
+}
+
+bool restoreFailureSupportsRetryAndReportsResiduals() {
+    for (bool residual : {false, true}) {
+        VerificationFailingDocumentManager documents;
+        documents.openDocument("a.sv", "alpha\n");
+        documents.openDocument("b.sv", "beta\n");
+        WorkspaceEditTransactionCoordinator coordinator;
+        auto prepared = coordinator.prepare(twoFilePlan(), documents);
+        coordinator.confirmPreview(&prepared);
+        require(coordinator.apply(prepared, documents).succeeded(), "fixture apply failed");
+        documents.failedRestoreCalls = residual ? std::set<int>{2, 4} : std::set<int>{2};
+        const auto failed = coordinator.undo(documents);
+        require(failed.status == TransactionStatus::RestoreFailed, "restore failure status missing");
+        require(coordinator.undoDepth() == 1, "failure consumed history");
+        if (residual) {
+            require(failed.residualFiles == std::vector<std::string>{"a.sv"}, "residual identity wrong");
+            require(coordinator.undo(documents).status == TransactionStatus::Conflict, "residual must block stale retry");
+        } else {
+            require(failed.residualFiles.empty(), "successful rollback reported residual");
+            require(coordinator.undo(documents).status == TransactionStatus::Undone, "rollback retry failed");
+            require(coordinator.redo(documents).status == TransactionStatus::Redone, "retry redo failed");
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 int main() {
     const std::vector<std::pair<std::string, std::function<bool()>>> tests = {
+        {"consecutiveHistoryAndFailedApplyPreserveMonotonicRevisions", consecutiveHistoryAndFailedApplyPreserveMonotonicRevisions},
+        {"restoreFailureSupportsRetryAndReportsResiduals", restoreFailureSupportsRetryAndReportsResiduals},
         {"changedPreviewPlanCannotApply", changedPreviewPlanCannotApply},
         {"previewIsMandatoryForHighRiskApply",
          previewIsMandatoryForHighRiskApply},

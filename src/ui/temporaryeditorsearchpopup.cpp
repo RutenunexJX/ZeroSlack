@@ -7,7 +7,8 @@
 
 #include <QEvent>
 #include <QKeyEvent>
-#include <QListWidget>
+#include <QListView>
+#include <QAbstractListModel>
 #include <QLineEdit>
 #include <QPalette>
 #include <QVBoxLayout>
@@ -20,6 +21,36 @@ constexpr int kPopupMaximumHeight = 260;
 constexpr int kPopupMinimumWidth = 360;
 constexpr int kCandidateRowHeight = 42;
 }
+
+class TemporaryEditorSearchModel final : public QAbstractListModel {
+public:
+    using QAbstractListModel::QAbstractListModel;
+    EditorSearchCandidates candidates;
+    int rowCount(const QModelIndex& parent = {}) const override { return parent.isValid() ? 0 : candidates.size(); }
+    QVariant data(const QModelIndex& index, int role) const override {
+        if (!index.isValid() || index.row() < 0 || index.row() >= candidates.size()) return {};
+        const auto& candidate = candidates[index.row()];
+        switch (role) {
+        case Qt::DisplayRole: {
+            QString text = QStringLiteral("%1   [%2]").arg(candidate.title, editorSearchCandidateTypeLabel(candidate.type));
+            if (!candidate.disambiguation.trimmed().isEmpty()) text += QLatin1Char('\n') + candidate.disambiguation.trimmed();
+            return text;
+        }
+        case Qt::UserRole: return static_cast<int>(candidate.type);
+        case Qt::UserRole + 1: return candidate.disambiguation;
+        case Qt::ToolTipRole: return QStringLiteral("%1 - %2").arg(candidate.title, candidate.disambiguation);
+        case Qt::SizeHintRole: return QSize(1, kCandidateRowHeight);
+        default: return {};
+        }
+    }
+    void replace(const EditorSearchCandidates& input) {
+        beginResetModel();
+        candidates = input;
+        if (std::any_of(candidates.cbegin(), candidates.cend(), [](const auto& value) { return !value.isValid(); }))
+            candidates.removeIf([](const auto& value) { return !value.isValid(); });
+        endResetModel();
+    }
+};
 
 TemporaryEditorSearchPopup::TemporaryEditorSearchPopup(
     QWidget* drawerParent)
@@ -35,7 +66,10 @@ TemporaryEditorSearchPopup::TemporaryEditorSearchPopup(
     layout->setContentsMargins(1, 1, 1, 1);
     layout->setSpacing(0);
 
-    list = UiControls::listWidget(this);
+    list = new QListView(this);
+    model = new TemporaryEditorSearchModel(list);
+    list->setModel(model);
+    list->setUniformItemSizes(true);
     list->setObjectName(QStringLiteral("temporaryEditorSearchResults"));
     list->setAlternatingRowColors(true);
     list->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -44,22 +78,8 @@ TemporaryEditorSearchPopup::TemporaryEditorSearchPopup(
     list->setTextElideMode(Qt::ElideMiddle);
     layout->addWidget(list);
 
-    QObject::connect(
-        list,
-        &QListWidget::itemClicked,
-        this,
-        [this](QListWidgetItem* item) {
-            if (item)
-                activateRow(list->row(item));
-        });
-    QObject::connect(
-        list,
-        &QListWidget::itemActivated,
-        this,
-        [this](QListWidgetItem* item) {
-            if (item)
-                activateRow(list->row(item));
-        });
+    connect(list, &QListView::clicked, this, [this](const QModelIndex& index) { activateRow(index.row()); });
+    connect(list, &QListView::activated, this, [this](const QModelIndex& index) { activateRow(index.row()); });
 
     refreshTheme();
     connect(&ApplicationThemeManager::instance(),
@@ -91,37 +111,10 @@ void TemporaryEditorSearchPopup::setCandidates(
     const QString& query)
 {
     queryValue = query.trimmed();
-    candidatesValue.clear();
-    list->clear();
-    if (queryValue.isEmpty()) {
-        hide();
-        return;
-    }
-
-    for (const EditorSearchCandidate& candidate : candidates) {
-        if (!candidate.isValid()) {
-            continue;
-        }
-        candidatesValue.append(candidate);
-        const QString type = editorSearchCandidateTypeLabel(candidate.type);
-        QString text = QStringLiteral("%1   [%2]")
-                           .arg(candidate.title, type);
-        if (!candidate.disambiguation.trimmed().isEmpty()) {
-            text += QStringLiteral("\n%1")
-                        .arg(candidate.disambiguation.trimmed());
-        }
-        auto* item = new QListWidgetItem(text, list);
-        item->setData(Qt::UserRole, static_cast<int>(candidate.type));
-        item->setData(Qt::UserRole + 1, candidate.disambiguation);
-        item->setToolTip(
-            QStringLiteral("%1 - %2")
-                .arg(candidate.title, candidate.disambiguation));
-        item->setSizeHint(QSize(1, kCandidateRowHeight));
-    }
-
-    list->setCurrentRow(-1);
+    model->replace(queryValue.isEmpty() ? EditorSearchCandidates{} : candidates);
+    list->setCurrentIndex({});
     list->clearSelection();
-    if (candidatesValue.isEmpty()) {
+    if (model->candidates.isEmpty()) {
         hide();
         return;
     }
@@ -133,8 +126,7 @@ void TemporaryEditorSearchPopup::setCandidates(
 void TemporaryEditorSearchPopup::clearCandidates()
 {
     queryValue.clear();
-    candidatesValue.clear();
-    list->clear();
+    model->replace({});
     hide();
 }
 
@@ -142,6 +134,11 @@ void TemporaryEditorSearchPopup::setActivationHandler(
     ActivationHandler handler)
 {
     activationHandler = std::move(handler);
+}
+
+void TemporaryEditorSearchPopup::setCancellationHandler(std::function<void()> handler)
+{
+    cancellationHandler = std::move(handler);
 }
 
 void TemporaryEditorSearchPopup::refreshTheme()
@@ -174,7 +171,7 @@ void TemporaryEditorSearchPopup::synchronizeGeometry()
         repositionBelowSearchField();
 }
 
-QListWidget* TemporaryEditorSearchPopup::resultsList() const
+QListView* TemporaryEditorSearchPopup::resultsList() const
 {
     return list;
 }
@@ -182,7 +179,7 @@ QListWidget* TemporaryEditorSearchPopup::resultsList() const
 EditorSearchCandidates
 TemporaryEditorSearchPopup::visibleCandidates() const
 {
-    return candidatesValue;
+    return model->candidates;
 }
 
 bool TemporaryEditorSearchPopup::eventFilter(
@@ -197,7 +194,7 @@ bool TemporaryEditorSearchPopup::eventFilter(
     if (CandidatePopupNavigation::handleKey(static_cast<QKeyEvent*>(event),
         [this](int delta) { moveSelection(delta); },
         [this] { return activateCurrentOrUniqueExact(); },
-        [this] { hide(); list->setCurrentRow(-1); list->clearSelection(); })) return true;
+        [this] { if (cancellationHandler) cancellationHandler(); hide(); list->setCurrentIndex({}); list->clearSelection(); })) return true;
     return QFrame::eventFilter(watched, event);
 }
 
@@ -214,7 +211,7 @@ void TemporaryEditorSearchPopup::repositionBelowSearchField()
     const int width = qMin(
         availableWidth,
         qMax(kPopupMinimumWidth, searchField->width()));
-    const int contentHeight = list->count() * kCandidateRowHeight + 2;
+    const int contentHeight = model->rowCount() * kCandidateRowHeight + 2;
     const int desiredHeight = qMin(kPopupMaximumHeight, contentHeight);
     const int spaceBelow = parentWidget()->height() - below.y() - 6;
     const QPoint searchTop = searchField->mapTo(
@@ -236,7 +233,7 @@ void TemporaryEditorSearchPopup::repositionBelowSearchField()
 
 void TemporaryEditorSearchPopup::moveSelection(int delta)
 {
-    if (candidatesValue.isEmpty())
+    if (model->candidates.isEmpty())
         return;
     if (!isVisible()) {
         repositionBelowSearchField();
@@ -248,14 +245,14 @@ void TemporaryEditorSearchPopup::moveSelection(int delta)
 
 bool TemporaryEditorSearchPopup::activateCurrentOrUniqueExact()
 {
-    const int row = list->currentRow();
+    const int row = list->currentIndex().row();
     if (row >= 0) {
         activateRow(row);
         return true;
     }
-    if (candidatesValue.size() != 1)
+    if (model->candidates.size() != 1)
         return true;
-    const EditorSearchCandidate& only = candidatesValue.first();
+    const EditorSearchCandidate& only = model->candidates.first();
     if (only.title.compare(queryValue, Qt::CaseInsensitive) != 0)
         return true;
     activateRow(0);
@@ -264,9 +261,8 @@ bool TemporaryEditorSearchPopup::activateCurrentOrUniqueExact()
 
 void TemporaryEditorSearchPopup::activateRow(int row)
 {
-    if (row < 0 || row >= static_cast<int>(candidatesValue.size())
-        || !CandidatePopupNavigation::selectable(list->item(row))) return;
-    const EditorSearchCandidate selected = candidatesValue.at(row);
+    if (row < 0 || row >= static_cast<int>(model->candidates.size())) return;
+    const EditorSearchCandidate selected = model->candidates.at(row);
     clearCandidates();
     if (activationHandler)
         activationHandler(selected);

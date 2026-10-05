@@ -37,7 +37,10 @@ enum class WorkspaceConfigurationSource {
     LegacySession,
 };
 
+enum class WorkspaceConfigurationLoadState { Missing, Loaded, Invalid, Unsupported, ReadError };
+
 struct WorkspaceConfigurationLoadResult {
+    WorkspaceConfigurationLoadState state = WorkspaceConfigurationLoadState::Missing;
     bool loaded = false;
     WorkspaceConfigurationSource source =
         WorkspaceConfigurationSource::Default;
@@ -46,6 +49,11 @@ struct WorkspaceConfigurationLoadResult {
     QString legacyFilePath;
     QStringList externalPaths;
     QString message;
+    bool usable() const {
+        return (state == WorkspaceConfigurationLoadState::Missing
+                || state == WorkspaceConfigurationLoadState::Loaded)
+            && configuration.isValid();
+    }
 };
 
 class WorkspaceConfigurationService

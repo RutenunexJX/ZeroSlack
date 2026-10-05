@@ -112,6 +112,8 @@ set(ZEROSLACK_DOCUMENT_SOURCES
     include/zeroslack/documents/tsdocument.h
     src/documents/crashrecoveryservice.cpp
     src/documents/documentbuffer.cpp
+    src/documents/documentfileread.cpp
+    include/zeroslack/documents/documentfileread.h
     src/editor/editorfileidentity.cpp
     src/editor/tsdocument.cpp
 )

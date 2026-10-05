@@ -1,4 +1,5 @@
 #include "scopedsearchpanel.h"
+#include <zeroslack/documents/documentfileread.h>
 #include "testuistyle.h"
 
 #include "editorfileidentity.h"
@@ -599,10 +600,14 @@ int main(int argc, char* argv[])
           "production fixture has two views of one SharedDocument");
 
     if (productionPanel) {
-        productionPanel->setScope(
-            ScopedSearchScope::Workspace);
-        productionPanel->setQueryText(
-            QStringLiteral("disk_only"));
+        productionPanel->setScope(ScopedSearchScope::File);
+        resetDocumentFileReadMetricsForTest();
+        productionPanel->setQueryText(QStringLiteral("buffer_only"));
+        productionPanel->refresh();
+        check(documentFileReadMetricsForTest().reads == 0,
+            "local search never reads unopened workspace files");
+        productionPanel->setScope(ScopedSearchScope::Workspace);
+        productionPanel->setQueryText(QStringLiteral("disk_only"));
         productionPanel->refresh();
     }
     check(productionPanel

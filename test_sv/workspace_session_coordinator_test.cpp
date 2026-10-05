@@ -251,6 +251,87 @@ QString savedGeometryMarker(
 }
 }
 
+void checkAutomaticSaveFailureAndRecovery()
+{
+    QTemporaryDir temp;
+    const QString workspace = temp.filePath("workspace");
+    const QString source = workspace + "/top.sv";
+    const QString blocker = temp.filePath("blocked");
+    const QString store = blocker + "/session.ini";
+    check(writeFile(source, "module top; endmodule\n") && writeFile(blocker, "block"),
+        "session failure fixture prepared");
+    WorkspaceManager manager;
+    manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+    QTabWidget widget;
+    TabManager tabs(&widget);
+    QStringList messages;
+    WorkspaceSessionUiBridge bridge;
+    bridge.showStatus = [&](const QString& message, int) { messages.append(message); };
+    WorkspaceSessionCoordinator coordinator(&manager, &tabs, nullptr, bridge, store, 25);
+    coordinator.setRestoreOnActivation(false);
+    check(manager.openWorkspace(workspace), "failure fixture workspace opens");
+    QTest::qWait(30);
+    messages.clear();
+    QSignalSpy saves(&coordinator, &WorkspaceSessionCoordinator::sessionSaveFinished);
+    coordinator.scheduleSessionSave();
+    check(QTest::qWaitFor([&] { return !saves.isEmpty(); }, 1000), "automatic save attempted");
+    check(!saves.isEmpty() && !saves.first().at(1).toBool(), "storage failure is reproducible");
+    check(coordinator.lastSaveOutcome().status == WorkspaceSessionSaveStatus::Failed
+        && coordinator.pendingSaveCount() == 1, "failed outcome retains one pending snapshot");
+    check(!messages.isEmpty(), "automatic save failure is visible without a modal dialog");
+    check(QFile::remove(blocker), "storage failure removed");
+    check(QTest::qWaitFor([&] { return QFileInfo(store).isFile(); }, 1500),
+        "pending automatic save retries after storage recovery");
+    WorkspaceSessionStateService service(store);
+    check(service.load(workspace).loaded, "retried session is loadable on next open");
+    coordinator.clearSession();
+    coordinator.scheduleSessionSave();
+    QTest::qWait(150);
+    check(!service.sessionExists(workspace), "clear cancels pending save recreation");
+    check(coordinator.saveSessionResult(false).status == WorkspaceSessionSaveStatus::Skipped,
+        "explicitly cleared auto-save has a skipped outcome");
+}
+
+void checkFailedSaveTransitionsAndBoundedRetries()
+{
+    QTemporaryDir temp;
+    const auto a = temp.filePath("a");
+    const auto b = temp.filePath("b");
+    const auto blocker = temp.filePath("blocked");
+    const auto store = blocker + "/state.ini";
+    check(writeFile(a + "/a.sv", "module a; endmodule\n")
+        && writeFile(b + "/b.sv", "module b; endmodule\n") && writeFile(blocker, "block"),
+        "transition failure fixture prepared");
+    WorkspaceManager manager;
+    manager.setRecentWorkspacePersistenceEnabledForTesting(false);
+    QTabWidget widget; TabManager tabs(&widget);
+    QByteArray geometry("state-a");
+    WorkspaceSessionUiBridge bridge;
+    bridge.captureUiState = [&](bool) { WorkspaceSessionUiState state; state.mainWindowGeometry = geometry; return state; };
+    WorkspaceSessionCoordinator coordinator(&manager, &tabs, nullptr, bridge, store, 25);
+    coordinator.setRestoreOnActivation(false);
+    check(manager.openWorkspace(a), "pending A opens");
+    QTest::qWait(50);
+    check(coordinator.openWorkspace(b), "failed session save keeps transition non-modal");
+    geometry = "state-b";
+    coordinator.saveSession(false);
+    QSignalSpy saves(&coordinator, &WorkspaceSessionCoordinator::sessionSaveFinished);
+    QTest::qWait(400);
+    const int boundedCount = saves.size();
+    QTest::qWait(400);
+    check(saves.size() == boundedCount && coordinator.pendingSaveCount() == 2,
+        "failed workspaces retain one snapshot each and stop retrying");
+    coordinator.clearSession();
+    check(coordinator.pendingSaveCount() == 1, "clearing B cancels only B's pending snapshot");
+    check(QFile::remove(blocker), "transition storage recovered");
+    coordinator.flushPendingSaves();
+    WorkspaceSessionStateService service(store);
+    check(savedGeometryMarker(service, a) == QStringLiteral("state-a")
+        && !service.sessionExists(b) && coordinator.pendingSaveCount() == 0,
+        "final flush preserves captured A and never recreates cleared B");
+    check(coordinator.saveBeforeWorkspaceTransition(), "cleaned skip is a successful transition disposition");
+}
+
 int main(int argc, char* argv[])
 {
     QStandardPaths::setTestModeEnabled(true);
@@ -494,6 +575,8 @@ int main(int argc, char* argv[])
     check(!lastStatus.isEmpty(),
           "coordinator reports user-visible lifecycle status");
     checkRestoredWorkspaceWatches();
+    checkAutomaticSaveFailureAndRecovery();
+    checkFailedSaveTransitionsAndBoundedRetries();
     checkWatchNotificationOwnership();
     std::cout << (checks - failures) << "/" << checks
               << " workspace session coordinator checks passed\n";

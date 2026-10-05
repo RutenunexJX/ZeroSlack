@@ -43,6 +43,7 @@ struct GlobalControlQueryContext {
     int replacementStart = -1;
     int replacementLength = 0;
     int documentRevision = -1;
+    quint64 documentInstance = 0;
     bool memberAccess = false;
 };
 
@@ -61,6 +62,10 @@ struct GlobalControlItem {
     int replacementStart = -1;
     int replacementLength = 0;
     int sourceDocumentRevision = -1;
+    quint64 sourceDocumentInstance = 0;
+    QString sourceFileName;
+    int sourceCursorPosition = -1;
+    quint64 sourceTemplateCatalogRevision = 0;
     GlobalControlItemOperation operation =
         GlobalControlItemOperation::InsertText;
 };

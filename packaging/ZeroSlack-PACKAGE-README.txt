@@ -1,4 +1,13 @@
-ZeroSlack v0.31.21 Windows package
+ZeroSlack v0.31.22 Windows package
+
+Release 0.31.22 reduces repeated document, recovery, search, formatting and
+template work. Document identities survive path alias changes; transactions
+preserve logical text coordinates and monotonic revision checks. Workspace
+settings drafts are retained, and invalid configuration or Pinloom link data is
+protected from writes. All 17 AR-12 through AR-28 items completed review and
+targeted validation; existing full-suite failures and unavailable private
+fixtures remain documented. Performance evidence describes its measured
+development builds, not desktop frame rates or every project.
 
 Release 0.31.21 separates Documents and Semantic runtime libraries from the UI;
 the CLI no longer depends on Widgets or Ela. Editor views share document parsing.

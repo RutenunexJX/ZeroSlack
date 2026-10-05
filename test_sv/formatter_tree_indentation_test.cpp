@@ -75,6 +75,21 @@ FormatterOptions structuralIndentationOptions()
 
 int main(int argc, char** argv)
 {
+    {
+        StructuredWhitespaceFormatter::SyntaxContext context;
+        const QString original = QStringLiteral("module reuse;\nlogic a;\nendmodule\n");
+        const auto* syntax = &context.syntaxFor(original);
+        StructuredWhitespaceFormatter::syntaxErrorLineRanges(original, &context);
+        StructuredWhitespaceFormatter::conservativeLineRanges(original, 4, &context);
+        expect("identical formatter inputs reuse one syntax version",
+            &context.syntaxFor(original) == syntax && context.parseCount() == 1);
+        const QString changed = original + QStringLiteral("// changed\n");
+        context.syntaxFor(changed);
+        expect("changed formatter text gets a distinct parse", context.parseCount() == 2);
+        const auto report = FormatterService::getInstance()->formatDocument(original);
+        expect("production formatter reuses syntax while retaining all guards",
+            report.accepted() && report.syntaxParseCount > 0 && report.syntaxReuseCount > report.syntaxParseCount);
+    }
     QCoreApplication application(argc, argv);
     Q_UNUSED(application);
 

@@ -18,6 +18,14 @@ class QTimer;
 class TabManager;
 class WorkspaceManager;
 
+enum class WorkspaceSessionSaveStatus { Skipped, Saved, Failed };
+struct WorkspaceSessionSaveOutcome {
+    WorkspaceSessionSaveStatus status = WorkspaceSessionSaveStatus::Skipped;
+    QString workspaceRoot;
+    QString reason;
+};
+Q_DECLARE_METATYPE(WorkspaceSessionSaveStatus)
+
 struct WorkspaceSessionUiRestoreResult {
     bool geometryRestored = true;
     bool dockStateRestored = true;
@@ -55,6 +63,10 @@ public:
     void setRememberPanelState(bool enabled);
 
     bool saveSession(bool showStatus = true);
+    WorkspaceSessionSaveOutcome saveSessionResult(bool showStatus = true);
+    WorkspaceSessionSaveOutcome lastSaveOutcome() const { return lastOutcome; }
+    int pendingSaveCount() const { return pendingSaves.size(); }
+    void flushPendingSaves();
     bool restoreSession();
     void clearSession();
     void scheduleSessionSave();
@@ -66,6 +78,8 @@ public:
     bool closeWorkspace(int index);
 
 signals:
+    void sessionSaveOutcome(const QString& workspaceRoot,
+        WorkspaceSessionSaveStatus status, const QString& reason);
     void sessionSaveFinished(
         const QString& workspaceRoot,
         bool saved);
@@ -91,6 +105,10 @@ private:
     WorkspaceSessionUiBridge uiBridge;
     WorkspaceSessionStateService stateService;
     QTimer* saveTimer = nullptr;
+    QTimer* retryTimer = nullptr;
+    struct PendingSave { WorkspaceSessionState state; int attempts = 0; };
+    QHash<QString, PendingSave> pendingSaves;
+    WorkspaceSessionSaveOutcome lastOutcome;
     QSet<QString> cleanWorkspaceRoots;
     QHash<QString, WorkspaceSessionUiState> liveWorkspaceUi;
     QSet<QString> activatedWorkspaceRoots;
@@ -103,6 +121,10 @@ private:
     WorkspaceSessionState captureSessionState() const;
     void cancelScheduledSave();
     void showStatus(const QString& message, int timeoutMs) const;
+    WorkspaceSessionSaveOutcome persistSession(const WorkspaceSessionState& state,
+        bool showSuccess, int attempts = 1, bool scheduleRetry = true);
+    WorkspaceSessionSaveOutcome publishSaveOutcome(WorkspaceSessionSaveOutcome outcome);
+    void retryPendingSaves();
 };
 
 #endif // WORKSPACESESSIONCOORDINATOR_H

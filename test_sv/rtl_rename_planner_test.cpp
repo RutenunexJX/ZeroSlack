@@ -128,11 +128,14 @@ public:
         auto found = docs.find(file);
         if (found == docs.end())
             return false;
-        found->text = QString::fromUtf8(
+        const auto restored = QString::fromUtf8(
             snapshot.text.data(),
             static_cast<qsizetype>(
                 snapshot.text.size()));
-        found->revision = snapshot.version.value;
+        if (found->text != restored) {
+            found->text = restored;
+            ++found->revision;
+        }
         return true;
     }
 };

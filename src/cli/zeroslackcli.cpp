@@ -334,7 +334,7 @@ WorkspaceState inspectWorkspace(const QString& requestedRoot)
         configurationService.loadWithResult(state.root);
     state.configuration = loaded.configuration;
     state.configurationSource = loaded.source;
-    if (!state.configuration.isValid()) {
+    if (!loaded.usable()) {
         state.failureReason = loaded.message.isEmpty()
             ? QStringLiteral("Workspace configuration is invalid.")
             : loaded.message;
@@ -1146,18 +1146,20 @@ QStringList gitChangedFiles(const WorkspaceState& state,
             }
             return {};
         }
-        return QString::fromUtf8(process.readAllStandardOutput())
-            .split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        QStringList paths;
+        for (const QByteArray& path : process.readAllStandardOutput().split('\0'))
+            if (!path.isEmpty()) paths.append(QString::fromUtf8(path));
+        return paths;
     };
 
     QStringList changed = runGit(
-        {QStringLiteral("diff"), QStringLiteral("--name-only"),
+        {QStringLiteral("diff"), QStringLiteral("--name-only"), QStringLiteral("-z"),
          baseRef, QStringLiteral("--")}, true);
     if (failureReason && !failureReason->isEmpty())
         return {};
     changed.append(runGit(
         {QStringLiteral("ls-files"), QStringLiteral("--others"),
-         QStringLiteral("--exclude-standard")}, false));
+         QStringLiteral("--exclude-standard"), QStringLiteral("-z")}, true));
     for (QString& path : changed)
         path = QDir::cleanPath(QDir::fromNativeSeparators(path));
     changed.sort(Qt::CaseInsensitive);

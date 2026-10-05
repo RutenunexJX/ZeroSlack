@@ -13,6 +13,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
+#include <QProcess>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QUrl>
@@ -151,6 +153,75 @@ private:
     }
 
 private slots:
+    void changedUsesLiteralGitFileNames()
+    {
+        QVERIFY2(!QStandardPaths::findExecutable("git").isEmpty(), "Git is required for the changed command regression");
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const auto root = fixture.filePath("repository"); QDir().mkpath(root);
+        const auto git = [&root](const QStringList& args) {
+            QProcess process; process.setWorkingDirectory(root);
+            process.start("git", args);
+            return process.waitForFinished(15000) && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+        };
+        QVERIFY(git({"init", "-q"}));
+        const QStringList paths = {QString::fromUtf8("中文目录/时钟.sv"), "space name.sv", " leading;name.sv", QString::fromUtf8("新建 计数器.sv")};
+        for (int i = 0; i < paths.size() - 1; ++i)
+            QVERIFY(writeText(QDir(root).filePath(paths[i]), QString("module m%1; logic q; endmodule\n").arg(i)));
+        QVERIFY(git({"add", "--", "."}));
+        QVERIFY(git({"-c", "user.name=ZeroSlack test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture"}));
+        PinloomCodeLinkStore store; store.setWorkspaceRoot(root);
+        SlangManager slang;
+        for (int i = 0; i < paths.size(); ++i) {
+            const auto file = QDir(root).filePath(paths[i]);
+            const auto text = QString("module m%1; logic q; assign q = 1'b0; endmodule\n").arg(i);
+            QVERIFY(writeText(file, text));
+            const auto symbol = recordNamed(slang.extractSymbolRecords(file, text), "q");
+            const auto source = PinloomSourceSelection::fromSemanticSymbol(root, text, symbol);
+            QVERIFY(source.isValid());
+            QVERIFY(store.addLink(source, QUrl(QString("pinloom://anchor/q%1").arg(i)), "q", {}));
+        }
+        ZeroSlackCliService service; ZeroSlackCliRequest request;
+        request.command = "changed"; request.workspaceRoot = root; request.baseRef = "HEAD";
+        request.cacheDirectory = fixture.filePath("cache");
+        const auto result = service.execute(request); QCOMPARE(result.exitCode, 0);
+        const auto data = result.envelope.value("data").toObject();
+        for (const auto& path : paths) {
+            QVERIFY(data.value("files").toArray().contains(path));
+            bool symbolFound = false, anchorFound = false;
+            for (const auto& value : data.value("symbols").toArray())
+                symbolFound |= value.toObject().value("file").toString() == path;
+            for (const auto& value : data.value("anchors").toArray())
+                anchorFound |= value.toObject().value("file").toString() == path;
+            QVERIFY2(symbolFound && anchorFound, qPrintable(path));
+        }
+        const auto cached = service.execute(request); QCOMPARE(cached.exitCode, 0);
+        QCOMPARE(cached.envelope.value("data"), result.envelope.value("data"));
+        QVERIFY(!cached.envelope.value("cacheRebuilt").toBool());
+    }
+
+    void invalidConfigurationDoesNotReuseGoodCache()
+    {
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const QString root = fixture.filePath("workspace");
+        QVERIFY(writeText(QDir(root).filePath("top.sv"), "module top; endmodule\n"));
+        ZeroSlackCliService service;
+        ZeroSlackCliRequest request; request.workspaceRoot = root;
+        request.cacheDirectory = fixture.filePath("cache"); request.command = "scan";
+        QCOMPARE(service.execute(request).exitCode, 0);
+        const auto path = WorkspaceConfigurationService::projectFilePath(root);
+        for (const auto& bytes : {QString("{broken"), QString(R"({"schema":"ZeroSlack.ProjectConfiguration","version":99})")}) {
+            QVERIFY(writeText(path, bytes));
+            for (const auto* command : {"scan", "status", "summary"}) {
+                request.command = command;
+                const auto result = service.execute(request);
+                QVERIFY2(result.exitCode != 0, command);
+                QVERIFY(!result.envelope.value("ok").toBool());
+                QVERIFY(!result.envelope.value("cacheRebuilt").toBool());
+            }
+            QCOMPARE(fileHash(path), QString::fromLatin1(QCryptographicHash::hash(bytes.toUtf8(), QCryptographicHash::Sha256).toHex()));
+        }
+    }
+
     void cacheTracksTopAndConfiguration()
     {
         QTemporaryDir fixture;

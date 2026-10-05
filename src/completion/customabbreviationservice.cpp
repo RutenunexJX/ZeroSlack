@@ -147,6 +147,7 @@ QList<CustomAbbreviationRecord> CustomAbbreviationService::records() const
 {
     QList<CustomAbbreviationRecord> result;
     std::unique_ptr<QSettings> settings = makeSettings(settingsFilePath);
+    settings->setAtomicSyncRequired(true);
     settings->beginGroup(QString::fromLatin1(kCustomAbbreviationGroup));
     const int count =
         settings->beginReadArray(QString::fromLatin1(kCustomAbbreviationItems));
@@ -289,6 +290,13 @@ CustomAbbreviationSaveReport CustomAbbreviationService::setRecords(
         return report;
 
     std::unique_ptr<QSettings> settings = makeSettings(settingsFilePath);
+    settings->setAtomicSyncRequired(true);
+    settings->sync();
+    if (settings->status() != QSettings::NoError) {
+        report.valid = false;
+        appendIssue(&report, {}, QStringLiteral("storage"), QStringLiteral("Cannot read abbreviation settings before saving."));
+        return report;
+    }
     settings->beginGroup(QString::fromLatin1(kCustomAbbreviationGroup));
     settings->remove(QString());
     settings->beginWriteArray(QString::fromLatin1(kCustomAbbreviationItems));
@@ -309,6 +317,10 @@ CustomAbbreviationSaveReport CustomAbbreviationService::setRecords(
     settings->endArray();
     settings->endGroup();
     settings->sync();
+    if (settings->status() != QSettings::NoError) {
+        report.valid = false;
+        appendIssue(&report, {}, QStringLiteral("storage"), QStringLiteral("Cannot commit abbreviation settings atomically."));
+    }
     return report;
 }
 
@@ -353,9 +365,5 @@ bool CustomAbbreviationService::removeRecord(const QString& id) const
 
 void CustomAbbreviationService::clear() const
 {
-    std::unique_ptr<QSettings> settings = makeSettings(settingsFilePath);
-    settings->beginGroup(QString::fromLatin1(kCustomAbbreviationGroup));
-    settings->remove(QString());
-    settings->endGroup();
-    settings->sync();
+    setRecords({});
 }

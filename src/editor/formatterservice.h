@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <memory>
+namespace StructuredWhitespaceFormatter { class SyntaxContext; }
 
 enum class FormatterOutcome {
     Applied,
@@ -34,6 +35,8 @@ struct FormatterReport {
     int formattedLines = 0;
     FormatterOutcome outcome = FormatterOutcome::Unchanged;
     QString diagnostic;
+    quint64 syntaxParseCount = 0;
+    quint64 syntaxReuseCount = 0;
 
     bool accepted() const
     {
@@ -54,6 +57,8 @@ public:
         const FormatterOptions& options = FormatterOptions()) const;
 
 private:
+    FormatterReport formatDocumentWithContext(const QString& text, const FormatterOptions& options,
+        StructuredWhitespaceFormatter::SyntaxContext& context) const;
     static std::unique_ptr<FormatterService> instance;
 };
 

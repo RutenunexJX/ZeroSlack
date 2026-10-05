@@ -16,8 +16,7 @@ class ZEROSLACK_API TemporaryEditorContextProvider final
     : public IContextContentProvider
 {
 public:
-    using SearchProvider =
-        std::function<EditorSearchCandidates(const QString&)>;
+    using SearchProvider = EditorSearchTaskProvider;
 
     explicit TemporaryEditorContextProvider(TabManager* tabManager);
 
