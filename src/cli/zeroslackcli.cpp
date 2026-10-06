@@ -1923,6 +1923,7 @@ QJsonObject suiteProviderDiagnostic(const QString& provider,
 }
 
 struct SuiteRuntimeResolver {
+    QString endpoint;
     bool runtimeAvailable = false;
     QSet<QString> providers;
     QString failureCode;
@@ -1932,13 +1933,16 @@ struct SuiteRuntimeResolver {
     static constexpr int kTotalResolveMilliseconds = 3000;
     static constexpr int kMaximumResolveAttempts = 16;
 
-    explicit SuiteRuntimeResolver(bool enabled = true)
+    explicit SuiteRuntimeResolver(bool enabled, const QString& runtimeEndpoint)
+        : endpoint(runtimeEndpoint)
     {
         deadline.start();
         if (!enabled)
             return;
 #ifdef ZEROSLACK_CLI_HAS_SUITEAPP
-        SuiteApp::Client client(SuiteApp::defaultRuntimeEndpoint(), 500);
+        if (endpoint.isEmpty())
+            endpoint = SuiteApp::defaultRuntimeEndpoint();
+        SuiteApp::Client client(endpoint, 500);
         const SuiteApp::TransportResult listed = client.listProviders();
         if (!listed.hasResponse()) {
             failureCode = listed.errorCode.isEmpty()
@@ -2000,7 +2004,7 @@ struct SuiteRuntimeResolver {
         ++resolveAttempts;
 #ifdef ZEROSLACK_CLI_HAS_SUITEAPP
         SuiteApp::Client client(
-            SuiteApp::defaultRuntimeEndpoint(),
+            endpoint,
             qBound(100, qMin(1200, remaining), 1200));
         const SuiteApp::TransportResult resolved = client.resolveResource(
             resource.uri.toString(QUrl::FullyEncoded), provider);
@@ -2052,6 +2056,7 @@ int compactJsonTokens(const QJsonValue& value)
 
 QJsonObject suiteContextData(const PreparedIndex& prepared,
                              const ZeroSlackCliRequest& request,
+                             const QString& runtimeEndpoint,
                              QString* failureReason)
 {
     if (failureReason)
@@ -2145,7 +2150,7 @@ QJsonObject suiteContextData(const PreparedIndex& prepared,
         [&referenceCounts](const QString& provider) {
             return referenceCounts.value(provider) > 0;
         });
-    SuiteRuntimeResolver resolver(hasReferences);
+    SuiteRuntimeResolver resolver(hasReferences, runtimeEndpoint);
     QJsonArray providerPayloads;
     QHash<QString, int> providerIndexes;
     for (const QString& provider : providerOrder) {
@@ -2525,7 +2530,7 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
     else if (request.command == QStringLiteral("suite-context")) {
         ZeroSlackCliRequest suiteRequest = request;
         suiteRequest.includedProviders = normalizedProviders;
-        data = suiteContextData(prepared, suiteRequest, &failure);
+        data = suiteContextData(prepared, suiteRequest, suiteRuntimeEndpoint, &failure);
     }
 
     if (failure.isEmpty()

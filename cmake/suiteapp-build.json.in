@@ -1,0 +1,6 @@
+{
+  "enabled": @ZEROSLACK_SUITEAPP_ENABLED_JSON@,
+  "sdkVersion": "@SuiteApp_VERSION@",
+  "guiProvider": @ZEROSLACK_SUITEAPP_GUI_JSON@,
+  "cliClient": @ZEROSLACK_SUITEAPP_ENABLED_JSON@
+}

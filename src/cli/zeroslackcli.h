@@ -40,7 +40,9 @@ public:
     // Deterministic interleaving for contract tests; no command-line switch or
     // process-global callback can enable it in the shipped CLI.
     using ObservationHook = std::function<void(ObservationStage)>;
-    explicit ZeroSlackCliService(ObservationHook hook = {}) : observationHook(std::move(hook)) {}
+    // An empty endpoint uses the SDK default; explicit endpoints isolate callers.
+    explicit ZeroSlackCliService(ObservationHook hook = {}, QString runtimeEndpoint = {})
+        : observationHook(std::move(hook)), suiteRuntimeEndpoint(std::move(runtimeEndpoint)) {}
     static constexpr int kSchemaVersion = 1;
 
     ZeroSlackCliResult execute(const ZeroSlackCliRequest& request) const;
@@ -52,6 +54,7 @@ public:
     static QString usageText();
 private:
     ObservationHook observationHook;
+    QString suiteRuntimeEndpoint;
 };
 
 #endif // ZEROSLACKCLI_H

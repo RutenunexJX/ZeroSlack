@@ -1,6 +1,7 @@
 #include "suiteappintegration.h"
 
 #include "mainwindow.h"
+#include "documentmodel.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticstableidentity.h"
@@ -155,9 +156,11 @@ SourceTarget sourceTarget(const QJsonObject& params, MainWindow* window)
 QString sourceSnippet(MainWindow* window, const SourceTarget& target)
 {
     QString text;
-    if (window && window->tabManager)
-        text = window->tabManager->getPlainTextFromOpenFile(target.filePath);
-    if (text.isEmpty()) {
+    const auto* documents = window && window->tabManager
+        ? window->tabManager->getDocumentModel() : nullptr;
+    if (documents && documents->editorForFile(target.filePath)) {
+        text = documents->documentTextForFile(target.filePath);
+    } else {
         QFile file(target.filePath);
         if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
             QTextStream stream(&file);
@@ -205,9 +208,15 @@ ZeroSlackSuiteIntegration::~ZeroSlackSuiteIntegration() = default;
 
 bool ZeroSlackSuiteIntegration::start(QString* failureReason)
 {
+    return start(SuiteApp::RuntimeStartOptions{}, failureReason);
+}
+
+bool ZeroSlackSuiteIntegration::start(
+    const SuiteApp::RuntimeStartOptions& runtimeOptions,
+    QString* failureReason)
+{
     if (provider && provider->isListening())
         return true;
-    SuiteApp::RuntimeStartOptions runtimeOptions;
     const SuiteApp::RuntimeStatus runtime =
         SuiteApp::ensureRuntime(runtimeOptions);
     if (!runtime.available) {

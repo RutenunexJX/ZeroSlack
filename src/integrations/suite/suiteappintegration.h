@@ -10,6 +10,7 @@ class QMainWindow;
 
 namespace SuiteApp {
 class Provider;
+struct RuntimeStartOptions;
 }
 
 class ZeroSlackSuiteIntegration final : public QObject
@@ -20,6 +21,8 @@ public:
     ~ZeroSlackSuiteIntegration() override;
 
     bool start(QString* failureReason = nullptr);
+    bool start(const SuiteApp::RuntimeStartOptions& options,
+               QString* failureReason = nullptr);
     bool isRegistered() const;
 
     static QJsonObject appDescriptor(const QString& version,

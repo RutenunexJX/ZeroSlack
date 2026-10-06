@@ -224,6 +224,16 @@ if(NOT ZEROSLACK_CLI_ONLY)
     find_package(Qt6 REQUIRED COMPONENTS Widgets Concurrent Svg Network)
 endif()
 find_package(SuiteApp 1 CONFIG QUIET)
+set(ZEROSLACK_SUITEAPP_ENABLED_JSON false)
+set(ZEROSLACK_SUITEAPP_GUI_JSON false)
+if(SuiteApp_FOUND)
+    set(ZEROSLACK_SUITEAPP_ENABLED_JSON true)
+    if(NOT ZEROSLACK_CLI_ONLY)
+        set(ZEROSLACK_SUITEAPP_GUI_JSON true)
+    endif()
+endif()
+configure_file(cmake/suiteapp-build.json.in
+    "${ZEROSLACK_GENERATED_INCLUDE_DIR}/suiteapp-build.json" @ONLY)
 
 # =========================================================
 # 4. Sources and Resources
@@ -912,6 +922,12 @@ if(BUILD_TESTING)
             src/integrations/suite/suiteappintegration.h)
         target_link_libraries(zeroslack_suiteapp_integration_test
             PRIVATE zeroslack_core SuiteApp::suiteapp Qt6::Test)
+        add_executable(zeroslack_suiteapp_ipc_test
+            test_sv/suiteapp_ipc_test.cpp
+            src/integrations/suite/suiteappintegration.cpp
+            src/integrations/suite/suiteappintegration.h)
+        target_link_libraries(zeroslack_suiteapp_ipc_test PRIVATE
+            zeroslack_core zeroslack_cli_support SuiteApp::suiteapp Qt6::Test Qt6::Concurrent)
     endif()
 
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
@@ -2364,6 +2380,12 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:zeroslack_suiteapp_integration_test>
         )
+        add_test(NAME zeroslack_suiteapp_ipc_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                $<TARGET_FILE:zeroslack_suiteapp_ipc_test>)
+        set_tests_properties(zeroslack_suiteapp_ipc_test PROPERTIES TIMEOUT 90 LABELS "suiteapp-ipc")
     endif()
     add_test(NAME editor_view_local_folding_test
         COMMAND ${CMAKE_COMMAND} -E env

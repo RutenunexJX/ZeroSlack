@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.31.25`
+Current version: `v0.31.26`
+
+Release 0.31.26 enables SuiteApp SDK 1.0.1 for GUI providers and CLI context resolution. Open documents, including empty unsaved text, remain authoritative for source previews. Package metadata records the compiled SDK capabilities.
 
 Release 0.31.25 fixes RTL source identity, current-file diagnostics and stale
 shared-document selection state. Read-only editor commands share the existing

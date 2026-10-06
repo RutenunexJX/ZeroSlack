@@ -24,6 +24,11 @@ $generatedVersion = [regex]::Match(
 if (-not $generatedVersion.Success -or $generatedVersion.Groups[1].Value -ne $version) {
     throw 'Generated application version does not match VERSION; reconfigure and rebuild first.'
 }
+$suiteBuildPath = Join-Path $buildRoot 'generated/suiteapp-build.json'
+if (-not (Test-Path -LiteralPath $suiteBuildPath -PathType Leaf)) {
+    throw 'SuiteApp build metadata is missing; reconfigure and rebuild first.'
+}
+$suiteBuild = Get-Content -LiteralPath $suiteBuildPath -Raw | ConvertFrom-Json
 $revision = & git -C $sourceRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git revision.' }
 $branch = & git -C $sourceRoot branch --show-current
@@ -159,7 +164,9 @@ if ($Formal -and -not $dirty) {
 }
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
-    appSuiteEnabled=$false; distribution='standalone';
+    appSuiteEnabled=[bool]$suiteBuild.enabled; distribution='standalone';
+    suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;
+    suiteCliClient=[bool]$suiteBuild.cliClient; runtimeBundled=$false;
     upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |
     ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
 Get-ChildItem -LiteralPath $outputRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
