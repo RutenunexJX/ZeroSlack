@@ -10,6 +10,7 @@
 #include <QFileSystemWatcher>
 #include <QHash>
 #include <QList>
+#include <QSet>
 #include <QStringList>
 #include <cstdint>
 #include <functional>
@@ -147,11 +148,13 @@ private:
         std::unique_ptr<QTimer> continuation;
         QStringList additions;
         QStringList removals;
+        QSet<QString> registrationRepairs;
         // Desired ownership changes immediately; native registrations follow
         // in bounded batches and may still deliver obsolete notifications.
         QHash<QString, QString> desiredFiles;
         QHash<QString, QString> desiredDirectories;
         std::function<void()> installed;
+        std::function<void()> semanticInstalled;
 
         void ensure(WorkspaceManager* owner);
         void clear();
@@ -168,6 +171,8 @@ private:
         std::uint64_t generation = 0;
         QString membershipDirectory;
         QStringList expectedChildren;
+        QSet<QString> coveredDirectories;
+        QHash<QString, QStringList> coverageMembership;
     };
     struct DirectoryScanResult {
         QStringList files;
@@ -175,8 +180,10 @@ private:
         WorkspaceWatcher::PreparedPaths watches;
         bool cancelled = false;
         bool membershipProbe = false;
+        bool coverageProbe = false;
         bool membershipChanged = false;
         QHash<QString, QStringList> membership;
+        QStringList uncoveredDirectories;
     };
 
     QString workspacePath;
@@ -215,7 +222,10 @@ private:
     void startDirectoryScan(const QString& path, const QString& membershipDirectory = {});
     void launchPendingDirectoryScan();
     void finishDirectoryScan(std::uint64_t generation,
-                             const QString& path);
+                             const QString& path,
+                             const QStringList& uncoveredDirectories);
+    void verifyDirectoryScanCoverage(std::uint64_t generation, const QString& path,
+                                     const QStringList& directories);
     void publishDirectoryScan(std::uint64_t generation, const QString& path);
     void cancelDirectoryScan();
     bool directoryScanIsCurrent(std::uint64_t generation,

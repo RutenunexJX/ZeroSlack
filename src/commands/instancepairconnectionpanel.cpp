@@ -1,6 +1,7 @@
 #include "uicontrols.h"
 #include "uitypography.h"
 #include "instancepairconnectionpanel.h"
+#include "editorfileidentity.h"
 
 #include <QAbstractItemView>
 #include <QApplication>
@@ -39,15 +40,6 @@ namespace {
 constexpr int kSemanticSignalRole = Qt::UserRole + 8300;
 constexpr char kTypedSignalMime[] =
     "application/x-zeroslack-instance-pair-signal";
-
-QString normalizedFileName(const QString& fileName)
-{
-    if (fileName.isEmpty())
-        return {};
-    return QDir::cleanPath(
-        QDir::fromNativeSeparators(
-            QFileInfo(fileName).absoluteFilePath()));
-}
 
 QString fromUtf8(const std::string& text)
 {
@@ -338,7 +330,7 @@ bool InstancePairConnectionPlanRequest::isValid() const
 {
     const auto sourceRevision =
         documentRevisions.constFind(
-            normalizedFileName(
+            EditorFileIdentity::lookupKey(
                 leftSignalStableKey.fileName));
     return leftSignalStableKey.isValid()
         && !leftSignalName.isEmpty()
@@ -892,7 +884,7 @@ void InstancePairConnectionPanel::rebuildRequestContext()
          ++it) {
         const InstancePairDocumentSnapshot& document =
             it.value();
-        const QString fileName = normalizedFileName(
+        const QString fileName = EditorFileIdentity::lookupKey(
             document.fileName.isEmpty()
                 ? it.key() : document.fileName);
         if (!fileName.isEmpty()
@@ -908,7 +900,7 @@ void InstancePairConnectionPanel::rebuildRequestContext()
              ++it) {
             const InstancePairDocumentSnapshot& document =
                 it.value();
-            const QString fileName = normalizedFileName(
+            const QString fileName = EditorFileIdentity::lookupKey(
                 document.fileName.isEmpty()
                     ? it.key() : document.fileName);
             if (!fileName.isEmpty()
@@ -919,7 +911,7 @@ void InstancePairConnectionPanel::rebuildRequestContext()
         }
     }
 
-    const QString signalFile = normalizedFileName(
+    const QString signalFile = EditorFileIdentity::lookupKey(
         currentAnalysis.leftSignal.location.fileName);
     requestContext.documentRevision =
         requestContext.documentRevisions.value(
@@ -1106,7 +1098,7 @@ proposalMatchesCurrentContext(
                 return false;
             for (const rtledit::DocumentBaseline& baseline :
                  baselines) {
-                const QString fileName = normalizedFileName(
+                const QString fileName = EditorFileIdentity::lookupKey(
                     fromUtf8(baseline.filePath));
                 const auto found =
                     requestContext.documentRevisions.constFind(
@@ -1137,7 +1129,7 @@ proposalMatchesCurrentContext(
             for (const rtledit::SourceDiffFile& file :
                  diff.files) {
                 const QString fileName =
-                    normalizedFileName(
+                    EditorFileIdentity::lookupKey(
                         fromUtf8(file.filePath));
                 const auto found =
                     requestContext.documentRevisions

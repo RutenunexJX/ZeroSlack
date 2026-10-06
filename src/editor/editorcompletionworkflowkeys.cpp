@@ -83,6 +83,11 @@ bool EditorCompletionWorkflow::handleInlineCandidateFilterKey(
     if (!plainBackspace && !isInlineFilterInput(event))
         return false;
 
+    if (!insertionAllowed()) {
+        cancelInlineAbbreviationSession();
+        return false;
+    }
+
     editor->state->beginInlineFilterTextOverlay(
         inlineSession.replacementStartPosition,
         inlineSession.replacementEndPosition);

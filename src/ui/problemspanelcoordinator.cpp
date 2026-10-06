@@ -11,11 +11,21 @@
 #include <QFileInfo>
 #include <QEvent>
 #include <QSignalBlocker>
+#include <QScrollBar>
 #include <QVBoxLayout>
 
 #include <utility>
 
 namespace {
+
+QString diagnosticItemKey(const QTreeWidgetItem* item)
+{
+    if (!item) return {};
+    if (item->childCount() > 0) return QStringLiteral("file:") + item->text(1);
+    return QStringList{item->data(0, Qt::UserRole).toString(),
+        item->data(0, Qt::UserRole + 1).toString(), item->data(0, Qt::UserRole + 2).toString(),
+        item->text(0), item->text(4), item->text(5)}.join(QChar(0));
+}
 
 QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
                                       const DiagnosticResult& result)
@@ -39,11 +49,11 @@ QTreeWidgetItem* createDiagnosticItem(QTreeWidgetItem* parent,
     return item;
 }
 
-QString diagnosticSummaryText(const DiagnosticReport& report)
+QString diagnosticSummaryText(const QMap<SemanticDiagnostic::Severity, int>& counts)
 {
-    const int errors = report.severityCounts.value(SemanticDiagnostic::Error);
-    const int warnings = report.severityCounts.value(SemanticDiagnostic::Warning);
-    const int infos = report.severityCounts.value(SemanticDiagnostic::Info);
+    const int errors = counts.value(SemanticDiagnostic::Error);
+    const int warnings = counts.value(SemanticDiagnostic::Warning);
+    const int infos = counts.value(SemanticDiagnostic::Info);
     return QStringLiteral("Current file: %1 errors, %2 warnings, %3 info")
         .arg(errors)
         .arg(warnings)
@@ -353,24 +363,8 @@ void ProblemsPanelCoordinator::update()
         queryOptions.workspaceFiles = workspaceFilesProvider();
 
     DiagnosticService* diagnosticService = DiagnosticService::getInstance();
-    const DiagnosticQuery query = diagnosticService->queryForPanel(queryOptions);
-    DiagnosticPanelQueryOptions countQueryOptions = queryOptions;
-    countQueryOptions.analysisBandLabel.clear();
-    const DiagnosticQuery countQuery =
-        diagnosticService->queryForPanel(countQueryOptions);
-    const DiagnosticReport countReport =
-        diagnosticService->findDiagnosticReport(countQuery);
-    updateDiagnosticBandComboPresentation(problemsBandCombo, countReport);
-    const DiagnosticReport report = diagnosticService->findDiagnosticReport(query);
-    DiagnosticPanelQueryOptions currentFileSummaryOptions;
-    currentFileSummaryOptions.scope = DiagnosticPanelScope::CurrentFile;
-    currentFileSummaryOptions.severity = DiagnosticSeverityFilter::All;
-    currentFileSummaryOptions.currentFileName = queryOptions.currentFileName;
-    const DiagnosticReport currentFileReport =
-        diagnosticService->findDiagnosticReport(
-            diagnosticService->queryForPanel(currentFileSummaryOptions));
-    if (diagnosticSummaryLabel)
-        diagnosticSummaryLabel->setText(diagnosticSummaryText(currentFileReport));
+    const auto projection = diagnosticService->reportForPanel(queryOptions);
+    const DiagnosticReport& report = projection->visible;
     if (diagnosticStateLabel) {
         const QString state = externalAnalysisState.isEmpty()
             ? inferredDiagnosticState(report)
@@ -378,6 +372,11 @@ void ProblemsPanelCoordinator::update()
         diagnosticStateLabel->setText(
             QStringLiteral("Diagnostics: %1").arg(state));
     }
+    if (projection == displayedReport) return;
+    displayedReport = projection;
+    updateDiagnosticBandComboPresentation(problemsBandCombo, projection->availableBands);
+    if (diagnosticSummaryLabel)
+        diagnosticSummaryLabel->setText(diagnosticSummaryText(projection->currentFileSeverityCounts));
     const QList<DiagnosticResult>& diagnostics = report.diagnostics;
     if (report.totalCount > 0) {
         const QString activityMessage =
@@ -399,6 +398,12 @@ void ProblemsPanelCoordinator::update()
         queryOptions.scope == DiagnosticPanelScope::CurrentFile;
     const bool hadExpandableItems = SemanticPanelUtils::treeHasExpandableItems(problemsTree);
     const QSet<QString> expandedKeys = SemanticPanelUtils::collectExpandedKeys(problemsTree);
+    const QString selectedKey = diagnosticItemKey(problemsTree->currentItem());
+    const int verticalScroll = problemsTree->verticalScrollBar()->value();
+    const int horizontalScroll = problemsTree->horizontalScrollBar()->value();
+    const bool updatesEnabled = problemsTree->updatesEnabled();
+    const QSignalBlocker treeSignals(problemsTree);
+    problemsTree->setUpdatesEnabled(false);
     problemsTree->clear();
     if (currentFileOnly) {
         for (const DiagnosticResult& result : diagnostics) {
@@ -426,6 +431,15 @@ void ProblemsPanelCoordinator::update()
         auto* emptyItem = new QTreeWidgetItem(problemsTree);
         emptyItem->setText(4, QStringLiteral("No problems"));
     }
+    if (!selectedKey.isEmpty())
+        for (QTreeWidgetItemIterator it(problemsTree); *it; ++it)
+            if (diagnosticItemKey(*it) == selectedKey) {
+                problemsTree->setCurrentItem(*it);
+                break;
+            }
+    problemsTree->verticalScrollBar()->setValue(verticalScroll);
+    problemsTree->horizontalScrollBar()->setValue(horizontalScroll);
+    problemsTree->setUpdatesEnabled(updatesEnabled);
 
     if (problemsDock) {
         const int errorCount = report.severityCounts.value(

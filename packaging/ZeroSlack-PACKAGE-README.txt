@@ -1,4 +1,13 @@
-ZeroSlack v0.31.24 Windows package
+ZeroSlack v0.31.25 Windows package
+
+Release 0.31.25 corrects RTL source identity and current-file diagnostics,
+reuses diagnostic projections, and guards read-only editor commands and stale
+shared-document selections. Workspace scanning validates native-watch handoff,
+repairs file/directory registration changes, and prunes junction cycles without
+hiding acyclic aliases. Scoped replacement rejects out-of-scope stale previews.
+R3–R6 scoped acceptance and two complementary reviews are complete. Performance
+samples describe the recorded development builds, not every project or this
+formal package. Missing SDK and excluded private fixtures remain out of scope.
 
 Release 0.31.24 unifies insertion and exclusive file creation, immutable source
 previews and token-based navigation. Failed jumps preserve navigation history;

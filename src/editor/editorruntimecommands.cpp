@@ -902,6 +902,14 @@ FormatterReport MyCodeEditorState::formatDocument(
             "No editor is available to format.");
         return unavailable;
     }
+    QString failureReason;
+    if (!editor->canApplyInsertion(&failureReason)) {
+        FormatterReport unavailable;
+        unavailable.outcome = FormatterOutcome::Rejected;
+        unavailable.diagnostic = failureReason;
+        emit editor->editorStatusMessageRequested(failureReason);
+        return unavailable;
+    }
 
     const QString oldText = editor->toPlainText();
     const FormatterReport report =

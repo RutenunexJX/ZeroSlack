@@ -3,6 +3,7 @@
 #include "definitionservice.h"
 #include "saferenameservice.h"
 #include "semanticindexsnapshot.h"
+#include "editorfileidentity.h"
 #include "tsdocument.h"
 #include "workspaceedittransactionservice.h"
 
@@ -125,25 +126,17 @@ normalizedCapturedDocuments(
             document.fileName.isEmpty()
                 ? it.key() : document.fileName);
         document.fileName = fileName;
-        if (!document.isValid()
-            || result.contains(fileName)) {
+        if (!document.isValid()) {
             return std::nullopt;
         }
-        result.insert(fileName, std::move(document));
-    }
-    return result;
-}
-
-QHash<QString, QString> normalizedSemanticContents(
-    const SemanticIndexSnapshot& snapshot)
-{
-    QHash<QString, QString> result;
-    for (auto it = snapshot.fileContentsView().constBegin();
-         it != snapshot.fileContentsView().constEnd(); ++it) {
-        const QString fileName =
-            normalizedFileName(it.key());
-        if (!fileName.isEmpty())
-            result.insert(fileName, it.value());
+        const auto identity = EditorFileIdentity::lookupKey(fileName);
+        const auto prior = result.constFind(identity);
+        if (prior != result.cend()) {
+            if (prior->text != document.text || prior->revision != document.revision || prior->unsaved != document.unsaved)
+                return std::nullopt;
+            continue;
+        }
+        result.insert(identity, std::move(document));
     }
     return result;
 }
@@ -176,7 +169,7 @@ bool validateCapturedDocuments(
     if (required.isEmpty()) {
         for (auto it = captured.constBegin();
              it != captured.constEnd(); ++it) {
-            required.insert(it.key());
+            required.insert(it->fileName);
         }
     }
     if (required.isEmpty()) {
@@ -186,11 +179,8 @@ bool validateCapturedDocuments(
                 "No workspace document snapshots were captured."));
     }
 
-    const QHash<QString, QString> semanticContents =
-        normalizedSemanticContents(
-            *query.semanticToken.snapshot);
     for (const QString& fileName : std::as_const(required)) {
-        const auto found = captured.constFind(fileName);
+        const auto found = captured.constFind(EditorFileIdentity::lookupKey(fileName));
         if (found == captured.constEnd()) {
             return fail(
                 InstancePairConnectionFailure::
@@ -209,7 +199,7 @@ bool validateCapturedDocuments(
                     .arg(fileName));
         }
         const auto live =
-            documents.snapshot(utf8String(fileName));
+            documents.snapshot(utf8String(found->fileName));
         if (!live) {
             return fail(
                 InstancePairConnectionFailure::
@@ -245,10 +235,8 @@ bool validateCapturedDocuments(
                     "The captured SystemVerilog syntax is incomplete: %1.")
                     .arg(fileName));
         }
-        const auto semantic =
-            semanticContents.constFind(fileName);
-        if (semantic == semanticContents.constEnd()
-            || semantic.value() != found->text) {
+        const auto semantic = query.semanticToken.snapshot->cachedFileSource(fileName);
+        if (!semantic.exists || semantic.text != found->text) {
             return fail(
                 InstancePairConnectionFailure::
                     StaleSemanticSource,
@@ -283,7 +271,7 @@ const InstancePairDocumentSnapshot* capturedDocument(
     const QString& fileName)
 {
     const auto found =
-        documents.constFind(normalizedFileName(fileName));
+        documents.constFind(EditorFileIdentity::lookupKey(fileName));
     return found == documents.constEnd()
         ? nullptr : &found.value();
 }
@@ -1543,7 +1531,7 @@ InstancePairConnectionFacade::analyze(
             query.leftSignalContext.fileName);
     const auto contextDocument =
         normalizedDocuments->constFind(
-            contextFile);
+            EditorFileIdentity::lookupKey(contextFile));
     if (contextDocument
             == normalizedDocuments->constEnd()) {
         return rejectedAnalysis(

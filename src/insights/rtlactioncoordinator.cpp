@@ -81,27 +81,17 @@ bool captureRtlActionDocuments(
         return false;
     }
 
-    QHash<QString, QString> semanticContents;
-    for (auto it =
-             semanticToken.snapshot
-                 ->fileContentsView().constBegin();
-         it != semanticToken.snapshot
-                   ->fileContentsView().constEnd();
-         ++it) {
-        const QString fileName =
-            normalizedRtlActionFileName(it.key());
-        if (!fileName.isEmpty())
-            semanticContents.insert(fileName, it.value());
-    }
-
     captured->clear();
+    const auto identities = EditorFileIdentity::lookupKeys(workspaceFiles.values());
+    QSet<QString> capturedIdentities;
     for (const QString& requestedFile : workspaceFiles) {
         const QString fileName =
             normalizedRtlActionFileName(requestedFile);
         if (fileName.isEmpty()
-            || captured->contains(fileName)) {
+            || capturedIdentities.contains(identities.value(requestedFile))) {
             continue;
         }
+        capturedIdentities.insert(identities.value(requestedFile));
         const auto live =
             documents.snapshot(
                 rtlActionUtf8String(fileName));
@@ -124,12 +114,9 @@ bool captureRtlActionDocuments(
         document.revision = live->version.value;
         document.text = text;
         document.syntax = std::move(syntax);
-        const auto semantic =
-            semanticContents.constFind(fileName);
-        document.unsaved =
-            semantic == semanticContents.constEnd()
-            || semantic.value() != text;
-        captured->insert(fileName, std::move(document));
+        const auto semantic = semanticToken.snapshot->cachedFileSource(fileName);
+        document.unsaved = !semantic.exists || semantic.text != text;
+        captured->insert(identities.value(requestedFile), std::move(document));
     }
     if (captured->isEmpty()) {
         if (failureReason) {
@@ -1555,7 +1542,7 @@ RtlActionCoordinator::executeInstancePairConnectionAction(
         normalizedRtlActionFileName(
             sourceContext.fileName);
     const auto capturedSource =
-        captured.constFind(sourceFile);
+        captured.constFind(EditorFileIdentity::lookupKey(sourceFile));
     if (capturedSource == captured.constEnd()) {
         return fail(QStringLiteral(
             "The source signal document was not captured."));
@@ -1864,7 +1851,7 @@ RtlActionCoordinator::executeMultiSignalPropagationAction(
         normalizedRtlActionFileName(
             editorContext.fileName);
     const auto capturedActive =
-        captured.constFind(activeFile);
+        captured.constFind(EditorFileIdentity::lookupKey(activeFile));
     if (capturedActive == captured.constEnd()) {
         return fail(QStringLiteral(
             "The selected signal document was not captured."));
@@ -1893,9 +1880,7 @@ RtlActionCoordinator::executeMultiSignalPropagationAction(
                 record.collectorKind;
             metadata.interfaceLikeOwner =
                 record.owner.interfaceLike;
-            if (normalizedRtlActionFileName(
-                    record.location.fileName)
-                    != activeFile
+            if (!EditorFileIdentity::same(record.location.fileName, activeFile)
                 || record.owner.name
                        != editorContext.moduleName
                 || (!SymbolTaxonomy::

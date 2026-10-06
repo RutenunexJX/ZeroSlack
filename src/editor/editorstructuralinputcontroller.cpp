@@ -76,6 +76,8 @@ bool EditorStructuralInputController::handleKeyPress(
     QKeyEvent* event,
     const EditorSyntaxState& syntax)
 {
+    if (!editor || !editor->canApplyInsertion())
+        return false;
     return handleStructuralEnter(editor, event, syntax)
         || handleKeywordBoundary(editor, event, syntax)
         || handlePairInput(editor, event, syntax);

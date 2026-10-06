@@ -37,6 +37,7 @@ struct InstancePairConnectionPlanRequest {
     QString connectionName;
     std::uint64_t documentRevision = 0;
     std::uint64_t semanticGeneration = 0;
+    // Physical identity keys for comparison, never paths for document I/O.
     QHash<QString, std::uint64_t> documentRevisions;
 
     bool isValid() const;

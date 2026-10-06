@@ -556,6 +556,7 @@ public:
     void setWorkspaceFileAnalysisBands(
         const QHash<QString, SemanticAnalysisBandMetadata>& bands);
     void clearWorkspaceFileAnalysisBands();
+    std::uint64_t workspaceAnalysisBandRevision() const { return m_workspaceAnalysisBandRevision; }
     SemanticAnalysisBandMetadata analysisBandForFile(
         const QString& fileName) const;
     SemanticAnalysisBandReport analysisBandReport(
@@ -654,6 +655,7 @@ private:
     std::uint64_t m_snapshotRevision = 0;
     QHash<QString, SemanticAnalysisBandMetadata>
         m_workspaceFileAnalysisBands;
+    std::uint64_t m_workspaceAnalysisBandRevision = 0;
     static std::unique_ptr<SemanticIndex> instance;
 
     SemanticSymbolRecord recordWithAnalysisBand(

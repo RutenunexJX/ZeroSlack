@@ -17,6 +17,8 @@ struct DiagnosticQuery {
     bool includeInfo = true;
     bool includeWarnings = true;
     bool includeErrors = true;
+    // An absent current document is distinct from the legacy empty/all query.
+    bool currentFileRequired = false;
 };
 
 enum class DiagnosticPanelScope {
@@ -38,6 +40,7 @@ struct DiagnosticPanelQueryOptions {
     QString currentFileName;
     QStringList workspaceFiles;
     QString analysisBandLabel;
+    bool operator==(const DiagnosticPanelQueryOptions&) const = default;
 };
 
 struct DiagnosticResult {
@@ -84,6 +87,12 @@ struct DiagnosticReport {
     QString analysisBandSummaryText() const;
 };
 
+struct DiagnosticPanelReport {
+    DiagnosticReport visible;
+    DiagnosticReport availableBands;
+    QMap<SemanticDiagnostic::Severity, int> currentFileSeverityCounts;
+};
+
 class DiagnosticService
 {
 public:
@@ -98,15 +107,22 @@ public:
     DiagnosticReport findDiagnosticReport(const DiagnosticQuery& query = {}) const;
     bool hasDiagnostics(const DiagnosticQuery& query = {}) const;
     DiagnosticQuery queryForPanel(const DiagnosticPanelQueryOptions& options) const;
+    // One derived projection of the current immutable publication, shared with
+    // the panel so unchanged updates can retain their existing tree items.
+    std::shared_ptr<const DiagnosticPanelReport> reportForPanel(
+        const DiagnosticPanelQueryOptions& options) const;
 
 private:
     SemanticIndex* index = nullptr;
+    struct PanelCache;
+    mutable std::unique_ptr<PanelCache> panelCache;
     static std::unique_ptr<DiagnosticService> instance;
 
     SemanticIndex* semanticIndex() const;
     bool severityMatches(SemanticDiagnostic::Severity severity,
                          const DiagnosticQuery& query) const;
     static DiagnosticQuery normalizedQuery(const DiagnosticQuery& query);
+    static DiagnosticReport reportFromDiagnostics(const QList<DiagnosticResult>& diagnostics);
     static QString normalizedFileName(const QString& fileName);
     static QStringList normalizedFileNames(const QStringList& fileNames);
     static QString severityDisplayName(SemanticDiagnostic::Severity severity);

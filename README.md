@@ -1,6 +1,14 @@
 # ZeroSlack
 
-Current version: `v0.31.24`
+Current version: `v0.31.25`
+
+Release 0.31.25 fixes RTL source identity, current-file diagnostics and stale
+shared-document selection state. Read-only editor commands share the existing
+write guard; diagnostic projections avoid repeated unchanged work. Workspace
+scanning validates the handoff to native watchers and prunes directory-junction
+cycles while preserving acyclic aliases. Scoped replacement rejects previews
+outside an explicitly empty current scope. R3–R6 acceptance and measured costs
+are recorded in the [architecture backlog](docs/architecture-redundancy-backlog.md).
 
 Release 0.31.24 shares insertion and file-creation guards, immutable source
 previews and token-based navigation, while retaining history after failed jumps.

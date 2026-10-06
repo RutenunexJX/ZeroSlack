@@ -3,6 +3,7 @@
 #include "hierarchyservice.h"
 #include "saferenameservice.h"
 #include "semanticindexsnapshot.h"
+#include "editorfileidentity.h"
 #include "tsdocument.h"
 #include "workspaceedittransactionservice.h"
 
@@ -87,25 +88,18 @@ std::optional<CapturedDocuments> normalizedCapturedDocuments(
         const QString fileName = normalizedFileName(
             !document.fileName.isEmpty()
                 ? document.fileName : it.key());
-        if (fileName.isEmpty() || !document.isValid()
-            || result.byFile.contains(fileName)) {
+        if (fileName.isEmpty() || !document.isValid()) {
             return std::nullopt;
         }
         document.fileName = fileName;
-        result.byFile.insert(fileName, document);
-    }
-    return result;
-}
-
-QHash<QString, QString> normalizedSemanticContents(
-    const SemanticIndexSnapshot& snapshot)
-{
-    QHash<QString, QString> result;
-    for (auto it = snapshot.fileContentsView().constBegin();
-         it != snapshot.fileContentsView().constEnd(); ++it) {
-        const QString fileName = normalizedFileName(it.key());
-        if (!fileName.isEmpty())
-            result.insert(fileName, it.value());
+        const QString identity = EditorFileIdentity::lookupKey(fileName);
+        const auto prior = result.byFile.constFind(identity);
+        if (prior != result.byFile.cend()) {
+            if (prior->text != document.text || prior->revision != document.revision || prior->unsaved != document.unsaved)
+                return std::nullopt;
+            continue;
+        }
+        result.byFile.insert(identity, document);
     }
     return result;
 }
@@ -231,7 +225,7 @@ InsertionEnvelope sourcePortEnvelope(
 {
     const QString fileName = normalizedFileName(
         member.report.signalRecord.location.fileName);
-    const auto found = documents.byFile.constFind(fileName);
+    const auto found = documents.byFile.constFind(EditorFileIdentity::lookupKey(fileName));
     if (found == documents.byFile.constEnd()
         || !found->syntax) {
         return {};
@@ -605,10 +599,8 @@ bool validateCapturedDocuments(
             requestedFiles.insert(normalized);
     }
 
-    const QHash<QString, QString> semanticContents =
-        normalizedSemanticContents(*query.semanticToken.snapshot);
     for (const QString& fileName : requestedFiles) {
-        const auto found = captured.byFile.constFind(fileName);
+        const auto found = captured.byFile.constFind(EditorFileIdentity::lookupKey(fileName));
         if (found == captured.byFile.constEnd()) {
             if (failure)
                 *failure = MultiSignalPropagationFailure::
@@ -622,7 +614,7 @@ bool validateCapturedDocuments(
         }
 
         const auto live =
-            documents.snapshot(utf8String(fileName));
+            documents.snapshot(utf8String(found->fileName));
         if (!live) {
             if (failure)
                 *failure = MultiSignalPropagationFailure::
@@ -670,10 +662,8 @@ bool validateCapturedDocuments(
             return false;
         }
         if (!found->unsaved) {
-            const auto semantic =
-                semanticContents.constFind(fileName);
-            if (semantic == semanticContents.constEnd()
-                || semantic.value() != found->text) {
+            const auto semantic = query.semanticToken.snapshot->cachedFileSource(fileName);
+            if (!semantic.exists || semantic.text != found->text) {
                 if (failure)
                     *failure = MultiSignalPropagationFailure::
                         StaleSemanticSource;
@@ -802,7 +792,7 @@ MultiSignalPropagationPlanner::plan(
         const QString fileName =
             normalizedFileName(request.context.fileName);
         const auto document =
-            captured->byFile.constFind(fileName);
+            captured->byFile.constFind(EditorFileIdentity::lookupKey(fileName));
         if (document == captured->byFile.constEnd()) {
             return rejected(
                 MultiSignalPropagationFailure::
@@ -844,7 +834,7 @@ MultiSignalPropagationPlanner::plan(
             request.groupMemberName.trimmed().isEmpty()
             ? identifier.text
             : request.groupMemberName.trimmed();
-        prepared.normalizedFile = fileName;
+        prepared.normalizedFile = EditorFileIdentity::lookupKey(fileName);
         prepared.originalOrder = memberIndex;
         if (!SafeRenameService::isValidIdentifier(
                 prepared.memberName)) {

@@ -120,6 +120,7 @@ QString presentationIdentity(const SemanticSymbolRecord& record)
 void SemanticIndex::setWorkspaceFileAnalysisBands(
     const QHash<QString, SemanticAnalysisBandMetadata>& bands)
 {
+    ++m_workspaceAnalysisBandRevision;
     m_workspaceFileAnalysisBands.clear();
     for (auto it = bands.constBegin(); it != bands.constEnd(); ++it) {
         const QString normalized = normalizedStoreFileName(it.key());
@@ -130,6 +131,7 @@ void SemanticIndex::setWorkspaceFileAnalysisBands(
 
 void SemanticIndex::clearWorkspaceFileAnalysisBands()
 {
+    ++m_workspaceAnalysisBandRevision;
     m_workspaceFileAnalysisBands.clear();
 }
 

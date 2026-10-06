@@ -325,7 +325,7 @@ void SemanticIndex::clearSnapshot()
 void SemanticIndex::clearSemanticState()
 {
     clearSnapshot();
-    m_workspaceFileAnalysisBands.clear();
+    clearWorkspaceFileAnalysisBands();
     if (m_relationshipEngine)
         m_relationshipEngine->clearAllRelationships();
 }

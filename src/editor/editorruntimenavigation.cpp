@@ -91,6 +91,9 @@ bool MyCodeEditorState::handleLexicalNavigationOrDeletion(
         return true;
     }
 
+    if (!editor->canApplyInsertion())
+        return false;
+
     if (cursor.hasSelection()) {
         cursor.beginEditBlock();
         cursor.removeSelectedText();

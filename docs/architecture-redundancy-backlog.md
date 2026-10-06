@@ -1,5 +1,51 @@
 # ZeroSlack 架构与冗余逻辑待办
 
+## 0.31.25 发布（2026-10-06）
+
+用户明确要求“push并打包正式包”，本次将已验收R3～R6及必要版本说明发布为0.31.25。发布前1,576文件与FINAL-IDENTITY逐一匹配，实际接受集合为`b594fb6d018d142f1bd8495eda13fd1a46527dfaaa277e1c09fb12e354f51948`。完整提交、暂存包验证、远端与本机坚果云替换结果见 `build/validation/20261006-convergence-release/RELEASE.md`；本条不代替发布完成证据。保留现有正式xIPs/SimDock嵌入组件，SuiteApp SDK仍关闭。下文旧发布/验收状态保留历史上下文。
+
+## 自主多轮收敛（2026-10-06）
+
+用户要求“自行迭代多轮，直到彻底收敛”；Goal 持续监督。起点为 R4 已验收 1,573 文件集合 `02157537246c9f1e8ff1a95135688cc602521b58e41f16c327789e6f1d501003`，含未提交 R3/R4。新任务、冻结配对基线及覆盖记录见 `build/coordination/20261006-zeroslack-convergence/`。逐批开发、整批验收，再做互补复查；不自动发布，不将“已审范围收敛”外推为不存在未知缺陷。
+
+| 编号 | 分级 | 根因、证据与状态 |
+| --- | --- | --- |
+| AR-45 | 确定缺陷 / 中高 | R5 修复扫描到监听的交接：单 worker 核对新覆盖目录、成员包含类型、保留独立 semantic 回调；31/31 执行回归及统筹29项探针、5/5产品目标通过。R6 必需回归进一步确认冻结R5的双类型/隐藏原生注册边界，已限次清理重装并独立验收：81项真实junction/type组件、80项handoff、公开29项探针连续3次通过。保留早期失败和原R5接受范围，完整结论见 convergence/r5 与 r6/coordinator-review/ACCEPTANCE.md |
+| AR-46 | 确定缺陷 / 高 | 已完成R6并独立验收。confirm() 与 confirm(list) 显式区分未提供范围和已知空范围，共用原事务；空工作区/关闭/排除/删除后的旧预览在编辑前拒绝。真实MainWindow/Ela原探针由40项/3失败变40项全过，新增实际产品contract162项通过，包含文本/revision/undo不变、未打开来源不被打开、重建预览与正常撤销。见 convergence/r6/coordinator-review/ACCEPTANCE.md |
+| AR-47 | 确定缺陷 / 中高 | 已完成R6并独立验收。复用物理身份，在worker请求内按祖先链剪枝Windows junction回环，保留直接成员与无环逻辑别名。独立自环/无环各7项全过，81项组件覆盖间接环、间隙变化、快切/关闭和后续事件。同一回环夹具64条错误别名变1文件，扫描/安装中位数约3857.75→52.78 ms；旧版也能完成。见 convergence/r6/coordinator-review/ACCEPTANCE.md |
+
+本次自主收敛已完成：R5/R6两批修复和独立验收后，FINAL-REVIEW-A/B 两个互补复查轮次未发现新增未闭环确定缺陷；报告和最终实际源码/运行身份见 `build/coordination/20261006-zeroslack-convergence/GOAL-COMPLETION.md`、`FINAL-IDENTITY.json`。保留R3/R4，上述为发布前接受状态；R3～R6随后纳入0.31.25发布，实际提交/远端/正式包完成结果见本文件开头的发布记录。普通工程测量有约12～14 ms局部增加，不宣称整体提速。范围外和未测边界仍保留，不作零未知保证。后文“待实施/未发布”等历史阶段叙述保留当时事实，当前状态以本节和对应最新验收/发布记录为准。
+
+- 前轮迭代 R4（2026-10-06）：用户要求继续下一轮，现已完成开发与独立统一验收。基线是已验收但未提交的 R3（0.31.24，完整源码集合 `45224da21c221f5beda8f7697be3ecba6746c7773c9d09fa4bbc1f9c733934da`），并非只有 HEAD 的现场。具体任务、六维覆盖和冻结源/运行文件见 `build/coordination/20261006-zeroslack-iteration-r4/`。该轮 Goal 约定范围已闭环，不自动发布。
+
+## R4：编辑能力与矩形选择生命周期（2026-10-06）
+
+| 编号 | 分级 | 新证据、归属与状态 |
+| --- | --- | --- |
+| AR-34 补充 | 确定缺陷 / 高 | 已修复 palette/结构化命令之外，普通自定义 key dispatch、结构输入和矩形输入仍用 QTextCursor 绕开 Qt 的只读处理。冻结真实 MyCodeEditor 中 Tab、Enter、括号、矩形输入/Delete 均改变只读文本/revision/undo；普通字符及可写对照正常。现已复用 canApplyInsertion 补齐相关写入消费者及 IME，保留导航/复制/加载。已完成独立验收；旧已验收场景保留 |
+| AR-44 | 确定缺陷 / 高 | 矩形选择保存裸行列，外来 SharedDocument 编辑既不结束选择也不重映射。真实主/辅助视图：框选 alpha/beta 首字母后，辅助插入 prefix\\n，回主输入 z 变成 zrefix/zlpha/beta。现由控制器标记自身编辑块，其余真实文本变更结束过期选区；清理视图局部撤销意图，保留共享文本 undo/redo，移除列粘贴冗余外层 edit block。已完成独立验收 |
+
+基线 `baseline-probe/run.log` 为显式 Ela、Qt offscreen，10 检查 / 6 失败（5 项只读、1 项错误行）；另有正常只读普通输入、可写列编辑与 Undo、真实列选区激活对照。AR-39 原为外来 change 触发模板镜像，AR-44 是随后输入消费过期列坐标，两者分别跟踪，复用现有编辑来源事实。不是 R3 修改引入的回归，也不据本次补查重写过去测试范围。搜索/替换及 MultiCursor 的保护条件复核没有形成额外确定缺陷；限制见本轮覆盖记录。
+
+R4 完整验收见 `build/coordination/20261006-zeroslack-iteration-r4/coordinator-review/ACCEPTANCE.md`：执行侧 23/23 回归通过；统筹独立 34 项黑盒探针从基线 13 失败变为全过，六组产品/控制器/共享文档测试（98/185/92/12/27/94 检查）全过，追加实际 MainWindow 模板/声明契约 89 项全过。11 个实施文件、1,573 个冻结源码文件与 46 个运行记录逐一核对。执行源码集合 `e9e482d31df4916fdf31dfd128e4fab5c8c3bdf19c9d6762c3b3682546d02db7`；当前 0.31.24 未提交。模拟 IME/Qt offscreen 不外推真实输入法驱动、画面帧率或其他平台；本轮无性能提升声明。
+
+- 上一迭代 R3（2026-10-06）：0.31.24 / `65096e125bb176ca3d92d4bae1805328f6df22a8` 已完成 push、正式包替换及复验，用户随后要求“继续新一轮的迭代”。本批 AR-41/42/43 已完成根因修复、性能验证及整批独立验收，不自动发布。任务和冻结基线见 `build/coordination/20261006-zeroslack-iteration-r3/TASK.md`、`baseline-identity.json`；下文原 Goal 和发布授权属于历史阶段。
+
+## R3：RTL 源码身份与诊断投影（2026-10-06）
+
+| 编号 | 等级 / 优先级 | 根因、当前证据与验收落点 |
+| --- | --- | --- |
+| AR-41 | 确定缺陷 / 高 | `RtlActionCoordinator::captureRtlActionDocuments`、`InstancePairConnectionFacade` 和 `MultiSignalPropagationPlanner` 重建全量 semanticContents，保留大小写的绝对路径与 SemanticIndexSnapshot 的 Windows pathKey 协议不同。同一已保存源码被误标 unsaved/StaleSemanticSource，阻断正常编辑预览；现有共享 cachedFileSource 正确匹配。当前两组重新构建的真实 Slang 测试分别 27 checks / 19 failures、19 checks / 15 failures，日志已冻结。沿既有源查询/身份所有者统一三个消费者，保留实际修订、语法、语义、只读门禁；补真实 Qt 文档和 MainWindow 预览/确认/撤销、别名及负例。过去的 18/15 历史失败此轮才纳入闭环，不倒写原接受范围。已完成开发与统一验收 |
+| AR-42 | 确定缺陷 / 中 | DiagnosticService 的 CurrentFile 空文件名落入 getDiagnostics 空字符串的全局通配语义；当前文件缺失时 Problems 显示其他文件且摘要错误。冻结 0.31.24 实际服务和面板在空目标及有目标→空目标时均显示 1 条其他文件错误，All Files 对照也为 1。由诊断查询所有者明确无目标与显式全局范围，补真实关闭最后 tab、未命名文档及工作区切换场景。已完成开发与统一验收 |
+| AR-43 | 可选优化 / 中 | Problems 一次刷新重复生成 count、visible、current-file 三份报告，并清空重建所有树项；稳定输入也重复执行。Release/Ela、Qt offscreen、200 文件/1,000 条合成诊断，10 次同步 update 为 65.4–79.1 ms。复用不可变诊断输入和投影，避免不变数据的重复查询/排序/建树；正确处理 band、过滤、当前文件、工作区和显隐失效，保留选择与导航。记录同条件新旧、冷热/新发布/稳定刷新及残余代价，不外推屏幕帧率。已完成开发与统一验收 |
+
+详细真实入口、现有保护、修复归属与验收条件在本轮 TASK；覆盖增量见 COORDINATOR-COVERAGE.md。Baseline probe 是实际生产查询与 ProblemsPanelCoordinator 加合成诊断，尚非真实 MainWindow 的关闭流程；RTL 两组使用实际 Slang 和文档测试适配器，真实 Qt 文档与产品入口现已补齐并通过；具体组合宿主与 MainWindow 边界见验收记录。未把测试替身结果当作全链路通过。源码集合为 `c39ee198f3904496d0a2956243dd14782d16794bb1f0a3bcdc47f94867135b66`。
+
+R3 完整结论见 `build/coordination/20261006-zeroslack-iteration-r3/coordinator-review/ACCEPTANCE.md`：两个 RTL 工作流为 28/28、19/19；统筹六項定向复验通过，独立 Classic 29 项 / Ela 30 项各三进程通过。执行侧 11 项 GUI 与 38 个 CLI 用例通过并核对产物身份。诊断新发布在展开且保留选择时会提前做布局，合并 update 与事件处理后中位数约 94.5→58.0 ms；收起列表约 57.6→21.6 ms，范围为 Qt offscreen、200 文件/1,000 条合成诊断。
+
+标注修正：本轮早期统筹 baseline-probe/coordinator-probe 只链接 Ela-enabled 构建，未激活 Ela 样式，实际为 Classic；原任务中的 Release/Ela 仅可指编译配置。原始材料保留，已补显式 Ela 的独立对照，不能把旧 Classic 计时冒充 Ela 运行。最终执行源码集合 `8dac6bf5ef8a4b522bc16d4a76cb2a3e159ed0b5d152864b9f1b4d398a47f95d`，当前仍为 0.31.24 未提交修改。
+### 前轮 Goal 与发布记录
+
 - 本次发布授权（2026-10-06）：用户明确要求 **“push 并打包正式包”**，将已验收 R1 六项及 R2 AR-39/40 收入 0.31.24。发布前 1,570 个源码文件与接受清单逐一核对；版本和发布说明作为单独增量记录。暂存验证、远端提交和坚果云替换的最终结果见 `build/validation/20261006-goal-release/RELEASE.md`，不以本条代替运行或发布完成证据。
 
 - 持续优化授权（2026-10-05）：用户明确要求依照 `C:/Users/14971/.codex/skills/architecture-improvement/SKILL.md` 持续多轮架构优化并用 goal 模式监督；本次先完成六项，再按覆盖缺口完成 R2 两个根因，现两批开发与独立验收均完成。执行侧开发与自测，统筹在完整交付后统一验收，不进行执行中实时互验。完整目标审计见 R2 `coordinator-review/GOAL-COMPLETION.md`，不以全仓“零未知”为无限停止条件，也不自动发布。

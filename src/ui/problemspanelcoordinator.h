@@ -8,6 +8,9 @@
 #include <QTreeWidget>
 
 #include <functional>
+#include <memory>
+
+struct DiagnosticPanelReport;
 
 class ProblemsPanelCoordinator : public QObject
 {
@@ -47,6 +50,7 @@ private:
     QString lastDiagnosticActivityMessage;
     QString externalAnalysisState;
     int updateInvocations = 0;
+    std::shared_ptr<const DiagnosticPanelReport> displayedReport;
 
     std::function<QString()> currentFileProvider;
     std::function<QStringList()> workspaceFilesProvider;

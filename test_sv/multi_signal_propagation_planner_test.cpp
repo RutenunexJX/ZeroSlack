@@ -923,8 +923,15 @@ int main(int argc, char** argv)
 
     rtledit::WorkspaceEditTransactionCoordinator
         transaction;
-    auto prepared = transaction.prepare(
+    const auto stalePrepared = transaction.prepare(
         applyPlan.workspaceEdit,
+        rtledit::SemanticIndexSnapshot{std::to_string(applyQuery.semanticToken.revision)},
+        fixture->documents, false);
+    expect("rollback keeps monotonic revisions and rejects reuse of the old plan", !stalePrepared.ready());
+    const auto retryQuery = queryFor(*fixture, {QStringLiteral("payload"), QStringLiteral("flags")}, false);
+    const auto retryPlan = planner.plan(retryQuery, fixture->documents);
+    auto prepared = transaction.prepare(
+        retryPlan.workspaceEdit,
         rtledit::SemanticIndexSnapshot{
             std::to_string(
                 applyQuery.semanticToken.revision)},

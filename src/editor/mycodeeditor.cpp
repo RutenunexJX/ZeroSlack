@@ -427,6 +427,8 @@ void MyCodeEditor::setPlainText(const QString& text)
 
 void MyCodeEditor::insertPlainText(const QString& text)
 {
+    if (!canApplyInsertion())
+        return;
     auto edit = beginSynchronousEditTransaction();
     QPlainTextEdit::insertPlainText(text);
 }
@@ -456,6 +458,12 @@ void MyCodeEditor::paste()
     if (isReadOnly() || !document())
         return;
 
+    // Column input owns its edit block, including the contentsChange callback.
+    if (state->columnMode.selectionActive()) {
+        state->executeClipboardAction(this, QStringLiteral("edit.paste"));
+        return;
+    }
+
     QTextCursor transaction(document());
     transaction.beginEditBlock();
     state->executeClipboardAction(
@@ -465,6 +473,8 @@ void MyCodeEditor::paste()
 
 void MyCodeEditor::undo()
 {
+    if (!canApplyInsertion())
+        return;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -480,6 +490,8 @@ void MyCodeEditor::undo()
 
 void MyCodeEditor::redo()
 {
+    if (!canApplyInsertion())
+        return;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -527,6 +539,8 @@ bool MyCodeEditor::duplicateLines(
 bool MyCodeEditor::deleteSelectedContent(
     QString* failureReason)
 {
+    if (!canApplyInsertion(failureReason))
+        return false;
     auto edit = beginSynchronousEditTransaction();
     const int verticalScroll = verticalScrollBar()->value();
     const int horizontalScroll = horizontalScrollBar()->value();
@@ -1344,6 +1358,11 @@ bool MyCodeEditor::replaceNextText(const QString& needle,
                                    const QString& replacement,
                                    bool caseSensitive)
 {
+    QString failureReason;
+    if (!canApplyInsertion(&failureReason)) {
+        emit editorStatusMessageRequested(failureReason);
+        return false;
+    }
     auto edit = beginSynchronousEditTransaction();
     if (needle.isEmpty()) {
         emit editorStatusMessageRequested(tr("Find text is empty"));
@@ -1382,6 +1401,11 @@ int MyCodeEditor::replaceAllText(const QString& needle,
                                  const QString& replacement,
                                  bool caseSensitive)
 {
+    QString failureReason;
+    if (!canApplyInsertion(&failureReason)) {
+        emit editorStatusMessageRequested(failureReason);
+        return 0;
+    }
     auto edit = beginSynchronousEditTransaction();
     if (needle.isEmpty()) {
         emit editorStatusMessageRequested(tr("Find text is empty"));
@@ -2069,6 +2093,11 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
 void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
+    if (!canApplyInsertion()) {
+        if (event)
+            event->ignore();
+        return;
+    }
     auto edit = beginSynchronousEditTransaction();
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     const int previousProjectedScroll = state->projection.active()

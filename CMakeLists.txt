@@ -1345,6 +1345,21 @@ if(BUILD_TESTING)
     target_link_libraries(workspace_session_coordinator_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(workspace_watch_handoff_contract_test
+        test_sv/workspace_watch_handoff_contract_test.cpp)
+    target_link_libraries(workspace_watch_handoff_contract_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::Concurrent)
+
+    add_executable(workspace_junction_contract_test
+        test_sv/workspace_junction_contract_test.cpp)
+    target_link_libraries(workspace_junction_contract_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::Concurrent)
+
+    add_executable(scoped_replace_scope_contract_test
+        test_sv/scoped_replace_scope_contract_test.cpp)
+    target_link_libraries(scoped_replace_scope_contract_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(workspace_switcher_test test_sv/workspace_switcher_test.cpp)
     target_link_libraries(workspace_switcher_test PRIVATE zeroslack_core Qt6::Test)
 
@@ -1365,6 +1380,11 @@ if(BUILD_TESTING)
 
     add_executable(relationship_value_access_contract_test test_sv/relationship_value_access_contract_test.cpp)
     target_link_libraries(relationship_value_access_contract_test PRIVATE zeroslack_core)
+
+    add_executable(diagnostic_panel_contract_test test_sv/diagnostic_panel_contract_test.cpp)
+    target_link_libraries(diagnostic_panel_contract_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(rtl_source_identity_contract_test test_sv/rtl_source_identity_contract_test.cpp)
+    target_link_libraries(rtl_source_identity_contract_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(fsm_ui_snapshot_test test_sv/fsm_ui_snapshot_test.cpp)
     set_target_properties(fsm_ui_snapshot_test PROPERTIES
@@ -1559,6 +1579,11 @@ if(BUILD_TESTING)
     target_link_libraries(editor_structural_input_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(editor_input_boundary_contract_test
+        test_sv/editor_input_boundary_contract_test.cpp)
+    target_link_libraries(editor_input_boundary_contract_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(editor_line_operation_test
         test_sv/editor_line_operation_test.cpp
         src/editor/editorlineoperationcontroller.cpp)
@@ -1711,6 +1736,14 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:relationship_value_access_contract_test>)
+    foreach(contract diagnostic_panel_contract_test rtl_source_identity_contract_test editor_input_boundary_contract_test workspace_watch_handoff_contract_test workspace_junction_contract_test scoped_replace_scope_contract_test)
+        add_test(NAME ${contract}
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:${contract}>)
+        set_tests_properties(${contract} PROPERTIES TIMEOUT 180)
+    endforeach()
     add_test(NAME external_document_sync_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

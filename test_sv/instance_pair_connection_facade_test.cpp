@@ -679,6 +679,8 @@ int main(int argc, char** argv)
         facade.analyze(
             readyQuery,
             readyFixture->documents);
+    if (!readyAnalysis.ready())
+        std::printf("Analysis rejection: %s\n", qPrintable(readyAnalysis.message));
     expect(
         "different branches resolve one LCA and structured side-by-side blocks",
         readyAnalysis.ready()
@@ -1062,6 +1064,15 @@ int main(int argc, char** argv)
     const auto undone =
         WorkspaceEditTransactionService::getInstance()
             ->undo(applyFixture->documents);
+    bool restoredTextWithNewRevisions = applyBefore.size() == applyFixture->documents.docs.size();
+    for (auto it = applyBefore.cbegin(); it != applyBefore.cend(); ++it) {
+        const auto current = applyFixture->documents.docs.constFind(it.key());
+        const bool changed = std::find(applied.changedFiles.begin(), applied.changedFiles.end(),
+                                      it.key().toUtf8().toStdString()) != applied.changedFiles.end();
+        restoredTextWithNewRevisions &= current != applyFixture->documents.docs.cend()
+            && current->text == it->text
+            && (changed ? current->revision > it->revision : current->revision == it->revision);
+    }
     expect(
         "all files apply atomically and one undo restores the pair connection",
         applyPlan.ready()
@@ -1072,9 +1083,7 @@ int main(int argc, char** argv)
             && undone.status
                 == rtledit::
                     TransactionStatus::Undone
-            && sameDocumentState(
-                applyBefore,
-                applyFixture->documents.docs)
+            && restoredTextWithNewRevisions
             && !WorkspaceEditTransactionService::
                     getInstance()->canUndo());
 

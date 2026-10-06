@@ -625,6 +625,8 @@ void restoreLineActionCursor(MyCodeEditor* editor,
 
 bool applyLineComment(MyCodeEditor* editor)
 {
+    if (!editor || !editor->canApplyInsertion())
+        return false;
     const TouchedLineRange range = touchedLineRange(editor);
     if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
         return false;
@@ -654,6 +656,8 @@ bool applyLineComment(MyCodeEditor* editor)
 
 bool applyLineUncomment(MyCodeEditor* editor)
 {
+    if (!editor || !editor->canApplyInsertion())
+        return false;
     const TouchedLineRange range = touchedLineRange(editor);
     if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
         return false;
@@ -765,6 +769,8 @@ void restoreLinePrefixActionCursor(MyCodeEditor* editor,
 
 bool applyLineIndent(MyCodeEditor* editor)
 {
+    if (!editor || !editor->canApplyInsertion())
+        return false;
     const TouchedLineRange range = touchedLineRange(editor);
     if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
         return false;
@@ -799,6 +805,8 @@ bool applyLineIndent(MyCodeEditor* editor)
 
 bool applyLineUnindent(MyCodeEditor* editor)
 {
+    if (!editor || !editor->canApplyInsertion())
+        return false;
     const TouchedLineRange range = touchedLineRange(editor);
     if (!editor || range.firstLine < 0 || range.lastLine < range.firstLine)
         return false;
@@ -897,7 +905,8 @@ bool handleLineCommentShortcut(MyCodeEditor* editor, QKeyEvent* event)
 bool handleBracketRangeTab(MyCodeEditor* editor, QKeyEvent* event)
 {
     if (!editor || !event
-        || event->key() != Qt::Key_Tab)
+        || event->key() != Qt::Key_Tab
+        || !editor->canApplyInsertion())
         return false;
     const Qt::KeyboardModifiers modifiers =
         event->modifiers()
@@ -1071,7 +1080,8 @@ QString adjustedExpressionBound(const QString& expression, bool increment)
 bool adjustSelectedRangeBound(MyCodeEditor* editor,
                               QKeyEvent* event)
 {
-    if (!editor || !event || hasCommandModifier(event))
+    if (!editor || !event || hasCommandModifier(event)
+        || !editor->canApplyInsertion())
         return false;
     const bool increment = event->key() == Qt::Key_Up;
     const bool decrement = event->key() == Qt::Key_Down;
@@ -1469,6 +1479,7 @@ void MyCodeEditorState::rebindDocument(
 
     modes.exitAll(EditorModeExitReason::DocumentChanged);
     columnMode.clearPendingColumnAnchor();
+    undoCursorEntries.clear();
     folding.resetForDocumentChange(editor);
     cancelSignalDefinitionEditor();
     cancelSemanticRenameEditor();
@@ -1578,6 +1589,10 @@ void MyCodeEditorState::handleDocumentContentsChange(
     const DocumentChange change = syntax.lastChange();
     if (!change.changesText() && change.oldLength == change.newLength)
         return;
+    columnMode.handleDocumentChange();
+    // Foreign edits invalidate view-local undo intentions, including rectangles.
+    if (synchronousEditTransactionDepth == 0)
+        undoCursorEntries.clear();
     if (insightTargetPick.active())
         insightTargetPick.clear(editor, QString(), EditorModeExitReason::DocumentChanged);
     const int newLength = change.newLength;
@@ -2772,6 +2787,8 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
 
     if (event->key() == Qt::Key_Tab
         && event->modifiers() == Qt::NoModifier) {
+        if (!editor->canApplyInsertion())
+            return false;
         QTextCursor cursor = editor->textCursor();
         cursor.insertText(QStringLiteral("    "));
         editor->setTextCursor(cursor);
@@ -4050,6 +4067,8 @@ bool MyCodeEditorState::confirmSignalDefinition(
     };
     if (!editor || !editor->document())
         return fail(QStringLiteral("No editor document"));
+    if (!editor->canApplyInsertion(failureReason))
+        return false;
     if (!signalDefinitionPeekActive
         || signalDefinitionPeek.isNull()
         || signalDefinitionEditor.isNull()
@@ -4306,6 +4325,8 @@ bool MyCodeEditorState::createAssignmentQueueAt(
             *message = QStringLiteral("No editor document");
         return false;
     }
+    if (!editor->canApplyInsertion(message))
+        return false;
     const QStringList ordered =
         signalSelection.selectedNames();
     if (ordered.isEmpty()) {
@@ -4829,6 +4850,11 @@ bool MyCodeEditorState::clearSelectedAssignmentRhs(MyCodeEditor* editor,
 {
     if (!editor || !editor->document())
         return false;
+    QString failureReason;
+    if (!editor->canApplyInsertion(&failureReason)) {
+        publishClearRhsFailure(editor, message, failureReason);
+        return false;
+    }
 
     QTextCursor cursor = editor->textCursor();
     int selectionStart = cursor.selectionStart();

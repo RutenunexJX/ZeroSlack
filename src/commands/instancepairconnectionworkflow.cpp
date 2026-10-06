@@ -1,6 +1,7 @@
 #include "instancepairconnectionworkflow.h"
 
 #include "semanticindex.h"
+#include "editorfileidentity.h"
 #include "workspaceedittransactionservice.h"
 
 #include <rtledit/edit_plan.h>
@@ -951,34 +952,23 @@ InstancePairConnectionWorkflow::preflight(
                 "The semantic generation changed after analysis."));
     }
 
-    for (auto it =
-             request.documentRevisions.constBegin();
-         it != request.documentRevisions.constEnd();
-         ++it) {
-        const auto live =
-            documentManager->snapshot(
-                utf8String(it.key()));
-        if (!live
-            || live->version.value
-                != it.value()) {
-            return rejected(
-                InstancePairConnectionWorkflowFailure::
-                    StaleDocumentRevision,
-                QStringLiteral(
-                    "The document revision changed after analysis: %1")
-                    .arg(it.key()));
-        }
-    }
-
-    for (auto it =
-             activeAnalysis->capturedDocuments.constBegin();
-         it != activeAnalysis->capturedDocuments.constEnd();
-         ++it) {
+    const auto& capturedDocuments = activeAnalysis->capturedDocuments.isEmpty()
+        ? activeAnalysis->query.documents : activeAnalysis->capturedDocuments;
+    QSet<QString> checkedIdentities;
+    for (auto it = capturedDocuments.constBegin(); it != capturedDocuments.constEnd(); ++it) {
         const InstancePairDocumentSnapshot& captured =
             it.value();
         const QString fileName = normalizedFileName(
             captured.fileName.isEmpty()
                 ? it.key() : captured.fileName);
+        const QString identity = EditorFileIdentity::lookupKey(fileName);
+        const auto requestedRevision = request.documentRevisions.constFind(identity);
+        if (requestedRevision == request.documentRevisions.cend()
+            || requestedRevision.value() != captured.revision) {
+            return rejected(InstancePairConnectionWorkflowFailure::StaleDocumentRevision,
+                QStringLiteral("The captured revision context changed: %1").arg(fileName));
+        }
+        checkedIdentities.insert(identity);
         const auto live =
             documentManager->snapshot(
                 utf8String(fileName));
@@ -994,6 +984,10 @@ InstancePairConnectionWorkflow::preflight(
                     "The document content changed after analysis: %1")
                     .arg(fileName));
         }
+    }
+    if (checkedIdentities.size() != request.documentRevisions.size()) {
+        return rejected(InstancePairConnectionWorkflowFailure::InvalidRequest,
+            QStringLiteral("The revision context contains an uncaptured document."));
     }
 
     if (!proposal)

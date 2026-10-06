@@ -56,6 +56,7 @@ public:
                    QString* message = nullptr);
 
     void clearSelection(MyCodeEditor* editor);
+    void handleDocumentChange();
     bool beginSelection(MyCodeEditor* editor,
                         QMouseEvent* event);
     bool handlePlainVirtualCursorClick(

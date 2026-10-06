@@ -85,8 +85,11 @@ public:
         const ReplacePreviewPlan& preview,
         const QList<SearchDocumentSnapshot>& searchedDocuments,
         bool dryRun = false);
+    // Legacy no-scope confirmation still checks live snapshots and external
+    // state. A supplied list is authoritative even when it is empty.
+    ScopedReplaceWorkflowResult confirm();
     ScopedReplaceWorkflowResult confirm(
-        const QList<SearchDocumentSnapshot>& currentDocuments = {});
+        const QList<SearchDocumentSnapshot>& currentDocuments);
     ScopedReplaceWorkflowResult cancel();
     ScopedReplaceWorkflowResult undo();
 
@@ -144,6 +147,8 @@ private:
     void postFailureNotification(
         const ScopedReplaceWorkflowResult& result);
     void clearPending();
+    ScopedReplaceWorkflowResult confirmImpl(
+        const QList<SearchDocumentSnapshot>* currentDocuments);
 
     static QString normalizedFileName(const std::string& filePath);
     static QString documentIdentity(const QString& fileName);

@@ -545,6 +545,9 @@ void EditorCompletionWorkflow::applyCompletionActivationState(
         return;
     }
 
+    if (!insertionAllowed())
+        return;
+
     if (activationState.action == CompletionActivationAction::ReplaceLine) {
         cursor.movePosition(QTextCursor::StartOfLine, QTextCursor::MoveAnchor);
         cursor.movePosition(QTextCursor::EndOfLine, QTextCursor::KeepAnchor);
@@ -578,6 +581,8 @@ int EditorCompletionWorkflow::replaceCommandInputAtCursor(
     int selectionStart,
     int selectionLength)
 {
+    if (!insertionAllowed())
+        return -1;
     QTextCursor cursor = editor->textCursor();
     if (inlineAbbreviationSessionActive()
         && !inlineAbbreviationSessionValid()) {

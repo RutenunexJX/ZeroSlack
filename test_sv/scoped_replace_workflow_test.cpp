@@ -402,6 +402,46 @@ void checkStaleRevision()
             && documents.applyCalls == 0);
 }
 
+void checkExplicitEmptyScope()
+{
+    PreviewFixture fixture(QStringLiteral("memory/scope.sv"));
+    MemoryDocuments documents;
+    documents.open(fixture.firstFile, 310, fixture.firstBefore);
+    ScopedReplaceWorkflow workflow(&documents);
+    workflow.preparePreview(fixture.preview, fixture.searchedDocuments);
+    const auto before = documents.snapshot(utf8String(fixture.firstFile));
+    const auto empty = workflow.confirm({});
+    const auto after = documents.snapshot(utf8String(fixture.firstFile));
+    expect("explicit empty brace list rejects the pending scope without applying",
+        empty.failure == ScopedReplaceWorkflowFailure::StaleSearchRevision
+        && before && after && before->text == after->text && before->version == after->version
+        && documents.applyCalls == 0 && !workflow.hasPendingPreview());
+    expect("rejected scope cannot be retried without rebuilding preview",
+        workflow.confirm().failure == ScopedReplaceWorkflowFailure::InvalidPreview);
+    workflow.preparePreview(fixture.preview, fixture.searchedDocuments);
+    expect("fresh authoritative nonempty scope applies normally",
+        workflow.confirm(fixture.searchedDocuments).state == ScopedReplaceWorkflowState::Applied);
+    expect("applied history can be undone after an earlier scope rejection",
+        workflow.undo().state == ScopedReplaceWorkflowState::Undone
+        && documents.text(fixture.firstFile) == fixture.firstBefore);
+    workflow.preparePreview(fixture.preview, fixture.searchedDocuments, true);
+    expect("explicit empty scope also rejects dry-run confirmation",
+        workflow.confirm(QList<SearchDocumentSnapshot>{}).failure == ScopedReplaceWorkflowFailure::StaleSearchRevision);
+    workflow.preparePreview(fixture.preview, fixture.searchedDocuments);
+    expect("no-argument compatibility validates live documents without asserting a scope",
+        workflow.confirm().state == ScopedReplaceWorkflowState::Applied);
+    PreviewFixture next(QStringLiteral("memory/next_scope.sv"));
+    documents.open(next.firstFile, 500, next.firstBefore);
+    workflow.preparePreview(next.preview, next.searchedDocuments);
+    expect("empty-scope failure preserves the earlier applied transaction history",
+        workflow.confirm({}).failure == ScopedReplaceWorkflowFailure::StaleSearchRevision
+        && workflow.canUndoAppliedTransaction());
+    expect("historical undo still works after a later rejected preview",
+        workflow.undo().state == ScopedReplaceWorkflowState::Undone
+        && documents.text(fixture.firstFile) == fixture.firstBefore
+        && documents.text(next.firstFile) == next.firstBefore);
+}
+
 void checkExternalModification()
 {
     QTemporaryDir directory;
@@ -674,6 +714,7 @@ int main(int argc, char* argv[])
     checkApplyAndSingleUndo();
     checkManyMatchesCaptureOneSnapshot();
     checkStaleRevision();
+    checkExplicitEmptyScope();
     checkExternalModification();
     checkSecondFileFailureRollsBack();
     checkRollbackFailureIsVisible();

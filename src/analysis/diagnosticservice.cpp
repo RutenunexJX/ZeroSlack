@@ -9,6 +9,13 @@
 
 std::unique_ptr<DiagnosticService> DiagnosticService::instance = nullptr;
 
+struct DiagnosticService::PanelCache {
+    SemanticSnapshotToken token;
+    std::uint64_t bandRevision = 0;
+    DiagnosticPanelQueryOptions options;
+    std::shared_ptr<const DiagnosticPanelReport> report;
+};
+
 namespace {
 int diagnosticSeverityRank(SemanticDiagnostic::Severity severity)
 {
@@ -159,6 +166,7 @@ DiagnosticService::~DiagnosticService() = default;
 void DiagnosticService::setSemanticIndex(SemanticIndex* semanticIndex)
 {
     index = semanticIndex ? semanticIndex : SemanticIndex::getInstance();
+    panelCache.reset();
 }
 
 QList<DiagnosticResult> DiagnosticService::findDiagnostics(
@@ -166,6 +174,8 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
 {
     const DiagnosticQuery normalized = normalizedQuery(query);
     QList<DiagnosticResult> result;
+    if (normalized.currentFileRequired && normalized.fileName.isEmpty())
+        return result;
     QSet<QString> normalizedWorkspaceFiles;
     if (normalized.workspaceFilesOnly) {
         for (const QString& fileName : normalized.workspaceFiles)
@@ -175,13 +185,16 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
 
     const QList<SemanticDiagnostic> diagnostics =
         semanticIndex()->getDiagnostics(normalized.fileName);
+    QHash<QString, QString> sortPaths, workspaceKeys;
+    QHash<QString, SemanticAnalysisBandMetadata> bands;
     for (const SemanticDiagnostic& diagnostic : diagnostics) {
         if (!severityMatches(diagnostic.severity, normalized))
             continue;
-        if (normalized.workspaceFilesOnly
-            && !normalizedWorkspaceFiles.contains(
-                EditorFileIdentity::lookupKey(diagnostic.fileName))) {
-            continue;
+        if (normalized.workspaceFilesOnly) {
+            auto key = workspaceKeys.constFind(diagnostic.fileName);
+            if (key == workspaceKeys.cend())
+                key = workspaceKeys.insert(diagnostic.fileName, EditorFileIdentity::lookupKey(diagnostic.fileName));
+            if (!normalizedWorkspaceFiles.contains(key.value())) continue;
         }
 
         DiagnosticResult item;
@@ -192,8 +205,11 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
         item.columnDisplayName = diagnosticColumnDisplayName(diagnostic.column);
         item.messageDisplayName = diagnosticMessageDisplayName(diagnostic.message);
         item.ownerDisplayName = diagnosticOwnerDisplayName(diagnostic.owner);
-        item.analysisBand = normalizedDiagnosticAnalysisBand(
-            semanticIndex()->analysisBandForFile(diagnostic.fileName));
+        auto band = bands.constFind(diagnostic.fileName);
+        if (band == bands.cend())
+            band = bands.insert(diagnostic.fileName, normalizedDiagnosticAnalysisBand(
+                semanticIndex()->analysisBandForFile(diagnostic.fileName)));
+        item.analysisBand = band.value();
         item.analysisBandDisplayName =
             diagnosticAnalysisBandDisplayName(item.analysisBand);
         if (!normalized.analysisBandLabel.isEmpty()
@@ -201,9 +217,11 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
             continue;
         }
         result.append(item);
+        if (!sortPaths.contains(diagnostic.fileName))
+            sortPaths.insert(diagnostic.fileName, normalizedFileName(diagnostic.fileName));
     }
     std::sort(result.begin(), result.end(),
-              [](const DiagnosticResult& lhs, const DiagnosticResult& rhs) {
+              [&sortPaths](const DiagnosticResult& lhs, const DiagnosticResult& rhs) {
                   const SemanticDiagnostic& left = lhs.diagnostic;
                   const SemanticDiagnostic& right = rhs.diagnostic;
                   const int severityCompare =
@@ -213,8 +231,8 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
                       return severityCompare < 0;
 
                   const int fileCompare =
-                      QString::compare(DiagnosticService::normalizedFileName(left.fileName),
-                                       DiagnosticService::normalizedFileName(right.fileName),
+                      QString::compare(sortPaths.value(left.fileName),
+                                       sortPaths.value(right.fileName),
                                        Qt::CaseInsensitive);
                   if (fileCompare != 0)
                       return fileCompare < 0;
@@ -229,8 +247,13 @@ QList<DiagnosticResult> DiagnosticService::findDiagnostics(
 
 DiagnosticReport DiagnosticService::findDiagnosticReport(const DiagnosticQuery& query) const
 {
+    return reportFromDiagnostics(findDiagnostics(query));
+}
+
+DiagnosticReport DiagnosticService::reportFromDiagnostics(const QList<DiagnosticResult>& diagnostics)
+{
     DiagnosticReport report;
-    report.diagnostics = findDiagnostics(query);
+    report.diagnostics = diagnostics;
     report.totalCount = report.diagnostics.size();
     QMap<QString, int> fileGroupIndexes;
     QMap<QString, int> analysisBandGroupIndexes;
@@ -298,6 +321,60 @@ bool DiagnosticService::hasDiagnostics(const DiagnosticQuery& query) const
     return !findDiagnostics(query).isEmpty();
 }
 
+std::shared_ptr<const DiagnosticPanelReport> DiagnosticService::reportForPanel(
+    const DiagnosticPanelQueryOptions& options) const
+{
+    const auto token = semanticIndex()->snapshotToken();
+    const auto bandRevision = semanticIndex()->workspaceAnalysisBandRevision();
+    if (panelCache && panelCache->token.snapshot == token.snapshot
+        && panelCache->token.revision == token.revision
+        && panelCache->bandRevision == bandRevision && panelCache->options == options)
+        return panelCache->report;
+
+    // Prepare display values and sort once. Current-file queries stay local;
+    // broader scopes also need the independent current-file summary.
+    DiagnosticQuery sourceQuery;
+    if (options.scope == DiagnosticPanelScope::CurrentFile) {
+        sourceQuery.fileName = options.currentFileName;
+        sourceQuery.currentFileRequired = true;
+    }
+    const auto diagnostics = findDiagnostics(sourceQuery);
+    QHash<QString, QString> identities;
+    QSet<QString> workspace;
+    if (options.scope == DiagnosticPanelScope::WorkspaceFiles) {
+        QStringList files = options.workspaceFiles;
+        for (const auto& result : diagnostics) files.append(result.diagnostic.fileName);
+        files.removeDuplicates();
+        identities = EditorFileIdentity::lookupKeys(files);
+        for (const auto& file : options.workspaceFiles) {
+            const auto key = identities.value(file);
+            if (!key.isEmpty()) workspace.insert(key);
+        }
+    }
+    auto report = std::make_shared<DiagnosticPanelReport>();
+    // The snapshot already owns the current-file diagnostic bucket. Counting
+    // it needs no display projection or physical resolution of unrelated files.
+    const auto currentFile = normalizedFileName(options.currentFileName);
+    if (!currentFile.isEmpty())
+        for (const auto& diagnostic : semanticIndex()->getDiagnostics(currentFile))
+            ++report->currentFileSeverityCounts[diagnostic.severity];
+    const auto selection = queryForPanel(options);
+    QList<DiagnosticResult> scoped, visible;
+    for (const auto& result : diagnostics) {
+        if (options.scope == DiagnosticPanelScope::WorkspaceFiles
+            && !workspace.contains(identities.value(result.diagnostic.fileName))) continue;
+        if (!severityMatches(result.diagnostic.severity, selection)) continue;
+        scoped.append(result);
+        if (selection.analysisBandLabel.isEmpty() || result.analysisBand.label == selection.analysisBandLabel)
+            visible.append(result);
+    }
+    report->availableBands = reportFromDiagnostics(scoped);
+    report->visible = selection.analysisBandLabel.isEmpty()
+        ? report->availableBands : reportFromDiagnostics(visible);
+    panelCache = std::make_unique<PanelCache>(PanelCache{token, bandRevision, options, report});
+    return report;
+}
+
 DiagnosticQuery DiagnosticService::queryForPanel(
     const DiagnosticPanelQueryOptions& options) const
 {
@@ -305,6 +382,7 @@ DiagnosticQuery DiagnosticService::queryForPanel(
     switch (options.scope) {
     case DiagnosticPanelScope::CurrentFile:
         query.fileName = options.currentFileName;
+        query.currentFileRequired = true;
         break;
     case DiagnosticPanelScope::WorkspaceFiles:
         query.workspaceFilesOnly = true;

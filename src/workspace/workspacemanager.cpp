@@ -3,6 +3,7 @@
 
 #include "slangparseoptions.h"
 #include "semanticanalysisinput.h"
+#include "editorfileidentity.h"
 #include "activitylogservice.h"
 #include "workspaceignoreservice.h"
 #include <QFileDialog>
@@ -21,6 +22,7 @@
 #include <QThread>
 #include <algorithm>
 #include <utility>
+#include <vector>
 
 namespace {
 constexpr int kMaxRecentWorkspaces = 20;
@@ -28,6 +30,14 @@ constexpr const char* kRecentWorkspaceGroup = "recentWorkspaces";
 constexpr const char* kRecentWorkspaceItems = "items";
 constexpr const char* kRecentWorkspaceAlias = "alias";
 constexpr const char* kRecentWorkspacePath = "path";
+
+QString directoryMemberKey(const QFileInfo& entry)
+{
+    // Entry kind is part of membership: replacing a file with a directory at
+    // the same path requires discovery of its children and different watches.
+    return (entry.isDir() ? QStringLiteral("d:") : QStringLiteral("f:"))
+        + SemanticInputCapture::pathKey(entry.absoluteFilePath());
+}
 }
 
 WorkspaceManager::WorkspaceManager(QObject *parent)
@@ -105,6 +115,7 @@ void WorkspaceManager::WorkspaceWatcher::ensure(WorkspaceManager* owner)
 void WorkspaceManager::WorkspaceWatcher::clear()
 {
     installed = {};
+    semanticInstalled = {};
     apply({});
 }
 
@@ -119,29 +130,52 @@ void WorkspaceManager::WorkspaceWatcher::apply(const PreparedPaths& prepared,
     // keeps display case. Reconcile by the same identity to avoid registering
     // the complete workspace a second time after semantic publication.
     const auto key = SemanticInputCapture::pathKey;
-    QHash<QString, QString> current;
-    for (const auto& path : watcher->files()) current.insert(key(path), path);
-    for (const auto& path : watcher->directories()) current.insert(key(path), path);
+    QHash<QString, QString> currentFiles;
+    QHash<QString, QString> currentDirectories;
+    for (const auto& path : watcher->files()) currentFiles.insert(key(path), path);
+    for (const auto& path : watcher->directories()) currentDirectories.insert(key(path), path);
     desiredFiles.clear();
     desiredDirectories.clear();
     for (const auto& path : prepared.directories) desiredDirectories.insert(key(path), path);
     for (const auto& path : prepared.files) desiredFiles.insert(key(path), path);
     removals.clear();
     additions.clear();
-    for (auto it = current.cbegin(); it != current.cend(); ++it)
-        if (!desiredFiles.contains(it.key()) && !desiredDirectories.contains(it.key()))
+    registrationRepairs.clear();
+    for (auto it = currentFiles.cbegin(); it != currentFiles.cend(); ++it) {
+        if (currentDirectories.contains(it.key())) {
+            // Keep both observed registrations together for native removal.
             removals.append(it.value());
+            removals.append(currentDirectories.value(it.key()));
+        } else if (!desiredFiles.contains(it.key())) {
+            removals.append(it.value());
+        }
+    }
+    for (auto it = currentDirectories.cbegin(); it != currentDirectories.cend(); ++it)
+        if (!currentFiles.contains(it.key()) && !desiredDirectories.contains(it.key()))
+            removals.append(it.value());
+    // A Windows kind transition can leave two backend registrations at one
+    // path. Qt removes the directory handle before the parent file handle,
+    // while erasing both public list entries. Retire each observed kind so a
+    // hidden old file registration cannot suppress a later addPath().
+    QSet<QString> removing;
+    for (const QString& path : std::as_const(removals)) removing.insert(key(path));
     // Ancestor directories are watched before their files. Input publication
     // waits for this bounded reconciliation to finish before capturing sources.
     QSet<QString> queued;
-    for (const auto& paths : {prepared.directories, prepared.files})
+    const auto queueMissing = [&](const QStringList& paths, const QHash<QString, QString>& current) {
         for (const auto& path : paths) {
             const auto identity = key(path);
-            if (!current.contains(identity) && !queued.contains(identity)) {
+            // During a kind transition Qt can still list the old and new
+            // registrations. Removing a path retires both; re-add its owner.
+            if ((!current.contains(identity) || removing.contains(identity))
+                && !queued.contains(identity)) {
                 additions.append(path);
                 queued.insert(identity);
             }
         }
+    };
+    queueMissing(prepared.directories, currentDirectories);
+    queueMissing(prepared.files, currentFiles);
     continuation->start(0);
 }
 
@@ -152,17 +186,48 @@ void WorkspaceManager::WorkspaceWatcher::advance()
     int operations = 0;
     while ((!removals.isEmpty() || !additions.isEmpty())
            && operations < 8 && budget.elapsed() < 4) {
-        if (!removals.isEmpty()) watcher->removePath(removals.takeLast());
-        else watcher->addPath(additions.takeFirst());
-        ++operations;
+        if (!removals.isEmpty()) {
+            const bool paired = removals.size() > 1
+                && SemanticInputCapture::pathKey(removals.last())
+                    == SemanticInputCapture::pathKey(removals.at(removals.size() - 2));
+            if (paired && operations + 2 > 8)
+                break;
+            QStringList paths{removals.takeLast()};
+            if (paired)
+                paths.append(removals.takeLast());
+            watcher->removePaths(paths);
+            operations += paths.size();
+        } else {
+            const QString path = additions.takeFirst();
+            const auto previousCount = watcher->files().size() + watcher->directories().size();
+            const bool added = watcher->addPath(path);
+            ++operations;
+            // An obsolete removal notification can erase Qt's public entry
+            // while its backend still owns a new registration at this path.
+            // addPath then succeeds without exposing coverage. Retire that
+            // residue and retry once through the same bounded queues.
+            const QString identity = SemanticInputCapture::pathKey(path);
+            if (added && previousCount == watcher->files().size() + watcher->directories().size()
+                && !watcher->files().contains(path, Qt::CaseInsensitive)
+                && !watcher->directories().contains(path, Qt::CaseInsensitive)
+                && !registrationRepairs.contains(identity)) {
+                registrationRepairs.insert(identity);
+                removals.append(path);
+                additions.prepend(path);
+            }
+        }
     }
     if (!removals.isEmpty() || !additions.isEmpty()) {
         continuation->start(0);
         return;
     }
     auto completion = std::move(installed);
+    auto semanticCompletion = std::move(semanticInstalled);
     installed = {};
+    semanticInstalled = {};
+    registrationRepairs.clear();
     if (completion) completion();
+    if (semanticCompletion) semanticCompletion();
 }
 
 QString WorkspaceManager::WorkspaceWatcher::rewatchFile(const QString& path)
@@ -750,11 +815,12 @@ void WorkspaceManager::applySemanticWatchPaths(const QString& root,
         // An include may have changed between capture and watch installation.
         // Revalidate once AFTER new coverage is installed. Unchanged desired
         // coverage does not schedule another request, so this cannot loop.
-        auto previousCompletion = std::move(watcher.installed);
-        watcher.installed = [self = QPointer<WorkspaceManager>(this), root,
-                             previousCompletion = std::move(previousCompletion)] {
-            if (previousCompletion) previousCompletion();
+        // Keep the latest semantic revalidation separate from scan completion:
+        // finishing an enumeration must not overwrite this pending consumer.
+        watcher.semanticInstalled = [self = QPointer<WorkspaceManager>(this), root,
+                                     activation = workspaceActivationGeneration] {
             if (self && self->isWorkspaceOpen()
+                && activation == self->workspaceActivationGeneration
                 && self->normalizeWorkspacePath(root) == self->workspacePath)
                 emit self->semanticInputsChanged(root);
         };
@@ -774,8 +840,13 @@ void WorkspaceManager::applyCombinedWatchPaths()
 void WorkspaceManager::onFileChanged(const QString& path)
 {
     const QString ownedPath = watcher.rewatchFile(path);
-    if (ownedPath.isEmpty())
+    if (ownedPath.isEmpty()) {
+        // A delayed removal event can name a file whose path is now a desired
+        // directory. Reconcile its current owner instead of losing coverage.
+        if (watcher.desiredDirectories.contains(SemanticInputCapture::pathKey(path)))
+            onDirectoryChanged(path);
         return;
+    }
     const QString identity = SemanticInputCapture::pathKey(ownedPath);
     if (std::any_of(semanticWatchPaths.files.cbegin(), semanticWatchPaths.files.cend(),
             [&](const QString& file) { return SemanticInputCapture::pathKey(file) == identity; })) {
@@ -793,8 +864,11 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
         return;
     const QString key = SemanticInputCapture::pathKey(path);
     const QString ownedPath = watcher.desiredDirectories.value(key);
-    if (ownedPath.isEmpty())
+    if (ownedPath.isEmpty()) {
+        if (watcher.desiredFiles.contains(key))
+            onFileChanged(path);
         return;
+    }
 
     QPointer<WorkspaceManager> self(this);
     const auto activation = workspaceActivationGeneration;
@@ -807,8 +881,10 @@ void WorkspaceManager::onDirectoryChanged(const QString& path)
         return;
     // Coalesced into one worker plus one latest request. No directory listing
     // or membership comparison runs in the GUI notification handler.
+    const bool stillCovered = watcher.watcher
+        && watcher.watcher->directories().contains(ownedPath, Qt::CaseInsensitive);
     startDirectoryScan(workspacePath,
-        (!directoryScanPending || membershipProbeDirectory == key)
+        stillCovered && (!directoryScanPending || membershipProbeDirectory == key)
                 && directoryMembership.contains(key) ? ownedPath : QString());
 }
 
@@ -843,10 +919,17 @@ void WorkspaceManager::launchPendingDirectoryScan()
 {
     if (scanWatcher || !pendingScanRequest)
         return;
-    const auto request = *pendingScanRequest;
+    auto request = *pendingScanRequest;
     pendingScanRequest.reset();
+    if (request.membershipDirectory.isEmpty() && request.coverageMembership.isEmpty()
+        && watcher.watcher) {
+        // Coverage must predate enumeration, not merely be desired or queued.
+        for (const QString& path : watcher.watcher->directories())
+            request.coveredDirectories.insert(SemanticInputCapture::pathKey(path));
+    }
     auto cancellation = std::make_shared<std::atomic_bool>(false);
-    auto progress = std::make_shared<std::atomic<int>>(0);
+    auto progress = std::make_shared<std::atomic<int>>(
+        request.coverageMembership.isEmpty() ? 0 : pendingScannedFiles.size());
     scanCancellation = cancellation;
     scanProgress = progress;
     auto* watcher = new QFutureWatcher<DirectoryScanResult>(this);
@@ -859,6 +942,16 @@ void WorkspaceManager::launchPendingDirectoryScan()
             if (scanCancellation == cancellation)
                 scanCancellation.reset();
             if (!result.cancelled && directoryScanIsCurrent(request.generation, request.path)) {
+                if (result.coverageProbe) {
+                    QPointer<WorkspaceManager> self(this);
+                    if (result.membershipChanged)
+                        startDirectoryScan(request.path);
+                    else
+                        publishDirectoryScan(request.generation, request.path);
+                    if (self)
+                        launchPendingDirectoryScan();
+                    return;
+                }
                 if (result.membershipProbe) {
                     directoryScanPending = false;
                     scanningPath.clear();
@@ -875,7 +968,7 @@ void WorkspaceManager::launchPendingDirectoryScan()
                 directoryMembership = std::move(result.membership);
                 preparedWatchPaths = std::move(result.watches);
                 QPointer<WorkspaceManager> self(this);
-                finishDirectoryScan(request.generation, request.path);
+                finishDirectoryScan(request.generation, request.path, result.uncoveredDirectories);
                 if (!self)
                     return;
             }
@@ -883,22 +976,46 @@ void WorkspaceManager::launchPendingDirectoryScan()
         });
     watcher->setFuture(QtConcurrent::run(&directoryThreadPool, [request, cancellation, progress] {
         DirectoryScanResult result;
-        if (!request.membershipDirectory.isEmpty()) {
-            result.membershipProbe = true;
-            QStringList children;
-            const auto entries = QDir(request.membershipDirectory).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot);
-            for (const auto& entry : entries) {
+        if (!request.membershipDirectory.isEmpty() || !request.coverageMembership.isEmpty()) {
+            result.membershipProbe = !request.membershipDirectory.isEmpty();
+            result.coverageProbe = !result.membershipProbe;
+            auto expected = request.coverageMembership;
+            if (result.membershipProbe)
+                expected.insert(request.membershipDirectory, request.expectedChildren);
+            for (auto it = expected.cbegin(); it != expected.cend(); ++it) {
                 if (cancellation->load(std::memory_order_relaxed)) {
                     result.cancelled = true;
                     return result;
                 }
-                children.append(SemanticInputCapture::pathKey(entry.absoluteFilePath()));
+                if (!QFileInfo(it.key()).isDir()) {
+                    result.membershipChanged = true;
+                    return result;
+                }
+                QStringList children;
+                QDirIterator entries(it.key(), QDir::AllEntries | QDir::NoDotAndDotDot);
+                while (entries.hasNext()) {
+                    if (cancellation->load(std::memory_order_relaxed)) {
+                        result.cancelled = true;
+                        return result;
+                    }
+                    entries.next();
+                    children.append(directoryMemberKey(entries.fileInfo()));
+                }
+                children.sort(Qt::CaseSensitive);
+                if (children != it.value()) {
+                    result.membershipChanged = true;
+                    return result;
+                }
             }
-            children.sort(Qt::CaseSensitive);
-            result.membershipChanged = children != request.expectedChildren;
             return result;
         }
+        // An unavailable root has no enumerated directories to validate. This
+        // also prevents retry loops when it disappears during cancellation.
+        if (!QFileInfo(request.path).isDir())
+            return result;
         result.directories.append(request.path);
+        if (!request.coveredDirectories.contains(SemanticInputCapture::pathKey(request.path)))
+            result.uncoveredDirectories.append(request.path);
         result.membership.insert(SemanticInputCapture::pathKey(request.path), {});
         auto normalized = [](const QString& path) {
             return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(path).absoluteFilePath()));
@@ -920,20 +1037,53 @@ void WorkspaceManager::launchPendingDirectoryScan()
                     return true;
             return false;
         };
-        QDirIterator iterator(request.path, QDir::AllEntries | QDir::NoDotAndDotDot,
-                              QDirIterator::Subdirectories);
-        while (iterator.hasNext()) {
+        // Junctions are not symbolic links on Windows. Keep physical ancestry
+        // per request rather than relying on QDirIterator's symlink policy.
+        // Separate acyclic logical aliases still get their own traversal.
+        struct DirectoryFrame {
+            std::unique_ptr<QDirIterator> entries;
+            QString physicalIdentity;
+            bool publishChildren;
+        };
+        std::vector<DirectoryFrame> stack;
+        QSet<QString> ancestors;
+        const auto pushDirectory = [&](const QString& path, const QString& identity,
+                                       bool publishChildren) {
+            stack.push_back({std::make_unique<QDirIterator>(path,
+                QDir::AllEntries | QDir::NoDotAndDotDot), identity, publishChildren});
+            if (publishChildren)
+                ancestors.insert(identity);
+        };
+        pushDirectory(request.path, EditorFileIdentity::lookupKey(request.path), true);
+        while (!stack.empty()) {
             if (cancellation->load(std::memory_order_relaxed)) {
                 result.cancelled = true;
                 return result;
             }
-            const QString path = normalized(iterator.next());
-            const QFileInfo entry = iterator.fileInfo();
+            auto& frame = stack.back();
+            if (!frame.entries->hasNext()) {
+                if (frame.publishChildren)
+                    ancestors.remove(frame.physicalIdentity);
+                stack.pop_back();
+                continue;
+            }
+            const QString path = normalized(frame.entries->next());
+            const QFileInfo entry = frame.entries->fileInfo();
             result.membership[SemanticInputCapture::pathKey(entry.absolutePath())]
-                .append(SemanticInputCapture::pathKey(path));
+                .append(directoryMemberKey(entry));
+            // Even a pruned link has actual direct members. Capture them for
+            // R5's post-install validation and later notifications, without
+            // publishing those children or recursively following them.
+            if (!frame.publishChildren)
+                continue;
             if (entry.isDir()) {
                 result.directories.append(path);
                 result.membership[SemanticInputCapture::pathKey(path)];
+                if (!request.coveredDirectories.contains(SemanticInputCapture::pathKey(path)))
+                    result.uncoveredDirectories.append(path);
+                const QString identity = EditorFileIdentity::lookupKey(path);
+                pushDirectory(path, identity,
+                    !entry.isSymLink() && !ancestors.contains(identity));
             } else {
                 result.files.append(path);
                 progress->store(result.files.size(), std::memory_order_relaxed);
@@ -959,7 +1109,8 @@ void WorkspaceManager::processDirectoryScanChunk()
 }
 
 void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
-                                           const QString& path)
+                                           const QString& path,
+                                           const QStringList& uncoveredDirectories)
 {
     if (!directoryScanIsCurrent(generation, path))
         return;
@@ -972,9 +1123,28 @@ void WorkspaceManager::finishDirectoryScan(std::uint64_t generation,
     auto paths = preparedWatchPaths;
     paths.files.append(semanticWatchPaths.files);
     paths.directories.append(semanticWatchPaths.directories);
-    watcher.apply(paths, [self, generation, path] {
-        if (self) self->publishDirectoryScan(generation, path);
+    watcher.apply(paths, [self, generation, path, uncoveredDirectories] {
+        if (self) self->verifyDirectoryScanCoverage(generation, path, uncoveredDirectories);
     });
+}
+
+void WorkspaceManager::verifyDirectoryScanCoverage(std::uint64_t generation,
+    const QString& path, const QStringList& directories)
+{
+    if (!directoryScanIsCurrent(generation, path))
+        return;
+    if (directories.isEmpty()) {
+        publishDirectoryScan(generation, path);
+        return;
+    }
+    DirectoryScanRequest request;
+    request.path = path;
+    request.generation = generation;
+    for (const QString& directory : directories)
+        request.coverageMembership.insert(directory,
+            directoryMembership.value(SemanticInputCapture::pathKey(directory)));
+    pendingScanRequest = std::move(request);
+    launchPendingDirectoryScan();
 }
 
 void WorkspaceManager::publishDirectoryScan(std::uint64_t generation,

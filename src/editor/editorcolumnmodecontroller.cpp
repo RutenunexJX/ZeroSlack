@@ -12,6 +12,7 @@
 #include <QKeySequence>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QScopedValueRollback>
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
@@ -26,6 +27,7 @@ struct EditorColumnModeController::State
     bool columnSelectionDragging = false;
     bool columnSelectionAwaitingEndpoint = false;
     bool columnSelectionDragMoved = false;
+    bool applyingDocumentEdit = false;
     int columnAnchorLine = -1;
     int columnAnchorColumn = -1;
     int columnCurrentLine = -1;
@@ -236,8 +238,9 @@ void replaceColumnSelectionRows(MyCodeEditor* editor,
                                 bool pasteMode,
                                 bool replaceSelectionArea = true)
 {
-    if (!editor || !hasColumnSelection(state))
+    if (!editor || !hasColumnSelection(state) || !editor->canApplyInsertion())
         return;
+    QScopedValueRollback<bool> ownEdit(state.applyingDocumentEdit, true);
 
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
@@ -691,6 +694,8 @@ bool handleColumnSelectionClipboard(MyCodeEditor* editor,
     const bool paste = event->key() == Qt::Key_V;
     if (!copy && !cut && !paste)
         return false;
+    if (!copy && !editor->canApplyInsertion())
+        return false;
 
     QClipboard* clipboard = QApplication::clipboard();
     if (!clipboard)
@@ -768,7 +773,8 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
                                    QKeyEvent* event,
                                    EditorColumnModeController::State& state)
 {
-    if (!editor || !event || !hasColumnSelection(state))
+    if (!editor || !event || !hasColumnSelection(state)
+        || !editor->canApplyInsertion())
         return false;
     if (event->modifiers().testFlag(Qt::ControlModifier)
         || event->modifiers().testFlag(Qt::MetaModifier)
@@ -802,6 +808,7 @@ bool handleColumnSelectionKeyInput(MyCodeEditor* editor,
     if (!printable && !backspace && !deleteKey && !forwardTab && !backwardTab)
         return false;
 
+    QScopedValueRollback<bool> ownEdit(state.applyingDocumentEdit, true);
     const int tabWidth = editorTabStopColumns(editor);
     const auto [firstLine, lastLine] = lineSpan(state);
     const auto [leftColumn, rightColumn] = columnSpan(state);
@@ -1127,6 +1134,8 @@ bool EditorColumnModeController::applyRows(
             *message = QStringLiteral("No column selection");
         return false;
     }
+    if (!editor->canApplyInsertion(message))
+        return false;
     replaceColumnSelectionRows(
         editor,
         *state,
@@ -1136,6 +1145,14 @@ bool EditorColumnModeController::applyRows(
     if (message)
         message->clear();
     return true;
+}
+
+void EditorColumnModeController::handleDocumentChange()
+{
+    if (!state->applyingDocumentEdit && selectionActive()) {
+        state->modes->exit(EditorModeId::ColumnSelection,
+                           EditorModeExitReason::DocumentChanged);
+    }
 }
 
 void EditorColumnModeController::publishVisibleAnnotations(
@@ -1453,7 +1470,7 @@ void EditorColumnModeController::prepareVirtualCursorInput(
 {
     if (!virtualCursorActive()
         || !editor
-        || !editor->document()) {
+        || !editor->canApplyInsertion()) {
         return;
     }
     const QTextBlock block =

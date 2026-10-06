@@ -314,8 +314,19 @@ ScopedReplaceWorkflow::preparePreview(
         editCount);
 }
 
+ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirm()
+{
+    return confirmImpl(nullptr);
+}
+
 ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirm(
     const QList<SearchDocumentSnapshot>& currentDocuments)
+{
+    return confirmImpl(&currentDocuments);
+}
+
+ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirmImpl(
+    const QList<SearchDocumentSnapshot>* currentDocuments)
 {
     if (!documentManager || !transactionService) {
         return fail(
@@ -334,13 +345,12 @@ ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirm(
 
     QHash<QString, SearchDocumentSnapshot>
         currentByIdentity;
-    for (const SearchDocumentSnapshot& document :
-         currentDocuments) {
-        const QString identity =
-            documentIdentity(document.fileName);
-        if (!identity.isEmpty()
-            && !currentByIdentity.contains(identity)) {
-            currentByIdentity.insert(identity, document);
+    if (currentDocuments) {
+        for (const SearchDocumentSnapshot& document : *currentDocuments) {
+            const QString identity = documentIdentity(document.fileName);
+            if (!identity.isEmpty() && !currentByIdentity.contains(identity)) {
+                currentByIdentity.insert(identity, document);
+            }
         }
     }
 
@@ -360,7 +370,7 @@ ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirm(
                 rtledit::TransactionStatus::Conflict);
         }
 
-        if (!currentByIdentity.isEmpty()) {
+        if (currentDocuments) {
             const auto searched =
                 currentByIdentity.constFind(
                     documentIdentity(fileName));
@@ -374,7 +384,7 @@ ScopedReplaceWorkflowResult ScopedReplaceWorkflow::confirm(
                     ScopedReplaceWorkflowFailure::
                         StaleSearchRevision,
                     QStringLiteral(
-                        "The search revision changed after preview: %1")
+                        "The search scope or revision changed after preview: %1")
                         .arg(fileName),
                     rtledit::TransactionStatus::Stale);
             }
