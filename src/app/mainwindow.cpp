@@ -1,6 +1,7 @@
 #include "uidialogs.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
+#include "filecreation.h"
 #include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
 
@@ -3610,17 +3611,10 @@ bool MainWindow::ensureUserTemplateJsonFile(const QString& filePath,
         return false;
     }
 
-    QFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
-        if (errorMessage) {
-            *errorMessage =
-                QStringLiteral("Failed to create user template file: %1")
-                    .arg(filePath);
-        }
-        return false;
-    }
-    file.write("{\n  \"templates\": []\n}\n");
-    return true;
+    const auto created = FileCreation::create(filePath, "{\n  \"templates\": []\n}\n");
+    if (errorMessage)
+        *errorMessage = created.message;
+    return created.created();
 }
 
 void MainWindow::reloadUserTemplates()

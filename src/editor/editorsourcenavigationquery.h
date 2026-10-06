@@ -24,7 +24,8 @@ public:
         const EditorSemanticContext& context);
     static EditorSourceNavigationTarget editorSourceNavigationTarget(
         const EditorSemanticContext& context,
-        int blockPosition);
+        int blockPosition,
+        const TSDocument* syntax = nullptr);
     static EditorSourceNavigationClickState sourceNavigationClickState(
         const EditorSourceNavigationTarget& target);
     static SourceIdentifierTarget sourceIdentifierTarget(

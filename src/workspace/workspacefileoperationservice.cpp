@@ -1,4 +1,5 @@
 #include "workspacefileoperationservice.h"
+#include "filecreation.h"
 
 #include "editorfileidentity.h"
 
@@ -7,7 +8,6 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
-#include <QSaveFile>
 #include <QStringList>
 
 #include <utility>
@@ -319,17 +319,9 @@ WorkspaceFileOperationService::apply(
     WorkspaceFileOperationResult result;
     switch (plan.kind) {
     case WorkspaceFileOperationKind::CreateFile: {
-        QSaveFile file(plan.targetPath);
-        if (!file.open(QIODevice::WriteOnly)) {
-            return failed(
-                QStringLiteral("Cannot create file: %1")
-                    .arg(file.errorString()));
-        }
-        if (!file.commit()) {
-            return failed(
-                QStringLiteral("Cannot atomically create file: %1")
-                    .arg(file.errorString()));
-        }
+        const auto created = FileCreation::create(plan.targetPath, {});
+        if (!created.created())
+            return failed(created.message);
         result.path = plan.targetPath;
         break;
     }

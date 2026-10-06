@@ -131,6 +131,7 @@ static bool sendEditorKey(MyCodeEditor& editor,
 
 static void insertAtEditorCursor(MyCodeEditor& editor, const QString& text)
 {
+    auto edit = editor.beginSynchronousEditTransaction();
     QTextCursor cursor = editor.textCursor();
     cursor.insertText(text);
     editor.setTextCursor(cursor);

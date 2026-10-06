@@ -1,6 +1,7 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "editorcoordinator.h"
+#include "filecreation.h"
 
 #include "actionregistry.h"
 #include "editorappearancesettings.h"
@@ -32,7 +33,6 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QPointer>
-#include <QSaveFile>
 #include <QTextCursor>
 #include <QTimer>
 
@@ -432,7 +432,14 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
             return dependencies.includeFileCompletionCandidates(currentFile);
         });
     editor->setIncludeNewHeaderCreator(
-        [this](const IncludeNewHeaderRequest& request) {
+        [this, guarded = QPointer<MyCodeEditor>(editor)](const IncludeNewHeaderRequest& request) {
+            QString reason;
+            if (!guarded || !guarded->canApplyInsertion(&reason)) {
+                IncludeNewHeaderResult rejected;
+                rejected.errorMessage = reason.isEmpty()
+                    ? tr("The source editor is no longer available.") : reason;
+                return rejected;
+            }
             return createIncludeNewHeader(request);
         });
     applyAppearance(editor);
@@ -772,16 +779,9 @@ IncludeNewHeaderResult EditorCoordinator::createIncludeNewHeader(
     else
         cursorPosition = body.size();
 
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        result.errorMessage =
-            tr("Can not create include file: %1").arg(fileName);
-        return result;
-    }
-    file.write(body.toUtf8());
-    if (!file.commit()) {
-        result.errorMessage =
-            tr("Can not save include file: %1").arg(fileName);
+    const auto created = FileCreation::create(filePath, body.toUtf8());
+    if (!created.created()) {
+        result.errorMessage = created.message;
         return result;
     }
 

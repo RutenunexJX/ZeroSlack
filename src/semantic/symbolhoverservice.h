@@ -7,6 +7,7 @@
 #include <memory>
 
 struct EditorSemanticContext;
+struct SourceIdentifierTarget;
 
 class SymbolHoverService
 {
@@ -18,7 +19,8 @@ public:
 
     void setSemanticIndex(SemanticIndex* semanticIndex);
     SymbolHoverReport hoverForContext(
-        const EditorSemanticContext& context) const;
+        const EditorSemanticContext& context,
+        const SourceIdentifierTarget* sourceIdentifier = nullptr) const;
 
 private:
     SemanticIndex* index = nullptr;

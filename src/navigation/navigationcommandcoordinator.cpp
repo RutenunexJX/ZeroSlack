@@ -1,6 +1,7 @@
 #include "navigationcommandcoordinator.h"
 
 #include "mycodeeditor.h"
+#include "editorfileidentity.h"
 #include "navigationmanager.h"
 #include "sourcenavigationservice.h"
 #include "tabmanager.h"
@@ -9,6 +10,8 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QTextCursor>
+#include <QPointer>
+#include <QScopedValueRollback>
 
 namespace {
 QString normalizedNavigationWorkspacePath(const QString& path)
@@ -263,34 +266,44 @@ void NavigationCommandCoordinator::navigateEditorToLine(
 
 void NavigationCommandCoordinator::navigateBack()
 {
+    if (replayingHistory)
+        return;
     pruneHistoryForCurrentWorkspace();
     if (backStack.isEmpty())
         return;
 
     const NavigationLocation current = targets.currentLocation();
-    const NavigationLocation target = backStack.takeLast();
-    if (current.isValid() && !(current == target))
-        forwardStack.append(current);
-
-    replayingHistory = true;
-    applyLocation(target);
-    replayingHistory = false;
+    const NavigationLocation target = backStack.last();
+    QScopedValueRollback<bool> replay(replayingHistory, true);
+    if (applyLocation(target)) {
+        backStack.removeLast();
+        if (current.isValid() && !(current == target))
+            forwardStack.append(current);
+    } else if (auto* editor = targets.currentEditor()) {
+        emit editor->editorStatusMessageRequested(
+            tr("Cannot return to %1. Navigation history is retained; retry when the file is available.").arg(target.filePath));
+    }
 }
 
 void NavigationCommandCoordinator::navigateForward()
 {
+    if (replayingHistory)
+        return;
     pruneHistoryForCurrentWorkspace();
     if (forwardStack.isEmpty())
         return;
 
     const NavigationLocation current = targets.currentLocation();
-    const NavigationLocation target = forwardStack.takeLast();
-    if (current.isValid() && !(current == target))
-        backStack.append(current);
-
-    replayingHistory = true;
-    applyLocation(target);
-    replayingHistory = false;
+    const NavigationLocation target = forwardStack.last();
+    QScopedValueRollback<bool> replay(replayingHistory, true);
+    if (applyLocation(target)) {
+        forwardStack.removeLast();
+        if (current.isValid() && !(current == target))
+            backStack.append(current);
+    } else if (auto* editor = targets.currentEditor()) {
+        emit editor->editorStatusMessageRequested(
+            tr("Cannot advance to %1. Navigation history is retained; retry when the file is available.").arg(target.filePath));
+    }
 }
 
 void NavigationCommandCoordinator::recordCurrentLocationBeforeNavigation(
@@ -320,13 +333,26 @@ bool NavigationCommandCoordinator::applyLocation(
         return false;
     if (location.workspacePath != targets.currentWorkspacePath())
         return false;
+    const NavigationLocation previous = targets.currentLocation();
+    const QPointer<MyCodeEditor> previousEditor = targets.currentEditor();
+    const QTextCursor previousCursor = previousEditor ? previousEditor->textCursor() : QTextCursor();
     if (!targets.activateOrOpenFile(location.filePath))
         return false;
-    if (MyCodeEditor* editor = targets.currentEditor())
-        editor->setHierarchyInstanceContext(location.instanceContext);
-    return lineResolver.applyToEditor(targets.currentEditor(),
-                                      location.lineNumber,
-                                      location.columnNumber);
+    auto* targetEditor = targets.currentEditor();
+    const bool correctTarget = targetEditor && targets.tabManager
+        && EditorFileIdentity::same(targets.tabManager->getDocumentForEditor(targetEditor).fileName, location.filePath);
+    if (!correctTarget || !lineResolver.applyToEditor(targetEditor, location.lineNumber, location.columnNumber)) {
+        // Opening can activate another tab before positioning fails. Restore
+        // presentation only; never close or modify a newly opened document.
+        if (previousEditor && targets.tabManager
+            && targets.tabManager->activateOpenFile(previous.filePath)) {
+            previousEditor->setTextCursor(previousCursor);
+            previousEditor->setHierarchyInstanceContext(previous.instanceContext);
+        }
+        return false;
+    }
+    targetEditor->setHierarchyInstanceContext(location.instanceContext);
+    return true;
 }
 
 void NavigationCommandCoordinator::pruneHistoryForCurrentWorkspace()

@@ -604,6 +604,17 @@ public:
                                      const QString& moduleName = QString()) const;
     QList<SemanticSymbolRecord> getStructMemberRecords(
         const QString& structTypeName = QString()) const;
+    // Identity-bearing queries are shared by completion, navigation and insights.
+    QList<SemanticSymbolRecord> getDeclarationMemberRecords(
+        const SemanticSymbolRecord& declaration) const;
+    QList<SemanticSymbolRecord> getTypeMemberRecords(
+        const SemanticSymbolRecord& subject,
+        SymbolTaxonomy::DeclarationKind memberKind) const;
+    SemanticSymbolRecord resolveVisibleValueRecord(
+        const QString& name, const SemanticQueryContext& context) const;
+    SemanticSymbolRecord resolveScopeRecord(const SemanticQueryContext& context) const;
+    SemanticSymbolRecord resolveMemberPath(
+        const SemanticSymbolRecord& root, const QStringList& memberPath) const;
     QList<SemanticSymbolRecord> getModuleContextSymbolRecordsByType(
         const QString& moduleName,
         const QString& fileName,

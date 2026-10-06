@@ -65,11 +65,25 @@ the cache, while `status` only inspects it.
 
 The workspace revision hashes normalized project configuration, the ordered
 relative source paths, and SHA-256 for every RTL source. Cache writes use an
-atomic save file. Stable semantic IDs hash declaration kind, owner scope,
-owner name, and symbol name; file identity is used only when no semantic owner
-exists. Anonymous process-like records also include declaration identity. The
-exact ID hashes the full existing `SymbolStableKey`, including its current
-source position.
+atomic save file. Cache version 5 stores `zsym-v2` semantic IDs for symbols and
+relationship endpoints. These IDs include declaration kind, case-sensitive
+name, source file, and the complete declaring-owner chain. Every source path
+in that chain is workspace-relative when inside the workspace; external paths
+retain their absolute identity. Source/owner positions are excluded for named
+declarations, so line movement and relocating an unchanged workspace preserve
+IDs. Legacy owned records without a declaration key conservatively use a
+snapshot identity. Anonymous process-like records retain their structural or
+position-sensitive identity. The `zexact-v1` ID still hashes the full existing
+`SymbolStableKey`, including its current source position and absolute paths.
+
+Caches from versions 3/4 are rejected; normal queries rebuild them, while
+`--no-refresh` fails without using stale IDs. Old `zsym-v1` IDs and their symbol
+URIs are not aliases to v2: they may be ambiguous and must be reacquired by
+querying the declaration. ID queries never fall back to name matching; name
+queries may still return several candidates. The `zeroslack.cli/v1` response
+envelope and the `zeroslack://symbol/<id>?workspace=...` URI format are unchanged.
+The SuiteApp resolver uses the same shared identity generator; its runtime
+opening behavior requires the optional SDK and is not covered by CLI tests.
 
 ### Verification
 

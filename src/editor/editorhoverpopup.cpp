@@ -706,14 +706,14 @@ void EditorHoverPopup::showPreview(const DefinitionPreviewReport& report,
     PeekContentModel content;
     content.kind = PeekContentKind::DefinitionPreview;
     content.maximumSize = QSize(760, 460);
-    content.navigationTarget = {
-        report.targetFile,
-        report.targetLine,
-        report.targetColumn};
+    if (report.available)
+        content.navigationTarget = {report.targetFile, report.targetLine, report.targetColumn};
     const QString title = report.displayKind.isEmpty()
         ? report.symbolName
         : QStringLiteral("%1  %2").arg(report.symbolName, report.displayKind);
     content.title = title;
+    if (report.sourceDescription == QStringLiteral("semantic snapshot"))
+        content.rows.append({QStringLiteral("Showing last analyzed text."), PeekContentRowRole::Muted, false});
 
     const QString location =
         locationText(report.targetFile, report.targetLine);
@@ -774,13 +774,13 @@ void EditorHoverPopup::showCodePreview(const CodePreviewReport& report,
     PeekContentModel content;
     content.kind = PeekContentKind::CodePreview;
     content.maximumSize = QSize(780, 480);
-    content.navigationTarget = {
-        report.fileName,
-        report.targetLine,
-        report.targetColumn};
+    if (report.available)
+        content.navigationTarget = {report.fileName, report.targetLine, report.targetColumn};
     content.title = report.title.isEmpty()
         ? QStringLiteral("Code preview")
         : report.title;
+    if (report.sourceDescription == QStringLiteral("semantic snapshot"))
+        content.rows.append({QStringLiteral("Showing last analyzed text."), PeekContentRowRole::Muted, false});
     if (!report.detail.isEmpty())
         content.rows.append(
             {report.detail, PeekContentRowRole::Muted, false});

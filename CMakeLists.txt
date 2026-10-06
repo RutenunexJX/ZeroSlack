@@ -267,6 +267,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/completionservicematcher.cpp
     src/navigation/definitionnavigationservice.cpp
     src/navigation/definitionpreviewservice.cpp
+    src/navigation/previewsource.cpp
     src/navigation/definitionservice.cpp
     src/commands/declaresignalfactcollector.cpp
     src/commands/declaresignalservice.cpp
@@ -453,6 +454,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/semantic/symbolhoverservice.cpp
     src/documents/tabdocumentqueries.cpp
     src/documents/tabfileio.cpp
+    src/documents/filecreation.cpp
     src/documents/tabmanager.cpp
     src/workspace/workspacemanager.cpp
     src/workspace/workspacefileoperationservice.cpp
@@ -663,6 +665,7 @@ if(ZEROSLACK_CLI_ONLY)
     if(BUILD_TESTING)
         find_package(Qt6 REQUIRED COMPONENTS Test)
         add_executable(zeroslack_cli_test test_sv/zeroslack_cli_test.cpp)
+        add_dependencies(zeroslack_cli_test zeroslack_cli)
         target_link_libraries(zeroslack_cli_test PRIVATE zeroslack_cli_support ZeroSlack::Semantic Qt6::Test)
         add_test(NAME zeroslack_cli_test COMMAND zeroslack_cli_test)
         zeroslack_domain_test_runtime(zeroslack_cli_test)
@@ -1001,6 +1004,9 @@ if(BUILD_TESTING)
     target_link_libraries(shared_document_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(declaration_identity_contract_test test_sv/declaration_identity_contract_test.cpp)
+    target_link_libraries(declaration_identity_contract_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(workspace_document_contract_test test_sv/workspace_document_contract_test.cpp)
     target_link_libraries(workspace_document_contract_test PRIVATE zeroslack_core Qt6::Test)
     add_test(NAME workspace_document_contract_test COMMAND workspace_document_contract_test)
@@ -1156,6 +1162,30 @@ if(BUILD_TESTING)
 
     add_executable(editor_source_navigation_test
         test_sv/editor_source_navigation_test.cpp)
+    add_executable(navigation_history_contract_test
+        test_sv/navigation_history_contract_test.cpp)
+    add_executable(source_preview_contract_test
+        test_sv/source_preview_contract_test.cpp)
+    add_executable(insertion_creation_contract_test
+        test_sv/insertion_creation_contract_test.cpp)
+    target_link_libraries(insertion_creation_contract_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
+    add_test(NAME insertion_creation_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
+            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:insertion_creation_contract_test>)
+    set_tests_properties(insertion_creation_contract_test PROPERTIES TIMEOUT 60)
+    target_link_libraries(source_preview_contract_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
+    add_test(NAME source_preview_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
+            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:source_preview_contract_test>)
+    set_tests_properties(source_preview_contract_test PROPERTIES TIMEOUT 40)
+    target_link_libraries(navigation_history_contract_test
+        PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
+    add_test(NAME navigation_history_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
+            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:navigation_history_contract_test>)
+    set_tests_properties(navigation_history_contract_test PROPERTIES TIMEOUT 40)
     target_link_libraries(editor_source_navigation_test
         PRIVATE zeroslack_core Qt6::Test)
 
@@ -1333,6 +1363,9 @@ if(BUILD_TESTING)
     add_executable(relationship_test test_sv/relationship_test.cpp)
     target_link_libraries(relationship_test PRIVATE zeroslack_core)
 
+    add_executable(relationship_value_access_contract_test test_sv/relationship_value_access_contract_test.cpp)
+    target_link_libraries(relationship_value_access_contract_test PRIVATE zeroslack_core)
+
     add_executable(fsm_ui_snapshot_test test_sv/fsm_ui_snapshot_test.cpp)
     set_target_properties(fsm_ui_snapshot_test PROPERTIES
         AUTOMOC OFF
@@ -1482,6 +1515,7 @@ if(BUILD_TESTING)
 
     add_executable(zeroslack_cli_test
         test_sv/zeroslack_cli_test.cpp)
+    add_dependencies(zeroslack_cli_test zeroslack_cli)
     target_link_libraries(zeroslack_cli_test
         PRIVATE zeroslack_cli_support ZeroSlack::Semantic Qt6::Test)
 
@@ -1667,6 +1701,16 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:shared_document_test>
     )
+    add_test(NAME declaration_identity_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:declaration_identity_contract_test>)
+    add_test(NAME relationship_value_access_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:relationship_value_access_contract_test>)
     add_test(NAME external_document_sync_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

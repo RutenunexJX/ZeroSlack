@@ -311,11 +311,15 @@ EditorSourceNavigationQuery::definitionSourceNavigationTarget(
 EditorSourceNavigationTarget
 EditorSourceNavigationQuery::editorSourceNavigationTarget(
     const EditorSemanticContext& context,
-    int blockPosition)
+    int blockPosition,
+    const TSDocument* syntax)
 {
     EditorSourceNavigationTarget editorTarget;
-    const SourceEditorNavigationTarget sourceTarget =
-        definitionSourceNavigationTarget(context);
+    const SourceEditorNavigationTarget sourceTarget = syntax
+        ? SourceNavigationService::getInstance()->editorNavigationTargetAtPosition(
+            *syntax, blockPosition + context.column,
+            [context](const QString& name) { return canResolveDefinitionTarget(name, context); })
+        : definitionSourceNavigationTarget(context);
     if (!sourceTarget.matched)
         return editorTarget;
 
@@ -324,9 +328,10 @@ EditorSourceNavigationQuery::editorSourceNavigationTarget(
     editorTarget.includeTarget = sourceTarget.includeTarget;
     editorTarget.identifierTarget = sourceTarget.identifierTarget;
     editorTarget.text = sourceTarget.text;
-    editorTarget.startPos = blockPosition + sourceTarget.startColumn;
-    editorTarget.endPos = blockPosition + sourceTarget.endColumn;
-    editorTarget.cursorPosition = blockPosition + sourceTarget.cursorColumn;
+    const int origin = syntax ? 0 : blockPosition;
+    editorTarget.startPos = origin + sourceTarget.startColumn;
+    editorTarget.endPos = origin + sourceTarget.endColumn;
+    editorTarget.cursorPosition = origin + sourceTarget.cursorColumn;
     return editorTarget;
 }
 

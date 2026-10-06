@@ -203,6 +203,7 @@ public:
         std::function<IncludeNewHeaderResult(
             const IncludeNewHeaderRequest& request)> creator);
     QStringList includeFileCompletionCandidates() const;
+    bool canApplyInsertion(QString* failureReason = nullptr) const;
     bool insertPackageImport(const QString& packageName,
                              QString* failureReason = nullptr);
     bool insertHeaderInclude(const QString& includePath,

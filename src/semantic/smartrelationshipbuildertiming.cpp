@@ -31,7 +31,7 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
         if (lineMin >= 0 && (signal.lineNumber - 1 < lineMin || signal.lineNumber - 1 > lineMax))
             continue;
 
-        int signalHandle = findSymbolLocalHandleByName(signal.signalName,
+        int signalHandle = findValueHandle(signal.reference, signal.signalName,
                                                        context,
                                                        signal.lineNumber);
         int ownerModuleHandle =
@@ -47,7 +47,7 @@ void SmartRelationshipBuilder::analyzeAlwaysBlocks(const QString& content, Analy
                 80,
                 signal.sourceRange,
                 QString(),
-                signal.signalAccessPath
+                signal.reference.hasBinding() ? signal.reference.accessPath : signal.signalAccessPath
             );
         }
     }
@@ -71,7 +71,7 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
             continue;
 
         if (signal.edgeSensitive && isClockSignalName(signal.signalName)) {
-            int clockHandle = findSymbolLocalHandleByName(signal.signalName,
+            int clockHandle = findValueHandle(signal.reference, signal.signalName,
                                                           context,
                                                           signal.lineNumber);
             if (clockHandle != -1) {
@@ -82,14 +82,14 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                     QString("Clock domain at line %1").arg(signal.lineNumber),
                     95,
                     signal.sourceRange,
-                    signal.signalAccessPath,
+                    signal.reference.hasBinding() ? signal.reference.accessPath : signal.signalAccessPath,
                     QString()
                 );
             }
         }
 
         if (isResetSignalName(signal.signalName)) {
-            int resetHandle = findSymbolLocalHandleByName(signal.signalName,
+            int resetHandle = findValueHandle(signal.reference, signal.signalName,
                                                           context,
                                                           signal.lineNumber);
             if (resetHandle != -1) {
@@ -100,7 +100,7 @@ void SmartRelationshipBuilder::analyzeClockResetRelationships(const QString& con
                     QString("Reset signal at line %1").arg(signal.lineNumber),
                     90,
                     signal.sourceRange,
-                    signal.signalAccessPath,
+                    signal.reference.hasBinding() ? signal.reference.accessPath : signal.signalAccessPath,
                     QString()
                 );
             }

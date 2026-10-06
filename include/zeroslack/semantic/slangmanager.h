@@ -25,6 +25,20 @@ struct SubroutineCallInfo {
     SemanticSourceRange sourceRange;
 };
 
+// One Slang-resolved declaration and its concrete access path travel together.
+// The name/path lists below are legacy projections, never a join key for bindings.
+struct SemanticValueReference {
+    QString name;
+    SemanticSymbolLocation location;
+    SymbolStableKey declaringScope;
+    QString accessPath;
+    // A captured binding whose source cannot be represented must not become a
+    // legacy name lookup. isValid() alone cannot distinguish those cases.
+    bool bindingCaptured = false;
+    bool isValid() const { return !name.isEmpty() && location.isValid(); }
+    bool hasBinding() const { return bindingCaptured || isValid(); }
+};
+
 /// Result of one assignment resolved by Slang.
 struct AssignmentInfo {
     QString leftName;
@@ -36,6 +50,8 @@ struct AssignmentInfo {
     // Slang proved the RHS is one whole value symbol, possibly through only
     // an implicit conversion, rather than an expression that merely reads it.
     bool exactValueForward = false;
+    SemanticValueReference leftReference;
+    QList<SemanticValueReference> rightReferences;
 };
 
 /// Result of one condition/control expression and the value symbols it reads.
@@ -44,6 +60,7 @@ struct ConditionReferenceInfo {
     QStringList symbolAccessPaths;
     int lineNumber;  // 1-based for Qt/UI
     SemanticSourceRange sourceRange;
+    QList<SemanticValueReference> references;
 };
 
 /// Result of one timing-control signal reference.
@@ -53,6 +70,7 @@ struct TimingSignalInfo {
     int lineNumber;      // 1-based for Qt/UI
     bool edgeSensitive;  // posedge/negedge/both-edge event
     SemanticSourceRange sourceRange;
+    SemanticValueReference reference;
 };
 
 /// All relationship facts extracted from one Slang parse.

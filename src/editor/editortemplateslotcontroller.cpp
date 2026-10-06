@@ -397,6 +397,7 @@ void EditorTemplateSlotController::start(
     clear(editor);
     if (!editor
         || !editor->document()
+        || editor->isReadOnly()
         || insertedLength < 0
         || slotMetadata.isEmpty()
         || !modeController) {

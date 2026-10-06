@@ -7,6 +7,7 @@
 #include <QDateTime>
 
 #include <QCryptographicHash>
+#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -154,6 +155,260 @@ private:
     }
 
 private slots:
+    void cliDeclarationIdentity_data()
+    {
+        QTest::addColumn<QString>("source");
+        QTest::addColumn<QString>("header");
+        QTest::addColumn<bool>("enumeration");
+        const QString enumBody = "typedef enum logic { IDLE, RUN } state_t;\nstate_t state;\n";
+        const QString structBody = "typedef struct packed { logic member; logic Member; } payload_t;\n"
+            "typedef payload_t alias_t; typedef alias_t alias2_t; alias2_t item;\n";
+        for (const bool enumeration : {true, false}) {
+            const QString body = enumeration ? enumBody : structBody;
+            const QString assignment = enumeration ? "state = IDLE" : "item.member = 1'b0";
+            const QByteArray suffix = enumeration ? "enum" : "struct-alias-case";
+            QTest::newRow(("modules-" + suffix).constData())
+                << ("module top_a;\n" + body + "always_comb " + assignment + ";\nendmodule\n"
+                    "module top_b;\n" + body + "always_comb " + assignment + ";\nendmodule\n")
+                << QString() << enumeration;
+            QTest::newRow(("packages-" + suffix).constData())
+                << ("package pkg_a;\n" + body + "endpackage\npackage pkg_b;\n" + body + "endpackage\n"
+                    "module top_a; import pkg_a::*; always_comb " + assignment + "; endmodule\n"
+                    "module top_b; import pkg_b::*; always_comb " + assignment + "; endmodule\n")
+                << QString() << enumeration;
+            const QString accessA = enumeration ? "pkg_a::state = pkg_a::IDLE" : "pkg_a::item.member = 1'b0";
+            const QString accessB = enumeration ? "pkg_b::state = pkg_b::IDLE" : "pkg_b::item.member = 1'b0";
+            QTest::newRow(("qualified-packages-" + suffix).constData())
+                << ("package pkg_a;\n" + body + "endpackage\npackage pkg_b;\n" + body + "endpackage\n"
+                    "module top_a; always_comb " + accessA + "; endmodule\n"
+                    "module top_b; always_comb " + accessB + "; endmodule\n")
+                << QString() << enumeration;
+            QTest::newRow(("shared-include-" + suffix).constData())
+                << ("module top_a;\n`include \"shared.svh\"\nalways_comb " + assignment + ";\nendmodule\n"
+                    "module top_b;\n`include \"shared.svh\"\nalways_comb " + assignment + ";\nendmodule\n")
+                << body << enumeration;
+        }
+    }
+
+    void cliDeclarationIdentity()
+    {
+        QFETCH(QString, source);
+        QFETCH(QString, header);
+        QFETCH(bool, enumeration);
+        QTemporaryDir fixture;
+        QVERIFY(fixture.isValid());
+        const QString root = fixture.filePath("workspace");
+        QVERIFY(writeText(root + "/types.sv", source));
+        if (!header.isEmpty()) QVERIFY(writeText(root + "/shared.svh", header));
+        WorkspaceConfigurationService configurationService;
+        auto configuration = configurationService.defaultConfiguration(root);
+        configuration.fileExtensions = {".sv"}; // Headers are includes, not independent compilation units.
+        QVERIFY(configurationService.save(configuration));
+        ZeroSlackCliRequest request;
+        request.workspaceRoot = root;
+        request.cacheDirectory = fixture.filePath("cache");
+        // Run the shipped command-line entry point, not a substitute index.
+        const auto execute = [&]() {
+            QString binary = QCoreApplication::applicationDirPath() + "/zeroslack-cli";
+#ifdef Q_OS_WIN
+            binary += ".exe";
+#endif
+            QStringList args{request.command, request.workspaceRoot};
+            if (request.command == "symbol") args.append(request.symbol);
+            if (request.command == "impact") args.append({"--symbol", request.symbol, "--depth", "1"});
+            args.append({"--cache-dir", request.cacheDirectory, "--format", "json"});
+            if (!request.allowRefresh) args.append("--no-refresh");
+            QProcess process;
+            process.start(binary, args);
+            ZeroSlackCliResult result;
+            result.exitCode = -1;
+            if (!process.waitForStarted(5000) || !process.waitForFinished(30000)) {
+                result.rendered = process.errorString().toUtf8();
+                return result;
+            }
+            result.rendered = process.readAllStandardOutput();
+            result.envelope = QJsonDocument::fromJson(result.rendered).object();
+            if (process.exitStatus() == QProcess::NormalExit && !result.envelope.isEmpty())
+                result.exitCode = process.exitCode();
+            result.rendered += process.readAllStandardError();
+            return result;
+        };
+        const auto matchesOf = [](const ZeroSlackCliResult& result) {
+            return result.envelope.value("data").toObject().value("matches").toArray();
+        };
+        const auto idsOf = [](const QJsonArray& matches, const QString& key) {
+            QSet<QString> ids;
+            for (const auto& value : matches) ids.insert(value.toObject().value(key).toString());
+            return ids;
+        };
+        request.command = "scan";
+        auto result = execute();
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        request.command = "symbol";
+        request.symbol = enumeration ? "IDLE" : "member";
+        request.allowRefresh = false;
+        result = execute();
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        QVERIFY(!result.envelope.value("cacheRebuilt").toBool());
+        const auto matches = matchesOf(result);
+        QCOMPARE(matches.size(), enumeration ? 2 : 4);
+        const auto ids = idsOf(matches, "id");
+        QCOMPARE(ids.size(), matches.size());
+        QCOMPARE(idsOf(matches, "exactId").size(), matches.size());
+        QCOMPARE(idsOf(matches, "uri").size(), matches.size());
+        QJsonObject selected;
+        for (const auto& value : matches) {
+            const auto record = value.toObject();
+            const auto id = record.value("id").toString();
+            QVERIFY(id.startsWith("zsym-v2-"));
+            QCOMPARE(QUrl(record.value("uri").toString()).path(), "/" + id);
+            const auto owner = record.value("ownerKey").toString();
+            if (record.value("name").toString() == request.symbol
+                && (owner.contains("top_a") || owner.contains("pkg_a"))) selected = record;
+        }
+        QVERIFY(!selected.isEmpty());
+        QSet<QString> foreignIds;
+        for (const auto& value : matches)
+            if (value.toObject().value("ownerKey") != selected.value("ownerKey"))
+                foreignIds.insert(value.toObject().value("id").toString());
+        const auto cachePath = ZeroSlackCliService().cachePathForWorkspace(root, request.cacheDirectory);
+        const auto warmCacheHash = fileHash(cachePath);
+        const int assignmentLine = source.left(source.indexOf("always_comb")).count('\n') + 1;
+        for (const QString& key : {QString("id"), QString("exactId")}) {
+            request.symbol = selected.value(key).toString();
+            result = execute();
+            QVERIFY2(result.succeeded(), result.rendered.constData());
+            QCOMPARE(matchesOf(result).size(), 1);
+            QCOMPARE(matchesOf(result).first().toObject().value("exactId"), selected.value("exactId"));
+            const auto edges = result.envelope.value("data").toObject().value("relationships").toArray();
+            if (enumeration) QCOMPARE(edges.size(), 2);
+            for (const auto& value : edges) {
+                const auto edge = value.toObject();
+                QVERIFY(!foreignIds.contains(edge.value("from").toString()));
+                QVERIFY(!foreignIds.contains(edge.value("to").toString()));
+                if (enumeration) QCOMPARE(edge.value("range").toObject().value("line").toInt(), assignmentLine);
+            }
+        }
+        request.command = "impact";
+        result = execute();
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        const auto impact = result.envelope.value("data").toObject();
+        QCOMPARE(impact.value("seeds").toArray().size(), 1);
+        int selectedNameCount = 0;
+        for (const auto& value : impact.value("symbols").toArray()) {
+            const auto record = value.toObject();
+            QVERIFY(!foreignIds.contains(record.value("id").toString()));
+            const auto owner = record.value("ownerKey").toString();
+            QVERIFY(owner.contains("top_a") || owner.contains("pkg_a"));
+            if (record.value("name") == selected.value("name")) ++selectedNameCount;
+        }
+        QCOMPARE(selectedNameCount, 1);
+        const auto impactEdges = impact.value("relationships").toArray();
+        if (enumeration) QCOMPARE(impactEdges.size(), 2);
+        for (const auto& value : impactEdges) {
+            const auto edge = value.toObject();
+            QVERIFY(!foreignIds.contains(edge.value("from").toString()));
+            QVERIFY(!foreignIds.contains(edge.value("to").toString()));
+            if (enumeration) QCOMPARE(edge.value("range").toObject().value("line").toInt(), assignmentLine);
+        }
+        QJsonObject counterpart;
+        for (const auto& value : matches) {
+            const auto record = value.toObject();
+            if (record.value("name") == selected.value("name")
+                && foreignIds.contains(record.value("id").toString())) counterpart = record;
+        }
+        QVERIFY(!counterpart.isEmpty());
+        request.symbol = counterpart.value("exactId").toString();
+        for (const QString command : {QString("symbol"), QString("impact")}) {
+            request.command = command;
+            result = execute();
+            QVERIFY2(result.succeeded(), result.rendered.constData());
+            const auto data = result.envelope.value("data").toObject();
+            const auto seeds = data.value(command == "symbol" ? "matches" : "seeds").toArray();
+            QCOMPARE(seeds.size(), 1);
+            QCOMPARE(seeds.first().toObject().value("exactId"), counterpart.value("exactId"));
+            for (const auto& value : data.value("symbols").toArray()) {
+                const auto owner = value.toObject().value("ownerKey").toString();
+                QVERIFY(owner.contains("top_b") || owner.contains("pkg_b"));
+            }
+            const auto edges = data.value("relationships").toArray();
+            if (enumeration) QCOMPARE(edges.size(), 2);
+            for (const auto& value : edges) {
+                const auto edge = value.toObject();
+                QVERIFY(edge.value("from") != selected.value("id"));
+                QVERIFY(edge.value("to") != selected.value("id"));
+                if (enumeration) QCOMPARE(edge.value("range").toObject().value("line").toInt(),
+                    source.left(source.lastIndexOf("always_comb")).count('\n') + 1);
+            }
+        }
+        request.command = "symbol";
+        request.symbol = "zsym-v1-013b1865bb2a2ee820f204ff"; // Frozen REVIEW-01 collision.
+        QVERIFY(!execute().succeeded());
+        QCOMPARE(fileHash(cachePath), warmCacheHash);
+
+        // Both declaration and owner positions move; only exact IDs may change.
+        QVERIFY(writeText(root + "/types.sv", "\n\n" + source));
+        if (!header.isEmpty()) QVERIFY(writeText(root + "/shared.svh", "\n\n" + header));
+        request.symbol = enumeration ? "IDLE" : "member";
+        QVERIFY(!execute().succeeded());
+        request.allowRefresh = true;
+        result = execute();
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        QVERIFY(result.envelope.value("cacheRebuilt").toBool());
+        const auto moved = matchesOf(result);
+        QCOMPARE(idsOf(moved, "id"), ids);
+        QVERIFY(idsOf(moved, "exactId") != idsOf(matches, "exactId"));
+
+        // Different absolute path lengths catch opaque nested-path hashing.
+        request.workspaceRoot = fixture.filePath("different-length/relocated-workspace");
+        QVERIFY(writeText(request.workspaceRoot + "/types.sv", "\n\n" + source));
+        if (!header.isEmpty()) QVERIFY(writeText(request.workspaceRoot + "/shared.svh", "\n\n" + header));
+        configuration = configurationService.defaultConfiguration(request.workspaceRoot);
+        configuration.fileExtensions = {".sv"};
+        QVERIFY(configurationService.save(configuration));
+        result = execute();
+        QVERIFY2(result.succeeded(), result.rendered.constData());
+        QCOMPARE(idsOf(matchesOf(result), "id"), ids);
+        QVERIFY(idsOf(matchesOf(result), "exactId") != idsOf(moved, "exactId"));
+    }
+
+    void cachePreservesDeclarationReferences() {
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const auto root=fixture.filePath("workspace");
+        const QString source="module top_a; typedef struct packed { logic alpha; } payload_t; payload_t item; endmodule\n"
+            "module top_b; typedef struct packed { logic beta; } payload_t; payload_t item; endmodule\n";
+        QVERIFY(writeText(root+"/types.sv",source));
+        ZeroSlackCliService service; ZeroSlackCliRequest request;
+        request.workspaceRoot=root; request.cacheDirectory=fixture.filePath("cache"); request.command="scan";
+        const auto scan=service.execute(request); QVERIFY2(scan.succeeded(),scan.rendered.constData());
+        const auto path=service.cachePathForWorkspace(root,request.cacheDirectory);
+        QFile cache(path); QVERIFY(cache.open(QIODevice::ReadOnly));
+        auto json=QJsonDocument::fromJson(cache.readAll()).object(); cache.close();
+        QCOMPARE(json.value("version").toInt(),5);
+        QSet<QString> exactKeys, boundTypes, boundOwners;
+        for(const auto& value:json.value("symbols").toArray()) exactKeys.insert(value.toObject().value("exactKey").toString());
+        for(const auto& value:json.value("symbols").toArray()) {
+            const auto record=value.toObject();
+            if(record.value("name").toString()!="item") continue;
+            const auto type=record.value("typeKey").toString(), owner=record.value("ownerKey").toString();
+            QVERIFY(!type.isEmpty() && exactKeys.contains(type));
+            QVERIFY(!owner.isEmpty() && exactKeys.contains(owner));
+            boundTypes.insert(type); boundOwners.insert(owner);
+        }
+        QCOMPARE(boundTypes.size(),2); QCOMPARE(boundOwners.size(),2);
+        request.command="symbol"; request.symbol="item"; request.allowRefresh=false;
+        const auto hit=service.execute(request); QVERIFY(hit.succeeded()); QVERIFY(!hit.envelope.value("cacheRebuilt").toBool());
+        for(const auto& value:hit.envelope.value("data").toObject().value("matches").toArray())
+            QVERIFY(boundTypes.contains(value.toObject().value("typeKey").toString()));
+        for (const int oldVersion : {3, 4}) {
+            json.insert("version",oldVersion); QVERIFY(writeText(path,QString::fromUtf8(QJsonDocument(json).toJson())));
+            request.allowRefresh=false;
+            QVERIFY(!service.execute(request).succeeded()); // Old caches lack references or contain v1 IDs.
+            request.allowRefresh=true; const auto rebuilt=service.execute(request);
+            QVERIFY(rebuilt.succeeded()); QVERIFY(rebuilt.envelope.value("cacheRebuilt").toBool());
+        }
+    }
+
     void anchorsCaptureSourcesOutsideSemanticExtensions() {
         auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
         const auto file = QDir(fixture.workspace->path()).filePath("notes.txt");

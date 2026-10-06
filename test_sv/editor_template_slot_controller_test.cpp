@@ -56,6 +56,7 @@ bool sendKey(MyCodeEditor& editor,
 void replaceSelection(MyCodeEditor& editor,
                       const QString& text)
 {
+    auto edit = editor.beginSynchronousEditTransaction();
     QTextCursor cursor = editor.textCursor();
     cursor.insertText(text);
     editor.setTextCursor(cursor);

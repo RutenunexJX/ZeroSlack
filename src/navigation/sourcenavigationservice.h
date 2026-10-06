@@ -5,6 +5,8 @@
 #include <functional>
 #include <memory>
 
+class TSDocument;
+
 struct IncludeDirectiveTarget {
     bool matched = false;
     QString includePath;
@@ -104,6 +106,12 @@ public:
                                                   int column) const;
     SourceNavigationTarget targetAtColumn(const QString& lineText,
                                           int column) const;
+    // Offsets are absolute UTF-16 positions in this borrowed syntax input.
+    SourceNavigationTarget targetAtPosition(const TSDocument& document,
+                                            int position) const;
+    SourceEditorNavigationTarget editorNavigationTargetAtPosition(
+        const TSDocument& document, int position,
+        const std::function<bool(const QString&)>& canResolveIdentifier) const;
     SourceSymbolActionContext symbolActionContextAtColumn(
         const QString& lineText,
         int column,
@@ -120,8 +128,6 @@ public:
 private:
     static std::unique_ptr<SourceNavigationService> instance;
 
-    static bool isIdentifierStart(QChar ch);
-    static bool isIdentifierPart(QChar ch);
 };
 
 #endif // SOURCENAVIGATIONSERVICE_H

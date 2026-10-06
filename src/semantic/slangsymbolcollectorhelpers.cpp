@@ -1,7 +1,9 @@
 #include "slangsymbolcollectorhelpers.h"
+#include "semanticstableidentity.h"
 
 #include <slang/ast/Scope.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
+#include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/SubroutineSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
@@ -252,13 +254,6 @@ QTextDocumentSourcePosition qTextDocumentSourcePosition(
 
 namespace {
 
-QString normalizedStableKeyFileName(const QString& fileName)
-{
-    if (fileName.isEmpty())
-        return QString();
-    return QDir::cleanPath(QDir::fromNativeSeparators(QFileInfo(fileName).absoluteFilePath()));
-}
-
 SymbolTaxonomy::DeclarationKind declarationKindForRawKind(
     SymbolTaxonomy::CollectorKind rawKind)
 {
@@ -449,13 +444,7 @@ void updateStableKey(SemanticSymbolRecord* record)
 {
     if (!record)
         return;
-    record->stableKey.fileName =
-        normalizedStableKeyFileName(record->location.fileName);
-    record->stableKey.symbolName = record->name;
-    record->stableKey.declarationKind = record->declarationKind;
-    record->stableKey.ownerScope = record->owner.name;
-    record->stableKey.sourcePosition = record->location.position;
-    record->stableKey.sourceLength = record->location.length;
+    record->stableKey = semanticDeclarationKey(*record);
 }
 
 } // namespace
@@ -505,27 +494,104 @@ bool fillSymbolRecord(const slang::SourceManager* sm,
         out.location.endColumn = out.location.startColumn;
     }
 
-    if (outOwnerName) {
+    {
         QString scopeName;
+        const slang::ast::Symbol* ownerSymbol = nullptr;
         for (const slang::ast::Scope* scope = sym.getParentScope(); scope;) {
             const slang::ast::Symbol* scopeSym = &scope->asSymbol();
             if (const auto* sub = scopeSym->as_if<slang::ast::SubroutineSymbol>()) {
                 scopeName = QString::fromStdString(std::string(sub->name));
+                ownerSymbol = sub;
                 break;
             }
             if (const auto* pkg = scopeSym->as_if<slang::ast::PackageSymbol>()) {
                 scopeName = QString::fromStdString(std::string(pkg->name));
+                ownerSymbol = pkg;
                 break;
             }
             scope = scopeSym->getParentScope();
         }
         if (scopeName.isEmpty()) {
-            if (const slang::ast::DefinitionSymbol* def = sym.getDeclaringDefinition())
+            if (const slang::ast::DefinitionSymbol* def = sym.getDeclaringDefinition()) {
                 scopeName = QString::fromStdString(std::string(def->name));
+                ownerSymbol = def;
+            }
         }
-        *outOwnerName = scopeName;
+        if (outOwnerName)
+            *outOwnerName = scopeName;
+        out.owner.name = scopeName;
+        if (ownerSymbol && ownerSymbol != &sym)
+            out.owner.stableKey = declarationKey(sm, *ownerSymbol);
     }
     return true;
+}
+
+SymbolStableKey declarationKey(const slang::SourceManager* sm,
+                               const slang::ast::Symbol& symbol)
+{
+    using namespace slang::ast;
+    SemanticSymbolRecord record;
+    if (!fillSymbolRecord(sm, symbol, record, nullptr))
+        return {};
+    if (const auto* def = symbol.as_if<DefinitionSymbol>()) {
+        applyCollectorKind(&record, def->definitionKind == DefinitionKind::Interface
+            ? SymbolTaxonomy::CollectorKind::Interface
+            : SymbolTaxonomy::CollectorKind::Module);
+        record.owner.name.clear();
+    } else if (symbol.kind == SymbolKind::Package) {
+        applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::Package);
+        // Package records retain their package scope for existing visibility queries.
+        record.owner.name = record.name;
+    } else if (symbol.kind == SymbolKind::TypeAlias) {
+        applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::Typedef);
+    } else if (const auto* sub = symbol.as_if<SubroutineSymbol>()) {
+        applyCollectorKind(&record, sub->subroutineKind == SubroutineKind::Task
+            ? SymbolTaxonomy::CollectorKind::Task
+            : SymbolTaxonomy::CollectorKind::Function);
+    } else {
+        return {};
+    }
+    updateStableKey(&record);
+    return record.stableKey;
+}
+
+void bindAggregateType(const slang::SourceManager* sm,
+                       const slang::ast::Type& type,
+                       SemanticSymbolRecord& record,
+                       QList<SemanticSymbolRecord>& outList)
+{
+    using namespace slang::ast;
+    const auto& canonical = type.getCanonicalType();
+    if (canonical.kind != SymbolKind::EnumType
+        && canonical.kind != SymbolKind::PackedStructType
+        && canonical.kind != SymbolKind::UnpackedStructType)
+        return;
+    if (type.kind == SymbolKind::TypeAlias) {
+        // Alias chains share the members of the actual aggregate declaration.
+        const Type* declaration = &type;
+        while (declaration->kind == SymbolKind::TypeAlias) {
+            const auto& target = declaration->as<TypeAliasType>().targetType.getType();
+            if (target.kind != SymbolKind::TypeAlias)
+                break;
+            declaration = &target;
+        }
+        record.type.stableKey = declarationKey(sm, *declaration);
+        record.type.rawTypeText = QString::fromStdString(std::string(type.name));
+    } else {
+        updateStableKey(&record);
+        record.type.stableKey = record.stableKey;
+        record.type.rawTypeText = record.name;
+        if (canonical.kind == SymbolKind::EnumType)
+            emitEnumValueRecords(sm, canonical.as<EnumType>(), record, outList);
+        else if (canonical.kind == SymbolKind::PackedStructType)
+            emitStructMemberRecords(sm, canonical.as<PackedStructType>(), record, outList);
+        else
+            emitStructMemberRecords(sm, canonical.as<UnpackedStructType>(), record, outList);
+    }
+    record.type.resolvedTypeName = record.type.stableKey.symbolName;
+    record.type.resolvedTypeKind = canonical.kind == SymbolKind::EnumType
+        ? SymbolTaxonomy::DeclarationKind::Enum
+        : SymbolTaxonomy::DeclarationKind::Struct;
 }
 
 void fillCompilationUnitSourcePosition(
@@ -607,7 +673,7 @@ void finalizeCollectedSymbolRecords(QList<SemanticSymbolRecord>* records)
 
 void emitEnumValueRecords(const slang::SourceManager* sm,
                           const slang::ast::EnumType& et,
-                          const QString& scopeKey,
+                          const SemanticSymbolRecord& owner,
                           QList<SemanticSymbolRecord>& outList)
 {
     for (const auto& ev : et.values()) {
@@ -615,14 +681,16 @@ void emitEnumValueRecords(const slang::SourceManager* sm,
         if (!fillSymbolRecord(sm, ev, record, nullptr))
             continue;
         applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::EnumValue);
-        record.owner.name = scopeKey;
+        record.owner.name = owner.name;
+        record.owner.stableKey = owner.stableKey.isValid()
+            ? owner.stableKey : owner.type.stableKey;
         outList.append(record);
     }
 }
 
 void emitStructMemberRecords(const slang::SourceManager* sm,
                              const slang::ast::Scope& structScope,
-                             const QString& scopeKey,
+                             const SemanticSymbolRecord& owner,
                              QList<SemanticSymbolRecord>& outList)
 {
     for (const auto& member : structScope.members()) {
@@ -632,7 +700,10 @@ void emitStructMemberRecords(const slang::SourceManager* sm,
         if (!fillSymbolRecord(sm, member, record, nullptr))
             continue;
         applyCollectorKind(&record, SymbolTaxonomy::CollectorKind::StructMember);
-        record.owner.name = scopeKey;
+        record.owner.name = owner.name;
+        record.owner.stableKey = owner.stableKey.isValid()
+            ? owner.stableKey : owner.type.stableKey;
+        bindAggregateType(sm, member.as<slang::ast::FieldSymbol>().getType(), record, outList);
         outList.append(record);
     }
 }

@@ -66,6 +66,13 @@ QList<QList<SemanticSymbolRecord>> SemanticIndex::getCommandCompletionSymbolReco
     QList<SemanticSymbolRecord> importedRecords;
     bool importsLoaded = false;
     const QString ownerName = commandCompletionOwnerName(context);
+    const auto scope = resolveScopeRecord(context);
+    const auto scopedRecords = scope.isValid() ? getDeclarationMemberRecords(scope)
+                                               : QList<SemanticSymbolRecord>{};
+    QSet<QString> scopedKeys;
+    for (const auto& record : scopedRecords)
+        scopedKeys.insert(symbolStableKeyText(record.stableKey));
+    const bool hasScopeDeclarations = !getSymbolRecordsByName(ownerName).isEmpty();
     for (qsizetype i = 0; i < commandKinds.size(); ++i) {
         auto& result = results[i];
         const CompletionCommandKind commandKind = commandKinds.at(i);
@@ -100,7 +107,10 @@ QList<QList<SemanticSymbolRecord>> SemanticIndex::getCommandCompletionSymbolReco
                 continue;
             }
 
-            const QString key = record.name.toCaseFolded();
+            if (!useGlobalScope && record.owner.name == ownerName && hasScopeDeclarations
+                && !scopedKeys.contains(symbolStableKeyText(record.stableKey)))
+                continue;
+            const QString key = record.name;
             if (record.visibility
                 == SymbolTaxonomy::SymbolVisibility::PackageVisible) {
                 importedRecordsByName[key].append(record);

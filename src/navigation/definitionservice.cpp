@@ -1,6 +1,7 @@
 #include "definitionservice.h"
 
 #include "completioncontexthelper.h"
+#include "completiontypes.h"
 #include "symboltaxonomy.h"
 
 #include <limits>
@@ -92,6 +93,60 @@ DefinitionResult DefinitionService::resolveDefinition(const DefinitionQuery& que
     if (instancePinResult.found)
         return instancePinResult;
 
+    QString variable, memberPrefix;
+    QString prefix = query.linePrefixBeforeCursor.trimmed();
+    if (CompletionContextHelper::tryParseStructMember(prefix, variable, memberPrefix)) {
+        QStringList path{query.symbolName};
+        while (true) {
+            path.prepend(variable);
+            prefix = prefix.left(prefix.lastIndexOf(QLatin1Char('.'))).trimmed();
+            if (!CompletionContextHelper::tryParseStructMember(prefix, variable, memberPrefix))
+                break;
+        }
+        SemanticQueryContext context;
+        context.fileName = query.fileName;
+        context.moduleName = query.moduleName;
+        context.cursorLine = query.cursorLine;
+        const auto root = semanticIndex()->resolveVisibleValueRecord(path.first(), context);
+        if (root.declarationKind == SymbolTaxonomy::DeclarationKind::StructVariable
+            || root.type.resolvedTypeKind == SymbolTaxonomy::DeclarationKind::Struct) {
+            DefinitionResult result;
+            result.symbolRecord = semanticIndex()->resolveMemberPath(root, path.mid(1));
+            result.found = result.symbolRecord.isValid();
+            result.symbolStableKey = result.symbolRecord.stableKey;
+            result.localFile = result.symbolRecord.location.fileName == query.fileName;
+            result.missReason = result.found ? SemanticDefinitionMissReason::None
+                : SemanticDefinitionMissReason::StructMemberTypeMismatch;
+            return result;
+        }
+    }
+
+    if (!query.structTypeNameForMember.isEmpty()) {
+        SemanticQueryContext context;
+        context.fileName = query.fileName;
+        context.moduleName = query.moduleName;
+        context.cursorLine = query.cursorLine;
+        const auto types = semanticIndex()->getCommandCompletionSymbolRecords(
+            context, CompletionCommandKind::Typedef);
+        for (const auto& type : types) {
+            if (type.name != query.structTypeNameForMember
+                || type.type.resolvedTypeKind != SymbolTaxonomy::DeclarationKind::Struct)
+                continue;
+            DefinitionResult result;
+            for (const auto& member : semanticIndex()->getTypeMemberRecords(
+                     type, SymbolTaxonomy::DeclarationKind::StructMember)) {
+                if (member.name != query.symbolName)
+                    continue;
+                result.found = true;
+                result.symbolRecord = member;
+                result.symbolStableKey = member.stableKey;
+                result.localFile = member.location.fileName == query.fileName;
+                result.missReason = SemanticDefinitionMissReason::None;
+                break;
+            }
+            return result;
+        }
+    }
     const DefinitionQuery resolvedQuery = withResolvedMemberContext(query);
     return toDefinitionResult(
         semanticIndex()->resolveDefinition(toSemanticDefinitionQuery(resolvedQuery)));

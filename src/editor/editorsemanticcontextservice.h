@@ -13,6 +13,8 @@
 #include <memory>
 #include <functional>
 
+class TSDocument;
+
 struct EditorSemanticContext {
     QString fileName;
     QString moduleName;
@@ -126,7 +128,8 @@ public:
         const EditorSemanticContext& context) const;
     EditorSourceNavigationTarget editorSourceNavigationTarget(
         const EditorSemanticContext& context,
-        int blockPosition) const;
+        int blockPosition,
+        const TSDocument* syntax = nullptr) const;
     EditorSourceNavigationClickState sourceNavigationClickState(
         const EditorSourceNavigationTarget& target) const;
     SourceIdentifierTarget sourceIdentifierTarget(
@@ -144,9 +147,11 @@ public:
         const QString& symbolName,
         const EditorSemanticContext& context) const;
     SymbolHoverReport symbolHoverReport(
-        const EditorSemanticContext& context) const;
+        const EditorSemanticContext& context,
+        const SourceIdentifierTarget* sourceIdentifier = nullptr) const;
     DefinitionPreviewReport definitionPreviewReport(
-        const EditorSemanticContext& context) const;
+        const EditorSemanticContext& context,
+        const SourceIdentifierTarget* sourceIdentifier = nullptr) const;
     CommandModeCompletionQuery commandModeCompletionQuery(
         const EditorSemanticContext& context) const;
     CommandModeCompletionState commandModeCompletionState(

@@ -125,6 +125,12 @@ private:
     int findSymbolLocalHandleByName(const QString& symbolName,
                                     const AnalysisContext& context,
                                     int lineNumber = -1);
+    int findValueHandle(const SemanticValueReference& reference,
+                        const QString& fallbackName, const AnalysisContext& context,
+                        int lineNumber);
+    QList<QPair<int, QString>> resolveValueAccesses(
+        const QList<SemanticValueReference>& references, const QStringList& paths,
+        const AnalysisContext& context, int lineNumber);
     QString findContainingModule(int lineNumber, const AnalysisContext& context);
     int getContainingModuleLocalHandle(int lineNumber,
                                        const AnalysisContext& context);

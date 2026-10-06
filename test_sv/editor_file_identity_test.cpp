@@ -144,6 +144,19 @@ int main()
     expect("lexical aliases share one identity",
            EditorFileIdentity::same(
                targetFile, lexicalAlias));
+    QStringList basicPaths{targetFile,lexicalAlias,
+        QDir(targetDirectory).filePath(QStringLiteral("missing.sv")),QString()};
+#ifdef Q_OS_WIN
+    basicPaths.append(targetFile+QLatin1Char('.'));
+    basicPaths.append(targetFile+QLatin1Char(' '));
+    const auto unicodeFile=QDir(targetDirectory).filePath(QStringLiteral("单元.sv"));
+    expect("Unicode source fixture exists",writeFixture(unicodeFile));
+    basicPaths.append(unicodeFile);
+#endif
+    const auto batch = EditorFileIdentity::lookupKeys(basicPaths);
+    for (const auto& path : basicPaths)
+        expect("publication binding preserves ordinary and missing-path identity",
+               batch.value(path) == EditorFileIdentity::lookupKey(path));
 
     const QString fileAlias =
         temporary.filePath(QStringLiteral("unit_alias.sv"));
@@ -153,6 +166,9 @@ int main()
         expect("file symlink resolves to the target identity",
                EditorFileIdentity::same(
                    targetFile, fileAlias));
+        expect("publication binding preserves a leaf symlink identity",
+               EditorFileIdentity::lookupKeys({fileAlias}).value(fileAlias)
+                   == EditorFileIdentity::lookupKey(targetFile));
     } else {
         std::printf(
             "[SKIP] file symlink creation is unavailable: %s\n",
@@ -177,6 +193,10 @@ int main()
         expect("missing leaf below a reparse alias has stable identity",
                EditorFileIdentity::same(
                    targetFuture, aliasFuture));
+        const auto bound = EditorFileIdentity::lookupKeys({targetFile,junctionFile,targetFuture,aliasFuture});
+        expect("publication binding reuses parents without changing junction or missing-leaf semantics",
+               bound.value(junctionFile)==EditorFileIdentity::lookupKey(targetFile)
+                   && bound.value(aliasFuture)==EditorFileIdentity::lookupKey(targetFuture));
     } else {
         std::printf(
             "[SKIP] directory symlink or junction creation is unavailable\n");

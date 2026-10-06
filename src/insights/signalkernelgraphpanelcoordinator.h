@@ -112,6 +112,7 @@ private:
     int lastFocusedSearchNodeId = -1;
     quint64 graphBuildRequestCount = 0;
     QMetaObject::Connection themeAboutToChangeConnection;
+    QList<QMetaObject::Connection> previewSourceConnections;
     PresentationState pendingThemePresentationState;
     PresentationState retainedPresentationState;
 

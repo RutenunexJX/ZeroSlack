@@ -519,7 +519,7 @@ EditorSourceNavigationTarget EditorSourceNavigationUi::targetAtPosition(
 
     return service->editorSourceNavigationTarget(
         contextProvider(cursor.position(), false),
-        block.position());
+        block.position(), editor->syntaxDocument());
 }
 
 bool EditorSourceNavigationUi::requestNavigationAtPosition(
@@ -613,12 +613,16 @@ void EditorSourceNavigationUi::refreshPopupAt(
 
     const EditorSemanticContext context =
         contextProvider(target.cursorPosition, !previewMode);
+    // Reuse the full-document syntax hit. A standalone line cannot recover
+    // multi-line comment context. The value is borrowed only during this call.
+    const SourceIdentifierTarget identifier{true, target.text, context.column,
+        context.column + target.endPos - target.startPos};
     EditorHoverPopup* hoverPopup = ensurePopup(editor);
     hoverPopup->setTransientPreview(previewMode);
     const QPoint globalPosition = editor->viewport()->mapToGlobal(position);
     if (previewMode) {
         const DefinitionPreviewReport report =
-            service->definitionPreviewReport(context);
+            service->definitionPreviewReport(context, &identifier);
         if (definitionPreviewTargetIsCurrentLocation(context, report)) {
             closePopup();
             return;
@@ -630,7 +634,7 @@ void EditorSourceNavigationUi::refreshPopupAt(
         }
         hoverPopup->showPreview(report, globalPosition, editor->font());
     } else {
-        const SymbolHoverReport report = service->symbolHoverReport(context);
+        const SymbolHoverReport report = service->symbolHoverReport(context, &identifier);
         if (!report.available) {
             closePopup();
             return;

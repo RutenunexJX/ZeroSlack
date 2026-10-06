@@ -26,6 +26,8 @@ public:
         const QString& fileName = QString()) const;
     QList<SemanticSymbolRecord> getSymbolRecordsByName(
         const QString& name) const;
+    QList<SemanticSymbolRecord> getSymbolRecordsByName(
+        const QString& name, const QString& fileName) const;
     QList<SemanticSymbolRecord> getSymbolRecordsByOwner(
         const QString& ownerName) const;
     QList<SemanticSymbolRecord> getSymbolRecordsByDeclarationKind(
@@ -38,6 +40,16 @@ public:
         const QString& name,
         const SemanticQueryContext& context = {}) const;
     QString getCachedFileContent(const QString& fileName) const;
+    struct CachedFileSource {
+        bool exists = false;
+        QString fileKey;
+        QString text;
+    };
+    // Exact/lexical paths use the existing content key. On a miss, resolve
+    // only the requested identity and consult this publication's alias index.
+    // An empty cached source is present; ambiguous physical aliases are not
+    // selected without an exact key. Returned QString values own their data.
+    CachedFileSource cachedFileSource(const QString& fileName) const;
     QStringList getScopeSymbolNames(const QString& fileName, int cursorLine) const;
     SemanticRelationship rebindRelationship(
         const SemanticRelationship& relationship) const;
@@ -130,6 +142,10 @@ private:
     QHash<QString, QList<SemanticDiagnostic>> m_rawDiagnosticsByFile;
     std::shared_ptr<const DiagnosticView> m_diagnosticView;
     QHash<QString, QString> m_fileContents;
+    // Only non-canonical keys need alias entries. Bind identities when their
+    // source is published/replaced, never by scanning inputs during a query.
+    QHash<QString, QString> m_contentIdentityByAlias;
+    QHash<QString, QSet<QString>> m_contentAliasesByIdentity;
     QStringList m_fileOrder;
     int m_symbolCount = 0;
     int m_relationshipCount = 0;
@@ -138,6 +154,8 @@ private:
     std::shared_ptr<FlatViews> m_flatViews = std::make_shared<FlatViews>();
 
     void replaceSymbolShard(const QString& file, QList<SemanticSymbolRecord> records);
+    void replaceFileContent(const QString& file, const QString& text, const QString& identity);
+    void removeFileContent(const QString& file);
     void replaceRelationshipShard(const QString& owner, const QList<SemanticRelationship>& records);
     void rebuildDiagnosticView(int maxDiagnostics);
     void resetViews() { m_flatViews = std::make_shared<FlatViews>(); }

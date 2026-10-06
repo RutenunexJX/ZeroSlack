@@ -1,4 +1,13 @@
-ZeroSlack v0.31.23 Windows package
+ZeroSlack v0.31.24 Windows package
+
+Release 0.31.24 unifies insertion and exclusive file creation, immutable source
+previews and token-based navigation. Failed jumps preserve navigation history;
+template mirroring respects the owning view and edit transaction. Semantic
+members and relationships bind to actual declarations and concrete access paths.
+Stable IDs use zsym-v2, exact IDs use zexact-v1, and CLI cache schema 5 rebuilds
+older caches. Integrations retaining old IDs must scan again and refresh them.
+The accepted R1/R2 scope retains documented baseline failures and unavailable
+fixtures. Earlier development timings are not measurements of this package.
 
 Release 0.31.23 protects document identity across saves, recovery and file-tree
 operations. Rollback respects edit ownership; recovery records are isolated by

@@ -1,7 +1,8 @@
 #include "codepreviewservice.h"
 
 #include "documentmodel.h"
-#include "semanticindex.h"
+#include "editorfileidentity.h"
+#include "previewsource.h"
 
 #include <QFileInfo>
 #include <QtGlobal>
@@ -9,14 +10,6 @@
 std::unique_ptr<CodePreviewService> CodePreviewService::instance = nullptr;
 
 namespace {
-QStringList splitLinesPreservingEmptyTail(const QString& text)
-{
-    QStringList lines = text.split(QLatin1Char('\n'));
-    if (!lines.isEmpty() && lines.last().isEmpty())
-        lines.removeLast();
-    return lines;
-}
-
 QString locationDisplayName(const QString& fileName, int line, int column)
 {
     if (fileName.isEmpty() || line <= 0)
@@ -68,17 +61,9 @@ CodePreviewService* CodePreviewService::getInstance()
     return instance.get();
 }
 
-CodePreviewService::CodePreviewService(SemanticIndex* semanticIndex)
-    : index(semanticIndex ? semanticIndex : SemanticIndex::getInstance())
-{
-}
+CodePreviewService::CodePreviewService() = default;
 
 CodePreviewService::~CodePreviewService() = default;
-
-void CodePreviewService::setSemanticIndex(SemanticIndex* semanticIndex)
-{
-    index = semanticIndex ? semanticIndex : SemanticIndex::getInstance();
-}
 
 void CodePreviewService::setDocumentModel(DocumentModel* documentModel)
 {
@@ -103,37 +88,34 @@ CodePreviewReport CodePreviewService::previewForCodeLink(
     report.fileDisplayName = RtlInsightLink::fileDisplayName(link.fileName);
     report.targetLine = link.line;
     report.targetColumn = link.column;
-    report.targetEndLine = query.sourceRange.endLine;
-    report.targetEndColumn = query.sourceRange.endColumn;
+    const bool matchingRange = query.sourceRange.isValid()
+        && EditorFileIdentity::same(query.sourceRange.fileName, link.fileName)
+        && query.sourceRange.line == link.line
+        && query.sourceRange.column == link.column;
+    report.targetEndLine = matchingRange ? query.sourceRange.endLine : 0;
+    report.targetEndColumn = matchingRange ? query.sourceRange.endColumn : 0;
     report.highlightedLine = link.line;
     report.locationDisplayName =
         locationDisplayName(link.fileName, link.line, link.column);
 
-    const QString text = previewTextForFile(link.fileName);
-    if (text.isEmpty()) {
-        report.unavailableReason =
-            QStringLiteral("Code preview unavailable.");
+    const auto source = PreviewSource::capture(link.fileName, documents, query.locationSnapshot);
+    const auto excerpt = source.excerpt(link.line, link.column, report.targetEndLine,
+        report.targetEndColumn, query.contextBefore, query.contextAfter);
+    report.sourceDescription = source.origin;
+    report.documentId = source.documentId;
+    report.documentRevision = source.documentRevision;
+    report.stale = excerpt.stale;
+    report.unavailableReason = excerpt.reason;
+    if (!excerpt.available) {
+        report.highlightedLine = 0;
         return report;
     }
+    report.firstLineNumber = excerpt.firstLine;
+    report.codeLines = excerpt.lines;
+    const QStringList lines = source.text.split('\n');
 
-    const QStringList lines = splitLinesPreservingEmptyTail(text);
-    if (link.line <= 0 || link.line > lines.size()) {
-        report.unavailableReason =
-            QStringLiteral("Code preview line unavailable.");
-        return report;
-    }
-
-    const int before = qMax(0, query.contextBefore);
-    const int after = qMax(0, query.contextAfter);
-    const int firstLine = qMax(1, link.line - before);
-    const int lastLine = qMin(lines.size(), link.line + after);
-    report.firstLineNumber = firstLine;
-    for (int line = firstLine; line <= lastLine; ++line)
-        report.codeLines.append(lines.at(line - 1));
-
-    report.preciseRange = query.sourceRange.isValid()
-        && query.sourceRange.fileName == link.fileName
-        && query.sourceRange.line == link.line;
+    report.preciseRange = matchingRange && report.targetEndLine >= link.line
+        && report.targetEndColumn > 0;
     if (report.preciseRange) {
         const QString targetCodeLine = lines.at(link.line - 1);
         report.caretLine = caretLineForRange(targetCodeLine,
@@ -150,18 +132,4 @@ CodePreviewReport CodePreviewService::previewForCodeLink(
 
     report.available = true;
     return report;
-}
-
-QString CodePreviewService::previewTextForFile(const QString& fileName) const
-{
-    if (fileName.isEmpty())
-        return QString();
-
-    if (documents) {
-        const QString openText = documents->documentTextForFile(fileName);
-        if (!openText.isEmpty())
-            return openText;
-    }
-
-    return index ? index->getCachedFileContent(fileName) : QString();
 }

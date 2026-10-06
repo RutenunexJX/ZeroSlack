@@ -10,6 +10,7 @@
 
 class DocumentModel;
 struct EditorSemanticContext;
+struct SourceIdentifierTarget;
 
 class DefinitionPreviewService
 {
@@ -22,7 +23,8 @@ public:
     void setSemanticIndex(SemanticIndex* semanticIndex);
     void setDocumentModel(DocumentModel* documentModel);
     DefinitionPreviewReport previewForContext(
-        const EditorSemanticContext& context) const;
+        const EditorSemanticContext& context,
+        const SourceIdentifierTarget* sourceIdentifier = nullptr) const;
 
 private:
     SemanticIndex* index = nullptr;
@@ -30,7 +32,6 @@ private:
     std::unique_ptr<DefinitionNavigationService> definitionNavigation;
     static std::unique_ptr<DefinitionPreviewService> instance;
 
-    QString previewTextForFile(const QString& fileName) const;
 };
 
 #endif // DEFINITIONPREVIEWSERVICE_H

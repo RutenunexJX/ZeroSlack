@@ -538,6 +538,7 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
     const SignalKernelGraphQuery& query) const
 {
     SignalKernelGraphReport report;
+    report.locationSnapshot = semanticIndex()->snapshot();
     SignalJourneyService journeyService(semanticIndex());
     const SignalJourneyReport journey =
         journeyService.buildSignalJourney(journeyQueryForGraphQuery(query));
@@ -621,6 +622,8 @@ SignalKernelGraphReport SignalKernelGraphService::buildSignalKernelGraph(
                        report.kernelModuleName,
                        report.fanoutGroupingThreshold,
                        nextFanoutGroupId);
+    if (semanticIndex()->snapshot() != report.locationSnapshot)
+        report.locationSnapshot.reset();
     return report;
 }
 

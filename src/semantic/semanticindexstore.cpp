@@ -1,4 +1,5 @@
 #include "semanticindex.h"
+#include "semanticstableidentity.h"
 
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
@@ -213,9 +214,7 @@ void SemanticIndex::updateSymbolRecordsForFiles(
             if (record.location.fileName.isEmpty())
                 record.location.fileName = update.fileName;
             record = recordWithAnalysisBand(std::move(record));
-            record.stableKey = {normalizedStoreFileName(record.location.fileName),
-                record.name, record.declarationKind, record.owner.name,
-                record.location.position, record.location.length};
+            record.stableKey = semanticDeclarationKey(record);
             const auto old = oldPresentations.constFind(presentationIdentity(record));
             if (old != oldPresentations.cend()) {
                 for (auto it = old->instanceInfoByPath.cbegin(); it != old->instanceInfoByPath.cend(); ++it) {

@@ -125,7 +125,10 @@ DefinitionQuery DefinitionNavigationService::toDefinitionQuery(
     const DefinitionNavigationQuery& query)
 {
     DefinitionQuery definitionQuery;
-    definitionQuery.symbolName = query.symbolName;
+    // Syntax tokens preserve the SystemVerilog escape marker; semantic symbol
+    // records store the identifier's name without that marker.
+    definitionQuery.symbolName = query.symbolName.startsWith(QLatin1Char('\\'))
+        ? query.symbolName.mid(1) : query.symbolName;
     definitionQuery.fileName = query.fileName;
     definitionQuery.moduleName = query.moduleName;
     definitionQuery.linePrefixBeforeCursor = query.linePrefixBeforeCursor;

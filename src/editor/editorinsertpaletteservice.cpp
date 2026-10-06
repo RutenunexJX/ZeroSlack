@@ -1,4 +1,5 @@
 #include "editorinsertpaletteservice.h"
+#include "tsdocument.h"
 
 #include "codetemplatecontextanalyzer.h"
 #include "codetemplateservice.h"
@@ -176,18 +177,24 @@ QList<GlobalControlItem> symbolItems(
             });
     };
 
+    SemanticQueryContext semanticContext;
+    semanticContext.fileName = context.fileName;
+    semanticContext.moduleName = context.moduleName;
+    semanticContext.packageName = context.packageName;
+    semanticContext.cursorLine = context.cursorLine;
+    semanticContext.cursorPosition = context.cursorPosition;
     const auto expectedEnumValues = [&]() {
         return service->findExpectedEnumValueRecords(
             context.expectedTypeIdentifier,
             context.moduleName,
             context.packageName,
-            parsed.filter);
+            parsed.filter, semanticContext);
     };
     const auto structMembers = [&]() {
         return service->findStructMemberCompletionRecords(
             context.memberPath,
             context.moduleName,
-            parsed.filter);
+            parsed.filter, semanticContext);
     };
     QList<SemanticSymbolRecord> visibleRecords;
     bool visibleRecordsLoaded = false;
@@ -477,15 +484,20 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
             captured.emplace();
             captured->context = context;
             ++contextAnalyses;
+            // One request-scoped original syntax input, shared by both facts.
+            // PackageToolService still parses its different probe text.
+            TSDocument originalDocument;
+            if (context.editorAvailable)
+                originalDocument.setText(context.documentText);
             const auto signalContext = context.editorAvailable
-                ? CodeTemplateContextAnalyzer::analyze(context.documentText, context.cursorPosition)
+                ? CodeTemplateContextAnalyzer::analyze(originalDocument, context.cursorPosition)
                 : CodeTemplateSignalContext{};
             for (const auto& item : CodeTemplateService::getInstance()->catalog())
                 captured->templates.append(CodeTemplateService::getInstance()->matchingTemplates(
                     item.commandToken, {}, signalContext));
             if (context.editorAvailable && context.cursorPosition >= 0)
                 captured->importSite = PackageToolService::analyzePackageImportSite(
-                    context.documentText, context.cursorPosition, context.cursorPosition);
+                    originalDocument, context.cursorPosition, context.cursorPosition);
         }
         captured->catalogRevision = catalogRevision;
         auto templates = captured->templates;

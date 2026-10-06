@@ -854,6 +854,18 @@ QStringList MyCodeEditor::includeFileCompletionCandidates() const
     return state->includeFileCandidates();
 }
 
+bool MyCodeEditor::canApplyInsertion(QString* failureReason) const
+{
+    if (!document() || isReadOnly()) {
+        if (failureReason)
+            *failureReason = QStringLiteral("The editor is read-only.");
+        return false;
+    }
+    if (failureReason)
+        failureReason->clear();
+    return true;
+}
+
 bool MyCodeEditor::insertPackageImport(
     const QString& packageName,
     QString* failureReason)
@@ -1082,9 +1094,7 @@ bool MyCodeEditor::insertCompletionText(
     const CodeTemplateSlotList& slotMetadata,
     QString* failureReason)
 {
-    if (isReadOnly()) {
-        if (failureReason)
-            *failureReason = QStringLiteral("The editor is read-only.");
+    if (!canApplyInsertion(failureReason)) {
         return false;
     }
     if (text.isEmpty()) {
@@ -2292,6 +2302,11 @@ void MyCodeEditor::focusOutEvent(QFocusEvent* event)
 {
     state->tripleClickArmed = false;
     state->clearPendingColumnAnchor();
+    // A popup temporarily takes focus while it still edits this view.
+    // Moving to another editor/tab/window ends this view's interactive session.
+    if (event && event->reason() != Qt::PopupFocusReason)
+        state->modes.exit(EditorModeId::TemplateSlots,
+                          EditorModeExitReason::ExternalControl);
     QPlainTextEdit::focusOutEvent(event);
 }
 

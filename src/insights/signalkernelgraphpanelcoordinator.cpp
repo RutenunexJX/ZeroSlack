@@ -984,6 +984,8 @@ SignalKernelGraphPanelCoordinator::SignalKernelGraphPanelCoordinator(
 
 SignalKernelGraphPanelCoordinator::~SignalKernelGraphPanelCoordinator()
 {
+    for (const auto& connection : previewSourceConnections)
+        QObject::disconnect(connection);
     QObject::disconnect(themeAboutToChangeConnection);
     if (!graphDock)
         return;
@@ -1120,7 +1122,23 @@ void SignalKernelGraphPanelCoordinator::setStatusMessageHandler(
 void SignalKernelGraphPanelCoordinator::setDocumentModel(
     DocumentModel* documentModel)
 {
+    for (const auto& connection : previewSourceConnections)
+        QObject::disconnect(connection);
+    previewSourceConnections.clear();
+    closeNodePreviewNow();
     CodePreviewService::getInstance()->setDocumentModel(documentModel);
+    if (!documentModel || !graphDock)
+        return;
+    // A visible node preview otherwise remains cached by node key while its
+    // document changes. Close it now; the next hover revalidates the witness.
+    const auto invalidatePreview = [this]() { closeNodePreviewNow(); };
+    previewSourceConnections = {
+        QObject::connect(documentModel, &DocumentModel::documentOpened, graphDock, invalidatePreview),
+        QObject::connect(documentModel, &DocumentModel::documentEdited, graphDock, invalidatePreview),
+        QObject::connect(documentModel, &DocumentModel::documentSaved, graphDock, invalidatePreview),
+        QObject::connect(documentModel, &DocumentModel::documentClosed, graphDock, invalidatePreview),
+        QObject::connect(documentModel, &QObject::destroyed, graphDock, invalidatePreview)
+    };
 }
 
 void SignalKernelGraphPanelCoordinator::showSignalKernelGraphForSymbol(
@@ -1804,6 +1822,7 @@ void SignalKernelGraphPanelCoordinator::showNodePreview(
     hoverPopup->setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX);
 
     CodePreviewQuery query;
+    query.locationSnapshot = currentReport.locationSnapshot;
     query.codeLink = node.previewCodeLink;
     query.sourceRange = node.evidenceRange;
     query.title = QStringLiteral("%1: %2")

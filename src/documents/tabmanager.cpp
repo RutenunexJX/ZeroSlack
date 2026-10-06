@@ -1722,6 +1722,8 @@ void TabManager::setWorkspaceScope(
     for (MyCodeEditor* editor : workspaceEditors) {
         if (!editor)
             continue;
+        if (switched)
+            editor->exitInteractionModes(EditorModeExitReason::TabChanged);
         const HierarchyInstanceContext current =
             editor->hierarchyInstanceContext();
         const DocumentSnapshot document =

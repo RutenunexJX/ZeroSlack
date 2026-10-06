@@ -39,7 +39,7 @@ namespace {
 
 constexpr auto kSchema = "zeroslack.cli/v1";
 constexpr auto kCacheSchema = "ZeroSlack.CliSemanticIndex";
-constexpr int kCacheVersion = 3;
+constexpr int kCacheVersion = 5;
 
 struct SourceFileState {
     QString absolutePath;
@@ -498,6 +498,7 @@ QJsonObject symbolJson(const SemanticSymbolRecord& record,
         {QStringLiteral("kindValue"),
          static_cast<int>(record.declarationKind)},
         {QStringLiteral("owner"), record.owner.name},
+        {QStringLiteral("ownerKey"), record.owner.stableKey.toString()},
         {QStringLiteral("ownerKind"),
          static_cast<int>(record.owner.kind)},
         {QStringLiteral("file"), file},
@@ -507,6 +508,8 @@ QJsonObject symbolJson(const SemanticSymbolRecord& record,
         {QStringLiteral("endColumn"), record.location.endColumn},
         {QStringLiteral("type"), record.type.rawTypeText},
         {QStringLiteral("resolvedType"), record.type.resolvedTypeName},
+        {QStringLiteral("typeKey"), record.type.stableKey.toString()},
+        {QStringLiteral("resolvedTypeKind"), static_cast<int>(record.type.resolvedTypeKind)},
         {QStringLiteral("declaration"),
          record.presentation.declarationText.trimmed()},
         {QStringLiteral("exactKey"), record.stableKey.toString()},
@@ -1078,12 +1081,14 @@ QJsonArray matchingSymbols(const QJsonArray& symbols,
 {
     QJsonArray matches;
     const QString folded = query.trimmed().toCaseFolded();
+    const bool idQuery = query.startsWith(QStringLiteral("zsym-"))
+        || query.startsWith(QStringLiteral("zexact-"));
     for (const QJsonValue& value : symbols) {
         const QJsonObject symbol = value.toObject();
         if (symbol.value(QStringLiteral("id")).toString() == query
             || symbol.value(QStringLiteral("exactId")).toString() == query
-            || symbol.value(QStringLiteral("name")).toString()
-                   .toCaseFolded() == folded) {
+            || (!idQuery && symbol.value(QStringLiteral("name")).toString()
+                   .toCaseFolded() == folded)) {
             matches.append(symbol);
         }
     }

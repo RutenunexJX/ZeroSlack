@@ -424,6 +424,11 @@ void runTemplateCacheAndWriterRegression()
     palette.invalidate();
     palette.query(GlobalControlCategory::Templates, "cache", context);
     expect("revision cursor and session invalidation refresh facts", palette.contextAnalysesForTesting() == 4);
+    context.fileName = temp.filePath("renamed.sv");
+    palette.query(GlobalControlCategory::Templates, "cache", context);
+    ++context.documentInstance;
+    palette.query(GlobalControlCategory::Templates, "cache", context);
+    expect("file and view identity invalidate captured template facts", palette.contextAnalysesForTesting() == 6);
     expect("workspace templates can be added externally",
         writeText(workspace, "[{\"command\":\";;workspace\",\"body\":\"logic workspace;\"}]"));
     expect("new workspace file invalidates absence cache", service->matchingTemplates(";;workspace").size() == 1);

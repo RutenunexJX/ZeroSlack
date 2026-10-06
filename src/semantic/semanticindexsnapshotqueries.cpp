@@ -1,6 +1,7 @@
 #include "semanticindexsnapshot.h"
 
 #include "symboltaxonomy.h"
+#include <zeroslack/documents/editorfileidentity.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -42,6 +43,16 @@ QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(const 
         for (int index : shard->byName.value(name))
             result.append(shard->records.at(index));
     }
+    return result;
+}
+
+QList<SemanticSymbolRecord> SemanticIndexSnapshot::getSymbolRecordsByName(
+    const QString& name, const QString& fileName) const
+{
+    QList<SemanticSymbolRecord> result;
+    const auto shard = m_symbolsByFile.value(normalizedSnapshotQueryFileName(fileName));
+    if (shard)
+        for (int index : shard->byName.value(name)) result.append(shard->records.at(index));
     return result;
 }
 
@@ -138,6 +149,28 @@ SemanticRelationship SemanticIndexSnapshot::rebindRelationship(const SemanticRel
 QString SemanticIndexSnapshot::getCachedFileContent(const QString& fileName) const
 {
     return m_fileContents.value(normalizedSnapshotQueryFileName(fileName));
+}
+
+SemanticIndexSnapshot::CachedFileSource SemanticIndexSnapshot::cachedFileSource(
+    const QString& fileName) const
+{
+    const QString key = normalizedSnapshotQueryFileName(fileName);
+    if (key.isEmpty())
+        return {};
+    auto found = m_fileContents.constFind(key);
+    if (found == m_fileContents.cend()) {
+        // At most one physical resolution, independent of project file count.
+        const QString identity = EditorFileIdentity::lookupKey(fileName);
+        found = m_fileContents.constFind(identity);
+        if (found == m_fileContents.cend()) {
+            const auto aliases = m_contentAliasesByIdentity.constFind(identity);
+            if (aliases == m_contentAliasesByIdentity.cend() || aliases->size() != 1)
+                return {};
+            found = m_fileContents.constFind(*aliases->cbegin());
+        }
+    }
+    return found == m_fileContents.cend()
+        ? CachedFileSource{} : CachedFileSource{true, found.key(), found.value()};
 }
 
 QStringList SemanticIndexSnapshot::getScopeSymbolNames(const QString& fileName,

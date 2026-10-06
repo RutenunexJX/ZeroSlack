@@ -2894,6 +2894,8 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
 void MyCodeEditorState::beginUndoRedo(MyCodeEditor* editor)
 {
     synchronousEditIsUndoRedo = true;
+    modes.exit(EditorModeId::TemplateSlots,
+               EditorModeExitReason::DocumentChanged);
     if (!editor || undoRedoViewportCaptured)
         return;
     if (QScrollBar* vertical = editor->verticalScrollBar())

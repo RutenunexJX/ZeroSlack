@@ -444,12 +444,21 @@ CodeTemplateSignalContext CodeTemplateContextAnalyzer::analyze(
     const QString& documentText,
     int cursorPosition)
 {
-    CodeTemplateSignalContext result;
     if (documentText.isEmpty() || cursorPosition < 0)
-        return result;
+        return {};
 
     TSDocument document;
     document.setText(documentText);
+    return analyze(document, cursorPosition);
+}
+
+CodeTemplateSignalContext CodeTemplateContextAnalyzer::analyze(
+    const TSDocument& document, int cursorPosition)
+{
+    CodeTemplateSignalContext result;
+    const QString& documentText = document.text().materialized();
+    if (documentText.isEmpty() || cursorPosition < 0)
+        return result;
     const TSNode module =
         moduleAt(document.rootNode(),
                  cursorPosition,

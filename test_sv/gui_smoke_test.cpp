@@ -10897,6 +10897,14 @@ static void runStructuralEditingRegression()
     const QString codeAfterCommentPopup =
         visibleEditorHoverPopupText(
             &codeAfterCommentPopupVisible);
+    if (!codeAfterCommentPopupVisible || !codeAfterCommentPopup.contains(QStringLiteral("sig0"))) {
+        const auto* syntax = semanticEditor.syntaxDocument();
+        const auto identifier = syntax->identifierAt(codeSigAfterComment);
+        std::printf("Comment-close diagnostic: pos=%d pending=%d deferred=%d comment=%d token=%s popup=%s\n",
+            codeSigAfterComment, syntax->hasPendingEdits(), syntax->hasDeferredSyntaxEdits(),
+            syntax->isCommentAt(codeSigAfterComment), identifier.text.toUtf8().constData(),
+            codeAfterCommentPopup.toUtf8().constData());
+    }
     expectBool("code after block-comment close keeps semantic popup",
                codeAfterCommentPopupVisible
                    && codeAfterCommentPopup.contains(

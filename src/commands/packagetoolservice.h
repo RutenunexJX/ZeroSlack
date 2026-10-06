@@ -5,6 +5,8 @@
 #include <QString>
 #include <QStringList>
 
+class TSDocument;
+
 enum class StructuredInlineInsertionStatus {
     Ok,
     Duplicate,
@@ -56,6 +58,10 @@ struct HeaderIncludeCandidate {
 class PackageToolService
 {
 public:
+    static PackageImportSite analyzePackageImportSite(
+        const TSDocument& originalDocument,
+        int replacementStart,
+        int replacementEnd);
     static PackageImportSite analyzePackageImportSite(
         const QString& documentText,
         int replacementStart,

@@ -359,9 +359,16 @@ PackageImportSite PackageToolService::analyzePackageImportSite(
     int replacementStart,
     int replacementEnd)
 {
-    PackageImportSite site;
     TSDocument originalDocument;
     originalDocument.setText(documentText);
+    return analyzePackageImportSite(originalDocument, replacementStart, replacementEnd);
+}
+
+PackageImportSite PackageToolService::analyzePackageImportSite(
+    const TSDocument& originalDocument, int replacementStart, int replacementEnd)
+{
+    PackageImportSite site;
+    const QString& documentText = originalDocument.text().materialized();
     if (!inlineRangeIsEditable(originalDocument,
                                replacementStart,
                                replacementEnd)) {

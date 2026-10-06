@@ -128,11 +128,12 @@ void SymbolHoverService::setSemanticIndex(SemanticIndex* semanticIndex)
 }
 
 SymbolHoverReport SymbolHoverService::hoverForContext(
-    const EditorSemanticContext& context) const
+    const EditorSemanticContext& context,
+    const SourceIdentifierTarget* sourceIdentifier) const
 {
     SymbolHoverReport report;
     const SourceIdentifierTarget identifier =
-        SourceNavigationService::getInstance()->identifierAtColumn(
+        sourceIdentifier ? *sourceIdentifier : SourceNavigationService::getInstance()->identifierAtColumn(
             context.lineText,
             context.column);
     if (!identifier.matched || identifier.identifier.isEmpty())

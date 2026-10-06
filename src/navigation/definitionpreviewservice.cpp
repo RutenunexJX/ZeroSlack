@@ -1,6 +1,7 @@
 #include "definitionpreviewservice.h"
 
 #include "documentmodel.h"
+#include "previewsource.h"
 #include "editorsemanticcontextservice.h"
 #include "sourcenavigationservice.h"
 
@@ -11,14 +12,6 @@ std::unique_ptr<DefinitionPreviewService> DefinitionPreviewService::instance = n
 namespace {
 constexpr int kPreviewContextBefore = 5;
 constexpr int kPreviewContextAfter = 10;
-
-QStringList splitLinesPreservingEmptyTail(const QString& text)
-{
-    QStringList lines = text.split(QLatin1Char('\n'));
-    if (!lines.isEmpty() && lines.last().isEmpty())
-        lines.removeLast();
-    return lines;
-}
 }
 
 DefinitionPreviewService* DefinitionPreviewService::getInstance()
@@ -48,11 +41,12 @@ void DefinitionPreviewService::setDocumentModel(DocumentModel* documentModel)
 }
 
 DefinitionPreviewReport DefinitionPreviewService::previewForContext(
-    const EditorSemanticContext& context) const
+    const EditorSemanticContext& context,
+    const SourceIdentifierTarget* sourceIdentifier) const
 {
     DefinitionPreviewReport report;
     const SourceIdentifierTarget identifier =
-        SourceNavigationService::getInstance()->identifierAtColumn(
+        sourceIdentifier ? *sourceIdentifier : SourceNavigationService::getInstance()->identifierAtColumn(
             context.lineText,
             context.column);
     if (!identifier.matched || identifier.identifier.isEmpty()) {
@@ -68,6 +62,7 @@ DefinitionPreviewReport DefinitionPreviewService::previewForContext(
     navigationContext.lineText = context.lineText;
     navigationContext.cursorLine = context.cursorLine;
     navigationContext.column = context.column;
+    const auto locationSnapshot = index ? index->snapshot() : nullptr;
     const DefinitionNavigationTarget target =
         definitionNavigation->resolveTarget(
             definitionNavigation->navigationQueryForContext(navigationContext));
@@ -86,41 +81,25 @@ DefinitionPreviewReport DefinitionPreviewService::previewForContext(
     report.targetColumn = target.column;
     report.highlightedLine = target.line;
 
-    const QString text = previewTextForFile(target.fileName);
-    if (text.isEmpty()) {
-        report.unavailableReason =
-            QStringLiteral("Definition found, preview unavailable.");
+    if (!index || index->snapshot() != locationSnapshot) {
+        report.stale = true;
+        report.unavailableReason = QStringLiteral("Analysis changed while locating the definition. Retry preview.");
         return report;
     }
-
-    const QStringList lines = splitLinesPreservingEmptyTail(text);
-    if (target.line <= 0 || target.line > lines.size()) {
-        report.unavailableReason =
-            QStringLiteral("Definition found, preview line unavailable.");
-        return report;
-    }
-
-    const int firstLine = qMax(1, target.line - kPreviewContextBefore);
-    const int lastLine =
-        qMin(lines.size(), target.line + kPreviewContextAfter);
-    report.firstLineNumber = firstLine;
-    for (int line = firstLine; line <= lastLine; ++line)
-        report.codeLines.append(lines.at(line - 1));
-    report.available = true;
+    const auto source = PreviewSource::capture(target.fileName, documents, locationSnapshot);
+    // Definitions supply a name start, not a reliable lexical token end (an
+    // escaped identifier's semantic name omits its escape). Verify the whole
+    // original target line when live text differs; appends remain valid.
+    const auto excerpt = source.excerpt(target.line, target.column, 0, 0,
+        kPreviewContextBefore, kPreviewContextAfter);
+    report.sourceDescription = source.origin;
+    report.documentId = source.documentId;
+    report.documentRevision = source.documentRevision;
+    report.available = excerpt.available;
+    report.stale = excerpt.stale;
+    report.unavailableReason = excerpt.reason;
+    report.firstLineNumber = excerpt.firstLine;
+    report.codeLines = excerpt.lines;
+    if (!report.available) report.highlightedLine = -1;
     return report;
-}
-
-QString DefinitionPreviewService::previewTextForFile(
-    const QString& fileName) const
-{
-    if (fileName.isEmpty())
-        return QString();
-
-    if (documents) {
-        const QString openText = documents->documentTextForFile(fileName);
-        if (!openText.isEmpty())
-            return openText;
-    }
-
-    return index ? index->getCachedFileContent(fileName) : QString();
 }

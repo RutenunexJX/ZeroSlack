@@ -43,14 +43,16 @@ public:
     QList<SemanticSymbolRecord> findStructMemberCompletionRecords(
         const QStringList& memberPath,
         const QString& moduleName,
-        const QString& prefix = QString()) const;
+        const QString& prefix = QString(),
+        const SemanticQueryContext& context = {}) const;
     QList<SemanticSymbolRecord> findVisibleStructMemberRecords(
         const CommandCompletionQuery& query) const;
     QList<SemanticSymbolRecord> findExpectedEnumValueRecords(
         const QString& identifier,
         const QString& moduleName,
         const QString& packageName,
-        const QString& prefix = QString()) const;
+        const QString& prefix = QString(),
+        const SemanticQueryContext& context = {}) const;
     QList<SemanticSymbolRecord> findVisibleEnumValueRecords(
         const CommandCompletionQuery& query) const;
 

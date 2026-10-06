@@ -1,6 +1,15 @@
 # ZeroSlack
 
-Current version: `v0.31.23`
+Current version: `v0.31.24`
+
+Release 0.31.24 shares insertion and file-creation guards, immutable source
+previews and token-based navigation, while retaining history after failed jumps.
+Template mirroring respects the editing view and transaction. Semantic queries
+bind members to their actual declarations and access paths, avoiding false
+cross-member relationships. Stable symbol IDs now use zsym-v2, exact IDs use
+zexact-v1, and CLI cache schema 5 rebuilds older caches; consumers must refresh
+stored IDs from a new scan. R1/R2 scoped acceptance and remaining performance
+costs are recorded in the [architecture backlog](docs/architecture-redundancy-backlog.md).
 
 Release 0.31.23 extends stable document identity to saving, recovery and file
 operations. Edit rollback preserves changes owned by other writers; independent

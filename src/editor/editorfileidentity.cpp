@@ -149,6 +149,57 @@ QString EditorFileIdentity::lookupKey(QString fileName)
     return key;
 }
 
+QHash<QString, QString> EditorFileIdentity::lookupKeys(const QStringList& fileNames)
+{
+    QHash<QString, QString> identities;
+    QHash<QString, QString> parents;
+    for (const QString& fileName : fileNames) {
+        const QString absolute = cleanedAbsolutePath(fileName);
+        const QFileInfo file(absolute);
+        const QString leaf = file.fileName();
+        bool nativeLeafAlias = leaf.contains(QLatin1Char('~'))
+            || leaf.contains(QLatin1Char(':')) || leaf.endsWith(QLatin1Char('.'))
+            || leaf.endsWith(QLatin1Char(' '));
+#ifdef Q_OS_WIN
+        // Native case comparison can differ from QString for non-ASCII names.
+        // Let the full resolver return the actual stored leaf in that case.
+        for (const QChar character : leaf)
+            nativeLeafAlias |= character.unicode() > 127;
+        const QString native = QDir::toNativeSeparators(absolute);
+        const DWORD attributes = GetFileAttributesW(
+            reinterpret_cast<LPCWSTR>(native.utf16()));
+        const bool regularFile = attributes != INVALID_FILE_ATTRIBUTES
+            && !(attributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT));
+#else
+        const bool regularFile = file.isFile() && !file.isSymLink();
+#endif
+        // A leaf alias can rename the file itself. Missing entries also need
+        // the existing deepest-parent semantics. A Windows DOS short name
+        // must expand the leaf, not merely its parent directory.
+        if (absolute.isEmpty() || !regularFile
+            || nativeLeafAlias) {
+            identities.insert(fileName, lookupKey(fileName));
+            continue;
+        }
+        const QString parent = file.absolutePath();
+        auto resolved = parents.constFind(parent);
+        if (resolved == parents.cend()) {
+            parents.insert(parent, finalExistingPath(parent));
+            resolved = parents.constFind(parent);
+        }
+        if (resolved->isEmpty()) {
+            identities.insert(fileName, lookupKey(fileName));
+            continue;
+        }
+        QString identity = QDir::cleanPath(QDir(resolved.value()).filePath(leaf));
+#ifdef Q_OS_WIN
+        identity = identity.toCaseFolded();
+#endif
+        identities.insert(fileName, identity);
+    }
+    return identities;
+}
+
 QString EditorFileIdentity::physicalPath(QString fileName)
 {
     return resolvedIdentityPath(fileName);

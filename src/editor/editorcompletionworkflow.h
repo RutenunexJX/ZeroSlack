@@ -54,6 +54,7 @@ public:
                                        QString* failureReason = nullptr);
 
 private:
+    bool insertionAllowed(QString* failureReason = nullptr) const;
     enum class IncludeCompletionMode {
         None,
         File,

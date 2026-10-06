@@ -53,6 +53,10 @@ struct DefinitionPreviewReport {
     int highlightedLine = -1;
     QStringList codeLines;
     QString unavailableReason;
+    bool stale = false;
+    QString sourceDescription;
+    QString documentId;
+    int documentRevision = 0;
 };
 
 #endif // SYMBOLHOVERREPORTS_H

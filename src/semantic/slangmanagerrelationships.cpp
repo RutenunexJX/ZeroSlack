@@ -38,12 +38,11 @@ AssignmentInfo assignmentInfoFromExpression(const AssignmentExpression& assignme
                                             const slang::SourceManager* sm)
 {
     AssignmentInfo info;
-    info.leftName = assignmentRootName(assignment.left());
-    info.leftAccessPath = expressionAccessPath(assignment.left());
-    if (info.leftAccessPath.isEmpty())
-        info.leftAccessPath = info.leftName;
-    info.rightNames = collectValueNames(assignment.right());
-    info.rightAccessPaths = collectValueAccessPaths(assignment.right());
+    info.leftReference = valueReference(assignment.left(), sm);
+    info.leftName = info.leftReference.name;
+    info.leftAccessPath = info.leftReference.accessPath;
+    info.rightReferences = collectValueReferences(assignment.right(), sm);
+    projectValueReferences(info.rightReferences, info.rightNames, info.rightAccessPaths);
     info.exactValueForward =
         isDirectValueForwardExpression(assignment.right())
         && info.rightNames.size() == 1

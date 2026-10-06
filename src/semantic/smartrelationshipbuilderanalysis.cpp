@@ -1,6 +1,7 @@
 #include "smartrelationshipbuilder.h"
 #include "semanticindexsnapshot.h"
 #include "symboltaxonomy.h"
+#include "semanticanalysisinput.h"
 
 namespace {
 QString rootNameForAccessPath(const QString& accessPath)
@@ -145,20 +146,18 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
             continue;
 
         int leftVarHandle =
-            findSymbolLocalHandleByName(assignment.leftName,
-                                        context,
-                                        assignment.lineNumber);
+            findValueHandle(assignment.leftReference, assignment.leftName,
+                            context, assignment.lineNumber);
         if (leftVarHandle == -1)
             continue;
 
+        const QString leftAccessPath = assignment.leftReference.hasBinding()
+            ? assignment.leftReference.accessPath : assignment.leftAccessPath;
         const QStringList rightAccessPaths =
             accessPathsOrNames(assignment.rightAccessPaths,
                                assignment.rightNames);
-        for (const QString& rightAccessPath : rightAccessPaths) {
-            const QString rightVar = rootNameForAccessPath(rightAccessPath);
-            int rightVarHandle = findSymbolLocalHandleByName(rightVar,
-                                                             context,
-                                                             assignment.lineNumber);
+        for (const auto& [rightVarHandle, rightAccessPath] : resolveValueAccesses(
+                 assignment.rightReferences, rightAccessPaths, context, assignment.lineNumber)) {
             if (rightVarHandle != -1 && rightVarHandle != leftVarHandle) {
                 addRelationshipWithContext(
                     leftVarHandle,
@@ -167,7 +166,7 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     QString("Assignment at line %1").arg(assignment.lineNumber),
                     85,
                     assignment.sourceRange,
-                    assignment.leftAccessPath,
+                    leftAccessPath,
                     rightAccessPath
                 );
 
@@ -176,14 +175,14 @@ void SmartRelationshipBuilder::analyzeVariableAssignments(const QString& content
                     leftVarHandle,
                     SymbolRelationshipEngine::ASSIGNS_TO,
                     QString("Assigned to %1 at line %2")
-                        .arg(assignment.leftAccessPath.isEmpty()
+                        .arg(leftAccessPath.isEmpty()
                                  ? assignment.leftName
-                                 : assignment.leftAccessPath)
+                                 : leftAccessPath)
                         .arg(assignment.lineNumber),
                     85,
                     assignment.sourceRange,
                     rightAccessPath,
-                    assignment.leftAccessPath,
+                    leftAccessPath,
                     assignment.exactValueForward
                 );
             }
@@ -203,11 +202,8 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
 
         const QStringList referenceAccessPaths =
             accessPathsOrNames(ref.symbolAccessPaths, ref.symbolNames);
-        for (const QString& referenceAccessPath : referenceAccessPaths) {
-            const QString varName = rootNameForAccessPath(referenceAccessPath);
-            int varHandle = findSymbolLocalHandleByName(varName,
-                                                        context,
-                                                        ref.lineNumber);
+        for (const auto& [varHandle, referenceAccessPath] : resolveValueAccesses(
+                 ref.references, referenceAccessPaths, context, ref.lineNumber)) {
             int ownerModuleHandle =
                 getContainingModuleLocalHandle(ref.lineNumber, context);
             if (ownerModuleHandle == -1)
@@ -360,6 +356,73 @@ SemanticSymbolRecord SmartRelationshipBuilder::findSymbolRecordByName(
     SemanticSymbolRecord missing;
     missing.localHandle = -1;
     return cacheAndReturn(missing);
+}
+
+int SmartRelationshipBuilder::findValueHandle(
+    const SemanticValueReference& reference, const QString& fallbackName,
+    const AnalysisContext& context, int lineNumber)
+{
+    if (!reference.hasBinding())
+        return findSymbolLocalHandleByName(fallbackName, context, lineNumber);
+    if (!reference.isValid() || reference.accessPath.isEmpty())
+        return -1;
+    const SymbolStableKey captureKey{reference.location.fileName, reference.name,
+        SymbolTaxonomy::DeclarationKind::Unknown, reference.declaringScope.toString(),
+        reference.location.position, reference.location.length};
+    const QString cacheKey = QStringLiteral("capture:") + captureKey.toString();
+    const auto cached = context.symbolRecordLookupCache.constFind(cacheKey);
+    if (cached != context.symbolRecordLookupCache.cend()) return cached->localHandle;
+    const auto candidates = context.snapshot
+        ? context.snapshot->getSymbolRecordsByName(reference.name, reference.location.fileName)
+        : context.recordsByName.value(reference.name);
+    SemanticSymbolRecord match;
+    for (const auto& candidate : candidates) {
+        if (SemanticInputCapture::pathKey(candidate.location.fileName)
+                != SemanticInputCapture::pathKey(reference.location.fileName)
+            || candidate.location.position != reference.location.position)
+            continue;
+        bool sameScope = !reference.declaringScope.isValid();
+        auto ownerKey = candidate.owner.stableKey;
+        QSet<QString> visited;
+        while (!sameScope && ownerKey.isValid() && !visited.contains(ownerKey.toString())) {
+            if (ownerKey == reference.declaringScope) { sameScope = true; break; }
+            visited.insert(ownerKey.toString());
+            SemanticSymbolRecord owner;
+            if (context.snapshot) owner = context.snapshot->getSymbolRecordByStableKey(ownerKey);
+            else for (const auto& local : context.recordsByName.value(ownerKey.symbolName))
+                if (local.stableKey == ownerKey) { owner = local; break; }
+            ownerKey = owner.owner.stableKey;
+        }
+        if (!sameScope) continue;
+        if (match.localHandle >= 0 && match.localHandle != candidate.localHandle) {
+            match = {}; // Bound but ambiguous references must never become name guesses.
+            break;
+        }
+        match = candidate;
+    }
+    context.symbolRecordLookupCache.insert(cacheKey, match);
+    return match.localHandle;
+}
+
+QList<QPair<int, QString>> SmartRelationshipBuilder::resolveValueAccesses(
+    const QList<SemanticValueReference>& references, const QStringList& paths,
+    const AnalysisContext& context, int lineNumber)
+{
+    QList<QPair<int, QString>> result;
+    if (!references.isEmpty()) {
+        for (const auto& reference : references) {
+            if (!reference.hasBinding() || reference.accessPath.isEmpty()) continue;
+            result.append({findValueHandle(reference, reference.name, context, lineNumber),
+                           reference.accessPath});
+        }
+        return result;
+    }
+    // Only old facts with no bindings may use the name/path projections.
+    for (const auto& path : paths) {
+        const QString name = rootNameForAccessPath(path);
+        result.append({findSymbolLocalHandleByName(name, context, lineNumber), path});
+    }
+    return result;
 }
 
 int SmartRelationshipBuilder::findSymbolLocalHandleByName(

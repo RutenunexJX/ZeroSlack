@@ -6,6 +6,11 @@
 #include <QString>
 
 struct SemanticSymbolRecord;
+struct SymbolStableKey;
+
+// Exact declaration key, qualified by the declaring owner's source and scope.
+// The owner position is excluded so relocation does not rename its members.
+ZEROSLACK_SEMANTIC_API SymbolStableKey semanticDeclarationKey(const SemanticSymbolRecord& record);
 
 struct ZEROSLACK_SEMANTIC_API SemanticStableIdentity {
     QString stableId;
@@ -19,6 +24,10 @@ struct ZEROSLACK_SEMANTIC_API SemanticStableIdentity {
     }
 };
 
+// zsym-v2 includes the complete declaring-owner chain and workspace-relative
+// source paths, excluding owner/source positions for named declarations.
+// zexact-v1 remains the current SymbolStableKey hash; old zsym-v1 IDs are not
+// aliases because they can refer to multiple declarations.
 ZEROSLACK_SEMANTIC_API SemanticStableIdentity semanticStableIdentity(
     const SemanticSymbolRecord& record,
     const QString& workspaceRoot = QString());

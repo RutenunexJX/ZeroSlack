@@ -47,6 +47,42 @@ QString digestId(const QString& prefix, const QString& value)
     return prefix + QString::fromLatin1(digest);
 }
 
+QString encodeIdentityParts(const QStringList& parts)
+{
+    QString encoded;
+    for (const auto& part : parts)
+        encoded += QString::number(part.size()) + QLatin1Char(':') + part;
+    return encoded;
+}
+
+// ownerScope is the length-prefixed declaration tuple written by
+// semanticDeclarationKey, or a legacy display name at the root. Decode every
+// ancestor before relativizing: hashing the opaque tuple would retain absolute
+// paths (and their lengths) when a workspace moves.
+QString portableOwnerScope(const QString& scope, const QString& workspaceRoot)
+{
+    QStringList parts;
+    qsizetype offset = 0;
+    for (int index = 0; index < 4; ++index) {
+        const qsizetype colon = scope.indexOf(QLatin1Char(':'), offset);
+        if (colon < 0)
+            break;
+        bool valid = false;
+        const qlonglong size = scope.mid(offset, colon - offset).toLongLong(&valid);
+        if (!valid || size < 0 || size > scope.size() - colon - 1)
+            break;
+        parts.append(scope.mid(colon + 1, size));
+        offset = colon + 1 + size;
+    }
+    if (parts.size() != 4 || offset != scope.size()
+        || !QFileInfo(parts[0]).isAbsolute()) {
+        return encodeIdentityParts({QStringLiteral("name"), scope});
+    }
+    return encodeIdentityParts({QStringLiteral("declaration"),
+        workspaceRelativePath(workspaceRoot, parts[0]),
+        portableOwnerScope(parts[1], workspaceRoot), parts[2], parts[3]});
+}
+
 bool isPositionSensitiveKind(SymbolTaxonomy::DeclarationKind kind)
 {
     using Kind = SymbolTaxonomy::DeclarationKind;
@@ -58,6 +94,18 @@ bool isPositionSensitiveKind(SymbolTaxonomy::DeclarationKind kind)
 }
 
 } // namespace
+
+SymbolStableKey semanticDeclarationKey(const SemanticSymbolRecord& record)
+{
+    QString scope = record.owner.name;
+    if (record.owner.stableKey.isValid()) {
+        const auto& owner = record.owner.stableKey;
+        scope = encodeIdentityParts({normalizedPath(owner.fileName),
+            owner.ownerScope, owner.symbolName, QString::number(int(owner.declarationKind))});
+    }
+    return {normalizedPath(record.location.fileName), record.name, record.declarationKind,
+            scope, record.location.position, record.location.length};
+}
 
 SemanticStableIdentity semanticStableIdentity(
     const SemanticSymbolRecord& record,
@@ -74,17 +122,31 @@ SemanticStableIdentity semanticStableIdentity(
     const QString relativeFile = workspaceRelativePath(
         workspaceRoot, record.location.fileName);
 
+    const bool qualifiedOwner = record.owner.stableKey.isValid();
+    const auto& ownerKey = record.owner.stableKey;
+    const QString ownerIdentity = qualifiedOwner
+        ? encodeIdentityParts({QStringLiteral("declaration"),
+            workspaceRelativePath(workspaceRoot, ownerKey.fileName),
+            portableOwnerScope(ownerKey.ownerScope, workspaceRoot),
+            ownerKey.symbolName, QString::number(int(ownerKey.declarationKind))})
+        : encodeIdentityParts({QStringLiteral("name"), owner});
     QStringList canonicalParts{
-        QStringLiteral("v1"),
+        QStringLiteral("v2"),
         QString::number(kind),
         QString::number(ownerKind),
-        owner,
+        relativeFile,
+        ownerIdentity,
         name,
     };
-    QString stability = QStringLiteral("semantic");
-    if (owner.isEmpty()) {
-        canonicalParts.append(relativeFile);
-        stability = QStringLiteral("file-semantic");
+    QString stability = qualifiedOwner ? QStringLiteral("semantic")
+                                       : QStringLiteral("file-semantic");
+    // A package records its own display scope. Other legacy owned records
+    // without declaration identity cannot promise cross-snapshot uniqueness.
+    if (!qualifiedOwner && !owner.isEmpty()
+        && !(record.declarationKind == SymbolTaxonomy::DeclarationKind::Package
+             && owner == name)) {
+        canonicalParts.append(QString::number(record.location.position));
+        stability = QStringLiteral("snapshot");
     }
     if (isPositionSensitiveKind(record.declarationKind)) {
         const QString declaration =
@@ -102,8 +164,8 @@ SemanticStableIdentity semanticStableIdentity(
         }
     }
 
-    identity.canonicalIdentity = canonicalParts.join(QLatin1Char('\n'));
-    identity.stableId = digestId(QStringLiteral("zsym-v1-"),
+    identity.canonicalIdentity = encodeIdentityParts(canonicalParts);
+    identity.stableId = digestId(QStringLiteral("zsym-v2-"),
                                  identity.canonicalIdentity);
     identity.exactId = digestId(
         QStringLiteral("zexact-v1-"),

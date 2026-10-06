@@ -1,6 +1,7 @@
 #include "semanticindexsnapshot.h"
 #include "semanticanalysisinput.h"
 #include "diagnosticpublicationpolicy.h"
+#include <zeroslack/documents/editorfileidentity.h>
 #include <QQueue>
 #include <algorithm>
 #include <utility>
@@ -11,7 +12,7 @@ QString recordIdentity(const SemanticSymbolRecord& record)
 {
     QString key;
     const QStringList fields{fileKey(record.location.fileName), record.name,
-        QString::number(int(record.declarationKind)), record.owner.name,
+        QString::number(int(record.declarationKind)), record.stableKey.ownerScope,
         record.type.resolvedTypeName};
     for (const QString& field : fields)
         key += QString::number(field.size()) + ':' + field;
@@ -70,16 +71,45 @@ SemanticIndexSnapshot SemanticIndexSnapshot::fromSymbolRecords(
     }
     for (const QString& file : files)
         result.replaceSymbolShard(file, grouped.value(file));
+    const auto contentIdentities = EditorFileIdentity::lookupKeys(contents.keys());
     for (auto it = contents.cbegin(); it != contents.cend(); ++it) {
-        result.m_fileContents.insert(fileKey(it.key()), it.value());
+        const QString file = fileKey(it.key());
+        result.replaceFileContent(file, it.value(), contentIdentities.value(it.key()));
         // Empty source files still own inputs and diagnostics and must be
         // visible to subsequent scope removal just like files with symbols.
-        if (!result.m_symbolsByFile.contains(fileKey(it.key())))
-            result.replaceSymbolShard(fileKey(it.key()), {});
+        if (!result.m_symbolsByFile.contains(file))
+            result.replaceSymbolShard(file, {});
     }
     for (const auto& diagnostic : diagnostics)
         result.m_rawDiagnosticsByFile[fileKey(diagnostic.fileName)].append(diagnostic);
     return result.withAdditionalRelationships(relationships);
+}
+
+void SemanticIndexSnapshot::removeFileContent(const QString& file)
+{
+    const auto alias = m_contentIdentityByAlias.constFind(file);
+    if (alias != m_contentIdentityByAlias.cend()) {
+        const QString identity = alias.value();
+        m_contentIdentityByAlias.remove(file);
+        auto keys = m_contentAliasesByIdentity.find(identity);
+        if (keys != m_contentAliasesByIdentity.end()) {
+            keys->remove(file);
+            if (keys->isEmpty())
+                m_contentAliasesByIdentity.erase(keys);
+        }
+    }
+    m_fileContents.remove(file);
+}
+
+void SemanticIndexSnapshot::replaceFileContent(
+    const QString& file, const QString& text, const QString& identity)
+{
+    removeFileContent(file);
+    m_fileContents.insert(file, text);
+    if (!identity.isEmpty() && identity != file) {
+        m_contentIdentityByAlias.insert(file, identity);
+        m_contentAliasesByIdentity[identity].insert(file);
+    }
 }
 
 void SemanticIndexSnapshot::replaceSymbolShard(const QString& file,
@@ -254,9 +284,24 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(
     // Rebuild the derived view once, after all input and diagnostic changes.
     result.m_diagnosticView.reset();
     QStringList changedFiles;
+    QSet<QString> contentFiles;
     QSet<QString> removedFiles;
-    for (const auto& update : updates)
+    for (const auto& update : updates) {
         changedFiles.append(update.fileName);
+        if (!update.removed)
+            contentFiles.insert(fileKey(update.fileName));
+    }
+    // Bind this write batch once, including the worker's authoritative full
+    // replacement. Keep applying updates in their original order below;
+    // removals and repeated keys must not be collapsed into a final-state map.
+    QHash<QString, QString> contentIdentities;
+    if (contentFiles.size() == 1) {
+        // No parent can be shared in a one-file delta; retain its direct bind.
+        const QString file = *contentFiles.cbegin();
+        contentIdentities.insert(file, EditorFileIdentity::lookupKey(file));
+    } else {
+        contentIdentities = EditorFileIdentity::lookupKeys(contentFiles.values());
+    }
     const QStringList touchingOwners = relationshipOwnersTouchingFiles(changedFiles);
     QSet<QString> referencingFiles;
     QHash<QString, SymbolStableKey> relocatedKeys;
@@ -277,7 +322,7 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(
             removedFiles.insert(file);
             result.m_symbolsByFile.remove(file);
             result.m_fileOrder.removeAll(file);
-            result.m_fileContents.remove(file);
+            result.removeFileContent(file);
             result.m_rawDiagnosticsByFile.remove(file);
             result.replaceRelationshipShard(file, {});
         } else {
@@ -285,14 +330,16 @@ SemanticIndexSnapshot SemanticIndexSnapshot::withReplacedFiles(
             if (!result.m_fileContents.contains(file)
                 || result.m_fileContents.value(file) != update.content)
                 result.m_rawDiagnosticsByFile.remove(file);
-            result.m_fileContents.insert(file, update.content);
+            result.replaceFileContent(file, update.content, contentIdentities.value(file));
         }
         referencingFiles |= m_symbolFilesByReference.value(file);
         for (const auto& old : getSymbolRecords(file)) {
             const auto current = result.recordForProjectionHandle(old.localHandle);
-            // A missing target removes the reference. A reused handle has the
-            // same declaration identity and can carry a relocated source key.
-            relocatedKeys.insert(symbolStableKeyText(old.stableKey), current.stableKey);
+            // Keep a removed target's unresolved identity. Clearing it would
+            // let legacy name fallback silently bind a different declaration.
+            // A reused handle may carry the same declaration at a new position.
+            relocatedKeys.insert(symbolStableKeyText(old.stableKey),
+                current.stableKey.isValid() ? current.stableKey : old.stableKey);
         }
     }
     for (const QString& file : referencingFiles) {
@@ -399,6 +446,8 @@ qsizetype SemanticIndexSnapshot::logicalBytes() const
     qsizetype bytes = qsizetype(m_symbolCount) * 2048 + qsizetype(m_relationshipCount) * 512;
     for (auto it = m_fileContents.cbegin(); it != m_fileContents.cend(); ++it)
         bytes += (it.key().size() + it.value().size()) * qsizetype(sizeof(QChar));
+    for (auto it = m_contentIdentityByAlias.cbegin(); it != m_contentIdentityByAlias.cend(); ++it)
+        bytes += (it.key().size() + it.value().size()) * 2 * qsizetype(sizeof(QChar)) + 256;
     for (auto it = m_rawDiagnosticsByFile.cbegin(); it != m_rawDiagnosticsByFile.cend(); ++it)
         bytes += it.value().size() * 1024;
     if (m_diagnosticView)

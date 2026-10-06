@@ -669,6 +669,15 @@ void MyCodeEditorState::handleTemplateSlotContentsChange(
     int charsAdded,
     bool updatePresentation)
 {
+    // Document notifications reach every attached view. Only the view whose
+    // synchronous input transaction caused this change may expand linked slots.
+    // A raw document edit (reload, batch rewrite, another view) invalidates the
+    // local session; focus alone cannot identify edits made by a popup/menu.
+    if (synchronousEditTransactionDepth == 0 || synchronousEditIsUndoRedo
+        || !editor || editor->isReadOnly()) {
+        templateSlots.clear(editor, QString(), updatePresentation);
+        return;
+    }
     templateSlots.handleContentsChange(
         editor,
         position,
@@ -905,6 +914,9 @@ FormatterReport MyCodeEditorState::formatDocument(
                 : report.diagnostic);
         return report;
     }
+
+    modes.exit(EditorModeId::TemplateSlots,
+               EditorModeExitReason::ExternalControl);
 
     FormatterTriviaPositionMapper positionMapper(
         oldText,

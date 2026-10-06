@@ -68,11 +68,12 @@ EditorSemanticContextService::definitionSourceNavigationTarget(
 EditorSourceNavigationTarget
 EditorSemanticContextService::editorSourceNavigationTarget(
     const EditorSemanticContext& context,
-    int blockPosition) const
+    int blockPosition,
+    const TSDocument* syntax) const
 {
     return EditorSourceNavigationQuery::editorSourceNavigationTarget(
         context,
-        blockPosition);
+        blockPosition, syntax);
 }
 
 EditorSourceNavigationClickState
@@ -125,15 +126,17 @@ QString EditorSemanticContextService::definitionTooltipText(
 }
 
 SymbolHoverReport EditorSemanticContextService::symbolHoverReport(
-    const EditorSemanticContext& context) const
+    const EditorSemanticContext& context,
+    const SourceIdentifierTarget* sourceIdentifier) const
 {
-    return SymbolHoverService::getInstance()->hoverForContext(context);
+    return SymbolHoverService::getInstance()->hoverForContext(context, sourceIdentifier);
 }
 
 DefinitionPreviewReport EditorSemanticContextService::definitionPreviewReport(
-    const EditorSemanticContext& context) const
+    const EditorSemanticContext& context,
+    const SourceIdentifierTarget* sourceIdentifier) const
 {
-    return DefinitionPreviewService::getInstance()->previewForContext(context);
+    return DefinitionPreviewService::getInstance()->previewForContext(context, sourceIdentifier);
 }
 
 CommandModeCompletionQuery

@@ -66,14 +66,21 @@ void applyCollectorKind(
 
 void finalizeCollectedSymbolRecords(QList<SemanticSymbolRecord>* records);
 
+SymbolStableKey declarationKey(const slang::SourceManager* sm,
+                               const slang::ast::Symbol& symbol);
+void bindAggregateType(const slang::SourceManager* sm,
+                       const slang::ast::Type& type,
+                       SemanticSymbolRecord& record,
+                       QList<SemanticSymbolRecord>& outList);
+
 void emitEnumValueRecords(const slang::SourceManager* sm,
                           const slang::ast::EnumType& et,
-                          const QString& scopeKey,
+                          const SemanticSymbolRecord& owner,
                           QList<SemanticSymbolRecord>& outList);
 
 void emitStructMemberRecords(const slang::SourceManager* sm,
                              const slang::ast::Scope& structScope,
-                             const QString& scopeKey,
+                             const SemanticSymbolRecord& owner,
                              QList<SemanticSymbolRecord>& outList);
 
 SymbolTaxonomy::CollectorKind variableOrNetCollectorKind(

@@ -669,13 +669,24 @@ QStringList EditorCompletionWorkflow::includeFileCandidates() const
     return includeFileProvider(editor->documentFileName());
 }
 
+bool EditorCompletionWorkflow::insertionAllowed(QString* failureReason) const
+{
+    QString reason;
+    const bool allowed = editor && editor->canApplyInsertion(&reason);
+    if (!editor)
+        reason = QStringLiteral("No editable editor tab is available.");
+    if (failureReason)
+        *failureReason = reason;
+    else if (!allowed && editor)
+        emit editor->editorStatusMessageRequested(reason);
+    return allowed;
+}
+
 bool EditorCompletionWorkflow::applyStructuredInsertionPlan(
     const StructuredInlineInsertionPlan& plan,
     QString* failureReason)
 {
-    if (!editor) {
-        if (failureReason)
-            *failureReason = QStringLiteral("No editable editor tab is available.");
+    if (!insertionAllowed(failureReason)) {
         return false;
     }
     if (!plan.ok()) {
@@ -733,6 +744,9 @@ bool EditorCompletionWorkflow::createAndInsertHeaderAtCursor(
     const QString& fileName,
     QString* failureReason)
 {
+    // Before planning or invoking a callback that can create files/open tabs.
+    if (!insertionAllowed(failureReason))
+        return false;
     if (!editor || !includeNewHeaderCreator) {
         if (failureReason)
             *failureReason = QStringLiteral("Header creation is unavailable.");
@@ -907,6 +921,8 @@ bool EditorCompletionWorkflow::showIncludeNewHeaderCompletions(
 bool EditorCompletionWorkflow::applyPackageImport(
     const QString& packageName)
 {
+    if (!insertionAllowed())
+        return false;
     if (!editor || packageName.isEmpty()
         || !inlineAbbreviationSessionValid()) {
         return false;
@@ -950,6 +966,8 @@ bool EditorCompletionWorkflow::applyPackageImport(
 void EditorCompletionWorkflow::applyIncludeCompletion(
     const QString& includePath)
 {
+    if (!insertionAllowed())
+        return;
     if (!editor || includePath.isEmpty())
         return;
 
@@ -994,6 +1012,8 @@ void EditorCompletionWorkflow::applyIncludeCompletion(
 
 void EditorCompletionWorkflow::applyIncludeNewHeaderChoice(const QString& choice)
 {
+    if (!insertionAllowed())
+        return;
     if (!editor || choice.isEmpty())
         return;
 

@@ -94,6 +94,8 @@ struct SignalKernelGraphReport {
     int fanoutGroupingThreshold = 0;
     QList<SignalKernelGraphFanoutGroup> inputFanoutGroups;
     QList<SignalKernelGraphFanoutGroup> outputFanoutGroups;
+    // The shared code preview consumes coordinates from this publication.
+    std::shared_ptr<const SemanticIndexSnapshot> locationSnapshot;
 };
 
 class SignalKernelGraphService

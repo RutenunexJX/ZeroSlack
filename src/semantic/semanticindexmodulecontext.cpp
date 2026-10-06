@@ -91,7 +91,7 @@ QList<QList<SemanticSymbolRecord>> SemanticIndex::getModuleContextSymbolRecordGr
         : moduleEndLineExclusive - 1;
 
     const QList<SemanticSymbolRecord> ownerRecords =
-        getSymbolRecordsByOwner(moduleName);
+        getDeclarationMemberRecords(moduleRecord);
     QList<SemanticSymbolRecord> rangeRecords;
     if (std::any_of(commandKinds.cbegin(), commandKinds.cend(),
                     completionCommandKindIsModuleRange)) {

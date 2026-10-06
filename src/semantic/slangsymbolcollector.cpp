@@ -277,30 +277,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record, variableOrNetCollectorKind(var.getType()));
             record.owner.name = moduleScope;
-            // For enum/struct variables, record the type key in dataType so var.member /
-            // enum-value completion can resolve the type (consumed by get{Struct,Enum}TypeForVariable).
-            // Typedef'd types use the alias name (members/values already emitted at the typedef site).
-            // Inline anonymous types (no alias) have no typedef site, so key members/values by the
-            // variable name here and emit them now.
-            if (record.collectorKind == CollectorKind::EnumVariable
-                || record.collectorKind == CollectorKind::PackedStructVariable
-                || record.collectorKind == CollectorKind::UnpackedStructVariable) {
-                QString typeName = QString::fromStdString(std::string(var.getType().name));
-                if (!typeName.isEmpty()) {
-                    record.type.rawTypeText = typeName;  // typedef'd: emitted at typedef site
-                } else {
-                    const QString key = record.name;  // anonymous: key by variable name
-                    record.type.rawTypeText = key;
-                    const slang::ast::Type& canon = var.getType().getCanonicalType();
-                    if (canon.kind == SymbolKind::EnumType) {
-                        emitEnumValueRecords(sm, canon.as<EnumType>(), key, outList);
-                    } else if (canon.kind == SymbolKind::PackedStructType) {
-                        emitStructMemberRecords(sm, static_cast<const slang::ast::Scope&>(canon.as<PackedStructType>()), key, outList);
-                    } else if (canon.kind == SymbolKind::UnpackedStructType) {
-                        emitStructMemberRecords(sm, static_cast<const slang::ast::Scope&>(canon.as<UnpackedStructType>()), key, outList);
-                    }
-                }
-            }
+            bindAggregateType(sm, var.getType(), record, outList);
             outList.append(record);
             if (cancelled())
                 return;
@@ -349,6 +326,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record, portDirectionCollectorKind(port.direction));
             record.owner.name = moduleScope;
+            bindAggregateType(sm, port.getType(), record, outList);
             outList.append(record);
             if (cancelled())
                 return;
@@ -419,12 +397,14 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 return;
             applyCollectorKind(&record, CollectorKind::Typedef);
             record.owner.name = moduleScope;
-            const QString aliasName = record.name;
+            record.stableKey = declarationKey(sm, typeAlias);
+            bindAggregateType(sm, typeAlias, record, outList);
             const slang::ast::Type& target = typeAlias.getCanonicalType();
             if (target.kind == SymbolKind::EnumType) {
                 record.type.rawTypeText = QLatin1String("enum");
                 outList.append(record);
-                emitEnumValueRecords(sm, target.as<EnumType>(), aliasName, outList);
+                if (record.type.stableKey == record.stableKey)
+                    emitEnumValueRecords(sm, target.as<EnumType>(), record, outList);
             }
             else if (target.kind == SymbolKind::PackedStructType
                      || target.kind == SymbolKind::UnpackedStructType) {
@@ -443,7 +423,8 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
                 const slang::ast::Scope& structScope = packed
                     ? static_cast<const slang::ast::Scope&>(target.as<PackedStructType>())
                     : static_cast<const slang::ast::Scope&>(target.as<UnpackedStructType>());
-                emitStructMemberRecords(sm, structScope, aliasName, outList);
+                if (record.type.stableKey == record.stableKey)
+                    emitStructMemberRecords(sm, structScope, record, outList);
             }
             else {
                 outList.append(record);

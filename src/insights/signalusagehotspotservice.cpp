@@ -30,13 +30,6 @@ QString rootNameForAccessPath(const QString& accessPath)
     return dotIndex < 0 ? normalized : normalized.left(dotIndex);
 }
 
-QString memberNameForAccessPath(const QString& accessPath)
-{
-    const QString normalized = normalizedAccessPath(accessPath);
-    const int dotIndex = normalized.lastIndexOf(QLatin1Char('.'));
-    return dotIndex < 0 ? QString() : normalized.mid(dotIndex + 1);
-}
-
 SymbolTaxonomy::SemanticMetadata metadataForRecord(
     const SemanticSymbolRecord& record)
 {
@@ -234,20 +227,8 @@ SemanticSymbolRecord memberRecordForAccessPath(SemanticIndex* index,
     if (!index || accessPath.isEmpty())
         return {};
 
-    QString structTypeName = root.type.resolvedTypeName;
-    if (structTypeName.isEmpty())
-        structTypeName = root.type.rawTypeText;
-    const QString memberName = memberNameForAccessPath(accessPath);
-    if (structTypeName.isEmpty() || memberName.isEmpty())
-        return {};
-
-    const QList<SemanticSymbolRecord> members =
-        index->getStructMemberRecords(structTypeName);
-    for (const SemanticSymbolRecord& member : members) {
-        if (member.name == memberName)
-            return member;
-    }
-    return {};
+    return index->resolveMemberPath(root,
+        normalizedAccessPath(accessPath).split(QLatin1Char('.'), Qt::SkipEmptyParts).mid(1));
 }
 
 QString subjectAccessPathForQuery(const SignalUsageHotspotQuery& query,

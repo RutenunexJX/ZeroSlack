@@ -7,9 +7,10 @@
 #include <QString>
 #include <QStringList>
 #include <memory>
+#include <QPointer>
 
 class DocumentModel;
-class SemanticIndex;
+class SemanticIndexSnapshot;
 
 struct CodePreviewQuery {
     RtlInsightCodeLink codeLink;
@@ -18,6 +19,7 @@ struct CodePreviewQuery {
     QString detail;
     int contextBefore = 4;
     int contextAfter = 7;
+    std::shared_ptr<const SemanticIndexSnapshot> locationSnapshot;
 };
 
 struct CodePreviewReport {
@@ -38,6 +40,10 @@ struct CodePreviewReport {
     QStringList codeLines;
     QString caretLine;
     QString unavailableReason;
+    bool stale = false;
+    QString sourceDescription;
+    QString documentId;
+    int documentRevision = 0;
 };
 
 class CodePreviewService
@@ -45,21 +51,18 @@ class CodePreviewService
 public:
     static CodePreviewService* getInstance();
 
-    explicit CodePreviewService(SemanticIndex* semanticIndex = nullptr);
+    CodePreviewService();
     ~CodePreviewService();
 
-    void setSemanticIndex(SemanticIndex* semanticIndex);
     void setDocumentModel(DocumentModel* documentModel);
 
     CodePreviewReport previewForCodeLink(
         const CodePreviewQuery& query) const;
 
 private:
-    SemanticIndex* index = nullptr;
-    DocumentModel* documents = nullptr;
+    QPointer<DocumentModel> documents;
     static std::unique_ptr<CodePreviewService> instance;
 
-    QString previewTextForFile(const QString& fileName) const;
 };
 
 #endif // CODEPREVIEWSERVICE_H

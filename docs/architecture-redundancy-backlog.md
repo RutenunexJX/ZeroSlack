@@ -1,23 +1,105 @@
 # ZeroSlack 架构与冗余逻辑待办
 
-- 记录日期：2026-10-04；最近更新：2026-10-05。
+- 本次发布授权（2026-10-06）：用户明确要求 **“push 并打包正式包”**，将已验收 R1 六项及 R2 AR-39/40 收入 0.31.24。发布前 1,570 个源码文件与接受清单逐一核对；版本和发布说明作为单独增量记录。暂存验证、远端提交和坚果云替换的最终结果见 `build/validation/20261006-goal-release/RELEASE.md`，不以本条代替运行或发布完成证据。
+
+- 持续优化授权（2026-10-05）：用户明确要求依照 `C:/Users/14971/.codex/skills/architecture-improvement/SKILL.md` 持续多轮架构优化并用 goal 模式监督；本次先完成六项，再按覆盖缺口完成 R2 两个根因，现两批开发与独立验收均完成。执行侧开发与自测，统筹在完整交付后统一验收，不进行执行中实时互验。完整目标审计见 R2 `coordinator-review/GOAL-COMPLETION.md`，不以全仓“零未知”为无限停止条件，也不自动发布。
+- 本次发布前正式基线：0.31.23 / `ec4db54e4fca52f9375fa0aa505c18f41ad73922` 已 push、打包并替换本机坚果云，证据见 `build/validation/20261005-followup-ten-release/RELEASE.md`。之后 R1 六项接受（49 文件变更集合 e1923b6ecb79e823e8464ac3954be9c25657094a77e087e7993278b8a666c6ca）；R2 三交接受完整源码集合 59caa493244d1ce0f8f8c304d9fb53ed7ee4aed58ac28be42f18879726a0682e，AR-39/40 均已闭环，证据见 R2 coordinator-review/ACCEPTANCE.md。此前 Goal 验收现场包含未提交修改；0.31.24 的完整提交和包身份以本次发布记录为准。
+- 记录日期：2026-10-04；最近更新：2026-10-06。
 - 历史审查基线（AR-01 至 AR-11）：ZeroSlack 0.31.20，提交 `9198d9a3116226a4640e11e8fc72651c665366d4`。
 - 历史审查基线（AR-12 至 AR-28 首次发现）：ZeroSlack 0.31.21，提交 `de7ce08b01d2f9e287f8643b204f87032074eb5a`。
-- 最新审查基线：提交 `3f51c1bfdce116c1089a2fcd4c100ec212b28b53`（0.31.22）加已验收的 71 个实施文件，源码集合 `f9cc94bb281c0ca68cdcb3bacaf45e3ee554e599f86b48ac9b7bbf917a9d1c29`；仍是未提交工作区，不能把本轮发现描述为正式包的新回归。
-- 当前授权（2026-10-05）：用户要求 **“先 push 并打包正式包，之后执行所有 6 项待修改项”**。先将已验收十项定版为 0.31.23，暂存包验证、push 并替换本机坚果云后，再执行 AR-34/35/36、AR-27 增补、AR-37/38。发布记录目录为 `build/validation/20261005-followup-ten-release/`；六项实施任务目录为 `build/coordination/20261005-zeroslack-followup-six/`。此处授权不表示六项已经实施或验收。
+- 历史接续静态审查基线：提交 `3f51c1bfdce116c1089a2fcd4c100ec212b28b53`（0.31.22）加已验收的 71 个实施文件，源码集合 `f9cc94bb281c0ca68cdcb3bacaf45e3ee554e599f86b48ac9b7bbf917a9d1c29`；后来已收入 0.31.23。该历史现场不是当前正在修改的全部源码。
+- 当前实施来源（2026-10-05）：用户要求 **“先 push 并打包正式包，之后执行所有 6 项待修改项”**。0.31.23 已完成暂存包验证、push 及本机坚果云替换，六项 AR-34/35/36、AR-27 增补、AR-37/38 已完整交付并通过统筹验收，见任务目录 coordinator-review/ACCEPTANCE.md。发布记录目录为 `build/validation/20261005-followup-ten-release/`；六项任务目录为 `build/coordination/20261005-zeroslack-followup-six/`。之后的 Goal 授权覆盖后续开发与验收，不重复发布这一版。
 - 上一阶段指示（2026-10-05）：**“记录；继续分析”。** 本轮仅阅读源码、测试断言、本机 Qt 文档与既有记录并更新本文，未修改产品、构建、运行测试、派发或发布。前批 10 项已经统筹验收通过，任务与验收仍见 `build/coordination/20261005-zeroslack-followup-ten/`，不将本轮新增场景倒写为其已覆盖范围。
 - 发布状态：AR-01 至 AR-11 已随 0.31.21 发布；AR-12 至 AR-28 原约定实施范围已完成并通过验收，0.31.22 已 push 并替换本机坚果云正式包。发布记录为 `build/validation/20261005-all-backlog-release/RELEASE.md`。
 - 本批完成：AR-01、AR-13、AR-19 的新调用链缺口，AR-16 的同根因优化，AR-22 的恢复风险，以及新增 AR-29 至 AR-33，共 10 项已开发并验收通过。发现时分级为 7 项确定缺陷、1 项待验证风险、2 项可选优化；AR-22 已经故障注入确认并修复。原验收记录及其所验证场景保留，不将新证据倒写为旧测试已经覆盖，也不把所有新发现称为本版引入的回归。
-- 接续分析：新增 AR-34 至 AR-36 三项确定缺陷（源码推导），给 AR-27 增补同次上下文采集的可选复用优化。原 AR-27 的过滤缓存及失效修复保持已验收状态。本轮无新增运行证据、无性能收益声明，全部新增工作待实施授权。
-- 本次继续记录：上述四项保留；新增 AR-37（新建文件缺少排他创建约束，确定缺陷）和 AR-38（导航失败后历史已被消费，恢复策略待验证）。补查浮动面板关闭及模板模式生命周期，未将缺少产品触发路径的假设计入缺陷。
+- 历史接续分析：当时新增 AR-34 至 AR-36 三项确定缺陷（源码推导），给 AR-27 增补同次上下文采集的可选复用优化；当时没有运行证据。后来均已获实施授权并进入 R1。原 AR-27 过滤缓存及失效修复的验收仍有效，R1 同次原文解析复用已单独验收，不覆盖历史证据边界。
+- 历史第二次接续记录：新增 AR-37（排他创建，确定缺陷）和 AR-38（导航失败后的历史恢复，当时待验证）。浮动面板关闭及模板模式生命周期的静态保护被保留；后来的 R2 用真实新场景确认 AR-39，不将它倒写为旧审查已经运行复现。
 - 首次统筹核对与返修证据：`build/coordination/20261005-zeroslack-all-backlog/coordinator-review/REVIEW-01.md`、`REWORK-01.md`；原探针冻结基线通过、本轮首交失败。此问题并入 AR-13，不另增同根因待办。
 - 上一轮实施任务与验收条件：`build/coordination/20261005-zeroslack-all-backlog/TASK.md`。历史章节保留授权前的静态审查基线；其中“未运行复现”等描述发现时的证据。最新章节则按 0.31.22 当前源码重新记录。
-- 规则：`C:/Users/14971/.codex/skills/appsuite-scoped-execution/SKILL.md` v1.3，已通知六个执行侧。规则通知不派发开发任务。
+- 当前规则：`C:/Users/14971/.codex/skills/architecture-improvement/SKILL.md` v1.0、`appsuite-scoped-execution/SKILL.md` v1.4，本轮已通知 ZeroSlack 执行侧读取应用。历史 v1.3 曾通知六个执行侧；规则通知本身不派发额外产品开发任务。
 - 上轮执行及验收任务：`build/coordination/20261004-zeroslack-eleven-architecture/TASK.md`；发布记录：`build/validation/20261005-ela-architecture-release/RELEASE.md`。
 - 证据边界：AR-01 至 AR-11 的“发现与影响”“代码依据”保留 0.31.20 基线的静态记录，其完成状态依据完整验收及发布记录。AR-12 起的初始发现依据 0.31.21 源码调用链，当时仅阅读测试替身与断言；授权后的实施已构建、回归及测量。“确定缺陷”表示源码存在完整可达的违约路径，初始静态记录不代表已经复现；实施后的实测结果与限制见本轮验收记录。
 - 完整验收记录：AR-01 至 AR-11 见 `build/coordination/20261004-zeroslack-eleven-architecture/coordinator-review/ACCEPTANCE.md`，AR-12 至 AR-28 原实施范围见 `build/coordination/20261005-zeroslack-all-backlog/coordinator-review/ACCEPTANCE.md`；本批 10 项补充场景见 `build/coordination/20261005-zeroslack-followup-ten/coordinator-review/ACCEPTANCE.md`。逐项证据及源码/二进制身份见各目录的 `acceptance.json` 和 `accepted-source-runtime-identity.json`；各自证据只覆盖对应任务范围。
 
 历史观察：主语义流水线已经收敛，部分调用方仍重复计算、维护状态或实现规则；当时 CLI 在取得统一快照后仍额外分析关系。AR-01 至 AR-11 已按上轮验收结果处理，不代表当前实现仍存在这些问题。后续发现从 AR-12 起单独记录，不能据其“新发现”推断由最近修改引入。
+
+## Goal 持续优化覆盖与批次
+
+方法采用 `architecture-improvement` v1.0 和 `appsuite-scoped-execution` v1.4；完整规则位于 skill，本文只保存 ZeroSlack 的范围、证据、条目和阶段，不另造一份重复通用规范。
+
+| 批次 / 路径 | 当前状态 | 进入及完成条件 |
+| --- | --- | --- |
+| R1：AR-34/35/36、AR-27 增补、AR-37/38 | 六项完整验收通过 | 三次交付、两次 AR-36 返修已闭环；最终独立 8/8 回归。生产批量入口也复用共享身份绑定；独立 2,001 文件全量 222.0222→140.9148 ms，旧正式版 13.9828 ms，明确保留后台身份绑定代价。预览查询已通过，证据见 `build/coordination/20261005-zeroslack-followup-six/coordinator-review/ACCEPTANCE.md`。接受集合 e1923b6e…6ca；未发布 |
+| R2：辅助编辑视图、模板联动、菜单/程序化撤销、声明成员身份 | 三交完整验收通过，AR-39/40 关闭 | 外部 ID 与声明/成员路径两次返修均闭环；独立 8 组配对对照、5/5 GUI/语义/关系目标、CLI 38 项通过；V2 48 条外部协议检查按未变范围继承。V1/V2/V3 源码、运行与证据保留。接受见 `build/coordination/20261006-zeroslack-goal-r2/coordinator-review/ACCEPTANCE.md`；未发布 |
+| 覆盖补查：补全类型/排名与候选身份；其余 CLI 命令、集成适配和配置边界 | 本次约定主要调用链已按范围收拢 | COORDINATOR-COVERAGE.md 记录 12 条调用链的源码/运行结论与继承边界；类型/身份的具体缺陷已入 R2 修复。其余补查未取得需要新建高/中优先级条目的违约证据；平台/资料限制明确保留，不为了凑批次制造条目 |
+| 历史已验收范围 | 原证据按范围保留 | 相关源码、依赖或配置变化时使受影响的覆盖项退回待审；没有新证据不重开。原两项基线断言失败和缺少资料不记为通过 |
+| 其他五个应用内部、热点/果核图内部重构、缺失 SuiteApp SDK、被排除私有/版权夹具 | 范围外，沿用用户安排 | ZeroSlack 对它们的现有接入/共享协议仍按实际可达路径审查；不擅自恢复依赖或扩展到其他仓库 |
+
+各轮沿职责与依赖、数据归属与复用、状态转换、异步生命周期、持久化、撤销与恢复记录真实场景，覆盖单位是调用链及状态组合。新增发现先分级、根因去重；对高/中优先级缺陷形成实施闭环，对风险补最小证据，对性能优化保留同条件前后数据。没有问题数量指标，也不把整个项目“零未知”作为无限停止条件。
+
+goal 的完成条件：当前及后续改进批已按授权完成，声明范围中适用高风险场景有证据，纳入的高/中优先级问题已修复验收，或具有明确依据的受限/范围外记录；剩余覆盖及性能代价如实交付。仅启动执行或完成一次源码阅读不能将 goal 标记 complete；未运行/受限不能登记为验收通过。
+
+## Goal R2 补查：共享文档与视图交互模式（2026-10-05）
+
+基线为冻结的 0.31.23 / `ec4db54e4fca52f9375fa0aa505c18f41ad73922`。读取 `git show` 和已冻结源码，隔离探针链接经 SHA-256 校验的正式版 DLL/import library；未使用执行侧正在重建的 DLL。证据位于 `build/coordination/20261005-zeroslack-goal-r2-analysis/`，`probe-identity.json` 记录基线、实际二进制及探针身份。此阶段不是对未交付 R1 的中途验收。
+
+| 调用链 | 维度与场景 | 状态与证据边界 |
+| --- | --- | --- |
+| 主编辑器 → 已打开的临时编辑器 → 同一 SharedDocument → 各自 contentsChange 消费者 | 数据归属、状态转换；失焦主视图保留模板联动，辅助视图普通输入 | 该范围已审；真实 TabManager 创建/注册辅助视图、同一 QTextDocument、焦点切换和键盘编辑已复现越界联动，见 AR-39 |
+| 同一共享文档的两个模板控制器 | 职责、重入、撤销；两个公共模板模式入口同时激活再编辑 | 控制器边界已实测重复镜像；完整 MainWindow 菜单/用户模板路径尚待实施回归补齐。共享文档 undo 能恢复原文，不把额外写入误报为已证明的不可恢复损坏 |
+| 单视图模板联动 → public undo/redo | 撤销与恢复；联动后程序化撤销和重做 | 本次探针均恢复预期文本，不登记缺陷；不能由此推出所有菜单、外部编辑和双视图组合都已覆盖 |
+| 视图重绑/关闭、主 tab 切换、全局控制器打开 | 生命周期与既有退出保护 | 源码保护已核查：TabManager 重绑/关闭、主 tab 切换及 MainWindow 全局控制器打开会退出模式；辅助视图普通 FocusIn 没有 tab group，不能触发该保护 |
+| 文件创建后开 tab/插入失败；补全排名及其余 CLI/适配边界 | 持久化/恢复与其他尚未闭合维度 | 部分已审，不能从本节实测外推为通过；按 Goal 批次继续补查 |
+
+补查创建部分失败：`EditorCoordinator::createIncludeNewHeader` 在文件创建成功但开 tab 失败时明确提示 “Created include file but could not open it”，并返回失败；`openUserTemplateFile` 对开 tab 失败也返回失败，已存在文件可再次打开。持久文件并不承诺被编辑器 Undo 删除，不能仅据“留下文件”认定事务缺陷。输入检查与最终插入间的约束属于 R1 AR-34；待其完整交付再核对，不在开发中重复验收。
+
+2026-10-06 接入及 CLI 覆盖补充（仍为 ec4db54e 静态核查，未为未变模块重复构建）：
+
+| 模块/调用链 | 场景和结论 | 验证边界 |
+| --- | --- | --- |
+| NativeContextView → xIPs/SimDock provider | 宿主先检查 GUI 线程、Qt 版本、ABI、方法返回类型和 QWidget 所属；DLL 保留到进程结束避免回调悬空；重复激活幂等，错误态可重试，retired 态禁止再次激活；busy/modal 拒绝关闭并保留 Cancel/Stop | 所列宿主路径源码已审，未发现新的确定缺陷。正式包原生集成的 3/0 结果见 0.31.23 RELEASE.md；后续若涉及这些文件则需重新判断证据有效性，不覆盖外部应用内部行为 |
+| XipsHostBridge → 导出完成回执 → references.json | 回执保留原 workspace，不借当前 workspace 改写来源；路径/联接检查，锁内读取，坏 JSON/未知 schema 拒绝覆盖，QSaveFile 检查完整写入/commit | 源码保护成立；不宣称已对任意不协作外部进程、所有系统平台组合做压力测试 |
+| CLI context/symbol/impact → PreparedIndex → 输出 | context 取已捕获文本并核对行范围；查询只消费 prepared symbols/relationships；输出前共同校验源文件及依赖，新缓存只在成功时写入，失败返回错误 envelope | 原 AR-01/33 的冻结输入及预算实测证据保留；本次补查这些实际消费者，没有发现另一次源文本重读。impact 最多 8 层，不在缺少实测收益时另建图缓存 |
+| GlobalControlCoordinator → GlobalControlPanel → 候选插入 | 冻结版继续核查：面板是 Qt Popup；Tab/Backtab 在 handleKey 中消费并切换候选类别；选择时先 hide，再派发。普通切 tab 点击会结束弹层，没有查到产品定义的“保持此弹层同时切编辑 tab”快捷键 | 仅支持所列正常交互的源码保护。Symbol 分支只有 revision 检查的事实保留；没有用测试直接改 active editor 来冒充真实用户路径，也未证明所有程序化异步切换组合均安全；不据缺少单个字段直接登记确定缺陷 |
+| SuiteApp SDK provider → sourceSnippet | `suiteappintegration.cpp:155` 仍以空文本触发磁盘回退，属于 AR-36 相同输入契约的另一个消费者 | 该实现只有 SDK 构建启用才可达，本机 SDK 缺失且用户明确暂缓。记为 **AR-36 范围外消费者，待 SDK 恢复时迁移共享预览输入并验证**，不说已修复，不另外制造编号，也不擅自恢复 SDK 开发 |
+
+### AR-39：视图局部模板控制器把其他视图的文档修改当作自身联动输入
+
+**确定缺陷 / 高；本轮冻结版实测。进度：R2 完整验收通过，V3 实际产品 89 检查独立复跑通过。**
+
+2026-10-06 首交接受边界：复用既有同步编辑事务与模式控制器，外来视图/无事务/UndoRedo 不能镜像，普通失焦退出、PopupFocusReason 保留合法菜单操作，workspace 切换撤销权限。真实 MainWindow 模板/编辑实例槽位、SharedDocument 双向交错、双控制器、公共/菜单/键盘撤销、外部事务/格式化、只读、辅助视图重绑/关闭及实际 workspace 切换通过；详细范围见 R2 REVIEW-01 及 89 项产品契约日志。以下保留发现时的负例与初始验收要求，不把它们改写成当时已验证。
+
+可达场景：同一文件的临时编辑器已经打开，回主视图启用带重复槽位的模板编辑，再把焦点转入临时编辑器；辅助视图没有启用模板模式，仅改选中的一处文本。预期只有选中范围被修改，实际失焦主视图的槽位控制器同时修改另一处。探针中第一处 `rst_n → reset_n` 使未选中的第二处也变成 `reset_n`。继续用两个实际公共模板控制器入口激活相同槽位后，第二处变成 `reset_n_n`，证实两个观察者均写回共享文档的重入后果。后者是控制器级实测，不冒充已运行完整 MainWindow 菜单流程。
+
+链路与现有保护：`MainWindow::ui.temporaryEditor.open` → `TemporaryEditorContextProvider` → `TemporaryEditorSession::ensureEditorFor/activateEntry` → `TabManager::createAuxiliaryView` → `SharedDocument::attachView`，辅助视图可编辑且与主视图共享文本；所有视图分别连接 `contentsChange`（`editorruntime.cpp:1328`、`:1726`）。`EditorTemplateSlotController::handleContentsChange`（`:637`）只检查本控制器 active、范围和本地重入标记，随后 `mirrorLinkedEdit`（`:775`）写回相同文档；没有编辑发起视图/交互所有权。`MyCodeEditor::focusOutEvent`（`:2291`）不退出模板模式，TabManager 的 FocusIn 只有命中 tab group 才切换活跃 tab（`:2214`），辅助视图不在其中。普通 tab 切换、重绑、关闭、全局控制器打开及键盘撤销的退出保护真实存在，但不覆盖这个输入序列。
+
+建议归属：由编辑交互/共享文档边界明确一次可写交互的所有者及发起来源，模板控制器只对有效的自身编辑执行镜像；复用现有 mode controller、document identity 和视图注册/生命周期，不能只在一个临时窗口按钮回调里清模式，也不要新增另一个权威文档副本。选择失焦退出还是保留但限制写入时，应保证弹出菜单、补全、模板内部镜像、正常鼠标操作和批量外部编辑的语义。
+
+验收：主/辅助视图交错输入只影响授权范围；两个视图不能重复镜像；主/辅助关闭、重绑和普通 tab 切换不残留写入权限；正常同视图联动、Tab/Shift+Tab/Escape、公共及菜单 Undo/Redo 仍成立；通过真实模板/编辑槽位入口和真实 SharedDocument 路径验证。外部格式化/事务修改不得被一个不属于它的模板会话扩写。保留基线负向探针和修改后的源码/DLL身份。与 AR-02 的共享语法解析、AR-19 的事务回滚分别有不同根因，不重开这两条。
+
+### AR-40：模板与类型补全用名称代替声明成员身份
+
+**确定缺陷 / 中；2026-10-06 冻结版实测。进度：R2 三交完整验收通过，声明/类型、外部 ID 及成员访问配对均已闭环。**
+
+2026-10-06 最终接受：V3 把实际声明与具体路径绑定为同一事实，统一赋值、条件、timing、clock/reset 消费；单次 AST 遍历和局部声明复用替代三次独立采集。已绑定但无法解析时保守失败，旧无绑定事实兼容回退保持。独立 8 组零诊断实际 Slang 对照全部通过，包括六组原失败和两个正常语义；独立 5/5 GUI/语义/关系目标及 CLI 38 项通过。V1 的真实类型/报告适配、导航/预览/历史与 V2 的 48 条外部 CLI 协议证据按未变边界继承。下文保留历次发现和返修时的结论，不将其改写为当时已经通过。当前接受范围、快照既有证据合并策略及图绘制限制见 `coordinator-review/ACCEPTANCE.md`。
+
+2026-10-06 第二交返修：V2 源码/运行/证据身份及 V1 冻结内容核对通过，独立 CLI 48 项断言、CLI 38 个 Qt 测试及 4/4 GUI/关系目标通过。共同语义 ID v2、完整 owner 链、相对路径和缓存 5 已消除首交的外部碰撞。不过 `SemanticValueReference` 与独立 paths 列表在 `resolveValueAccesses()` 按同名 root 重新配对，真实 Slang 零诊断输入 `p_a::item.left ^ p_b::item.right` 的赋值/条件均错误生成四种声明/路径组合。证据见 `coordinator-review/v2/member-access-pairing/results.json`；它是实际捕获→快照→关系构建，不是手写事实，CLI JSON 不暴露 accessPath 因而不能代替此验证。已按 `REVIEW-02.md` 要求共同事实中绑定实际声明和具体路径，统一赋值/条件/timing 消费、完整配对去重和有绑定输入的保守失败。timing 目前为源码同类风险，不称已实测。V2 的 1,698 份交付文件已冻结，第三交须使用新目录；同属 AR-40，不新增编号。
+
+第二交冻结对照补充：准备第三交独立验收时，仅运行冻结 V2，`coordinator-review/pairing-contract/v2-ready/results.json` 的 8 组输入全部零诊断。6 组证实时序 sensitivity、clock/reset、同声明多成员及共享 include 嵌套别名也存在同类错配/漏路径；单成员不作为整值桥、标量整值直接转发两组正常。上述 timing 源码风险因此进一步取得运行证据，保留派发时的原结论。探针准备阶段自身的修正见同目录 README，不冒充产品失败，不对执行中的第三交进行验收。
+
+2026-10-06 首交返修：实际 Slang、增量 owner/type key、模板大小写及 include 来源、MainWindow 候选/插入/撤销均通过；CLI 缓存也保存了新 ownerKey/typeKey。然而共同 `semanticStableIdentity()` 仍用 kind/owner.name/name 生成旧 v1 ID。两个模块内的同名 `state_t::IDLE` 在精确键不同的情况下导出相同 ID 和 URI；真实 `impact --symbol <top_a 的 exactId> --depth 1` 仅一个 seed，却包含另一模块的 IDLE 和关系。`symbol` 的关联边也使用碰撞 ID。证据见 R2 `coordinator-review/cli-identity/results.json`。这是原有同根因消费者的遗漏，不说是新引入回归，也不新开编号。已要求执行侧统一身份协议及版本/缓存策略、保留行移动和 workspace-relative 稳定性、补真实 CLI 回归后完整交付；不只对 impact 加文件过滤。首交及统筹通过/失败证据冻结在 `delivery-v1/`。
+
+同根因消费者补充（2026-10-06）：实际 Slang 解析同文件两个合法模块，各自有同名 payload_t / state_t 及 item / state 变量；top_a 的 struct 成员、预期 enum 值和 visible 查询混入 top_b 的 beta / B_IDLE / B_RUN，实际 EditorInsertPaletteService 同样暴露。将 top_b 的类型改名后对照正常。证据 `build/coordination/20261005-zeroslack-goal-r2-analysis/type-identity/results.json` 保留源文本/摘要、真实记录、六个生产查询输出及冻结 DLL/探针身份；尚未运行 MainWindow 上下文采集和最终插入。归属/类型已有 stableKey 字段但实际采集为空，查询仅用 rawTypeText / owner.name 关联。同一源文件过滤无法区分这些声明。修复覆盖采集 → 快照/增量/序列化 → CompletionService → palette；合法别名/import/include/匿名类型与旧记录歧义须有回归。共享 Definition/SignalJourney/hotspot 调用边界一并审查，图内部重构仍排除。合并 AR-40，避免为每个查询重复列同根因。
+
+真实入口是插入面板的 Instantiate：`EditorInsertPaletteService::appendSemanticTemplates` → `CompletionService::commandSymbolCompletionItem` → `moduleInstantiationTemplateForRecord` → `uniqueOrderedModuleMembers`。最后一层对 `record.name.toCaseFolded()` 去重，把语言中区分大小写的端口、参数错误合并。大小写宽松匹配是候选搜索的显示策略，不等于声明身份。
+
+基线探针经实际 `SlangManager::extractSymbolRecords` 解析 `module case_child #(parameter WIDTH=1, parameter width=2)(input logic a, input logic A); endmodule`；索引正确包含 WIDTH、width、a、A 四条声明，生产用 CompletionService 的模板却只生成 `.WIDTH(WIDTH)` 和 `.a(a)`，丢弃另外两条。证据同 `20261005-zeroslack-goal-r2-analysis/probe.log` 与 `probe-identity.json`；这是实际解析器、索引和模板生成链路实测，尚未运行完整 MainWindow 插入交互。
+
+同一归属契约的补充场景：`recordsForSelectedModule`（`completionservicecommand.cpp:220`）先按 owner.name 收集所有同名模块成员，在所选模块文件中没有记录时回退到全部 ownerRecords。探针分别由实际 Slang 解析 a.sv 的无端口 `same_child` 和 b.sv 的带 `other_port` 的 `same_child`，将解析记录装入真实 SemanticIndex；选择 a.sv 声明却生成 b.sv 的 `.other_port(other_port)`。这是索引消费者边界实测，完整项目分析/候选面板组合仍需回归补齐，不宣称解析器一定在每一种重复定义配置中发布两条声明。共享记录已有 `SemanticSymbolOwner::stableKey`（`include/zeroslack/semantic/semanticindex.h:69`），应先核实并复用，而不是仅去掉大小写折叠后继续跨声明借用成员。
+
+归属与复用：修复实例化成员选择/去重的语义身份约束；复用已有语义 record/owner/source identity，保留精确大小写并约束所选声明。核查 include 中声明的参数/端口不能被简单“同文件”过滤掉；核查旧记录缺少 owner identity 时的保守兼容，避免为本问题引入第二套全局符号索引，也不要把用户命令缩写的不区分大小写策略一并改掉。
+
+验收：真实源码中的大小写不同参数和端口全部按源顺序生成，槽位偏移正确；重复语义记录不多插一遍；普通模块、无参数模块、多个文件中同名模块的既有隔离行为保留；插入面板实际插入和一次 Undo/Redo 正常。新增测试用真实解析记录为主，不只用手写 record 掩盖上游语义。
 
 ## 接续静态审查：文件创建、导航恢复与界面生命周期（2026-10-05，第二轮）
 
@@ -451,18 +533,22 @@ Settings Center 已有 expectedRevision，但“检查版本”和 `QSaveFile::c
 | AR-24 | Pinloom 异步创建回调使用可变的当前链接来源 | 高 | 已完成，统筹验收通过 |
 | AR-25 | Pinloom 链接存储的加载失败与写入约束未闭环 | 高 | 已完成，统筹验收通过 |
 | AR-26 | CLI 按文本行解析 Git 文件名，遗漏被转义路径的关联 | 中 | 已完成，统筹验收通过 |
-| AR-27 | 模板面板输入复用及同次上下文采集 | 中 | 原过滤缓存及目录失效已验收；新增同次原文重复解析为可选优化，待评估 |
+| AR-27 | 模板面板输入复用及同次上下文采集 | 中 | 原过滤缓存及目录失效已验收；R1 同次解析复用也已验收，原文 2→1，30 进程证据见 R1 ACCEPTANCE |
 | AR-28 | 工程配置加载失败被当作有效默认配置继续使用 | 高 | 已完成，统筹验收通过 |
 | AR-29 | 多进程恢复记录缺少编辑会话所有权 | 高 | 会话隔离、租约及认领完成，两进程回归通过；本批验收通过 |
 | AR-30 | 工程配置与设置提交的基线冲突语义不统一 | 高 | 草稿基线与协作锁内复查完成，两进程回归通过；本批验收通过 |
 | AR-31 | 批量编辑重复扫描、转换同一文本坐标 | 中 | 索引及偏移复用完成，本批验收通过；两组 400 处编辑实测约 31.6/34.9 倍 |
 | AR-32 | 高风险编辑的恢复能力、工作流状态与面板归属脱节 | 高 | 事务归属、重试及显式释放能力贯通面板，本批验收通过 |
 | AR-33 | CLI bundle 固定内容及首次链接块遗漏组合预算 | 中 | 完整组合预算及边界回归完成，本批验收通过 |
-| AR-34 | 结构化插入及关联文件创建绕过可写性约束 | 高 | 新发现，源码推导；未实施 |
-| AR-35 | 导航行级识别与共享语法的完整 token 契约不一致 | 中 | 新发现，源码推导；未实施 |
-| AR-36 | 预览文本来源、有效空内容与语义位置版本脱节 | 中 | 新发现，源码推导；未实施 |
+| AR-34 | 结构化插入及关联文件创建绕过可写性约束 | 高 | R1 已完成，统筹独立验收通过 |
+| AR-35 | 导航行级识别与共享语法的完整 token 契约不一致 | 中 | R1 已完成，统筹独立验收通过 |
+| AR-36 | 预览文本来源、有效空内容与语义位置版本脱节 | 中 | R1 已完成，统筹独立验收通过 |
+| AR-37 | 新建文件缺少排他创建语义 | 高 | R1 已完成，统筹独立验收通过 |
+| AR-38 | 导航跳转失败已消耗历史 | 中 | R1 基线负例及修复后实际 TabManager 回归通过，已验收 |
+| AR-39 | 共享文档的多个视图模板控制器越界及重复镜像 | 高 | R2 完整验收通过，V3 产品契约独立复跑通过 |
+| AR-40 | 声明成员身份：实例化大小写误合并、跨声明借用及同名类型补全混用 | 中 | R2 完整验收通过；外部 ID 及声明/成员路径两次返修均闭环 |
 
-AR-01 至 AR-11 及 AR-12 至 AR-28 原 TASK 的实施和验收记录均保留，已发布 0.31.22。前批授权的 10 项后续缺口、风险与优化已按范围关闭，修改仍在工作区、尚未发布。本轮新增 AR-34 至 AR-36 及 AR-27 优化增补仍待处理；旧失败或缺失夹具不记为通过。
+AR-01 至 AR-11 及 AR-12 至 AR-28 原 TASK 的实施和验收记录均保留；前批 10 项后续缺口已随 0.31.23 发布。本次 Goal 的 R1 六项和 R2 AR-39/40 已完整验收，新增已纳入问题全部闭环；旧失败、缺失夹具及既定范围外事项不记为通过。目标完成审计见 R2 GOAL-COMPLETION.md，未自动发布。
 
 以下保留历史发现、原执行顺序及验收说明；当前完成状态以本页待办总览及本批最终验收为准。
 
