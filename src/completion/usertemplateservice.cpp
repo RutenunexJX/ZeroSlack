@@ -134,12 +134,12 @@ bool rangeWithinText(int start, int length, const QString& text)
 {
     if (start < 0)
         return true;
-    return length >= 0 && start + length <= text.size();
+    return length >= 0 && start <= text.size() && length <= text.size() - start;
 }
 
 bool slotRangeWithinText(int start, int length, const QString& text)
 {
-    return start >= 0 && length >= 0 && start + length <= text.size();
+    return start >= 0 && rangeWithinText(start, length, text);
 }
 
 QSet<QString> builtInTemplateTokens()

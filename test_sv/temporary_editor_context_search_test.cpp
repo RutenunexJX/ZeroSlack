@@ -287,9 +287,13 @@ int main(int argc, char** argv)
     catalogWait.start();
     while (!publishedProvider.semanticCatalogReady() && catalogWait.elapsed() < 5000)
         pumpEvents(2);
-    expect("snapshot catalog preserves complete search and navigation",
+    auto expectedPublished = indexedCandidates;
+    for (auto& candidate : expectedPublished)
+        if (candidate.type != EditorSearchCandidateType::File)
+            candidate.sourceTextSha256 = QByteArray{};
+    expect("snapshot catalog preserves metadata and marks unavailable source evidence",
         publishedProvider.semanticCatalogReady()
-            && publishedProvider.query(QStringLiteral("dplct")) == indexedCandidates);
+            && publishedProvider.query(QStringLiteral("dplct")) == expectedPublished);
     publishedProvider.setSemanticSnapshot(publishedCatalog);
     publishedProvider.setSemanticSnapshot(std::make_shared<const SemanticIndexSnapshot>());
     catalogWait.restart();

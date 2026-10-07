@@ -9,11 +9,14 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLockFile>
 #include <QSaveFile>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QTemporaryDir>
 
 #include <algorithm>
+#include <memory>
 
 namespace {
 QJsonArray floatingInstancesToJson(const QList<ContextFloatingInstanceState>& instances)
@@ -60,6 +63,139 @@ constexpr const char* kSettingsVersion = "v2";
 constexpr const char* kSettingsWorkspaces =
     "workspaces";
 constexpr const char* kSettingsState = "state";
+
+// Parse and edit an isolated INI image. QSettings instances for the real path
+// share pending writes, so a failed sync must never become a readable baseline.
+struct SessionStorage {
+    QString path;
+    bool existed = false;
+    bool available = false;
+    QByteArray original;
+    WorkspaceSessionReadStatus failure = WorkspaceSessionReadStatus::ReadError;
+    QString message;
+    QTemporaryDir staging;
+    std::unique_ptr<QSettings> settings;
+
+    explicit SessionStorage(const QString& storagePath) : path(storagePath)
+    {
+        const QFileInfo source(path);
+        existed = source.exists();
+        if (existed) {
+            QFile file(path);
+            if (!source.isFile() || !file.open(QIODevice::ReadOnly)) {
+                message = QStringLiteral("Local session storage is unreadable; the original is preserved.");
+                return;
+            }
+            original = file.readAll();
+            if (file.error() != QFileDevice::NoError) {
+                message = file.errorString();
+                return;
+            }
+        } else {
+            QFileInfo ancestor(source.absolutePath());
+            while (!ancestor.exists() && ancestor.absoluteFilePath() != ancestor.absolutePath())
+                ancestor = QFileInfo(ancestor.absolutePath());
+            if (!ancestor.isDir()) {
+                message = QStringLiteral("Local session storage directory is unavailable.");
+                return;
+            }
+        }
+        if (!staging.isValid()) {
+            message = QStringLiteral("Cannot prepare an isolated session read.");
+            return;
+        }
+        const QString copyPath = staging.filePath(QStringLiteral("session.ini"));
+        QFile copy(copyPath);
+        if (!copy.open(QIODevice::WriteOnly) || copy.write(original) != original.size()) {
+            message = QStringLiteral("Cannot prepare an isolated session read.");
+            return;
+        }
+        copy.close();
+        settings = std::make_unique<QSettings>(copyPath, QSettings::IniFormat);
+        settings->setFallbacksEnabled(false);
+        settings->allKeys();
+        if (settings->status() != QSettings::NoError) {
+            failure = WorkspaceSessionReadStatus::Invalid;
+            message = QStringLiteral("Local session INI is invalid; repair the storage file before saving.");
+            return;
+        }
+        available = true;
+    }
+
+    bool commit(QString* reason)
+    {
+        settings->sync();
+        QFile staged(settings->fileName());
+        if (settings->status() != QSettings::NoError || !staged.open(QIODevice::ReadOnly)) {
+            *reason = QStringLiteral("Failed to serialize local workspace session.");
+            return false;
+        }
+        const QByteArray bytes = staged.readAll();
+        if (staged.error() != QFileDevice::NoError) {
+            *reason = staged.errorString();
+            return false;
+        }
+        QSaveFile output(path);
+        output.setDirectWriteFallback(false);
+        if (!output.open(QIODevice::WriteOnly) || output.write(bytes) != bytes.size()) {
+            *reason = output.errorString();
+            return false;
+        }
+        QFile current(path);
+        const bool existsNow = QFileInfo::exists(path);
+        const bool matches = existed == existsNow && (!existed
+            || (current.open(QIODevice::ReadOnly) && current.readAll() == original
+                && current.error() == QFileDevice::NoError));
+        current.close();
+        if (!matches) {
+            output.cancelWriting();
+            *reason = QStringLiteral("Local session storage changed before commit; the original is preserved.");
+            return false;
+        }
+        if (!output.commit()) {
+            *reason = output.errorString();
+            return false;
+        }
+        return true;
+    }
+};
+
+QJsonObject readSessionObject(SessionStorage& storage, const QString& group,
+                              WorkspaceSessionReadStatus* status, QString* message)
+{
+    if (!storage.available) {
+        *status = storage.failure;
+        *message = storage.message;
+        return {};
+    }
+    storage.settings->beginGroup(group);
+    const bool contains = storage.settings->contains(QString::fromLatin1(kSettingsState));
+    const bool hasFields = !storage.settings->childKeys().isEmpty() || !storage.settings->childGroups().isEmpty();
+    const QByteArray bytes = storage.settings->value(QString::fromLatin1(kSettingsState)).toByteArray();
+    storage.settings->endGroup();
+    if (!contains && !hasFields) {
+        *status = WorkspaceSessionReadStatus::Missing;
+        *message = QStringLiteral("No local workspace session found.");
+        return {};
+    }
+    const auto document = QJsonDocument::fromJson(bytes);
+    if (!contains || !document.isObject()) {
+        *status = WorkspaceSessionReadStatus::Invalid;
+        *message = QStringLiteral("Local workspace session is invalid; repair it or explicitly clear this session before saving.");
+        return {};
+    }
+    const auto object = document.object();
+    const auto version = object.value(QStringLiteral("version"));
+    if (object.value(QStringLiteral("schema")).toString() != QString::fromLatin1(kLocalSchema)
+        || !version.isDouble() || version.toDouble() != version.toInt(-1)
+        || version.toInt() < 2 || version.toInt() > WorkspaceSessionStateService::kVersion) {
+        *status = WorkspaceSessionReadStatus::Unsupported;
+        *message = QStringLiteral("Local workspace session schema is unsupported; repair it or explicitly clear this session before saving.");
+        return {};
+    }
+    *status = WorkspaceSessionReadStatus::Loaded;
+    return object;
+}
 
 QString pathKey(const QString& path)
 {
@@ -798,17 +934,12 @@ bool WorkspaceSessionStateService::
         settingsGroup(workspaceRoot);
     if (group.isEmpty())
         return false;
-    std::unique_ptr<QSettings> settings =
-        makeSettings();
-    if (!settings)
-        return false;
-    settings->beginGroup(group);
-    const bool exists =
-        settings->contains(
-            QString::fromLatin1(
-                kSettingsState));
-    settings->endGroup();
-    return exists;
+    SessionStorage storage(localStoragePath());
+    WorkspaceSessionReadStatus status;
+    QString reason;
+    readSessionObject(storage, group, &status, &reason);
+    return status != WorkspaceSessionReadStatus::Missing
+        && status != WorkspaceSessionReadStatus::ReadError;
 }
 
 WorkspaceSessionSaveResult
@@ -831,18 +962,28 @@ WorkspaceSessionStateService::save(
         return result;
     }
 
-    std::unique_ptr<QSettings> settings =
-        makeSettings();
-    if (!settings) {
+    if (!QDir().mkpath(QFileInfo(result.storagePath).absolutePath())) {
         result.message =
             QStringLiteral(
                 "Local session storage is unavailable.");
         return result;
     }
-    settings->beginGroup(
+    QLockFile lock(result.storagePath + QStringLiteral(".write.lock"));
+    if (!lock.tryLock(0)) {
+        result.message = QStringLiteral("Local session storage is busy; retry the save.");
+        return result;
+    }
+    SessionStorage storage(result.storagePath);
+    WorkspaceSessionReadStatus status;
+    readSessionObject(storage, settingsGroup(root), &status, &result.message);
+    if (status != WorkspaceSessionReadStatus::Missing && status != WorkspaceSessionReadStatus::Loaded) {
+        result.retryable = status == WorkspaceSessionReadStatus::ReadError;
+        return result;
+    }
+    storage.settings->beginGroup(
         settingsGroup(root));
-    settings->remove(QString());
-    settings->setValue(
+    storage.settings->remove(QString());
+    storage.settings->setValue(
         QString::fromLatin1(kSettingsState),
         QJsonDocument(
             sessionObject(
@@ -850,19 +991,13 @@ WorkspaceSessionStateService::save(
                 root,
                 result.workspaceIdentity))
             .toJson(QJsonDocument::Compact));
-    settings->endGroup();
-    settings->sync();
-    result.saved =
-        settings->status()
-        == QSettings::NoError;
-    result.message =
-        result.saved
-        ? QStringLiteral(
+    storage.settings->endGroup();
+    result.saved = storage.commit(&result.message);
+    if (result.saved)
+        result.message = QStringLiteral(
               "Local workspace session saved; "
               "portable project configuration "
-              "is unchanged.")
-        : QStringLiteral(
-              "Failed to save local workspace session.");
+              "is unchanged.");
     return result;
 }
 
@@ -883,48 +1018,10 @@ WorkspaceSessionStateService::load(
         return result;
     }
 
-    std::unique_ptr<QSettings> settings =
-        makeSettings();
-    if (!settings) {
-        result.message =
-            QStringLiteral(
-                "Local session storage is unavailable.");
+    SessionStorage storage(result.storagePath);
+    const QJsonObject object = readSessionObject(storage, settingsGroup(root), &result.status, &result.message);
+    if (result.status != WorkspaceSessionReadStatus::Loaded)
         return result;
-    }
-    settings->beginGroup(
-        settingsGroup(root));
-    const QByteArray bytes =
-        settings->value(
-            QString::fromLatin1(
-                kSettingsState))
-            .toByteArray();
-    settings->endGroup();
-    if (bytes.isEmpty()) {
-        result.message =
-            QStringLiteral(
-                "No local workspace session found.");
-        return result;
-    }
-    const QJsonDocument document =
-        QJsonDocument::fromJson(bytes);
-    const QJsonObject object =
-        document.object();
-    const int version = object.value(
-        QStringLiteral("version")).toInt();
-    if (!document.isObject()
-        || object.value(
-               QStringLiteral("schema"))
-                   .toString()
-               != QString::fromLatin1(
-                   kLocalSchema)
-        || version < 2
-        || version > kVersion) {
-        result.message =
-            QStringLiteral(
-                "Local workspace session schema "
-                "is unsupported.");
-        return result;
-    }
 
     WorkspaceSessionState state;
     state.workspaceRoot = root;
@@ -971,16 +1068,24 @@ bool WorkspaceSessionStateService::clear(
         settingsGroup(workspaceRoot);
     if (group.isEmpty())
         return false;
-    std::unique_ptr<QSettings> settings =
-        makeSettings();
-    if (!settings)
+    const QString path = localStoragePath();
+    if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath()))
         return false;
-    settings->beginGroup(group);
-    settings->remove(QString());
-    settings->endGroup();
-    settings->sync();
-    return settings->status()
-        == QSettings::NoError;
+    QLockFile lock(path + QStringLiteral(".write.lock"));
+    if (!lock.tryLock(0))
+        return false;
+    SessionStorage storage(path);
+    // Explicit clear may remove an unknown JSON payload, but an invalid INI
+    // cannot safely identify the workspace partition to remove.
+    if (!storage.available)
+        return false;
+    if (!storage.existed)
+        return true;
+    storage.settings->beginGroup(group);
+    storage.settings->remove(QString());
+    storage.settings->endGroup();
+    QString reason;
+    return storage.commit(&reason);
 }
 
 WorkspaceLegacyImportResult
@@ -1140,19 +1245,4 @@ QString WorkspaceSessionStateService::
              QString::fromLatin1(
                  kSettingsWorkspaces),
              identity);
-}
-
-std::unique_ptr<QSettings>
-WorkspaceSessionStateService::makeSettings() const
-{
-    const QString path = localStoragePath();
-    if (path.isEmpty())
-        return nullptr;
-    if (!QDir().mkpath(
-            QFileInfo(path)
-                .absolutePath())) {
-        return nullptr;
-    }
-    return std::make_unique<QSettings>(
-        path, QSettings::IniFormat);
 }

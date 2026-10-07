@@ -10,10 +10,6 @@
 #include <QString>
 #include <QStringList>
 
-#include <memory>
-
-class QSettings;
-
 struct WorkspaceSessionTabState {
     QString filePath;
     int cursorLine = 1;
@@ -50,13 +46,17 @@ struct WorkspaceSessionState {
 
 struct WorkspaceSessionSaveResult {
     bool saved = false;
+    bool retryable = true;
     QString storagePath;
     QString workspaceIdentity;
     QString message;
 };
 
+enum class WorkspaceSessionReadStatus { Missing, Loaded, Invalid, Unsupported, ReadError };
+
 struct WorkspaceSessionRestoreResult {
     bool loaded = false;
+    WorkspaceSessionReadStatus status = WorkspaceSessionReadStatus::ReadError;
     QString storagePath;
     WorkspaceSessionState state;
     QStringList skippedTabs;
@@ -113,7 +113,6 @@ private:
         const QString& path);
     static QString settingsGroup(
         const QString& workspaceRoot);
-    std::unique_ptr<QSettings> makeSettings() const;
 };
 
 #endif // WORKSPACESESSIONSTATESERVICE_H

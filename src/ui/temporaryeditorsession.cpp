@@ -108,12 +108,30 @@ bool TemporaryEditorSession::saveCurrent(bool forceSaveAs)
 bool TemporaryEditorSession::openLocation(
     const EditorLocation& location)
 {
+    return openLocation(location, nullptr);
+}
+
+bool TemporaryEditorSession::openSearchCandidate(const EditorSearchCandidate& candidate)
+{
+    return openLocation(candidate.location,
+        candidate.sourceTextSha256 ? &*candidate.sourceTextSha256 : nullptr);
+}
+
+bool TemporaryEditorSession::openLocation(
+    const EditorLocation& location, const QByteArray* expectedSourceSha256)
+{
     if (!location.isValid() || !tabManagerValue || !viewParentValue) {
         emit openFailed(location);
         return false;
     }
 
     if (isOpen() && currentLocation().equivalentTo(location)) {
+        HistoryEntry current;
+        current.location = location;
+        if (expectedSourceSha256 && !ensureEditorFor(&current, expectedSourceSha256)) {
+            emit openFailed(location);
+            return false;
+        }
         applyInitialLocation(location);
         editorValue->setFocus();
         return true;
@@ -122,7 +140,7 @@ bool TemporaryEditorSession::openLocation(
     captureCurrentViewState();
     HistoryEntry next;
     next.location = location;
-    if (!activateEntry(&next)) {
+    if (!activateEntry(&next, expectedSourceSha256)) {
         emit openFailed(location);
         return false;
     }
@@ -198,9 +216,9 @@ void TemporaryEditorSession::captureCurrentViewState()
     entry.hasViewState = true;
 }
 
-bool TemporaryEditorSession::activateEntry(HistoryEntry* entry)
+bool TemporaryEditorSession::activateEntry(HistoryEntry* entry, const QByteArray* expectedSourceSha256)
 {
-    if (!entry || !ensureEditorFor(entry))
+    if (!entry || !ensureEditorFor(entry, expectedSourceSha256))
         return false;
 
     if (entry->hasViewState)
@@ -212,7 +230,7 @@ bool TemporaryEditorSession::activateEntry(HistoryEntry* entry)
     return true;
 }
 
-bool TemporaryEditorSession::ensureEditorFor(HistoryEntry* entry)
+bool TemporaryEditorSession::ensureEditorFor(HistoryEntry* entry, const QByteArray* expectedSourceSha256)
 {
     if (!entry || !tabManagerValue || !viewParentValue)
         return false;
@@ -224,7 +242,8 @@ bool TemporaryEditorSession::ensureEditorFor(HistoryEntry* entry)
             viewParentValue,
             entry->hasViewState
                 ? entry->viewState
-                : SharedDocumentViewState());
+                : SharedDocumentViewState(),
+            expectedSourceSha256);
         if (editorValue)
             emit editorChanged(editorValue);
         return !editorValue.isNull();
@@ -239,7 +258,7 @@ bool TemporaryEditorSession::ensureEditorFor(HistoryEntry* entry)
                 && EditorFileIdentity::same(
                     current->fileName(),
                     entry->location.filePath)));
-    if (sameDocument)
+    if (sameDocument && !expectedSourceSha256)
         return true;
 
     return tabManagerValue->rebindAuxiliaryView(
@@ -248,7 +267,8 @@ bool TemporaryEditorSession::ensureEditorFor(HistoryEntry* entry)
         entry->location.filePath,
         entry->hasViewState
             ? entry->viewState
-            : SharedDocumentViewState());
+            : SharedDocumentViewState(),
+        expectedSourceSha256);
 }
 
 void TemporaryEditorSession::applyInitialLocation(

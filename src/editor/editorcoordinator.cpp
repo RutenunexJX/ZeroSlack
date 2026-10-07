@@ -8,6 +8,7 @@
 #include "editorcolumnmodecontroller.h"
 #include "editoractioncontextservice.h"
 #include "editorcontextmenumodel.h"
+#include "editorfileidentity.h"
 #include "editorsemanticcontextservice.h"
 #include "exposesignaltotoppreview.h"
 #include "exposesignaltotopservice.h"
@@ -1352,10 +1353,17 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 
     QVariantMap pinloomLinkSource;
     QString pinloomLinkReason;
+    WorkspaceEditDocumentManager linkDocuments(tabManager);
+    const QString pinloomOriginFile = editor->documentFileName();
+    std::optional<rtledit::WorkspaceDocumentSnapshot> pinloomOriginSnapshot;
+    std::optional<rtledit::WorkspaceDocumentSnapshot> pinloomSourceSnapshot;
+    QString pinloomSourceFile;
+    QString pinloomSourceIdentity;
     if (actionContext.workspacePath.trimmed().isEmpty()) {
         pinloomLinkReason = QStringLiteral(
             "Open a workspace before linking code.");
-    } else if (const TSDocument* syntax = editor->syntaxDocument()) {
+    } else if (const TSDocument* syntax = editor->syntaxDocument();
+               syntax && syntax->text() == documentText) {
         const QTextCursor selection = editor->textCursor();
         int selectedStart = selection.hasSelection()
             ? selection.selectionStart() : cursorPosition;
@@ -1376,7 +1384,9 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 || (selectedStart == identifier.startChar
                     && selectedEnd == identifier.endChar));
         PinloomSourceSelection source;
+        bool staleDefinition = false;
         if (exactSymbolSelection) {
+            const auto definitionToken = SemanticIndex::getInstance()->snapshotToken();
             const EditorSemanticContext symbolContext =
                 editor->editorSemanticContextForPosition(
                     identifier.startChar, false);
@@ -1394,23 +1404,27 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                            : definition.fileName)
                     : definitionSymbol.location.fileName;
                 definitionSymbol.location.fileName = definitionFile;
-                const bool currentFile =
-                    normalizedEditorCoordinatorFileName(definitionFile)
-                    == normalizedEditorCoordinatorFileName(
-                        editor->documentFileName());
-                const QString definitionText = currentFile
-                    ? documentText
-                    : SemanticIndex::getInstance()
-                          ->getCachedFileContent(definitionFile);
-                if (!definitionText.isEmpty()) {
+                pinloomSourceSnapshot = linkDocuments.snapshot(definitionFile.toUtf8().toStdString());
+                const QString definitionText = pinloomSourceSnapshot
+                    ? QString::fromUtf8(pinloomSourceSnapshot->text) : QString();
+                const QString publishedText = SemanticIndex::getInstance()->getCachedFileContent(definitionFile);
+                const auto currentDefinitionToken = SemanticIndex::getInstance()->snapshotToken();
+                if (pinloomSourceSnapshot && !publishedText.isNull()
+                    && publishedText == definitionText
+                    && definitionToken.snapshot == currentDefinitionToken.snapshot
+                    && definitionToken.revision == currentDefinitionToken.revision) {
                     source = PinloomSourceSelection::fromSemanticSymbol(
                         actionContext.workspacePath,
                         definitionText,
                         definitionSymbol);
+                } else {
+                    staleDefinition = true;
+                    pinloomLinkReason = QStringLiteral(
+                        "The definition no longer matches its source. Refresh semantic analysis before linking this symbol.");
                 }
             }
         }
-        if (!source.isValid()) {
+        if (!source.isValid() && !staleDefinition) {
             const TSBindableCodeAnchor syntaxAnchor =
                 syntax->bindableCodeAnchorAt(
                     cursorPosition,
@@ -1427,18 +1441,28 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
             }
         }
         if (source.isValid()) {
-            for (const ResolvedPinloomCodeLink& existing : pinloomLinks) {
-                if (existing.anchor.source.anchorKind
-                    == source.anchorKind) {
-                    source.anchorId = existing.anchor.id;
-                    break;
+            pinloomOriginSnapshot = linkDocuments.snapshot(pinloomOriginFile.toUtf8().toStdString());
+            pinloomSourceFile = source.absoluteFilePath;
+            if (source.anchorKind != PinloomCodeAnchorKind::Symbol)
+                pinloomSourceSnapshot = pinloomOriginSnapshot;
+            pinloomSourceIdentity = EditorFileIdentity::lookupKey(pinloomSourceFile);
+            if (!pinloomOriginSnapshot || !pinloomSourceSnapshot
+                || QString::fromUtf8(pinloomOriginSnapshot->text) != documentText) {
+                pinloomLinkReason = QStringLiteral("The source is unavailable or changed while opening the menu.");
+            } else {
+                for (const ResolvedPinloomCodeLink& existing : pinloomLinks) {
+                    if (existing.anchor.source.anchorKind
+                        == source.anchorKind) {
+                        source.anchorId = existing.anchor.id;
+                        break;
+                    }
                 }
+                pinloomLinkSource = source.toVariantMap();
+                pinloomLinkSource.insert(
+                    QStringLiteral("suggestedTitle"),
+                    source.suggestedTitle());
             }
-            pinloomLinkSource = source.toVariantMap();
-            pinloomLinkSource.insert(
-                QStringLiteral("suggestedTitle"),
-                source.suggestedTitle());
-        } else {
+        } else if (pinloomLinkReason.isEmpty()) {
             pinloomLinkReason = QStringLiteral(
                 "Place the cursor on a resolvable symbol or inside one complete always/assign block.");
         }
@@ -1580,14 +1604,38 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 
     const auto execute =
         [this,
-         editor,
+         editor = QPointer<MyCodeEditor>(editor),
          context,
          cursorPosition,
          menuState,
          sourceContext,
          pinloomLinkSource,
+         pinloomOriginFile,
+         pinloomOriginSnapshot,
+         pinloomSourceSnapshot,
+         pinloomSourceFile,
+         pinloomSourceIdentity,
          pinloomAnchorId](
             const QString& actionId) {
+            if (!editor)
+                return;
+            if (actionId == QString::fromLatin1(ActionIds::PinloomLinkSelection)) {
+                WorkspaceEditDocumentManager documents(tabManager);
+                const auto origin = documents.snapshot(pinloomOriginFile.toUtf8().toStdString());
+                const auto source = documents.snapshot(pinloomSourceFile.toUtf8().toStdString());
+                const auto selection = PinloomSourceSelection::fromVariantMap(pinloomLinkSource);
+                if (!pinloomOriginSnapshot || !pinloomSourceSnapshot || !origin || !source
+                    || origin->version != pinloomOriginSnapshot->version || origin->text != pinloomOriginSnapshot->text
+                    || source->version != pinloomSourceSnapshot->version || source->text != pinloomSourceSnapshot->text
+                    || editor->documentFileName() != pinloomOriginFile
+                    || EditorFileIdentity::lookupKey(pinloomSourceFile) != pinloomSourceIdentity
+                    || !tabManager || !EditorFileIdentity::same(
+                        tabManager->workspaceForFile(pinloomOriginFile), selection.workspaceRoot)) {
+                    if (statusMessageHandler)
+                        statusMessageHandler(QStringLiteral("The link source changed. Reopen the menu to review the current source."), 5000);
+                    return;
+                }
+            }
             const bool registeredEditorAction =
                 actionId == QStringLiteral("edit.undo")
                 || actionId == QStringLiteral("edit.redo")

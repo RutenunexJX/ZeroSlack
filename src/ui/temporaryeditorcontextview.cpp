@@ -255,7 +255,9 @@ void TemporaryEditorContextView::buildUi()
     searchPopup->attachSearchField(searchEdit);
     searchPopup->setActivationHandler(
         [this](const EditorSearchCandidate& candidate) {
-            if (openLocation(candidate.location)) {
+            if (session && session->openSearchCandidate(candidate)) {
+                asyncQuery->cancel();
+                attachEditor();
                 searchEdit->clear();
                 searchPopup->clearCandidates();
             }

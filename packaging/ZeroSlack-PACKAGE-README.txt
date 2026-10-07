@@ -1,4 +1,11 @@
-ZeroSlack v0.31.26 Windows package
+ZeroSlack v0.31.27 Windows package
+
+Release 0.31.27 hardens document saves, workspace sessions, delayed source
+navigation and Suite context identity. File actions preserve the confirmed
+source generation across Save All, reject incomplete directory enumeration,
+and explicitly report partial disk commits. The accepted R1-R6 changes retain
+SuiteApp SDK 1.0.1 and the pinned native components. The SDK multi-instance
+unregister limitation remains open; no unmeasured performance gain is claimed.
 
 Release 0.31.26 enables SuiteApp SDK 1.0.1 for GUI providers and CLI context resolution. Open documents, including empty unsaved text, remain authoritative for source previews. Package metadata records the compiled SDK capabilities.
 

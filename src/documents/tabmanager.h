@@ -20,6 +20,7 @@
 #include "tabfileio.h"
 #include "unsaveddocumentmanager.h"
 #include "workspacesessionstateservice.h"
+#include "workspacefileoperationservice.h"
 
 enum class TabGroupingMode {
     None,
@@ -92,12 +93,14 @@ public:
         const QString& documentId,
         const QString& fileName,
         QWidget* parent,
-        const SharedDocumentViewState& state = {});
+        const SharedDocumentViewState& state = {},
+        const QByteArray* expectedSourceSha256 = nullptr);
     bool rebindAuxiliaryView(
         MyCodeEditor* editor,
         const QString& documentId,
         const QString& fileName,
-        const SharedDocumentViewState& state = {});
+        const SharedDocumentViewState& state = {},
+        const QByteArray* expectedSourceSha256 = nullptr);
     bool closeAuxiliaryView(MyCodeEditor* editor);
     bool saveAuxiliaryView(MyCodeEditor* editor,
                            bool forceSaveAs = false);
@@ -176,7 +179,8 @@ public:
         bool recursive,
         WorkspacePathMutation* prepared,
         QWidget* dialogParent = nullptr,
-        QString* failureReason = nullptr);
+        QString* failureReason = nullptr,
+        const WorkspacePathMutationGuard& guard = {});
     bool validateWorkspacePathMutation(const WorkspacePathMutation& prepared,
                                        QString* failureReason = nullptr) const;
     bool finalizeWorkspacePathMutation(
@@ -347,7 +351,8 @@ private:
         bool auxiliary);
     SharedDocument* auxiliaryDocument(
         const QString& documentId,
-        const QString& fileName);
+        const QString& fileName,
+        const QByteArray* expectedSourceSha256);
     bool closeAuxiliaryViewInternal(
         MyCodeEditor* editor,
         bool releaseUnusedDocument);
@@ -361,12 +366,15 @@ private:
     bool saveEditor(
         MyCodeEditor* editor,
         bool forceSaveAs,
-        const QString& explicitFileName = QString());
+        const QString& explicitFileName = QString(),
+        WorkspaceFileSnapshot* savedGeneration = nullptr);
     bool confirmCloseDocument(SharedDocument* document,
                               QString* savedFileName = nullptr);
     bool resolvePendingDocuments(
         const QList<SharedDocument*>& documents,
-        QWidget* dialogParent);
+        QWidget* dialogParent,
+        const WorkspacePathMutationGuard& guard = {},
+        QString* failureReason = nullptr);
     bool closeEditor(MyCodeEditor* editor,
                      bool confirmUnsaved = true,
                      bool remember = true);

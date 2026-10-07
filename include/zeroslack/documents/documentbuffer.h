@@ -42,6 +42,8 @@ public:
     void restoreSavedBaseline(
         const QByteArray& sha256,
         const QDateTime& modifiedUtc);
+    // Adopt an accepted disk generation without changing text, revision or undo.
+    void restoreSavedBaseline(const DocumentFileReadResult& source);
     void markSaved();
     void markSaved(const QByteArray& sha256,
                    const QDateTime& modifiedUtc);

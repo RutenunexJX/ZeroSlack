@@ -78,7 +78,7 @@ public:
     void untrackDocument(SharedDocument* document);
     void noteDocumentSaved(SharedDocument* document);
     void noteDocumentSaved(SharedDocument* document,
-                           const QByteArray& fingerprint);
+                           const QByteArray& rawFingerprint);
 
     // This is the deterministic business-logic entry point. The
     // QFileSystemWatcher callbacks delegate to it, while tests can invoke it
@@ -144,12 +144,7 @@ private:
         QMetaObject::Connection destroyedConnection;
     };
 
-    struct DiskSnapshot {
-        bool available = false;
-        QString text;
-        QByteArray fingerprint;
-        QString failureReason;
-    };
+    using DiskSnapshot = DocumentFileReadResult;
 
     std::unique_ptr<QFileSystemWatcher> watcher;
     QHash<SharedDocument*, TrackedDocument> trackedDocuments;

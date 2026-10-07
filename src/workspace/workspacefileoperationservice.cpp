@@ -10,7 +10,15 @@
 #include <QFileInfo>
 #include <QStringList>
 
+#include <filesystem>
 #include <utility>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#undef CreateFile
+#undef CreateDirectory
+#else
+#include <sys/stat.h>
+#endif
 
 namespace {
 QString ensureTrailingSeparator(QString path)
@@ -65,14 +73,46 @@ bool defaultTrashMover(const QString& sourcePath,
     return true;
 }
 
-QString revisionTokenForPlan(
-    const WorkspaceFileOperationPlan& plan)
+QByteArray objectId(const QString& path)
 {
+    QByteArray bytes;
+    QDataStream stream(&bytes, QIODevice::WriteOnly);
+#ifdef Q_OS_WIN
+    const HANDLE handle = CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return {};
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool available = GetFileInformationByHandle(handle, &info);
+    CloseHandle(handle);
+    if (!available) return {};
+    stream << quint32(info.dwVolumeSerialNumber) << quint32(info.nFileIndexHigh) << quint32(info.nFileIndexLow);
+#else
+    struct stat info{};
+    if (::stat(QFile::encodeName(path).constData(), &info) != 0) return {};
+    stream << quint64(info.st_dev) << quint64(info.st_ino);
+#endif
+    return bytes;
+}
+
+bool sameObject(const WorkspaceFileSnapshot& a, const WorkspaceFileSnapshot& b)
+{
+    return a.identityKey == b.identityKey && a.objectId == b.objectId
+        && a.exists == b.exists && a.directory == b.directory;
+}
+
+QString revisionTokenForPlan(WorkspaceFileOperationPlan& plan)
+{
+    plan.workspaceSnapshot = WorkspaceFileOperationService::snapshot(plan.workspaceRoot, false);
+    plan.parentSnapshot = WorkspaceFileOperationService::snapshot(
+        QFileInfo(plan.sourcePath.isEmpty() ? plan.targetPath : plan.sourcePath).absolutePath(), false);
+    plan.targetSnapshot = WorkspaceFileOperationService::snapshot(plan.targetPath, false);
     QByteArray serialized;
     QDataStream stream(&serialized, QIODevice::WriteOnly);
     const auto writeSnapshot = [&stream](
                                    const WorkspaceFileSnapshot& snapshot) {
         stream << snapshot.identityKey
+               << snapshot.objectId
                << snapshot.exists
                << snapshot.directory
                << snapshot.size
@@ -81,15 +121,16 @@ QString revisionTokenForPlan(
     };
 
     stream << static_cast<qint32>(plan.kind)
-           << EditorFileIdentity::lookupKey(plan.workspaceRoot)
-           << EditorFileIdentity::lookupKey(plan.sourcePath)
-           << EditorFileIdentity::lookupKey(plan.targetPath)
+           << plan.workspaceRoot << plan.sourcePath << plan.targetPath
+           << plan.workspaceSnapshot.identityKey << plan.workspaceSnapshot.objectId
+           << plan.parentSnapshot.identityKey << plan.parentSnapshot.objectId
            << plan.sourceDirectory;
     writeSnapshot(plan.sourceSnapshot);
-    writeSnapshot(
-        WorkspaceFileOperationService::snapshot(
-            plan.targetPath,
-            false));
+    writeSnapshot(plan.targetSnapshot);
+    for (auto it = plan.sourceEntries.cbegin(); it != plan.sourceEntries.cend(); ++it) {
+        stream << it.key();
+        writeSnapshot(it.value());
+    }
 
     return QString::fromLatin1(
         QCryptographicHash::hash(
@@ -103,6 +144,7 @@ bool WorkspaceFileSnapshot::operator==(
     const WorkspaceFileSnapshot& other) const
 {
     return identityKey == other.identityKey
+        && objectId == other.objectId
         && exists == other.exists
         && directory == other.directory
         && size == other.size
@@ -261,15 +303,10 @@ WorkspaceFileOperationService::planReveal(
     return plan;
 }
 
-WorkspaceFileOperationResult
-WorkspaceFileOperationService::apply(
+WorkspaceFileOperationPlan
+WorkspaceFileOperationService::replan(
     const WorkspaceFileOperationPlan& plan) const
 {
-    if (!plan.valid)
-        return failed(plan.failureReason.isEmpty()
-                          ? QStringLiteral("The operation plan is invalid.")
-                          : plan.failureReason);
-
     WorkspaceFileOperationPlan current;
     switch (plan.kind) {
     case WorkspaceFileOperationKind::CreateFile:
@@ -303,6 +340,53 @@ WorkspaceFileOperationService::apply(
                              plan.sourcePath);
         break;
     }
+    return current;
+}
+
+bool WorkspaceFileOperationService::revalidate(WorkspaceFileOperationPlan* plan,
+    const WorkspaceFileSnapshot* saved, QString* failureReason) const
+{
+    const auto fail = [&](const QString& reason) {
+        if (failureReason) *failureReason = reason;
+        return false;
+    };
+    if (!plan || !plan->valid) return fail(QStringLiteral("The operation plan is invalid."));
+    auto current = replan(*plan);
+    if (!current.valid) return fail(current.failureReason);
+    if (current.revisionToken == plan->revisionToken) return true;
+    const QString stale = QStringLiteral("The selected path changed after confirmation. Review a new plan before applying it.");
+    if (!saved || saved->contentDigest.isEmpty()
+        || !sameObject(plan->workspaceSnapshot, current.workspaceSnapshot)
+        || !sameObject(plan->parentSnapshot, current.parentSnapshot)
+        || plan->sourceEntries.keys() != current.sourceEntries.keys()) return fail(stale);
+    const auto allowed = [&](const WorkspaceFileSnapshot& before, const WorkspaceFileSnapshot& after) {
+        if (before == after) return true;
+        if (before.identityKey == saved->identityKey && after == *saved) return true;
+        // Atomic replacement can change ancestor directory timestamps, but not
+        // their identity, membership, or any other file's generation.
+        return before.directory && sameObject(before, after)
+            && saved->identityKey.startsWith(ensureTrailingSeparator(before.identityKey));
+    };
+    if (!allowed(plan->sourceSnapshot, current.sourceSnapshot)) return fail(stale);
+    for (auto it = plan->sourceEntries.cbegin(); it != plan->sourceEntries.cend(); ++it)
+        if (!allowed(it.value(), current.sourceEntries.value(it.key()))) return fail(stale);
+    if (plan->targetSnapshot != current.targetSnapshot) {
+        // Case-only rename: the target is the same reviewed source object.
+        auto target = current.targetSnapshot;
+        target.contentDigest = saved->contentDigest;
+        if (plan->targetSnapshot.identityKey != saved->identityKey || target != *saved) return fail(stale);
+    }
+    *plan = std::move(current);
+    return true;
+}
+
+WorkspaceFileOperationResult
+WorkspaceFileOperationService::apply(const WorkspaceFileOperationPlan& plan) const
+{
+    if (!plan.valid)
+        return failed(plan.failureReason.isEmpty()
+                          ? QStringLiteral("The operation plan is invalid.") : plan.failureReason);
+    const auto current = replan(plan);
     if (!current.valid)
         return failed(current.failureReason);
     if ((!plan.revisionToken.isEmpty()
@@ -405,8 +489,10 @@ WorkspaceFileOperationService::snapshot(
     const QFileInfo info(path);
     result.identityKey =
         EditorFileIdentity::lookupKey(path);
+    if (path.isEmpty()) return result;
     result.exists = info.exists();
     result.directory = info.isDir();
+    if (result.exists) result.objectId = objectId(info.absoluteFilePath());
     result.size = info.isFile() ? info.size() : -1;
     result.modifiedUtc =
         info.lastModified().toUTC();
@@ -549,6 +635,40 @@ WorkspaceFileOperationService::planExistingPath(
     plan.sourceSnapshot = snapshot(
         plan.sourcePath,
         mutationRequiresContentRevision);
+    if (mutationRequiresContentRevision) {
+        plan.sourceEntries.insert(QString(), plan.sourceSnapshot);
+        if (plan.sourceDirectory) {
+            // QDirIterator treats an enumeration error like end-of-directory.
+            // Confirmation requires a complete tree, including every descent.
+#ifdef Q_OS_WIN
+            const std::filesystem::path source(plan.sourcePath.toStdWString());
+#else
+            const std::filesystem::path source(QFile::encodeName(plan.sourcePath).constData());
+#endif
+            std::error_code error;
+            std::filesystem::recursive_directory_iterator entries(source, error), end;
+            while (!error && entries != end) {
+#ifdef Q_OS_WIN
+                const auto child = QString::fromStdWString(entries->path().native());
+#else
+                const auto child = QFile::decodeName(entries->path().native().c_str());
+#endif
+                plan.sourceEntries.insert(QDir(plan.sourcePath).relativeFilePath(child), snapshot(child));
+                entries.increment(error);
+            }
+            if (error) {
+                plan.failureReason = QStringLiteral("The selected directory could not be enumerated completely: %1")
+                    .arg(QString::fromStdString(error.message()));
+                return plan;
+            }
+        }
+        for (const auto& entry : std::as_const(plan.sourceEntries)) {
+            if (!entry.exists || entry.objectId.isEmpty() || (!entry.directory && entry.contentDigest.isEmpty())) {
+                plan.failureReason = QStringLiteral("The selected path could not be read completely. Review it again.");
+                return plan;
+            }
+        }
+    }
     plan.valid = true;
     return plan;
 }

@@ -1361,6 +1361,21 @@ if(BUILD_TESTING)
     target_link_libraries(workspace_session_coordinator_test
         PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(document_persistence_generation_test
+        test_sv/document_persistence_generation_test.cpp)
+    target_link_libraries(document_persistence_generation_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(semantic_source_generation_test
+        test_sv/semantic_source_generation_test.cpp)
+    target_link_libraries(semantic_source_generation_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(user_template_range_contract_test
+        test_sv/user_template_range_contract_test.cpp)
+    target_link_libraries(user_template_range_contract_test
+        PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(workspace_watch_handoff_contract_test
         test_sv/workspace_watch_handoff_contract_test.cpp)
     target_link_libraries(workspace_watch_handoff_contract_test
@@ -1416,6 +1431,19 @@ if(BUILD_TESTING)
         test_sv/temporary_editor_context_search_test.cpp)
     target_link_libraries(temporary_editor_context_search_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(delayed_consumer_generation_test
+        test_sv/delayed_consumer_generation_test.cpp)
+    target_link_libraries(delayed_consumer_generation_test
+        PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(workspace_path_confirmation_test
+        test_sv/workspace_path_confirmation_test.cpp)
+    target_link_libraries(workspace_path_confirmation_test
+        PRIVATE zeroslack_core Qt6::Test)
+    if(WIN32)
+        target_link_libraries(workspace_path_confirmation_test PRIVATE advapi32)
+    endif()
 
     add_executable(compact_layout_test test_sv/compact_layout_test.cpp)
     target_link_libraries(compact_layout_test PRIVATE zeroslack_core Qt6::Test)
@@ -2088,6 +2116,23 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:temporary_editor_context_search_test>
     )
+    add_test(NAME delayed_consumer_generation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=ela"
+            $<TARGET_FILE:delayed_consumer_generation_test>
+    )
+    set_tests_properties(delayed_consumer_generation_test PROPERTIES TIMEOUT 120)
+    add_test(NAME workspace_path_confirmation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=ela"
+            $<TARGET_FILE:workspace_path_confirmation_test>)
+    set_tests_properties(workspace_path_confirmation_test PROPERTIES TIMEOUT 120)
     add_test(NAME compact_layout_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2406,6 +2451,25 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:workspace_session_coordinator_test>
     )
+    add_test(NAME document_persistence_generation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
+            $<TARGET_FILE:document_persistence_generation_test> -o -,txt)
+    set_tests_properties(document_persistence_generation_test PROPERTIES TIMEOUT 90)
+    add_test(NAME semantic_source_generation_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
+            $<TARGET_FILE:semantic_source_generation_test> -o -,txt)
+    set_tests_properties(semantic_source_generation_test PROPERTIES TIMEOUT 180)
+    add_test(NAME user_template_range_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            $<TARGET_FILE:user_template_range_contract_test> -o -,txt)
+    set_tests_properties(user_template_range_contract_test PROPERTIES TIMEOUT 30)
     add_test(NAME workspace_switcher_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

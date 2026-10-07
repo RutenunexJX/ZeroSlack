@@ -42,12 +42,14 @@ public:
                             const DocumentFileReadResult* initialFile = nullptr);
     ~SharedDocument() override;
 
-    bool reloadCleanText(const QString& text);
+    bool reloadCleanText(const QString& text,
+                         const DocumentFileReadResult* source = nullptr);
     // Applies a user-confirmed external generation as one undoable
     // replacement. Unlike automatic clean reload, this entry point may
     // resolve a dirty conflict and deliberately keeps the rejected local
     // text reachable through the shared undo stack.
-    bool acceptExternalText(const QString& text);
+    bool acceptExternalText(const QString& text,
+                            const DocumentFileReadResult* source = nullptr);
     bool restoreUnsavedText(
         const QString& text,
         std::uint64_t recoveredRevision);

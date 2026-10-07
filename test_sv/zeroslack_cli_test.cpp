@@ -554,6 +554,92 @@ private slots:
         QVERIFY(writeText(include + "/def.svh", "`define W 32\n"));
         QCOMPARE(ZeroSlackCliService().execute(request).exitCode, 4);
     }
+    void statusValidatesFinalInput_data() {
+        QTest::addColumn<QString>("scenario");
+        QTest::addColumn<bool>("requireCurrent");
+        for (const auto* scenario : {"current", "already-stale", "missing-cache", "unreadable-before",
+                 "root-change", "root-delete", "root-added", "include-change", "include-delete",
+                 "include-unreadable", "negative-created", "include-format"}) {
+            for (bool required : {false, true}) {
+                const auto label = QByteArray(scenario) + (required ? "-require-current" : "-report-only");
+                QTest::newRow(label.constData()) << QString::fromLatin1(scenario) << required;
+            }
+        }
+    }
+    void statusValidatesFinalInput() {
+        QFETCH(QString, scenario); QFETCH(bool, requireCurrent);
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const QString root = fixture.filePath("root"), first = fixture.filePath("first"), second = fixture.filePath("second");
+        const QString top = root + "/top.sv", header = second + "/def.svh", missing = first + "/def.svh";
+        const QString originalTop = "`include \"def.svh\"\nmodule top; logic [`W-1:0] q; endmodule\n";
+        const QString originalHeader = "`define W 8\n";
+        QVERIFY(writeText(top, originalTop)); QVERIFY(writeText(header, originalHeader));
+        QVERIFY(QDir().mkpath(first));
+        WorkspaceConfigurationService config;
+        auto settings = config.load(root); settings.includeDirs = {first, second}; QVERIFY(config.save(settings));
+        ZeroSlackCliRequest request; request.command = "scan";
+        request.workspaceRoot = root; request.cacheDirectory = fixture.filePath("cache");
+        ZeroSlackCliService stable; QVERIFY(stable.execute(request).succeeded());
+        const auto cache = stable.cachePathForWorkspace(root, request.cacheDirectory);
+        const auto scannedHash = fileHash(cache); QVERIFY(!scannedHash.isEmpty());
+        if (scenario == "already-stale") QVERIFY(writeText(header, "`define W 16\n"));
+        if (scenario == "missing-cache") QVERIFY(QFile::remove(cache));
+        if (scenario == "unreadable-before") {
+            QVERIFY(QFile::remove(header)); QVERIFY(QDir().mkdir(header));
+        }
+        const auto beforeHash = fileHash(cache);
+        const auto beforeModified = QFileInfo(cache).lastModified();
+        request.command = "status"; request.requireCurrent = requireCurrent;
+        bool observed = false, changed = true;
+        ZeroSlackCliService raced([&](auto stage) {
+            if (stage != ZeroSlackCliService::ObservationStage::BeforeOutput) return;
+            observed = true;
+            if (scenario == "root-change") changed = writeText(top, originalTop + "// changed\n");
+            if (scenario == "root-delete") changed = QFile::remove(top);
+            if (scenario == "root-added") changed = writeText(root + "/added.sv", "module added; endmodule\n");
+            if (scenario == "include-change") changed = writeText(header, "`define W 32\n");
+            if (scenario == "include-delete") changed = QFile::remove(header);
+            if (scenario == "include-unreadable") changed = QFile::remove(header) && QDir().mkdir(header);
+            if (scenario == "negative-created") changed = writeText(missing, "`define W 64\n");
+            if (scenario == "include-format") {
+                QFile file(header);
+                const auto bytes = QByteArray(QStringEncoder(QStringConverter::Utf16LE,
+                    QStringConverter::Flag::WriteBom)(originalHeader));
+                changed = file.open(QIODevice::WriteOnly | QIODevice::Truncate) && file.write(bytes) == bytes.size();
+            }
+        });
+        const auto result = raced.execute(request);
+        QVERIFY(observed); QVERIFY(changed);
+        QCOMPARE(fileHash(cache), beforeHash);
+        QCOMPARE(QFileInfo(cache).lastModified(), beforeModified);
+        const bool initiallyStale = scenario == "already-stale" || scenario == "missing-cache" || scenario == "unreadable-before";
+        const bool remainsCurrent = scenario == "current" || scenario == "include-format";
+        const int expectedExit = initiallyStale ? (requireCurrent ? 4 : 0) : (remainsCurrent ? 0 : 3);
+        QCOMPARE(result.exitCode, expectedExit);
+        QVERIFY(!result.envelope.value("cacheRebuilt").toBool());
+        if (expectedExit == 3) {
+            QVERIFY(!result.envelope.contains("data"));
+            QCOMPARE(result.envelope.value("error").toObject().value("code").toString(), QString("source_changed"));
+        } else {
+            const auto data = result.envelope.value("data").toObject();
+            QCOMPARE(data.value("cacheCurrent").toBool(), remainsCurrent);
+            QCOMPARE(data.value("cacheExists").toBool(), scenario != "missing-cache");
+            if (expectedExit == 4)
+                QCOMPARE(result.envelope.value("error").toObject().value("code").toString(), QString("cache_stale"));
+        }
+        request.requireCurrent = true;
+        QCOMPARE(stable.execute(request).exitCode, remainsCurrent ? 0 : 4);
+        QCOMPARE(fileHash(cache), beforeHash);
+        if (!remainsCurrent) {
+            if (QFileInfo(header).isDir()) QVERIFY(QDir().rmdir(header));
+            QVERIFY(writeText(header, originalHeader)); QVERIFY(writeText(top, originalTop));
+            if (QFileInfo::exists(missing)) QVERIFY(QFile::remove(missing));
+            if (QFileInfo::exists(root + "/added.sv")) QVERIFY(QFile::remove(root + "/added.sv"));
+            request.command = "scan"; QVERIFY(stable.execute(request).succeeded());
+            request.command = "status"; QVERIFY(stable.execute(request).succeeded());
+            QVERIFY(!fileHash(cache).isEmpty());
+        }
+    }
     void bundleCountsCompleteMarkdown() {
         auto fixture = makeFixture(); QVERIFY(fixture.workspace && fixture.cache);
         ZeroSlackCliRequest request; request.command = "bundle"; request.query = QString(700, 'x');

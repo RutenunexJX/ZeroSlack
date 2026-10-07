@@ -5,6 +5,7 @@
 #include "semanticindexsnapshot.h"
 
 #include <QDir>
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QSet>
 #include <QPointer>
@@ -123,6 +124,7 @@ struct TemporaryEditorSearchProvider::AsyncCatalog {
         QList<SemanticSymbolRecord> source;
         QList<IndexedCandidate> candidates;
         QHash<QString, QString> fileIdentities;
+        QHash<QString, SemanticIndexSnapshot::CachedFileSource> sources;
     };
     struct Result {
         QString root;
@@ -230,7 +232,14 @@ struct TemporaryEditorSearchProvider::AsyncCatalog {
                         if (cancelled->load()) return {};
                         if (identityFor(it.key()) != it.value()) { sameAliases = false; break; }
                     }
-                if (reusable && sameAliases && reusable->source.constData() == records.constData()) {
+                bool sameSources = bool(reusable);
+                if (reusable)
+                    for (auto it = reusable->sources.cbegin(); it != reusable->sources.cend(); ++it) {
+                        if (cancelled->load()) return {};
+                        const auto source = request.snapshot->cachedFileSource(it.key());
+                        if (source.exists != it->exists || source.text != it->text) { sameSources = false; break; }
+                    }
+                if (reusable && sameAliases && sameSources && reusable->source.constData() == records.constData()) {
                     result->files.insert(file, reusable);
                     continue;
                 }
@@ -242,9 +251,20 @@ struct TemporaryEditorSearchProvider::AsyncCatalog {
                 auto prepared = std::make_shared<File>();
                 prepared->source = records;
                 prepared->candidates = std::move(builder.indexedSemanticCandidates);
-                for (const auto& entry : prepared->candidates)
+                QHash<QString, QByteArray> sourceDigests;
+                for (auto& entry : prepared->candidates) {
+                    const auto& path = entry.candidate.location.filePath;
+                    if (!sourceDigests.contains(path)) {
+                        const auto source = request.snapshot->cachedFileSource(path);
+                        prepared->sources.insert(path, source);
+                        sourceDigests.insert(path, source.exists
+                            ? QCryptographicHash::hash(source.text.toUtf8(), QCryptographicHash::Sha256)
+                            : QByteArray{});
+                    }
+                    entry.candidate.sourceTextSha256 = sourceDigests.value(path);
                     prepared->fileIdentities.insert(entry.candidate.location.filePath,
                         identityFor(entry.candidate.location.filePath));
+                }
                 result->files.insert(file, std::move(prepared));
             }
             // Resolve aliases before fuzzy matching, exactly as the existing

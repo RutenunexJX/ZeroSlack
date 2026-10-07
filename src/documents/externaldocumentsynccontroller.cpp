@@ -3,25 +3,12 @@
 #include "editorfileidentity.h"
 #include "shareddocument.h"
 
-#include <QCryptographicHash>
-#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QSet>
 #include <QStringList>
-#include <QTextDocument>
-#include <QTextStream>
 
 #include <utility>
-
-namespace {
-QByteArray textFingerprint(const QString& text)
-{
-    return QCryptographicHash::hash(
-        text.toUtf8(),
-        QCryptographicHash::Sha256);
-}
-}
 
 ExternalDocumentSyncController::ExternalDocumentSyncController(
     QObject* parent)
@@ -93,18 +80,14 @@ void ExternalDocumentSyncController::trackDocument(
     tracked.pathKey = nextPathKey;
     tracked.directory =
         normalizedPath(QFileInfo(fileName).absolutePath());
-    tracked.savedFingerprint = initialFile && initialFile->available ? initialFile->logicalSha256 : textFingerprint(
-        document->textDocument()
-            ? document->textDocument()->toPlainText()
-            : QString());
+    tracked.savedFingerprint = initialFile && initialFile->available
+        ? initialFile->rawSha256 : document->savedBaselineSha256();
     tracked.observedFingerprint =
         tracked.savedFingerprint;
     // The first deterministic probe should publish an unavailable transition
     // if the path disappeared between opening and subscription.
     tracked.diskAvailable = true;
     if (initialFile && initialFile->available) {
-        tracked.savedFingerprint = initialFile->logicalSha256;
-        tracked.observedFingerprint = initialFile->logicalSha256;
         document->setReadOnly(initialFile->readOnly);
     } else if (QFileInfo(fileName).isFile()) {
         document->setReadOnly(!QFileInfo(fileName).isWritable());
@@ -143,8 +126,8 @@ void ExternalDocumentSyncController::noteDocumentSaved(
         refreshSubscriptions();
         return;
     }
-    found->savedFingerprint = snapshot.fingerprint;
-    found->observedFingerprint = snapshot.fingerprint;
+    found->savedFingerprint = snapshot.rawSha256;
+    found->observedFingerprint = snapshot.rawSha256;
     found->keptLocalFingerprint.clear();
     found->diskAvailable = true;
     document->setReadOnly(
@@ -156,9 +139,9 @@ void ExternalDocumentSyncController::noteDocumentSaved(
 
 void ExternalDocumentSyncController::noteDocumentSaved(
     SharedDocument* document,
-    const QByteArray& fingerprint)
+    const QByteArray& rawFingerprint)
 {
-    if (!document || fingerprint.size() != 32) {
+    if (!document || rawFingerprint.size() != 32) {
         noteDocumentSaved(document);
         return;
     }
@@ -171,8 +154,8 @@ void ExternalDocumentSyncController::noteDocumentSaved(
         refreshSubscriptions();
         return;
     }
-    found->savedFingerprint = fingerprint;
-    found->observedFingerprint = fingerprint;
+    found->savedFingerprint = rawFingerprint;
+    found->observedFingerprint = rawFingerprint;
     found->keptLocalFingerprint.clear();
     found->diskAvailable = true;
     document->setReadOnly(!source.isWritable());
@@ -238,11 +221,11 @@ ExternalDocumentSyncController::processFileChange(
     found->diskAvailable = true;
     document->setReadOnly(
         !QFileInfo(found->fileName).isWritable());
-    if (snapshot.fingerprint
+    if (snapshot.rawSha256
         == found->observedFingerprint) {
         if (document->externalState()
                 == SharedDocumentExternalState::ExternallyModified
-            && snapshot.fingerprint
+            && snapshot.rawSha256
                    == found->savedFingerprint) {
             document->setExternalState(
                 SharedDocumentExternalState::Current);
@@ -254,7 +237,7 @@ ExternalDocumentSyncController::processFileChange(
         return result;
     }
 
-    found->observedFingerprint = snapshot.fingerprint;
+    found->observedFingerprint = snapshot.rawSha256;
     found->keptLocalFingerprint.clear();
     if (document->dirty()
         || document->externalState()
@@ -270,7 +253,7 @@ ExternalDocumentSyncController::processFileChange(
         return result;
     }
 
-    if (!document->reloadCleanText(snapshot.text)) {
+    if (!document->reloadCleanText(snapshot.text, &snapshot)) {
         document->setExternalState(
             SharedDocumentExternalState::Conflict);
         result.outcome =
@@ -282,7 +265,7 @@ ExternalDocumentSyncController::processFileChange(
         return result;
     }
 
-    found->savedFingerprint = snapshot.fingerprint;
+    found->savedFingerprint = snapshot.rawSha256;
     result.outcome =
         ExternalDocumentSyncOutcome::Reloaded;
     rearmFileSubscription(found->fileName);
@@ -335,7 +318,7 @@ ExternalDocumentSyncController::conflictReview(
             initialSnapshot.failureReason;
         return review;
     }
-    if (initialSnapshot.fingerprint
+    if (initialSnapshot.rawSha256
         != found->observedFingerprint) {
         processFileChange(found->fileName);
     }
@@ -356,16 +339,16 @@ ExternalDocumentSyncController::conflictReview(
                 "The document no longer has an unresolved external conflict.");
         return review;
     }
-    if (snapshot.fingerprint
+    if (snapshot.rawSha256
         != found->observedFingerprint) {
         found->observedFingerprint =
-            snapshot.fingerprint;
+            snapshot.rawSha256;
         found->keptLocalFingerprint.clear();
         rearmFileSubscription(found->fileName);
     }
 
     review.externalText = snapshot.text;
-    review.externalFingerprint = snapshot.fingerprint;
+    review.externalFingerprint = snapshot.rawSha256;
     review.externalAvailable = true;
     review.valid = true;
     return review;
@@ -414,7 +397,8 @@ ExternalDocumentSyncController::keepLocal(
         return result;
     }
 
-    found->keptLocalFingerprint = snapshot.fingerprint;
+    found->keptLocalFingerprint = snapshot.rawSha256;
+    document->restoreSavedBaseline(snapshot);
     // The conflict generation has been explicitly acknowledged, but the
     // buffer remains dirty until a guarded save or Save As completes.
     document->setExternalState(
@@ -442,7 +426,7 @@ ExternalDocumentSyncController::reloadExternal(
             QStringLiteral("The document is no longer tracked.");
         return result;
     }
-    if (!document->acceptExternalText(snapshot.text)) {
+    if (!document->acceptExternalText(snapshot.text, &snapshot)) {
         result.status =
             ExternalDocumentConflictActionStatus::InvalidReview;
         result.failureReason =
@@ -451,8 +435,8 @@ ExternalDocumentSyncController::reloadExternal(
         return result;
     }
 
-    found->savedFingerprint = snapshot.fingerprint;
-    found->observedFingerprint = snapshot.fingerprint;
+    found->savedFingerprint = snapshot.rawSha256;
+    found->observedFingerprint = snapshot.rawSha256;
     found->keptLocalFingerprint.clear();
     found->diskAvailable = true;
     document->setReadOnly(
@@ -492,7 +476,7 @@ bool ExternalDocumentSyncController::canOverwriteDocument(
         return false;
     }
 
-    if (snapshot.fingerprint
+    if (snapshot.rawSha256
         != found->observedFingerprint) {
         processFileChange(found->fileName);
         if (failureReason) {
@@ -504,7 +488,7 @@ bool ExternalDocumentSyncController::canOverwriteDocument(
 
     switch (document->externalState()) {
     case SharedDocumentExternalState::Current:
-        if (snapshot.fingerprint
+        if (snapshot.rawSha256
             == found->savedFingerprint) {
             return true;
         }
@@ -515,7 +499,7 @@ bool ExternalDocumentSyncController::canOverwriteDocument(
         return false;
     case SharedDocumentExternalState::ExternallyModified:
         if (!found->keptLocalFingerprint.isEmpty()
-            && snapshot.fingerprint
+            && snapshot.rawSha256
                    == found->keptLocalFingerprint) {
             return true;
         }
@@ -613,8 +597,7 @@ ExternalDocumentSyncController::DiskSnapshot
 ExternalDocumentSyncController::readDiskSnapshot(
     const QString& fileName)
 {
-    const auto source = readDocumentFile(fileName);
-    return {source.available, source.text, source.logicalSha256, source.failureReason};
+    return readDocumentFile(fileName);
 }
 
 void ExternalDocumentSyncController::refreshSubscriptions()
@@ -804,7 +787,7 @@ ExternalDocumentSyncController::validateReview(
             conflictReview(found->fileName);
         return result;
     }
-    if (snapshot.fingerprint
+    if (snapshot.rawSha256
         != review.externalFingerprint) {
         processFileChange(found->fileName);
         result.status =

@@ -2,6 +2,7 @@
 #define TEMPORARYEDITORSESSION_H
 
 #include "editorlocation.h"
+#include "editorsearchcandidate.h"
 #include "shareddocument.h"
 #include "zeroslackexport.h"
 
@@ -34,6 +35,7 @@ public:
     void setViewParent(QWidget* parent);
     bool saveCurrent(bool forceSaveAs = false);
     bool openLocation(const EditorLocation& location);
+    bool openSearchCandidate(const EditorSearchCandidate& candidate);
     bool goBack();
     bool goForward();
     void close();
@@ -62,8 +64,9 @@ private:
     bool closing = false;
 
     void captureCurrentViewState();
-    bool activateEntry(HistoryEntry* entry);
-    bool ensureEditorFor(HistoryEntry* entry);
+    bool openLocation(const EditorLocation& location, const QByteArray* expectedSourceSha256);
+    bool activateEntry(HistoryEntry* entry, const QByteArray* expectedSourceSha256 = nullptr);
+    bool ensureEditorFor(HistoryEntry* entry, const QByteArray* expectedSourceSha256);
     void applyInitialLocation(const EditorLocation& location);
     void applyViewState(const SharedDocumentViewState& state,
                         const QTextCursor& trackedCursor);

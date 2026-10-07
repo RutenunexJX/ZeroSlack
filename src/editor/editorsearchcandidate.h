@@ -4,9 +4,11 @@
 #include "editorlocation.h"
 
 #include <QList>
+#include <QByteArray>
 #include <QMetaType>
 #include <QString>
 #include <functional>
+#include <optional>
 
 enum class EditorSearchCandidateType {
     File,
@@ -21,6 +23,9 @@ struct EditorSearchCandidate {
     EditorSearchCandidateType type = EditorSearchCandidateType::File;
     QString disambiguation;
     int score = 0;
+    // Snapshot-backed semantic coordinates require the same logical source at
+    // activation. An empty digest is unavailable evidence; nullopt is unbound.
+    std::optional<QByteArray> sourceTextSha256;
 
     bool isValid() const
     {

@@ -1,5 +1,79 @@
 # ZeroSlack 架构与冗余逻辑待办
 
+## R6：文件操作确认代际与连续失败恢复（2026-10-07）
+
+R5 已由统筹接受。本轮在其 32 个未提交任务文件上完成开发与自测，版本仍为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**。以下为执行侧完成候选，等待统筹验收；不提交、发布或变更 Goal 状态。
+
+| 编号 | 根因与历史去重 | 实现与证据 |
+| --- | --- | --- |
+| AR-58 | 中优先级，确定缺陷。文件动作在未保存决策之后无条件采用新计划，把独立外部变化误当成已确认来源；目录计划也缺少子文件代际。区别于 AR-13 的稳定文档身份与准备/收尾集合、AR-54 的普通保存原始字节保护。冻结当前 R5 实际库，真实 MainWindow 中受控 Discard、实际 Pending Documents 模态期间外部改写、未打开子文件变化、保存 A 后外部改写 B 四项失败，14 项对照通过。统筹旧 R4 探针单列为历史证据。 | 文件服务保存源树清单、原始摘要、物理路径及文件系统对象身份，绑定工作区、父目录和目标；每次保存前验证原计划，仅允许本次保存实际提交的精确代际推进计划。TabManager 在 fileSaved 等信号前捕获保存回执，并在决策前保留 QPointer、修订和视图集合。保留正常 Save All、Save As 移走文档及部分成功后的已存结果；取消/失败不执行路径动作，不伪造回滚。 |
+| AR-13 补充 | 不新增独立编号。原准备/收尾适配器有效，受控 Trash 完成后视图被锁定的失败注入显示：返回失败时没有明确磁盘已完成，且遗漏恢复路径。此注入验证部分提交回执，不声称观察到自然 UI 时序故障。 | 真实 Action 返回 diskOperationCompleted、path、recoveredPath，并明确说明文件动作已完成但视图收尾失败；刷新实际磁盘结果，重复执行在源缺失处拒绝，不再次调用 Trash。 |
+
+初交付真实 MainWindow/Ela offscreen 测试 **33/33**、相关既有回归 **11/11**；审查 1 后扩展为 **37/37**，受影响文件操作/导航回归 **2/2**，其余九项按相关实现未变继承。覆盖 dirty/clean、主/辅助及仅辅助视图、实际模态 Discard/Save As/取消、同内容同时间戳的物理替换、目录联接重绑、工作区切换、部分保存后失败/取消、排他创建和重试、临时可恢复 Trash、会话写锁失败→切换→关闭/重开→Restore/Reset→存储恢复。AR-22/53 的恢复来源和格式屏障未改；Reset 在存储失败时按既有策略丢弃本进程 pending 并抑制自动恢复，持久记录未删除会明确报错，恢复存储后显式重试清理。
+
+审查 1 的目录完整性风险已在实际 Windows 临时 ACL 场景确认：拒绝列目录但可读属性/写已知子文件时，初交付将未枚举成员当作空子树，原地修改后旧 token 仍可改名。按 AR-58 改用显式错误状态的递归枚举，所选/嵌套目录两负例在同一探针上由失败转为拒绝；原 DACL 逐字节恢复，权限恢复重试和空目录对照通过。创建后打开失败另沿真实 MainWindow 消费者验证：创建成功、读取警告、文件/dirty/光标/历史保持、拒绝重复覆盖及原导航重试均正确，仅补测试，不改成功语义。初交付身份和报告独立封存，详见 R6 的 REVIEW-1-RESPONSE.md。
+
+完整差异、六维覆盖、源码/实际产物及日志摘要、R5 继承核对见 `build/coordination/20261007-zeroslack-architecture-continuation/r6/DELIVERY.md`、`COVERAGE.md`、`delivery.json`；R5–R6 完成候选见同目录 `GOAL-CANDIDATE.md`。目录修改需读取源树内容，未宣称性能收益。未测试真实桌面和 OS 回收站，不证明任意系统调用间的原子性；AR-52 仍属 SDK 开放事项。
+
+## R5：延迟消费与来源代际（2026-10-07）
+
+R1～R4 已由统筹验收。本轮从其 24 个未提交任务文件继续，版本仍为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**，仅执行 R5。下述修复及范围检查已由执行侧完成，提交统筹验收；不提交、发布或自动开始 R6。
+
+| 编号 | 根因与去重 | 实现与证据 |
+| --- | --- | --- |
+| AR-57 | 中优先级，确定缺陷。临时搜索的 query/catalog generation 只证明结果属于当前查询，候选未携带语义源文证据；选择前发生 dirty 或磁盘变化时，旧坐标仍可绑定新文本。区别于 AR-35 的词法识别、AR-38 的失败历史提交及 AR-55 的 Pinloom 菜单来源。 | 从不可变 snapshot 提取逻辑源文摘要，分片复用同时检查源文，选择时在 TabManager 的实际 SharedDocument 绑定边界复核。拒绝前不拆旧视图、不提交新历史；摘要不进入 EditorLocation、历史或会话持久化。相同文本的 dirty、格式变化及恢复重试仍可导航。冻结 R4 源码/实际 DLL 后，以同一探针可执行文件对照：R4 为 11 通过/3 失败，修复后 14/14；三个负例分别为跨视图 dirty、同目标 dirty、未打开文件的外部改写。 |
+
+实际 Live Insights Provider 经 MainWindow 的 `revealSuiteSource` 传播失败；旧 SemanticPanelRefresh 的 RTL wrapper 在当前注册链中无消费者，未据此修改导航。ActivityLog 新用例先断言 append 后文本未呈现且 unread=1，再验证 flush、clear、hide/show 和 close；四项在旧、新 DLL 均通过，未证明原有生命周期观察为缺陷。Pinloom 的读请求取消/合并和写操作原工作区归属继续沿实际消费者核对。
+
+GUI 构建、13 个相关回归目标、4 个策略检查通过。完整六维覆盖、失败夹具分类、R4 保留核对、累计及本轮差异和源码/产物摘要见 `build/coordination/20261007-zeroslack-architecture-continuation/r5/DELIVERY.md`、`COVERAGE.md`、`delivery.json`。AR-52 仍为 SDK 范围外开放事项；Qt offscreen、真实外部应用与任意 OS 竞争限制保留。没有性能收益测量。
+
+## R4：外部接入、UI、CLI 与最终覆盖（2026-10-07）
+
+以统筹已接受的 R1～R3 累计 23 个未提交文件为起点，版本仍为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**。本轮只补下述确定根因和剩余接入覆盖，提交完成候选供统筹统一验收；不标记 Goal 完成，不提交或发布。历史正文及已发布结论保留。
+
+| 编号 | 根因与去重 | 实现与证据 |
+| --- | --- | --- |
+| AR-01（补充 status 消费路径） | 中优先级。`status` 初次判定缓存有效后，输出前仅复核工作区根源文件，遗漏已有依赖证据；外部 include 在该间隔变化时仍报告 current。属于历史 AR-01 的独立当前性判断遗漏，不重复编号，也不撤销原范围的发布结论。 | `preparedInputsStillCurrent` 统一工作区与依赖终检，status 声称 current 时与普通查询复用完整依赖复核；缺失或已过期缓存仍可只报告状态。新增 24 个数据行覆盖 report-only/require-current、根变化、include 修改/删除/不可读、负查找新建、逻辑等价格式变化及恢复。开发基线 18 通过/8 失败，最终完整 CLI 62 通过/0 失败/0 跳过；状态查询与拒绝路径均不重建或改写缓存。 |
+
+剩余六维覆盖、真实 Runtime/固定 xIPs 2.8.0 与 SimDock 0.5.0/Questa 的 MainWindow 组合、图导出与构建契约、完整累计差异和身份见 `build/coordination/20261007-zeroslack-architecture/r4/DELIVERY.md`、`COVERAGE.md`、`COMPLETION-CANDIDATE.md`、`delivery.json`。AR-52 仍为共享 SDK 1.0.1 的外部开放问题。ActivityLog 捕获归属观察未证明实际故障，不据此增加生产修复；Qt offscreen、文件系统非原子快照及真实外部应用联调限制分别保留。不自动开始下一轮。
+
+## R3：语义、编辑与跨文件事务（2026-10-07）
+
+以统筹已接受的 R1/R2 累计 18 个未提交文件为起点，正式版本仍为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**。本轮三项确定问题已实现并完成开发构建与自测，提交统筹统一验收。历史已发布和已验收结论保留，不自动开展 R4，不提交或发布。
+
+| 编号 | 根因与去重 | 实现与证据 |
+| --- | --- | --- |
+| AR-18 补充 | 中优先级，Scheduler 外部文件消费者另读未规范化文本，并将其伪装成可信 buffer override，绕过共享解码及最终磁盘复核。与历史逻辑源文契约同根；原事务范围已发布结论继续有效。 | 外部事件只提交变更路径，由现有 SemanticInputCapture 捕获、解码、保留来源和失败状态；清除该文件旧 pending clean override，关闭文档也清理该待处理值。真实 Scheduler→Slang→发布验证 LF/CRLF/UTF-16LE+BOM 正对照及 CR/LineSeparator/NBSP，另覆盖入队后新磁盘内容、删除/不可读失败恢复、dirty 与关闭场景。 |
+| AR-55 | 中优先级，Pinloom 菜单用旧语义定义坐标截取新文本。区别于 AR-24 的异步操作归属、AR-49 的 Suite Provider 消费者。 | 在实际 EditorCoordinator 来源边界核对语义 token、发布源文与当前文档快照；旧定义拒绝，不宽松退回其他选区。菜单触发时复核原编辑器、源/目标快照、物理身份及工作区；保留无语义时完整 always/assign 的当前 TS 路径。真实菜单验证同文件、跨文件 dirty、菜单后编辑/关闭重开/外部改写及关闭原视图；后续异步来源归属未改。 |
+| AR-56 | 中优先级，用户模板选区/slot 校验的 `int start + length` 溢出，使越界记录被认为有效。真实 JSON→UserTemplateService→CompletionService 四个负例进入候选，保存入口四个负例也返回成功；不据此宣称已经复现崩溃。 | 在现有共享区间校验中先验证起点，再以剩余长度比较，slot 复用同一校验。保留负起点表示无选区、正文末尾零长 slot、UTF-16 正文范围；无效加载不进入候选，后续增删拒绝覆盖原文件，失败保存保留字节。新测试修复前 16 通过/8 失败，最终 24/24。 |
+
+最终 GUI/CLI 开发构建通过；语义与链接新测试 **22/22**、模板范围 **24/24**，18 个既有范围测试全部通过。真实文档适配器、范围替换、RTL 来源/计划器/工作流/面板和核心事务回执、回滚、连续 undo/redo 均有本轮运行证据。完整差异、六维覆盖、命令、日志和最终身份见 `build/coordination/20261007-zeroslack-architecture/r3/DELIVERY.md`、`delivery.json`、`COVERAGE.md`。AR-52 仍属共享 SDK 开放问题；Qt offscreen 与受控调度不代表真实显示或任意 OS 竞争已验证。
+
+## R2：文档、工作区与持久化（2026-10-07）
+
+继承已验收 R1 六项文件差异，正式版本仍为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**。本轮两项确定缺陷已修复并完成开发构建与自测，等待统筹验收；不改版本、不提交或发布。历史已发布结论保持不变。
+
+| 编号 | 根因、归属与历史去重 | 本轮结果 |
+| --- | --- | --- |
+| AR-53 | 中优先级，会话存储读取状态与写入约束。损坏或不支持的记录被当成缺失，触发旧 `.zs` 导入并覆盖本地记录。区别于 AR-22 的失败通知、重试和 pending 来源选择；保留其已验收的最新 pending 优先语义。 | 服务区分 Missing/Loaded/Invalid/Unsupported/ReadError，所有保存入口共用格式屏障；仅 Missing 可迁移，迁移提交成功后才应用 UI。隔离 INI 解析、写锁、提交前字节复核和 QSaveFile 避免失败写缓存成为读取依据。支持 v2/v3/v4；未知 JSON 可显式清理，整份 INI 损坏时拒绝无法定位分区的清理。真实 MainWindow/TabManager 的显式与自动恢复、原记录和 dirty/undo 保留、pending 修复恢复、锁失败、跨工作区分区保留均通过。 |
+| AR-54 | 中优先级，外部同步错误地用逻辑文本摘要判定磁盘版本。编码/BOM/换行变化被忽略，后续保存恢复旧格式。AR-17 的打开时捕获复用、AR-18 的事务逻辑文本统一仍有效；本项补充外部同步、冲突确认及保存的原始字节版本契约，重载重复读取随同收敛，不单列优化。 | 复用 DocumentFileReadResult，把文本、格式和原始摘要作为同次读取结果接受。干净同文本变化不增 revision、不清 undo；dirty 变化进入冲突，旧 review 和 keepLocal 不授权新磁盘版本。保留本地、重载撤销/重做、另存为及恢复摘要均通过。保存使用实际已写入原始摘要，不在保存时盲采格式。 |
+
+首轮 11/11 范围检查通过。最终仅移除生产源码末尾空行，并补充跨分区/失败保存保留断言；重新构建后会话两项检查通过，新增组合测试 **23/23** 通过。证据、六维覆盖、源码和产物 SHA 见 `build/coordination/20261007-zeroslack-architecture/r2/DELIVERY.md`、`delivery.json`、`COVERAGE.md`。测试使用本轮开发 DLL、Qt offscreen 和隔离状态；不声称真实显示、断电或任意系统调用间竞争已验证。AR-52 仍开放于共享 SDK；R3 留待统筹安排。
+
+## 当前基线与 R1：已启用 SuiteApp SDK（2026-10-07）
+
+当前正式基线为 **0.31.26 / `00b3f037cc3e6f2db37e2c49aa3ee94f55ea073a`**，GUI Provider 与 CLI Client 已启用 SuiteApp SDK 1.0.1。下文 0.31.25 的“SDK 仍关闭”仅描述历史版本；dirty 空文档预览在 0.31.26 已修复，本轮保留该结论。新 Goal、范围与执行/统筹分工见 `build/coordination/20261007-zeroslack-architecture/GOAL.md`、`R1-TASK.md`。本轮只交付工作区改动，不改版本、不提交或发布。
+
+| 编号 | 分类 / 归属 | 既有保护与可达证据 | 本轮状态与验收条件 |
+| --- | --- | --- | --- |
+| AR-48 | 确定缺陷 / Suite 资源定位入口 | SDK 验证信封并路由 Provider，但显式 providerId 不验证应用 URI；适配器忽略非法 URI，以 arguments 覆盖文件/坐标，且 `isValid()` 忽略符号解析失败。真实 IPC 中外来 URI、冲突文件、缺失符号加备用文件、非整数/零/相对路径仍返回成功。 | 已修复并自测：绝对路径及正整数约束、已声明定位值一致性、物理路径比较、符号错误不可由文件掩盖，显式工作区绑定当前语义上下文。拒绝前后文本、revision、dirty、选择、undo 与打开文档数不变；同一文件的大小写/词法别名可通过。 |
+| AR-49 | 确定缺陷 / Suite 源文捕获及共享编辑器定位 | 既有 DocumentModel、统一文件读取和语义快照保留源文；Suite 磁盘预览另走 QTextStream，读取失败视为空成功，符号坐标未校验来源修订，打开前未校验行列。真实 IPC 复现旧符号对 dirty/改盘/删除来源成功、越界定位打开文件；真实产品工厂默认 NoWrap 下，非 BMP 字符使“向右移动次数”与 UTF-16 列偏移相差一列。 | 已修复并自测：复用 DocumentModel/readDocumentFile，符号必须匹配快照源文；导航前检查位置范围；编辑器按 QTextBlock + UTF-16 偏移定位。响应带来源、内容 SHA256、文档 textVersion/dirty、positionAvailable、columnEncoding；查询可描述已失效坐标但不打开，action/open 拒绝。验证 UTF-16LE+BOM/CRLF、重命名、打开后删除、关闭后不可用、恢复、撤销/重做和精确列。 |
+| AR-50 | 确定缺陷 / Suite 注册生命周期 | SDK 的 `isListening()` 仅表示本地服务；适配器据此短路 `start()` 和注册查询。隔离 Runtime 被终止后仍报告已注册，不能用同一对象恢复注册。主程序只在启动时调用一次 start，并无 SDK 自动重连保证。 | 已修复并自测：按 Runtime 注册表中的 appId+endpoint 确认归属；显式再次 start 重新确认 Runtime 并注册。保留有界状态查询、重复启动和最后 Provider 退出；实际断连、重启同端点及重注册通过。不新增后台自动重连策略。 |
+| AR-51 | 确定缺陷 / CLI SuiteRuntimeResolver 消费边界 | 已有请求预算、字段白名单、原生失败保留本地元数据；但成功信封中的另一 appId/URI 仍计入 nativeResolvedCount。真实 CLI 服务经实际 Runtime 和可控外部 Provider 复现。 | 已修复并自测：拒绝明确不匹配的 appId/URI 及空/非对象模型，输出结构化诊断并保留本地项目；兼容旧模型省略身份字段。使用 displayName 为 Tickx 的 fixture、稳定 providerId=wave 验证改名不改协议身份；1800ms 延迟触发客户端超时后回退、随后恢复。此 fixture 不代表真实 Tickx/Pinloom/Csrio 跨应用验收。 |
+| AR-52 | 确定跨仓缺陷 / SuiteApp SDK Broker+Provider | SDK 注册表以 appId 为键覆盖实例；注销只带 appId。SDK 1.0.1 实际 Runtime + 两个同 appId、不同端点的 Provider 探针确认：第二实例仍监听时，第一个 stop 移除了第二实例注册。 | **已复现，未修改，转共享 SDK 归属层处理**。证据 `r1/sdk-ownership.json`；探针为同进程两个真实 SDK Provider，不宣称已启动两个完整产品进程。验收应覆盖实例归属令牌/端点、旧实例注销与超时回收不得删除替代实例。 |
+
+本轮六维覆盖、修复前后日志、源码/构建/二进制身份及限制统一见 `build/coordination/20261007-zeroslack-architecture/r1/DELIVERY.md` 和 `delivery.json`。R1 只对上述自有缺陷完成闭环；共享 SDK 多实例归属仍开放。下一轮优先补文档/工作区切换与持久化恢复的端到端状态，含物理别名重新指向、打开与外部改盘竞争、语义异步发布与退出中的请求。不自动开始 R2。历史 AR-01～AR-47 及其已验收结论保持不变。
+
 ## 0.31.25 发布（2026-10-06）
 
 用户明确要求“push并打包正式包”，本次将已验收R3～R6及必要版本说明发布为0.31.25。发布前1,576文件与FINAL-IDENTITY逐一匹配，实际接受集合为`b594fb6d018d142f1bd8495eda13fd1a46527dfaaa277e1c09fb12e354f51948`。完整提交、暂存包验证、远端与本机坚果云替换结果见 `build/validation/20261006-convergence-release/RELEASE.md`；本条不代替发布完成证据。保留现有正式xIPs/SimDock嵌入组件，SuiteApp SDK仍关闭。下文旧发布/验收状态保留历史上下文。

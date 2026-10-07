@@ -109,8 +109,7 @@ void DocumentBuffer::resetText(const QString& text,
         savedRevision = revision;
         document->setModified(false);
         if (source && source->available) {
-            restoreSavedBaseline(source->rawSha256, source->modifiedUtc);
-            format = source->format;
+            restoreSavedBaseline(*source);
         } else {
             captureSavedBaseline();
         }
@@ -132,6 +131,14 @@ void DocumentBuffer::restoreSavedBaseline(
         modifiedUtc.isValid()
         ? modifiedUtc.toUTC()
         : QDateTime();
+}
+
+void DocumentBuffer::restoreSavedBaseline(const DocumentFileReadResult& source)
+{
+    if (!source.available)
+        return;
+    restoreSavedBaseline(source.rawSha256, source.modifiedUtc);
+    format = source.format;
 }
 
 void DocumentBuffer::markSaved()
@@ -203,8 +210,7 @@ void DocumentBuffer::captureSavedBaseline()
     }
     const auto source = readDocumentFile(normalizedFileName);
     if (source.available) {
-        restoreSavedBaseline(source.rawSha256, source.modifiedUtc);
-        format = source.format;
+        restoreSavedBaseline(source);
     } else {
         savedBaselineDigest = QCryptographicHash::hash(document->toPlainText().toUtf8(), QCryptographicHash::Sha256);
         savedBaselineModifiedTimeUtc = {};

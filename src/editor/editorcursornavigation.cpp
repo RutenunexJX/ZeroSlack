@@ -5,6 +5,7 @@
 
 #include <QCursor>
 #include <QGuiApplication>
+#include <QTextBlock>
 #include <QTextCursor>
 #include <QWidget>
 
@@ -24,16 +25,14 @@ void EditorCursorNavigation::applyLineTarget(
     MyCodeEditor* editor,
     const SourceLineNavigationTarget& target) const
 {
-    QTextCursor cursor = editor->textCursor();
-    cursor.movePosition(QTextCursor::Start);
-    for (int i = 0; i < target.lineMoves; ++i)
-        cursor.movePosition(QTextCursor::Down);
-    if (target.columnMoves > 0) {
-        cursor.movePosition(
-            QTextCursor::Right,
-            QTextCursor::MoveAnchor,
-            target.columnMoves);
-    }
+    const QTextBlock block = editor->document()->findBlockByNumber(
+        qBound(0, target.lineMoves, editor->document()->blockCount() - 1));
+    if (!block.isValid())
+        return;
+    // Source coordinates use logical lines and UTF-16 offsets, whereas Down
+    // follows visual rows and Right follows grapheme boundaries.
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(block.position() + qBound(0, target.columnMoves, block.length() - 1));
     editor->setTextCursor(cursor);
     editor->centerCursor();
     editor->setFocus();

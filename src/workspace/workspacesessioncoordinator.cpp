@@ -188,12 +188,17 @@ WorkspaceSessionSaveOutcome WorkspaceSessionCoordinator::persistSession(
     QString message = result.message;
     if (result.saved) {
         pendingSaves.remove(key);
-    } else {
+    } else if (result.retryable) {
         pendingSaves.insert(key, {state, attempts});
         message += attempts < 3 && scheduleRetry
             ? QStringLiteral(" The session is pending; it will be retried automatically.")
             : QStringLiteral(" The session is still pending. Save Session or the next state change can retry; source files are unaffected.");
         if (attempts < 3 && scheduleRetry) retryTimer->start();
+    } else {
+        // Keep a previously owned pending state, but never manufacture one
+        // from a blocked read or keep automatically retrying a format error.
+        if (auto pending = pendingSaves.find(key); pending != pendingSaves.end())
+            pending->attempts = 3;
     }
     if (showSuccess || !result.saved || attempts > 1) {
         showStatus(
@@ -259,7 +264,13 @@ bool WorkspaceSessionCoordinator::restoreSession()
         return false;
     }
 
-    WorkspaceSessionRestoreResult result;
+    WorkspaceSessionRestoreResult result = stateService.load(workspaceRoot);
+    if (result.status == WorkspaceSessionReadStatus::Invalid
+        || result.status == WorkspaceSessionReadStatus::Unsupported) {
+        showStatus(result.message, 5000);
+        emit sessionRestoreFinished(workspaceRoot, false);
+        return false;
+    }
     const auto pending = pendingSaves.constFind(rootKey);
     const bool restoredPending = pending != pendingSaves.cend();
     if (restoredPending) {
@@ -267,16 +278,20 @@ bool WorkspaceSessionCoordinator::restoreSession()
         // activation and explicit Restore consume it; Reset clears it.
         result.loaded = true;
         result.state = pending->state;
-    } else {
-        result = stateService.load(workspaceRoot);
     }
     bool importedLegacy = false;
-    if (!result.loaded
+    if (!result.loaded && result.status == WorkspaceSessionReadStatus::Missing
         && WorkspaceSessionStateService::legacySessionFileExists(
             workspaceRoot)) {
         const WorkspaceLegacyImportResult legacy =
             stateService.loadLegacy(workspaceRoot);
         if (legacy.loaded) {
+            const auto migrated = stateService.save(legacy.state);
+            if (!migrated.saved) {
+                showStatus(migrated.message + QStringLiteral(" Legacy import was not applied."), 5000);
+                emit sessionRestoreFinished(workspaceRoot, false);
+                return false;
+            }
             result.loaded = true;
             result.state = legacy.state;
             result.skippedTabs = legacy.skippedTabs;
@@ -284,7 +299,6 @@ bool WorkspaceSessionCoordinator::restoreSession()
                 legacy.skippedScannedFiles;
             result.message = legacy.message;
             importedLegacy = true;
-            stateService.save(legacy.state);
         } else {
             result.message = legacy.message;
         }
@@ -427,7 +441,10 @@ void WorkspaceSessionCoordinator::noteSessionAvailability()
             workspaceRootKey(workspaceRoot))) {
         return;
     }
-    if (stateService.sessionExists(workspaceRoot)) {
+    const auto local = stateService.load(workspaceRoot);
+    if (local.status != WorkspaceSessionReadStatus::Missing && !local.loaded) {
+        showStatus(local.message, 5000);
+    } else if (local.loaded) {
         showStatus(
             QStringLiteral(
                 "Local workspace session available: "

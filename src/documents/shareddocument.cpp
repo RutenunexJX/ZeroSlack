@@ -60,9 +60,11 @@ SharedDocument::~SharedDocument()
         detachView(editor, true);
 }
 
-bool SharedDocument::reloadCleanText(const QString& text)
+bool SharedDocument::reloadCleanText(const QString& text,
+                                     const DocumentFileReadResult* source)
 {
     if (!document || dirty()
+        || (source && (!source->available || source->text != text))
         || externalFileState
                == SharedDocumentExternalState::Conflict) {
         return false;
@@ -80,11 +82,14 @@ bool SharedDocument::reloadCleanText(const QString& text)
     }
 
     if (document->toPlainText() != text)
-        resetText(text, revision + 1, true);
+        resetText(text, revision + 1, true, source);
     else {
         document->setModified(false);
         savedRevision = revision;
-        captureSavedBaseline();
+        if (source)
+            restoreSavedBaseline(*source);
+        else
+            captureSavedBaseline();
     }
 
     for (auto it = states.cbegin(); it != states.cend(); ++it) {
@@ -98,9 +103,10 @@ bool SharedDocument::reloadCleanText(const QString& text)
     return true;
 }
 
-bool SharedDocument::acceptExternalText(const QString& text)
+bool SharedDocument::acceptExternalText(const QString& text,
+                                        const DocumentFileReadResult* source)
 {
-    if (!document)
+    if (!document || (source && (!source->available || source->text != text)))
         return false;
 
     QHash<MyCodeEditor*, SharedDocumentViewState> states;
@@ -129,7 +135,10 @@ bool SharedDocument::acceptExternalText(const QString& text)
 
     savedRevision = revision;
     document->setModified(false);
-    captureSavedBaseline();
+    if (source)
+        restoreSavedBaseline(*source);
+    else
+        captureSavedBaseline();
     loadingText = false;
     lastDirtyState = false;
     if (wasDirty)

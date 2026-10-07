@@ -34,4 +34,5 @@ private:
 
     MainWindow* window = nullptr;
     std::unique_ptr<SuiteApp::Provider> provider;
+    QString runtimeEndpoint;
 };

@@ -578,6 +578,16 @@ bool dependencyEvidenceCurrent(const QJsonObject& evidence,
     return SemanticInputCapture::matchesFingerprint(fingerprint, project);
 }
 
+bool preparedInputsStillCurrent(const PreparedIndex& prepared)
+{
+    // Status can report a missing or already stale cache without using its
+    // semantic contents. A claimed current cache must retain all dependencies.
+    return workspaceStillCurrent(prepared.workspace)
+        && (!prepared.cacheCurrent || dependencyEvidenceCurrent(
+            prepared.index.value(QStringLiteral("dependencyEvidence")).toObject(),
+            projectForWorkspace(prepared.workspace)));
+}
+
 QJsonObject buildSemanticIndex(const WorkspaceState& state,
                                QString* failureReason)
 {
@@ -2037,8 +2047,35 @@ struct SuiteRuntimeResolver {
             }
             return {};
         }
-        return safeNativeModel(provider, response.value(
-            QStringLiteral("result")).toObject(), omittedCount);
+        const QJsonValue result = response.value(QStringLiteral("result"));
+        const QJsonObject model = result.toObject();
+        const QJsonValue appId = model.value(QStringLiteral("appId"));
+        const QJsonValue uri = model.value(QStringLiteral("uri"));
+        // Older provider models omit these fields. A declared identity must
+        // agree with the routed request before any native fields are consumed.
+        if ((!appId.isUndefined() && (!appId.isString()
+             || (!appId.toString().isEmpty() && appId.toString() != provider)))
+            || (!uri.isUndefined() && (!uri.isString()
+                || (!uri.toString().isEmpty()
+                    && QUrl(uri.toString(), QUrl::StrictMode) != resource.uri)))) {
+            if (diagnostic) {
+                *diagnostic = suiteProviderDiagnostic(provider,
+                    QStringLiteral("provider_identity_mismatch"),
+                    QStringLiteral("The provider returned a different resource identity; local metadata was retained."),
+                    resource.uri.toString(QUrl::FullyEncoded));
+            }
+            return {};
+        }
+        if (!result.isObject() || model.isEmpty()) {
+            if (diagnostic) {
+                *diagnostic = suiteProviderDiagnostic(provider,
+                    QStringLiteral("provider_invalid_response"),
+                    QStringLiteral("The provider returned no resource model; local metadata was retained."),
+                    resource.uri.toString(QUrl::FullyEncoded));
+            }
+            return {};
+        }
+        return safeNativeModel(provider, model, omittedCount);
 #else
         Q_UNUSED(resource);
         return {};
@@ -2463,10 +2500,10 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
     if (observationHook) observationHook(ObservationStage::BeforeOutput);
 
     if (statusOnly) {
-        if (!workspaceStillCurrent(prepared.workspace)) {
+        if (!preparedInputsStillCurrent(prepared)) {
             result.exitCode = 3;
             result.envelope = errorEnvelope(request, QStringLiteral("source_changed"),
-                QStringLiteral("Workspace changed while preparing this command."), &prepared.workspace);
+                QStringLiteral("Source or dependency changed while preparing this command; retry with current input."), &prepared.workspace);
             result.rendered = render(result.envelope, request.format);
             return result;
         }
@@ -2533,10 +2570,7 @@ ZeroSlackCliResult ZeroSlackCliService::execute(
         data = suiteContextData(prepared, suiteRequest, suiteRuntimeEndpoint, &failure);
     }
 
-    if (failure.isEmpty()
-        && (!workspaceStillCurrent(prepared.workspace)
-            || !dependencyEvidenceCurrent(prepared.index.value(QStringLiteral("dependencyEvidence")).toObject(),
-                                          projectForWorkspace(prepared.workspace)))) {
+    if (failure.isEmpty() && !preparedInputsStillCurrent(prepared)) {
         failure = QStringLiteral("Source or dependency changed while preparing this command; retry with current input.");
     }
     if (failure.isEmpty() && prepared.rebuilt

@@ -2,6 +2,8 @@
 
 #include "mainwindow.h"
 #include "documentmodel.h"
+#include "editorfileidentity.h"
+#include <zeroslack/documents/documentfileread.h>
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticstableidentity.h"
@@ -13,12 +15,14 @@
 #include <suiteapp/runtime.h>
 
 #include <QCoreApplication>
-#include <QFile>
+#include <QCryptographicHash>
 #include <QFileInfo>
 #include <QJsonArray>
-#include <QTextStream>
 #include <QUrl>
 #include <QUrlQuery>
+
+#include <cmath>
+#include <limits>
 
 namespace {
 
@@ -34,14 +38,54 @@ struct SourceTarget {
     QString semanticId;
     int line = 1;
     int column = 1;
+    bool lineSpecified = false;
+    bool columnSpecified = false;
+    QString indexedText;
     QString failureCode;
     QString failureReason;
 
     bool isValid() const
     {
-        return !filePath.trimmed().isEmpty();
+        return failureCode.isEmpty() && !filePath.trimmed().isEmpty();
     }
 };
+
+bool mergeString(const QJsonObject& values, const QString& key,
+                 QString* destination, bool path = false)
+{
+    if (!values.contains(key))
+        return true;
+    const auto value = values.value(key);
+    if (!value.isString() || value.toString().trimmed().isEmpty())
+        return false;
+    const QString text = value.toString();
+    if (path && !QFileInfo(text).isAbsolute())
+        return false;
+    if (!destination->isEmpty()
+        && (path ? !EditorFileIdentity::same(*destination, text)
+                 : *destination != text))
+        return false;
+    if (destination->isEmpty())
+        *destination = text;
+    return true;
+}
+
+bool mergeCoordinate(const QJsonObject& values, const QString& key,
+                     int* destination, bool* specified)
+{
+    if (!values.contains(key))
+        return true;
+    const auto value = values.value(key);
+    const double number = value.toDouble();
+    if (!value.isDouble() || !std::isfinite(number) || number < 1
+        || number > std::numeric_limits<int>::max() || std::floor(number) != number)
+        return false;
+    if (*specified && *destination != static_cast<int>(number))
+        return false;
+    *destination = static_cast<int>(number);
+    *specified = true;
+    return true;
+}
 
 QString activeWorkspaceRoot(MainWindow* window)
 {
@@ -84,103 +128,174 @@ void resolveSymbolTarget(SourceTarget* target)
         return;
     }
     const SemanticSymbolRecord& record = matches.constFirst();
+    if ((!target->filePath.isEmpty()
+         && !EditorFileIdentity::same(target->filePath, record.location.fileName))
+        || (target->lineSpecified && target->line != record.location.startLine)
+        || (target->columnSpecified && target->column != record.location.startColumn)) {
+        target->failureCode = QStringLiteral("invalid_resource");
+        target->failureReason = QStringLiteral("Symbol and source locators disagree.");
+        return;
+    }
+    const auto source = snapshot->cachedFileSource(record.location.fileName);
+    if (!source.exists) {
+        target->failureCode = QStringLiteral("symbol_source_unavailable");
+        target->failureReason = QStringLiteral("The symbol snapshot has no source revision.");
+        return;
+    }
     target->kind = QStringLiteral("symbol");
     target->filePath = QFileInfo(record.location.fileName).absoluteFilePath();
-    target->line = qMax(1, record.location.startLine);
-    target->column = qMax(1, record.location.startColumn);
+    target->line = record.location.startLine;
+    target->column = record.location.startColumn;
+    target->indexedText = source.text;
 }
 
 SourceTarget sourceTarget(const QJsonObject& params, MainWindow* window)
 {
     SourceTarget target;
+    const auto invalid = [&] {
+        target.failureCode = QStringLiteral("invalid_resource");
+        target.failureReason = QStringLiteral("Source locators must be valid, absolute and consistent.");
+        return target;
+    };
+    for (const QString& key : {QStringLiteral("resourceUri"), QStringLiteral("uri")}) {
+        if (params.contains(key) && !params.value(key).isString())
+            return invalid();
+    }
     target.uri = params.value(QStringLiteral("resourceUri")).toString();
     if (target.uri.isEmpty())
         target.uri = params.value(QStringLiteral("uri")).toString();
+    else if (!params.value(QStringLiteral("uri")).toString().isEmpty()
+             && QUrl(target.uri) != QUrl(params.value(QStringLiteral("uri")).toString()))
+        return invalid();
 
+    if (params.contains(QStringLiteral("arguments"))
+        && !params.value(QStringLiteral("arguments")).isObject())
+        return invalid();
     const QJsonObject arguments =
         params.value(QStringLiteral("arguments")).toObject();
     if (!target.uri.isEmpty()) {
         const QUrl url(target.uri, QUrl::StrictMode);
-        if (url.isValid()
-            && url.scheme().compare(QStringLiteral("zeroslack"),
-                                    Qt::CaseInsensitive) == 0
-            && url.host().compare(QStringLiteral("source"),
-                                  Qt::CaseInsensitive) == 0) {
-            const QUrlQuery query(url);
-            target.filePath = query.queryItemValue(
-                QStringLiteral("file"), QUrl::FullyDecoded);
-            target.line = qMax(1, query.queryItemValue(
-                QStringLiteral("line")).toInt());
-            target.column = qMax(1, query.queryItemValue(
-                QStringLiteral("column")).toInt());
-        } else if (url.isValid()
-                   && url.scheme().compare(QStringLiteral("zeroslack"),
-                                           Qt::CaseInsensitive) == 0
-                   && url.host().compare(QStringLiteral("symbol"),
-                                         Qt::CaseInsensitive) == 0) {
-            const QUrlQuery query(url);
-            target.kind = QStringLiteral("symbol");
-            target.semanticId = url.path().mid(1);
-            target.workspaceRoot = query.queryItemValue(
-                QStringLiteral("workspace"), QUrl::FullyDecoded);
+        if (!url.isValid() || url.scheme() != QStringLiteral("zeroslack")
+            || !url.userInfo().isEmpty() || url.port() != -1 || url.hasFragment())
+            return invalid();
+        const QUrlQuery query(url);
+        QJsonObject locator;
+        for (const auto& item : query.queryItems(QUrl::FullyDecoded)) {
+            QString key;
+            if (item.first == QStringLiteral("file")) key = QStringLiteral("filePath");
+            if (item.first == QStringLiteral("workspace")) key = QStringLiteral("workspaceRoot");
+            if (item.first == QStringLiteral("line") || item.first == QStringLiteral("column"))
+                key = item.first;
+            if (key.isEmpty())
+                continue;
+            if (locator.contains(key))
+                return invalid();
+            if (key == QStringLiteral("line") || key == QStringLiteral("column")) {
+                bool ok = false;
+                const auto coordinate = item.second.toLongLong(&ok);
+                if (!ok || coordinate < 1 || coordinate > std::numeric_limits<int>::max())
+                    return invalid();
+                locator.insert(key, static_cast<int>(coordinate));
+            } else {
+                locator.insert(key, item.second);
+            }
         }
+        if (!mergeString(locator, QStringLiteral("filePath"), &target.filePath, true)
+            || !mergeString(locator, QStringLiteral("workspaceRoot"), &target.workspaceRoot, true)
+            || !mergeCoordinate(locator, QStringLiteral("line"), &target.line, &target.lineSpecified)
+            || !mergeCoordinate(locator, QStringLiteral("column"), &target.column, &target.columnSpecified))
+            return invalid();
+        if (url.host() == QStringLiteral("source")) {
+            if (target.filePath.isEmpty() || (!url.path().isEmpty() && url.path() != QStringLiteral("/"))
+                || arguments.contains(QStringLiteral("symbolId")))
+                return invalid();
+        } else if (url.host() == QStringLiteral("symbol")) {
+            target.kind = QStringLiteral("symbol");
+            target.semanticId = url.path(QUrl::FullyDecoded).mid(1);
+            if (target.semanticId.isEmpty() || target.semanticId.contains(QLatin1Char('/')))
+                return invalid();
+        } else
+            return invalid();
     }
+    if (!mergeString(arguments, QStringLiteral("filePath"), &target.filePath, true)
+        || !mergeString(arguments, QStringLiteral("workspaceRoot"), &target.workspaceRoot, true)
+        || !mergeString(arguments, QStringLiteral("symbolId"), &target.semanticId)
+        || !mergeCoordinate(arguments, QStringLiteral("line"), &target.line, &target.lineSpecified)
+        || !mergeCoordinate(arguments, QStringLiteral("column"), &target.column, &target.columnSpecified))
+        return invalid();
+    const QString currentWorkspace = activeWorkspaceRoot(window);
     if (target.workspaceRoot.isEmpty())
-        target.workspaceRoot = activeWorkspaceRoot(window);
-    if (!arguments.value(QStringLiteral("workspaceRoot")).toString().isEmpty()) {
-        target.workspaceRoot = arguments.value(
-            QStringLiteral("workspaceRoot")).toString();
-    }
-    if (!arguments.value(QStringLiteral("symbolId")).toString().isEmpty()) {
-        target.kind = QStringLiteral("symbol");
-        target.semanticId = arguments.value(
-            QStringLiteral("symbolId")).toString();
-    }
-    if (!arguments.value(QStringLiteral("filePath")).toString().isEmpty())
-        target.filePath = arguments.value(QStringLiteral("filePath")).toString();
-    if (arguments.value(QStringLiteral("line")).isDouble())
-        target.line = qMax(1, arguments.value(QStringLiteral("line")).toInt());
-    if (arguments.value(QStringLiteral("column")).isDouble())
-        target.column = qMax(1, arguments.value(QStringLiteral("column")).toInt());
+        target.workspaceRoot = currentWorkspace;
     if (!target.filePath.isEmpty())
         target.filePath = QFileInfo(target.filePath).absoluteFilePath();
     if (!target.workspaceRoot.isEmpty()) {
         target.workspaceRoot = QFileInfo(
             target.workspaceRoot).absoluteFilePath();
     }
-    if (!target.semanticId.isEmpty())
+    if (!target.semanticId.isEmpty()) {
+        if (!currentWorkspace.isEmpty()
+            && !EditorFileIdentity::same(target.workspaceRoot, currentWorkspace)) {
+            target.failureCode = QStringLiteral("workspace_mismatch");
+            target.failureReason = QStringLiteral("The symbol does not name the active workspace.");
+            return target;
+        }
+        // Use the active workspace spelling when an equivalent alias was supplied.
+        if (!currentWorkspace.isEmpty()) target.workspaceRoot = currentWorkspace;
         resolveSymbolTarget(&target);
+    }
     return target;
 }
 
-QString sourceSnippet(MainWindow* window, const SourceTarget& target)
-{
+struct SourceContent {
     QString text;
+    QString failureReason;
+    bool fromDocument = false;
+    bool dirty = false;
+    int textVersion = 0;
+};
+
+SourceContent readSource(MainWindow* window, const SourceTarget& target)
+{
+    SourceContent source;
     const auto* documents = window && window->tabManager
         ? window->tabManager->getDocumentModel() : nullptr;
     if (documents && documents->editorForFile(target.filePath)) {
-        text = documents->documentTextForFile(target.filePath);
+        const auto snapshot = documents->documentForFile(target.filePath);
+        source.text = snapshot.text;
+        source.fromDocument = true;
+        source.dirty = snapshot.dirty;
+        source.textVersion = snapshot.textVersion;
     } else {
-        QFile file(target.filePath);
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QTextStream stream(&file);
-            text = stream.readAll();
-        }
+        const auto read = readDocumentFile(target.filePath);
+        source.text = read.text;
+        if (!read.available)
+            source.failureReason = read.failureReason;
     }
-    if (text.isEmpty())
+    return source;
+}
+
+bool positionAvailable(const SourceTarget& target, const QStringList& lines)
+{
+    return target.line > 0 && target.line <= lines.size()
+        && target.column > 0 && target.column <= lines.at(target.line - 1).size() + 1;
+}
+
+QString sourceSnippet(const SourceTarget& target, const QStringList& lines)
+{
+    if (target.line < 1)
         return {};
-    const QStringList lines = text.split(QLatin1Char('\n'));
-    const int first = qMax(0, target.line - 4);
-    const int last = qMin(lines.size(), target.line + 3);
+    const qsizetype first = qMax(qsizetype(0), qsizetype(target.line) - 4);
+    const qsizetype last = qMin(lines.size(), qsizetype(target.line) + 3);
     QStringList snippet;
-    for (int index = first; index < last; ++index)
+    for (qsizetype index = first; index < last; ++index)
         snippet.append(lines.at(index));
     return snippet.join(QLatin1Char('\n'));
 }
 
-QJsonObject resolvedSource(MainWindow* window, const SourceTarget& target)
+QJsonObject resolvedSource(const SourceTarget& target, const SourceContent& source,
+                           const QStringList& lines)
 {
-    return {
+    QJsonObject result{
         {QStringLiteral("appId"), QStringLiteral("zeroslack")},
         {QStringLiteral("uri"), target.uri},
         {QStringLiteral("kind"), target.kind},
@@ -190,9 +305,18 @@ QJsonObject resolvedSource(MainWindow* window, const SourceTarget& target)
         {QStringLiteral("title"), QFileInfo(target.filePath).fileName()},
         {QStringLiteral("line"), target.line},
         {QStringLiteral("column"), target.column},
+        {QStringLiteral("columnEncoding"), QStringLiteral("utf-16")},
         {QStringLiteral("exists"), QFileInfo::exists(target.filePath)},
-        {QStringLiteral("snippet"), sourceSnippet(window, target)},
+        {QStringLiteral("snippet"), sourceSnippet(target, lines)},
+        {QStringLiteral("positionAvailable"), positionAvailable(target, lines)},
+        {QStringLiteral("source"), source.fromDocument ? QStringLiteral("document") : QStringLiteral("disk")},
+        {QStringLiteral("dirty"), source.dirty},
+        {QStringLiteral("contentSha256"), QString::fromLatin1(
+             QCryptographicHash::hash(source.text.toUtf8(), QCryptographicHash::Sha256).toHex())},
     };
+    if (source.fromDocument)
+        result.insert(QStringLiteral("textVersion"), source.textVersion);
+    return result;
 }
 
 } // namespace
@@ -215,7 +339,9 @@ bool ZeroSlackSuiteIntegration::start(
     const SuiteApp::RuntimeStartOptions& runtimeOptions,
     QString* failureReason)
 {
-    if (provider && provider->isListening())
+    if (failureReason)
+        failureReason->clear();
+    if (runtimeEndpoint == runtimeOptions.endpoint && isRegistered())
         return true;
     const SuiteApp::RuntimeStatus runtime =
         SuiteApp::ensureRuntime(runtimeOptions);
@@ -224,18 +350,36 @@ bool ZeroSlackSuiteIntegration::start(
             *failureReason = runtime.errorMessage;
         return false;
     }
-    provider = std::make_unique<SuiteApp::Provider>(
-        appDescriptor(QCoreApplication::applicationVersion()),
-        [this](const QJsonObject& request) {
-            return processRequest(request);
-        },
-        this);
-    return provider->start(runtimeOptions.endpoint, failureReason);
+    if (provider && runtimeEndpoint != runtimeOptions.endpoint)
+        provider.reset();
+    if (!provider) {
+        provider = std::make_unique<SuiteApp::Provider>(
+            appDescriptor(QCoreApplication::applicationVersion()),
+            [this](const QJsonObject& request) { return processRequest(request); },
+            this);
+    }
+    if (!provider->start(runtimeOptions.endpoint, failureReason))
+        return false;
+    runtimeEndpoint = runtimeOptions.endpoint;
+    return true;
 }
 
 bool ZeroSlackSuiteIntegration::isRegistered() const
 {
-    return provider && provider->isListening();
+    if (!provider || !provider->isListening() || runtimeEndpoint.isEmpty())
+        return false;
+    const auto listed = SuiteApp::Client(runtimeEndpoint, 250).listProviders();
+    if (!listed.hasResponse() || !listed.response.value(QStringLiteral("ok")).toBool())
+        return false;
+    const auto descriptor = provider->descriptor();
+    for (const auto& value : listed.response.value(QStringLiteral("result")).toObject()
+             .value(QStringLiteral("providers")).toArray()) {
+        const auto registered = value.toObject();
+        if (SuiteApp::descriptorAppId(registered) == SuiteApp::descriptorAppId(descriptor)
+            && SuiteApp::descriptorEndpoint(registered) == SuiteApp::descriptorEndpoint(descriptor))
+            return true;
+    }
+    return false;
 }
 
 QJsonObject ZeroSlackSuiteIntegration::appDescriptor(
@@ -300,8 +444,18 @@ QJsonObject ZeroSlackSuiteIntegration::processRequest(
                       "A zeroslack://source or zeroslack://symbol resource is required")
                 : target.failureReason);
     }
+    const SourceContent source = readSource(window, target);
+    if (!source.failureReason.isEmpty()) {
+        return SuiteApp::errorResponse(request, QStringLiteral("source_unavailable"),
+                                        source.failureReason);
+    }
+    if (target.kind == QStringLiteral("symbol") && source.text != target.indexedText) {
+        return SuiteApp::errorResponse(request, QStringLiteral("symbol_source_stale"),
+            QStringLiteral("The source has changed since this symbol snapshot was built."));
+    }
+    const QStringList lines = source.text.split(QLatin1Char('\n'));
     if (method == QStringLiteral("resource.resolve"))
-        return SuiteApp::successResponse(request, resolvedSource(window, target));
+        return SuiteApp::successResponse(request, resolvedSource(target, source, lines));
 
     if (method == QStringLiteral("action.invoke")) {
         const QString actionId = params.value(
@@ -311,6 +465,10 @@ QJsonObject ZeroSlackSuiteIntegration::processRequest(
             return SuiteApp::errorResponse(
                 request, QStringLiteral("action_not_supported"),
                 QStringLiteral("Unknown ZeroSlack action"));
+        }
+        if (!positionAvailable(target, lines)) {
+            return SuiteApp::errorResponse(request, QStringLiteral("source_position_unavailable"),
+                QStringLiteral("The requested position is outside the current source."));
         }
         const bool opened = window
             && window->revealSuiteSource(
@@ -323,7 +481,7 @@ QJsonObject ZeroSlackSuiteIntegration::processRequest(
         return SuiteApp::successResponse(
             request, {{QStringLiteral("opened"), true},
                       {QStringLiteral("resource"),
-                       resolvedSource(window, target)}});
+                       resolvedSource(target, source, lines)}});
     }
 
     const QString surfaceId =
@@ -339,9 +497,13 @@ QJsonObject ZeroSlackSuiteIntegration::processRequest(
             {{QStringLiteral("surfaceId"), surfaceId},
              {QStringLiteral("mode"), QStringLiteral("model")},
              {QStringLiteral("fallback"), QStringLiteral("external")},
-             {QStringLiteral("model"), resolvedSource(window, target)}});
+             {QStringLiteral("model"), resolvedSource(target, source, lines)}});
     }
     if (method == QStringLiteral("surface.open")) {
+        if (!positionAvailable(target, lines)) {
+            return SuiteApp::errorResponse(request, QStringLiteral("source_position_unavailable"),
+                QStringLiteral("The requested position is outside the current source."));
+        }
         const bool opened = window
             && window->revealSuiteSource(
                 target.filePath, target.line, target.column);

@@ -3,6 +3,7 @@
 
 #include <QByteArray>
 #include <QDateTime>
+#include <QMap>
 #include <QString>
 
 #include <functional>
@@ -18,6 +19,7 @@ enum class WorkspaceFileOperationKind {
 
 struct WorkspaceFileSnapshot {
     QString identityKey;
+    QByteArray objectId;
     bool exists = false;
     bool directory = false;
     qint64 size = -1;
@@ -43,7 +45,16 @@ struct WorkspaceFileOperationPlan {
     QString preview;
     QString failureReason;
     WorkspaceFileSnapshot sourceSnapshot;
+    QMap<QString, WorkspaceFileSnapshot> sourceEntries;
+    WorkspaceFileSnapshot targetSnapshot;
+    WorkspaceFileSnapshot workspaceSnapshot;
+    WorkspaceFileSnapshot parentSnapshot;
     QString revisionToken;
+};
+
+struct WorkspacePathMutationGuard {
+    std::function<bool(QString*)> validate;
+    std::function<bool(const WorkspaceFileSnapshot&, QString*)> acceptSave;
 };
 
 struct WorkspaceFileOperationResult {
@@ -88,6 +99,11 @@ public:
     WorkspaceFileOperationResult apply(
         const WorkspaceFileOperationPlan& plan) const;
 
+    // Advance only the file generation actually committed by this Save All.
+    bool revalidate(WorkspaceFileOperationPlan* plan,
+                    const WorkspaceFileSnapshot* saved = nullptr,
+                    QString* failureReason = nullptr) const;
+
     void setTrashMoverForTesting(TrashMover mover);
 
     static bool pathIsInsideWorkspace(
@@ -100,6 +116,8 @@ public:
 
 private:
     TrashMover trashMover;
+
+    WorkspaceFileOperationPlan replan(const WorkspaceFileOperationPlan& plan) const;
 
     WorkspaceFileOperationPlan planCreate(
         WorkspaceFileOperationKind kind,

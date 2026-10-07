@@ -6,6 +6,7 @@
 #include "editorfileidentity.h"
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -1132,10 +1133,11 @@ MyCodeEditor* TabManager::createAuxiliaryView(
     const QString& documentId,
     const QString& fileName,
     QWidget* parentWidget,
-    const SharedDocumentViewState& state)
+    const SharedDocumentViewState& state,
+    const QByteArray* expectedSourceSha256)
 {
     SharedDocument* document =
-        auxiliaryDocument(documentId, fileName);
+        auxiliaryDocument(documentId, fileName, expectedSourceSha256);
     if (!document || !parentWidget)
         return nullptr;
     return createBoundView(
@@ -1146,13 +1148,14 @@ bool TabManager::rebindAuxiliaryView(
     MyCodeEditor* editor,
     const QString& documentId,
     const QString& fileName,
-    const SharedDocumentViewState& state)
+    const SharedDocumentViewState& state,
+    const QByteArray* expectedSourceSha256)
 {
     if (!isAuxiliaryView(editor))
         return false;
 
     SharedDocument* target =
-        auxiliaryDocument(documentId, fileName);
+        auxiliaryDocument(documentId, fileName, expectedSourceSha256);
     SharedDocument* previous =
         sharedDocumentForEditor(editor);
     if (!target)
@@ -1841,7 +1844,8 @@ bool TabManager::prepareWorkspacePathMutation(
     bool recursive,
     WorkspacePathMutation* prepared,
     QWidget* dialogParent,
-    QString* failureReason)
+    QString* failureReason,
+    const WorkspacePathMutationGuard& guard)
 {
     if (prepared) *prepared = {};
     if (failureReason)
@@ -1855,6 +1859,7 @@ bool TabManager::prepareWorkspacePathMutation(
     }
 
     QList<SharedDocument*> affectedDocuments;
+    QList<WorkspacePathMutation::Document> confirmedDocuments;
     for (SharedDocument* document :
          sharedDocuments->documents()) {
         if (!document
@@ -1875,28 +1880,31 @@ bool TabManager::prepareWorkspacePathMutation(
             }
         }
         affectedDocuments.append(document);
+        WorkspacePathMutation::Document entry;
+        entry.document = document;
+        entry.identity = document->documentId();
+        entry.revision = document->textRevision();
+        for (auto* view : document->views()) entry.views.append(view);
+        confirmedDocuments.append(std::move(entry));
     }
 
     if (!resolvePendingDocuments(
             affectedDocuments,
-            dialogParent)) {
-        if (failureReason) {
+            dialogParent, guard, failureReason)) {
+        if (failureReason && failureReason->isEmpty()) {
             *failureReason = QStringLiteral(
                 "The file operation was cancelled because its open "
                 "documents were not resolved.");
         }
         return false;
     }
+    if (guard.validate && !guard.validate(failureReason)) return false;
     prepared->owner = this;
-    for (auto* document : affectedDocuments) {
+    for (const auto& entry : confirmedDocuments) {
         // Save As may have deliberately moved a pending document away.
-        if (!documentPathMatchesMutation(document->documentId(), sourcePath, recursive)) continue;
-        WorkspacePathMutation::Document entry;
-        entry.document = document;
-        entry.identity = document->documentId();
-        entry.revision = document->textRevision();
-        for (auto* view : document->views()) entry.views.append(view);
-        prepared->documents.append(std::move(entry));
+        if (entry.document && entry.document->documentId() != entry.identity
+            && !documentPathMatchesMutation(entry.document->documentId(), sourcePath, recursive)) continue;
+        prepared->documents.append(entry);
     }
     return validateWorkspacePathMutation(*prepared, failureReason);
 }
@@ -2432,24 +2440,26 @@ MyCodeEditor* TabManager::createBoundView(
 
 SharedDocument* TabManager::auxiliaryDocument(
     const QString& documentId,
-    const QString& fileName)
+    const QString& fileName,
+    const QByteArray* expectedSourceSha256)
 {
     if (!sharedDocuments)
         return nullptr;
-    if (!documentId.isEmpty()) {
-        if (SharedDocument* document =
-                sharedDocuments->documentById(documentId)) {
-            return document;
-        }
+    SharedDocument* document = sharedDocuments->documentById(documentId);
+    if (!document && !fileName.isEmpty()) document = sharedDocuments->documentForFile(fileName);
+    const bool acquired = !document && !fileName.isEmpty();
+    if (acquired) document = acquireFileDocument(fileName);
+    // Validate the actual shared buffer before detaching or rebinding a view.
+    // Re-reading the path here would miss dirty buffers and introduce another
+    // disk generation between validation and acquisition.
+    if (document && expectedSourceSha256
+        && (expectedSourceSha256->isEmpty()
+            || QCryptographicHash::hash(document->textDocument()->toPlainText().toUtf8(),
+                                        QCryptographicHash::Sha256) != *expectedSourceSha256)) {
+        if (acquired) sharedDocuments->releaseIfUnused(document);
+        return nullptr;
     }
-    if (!fileName.isEmpty()) {
-        if (SharedDocument* document =
-                sharedDocuments->documentForFile(fileName)) {
-            return document;
-        }
-        return acquireFileDocument(fileName);
-    }
-    return nullptr;
+    return document;
 }
 
 bool TabManager::bindEditorToDocument(
@@ -2514,7 +2524,8 @@ SharedDocument* TabManager::acquireFileDocument(
 bool TabManager::saveEditor(
     MyCodeEditor* editor,
     bool forceSaveAs,
-    const QString& explicitFileName)
+    const QString& explicitFileName,
+    WorkspaceFileSnapshot* savedGeneration)
 {
     SharedDocument* document =
         sharedDocumentForEditor(editor);
@@ -2582,7 +2593,6 @@ bool TabManager::saveEditor(
     QString saveFailure;
     const QString& savedText = editor->cachedDocumentText();
     QByteArray savedRawFingerprint;
-    QByteArray savedLogicalFingerprint;
     // Bind the selected target once. The atomic writer uses this physical
     // path, so a rebound display alias cannot redirect its temporary file.
     const QString writePath = EditorFileIdentity::physicalPath(fileName);
@@ -2600,7 +2610,7 @@ bool TabManager::saveEditor(
             savedText,
             &saveFailure,
             &savedRawFingerprint,
-            &savedLogicalFingerprint,
+            nullptr,
             revalidateOverwrite, document->fileFormat())) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
@@ -2614,6 +2624,16 @@ bool TabManager::saveEditor(
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(fileName, QStringLiteral("The save target changed during commit. Review the saved file before continuing."));
         return false;
+    }
+    if (savedGeneration) {
+        // Capture the committed generation before model/fileSaved signals can
+        // re-enter application code. The path operation may authorize only it.
+        *savedGeneration = WorkspaceFileOperationService::snapshot(writePath);
+        if (savedGeneration->contentDigest != savedRawFingerprint || savedGeneration->objectId.isEmpty()) {
+            writeRecoverySnapshot(document, true);
+            emit fileSaveFailed(fileName, QStringLiteral("The saved file changed before its generation could be confirmed."));
+            return false;
+        }
     }
     const bool renamedDocument = !document->matchesSourcePath(fileName) || !sameLexicalPath(
         fileName,
@@ -2642,7 +2662,7 @@ bool TabManager::saveEditor(
     clearRecoverySnapshot(document, true);
     if (externalDocumentSync)
         externalDocumentSync->noteDocumentSaved(
-            document, savedLogicalFingerprint);
+            document, savedRawFingerprint);
     updateTitlesForDocument(document);
     if (renamedDocument)
         applyWorkspaceScope();
@@ -2668,7 +2688,9 @@ bool TabManager::confirmCloseDocument(
 
 bool TabManager::resolvePendingDocuments(
     const QList<SharedDocument*>& documents,
-    QWidget* dialogParent)
+    QWidget* dialogParent,
+    const WorkspacePathMutationGuard& guard,
+    QString* failureReason)
 {
     if (!unsavedDocumentManager)
         return documents.isEmpty();
@@ -2681,10 +2703,13 @@ bool TabManager::resolvePendingDocuments(
         dialogParent
             ? dialogParent
             : qobject_cast<QWidget*>(parent()),
-        [this](SharedDocument* document) {
+        [this, &guard, failureReason](SharedDocument* document) {
             if (!document || document->views().isEmpty())
                 return false;
-            return saveEditor(document->views().first(), false);
+            if (guard.validate && !guard.validate(failureReason)) return false;
+            WorkspaceFileSnapshot saved;
+            if (!saveEditor(document->views().first(), false, {}, guard.acceptSave ? &saved : nullptr)) return false;
+            return !guard.acceptSave || guard.acceptSave(saved, failureReason);
         });
 }
 

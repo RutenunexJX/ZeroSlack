@@ -8,10 +8,8 @@
 
 #include <QDateTime>
 #include <QDir>
-#include <QFile>
 #include <QFileInfo>
 #include <QSet>
-#include <QTextStream>
 
 #include <algorithm>
 #include <utility>
@@ -510,16 +508,10 @@ void AnalysisScheduler::scheduleExternalFileAnalysis(const QString& fileName,
                 || isSelfWriteWatcherEvent(fileName)) {
                 return;
             }
-            QFile file(fileName);
-            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                rememberPendingCleanSemanticChange(
-                    fileName,
-                    QTextStream(&file).readAll(),
-                    snapshot.fileName.isEmpty()
-                        ? 0
-                        : static_cast<std::uint64_t>(snapshot.textVersion),
-                    SemanticAnalysisReason::ExternalFileChange);
-            }
+            // Disk events are hints, not authoritative buffer overrides.
+            // The worker's SemanticInputCapture owns decoding, read failures
+            // and final disk revalidation, including coalesced newer changes.
+            pendingCleanSemanticChanges.remove(normalizedFileName(fileName));
             requestSemanticAnalysis(
                 SemanticAnalysisReason::ExternalFileChange,
                 SemanticChangeImpact::Unknown,
@@ -590,6 +582,7 @@ void AnalysisScheduler::handleDocumentClosed(const QString& fileName)
         timer->deleteLater();
     semanticStatuses.remove(key);
     standaloneAnalysisRevisions.remove(key);
+    pendingCleanSemanticChanges.remove(key);
     if (symbolAnalyzer) symbolAnalyzer->cancelFileAnalysis(fileName);
     selfWriteStamps.remove(key);
 }

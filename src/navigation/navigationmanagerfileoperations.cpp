@@ -761,24 +761,28 @@ NavigationManager::executeActionRoute(
     WorkspacePathMutation preparedMutation;
     if (pathMutation && connectedTabManager) {
         QString pendingFailure;
+        WorkspacePathMutationGuard guard;
+        guard.validate = [this, &plan](QString* reason) {
+            if (!connectedWorkspaceManager || !EditorFileIdentity::same(
+                    connectedWorkspaceManager->getWorkspacePath(), plan.workspaceRoot)) {
+                if (reason) *reason = QStringLiteral("The active workspace changed during confirmation. Review the operation again.");
+                return false;
+            }
+            return fileOperationService->revalidate(&plan, nullptr, reason);
+        };
+        guard.acceptSave = [this, &plan](const WorkspaceFileSnapshot& saved, QString* reason) {
+            return fileOperationService->revalidate(&plan, &saved, reason);
+        };
         if (!connectedTabManager
                  ->prepareWorkspacePathMutation(
                      plan.sourcePath,
                      plan.sourceDirectory,
                      &preparedMutation,
                      navigationWidget,
-                     &pendingFailure)) {
+                     &pendingFailure,
+                     guard)) {
             actionResult.failureReason =
                 pendingFailure;
-            return actionResult;
-        }
-        // Saving a pending document legitimately changes the source
-        // snapshot. Re-analyze after the unified pending-document
-        // decision, immediately before atomic application.
-        plan = makePlan();
-        if (!plan.valid) {
-            actionResult.failureReason =
-                plan.failureReason;
             return actionResult;
         }
     }
@@ -797,10 +801,11 @@ NavigationManager::executeActionRoute(
 
     QString closeFailure;
     if (pathMutation && connectedTabManager) {
-        connectedTabManager
-            ->finalizeWorkspacePathMutation(
+        if (!connectedTabManager->finalizeWorkspacePathMutation(
                 preparedMutation,
-                &closeFailure);
+                &closeFailure)) {
+            closeFailure = QStringLiteral("The file operation completed, but editor finalization failed. %1").arg(closeFailure);
+        }
     }
 
     if (plan.kind
@@ -891,26 +896,21 @@ NavigationManager::executeActionRoute(
         }
     }
 
-    if (!closeFailure.isEmpty()) {
-        actionResult.failureReason =
-            closeFailure;
-        actionResult.output.insert(
-            QStringLiteral("path"),
-            result.path);
-        return actionResult;
-    }
-
-    actionResult.succeeded = true;
-    actionResult.message =
-        plan.preview;
     actionResult.output.insert(
         QStringLiteral("path"),
         result.path);
+    if (pathMutation) actionResult.output.insert(QStringLiteral("diskOperationCompleted"), true);
     if (!result.recoveredPath.isEmpty()) {
         actionResult.output.insert(
             QStringLiteral("recoveredPath"),
             result.recoveredPath);
     }
+    if (!closeFailure.isEmpty()) {
+        actionResult.failureReason = closeFailure;
+        return actionResult;
+    }
+    actionResult.succeeded = true;
+    actionResult.message = plan.preview;
     return actionResult;
 }
 
