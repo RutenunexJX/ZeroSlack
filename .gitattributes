@@ -1,2 +1,5 @@
 # Preserve the audited vendor bytes and reconstruction patch line endings.
 thirdparty/elawidgettools/** -text
+
+# Keep captured SimDock fixture bytes identical to their provenance hashes.
+test_sv/fixtures/simdock/** -text
