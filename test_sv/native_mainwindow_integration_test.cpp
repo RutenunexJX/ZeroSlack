@@ -44,6 +44,7 @@
 #include <QTemporaryDir>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTextDocument>
 #include <QTimer>
 #include <QtTest>
 #include <functional>
@@ -152,6 +153,55 @@ QJsonObject moduleEvidence(const QString &name)
     return {{"name", name}, {"path", path}, {"sha256", path.isEmpty() ? QString() :
             QString::fromLatin1(QCryptographicHash::hash(get(path), QCryptographicHash::Sha256).toHex())}};
 }
+
+struct SimulationIdentity
+{
+    QPointer<SimDockContextView> workspace;
+    QPointer<simdock::Workbench> panel;
+    QPointer<QWidget> sources, logs, sourceParent, logParent;
+    QPointer<QAbstractItemView> sourceList;
+    QPointer<QAbstractItemModel> sourceModel;
+    QPointer<QPlainTextEdit> log;
+    QPointer<QTextDocument> logDocument;
+
+    explicit SimulationIdentity(SimDockContextView *view) : workspace(view), panel(view->workbench())
+    {
+        sources = panel->sourceFilesWidget(); logs = panel->runLogWidget();
+        sourceParent = sources->parentWidget(); logParent = logs->parentWidget();
+        sourceList = sources->findChild<QAbstractItemView *>("sourceList");
+        sourceModel = sourceList ? sourceList->model() : nullptr;
+        log = logs->findChild<QPlainTextEdit *>();
+        logDocument = log ? log->document() : nullptr;
+    }
+    void verify(MainWindow &window, QWidget *surface) const
+    {
+        QVERIFY(workspace && panel && sources && logs && sourceParent && logParent);
+        QVERIFY(sourceList && sourceModel && log && logDocument);
+        QCOMPARE(workspace->workbench(), panel.data());
+        QCOMPARE(workspace->component(), static_cast<QWidget *>(panel.data()));
+        QCOMPARE(panel->sourceFilesWidget(), sources.data());
+        QCOMPARE(panel->runLogWidget(), logs.data());
+        QCOMPARE(sourceList->model(), sourceModel.data());
+        QCOMPARE(log->document(), logDocument.data());
+        QCOMPARE(sources->parentWidget(), sourceParent.data());
+        QCOMPARE(logs->parentWidget(), logParent.data());
+        auto *navigation = window.findChild<NavigationWidget *>(); QVERIFY(navigation);
+        QVERIFY(navigation->isAncestorOf(sources));
+        QVERIFY(window.isAncestorOf(logs));
+        QVERIFY(!panel->isAncestorOf(sources) && !panel->isAncestorOf(logs));
+        if (surface) {
+            QVERIFY(surface != workspace);
+            QCOMPARE(workspace->parentWidget(), surface);
+            QCOMPARE(surface->findChildren<SimDockContextView *>().size(), 1);
+            QCOMPARE(surface->findChild<SimDockContextView *>(), workspace.data());
+            QVERIFY(surface->isAncestorOf(panel));
+            QVERIFY(!surface->isAncestorOf(sources) && !surface->isAncestorOf(logs));
+        } else {
+            QCOMPARE(workspace->parentWidget(), static_cast<QWidget *>(&window));
+            QVERIFY(workspace->isHidden());
+        }
+    }
+};
 }
 
 // Uses the product's actual MainWindow and providers, never component C++
@@ -343,6 +393,10 @@ class NativeMainWindowIntegrationTest : public QObject
         whenVisible(&window, "payloadReviewForm", [](QWidget *form) { click(form, "formAccept"); });
         click(xhost->component(), "updateButton"); QTRY_VERIFY_WITH_TIMEOUT(!busy(xhost->component()), 10000);
         auto *dock = controller->dockHost();
+        const SimulationIdentity simulation(shost);
+        QPointer<QWidget> simulationSurface = controller->viewForResource(skey);
+        QVERIFY(simulationSurface);
+        simulation.verify(window, simulationSurface); QVERIFY(!QTest::currentTestFailed());
         const auto xstate = xhost->saveState();
         const auto sstate = shost->saveState();
         window.resizeDocks({controller->dockWidget()}, {window.width()}, Qt::Horizontal);
@@ -367,6 +421,8 @@ class NativeMainWindowIntegrationTest : public QObject
                     QVERIFY(dock->setSectionCollapsed(key, false, false));
                     QVERIFY(dock->setSectionHeight(key, layout.second));
                     QVERIFY(controller->focusResource(key));
+                    QCOMPARE(controller->viewForResource(skey), simulationSurface.data());
+                    simulation.verify(window, simulationSurface); QVERIFY(!QTest::currentTestFailed());
                     const int effectiveWidth = qMin(layout.first, maximumDockWidth);
                     window.resizeDocks({controller->dockWidget()}, {effectiveWidth}, Qt::Horizontal);
                     window.raise(); window.activateWindow();
@@ -393,10 +449,22 @@ class NativeMainWindowIntegrationTest : public QObject
         for (bool simdock : {false, true}) {
             const auto key = simdock ? skey : xkey;
             QWidget *host = simdock ? static_cast<QWidget*>(shost) : static_cast<QWidget*>(xhost);
-            auto *panel = simdock ? shost->component() : xhost->component();
+            QPointer<QWidget> surface = controller->viewForResource(key);
+            QPointer<QWidget> panel = simdock ? shost->component() : xhost->component();
+            QVERIFY(surface && panel);
+            QCOMPARE(dock->viewForResource(key), surface.data());
+            if (simdock) QCOMPARE(surface.data(), simulationSurface.data());
+            else QCOMPARE(surface.data(), host);
             const auto saved = simdock ? shost->saveState() : xhost->saveState();
             QVERIFY(controller->unpinResource(key));
-            auto *floating = controller->floatingWindow(); QVERIFY(floating && floating->view() == host);
+            QPointer<ContextFloatingWindow> floating = controller->floatingWindow();
+            QVERIFY(floating && surface && panel);
+            QCOMPARE(floating->view(), surface.data());
+            QCOMPARE(controller->viewForResource(key), surface.data());
+            QVERIFY(!dock->containsResource(key));
+            QVERIFY(surface == host || surface->isAncestorOf(host));
+            QCOMPARE(simdock ? shost->component() : xhost->component(), panel.data());
+            simulation.verify(window, simulationSurface); QVERIFY(!QTest::currentTestFailed());
             floating->resize(qMin(920, available.width() - 24), qMin(760, available.height() - 24));
             floating->move(available.topLeft() + QPoint(12, 12));
             floating->show(); floating->raise(); floating->activateWindow();
@@ -405,10 +473,19 @@ class NativeMainWindowIntegrationTest : public QObject
             if (simdock) simdockReachability(panel); else xipsReachability(panel);
             QVERIFY(!QTest::currentTestFailed());
             QVERIFY(controller->pinFloatingResource(key));
-            QCOMPARE(simdock ? shost->component() : xhost->component(), panel);
+            QVERIFY(surface && panel && floating);
+            QCOMPARE(controller->viewForResource(key), surface.data());
+            QCOMPARE(dock->viewForResource(key), surface.data());
+            QVERIFY(!floating->view());
+            QVERIFY(dock->isAncestorOf(surface));
+            QCOMPARE(simdock ? shost->component() : xhost->component(), panel.data());
             QCOMPARE((simdock ? shost->saveState() : xhost->saveState()).value(simdock ? "projectId" : "assetId"), saved.value(simdock ? "projectId" : "assetId"));
+            if (simdock) QCOMPARE(shost->saveState(), saved);
+            simulation.verify(window, simulationSurface); QVERIFY(!QTest::currentTestFailed());
+            finalUi[simdock ? "simulationSurfaceRoundTrip" : "xipsSurfaceRoundTrip"] = true;
         }
         finalUi["floating"] = true;
+        finalUi["sharedSimulationOwnership"] = true;
         QVERIFY(dock->setSectionCollapsed(xkey, true, false));
         QVERIFY(dock->setSectionCollapsed(skey, false, false));
         QVERIFY(dock->setSectionHeight(skey, 690));
@@ -889,11 +966,22 @@ private slots:
         }
         sresource.state = shost->saveState();
         const auto xstate = xhost->saveState();
+        const SimulationIdentity simulation(shost);
+        QPointer<QWidget> closedSurface = controller->viewForResource(sresource.stableKey());
+        QVERIFY(closedSurface);
+        simulation.verify(window, closedSurface); QVERIFY(!QTest::currentTestFailed());
         QVERIFY(controller->closePinnedResource(sresource.stableKey()));
         QVERIFY(shost); QVERIFY(!controller->viewForResource(sresource.stableKey()));
+        simulation.verify(window, nullptr); QVERIFY(!QTest::currentTestFailed());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(!closedSurface);
+        simulation.verify(window, nullptr); QVERIFY(!QTest::currentTestFailed());
         QVERIFY(controller->openResource(sresource, {ContextSurface::Docked, ContextPersistence::Kept}));
         shost = window.findChild<SimDockContextView*>();
         QVERIFY(shost && shost->isReady());
+        QCOMPARE(shost.data(), simulation.workspace.data());
+        simulation.verify(window, controller->viewForResource(sresource.stableKey())); QVERIFY(!QTest::currentTestFailed());
+        QCOMPARE(shost->saveState(), sresource.state);
         QCOMPARE(shost->saveState().value("projectId").toString(), QString::fromLatin1(projectId));
         QCOMPARE(shost->property("nativeComponentDarkTheme").toBool(), true);
         QVERIFY(sessions->openWorkspace(b));
@@ -907,6 +995,8 @@ private slots:
         QVERIFY(controller->openTool("simdock"));
         shost = window.findChild<SimDockContextView*>();
         QVERIFY(shost && shost->isReady());
+        QCOMPARE(shost.data(), simulation.workspace.data());
+        simulation.verify(window, controller->viewForResource(sresource.stableKey())); QVERIFY(!QTest::currentTestFailed());
         QTRY_VERIFY_WITH_TIMEOUT(shost->canClose(), 10000);
         QCOMPARE(shost->saveState().value("workspace").toString(), a);
         QCOMPARE(shost->saveState().value("projectId").toString(), QString::fromLatin1(projectId));
@@ -919,6 +1009,8 @@ private slots:
         if (finalUiRequested()) {
             verifyThemes(xhost, shost, true); QVERIFY(!QTest::currentTestFailed());
             finalUi["globalPurity"] = true; finalUi["closeReopenContext"] = true;
+            finalUi["surfaceDestroyedWorkspaceRetained"] = true;
+            finalUi["sourceModelAndLogDocumentRetained"] = true;
             QVERIFY(put(QDir(report).filePath("final-ui-evidence.json"), QJsonDocument(QJsonObject{
                 {"host", "ZeroSlack MainWindow"}, {"platform", QGuiApplication::platformName()}, {"dpr", window.devicePixelRatioF()},
                 {"finalUiIntegration", finalUi}, {"layouts", uiLayouts}, {"pointerChecks", pointerEvidence}, {"screenshots", captures}}).toJson()));
