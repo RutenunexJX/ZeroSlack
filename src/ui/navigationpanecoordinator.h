@@ -34,6 +34,9 @@ public:
     void showFiles();
     void showDesign();
     void showSearch();
+    void setSourceFilesWidget(QWidget* widget);
+    int activeTab() const;
+    void setActiveTab(int tab);
     QString filesSearchQuery() const;
     QString designSearchQuery() const;
     void setSearchQueries(const QString& filesQuery,

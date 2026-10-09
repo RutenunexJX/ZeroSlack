@@ -32,6 +32,7 @@ class NavigationManager;
 class NavigationPaneCoordinator;
 class NotificationCenter;
 class EditingTimeService;
+class SimDockContextView;
 class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
@@ -117,6 +118,7 @@ private:
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<NotificationCenter> notificationCenter;
     std::unique_ptr<EditingTimeService> editingTimeService;
+    std::unique_ptr<SimDockContextView> simulationWorkspace;
     std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;

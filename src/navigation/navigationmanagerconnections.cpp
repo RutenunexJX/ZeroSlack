@@ -415,6 +415,7 @@ void NavigationManager::setupConnections()
             &NavigationWidget::searchFilterChanged,
             this,
             [this](int tabIndex, const QString& filter) {
+                if (tabIndex != NavigationWidget::FileTab && tabIndex != NavigationWidget::DesignTab) return;
                 setSearchFilter(
                     tabIndex == NavigationWidget::DesignTab
                         ? DesignHierarchyView

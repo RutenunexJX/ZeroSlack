@@ -17,9 +17,11 @@
 #include <ElaSpinBox.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
-#include <ElaDrawerArea.h>
 #include <ElaToolButton.h>
-#include <ElaStatusBar.h>
+#include "uicontrols.h"
+#include "roundedicons.h"
+#include <QAction>
+#include <QMenu>
 #include <QScrollBar>
 #include <QSet>
 #include <QDialog>
@@ -30,19 +32,14 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
-#include <QFontDatabase>
 #include <QFrame>
 #include <QFutureWatcher>
-#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QSettings>
 #include <QProxyStyle>
 #include <QStyleFactory>
 #include <QSignalBlocker>
-#include <QSplitter>
 #include <QScrollArea>
-#include <QStackedWidget>
-#include <QResizeEvent>
 #include <QScopedValueRollback>
 #include <QStandardItemModel>
 #include <QTextCursor>
@@ -63,12 +60,6 @@ Workbench::Workbench(QWidget* parent, bool standalone)
     m_scanPool.setMaxThreadCount(1);
     buildUi();
     m_simulator = preference(QStringLiteral("simulator/path")).toString();
-    QVariantMap layout;
-    for (const auto& key : {"layout/columns", "layout/workbench", "layout/simulationExpanded", "layout/logExpanded", "layout/compactPage"}) {
-        const auto value = preference(QString::fromLatin1(key));
-        if (value.isValid()) layout.insert(QString::fromLatin1(key), value);
-    }
-    restoreLayout(layout);
     m_logTimer.setSingleShot(true);
     m_logTimer.setInterval(16);
     connect(&m_logTimer, &QTimer::timeout, this, &Workbench::flushLog);
@@ -89,155 +80,182 @@ Workbench::~Workbench()
     shutdown();
     // Only this instance's tasks are drained; the host's global pool is untouched.
     m_scanPool.waitForDone();
+    delete m_sources;
+    delete m_logs;
 }
 
 QSize Workbench::minimumSizeHint() const { return {280, 240}; }
 
-void Workbench::resizeEvent(QResizeEvent* event)
-{
-    QWidget::resizeEvent(event);
-    updatePresentation();
-}
-
-void Workbench::updatePresentation()
-{
-    if (!m_compactBody || m_arranging) return;
-    // Short floating windows need the same scrollable pages as narrow docks.
-    setCompact(width() < 900 || height() < 600);
-}
-
-void Workbench::arrangeSimulationFields(bool compact)
-{
-    m_simulationHeading->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
-    m_tbActions->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
-    m_runActions->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
-    m_waveActions->setDirection(compact ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
-    QWidget* fields[] = {m_tbCaption, m_durationCaption, m_tbTop, m_duration, m_units};
-    for (auto* field : fields)
-        m_simulationFields->removeWidget(field);
-    if (compact) {
-        m_simulationFields->addWidget(m_tbCaption, 0, 0, 1, 2);
-        m_simulationFields->addWidget(m_tbTop, 1, 0, 1, 2);
-        m_simulationFields->addWidget(m_durationCaption, 2, 0, 1, 2);
-        m_simulationFields->addWidget(m_duration, 3, 0);
-        m_simulationFields->addWidget(m_units, 3, 1);
-    } else {
-        m_simulationFields->addWidget(m_tbCaption, 0, 0);
-        m_simulationFields->addWidget(m_durationCaption, 0, 1, 1, 2);
-        m_simulationFields->addWidget(m_tbTop, 1, 0);
-        m_simulationFields->addWidget(m_duration, 1, 1);
-        m_simulationFields->addWidget(m_units, 1, 2);
-    }
-}
-
-void Workbench::setCompact(bool compact)
-{
-    if (compact == m_compact) return;
-    QScopedValueRollback<bool> arranging(m_arranging, true);
-    m_configDrawer->finishDrawerAnimation();
-    m_logDrawer->finishDrawerAnimation();
-    if (compact && m_wideBody->isVisible()) {
-        m_wideColumnsState = m_top->saveState();
-        m_wideWorkbenchState = m_logToggle->isChecked() ? m_split->saveState() : m_expandedLogState;
-    }
-    m_compact = compact;
-    setProperty("compactLayout", compact);
-    arrangeSimulationFields(compact);
-    m_configToggle->setVisible(!compact);
-    m_logToggle->setVisible(!compact);
-    m_analysisStatus->setVisible(!compact);
-    m_logs->setMaximumHeight(QWIDGETSIZE_MAX);
-
-    if (compact) {
-        m_sidebar->setMinimumWidth(0);
-        m_sidebar->setMaximumWidth(QWIDGETSIZE_MAX);
-        m_files->setMinimumWidth(0);
-        m_config->setMinimumWidth(0);
-        m_columns->removeWidget(m_sidebar);
-        // Transfer whole existing panels only at the breakpoint. Views, models,
-        // editor fields, selections and the session retain their identities.
-        m_pages[0]->setWidget(m_sidebar);
-        m_pages[1]->setWidget(m_files);
-        m_pages[2]->setWidget(m_config);
-        m_pages[3]->setWidget(m_logs);
-        m_configDrawer->setExpanded(true, false);
-        m_logDrawer->show();
-        m_logDrawer->setExpanded(true, false);
-        m_wideBody->hide();
-        m_compactBody->show();
-    } else {
-        for (auto* page : m_pages) page->takeWidget();
-        m_sidebar->setFixedWidth(220);
-        m_files->setMinimumWidth(260);
-        m_config->setMinimumWidth(320);
-        m_columns->insertWidget(0, m_sidebar);
-        m_top->addWidget(m_files);
-        m_top->addWidget(m_config);
-        m_split->addWidget(m_logs);
-        for (auto* panel : {m_sidebar, m_files, m_config, m_logs}) panel->show();
-        m_compactBody->hide();
-        m_wideBody->show();
-        layout()->activate();
-        m_wideBody->layout()->activate();
-        if (m_wideColumnsState.isEmpty()) m_top->setSizes({420, 360});
-        else m_top->restoreState(m_wideColumnsState);
-        if (m_wideWorkbenchState.isEmpty()) m_split->setSizes({420, 200});
-        else m_split->restoreState(m_wideWorkbenchState);
-        m_configDrawer->setExpanded(m_configToggle->isChecked(), false);
-        m_logDrawer->setExpanded(m_logToggle->isChecked(), false);
-        if (!m_logToggle->isChecked()) collapseLogLayout();
-    }
-    updateGeometry();
-}
-
 void Workbench::buildUi()
 {
     auto* outer = new QVBoxLayout(this);
-    outer->setContentsMargins(0, 0, 0, 0);
-    outer->setSpacing(0);
-    // The host chooses the width. Child panel minima must not enlarge a dock.
-    outer->setSizeConstraint(QLayout::SetNoConstraint);
+    outer->setContentsMargins(12, 10, 12, 10);
+    outer->setSpacing(10);
+    auto* heading = new QHBoxLayout;
+    heading->addWidget(Ui::label(QStringLiteral("Simulation"), this, Ui::Role::PanelTitle), 1);
+    auto* auxiliary = UiControls::toolButton(this);
+    auxiliary->setObjectName(QStringLiteral("simulationActions"));
+    auxiliary->setIcon(RoundedIcons::icon(RoundedIcons::More));
+    auxiliary->setAccessibleName(QStringLiteral("Simulation actions"));
+    auxiliary->setToolTip(QStringLiteral("Simulation actions"));
+    auto* menu = UiControls::menu(this);
+    m_generate = menu->addAction(QStringLiteral("Create Demo TB"));
+    m_generate->setObjectName(QStringLiteral("createTb"));
+    auxiliary->setMenu(menu);
+    auxiliary->setPopupMode(QToolButton::InstantPopup);
+    heading->addWidget(auxiliary);
+    m_settings = UiControls::toolButton(this);
+    m_settings->setObjectName(QStringLiteral("openSettings"));
+    m_settings->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
+    m_settings->setAccessibleName(QStringLiteral("Simulation settings"));
+    m_settings->setToolTip(QStringLiteral("Simulation settings"));
+    heading->addWidget(m_settings);
+    outer->addLayout(heading);
 
-    m_wideBody = new QWidget(this);
-    m_wideBody->setObjectName(QStringLiteral("wideWorkbench"));
-    auto* columns = new QHBoxLayout(m_wideBody);
-    m_columns = columns;
-    columns->setContentsMargins(12, 12, 12, 12);
-    columns->setSpacing(8);
-    auto* sidebar = m_sidebar = new QFrame(m_wideBody);
-    sidebar->setObjectName(QStringLiteral("workspaceSidebar"));
-    sidebar->setProperty("surface", "panel");
-    sidebar->setFixedWidth(220);
-    auto* navigation = new QVBoxLayout(sidebar);
-    navigation->setContentsMargins(12, 16, 12, 12);
-    navigation->setSpacing(12);
-    navigation->addWidget(Ui::label(QStringLiteral("Workspace"), sidebar, Ui::Role::Section));
-    m_workspaceTitle = Ui::label(QStringLiteral("No workspace"), sidebar, Ui::Role::PanelTitle);
-    m_workspaceTitle->setWordWrap(true);
-    auto wrapping = m_workspaceTitle->sizePolicy();
-    wrapping.setHorizontalPolicy(QSizePolicy::Ignored);
-    m_workspaceTitle->setSizePolicy(wrapping);
-    navigation->addWidget(m_workspaceTitle);
-    m_workspacePath = Ui::label(QStringLiteral("Select a folder containing HDL source files"), sidebar, Ui::Role::Metadata);
-    m_workspacePath->setSizePolicy(wrapping);
-    m_workspacePath->setIsWrapAnywhere(true);
-    m_workspacePath->setMaximumHeight(60);
-    Ui::enableToolTip(m_workspacePath);
-    navigation->addWidget(m_workspacePath);
-    m_open = Ui::button(QStringLiteral("Open workspace"), sidebar);
-    m_open->setObjectName(QStringLiteral("openWorkspace"));
-    navigation->addWidget(m_open);
-    navigation->addSpacing(8);
+    m_emptyState = Ui::label(QStringLiteral("Open a ZeroSlack workspace to configure simulation."), this, Ui::Role::Metadata);
+    m_emptyState->setObjectName(QStringLiteral("simulationEmptyState"));
+    m_emptyState->setWordWrap(true);
+    outer->addWidget(m_emptyState);
+    auto* scroll = new QScrollArea(this);
+    scroll->setObjectName(QStringLiteral("simulationFormScroll"));
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    Ui::smoothScrolling(scroll);
+    m_projectPanel = new QWidget(scroll);
+    auto* form = new QVBoxLayout(m_projectPanel);
+    form->setContentsMargins(0, 0, 4, 0);
+    form->setSpacing(8);
+    form->addWidget(Ui::label(QStringLiteral("DUT module"), this, Ui::Role::Section));
+    m_dut = new ElaComboBox(this);
+    m_dut->setObjectName(QStringLiteral("dutSelector"));
+    m_dut->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_dut->setMinimumContentsLength(1);
+    m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));
+    form->addWidget(m_dut);
+    form->addWidget(Ui::label(QStringLiteral("Simulation input"), this, Ui::Role::Section));
+    m_inputMode = new ElaComboBox(this);
+    m_inputMode->setObjectName(QStringLiteral("simulationInputMode"));
+    m_inputMode->addItem(QStringLiteral("Graphical stimulus"), int(InputMode::Graphical));
+    m_inputMode->addItem(QStringLiteral("Existing testbench"), int(InputMode::ExistingTb));
+    form->addWidget(m_inputMode);
+    m_graphicalInput = new QWidget(this);
+    auto* graphical = new QVBoxLayout(m_graphicalInput);
+    graphical->setContentsMargins(0, 0, 0, 0);
+    m_stimulus = Ui::button(QStringLiteral("Draw stimulus"), this);
+    m_stimulus->setObjectName(QStringLiteral("editStimulus"));
+    graphical->addWidget(m_stimulus);
+    auto* details = Ui::disclosure(QStringLiteral("Generated TB details"), this);
+    details->setObjectName(QStringLiteral("generatedTbDetailsToggle"));
+    details->setChecked(false);
+    m_generatedPath = new ElaLineEdit(this);
+    m_generatedPath->setObjectName(QStringLiteral("generatedTbPath"));
+    m_generatedPath->setReadOnly(true);
+    m_generatedPath->setPlaceholderText(QStringLiteral("Generated when stimulus is saved"));
+    graphical->addWidget(details);
+    graphical->addWidget(m_generatedPath);
+    m_generatedPath->hide();
+    connect(details, &QToolButton::toggled, m_generatedPath, &QWidget::setVisible);
+    form->addWidget(m_graphicalInput);
+    m_existingInput = new QWidget(this);
+    auto* existing = new QVBoxLayout(m_existingInput);
+    existing->setContentsMargins(0, 0, 0, 0);
+    m_tbFile = new ElaLineEdit(this);
+    m_tbFile->setObjectName(QStringLiteral("tbFile"));
+    m_tbFile->setReadOnly(true);
+    m_tbFile->setPlaceholderText(QStringLiteral("Select a TB inside the workspace"));
+    existing->addWidget(m_tbFile);
+    auto* tbActions = new QHBoxLayout;
+    m_openTb = Ui::button(QStringLiteral("Open TB"), this);
+    m_openTb->setObjectName(QStringLiteral("openTb"));
+    m_chooseTb = Ui::button(QStringLiteral("Choose TB"), this);
+    m_chooseTb->setObjectName(QStringLiteral("chooseTb"));
+    tbActions->addWidget(m_openTb);
+    tbActions->addWidget(m_chooseTb);
+    existing->addLayout(tbActions);
+    existing->addWidget(Ui::label(QStringLiteral("TB top level"), this, Ui::Role::Section));
+    m_tbTop = new ElaLineEdit(this);
+    m_tbTop->setObjectName(QStringLiteral("tbTop"));
+    m_tbTop->setPlaceholderText(QStringLiteral("tb_top"));
+    existing->addWidget(m_tbTop);
+    form->addWidget(m_existingInput);
+    form->addWidget(Ui::label(QStringLiteral("Duration"), this, Ui::Role::Section));
+    m_graphicalDuration = Ui::label(QString(), this, Ui::Role::Body);
+    m_graphicalDuration->setObjectName(QStringLiteral("graphicalDuration"));
+    m_graphicalDuration->setToolTip(QStringLiteral("Change duration in Edit stimulus > Timing"));
+    form->addWidget(m_graphicalDuration);
+    m_durationInput = new QWidget(this);
+    auto* timing = new QHBoxLayout(m_durationInput);
+    timing->setContentsMargins(0, 0, 0, 0);
+    m_duration = Ui::spinBox(this);
+    m_duration->setObjectName(QStringLiteral("duration"));
+    m_duration->setRange(1, 3600000);
+    m_duration->setValue(1000);
+    m_units = new ElaComboBox(this);
+    m_units->setObjectName(QStringLiteral("durationUnits"));
+    m_units->addItem(QStringLiteral("ns"), 1);
+    m_units->addItem(QStringLiteral("us"), 1000);
+    m_units->addItem(QStringLiteral("ms"), 1000000);
+    m_units->setFixedWidth(82);
+    timing->addWidget(m_duration, 1);
+    timing->addWidget(m_units);
+    form->addWidget(m_durationInput);
+    auto* waveToggle = Ui::disclosure(QStringLiteral("Waveform options"), this);
+    waveToggle->setObjectName(QStringLiteral("waveOptionsToggle"));
+    waveToggle->setChecked(false);
+    form->addWidget(waveToggle);
+    auto* waveOptions = new QWidget(this);
+    auto* waves = new QVBoxLayout(waveOptions);
+    waves->setContentsMargins(0, 0, 0, 0);
+    waves->addWidget(Ui::label(QStringLiteral("Waveform scope"), this, Ui::Role::Section));
+    m_waveScope = new ElaComboBox(this);
+    m_waveScope->setObjectName(QStringLiteral("waveScope"));
+    m_waveScope->addItem(QStringLiteral("Interface (TB top)"), QStringLiteral("interface"));
+    m_waveScope->addItem(QStringLiteral("Selected signals"), QStringLiteral("selected"));
+    m_waveScope->addItem(QStringLiteral("All signals"), QStringLiteral("all"));
+    m_waveSignals = Ui::button(QStringLiteral("Choose signals"), this);
+    m_waveSignals->setObjectName(QStringLiteral("chooseWaveSignals"));
+    waves->addWidget(m_waveScope);
+    waves->addWidget(m_waveSignals);
+    form->addWidget(waveOptions);
+    waveOptions->hide();
+    connect(waveToggle, &QToolButton::toggled, waveOptions, &QWidget::setVisible);
+    form->addStretch();
+    scroll->setWidget(m_projectPanel);
+    outer->addWidget(scroll, 1);
+    m_status = Ui::label(QStringLiteral("Ready"), this, Ui::Role::Metadata);
+    m_status->setObjectName(QStringLiteral("runStatus"));
+    m_status->setWordWrap(true);
+    outer->addWidget(m_status);
+    auto* actions = new QHBoxLayout;
+    m_stop = Ui::button(QStringLiteral("Close session"), this);
+    m_stop->setObjectName(QStringLiteral("stopSimulation"));
+    m_run = Ui::button(QStringLiteral("Start simulation"), this, true);
+    m_run->setObjectName(QStringLiteral("startSimulation"));
+    actions->addWidget(m_stop);
+    actions->addWidget(m_run, 1);
+    outer->addLayout(actions);
+
+    auto* sources = new QWidget(this);
+    m_sources = sources;
+    sources->setObjectName(QStringLiteral("simulationSources"));
+    auto* sourceLayout = new QVBoxLayout(sources);
+    sourceLayout->setContentsMargins(2, 6, 2, 2);
+    sourceLayout->setSpacing(8);
+    auto* projects = new QWidget(sources);
+    auto* projectLayout = new QVBoxLayout(projects);
+    projectLayout->setContentsMargins(0, 0, 0, 0);
+    projectLayout->setSpacing(4);
     auto* projectHeading = new QHBoxLayout;
     projectHeading->setSpacing(8);
-    projectHeading->addWidget(Ui::label(QStringLiteral("Projects"), sidebar, Ui::Role::Section));
+    projectHeading->addWidget(Ui::label(QStringLiteral("Projects"), projects, Ui::Role::Section));
     projectHeading->addStretch();
-    m_new = Ui::button(QStringLiteral("New"), sidebar);
+    m_new = Ui::button(QStringLiteral("New"), projects);
     m_new->setObjectName(QStringLiteral("newProject"));
     m_new->setFixedWidth(56);
     projectHeading->addWidget(m_new);
-    navigation->addLayout(projectHeading);
-    m_projectList = new ElaListView(sidebar);
+    projectLayout->addLayout(projectHeading);
+    m_projectList = new ElaListView(projects);
     m_projectList->setObjectName(QStringLiteral("projectList"));
     auto* projectStyle = ElaListView::createStyle(m_projectList, 32);
     static_cast<QProxyStyle*>(projectStyle)->setBaseStyle(QStyleFactory::create(QStringLiteral("Fusion")));
@@ -248,37 +266,23 @@ void Workbench::buildUi()
     Ui::smoothScrolling(m_projectList);
     m_projectModel = new QStandardItemModel(this);
     m_projectList->setModel(m_projectModel);
-    navigation->addWidget(m_projectList, 1);
-    m_scanStatus = Ui::label(QStringLiteral("Only files inside the workspace are analyzed"), sidebar, Ui::Role::Metadata);
-    m_scanStatus->setWordWrap(true);
-    navigation->addWidget(m_scanStatus);
-    m_settings = Ui::button(QStringLiteral("Settings"), sidebar);
-    m_settings->setObjectName(QStringLiteral("openSettings"));
-    navigation->addWidget(m_settings);
-    columns->addWidget(sidebar);
+    projectLayout->addWidget(m_projectList, 1);
 
-    auto* split = m_split = new QSplitter(Qt::Vertical, m_wideBody);
-    split->setObjectName(QStringLiteral("workbenchSplitter"));
-    split->setHandleWidth(8);
-    auto* top = m_top = new QSplitter(Qt::Horizontal, split);
-    top->setObjectName(QStringLiteral("columnSplitter"));
-    top->setHandleWidth(8);
-    auto* files = m_files = new QFrame(top);
+    m_projectList->setMinimumHeight(42);
+    m_projectList->setMaximumHeight(140);
+    sourceLayout->addWidget(projects);
+    auto* files = new QWidget(sources);
     files->setObjectName(QStringLiteral("sourcePanel"));
-    files->setProperty("surface", "panel");
-    files->setMinimumWidth(260);
     auto* fileLayout = new QVBoxLayout(files);
-    fileLayout->setContentsMargins(12, 12, 12, 12);
-    fileLayout->setSpacing(8);
+    fileLayout->setContentsMargins(0, 0, 0, 0);
+    fileLayout->setSpacing(6);
     auto* fileHeading = new QHBoxLayout;
-    fileHeading->setSpacing(8);
-    fileHeading->addWidget(Ui::label(QStringLiteral("Source files"), this, Ui::Role::PanelTitle));
-    fileHeading->addStretch();
+    fileHeading->addWidget(Ui::label(QStringLiteral("Build inputs"), this, Ui::Role::Section), 1);
     m_refresh = Ui::button(QStringLiteral("Rescan"), this);
     m_refresh->setObjectName(QStringLiteral("refreshWorkspace"));
     fileHeading->addWidget(m_refresh);
     fileLayout->addLayout(fileHeading);
-    m_sourceHint = Ui::label(QStringLiteral("Select source files. Compilation follows the list order."), this, Ui::Role::Metadata);
+    m_sourceHint = Ui::label(QStringLiteral("Select files and set their compilation order."), this, Ui::Role::Metadata);
     m_sourceHint->setWordWrap(true);
     fileLayout->addWidget(m_sourceHint);
     m_fileList = new ElaListView(this);
@@ -313,138 +317,25 @@ void Workbench::buildUi()
     Ui::enableToolTip(m_fileList);
     fileActions->addWidget(up);
     fileActions->addWidget(down);
-    fileActions->addStretch();
     fileLayout->addLayout(fileActions);
-
-    auto* config = m_config = new QFrame(top);
-    config->setObjectName(QStringLiteral("simulationPanel"));
-    config->setProperty("surface", "panel");
-    config->setMinimumWidth(320);
-    auto* configLayout = new QVBoxLayout(config);
-    configLayout->setContentsMargins(16, 16, 16, 16);
-    configLayout->setSpacing(12);
-    m_configToggle = Ui::disclosure(QStringLiteral("Simulation"), config);
-    m_configToggle->setObjectName(QStringLiteral("simulationToggle"));
-    auto* simulationHeading = new QHBoxLayout;
-    m_simulationHeading = simulationHeading;
-    simulationHeading->addWidget(m_configToggle, 1);
-    m_stimulus = Ui::button(QStringLiteral("Draw stimulus"), config);
-    m_stimulus->setObjectName(QStringLiteral("editStimulus"));
-    simulationHeading->addWidget(m_stimulus);
-    configLayout->addLayout(simulationHeading);
-    m_configDrawer = new ElaDrawerArea(config);
-    m_configDrawer->setObjectName(QStringLiteral("simulationDrawer"));
-    m_configDrawer->setDrawerHeaderVisible(false);
-    m_configDrawer->setBorderRadius(4);
-    m_projectPanel = new QWidget(config);
-    auto* form = new QVBoxLayout(m_projectPanel);
-    form->setContentsMargins(0, 0, 0, 0);
-    form->setSpacing(8);
-    form->addWidget(Ui::label(QStringLiteral("DUT module"), this, Ui::Role::Section));
-    m_dut = new ElaComboBox(this);
-    m_dut->setObjectName(QStringLiteral("dutSelector"));
-    m_dut->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_dut->setMinimumContentsLength(12);
-    m_dut->setPlaceholderText(QStringLiteral("Select source files first"));
-    form->addWidget(m_dut);
-    form->addSpacing(8);
-    form->addWidget(Ui::label(QStringLiteral("Testbench"), this, Ui::Role::Section));
-    m_tbFile = new ElaLineEdit(this);
-    m_tbFile->setReadOnly(true);
-    m_tbFile->setPlaceholderText(QStringLiteral("Create or select a TB file"));
-    m_tbFile->setObjectName(QStringLiteral("tbFile"));
-    form->addWidget(m_tbFile);
-    auto* tbActions = new QHBoxLayout;
-    m_tbActions = tbActions;
-    tbActions->setSpacing(8);
-    m_generate = Ui::button(QStringLiteral("Create Demo TB"), this);
-    m_generate->setObjectName(QStringLiteral("createTb"));
-    m_chooseTb = Ui::button(QStringLiteral("Select existing TB"), this);
-    m_chooseTb->setObjectName(QStringLiteral("chooseTb"));
-    tbActions->addWidget(m_generate, 1);
-    tbActions->addWidget(m_chooseTb, 1);
-    form->addLayout(tbActions);
-    form->addSpacing(8);
-    auto* fields = new QGridLayout;
-    m_simulationFields = fields;
-    fields->setHorizontalSpacing(12);
-    fields->setVerticalSpacing(8);
-    m_tbCaption = Ui::label(QStringLiteral("TB top level"), this, Ui::Role::Section);
-    m_durationCaption = Ui::label(QStringLiteral("Duration"), this, Ui::Role::Section);
-    fields->addWidget(m_tbCaption, 0, 0);
-    fields->addWidget(m_durationCaption, 0, 1, 1, 2);
-    m_tbTop = new ElaLineEdit(this);
-    m_tbTop->setObjectName(QStringLiteral("tbTop"));
-    m_tbTop->setPlaceholderText(QStringLiteral("tb_top"));
-    fields->addWidget(m_tbTop, 1, 0);
-    m_duration = Ui::spinBox(this);
-    m_duration->setObjectName(QStringLiteral("duration"));
-    m_duration->setRange(1, 3600000);
-    m_duration->setValue(1000);
-    fields->addWidget(m_duration, 1, 1);
-    m_units = new ElaComboBox(this);
-    m_units->addItem(QStringLiteral("ns"), 1);
-    m_units->addItem(QStringLiteral("us"), 1000);
-    m_units->addItem(QStringLiteral("ms"), 1000000);
-    m_units->setFixedWidth(82);
-    fields->addWidget(m_units, 1, 2);
-    fields->setColumnStretch(0, 1);
-    form->addLayout(fields);
-    form->addWidget(Ui::label(QStringLiteral("Waveform scope"), this, Ui::Role::Section));
-    auto* waves = new QHBoxLayout;
-    m_waveActions = waves;
-    m_waveScope = new ElaComboBox(this);
-    m_waveScope->setObjectName(QStringLiteral("waveScope"));
-    m_waveScope->addItem(QStringLiteral("Interface (TB top)"), QStringLiteral("interface"));
-    m_waveScope->addItem(QStringLiteral("Selected signals"), QStringLiteral("selected"));
-    m_waveScope->addItem(QStringLiteral("All signals"), QStringLiteral("all"));
-    m_waveSignals = Ui::button(QStringLiteral("Choose signals"), this);
-    m_waveSignals->setObjectName(QStringLiteral("chooseWaveSignals"));
-    waves->addWidget(m_waveScope, 1); waves->addWidget(m_waveSignals);
-    form->addLayout(waves);
-    connect(m_waveScope, &QComboBox::currentIndexChanged, this, [this] {
-        if (m_loading || !current()) return;
-        current()->waveScope = m_waveScope->currentData().toString();
-        saveCurrent(); updateControls();
-    });
-    connect(m_waveSignals, &QPushButton::clicked, this, &Workbench::chooseWaveSignals);
-    m_configDrawer->addDrawer(m_projectPanel);
-    m_configDrawer->setExpanded(true, false);
-    configLayout->addWidget(m_configDrawer);
-    connect(m_configToggle, &QToolButton::toggled, m_configDrawer, [this](bool expanded) {
-        m_configDrawer->setExpanded(m_compact || expanded, !m_compact);
-    });
-    configLayout->addStretch();
-    auto* note = Ui::label(QStringLiteral("Compile and load the TB. View waveforms in Questa."), this, Ui::Role::Metadata);
-    note->setWordWrap(true);
-    configLayout->addWidget(note);
-    auto* actions = new QHBoxLayout;
-    m_runActions = actions;
-    actions->setSpacing(8);
-    m_stop = Ui::button(QStringLiteral("Close session"), this);
-    m_stop->setObjectName(QStringLiteral("stopSimulation"));
-    m_run = Ui::button(QStringLiteral("Start simulation"), this, true);
-    m_run->setObjectName(QStringLiteral("startSimulation"));
-    actions->addWidget(m_stop);
-    actions->addWidget(m_run, 1);
-    configLayout->addLayout(actions);
-
-    auto* logs = m_logs = new QFrame(split);
-    logs->setObjectName(QStringLiteral("logPanel"));
-    logs->setProperty("surface", "panel");
+    m_fileList->setMinimumHeight(80);
+    m_scanStatus = Ui::label(QStringLiteral("Open a ZeroSlack workspace."), this, Ui::Role::Metadata);
+    m_scanStatus->setWordWrap(true);
+    fileLayout->addWidget(m_scanStatus);
+    sourceLayout->addWidget(files, 1);
+    sources->hide();
+    auto* logs = new QWidget(this);
+    m_logs = logs;
+    logs->setObjectName(QStringLiteral("simulationRunLog"));
     auto* logLayout = new QVBoxLayout(logs);
-    logLayout->setContentsMargins(12, 8, 12, 8);
-    logLayout->setSpacing(4);
+    logLayout->setContentsMargins(10, 8, 10, 8);
     auto* logHeading = new QHBoxLayout;
-    m_logToggle = Ui::disclosure(QStringLiteral("Run log"), logs);
-    m_logToggle->setObjectName(QStringLiteral("logToggle"));
-    logHeading->addWidget(m_logToggle);
     logHeading->addStretch();
-    auto* clear = Ui::button(QStringLiteral("Clear"), this);
+    auto* clear = Ui::button(QStringLiteral("Clear"), logs);
     clear->setObjectName(QStringLiteral("clearLog"));
     logHeading->addWidget(clear);
     logLayout->addLayout(logHeading);
-    m_log = Ui::textView(this);
+    m_log = Ui::textView(logs);
     m_log->setObjectName(QStringLiteral("simulationLog"));
     m_log->setProperty("codeSurface", true);
     m_log->setNativeTextBehavior(true);
@@ -452,82 +343,25 @@ void Workbench::buildUi()
     m_log->setMaximumBlockCount(10000);
     m_log->setFont(Ui::codeFont());
     m_log->setPlaceholderText(QStringLiteral("Compiler, loader, and simulation output will appear here."));
-    m_logDrawer = new ElaDrawerArea(logs);
-    m_logDrawer->setObjectName(QStringLiteral("logDrawer"));
-    m_logDrawer->setDrawerHeaderVisible(false);
-    m_logDrawer->setDrawerEdge(Qt::BottomEdge);
-    m_logDrawer->addDrawer(m_log);
-    m_logDrawer->setExpanded(true, false);
-    logLayout->addWidget(m_logDrawer, 1);
-    connect(m_logToggle, &QToolButton::toggled, this, &Workbench::setLogExpanded);
-    connect(m_logDrawer, &ElaDrawerArea::drawerAnimationFinished, this, [this](bool expanded) {
-        if (!expanded) collapseLogLayout();
-    });
-    top->setChildrenCollapsible(false);
-    top->setSizes({420, 360});
-    top->setStretchFactor(0, 1);
-    top->setStretchFactor(1, 0);
-    split->setChildrenCollapsible(false);
-    split->setSizes({420, 200});
-    split->setStretchFactor(0, 1);
-    split->setStretchFactor(1, 0);
-    columns->addWidget(split, 1);
-    outer->addWidget(m_wideBody, 1);
-
-    m_compactBody = new QWidget(this);
-    m_compactBody->setObjectName(QStringLiteral("compactWorkbench"));
-    auto* compactLayout = new QVBoxLayout(m_compactBody);
-    compactLayout->setContentsMargins(8, 8, 8, 8);
-    compactLayout->setSpacing(8);
-    m_section = new ElaComboBox(m_compactBody);
-    m_section->setObjectName(QStringLiteral("workbenchSection"));
-    m_section->setAccessibleName(QStringLiteral("Workbench section"));
-    m_section->addItem(QStringLiteral("Workspace and projects"), QStringLiteral("workspace"));
-    m_section->addItem(QStringLiteral("Source files and order"), QStringLiteral("sources"));
-    m_section->addItem(QStringLiteral("Simulation and stimulus"), QStringLiteral("simulation"));
-    m_section->addItem(QStringLiteral("Run log"), QStringLiteral("log"));
-    m_section->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_section->setMinimumContentsLength(1);
-    compactLayout->addWidget(m_section);
-    m_sections = new QStackedWidget(m_compactBody);
-    m_sections->setObjectName(QStringLiteral("workbenchSections"));
-    for (int i = 0; i < 4; ++i) {
-        auto* page = m_pages[i] = new QScrollArea(m_sections);
-        page->setObjectName(QStringLiteral("workbenchPage%1").arg(i));
-        page->setWidgetResizable(true);
-        page->setFrameShape(QFrame::NoFrame);
-        page->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        Ui::smoothScrolling(page);
-        m_sections->addWidget(page);
-    }
-    connect(m_section, &QComboBox::currentIndexChanged, m_sections, &QStackedWidget::setCurrentIndex);
-    compactLayout->addWidget(m_sections, 1);
-    outer->addWidget(m_compactBody, 1);
-    m_compactBody->hide();
-
-    auto* statusBar = new ElaStatusBar(this);
-    statusBar->setSizeGripEnabled(false);
-    statusBar->addWidget(Ui::label(QStringLiteral("QuestaSim"), this, Ui::Role::Metadata));
-    m_analysisStatus = Ui::label(QStringLiteral("Workspace analysis"), this, Ui::Role::Metadata);
-    statusBar->addWidget(m_analysisStatus, 1);
-    m_status = Ui::label(QStringLiteral("Ready"), this, Ui::Role::Metadata);
-    m_status->setObjectName(QStringLiteral("runStatus"));
-    statusBar->addPermanentWidget(m_status);
-    outer->addWidget(statusBar);
+    logLayout->addWidget(m_log, 1);
+    logs->hide();
     Ui::normalizeControls(this);
-
-    connect(m_settings, &QPushButton::clicked, this, &Workbench::openSettings);
-    connect(m_open, &QPushButton::clicked, this, [this] {
-        QPointer<Workbench> owner(this);
-        QPointer<QFileDialog> dialog = new QFileDialog(this, QStringLiteral("Open workspace"), m_root);
-        dialog->setFileMode(QFileDialog::Directory);
-        dialog->setOptions(QFileDialog::ShowDirsOnly | QFileDialog::DontUseNativeDialog);
-        const auto result = dialog->exec();
-        if (!owner || !dialog) return;
-        const auto paths = dialog->selectedFiles();
-        delete dialog;
-        if (result == QDialog::Accepted && !paths.isEmpty()) openWorkspace(paths.first());
+    connect(m_settings, &QToolButton::clicked, this, &Workbench::openSettings);
+    connect(m_openTb, &QPushButton::clicked, this, [this] {
+        if (const auto* p = current(); p && !p->tbFile.isEmpty()) emit openFileRequested(QDir(m_root).filePath(p->tbFile));
     });
+    connect(m_inputMode, &QComboBox::currentIndexChanged, this, [this] {
+        if (m_loading || !current()) return;
+        setInputMode(*current(), InputMode(m_inputMode->currentData().toInt()));
+        saveCurrent();
+        selectProject(m_projectIndex);
+    });
+    connect(m_waveScope, &QComboBox::currentIndexChanged, this, [this] {
+        if (m_loading || !current()) return;
+        current()->waveScope = m_waveScope->currentData().toString();
+        saveCurrent(); updateControls();
+    });
+    connect(m_waveSignals, &QPushButton::clicked, this, &Workbench::chooseWaveSignals);
     connect(m_new, &QPushButton::clicked, this, [this] {
         QPointer<Workbench> owner(this);
         const auto name = askProjectName(this);
@@ -545,7 +379,7 @@ void Workbench::buildUi()
         if (identity.size() != 2) return;
         if (p->dutFile != identity[0] || p->dutName != identity[1]) {
             p->dutFile = identity[0]; p->dutName = identity[1];
-            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {};
+            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {}; p->alternateInput = {};
             m_tbFile->clear(); m_tbTop->clear();
         }
         const auto selection = selectDependencies(m_dependencies, identity[0], p->sources);
@@ -555,17 +389,17 @@ void Workbench::buildUi()
         saveCurrent(); updateControls();
     });
     connect(m_tbTop, &QLineEdit::editingFinished, this, [this] {
-        if (auto* p = current()) { p->tbName = m_tbTop->text().trimmed(); saveCurrent(); updateControls(); }
+        if (auto* p = current(); p && p->inputMode == InputMode::ExistingTb) { p->tbName = m_tbTop->text().trimmed(); saveCurrent(); updateControls(); }
     });
     auto durationChanged = [this] {
-        if (m_loading || !current()) return;
+        if (m_loading || !current() || current()->inputMode != InputMode::ExistingTb) return;
         current()->durationNs = qint64(m_duration->value()) * m_units->currentData().toLongLong();
-        saveCurrent();
+        saveCurrent(); updateControls();
     };
     connect(m_duration, &QSpinBox::valueChanged, this, durationChanged);
     connect(m_units, &QComboBox::currentIndexChanged, this, durationChanged);
     connect(m_stimulus, &QPushButton::clicked, this, &Workbench::editStimulus);
-    connect(m_generate, &QPushButton::clicked, this, &Workbench::createTb);
+    connect(m_generate, &QAction::triggered, this, &Workbench::createTb);
     connect(m_chooseTb, &QPushButton::clicked, this, &Workbench::chooseTb);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
     connect(m_stop, &QPushButton::clicked, this, [this] {
@@ -635,23 +469,18 @@ QString Workbench::setContext(const QString& path)
         m_root.clear(); m_scan = {}; m_dependencies = DependencyIndex(); m_projects.clear(); m_projectIndex = -1;
         m_loading = true; m_projectModel->clear(); m_loading = false;
         selectProject(-1);
-        m_workspaceTitle->setText(QStringLiteral("No workspace"));
-        m_workspacePath->setText(QStringLiteral("Select a folder containing HDL source files"));
-        m_workspacePath->setToolTip({});
-        m_scanStatus->setText(QStringLiteral("Only files inside the workspace are analyzed"));
+
+        m_scanStatus->setText(QStringLiteral("Open a ZeroSlack workspace."));
+        m_status->setText(QStringLiteral("Ready"));
         return {};
     }
     cancelPreparation();
     const QString previousId = current() && root == m_root ? current()->id : QString();
     if (m_scanCancelled) m_scanCancelled->store(true);
     m_scanCancelled = std::make_shared<std::atomic_bool>(false);
-    m_configDrawer->finishDrawerAnimation();
-    m_logDrawer->finishDrawerAnimation();
     m_root = root;
+    m_status->setText(QStringLiteral("Ready"));
     setPreference(QStringLiteral("workspace/last"), m_root);
-    m_workspaceTitle->setText(QFileInfo(m_root).fileName());
-    m_workspacePath->setText(QDir::toNativeSeparators(m_root));
-    m_workspacePath->setToolTip(QDir::toNativeSeparators(m_root));
     m_scan = {}; m_dependencies = DependencyIndex();
     m_loading = true;
     m_projectIndex = -1;
@@ -746,7 +575,7 @@ void Workbench::selectProject(int row)
     m_loading = true;
     m_projectList->setCurrentIndex(m_projectModel->index(row, 0));
     const auto* p = current();
-    m_tbFile->setText(p ? p->tbFile : QString());
+    m_inputMode->setCurrentIndex(m_inputMode->findData(int(p ? p->inputMode : InputMode::Graphical)));
     m_tbTop->setText(p ? p->tbName : QString());
     m_waveScope->setCurrentIndex(qMax(0, m_waveScope->findData(p ? p->waveScope : QStringLiteral("interface"))));
     const qint64 duration = p ? p->durationNs : 1000;
@@ -756,6 +585,7 @@ void Workbench::selectProject(int row)
     m_loading = false;
     refreshFiles();
     updateControls();
+    emit stateChanged();
 }
 void Workbench::refreshFiles()
 {
@@ -904,7 +734,7 @@ void Workbench::updateDutChoices()
     if (choice >= 0) {
         const auto identity = m_dut->itemData(choice).toStringList();
         if (!p->dutName.isEmpty() && (p->dutName != identity[1] || p->dutFile != identity[0])) {
-            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {}; m_tbFile->clear(); m_tbTop->clear();
+            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {}; p->alternateInput = {}; m_tbFile->clear(); m_tbTop->clear();
         }
         p->dutFile = identity[0]; p->dutName = identity[1];
     }
@@ -914,13 +744,20 @@ void Workbench::saveCurrent()
     if (m_loading || !current()) return;
     QString error;
     if (!saveProject(m_root, *current(), &error)) appendLog(QStringLiteral("Settings could not be saved: %1\n").arg(error));
+    emit stateChanged();
 }
 void Workbench::updateControls()
 {
+    m_projectList->setFixedHeight(qBound(42, m_projectModel->rowCount() * 38 + 4, 140));
     const bool busy = m_session.busy() || m_preparing;
     m_settings->setEnabled(!m_preparing);
     const auto* p = current();
-    m_open->setEnabled(!busy);
+    const auto tbPath = p ? p->tbFile : QString();
+    const auto fullPath = tbPath.isEmpty() ? QString() : QDir::toNativeSeparators(QDir(m_root).filePath(tbPath));
+    for (auto* field : {m_tbFile, m_generatedPath}) {
+        field->setText(tbPath);
+        field->setToolTip(fullPath);
+    }
     m_new->setEnabled(!m_root.isEmpty() && !busy);
     m_refresh->setEnabled(!m_root.isEmpty() && !busy && !m_scanning);
     m_projectList->setEnabled(!busy);
@@ -932,17 +769,27 @@ void Workbench::updateControls()
             if (m_fileModel->item(row)->isCheckable() != checkable) m_fileModel->item(row)->setCheckable(checkable);
     }
     m_fileList->viewport()->update();
-    m_sourceHint->setText(p ? QStringLiteral("Select source files. Compilation follows the list order.")
+    m_sourceHint->setText(p ? QStringLiteral("Select files and set their compilation order.")
         : QStringLiteral("Select a file to create a simulation project."));
     m_projectPanel->setEnabled(p && !busy && !m_scanning);
     m_stimulus->setEnabled(p && currentModule() && !busy && !m_scanning);
-    const bool graphical = p && !p->stimulus.isEmpty();
-    m_stimulus->setText(graphical ? QStringLiteral("Edit stimulus") : QStringLiteral("Draw stimulus"));
+    const bool graphical = !p || p->inputMode == InputMode::Graphical;
+    m_graphicalInput->setVisible(graphical);
+    m_existingInput->setVisible(!graphical);
+    m_durationInput->setVisible(!graphical);
+    m_graphicalDuration->setVisible(graphical);
+    m_graphicalDuration->setText(QStringLiteral("%1 ns").arg(p ? p->durationNs : 1000));
+    m_emptyState->setVisible(!p);
+    m_emptyState->setText(m_root.isEmpty() ? QStringLiteral("Open a ZeroSlack workspace to configure simulation.")
+        : QStringLiteral("Create or select a project in Build inputs."));
+    m_openTb->setEnabled(p && !p->tbFile.isEmpty());
+    m_stimulus->setText(p && !p->stimulus.isEmpty() ? QStringLiteral("Edit stimulus") : QStringLiteral("Draw stimulus"));
     m_tbTop->setReadOnly(graphical);
     m_duration->setEnabled(!graphical); m_units->setEnabled(!graphical);
     m_duration->setToolTip(graphical ? QStringLiteral("Change duration in Edit stimulus > Timing") : QString());
     m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
     m_run->setEnabled(p && !p->sources.isEmpty() && !p->tbFile.isEmpty() && !busy && !m_scanning);
+    m_waveSignals->setVisible(p && p->waveScope == QStringLiteral("selected"));
     m_waveSignals->setEnabled(p && p->waveScope == QStringLiteral("selected") && !busy);
     m_stop->setEnabled(m_preparing || m_session.alive());
     m_stop->setText(m_preparing ? QStringLiteral("Cancel preparation") : busy ? QStringLiteral("Stop simulation") : QStringLiteral("Close session"));
@@ -966,27 +813,31 @@ void Workbench::chooseTb()
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > 8 * 1024 * 1024) { appendLog(QStringLiteral("Could not read the TB file.\n")); return; }
     const auto source = analyzeSource(file.readAll(), QDir(m_root).relativeFilePath(path));
+    setInputMode(*p, InputMode::ExistingTb);
     p->stimulus = {};
     p->tbFile = source.path;
     p->tbName = source.modules.size() == 1 ? source.modules.first().name : QFileInfo(path).completeBaseName();
     m_tbFile->setText(p->tbFile); m_tbTop->setText(p->tbName);
-    saveCurrent(); updateControls();
+    saveCurrent(); selectProject(m_projectIndex);
 }
 bool Workbench::createDemo(const TbOptions& options, QString* error)
 {
     auto* p = current();
     const auto* module = currentModule();
     if (!p || !module) { *error = QStringLiteral("Select a DUT first."); return false; }
-    const QString text = generateTestbench(*module, options, p->durationNs, error);
+    const auto duration = p->durationNs;
+    const QString text = generateTestbench(*module, options, duration, error);
     if (!error->isEmpty()) return false;
     const QString path = projectTbPath(*p, options.name);
     if (!writeNewTb(m_root, path, text, error)) return false;
+    setInputMode(*p, InputMode::ExistingTb);
     p->stimulus = {};
     p->tbFile = path; p->tbName = options.name;
+    p->durationNs = duration;
     m_tbFile->setText(path); m_tbTop->setText(options.name);
     saveCurrent();
     appendLog(QStringLiteral("Created %1\n").arg(path));
-    updateControls();
+    selectProject(m_projectIndex);
     return true;
 }
 void Workbench::createTb()
@@ -1213,43 +1064,11 @@ void Workbench::flushLog()
     m_pendingLog.clear();
     bar->setValue(follow ? bar->maximum() : position);
 }
-void Workbench::setLogExpanded(bool expanded)
-{
-    if (m_compact) {
-        m_logs->setMaximumHeight(QWIDGETSIZE_MAX);
-        m_logDrawer->show();
-        m_logDrawer->setExpanded(true, false);
-        return;
-    }
-    if (expanded) {
-        m_logs->setMaximumHeight(QWIDGETSIZE_MAX);
-        m_logDrawer->show();
-        if (!m_expandedLogState.isEmpty()) m_split->restoreState(m_expandedLogState);
-    } else if (m_logDrawer->getIsExpand()) {
-        // QSplitter remembers requested sizes even when a panel's minimum
-        // height clamps them. Persist the actual visible layout before hiding
-        // the log, so a later collapsed settings panel cannot resurrect an
-        // older, larger requested log height.
-        m_split->setSizes(m_split->sizes());
-        m_expandedLogState = m_split->saveState();
-    }
-    m_logDrawer->setExpanded(expanded);
-    if (!expanded && !m_logDrawer->isDrawerAnimating()) collapseLogLayout();
-}
-void Workbench::collapseLogLayout()
-{
-    if (m_compact) return;
-    m_logDrawer->hide();
-    const int height = m_logs->minimumSizeHint().height();
-    m_logs->setMaximumHeight(height);
-    const auto sizes = m_split->sizes();
-    m_split->setSizes({sizes.first() + sizes.last() - height, height});
-}
 void Workbench::applyTheme()
 {
     Ui::applyTheme(this);
-    m_configDrawer->finishDrawerAnimation();
-    m_logDrawer->finishDrawerAnimation();
+    if (m_sources) Ui::applyTheme(m_sources);
+    if (m_logs) Ui::applyTheme(m_logs);
     update();
 }
 void Workbench::setDarkTheme(bool dark)
@@ -1306,28 +1125,11 @@ QVariantMap Workbench::saveState() const
     return {{QStringLiteral("version"), 1}, {QStringLiteral("workspace"), m_root},
         {QStringLiteral("projectId"), m_projectIndex >= 0 && m_projectIndex < m_projects.size() ? m_projects[m_projectIndex].id : QString()},
         {QStringLiteral("preferences"), preferences},
-        {QStringLiteral("layout/columns"), m_compact ? m_wideColumnsState : m_top->saveState()},
-        {QStringLiteral("layout/workbench"), m_compact ? m_wideWorkbenchState : (m_logToggle->isChecked() ? m_split->saveState() : m_expandedLogState)},
-        {QStringLiteral("layout/compactPage"), m_section->currentData()},
-        {QStringLiteral("layout/simulationExpanded"), m_configToggle->isChecked()},
-        {QStringLiteral("layout/logExpanded"), m_logToggle->isChecked()}};
+        {QStringLiteral("layout/waveOptionsExpanded"), findChild<QToolButton*>(QStringLiteral("waveOptionsToggle"))->isChecked()}};
 }
 void Workbench::restoreLayout(const QVariantMap& state)
 {
-    m_wideColumnsState = state.value(QStringLiteral("layout/columns")).toByteArray();
-    m_expandedLogState = state.value(QStringLiteral("layout/workbench")).toByteArray();
-    m_wideWorkbenchState = m_expandedLogState;
-    if (!m_compact) {
-        m_top->restoreState(m_wideColumnsState);
-        m_split->restoreState(m_wideWorkbenchState);
-    }
-    m_section->setCurrentIndex(qMax(0, m_section->findData(state.value(QStringLiteral("layout/compactPage"), QStringLiteral("workspace")))));
-    m_configToggle->setChecked(state.value(QStringLiteral("layout/simulationExpanded"), true).toBool());
-    m_logToggle->setChecked(state.value(QStringLiteral("layout/logExpanded"), true).toBool());
-    // Collapsing the log captures the current splitter sizes. During initial
-    // restoration those may still be clamped by the expanded settings panel.
-    // Retain the persisted expanded sizes until the user opens the log.
-    if (!m_wideWorkbenchState.isEmpty()) m_expandedLogState = m_wideWorkbenchState;
+    findChild<QToolButton*>(QStringLiteral("waveOptionsToggle"))->setChecked(state.value(QStringLiteral("layout/waveOptionsExpanded"), false).toBool());
 }
 QString Workbench::restoreState(const QVariantMap& state)
 {
@@ -1362,7 +1164,7 @@ QString Workbench::restoreState(const QVariantMap& state)
 void Workbench::savePreferences()
 {
     const auto state = saveState();
-    for (const auto& key : {"layout/columns", "layout/workbench", "layout/simulationExpanded", "layout/logExpanded", "layout/compactPage"}) {
+    for (const auto& key : {"layout/waveOptionsExpanded"}) {
         const auto name = QString::fromLatin1(key);
         setPreference(name, state.value(name));
     }

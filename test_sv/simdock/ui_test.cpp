@@ -1,3 +1,4 @@
+#include "../../src/simulation/simdock/ui/workbench.h"
 #include "support/mainwindow.h"
 #include "../../src/simulation/simdock/core/questasession.h"
 #include "../../src/simulation/simdock/ui/stimulusdialog.h"
@@ -613,7 +614,7 @@ private slots:
         }
         MainWindow window;
         window.setSimulator(simulator.filePath(QStringLiteral("vsim.exe")));
-        auto* settingsButton = window.findChild<ElaPushButton*>(QStringLiteral("openSettings"));
+        auto* settingsButton = window.findChild<QToolButton*>(QStringLiteral("openSettings"));
         QVERIFY(settingsButton);
         bool changed = false;
         QTimer::singleShot(50, &window, [&] {
@@ -959,81 +960,31 @@ private slots:
         QCOMPARE(model->item(0)->checkState(), Qt::Checked);
         w.close();
     }
-    void drawersAndSplitterRestore()
+    void formOptionsRestoreWithoutLegacySections()
     {
-        MainWindow w;
-        w.resize(1200, 780);
-        w.show();
-        QTest::qWait(100);
-        auto* config = w.findChild<ElaDrawerArea*>(QStringLiteral("simulationDrawer"));
-        auto* log = w.findChild<ElaDrawerArea*>(QStringLiteral("logDrawer"));
-        auto* toggle = w.findChild<ElaToolButton*>(QStringLiteral("simulationToggle"));
-        auto* logToggle = w.findChild<ElaToolButton*>(QStringLiteral("logToggle"));
-        auto* columns = w.findChild<QSplitter*>(QStringLiteral("columnSplitter"));
-        auto* workbench = w.findChild<QSplitter*>(QStringLiteral("workbenchSplitter"));
-        auto* field = w.findChild<ElaLineEdit*>(QStringLiteral("tbFile"));
-        QVERIFY(config && log && toggle && logToggle && columns && workbench && field);
-        field->setText(QStringLiteral("tb/preserve.sv"));
+        QTemporaryDir workspace;
+        MainWindow w; w.show();
+        QSignalSpy scans(&w, &MainWindow::scanFinished);
+        w.openWorkspace(workspace.path());
+        QTRY_COMPARE(scans.size(), 1);
+        QVERIFY(w.createProject(QStringLiteral("Form state")));
+        auto* toggle = w.findChild<QToolButton*>("waveOptionsToggle"); QVERIFY(toggle);
+        QVERIFY(!toggle->isChecked());
+        QVERIFY(!w.findChild<QWidget*>("workbenchSection"));
+        QVERIFY(!w.findChild<QWidget*>("openWorkspace"));
+        auto* scope = w.findChild<ElaComboBox*>("waveScope"); QVERIFY(scope);
+        toggle->click(); QVERIFY(scope->isVisible());
+        auto* field = w.findChild<ElaLineEdit*>("tbFile"); field->setText("tb/preserve.sv");
         QPointer<ElaLineEdit> identity(field);
-        columns->setSizes({510, 390});
-        workbench->setSizes({410, 270});
-        const auto columnSizes = columns->sizes();
-        const auto workbenchSizes = workbench->sizes();
-        toggle->click();
-        QVERIFY(config->isDrawerAnimating());
-        toggle->click();
-        QTRY_VERIFY(!config->isDrawerAnimating());
-        QVERIFY(config->getIsExpand());
-        QCOMPARE(config->drawerSnapshotBytes(), qint64(0));
-        QCOMPARE(field->text(), QStringLiteral("tb/preserve.sv"));
-        QCOMPARE(identity.data(), field);
-        toggle->setFocus();
-        QTest::keyClick(toggle, Qt::Key_Space);
-        QTRY_VERIFY(!config->isDrawerAnimating());
-        QVERIFY(!config->getIsExpand());
-        toggle->click();
+        toggle->click(); toggle->click();
+        QCOMPARE(identity.data(), field); QCOMPARE(field->text(), QString("tb/preserve.sv"));
+        auto* workbench = w.findChild<Workbench*>(); QVERIFY(workbench);
+        auto state = workbench->saveState();
+        toggle->setChecked(false); QVERIFY(workbench->restoreState(state).isEmpty());
+        QVERIFY(toggle->isChecked());
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
-        QVERIFY(!config->isDrawerAnimating());
-        QCOMPARE(config->drawerSnapshotBytes(), qint64(0));
-        logToggle->click();
-        QTRY_VERIFY(!log->isDrawerAnimating());
-        QVERIFY(!log->getIsExpand());
-        QTRY_VERIFY(log->isHidden());
-        QTRY_COMPARE(workbench->sizes().last(), log->parentWidget()->minimumSizeHint().height());
-        logToggle->click();
-        QTRY_VERIFY(!log->isDrawerAnimating());
-        QVERIFY(qAbs(workbench->sizes().last() - workbenchSizes.last()) <= 3);
-        logToggle->click();
-        QTRY_VERIFY(!log->isDrawerAnimating());
-        toggle->click();
-        const auto savedColumnSizes = columns->sizes();
+        QCOMPARE(identity.data(), field);
         w.close();
-        MainWindow restored;
-        // Offscreen's small virtual screen constrains restoreGeometry; compare at the same client size.
-        restored.resize(w.size());
-        restored.show();
-        QTest::qWait(100);
-        // Native Ela frame setup can adjust client size on the first show.
-        restored.resize(w.size());
-        QTest::qWait(30);
-        QCOMPARE(restored.size(), w.size());
-        auto* restoredColumns = restored.findChild<QSplitter*>(QStringLiteral("columnSplitter"));
-        auto* restoredLog = restored.findChild<ElaToolButton*>(QStringLiteral("logToggle"));
-        QVERIFY(!restored.findChild<ElaToolButton*>(QStringLiteral("simulationToggle"))->isChecked());
-        QVERIFY(!restoredLog->isChecked());
-        qInfo() << "columns:" << columnSizes << "saved:" << savedColumnSizes << "restored:" << restoredColumns->sizes();
-        QVERIFY(qAbs(restoredColumns->sizes().first() - savedColumnSizes.first()) <= 3);
-        restoredLog->click();
-        auto* restoredDrawer = restored.findChild<ElaDrawerArea*>(QStringLiteral("logDrawer"));
-        QTRY_VERIFY(!restoredDrawer->isDrawerAnimating());
-        qInfo() << "log splitter restore:" << workbenchSizes
-                << restored.findChild<QSplitter*>(QStringLiteral("workbenchSplitter"))->sizes()
-                << "windows" << w.size() << restored.size()
-                << "splitters" << workbench->size()
-                << restored.findChild<QSplitter*>(QStringLiteral("workbenchSplitter"))->size()
-                << "config minimum" << restored.findChild<QSplitter*>(QStringLiteral("columnSplitter"))->minimumSizeHint();
-        QVERIFY(qAbs(restored.findChild<QSplitter*>(QStringLiteral("workbenchSplitter"))->sizes().last() - workbenchSizes.last()) <= 3);
-        restored.close();
     }
     void comboAndMenuInterruptions()
     {

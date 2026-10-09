@@ -24,6 +24,7 @@
 #include <QProcess>
 #include <QSettings>
 #include <QSplitter>
+#include <QToolButton>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -71,7 +72,7 @@ int sessionPhase(const QString& mode, const QString& workspace, const QString& p
     auto* sessions = window.findChild<WorkspaceSessionCoordinator*>();
     auto* controller = window.findChild<ContextWorkspaceController*>();
     if (!sessions || !controller || !sessions->openWorkspace(workspace)) return 11;
-    auto* host = qobject_cast<SimDockContextView*>(controller->viewForResource("simdock:workbench"));
+    auto* host = window.findChild<SimDockContextView*>();
     if (!host || !host->isReady()) return 12;
     auto* panel = host->workbench();
     QTest::qWait(150);
@@ -82,20 +83,19 @@ int sessionPhase(const QString& mode, const QString& workspace, const QString& p
     if (host->saveState().value("legacyLayout").toMap().size() != 2) return 16;
     window.resizeDocks({controller->dockWidget()}, {1100}, Qt::Horizontal);
     QTest::qWait(150);
-    auto* columns = panel->findChild<QSplitter*>("columnSplitter");
-    auto* workbench = panel->findChild<QSplitter*>("workbenchSplitter");
-    if (!columns || !workbench) return 17;
+    auto* options = panel->findChild<QToolButton*>("waveOptionsToggle");
+    if (!options || panel->findChild<QWidget*>("workbenchSection")) return 17;
     if (mode == "save") {
-        columns->setSizes({355, 675}); workbench->setSizes({610, 190});
+        options->setChecked(true);
         QTest::qWait(60);
         const auto state = host->saveState();
         if (!write(profile + "/expected-state.json", QJsonDocument(QJsonObject::fromVariantMap(state)).toJson())) return 18;
     } else {
         const auto expected = SimDockState::decode(object(profile + "/expected-state.json").toVariantMap());
         const auto actual = SimDockState::decode(host->saveState());
-        for (const auto& key : {"layout/columns", "layout/workbench"}) {
-            if (actual.value(key).toByteArray() != expected.value(key).toByteArray()) {
-                qCritical() << key << actual.value(key).toByteArray().toBase64() << expected.value(key).toByteArray().toBase64();
+        for (const auto& key : {"layout/waveOptionsExpanded", "projectId", "preferences", "legacyLayout"}) {
+            if (actual.value(key) != expected.value(key)) {
+                qCritical() << key << actual.value(key) << expected.value(key);
                 return 19;
             }
         }

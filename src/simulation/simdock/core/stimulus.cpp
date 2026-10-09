@@ -500,6 +500,7 @@ bool saveGeneratedStimulus(const QString &root, Project &p, const QJsonObject &s
 }
 Project generatedStimulusProject(Project updated, const QJsonObject &stimulus, const QString &content)
 {
+    setInputMode(updated, InputMode::Graphical);
     const auto hash =
         QString::fromLatin1(QCryptographicHash::hash(content.toUtf8(), QCryptographicHash::Sha256).toHex());
     const auto options = stimulusOptions(stimulus);

@@ -3,6 +3,7 @@
 #include <QCloseEvent>
 #include <QSettings>
 #include <QVBoxLayout>
+#include <QHBoxLayout>
 
 namespace simdock {
 MainWindow::MainWindow(QWidget* parent) : ElaWidget(parent)
@@ -19,7 +20,12 @@ MainWindow::MainWindow(QWidget* parent) : ElaWidget(parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_workbench = new Workbench(this, true);
-    layout->addWidget(m_workbench);
+    auto* body = new QHBoxLayout;
+    auto* sources = m_workbench->sourceFilesWidget(); sources->setFixedWidth(290);
+    body->addWidget(sources); body->addWidget(m_workbench, 1);
+    layout->addLayout(body, 1); sources->show();
+    auto* log = m_workbench->runLogWidget(); log->setMaximumHeight(180);
+    layout->addWidget(log); log->show();
     connect(m_workbench, &Workbench::scanFinished, this, &MainWindow::scanFinished);
     QSettings settings;
     if (settings.contains(QStringLiteral("window/geometry")))

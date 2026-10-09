@@ -3,6 +3,7 @@
 #include <QtTest>
 #include <QtConcurrent>
 #include <QApplication>
+#include <QAction>
 #include <QComboBox>
 #include <QDialog>
 #include <QFile>
@@ -79,12 +80,12 @@ class WorkbenchHostTest : public QObject {
         write(root.filePath(QString(".simdock/projects/%1.json").arg(id)), QJsonDocument(project).toJson());
     }
     static void section(QWidget* widget, const QString& name) {
-        if (widget->property("compactLayout").toBool()) {
-            auto* selector = widget->findChild<QComboBox*>("workbenchSection");
-            QVERIFY(selector && selector->isVisible());
-            selector->setCurrentIndex(selector->findData(name));
-            QCoreApplication::processEvents();
-        }
+        auto* panel = qobject_cast<simdock::Workbench*>(widget);
+        auto* source = panel->sourceFilesWidget(); auto* log = panel->runLogWidget();
+        source->hide(); log->hide();
+        auto* page = name == "workspace" || name == "sources" ? source : name == "log" ? log : nullptr;
+        if (page) { page->setGeometry(widget->rect()); page->show(); page->raise(); }
+        QCoreApplication::processEvents();
     }
     static bool reachable(QWidget* control, QWidget* boundary) {
         if (!control || !control->isVisible()) return false;
@@ -229,7 +230,8 @@ private slots:
             host.resize(960, 760); QCoreApplication::processEvents(); capture(&host, "host-theme-" + theme + "-wide");
             host.resize(280, 760); QCoreApplication::processEvents(); section(widget, "workspace");
             capture(&host, "host-theme-" + theme + "-280");
-            auto* settings = widget->findChild<QPushButton*>("openSettings"); QVERIFY(reachable(settings, widget));
+            section(widget, "simulation");
+        auto* settings = widget->findChild<QToolButton*>("openSettings"); QVERIFY(reachable(settings, widget));
             QTimer::singleShot(0, widget, [&] {
                 auto* dialog = widget->findChild<QDialog*>("settingsDialog"); QVERIFY(dialog);
                 QTimer::singleShot(5000, dialog, &QDialog::reject);
@@ -274,11 +276,12 @@ private slots:
         QSignalSpy scanned(widget, SIGNAL(scanFinished()));
         QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         QCOMPARE(host.width(), width); QCOMPARE(widget->width(), width); QVERIFY(widget->minimumSizeHint().width() <= 280);
-        QCOMPARE(widget->property("compactLayout").toBool(), width < 900 || height < 600);
+        QVERIFY(!widget->findChild<QWidget*>("workbenchSection"));
+        QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
         const QList<QPair<QString, QStringList>> controls{
-            {"workspace", {"openWorkspace", "newProject", "projectList", "openSettings"}},
+            {"workspace", {"newProject", "projectList"}},
             {"sources", {"sourceList", "refreshWorkspace", "moveSourceUp", "moveSourceDown"}},
-            {"simulation", {"editStimulus", "dutSelector", "tbFile", "createTb", "chooseTb", "tbTop", "duration", "startSimulation", "stopSimulation"}},
+            {"simulation", {"openSettings", "editStimulus", "dutSelector", "simulationInputMode", "graphicalDuration", "startSimulation", "stopSimulation"}},
             {"log", {"simulationLog", "clearLog"}}};
         for (const auto& [page, names] : controls) {
             section(widget, page);
@@ -305,7 +308,7 @@ private slots:
         widget->findChild<QPushButton*>("moveSourceUp")->click();
         const QPersistentModelIndex selected(list->currentIndex());
         const auto path = selected.data(Qt::UserRole);
-        auto* columns = widget->findChild<QSplitter*>("columnSplitter"); columns->setSizes({450, 550});
+        auto* options = widget->findChild<QToolButton*>("waveOptionsToggle"); options->setChecked(true);
         const auto wideState = state(widget);
         auto* tb = widget->findChild<QLineEdit*>("tbTop"); tb->setText("tb_keep");
         for (int width : {520, 280, 960, 1250, 280, 520, 1250}) {
@@ -315,14 +318,15 @@ private slots:
             QVERIFY(selected.isValid()); QCOMPARE(list->currentIndex(), QModelIndex(selected));
             QCOMPARE(selected.data(Qt::UserRole), path); QCOMPARE(selected.data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
             QCOMPARE(tb->text(), QStringLiteral("tb_keep")); QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
-            QCOMPARE(state(widget)["layout/compactPage"].toString(), QStringLiteral("sources"));
+            QCOMPARE(state(widget)["layout/waveOptionsExpanded"].toBool(), true);
         }
         QTest::qWait(120); QCOMPARE(scanned.size(), 1);
-        // A compact save keeps the last wide splitter proportions, not an empty splitter.
+        // The current form state survives width changes; obsolete splitters are not restored.
         host.resize(520, 700); QCoreApplication::processEvents();
-        auto saved = state(widget); saved["layout/columns"] = wideState["layout/columns"];
+        auto saved = state(widget); saved["layout/waveOptionsExpanded"] = wideState["layout/waveOptionsExpanded"];
         QVERIFY(restore(widget, saved).isEmpty()); host.resize(1250, 700); QCoreApplication::processEvents();
-        QCOMPARE(state(widget)["layout/columns"], wideState["layout/columns"]);
+        QCOMPARE(state(widget)["layout/waveOptionsExpanded"], wideState["layout/waveOptionsExpanded"]);
+        section(widget, "simulation");
         QVERIFY(reachable(widget->findChild<QPushButton*>("startSimulation"), widget));
     }
     void narrowWorkspaceActions_data() {
@@ -334,13 +338,8 @@ private slots:
         QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
         auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(width, 700); host.show();
         QSignalSpy scanned(widget, SIGNAL(scanFinished())); section(widget, "workspace");
-        auto* open = widget->findChild<QPushButton*>("openWorkspace"); QVERIFY(reachable(open, widget));
-        QTimer::singleShot(0, widget, [&] {
-            auto* dialog = widget->findChild<QFileDialog*>(); QVERIFY(dialog);
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            dialog->setDirectory(root.path()); QMetaObject::invokeMethod(dialog, "accept");
-        });
-        QTest::mouseClick(open, Qt::LeftButton); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
+        QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
+        QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         auto* add = widget->findChild<QPushButton*>("newProject"); QVERIFY(reachable(add, widget));
         QTimer::singleShot(0, widget, [&] {
             auto* dialog = widget->findChild<QDialog*>("newProjectDialog"); QVERIFY(dialog);
@@ -372,7 +371,8 @@ private slots:
         QVERIFY(!original.isEmpty()); projects->scrollTo(original.first());
         QTest::mouseClick(projects->viewport(), Qt::LeftButton, Qt::NoModifier, projects->visualRect(original.first()).center());
         QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
-        auto* settings = widget->findChild<QPushButton*>("openSettings"); QVERIFY(reachable(settings, widget));
+        section(widget, "simulation");
+        auto* settings = widget->findChild<QToolButton*>("openSettings"); QVERIFY(reachable(settings, widget));
         QTimer::singleShot(0, widget, [&] {
             auto* dialog = widget->findChild<QDialog*>("settingsDialog"); QVERIFY(dialog);
             QTimer::singleShot(5000, dialog, &QDialog::reject);
@@ -477,9 +477,11 @@ private slots:
             host.show(); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
             QVERIFY(call(widget, "setContext", root.path()).isEmpty());
             QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
-            section(widget, QByteArray(action) == "openSettings" || QByteArray(action) == "newProject" ? "workspace" : "simulation");
-            auto* button = widget->findChild<QPushButton*>(QString::fromLatin1(action)); QVERIFY(button && button->isEnabled());
-            QVERIFY(reachable(button, widget));
+            section(widget, QByteArray(action) == "newProject" ? "workspace" : "simulation");
+            auto* button = widget->findChild<QAbstractButton*>(QString::fromLatin1(action));
+            auto* menuAction = widget->findChild<QAction*>(QString::fromLatin1(action));
+            QVERIFY((button && button->isEnabled()) || (menuAction && menuAction->isEnabled()));
+            QVERIFY(reachable(button ? button : widget->findChild<QWidget*>("simulationActions"), widget));
             QTimer destroyPoll;
             destroyPoll.setInterval(10);
             connect(&destroyPoll, &QTimer::timeout, &host, [&] {
@@ -489,7 +491,8 @@ private slots:
                 if (!visible) return;
                 QVERIFY(!closable(widget)); destroyPoll.stop(); delete widget;
             });
-            destroyPoll.start(); QTest::mouseClick(button, Qt::LeftButton);
+            destroyPoll.start();
+            if (menuAction) menuAction->trigger(); else QTest::mouseClick(button, Qt::LeftButton);
             QTRY_VERIFY_WITH_TIMEOUT(widget.isNull(), 10000);
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
@@ -507,8 +510,8 @@ private slots:
         saved["preferences"] = QVariantMap{{"simulator/path", simulator}};
         QVERIFY(restore(widget, saved).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         section(widget, "simulation");
-        auto* generate = widget->findChild<QPushButton*>("createTb"); QVERIFY(generate && generate->isEnabled());
-        QVERIFY(reachable(generate, widget));
+        auto* generate = widget->findChild<QAction*>("createTb"); QVERIFY(generate && generate->isEnabled());
+        QVERIFY(reachable(widget->findChild<QWidget*>("simulationActions"), widget));
         QTimer::singleShot(0, widget, [&] {
             auto* dialog = widget->findChild<QDialog*>(); QVERIFY(dialog);
             QTimer::singleShot(3000, dialog, &QDialog::reject);
@@ -516,7 +519,7 @@ private slots:
             for (auto* button : dialog->findChildren<QPushButton*>())
                 if (button->text() == "Create file") { QVERIFY(reachable(button, dialog)); QTest::mouseClick(button, Qt::LeftButton); return; }
         });
-        QTest::mouseClick(generate, Qt::LeftButton);
+        generate->trigger();
         auto* choose = widget->findChild<QPushButton*>("chooseTb"); QVERIFY(reachable(choose, widget));
         const auto tbFile = widget->findChild<QLineEdit*>("tbFile")->text(); QVERIFY(!tbFile.isEmpty());
         QTimer::singleShot(0, widget, [&] {

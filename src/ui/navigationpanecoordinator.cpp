@@ -340,6 +340,13 @@ void NavigationPaneCoordinator::showSearch()
         navigationWidget->focusSearch();
 }
 
+void NavigationPaneCoordinator::setSourceFilesWidget(QWidget* widget)
+{ if (navigationWidget) navigationWidget->setSourceFilesWidget(widget); }
+int NavigationPaneCoordinator::activeTab() const
+{ return navigationWidget ? navigationWidget->activeTab() : 0; }
+void NavigationPaneCoordinator::setActiveTab(int tab)
+{ if (navigationWidget) navigationWidget->setActiveTab(NavigationWidget::NavigationTab(qBound(0, tab, 2))); }
+
 QString NavigationPaneCoordinator::filesSearchQuery() const
 {
     return navigationWidget

@@ -293,6 +293,7 @@ void NavigationManager::onWorkspaceChanged(const QString& workspacePath)
 
 void NavigationManager::onViewChanged(int index)
 {
+    if (index != NavigationWidget::FileTab && index != NavigationWidget::DesignTab) return;
     setActiveView(index == NavigationWidget::DesignTab
                       ? DesignHierarchyView
                       : FileHierarchyView);

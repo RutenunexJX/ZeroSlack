@@ -125,6 +125,7 @@ Scan scanWorkspace(const QString& root, const std::atomic_bool* cancelled, ScanM
 Project newProject(const QString& name)
 {
     Project p;
+    p.inputMode = InputMode::Graphical;
     p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p.name = name.trimmed();
     return p;
@@ -139,6 +140,11 @@ QJsonObject projectJson(const Project& p)
         {QStringLiteral("tbFile"), p.tbFile}, {QStringLiteral("tbName"), p.tbName},
         {QStringLiteral("durationNs"), double(p.durationNs)},
         {QStringLiteral("stimulus"), p.stimulus},
+        {QStringLiteral("inputMode"), p.inputMode == InputMode::Graphical ? QStringLiteral("graphical") : QStringLiteral("existing")},
+        {QStringLiteral("alternateInput"), QJsonObject{
+            {QStringLiteral("tbFile"), p.alternateInput.tbFile}, {QStringLiteral("tbName"), p.alternateInput.tbName},
+            {QStringLiteral("durationNs"), double(p.alternateInput.durationNs)},
+            {QStringLiteral("stimulus"), p.alternateInput.stimulus}}},
         {QStringLiteral("waveScope"), p.waveScope},
         {QStringLiteral("waveSignals"), QJsonArray::fromStringList(p.waveSignals)}};
 }
@@ -147,7 +153,8 @@ static QString validateProject(const QString& root, const Project& p)
 {
     if (QUuid(p.id).isNull() || p.name.isEmpty() || p.name.size() > 120)
         return QStringLiteral("Invalid project name or ID.");
-    if (p.durationNs < 1 || p.durationNs > 3600000000000LL)
+    if (p.durationNs < 1 || p.durationNs > 3600000000000LL
+        || p.alternateInput.durationNs < 1 || p.alternateInput.durationNs > 3600000000000LL)
         return QStringLiteral("Simulation duration must be between 1 ns and 1 hour.");
     if (p.sources.size() > 10000) return QStringLiteral("The project exceeds the source file limit.");
     if (p.waveScope != QStringLiteral("interface") && p.waveScope != QStringLiteral("selected")
@@ -155,7 +162,7 @@ static QString validateProject(const QString& root, const Project& p)
     if (QJsonDocument(projectJson(p)).toJson().size() > 8 * 1024 * 1024)
         return QStringLiteral("The project exceeds the 8 MiB size limit.");
     QStringList paths = p.sources;
-    paths << p.dutFile << p.tbFile;
+    paths << p.dutFile << p.tbFile << p.alternateInput.tbFile;
     for (const auto& path : paths) {
         if (path.isEmpty()) continue;
         if (QDir::isAbsolutePath(path) || !insideWorkspace(root, QDir(root).filePath(path)))
@@ -204,10 +211,20 @@ QList<Project> loadProjects(const QString& root, QStringList* errors)
         p.tbName = o.value(QStringLiteral("tbName")).toString();
         p.durationNs = o.value(QStringLiteral("durationNs")).toInteger(1000);
         p.stimulus = o.value(QStringLiteral("stimulus")).toObject();
+        const auto mode = o.value(QStringLiteral("inputMode")).toString();
+        p.inputMode = mode == QStringLiteral("graphical") || (mode.isEmpty() && (!p.stimulus.isEmpty() || p.tbFile.isEmpty()))
+            ? InputMode::Graphical : InputMode::ExistingTb;
+        const auto alternate = o.value(QStringLiteral("alternateInput")).toObject();
+        p.alternateInput = {alternate.value(QStringLiteral("tbFile")).toString(),
+            alternate.value(QStringLiteral("tbName")).toString(),
+            alternate.value(QStringLiteral("durationNs")).toInteger(1000),
+            alternate.value(QStringLiteral("stimulus")).toObject()};
         p.waveScope = o.value(QStringLiteral("waveScope")).toString(QStringLiteral("interface"));
         for (const auto &signal : o.value(QStringLiteral("waveSignals")).toArray())
             if (signal.isString()) p.waveSignals << signal.toString();
         QString issue = validateProject(root, p);
+        if (!mode.isEmpty() && mode != QStringLiteral("graphical") && mode != QStringLiteral("existing"))
+            issue = QStringLiteral("Unknown simulation input mode.");
         if (parseError.error != QJsonParseError::NoError || o.value(QStringLiteral("schema")).toString() != QStringLiteral("simdock.project/v1"))
             issue = QStringLiteral("Unsupported project format or invalid JSON.");
         if (p.id + QStringLiteral(".json") != item.fileName()) issue = QStringLiteral("The project ID does not match the file name.");

@@ -51,6 +51,15 @@ New-Item -ItemType Directory -Path $outputRoot | Out-Null
 foreach ($name in $binaries) { Copy-Item -LiteralPath (Join-Path $buildRoot $name) -Destination $outputRoot }
 $deployTargets = @($binaries | ForEach-Object { Join-Path $outputRoot $_ })
 $nativeComponents = [ordered]@{}
+$nativeHostRuntimeFiles = @()
+$nativeHostPluginFiles = @()
+function Join-NativeRuntimePath([string]$Root, [string]$Relative) {
+    if ([string]::IsNullOrWhiteSpace($Relative) -or [IO.Path]::IsPathRooted($Relative) -or
+        $Relative -match '(^|[\\/])\.\.([\\/]|$)' -or $Relative.Contains(':')) {
+        throw "Invalid native runtime path: $Relative"
+    }
+    return Join-Path $Root $Relative
+}
 foreach ($component in @(
     @{ id='xips'; package=$XipsPackageDirectory; setting='ZEROSLACK_XIPS_COMPONENT_DIR'; files=@('xips-browser.dll','xips-browser-impl.dll','XipsEla.dll') }
 )) {
@@ -63,12 +72,25 @@ foreach ($component in @(
         continue
     }
     $componentFiles = @($component.files)
+    $runtimeManifestPath = Join-Path $componentRoot 'xips-native-runtime.json'
+    $runtimeManifest = $null
+    if (Test-Path -LiteralPath $runtimeManifestPath -PathType Leaf) {
+        $runtimeManifest = Get-Content -LiteralPath $runtimeManifestPath -Raw | ConvertFrom-Json
+        if ($runtimeManifest.schema -ne 'xips.native-deployment/v1' -or
+            $runtimeManifest.nativeSurfaceAbi -ne 1 -or $runtimeManifest.qt -ne '6.10.2') {
+            throw 'The xIPs runtime manifest is incompatible with this host.'
+        }
+        $componentFiles = @($componentFiles + @($runtimeManifest.componentFiles) | Select-Object -Unique)
+        $nativeHostRuntimeFiles += @($runtimeManifest.additionalHostRuntimeFiles)
+        $nativeHostPluginFiles += @($runtimeManifest.hostPluginFiles)
+    }
     $componentTarget = Join-Path $outputRoot "components/$($component.id)"
     New-Item -ItemType Directory -Path $componentTarget | Out-Null
     foreach ($name in $componentFiles) {
-        $source = Join-Path $componentRoot $name
+        $source = Join-NativeRuntimePath $componentRoot $name
         if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing native runtime: $source" }
-        $target = Join-Path $componentTarget $name
+        $target = Join-NativeRuntimePath $componentTarget $name
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
         Copy-Item -LiteralPath $source -Destination $target
         if ($name.EndsWith('.dll')) { $deployTargets += $target }
     }
@@ -92,7 +114,11 @@ foreach ($component in @(
         $path = Join-Path $componentRoot $name
         if (Test-Path -LiteralPath $path) {
             New-Item -ItemType Directory -Path $componentNotices -Force | Out-Null
-            Copy-Item -LiteralPath $path -Destination $componentNotices -Recurse
+            if ($name -eq 'licenses') {
+                Get-ChildItem -LiteralPath $path | ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination $componentNotices -Recurse
+                }
+            } else { Copy-Item -LiteralPath $path -Destination $componentNotices -Recurse }
         }
     }
     # An already packaged component stores notices under the package owner.
@@ -101,6 +127,13 @@ foreach ($component in @(
     if (-not (Test-Path -LiteralPath $componentNotices) -and (Test-Path -LiteralPath $parentNotices)) {
         New-Item -ItemType Directory -Path (Split-Path -Parent $componentNotices) -Force | Out-Null
         Copy-Item -LiteralPath $parentNotices -Destination $componentNotices -Recurse
+    }
+    if ($runtimeManifest) {
+        foreach ($name in @($runtimeManifest.helperLicenseFiles)) {
+            $relative = $name -replace '^licenses[\\/]', ''
+            $notice = Join-NativeRuntimePath $componentNotices $relative
+            if (-not (Test-Path -LiteralPath $notice -PathType Leaf)) { throw "Missing native helper notice: $notice" }
+        }
     }
     $nativeComponents[$component.id] = [ordered]@{
         directory="components/$($component.id)"; files=$componentFiles
@@ -144,6 +177,18 @@ $nativeComponents['wave'] = [ordered]@{ directory='components/wave'; files=@($wa
 & (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
     --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot @deployTargets
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
+foreach ($name in @($nativeHostRuntimeFiles | Select-Object -Unique)) {
+    $source = Join-NativeRuntimePath (Join-Path $QtDirectory 'bin') $name
+    $target = Join-NativeRuntimePath $outputRoot $name
+    New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+    Copy-Item -LiteralPath $source -Destination $target -Force
+}
+foreach ($name in @($nativeHostPluginFiles | Select-Object -Unique)) {
+    $source = Join-NativeRuntimePath (Join-Path $QtDirectory 'plugins') $name
+    $target = Join-NativeRuntimePath $outputRoot $name
+    New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+    Copy-Item -LiteralPath $source -Destination $target -Force
+}
 if ($nativeComponents.Contains('xips')) {
     $sqlDrivers = Join-Path $outputRoot 'sqldrivers'
     New-Item -ItemType Directory -Path $sqlDrivers -Force | Out-Null

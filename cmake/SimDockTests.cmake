@@ -1,6 +1,15 @@
 # Original SimDock cases compile against the owned implementation. The legacy
 # window is test-only chrome; the real ZeroSlack lifecycle is tested separately.
 find_package(Qt6 REQUIRED COMPONENTS Test)
+add_executable(simulation_workspace_ui_test test_sv/simulation_workspace_ui_test.cpp)
+target_link_libraries(simulation_workspace_ui_test PRIVATE zeroslack_core Qt6::Test)
+target_include_directories(simulation_workspace_ui_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
+add_test(NAME simulation_workspace_ui COMMAND simulation_workspace_ui_test
+    sourceFirstSingleOwnershipAndSessionRestore navigationSearchAndTransferredModalGuard
+    inputModesRetainBothConfigurationsAndDuration logSelectionScrollAndHiddenDelivery hostVisualsAndMenus)
+set_tests_properties(simulation_workspace_ui PROPERTIES TIMEOUT 180
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 foreach(pair IN ITEMS "scan_cache;scan_cache_test" "scoreboard;scoreboard_test" "stimulus;stimulus_test" "core;core_test" "workbench_host;workbench_host_test")
     list(GET pair 0 name)
     list(GET pair 1 source)

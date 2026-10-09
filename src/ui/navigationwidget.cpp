@@ -7,6 +7,7 @@
 #include <QHeaderView>
 #include <QMenu>
 #include <QSignalBlocker>
+#include <QTabBar>
 #include <QTreeWidgetItemIterator>
 
 NavigationWidget::NavigationWidget(QWidget *parent)
@@ -35,19 +36,21 @@ void NavigationWidget::setActiveTab(NavigationTab tab)
 
 void NavigationWidget::focusSearch()
 {
+    if (activeTab() == SourceFilesTab) setActiveTab(FileTab);
     if (searchLineEdit)
         searchLineEdit->setFocus(Qt::ShortcutFocusReason);
 }
 
 QString NavigationWidget::searchFilter(NavigationTab tab) const
 {
-    return tab == DesignTab ? designSearchFilter : fileSearchFilter;
+    return searchFilterForIndex(tab);
 }
 
 void NavigationWidget::setSearchFilter(NavigationTab tab,
                                        const QString& filter)
 {
     const int index = static_cast<int>(tab);
+    if (index != FileTab && index != DesignTab) return;
     const QString normalized = filter.trimmed();
     setStoredSearchFilter(index, normalized);
     if (!tabWidget || tabWidget->currentIndex() != index)
@@ -314,7 +317,10 @@ void NavigationWidget::highlightFile(const QString& filePath)
 
 void NavigationWidget::onTabChanged(int index)
 {
+    searchLineEdit->setVisible(index != SourceFilesTab);
+    if (index == SourceFilesTab) { emit viewChanged(index); return; }
     (index == DesignTab ? designTabLayout : fileTabLayout)->insertWidget(0, searchLineEdit);
+    searchLineEdit->show();
     if (searchLineEdit) {
         const QSignalBlocker blocker(searchLineEdit);
         searchLineEdit->setText(searchFilterForIndex(index));
@@ -333,6 +339,7 @@ void NavigationWidget::onTabChanged(int index)
 void NavigationWidget::onSearchTextChanged(const QString& text)
 {
     const int index = tabWidget ? tabWidget->currentIndex() : FileTab;
+    if (index != FileTab && index != DesignTab) return;
     const QString normalized = text.trimmed();
     if (searchFilterForIndex(index) == normalized
         && !(index == DesignTab ? designTreeRefreshPending : fileTreeRefreshPending))
@@ -422,6 +429,10 @@ void NavigationWidget::setupUI()
 
     tabWidget = UiControls::tabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
+    tabWidget->tabBar()->setFont(UiTypography::font(UiTypography::Role::Metadata));
+    tabWidget->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { padding: 7px 6px; min-width: 0px; }"));
+    tabWidget->tabBar()->setUsesScrollButtons(false);
+    tabWidget->tabBar()->setElideMode(Qt::ElideRight);
     mainLayout->insertWidget(0, tabWidget);
     mainLayout->removeWidget(searchLineEdit);
 
@@ -501,7 +512,14 @@ void NavigationWidget::setupDesignTab()
 
 QString NavigationWidget::searchFilterForIndex(int index) const
 {
-    return index == DesignTab ? designSearchFilter : fileSearchFilter;
+    return index == DesignTab ? designSearchFilter : index == FileTab ? fileSearchFilter : QString();
+}
+
+int NavigationWidget::activeTab() const { return tabWidget->currentIndex(); }
+void NavigationWidget::setSourceFilesWidget(QWidget* widget)
+{
+    if (!widget || tabWidget->count() > SourceFilesTab) return;
+    tabWidget->addTab(widget, tr("Build inputs"));
 }
 
 void NavigationWidget::setStoredSearchFilter(int index,
@@ -510,7 +528,7 @@ void NavigationWidget::setStoredSearchFilter(int index,
     if (index == DesignTab) {
         designTreeRefreshPending |= designSearchFilter != filter;
         designSearchFilter = filter;
-    } else {
+    } else if (index == FileTab) {
         fileTreeRefreshPending |= fileSearchFilter != filter;
         fileSearchFilter = filter;
     }

@@ -68,7 +68,8 @@ bool MainWindow::openSimDockTarget(const QString& workspace, const QString& proj
         for (const auto& project : simdock::loadProjects(root)) if (project.id == projectId) found = true;
         if (!found) return fail(tr("The simulation project no longer exists."));
     }
-    if (!contextWorkspaceController->canCloseResources(error)) return false;
+    if ((simulationWorkspace && !simulationWorkspace->canClose(error))
+        || !contextWorkspaceController->canCloseResources(error)) return false;
     if (QFileInfo(workspaceManager->getWorkspacePath()).canonicalFilePath() != root
         && !workspaceManager->openWorkspace(root))
         return fail(tr("The workspace change was cancelled or could not be completed."));
@@ -76,7 +77,7 @@ bool MainWindow::openSimDockTarget(const QString& workspace, const QString& proj
     const auto resource = provider.activationResource(root);
     if (!contextWorkspaceController->openResource(resource,
             {ContextSurface::Docked, ContextPersistence::Kept}, error)) return false;
-    auto* view = qobject_cast<SimDockContextView*>(contextWorkspaceController->viewForResource(resource.stableKey()));
+    auto* view = simulationWorkspace.get();
     if (!view || !view->isReady())
         return fail(view ? view->property("nativeComponentError").toString() : tr("The simulation workbench is unavailable."));
     const auto issue = view->workbench()->openProject(projectId);
@@ -109,6 +110,7 @@ void MainWindow::setupContextWorkspace()
             ? workspaceManager->getWorkspacePath()
             : QString();
         contextWorkspaceController->setWorkspaceRoot(workspaceRoot);
+        simulationWorkspace->activate(SimDockContextProvider().activationResource(workspaceRoot));
         pinloomCodeLinkCoordinator->setWorkspaceRoot(workspaceRoot);
         connect(workspaceManager.get(),
                 &WorkspaceManager::workspaceActivated,
@@ -120,6 +122,7 @@ void MainWindow::setupContextWorkspace()
                     const QString&,
                     const QString& path) {
                     controller->setWorkspaceRoot(path);
+                    simulationWorkspace->activate(SimDockContextProvider().activationResource(path));
                     if (tabManager) {
                         const QString file = tabManager->getCurrentDocumentMetadata().fileName;
                         controller->setActiveDocument(file.isEmpty() ? QString() : QDir(path).relativeFilePath(file));
@@ -134,6 +137,7 @@ void MainWindow::setupContextWorkspace()
                  controller = contextWorkspaceController.get(),
                  coordinator = pinloomCodeLinkCoordinator.get()]() {
                     controller->setWorkspaceRoot({});
+                    simulationWorkspace->activate(SimDockContextProvider().activationResource({}));
                     coordinator->setWorkspaceRoot({});
                     requestLiveInsightUpdates();
                 });
@@ -324,14 +328,16 @@ void MainWindow::setupContextWorkspace()
 
     contextWorkspaceController->registerProvider(
         std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get()));
-    contextWorkspaceController->registerProvider(std::make_unique<SimDockContextProvider>());
+    contextWorkspaceController->registerProvider(std::make_unique<SimDockContextProvider>(simulationWorkspace.get()));
 
     connect(contextWorkspaceController.get(), &ContextWorkspaceController::resourceCloseRejected,
             this, [this](const QString &reason) { postActivityMessage(reason, 6000); });
     if (workspaceManager) {
         const QPointer<ContextWorkspaceController> controller(contextWorkspaceController.get());
-        workspaceManager->setWorkspaceTransitionGuard([controller] {
+        const QPointer<SimDockContextView> simulation(simulationWorkspace.get());
+        workspaceManager->setWorkspaceTransitionGuard([controller, simulation] {
             QString error;
+            if (simulation && !simulation->canClose(&error)) return error;
             if (controller && !controller->canCloseResources(&error))
                 return error.isEmpty() ? QStringLiteral("An embedded component is busy.") : error;
             return QString();

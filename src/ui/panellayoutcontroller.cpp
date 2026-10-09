@@ -54,6 +54,8 @@ QString panelLabel(const QString& panelId)
         return QStringLiteral("Search");
     if (panelId == QStringLiteral("activity"))
         return QStringLiteral("Activity");
+    if (panelId == QStringLiteral("simulationLog"))
+        return QStringLiteral("Run log");
     if (panelId == QStringLiteral("rtlHighRiskEdit"))
         return QStringLiteral("Change Preview");
     if (panelId == QStringLiteral("connections"))
@@ -67,6 +69,7 @@ QIcon panelIcon(const QString& panelId)
     if (panelId == QStringLiteral("problems")) return icon(Warning);
     if (panelId == QStringLiteral("scopedSearch")) return icon(Search);
     if (panelId == QStringLiteral("activity")) return icon(Activity);
+    if (panelId == QStringLiteral("simulationLog")) return icon(Activity);
     if (panelId == QStringLiteral("rtlHighRiskEdit")) return icon(Change);
     if (panelId == QStringLiteral("connections")) return icon(Connections);
     return icon(Info);
@@ -1153,6 +1156,7 @@ void PanelLayoutController::updateButtons()
             continue;
         entry.button->setVisible(entry.id == QStringLiteral("problems")
             || entry.id == QStringLiteral("activity")
+            || entry.id == QStringLiteral("simulationLog")
             || (entry.id != QStringLiteral("connections") && expanded && entry.id == activePanel));
         entry.button->setChecked(expanded && entry.id == activePanel);
         entry.button->setProperty(

@@ -8,6 +8,8 @@
 #include "contextfloatingwindow.h"
 #include "mainwindow.h"
 #include "tabmanager.h"
+#include "navigationwidget.h"
+#include "../src/simulation/simdock/ui/workbench.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
 #include "settingscenterservice.h"
@@ -70,12 +72,12 @@ void click(QWidget *owner, const char *name)
     QVERIFY2(button->isEnabled(), name);
     button->click();
 }
-void whenVisible(QWidget *owner, const QString &name, std::function<void(QWidget *)> action)
+void whenVisible(QWidget *owner, const QString &name, std::function<void(QWidget *)> action, bool rejectOnReturn = false)
 {
     auto *timer = new QTimer(owner);
     QElapsedTimer elapsed;
     elapsed.start();
-    QObject::connect(timer, &QTimer::timeout, owner, [owner, timer, name, action, elapsed] {
+    QObject::connect(timer, &QTimer::timeout, owner, [owner, timer, name, action, elapsed, rejectOnReturn] {
         for (auto *widget : owner->findChildren<QWidget *>(name)) {
             if (!widget->isVisible()) continue;
             if (auto *dialog = qobject_cast<QDialog *>(widget->window())) {
@@ -85,7 +87,13 @@ void whenVisible(QWidget *owner, const QString &name, std::function<void(QWidget
                     dialog->reject();
                 });
             }
-            timer->stop(); timer->deleteLater(); action(widget); return;
+            timer->stop(); timer->deleteLater();
+            const QPointer<QDialog> dialog = qobject_cast<QDialog *>(widget->window());
+            // Test assertions can return from the action before it accepts the form.
+            const auto dismissUnfinished = qScopeGuard([dialog, rejectOnReturn] {
+                if ((rejectOnReturn || QTest::currentTestFailed()) && dialog && dialog->isVisible()) dialog->reject();
+            });
+            action(widget); return;
         }
         if (elapsed.elapsed() > 10000) {
             timer->stop(); timer->deleteLater();
@@ -282,36 +290,14 @@ class NativeMainWindowIntegrationTest : public QObject
     }
     void simdockReachability(QWidget *panel)
     {
-        auto *selector = panel->findChild<QComboBox *>("workbenchSection"); QVERIFY(selector);
-        const QList<QStringList> controls{{"openWorkspace", "newProject", "openSettings"},
-            {"refreshWorkspace", "moveSourceUp", "moveSourceDown"},
-            {"dutSelector", "editStimulus", "duration", "startSimulation", "stopSimulation"}, {"clearLog", "simulationLog"}};
-        for (int page = 0; page < controls.size(); ++page) {
-            if (selector->isVisible()) {
-                QVERIFY(reachable(selector));
-                QTest::mouseClick(selector, Qt::LeftButton);
-                auto *choices = selector->view(); QTRY_VERIFY(choices->isVisible());
-                QTest::qWait(220);
-                // Keyboard events belong to the active popup view, not the
-                // covered combo box underneath it.
-                QTest::keyClick(choices, Qt::Key_Home);
-                for (int step = 0; step < page; ++step) QTest::keyClick(choices, Qt::Key_Down);
-                QTest::keyClick(choices, Qt::Key_Return);
-                QTRY_VERIFY(!choices->isVisible());
-                QCOMPARE(selector->currentIndex(), page);
-            }
-            for (const auto &name : controls[page])
-                QVERIFY2(reachable(panel->findChild<QWidget *>(name)), qPrintable(name));
-            if (page == 0) {
-                cancelForm(panel, "newProject", "newProjectDialog");
-                cancelForm(panel, "openSettings", "settingsDialog");
-            } else if (page == 2) {
-                auto *run = panel->findChild<QAbstractButton *>("startSimulation"); QVERIFY(run && run->isEnabled());
-                cancelForm(panel, "editStimulus", "stimulusDialog");
-            } else if (page == 3) pointerClick(panel, "clearLog");
-            QVERIFY(!QTest::currentTestFailed());
-            screenshot(*panel->window(), uiCase + QString("-page%1").arg(page));
-        }
+        QVERIFY(!panel->findChild<QWidget*>("workbenchSection"));
+        QVERIFY(!panel->findChild<QWidget*>("openWorkspace"));
+        for (const auto* name : {"openSettings", "simulationInputMode", "dutSelector", "editStimulus", "graphicalDuration", "startSimulation", "stopSimulation"})
+            QVERIFY2(reachable(panel->findChild<QWidget*>(QLatin1String(name))), name);
+        cancelForm(panel, "openSettings", "settingsDialog");
+        cancelForm(panel, "editStimulus", "stimulusDialog");
+        QVERIFY(!QTest::currentTestFailed());
+        screenshot(*panel->window(), uiCase + "-simulation");
     }
     void verifyThemes(NativeContextView *xhost, SimDockContextView *shost, bool dark)
     {
@@ -480,23 +466,29 @@ class NativeMainWindowIntegrationTest : public QObject
         QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
         auto *working = panel->findChild<QAbstractItemView *>("workingFiles");
         QVERIFY(working);
-        QMimeData mime; mime.setUrls({QUrl::fromLocalFile(root + "/external/rtl")});
+        // Ordinary file drops collect working files without creating a revision.
+        QMimeData mime; mime.setUrls({QUrl::fromLocalFile(root + "/external/rtl/sub/helper.sv")});
         QDragEnterEvent enter(QPoint(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(working->viewport(), &enter); QVERIFY(enter.isAccepted());
         QDropEvent drop(QPointF(10, 10), Qt::CopyAction, &mime, Qt::LeftButton, Qt::NoModifier);
         QApplication::sendEvent(working->viewport(), &drop); QVERIFY(drop.isAccepted());
+        QCOMPARE(drop.dropAction(), Qt::CopyAction);
         QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
         auto *model = working->model();
-        const auto top = fileIndex(model, "top.sv"), helper = fileIndex(model, "rtl/sub/helper.sv");
+        auto *versions = panel->findChild<QAbstractItemView *>("revisionTable");
+        QVERIFY(versions);
+        QCOMPARE(versions->model()->rowCount(), 0);
+        const auto top = fileIndex(model, "top.sv"), helper = fileIndex(model, "helper.sv");
         QVERIFY(top.isValid() && helper.isValid());
         QVERIFY(model->setData(top, Qt::Unchecked, Qt::CheckStateRole));
         QVERIFY(model->setData(helper, Qt::Checked, Qt::CheckStateRole));
         const auto checked = host->saveState();
+        host->restoreState(checked);
+        QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
+        QCOMPARE(host->saveState().value("workingChecks"), checked.value("workingChecks"));
         whenVisible(&window, "payloadReviewForm", [](QWidget *form) { click(form, "formAccept"); });
         click(panel, "updateButton");
         QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
-        auto *versions = panel->findChild<QAbstractItemView *>("revisionTable");
-        QVERIFY(versions);
         QCOMPARE(versions->model()->rowCount(), 1);
         const auto revision = host->saveState().value("revision").toString();
         QVERIFY(!revision.isEmpty());
@@ -508,7 +500,9 @@ class NativeMainWindowIntegrationTest : public QObject
         }
         QVERIFY(!manifestPath.isEmpty());
         const auto manifest = QJsonDocument::fromJson(get(manifestPath)).object();
-        QCOMPARE(manifest.value("files").toArray(), QJsonArray{QStringLiteral("rtl/sub/helper.sv")});
+        QCOMPARE(manifest.value("files").toArray(), QJsonArray{QStringLiteral("helper.sv")});
+        QVERIFY(fileIndex(model, "helper.sv").isValid() && fileIndex(model, "top.sv").isValid());
+        QCOMPARE(host->saveState().value("workingChecks"), checked.value("workingChecks"));
         const auto destination = workspace + "/subset.sv";
         whenVisible(&window, "exportDestination", [destination](QWidget *field) {
             qobject_cast<QLineEdit *>(field)->setText(destination); click(field->window(), "formAccept");
@@ -524,6 +518,8 @@ class NativeMainWindowIntegrationTest : public QObject
         click(panel, "deleteRevisionButton");
         QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
         QCOMPARE(versions->model()->rowCount(), 0);
+        QVERIFY(fileIndex(model, "top.sv").isValid());
+        QVERIFY(fileIndex(model, "helper.sv").isValid());
         QCOMPARE(host->saveState().value("workingChecks"), checked.value("workingChecks"));
         const QString definitionRoot = QFileInfo(manifestPath).dir().absoluteFilePath("../..");
         const auto definition = QJsonDocument::fromJson(get(definitionRoot + "/.xips.json")).object();
@@ -531,7 +527,103 @@ class NativeMainWindowIntegrationTest : public QObject
         QVERIFY(!source.isEmpty());
         const QString assetRoot = QDir(library).filePath(source);
         QCOMPARE(get(assetRoot + "/top.sv"), get(root + "/external/top.sv"));
+        QCOMPARE(get(assetRoot + "/helper.sv"), get(root + "/external/rtl/sub/helper.sv"));
+
+        // Folder drops review a selected payload and archive it immediately in 2.13.2.
+        QVERIFY(put(root + "/external/rtl/unused.sv", "module not_imported; endmodule\n"));
+        const auto beforeImport = host->saveState();
+        const auto dropFolder = [&] {
+            QMimeData folderMime; folderMime.setUrls({QUrl::fromLocalFile(root + "/external/rtl")});
+            QDragEnterEvent folderEnter(QPoint(10, 10), Qt::CopyAction, &folderMime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(working->viewport(), &folderEnter); QVERIFY(folderEnter.isAccepted());
+            QDropEvent folderDrop(QPointF(10, 10), Qt::CopyAction, &folderMime, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(working->viewport(), &folderDrop); QVERIFY(folderDrop.isAccepted());
+            QCOMPARE(folderDrop.dropAction(), Qt::CopyAction);
+        };
+        bool cancelled = false;
+        whenVisible(&window, "folderImportForm", [&](QWidget *form) {
+            QCOMPARE(form->parentWidget(), &window);
+            QCOMPARE(QApplication::activeModalWidget(), form);
+            QCOMPARE(form->windowModality(), Qt::ApplicationModal);
+            auto *transfer = form->findChild<QComboBox *>("importTransfer"); QVERIFY(transfer);
+            transfer->setCurrentIndex(transfer->findData(true));
+            cancelled = true;
+            // Deliberately return without accepting: independent cleanup must reject it.
+        }, true);
+        dropFolder();
+        QTRY_VERIFY_WITH_TIMEOUT(cancelled && !busy(panel) && host->canClose(), 12000);
+        QVERIFY(!QApplication::activeModalWidget());
+        QCOMPARE(versions->model()->rowCount(), 0);
+        QCOMPARE(host->saveState().value("assetId"), beforeImport.value("assetId"));
+        QCOMPARE(host->saveState().value("workingChecks"), beforeImport.value("workingChecks"));
+        QVERIFY(!QFileInfo::exists(assetRoot + "/rtl/sub/helper.sv"));
+        QCOMPARE(get(root + "/external/rtl/sub/helper.sv"), get(assetRoot + "/helper.sv"));
+        QVERIFY(QFileInfo::exists(root + "/external/rtl/unused.sv"));
+
+        bool imported = false;
+        whenVisible(&window, "folderImportForm", [&](QWidget *form) {
+            QCOMPARE(form->parentWidget(), &window);
+            QCOMPARE(QApplication::activeModalWidget(), form);
+            QCOMPARE(form->windowModality(), Qt::ApplicationModal);
+            auto *destination = form->findChild<QComboBox *>("importDestination"); QVERIFY(destination);
+            QCOMPARE(destination->currentData().toString(), asset.value("assetId").toString());
+            auto *tree = form->findChild<QAbstractItemView *>("importFiles"); QVERIFY(tree);
+            const auto selected = fileIndex(tree->model(), "rtl/sub/helper.sv");
+            const auto excluded = fileIndex(tree->model(), "rtl/unused.sv");
+            QVERIFY(selected.isValid() && excluded.isValid());
+            QVERIFY(tree->model()->setData(excluded, Qt::Unchecked, Qt::CheckStateRole));
+            QCOMPARE(selected.data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
+            auto *transfer = form->findChild<QComboBox *>("importTransfer"); QVERIFY(transfer);
+            QCOMPARE(transfer->currentData().toBool(), false);
+            auto *version = form->findChild<QLineEdit *>("importVersion"); QVERIFY(version);
+            version->setText("folder-v1");
+            auto *note = form->findChild<QLineEdit *>("importNote"); QVERIFY(note);
+            note->setText("selected nested file through ZeroSlack");
+            if (!report.isEmpty()) {
+                QTest::qWait(350);
+                QVERIFY(form->grab().save(QDir(report).filePath("folder-import.png")));
+            }
+            imported = true;
+            click(form, "formAccept");
+        });
+        dropFolder();
+        QTRY_VERIFY_WITH_TIMEOUT(imported && !busy(panel) && host->canClose(), 12000);
+        QVERIFY(!QApplication::activeModalWidget());
+        QCOMPARE(versions->model()->rowCount(), 1);
+        const auto importedRevision = versions->model()->index(0, 0).data(Qt::UserRole).toString();
+        QVERIFY(!importedRevision.isEmpty() && importedRevision != revision);
+        const auto importedManifest = QJsonDocument::fromJson(get(QFileInfo(manifestPath).dir()
+            .filePath(importedRevision + ".json"))).object();
+        QCOMPARE(importedManifest.value("files").toArray(), QJsonArray{QStringLiteral("rtl/sub/helper.sv")});
+        QCOMPARE(importedManifest.value("note").toString(), QStringLiteral("selected nested file through ZeroSlack"));
+        QCOMPARE(versions->model()->index(0, 0).data().toString(), QStringLiteral("folder-v1"));
         QCOMPARE(get(assetRoot + "/rtl/sub/helper.sv"), get(root + "/external/rtl/sub/helper.sv"));
+        QVERIFY(!QFileInfo::exists(assetRoot + "/rtl/unused.sv"));
+        QVERIFY(QFileInfo::exists(root + "/external/rtl/unused.sv"));
+        QCOMPARE(get(assetRoot + "/top.sv"), get(root + "/external/top.sv"));
+        QCOMPARE(get(assetRoot + "/helper.sv"), get(root + "/external/rtl/sub/helper.sv"));
+        auto *pages = panel->findChild<QTabWidget *>("assetPages"); QVERIFY(pages);
+        pages->setCurrentIndex(1);
+        versions->setCurrentIndex(versions->model()->index(0, 0));
+        const auto folderDestination = workspace + "/folder-subset.sv";
+        whenVisible(&window, "exportDestination", [folderDestination](QWidget *field) {
+            qobject_cast<QLineEdit *>(field)->setText(folderDestination); click(field->window(), "formAccept");
+        });
+        click(panel, "takeButton");
+        QTRY_VERIFY_WITH_TIMEOUT(!busy(panel), 10000);
+        QCOMPARE(get(folderDestination), get(root + "/external/rtl/sub/helper.sv"));
+        const auto updatedReceipts = QJsonDocument::fromJson(get(workspace + "/.zeroslack/xips-references.json"))
+                                         .object().value("assets").toArray();
+        QCOMPARE(updatedReceipts.size(), 2);
+        QCOMPARE(updatedReceipts.first(), receipts.first());
+        QCOMPARE(updatedReceipts.last().toObject().value("revision").toString(), importedRevision);
+        QCOMPARE(updatedReceipts.last().toObject().value("path").toString(), QStringLiteral("folder-subset.sv"));
+        QCOMPARE(QFileInfo(window.tabManager->getCurrentDocumentMetadata().fileName).canonicalFilePath(),
+                 QFileInfo(folderDestination).canonicalFilePath());
+        if (!report.isEmpty()) QVERIFY(put(QDir(report).filePath("xips-workflow.json"), QJsonDocument(QJsonObject{
+            {"ordinaryFileRevision", manifest}, {"folderImportRevision", importedManifest},
+            {"modalEarlyReturnCleaned", cancelled}, {"folderImportReviewed", imported},
+            {"receipts", updatedReceipts}}).toJson()));
         screenshot(window, "mainwindow-xips-dark");
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         QCOMPARE(host->property("nativeComponentDarkTheme").toBool(), false);
@@ -609,7 +701,8 @@ private slots:
         const auto version = qApp->applicationVersion();
         const auto pluginPaths = qApp->libraryPaths();
         QSettings().setValue("host/sentinel", "preserved");
-        const auto settingsKeys = QSettings().allKeys();
+        auto settingsKeys = QSettings().allKeys();
+        settingsKeys.removeIf([](const QString& key) { return key.startsWith("integrations/simdock/"); });
         XipsContextProvider xips(nullptr, nullptr);
         SimDockContextProvider simdock;
         const auto xresource = xips.activationResource(a);
@@ -622,7 +715,7 @@ private slots:
         QVERIFY2(xhost->isReady(), qPrintable(xhost->property("nativeComponentError").toString()));
         QCOMPARE(xhost->property("nativeComponentDarkTheme").toBool(), true);
         QVERIFY(controller->openResource(sresource, {ContextSurface::Docked, ContextPersistence::Kept}));
-        QPointer<SimDockContextView> shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
+        QPointer<SimDockContextView> shost = window.findChild<SimDockContextView*>();
         QVERIFY(shost);
         QVERIFY2(shost->isReady(), qPrintable(shost->property("nativeComponentError").toString()));
         QCOMPARE(shost->property("nativeComponentDarkTheme").toBool(), true);
@@ -634,12 +727,22 @@ private slots:
         auto remainingKeys = QSettings().allKeys();
         remainingKeys.removeIf([](const QString& key) { return key.startsWith("integrations/simdock/"); });
         QCOMPARE(remainingKeys, settingsKeys); QCOMPARE(title->text(), expectedTitle);
+        QJsonArray xipsModules;
+        const auto xipsDirectory = QFileInfo(qEnvironmentVariable("XIPS_BROWSER_LIBRARY")).canonicalPath();
+        for (const QString &name : {"xips-browser.dll", "xips-browser-impl.dll", "XipsEla.dll"}) {
+            const auto entry = moduleEvidence(name);
+            QVERIFY2(!entry.value("path").toString().isEmpty(), qPrintable(name));
+            QCOMPARE(QFileInfo(entry.value("path").toString()).canonicalPath(), xipsDirectory);
+            xipsModules.append(entry);
+        }
+        if (!report.isEmpty()) QVERIFY(put(QDir(report).filePath("xips-loaded-modules.json"),
+            QJsonDocument(QJsonObject{{"modules", xipsModules}}).toJson()));
         QVERIFY(controller->focusResource(xresource.stableKey()));
         xipsWorkflow(window, xhost, fixture.path(), a, library);
         QVERIFY(!QTest::currentTestFailed());
         QVERIFY(controller->focusResource(sresource.stableKey()));
         QWidget *panel = shost->component();
-        auto *sources = panel->findChild<QAbstractItemView *>("sourceList");
+        auto *sources = window.findChild<QAbstractItemView *>("sourceList");
         QVERIFY(sources);
         QTRY_COMPARE_WITH_TIMEOUT(sources->model()->rowCount(), 2, 10000);
         QModelIndex unused;
@@ -702,11 +805,11 @@ private slots:
         QVERIFY(window.tabManager->getCurrentEditor());
         QCloseEvent close; QApplication::sendEvent(&window, &close); QVERIFY(!close.isAccepted());
         QVERIFY(controller->unpinResource(sresource.stableKey()));
-        QCOMPARE(controller->viewForResource(sresource.stableKey()), shost.data());
+        QVERIFY(controller->viewForResource(sresource.stableKey())->isAncestorOf(shost));
         QVERIFY(!controller->closeFloatingResource(sresource.stableKey()));
         QVERIFY(controller->pinFloatingResource(sresource.stableKey()));
         QCOMPARE(shost->component(), panel);
-        auto *log = panel->findChild<QPlainTextEdit *>("simulationLog"); QVERIFY(log);
+        auto *log = window.findChild<QPlainTextEdit *>("simulationLog"); QVERIFY(log);
         const QPointer<QPlainTextEdit> runLog(log);
         const auto retainLog = qScopeGuard([this, runLog] {
             if (!report.isEmpty() && runLog) put(QDir(report).filePath("questa.log"), runLog->toPlainText().toUtf8());
@@ -787,9 +890,9 @@ private slots:
         sresource.state = shost->saveState();
         const auto xstate = xhost->saveState();
         QVERIFY(controller->closePinnedResource(sresource.stableKey()));
-        QTRY_VERIFY(shost.isNull());
+        QVERIFY(shost); QVERIFY(!controller->viewForResource(sresource.stableKey()));
         QVERIFY(controller->openResource(sresource, {ContextSurface::Docked, ContextPersistence::Kept}));
-        shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
+        shost = window.findChild<SimDockContextView*>();
         QVERIFY(shost && shost->isReady());
         QCOMPARE(shost->saveState().value("projectId").toString(), QString::fromLatin1(projectId));
         QCOMPARE(shost->property("nativeComponentDarkTheme").toBool(), true);
@@ -802,7 +905,7 @@ private slots:
         QCOMPARE(xhost->saveState().value("library"), xstate.value("library"));
         QCOMPARE(xhost->saveState().value("assetId"), xstate.value("assetId"));
         QVERIFY(controller->openTool("simdock"));
-        shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
+        shost = window.findChild<SimDockContextView*>();
         QVERIFY(shost && shost->isReady());
         QTRY_VERIFY_WITH_TIMEOUT(shost->canClose(), 10000);
         QCOMPARE(shost->saveState().value("workspace").toString(), a);

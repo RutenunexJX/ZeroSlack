@@ -28,7 +28,8 @@ class ZEROSLACK_API NavigationWidget : public QWidget
 public:
     enum NavigationTab {
         FileTab = 0,
-        DesignTab = 1
+        DesignTab = 1,
+        SourceFilesTab = 2
     };
     enum FileTreeItemKind {
         PlaceholderItem = 0,
@@ -44,6 +45,8 @@ public:
     ~NavigationWidget();
 
     void setActiveTab(NavigationTab tab);
+    int activeTab() const;
+    void setSourceFilesWidget(QWidget* widget);
     void focusSearch();
     QString searchFilter(NavigationTab tab) const;
     void setSearchFilter(NavigationTab tab, const QString& filter);

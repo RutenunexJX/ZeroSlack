@@ -9,6 +9,7 @@
 #include "../core/dependencies.h"
 #include "../core/preparation.h"
 #include <QTimer>
+#include <QPointer>
 #include <atomic>
 #include <memory>
 #include <optional>
@@ -22,15 +23,8 @@ class ElaText;
 class QStandardItemModel;
 class QStandardItem;
 class QModelIndex;
-class QSplitter;
-class QFrame;
-class ElaDrawerArea;
-class ElaToolButton;
-class QBoxLayout;
-class QGridLayout;
-class QScrollArea;
-class QStackedWidget;
-class QResizeEvent;
+class QAction;
+class QToolButton;
 
 namespace simdock {
 class ZEROSLACK_API Workbench : public QWidget {
@@ -38,6 +32,8 @@ class ZEROSLACK_API Workbench : public QWidget {
 public:
     explicit Workbench(QWidget* parent = nullptr, bool standalone = false);
     ~Workbench() override;
+    QWidget* sourceFilesWidget() const { return m_sources; }
+    QWidget* runLogWidget() const { return m_logs; }
     void initialize();
     void openWorkspace(const QString& path);
     bool openSuiteTarget(const QString& root, const QString& projectId, QString* error);
@@ -55,29 +51,22 @@ public:
     void savePreferences();
     QSize minimumSizeHint() const override;
 signals:
+    void openFileRequested(const QString& file);
+    void stateChanged();
     void scanFinished();
     void preferencesChanged();
-protected:
-    void resizeEvent(QResizeEvent* event) override;
 private:
     QString contextError() const;
     QVariant preference(const QString& key, const QVariant& fallback = {}) const;
     void setPreference(const QString& key, const QVariant& value);
     void restoreLayout(const QVariantMap& state);
-    void updatePresentation();
-    void setCompact(bool compact);
-    void arrangeSimulationFields(bool compact);
-    bool m_compact = false, m_arranging = false;
-    QWidget *m_wideBody = nullptr, *m_compactBody = nullptr;
-    QFrame *m_sidebar = nullptr, *m_files = nullptr, *m_config = nullptr;
-    QBoxLayout *m_columns = nullptr, *m_simulationHeading = nullptr, *m_tbActions = nullptr, *m_runActions = nullptr,
-               *m_waveActions = nullptr;
-    QGridLayout* m_simulationFields = nullptr;
-    ElaText *m_tbCaption = nullptr, *m_durationCaption = nullptr, *m_analysisStatus = nullptr;
-    ElaComboBox* m_section = nullptr;
-    QStackedWidget* m_sections = nullptr;
-    QScrollArea* m_pages[4]{};
-    QByteArray m_wideColumnsState, m_wideWorkbenchState;
+    QPointer<QWidget> m_sources, m_logs;
+    QWidget *m_graphicalInput = nullptr, *m_existingInput = nullptr, *m_durationInput = nullptr;
+    ElaText *m_emptyState = nullptr, *m_graphicalDuration = nullptr;
+    ElaComboBox* m_inputMode = nullptr;
+    ElaLineEdit* m_generatedPath = nullptr;
+    QToolButton* m_settings = nullptr;
+    QAction* m_generate = nullptr;
     bool m_standalone = false;
     QVariantMap m_preferences;
     std::optional<bool> m_hostDarkTheme;
@@ -102,8 +91,6 @@ private:
     void moveSource(int offset);
     void appendLog(const QString& text);
     void flushLog();
-    void setLogExpanded(bool expanded);
-    void collapseLogLayout();
     void applyTheme();
     Project* current();
     const Module* currentModule() const;
@@ -124,12 +111,7 @@ private:
     std::shared_ptr<std::atomic_bool> m_scanCancelled;
     QTimer m_logTimer;
     QString m_pendingLog;
-    QSplitter *m_split, *m_top;
-    QFrame* m_logs;
-    ElaDrawerArea *m_configDrawer, *m_logDrawer;
-    ElaToolButton *m_configToggle, *m_logToggle;
-    QByteArray m_expandedLogState;
-    ElaText *m_workspaceTitle, *m_workspacePath, *m_scanStatus, *m_status, *m_sourceHint;
+    ElaText *m_scanStatus, *m_status, *m_sourceHint;
     ElaListView *m_projectList, *m_fileList;
     QStandardItemModel *m_projectModel, *m_fileModel;
     ElaComboBox *m_dut, *m_units;
@@ -138,7 +120,7 @@ private:
     ElaLineEdit *m_tbFile, *m_tbTop;
     ElaSpinBox* m_duration;
     ElaPlainTextEdit* m_log;
-    ElaPushButton *m_open, *m_new, *m_refresh, *m_generate, *m_stimulus, *m_chooseTb, *m_run, *m_stop, *m_settings;
+    ElaPushButton *m_new, *m_refresh, *m_stimulus, *m_chooseTb, *m_openTb, *m_run, *m_stop;
     QWidget* m_projectPanel;
 };
 }

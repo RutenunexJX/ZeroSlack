@@ -2,6 +2,7 @@
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "uitooltips.h"
+#include "uitypography.h"
 #include <ElaApplication.h>
 #include <ElaComboBox.h>
 #include <ElaLineEdit.h>
@@ -193,17 +194,14 @@ void constrainDialog(QDialog* dialog)
 
 QFont font(Role role)
 {
-    QFont result;
-    result.setFamilies({QStringLiteral("Noto Sans"), QStringLiteral("Segoe UI"),
-        QStringLiteral("Noto Sans SC"), QStringLiteral("Microsoft YaHei UI"), QStringLiteral("Arial")});
-    result.setStyleHint(QFont::SansSerif);
-    result.setKerning(true);
-    result.setLetterSpacing(QFont::AbsoluteSpacing, 0);
-    result.setPixelSize(role == Role::PageTitle ? 18 : role == Role::PanelTitle ? 14
-        : role == Role::Metadata || role == Role::Section ? 12 : 13);
-    result.setWeight(role == Role::PageTitle || role == Role::PanelTitle || role == Role::Section
-        ? QFont::DemiBold : QFont::Normal);
-    return result;
+    switch (role) {
+    case Role::PageTitle: return UiTypography::font(UiTypography::Role::PageTitle);
+    case Role::PanelTitle: return UiTypography::font(UiTypography::Role::PanelTitle);
+    case Role::Section: return UiTypography::font(UiTypography::Role::Section);
+    case Role::Metadata: return UiTypography::font(UiTypography::Role::Metadata);
+    case Role::Body: return UiTypography::font(UiTypography::Role::Body);
+    }
+    return UiTypography::font();
 }
 QFont codeFont()
 {

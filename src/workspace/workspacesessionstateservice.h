@@ -28,6 +28,7 @@ struct WorkspaceSessionUiState {
     QByteArray mainWindowState;
     QString navigationFilesQuery;
     QString navigationDesignQuery;
+    int navigationActiveTab = 0;
     QString tabGroupingMode = QStringLiteral("none");
     PanelLayoutState panelLayout;
     ContextWorkspaceState contextWorkspace;

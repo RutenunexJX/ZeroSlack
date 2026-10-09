@@ -766,7 +766,7 @@ private slots:
         QVERIFY(whileServing([&] { return client.invokeAction("simdock.project.open", {}, target, "simdock"); }).response.value("ok").toBool());
         QCOMPARE(window.workspaceManager->getWorkspacePath(), a);
         auto* controller = window.findChild<ContextWorkspaceController*>(); QVERIFY(controller);
-        auto* host = qobject_cast<SimDockContextView*>(controller->viewForResource("simdock:workbench"));
+        auto* host = window.findChild<SimDockContextView*>();
         QVERIFY(host && host->isReady());
         QCOMPARE(host->saveState().value("projectId").toString(), project.id);
         const auto heldFile = a + QStringLiteral("/held.sv");
@@ -778,7 +778,7 @@ private slots:
         const auto heldText = heldEditor->toPlainText();
         QVERIFY(window.tabManager->getDocumentForEditor(heldEditor).dirty);
         QVERIFY(whileServing([&] { return client.openSurface("simdock.workbench", target, "simdock"); }).response.value("ok").toBool());
-        QCOMPARE(controller->viewForResource("simdock:workbench"), host);
+        QVERIFY(controller->viewForResource("simdock:workbench")->isAncestorOf(host));
         const auto rejected = whileServing([&] { return client.invokeAction("simdock.simulation.run", {}, target, "simdock"); });
         QCOMPARE(rejected.response.value("error").toObject().value("code").toString(), QString("action_not_supported"));
         QCOMPARE(host->component()->findChild<simdock::QuestaSession*>()->processId(), qint64(0));

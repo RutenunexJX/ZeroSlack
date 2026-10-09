@@ -36,15 +36,34 @@ struct Scan {
     QList<SourceFile> files;
     QStringList messages;
 };
+enum class InputMode { Graphical, ExistingTb };
+struct InputConfiguration {
+    QString tbFile, tbName;
+    qint64 durationNs = 1000;
+    QJsonObject stimulus;
+};
 struct Project {
     QString id, name;
     QStringList sources;
     QString dutFile, dutName, tbFile, tbName;
     qint64 durationNs = 1000;
     QJsonObject stimulus;
+    InputMode inputMode = InputMode::ExistingTb;
+    InputConfiguration alternateInput;
     QString waveScope = QStringLiteral("interface");
     QStringList waveSignals;
 };
+inline void setInputMode(Project& project, InputMode mode)
+{
+    if (project.inputMode == mode) return;
+    InputConfiguration previous{project.tbFile, project.tbName, project.durationNs, project.stimulus};
+    project.tbFile = project.alternateInput.tbFile;
+    project.tbName = project.alternateInput.tbName;
+    project.durationNs = project.alternateInput.durationNs;
+    project.stimulus = project.alternateInput.stimulus;
+    project.alternateInput = previous;
+    project.inputMode = mode;
+}
 struct TbOptions {
     QString name, clock, reset;
     bool resetActiveLow = true;

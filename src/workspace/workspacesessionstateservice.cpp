@@ -377,6 +377,7 @@ QJsonObject sessionObject(
     ui.insert(
         QStringLiteral("navigationDesignQuery"),
         state.ui.navigationDesignQuery);
+    ui.insert(QStringLiteral("navigationActiveTab"), state.ui.navigationActiveTab);
     ui.insert(
         QStringLiteral("tabGroupingMode"),
         state.ui.tabGroupingMode);
@@ -642,6 +643,7 @@ void restoreUi(
                     "mainWindowState"))
                 .toString()
                 .toLatin1());
+    ui->navigationActiveTab = qBound(0, object.value(QStringLiteral("navigationActiveTab")).toInt(), 2);
     ui->navigationFilesQuery =
         object.value(
             QStringLiteral("navigationFilesQuery"))

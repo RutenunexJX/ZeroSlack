@@ -4,6 +4,8 @@
 #include "filecreation.h"
 #include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
+#include "../integrations/simdock/simdockcontextview.h"
+#include "../simulation/simdock/ui/workbench.h"
 
 #include "actionregistry.h"
 #include "applicationthememanager.h"
@@ -415,6 +417,7 @@ MainWindow::~MainWindow()
     // Stop chrome observers before editor teardown emits document state signals.
     workspaceSwitcher.reset();
     workspaceSessionCoordinator.reset();
+    simulationWorkspace.reset();
 
     // TabManager owns SharedDocuments whose teardown rebinds every attached
     // editor to an independent QTextDocument.  That operation legitimately
@@ -1847,6 +1850,16 @@ void MainWindow::setupPanelLayoutController()
         semanticDocks && semanticDocks->activityLogPanelCoordinator()
             ? semanticDocks->activityLogPanelCoordinator()->dock()
             : nullptr);
+    simulationWorkspace = std::make_unique<SimDockContextView>(this);
+    simulationWorkspace->hide();
+    auto* simulation = simulationWorkspace->workbench();
+    navigationPane->setSourceFilesWidget(simulation->sourceFilesWidget());
+    auto* runLogDock = new QDockWidget(tr("Run log"), this);
+    runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
+    runLogDock->setWidget(simulation->runLogWidget());
+    registerPanel(QStringLiteral("simulationLog"), runLogDock);
+    connect(simulation, &simdock::Workbench::openFileRequested, this,
+        [this](const QString& file) { revealSuiteSource(file); });
     registerPanel(
         RtlHighRiskEditPanelCoordinator::panelId(),
         semanticDocks
@@ -3740,6 +3753,7 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                     navigationPane->filesSearchQuery();
                 state.navigationDesignQuery =
                     navigationPane->designSearchQuery();
+                state.navigationActiveTab = navigationPane->activeTab();
             }
             if (panelLayoutController && rememberPanelState) {
                 state.panelLayout =
@@ -3769,6 +3783,7 @@ void MainWindow::setupWorkspaceSessionCoordinator()
                 navigationPane->setSearchQueries(
                     state.navigationFilesQuery,
                     state.navigationDesignQuery);
+                navigationPane->setActiveTab(state.navigationActiveTab);
             }
             if (rememberPanelState
                 && !result.dockStateRestored) {
@@ -3986,6 +4001,8 @@ EditorActionContext MainWindow::resolveEditorActionContext(
 
 QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
 {
+    if (panelId == QStringLiteral("simulationLog"))
+        return findChild<QDockWidget*>(QStringLiteral("simulationRunLogDock"));
     if (panelId == QStringLiteral("navigation"))
         return navigationPane ? navigationPane->dock() : nullptr;
     if (panelId == QStringLiteral("problems"))
@@ -4563,7 +4580,8 @@ void MainWindow::setupEditorCoordinator()
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QString componentError;
-    if (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError)) {
+    if ((simulationWorkspace && !simulationWorkspace->canClose(&componentError))
+        || (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError))) {
         event->ignore();
         postActivityMessage(componentError, 6000);
         return;
