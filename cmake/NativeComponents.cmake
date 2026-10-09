@@ -13,29 +13,68 @@ function(zeroslack_deploy_component id directory)
             message(FATAL_ERROR "Missing ${id} runtime: ${directory}/${file}")
         endif()
     endforeach()
-    set(files)
+    set(deployCommands)
     foreach(file IN LISTS ARGN)
-        list(APPEND files "${directory}/${file}")
+        if(IS_ABSOLUTE "${file}" OR file MATCHES "(^|[/\\\\])\\.\\.([/\\\\]|$)|:")
+            message(FATAL_ERROR "Invalid ${id} runtime path: ${file}")
+        endif()
+        get_filename_component(parent "${file}" DIRECTORY)
+        list(APPEND deployCommands
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:demo>/components/${id}/${parent}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${directory}/${file}" "$<TARGET_FILE_DIR:demo>/components/${id}/${file}")
     endforeach()
     add_custom_target(zeroslack_deploy_${id} ALL
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:demo>/components/${id}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${files} "$<TARGET_FILE_DIR:demo>/components/${id}"
+        ${deployCommands}
         VERBATIM)
     add_dependencies(demo zeroslack_deploy_${id})
 endfunction()
 
 if(ZEROSLACK_XIPS_COMPONENT_DIR)
-    zeroslack_deploy_component(xips "${ZEROSLACK_XIPS_COMPONENT_DIR}"
-        xips-browser.dll xips-browser-impl.dll XipsEla.dll ${ZEROSLACK_XIPS_ADDITIONAL_RUNTIMES})
-    # xIPs imports QtSql. Use the same Qt build as the host, never a component's
-    # unrelated Qt distribution; its SQLite plugin belongs to the host runtime.
-    find_package(Qt6 ${Qt6_VERSION} EXACT REQUIRED COMPONENTS Sql)
+    set(xipsFiles xips-browser.dll xips-browser-impl.dll XipsEla.dll ${ZEROSLACK_XIPS_ADDITIONAL_RUNTIMES})
+    set(xipsQtModules Sql)
+    set(xipsManifestPath "${ZEROSLACK_XIPS_COMPONENT_DIR}/xips-native-runtime.json")
+    if(EXISTS "${xipsManifestPath}")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${xipsManifestPath}")
+        file(READ "${xipsManifestPath}" xipsManifest)
+        string(JSON xipsSchema GET "${xipsManifest}" schema)
+        string(JSON xipsAbi GET "${xipsManifest}" nativeSurfaceAbi)
+        string(JSON xipsQt GET "${xipsManifest}" qt)
+        if(NOT xipsSchema STREQUAL "xips.native-deployment/v1" OR NOT xipsAbi EQUAL 1 OR NOT xipsQt VERSION_EQUAL Qt6_VERSION)
+            message(FATAL_ERROR "The xIPs runtime manifest is incompatible with this host")
+        endif()
+        foreach(field componentFiles additionalHostRuntimeFiles)
+            string(JSON count LENGTH "${xipsManifest}" ${field})
+            if(count GREATER 0)
+                math(EXPR last "${count} - 1")
+                foreach(index RANGE ${last})
+                    string(JSON file GET "${xipsManifest}" ${field} ${index})
+                    if(field STREQUAL "componentFiles")
+                        list(APPEND xipsFiles "${file}")
+                    elseif(file MATCHES "^Qt6([A-Za-z0-9]+)\\.dll$")
+                        list(APPEND xipsQtModules "${CMAKE_MATCH_1}")
+                    else()
+                        message(FATAL_ERROR "Unsupported xIPs shared runtime: ${file}")
+                    endif()
+                endforeach()
+            endif()
+        endforeach()
+    endif()
+    list(REMOVE_DUPLICATES xipsFiles)
+    list(REMOVE_DUPLICATES xipsQtModules)
+    zeroslack_deploy_component(xips "${ZEROSLACK_XIPS_COMPONENT_DIR}" ${xipsFiles})
+    # Shared Qt and SQLite must match the host build. The manifest also carries
+    # component-relative helpers, so development and packaged layouts agree.
+    find_package(Qt6 ${Qt6_VERSION} EXACT REQUIRED COMPONENTS ${xipsQtModules})
     if(NOT TARGET Qt6::QSQLiteDriverPlugin)
         message(FATAL_ERROR "xIPs native deployment requires the matching Qt SQLite plugin")
     endif()
+    set(xipsQtCommands)
+    foreach(module IN LISTS xipsQtModules)
+        list(APPEND xipsQtCommands COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Qt6::${module}>" "$<TARGET_FILE_DIR:demo>")
+    endforeach()
     add_custom_target(zeroslack_deploy_xips_qt ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:demo>/sqldrivers"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Qt6::Sql>" "$<TARGET_FILE_DIR:demo>"
+        ${xipsQtCommands}
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:Qt6::QSQLiteDriverPlugin>" "$<TARGET_FILE_DIR:demo>/sqldrivers"
         VERBATIM)
     add_dependencies(zeroslack_deploy_xips zeroslack_deploy_xips_qt)
