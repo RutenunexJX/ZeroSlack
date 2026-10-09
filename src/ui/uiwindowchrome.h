@@ -16,5 +16,6 @@ struct UiWindowTitleBar {
 
 namespace UiWindowChrome {
 // The host retains frame geometry, native hit testing and document close policy.
-ZEROSLACK_API UiWindowTitleBar createTitleBar(QMainWindow* host, QWidget* workspacePicker = nullptr);
+ZEROSLACK_API UiWindowTitleBar createTitleBar(QMainWindow* host, QWidget* workspacePicker = nullptr,
+                                           QWidget* accessory = nullptr);
 }

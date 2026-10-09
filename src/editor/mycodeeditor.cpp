@@ -404,8 +404,35 @@ MyCodeEditor::SynchronousEditTransaction::~SynchronousEditTransaction()
         editor->state->endSynchronousEditTransaction(editor);
 }
 
+MyCodeEditor::UserEditScope::UserEditScope(MyCodeEditor* value, int key, bool repeat)
+    : editor(value)
+{
+    if (!editor) return;
+    outer = editor->userEditDepth++ == 0;
+    if (outer) {
+        document = editor->document();
+        revision = editor->semanticDocumentRevision();
+        emit editor->userEditStarted(key, repeat);
+    }
+}
+
+MyCodeEditor::UserEditScope::~UserEditScope()
+{
+    if (!editor) return;
+    --editor->userEditDepth;
+    if (outer)
+        emit editor->userEditFinished(document == editor->document()
+            && revision != editor->semanticDocumentRevision());
+}
+
+MyCodeEditor::UserEditScope MyCodeEditor::beginUserEdit(int key, bool repeat)
+{
+    return UserEditScope(this, key, repeat);
+}
+
 MyCodeEditor::~MyCodeEditor()
 {
+    emit editingInteractionEnded();
     state->shutdown(this);
 }
 
@@ -413,11 +440,13 @@ void MyCodeEditor::attachSharedDocument(
     QTextDocument* sharedDocument,
     std::uint64_t textRevision)
 {
+    emit editingInteractionEnded();
     state->rebindDocument(this, sharedDocument, textRevision);
 }
 
 void MyCodeEditor::setPlainText(const QString& text)
 {
+    emit editingInteractionEnded();
     {
         auto edit = beginSynchronousEditTransaction();
         QPlainTextEdit::setPlainText(text);
@@ -1979,6 +2008,7 @@ void MyCodeEditor::setEditorBackground(const QString& preset, const QString& cus
 
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
+    auto input = beginUserEdit(event->key(), event->isAutoRepeat());
     lifecycleTrace("key.enter");
     auto edit = beginSynchronousEditTransaction();
     lifecycleTrace("key.transaction");
@@ -2093,6 +2123,8 @@ void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 
 void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
+    UserEditScope input((!event->commitString().isEmpty() || event->replacementLength() != 0)
+                           ? this : nullptr, -1, false);
     if (!canApplyInsertion()) {
         if (event)
             event->ignore();
@@ -2204,6 +2236,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::dropEvent(QDropEvent* event)
 {
+    auto input = beginUserEdit(-1);
     auto edit = beginSynchronousEditTransaction();
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     if (state->projection.active()
@@ -2233,6 +2266,7 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
+    UserEditScope input(event->button() == Qt::MiddleButton ? this : nullptr, -1, false);
     auto edit = beginSynchronousEditTransaction();
     if (event->button() == Qt::BackButton) {
         emit navigationBackRequested();
@@ -2363,6 +2397,7 @@ void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseReleaseEvent(QMouseEvent *event)
 {
+    UserEditScope input(event->button() == Qt::MiddleButton ? this : nullptr, -1, false);
     auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseRelease(this, event))
         return;

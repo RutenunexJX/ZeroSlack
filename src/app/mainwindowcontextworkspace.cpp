@@ -1,5 +1,7 @@
 #include "mainwindow.h"
 #include "../integrations/simdock/simdockcontextprovider.h"
+#include "../integrations/simdock/simdockcontextview.h"
+#include "../simulation/simdock/ui/workbench.h"
 
 #include "contextworkspacecontroller.h"
 #include "liveinsightscontextprovider.h"
@@ -48,6 +50,40 @@ bool MainWindow::revealSuiteSource(const QString& filePath,
         activateWindow();
     }
     return revealed;
+}
+
+bool MainWindow::openSimDockTarget(const QString& workspace, const QString& projectId, QString* error)
+{
+    const auto fail = [error](const QString& message) {
+        if (error) *error = message;
+        return false;
+    };
+    const auto root = QFileInfo(workspace).canonicalFilePath();
+    if (!QDir::isAbsolutePath(workspace) || root.isEmpty() || !QFileInfo(root).isDir())
+        return fail(tr("The simulation workspace must be an existing absolute directory."));
+    if (!workspaceManager || !contextWorkspaceController)
+        return fail(tr("The simulation workspace is unavailable."));
+    if (!projectId.isEmpty()) {
+        bool found = false;
+        for (const auto& project : simdock::loadProjects(root)) if (project.id == projectId) found = true;
+        if (!found) return fail(tr("The simulation project no longer exists."));
+    }
+    if (!contextWorkspaceController->canCloseResources(error)) return false;
+    if (QFileInfo(workspaceManager->getWorkspacePath()).canonicalFilePath() != root
+        && !workspaceManager->openWorkspace(root))
+        return fail(tr("The workspace change was cancelled or could not be completed."));
+    SimDockContextProvider provider;
+    const auto resource = provider.activationResource(root);
+    if (!contextWorkspaceController->openResource(resource,
+            {ContextSurface::Docked, ContextPersistence::Kept}, error)) return false;
+    auto* view = qobject_cast<SimDockContextView*>(contextWorkspaceController->viewForResource(resource.stableKey()));
+    if (!view || !view->isReady())
+        return fail(view ? view->property("nativeComponentError").toString() : tr("The simulation workbench is unavailable."));
+    const auto issue = view->workbench()->openProject(projectId);
+    if (!issue.isEmpty()) return fail(issue);
+    contextWorkspaceController->focusResource(resource.stableKey());
+    showNormal(); raise(); activateWindow();
+    return true;
 }
 
 void MainWindow::setupContextWorkspace()

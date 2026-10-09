@@ -17,7 +17,8 @@
 #include "ElaToolButton.h"
 #endif
 
-UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* workspacePicker)
+UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* workspacePicker,
+                                             QWidget* accessory)
 {
     UiWindowTitleBar result;
     QAbstractButton* minimize = nullptr;
@@ -31,6 +32,8 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
         result.widget = bar;
         if (workspacePicker)
             bar->setCustomWidget(ElaAppBarType::LeftArea, workspacePicker);
+        if (accessory)
+            bar->setCustomWidget(ElaAppBarType::RightArea, accessory);
         result.label = bar->titleLabel();
         if (workspacePicker) {
             QObject::disconnect(host, &QWidget::windowTitleChanged, bar, nullptr);
@@ -92,6 +95,8 @@ UiWindowTitleBar UiWindowChrome::createTitleBar(QMainWindow* host, QWidget* work
             row->addWidget(workspacePicker);
             row->addStretch();
         }
+        if (accessory)
+            row->addWidget(accessory);
         for (int index = 0; index < 3; ++index) {
             auto* button = new QToolButton(frame);
             button->setIcon(host->style()->standardIcon(index == 0 ? QStyle::SP_TitleBarMinButton

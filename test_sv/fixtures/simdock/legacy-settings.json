@@ -1,0 +1,45 @@
+{
+  "schema": "simdock.legacy-settings-snapshot/v1",
+  "observedUtc": "2026-10-09T03:20:35.9136524Z",
+  "path": "HKCU\\Software\\SimDock\\SimDock",
+  "existed": true,
+  "access": "read-only",
+  "creatorVersion": "unknown",
+  "entries": [
+    {
+      "key": "/simulator",
+      "name": "type",
+      "kind": "String",
+      "encoding": "native",
+      "value": "questa"
+    },
+    {
+      "key": "/simulator",
+      "name": "path",
+      "kind": "String",
+      "encoding": "native",
+      "value": "D:/questa/win64/vsim.exe"
+    },
+    {
+      "key": "/theme",
+      "name": "dark",
+      "kind": "String",
+      "encoding": "native",
+      "value": "true"
+    },
+    {
+      "key": "/window",
+      "name": "geometry",
+      "kind": "Binary",
+      "encoding": "base64",
+      "value": "QABCAHkAdABlAEEAcgByAGEAeQAoAAEA2QDQAMsAAAADAAAAAAAAAAAAAgCnAAAAAAABAD8AAAAAAAcAVgAAAAAABABoAAAAAAACAKcAAAAAAAEAPwAAAAAABwBWAAAAAAAEAGgAAAAAAAAAAAAAAAAAAAAAAAoAAAAAAAAAAgCnAAAAAAABAD8AAAAAAAcAVgAAAAAABABoACkA"
+    },
+    {
+      "key": "/workspace",
+      "name": "last",
+      "kind": "String",
+      "encoding": "native",
+      "value": "C:/Users/14971/Desktop/links_remote/pcie_uart_ts/ts260829/pcie_uart.srcs/sources_1/new"
+    }
+  ]
+}

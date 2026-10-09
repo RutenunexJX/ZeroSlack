@@ -7,6 +7,7 @@
 
 class MainWindow;
 class QMainWindow;
+class SimDockSuiteCompatibility;
 
 namespace SuiteApp {
 class Provider;
@@ -34,5 +35,6 @@ private:
 
     MainWindow* window = nullptr;
     std::unique_ptr<SuiteApp::Provider> provider;
+    std::unique_ptr<SimDockSuiteCompatibility> simdock;
     QString runtimeEndpoint;
 };

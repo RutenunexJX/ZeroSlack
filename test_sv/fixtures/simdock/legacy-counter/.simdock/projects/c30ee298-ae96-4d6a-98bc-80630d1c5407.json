@@ -1,0 +1,13 @@
+{
+    "durationNs": 1000,
+    "dutFile": "rtl/counter.sv",
+    "dutName": "counter",
+    "id": "c30ee298-ae96-4d6a-98bc-80630d1c5407",
+    "name": "Counter demo",
+    "schema": "simdock.project/v1",
+    "sources": [
+        "rtl/counter.sv"
+    ],
+    "tbFile": "sim/c30ee298/tb_counter.sv",
+    "tbName": "tb_counter"
+}

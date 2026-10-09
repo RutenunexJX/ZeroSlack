@@ -1,0 +1,180 @@
+{
+    "appScale": "1",
+    "applicationDpr": 1,
+    "completedUtc": "2026-10-09T04:00:36.397Z",
+    "componentCommit": "9ca7c2621319cf324b986fcf25f94c418e5cd84b",
+    "componentVersion": "0.5.0",
+    "contextStateTyped": {
+        "activePinnedResourceKey": "simdock:workbench",
+        "dockVisible": true,
+        "dockWidth": 1100,
+        "pinnedResources": [
+            {
+                "iconKey": "media-playback-start",
+                "providerId": "simdock",
+                "resourceId": "workbench",
+                "schema": "zeroslack-context-resource/v1",
+                "state": {
+                    "layout/columns": {
+                        "base64": "AAAA/wAAAAEAAAACAAABYwAAAqMAAAAACAEAAAABAA==",
+                        "sha256": "cf66a98e49c62fc95f8c39018776d33041ed64932dd353fd74896756e2d63261",
+                        "size": 31,
+                        "type": "QByteArray"
+                    },
+                    "layout/compactPage": "workspace",
+                    "layout/logExpanded": true,
+                    "layout/simulationExpanded": true,
+                    "layout/workbench": {
+                        "base64": "AAAA/wAAAAEAAAACAAACYgAAAL4AAAAACAEAAAACAA==",
+                        "sha256": "71d1ba925fe6c49f7fd090f070f0fbd67a9fd554df7af8949ac21ed2bc181f91",
+                        "size": 31,
+                        "type": "QByteArray"
+                    },
+                    "preferences": {
+                        "simulator/path": "D:/questa/win64/vsim.exe",
+                        "waveform/theme": "nord"
+                    },
+                    "projectId": "e631f74f-f92f-470a-b813-66fb11b66b32",
+                    "version": 1,
+                    "workspace": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/workspace"
+                },
+                "title": "SimDock",
+                "uri": "simdock://workbench",
+                "workspaceId": ""
+            }
+        ],
+        "providerStates": {
+        },
+        "version": 8
+    },
+    "helperHeadersCommit": "fdfb22cfb9057d940a04e07eecade94f21e4cd3f",
+    "hostCommit": "fdfb22cfb9057d940a04e07eecade94f21e4cd3f",
+    "hostVersion": "0.31.27",
+    "liveWorkbenchStateTyped": {
+        "layout/columns": {
+            "base64": "AAAA/wAAAAEAAAACAAABYwAAAqMAAAAACAEAAAABAA==",
+            "sha256": "cf66a98e49c62fc95f8c39018776d33041ed64932dd353fd74896756e2d63261",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "layout/compactPage": "workspace",
+        "layout/logExpanded": true,
+        "layout/simulationExpanded": true,
+        "layout/workbench": {
+            "base64": "AAAA/wAAAAEAAAACAAACYgAAAL4AAAAACAEAAAACAA==",
+            "sha256": "71d1ba925fe6c49f7fd090f070f0fbd67a9fd554df7af8949ac21ed2bc181f91",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "preferences": {
+            "simulator/path": "D:/questa/win64/vsim.exe",
+            "waveform/theme": "nord"
+        },
+        "projectId": "e631f74f-f92f-470a-b813-66fb11b66b32",
+        "version": 1,
+        "workspace": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/workspace"
+    },
+    "mode": "save",
+    "modules": [
+        {
+            "name": "libzeroslack_core.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/libzeroslack_core.dll",
+            "sha256": "6aafaabba22e95c9d4559f1188129fec280f079863d59baaeff450043c4fcb36"
+        },
+        {
+            "name": "libzeroslack_documents.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/libzeroslack_documents.dll",
+            "sha256": "f9c41b7a0fdb794e945ad3b0d1a6164005264e212bd9f8da8942e1fdf6aee1e1"
+        },
+        {
+            "name": "libzeroslack_semantic.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/libzeroslack_semantic.dll",
+            "sha256": "2711201bd4b7dd473ec1b1b352aa50339d4f9990ef23b5e2a00964c5816bba22"
+        },
+        {
+            "name": "ElaWidgetTools.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/ElaWidgetTools.dll",
+            "sha256": "a1f87ae40fecadb1497077c49403d6b8faea915f28e416f617f2653b9307cc07"
+        },
+        {
+            "name": "simdock-workbench.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/components/simdock/simdock-workbench.dll",
+            "sha256": "accb81df498ea00ce0871497673ac1c0c40324558342b81a1dec556f2f683a82"
+        },
+        {
+            "name": "SimDockEla.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/components/simdock/SimDockEla.dll",
+            "sha256": "cc092221fc41cc7a225eddc9b91d70f97f3d59024c83c01b36cd51e16261e9a2"
+        },
+        {
+            "name": "Qt6Core.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/Qt6Core.dll",
+            "sha256": "7e14027a0bb4017325db707c315c70ee008c8f2364f60bb2eb04d53c017ee762"
+        },
+        {
+            "name": "Qt6Widgets.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/Qt6Widgets.dll",
+            "sha256": "18dce4f681cdbf0970301b5e6fbf5e8eb32182051c684b9366435269301870b9"
+        },
+        {
+            "name": "Qt6Test.dll",
+            "path": "",
+            "sha256": ""
+        },
+        {
+            "name": "libstdc++-6.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64/libstdc++-6.dll",
+            "sha256": "8013488c5528bad7966ca07f3ea2e7a9b743cacb258fe76b46a326f821cc83b0"
+        }
+    ],
+    "nativeViewStateTyped": {
+        "layout/columns": {
+            "base64": "AAAA/wAAAAEAAAACAAABYwAAAqMAAAAACAEAAAABAA==",
+            "sha256": "cf66a98e49c62fc95f8c39018776d33041ed64932dd353fd74896756e2d63261",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "layout/compactPage": "workspace",
+        "layout/logExpanded": true,
+        "layout/simulationExpanded": true,
+        "layout/workbench": {
+            "base64": "AAAA/wAAAAEAAAACAAACYgAAAL4AAAAACAEAAAACAA==",
+            "sha256": "71d1ba925fe6c49f7fd090f070f0fbd67a9fd554df7af8949ac21ed2bc181f91",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "preferences": {
+            "simulator/path": "D:/questa/win64/vsim.exe",
+            "waveform/theme": "nord"
+        },
+        "projectId": "e631f74f-f92f-470a-b813-66fb11b66b32",
+        "version": 1,
+        "workspace": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/workspace"
+    },
+    "passed": true,
+    "productionPackage": "E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64",
+    "qtPlatform": "windows",
+    "resourceKey": "simdock:workbench",
+    "schema": "zeroslack.legacy-simdock-host-state/v1",
+    "screenLogicalDpi": 96,
+    "screenName": "U27G3X",
+    "sessionOwner": "actual WorkspaceSessionCoordinator created by old MainWindow; explicit isolated AppConfig-style override matching old main.cpp",
+    "sessionPath": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/profile/AppConfig/workspace-sessions.ini",
+    "settingsRoot": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/profile/AppConfig",
+    "simulationRun": false,
+    "steps": [
+        {
+            "action": "Actual old MainWindow -> ContextWorkspaceController -> NativeContextView -> formal SimDock 0.5.0.",
+            "utc": "2026-10-09T04:00:35.191Z"
+        },
+        {
+            "action": "Changed preferences and actual QSplitter sizes through old UI; capture original QVariant types before serialization.",
+            "utc": "2026-10-09T04:00:35.796Z"
+        },
+        {
+            "action": "Actual old WorkspaceSessionCoordinator saved native resource state to isolated disk session.",
+            "utc": "2026-10-09T04:00:35.821Z"
+        }
+    ],
+    "suiteProviderStarted": false
+}

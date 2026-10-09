@@ -1,0 +1,15 @@
+{
+    "durationNs": 1000,
+    "dutFile": "host_dut.sv",
+    "dutName": "host_dut",
+    "id": "e631f74f-f92f-470a-b813-66fb11b66b32",
+    "name": "Old host persisted project",
+    "schema": "simdock.project/v1",
+    "sources": [
+        "host_dut.sv"
+    ],
+    "stimulus": {
+    },
+    "tbFile": "",
+    "tbName": ""
+}

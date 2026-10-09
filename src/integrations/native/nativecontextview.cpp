@@ -1,6 +1,5 @@
 #include "nativecontextview.h"
 #include "../xips/xipsbrowserapi.h"
-#include "../simdock/simdockworkbenchapi.h"
 #include "uicontrols.h"
 #include "applicationthememanager.h"
 
@@ -87,55 +86,28 @@ private:
 #endif
 };
 
-QString preloadSimDockUi(const QString &entryPath)
-{
-#ifdef Q_OS_WIN
-    const QString expected = QFileInfo(QFileInfo(entryPath).dir().filePath(QStringLiteral("SimDockEla.dll"))).canonicalFilePath();
-    if (expected.isEmpty()) return QStringLiteral("Missing adjacent SimDockEla.dll.");
-    if (const HMODULE loaded = GetModuleHandleW(L"SimDockEla.dll")) {
-        wchar_t path[32768]{};
-        const DWORD length = GetModuleFileNameW(loaded, path, DWORD(std::size(path)));
-        const QString actual = length && length < std::size(path)
-            ? QFileInfo(QString::fromWCharArray(path, int(length))).canonicalFilePath() : QString();
-        if (actual.compare(expected, Qt::CaseInsensitive) != 0)
-            return QStringLiteral("A different private SimDockEla.dll is already loaded. Restart ZeroSlack before switching builds.");
-    }
-    NativeLibrary dependency(expected);
-    if (!dependency.load()) return QStringLiteral("SimDockEla.dll: %1").arg(dependency.errorString());
-#else
-    Q_UNUSED(entryPath)
-#endif
-    return {};
-}
-
 bool hasMethod(const QWidget *widget, const char *signature, int resultType)
 {
     const int index = widget->metaObject()->indexOfMethod(signature);
     return index >= 0 && widget->metaObject()->method(index).returnMetaType().id() == resultType;
 }
-QString checkContract(QWidget *widget, NativeContextView::Kind kind)
+QString checkContract(QWidget *widget)
 {
-    const bool simdock = kind == NativeContextView::Kind::SimDock;
     if (!hasMethod(widget, "saveState()", QMetaType::QVariantMap)
-        || !hasMethod(widget, "restoreState(QVariantMap)", simdock ? QMetaType::QString : QMetaType::Void)
-        || !(simdock ? hasMethod(widget, "setContext(QString)", QMetaType::QString)
-                     : hasMethod(widget, "setContext(QString,QString)", QMetaType::Void)))
-        return QStringLiteral("The component does not implement the native context/state contract.");
-    if (simdock && (!hasMethod(widget, "canClose()", QMetaType::Bool)
-                    || !hasMethod(widget, "openProject(QString)", QMetaType::QString)))
-        return QStringLiteral("The SimDock component does not implement the project/close contract.");
-    if (!simdock && (!hasMethod(widget, "collectPaths(QStringList)", QMetaType::Void)
-                     || !hasMethod(widget, "revealAsset(QString)", QMetaType::Void)
-                     || !hasMethod(widget, "refresh()", QMetaType::Void)
-                     || !hasMethod(widget, "isCatalogBusy()", QMetaType::Bool)))
+        || !hasMethod(widget, "restoreState(QVariantMap)", QMetaType::Void)
+        || !hasMethod(widget, "setContext(QString,QString)", QMetaType::Void)
+        || !hasMethod(widget, "collectPaths(QStringList)", QMetaType::Void)
+        || !hasMethod(widget, "revealAsset(QString)", QMetaType::Void)
+        || !hasMethod(widget, "refresh()", QMetaType::Void)
+        || !hasMethod(widget, "isCatalogBusy()", QMetaType::Bool))
         return QStringLiteral("The xIPs component does not implement the browser contract.");
     return {};
 }
 } // namespace
 
-NativeContextView::NativeContextView(Kind kind, QWidget *parent) : QWidget(parent), kind(kind)
+NativeContextView::NativeContextView(QWidget *parent) : QWidget(parent)
 {
-    setObjectName(kind == Kind::Xips ? QStringLiteral("xipsHost") : QStringLiteral("simdockHost"));
+    setObjectName(QStringLiteral("xipsHost"));
     setProperty("nativeComponentReady", false);
     layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -173,7 +145,7 @@ NativeContextView::NativeContextView(Kind kind, QWidget *parent) : QWidget(paren
 }
 
 QString NativeContextView::name() const
-{ return kind == Kind::Xips ? QStringLiteral("xIPs") : QStringLiteral("SimDock"); }
+{ return QStringLiteral("xIPs"); }
 
 void NativeContextView::setHostBridge(QObject *hostBridge)
 {
@@ -185,12 +157,12 @@ void NativeContextView::setHostBridge(QObject *hostBridge)
 QStringList NativeContextView::candidates() const
 {
     if (!explicitLibrary.isEmpty()) return {explicitLibrary};
-    const QString environment = qEnvironmentVariable(kind == Kind::Xips ? "XIPS_BROWSER_LIBRARY" : "SIMDOCK_WORKBENCH_LIBRARY");
+    const QString environment = qEnvironmentVariable("XIPS_BROWSER_LIBRARY");
     // An explicit override is authoritative, including a missing file. Do not
     // silently load an unrelated installed build when a developer selects one.
     if (!environment.isEmpty()) return {environment};
-    const QString id = kind == Kind::Xips ? QStringLiteral("xips") : QStringLiteral("simdock");
-    const QString file = kind == Kind::Xips ? QStringLiteral("xips-browser.dll") : QStringLiteral("simdock-workbench.dll");
+    const QString id = QStringLiteral("xips");
+    const QString file = QStringLiteral("xips-browser.dll");
     const QDir app(QCoreApplication::applicationDirPath());
     const QString configured = QSettings().value(QStringLiteral("integrations/native/%1Library").arg(id)).toString();
     QStringList paths{configured, app.filePath(QStringLiteral("components/%1/%2").arg(id, file)), app.filePath(file),
@@ -209,8 +181,7 @@ bool NativeContextView::createComponent(QString *error)
     }
     using Abi = const char *(*)();
     using Factory = QWidget *(*)(QWidget *, QObject *);
-    const bool xips = kind == Kind::Xips;
-    const QByteArray expected = xips ? xipsExpectedBrowserAbi() : simdockExpectedWorkbenchAbi();
+    const QByteArray expected = xipsExpectedBrowserAbi();
     QStringList failures;
     for (const QString &candidate : candidates()) {
         const QFileInfo file(candidate);
@@ -222,20 +193,13 @@ bool NativeContextView::createComponent(QString *error)
         // Native modules stay mapped for the process lifetime, including a
         // rejected module whose static initializers have already run. Retrying
         // a different file is supported; replacing a loaded DLL needs restart.
-        if (!xips) {
-            const QString dependencyError = preloadSimDockUi(file.absoluteFilePath());
-            if (!dependencyError.isEmpty()) {
-                failures.append(tr("%1: %2").arg(candidate, dependencyError));
-                continue;
-            }
-        }
         NativeLibrary library(file.absoluteFilePath());
         if (!library.load()) {
             failures.append(tr("%1: %2").arg(candidate, library.errorString()));
             continue;
         }
-        const auto abi = reinterpret_cast<Abi>(library.resolve(xips ? "xips_browser_abi_v1" : "simdock_workbench_abi_v1"));
-        const auto factory = reinterpret_cast<Factory>(library.resolve(xips ? "xips_create_browser_v1" : "simdock_create_workbench_v1"));
+        const auto abi = reinterpret_cast<Abi>(library.resolve("xips_browser_abi_v1"));
+        const auto factory = reinterpret_cast<Factory>(library.resolve("xips_create_browser_v1"));
         const char *reported = abi ? abi() : nullptr;
         if (!reported || QByteArray(reported) != expected || !factory) {
             failures.append(tr("%1: incompatible component.\nExpected: %2\nReported: %3\n"
@@ -245,7 +209,7 @@ bool NativeContextView::createComponent(QString *error)
                                                                                    : QString::fromLatin1(reported)));
             continue;
         }
-        if (xips) {
+        {
             // xIPs loads its implementation with ALTERED_SEARCH_PATH. A Qt
             // module not already imported by this host is then searched next
             // to the component, not next to ZeroSlack.exe. Preload the host's
@@ -261,13 +225,13 @@ bool NativeContextView::createComponent(QString *error)
         }
         QWidget *created = factory(this, bridge);
         if (!created) {
-            const auto lastError = reinterpret_cast<Abi>(library.resolve(xips ? "xips_browser_last_error_v1" : "simdock_workbench_last_error_v1"));
+            const auto lastError = reinterpret_cast<Abi>(library.resolve("xips_browser_last_error_v1"));
             const char *detail = lastError ? lastError() : nullptr;
             failures.append(tr("%1 returned no native widget.%2").arg(candidate,
                             detail && *detail ? QStringLiteral("\n") + QString::fromUtf8(detail) : QString()));
             continue;
         }
-        const QString contractError = checkContract(created, kind);
+        const QString contractError = checkContract(created);
         if (!contractError.isEmpty() || created->parentWidget() != this || created->isWindow()) {
             delete created;
             failures.append(tr("%1: %2").arg(candidate, contractError.isEmpty()
@@ -278,14 +242,14 @@ bool NativeContextView::createComponent(QString *error)
         // Component styles can select their root by object name. The host owns
         // its wrapper identity and must preserve the factory's widget identity.
         if (panel->objectName().isEmpty())
-            panel->setObjectName(xips ? QStringLiteral("xipsBrowser") : QStringLiteral("simdockWorkbench"));
+            panel->setObjectName(QStringLiteral("xipsBrowser"));
         layout->insertWidget(0, panel, 1);
         setProperty("nativeComponentLibrary", file.canonicalFilePath());
         setProperty("nativeComponentAbi", expected);
         if (!explicitLibrary.isEmpty())
             QSettings().setValue(QStringLiteral("integrations/native/%1Library")
-                                    .arg(xips ? QStringLiteral("xips") : QStringLiteral("simdock")), file.absoluteFilePath());
-        const auto capabilities = reinterpret_cast<Abi>(library.resolve(xips ? "xips_browser_capabilities_v1" : "simdock_workbench_capabilities_v1"));
+                                    .arg(QStringLiteral("xips")), file.absoluteFilePath());
+        const auto capabilities = reinterpret_cast<Abi>(library.resolve("xips_browser_capabilities_v1"));
         if (capabilities) {
             const char *json = capabilities();
             const auto document = json ? QJsonDocument::fromJson(QByteArray(json)) : QJsonDocument();
@@ -303,7 +267,7 @@ bool NativeContextView::createComponent(QString *error)
 bool NativeContextView::activate(const ContextResource &resource)
 {
     if (property("nativeComponentRetired").toBool()) return false;
-    if (resource.providerId != (kind == Kind::Xips ? QStringLiteral("xips") : QStringLiteral("simdock")))
+    if (resource.providerId != (QStringLiteral("xips")))
         return false;
     // createView and the docking controller both activate a new resource.
     // Reopening an existing rail entry must not restart scans or replay old UI
@@ -338,11 +302,8 @@ bool NativeContextView::applyContextAndState(QString *error)
     if (!contextApplied || appliedWorkspace != desired.workspaceId) {
         if (contextApplied && !canClose(error)) return false;
         QString componentError;
-        const bool called = kind == Kind::Xips
-            ? QMetaObject::invokeMethod(panel, "setContext", Qt::DirectConnection,
-                                       Q_ARG(QString, QString()), Q_ARG(QString, desired.workspaceId))
-            : QMetaObject::invokeMethod(panel, "setContext", Qt::DirectConnection,
-                                       Q_RETURN_ARG(QString, componentError), Q_ARG(QString, desired.workspaceId));
+        const bool called = QMetaObject::invokeMethod(panel, "setContext", Qt::DirectConnection,
+            Q_ARG(QString, QString()), Q_ARG(QString, desired.workspaceId));
         if (!called || !componentError.isEmpty()) {
             *error = called ? componentError : tr("The component could not receive the workspace context.");
             return false;
@@ -351,15 +312,9 @@ bool NativeContextView::applyContextAndState(QString *error)
         appliedWorkspace = desired.workspaceId;
     }
     if (statePending) {
-        // SimDock's standalone state also contains a workspace. The host owns
-        // that identity: an old/moved session must never reopen another root.
-        if (kind == Kind::SimDock)
-            desired.state.insert(QStringLiteral("workspace"), desired.workspaceId);
         QString componentError;
-        const bool called = kind == Kind::Xips
-            ? QMetaObject::invokeMethod(panel, "restoreState", Qt::DirectConnection, Q_ARG(QVariantMap, desired.state))
-            : QMetaObject::invokeMethod(panel, "restoreState", Qt::DirectConnection,
-                                       Q_RETURN_ARG(QString, componentError), Q_ARG(QVariantMap, desired.state));
+        const bool called = QMetaObject::invokeMethod(panel, "restoreState", Qt::DirectConnection,
+            Q_ARG(QVariantMap, desired.state));
         if (!called || !componentError.isEmpty()) {
             *error = called ? componentError : tr("The component could not restore its state.");
             return false;
@@ -442,15 +397,9 @@ bool NativeContextView::canClose(QString *error) const
         return false;
     }
     if (!panel) return true;
-    bool allowed = false;
-    bool called;
-    if (kind == Kind::Xips) {
-        bool busy = true;
-        called = QMetaObject::invokeMethod(panel, "isCatalogBusy", Qt::DirectConnection, Q_RETURN_ARG(bool, busy));
-        allowed = !busy;
-    } else {
-        called = QMetaObject::invokeMethod(panel, "canClose", Qt::DirectConnection, Q_RETURN_ARG(bool, allowed));
-    }
+    bool busy = true;
+    const bool called = QMetaObject::invokeMethod(panel, "isCatalogBusy", Qt::DirectConnection, Q_RETURN_ARG(bool, busy));
+    const bool allowed = !busy;
     if ((!called || !allowed) && error)
         *error = tr("%1 is busy. Finish or stop its operation before closing it or changing workspace.").arg(name());
     return called && allowed;

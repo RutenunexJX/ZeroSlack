@@ -1,0 +1,199 @@
+{
+    "appScale": "1",
+    "applicationDpr": 1,
+    "completedUtc": "2026-10-09T03:52:31.345Z",
+    "modules": [
+        {
+            "name": "simdock-workbench.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/simdock-workbench.dll",
+            "sha256": "c39ca31249dc56b82241334e941e8b8f97ea7a150b5118dc0ab4fa1b97844084"
+        },
+        {
+            "name": "SimDockEla.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/SimDockEla.dll",
+            "sha256": "7a81e9a96081b5b15a6f5fd67be6dcf3ad29b23c01622d799105d8e0afa5e5e8"
+        },
+        {
+            "name": "wavewidgets.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/wavewidgets.DLL",
+            "sha256": "c326b99e68bcbb2f8dd5e3e7585f4def58ba33d77ba384a86c9ede48cd444a70"
+        },
+        {
+            "name": "WaveWorkbenchEla.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/WaveWorkbenchEla.DLL",
+            "sha256": "85bce4affee3c45f4b3afef010eeb6e82d9a0bd42f6bfdc033371bb4ee6aa439"
+        },
+        {
+            "name": "Qt6Core.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/Qt6Core.dll",
+            "sha256": "7e14027a0bb4017325db707c315c70ee008c8f2364f60bb2eb04d53c017ee762"
+        },
+        {
+            "name": "Qt6Widgets.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/Qt6Widgets.dll",
+            "sha256": "18dce4f681cdbf0970301b5e6fbf5e8eb32182051c684b9366435269301870b9"
+        },
+        {
+            "name": "Qt6Test.dll",
+            "path": "E:/QT6/6.10.2/mingw_64/bin/Qt6Test.dll",
+            "sha256": "361b8b7e07bface17ab137c0c5d9e8d9b859f6dd10b334e9167655871e9da240"
+        },
+        {
+            "name": "libstdc++-6.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/libstdc++-6.dll",
+            "sha256": "8013488c5528bad7966ca07f3ea2e7a9b743cacb258fe76b46a326f821cc83b0"
+        },
+        {
+            "name": "libgcc_s_seh-1.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/libgcc_s_seh-1.dll",
+            "sha256": "5e27589147caa6d7a30f4cc058a14c455dc62233901ffff9a1797ede425e9f86"
+        },
+        {
+            "name": "libwinpthread-1.dll",
+            "path": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock/libwinpthread-1.dll",
+            "sha256": "c7c7dced65fff71c7bb61f80c771c562f533d26d72722d9d6091129a3b03d5ce"
+        }
+    ],
+    "passed": true,
+    "productionPackage": "E:/PinloomRoot/AppPackage/AppSuite/Apps/SimDock",
+    "projects": [
+        {
+            "durationNs": 2000,
+            "id": "4b340805-b037-4a67-aa75-6fcddb36ac54",
+            "kind": "none",
+            "projectFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/.simdock/projects/4b340805-b037-4a67-aa75-6fcddb36ac54.json",
+            "projectSha256": "245b22ebc7cb66017724c2852011a038e51720ddb25584d49e32a334df534c7a",
+            "savePath": "old Workbench -> StimulusDialog Save -> async prepare -> old saveStimulus/QSaveFile",
+            "schema": "simdock.project/v1",
+            "tbFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/sim/4b340805/tb_capture_dut_stimulus_190b837c1b291ab2.sv",
+            "tbSha256": "190b837c1b291ab2e2db2ed9a020ae4b5679b0bca312705fe9f138b3a7fd6ddd"
+        },
+        {
+            "durationNs": 2000,
+            "id": "9e94479e-b032-4c12-a934-fef41d05df49",
+            "kind": "uart_tx",
+            "projectFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/.simdock/projects/9e94479e-b032-4c12-a934-fef41d05df49.json",
+            "projectSha256": "e66cf53d77f0040c0e3d553b8f4578011ff98038cf2c207e9e41cdf85ac30638",
+            "savePath": "old Workbench -> StimulusDialog Save -> async prepare -> old saveStimulus/QSaveFile",
+            "schema": "simdock.project/v1",
+            "tbFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/sim/9e94479e/tb_capture_dut_stimulus_c30c72d0862190f8.sv",
+            "tbSha256": "c30c72d0862190f8d13fe3d5a73db2fec51295f82f2b80aca44aff2c92147e66"
+        },
+        {
+            "durationNs": 2000,
+            "id": "774390c3-6072-4e2b-88e5-2472e2bd854d",
+            "kind": "stream",
+            "projectFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/.simdock/projects/774390c3-6072-4e2b-88e5-2472e2bd854d.json",
+            "projectSha256": "972c41929bacccc434145a6777f959f1bfb7c388574fa072380aabe59b6f4cb0",
+            "savePath": "old Workbench -> StimulusDialog Save -> async prepare -> old saveStimulus/QSaveFile",
+            "schema": "simdock.project/v1",
+            "tbFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/sim/774390c3/tb_capture_dut_stimulus_482692d47e60c626.sv",
+            "tbSha256": "482692d47e60c6265e9497b10d7272d7ec5a74fe8d5cf16cec09e1a9e3ff37b4"
+        },
+        {
+            "durationNs": 2000,
+            "id": "917164fb-9491-4371-bbc0-acbc91117eb9",
+            "kind": "values",
+            "projectFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/.simdock/projects/917164fb-9491-4371-bbc0-acbc91117eb9.json",
+            "projectSha256": "cc90cea673a17fb3858f3b7020211de52aa7770cfcc9dc3f11d84b8fd12ba13b",
+            "savePath": "old Workbench -> StimulusDialog Save -> async prepare -> old saveStimulus/QSaveFile",
+            "schema": "simdock.project/v1",
+            "tbFile": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace/sim/917164fb/tb_capture_dut_stimulus_92a166ea82e0988c.sv",
+            "tbSha256": "92a166ea82e0988c83752aeaf5cb7f1050357b3065622d6d9381b8bbfc097fe9"
+        }
+    ],
+    "qtPlatform": "windows",
+    "refusal": {
+        "message": "The generated TB was modified. Your file has been preserved.",
+        "modifiedTbSha256": "31eab6b490c36928ea5b2a5fd6863734e02b4d224f686aacbe2e19288b3fd893",
+        "originalTbSha256": "92a166ea82e0988c83752aeaf5cb7f1050357b3065622d6d9381b8bbfc097fe9",
+        "preserved": true,
+        "projectSha256BeforeAndAfter": "cc90cea673a17fb3858f3b7020211de52aa7770cfcc9dc3f11d84b8fd12ba13b"
+    },
+    "schema": "simdock.baseline-capture/v1",
+    "screenLogicalDpi": 96,
+    "screenName": "U27G3X",
+    "simulationRun": false,
+    "sourceCommit": "e1747735735f0e50e06587d729784546efba56eb",
+    "steps": [
+        {
+            "action": "Loaded formal SimDock 0.6.1 workbench and scanned isolated RTL input; no Suite provider or simulator started.",
+            "utc": "2026-10-09T03:52:28.772Z"
+        },
+        {
+            "action": "Create project via production newProject dialog: none",
+            "utc": "2026-10-09T03:52:28.776Z"
+        },
+        {
+            "action": "Production waveform API + Timing apply/undo/redo + Checks none; click Save.",
+            "utc": "2026-10-09T03:52:29.224Z"
+        },
+        {
+            "action": "Saved and froze none project and generated TB.",
+            "utc": "2026-10-09T03:52:29.262Z"
+        },
+        {
+            "action": "Create project via production newProject dialog: uart_tx",
+            "utc": "2026-10-09T03:52:29.263Z"
+        },
+        {
+            "action": "Production waveform API + Timing apply/undo/redo + Checks uart_tx; click Save.",
+            "utc": "2026-10-09T03:52:29.685Z"
+        },
+        {
+            "action": "Saved and froze uart_tx project and generated TB.",
+            "utc": "2026-10-09T03:52:29.751Z"
+        },
+        {
+            "action": "Create project via production newProject dialog: stream",
+            "utc": "2026-10-09T03:52:29.752Z"
+        },
+        {
+            "action": "Production waveform API + Timing apply/undo/redo + Checks stream; click Save.",
+            "utc": "2026-10-09T03:52:30.181Z"
+        },
+        {
+            "action": "Saved and froze stream project and generated TB.",
+            "utc": "2026-10-09T03:52:30.228Z"
+        },
+        {
+            "action": "Create project via production newProject dialog: values",
+            "utc": "2026-10-09T03:52:30.230Z"
+        },
+        {
+            "action": "Production waveform API + Timing apply/undo/redo + Checks values; click Save.",
+            "utc": "2026-10-09T03:52:30.641Z"
+        },
+        {
+            "action": "Saved and froze values project and generated TB.",
+            "utc": "2026-10-09T03:52:30.703Z"
+        },
+        {
+            "action": "Old production Save refused to overwrite the user-modified generated TB; project and edited bytes preserved.",
+            "utc": "2026-10-09T03:52:30.931Z"
+        }
+    ],
+    "suiteProviderStarted": false,
+    "workbenchStateTyped": {
+        "layout/columns": {
+            "base64": "AAAA/wAAAAEAAAACAAABpAAAAWgAAAAACAEAAAABAA==",
+            "sha256": "5ff619434814a9a5ba6f3a07e0182a110c13e39df5b4866d6ac3e195aac090ce",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "layout/compactPage": "workspace",
+        "layout/logExpanded": true,
+        "layout/simulationExpanded": true,
+        "layout/workbench": {
+            "base64": "AAAA/wAAAAEAAAACAAAB5QAAAMgAAAAACAEAAAACAA==",
+            "sha256": "ab9320657a4409df2af097ec24b9b199413b5bfd1d9427b4ea40b6d185922763",
+            "size": 31,
+            "type": "QByteArray"
+        },
+        "preferences": {
+        },
+        "projectId": "917164fb-9491-4371-bbc0-acbc91117eb9",
+        "version": 1,
+        "workspace": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/simdock061-run1/workspace"
+    }
+}

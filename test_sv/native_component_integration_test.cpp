@@ -1,6 +1,7 @@
 #include "../src/integrations/native/nativecontextview.h"
 #include "../src/integrations/xips/xipscontextprovider.h"
 #include "../src/integrations/simdock/simdockcontextprovider.h"
+#include "../src/integrations/simdock/simdockcontextview.h"
 #include "testuistyle.h"
 #include <QApplication>
 #include <QDir>
@@ -22,7 +23,7 @@ private slots:
     void initTestCase()
     {
         QVERIFY2(!qEnvironmentVariable("XIPS_BROWSER_LIBRARY").isEmpty(), "Set the real xIPs DLL path");
-        QVERIFY2(!qEnvironmentVariable("SIMDOCK_WORKBENCH_LIBRARY").isEmpty(), "Set the real SimDock DLL path");
+        qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", settings.filePath("legacy.ini").toUtf8());
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
         QVERIFY(initializeUiStyleForTest());
@@ -56,29 +57,33 @@ private slots:
         QWidget parent;
         for (auto *provider : {static_cast<IContextContentProvider *>(&xips), static_cast<IContextContentProvider *>(&simdock)}) {
             std::unique_ptr<QWidget> view(provider->createView(provider->activationResource(a), &parent));
-            auto *host = qobject_cast<NativeContextView *>(view.get());
+            auto *host = view.get();
+            const auto component = [&]() -> QWidget* {
+                if (auto* external = qobject_cast<NativeContextView*>(view.get())) return external->component();
+                return qobject_cast<SimDockContextView*>(view.get())->component();
+            };
             QVERIFY(host);
-            QVERIFY2(host->isReady(), qPrintable(host->property("nativeComponentError").toString()));
-            QVERIFY(host->component() && host->component()->parentWidget() == host && !host->component()->isWindow());
+            QVERIFY2(host->property("nativeComponentReady").toBool(), qPrintable(host->property("nativeComponentError").toString()));
+            QVERIFY(component() && component()->parentWidget() == host && !component()->isWindow());
             QCOMPARE(QApplication::font(), font);
             QCOMPARE(QApplication::palette(), palette);
             QCOMPARE(QCoreApplication::applicationName(), appName);
             QCOMPARE(QCoreApplication::organizationName(), organization);
-            QTRY_VERIFY_WITH_TIMEOUT(host->canClose(), 30000);
-            const auto state = host->saveState();
+            QTRY_VERIFY_WITH_TIMEOUT(provider->canCloseView(view.get(), nullptr), 30000);
+            const auto state = provider->saveViewState(view.get());
             for (const QString &path : {b, a, b, a}) {
                 auto resource = provider->activationResource(path);
                 resource.state = state;
                 QVERIFY(provider->activateView(host, resource));
-                QVERIFY2(host->isReady(), qPrintable(host->property("nativeComponentError").toString()));
-                QTRY_VERIFY_WITH_TIMEOUT(host->canClose(), 30000);
+                QVERIFY2(host->property("nativeComponentReady").toBool(), qPrintable(host->property("nativeComponentError").toString()));
+                QTRY_VERIFY_WITH_TIMEOUT(provider->canCloseView(view.get(), nullptr), 30000);
             }
             QVERIFY(provider->activateView(host, provider->activationResource(QString())));
-            QVERIFY(host->isReady());
-            QTRY_VERIFY_WITH_TIMEOUT(host->canClose(), 30000);
+            QVERIFY(host->property("nativeComponentReady").toBool());
+            QTRY_VERIFY_WITH_TIMEOUT(provider->canCloseView(view.get(), nullptr), 30000);
             view.reset();
             view.reset(provider->createView(provider->activationResource(a), &parent));
-            QVERIFY(qobject_cast<NativeContextView *>(view.get())->isReady());
+            QVERIFY(view->property("nativeComponentReady").toBool());
             QCOMPARE(QApplication::font(), font);
             QCOMPARE(QApplication::palette(), palette);
         }

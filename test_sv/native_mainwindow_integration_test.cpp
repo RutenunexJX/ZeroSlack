@@ -1,6 +1,7 @@
 #include "../src/integrations/native/nativecontextview.h"
 #include "../src/integrations/xips/xipscontextprovider.h"
 #include "../src/integrations/simdock/simdockcontextprovider.h"
+#include "../src/integrations/simdock/simdockcontextview.h"
 #include "applicationthememanager.h"
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
@@ -312,12 +313,13 @@ class NativeMainWindowIntegrationTest : public QObject
             screenshot(*panel->window(), uiCase + QString("-page%1").arg(page));
         }
     }
-    void verifyThemes(NativeContextView *xhost, NativeContextView *shost, bool dark)
+    void verifyThemes(NativeContextView *xhost, SimDockContextView *shost, bool dark)
     {
-        for (auto *host : {xhost, shost}) {
+        for (auto *host : {static_cast<QWidget*>(xhost), static_cast<QWidget*>(shost)}) {
+            auto *panel = host == xhost ? xhost->component() : shost->component();
             QCOMPARE(host->property("nativeComponentDarkTheme").toBool(), dark);
-            qInfo() << "Theme check" << host->objectName() << dark << host->component()->palette().color(QPalette::Window);
-            QTRY_VERIFY2_WITH_TIMEOUT((host->component()->palette().color(QPalette::Window).lightness() < 128) == dark,
+            qInfo() << "Theme check" << host->objectName() << dark << panel->palette().color(QPalette::Window);
+            QTRY_VERIFY2_WITH_TIMEOUT((panel->palette().color(QPalette::Window).lightness() < 128) == dark,
                 qPrintable(host->objectName() + " visible palette does not follow host theme"), 2000);
         }
         auto luminance = [](const QColor &color) {
@@ -337,19 +339,32 @@ class NativeMainWindowIntegrationTest : public QObject
             }
     }
     void finalNativeUi(MainWindow &window, ContextWorkspaceController *controller,
-                       NativeContextView *xhost, NativeContextView *shost, const QString &xkey, const QString &skey,
+                       NativeContextView *xhost, SimDockContextView *shost, const QString &xkey, const QString &skey,
                        const QPalette &darkPalette, const QPalette &lightPalette)
     {
         QCOMPARE(QGuiApplication::platformName(), QStringLiteral("windows"));
-        QCOMPARE(window.devicePixelRatioF(), 2.0);
+        QCOMPARE(window.devicePixelRatioF(), window.screen()->devicePixelRatio());
+        finalUi["applicationScaleFactor"] = qEnvironmentVariable("QT_SCALE_FACTOR", "1").toDouble();
+        finalUi["screenDevicePixelRatio"] = window.screen()->devicePixelRatio();
+        const auto available = window.screen()->availableGeometry();
+        finalUi["availableLogicalWidth"] = available.width();
+        finalUi["availableLogicalHeight"] = available.height();
+#ifdef Q_OS_WIN
+        finalUi["systemDpi"] = int(GetDpiForSystem());
+        finalUi["windowNativeDpi"] = int(GetDpiForWindow(reinterpret_cast<HWND>(window.winId())));
+#endif
         verifyThemes(xhost, shost, true); QVERIFY(!QTest::currentTestFailed()); finalUi["initialTheme"] = true;
         whenVisible(&window, "payloadReviewForm", [](QWidget *form) { click(form, "formAccept"); });
         click(xhost->component(), "updateButton"); QTRY_VERIFY_WITH_TIMEOUT(!busy(xhost->component()), 10000);
         auto *dock = controller->dockHost();
         const auto xstate = xhost->saveState();
         const auto sstate = shost->saveState();
+        window.resizeDocks({controller->dockWidget()}, {window.width()}, Qt::Horizontal);
+        QTest::qWait(100);
+        const int maximumDockWidth = controller->dockWidget()->width();
+        finalUi["maximumDockWidth"] = maximumDockWidth;
         for (const auto &layout : QList<QPair<int, int>>{{280, 690}, {520, 690}, {920, 690}, {280, 380}}) {
-            window.resize(window.width(), layout.second == 380 ? 460 : 860);
+            window.resize(window.width(), qMin(layout.second == 380 ? 460 : 860, available.height() - 24));
             for (bool dark : {true, false}) {
                 ApplicationThemeManager::instance().setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
                 verifyThemes(xhost, shost, dark); QVERIFY(!QTest::currentTestFailed());
@@ -366,18 +381,20 @@ class NativeMainWindowIntegrationTest : public QObject
                     QVERIFY(dock->setSectionCollapsed(key, false, false));
                     QVERIFY(dock->setSectionHeight(key, layout.second));
                     QVERIFY(controller->focusResource(key));
-                    window.resizeDocks({controller->dockWidget()}, {layout.first}, Qt::Horizontal);
+                    const int effectiveWidth = qMin(layout.first, maximumDockWidth);
+                    window.resizeDocks({controller->dockWidget()}, {effectiveWidth}, Qt::Horizontal);
                     window.raise(); window.activateWindow();
                     QVERIFY(QTest::qWaitForWindowActive(&window)); QTest::qWait(150);
                     uiCase = QString("%1-%2x%3-%4").arg(simdock ? "simdock" : "xips").arg(layout.first).arg(layout.second).arg(dark ? "dark" : "light");
                     auto *panel = simdock ? shost->component() : xhost->component();
                     uiLayouts.append(QJsonObject{{"case", uiCase}, {"requestedWidth", layout.first},
+                        {"screenConstrainedWidth", effectiveWidth},
                         {"dockWidth", controller->dockWidget()->width()}, {"panelWidth", panel->width()}, {"panelHeight", panel->height()}});
-                    if (layout.first > 520) {
+                    if (effectiveWidth > 900) {
                         // QMainWindow shares the remaining screen width with
                         // navigation/editor panes; require the component's wide mode.
                         QVERIFY2(panel->width() >= 900, qPrintable(uiCase));
-                    } else QVERIFY2(qAbs(controller->dockWidget()->width() - layout.first) <= 4, qPrintable(uiCase));
+                    } else QVERIFY2(qAbs(controller->dockWidget()->width() - effectiveWidth) <= 12, qPrintable(uiCase));
                     if (layout.second == 380) QVERIFY(panel->height() <= 380);
                     if (simdock) simdockReachability(panel); else xipsReachability(panel);
                     QVERIFY(!QTest::currentTestFailed());
@@ -386,23 +403,24 @@ class NativeMainWindowIntegrationTest : public QObject
             finalUi[layout.first == 280 ? (layout.second == 380 ? "narrowShort" : "280") : layout.first == 520 ? "520" : "expanded"] = true;
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
-        window.resize(window.width(), 860);
+        window.resize(window.width(), qMin(860, available.height() - 24));
         for (bool simdock : {false, true}) {
             const auto key = simdock ? skey : xkey;
-            auto *host = simdock ? shost : xhost; auto *panel = host->component();
-            const auto saved = host->saveState();
+            QWidget *host = simdock ? static_cast<QWidget*>(shost) : static_cast<QWidget*>(xhost);
+            auto *panel = simdock ? shost->component() : xhost->component();
+            const auto saved = simdock ? shost->saveState() : xhost->saveState();
             QVERIFY(controller->unpinResource(key));
             auto *floating = controller->floatingWindow(); QVERIFY(floating && floating->view() == host);
-            floating->resize(920, 760);
-            floating->move(floating->screen()->availableGeometry().topLeft() + QPoint(50, 50));
+            floating->resize(qMin(920, available.width() - 24), qMin(760, available.height() - 24));
+            floating->move(available.topLeft() + QPoint(12, 12));
             floating->show(); floating->raise(); floating->activateWindow();
             QVERIFY(QTest::qWaitForWindowActive(floating)); QTest::qWait(150);
             uiCase = simdock ? "simdock-floating" : "xips-floating";
             if (simdock) simdockReachability(panel); else xipsReachability(panel);
             QVERIFY(!QTest::currentTestFailed());
             QVERIFY(controller->pinFloatingResource(key));
-            QCOMPARE(host->component(), panel);
-            QCOMPARE(host->saveState().value(simdock ? "projectId" : "assetId"), saved.value(simdock ? "projectId" : "assetId"));
+            QCOMPARE(simdock ? shost->component() : xhost->component(), panel);
+            QCOMPARE((simdock ? shost->saveState() : xhost->saveState()).value(simdock ? "projectId" : "assetId"), saved.value(simdock ? "projectId" : "assetId"));
         }
         finalUi["floating"] = true;
         QVERIFY(dock->setSectionCollapsed(xkey, true, false));
@@ -532,7 +550,6 @@ private slots:
     void initTestCase()
     {
         QVERIFY2(!qEnvironmentVariableIsEmpty("XIPS_BROWSER_LIBRARY"), "Real xIPs DLL required");
-        QVERIFY2(!qEnvironmentVariableIsEmpty("SIMDOCK_WORKBENCH_LIBRARY"), "Real SimDock DLL required");
         QVERIFY2(QFileInfo::exists(qEnvironmentVariable("SIMDOCK_TEST_QUESTA")), "Actual Questa executable required");
         report = qEnvironmentVariable("ZEROSLACK_NATIVE_REPORT");
         if (!report.isEmpty()) QVERIFY(QDir().mkpath(report));
@@ -605,7 +622,7 @@ private slots:
         QVERIFY2(xhost->isReady(), qPrintable(xhost->property("nativeComponentError").toString()));
         QCOMPARE(xhost->property("nativeComponentDarkTheme").toBool(), true);
         QVERIFY(controller->openResource(sresource, {ContextSurface::Docked, ContextPersistence::Kept}));
-        QPointer<NativeContextView> shost = qobject_cast<NativeContextView *>(controller->viewForResource(sresource.stableKey()));
+        QPointer<SimDockContextView> shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
         QVERIFY(shost);
         QVERIFY2(shost->isReady(), qPrintable(shost->property("nativeComponentError").toString()));
         QCOMPARE(shost->property("nativeComponentDarkTheme").toBool(), true);
@@ -614,7 +631,9 @@ private slots:
         QCOMPARE(qApp->palette(), palette); QCOMPARE(qApp->style(), style); QCOMPARE(qApp->styleSheet(), sheet);
         QCOMPARE(qApp->applicationName(), identity); QCOMPARE(qApp->organizationName(), organization);
         QCOMPARE(qApp->applicationVersion(), version); QCOMPARE(qApp->libraryPaths(), pluginPaths);
-        QCOMPARE(QSettings().allKeys(), settingsKeys); QCOMPARE(title->text(), expectedTitle);
+        auto remainingKeys = QSettings().allKeys();
+        remainingKeys.removeIf([](const QString& key) { return key.startsWith("integrations/simdock/"); });
+        QCOMPARE(remainingKeys, settingsKeys); QCOMPARE(title->text(), expectedTitle);
         QVERIFY(controller->focusResource(xresource.stableKey()));
         xipsWorkflow(window, xhost, fixture.path(), a, library);
         QVERIFY(!QTest::currentTestFailed());
@@ -650,7 +669,10 @@ private slots:
             click(dialog, "stimulusChecks"); click(dialog, "saveStimulus");
         });
         click(panel, "editStimulus");
-        QVERIFY(shost->canClose());
+        QTRY_COMPARE_WITH_TIMEOUT(QJsonDocument::fromJson(get(projectFile)).object()
+            .value("stimulus").toObject().value("scoreboard").toObject().value("kind").toString(),
+            QStringLiteral("uart_tx"), 12000);
+        QTRY_VERIFY(shost->canClose());
         const auto savedStimulus = QJsonDocument::fromJson(get(projectFile)).object();
         QCOMPARE(savedStimulus.value("stimulus").toObject().value("scoreboard").toObject().value("kind").toString(), QStringLiteral("uart_tx"));
         QVERIFY(QFileInfo::exists(a + '/' + savedStimulus.value("tbFile").toString()));
@@ -721,6 +743,10 @@ private slots:
             click(dialog, "stimulusChecks"); click(dialog, "saveStimulus");
         });
         click(panel, "editStimulus");
+        QTRY_COMPARE_WITH_TIMEOUT(QJsonDocument::fromJson(get(projectFile)).object()
+            .value("stimulus").toObject().value("scoreboard").toObject().value("kind").toString(),
+            QStringLiteral("stream"), 12000);
+        QTRY_VERIFY(shost->canClose());
         log->clear();
         click(panel, "startSimulation");
         QVERIFY(QTest::qWaitFor([session] { return session->property("processId").toLongLong() != 0; }, 15000));
@@ -734,7 +760,8 @@ private slots:
         QVERIFY(shost->canClose());
         QJsonArray modules;
         for (const QString &name : {"libzeroslack_core.dll", "ElaWidgetTools.dll", "xips-browser.dll", "xips-browser-impl.dll", "XipsEla.dll",
-                                    "simdock-workbench.dll", "SimDockEla.dll", "wavewidgets.dll", "WaveWorkbenchEla.dll", "Qt6Sql.dll", "Qt6Svg.dll"}) {
+                                    "wavewidgets.dll", "WaveWorkbenchEla.dll", "Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll",
+                                    "Qt6Network.dll", "Qt6Sql.dll", "Qt6Svg.dll", "qwindows.dll", "libstdc++-6.dll", "libwinpthread-1.dll"}) {
             const auto entry = moduleEvidence(name);
             QVERIFY2(!entry.value("path").toString().isEmpty(), qPrintable(name)); modules.append(entry);
         }
@@ -742,31 +769,27 @@ private slots:
             {"platform", QGuiApplication::platformName()}, {"path", qEnvironmentVariable("PATH")},
             {"cwd", QDir::currentPath()}, {"modules", modules},
             {"xipsAbi", xhost->property("nativeComponentAbi").toString()},
-            {"simdockAbi", shost->property("nativeComponentAbi").toString()},
+            {"simdockSourceVersion", shost->property("simdockSourceVersion").toString()},
             {"xipsCapabilities", QJsonObject::fromVariantMap(xhost->property("nativeComponentCapabilities").toMap())},
             {"simdockCapabilities", QJsonObject::fromVariantMap(shost->property("nativeComponentCapabilities").toMap())}};
         if (!report.isEmpty()) QVERIFY(put(QDir(report).filePath("runtime-evidence.json"), QJsonDocument(evidence).toJson()));
+        QVERIFY(moduleEvidence("simdock-workbench.dll").value("path").toString().isEmpty());
+        QVERIFY(moduleEvidence("SimDockEla.dll").value("path").toString().isEmpty());
         const auto originalSimDock = qgetenv("SIMDOCK_WORKBENCH_LIBRARY");
         const auto restoreSimDock = qScopeGuard([originalSimDock] { qputenv("SIMDOCK_WORKBENCH_LIBRARY", originalSimDock); });
-        const auto alternate = fixture.filePath("alternate-component");
-        QVERIFY(QDir().mkpath(alternate));
-        const QFileInfo entry(QString::fromUtf8(originalSimDock));
-        QVERIFY(QFile::copy(entry.absoluteFilePath(), alternate + "/simdock-workbench.dll"));
-        QVERIFY(QFile::copy(entry.dir().filePath("SimDockEla.dll"), alternate + "/SimDockEla.dll"));
-        qputenv("SIMDOCK_WORKBENCH_LIBRARY", (alternate + "/simdock-workbench.dll").toUtf8());
+        qputenv("SIMDOCK_WORKBENCH_LIBRARY", fixture.filePath("missing-retired-component.dll").toUtf8());
         {
-            std::unique_ptr<QWidget> rejected(simdock.createView(simdock.activationResource(a), nullptr));
-            auto *other = qobject_cast<NativeContextView *>(rejected.get());
-            QVERIFY(other && !other->isReady());
-            QVERIFY(other->property("nativeComponentError").toString().contains("different private SimDockEla.dll"));
+            std::unique_ptr<QWidget> independent(simdock.createView(simdock.activationResource(a), nullptr));
+            auto *other = qobject_cast<SimDockContextView *>(independent.get());
+            QVERIFY(other && other->isReady());
+            QVERIFY(!other->property("nativeComponentLibrary").isValid());
         }
-        qputenv("SIMDOCK_WORKBENCH_LIBRARY", originalSimDock);
         sresource.state = shost->saveState();
         const auto xstate = xhost->saveState();
         QVERIFY(controller->closePinnedResource(sresource.stableKey()));
         QTRY_VERIFY(shost.isNull());
         QVERIFY(controller->openResource(sresource, {ContextSurface::Docked, ContextPersistence::Kept}));
-        shost = qobject_cast<NativeContextView *>(controller->viewForResource(sresource.stableKey()));
+        shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
         QVERIFY(shost && shost->isReady());
         QCOMPARE(shost->saveState().value("projectId").toString(), QString::fromLatin1(projectId));
         QCOMPARE(shost->property("nativeComponentDarkTheme").toBool(), true);
@@ -779,7 +802,7 @@ private slots:
         QCOMPARE(xhost->saveState().value("library"), xstate.value("library"));
         QCOMPARE(xhost->saveState().value("assetId"), xstate.value("assetId"));
         QVERIFY(controller->openTool("simdock"));
-        shost = qobject_cast<NativeContextView *>(controller->viewForResource(sresource.stableKey()));
+        shost = qobject_cast<SimDockContextView *>(controller->viewForResource(sresource.stableKey()));
         QVERIFY(shost && shost->isReady());
         QTRY_VERIFY_WITH_TIMEOUT(shost->canClose(), 10000);
         QCOMPARE(shost->saveState().value("workspace").toString(), a);
@@ -816,6 +839,8 @@ int main(int argc, char **argv)
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, profile.path());
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH", profile.filePath("sessions.ini").toUtf8());
+    qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", profile.filePath("legacy.ini").toUtf8());
+    qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH", profile.filePath("editing-time.json").toUtf8());
     if (!initializeUiStyleForTest()) return 3;
     ApplicationThemeManager::instance().applyToApplication();
     NativeMainWindowIntegrationTest test;

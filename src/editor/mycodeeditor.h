@@ -19,6 +19,7 @@
 
 #include <QList>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QStringList>
 #include <QVariantMap>
 #include <cstdint>
@@ -119,6 +120,23 @@ class ZEROSLACK_API MyCodeEditor : public QPlainTextEdit
 {
     Q_OBJECT
 public:
+    // Explicit user entry points only. Positive key: physical key; 0: command;
+    // -1: synchronous input without a corresponding held key (e.g. IME commit).
+    class UserEditScope {
+    public:
+        UserEditScope(const UserEditScope&) = delete;
+        UserEditScope& operator=(const UserEditScope&) = delete;
+        ~UserEditScope();
+    private:
+        friend class MyCodeEditor;
+        UserEditScope(MyCodeEditor* editor, int key, bool repeat);
+        QPointer<MyCodeEditor> editor;
+        QPointer<QTextDocument> document;
+        std::uint64_t revision = 0;
+        bool outer = false;
+    };
+    UserEditScope beginUserEdit(int key = 0, bool repeat = false);
+
     class SynchronousEditTransaction
     {
     public:
@@ -399,9 +417,13 @@ private:
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
+    int userEditDepth = 0;
     QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
 
 signals:
+    void userEditStarted(int key, bool repeat);
+    void userEditFinished(bool textChanged);
+    void editingInteractionEnded();
     void fileNameChanged(const QString& fileName);
     void hierarchyInstanceContextChanged(
         const HierarchyInstanceContext& context);

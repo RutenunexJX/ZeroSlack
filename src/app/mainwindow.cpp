@@ -10,6 +10,8 @@
 #include "ui_mainwindow.h"
 
 #include "mycodeeditor.h"
+#include "editingtimeservice.h"
+#include "editingtimewidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "projectmodel.h"
@@ -254,6 +256,16 @@ MainWindow::MainWindow(QWidget *parent)
     setupGlobalControl();
     setupCommandLayer();
     setupEditorCoordinator();
+    editingTimeService = std::make_unique<EditingTimeService>(
+        EditingTimeService::defaultStoragePath(), this);
+    connect(editingTimeService.get(), &EditingTimeService::persistenceFailed, this,
+        [this](const QString& error) {
+            ActivityLogService::getInstance()->append(QStringLiteral("Editing time"),
+                ActivityLogLevel::Warning, error, -1, {}, true);
+            postActivityMessage(tr("Editing time could not be saved: %1").arg(error), 6000);
+        });
+    editingTimeService->attachTabManager(tabManager.get());
+    editingTimeService->synchronize();
     setupManagerConnections();
     applyModernShellStyle();
     applyRegisteredActionShortcuts();
@@ -288,7 +300,7 @@ MainWindow::MainWindow(QWidget *parent)
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
-    }, workspaceSwitcher.get());
+    }, workspaceSwitcher.get(), new EditingTimeWidget(editingTimeService.get(), this));
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (visible)
@@ -383,6 +395,8 @@ void MainWindow::setupNotificationCenter()
 
 MainWindow::~MainWindow()
 {
+    // Flush while activity-message consumers and editor lifetimes are intact.
+    editingTimeService.reset();
     // Qt destroys its dock layout before the child docks. Abort active drags
     // while that layout and all of its widgets are still intact.
     for (auto* floating : findChildren<ContextFloatingWindow*>())
@@ -2735,6 +2749,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return fail(QStringLiteral(
                 "No editor tab is available."));
         }
+        auto input = editor->beginUserEdit();
         if (route == QStringLiteral("editor.standard.undo")) {
             if (!editor->document()->isUndoAvailable())
                 return fail(QStringLiteral("Nothing to undo."));
@@ -4557,6 +4572,13 @@ void MainWindow::closeEvent(QCloseEvent *event)
         fileCommandCoordinator->handleCloseEvent(event, this);
     else
         event->accept();
+    if (event && event->isAccepted() && editingTimeService) {
+        editingTimeService->stopAll();
+        if (!editingTimeService->synchronize() && editingTimeService->hasPendingTime()) {
+            event->ignore();
+            postActivityMessage(tr("Close postponed: editing time has not been saved."), 6000);
+        }
+    }
     if (event && event->isAccepted()
         && workspaceSessionCoordinator) {
         workspaceSessionCoordinator->saveBeforeWorkspaceTransition();

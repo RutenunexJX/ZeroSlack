@@ -397,6 +397,12 @@ set(ZEROSLACK_CORE_SOURCES
     src/ui/temporaryeditorsearchprovider.cpp
     src/documents/unsaveddocumentmanager.cpp
     src/editor/mycodeeditor.cpp
+    src/app/editingtimeservice.cpp
+    src/app/editingtimeservice.h
+    src/app/editingtimestore.cpp
+    src/app/editingtimestore.h
+    src/ui/editingtimewidget.cpp
+    src/ui/editingtimewidget.h
     src/editor/myhighlighter.cpp
     src/navigation/navigationcommandcoordinator.cpp
     src/navigation/navigationmanager.cpp
@@ -868,10 +874,12 @@ else()
 endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
+include(cmake/SimDock.cmake)
 include(cmake/NativeComponents.cmake)
 if(SuiteApp_FOUND)
     target_sources(demo PRIVATE
         src/integrations/suite/suiteappintegration.cpp
+        src/integrations/simdock/simdocksuitecompatibility.cpp
         src/integrations/suite/suiteappintegration.h)
     target_link_libraries(demo PRIVATE SuiteApp::suiteapp)
     target_compile_definitions(demo PRIVATE ZEROSLACK_HAS_SUITEAPP=1)
@@ -919,12 +927,14 @@ if(BUILD_TESTING)
         add_executable(zeroslack_suiteapp_integration_test
             test_sv/suiteapp_integration_test.cpp
             src/integrations/suite/suiteappintegration.cpp
+        src/integrations/simdock/simdocksuitecompatibility.cpp
             src/integrations/suite/suiteappintegration.h)
         target_link_libraries(zeroslack_suiteapp_integration_test
             PRIVATE zeroslack_core SuiteApp::suiteapp Qt6::Test)
         add_executable(zeroslack_suiteapp_ipc_test
             test_sv/suiteapp_ipc_test.cpp
             src/integrations/suite/suiteappintegration.cpp
+        src/integrations/simdock/simdocksuitecompatibility.cpp
             src/integrations/suite/suiteappintegration.h)
         target_link_libraries(zeroslack_suiteapp_ipc_test PRIVATE
             zeroslack_core zeroslack_cli_support SuiteApp::suiteapp Qt6::Test Qt6::Concurrent)
@@ -1439,6 +1449,8 @@ if(BUILD_TESTING)
 
     add_executable(workspace_path_confirmation_test
         test_sv/workspace_path_confirmation_test.cpp)
+    add_executable(editing_time_contract_test test_sv/editing_time_contract_test.cpp)
+    target_link_libraries(editing_time_contract_test PRIVATE zeroslack_core Qt6::Test)
     target_link_libraries(workspace_path_confirmation_test
         PRIVATE zeroslack_core Qt6::Test)
     if(WIN32)
@@ -1539,11 +1551,6 @@ if(BUILD_TESTING)
             RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures/common"
             LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures/common")
     endforeach()
-    add_library(native_fixture_simdock_ela SHARED test_sv/native_component_private_dependency.cpp)
-    target_link_libraries(native_fixture_simdock_ela PRIVATE Qt6::Core)
-    set_target_properties(native_fixture_simdock_ela PROPERTIES PREFIX "" OUTPUT_NAME "SimDockEla"
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures/common"
-        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/native-fixtures/common")
     target_compile_definitions(native_component_bad_abi PRIVATE NATIVE_FIXTURE_BAD_ABI)
     target_compile_definitions(native_component_no_factory PRIVATE NATIVE_FIXTURE_MISSING_FACTORY)
     add_library(native_fixture_private_dependency SHARED test_sv/native_component_private_dependency.cpp)
@@ -1561,17 +1568,14 @@ if(BUILD_TESTING)
         NATIVE_FIXTURE_BAD="$<TARGET_FILE:native_component_bad_abi>"
         NATIVE_FIXTURE_NO_FACTORY="$<TARGET_FILE:native_component_no_factory>"
         NATIVE_FIXTURE_ISOLATED="$<TARGET_FILE:native_component_isolated_fixture>")
-    add_dependencies(native_component_host_test native_component_fixture native_component_bad_abi native_component_no_factory native_component_isolated_fixture native_fixture_simdock_ela)
+    add_dependencies(native_component_host_test native_component_fixture native_component_bad_abi native_component_no_factory native_component_isolated_fixture)
     add_executable(native_component_integration_test test_sv/native_component_integration_test.cpp)
     target_link_libraries(native_component_integration_test PRIVATE zeroslack_core Qt6::Test)
     if(TARGET zeroslack_deploy_xips)
         add_dependencies(native_component_integration_test zeroslack_deploy_xips)
     endif()
-    if(TARGET zeroslack_deploy_simdock)
-        add_dependencies(native_component_integration_test zeroslack_deploy_simdock)
-    endif()
-    if(TARGET zeroslack_deploy_simdock_wave)
-        add_dependencies(native_component_integration_test zeroslack_deploy_simdock_wave)
+    if(TARGET zeroslack_deploy_wave)
+        add_dependencies(native_component_integration_test zeroslack_deploy_wave)
     endif()
     add_executable(native_mainwindow_integration_test test_sv/native_mainwindow_integration_test.cpp)
     target_link_libraries(native_mainwindow_integration_test PRIVATE zeroslack_core Qt6::Test)
@@ -2133,6 +2137,14 @@ if(BUILD_TESTING)
             "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:workspace_path_confirmation_test>)
     set_tests_properties(workspace_path_confirmation_test PROPERTIES TIMEOUT 120)
+    add_test(NAME editing_time_contract_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            "ZEROSLACK_TEST_UI_STYLE=ela"
+            $<TARGET_FILE:editing_time_contract_test>)
+    set_tests_properties(editing_time_contract_test PROPERTIES TIMEOUT 120)
     add_test(NAME compact_layout_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2389,17 +2401,16 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:native_component_host_test> -o -,txt)
     set_tests_properties(native_component_host_test PROPERTIES TIMEOUT 60)
-    option(ZEROSLACK_TEST_REAL_NATIVE_COMPONENTS "Register real-DLL integration test (requires both native deployments)" OFF)
+    option(ZEROSLACK_TEST_REAL_NATIVE_COMPONENTS "Register host integration with the real xIPs component" OFF)
     if(ZEROSLACK_TEST_REAL_NATIVE_COMPONENTS)
-        if(NOT ZEROSLACK_XIPS_COMPONENT_DIR OR NOT ZEROSLACK_SIMDOCK_COMPONENT_DIR)
-            message(FATAL_ERROR "Real native integration requires both ZEROSLACK_*_COMPONENT_DIR values")
+        if(NOT ZEROSLACK_XIPS_COMPONENT_DIR)
+            message(FATAL_ERROR "Real native integration requires ZEROSLACK_XIPS_COMPONENT_DIR")
         endif()
         add_test(NAME native_component_integration_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
                 "XIPS_BROWSER_LIBRARY=$<TARGET_FILE_DIR:demo>/components/xips/xips-browser.dll"
-                "SIMDOCK_WORKBENCH_LIBRARY=$<TARGET_FILE_DIR:demo>/components/simdock/simdock-workbench.dll"
                 $<TARGET_FILE:native_component_integration_test> -o -,txt)
         set_tests_properties(native_component_integration_test PROPERTIES TIMEOUT 90 LABELS "native-real")
         set_tests_properties(xips_context_provider_test PROPERTIES
@@ -2411,7 +2422,6 @@ if(BUILD_TESTING)
                     "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                     "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
                     "XIPS_BROWSER_LIBRARY=$<TARGET_FILE_DIR:demo>/components/xips/xips-browser.dll"
-                    "SIMDOCK_WORKBENCH_LIBRARY=$<TARGET_FILE_DIR:demo>/components/simdock/simdock-workbench.dll"
                     "SIMDOCK_TEST_QUESTA=${ZEROSLACK_TEST_QUESTA_EXECUTABLE}"
                     $<TARGET_FILE:native_mainwindow_integration_test> -o -,txt)
             set_tests_properties(native_mainwindow_integration_test PROPERTIES TIMEOUT 180 LABELS "native-real")
@@ -2727,3 +2737,7 @@ foreach(target IN LISTS zeroslack_local_targets)
         endif()
     endif()
 endforeach()
+
+if(BUILD_TESTING)
+    include(cmake/SimDockTests.cmake)
+endif()

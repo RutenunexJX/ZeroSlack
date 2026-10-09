@@ -1,4 +1,6 @@
-ZeroSlack v0.31.27 Windows package
+ZeroSlack v0.31.28 Windows package
+
+Release 0.31.28 integrates the complete SimDock 0.6.1 workbench into ZeroSlack: projects, stimulus and Timing editing, Checks, Questa execution, waveforms and existing data compatibility. The `simdock` Suite provider now belongs to the ZeroSlack process. The title bar also tracks actual editing intervals, persists the total across restarts and provides Reset without adding an editor row. Old SimDock repositories and packages remain archived.
 
 Release 0.31.27 hardens document saves, workspace sessions, delayed source
 navigation and Suite context identity. File actions preserve the confirmed
@@ -16,7 +18,7 @@ repairs file/directory registration changes, and prunes junction cycles without
 hiding acyclic aliases. Scoped replacement rejects out-of-scope stale previews.
 R3–R6 scoped acceptance and two complementary reviews are complete. Performance
 samples describe the recorded development builds, not every project or this
-formal package. Missing SDK and excluded private fixtures remain out of scope.
+formal package. Excluded private fixtures remain out of scope; SDK 1.0.1 was enabled in 0.31.26.
 
 Release 0.31.24 unifies insertion and exclusive file creation, immutable source
 previews and token-based navigation. Failed jumps preserve navigation history;
@@ -66,9 +68,15 @@ at 3.13 GiB (medians); real project costs vary. True semantic changes still need
 full ordered compilation. Ordinary key medians increased by 2–3 ms and first
 visible Design readiness by about 0.10 seconds.
 
-Native xIPs and SimDock panels and their private runtimes remain included.
-SuiteApp SDK registration remains disabled on this machine; native embedding
-is available independently.
+SimDock 0.6.1 source is integrated into libzeroslack_core.dll. Its workspace,
+stimulus, Checks and Questa controls use the ZeroSlack-owned workbench. The
+package does not require SimDock.exe, simdock-workbench.dll or SimDockEla.dll.
+Tickx 0.15.2 remains a separate waveform component in components/wave; xIPs
+retains its component and private runtime. See simdock-source.json and
+build-info.json for the source and component identities of this build.
+SuiteApp SDK registration, when compiled in, advertises the ZeroSlack source
+provider and the compatible simdock URI/action provider in the same process.
+The editor and simulation workbench remain available without Suite Runtime.
 
 Ela is the maintained UI backend. Launch ZeroSlack.exe. The fixed package directory is
 ZeroSlack-win64. Consult build-info.json for the product version, release

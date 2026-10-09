@@ -160,29 +160,37 @@ void FileCommandCoordinator::EditorCommandDispatcher::copy(
 void FileCommandCoordinator::EditorCommandDispatcher::paste(
     MyCodeEditor* editor) const
 {
-    if (editor)
+    if (editor) {
+        auto input = editor->beginUserEdit();
         editor->paste();
+    }
 }
 
 void FileCommandCoordinator::EditorCommandDispatcher::cut(
     MyCodeEditor* editor) const
 {
-    if (editor)
+    if (editor) {
+        auto input = editor->beginUserEdit();
         editor->cut();
+    }
 }
 
 void FileCommandCoordinator::EditorCommandDispatcher::undo(
     MyCodeEditor* editor) const
 {
-    if (editor)
+    if (editor) {
+        auto input = editor->beginUserEdit();
         editor->undo();
+    }
 }
 
 void FileCommandCoordinator::EditorCommandDispatcher::redo(
     MyCodeEditor* editor) const
 {
-    if (editor)
+    if (editor) {
+        auto input = editor->beginUserEdit();
         editor->redo();
+    }
 }
 
 void FileCommandCoordinator::newFile()

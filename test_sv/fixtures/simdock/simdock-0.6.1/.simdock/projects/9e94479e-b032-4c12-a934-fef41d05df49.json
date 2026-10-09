@@ -1,0 +1,423 @@
+{
+    "durationNs": 2000,
+    "dutFile": "capture_dut.sv",
+    "dutName": "capture_dut",
+    "id": "9e94479e-b032-4c12-a934-fef41d05df49",
+    "name": "Frozen 0.6.1 uart_tx",
+    "schema": "simdock.project/v1",
+    "sources": [
+        "capture_dut.sv"
+    ],
+    "stimulus": {
+        "schema": "simdock.stimulus/v1",
+        "scoreboard": {
+            "baud": 10000000,
+            "checkCount": true,
+            "checkData": true,
+            "checkFormat": true,
+            "checkTimeout": true,
+            "data": "data",
+            "dataBits": 8,
+            "kind": "uart_tx",
+            "output": "tx",
+            "outputReady": "out_ready",
+            "outputValid": "out_valid",
+            "parity": "none",
+            "ready": "ready",
+            "resetPolicy": "discard",
+            "schema": "simdock.scoreboard/v1",
+            "stopHalfBits": 2,
+            "timeoutNs": 250000,
+            "valid": "valid",
+            "values": [
+            ]
+        },
+        "signature": "c4cfd9fd49c7d98e4b38fad3b792aaa7ef90398a95f1360c7a5e02924b59e242",
+        "timing": {
+            "activeLow": true,
+            "clock": "clk",
+            "name": "tb_capture_dut",
+            "periodNs": 20,
+            "reset": "rst_n",
+            "resetCycles": 5
+        },
+        "wave": {
+            "clockDomains": [
+                {
+                    "activeEdge": "falling",
+                    "dutyDenominator": "2",
+                    "dutyNumerator": "1",
+                    "id": "clock",
+                    "name": "clk",
+                    "periodTick": "20000",
+                    "phaseTick": "10000",
+                    "resetRelation": ""
+                }
+            ],
+            "exportSettings": {
+            },
+            "importedTraces": [
+            ],
+            "linkedResources": [
+            ],
+            "name": "capture_dut",
+            "projectId": "simdock-capture_dut",
+            "scenarios": [
+                {
+                    "durationTick": "2000000",
+                    "events": [
+                    ],
+                    "id": "stimulus",
+                    "lanes": [
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#a6adc8",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "clk",
+                            "kind": "clock",
+                            "name": "clk",
+                            "radix": "hexadecimal",
+                            "segments": [
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 1
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#fab387",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "rst_n",
+                            "kind": "bit",
+                            "name": "rst_n",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "100000",
+                                    "id": "rst_n-reset",
+                                    "startTick": "0",
+                                    "value": "0"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "rst_n-released",
+                                    "startTick": "100000",
+                                    "value": "1"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 1
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#a6e3a1",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "enable",
+                            "kind": "bit",
+                            "name": "enable",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "enable-capture-0",
+                                    "startTick": "0",
+                                    "value": "0"
+                                },
+                                {
+                                    "endTick": "500000",
+                                    "id": "enable-capture-1",
+                                    "startTick": "250000",
+                                    "value": "1"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "enable-capture-2",
+                                    "startTick": "500000",
+                                    "value": "X"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "enable-capture-3",
+                                    "startTick": "750000",
+                                    "value": "Z"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 1
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#a6e3a1",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "valid",
+                            "kind": "bit",
+                            "name": "valid",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "valid-capture-0",
+                                    "startTick": "0",
+                                    "value": "0"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "valid-capture-1",
+                                    "startTick": "250000",
+                                    "value": "1"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "valid-capture-3",
+                                    "startTick": "750000",
+                                    "value": "0"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 1
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#a6e3a1",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "out_ready",
+                            "kind": "bit",
+                            "name": "out_ready",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "500000",
+                                    "id": "out_ready-capture-0",
+                                    "startTick": "0",
+                                    "value": "1"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "out_ready-capture-2",
+                                    "startTick": "500000",
+                                    "value": "0"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "out_ready-capture-3",
+                                    "startTick": "750000",
+                                    "value": "1"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 1
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#89b4fa",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "data",
+                            "kind": "bus",
+                            "name": "data",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "data-capture-0",
+                                    "startTick": "0",
+                                    "value": "0x00"
+                                },
+                                {
+                                    "endTick": "500000",
+                                    "id": "data-capture-1",
+                                    "startTick": "250000",
+                                    "value": "0xa5"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "data-capture-2",
+                                    "startTick": "500000",
+                                    "value": "0x5a"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "data-capture-3",
+                                    "startTick": "750000",
+                                    "value": "0bxx10zz01"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 8
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#89b4fa",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "signed_data",
+                            "kind": "bus",
+                            "name": "signed_data",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "signed_data-capture-0",
+                                    "startTick": "0",
+                                    "value": "0xf"
+                                },
+                                {
+                                    "endTick": "500000",
+                                    "id": "signed_data-capture-1",
+                                    "startTick": "250000",
+                                    "value": "0bx10z"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "signed_data-capture-2",
+                                    "startTick": "500000",
+                                    "value": "0x7"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "signed_data-capture-3",
+                                    "startTick": "750000",
+                                    "value": "X"
+                                }
+                            ],
+                            "signed": true,
+                            "visible": true,
+                            "width": 8
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#cba6f7",
+                            "enumMap": {
+                                "ACTIVE": "1",
+                                "DONE": "2",
+                                "IDLE": "0"
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "mode",
+                            "kind": "enum",
+                            "name": "mode",
+                            "radix": "decimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "mode-capture-0",
+                                    "startTick": "0",
+                                    "value": "IDLE"
+                                },
+                                {
+                                    "endTick": "500000",
+                                    "id": "mode-capture-1",
+                                    "startTick": "250000",
+                                    "value": "ACTIVE"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "mode-capture-2",
+                                    "startTick": "500000",
+                                    "value": "DONE"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "mode-capture-3",
+                                    "startTick": "750000",
+                                    "value": "IDLE"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 2
+                        },
+                        {
+                            "clockDomainId": "clock",
+                            "color": "#89b4fa",
+                            "enumMap": {
+                            },
+                            "groupId": "",
+                            "height": 48,
+                            "id": "unknown_bus",
+                            "kind": "bus",
+                            "name": "unknown_bus",
+                            "radix": "hexadecimal",
+                            "segments": [
+                                {
+                                    "endTick": "250000",
+                                    "id": "unknown_bus-capture-0",
+                                    "startTick": "0",
+                                    "value": "X"
+                                },
+                                {
+                                    "endTick": "500000",
+                                    "id": "unknown_bus-capture-1",
+                                    "startTick": "250000",
+                                    "value": "Z"
+                                },
+                                {
+                                    "endTick": "750000",
+                                    "id": "unknown_bus-capture-2",
+                                    "startTick": "500000",
+                                    "value": "0bx10z"
+                                },
+                                {
+                                    "endTick": "2000000",
+                                    "id": "unknown_bus-capture-3",
+                                    "startTick": "750000",
+                                    "value": "0xa"
+                                }
+                            ],
+                            "signed": false,
+                            "visible": true,
+                            "width": 4
+                        }
+                    ],
+                    "markers": [
+                    ],
+                    "name": "Inputs",
+                    "relations": [
+                    ]
+                }
+            ],
+            "schemaVersion": 1,
+            "simdockTiming": {
+                "activeLow": true,
+                "clock": "clk",
+                "name": "tb_capture_dut",
+                "periodNs": 20,
+                "reset": "rst_n",
+                "resetCycles": 5
+            },
+            "timebase": {
+                "picosecondsPerTick": "1"
+            }
+        }
+    },
+    "tbFile": "sim/9e94479e/tb_capture_dut_stimulus_c30c72d0862190f8.sv",
+    "tbName": "tb_capture_dut",
+    "waveScope": "interface",
+    "waveSignals": [
+    ]
+}

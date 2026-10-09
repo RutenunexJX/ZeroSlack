@@ -5,7 +5,7 @@ param(
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$XipsPackageDirectory = '',
-    [string]$SimDockPackageDirectory = '',
+    [string]$TickxComponentDirectory = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
@@ -52,8 +52,7 @@ foreach ($name in $binaries) { Copy-Item -LiteralPath (Join-Path $buildRoot $nam
 $deployTargets = @($binaries | ForEach-Object { Join-Path $outputRoot $_ })
 $nativeComponents = [ordered]@{}
 foreach ($component in @(
-    @{ id='xips'; package=$XipsPackageDirectory; setting='ZEROSLACK_XIPS_COMPONENT_DIR'; files=@('xips-browser.dll','xips-browser-impl.dll','XipsEla.dll') },
-    @{ id='simdock'; package=$SimDockPackageDirectory; setting='ZEROSLACK_SIMDOCK_COMPONENT_DIR'; files=@('simdock-workbench.dll','SimDockEla.dll','simdock-workbench.json') }
+    @{ id='xips'; package=$XipsPackageDirectory; setting='ZEROSLACK_XIPS_COMPONENT_DIR'; files=@('xips-browser.dll','xips-browser-impl.dll','XipsEla.dll') }
 )) {
     $configured = $cache | Where-Object { $_ -match "^$($component.setting):[^=]+=(.+)$" }
     $componentRoot = if ($component.package) {
@@ -64,13 +63,6 @@ foreach ($component in @(
         continue
     }
     $componentFiles = @($component.files)
-    if ($component.id -eq 'simdock') {
-        $workbench = Get-Content -LiteralPath (Join-Path $componentRoot 'simdock-workbench.json') -Raw | ConvertFrom-Json
-        $hasWave = Test-Path -LiteralPath (Join-Path $componentRoot 'wavewidgets.dll')
-        if ($hasWave -or (Test-Path -LiteralPath (Join-Path $componentRoot 'WaveWorkbenchEla.dll'))) {
-            $componentFiles += @('wavewidgets.dll', 'WaveWorkbenchEla.dll')
-        }
-    }
     $componentTarget = Join-Path $outputRoot "components/$($component.id)"
     New-Item -ItemType Directory -Path $componentTarget | Out-Null
     foreach ($name in $componentFiles) {
@@ -103,12 +95,52 @@ foreach ($component in @(
             Copy-Item -LiteralPath $path -Destination $componentNotices -Recurse
         }
     }
+    # An already packaged component stores notices under the package owner.
+    # Preserve its matching notices without consulting a newer standalone app.
+    $parentNotices = Join-Path (Split-Path -Parent (Split-Path -Parent $componentRoot)) "licenses/components/$($component.id)"
+    if (-not (Test-Path -LiteralPath $componentNotices) -and (Test-Path -LiteralPath $parentNotices)) {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $componentNotices) -Force | Out-Null
+        Copy-Item -LiteralPath $parentNotices -Destination $componentNotices -Recurse
+    }
     $nativeComponents[$component.id] = [ordered]@{
         directory="components/$($component.id)"; files=$componentFiles
         version=$(if ($componentInfo) { $componentInfo.version } else { $null })
         revision=$(if ($componentInfo.revision) { $componentInfo.revision } elseif ($componentInfo.sourceCommit) { $componentInfo.sourceCommit } else { $null })
     }
 }
+$integratedSimDock = Get-Content -LiteralPath (Join-Path $buildRoot 'simdock-source.json') -Raw | ConvertFrom-Json
+if ($integratedSimDock.version -ne '0.6.1' -or $integratedSimDock.commit -ne 'e1747735735f0e50e06587d729784546efba56eb' -or $integratedSimDock.owner -ne 'zeroslack_core') {
+    throw 'Integrated SimDock source provenance does not match the reviewed boundary.'
+}
+Copy-Item -LiteralPath (Join-Path $buildRoot 'simdock-source.json') -Destination $outputRoot
+if (-not $TickxComponentDirectory) {
+    $entry = $cache | Where-Object { $_ -match '^ZEROSLACK_TICKX_COMPONENT_DIR:[^=]+=(.+)$' } | Select-Object -First 1
+    if ($entry) { $TickxComponentDirectory = ($entry -split '=', 2)[1] }
+}
+if (-not $TickxComponentDirectory) { throw 'The release requires the pinned Tickx 0.15.2 component and notices.' }
+$waveInput = (Resolve-Path -LiteralPath $TickxComponentDirectory).Path
+$waveRuntime = Join-Path $buildRoot 'components/wave'
+$waveTarget = Join-Path $outputRoot 'components/wave'
+New-Item -ItemType Directory -Path $waveTarget -Force | Out-Null
+$waveHashes = [ordered]@{
+    'wavewidgets.dll' = 'c326b99e68bcbb2f8dd5e3e7585f4def58ba33d77ba384a86c9ede48cd444a70'
+    'WaveWorkbenchEla.dll' = '85bce4affee3c45f4b3afef010eeb6e82d9a0bd42f6bfdc033371bb4ee6aa439'
+}
+foreach ($entry in $waveHashes.GetEnumerator()) {
+    $source = Join-Path $waveRuntime $entry.Key
+    if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) {
+        throw "The deployed Tickx runtime is not the frozen 0.15.2 input: $($entry.Key)"
+    }
+    $target = Join-Path $waveTarget $entry.Key
+    Copy-Item -LiteralPath $source -Destination $target
+    $deployTargets += $target
+}
+$waveNotices = Join-Path $waveInput 'licenses'
+if (-not (Test-Path -LiteralPath $waveNotices -PathType Container)) { throw 'Tickx component notices are missing.' }
+$waveLicenseTarget = Join-Path $outputRoot 'licenses/components/wave'
+New-Item -ItemType Directory -Path (Split-Path -Parent $waveLicenseTarget) -Force | Out-Null
+Copy-Item -LiteralPath $waveNotices -Destination $waveLicenseTarget -Recurse
+$nativeComponents['wave'] = [ordered]@{ directory='components/wave'; files=@($waveHashes.Keys); version='0.15.2'; revision='9730d475b02a59bec9e9c1ca8c6e0a508445dbca'; sha256=$waveHashes }
 & (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
     --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot @deployTargets
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }
@@ -123,6 +155,7 @@ foreach ($name in @('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dl
 }
 $licenseRoot = Join-Path $outputRoot 'licenses'
 New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'resources/licenses/simdock') -Destination $licenseRoot -Recurse
 $licenses = [ordered]@{
     'slang-MIT.txt' = 'thirdparty/slang/LICENSE'
     'tree-sitter-MIT.txt' = 'thirdparty/tree_sitter/LICENSE'
@@ -164,6 +197,7 @@ if ($Formal -and -not $dirty) {
 }
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
+    integratedFeatures=[ordered]@{ simdock=$integratedSimDock };
     appSuiteEnabled=[bool]$suiteBuild.enabled; distribution='standalone';
     suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;
     suiteCliClient=[bool]$suiteBuild.cliClient; runtimeBundled=$false;

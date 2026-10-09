@@ -1722,14 +1722,18 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
                 return;
             }
             if (actionId == QStringLiteral("edit.undo")) {
+                auto input = editor->beginUserEdit();
                 editor->undo();
             } else if (actionId == QStringLiteral("edit.redo")) {
+                auto input = editor->beginUserEdit();
                 editor->redo();
             } else if (actionId == QStringLiteral("edit.cut")) {
+                auto input = editor->beginUserEdit();
                 editor->cut();
             } else if (actionId == QStringLiteral("edit.copy")) {
                 editor->copy();
             } else if (actionId == QStringLiteral("edit.paste")) {
+                auto input = editor->beginUserEdit();
                 editor->paste();
             } else if (actionId == QStringLiteral("select.all")) {
                 editor->selectAll();

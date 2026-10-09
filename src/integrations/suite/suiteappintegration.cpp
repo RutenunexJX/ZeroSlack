@@ -1,4 +1,5 @@
 #include "suiteappintegration.h"
+#include "../simdock/simdocksuitecompatibility.h"
 
 #include "mainwindow.h"
 #include "documentmodel.h"
@@ -361,12 +362,19 @@ bool ZeroSlackSuiteIntegration::start(
     if (!provider->start(runtimeOptions.endpoint, failureReason))
         return false;
     runtimeEndpoint = runtimeOptions.endpoint;
-    return true;
+    if (!simdock) {
+        simdock = std::make_unique<SimDockSuiteCompatibility>(
+            [this](const QString& root, const QString& id, QString* error) {
+                return window && window->openSimDockTarget(root, id, error);
+            }, this);
+    }
+    return simdock->start(failureReason, runtimeOptions);
 }
 
 bool ZeroSlackSuiteIntegration::isRegistered() const
 {
-    if (!provider || !provider->isListening() || runtimeEndpoint.isEmpty())
+    if (!provider || !provider->isListening() || runtimeEndpoint.isEmpty()
+        || !simdock || !simdock->isRegistered())
         return false;
     const auto listed = SuiteApp::Client(runtimeEndpoint, 250).listProviders();
     if (!listed.hasResponse() || !listed.response.value(QStringLiteral("ok")).toBool())

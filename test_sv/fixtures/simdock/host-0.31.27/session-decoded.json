@@ -1,0 +1,151 @@
+{
+    "workspaceSessions/v2/workspaces/b53a2422fdd565ecd4ce8c2d/state": {
+        "savedAt": "2026-10-09T04:00:35Z",
+        "schema": "ZeroSlack.LocalWorkspaceSession",
+        "tabs": [
+        ],
+        "ui": {
+            "contextWorkspace": {
+                "activePinnedResourceKey": "simdock:workbench",
+                "bottomDockHeight": 280,
+                "bottomDockVisible": false,
+                "bottomSplitState": "",
+                "dockSections": [
+                    {
+                        "bottom": false,
+                        "collapsed": false,
+                        "height": 0,
+                        "left": false,
+                        "resourceKey": "simdock:workbench",
+                        "width": 0
+                    }
+                ],
+                "dockVisible": true,
+                "dockWidth": 1100,
+                "documentFloatingLayouts": {
+                },
+                "documentFloatingOrder": [
+                ],
+                "floatingCollapsed": false,
+                "floatingGeometryValid": false,
+                "floatingHeight": 440,
+                "floatingInstances": [
+                ],
+                "floatingScreenName": "",
+                "floatingWidth": 520,
+                "floatingX": 0,
+                "floatingY": 0,
+                "leftDockHeight": 300,
+                "leftDockVisible": false,
+                "leftDockWidth": 520,
+                "peekHeight": 440,
+                "peekWidth": 520,
+                "pinnedResources": [
+                    {
+                        "iconKey": "media-playback-start",
+                        "providerId": "simdock",
+                        "resourceId": "workbench",
+                        "schema": "zeroslack-context-resource/v1",
+                        "state": {
+                            "layout/columns": "\u0000\u0000\u0000�\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0002\u0000\u0000\u0001c\u0000\u0000\u0002�\u0000\u0000\u0000\u0000\b\u0001\u0000\u0000\u0000\u0001\u0000",
+                            "layout/compactPage": "workspace",
+                            "layout/logExpanded": true,
+                            "layout/simulationExpanded": true,
+                            "layout/workbench": "\u0000\u0000\u0000�\u0000\u0000\u0000\u0001\u0000\u0000\u0000\u0002\u0000\u0000\u0002b\u0000\u0000\u0000�\u0000\u0000\u0000\u0000\b\u0001\u0000\u0000\u0000\u0002\u0000",
+                            "preferences": {
+                                "simulator/path": "D:/questa/win64/vsim.exe",
+                                "waveform/theme": "nord"
+                            },
+                            "projectId": "e631f74f-f92f-470a-b813-66fb11b66b32",
+                            "version": 1,
+                            "workspace": "E:/ZeroSlack/ZeroSlack/build/coordination/20261009-simdock-internalization/baseline-capture/host03127-run2/workspace"
+                        },
+                        "title": "SimDock",
+                        "uri": "simdock://workbench",
+                        "workspaceId": ""
+                    }
+                ],
+                "providerStates": {
+                },
+                "railVisible": true,
+                "valid": true,
+                "version": 8
+            },
+            "mainWindowGeometry": "AdnQywADAAAAAAIoAAAAuQAACMsAAAQ8AAACKAAAALkAAAjLAAAEPAAAAAAAAAAAB4AAAAIoAAAAuQAACMsAAAQ8",
+            "mainWindowState": "AAAA/wAAAAD9AAAAAwAAAAAAAAEYAAADWPwCAAAAAvsAAAAcAG4AYQB2AGkAZwBhAHQAaQBvAG4ARABvAGMAawEAAAAoAAADWP////8A///++wAAADAAYwBvAG4AdABlAHgAdABXAG8AcgBrAHMAcABhAGMAZQBMAGUAZgB0AEQAbwBjAGsAAAAAAP////8AAACgAP///gAAAAEAAARMAAADWPwCAAAAAvsAAAAqAGMAbwBuAHQAZQB4AHQARgBsAG8AYQB0AGkAbgBnAFcAaQBuAGQAbwB3AgAAAoAAAAEUAAACgAAAAeD7AAAAKABjAG8AbgB0AGUAeAB0AFcAbwByAGsAcwBwAGEAYwBlAEQAbwBjAGsBAAAAKAAAA1gAAACKAP///gAAAAMAAAD4AAAAKvwCAAAAAvwAAANWAAAAKgAAACoAAAAq/AEAAAAG+wAAABgAcAByAG8AYgBsAGUAbQBzAEQAbwBjAGsBAAAAAP////8AAAAAAAAAAPsAAAAYAGEAYwB0AGkAdgBpAHQAeQBEAG8AYwBrAQAAAAD/////AAAAAAAAAAD7AAAAIABzAGMAbwBwAGUAZABTAGUAYQByAGMAaABEAG8AYwBrAQAAAAD/////AAAAAAAAAAD7AAAAJgByAHQAbABIAGkAZwBoAFIAaQBzAGsARQBkAGkAdABEAG8AYwBrAQAAAAD/////AAAAAAAAAAD7AAAAHgBDAG8AbgBuAGUAYwB0AGkAbwBuAHMARABvAGMAawEAAAAA/////wAAAAAAAAAA+wAAACgAYgBvAHQAdABvAG0AVABvAG8AbABEAHIAYQB3AGUAcgBEAG8AYwBrAQAAASIAAAD4AAAA+AD////7AAAANABjAG8AbgB0AGUAeAB0AFcAbwByAGsAcwBwAGEAYwBlAEIAbwB0AHQAbwBtAEQAbwBjAGsAAAAAAP////8AAAAAAAAAAAAAAPgAAAMoAAAABAAAAAQAAAABAAAAAvwAAAABAAAAAQAAAAEAAAAWAGMAbwBuAHQAZQB4AHQAUgBhAGkAbAMAAAAA/////wAAAAAAAAAA",
+            "navigationDesignQuery": "",
+            "navigationFilesQuery": "",
+            "panelLayout": {
+                "active": "problems",
+                "closed": [
+                ],
+                "collapsed": true,
+                "expandedHeight": 280,
+                "heights": {
+                    "activity": 280,
+                    "connections": 280,
+                    "problems": 280,
+                    "rtlHighRiskEdit": 280,
+                    "scopedSearch": 280
+                },
+                "last": "problems",
+                "navigationVisible": true,
+                "order": [
+                    "problems",
+                    "scopedSearch",
+                    "activity",
+                    "rtlHighRiskEdit",
+                    "connections"
+                ],
+                "pinned": [
+                ],
+                "valid": true,
+                "version": 2,
+                "viewStates": {
+                    "activity": {
+                        "scrolls": {
+                            "activityOutputText": {
+                                "horizontal": 0,
+                                "vertical": 0
+                            }
+                        }
+                    },
+                    "connections": {
+                    },
+                    "problems": {
+                        "scrolls": {
+                            "ElaComboBoxView": {
+                                "horizontal": 0,
+                                "vertical": 0
+                            },
+                            "problemsTree": {
+                                "horizontal": 0,
+                                "vertical": 0
+                            }
+                        },
+                        "selections": {
+                            "ElaComboBoxView": {
+                                "column": 0,
+                                "path": "0"
+                            }
+                        }
+                    },
+                    "rtlHighRiskEdit": {
+                    },
+                    "scopedSearch": {
+                    }
+                }
+            },
+            "tabGroupingMode": "none"
+        },
+        "version": 4,
+        "workspaceId": "b53a2422fdd565ecd4ce8c2d",
+        "workspaceScan": {
+            "files": [
+                ".simdock/projects/e631f74f-f92f-470a-b813-66fb11b66b32.json",
+                "host_dut.sv"
+            ],
+            "scanComplete": true
+        }
+    }
+}

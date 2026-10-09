@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.31.27`
+Current version: `v0.31.28`
+
+Release 0.31.28 integrates the complete SimDock 0.6.1 workbench into ZeroSlack: projects, stimulus and Timing editing, Checks, Questa execution, waveforms and existing data compatibility. The `simdock` Suite provider now belongs to the ZeroSlack process. The title bar also tracks actual editing intervals, persists the total across restarts and provides Reset without adding an editor row. Old SimDock repositories and packages remain archived.
 
 Release 0.31.27 hardens document saves, workspace sessions and delayed source navigation against stale inputs. File actions preserve the confirmed source generation across Save All, reject incomplete directory enumeration, and report partial disk commits explicitly. Suite context identity, analysis handoff and template bounds retain the accepted R1–R6 protections. SuiteApp SDK remains 1.0.1; its separately documented multi-instance unregister limitation remains open.
 
@@ -191,7 +193,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.27`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.28`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -226,7 +228,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.31.27`. Ela is the sole formal package,
+The current release is `0.31.28`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

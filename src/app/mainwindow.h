@@ -31,6 +31,7 @@ class NavigationCommandCoordinator;
 class NavigationManager;
 class NavigationPaneCoordinator;
 class NotificationCenter;
+class EditingTimeService;
 class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
@@ -101,6 +102,7 @@ public:
     bool revealSuiteSource(const QString& filePath,
                            int lineNumber = 1,
                            int columnNumber = 1);
+    bool openSimDockTarget(const QString& workspace, const QString& projectId, QString* error);
 
 protected:
     void closeEvent(QCloseEvent *event) override;
@@ -114,6 +116,7 @@ private:
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<NotificationCenter> notificationCenter;
+    std::unique_ptr<EditingTimeService> editingTimeService;
     std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;

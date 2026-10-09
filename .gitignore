@@ -36,6 +36,8 @@ CMakeLists.txt.user.*
 !cmake/SlangSourceCapture.cmake
 !cmake/source_layout.cmake
 !cmake/NativeComponents.cmake
+!cmake/SimDock.cmake
+!cmake/SimDockTests.cmake
 !cmake/DomainSources.cmake
 !cmake/DomainTargets.cmake
 !cmake/CliTargets.cmake

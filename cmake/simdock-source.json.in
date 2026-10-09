@@ -1,0 +1,8 @@
+{
+  "schema": "zeroslack.integrated-source/v1",
+  "id": "simdock",
+  "version": "@ZEROSLACK_SIMDOCK_SOURCE_VERSION@",
+  "commit": "@ZEROSLACK_SIMDOCK_SOURCE_COMMIT@",
+  "owner": "zeroslack_core",
+  "waveEditor": {"id": "tickx", "version": "0.15.2", "commit": "9730d475b02a59bec9e9c1ca8c6e0a508445dbca"}
+}

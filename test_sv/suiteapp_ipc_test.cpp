@@ -11,6 +11,11 @@
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
 #include "activitylogservice.h"
+#include "contextworkspacecontroller.h"
+#include "../src/integrations/simdock/simdockcontextview.h"
+#include "../src/simulation/simdock/core/workspace.h"
+#include "../src/simulation/simdock/ui/workbench.h"
+#include "usertemplateservice.h"
 #include <zeroslack/documents/documentfileread.h>
 #include <zeroslack/ui/applicationwindow.h>
 
@@ -21,6 +26,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QDockWidget>
+#include <QDialog>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
@@ -111,6 +117,12 @@ QJsonObject onlyProviderPayload(const ZeroSlackCliResult& result)
     const auto providers = result.envelope.value("data").toObject().value("payload")
         .toObject().value("providers").toArray();
     return providers.isEmpty() ? QJsonObject{} : providers.first().toObject();
+}
+QJsonObject registeredProvider(const QJsonArray& providers, const QString& id)
+{
+    for (const auto& value : providers)
+        if (value.toObject().value("appId").toString() == id) return value.toObject();
+    return {};
 }
 } // namespace
 
@@ -442,7 +454,7 @@ private slots:
         QVERIFY(integration.start(options));
         QVERIFY(integration.isRegistered());
         const auto reply = SuiteApp::Client(endpoint, 500).listProviders();
-        QCOMPARE(reply.response.value("result").toObject().value("providers").toArray().size(), 1);
+        QCOMPARE(reply.response.value("result").toObject().value("providers").toArray().size(), 2);
     }
 
     void symbolWorkspaceIsBoundToActiveWorkspace()
@@ -510,8 +522,8 @@ private slots:
         SuiteApp::RuntimeStartOptions options; options.endpoint = endpoint; options.startIfMissing = false;
         QVERIFY(integration->start(options));
         const SuiteApp::Client client(endpoint, 1500);
-        const auto descriptor = client.listProviders().response.value("result").toObject()
-            .value("providers").toArray().first().toObject();
+        const auto descriptor = registeredProvider(client.listProviders().response.value("result").toObject()
+            .value("providers").toArray(), QStringLiteral("zeroslack"));
         const QString providerEndpoint = SuiteApp::descriptorEndpoint(descriptor);
         QVERIFY(!providerEndpoint.isEmpty());
         const QString symbolUri = semanticStableSymbolUri(payload, first);
@@ -592,8 +604,8 @@ private slots:
         QVERIFY(registered.hasResponse());
         const QJsonArray providers = registered.response.value("result")
             .toObject().value("providers").toArray();
-        QCOMPARE(providers.size(), 1);
-        const QJsonObject descriptor = providers.first().toObject();
+        QCOMPARE(providers.size(), 2);
+        const QJsonObject descriptor = registeredProvider(providers, QStringLiteral("zeroslack"));
         QCOMPARE(descriptor.value("appId").toString(), QStringLiteral("zeroslack"));
         QCOMPARE(descriptor.value("displayName").toString(), QStringLiteral("ZeroSlack"));
         QCOMPARE(descriptor.value("version").toString(), QString::fromLatin1(APP_VERSION));
@@ -712,9 +724,90 @@ private slots:
         const SuiteApp::Client client(endpoint, 100);
         const auto providers = client.listProviders();
         QVERIFY(providers.hasResponse());
-        QCOMPARE(providers.response.value("result").toObject().value("providers").toArray().size(), 1);
+        QCOMPARE(providers.response.value("result").toObject().value("providers").toArray().size(), 2);
         integration.reset();
         QTRY_VERIFY_WITH_TIMEOUT(!client.listProviders().hasResponse(), 6000);
+    }
+
+    void simdockCompatibilityUsesActualHostAndIsolatedRuntime()
+    {
+        const auto endpoint = uniqueEndpoint();
+        OwnedRuntime runtime; QVERIFY(runtime.launch(endpoint));
+        QTemporaryDir fixture;
+        const auto a = fixture.filePath("a"), b = fixture.filePath("b");
+        QVERIFY(QDir().mkpath(a) && QDir().mkpath(b));
+        auto project = simdock::newProject("Legacy Suite project"); QString error;
+        QVERIFY(simdock::saveProject(a, project, &error));
+        MainWindow window;
+        window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("recovery")));
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        auto integration = std::make_unique<ZeroSlackSuiteIntegration>(&window);
+        SuiteApp::RuntimeStartOptions options; options.endpoint = endpoint; options.startIfMissing = false;
+        QVERIFY2(integration->start(options, &error), qPrintable(error));
+        SuiteApp::Client client(endpoint, 2000);
+        const auto providers = client.listProviders().response.value("result").toObject().value("providers").toArray();
+        QCOMPARE(providers.size(), 2);
+        const auto compatibility = registeredProvider(providers, "simdock");
+        const auto primary = registeredProvider(providers, "zeroslack");
+        QCOMPARE(compatibility.value("processId").toInteger(), QCoreApplication::applicationPid());
+        QCOMPARE(primary.value("processId"), compatibility.value("processId"));
+        QCOMPARE(compatibility.value("version").toString(), QString("0.6.1"));
+        QVERIFY(SuiteApp::descriptorEndpoint(primary) != SuiteApp::descriptorEndpoint(compatibility));
+        QUrl uri("simdock://project"); QUrlQuery query;
+        query.addQueryItem("workspace", a); query.addQueryItem("id", project.id); uri.setQuery(query);
+        const auto target = uri.toString(QUrl::FullyEncoded);
+        const auto resolved = whileServing([&] { return client.resolveResource(target, "simdock"); });
+        QVERIFY(resolved.response.value("ok").toBool());
+        QCOMPARE(resolved.response.value("result").toObject().value("project").toObject().value("id").toString(), project.id);
+        QVERIFY(!window.workspaceManager->isWorkspaceOpen());
+        const auto described = whileServing([&] { return client.describeSurface("simdock.workbench", target, "simdock"); });
+        QCOMPARE(described.response.value("result").toObject().value("mode").toString(), QString("external"));
+        QVERIFY(!window.workspaceManager->isWorkspaceOpen());
+        QVERIFY(whileServing([&] { return client.invokeAction("simdock.project.open", {}, target, "simdock"); }).response.value("ok").toBool());
+        QCOMPARE(window.workspaceManager->getWorkspacePath(), a);
+        auto* controller = window.findChild<ContextWorkspaceController*>(); QVERIFY(controller);
+        auto* host = qobject_cast<SimDockContextView*>(controller->viewForResource("simdock:workbench"));
+        QVERIFY(host && host->isReady());
+        QCOMPARE(host->saveState().value("projectId").toString(), project.id);
+        const auto heldFile = a + QStringLiteral("/held.sv");
+        QVERIFY(writeFile(heldFile, "module held; endmodule\n"));
+        QVERIFY(window.tabManager->openFileInTab(heldFile));
+        QPointer<MyCodeEditor> heldEditor(window.tabManager->getCurrentEditor());
+        QVERIFY(heldEditor);
+        heldEditor->insertPlainText(QStringLiteral("// unsaved\n"));
+        const auto heldText = heldEditor->toPlainText();
+        QVERIFY(window.tabManager->getDocumentForEditor(heldEditor).dirty);
+        QVERIFY(whileServing([&] { return client.openSurface("simdock.workbench", target, "simdock"); }).response.value("ok").toBool());
+        QCOMPARE(controller->viewForResource("simdock:workbench"), host);
+        const auto rejected = whileServing([&] { return client.invokeAction("simdock.simulation.run", {}, target, "simdock"); });
+        QCOMPARE(rejected.response.value("error").toObject().value("code").toString(), QString("action_not_supported"));
+        QCOMPARE(host->component()->findChild<simdock::QuestaSession*>()->processId(), qint64(0));
+        QUrl other("simdock://workspace"); QUrlQuery otherQuery; otherQuery.addQueryItem("path", b); other.setQuery(otherQuery);
+        const auto otherTarget = other.toString(QUrl::FullyEncoded);
+        {
+            QDialog dialog(host->component()); dialog.show(); QTest::qWait(30);
+            const auto busy = whileServing([&] { return client.invokeAction("simdock.workspace.open", {}, otherTarget, "simdock"); });
+            QCOMPARE(busy.response.value("error").toObject().value("code").toString(), QString("open_failed"));
+            QCOMPARE(window.workspaceManager->getWorkspacePath(), a);
+        }
+        QVERIFY(whileServing([&] { return client.openSurface("simdock.workbench", otherTarget, "simdock"); }).response.value("ok").toBool());
+        QCOMPARE(window.workspaceManager->getWorkspacePath(), b);
+        QVERIFY(heldEditor);
+        QCOMPARE(heldEditor->toPlainText(), heldText);
+        QVERIFY(window.tabManager->getDocumentForEditor(heldEditor).dirty);
+        QVERIFY(whileServing([&] { return client.resolveResource(otherTarget); }).response.value("ok").toBool());
+        heldEditor->document()->setModified(false);
+        const auto invalid = whileServing([&] { return client.resolveResource("simdock://workspace?path=relative", "simdock"); });
+        QCOMPARE(invalid.response.value("error").toObject().value("code").toString(), QString("workspace_not_found"));
+        runtime.kill(); QVERIFY(runtime.waitForFinished(3000)); QVERIFY(!integration->isRegistered());
+        QVERIFY(!client.resolveResource(target, "simdock").hasResponse());
+        QVERIFY(runtime.launch(endpoint)); QVERIFY2(integration->start(options, &error), qPrintable(error));
+        QVERIFY(integration->isRegistered());
+        QVERIFY(whileServing([&] { return client.resolveResource(target, "simdock"); }).response.value("ok").toBool());
+        QVERIFY(window.close()); integration.reset();
+        QCOMPARE(client.listProviders().response.value("result").toObject().value("providers").toArray().size(), 0);
+        QVERIFY(!SuiteApp::sendRequest(SuiteApp::descriptorEndpoint(compatibility), SuiteApp::makeRequest("health.ping"), 100).hasResponse());
+        QVERIFY(runtime.waitForFinished(6000));
     }
 
     void cliUsesRuntimeAndPreservesLocalMetadataOnFailure()
@@ -838,6 +931,9 @@ int main(int argc, char** argv)
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH", settings.filePath("sessions.ini").toUtf8());
+    qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", settings.filePath("legacy.ini").toUtf8());
+    qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH", settings.filePath("editing-time.json").toUtf8());
+    UserTemplateService::getInstance()->setGlobalTemplateFilePath(settings.filePath("templates.json"));
     SuiteAppIpcTest test;
     return QTest::qExec(&test, argc, argv);
 }

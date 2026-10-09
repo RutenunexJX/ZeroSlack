@@ -1,10 +1,8 @@
 # Optional, explicit native runtime deployment, independent of SuiteApp_FOUND.
 # These directories contain the component and its privately named Ela runtime.
 set(ZEROSLACK_XIPS_COMPONENT_DIR "" CACHE PATH "xIPs native runtime directory")
-set(ZEROSLACK_SIMDOCK_COMPONENT_DIR "" CACHE PATH "SimDock native runtime directory")
-set(ZEROSLACK_SIMDOCK_WAVE_COMPONENT_DIR "" CACHE PATH "Optional Tickx DLL directory for SimDock's embedded waveform editor")
+set(ZEROSLACK_TICKX_COMPONENT_DIR "" CACHE PATH "Pinned Tickx 0.15.2 waveform runtime directory")
 set(ZEROSLACK_XIPS_ADDITIONAL_RUNTIMES "" CACHE STRING "Additional xIPs DLL filenames from its final runtime manifest")
-set(ZEROSLACK_SIMDOCK_ADDITIONAL_RUNTIMES "" CACHE STRING "Additional SimDock DLL filenames from its final runtime manifest")
 
 function(zeroslack_deploy_component id directory)
     if(NOT WIN32)
@@ -42,24 +40,20 @@ if(ZEROSLACK_XIPS_COMPONENT_DIR)
         VERBATIM)
     add_dependencies(zeroslack_deploy_xips zeroslack_deploy_xips_qt)
 endif()
-if(ZEROSLACK_SIMDOCK_COMPONENT_DIR)
-    zeroslack_deploy_component(simdock "${ZEROSLACK_SIMDOCK_COMPONENT_DIR}" simdock-workbench.dll SimDockEla.dll simdock-workbench.json ${ZEROSLACK_SIMDOCK_ADDITIONAL_RUNTIMES})
-endif()
-if(ZEROSLACK_SIMDOCK_WAVE_COMPONENT_DIR)
-    if(NOT ZEROSLACK_SIMDOCK_COMPONENT_DIR)
-        message(FATAL_ERROR "The Tickx dependency requires SimDock native deployment")
-    endif()
+if(ZEROSLACK_TICKX_COMPONENT_DIR)
     foreach(file wavewidgets.dll WaveWorkbenchEla.dll)
-        if(NOT EXISTS "${ZEROSLACK_SIMDOCK_WAVE_COMPONENT_DIR}/${file}")
+        if(NOT EXISTS "${ZEROSLACK_TICKX_COMPONENT_DIR}/${file}")
             message(FATAL_ERROR "Missing SimDock waveform dependency: ${file}")
         endif()
+        file(SHA256 "${ZEROSLACK_TICKX_COMPONENT_DIR}/${file}" digest)
+        if(file STREQUAL "wavewidgets.dll")
+            set(expected "c326b99e68bcbb2f8dd5e3e7585f4def58ba33d77ba384a86c9ede48cd444a70")
+        else()
+            set(expected "85bce4affee3c45f4b3afef010eeb6e82d9a0bd42f6bfdc033371bb4ee6aa439")
+        endif()
+        if(NOT digest STREQUAL expected)
+            message(FATAL_ERROR "Tickx runtime does not match the frozen 0.15.2 boundary: ${file}")
+        endif()
     endforeach()
-    add_custom_target(zeroslack_deploy_simdock_wave ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${ZEROSLACK_SIMDOCK_WAVE_COMPONENT_DIR}/wavewidgets.dll"
-            "${ZEROSLACK_SIMDOCK_WAVE_COMPONENT_DIR}/WaveWorkbenchEla.dll"
-            "$<TARGET_FILE_DIR:demo>/components/simdock"
-        VERBATIM)
-    add_dependencies(zeroslack_deploy_simdock_wave zeroslack_deploy_simdock)
-    add_dependencies(demo zeroslack_deploy_simdock_wave)
+    zeroslack_deploy_component(wave "${ZEROSLACK_TICKX_COMPONENT_DIR}" wavewidgets.dll WaveWorkbenchEla.dll)
 endif()

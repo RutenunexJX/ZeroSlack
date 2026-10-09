@@ -50,8 +50,9 @@ private:
 class WorkspaceChrome final : public QObject {
 public:
     WorkspaceChrome(QMainWindow* host, NavigationPaneCoordinator* navigationPane,
-                    std::function<void()> settings, WorkspaceSwitcher* workspaces = nullptr)
-        : QObject(host), window(host) {
+                    std::function<void()> settings, WorkspaceSwitcher* workspaces = nullptr,
+                    QWidget* accessory = nullptr)
+        : QObject(host), window(host), titleAccessory(accessory) {
         QDockWidget* navigation = navigationPane
             ? navigationPane->dock() : nullptr;
         host->setWindowFlag(Qt::FramelessWindowHint);
@@ -112,7 +113,7 @@ public:
                     });
         }
         workspaceStrip = workspaces ? workspaces->createStrip(host) : nullptr;
-        const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip);
+        const auto titleBar = UiWindowChrome::createTitleBar(host, workspaceStrip, titleAccessory);
         title = titleBar.widget;
         titleLabel = titleBar.label;
         maximizeButton = titleBar.maximize;
@@ -147,6 +148,8 @@ protected:
         if (target == window && event->type() == QEvent::Resize) {
             updateTitleGeometry();
         }
+        if (target == titleAccessory && event->type() == QEvent::LayoutRequest)
+            updateTitleGeometry();
         if (target == window && event->type() == QEvent::PaletteChange) {
             if (settingsButton)
                 settingsButton->setIcon(RoundedIcons::icon(RoundedIcons::Settings));
@@ -157,6 +160,7 @@ protected:
             && title->isVisible()) title->raise();
         if (widget != window && widget != title && !title->isAncestorOf(widget)) return false;
         if (workspaceStrip && (widget == workspaceStrip || workspaceStrip->isAncestorOf(widget))) return false;
+        if (titleAccessory && (widget == titleAccessory || titleAccessory->isAncestorOf(widget))) return false;
         if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick) {
             auto* mouse = static_cast<QMouseEvent*>(event);
             if (mouse->button() != Qt::LeftButton || !window->windowHandle()) return false;
@@ -183,7 +187,8 @@ private:
         title->setGeometry(4, 4, window->width() - 8, title->height());
         if (workspaceStrip)
             workspaceStrip->setMaximumWidth(qMax(96, window->width() - 240
-                - (titleLabel ? titleLabel->sizeHint().width() : 0)));
+                - (titleLabel ? titleLabel->sizeHint().width() : 0)
+                - (titleAccessory ? titleAccessory->sizeHint().width() : 0)));
     }
     void updateMaximizeIcon() {
         if (title && title->property("zeroslackElaControl").toBool()) return;
@@ -219,6 +224,7 @@ private:
     QWidget* title = nullptr;
     QPointer<QLabel> titleLabel;
     QWidget* workspaceStrip = nullptr;
+    QPointer<QWidget> titleAccessory;
     QPointer<QToolButton> settingsButton;
     QToolButton* maximizeButton = nullptr;
 };

@@ -153,7 +153,7 @@ ContextResource XipsContextProvider::activationResource(const QString &workspace
 }
 QWidget *XipsContextProvider::createView(const ContextResource &resource, QWidget *parent)
 {
-    auto *host = new NativeContextView(NativeContextView::Kind::Xips, parent);
+    auto *host = new NativeContextView(parent);
     host->setHostBridge(new XipsHostBridge(tabs, workspaces, host));
     if (workspaces) {
         const QPointer<WorkspaceManager> manager = workspaces;

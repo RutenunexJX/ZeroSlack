@@ -15,8 +15,7 @@ class ZEROSLACK_API NativeContextView final : public QWidget
 {
     Q_OBJECT
 public:
-    enum class Kind { Xips, SimDock };
-    explicit NativeContextView(Kind kind, QWidget *parent = nullptr);
+    explicit NativeContextView(QWidget *parent = nullptr);
     void setHostBridge(QObject *bridge);
     bool activate(const ContextResource &resource);
     void setWorkspace(const QString &workspace);
@@ -32,7 +31,6 @@ public slots:
     void resetSavedState();
 
 private:
-    Kind kind;
     ContextResource desired;
     ContextResource lastActivation;
     bool activated = false;

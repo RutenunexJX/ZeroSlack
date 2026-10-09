@@ -1,6 +1,8 @@
 #include "../src/integrations/native/nativecontextview.h"
 #include "../src/integrations/xips/xipscontextprovider.h"
 #include "../src/integrations/simdock/simdockcontextprovider.h"
+#include "../src/integrations/simdock/simdockcontextview.h"
+#include <QDialog>
 #include "contextworkspacecontroller.h"
 #include "contextdockhost.h"
 #include "testuistyle.h"
@@ -25,6 +27,7 @@ private slots:
     {
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+        qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", settings.filePath("legacy.ini").toUtf8());
         QVERIFY(initializeUiStyleForTest());
     }
     void init()
@@ -69,44 +72,45 @@ private slots:
     {
         QFETCH(QByteArray, library);
         QFETCH(QByteArray, mode);
-        qputenv("SIMDOCK_WORKBENCH_LIBRARY", library);
+        qputenv("XIPS_BROWSER_LIBRARY", library);
         if (!mode.isEmpty()) qputenv(mode.constData(), "1");
         std::unique_ptr<QWidget> view;
         {
-            SimDockContextProvider provider;
+            XipsContextProvider provider(nullptr, nullptr);
             view.reset(provider.createView(provider.activationResource("workspace"), nullptr));
         }
         auto *host = qobject_cast<NativeContextView *>(view.get());
         QVERIFY(host && !host->isReady());
         QVERIFY(!host->property("nativeComponentError").toString().isEmpty());
         // The provider has died. Recovery callbacks are owned by the surface.
-        qputenv("SIMDOCK_WORKBENCH_LIBRARY", NATIVE_FIXTURE_GOOD);
+        qputenv("XIPS_BROWSER_LIBRARY", NATIVE_FIXTURE_GOOD);
         if (!mode.isEmpty()) qunsetenv(mode.constData());
         host->retry();
         QVERIFY2(host->isReady(), qPrintable(host->property("nativeComponentError").toString()));
     }
     void componentErrorsRetainStateUntilRecovery()
     {
+        QTemporaryDir workspace;
         SimDockContextProvider provider;
-        auto resource = provider.activationResource("rejected");
-        resource.state = {{"selection", "uart"}, {"workspace", "stale-root"}};
+        auto resource = provider.activationResource(workspace.filePath("missing"));
+        resource.state = {{"version", 1}, {"workspace", "stale-root"}, {"projectId", QString()}};
         std::unique_ptr<QWidget> view(provider.createView(resource, nullptr));
-        auto *host = qobject_cast<NativeContextView *>(view.get());
+        auto *host = qobject_cast<SimDockContextView *>(view.get());
         QVERIFY(host && !host->isReady());
         QCOMPARE(host->saveState(), resource.state);
-        resource.workspaceId = "accepted";
-        auto expectedState = resource.state;
-        expectedState.insert("workspace", "accepted");
+        resource.workspaceId = workspace.path();
         QVERIFY(provider.activateView(host, resource));
-        QVERIFY(host->isReady());
-        QCOMPARE(host->component()->property("workspace").toString(), QStringLiteral("accepted"));
-        QCOMPARE(host->saveState(), expectedState);
-        const int restores = host->component()->property("restoreCount").toInt();
+        QVERIFY2(host->isReady(), qPrintable(host->property("nativeComponentError").toString()));
+        QCOMPARE(host->saveState().value("workspace").toString(), workspace.path());
+        QSignalSpy scans(host->component(), SIGNAL(scanFinished()));
+        QTest::qWait(100);
+        const int count = scans.size();
         QVERIFY(provider.activateView(host, resource));
-        QCOMPARE(host->component()->property("restoreCount").toInt(), restores);
-        host->restoreState({{"reject", true}});
+        QTest::qWait(100);
+        QCOMPARE(scans.size(), count);
+        host->restoreState({{"version", 2}});
         QVERIFY(!host->isReady());
-        QVERIFY(host->property("nativeComponentError").toString().contains("State rejected"));
+        QVERIFY(host->property("nativeComponentError").toString().contains("Unsupported"));
         host->resetSavedState();
         QVERIFY(host->isReady());
     }
@@ -138,7 +142,6 @@ private slots:
     {
         QTest::addColumn<bool>("simdock");
         QTest::newRow("xips") << false;
-        QTest::newRow("simdock") << true;
     }
     void panelsTrackInitialThemeChangesAndRestore()
     {
@@ -166,25 +169,17 @@ private slots:
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         QCOMPARE(host->component()->property("darkTheme").toBool(), true);
     }
-    void rejectsDifferentPrivateSimDockRuntime()
+    void legacyLibraryOverrideCannotReplaceOwnedWorkbench()
     {
-#ifdef Q_OS_WIN
+        QTemporaryDir directory;
+        qputenv("SIMDOCK_WORKBENCH_LIBRARY", directory.filePath("missing.dll").toUtf8());
+        QSettings().setValue("integrations/native/simdockLibrary", directory.filePath("other.dll"));
         SimDockContextProvider provider;
-        std::unique_ptr<QWidget> original(provider.createView(provider.activationResource("workspace"), nullptr));
-        auto *first = qobject_cast<NativeContextView *>(original.get());
-        QVERIFY(first && first->isReady());
-        QTemporaryDir other;
-        const QString source = QString::fromUtf8(NATIVE_FIXTURE_GOOD);
-        const QString target = other.filePath("different-workbench.dll");
-        QVERIFY(QFile::copy(source, target));
-        QVERIFY(QFile::copy(QFileInfo(source).dir().filePath("SimDockEla.dll"), other.filePath("SimDockEla.dll")));
-        qputenv("SIMDOCK_WORKBENCH_LIBRARY", target.toUtf8());
-        std::unique_ptr<QWidget> rejected(provider.createView(provider.activationResource("workspace"), nullptr));
-        auto *host = qobject_cast<NativeContextView *>(rejected.get());
-        QVERIFY(host && !host->isReady());
-        QVERIFY(host->property("nativeComponentError").toString().contains("different private SimDockEla.dll"));
-        QVERIFY(first->isReady());
-#endif
+        std::unique_ptr<QWidget> view(provider.createView(provider.activationResource(directory.path()), nullptr));
+        auto *host = qobject_cast<SimDockContextView *>(view.get());
+        QVERIFY(host && host->isReady());
+        QCOMPARE(QByteArray(host->component()->metaObject()->className()), QByteArray("simdock::Workbench"));
+        QVERIFY(!host->property("nativeComponentLibrary").isValid());
     }
     void busyPanelSurvivesDockingWorkspaceChangesAndClose()
     {
@@ -211,10 +206,12 @@ private slots:
         const auto resource = provider->activationResource(b);
         QVERIFY(controller.registerProvider(std::move(provider)));
         QVERIFY(controller.openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept}));
-        QPointer<NativeContextView> host = qobject_cast<NativeContextView *>(controller.viewForResource(resource.stableKey()));
+        QPointer<SimDockContextView> host = qobject_cast<SimDockContextView *>(controller.viewForResource(resource.stableKey()));
         QVERIFY(host && host->isReady());
         QPointer<QWidget> native = host->component();
-        native->setProperty("busy", true);
+        auto *dialog = new QDialog(native);
+        dialog->show();
+        QTest::qWait(30);
         QVERIFY(controller.unpinResource(resource.stableKey()));
         QCOMPARE(controller.viewForResource(resource.stableKey()), host.data());
         QVERIFY(!controller.closeFloatingResource(resource.stableKey()));
@@ -236,14 +233,14 @@ private slots:
         QVERIFY(controller.pinFloatingResource(resource.stableKey()));
         QCOMPARE(host->component(), native.data());
         QVERIFY(!controller.closePinnedResource(resource.stableKey()));
-        native->setProperty("busy", false);
+        delete dialog;
         QVERIFY(manager.switchWorkspace(0));
         QCOMPARE(controller.workspaceRoot(), a);
         QVERIFY(host->property("nativeComponentRetired").toBool());
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QVERIFY(!host && !native);
         QVERIFY(controller.openTool("simdock"));
-        QVERIFY(qobject_cast<NativeContextView *>(controller.viewForResource(resource.stableKey()))->isReady());
+        QVERIFY(qobject_cast<SimDockContextView *>(controller.viewForResource(resource.stableKey()))->isReady());
     }
 };
 QTEST_MAIN(NativeComponentHostTest)

@@ -1,0 +1,118 @@
+{
+  "schema": "zeroslack.simdock-legacy-fixtures/v1",
+  "productionSource": {
+    "version": "0.6.1",
+    "commit": "e1747735735f0e50e06587d729784546efba56eb"
+  },
+  "oldHost": {
+    "version": "0.31.27",
+    "commit": "fdfb22cfb9057d940a04e07eecade94f21e4cd3f",
+    "componentVersion": "0.5.0"
+  },
+  "origin": "Real frozen production binaries wrote these bytes; no new implementation generated them.",
+  "counterCreatorVersion": "unknown; file preserved from independent repository",
+  "sessionBoundary": "Old host JSON lost non-UTF-8 splitter bytes. Original strings are preserved, not reconstructed.",
+  "pathRebasing": "Tests copy bytes to temporary workspaces and replace only the session workspace identity key. Fixture bytes stay unchanged.",
+  "files": [
+    {
+      "path": "simdock-0.6.1/capture_dut.sv",
+      "sha256": "b8353f2219c4735611f4ac189bf72d1a004a8c3c4ff8719a67a84ce40daa259b",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/capture_dut.sv"
+    },
+    {
+      "path": "simdock-0.6.1/.simdock/projects/4b340805-b037-4a67-aa75-6fcddb36ac54.json",
+      "sha256": "245b22ebc7cb66017724c2852011a038e51720ddb25584d49e32a334df534c7a",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/.simdock/projects/4b340805-b037-4a67-aa75-6fcddb36ac54.json"
+    },
+    {
+      "path": "simdock-0.6.1/.simdock/projects/774390c3-6072-4e2b-88e5-2472e2bd854d.json",
+      "sha256": "972c41929bacccc434145a6777f959f1bfb7c388574fa072380aabe59b6f4cb0",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/.simdock/projects/774390c3-6072-4e2b-88e5-2472e2bd854d.json"
+    },
+    {
+      "path": "simdock-0.6.1/.simdock/projects/917164fb-9491-4371-bbc0-acbc91117eb9.json",
+      "sha256": "cc90cea673a17fb3858f3b7020211de52aa7770cfcc9dc3f11d84b8fd12ba13b",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/.simdock/projects/917164fb-9491-4371-bbc0-acbc91117eb9.json"
+    },
+    {
+      "path": "simdock-0.6.1/.simdock/projects/9e94479e-b032-4c12-a934-fef41d05df49.json",
+      "sha256": "e66cf53d77f0040c0e3d553b8f4578011ff98038cf2c207e9e41cdf85ac30638",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/.simdock/projects/9e94479e-b032-4c12-a934-fef41d05df49.json"
+    },
+    {
+      "path": "simdock-0.6.1/sim/4b340805/tb_capture_dut_stimulus_190b837c1b291ab2.sv",
+      "sha256": "190b837c1b291ab2e2db2ed9a020ae4b5679b0bca312705fe9f138b3a7fd6ddd",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/sim/4b340805/tb_capture_dut_stimulus_190b837c1b291ab2.sv"
+    },
+    {
+      "path": "simdock-0.6.1/sim/774390c3/tb_capture_dut_stimulus_482692d47e60c626.sv",
+      "sha256": "482692d47e60c6265e9497b10d7272d7ec5a74fe8d5cf16cec09e1a9e3ff37b4",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/sim/774390c3/tb_capture_dut_stimulus_482692d47e60c626.sv"
+    },
+    {
+      "path": "simdock-0.6.1/sim/917164fb/tb_capture_dut_stimulus_92a166ea82e0988c.sv",
+      "sha256": "92a166ea82e0988c83752aeaf5cb7f1050357b3065622d6d9381b8bbfc097fe9",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/sim/917164fb/tb_capture_dut_stimulus_92a166ea82e0988c.sv"
+    },
+    {
+      "path": "simdock-0.6.1/sim/9e94479e/tb_capture_dut_stimulus_c30c72d0862190f8.sv",
+      "sha256": "c30c72d0862190f8d13fe3d5a73db2fec51295f82f2b80aca44aff2c92147e66",
+      "source": "baseline-capture/simdock061-run1/fixtures/values/sim/9e94479e/tb_capture_dut_stimulus_c30c72d0862190f8.sv"
+    },
+    {
+      "path": "host-0.31.27/workspace/host_dut.sv",
+      "sha256": "376eb125b73d9a9a793e0e0d7c28c102aebc99a87ee1423a19ee6af5b1f10163",
+      "source": "baseline-capture/host03127-run2/fixtures/workspace-after-save/host_dut.sv"
+    },
+    {
+      "path": "host-0.31.27/workspace/.simdock/projects/e631f74f-f92f-470a-b813-66fb11b66b32.json",
+      "sha256": "82dd3542dc4e2bc28ca53e63c09ea17aa405d0c9598f33357e085a3eb101eda7",
+      "source": "baseline-capture/host03127-run2/fixtures/workspace-after-save/.simdock/projects/e631f74f-f92f-470a-b813-66fb11b66b32.json"
+    },
+    {
+      "path": "legacy-counter/rtl/counter.sv",
+      "sha256": "fc1b54fb222d760e7a0f9022cfa0b4692c77e14930d51e27817d930aa24f0b3f",
+      "source": "preparation/legacy-counter/rtl/counter.sv"
+    },
+    {
+      "path": "legacy-counter/.simdock/projects/c30ee298-ae96-4d6a-98bc-80630d1c5407.json",
+      "sha256": "bb98ecbed798cdfe6ca4d61af195b9deff3c2da8bce21d238e5a466b768cc96c",
+      "source": "preparation/legacy-counter/.simdock/projects/c30ee298-ae96-4d6a-98bc-80630d1c5407.json"
+    },
+    {
+      "path": "legacy-counter/sim/c30ee298/tb_counter.sv",
+      "sha256": "50692905610ae52a226932494c1f2f917a086c1e8ce5ee78e15aed4cfa00984a",
+      "source": "preparation/legacy-counter/sim/c30ee298/tb_counter.sv"
+    },
+    {
+      "path": "capture-0.6.1.json",
+      "sha256": "e39f635a071d20b27d1e87247f5c2bb3d15362fb749fb73f6b80f2a2bed89225",
+      "source": "baseline-capture/simdock061-run1/capture-report.json"
+    },
+    {
+      "path": "host-0.31.27/save-report.json",
+      "sha256": "6dc30698e0883135bdfa8babdf452cd25aa8db8ce0e79171364b5270a3bc423a",
+      "source": "baseline-capture/host03127-run2/host-save-report.json"
+    },
+    {
+      "path": "host-0.31.27/restart-report.json",
+      "sha256": "c0ce6143a94072c5e5474bdfd703fa82579a1d9696c1f931e4b7eddcc5f4bcd7",
+      "source": "baseline-capture/host03127-run2/host-restart-report.json"
+    },
+    {
+      "path": "host-0.31.27/session.ini",
+      "sha256": "874c9bf681724e5c7cc5ea52aa5cc63f55fde464770513ffb4766e1cc0cff51d",
+      "source": "baseline-capture/host03127-run2/evidence/session-after-save.ini"
+    },
+    {
+      "path": "host-0.31.27/session-decoded.json",
+      "sha256": "aa026cd9094cad7dcf321a99d9d7cd5652ea385c5a8406d1175d084a31c9f8cc",
+      "source": "baseline-capture/host03127-run2/evidence/session-after-save-decoded.json"
+    },
+    {
+      "path": "legacy-settings.json",
+      "sha256": "a271a0cc599237e76287d142b3fe219c84e66a780117dc8751ac52cc1afc60f1",
+      "source": "preparation/legacy-settings.json"
+    }
+  ]
+}

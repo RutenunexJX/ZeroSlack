@@ -95,7 +95,23 @@ WaveWorkbench, Pinloom and RegMapWorkbench are separate products with their own
 repositories and licenses. ZeroSlack talks to them across versioned IPC
 boundaries and contains none of their source. See
 [AppSuite integration](docs/suite.md). WaveWorkbench and its toolchain retain their
-own license files when distributed in AppSuite; ZeroSlack no longer bundles or executes a simulator.
+own license files when distributed in AppSuite. The integrated simulation
+workbench can execute a user-configured Questa installation; no simulator
+executable or simulator license is bundled.
+
+## Integrated simulation workbench
+
+SimDock 0.6.1 source, from commit
+`e1747735735f0e50e06587d729784546efba56eb`, is incorporated under
+`src/simulation/simdock`. Its original license, applicable dependency notices
+and asset provenance are retained in `resources/licenses/simdock` and shipped
+under `licenses/simdock`. Slang, tree-sitter and Ela use ZeroSlack's existing
+implementations and notices.
+
+The graphical stimulus editor uses the separate Tickx 0.15.2 component from
+commit `9730d475b02a59bec9e9c1ca8c6e0a508445dbca`. Its `wavewidgets.dll` and
+`WaveWorkbenchEla.dll` retain their own runtime boundary. Matching notices
+are shipped under `licenses/components/wave`.
 
 ## Test fixtures
 
