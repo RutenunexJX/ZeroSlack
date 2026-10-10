@@ -16,7 +16,10 @@
 #include <QGraphicsView>
 #include <QLineF>
 #include <QPushButton>
+#include <QToolButton>
+#include <QMenu>
 #include <QTemporaryDir>
+#include <QSettings>
 #include <QWidget>
 #include <QTransform>
 
@@ -321,6 +324,10 @@ int main(int argc, char** argv)
 {
     qputenv("QT_QPA_PLATFORM", QByteArrayLiteral("offscreen"));
     QApplication app(argc, argv);
+    QTemporaryDir settings;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     if (!initializeUiStyleForTest()) return 3;
     QTemporaryDir temporary;
     expect("temporary export directory is available", temporary.isValid());
@@ -454,18 +461,8 @@ int main(int argc, char** argv)
         QStringLiteral("signalUsageHotspotTrackView"));
     auto* themedMatrixView = hotspot.findChild<QGraphicsView*>(
         QStringLiteral("signalUsageHotspotMatrixView"));
-    if (themedTrackView) {
-        themedTrackView->setTransform(
-            QTransform::fromScale(1.18, 1.18));
-        themedTrackView->centerOn(
-            themedTrackView->scene()->sceneRect().center());
-    }
-    if (themedMatrixView) {
-        themedMatrixView->setTransform(
-            QTransform::fromScale(0.91, 0.91));
-        themedMatrixView->centerOn(
-            themedMatrixView->scene()->sceneRect().center());
-    }
+    hotspot.focusZoomIn();
+    QApplication::processEvents();
     const QTransform hotspotTrackTransform = themedTrackView
         ? themedTrackView->transform() : QTransform();
     const QTransform hotspotMatrixTransform = themedMatrixView
@@ -484,7 +481,7 @@ int main(int argc, char** argv)
         ? themedMatrixView->viewport()->size() : QSize();
     const QColor hotspotLightText = themedTrackView
         ? sceneTextColor(themedTrackView->scene(),
-                         QStringLiteral("Signal Usage Map"))
+                         QStringLiteral("Source lines"))
         : QColor();
     const quint64 hotspotBuildRequests =
         hotspot.reportBuildRequestCountForTest();
@@ -493,7 +490,7 @@ int main(int argc, char** argv)
     QApplication::processEvents();
     const QColor hotspotDarkText = themedTrackView
         ? sceneTextColor(themedTrackView->scene(),
-                         QStringLiteral("Signal Usage Map"))
+                         QStringLiteral("Source lines"))
         : QColor();
     expect("Usage Hotspot theme refresh consumes cached report without service build",
            hotspot.reportBuildRequestCountForTest()
@@ -575,7 +572,7 @@ int main(int argc, char** argv)
            themedTrackView
                && sceneTextColor(
                       themedTrackView->scene(),
-                      QStringLiteral("Signal Usage Map"))
+                      QStringLiteral("Source lines"))
                       == hotspotLightText
                && hotspot.reportBuildRequestCountForTest()
                       == hotspotBuildRequests);
@@ -608,19 +605,10 @@ int main(int argc, char** argv)
     }
     expect("Usage Hotspot graph view controls use Registry metadata",
            graphViewMetadataComplete);
-    QPushButton* zoomInButton =
-        hotspot.findChild<QPushButton*>(
-            QStringLiteral(
-                "signalUsageHotspotZoomInButton"));
-    expect("Usage Hotspot toolbar button shares the Zoom In Action",
-           zoomInButton
-               && zoomInButton->property(
-                      GraphExportUi::kActionIdProperty)
-                      .toString()
-                      == QString::fromLatin1(
-                          ActionIds::GraphViewZoomIn)
-               && zoomInButton->text()
-                      == QStringLiteral("Zoom In"));
+    auto* hotspotMore = hotspot.findChild<QToolButton*>(QStringLiteral("signalUsageHotspotMoreButton"));
+    expect("Usage Hotspot More menu shares the Zoom In Action",
+           hotspotMore && hotspotMore->menu() && hotspotMore->menu()->actions().contains(
+               hotspot.graphViewActionForTest(QString::fromLatin1(ActionIds::GraphViewZoomIn))));
     resetApplicationActionExecutionHistory();
     const ActionExecutionResult resetView =
         hotspot.triggerGraphViewActionForTest(

@@ -19,6 +19,8 @@
 #include "temporaryeditorcontextview.h"
 #include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
+#include "signalusagehotspotpanel.h"
+#include "mycodeeditor.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "statetransitiongraphservice.h"
 #include "semanticindex.h"
@@ -96,6 +98,26 @@ void MainWindow::setupContextWorkspace()
             this,
             editorSplitHost,
             this);
+    contextWorkspaceController->setExternalResourceHandler(
+        [this](const ContextResource& resource, bool restoring) -> std::optional<bool> {
+            LiveInsightKind kind;
+            if (!LiveInsightsContextProvider::kindFromResource(resource, &kind)
+                || kind != LiveInsightKind::Hotspot) return std::nullopt;
+            if (!hotspotPanel || !panelLayoutController) return false;
+            hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+            const auto target = resource.state.value(QStringLiteral("target")).toMap();
+            if (!target.isEmpty() && (!restoring || hotspotPanel->saveViewState().value("signal").toString().isEmpty())) {
+                hotspotPanel->showHotspotForSymbol(target.value("signalName").toString(),
+                    target.value("fileName").toString(), target.value("moduleName").toString(),
+                    target.value("signalAccessPath").toString());
+            } else if (!restoring && hotspotPanel->saveViewState().value("signal").toString().isEmpty()) {
+                const auto context = activeLiveInsightToolContext(false);
+                if (!context.signalName.isEmpty()) hotspotPanel->showHotspotForSymbol(context.signalName,
+                    context.fileName, context.moduleName, context.signalAccessPath);
+            }
+            if (!restoring) panelLayoutController->restorePanel(QStringLiteral("hotspot"));
+            return true;
+        });
     pinloomCodeLinkCoordinator =
         std::make_unique<PinloomCodeLinkCoordinator>(
             contextWorkspaceController.get());
@@ -587,6 +609,13 @@ bool MainWindow::beginLiveInsightTargetPick(
 
 void MainWindow::requestLiveInsightUpdates()
 {
+    if (hotspotPanel) {
+        hotspotPanel->setWorkspaceRoot(workspaceManager ? workspaceManager->getWorkspacePath() : QString());
+        auto* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
+        hotspotPanel->setCurrentEditorLocation(editor ? tabManager->getCurrentDocumentMetadata().fileName : QString(),
+            editor ? editor->textCursor().blockNumber() + 1 : 0);
+        hotspotPanel->refreshSemanticSnapshot();
+    }
     if (!liveInsightSession || !tabManager)
         return;
     // Each fixed/pinned/detached graph owns its own request stream. Refresh
@@ -707,6 +736,13 @@ bool MainWindow::openLiveInsightFromSourceAction(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
+    if (kind == LiveInsightKind::Hotspot && hotspotPanel && panelLayoutController) {
+        hotspotPanel->setWorkspaceRoot(workspaceManager ? workspaceManager->getWorkspacePath() : QString());
+        hotspotPanel->showHotspotForSymbol(symbolName, fileName, moduleName, signalAccessPath);
+        panelLayoutController->restorePanel(QStringLiteral("hotspot"));
+        requestLiveInsightUpdates();
+        return true;
+    }
     if (!contextWorkspaceController || !tabManager)
         return false;
 
@@ -804,6 +840,11 @@ void MainWindow::openLiveInsightFullView(
         context.moduleName = target.value(QStringLiteral("moduleName")).toString();
         context.signalName = target.value(QStringLiteral("signalName")).toString();
         context.signalAccessPath = target.value(QStringLiteral("signalAccessPath")).toString();
+    }
+    if (kind == LiveInsightKind::Hotspot && hotspotPanel) {
+        openLiveInsightFromSourceAction(kind, context.signalName, context.fileName, context.moduleName, context.signalAccessPath);
+        panelLayoutController->openPanelInMainArea(QStringLiteral("hotspot"));
+        return;
     }
     const QString stableId =
         QStringLiteral("live-insight:%1")

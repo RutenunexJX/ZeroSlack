@@ -14,6 +14,8 @@
 
 #include <map>
 #include <memory>
+#include <functional>
+#include <optional>
 
 class ContextDockHost;
 class ContextDockTransition;
@@ -82,6 +84,9 @@ public:
     bool setProviderPinned(const QString& providerId, bool pinned);
     bool toolboxVisible() const;
     bool openTool(const QString& providerId);
+    // A host may give an existing tool a single home outside Context surfaces.
+    void setExternalResourceHandler(std::function<std::optional<bool>(const ContextResource&, bool)> handler)
+    { externalResourceHandler = std::move(handler); }
 
     bool openResource(
         const ContextResource& resource,
@@ -116,6 +121,7 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
+    std::function<std::optional<bool>(const ContextResource&, bool)> externalResourceHandler;
     QPointer<QMainWindow> window;
     QPointer<QWidget> editorRegionValue;
     QPointer<ContextRail> railValue;

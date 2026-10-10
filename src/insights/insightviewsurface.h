@@ -26,7 +26,6 @@ public:
         if (rtlValue) {
             if (auto* graph = dock->findChild<QWidget*>(QStringLiteral("rtlInsightsGraphPanel")))
                 CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(graph->layout()));
-            CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(rtlValue->signalUsageHotspotPanelForTest()->layout()));
         }
         dock->setMinimumWidth(0);
         dock->setMinimumHeight(0);

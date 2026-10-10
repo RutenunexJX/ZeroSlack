@@ -6,7 +6,7 @@
 
 class ActivityLogService;
 class QPlainTextEdit;
-class QPushButton;
+class QAction;
 
 class ActivityLogPanelCoordinator : public QObject
 {
@@ -14,6 +14,7 @@ public:
     explicit ActivityLogPanelCoordinator(QWidget* parent);
 
     QDockWidget* dock() const { return activityDock; }
+    QAction* clearAction() const { return clearLogAction; }
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -21,7 +22,7 @@ protected:
 private:
     QDockWidget* activityDock = nullptr;
     QPlainTextEdit* outputText = nullptr;
-    QPushButton* clearButton = nullptr;
+    QAction* clearLogAction = nullptr;
     ActivityLogService* service = nullptr;
     QStringList pendingLines;
     bool flushQueued = false;

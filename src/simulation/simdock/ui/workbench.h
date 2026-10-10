@@ -25,6 +25,9 @@ class QStandardItem;
 class QModelIndex;
 class QAction;
 class QToolButton;
+class QLabel;
+class QListView;
+class QPushButton;
 
 namespace simdock {
 class ZEROSLACK_API Workbench : public QWidget {
@@ -111,8 +114,9 @@ private:
     std::shared_ptr<std::atomic_bool> m_scanCancelled;
     QTimer m_logTimer;
     QString m_pendingLog;
-    ElaText *m_scanStatus, *m_status, *m_sourceHint;
-    ElaListView *m_projectList, *m_fileList;
+    ElaText *m_status;
+    QLabel *m_scanStatus, *m_sourceHint;
+    QListView *m_projectList, *m_fileList;
     QStandardItemModel *m_projectModel, *m_fileModel;
     ElaComboBox *m_dut, *m_units;
     ElaComboBox* m_waveScope;
@@ -120,7 +124,8 @@ private:
     ElaLineEdit *m_tbFile, *m_tbTop;
     ElaSpinBox* m_duration;
     ElaPlainTextEdit* m_log;
-    ElaPushButton *m_new, *m_refresh, *m_stimulus, *m_chooseTb, *m_openTb, *m_run, *m_stop;
+    QPushButton *m_new, *m_refresh;
+    ElaPushButton *m_stimulus, *m_chooseTb, *m_openTb, *m_run, *m_stop;
     QWidget* m_projectPanel;
 };
 }

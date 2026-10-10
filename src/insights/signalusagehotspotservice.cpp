@@ -817,6 +817,21 @@ SignalUsageHotspotReport SignalUsageHotspotService::buildSignalUsageHotspot(
     appendDirection(false);
     appendDirection(true);
 
+    // Resolve snippets from the same immutable publication as the references.
+    // Do not read current disk text beside coordinates from an older snapshot.
+    QHash<QString, QStringList> sourceLines;
+    for (auto& item : report.items) {
+        if (!sourceLines.contains(item.fileName)) {
+            sourceLines.insert(item.fileName,
+                semanticIndex()->getCachedFileContent(item.fileName).split(QLatin1Char('\n')));
+        }
+        const auto& lines = sourceLines[item.fileName];
+        if (item.line > 0 && item.line <= lines.size()) {
+            const QString source = lines.at(item.line - 1).trimmed();
+            if (!source.isEmpty()) item.snippet = source;
+        }
+    }
+
     std::sort(report.items.begin(),
               report.items.end(),
               [](const SignalUsageHotspotItem& lhs,

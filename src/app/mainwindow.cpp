@@ -53,6 +53,7 @@
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
 #include "semanticdockcoordinator.h"
+#include "signalusagehotspotpanel.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticpanelrefreshcoordinator.h"
@@ -153,23 +154,6 @@ DiagnosticPanelScope diagnosticScopeFromProblemsCombo(QComboBox* combo)
         return DiagnosticPanelScope::AllFiles;
     default:
         return DiagnosticPanelScope::CurrentFile;
-    }
-}
-
-DiagnosticSeverityFilter diagnosticSeverityFromProblemsCombo(QComboBox* combo)
-{
-    if (!combo)
-        return DiagnosticSeverityFilter::All;
-
-    switch (combo->currentData().toInt()) {
-    case 1:
-        return DiagnosticSeverityFilter::Errors;
-    case 2:
-        return DiagnosticSeverityFilter::Warnings;
-    case 3:
-        return DiagnosticSeverityFilter::Info;
-    default:
-        return DiagnosticSeverityFilter::All;
     }
 }
 
@@ -1780,10 +1764,26 @@ void MainWindow::setupPanelLayoutController()
 {
     panelLayoutController =
         std::make_unique<PanelLayoutController>(this, this);
-    panelLayoutController->setMainAreaRequestHandler([this](QWidget* content, QWidget* home) {
-        const QString id = QStringLiteral("connections");
+    panelLayoutController->setMainAreaRequestHandler([this](const QString& id, QWidget* content, QWidget* home) {
         if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
-        else tabManager->openToolPage(new BorrowedPanelPage(content, home), id, tr("Connections"));
+        else {
+            auto* page = new BorrowedPanelPage(content, home);
+            if (id == QStringLiteral("hotspot")) {
+                hotspotPanel->setInMainArea(true);
+                const QPointer<SignalUsageHotspotPanel> hotspot(hotspotPanel);
+                const QPointer<PanelLayoutController> layout(panelLayoutController.get());
+                const QPointer<WorkspaceManager> manager(workspaceManager.get());
+                const QString workspace = workspaceManager->getWorkspacePath();
+                connect(page, &QObject::destroyed, panelLayoutController.get(), [hotspot, layout, manager, workspace] {
+                    if (hotspot) hotspot->setInMainArea(false);
+                    if (layout) QTimer::singleShot(0, layout, [layout, manager, workspace] {
+                        if (layout && manager && manager->getWorkspacePath() == workspace)
+                            layout->restorePanel(QStringLiteral("hotspot"));
+                    });
+                });
+            }
+            tabManager->openToolPage(page, id, id == QStringLiteral("hotspot") ? tr("Hotspot") : tr("Connections"));
+        }
     });
     panelLayoutController
         ->setRegisteredPanelActionRequestHandler(
@@ -1850,6 +1850,13 @@ void MainWindow::setupPanelLayoutController()
         semanticDocks && semanticDocks->activityLogPanelCoordinator()
             ? semanticDocks->activityLogPanelCoordinator()->dock()
             : nullptr);
+    if (semanticDocks && semanticDocks->activityLogPanelCoordinator())
+        panelLayoutController->setPanelAction(QStringLiteral("activity"),
+            semanticDocks->activityLogPanelCoordinator()->clearAction());
+    if (semanticDocks && semanticDocks->problemsPanelCoordinator())
+        semanticDocks->problemsPanelCoordinator()->setWorkspaceRootProvider([this] {
+            return workspaceManager ? workspaceManager->getWorkspacePath() : QString();
+        });
     simulationWorkspace = std::make_unique<SimDockContextView>(this);
     simulationWorkspace->hide();
     auto* simulation = simulationWorkspace->workbench();
@@ -1858,6 +1865,34 @@ void MainWindow::setupPanelLayoutController()
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());
     registerPanel(QStringLiteral("simulationLog"), runLogDock);
+    {
+        hotspotPanel = new SignalUsageHotspotPanel(this);
+        auto* hotspotDock = new QDockWidget(tr("Hotspot"), this);
+        hotspotDock->setObjectName(QStringLiteral("signalUsageHotspotDock"));
+        hotspotDock->setWidget(hotspotPanel);
+        registerPanel(QStringLiteral("hotspot"), hotspotDock);
+        hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+        hotspotPanel->setNavigationHandler([this](const QString& file, int line, int column) {
+            return revealSuiteSource(file, line, column);
+        });
+        hotspotPanel->setStatusMessageHandler([this](const QString& message, int timeout) {
+            postActivityMessage(message, timeout);
+        });
+        hotspotPanel->setMainAreaHandler([this](bool expanded) {
+            if (expanded) panelLayoutController->openPanelInMainArea(QStringLiteral("hotspot"));
+            else {
+                tabManager->activateToolPage(QStringLiteral("hotspot"));
+                tabManager->closeActiveToolPage(QStringLiteral("hotspot"));
+            }
+        });
+        panelLayoutController->setPanelStateHandlers(QStringLiteral("hotspot"),
+            [this] { return hotspotPanel->saveViewState(); },
+            [this](const QVariantMap& state) {
+                hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+                if (state.isEmpty()) hotspotPanel->clearTarget();
+                else hotspotPanel->restoreViewState(state);
+            });
+    }
     connect(simulation, &simdock::Workbench::openFileRequested, this,
         [this](const QString& file) { revealSuiteSource(file); });
     registerPanel(
@@ -3878,8 +3913,7 @@ void MainWindow::navigateDiagnostic(bool previous)
                          : QStringList();
     query.scope = diagnosticScopeFromProblemsCombo(
         problemsPanel ? problemsPanel->scopeCombo() : nullptr);
-    query.severity = diagnosticSeverityFromProblemsCombo(
-        problemsPanel ? problemsPanel->severityCombo() : nullptr);
+    query.severity = problemsPanel ? problemsPanel->severityFilter() : DiagnosticSeverityFilter::All;
 
     DiagnosticNavigationService service;
     const DiagnosticNavigationResult result = service.navigate(query);
@@ -4001,6 +4035,8 @@ EditorActionContext MainWindow::resolveEditorActionContext(
 
 QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
 {
+    if (panelId == QStringLiteral("hotspot"))
+        return findChild<QDockWidget*>(QStringLiteral("signalUsageHotspotDock"));
     if (panelId == QStringLiteral("simulationLog"))
         return findChild<QDockWidget*>(QStringLiteral("simulationRunLogDock"));
     if (panelId == QStringLiteral("navigation"))

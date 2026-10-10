@@ -13,6 +13,7 @@
 #include "roundedicons.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QAbstractScrollArea>
 #include <QApplication>
 #include <QDynamicPropertyChangeEvent>
@@ -54,6 +55,8 @@ QString panelLabel(const QString& panelId)
         return QStringLiteral("Search");
     if (panelId == QStringLiteral("activity"))
         return QStringLiteral("Activity");
+    if (panelId == QStringLiteral("hotspot"))
+        return QStringLiteral("Hotspot");
     if (panelId == QStringLiteral("simulationLog"))
         return QStringLiteral("Run log");
     if (panelId == QStringLiteral("rtlHighRiskEdit"))
@@ -70,6 +73,7 @@ QIcon panelIcon(const QString& panelId)
     if (panelId == QStringLiteral("scopedSearch")) return icon(Search);
     if (panelId == QStringLiteral("activity")) return icon(Activity);
     if (panelId == QStringLiteral("simulationLog")) return icon(Activity);
+    if (panelId == QStringLiteral("hotspot")) return icon(HotspotGraph);
     if (panelId == QStringLiteral("rtlHighRiskEdit")) return icon(Change);
     if (panelId == QStringLiteral("connections")) return icon(Connections);
     return icon(Info);
@@ -378,7 +382,9 @@ void PanelLayoutController::buildButton(PanelEntry& entry)
     button->setIconSize(QSize(20, 20));
     button->setFocusPolicy(Qt::StrongFocus);
     entry.button = button;
-    layout->insertWidget(qMax(0, layout->count() - 1), button);
+    int insertion = 0;
+    while (insertion < layout->count() && !layout->itemAt(insertion)->spacerItem()) ++insertion;
+    layout->insertWidget(insertion, button);
     connect(button,
             &QToolButton::clicked,
             this,
@@ -432,7 +438,7 @@ PanelLayoutState PanelLayoutController::layoutState() const
         state.bottomPanelHeights.insert(entry.id, entry.height);
         state.bottomPanelViewStates.insert(
             entry.id,
-            entry.content
+            entry.captureState ? entry.captureState() : entry.content
                 ? captureWidgetState(entry.content)
                 : entry.viewState);
     }
@@ -491,6 +497,7 @@ void PanelLayoutController::restoreLayoutState(
         }
         entry.height = qMax(kMinimumContentHeight, height);
         entry.viewState = state.bottomPanelViewStates.value(entry.id);
+        if (entry.restoreState) entry.restoreState(entry.viewState);
         if (entry.id == QStringLiteral("connections")
             && entry.viewState.isEmpty()) {
             entry.viewState = state.bottomPanelViewStates.value(
@@ -1015,8 +1022,9 @@ void PanelLayoutController::activatePanel(
 #ifdef ZEROSLACK_ENABLE_ELA
     if (activePanel != entry.id && contentDrawer) contentDrawer->finishDrawerAnimation();
 #endif
-    if (entry.id == QStringLiteral("connections") && mainAreaRequest && entry.content) {
-        mainAreaRequest(entry.content, bottomContentStack);
+    if (mainAreaRequest && entry.content && (entry.id == QStringLiteral("connections")
+        || entry.content->parentWidget() != bottomContentStack)) {
+        mainAreaRequest(entry.id, entry.content, bottomContentStack);
         return;
     }
     if (PanelEntry* current = entryForId(activePanel))
@@ -1152,9 +1160,12 @@ void PanelLayoutController::updateButtons()
 {
     const bool expanded = !collapsed;
     for (PanelEntry& entry : panels) {
+        if (entry.actionButton)
+            entry.actionButton->setVisible(expanded && entry.id == activePanel);
         if (!entry.button)
             continue;
         entry.button->setVisible(entry.id == QStringLiteral("problems")
+            || entry.id == QStringLiteral("hotspot")
             || entry.id == QStringLiteral("activity")
             || entry.id == QStringLiteral("simulationLog")
             || (entry.id != QStringLiteral("connections") && expanded && entry.id == activePanel));
@@ -1170,6 +1181,41 @@ void PanelLayoutController::updateButtons()
                            entry.label)
                 : QStringLiteral("%1 status: %2")
                       .arg(entry.label, entry.badgeText));
+    }
+}
+
+bool PanelLayoutController::setPanelAction(const QString& panelId, QAction* action)
+{
+    auto* entry = entryForId(panelId);
+    if (!entry || !bottomButtonBar) return false;
+    if (!entry->actionButton) {
+        entry->actionButton = UiControls::toolButton(bottomButtonBar);
+        entry->actionButton->setObjectName(panelId + QStringLiteral("PanelActionButton"));
+        entry->actionButton->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        entry->actionButton->setIconSize(QSize(18, 18));
+        qobject_cast<QHBoxLayout*>(bottomButtonBar->layout())->addWidget(entry->actionButton);
+    }
+    entry->actionButton->setDefaultAction(action);
+    entry->actionButton->setAccessibleName(action ? action->text() : QString());
+    updateButtons();
+    return true;
+}
+
+bool PanelLayoutController::openPanelInMainArea(const QString& panelId)
+{
+    auto* entry = entryForId(panelId);
+    if (!entry || !entry->content || !mainAreaRequest) return false;
+    if (activePanel == entry->id) setBottomCollapsed(true);
+    mainAreaRequest(entry->id, entry->content, bottomContentStack);
+    return true;
+}
+
+void PanelLayoutController::setPanelStateHandlers(const QString& panelId,
+    std::function<QVariantMap()> capture, std::function<void(const QVariantMap&)> restore)
+{
+    if (auto* entry = entryForId(panelId)) {
+        entry->captureState = std::move(capture);
+        entry->restoreState = std::move(restore);
     }
 }
 
@@ -1214,13 +1260,13 @@ void PanelLayoutController::updateDrawerStyle()
 void PanelLayoutController::capturePanelViewState(
     PanelEntry& entry) const
 {
-    if (entry.content)
+    if (entry.content && !entry.captureState)
         entry.viewState = captureWidgetState(entry.content);
 }
 
 void PanelLayoutController::restorePanelViewState(PanelEntry& entry)
 {
-    if (entry.content && !entry.viewState.isEmpty())
+    if (entry.content && !entry.restoreState && !entry.viewState.isEmpty())
         restoreWidgetState(entry.content, entry.viewState);
 }
 

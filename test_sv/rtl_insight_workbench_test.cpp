@@ -1305,6 +1305,10 @@ void RtlInsightWorkbenchTest::stateTargetPickerUsesRenderSession()
 int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
+    QTemporaryDir settings;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings.path());
     if (!initializeUiStyleForTest()) return 3;
     RtlInsightWorkbenchTest test;
     return QTest::qExec(&test, argc, argv);

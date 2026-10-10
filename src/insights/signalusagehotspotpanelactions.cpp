@@ -144,9 +144,7 @@ void SignalUsageHotspotPanel::
     if (graphContent) {
         for (const SignalUsageHotspotTrackLane& lane :
              currentReport.trackLanes) {
-            if (EditorFileIdentity::same(
-                    lane.fileName,
-                    currentEditorFileName)
+            if (fileKey(lane.fileName) == currentEditorFileKey
                 && currentEditorLine >= lane.startLine
                 && currentEditorLine <= lane.endLine) {
                 centerAvailable = true;

@@ -15,6 +15,18 @@
 #include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QPushButton>
+#include <QToolButton>
+#include <QSettings>
+#include <QMenu>
+#include <QTemporaryDir>
+#include <QTreeWidget>
+#include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QGraphicsItem>
+#include <QGraphicsSimpleTextItem>
+#include <QScrollBar>
+#include <QScopeGuard>
+#include <QtTest>
 #include <QPixmap>
 #include <QThread>
 #include <QTimer>
@@ -398,8 +410,8 @@ bool verifyControlledTrackGeometry(SignalUsageHotspotPanel& panel,
     const qreal railWidth = panel.firstTrackRailWidthForTest();
     const qreal sceneWidth = panel.trackSceneWidthForTest();
     const QList<qreal> centers = panel.trackBlockCenterXsForTest();
-    if (railWidth < 200.0 || railWidth > 820.0
-        || sceneWidth < railWidth || sceneWidth > 1100.0) {
+    if (railWidth < 180.0
+        || qAbs(sceneWidth - railWidth - panel.trackRailLeftForTest() - 24.0) > 0.01) {
         qWarning() << label << "track scene or rail width is not controlled"
                    << railWidth << sceneWidth;
         return false;
@@ -410,14 +422,18 @@ bool verifyControlledTrackGeometry(SignalUsageHotspotPanel& panel,
         return false;
     }
 
-    const qreal railLeft = 220.0;
+    const qreal railLeft = panel.trackRailLeftForTest();
     const qreal railRight = railLeft + railWidth;
-    for (qreal center : centers) {
+    const QList<qreal> fractions{0.1, 0.5, 0.9};
+    for (int i = 0; i < centers.size(); ++i) {
+        const qreal center = centers.at(i);
         if (center < railLeft - 8.0 || center > railRight + 8.0) {
             qWarning() << label << "track block is outside controlled rail"
                        << center << railLeft << railRight;
             return false;
         }
+        const qreal expected = railLeft + railWidth * (qRound(expectedEndLine * fractions[i]) - 1) / (expectedEndLine - 1);
+        if (qAbs(center - expected) > 0.01) return false;
     }
     return true;
 }
@@ -449,23 +465,180 @@ bool verifyAllRolesVisible()
     }
     allRoles.trackLanes.first().count = roles.size();
     panel.renderReportForTest(allRoles);
-    if (panel.trackBlockCountForTest() != 7 || panel.matrixNonEmptyCellCountForTest() != 7) {
+    int retained = 0;
+    for (const auto& cluster : panel.trackClustersForTest()) retained += cluster.size();
+    if (retained != 7 || panel.matrixNonEmptyCellCountForTest() != 7) {
         qWarning() << "All seven roles must remain visible without type filters";
         return false;
     }
     panel.setFocusSearchText("Unknown");
     if (panel.trackBlockCountForTest() != 1) return false;
     panel.setFocusSearchText("");
-    if (panel.trackBlockCountForTest() != 7) return false;
+    retained = 0;
+    for (const auto& cluster : panel.trackClustersForTest()) retained += cluster.size();
+    if (retained != 7) return false;
+    for (int role = 0; role < 7; ++role) {
+        auto* button = panel.findChild<QToolButton*>(QStringLiteral("hotspotRole_%1").arg(role));
+        if (!button || !button->isChecked()) return false;
+        button->click();
+        if (panel.matrixItemCountForTest() != 6) return false;
+        button->click();
+        if (panel.matrixItemCountForTest() != 7) return false;
+    }
     const auto evidence = qEnvironmentVariable("ZEROSLACK_UI_EVIDENCE_DIR");
     if (!evidence.isEmpty()) {
         QDir().mkpath(evidence);
-        panel.resize(1400, 760); panel.show(); QApplication::processEvents();
+        panel.setMatrixModeForTest(false);
+        panel.resize(1400, 360); panel.show(); QApplication::processEvents();
         panel.grab().save(evidence + "/hotspot-all-roles-track.png");
         panel.setMatrixModeForTest(true); QApplication::processEvents();
         panel.grab().save(evidence + "/hotspot-all-roles-matrix.png");
     }
     return true;
+}
+
+bool verifyDenseClustersAndReadingPosition()
+{
+    SignalUsageHotspotPanel panel;
+    panel.resize(960, 320); panel.show(); QApplication::processEvents();
+    auto report = scopedTrackReport(2000, QList<int>(120, 1000));
+    panel.renderReportForTest(report); panel.setMatrixModeForTest(false);
+    if (panel.trackClustersForTest().size() != 1 || panel.trackClustersForTest().first().size() != 120) return false;
+    if (panel.rowHeightForTest() < 40 || panel.rowHeightForTest() > 55) return false;
+    if (!panel.selectTrackClusterForTest(0)) return false;
+    auto* list = panel.inlineItemsForTest();
+    if (!list || list->topLevelItemCount() != 120) return false;
+    QString jumpedFile; int jumpedLine = 0, jumpedColumn = 0;
+    panel.setNavigationHandler([&](const QString& file, int line, int column) {
+        jumpedFile = file; jumpedLine = line; jumpedColumn = column; return true;
+    });
+    list->setCurrentItem(list->topLevelItem(119)); list->setFocus();
+    QTest::keyClick(list, Qt::Key_Return);
+    if (jumpedFile != QStringLiteral("scoped_module.sv") || jumpedLine != 1000 || jumpedColumn != 5) return false;
+    if (panel.selectedItemIndexForTest() != 119) return false;
+    panel.setMatrixModeForTest(true); panel.setMatrixModeForTest(false);
+    if (panel.selectedItemIndexForTest() != 119 || !panel.inlineItemsForTest()
+        || panel.inlineItemsForTest()->topLevelItemCount() != 120) return false;
+    panel.collapseDetails();
+    if (panel.inlineItemsForTest()) return false;
+    const qreal width = panel.firstTrackRailWidthForTest();
+    panel.focusZoomIn();
+    auto* view = panel.findChild<QGraphicsView*>(QStringLiteral("signalUsageHotspotTrackView"));
+    if (panel.firstTrackRailWidthForTest() <= width || !view || view->transform() != QTransform()) return false;
+    panel.setMatrixModeForTest(true);
+    panel.selectMatrixCellForTest(SignalUsageHotspotRole::Write, "scope_mod", "scoped_module.sv");
+    const auto selected = panel.selectedItemIndexForTest();
+    panel.setFocusSearchText("sig"); panel.setMatrixModeForTest(false);
+    if (panel.selectedItemIndexForTest() != selected || panel.focusSearchText() != "sig" || panel.matrixItemCountForTest() != 120) return false;
+    auto rows = sampleReport();
+    const auto source = rows;
+    for (int row = 1; row < 30; ++row) {
+        auto lane = source.trackLanes.first();
+        lane.moduleName = QStringLiteral("module_%1").arg(row);
+        lane.positions.clear();
+        for (auto usage : source.items) {
+            usage.moduleName = lane.moduleName;
+            rows.items.append(usage);
+        }
+        rows.trackLanes.append(lane);
+    }
+    panel.setFocusSearchText(""); panel.renderReportForTest(rows);
+    QApplication::processEvents();
+    view->verticalScrollBar()->setValue(470);
+    const int scroll = view->verticalScrollBar()->value();
+    panel.setMatrixModeForTest(true);
+    auto* matrix = panel.findChild<QGraphicsView*>("signalUsageHotspotMatrixView");
+    if (!matrix || qAbs(matrix->verticalScrollBar()->value() - scroll) > 1) return false;
+    panel.setMatrixModeForTest(false);
+    if (qAbs(view->verticalScrollBar()->value() - scroll) > 1) return false;
+    panel.renderReportForTest(scopedTrackReport(2000, {1000}));
+    QApplication::processEvents();
+    QGraphicsItem* single = nullptr;
+    for (auto* mark : view->scene()->items())
+        if (mark->toolTip().contains("1000:5") && mark->toolTip().contains("scoped_module.sv")) single = mark;
+    if (!single) return false;
+    jumpedLine = 0;
+    const QPoint point = view->mapFromScene(single->sceneBoundingRect().center());
+    QTest::mouseClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+    QApplication::processEvents();
+    QTest::mouseDClick(view->viewport(), Qt::LeftButton, Qt::NoModifier, point);
+    if (jumpedLine != 1000 || jumpedColumn != 5) return false;
+    panel.setWorkspaceRoot("changed-workspace");
+    return panel.trackClustersForTest().isEmpty() && panel.currentDeclarationDisplayNameForTest().isEmpty();
+}
+
+bool verifySnapshotReplacementAndStateRestore()
+{
+    auto* index = SemanticIndex::getInstance();
+    const auto previous = index->snapshot();
+    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
+    index->setSnapshot(sharedSnapshotFromRecords({}));
+    SignalUsageHotspotPanel panel;
+    panel.setReportBuilderForTest([](const SignalUsageHotspotQuery&, std::shared_ptr<const SemanticIndexSnapshot> snapshot) {
+        auto report = sampleReport();
+        if (snapshot->getSymbolRecordsByName("updated").isEmpty()) {
+            QThread::msleep(80); report.declarationDisplayName = "obsolete";
+        } else report.declarationDisplayName = "updated";
+        return report;
+    });
+    panel.showHotspotForSymbol("mcs", "chl_ctrl.sv", "chl_ctrl");
+    const auto record = SemanticFixtureRecordBuilder("updated", SymbolTaxonomy::DeclarationKind::Module)
+        .withFile("chl_ctrl.sv").withLocalHandle(1).withLine(1, 1).record();
+    index->setSnapshot(sharedSnapshotFromRecords({record}));
+    bool obsoletePublished = false;
+    if (!waitUntil([&] {
+        obsoletePublished |= panel.currentDeclarationDisplayNameForTest() == "obsolete";
+        return !panel.reportBuildInFlightForTest();
+    }, 1500) || obsoletePublished || panel.currentDeclarationDisplayNameForTest() != "updated"
+        || panel.reportBuildRequestCountForTest() != 2) return false;
+    panel.selectUsageForTest(1);
+    panel.setFocusSearchText("mcs"); panel.setMatrixModeForTest(false);
+    const auto state = panel.saveViewState();
+    panel.setReportBuilderForTest([](const SignalUsageHotspotQuery&, std::shared_ptr<const SemanticIndexSnapshot>) {
+        auto report = sampleReport();
+        report.items.prepend(item(SignalUsageHotspotRole::Unknown, "chl_ctrl", "chl_ctrl.sv", 20, "new mcs usage"));
+        return report;
+    });
+    panel.refreshReport();
+    if (!waitUntil([&] { return !panel.reportBuildInFlightForTest(); }, 1500)
+        || panel.selectedItemIndexForTest() != 2) return false;
+    panel.setFocusSearchText("missing"); panel.restoreViewState(state);
+    if (!waitUntil([&] { return !panel.reportBuildInFlightForTest(); }, 1500)) return false;
+    return panel.selectedItemIndexForTest() == 2 && panel.focusSearchText() == "mcs"
+        && !panel.matrixModeForTest() && panel.inlineItemsForTest();
+}
+
+bool verifyLatestEmptyStateWhileOlderRequestRuns()
+{
+    SignalUsageHotspotPanel panel;
+    const auto emptyState = panel.saveViewState();
+    auto releaseOld = std::make_shared<std::atomic<bool>>(false);
+    const auto release = qScopeGuard([releaseOld] { releaseOld->store(true); });
+    panel.setReportBuilderForTest([releaseOld](const SignalUsageHotspotQuery& query,
+        std::shared_ptr<const SemanticIndexSnapshot>) {
+        if (query.signalName == "slow") while (!releaseOld->load()) QThread::msleep(1);
+        SignalUsageHotspotReport report;
+        report.notFoundReasonDisplayName = "Target unavailable";
+        return report;
+    });
+    panel.showHotspotForSymbol("slow", "source.sv", "module");
+    panel.showHotspotForSymbol("missing", "source.sv", "module");
+    auto* view = panel.findChild<QGraphicsView*>("signalUsageHotspotMatrixView");
+    const bool latestShown = waitUntil([&] {
+        for (auto* item : view->scene()->items())
+            if (auto* text = qgraphicsitem_cast<QGraphicsSimpleTextItem*>(item))
+                if (text->text() == "Target unavailable") return true;
+        return false;
+    }, 1000);
+    const bool olderStillRunning = panel.reportBuildInFlightForTest();
+    releaseOld->store(true);
+    if (!waitUntil([&] { return !panel.reportBuildInFlightForTest(); }, 1000)
+        || !latestShown || !olderStillRunning) return false;
+    panel.restoreViewState(emptyState);
+    const auto requests = panel.reportBuildRequestCountForTest();
+    panel.refreshReport();
+    return panel.saveViewState().value("signal").toString().isEmpty()
+        && panel.reportBuildRequestCountForTest() == requests && panel.trackClustersForTest().isEmpty();
 }
 
 bool verifyReportBuildIsAsyncAndLatestWins()
@@ -514,12 +687,17 @@ bool verifyReportBuildIsAsyncAndLatestWins()
         [&]() { return !panel.reportBuildInFlightForTest(); },
         1000);
     qInfo() << "Hotspot async dispatch latency ms" << callElapsedMs;
-    return callElapsedMs < 50
+    const bool latestWins = callElapsedMs < 50
         && slowRanOffThread
         && latestPublished
         && allFinished
         && panel.currentDeclarationDisplayNameForTest()
                == QStringLiteral("latest");
+    panel.showHotspotForSymbol("slow", "slow.sv", "slow_module");
+    panel.setWorkspaceRoot("another-workspace");
+    const bool cleared = waitUntil([&] { return !panel.reportBuildInFlightForTest(); }, 1000)
+        && panel.currentDeclarationDisplayNameForTest().isEmpty();
+    return latestWins && cleared;
 }
 }
 
@@ -527,9 +705,18 @@ int main(int argc, char** argv)
 {
     qInstallMessageHandler(stderrQtMessageHandler);
     QApplication app(argc, argv);
+    QTemporaryDir profile;
+    QCoreApplication::setOrganizationName("ZeroSlackHotspotTest");
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, profile.path());
     if (!initializeUiStyleForTest()) return 3;
+    { SignalUsageHotspotPanel defaults; if (!defaults.matrixModeForTest()) return 1; }
     resetApplicationActionExecutionHistory();
     if (!verifyAllRolesVisible()) return 1;
+    if (!verifyDenseClustersAndReadingPosition()) { qWarning() << "Dense cluster, inline navigation, role filter or axis zoom contract failed"; return 1; }
+    if (!verifySnapshotReplacementAndStateRestore()) { qWarning() << "Snapshot replacement or stable selection restore failed"; return 1; }
+    if (!verifyLatestEmptyStateWhileOlderRequestRuns()) { qWarning() << "Latest empty-query status or empty target restore failed"; return 1; }
     if (!verifyReportBuildIsAsyncAndLatestWins()) {
         qWarning() << "Hotspot report build blocked UI or published a stale result";
         return 1;
@@ -621,19 +808,9 @@ int main(int argc, char** argv)
         qWarning() << "Usage Hotspot graph view Actions do not match Registry metadata";
         return 1;
     }
-    QPushButton* zoomInButton =
-        panel.findChild<QPushButton*>(
-            QStringLiteral(
-                "signalUsageHotspotZoomInButton"));
-    if (!zoomInButton
-        || zoomInButton->text()
-               != zoomInAction->text()
-        || zoomInButton->property(
-               GraphExportUi::kActionIdProperty)
-               .toString()
-               != QString::fromLatin1(
-                   ActionIds::GraphViewZoomIn)) {
-        qWarning() << "Usage Hotspot toolbar does not consume Registry Action metadata";
+    auto* more = panel.findChild<QToolButton*>(QStringLiteral("signalUsageHotspotMoreButton"));
+    if (!more || !more->menu() || !more->menu()->actions().contains(zoomInAction)) {
+        qWarning() << "Usage Hotspot More menu does not consume Registry Action metadata";
         return 1;
     }
     const ActionExecutionResult resetResult =
@@ -717,7 +894,9 @@ int main(int argc, char** argv)
     panel.renderReportForTest(previewReport);
     const int fullPreviewLaneCount = panel.trackLaneCountForTest();
     const int fullPreviewBlockCount = panel.trackBlockCountForTest();
-    if (fullPreviewLaneCount != 4 || fullPreviewBlockCount < 18) {
+    int referenceCount = 0;
+    for (const auto& cluster : panel.trackClustersForTest()) referenceCount += cluster.size();
+    if (fullPreviewLaneCount != 4 || referenceCount != previewReport.items.size()) {
         qWarning() << "Preview report did not render expected dense lanes"
                    << fullPreviewLaneCount << fullPreviewBlockCount;
         return 1;

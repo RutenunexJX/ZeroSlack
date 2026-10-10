@@ -3,11 +3,12 @@
 #include "activitylogpanelcoordinator.h"
 
 #include "activitylogservice.h"
+#include "roundedicons.h"
 
 #include <QHBoxLayout>
 #include <QEvent>
 #include <QPlainTextEdit>
-#include <QPushButton>
+#include <QAction>
 #include <QScrollBar>
 #include <QTextCursor>
 #include <QTextBlockFormat>
@@ -18,16 +19,8 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
 {
     auto* panel = new QWidget(parent);
     auto* layout = new QVBoxLayout(panel);
-    layout->setContentsMargins(10, 8, 10, 8);
-    layout->setSpacing(8);
-
-    auto* toolbar = new QHBoxLayout;
-    toolbar->setContentsMargins(0, 0, 0, 0);
-    toolbar->addStretch(1);
-    clearButton = UiControls::pushButton(QObject::tr("Clear"), panel);
-    clearButton->setObjectName(QStringLiteral("activityLogClearButton"));
-    toolbar->addWidget(clearButton);
-    layout->addLayout(toolbar);
+    layout->setContentsMargins(8, 3, 8, 3);
+    layout->setSpacing(0);
 
     outputText = UiControls::readOnlyText(panel);
     outputText->setObjectName(QStringLiteral("activityOutputText"));
@@ -44,6 +37,9 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
     activityDock->setFeatures(QDockWidget::DockWidgetMovable |
                               QDockWidget::DockWidgetFloatable |
                               QDockWidget::DockWidgetClosable);
+    clearLogAction = new QAction(RoundedIcons::icon(RoundedIcons::Clear), QObject::tr("Clear Activity"), activityDock);
+    clearLogAction->setObjectName(QStringLiteral("activityLogClearAction"));
+    clearLogAction->setToolTip(QObject::tr("Clear Activity"));
 
     appendExistingEvents();
 
@@ -85,8 +81,8 @@ ActivityLogPanelCoordinator::ActivityLogPanelCoordinator(QWidget* parent)
                              schedulePendingFlush();
                          }
                      });
-    QObject::connect(clearButton,
-                     &QPushButton::clicked,
+    QObject::connect(clearLogAction,
+                     &QAction::triggered,
                      service,
                      &ActivityLogService::clear);
 }

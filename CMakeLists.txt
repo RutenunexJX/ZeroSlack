@@ -1613,7 +1613,10 @@ if(BUILD_TESTING)
 
     add_executable(signal_usage_hotspot_panel_test
         test_sv/signal_usage_hotspot_panel_test.cpp)
-    target_link_libraries(signal_usage_hotspot_panel_test PRIVATE zeroslack_core)
+    target_link_libraries(signal_usage_hotspot_panel_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(bottom_panels_ui_test test_sv/bottom_panels_ui_test.cpp)
+    target_link_libraries(bottom_panels_ui_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(large_file_perf_test test_sv/large_file_perf_test.cpp)
     target_link_libraries(large_file_perf_test PRIVATE zeroslack_core Qt6::Test)
@@ -2586,6 +2589,13 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:signal_usage_hotspot_panel_test>
+    )
+    add_test(NAME bottom_panels_ui_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:bottom_panels_ui_test>
     )
     add_test(NAME large_file_perf_test
         COMMAND ${CMAKE_COMMAND} -E env

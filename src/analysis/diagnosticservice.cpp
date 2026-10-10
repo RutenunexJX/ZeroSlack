@@ -363,6 +363,7 @@ std::shared_ptr<const DiagnosticPanelReport> DiagnosticService::reportForPanel(
     for (const auto& result : diagnostics) {
         if (options.scope == DiagnosticPanelScope::WorkspaceFiles
             && !workspace.contains(identities.value(result.diagnostic.fileName))) continue;
+        ++report->scopeSeverityCounts[result.diagnostic.severity];
         if (!severityMatches(result.diagnostic.severity, selection)) continue;
         scoped.append(result);
         if (selection.analysisBandLabel.isEmpty() || result.analysisBand.label == selection.analysisBandLabel)

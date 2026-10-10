@@ -91,6 +91,7 @@ struct DiagnosticPanelReport {
     DiagnosticReport visible;
     DiagnosticReport availableBands;
     QMap<SemanticDiagnostic::Severity, int> currentFileSeverityCounts;
+    QMap<SemanticDiagnostic::Severity, int> scopeSeverityCounts;
 };
 
 class DiagnosticService

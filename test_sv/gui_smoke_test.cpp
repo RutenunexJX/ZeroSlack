@@ -323,7 +323,7 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
         fixturePath,
         QStringLiteral("insight_top"));
     if (window.panelLayoutController)
-        window.panelLayoutController->setBottomCollapsed(true);
+        window.panelLayoutController->restorePanel(QStringLiteral("hotspot"));
     if (QDockWidget* navigationDock = window.dockForPanelId(QStringLiteral("navigation")))
         navigationDock->show();
 
@@ -366,16 +366,11 @@ static bool saveFullAppSignalUsageHotspotScreenshot(MainWindow& window,
         qWarning() << "Failed to save full app screenshot" << outputPath;
     else
         qInfo() << "Saved full app screenshot" << outputPath;
-    const ContextResource activeResource =
-        window.contextWorkspaceController->dockHost()
-            ->currentResource();
-    if (activeResource.isValid()) {
-        window.contextWorkspaceController->closePinnedResource(
-            activeResource.stableKey());
-    }
+    if (window.panelLayoutController)
+        window.panelLayoutController->setBottomCollapsed(true);
     if (window.tabManager) {
         QWidget* fullView = window.tabManager->toolPage(
-            QStringLiteral("live-insight:hotspot"));
+            QStringLiteral("hotspot"));
         auto* group = fullView
             ? qobject_cast<QTabWidget*>(
                   fullView->parentWidget())
@@ -6517,221 +6512,29 @@ static void runActivityLogServiceRegression()
                    && QApplication::focusWidget()
                           == focusBeforeProblemsUpdate,
                true);
-    expectBool("problems current file diagnostic summary",
-               diagnosticActivityProblems.summaryLabel()
-                   && diagnosticActivityProblems.summaryLabel()->text()
-                          == QStringLiteral(
-                              "Current file: 0 errors, 1 warnings, 1 info"),
-               true);
-    expectBool("problems diagnostic state label",
-               diagnosticActivityProblems.stateLabel()
-                   && diagnosticActivityProblems.stateLabel()->text()
-                          == QStringLiteral(
-                              "Diagnostics: current + background"),
-               true);
+    expectBool("problems counts follow selected scope",
+               diagnosticActivityProblems.severityButton(DiagnosticSeverityFilter::All)->text() == QStringLiteral("All 3")
+                   && diagnosticActivityProblems.severityButton(DiagnosticSeverityFilter::Errors)->text() == QStringLiteral("Errors 1"), true);
+    expectBool("problems hides current state", diagnosticActivityProblems.stateLabel()->isHidden(), true);
     diagnosticActivityProblems.setAnalysisState(QStringLiteral("analyzing"));
-    expectBool("problems explicit diagnostic state label",
-               diagnosticActivityProblems.stateLabel()
-                   && diagnosticActivityProblems.stateLabel()->text()
-                          == QStringLiteral("Diagnostics: analyzing"),
-               true);
+    expectBool("problems explicit analysis state", diagnosticActivityProblems.stateLabel()->text() == QString::fromUtf8("Analyzing…"), true);
     diagnosticActivityProblems.setAnalysisState(QString());
-    bool sawBandCountLabels = false;
-    if (diagnosticActivityProblems.bandCombo()) {
-        const int allBandIndex =
-            diagnosticActivityProblems.bandCombo()->findData(QString());
-        const int currentIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("current"));
-        const int backgroundIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("background"));
-        sawBandCountLabels =
-            allBandIndex >= 0
-            && currentIndex >= 0
-            && backgroundIndex >= 0
-            && diagnosticActivityProblems.bandCombo()->itemText(allBandIndex)
-                == QStringLiteral("All Bands (3)")
-            && diagnosticActivityProblems.bandCombo()->itemText(currentIndex)
-                == QStringLiteral("Current (2)")
-            && diagnosticActivityProblems.bandCombo()->itemText(backgroundIndex)
-                == QStringLiteral("Background (1)");
-    }
-    expectBool("problems band filter shows counts",
-               sawBandCountLabels,
-               true);
-    bool sawBandSeverityTooltips = false;
-    if (diagnosticActivityProblems.bandCombo()) {
-        const int allBandIndex =
-            diagnosticActivityProblems.bandCombo()->findData(QString());
-        const int currentIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("current"));
-        const int backgroundIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("background"));
-        const QString allToolTip =
-            allBandIndex >= 0
-                ? diagnosticActivityProblems.bandCombo()
-                      ->itemData(allBandIndex, Qt::ToolTipRole)
-                      .toString()
-                : QString();
-        const QString currentToolTip =
-            currentIndex >= 0
-                ? diagnosticActivityProblems.bandCombo()
-                      ->itemData(currentIndex, Qt::ToolTipRole)
-                      .toString()
-                : QString();
-        const QString backgroundToolTip =
-            backgroundIndex >= 0
-                ? diagnosticActivityProblems.bandCombo()
-                      ->itemData(backgroundIndex, Qt::ToolTipRole)
-                      .toString()
-                : QString();
-        sawBandSeverityTooltips =
-            allToolTip.contains(
-                QStringLiteral("current 2 diagnostics"))
-            && allToolTip.contains(QStringLiteral("1 warning"))
-            && allToolTip.contains(QStringLiteral("1 info"))
-            && allToolTip.contains(
-                QStringLiteral("background 1 diagnostic"))
-            && allToolTip.contains(QStringLiteral("1 error"))
-            && currentToolTip
-                == QStringLiteral(
-                    "current 2 diagnostics (1 warning, 1 info)")
-            && backgroundToolTip
-                == QStringLiteral("background 1 diagnostic (1 error)");
-    }
-    expectBool("problems band filter shows severity tooltips",
-               sawBandSeverityTooltips,
-               true);
     QTreeWidget* diagnosticActivityTree = diagnosticActivityProblems.tree();
-    expectBool("problems band column visible",
-               diagnosticActivityTree
-                   && diagnosticActivityTree->columnCount() == 7
-                   && diagnosticActivityTree->headerItem()
-                   && diagnosticActivityTree->headerItem()->text(5)
-                       == QStringLiteral("Owner")
-                   && diagnosticActivityTree->headerItem()->text(6)
-                       == QStringLiteral("Band"),
-               true);
-    bool sawCurrentBandRow = false;
-    bool sawBackgroundBandRow = false;
-    bool sawSlangOwnerRow = false;
-    bool sawSemanticOwnerRow = false;
-    if (diagnosticActivityTree) {
-        for (int i = 0; i < diagnosticActivityTree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* group = diagnosticActivityTree->topLevelItem(i);
-            if (!group)
-                continue;
-            sawCurrentBandRow = sawCurrentBandRow
-                || group->text(6) == QStringLiteral("current");
-            sawBackgroundBandRow = sawBackgroundBandRow
-                || group->text(6) == QStringLiteral("background");
-            for (int child = 0; child < group->childCount(); ++child) {
-                QTreeWidgetItem* row = group->child(child);
-                sawCurrentBandRow = sawCurrentBandRow
-                    || (row && row->text(6) == QStringLiteral("current"));
-                sawBackgroundBandRow = sawBackgroundBandRow
-                    || (row && row->text(6) == QStringLiteral("background"));
-                sawSlangOwnerRow = sawSlangOwnerRow
-                    || (row && row->text(5) == QStringLiteral("Slang"));
-                sawSemanticOwnerRow = sawSemanticOwnerRow
-                    || (row && row->text(5)
-                               == QStringLiteral("Semantic index"));
-            }
-        }
+    expectBool("problems compact columns", diagnosticActivityTree->columnCount() == 3
+        && diagnosticActivityTree->headerItem()->text(1) == QStringLiteral("Message")
+        && diagnosticActivityTree->headerItem()->text(2) == QStringLiteral("Location"), true);
+    bool sawSlangOwner = false, sawSemanticOwner = false;
+    for (QTreeWidgetItemIterator it(diagnosticActivityTree); *it; ++it) {
+        sawSlangOwner |= (*it)->toolTip(1).contains(QStringLiteral("Slang"));
+        sawSemanticOwner |= (*it)->toolTip(1).contains(QStringLiteral("Semantic index"));
     }
-    expectBool("problems rows show diagnostic bands",
-               sawCurrentBandRow && sawBackgroundBandRow,
-               true);
-    expectBool("problems rows show diagnostic owners",
-               sawSlangOwnerRow && sawSemanticOwnerRow,
-               true);
-    if (diagnosticActivityProblems.bandCombo()) {
-        const int backgroundIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("background"));
-        if (backgroundIndex >= 0)
-            diagnosticActivityProblems.bandCombo()->setCurrentIndex(backgroundIndex);
-    }
-    bool sawOnlyBackgroundRows = false;
-    if (diagnosticActivityTree) {
-        int diagnosticRows = 0;
-        bool allBackground = true;
-        for (int i = 0; i < diagnosticActivityTree->topLevelItemCount(); ++i) {
-            QTreeWidgetItem* group = diagnosticActivityTree->topLevelItem(i);
-            if (!group)
-                continue;
-            if (group->childCount() == 0) {
-                ++diagnosticRows;
-                allBackground = allBackground
-                    && group->text(6) == QStringLiteral("background");
-                continue;
-            }
-            for (int child = 0; child < group->childCount(); ++child) {
-                QTreeWidgetItem* row = group->child(child);
-                if (!row)
-                    continue;
-                ++diagnosticRows;
-                allBackground = allBackground
-                    && row->text(6) == QStringLiteral("background");
-            }
-        }
-        sawOnlyBackgroundRows = diagnosticRows == 1 && allBackground;
-    }
-    expectBool("problems band filter narrows diagnostics",
-               sawOnlyBackgroundRows,
-               true);
-    bool keptUnfilteredBandCounts = false;
-    if (diagnosticActivityProblems.bandCombo()) {
-        const int currentIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("current"));
-        const int backgroundIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("background"));
-        keptUnfilteredBandCounts =
-            currentIndex >= 0
-            && backgroundIndex >= 0
-            && diagnosticActivityProblems.bandCombo()->itemText(currentIndex)
-                == QStringLiteral("Current (2)")
-            && diagnosticActivityProblems.bandCombo()->itemText(backgroundIndex)
-                == QStringLiteral("Background (1)");
-    }
-    expectBool("problems band counts ignore band filter",
-               keptUnfilteredBandCounts,
-               true);
-    bool keptUnfilteredBandTooltips = false;
-    if (diagnosticActivityProblems.bandCombo()) {
-        const int currentIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("current"));
-        const int backgroundIndex =
-            diagnosticActivityProblems.bandCombo()->findData(
-                QStringLiteral("background"));
-        const QString currentToolTip =
-            currentIndex >= 0
-                ? diagnosticActivityProblems.bandCombo()
-                      ->itemData(currentIndex, Qt::ToolTipRole)
-                      .toString()
-                : QString();
-        const QString backgroundToolTip =
-            backgroundIndex >= 0
-                ? diagnosticActivityProblems.bandCombo()
-                      ->itemData(backgroundIndex, Qt::ToolTipRole)
-                      .toString()
-                : QString();
-        keptUnfilteredBandTooltips =
-            currentToolTip
-                == QStringLiteral(
-                    "current 2 diagnostics (1 warning, 1 info)")
-            && backgroundToolTip
-                == QStringLiteral("background 1 diagnostic (1 error)");
-    }
-    expectBool("problems band tooltips ignore band filter",
-               keptUnfilteredBandTooltips,
-               true);
+    expectBool("problems owners remain in hover details", sawSlangOwner && sawSemanticOwner, true);
+    diagnosticActivityProblems.severityButton(DiagnosticSeverityFilter::Errors)->click();
+    expectBool("problems severity filter retains scope counts",
+        diagnosticActivityTree->topLevelItemCount() == 1
+        && diagnosticActivityTree->topLevelItem(0)->childCount() == 1
+        && diagnosticActivityProblems.severityButton(DiagnosticSeverityFilter::All)->text() == QStringLiteral("All 3"), true);
+    diagnosticActivityProblems.severityButton(DiagnosticSeverityFilter::All)->click();
     bool sawDiagnosticBandActivity = false;
     for (const ActivityLogEvent& event : service->events()) {
         sawDiagnosticBandActivity = sawDiagnosticBandActivity
@@ -7094,7 +6897,7 @@ static bool hasDiagnosticTreeItem(QTreeWidget* tree,
     for (QTreeWidgetItem* item : items) {
         const QString itemFileName = item->data(0, Qt::UserRole).toString();
         if (EditorFileIdentity::same(itemFileName, fileName)
-            && item->text(4).contains(message)) {
+            && item->text(1).contains(message)) {
             return true;
         }
     }
@@ -7112,13 +6915,6 @@ static QComboBox* problemsScopeCombo(MainWindow& window)
 {
     return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
         ? window.semanticDocks->problemsPanelCoordinator()->scopeCombo()
-        : nullptr;
-}
-
-static QComboBox* problemsBandCombo(MainWindow& window)
-{
-    return window.semanticDocks && window.semanticDocks->problemsPanelCoordinator()
-        ? window.semanticDocks->problemsPanelCoordinator()->bandCombo()
         : nullptr;
 }
 
@@ -14917,8 +14713,6 @@ int main(int argc, char** argv)
                    true);
         workspaceSymbolsDone = false;
         workspaceFilesScanned = false;
-        if (problemsBandCombo(window))
-            problemsBandCombo(window)->setCurrentIndex(0);
         expectBool("reopen workspace after close",
                    window.workspaceManager->openWorkspace(workspacePath), true);
         expectBool("reopened workspace file scan completes",

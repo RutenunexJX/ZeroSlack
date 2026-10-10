@@ -392,8 +392,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphPanelLayout->addWidget(viewState->graphTable, 0);
 
     viewState->signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
-    CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(viewState->signalUsageHotspotPanel->layout()));
-    CompactFlowLayout::makeScrollable(viewState->signalUsageHotspotPanel);
 
     viewState->insightsStack = new QStackedWidget(panel);
     viewState->insightsStack->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);

@@ -15,6 +15,7 @@
 #include <functional>
 
 class QEvent;
+class QAction;
 class QFrame;
 class QMainWindow;
 class QStackedWidget;
@@ -56,7 +57,10 @@ public:
     bool registerBottomPanelAlias(const QString& alias,
                                   const QString& panelId);
     void finalize();
-    void setMainAreaRequestHandler(std::function<void(QWidget*, QWidget*)> handler) { mainAreaRequest = std::move(handler); }
+    void setMainAreaRequestHandler(std::function<void(const QString&, QWidget*, QWidget*)> handler) { mainAreaRequest = std::move(handler); }
+    bool openPanelInMainArea(const QString& panelId);
+    void setPanelStateHandlers(const QString& panelId, std::function<QVariantMap()> capture,
+                              std::function<void(const QVariantMap&)> restore);
 
     PanelLayoutState layoutState() const;
     void restoreLayoutState(const PanelLayoutState& state);
@@ -96,6 +100,7 @@ public:
                        const QString& tone = QString());
     QString panelBadgeText(const QString& panelId) const;
     QString panelBadgeTone(const QString& panelId) const;
+    bool setPanelAction(const QString& panelId, QAction* action);
 
 
     void bindManagedTabBars();
@@ -125,8 +130,11 @@ private:
         QPointer<QDockWidget> dock;
         QPointer<QWidget> content;
         QPointer<QToolButton> button;
+        QPointer<QToolButton> actionButton;
         int height = kDefaultContentHeight;
         QVariantMap viewState;
+        std::function<QVariantMap()> captureState;
+        std::function<void(const QVariantMap&)> restoreState;
         QString badgeText;
         QString badgeTone;
     };
@@ -158,7 +166,7 @@ private:
     QStringList defaultOrder;
     QString activePanel;
     QString lastPanel;
-    std::function<void(QWidget*, QWidget*)> mainAreaRequest;
+    std::function<void(const QString&, QWidget*, QWidget*)> mainAreaRequest;
     bool collapsed = false;
     bool applying = false;
     bool finalized = false;

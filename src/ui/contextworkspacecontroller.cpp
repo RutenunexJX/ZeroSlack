@@ -691,6 +691,11 @@ bool ContextWorkspaceController::openResource(
         return false;
     }
 
+    if (externalResourceHandler) {
+        const auto handled = externalResourceHandler(resource, restoringState);
+        if (handled.has_value()) return *handled;
+    }
+
     if (placement.binding == ContextBinding::DocumentBound
         && (placement.surface == ContextSurface::Docked || activeDocumentPath.isEmpty())) {
         if (failureReason) {

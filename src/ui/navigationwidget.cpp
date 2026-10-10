@@ -429,10 +429,6 @@ void NavigationWidget::setupUI()
 
     tabWidget = UiControls::tabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
-    tabWidget->tabBar()->setFont(UiTypography::font(UiTypography::Role::Metadata));
-    tabWidget->tabBar()->setStyleSheet(QStringLiteral("QTabBar::tab { padding: 7px 6px; min-width: 0px; }"));
-    tabWidget->tabBar()->setUsesScrollButtons(false);
-    tabWidget->tabBar()->setElideMode(Qt::ElideRight);
     mainLayout->insertWidget(0, tabWidget);
     mainLayout->removeWidget(searchLineEdit);
 

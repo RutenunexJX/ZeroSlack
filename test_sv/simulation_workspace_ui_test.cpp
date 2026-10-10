@@ -3,6 +3,7 @@
 #include "contextworkspacecontroller.h"
 #include "contextfloatingwindow.h"
 #include "navigationwidget.h"
+#include "navigationpanecoordinator.h"
 #include "panellayoutcontroller.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
@@ -116,6 +117,55 @@ class SimulationWorkspaceUiTest : public QObject {
             {"screenWidth", bounds.width()}, {"screenHeight", bounds.height()}}).toJson()));
     }
 private slots:
+    void navigationMotionRetainsBuildInputs_data() {
+        QTest::addColumn<int>("tab"); QTest::addColumn<int>("width"); QTest::addColumn<bool>("dark");
+        QTest::newRow("files-light") << 0 << 1280 << false;
+        QTest::newRow("design-light") << 1 << 1280 << false;
+        QTest::newRow("inputs-light") << 2 << 1280 << false;
+        QTest::newRow("inputs-narrow-dark") << 2 << 780 << true;
+    }
+    void navigationMotionRetainsBuildInputs() {
+        QFETCH(int, tab); QFETCH(int, width); QFETCH(bool, dark);
+        auto& theme = ApplicationThemeManager::instance();
+        const bool animations = theme.animationsEnabled();
+        theme.setAnimationsEnabled(true);
+        const auto restore = qScopeGuard([&] { theme.setAnimationsEnabled(animations); });
+        Host f; QVERIFY(f.open()); ready(f);
+        theme.setMode(dark ? ThemeMode::Dark : ThemeMode::Light);
+        auto* pane = f.window->findChild<NavigationPaneCoordinator*>(); QVERIFY(pane);
+        f.window->resize(width, 720);
+        pane->setActiveTab(tab); pane->setExpanded(true, false); QTest::qWait(80);
+        const auto sourceModel = f.sources()->model();
+        const auto projectId = f.saved().id;
+        const auto compilationOrder = f.saved().sources;
+        const int expandedWidth = pane->dock()->width();
+        const int contentWidth = f.navigation()->width();
+        for (int i = 0; i < 3; ++i) {
+            pane->setExpanded(false);
+            QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
+            QVERIFY(!pane->isExpanded());
+            pane->setExpanded(true);
+            QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
+            QVERIFY(pane->isExpanded());
+            QCOMPARE(f.navigation()->width(), contentWidth);
+            if (width >= 850) QCOMPARE(pane->dock()->width(), expandedWidth);
+        }
+        pane->setExpanded(false); QTest::qWait(35);
+        pane->setExpanded(true); QTest::qWait(35);
+        pane->setExpanded(false); QTest::qWait(25);
+        pane->setExpanded(true);
+        QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
+        QVERIFY(pane->isExpanded()); QCOMPARE(pane->activeTab(), tab);
+        QCOMPARE(f.sources()->model(), sourceModel);
+        QCOMPARE(f.saved().id, projectId); QCOMPARE(f.saved().sources, compilationOrder);
+        if (tab == 2) {
+            QVERIFY(f.sources()->isVisible());
+            f.sources()->setCurrentIndex(sourceModel->index(1, 0));
+            click(f.window.get(), "moveSourceUp");
+            QCOMPARE(f.saved().sources, QStringList({"extra.sv", "dut.sv"}));
+        }
+        capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-motion-restored");
+    }
     void sourceFirstSingleOwnershipAndSessionRestore() {
         Host f; QVERIFY(f.open()); ready(f);
         QVERIFY(!f.context()->viewForResource(key));
@@ -265,7 +315,12 @@ private slots:
         QVERIFY(f.sources()->height() >= 80); QVERIFY(child<QWidget>(f.window.get(), "projectList")->height() <= 140);
         QVERIFY(f.sources()->isVisible()); QVERIFY(f.log()->isVisible());
         auto* tabs = child<QTabWidget>(f.window.get(), "navigationTabs")->tabBar();
-        for (int i = 0; i < 3; ++i) QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
+        for (int i = 0; i < 3; ++i) {
+            tabs->setCurrentIndex(i);
+            QTest::qWait(30);
+            QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
+        }
+        tabs->setCurrentIndex(2);
         QVERIFY(!f.panel()->findChild<QWidget*>("workbenchSection"));
         auto* waves = child<QAbstractButton>(f.panel(), "waveOptionsToggle"); QVERIFY(!waves->isChecked()); waves->click();
         auto* scope = child<QComboBox>(f.panel(), "waveScope"); QCOMPARE(scope->count(), 3);

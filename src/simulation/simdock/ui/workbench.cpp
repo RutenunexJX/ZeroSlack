@@ -19,8 +19,13 @@
 #include <ElaTheme.h>
 #include <ElaToolButton.h>
 #include "uicontrols.h"
+#include "uitypography.h"
 #include "roundedicons.h"
 #include <QAction>
+#include <QApplication>
+#include <QLabel>
+#include <QListView>
+#include <QPushButton>
 #include <QMenu>
 #include <QScrollBar>
 #include <QSet>
@@ -240,7 +245,7 @@ void Workbench::buildUi()
     m_sources = sources;
     sources->setObjectName(QStringLiteral("simulationSources"));
     auto* sourceLayout = new QVBoxLayout(sources);
-    sourceLayout->setContentsMargins(2, 6, 2, 2);
+    sourceLayout->setContentsMargins(2, 2, 2, 2);
     sourceLayout->setSpacing(8);
     auto* projects = new QWidget(sources);
     auto* projectLayout = new QVBoxLayout(projects);
@@ -248,22 +253,19 @@ void Workbench::buildUi()
     projectLayout->setSpacing(4);
     auto* projectHeading = new QHBoxLayout;
     projectHeading->setSpacing(8);
-    projectHeading->addWidget(Ui::label(QStringLiteral("Projects"), projects, Ui::Role::Section));
+    auto* projectsLabel = UiControls::label(QStringLiteral("Projects"), projects);
+    UiTypography::apply(projectsLabel, UiTypography::Role::Section);
+    projectHeading->addWidget(projectsLabel);
     projectHeading->addStretch();
-    m_new = Ui::button(QStringLiteral("New"), projects);
+    m_new = UiControls::pushButton(QStringLiteral("New"), projects);
     m_new->setObjectName(QStringLiteral("newProject"));
-    m_new->setFixedWidth(56);
     projectHeading->addWidget(m_new);
     projectLayout->addLayout(projectHeading);
-    m_projectList = new ElaListView(projects);
+    m_projectList = UiControls::listView(projects);
     m_projectList->setObjectName(QStringLiteral("projectList"));
-    auto* projectStyle = ElaListView::createStyle(m_projectList, 32);
-    static_cast<QProxyStyle*>(projectStyle)->setBaseStyle(QStyleFactory::create(QStringLiteral("Fusion")));
-    m_projectList->setStyle(projectStyle);
+    m_projectList->setProperty("workspaceNavigationList", true);
     m_projectList->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_projectList->setFont(Ui::font());
     m_projectList->setUniformItemSizes(true);
-    Ui::smoothScrolling(m_projectList);
     m_projectModel = new QStandardItemModel(this);
     m_projectList->setModel(m_projectModel);
     projectLayout->addWidget(m_projectList, 1);
@@ -277,22 +279,28 @@ void Workbench::buildUi()
     fileLayout->setContentsMargins(0, 0, 0, 0);
     fileLayout->setSpacing(6);
     auto* fileHeading = new QHBoxLayout;
-    fileHeading->addWidget(Ui::label(QStringLiteral("Build inputs"), this, Ui::Role::Section), 1);
-    m_refresh = Ui::button(QStringLiteral("Rescan"), this);
+    auto* inputsLabel = UiControls::label(QStringLiteral("Build inputs"), files);
+    UiTypography::apply(inputsLabel, UiTypography::Role::Section);
+    fileHeading->addWidget(inputsLabel, 1);
+    m_refresh = UiControls::pushButton(QStringLiteral("Rescan"), files);
     m_refresh->setObjectName(QStringLiteral("refreshWorkspace"));
     fileHeading->addWidget(m_refresh);
     fileLayout->addLayout(fileHeading);
-    m_sourceHint = Ui::label(QStringLiteral("Select files and set their compilation order."), this, Ui::Role::Metadata);
+    m_sourceHint = UiControls::label(QStringLiteral("Select files and set their compilation order."), files);
+    UiTypography::apply(m_sourceHint, UiTypography::Role::Metadata);
     m_sourceHint->setWordWrap(true);
     fileLayout->addWidget(m_sourceHint);
-    m_fileList = new ElaListView(this);
+    m_fileList = new QListView(files);
     m_fileList->setObjectName(QStringLiteral("sourceList"));
-    auto* fileStyle = ElaListView::createStyle(m_fileList, 32);
+    auto* fileStyle = ElaListView::createStyle(qApp, qMax(28, m_fileList->fontMetrics().height() + 10));
     static_cast<QProxyStyle*>(fileStyle)->setBaseStyle(new SourceMetricsStyle);
     m_fileList->setStyle(fileStyle);
+    connect(m_fileList, &QObject::destroyed, fileStyle, &QObject::deleteLater);
+    m_fileList->setProperty("workspaceNavigationList", true);
+    m_fileList->setMouseTracking(true);
     m_fileList->setItemDelegate(new SourceDelegate(m_fileList));
     m_fileList->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_fileList->setFont(Ui::font());
+    m_fileList->setFont(UiTypography::font());
     m_fileList->setTextElideMode(Qt::ElideMiddle);
     m_fileModel = new SourceModel(this, [this](const QModelIndex& index, Qt::CheckState state) {
         if (m_scanning || m_session.busy() || m_requestingProject
@@ -302,12 +310,12 @@ void Workbench::buildUi()
     });
     m_fileList->setModel(m_fileModel);
     m_fileList->setUniformItemSizes(true);
-    Ui::smoothScrolling(m_fileList);
+    UiControls::enableSmoothScrolling(m_fileList);
     fileLayout->addWidget(m_fileList, 1);
     auto* fileActions = new QHBoxLayout;
     fileActions->setSpacing(8);
-    auto* up = Ui::button(QStringLiteral("Move up"), this);
-    auto* down = Ui::button(QStringLiteral("Move down"), this);
+    auto* up = UiControls::pushButton(QStringLiteral("Move up"), files);
+    auto* down = UiControls::pushButton(QStringLiteral("Move down"), files);
     up->setObjectName(QStringLiteral("moveSourceUp"));
     down->setObjectName(QStringLiteral("moveSourceDown"));
     up->setToolTip(QStringLiteral("Compile the selected file earlier"));
@@ -319,7 +327,8 @@ void Workbench::buildUi()
     fileActions->addWidget(down);
     fileLayout->addLayout(fileActions);
     m_fileList->setMinimumHeight(80);
-    m_scanStatus = Ui::label(QStringLiteral("Open a ZeroSlack workspace."), this, Ui::Role::Metadata);
+    m_scanStatus = UiControls::label(QStringLiteral("Open a ZeroSlack workspace."), files);
+    UiTypography::apply(m_scanStatus, UiTypography::Role::Metadata);
     m_scanStatus->setWordWrap(true);
     fileLayout->addWidget(m_scanStatus);
     sourceLayout->addWidget(files, 1);
@@ -1067,7 +1076,6 @@ void Workbench::flushLog()
 void Workbench::applyTheme()
 {
     Ui::applyTheme(this);
-    if (m_sources) Ui::applyTheme(m_sources);
     if (m_logs) Ui::applyTheme(m_logs);
     update();
 }

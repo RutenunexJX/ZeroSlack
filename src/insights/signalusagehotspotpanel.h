@@ -12,6 +12,9 @@
 #include <functional>
 #include <memory>
 #include <QSet>
+#include <QHash>
+#include <QPointer>
+#include <QVariantMap>
 
 class QAction;
 class QGraphicsScene;
@@ -23,7 +26,8 @@ class QResizeEvent;
 class QSplitter;
 class QStackedWidget;
 class QTreeWidget;
-struct SignalUsageHotspotThemePresentationSnapshot;
+class QToolButton;
+class QGraphicsLineItem;
 
 enum class SignalUsageHotspotExportSurface {
     Track,
@@ -50,6 +54,14 @@ public:
                               const QString& moduleName,
                               const QString& signalAccessPath = {});
     void refreshReport();
+    void setWorkspaceRoot(const QString& root);
+    void refreshSemanticSnapshot();
+    void clearTarget();
+    QVariantMap saveViewState() const;
+    void restoreViewState(const QVariantMap& state);
+    void setMainAreaHandler(std::function<void(bool)> handler);
+    void setInMainArea(bool expanded);
+    bool isInMainArea() const;
     void setCurrentEditorLocation(const QString& fileName, int line);
     void focusFit();
     void focusZoomIn();
@@ -92,6 +104,12 @@ public:
     QString currentDeclarationDisplayNameForTest() const;
     void setMatrixModeForTest(bool matrixMode);
     bool matrixModeForTest() const;
+    QList<QList<int>> trackClustersForTest() const;
+    qreal trackRailLeftForTest() const;
+    qreal rowHeightForTest() const;
+    bool selectTrackClusterForTest(int clusterIndex);
+    QTreeWidget* inlineItemsForTest() const;
+    void collapseDetails();
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -101,11 +119,6 @@ private:
     QLineEdit* searchEdit = nullptr;
     QPushButton* trackModeButton = nullptr;
     QPushButton* matrixModeButton = nullptr;
-    QPushButton* zoomOutButton = nullptr;
-    QPushButton* zoomInButton = nullptr;
-    QPushButton* fitButton = nullptr;
-    QPushButton* centerCurrentButton = nullptr;
-    QPushButton* resetLayoutButton = nullptr;
     QAction* fitViewAction = nullptr;
     QAction* zoomInViewAction = nullptr;
     QAction* zoomOutViewAction = nullptr;
@@ -113,16 +126,49 @@ private:
     QAction* resetLayoutViewAction = nullptr;
     QAction* exportTrackAction = nullptr;
     QAction* exportMatrixAction = nullptr;
-    QSplitter* contentSplitter = nullptr;
     QStackedWidget* modeStack = nullptr;
     QGraphicsScene* trackScene = nullptr;
     InsightGraphView* trackView = nullptr;
     QGraphicsScene* matrixScene = nullptr;
     InsightGraphView* matrixView = nullptr;
-    QTreeWidget* matrixItemsTree = nullptr;
-    QWidget* inspectorPanel = nullptr;
-    QLabel* inspectorTitleLabel = nullptr;
-    QLabel* inspectorDetailLabel = nullptr;
+    QPointer<QTreeWidget> inlineItems;
+    QToolButton* mainAreaButton = nullptr;
+    QList<QToolButton*> roleButtons;
+    QSet<int> enabledRoles;
+    QString workspaceRoot;
+    QString expandedLane;
+    QList<int> detailIndexes;
+    bool mainArea = false;
+    bool renderQueued = false;
+    bool rebuilding = false;
+    std::function<void(bool)> mainAreaHandler;
+    struct VisibleLane {
+        int laneIndex = -1;
+        QList<int> indexes;
+        QHash<int, QList<int>> roles;
+    };
+    QList<VisibleLane> visibleLanes;
+    QHash<QString, QString> reportFileKeys;
+    QHash<QString, qreal> rowPositions[2];
+    struct ReadingPosition {
+        QString lane;
+        qreal offset = 0;
+        int horizontal = 0;
+    };
+    ReadingPosition pendingReadingPosition;
+    bool pendingReadingPositionValid = false;
+    QList<QList<int>> trackClusters;
+    QList<QRectF> trackClusterRects;
+    struct EditorMarker {
+        int laneIndex = -1;
+        qreal y = 0;
+        QGraphicsLineItem* item = nullptr;
+    };
+    QList<EditorMarker> editorMarkers;
+    qreal railLeft = 180;
+    qreal rowHeight = 40;
+    quint64 requestedSnapshotRevision = 0;
+    QString pendingSelectedIdentity;
 
     SignalUsageHotspotQuery currentQuery;
     SignalUsageHotspotReport currentReport;
@@ -133,6 +179,7 @@ private:
     bool activeMatrixCellValid = false;
     QSet<int> focusedItemIndexes;
     QString currentEditorFileName;
+    QString currentEditorFileKey;
     int currentEditorLine = 0;
     int selectedItemIndex = -1;
     int lastTrackBlockCount = 0;
@@ -145,10 +192,7 @@ private:
     std::uint64_t reportGeneration = 0;
     std::uint64_t reportBuildRequestCount = 0;
     int activeReportBuilds = 0;
-    int presentationThemeMode = -1;
-    std::uint64_t themePresentationGeneration = 0;
-    std::shared_ptr<const SignalUsageHotspotThemePresentationSnapshot>
-        pendingThemePresentation;
+    bool currentReportPending = false;
 
     std::function<bool(const QString&, int, int)> navigationHandler;
     std::function<void(const QString&, int)> statusMessageHandler;
@@ -158,12 +202,21 @@ private:
     void renderUnavailable(const QString& message);
     void renderTrack();
     void renderMatrix();
-    void renderMatrixItems();
+    void buildProjection();
+    void queueRebuild();
+    void updateEditorMarkers();
+    ReadingPosition captureReadingPosition() const;
+    void restoreReadingPosition(const ReadingPosition& position);
+    qreal addInlineDetails(QGraphicsScene* scene, qreal y, qreal width);
+    void selectIndexes(const QList<int>& indexes, const QString& lane);
+    QString itemIdentity(int index) const;
+    QString fileKey(const QString& file) const;
+    QString laneKey(const QString& module, const QString& file) const;
+    void cacheReportFileKeys();
     void activateMatrixCell(SignalUsageHotspotRole role,
                             const QString& moduleName,
                             const QString& fileName,
                             bool focusTrack);
-    void activateMatrixCellForItem(int itemIndex, bool focusTrack);
     void clearMatrixFocus();
     QRectF trackRectForItem(int itemIndex) const;
     qreal targetTrackRailWidth() const;
@@ -174,9 +227,6 @@ private:
     bool resetLayout();
     void restoreLayout();
     void saveLayout() const;
-    void showInspectorForItem(int itemIndex);
-    void showInspectorMessage(const QString& title, const QString& message);
-    void showMatrixCellDetails();
     void navigateItem(int itemIndex);
     bool itemPassesFilters(const SignalUsageHotspotItem& item) const;
     QList<int> filteredItemIndexes(bool includeMatrixFocus = true) const;

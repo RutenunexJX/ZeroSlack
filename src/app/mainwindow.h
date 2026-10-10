@@ -33,6 +33,7 @@ class NavigationPaneCoordinator;
 class NotificationCenter;
 class EditingTimeService;
 class SimDockContextView;
+class SignalUsageHotspotPanel;
 class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
@@ -113,12 +114,14 @@ signals:
         const SemanticAnalysisTelemetry& telemetry);
 
 private:
+    friend class BottomPanelsUiTest;
     Ui::MainWindow *ui;
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
     std::unique_ptr<NotificationCenter> notificationCenter;
     std::unique_ptr<EditingTimeService> editingTimeService;
     std::unique_ptr<SimDockContextView> simulationWorkspace;
+    SignalUsageHotspotPanel* hotspotPanel = nullptr;
     std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;
