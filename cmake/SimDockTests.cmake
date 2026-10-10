@@ -55,7 +55,7 @@ foreach(name IN ITEMS scan_cache scoreboard stimulus core workbench_host ui ui_2
 endforeach()
 set_tests_properties(simdock_ui_200 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=2;SIMDOCK_TEST_QUESTA=")
 if(ZEROSLACK_TEST_QUESTA_EXECUTABLE)
-    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
+    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_stimulus_live COMMAND simdock_stimulus_tests liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-stimulus-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_scoreboard_live COMMAND simdock_scoreboard_tests liveScoreboards -o "${CMAKE_BINARY_DIR}/simdock-scoreboard-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_workbench_host_live COMMAND simdock_workbench_host_tests simulationLifecycle -o "${CMAKE_BINARY_DIR}/simdock-host-live.xml,junitxml" -o -,txt)

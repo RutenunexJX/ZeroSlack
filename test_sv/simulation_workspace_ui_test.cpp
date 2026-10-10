@@ -342,26 +342,61 @@ private slots:
     void liveQuestaStartStopFailureRecovery() {
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
         QVERIFY2(QFileInfo::exists(executable), "Real Questa is required for this test.");
+        const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
+        QString allLog;
         Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation()); f.panel()->setSimulator(executable); f.runLog();
         auto* session = f.panel()->findChild<simdock::QuestaSession*>(); QVERIFY(session);
+        QSignalSpy finished(session, &simdock::QuestaSession::finished);
+        connect(session, &simdock::QuestaSession::logText, this, [&](const QString& text) {
+            allLog += text;
+            if (!output.isEmpty()) put(QDir(output).filePath("questa-all-runs.log"), allLog.toUtf8());
+        });
+        const auto preserveRun = [&](const QString& phase) {
+            if (output.isEmpty()) return true;
+            const QDir destination(QDir(output).filePath(phase));
+            if (!put(destination.filePath("host.log"), f.log()->toPlainText().toUtf8())) return false;
+            for (const auto& name : {"run.do", "modelsim.ini", "transcript.log"}) {
+                const auto path = QDir(session->lastRunDirectory()).filePath(QLatin1String(name));
+                if (!QFileInfo::exists(path) || !put(destination.filePath(QLatin1String(name)), read(path))) return false;
+            }
+            return put(destination.filePath("identity.json"), QJsonDocument(QJsonObject{
+                {"runDirectory", session->lastRunDirectory()}, {"processId", session->processId()},
+                {"alive", session->alive()}, {"busy", session->busy()}, {"canClose", f.view()->canClose()}}).toJson());
+        };
         click(f.panel(), "startSimulation");
         QTRY_VERIFY_WITH_TIMEOUT(session->alive(), 20000);
         QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
-        QTRY_VERIFY2_WITH_TIMEOUT(f.log()->toPlainText().contains("Run completed"), qPrintable(f.log()->toPlainText()), 130000);
+        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
         QVERIFY(!f.view()->canClose());
+        QVERIFY(!f.window->close());
+        QVERIFY(preserveRun("first-success"));
         click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
         QVERIFY(f.view()->canClose());
         child<QLineEdit>(f.panel(), "tbTop")->setText("missing_tb_top");
         QMetaObject::invokeMethod(child<QLineEdit>(f.panel(), "tbTop"), "editingFinished");
         click(f.window.get(), "clearLog"); click(f.panel(), "startSimulation");
-        QTRY_VERIFY_WITH_TIMEOUT(f.log()->toPlainText().contains("failed", Qt::CaseInsensitive) || f.log()->toPlainText().contains("Error"), 130000);
+        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
+        QVERIFY2(!finished.takeFirst()[0].toBool(), qPrintable(allLog));
+        QVERIFY2(allLog.contains("missing_tb_top") && allLog.contains("Questa could not load the testbench"), qPrintable(allLog));
+        QVERIFY(session->alive()); QVERIFY(!f.view()->canClose());
+        QVERIFY(!f.window->close());
+        QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
+        QVERIFY(preserveRun("invalid-top"));
         click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
+        QVERIFY(f.view()->canClose());
         child<QLineEdit>(f.panel(), "tbTop")->setText("tb_manual"); QMetaObject::invokeMethod(child<QLineEdit>(f.panel(), "tbTop"), "editingFinished");
         click(f.window.get(), "clearLog"); click(f.panel(), "startSimulation");
-        QTRY_VERIFY2_WITH_TIMEOUT(f.log()->toPlainText().contains("Run completed"), qPrintable(f.log()->toPlainText()), 130000);
-        const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
+        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
+        QVERIFY2(!allLog.contains("Could not publish Questa state"), qPrintable(allLog));
+        QVERIFY(!f.view()->canClose());
+        QVERIFY(!f.window->close());
+        QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
+        QVERIFY(preserveRun("corrected-top"));
         if (!output.isEmpty()) QVERIFY(put(QDir(output).filePath("questa-host.log"), f.log()->toPlainText().toUtf8()));
         click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
+        QVERIFY(f.view()->canClose()); QVERIFY(f.sessions()->openWorkspace(f.other));
         QVERIFY(f.window->close());
     }
 };

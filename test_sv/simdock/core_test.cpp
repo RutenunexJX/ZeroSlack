@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
@@ -26,6 +27,47 @@ static bool put(const QString& path, const QByteArray& bytes)
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
 }
+static QByteArray read(const QString& path)
+{
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+}
+static QStringList sessionDirectories()
+{
+    return QDir(QDir::tempPath()).entryList({QStringLiteral("simdock-session-*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+}
+static QString newSessionDirectory(const QStringList& previous)
+{
+    auto directories = sessionDirectories();
+    for (const auto& entry : previous) directories.removeAll(entry);
+    return directories.size() == 1 ? QDir(QDir::tempPath()).filePath(directories.first()) : QString();
+}
+static bool captureSession(const QString& phase, const QString& directory, const QuestaSession& session, const QString& log)
+{
+    const auto output = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+    if (output.isEmpty()) return true;
+    const QDir destination(QDir(output).filePath(phase));
+    if (!put(destination.filePath("host.log"), log.toUtf8())) return false;
+    for (const auto& name : {"bootstrap.do", "state", "state.tmp", "transcript.log", "active.do", "command.do"}) {
+        const auto path = QDir(directory).filePath(QLatin1String(name));
+        if (QFileInfo::exists(path) && !put(destination.filePath(QLatin1String(name)), read(path))) return false;
+    }
+    for (const auto& name : {"run.do", "modelsim.ini", "transcript.log"}) {
+        const auto path = QDir(session.lastRunDirectory()).filePath(QLatin1String(name));
+        if (QFileInfo::exists(path) && !put(destination.filePath("run/" + QLatin1String(name)), read(path))) return false;
+    }
+    return put(destination.filePath("identity.json"), QJsonDocument(QJsonObject{
+        {"sessionDirectory", directory}, {"runDirectory", session.lastRunDirectory()},
+        {"processId", session.processId()}, {"alive", session.alive()}, {"busy", session.busy()}}).toJson());
+}
+#ifdef Q_OS_WIN
+static HANDLE openState(const QString& path, DWORD access, DWORD sharing)
+{
+    const auto native = QDir::toNativeSeparators(path);
+    return CreateFileW(reinterpret_cast<const wchar_t*>(native.utf16()), access, sharing,
+                       nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+}
+#endif
 static QByteArray counter()
 {
     return QByteArrayLiteral("module counter #(parameter int WIDTH=8)(input logic clk, rst_n, enable, output logic [WIDTH-1:0] count);\n"
@@ -412,6 +454,138 @@ private slots:
         QVERIFY(log.indexOf(QStringLiteral("Compiling package cfg")) < log.indexOf(QStringLiteral("Compiling module child")));
         session.stop();
         QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+    }
+    void liveStateReaderReleasesHandle()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("Windows sharing semantics are required.");
+#else
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to verify the real Questa state handoff.");
+        QTemporaryDir workspace;
+        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; endmodule\n"));
+        auto project = newProject("State reader");
+        project.sources = {"tb.sv"}; project.tbFile = "tb.sv"; project.tbName = "tb";
+        QString log, directory, error;
+        bool probed = false;
+        DWORD sharingError = ERROR_SUCCESS;
+        QuestaSession session;
+        QSignalSpy finished(&session, &QuestaSession::finished);
+        connect(&session, &QuestaSession::logText, this, [&log](const QString& text) { log += text; });
+        connect(&session, &QuestaSession::stateChanged, this, [&](const QString& state) {
+            if (state != QStringLiteral("Completed")) return;
+            // DELETE access detects a read handle that denies atomic replacement,
+            // without modifying the file or racing the simulator's contents.
+            const auto handle = openState(QDir(directory).filePath("state"), DELETE,
+                                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE);
+            sharingError = handle == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
+            if (handle != INVALID_HANDLE_VALUE) CloseHandle(handle);
+            probed = true;
+        });
+        const auto previous = sessionDirectories();
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        directory = newSessionDirectory(previous); QVERIFY(!directory.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
+        QVERIFY2(finished.first()[0].toBool(), qPrintable(log));
+        QVERIFY(captureSession("reader", directory, session, log));
+        qInfo() << "State replacement access during Completed callback: Win32 error" << sharingError;
+        QVERIFY(probed);
+        QCOMPARE(sharingError, DWORD(ERROR_SUCCESS));
+        session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+#endif
+    }
+    void liveStatePublicationContention()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("Windows sharing semantics are required.");
+#else
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to verify real Questa state publication.");
+        QTemporaryDir workspace;
+        QVERIFY(put(workspace.filePath("tb.sv"), "module tb; reg clk=0; always #5 clk=~clk; endmodule\n"));
+        auto project = newProject("State contention");
+        project.sources = {"tb.sv"}; project.tbFile = "tb.sv"; project.tbName = "tb";
+        QString log, error;
+        QuestaSession session;
+        QSignalSpy finished(&session, &QuestaSession::finished);
+        connect(&session, &QuestaSession::logText, this, [&log](const QString& text) { log += text; });
+        const auto previous = sessionDirectories();
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        auto directory = newSessionDirectory(previous); QVERIFY(!directory.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+        const auto pid = session.processId();
+        const auto statePath = QDir(directory).filePath("state");
+        const auto oldRecord = read(statePath);
+        QVERIFY(QByteArray(oldRecord).replace("\r\n", "\n").endsWith("|completed\n"));
+        HANDLE lock = openState(statePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
+        const auto unlock = qScopeGuard([&] { if (lock != INVALID_HANDLE_VALUE) CloseHandle(lock); });
+        QVERIFY(lock != INVALID_HANDLE_VALUE);
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        const auto runId = QFileInfo(session.lastRunDirectory()).fileName().toUtf8();
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(QDir(directory).filePath("state.tmp")), 5000);
+        QVERIFY(captureSession("contention-locked", directory, session, log));
+        QCOMPARE(read(QDir(directory).filePath("state.tmp")).replace("\r\n", "\n"), runId + "|compiling\n");
+        QCOMPARE(read(statePath), oldRecord);
+        QTest::qWait(180);
+        QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
+        QVERIFY(put(statePath, runId + "|completed"));
+        QTest::qWait(180);
+        QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
+        QVERIFY(put(statePath, runId + "|completed|unexpected\n"));
+        QTest::qWait(180);
+        QCOMPARE(finished.size(), 0); QVERIFY(session.busy());
+        QVERIFY(put(statePath, oldRecord));
+        CloseHandle(lock); lock = INVALID_HANDLE_VALUE;
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+        QCOMPARE(session.processId(), pid);
+        QVERIFY2(!log.contains("SimDock error:"), qPrintable(log));
+        QVERIFY(captureSession("contention-recovered", directory, session, log));
+        qInfo() << "Transient lock recovered; stale, partial and malformed completion records were ignored; pid" << pid;
+
+        lock = openState(statePath, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
+        QVERIFY(lock != INVALID_HANDLE_VALUE);
+        QElapsedTimer elapsed; elapsed.start();
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 10000);
+        QCOMPARE(finished.size(), 1);
+        QVERIFY(!finished.takeFirst()[0].toBool());
+        QVERIFY(!session.busy());
+        QVERIFY2(log.contains("SimDock session error:"), qPrintable(log));
+        QVERIFY2(log.contains("Could not publish Questa state"), qPrintable(log));
+        QVERIFY(!log.contains("wall-clock timeout"));
+        qInfo() << "Persistent state lock reported failure and closed the session after" << elapsed.elapsed() << "ms";
+        QVERIFY(captureSession("contention-exhausted", directory, session, log));
+        CloseHandle(lock); lock = INVALID_HANDLE_VALUE;
+        const auto beforeRestart = sessionDirectories();
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        directory = newSessionDirectory(beforeRestart); QVERIFY(!directory.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+        QVERIFY(QFileInfo(QDir(session.lastRunDirectory()).filePath("result.wlf")).size() > 0);
+        QVERIFY(captureSession("contention-restarted", directory, session, log));
+
+        lock = openState(QDir(directory).filePath("state"), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE);
+        QVERIFY(lock != INVALID_HANDLE_VALUE);
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(QDir(directory).filePath("state.tmp")), 5000);
+        session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+        QCOMPARE(finished.size(), 1); QVERIFY(!finished.takeFirst()[0].toBool());
+        QVERIFY(!session.busy());
+        QVERIFY(captureSession("contention-cancelled", directory, session, log));
+        CloseHandle(lock); lock = INVALID_HANDLE_VALUE;
+
+        const auto beforeTimeout = sessionDirectories();
+        session.setWallTimeout(1);
+        QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+        directory = newSessionDirectory(beforeTimeout); QVERIFY(!directory.isEmpty());
+        QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+        QCOMPARE(finished.size(), 1); QVERIFY(!finished.takeFirst()[0].toBool());
+        QVERIFY(!session.busy()); QVERIFY(log.contains("wall-clock timeout"));
+        QVERIFY(captureSession("deadline", directory, session, log));
+        qInfo() << "Stop during publication retry and the wall-clock deadline both closed their managed sessions";
+#endif
     }
     void liveLoadFailureAndRecovery()
     {

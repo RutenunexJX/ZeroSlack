@@ -228,28 +228,60 @@ proc ::simdock::state {value} {
     variable base
     variable runId
     set out [open [file join $base state.tmp] w]
-    fconfigure $out -encoding utf-8
-    puts $out "$runId|$value"
-    close $out
-    file rename -force [file join $base state.tmp] [file join $base state]
+    try {
+        fconfigure $out -encoding utf-8 -translation lf
+        puts $out "$runId|$value"
+    } finally {
+        close $out
+    }
+    # Windows readers can briefly deny replacement. Keep the complete record
+    # and retry for at most 975 ms, without reentering the command event loop.
+    for {set attempt 0} {$attempt < 40} {incr attempt} {
+        if {![catch {file rename -force [file join $base state.tmp] [file join $base state]} message details]} {
+            return
+        }
+        set code [dict get $details -errorcode]
+        if {$attempt == 39 || $::tcl_platform(platform) ne "windows"
+            || [lindex $code 0] ne "POSIX" || [lindex $code 1] ni {EACCES EPERM EBUSY}} {
+            return -options $details "Could not publish Questa state '$value': $message"
+        }
+        after 25
+    }
+}
+proc ::simdock::fatal {message details} {
+    puts "SimDock session error: $message"
+    puts [dict get $details -errorinfo]
+    quit -force -code 1
 }
 proc ::simdock::poll {} {
     variable base
-    if {[file exists [file join $base command.do]]} {
-        file rename -force [file join $base command.do] [file join $base active.do]
-        if {[catch {uplevel #0 [list source -encoding utf-8 [file join $base active.do]]} message details]} {
-            puts "SimDock error: $message"
-            puts [dict get $details -errorinfo]
-            ::simdock::state failed
-        } else {
-            ::simdock::state completed
+    if {[catch {
+        if {[file exists [file join $base command.do]]} {
+            file rename -force [file join $base command.do] [file join $base active.do]
+            if {[catch {uplevel #0 [list source -encoding utf-8 [file join $base active.do]]} message details]} {
+                puts "SimDock error: $message"
+                puts [dict get $details -errorinfo]
+                set result failed
+            } else {
+                set result completed
+            }
+            file delete -force [file join $base active.do]
+            ::simdock::state $result
         }
-        file delete -force [file join $base active.do]
+    } message details]} {
+        # A failed terminal publication must not leave a live but unresponsive
+        # session. Process exit reports failure to the host even if state is locked.
+        ::simdock::fatal $message $details
+        return
     }
     after 150 ::simdock::poll
 }
 )tcl");
-    script += QStringLiteral("transcript file %1\ntranscript on\n::simdock::state ready\nafter 150 ::simdock::poll\n").arg(tclWord(QDir(base).filePath(QStringLiteral("transcript.log"))));
+    script += QStringLiteral("transcript file %1\ntranscript on\n"
+        "if {[catch {::simdock::state ready} message details]} {\n"
+        "    ::simdock::fatal $message $details\n"
+        "} else {after 150 ::simdock::poll}\n")
+        .arg(tclWord(QDir(base).filePath(QStringLiteral("transcript.log"))));
     const QString bootstrap = QDir(base).filePath(QStringLiteral("bootstrap.do"));
     if (!writeFile(bootstrap, script, error)) return false;
 #ifdef Q_OS_WIN
@@ -400,14 +432,23 @@ void QuestaSession::poll()
             }
         }
     }
-    QFile stateFile(dir.filePath(QStringLiteral("state")));
-    if (!stateFile.open(QIODevice::ReadOnly)) return;
-    const QString state = QString::fromUtf8(stateFile.read(512)).trimmed();
+    QByteArray record;
+    {
+        QFile stateFile(dir.filePath(QStringLiteral("state")));
+        if (!stateFile.open(QIODevice::ReadOnly)) return;
+        record = stateFile.read(513);
+        if (stateFile.error() != QFileDevice::NoError) return;
+    }
+    // Release the read handle before sending commands or notifying receivers;
+    // either can give Questa time to replace the state file on Windows.
+    if (record.size() > 512 || !record.endsWith('\n') || record.count('\n') != 1) return;
+    const QString state = QString::fromUtf8(record).trimmed();
+    if (state.count(QLatin1Char('|')) != 1) return;
     if (state == m_lastState) return;
     m_lastState = state;
     const QString id = state.section(QLatin1Char('|'), 0, 0);
     const QString value = state.section(QLatin1Char('|'), 1, 1);
-    if (value == QStringLiteral("ready")) {
+    if (id.isEmpty() && value == QStringLiteral("ready") && m_busy && !m_ready && !m_stopping) {
         m_ready = true;
         QString error;
         if (!sendPending(&error)) finish(false, error);
