@@ -275,6 +275,13 @@ public:
         const QList<SemanticDecoration>& decorations);
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
+    void setTbAssistAnnotations(const QList<EditorAnnotation>& annotations);
+    QList<TbInputAssist> tbInputAssists() const;
+    QHash<QString, QRect> tbAssistHitRegions() const;
+    bool openTbInputAssist(int index);
+    void addTbInputAssistMenu(QMenu* menu, int position);
+    void setTbAssistDependencyCheck(std::function<bool()> check);
+    bool tbAssistDependenciesCurrent() const;
     void setPinloomCodeLinkAnnotations(
         const QList<EditorAnnotation>& annotations);
     void setAnnotationDisplayOptions(

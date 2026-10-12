@@ -2,6 +2,7 @@
 #define GHOSTANNOTATIONSERVICE_H
 
 #include "effectivevalueservice.h"
+#include "tbinputassist.h"
 
 #include <QList>
 #include <QString>
@@ -46,11 +47,13 @@ struct GhostAnnotationQuery {
     QString documentText;
     HierarchyInstanceContext instanceContext;
     std::uint64_t documentRevision = 0;
+    bool tbDependenciesCurrent = true;
     std::function<bool()> cancelled;
 };
 
 struct GhostAnnotationReport {
     QList<GhostAnnotation> annotations;
+    QList<TbInputAssist> tbInputs;
 };
 
 struct GhostNumericLiteralQuery {

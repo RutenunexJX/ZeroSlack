@@ -110,9 +110,14 @@ struct SemanticStructuredSelectorFact {
 
 struct SemanticStructuredEnumValueFact {
     QString name;
+    // Verified from the consuming symbol's scope. Empty means display-only;
+    // available describes the numeric value, not permission to write source.
+    QString expressionText;
     QString valueText;
     QString displayValueText;
     bool available = false;
+    QString expressionFailureReason;
+    bool unqualifiedReferenceAvailable = false;
 };
 
 struct SemanticStructuredLeafFact {
@@ -142,6 +147,7 @@ struct SemanticElaboratedSymbolInfo {
     bool interfaceType = false;
     bool signedIntegral = false;
     std::uint64_t bitWidth = 0;
+    QList<SemanticStructuredEnumValueFact> enumValues;
     // Unified Slang driver facts for this exact elaborated instance.
     // Unknown is deliberately distinct from ProvenZero: action planners
     // may reuse an existing endpoint only after Slang proved absence.

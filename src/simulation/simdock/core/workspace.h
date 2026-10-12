@@ -21,8 +21,10 @@ QString projectDirectory(const QString& root);
 Scan scanWorkspace(const QString& root, const std::atomic_bool* cancelled = nullptr,
                    ScanMetrics* metrics = nullptr, SourceCache* cache = nullptr);
 QList<Project> loadProjects(const QString& root, QStringList* errors = nullptr);
-bool saveProject(const QString& root, const Project& project, QString* error);
+bool saveProject(const QString& root, Project& project, QString* error);
 Project newProject(const QString& name);
+QString validateStorageName(const QString& name);
+QString validateProject(const QString& root, const Project& project);
 QString projectTbPath(const Project& project, const QString& top);
 QString validateInputs(const QString& root, const Project& project,
                        QMap<QString, QByteArray>* fingerprints = nullptr,

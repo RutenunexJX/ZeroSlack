@@ -608,6 +608,13 @@ GhostAnnotationReport GhostAnnotationService::annotationsForDocument(
                                           query,
                                           &report.annotations);
     appendExpressionFactAnnotations(facts, &report.annotations, query.cancelled);
+    report.tbInputs = TbInputAssistService::analyze(query.fileName, query.documentText,
+                                                   *activeIndex, query.cancelled, valueReader, query.documentRevision);
+    if (!query.tbDependenciesCurrent) for (auto& input : report.tbInputs) {
+        input.current = false;
+        input.status = QStringLiteral("Other open documents have pending semantic changes; analyze or save them before applying.");
+        input.annotation = QStringLiteral("Input facts pending…");
+    }
 
     report.annotations.erase(
         std::remove_if(report.annotations.begin(),

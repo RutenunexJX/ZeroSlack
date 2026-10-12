@@ -146,9 +146,8 @@ void parametersFrom(TSNode scope, Module& module, const QByteArray& source, bool
         auto type = child(parent, "data_type_or_implicit");
         if (ts_node_is_null(type)) type = child(parent, "data_type");
         p.type = text(type, source);
-        if (p.value.contains(QChar(96)) || p.value.contains(QStringLiteral("::"))
-            || p.type.contains(QStringLiteral("::")) || p.type.contains(QLatin1Char('[')))
-            module.limitations << QStringLiteral("Parameter %1 uses a macro, package, or composite type. Write the TB manually.").arg(p.name);
+        if (p.value.contains(QChar(96)) || p.type.contains(QLatin1Char('[')))
+            module.limitations << QStringLiteral("Parameter %1 uses a macro or composite type. Write the TB manually.").arg(p.name);
         bool duplicate = false;
         for (const auto& previous : module.parameters) if (previous.name == p.name) duplicate = true;
         if (!duplicate) module.parameters << p;

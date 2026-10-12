@@ -1183,6 +1183,7 @@ void MyCodeEditorState::initializeCore(MyCodeEditor* editor)
 
 void MyCodeEditorState::shutdown(MyCodeEditor* editor)
 {
+    tbAssist.reset();
     clearVisibleTextLayoutCache();
     folding.resetForDocumentChange(editor);
     highlightRefresh.detach();
@@ -1478,6 +1479,7 @@ void MyCodeEditorState::rebindDocument(
     }
 
     modes.exitAll(EditorModeExitReason::DocumentChanged);
+    if (tbAssist) tbAssist->invalidate();
     columnMode.clearPendingColumnAnchor();
     undoCursorEntries.clear();
     folding.resetForDocumentChange(editor);
@@ -1560,6 +1562,7 @@ void MyCodeEditorState::handleDocumentContentsChange(
         documentChangePhaseTimer.restart();
     };
 
+    if (tbAssist) tbAssist->invalidate();
     if (signalDefinitionPeekActive
         || signalDefinitionEditor)
         cancelSignalDefinitionEditor();

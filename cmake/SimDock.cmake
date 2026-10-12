@@ -7,21 +7,17 @@ if(NOT ZEROSLACK_ENABLE_ELA)
 endif()
 target_sources(zeroslack_core PRIVATE
     src/simulation/simdock/core/workspace.cpp
+    src/simulation/simdock/core/projectstore.cpp
+    src/simulation/simdock/core/ownedpaths.cpp
+    src/simulation/simdock/core/sessionfiles.cpp
     src/simulation/simdock/core/analyzer.cpp
     src/simulation/simdock/core/dependencies.cpp
     src/simulation/simdock/core/testbench.cpp
-    src/simulation/simdock/core/stimulus.cpp
-    src/simulation/simdock/core/stimulussemantic.cpp
-    src/simulation/simdock/core/preparation.cpp
-    src/simulation/simdock/core/scoreboard.cpp
     src/simulation/simdock/core/questasession.cpp
     src/simulation/simdock/core/wavepalette.cpp
     src/simulation/simdock/ui/workbench.cpp
-    src/simulation/simdock/ui/stimulusdialog.cpp
-    src/simulation/simdock/ui/scoreboarddialog.cpp
     src/simulation/simdock/ui/dialogs.cpp
     src/simulation/simdock/ui/uistyle.cpp
-    src/simulation/simdock/ui/componentpath.cpp
     src/integrations/simdock/simdockcontextview.cpp
     src/integrations/simdock/simdockstate.cpp
     resources/simdock/simdock.qrc)

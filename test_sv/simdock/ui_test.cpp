@@ -1,9 +1,6 @@
 #include "../../src/simulation/simdock/ui/workbench.h"
 #include "support/mainwindow.h"
 #include "../../src/simulation/simdock/core/questasession.h"
-#include "../../src/simulation/simdock/ui/stimulusdialog.h"
-#include "../../src/simulation/simdock/core/stimulus.h"
-#include "../../src/simulation/simdock/ui/scoreboarddialog.h"
 #include <QTableWidget>
 #include <algorithm>
 #include <QMouseEvent>
@@ -64,298 +61,6 @@ class UiTest : public QObject {
     Q_OBJECT
     QTemporaryDir m_settings;
 private slots:
-    void scoreboardWorkflow()
-    {
-#ifndef SIMDOCK_HAS_WAVE_EDITOR
-        QSKIP("Configure SIMDOCK_WAVEWIDGETS_DIR to test the shared editor workflow.");
-#endif
-        Scan scan;
-        scan.files << analyzeSource("module checked(input logic clk,rst,byte_valid,out_ready, input logic [7:0] byte_data, "
-            "output logic byte_ready,uart_tx,out_valid,output logic [7:0] out_data); endmodule", "dut.sv");
-        const auto module = scan.files.first().modules.first();
-        QString error;
-        auto original = newStimulus(module, scan, suggestedTbOptions(module), 10000, &error);
-        QVERIFY2(!original.isEmpty(), qPrintable(error));
-        QJsonObject saved;
-        StimulusDialog drawing(module, scan, original, 10000,
-            [&](const QJsonObject &data, QString *) { saved = data; return true; });
-        drawing.show(); QTest::qWait(50);
-        auto *open = drawing.findChild<QPushButton*>("stimulusChecks"); QVERIFY(open);
-        QTimer::singleShot(0, &drawing, [&] {
-            auto *dialog = drawing.findChild<ScoreboardDialog*>("scoreboardDialog");
-            QVERIFY(dialog); QTimer::singleShot(3000, dialog, &QDialog::reject);
-            auto *kind = dialog->findChild<QComboBox*>("scoreboardKind"); QVERIFY(kind);
-            kind->setCurrentIndex(kind->findData("uart_tx"));
-            dialog->findChild<QSpinBox*>("scoreboard_baud")->setValue(10000000);
-            QTest::qWait(50);
-            QCOMPARE(dialog->findChild<QComboBox*>("scoreboard_data")->currentData().toString(), QStringLiteral("byte_data"));
-            const auto report = qEnvironmentVariable("SIMDOCK_SCOREBOARD_REPORT");
-            if (!report.isEmpty()) {
-                QDir().mkpath(report);
-                QVERIFY(dialog->grab().save(QDir(report).filePath("checks-" + qEnvironmentVariable("QT_SCALE_FACTOR", "1") + ".png")));
-            }
-            dialog->findChild<QPushButton*>("applyScoreboard")->click();
-        });
-        open->click();
-        auto snapshot = drawing.drawing(&error);
-        QCOMPARE(snapshot["scoreboard"].toObject()["kind"].toString(), QStringLiteral("uart_tx"));
-        QVERIFY2(stimulusTestbench(module, scan, snapshot, &error).contains("finish_check"), qPrintable(error));
-        drawing.findChild<QPushButton*>("resetStimulus")->click();
-        QCOMPARE(drawing.drawing(&error)["scoreboard"], snapshot["scoreboard"]);
-        drawing.findChild<QPushButton*>("saveStimulus")->click(); QVERIFY(!saved.isEmpty());
-        StimulusDialog reopened(module, scan, saved, 10000, {}); reopened.show(); QTest::qWait(30);
-        QCOMPARE(reopened.drawing(&error)["scoreboard"], snapshot["scoreboard"]);
-        QTimer::singleShot(0, &reopened, [&] {
-            auto *dialog = reopened.findChild<ScoreboardDialog*>("scoreboardDialog"); QVERIFY(dialog);
-            dialog->findChild<QComboBox*>("scoreboardKind")->setCurrentIndex(0); dialog->reject();
-        });
-        reopened.findChild<QPushButton*>("stimulusChecks")->click();
-        QCOMPARE(reopened.drawing(&error)["scoreboard"], snapshot["scoreboard"]);
-        reopened.reject();
-        auto expected = defaultScoreboard(); expected["kind"] = "values"; expected["output"] = "out_data";
-        expected["outputValid"] = "out_valid"; expected["outputReady"] = "out_ready"; expected["values"] = QJsonArray{"1ff"};
-        const auto ports = scoreboardSignals(module, scan, &error); QVERIFY(error.isEmpty());
-        ScoreboardDialog table(ports, suggestedTbOptions(module), expected); table.show();
-        table.findChild<QPushButton*>("applyScoreboard")->click();
-        QVERIFY(table.result() != QDialog::Accepted); QVERIFY(!table.findChild<QLabel*>("scoreboardError")->text().isEmpty());
-        table.findChild<QTableWidget*>("scoreboard_values")->item(0,0)->setText("ff");
-        table.findChild<QPushButton*>("applyScoreboard")->click(); QCOMPARE(table.result(), int(QDialog::Accepted));
-    }
-    void workspaceStimulusCompatibility()
-    {
-        const auto root = qEnvironmentVariable("SIMDOCK_TEST_STIMULUS_WORKSPACE");
-        if (root.isEmpty()) QSKIP("Set SIMDOCK_TEST_STIMULUS_WORKSPACE for read-only project compatibility validation.");
-        const auto id = qEnvironmentVariable("SIMDOCK_TEST_STIMULUS_PROJECT");
-        const auto projects = loadProjects(root);
-        const auto selected = std::find_if(projects.begin(), projects.end(), [&](const Project& p) { return p.id == id; });
-        QVERIFY2(selected != projects.end(), "The explicitly selected project must exist.");
-        Scan scan;
-        scan.root = root;
-        for (const auto& path : selected->sources) {
-            const auto absolute = QDir(root).filePath(path);
-            QVERIFY(insideWorkspace(root, absolute));
-            QFile input(absolute);
-            QVERIFY(input.open(QIODevice::ReadOnly));
-            QVERIFY(input.size() <= 8 * 1024 * 1024);
-            scan.files << analyzeSource(input.readAll(), path);
-        }
-        const Module* module = nullptr;
-        for (const auto& file : scan.files) if (file.path == selected->dutFile)
-            for (const auto& candidate : file.modules) if (candidate.name == selected->dutName) module = &candidate;
-        QVERIFY(module);
-        QString error;
-        const auto inputs = stimulusSignals(*module, scan, &error);
-        QVERIFY2(error.isEmpty(), qPrintable(error));
-        // Deliberately no persistence callback: never modify the user's workspace.
-        StimulusDialog dialog(*module, scan, {}, selected->durationNs, {});
-        dialog.show(); QTest::qWait(100);
-        QVERIFY2(dialog.ready(), qPrintable(dialog.findChild<QLabel*>(QStringLiteral("stimulusError"))->text()));
-        const auto snapshot = dialog.drawing(&error);
-        QVERIFY2(error.isEmpty(), qPrintable(error));
-        const auto tb = stimulusTestbench(*module, scan, snapshot, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        const auto enums = std::count_if(inputs.begin(), inputs.end(), [](const StimulusSignal& p) { return !p.enumValues.isEmpty(); });
-        qInfo() << "Real workspace stimulus: inputs" << inputs.size() << "enum inputs" << enums << "generated TB bytes" << tb.toUtf8().size();
-        const auto report = qEnvironmentVariable("SIMDOCK_STIMULUS_SCREENSHOT_DIR");
-        if (!report.isEmpty()) {
-            QDir().mkpath(report);
-            QVERIFY(dialog.grab().save(QDir(report).filePath(QStringLiteral("workspace-stimulus.png"))));
-        }
-        dialog.reject();
-    }
-    void graphicalProjectWorkflow()
-    {
-#ifndef SIMDOCK_HAS_WAVE_EDITOR
-        QSKIP("Configure SIMDOCK_WAVEWIDGETS_DIR to test the shared editor.");
-#else
-        QTemporaryDir workspace;
-        QFile rtl(workspace.filePath(QStringLiteral("dut.sv")));
-        QVERIFY(rtl.open(QIODevice::WriteOnly));
-        rtl.write("module first(input logic clk,rst,enable); endmodule\nmodule second(input logic enable); endmodule");
-        rtl.close();
-        auto project=newProject(QStringLiteral("Graphical project"));
-        project.sources={QStringLiteral("dut.sv")};project.dutFile=QStringLiteral("dut.sv");project.dutName=QStringLiteral("first");
-        QString error;QVERIFY(saveProject(workspace.path(),project,&error));
-        MainWindow w;QSignalSpy scanned(&w,&MainWindow::scanFinished);w.openWorkspace(workspace.path());w.show();
-        QTRY_COMPARE_WITH_TIMEOUT(scanned.size(),1,10000);
-        auto* open=w.findChild<QPushButton*>(QStringLiteral("editStimulus"));QVERIFY(open && open->isEnabled());
-        open->click();
-        auto* stop = w.findChild<QPushButton*>(QStringLiteral("stopSimulation"));
-        QVERIFY(stop && stop->isEnabled()); QCOMPARE(stop->text(), QStringLiteral("Cancel preparation"));
-        stop->click();
-        QTest::qWait(80);
-        QVERIFY(!w.findChild<QDialog*>(QStringLiteral("stimulusDialog")));
-        QVERIFY(open->isEnabled());
-        QTimer editorPoll;
-        editorPoll.setInterval(10);
-        connect(&editorPoll, &QTimer::timeout, &w, [&] {
-            auto* dialog=w.findChild<QDialog*>(QStringLiteral("stimulusDialog"));
-            if (!dialog || !dialog->isVisible()) return;
-            if (dialog->isEnabled())
-                QTest::mouseClick(dialog->findChild<QPushButton*>(QStringLiteral("saveStimulus")),Qt::LeftButton);
-        });
-        editorPoll.start(); open->click();
-        QTRY_VERIFY_WITH_TIMEOUT(!loadProjects(workspace.path()).first().stimulus.isEmpty(), 10000);
-        editorPoll.stop();
-        QTRY_VERIFY(!w.findChild<QDialog*>(QStringLiteral("stimulusDialog")));
-        const auto saved=loadProjects(workspace.path()).first();
-        QVERIFY(!saved.stimulus.isEmpty());QVERIFY(QFileInfo(workspace.filePath(saved.tbFile)).isFile());
-        QVERIFY(w.findChild<QLineEdit*>(QStringLiteral("tbTop"))->isReadOnly());
-        QVERIFY(w.findChild<QPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
-        editorPoll.disconnect();
-        connect(&editorPoll, &QTimer::timeout, &w, [&] {
-            auto* dialog=w.findChild<QDialog*>(QStringLiteral("stimulusDialog"));
-            if (!dialog || !dialog->isVisible()) return;
-            editorPoll.stop(); dialog->reject();
-        });
-        editorPoll.start(); open->click();
-        QTRY_VERIFY_WITH_TIMEOUT(!editorPoll.isActive(), 10000);
-        QCOMPARE(loadProjects(workspace.path()).first().stimulus,saved.stimulus);
-        auto* dut=w.findChild<QComboBox*>(QStringLiteral("dutSelector"));QCOMPARE(dut->count(),2);dut->setCurrentIndex(1);
-        const auto changed=loadProjects(workspace.path()).first();QVERIFY(changed.stimulus.isEmpty());QVERIFY(changed.tbFile.isEmpty());
-        QVERIFY(QFileInfo(workspace.filePath(saved.tbFile)).isFile());
-#endif
-    }
-    void randomStimulusFill()
-    {
-#ifndef SIMDOCK_HAS_WAVE_EDITOR
-        QSKIP("Configure SIMDOCK_WAVEWIDGETS_DIR to test the shared editor.");
-#else
-        const auto source = analyzeSource(
-            "package p; typedef enum logic [1:0] { IDLE, ACTIVE, DONE } mode_t; endpackage "
-            "module random_dut import p::*; (input logic clk, input logic [7:0] data, input mode_t mode); endmodule", "random.sv");
-        Scan scan; scan.files << source;
-        const auto module = source.modules.first();
-        QString error;
-        QJsonObject saved;
-        StimulusDialog dialog(module, scan, {}, 1000000,
-            [&](const QJsonObject& drawing, QString*) { saved = drawing; return true; });
-        dialog.resize(960, 650);
-        dialog.show(); QTest::qWait(100);
-        QVERIFY2(dialog.ready(), qPrintable(dialog.findChild<QLabel*>("stimulusError")->text()));
-        auto* canvas = dialog.findChild<QAbstractScrollArea*>("stimulusCanvas"); QVERIFY(canvas);
-        // The offscreen DPR=2 screen is only 400 logical pixels wide. A
-        // screen-bounded dialog can scroll; allocate all three lanes for this
-        // editor interaction test and keep the drag to the right of its names.
-        canvas->setMinimumHeight(220);
-        QTRY_VERIFY(canvas->viewport()->height() >= 184);
-        auto* dice = dialog.findChild<QToolButton*>("stimulusRandomFill");
-        QVERIFY(dice && dice->isVisible() && dice->isCheckable() && !dice->icon().isNull());
-        const auto before = dialog.drawing(&error);
-        QTest::mouseClick(dice, Qt::LeftButton);
-        QVERIFY(dice->isChecked());
-        QCOMPARE(dialog.drawing(&error), before);
-        const auto send = [&](QEvent::Type type, QPoint point) {
-            QMouseEvent event(type, QPointF(point), QPointF(canvas->viewport()->mapToGlobal(point)),
-                type == QEvent::MouseMove ? Qt::NoButton : Qt::LeftButton,
-                type == QEvent::MouseButtonRelease ? Qt::NoButton : Qt::LeftButton, Qt::NoModifier);
-            QApplication::sendEvent(canvas->viewport(), &event);
-        };
-        const auto width = canvas->viewport()->width();
-        send(QEvent::MouseButtonPress, QPoint(width - 40, 64));
-        send(QEvent::MouseMove, QPoint(width - 4, 40 + 2 * 48 + 24));
-        send(QEvent::MouseButtonRelease, QPoint(width - 4, 40 + 2 * 48 + 24));
-        const auto after = dialog.drawing(&error);
-        QVERIFY2(error.isEmpty(), qPrintable(error));
-        QVERIFY(after != before);
-        const auto lanes = [](const QJsonObject& drawing) {
-            return drawing["wave"].toObject()["scenarios"].toArray().first().toObject()["lanes"].toArray();
-        };
-        QCOMPARE(lanes(after).first(), lanes(before).first()); // clock stays automatic
-        const auto tb = stimulusTestbench(module, scan, after, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        QVERIFY(tb.contains("mode_t'("));
-        QTest::mouseClick(dialog.findChild<QPushButton*>("stimulusUndo"), Qt::LeftButton);
-        QCOMPARE(dialog.drawing(&error), before);
-        QTest::mouseClick(dialog.findChild<QPushButton*>("stimulusRedo"), Qt::LeftButton);
-        QCOMPARE(dialog.drawing(&error), after); // redo reuses the same random values
-        // Timing is an undoable edit on the same canvas; earlier drawing edits
-        // retain valid ScenarioRefs and redo must reproduce the random values.
-        auto* editor = dialog.findChild<QWidget*>("WaveStimulusEditor");
-        dialog.findChild<QSpinBox*>("stimulusDuration")->setValue(2);
-        dialog.findChild<QPushButton*>("applyStimulusTiming")->click();
-        QCOMPARE(dialog.findChild<QWidget*>("WaveStimulusEditor"), editor);
-        QCOMPARE(dialog.findChild<QAbstractScrollArea*>("stimulusCanvas"), canvas);
-        const auto retimed = dialog.drawing(&error);
-        QVERIFY(retimed != after);
-        dialog.findChild<QPushButton*>("stimulusUndo")->click();
-        QCOMPARE(dialog.drawing(&error), after);
-        QCOMPARE(dialog.findChild<QSpinBox*>("stimulusDuration")->value(), 1);
-        dialog.findChild<QPushButton*>("stimulusUndo")->click();
-        QCOMPARE(dialog.drawing(&error), before);
-        dialog.findChild<QPushButton*>("stimulusRedo")->click();
-        QCOMPARE(dialog.drawing(&error), after);
-        dialog.findChild<QPushButton*>("stimulusRedo")->click();
-        QCOMPARE(dialog.drawing(&error), retimed);
-        dialog.findChild<QPushButton*>("stimulusUndo")->click();
-        QTest::mouseClick(dice, Qt::LeftButton);
-        QVERIFY(!dice->isChecked());
-        const auto report = qEnvironmentVariable("SIMDOCK_STIMULUS_SCREENSHOT_DIR");
-        if (!report.isEmpty()) {
-            QDir().mkpath(report);
-            QVERIFY(dialog.grab().save(QDir(report).filePath("random-stimulus.png")));
-        }
-        QTest::mouseClick(dialog.findChild<QPushButton*>("saveStimulus"), Qt::LeftButton);
-        QCOMPARE(dialog.result(), int(QDialog::Accepted));
-        QCOMPARE(saved, after);
-        StimulusDialog reopened(module, scan, saved, 1000000, {});
-        QVERIFY(reopened.ready());
-        QCOMPARE(reopened.drawing(&error), saved);
-#endif
-    }
-    void embeddedStimulusEditor()
-    {
-#ifndef SIMDOCK_HAS_WAVE_EDITOR
-        QSKIP("Configure SIMDOCK_WAVEWIDGETS_DIR to test the shared editor.");
-#else
-        const auto source = analyzeSource("package p; typedef enum logic [1:0] { IDLE, ACTIVE, DONE } mode_t; endpackage\n"
-            "module drawing import p::*; (input logic clk, rst, enable, input mode_t mode, input logic [7:0] data); endmodule", "dut.sv");
-        Scan scan; scan.files << source; const auto module = source.modules.first();
-        QJsonObject saved; QString error;
-        StimulusDialog dialog(module, scan, {}, 100, [&saved](const QJsonObject& drawing, QString*) {saved = drawing;return true;});
-        dialog.show(); QTest::qWait(100);
-        QVERIFY2(dialog.ready(),qPrintable(dialog.findChild<QLabel*>("stimulusError")->text()));
-        auto* canvas = dialog.findChild<QAbstractScrollArea*>("stimulusCanvas"); QVERIFY(canvas);
-        const auto before = dialog.drawing(&error); QVERIFY2(error.isEmpty(),qPrintable(error));
-        const QPoint bitPoint(canvas->viewport()->width()*2/3,40+2*48+24);
-        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,bitPoint);
-        const auto edited = dialog.drawing(&error); QVERIFY2(error.isEmpty(),qPrintable(error));
-        QVERIFY(edited != before);
-        QTest::mouseClick(dialog.findChild<QPushButton*>("stimulusUndo"),Qt::LeftButton);
-        QCOMPARE(dialog.drawing(&error),before);
-        QTest::mouseClick(dialog.findChild<QPushButton*>("stimulusRedo"),Qt::LeftButton);
-        QCOMPARE(dialog.drawing(&error),edited);
-        for(const auto& name : {"CanvasAddClockButton","CanvasAddBitButton","CanvasAddBusButton","TimelineDurationEdit"})
-            QVERIFY(!canvas->findChild<QWidget*>(name)->isVisible());
-        QTest::mouseClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,QPoint(bitPoint.x(),64));
-        QCOMPARE(dialog.drawing(&error),edited); // automatic clock cannot be gated by a click
-        QTest::mouseDClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,QPoint(bitPoint.x(),40+3*48+24));
-        auto* enumBox=dialog.findChild<QComboBox*>("BusEditRecentValuesCombo");
-        QVERIFY(enumBox && enumBox->isVisible());
-        const int active=enumBox->findData(QStringLiteral("ACTIVE"));QVERIFY(active>0);
-        enumBox->setCurrentIndex(active);
-        QVERIFY(QMetaObject::invokeMethod(enumBox,"activated",Q_ARG(int,active)));
-        QTest::mouseClick(dialog.findChild<QToolButton*>("BusEditApplyButton"),Qt::LeftButton);
-        auto withEnum=dialog.drawing(&error);QVERIFY2(error.isEmpty(),qPrintable(error));QVERIFY(withEnum!=edited);
-        QTest::mouseDClick(canvas->viewport(),Qt::LeftButton,Qt::NoModifier,QPoint(bitPoint.x(),40+4*48+24));
-        auto* busValue=dialog.findChild<QLineEdit*>("BusPresetValueEdit");QVERIFY(busValue && busValue->isVisible());
-        QVERIFY(!busValue->isReadOnly());busValue->selectAll();QTest::keyClicks(busValue,"A5");
-        QTest::mouseClick(dialog.findChild<QToolButton*>("BusEditApplyButton"),Qt::LeftButton);
-        const auto compiled=stimulusTestbench(module,scan,dialog.drawing(&error),&error);
-        QVERIFY2(!compiled.isEmpty(),qPrintable(error));QVERIFY(compiled.contains("8'ha5"));
-        const auto reportDir=qEnvironmentVariable("SIMDOCK_STIMULUS_SCREENSHOT_DIR");
-        if(!reportDir.isEmpty()) {QDir().mkpath(reportDir);QVERIFY(dialog.grab().save(QDir(reportDir).filePath(QStringLiteral("stimulus-%1.png").arg(qEnvironmentVariable("QT_SCALE_FACTOR","1")))));}
-        QTest::mouseClick(dialog.findChild<QPushButton*>("saveStimulus"),Qt::LeftButton);
-        QCOMPARE(dialog.result(),int(QDialog::Accepted));QVERIFY(!saved.isEmpty());QVERIFY(!dialog.runRequested());
-        StimulusDialog reopened(module,scan,saved,100,{});reopened.show();QTest::qWait(50);
-        QVERIFY(reopened.ready());QCOMPARE(reopened.drawing(&error),saved);
-        QTest::mouseClick(reopened.findChild<QPushButton*>("runStimulus"),Qt::LeftButton);
-        QCOMPARE(reopened.result(),int(QDialog::Accepted));QVERIFY(reopened.runRequested());
-        bool wasSaved=false;
-        StimulusDialog cancelled(module,scan,saved,100,[&wasSaved](const QJsonObject&,QString*){wasSaved=true;return true;});
-        cancelled.reject();QVERIFY(!wasSaved);
-#endif
-    }
 #ifdef SIMDOCK_WITH_APPSUITE
     void suiteMissingRuntimeFallsBack()
     {
@@ -548,7 +253,7 @@ private slots:
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
         QVERIFY(w.createProject(QStringLiteral("Counter demo")));
-        auto* list = w.findChild<ElaListView*>(QStringLiteral("sourceList"));
+        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
         QVERIFY(list);
         auto* model = qobject_cast<QStandardItemModel*>(list->model());
         QCOMPARE(model->rowCount(), 1);
@@ -682,7 +387,7 @@ private slots:
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
         QVERIFY(w.createProject(QStringLiteral("Named types")));
-        auto* model = qobject_cast<QStandardItemModel*>(w.findChild<ElaListView*>(QStringLiteral("sourceList"))->model());
+        auto* model = qobject_cast<QStandardItemModel*>(w.findChild<QListView*>(QStringLiteral("sourceList"))->model());
         QVERIFY(model);
         for (int row = 0; row < model->rowCount(); ++row)
             if (model->item(row)->text().contains(QStringLiteral("dut.sv"))) model->item(row)->setCheckState(Qt::Checked);
@@ -716,7 +421,7 @@ private slots:
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        auto* list = w.findChild<ElaListView*>(QStringLiteral("sourceList"));
+        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
         auto* projects = w.findChild<ElaListView*>(QStringLiteral("projectList"));
         QVERIFY(list && projects);
         auto* model = qobject_cast<QStandardItemModel*>(list->model());
@@ -784,7 +489,7 @@ private slots:
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
-        auto* list = w.findChild<ElaListView*>(QStringLiteral("sourceList"));
+        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
         auto* model = qobject_cast<QStandardItemModel*>(list->model());
         auto* dut = w.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
         const auto findSource = [&](const QString& path) -> QStandardItem* {
@@ -843,7 +548,7 @@ private slots:
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
         if (hasProject) QVERIFY(w.createProject(QStringLiteral("Wheel regression")));
-        auto* list = w.findChild<ElaListView*>(QStringLiteral("sourceList"));
+        auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
         QVERIFY(list);
         QTRY_VERIFY(list->verticalScrollBar()->maximum() > 0);
         w.raise(); w.activateWindow();
@@ -933,7 +638,7 @@ private slots:
         w.openWorkspace(workspace.path());
         QTRY_COMPARE(scans.size(), 1);
         QVERIFY(w.createProject(QStringLiteral("Native input")));
-        auto* view = w.findChild<ElaListView*>(QStringLiteral("sourceList"));
+        auto* view = w.findChild<QListView*>(QStringLiteral("sourceList"));
         auto* model = qobject_cast<QStandardItemModel*>(view->model());
         const auto index = model->index(0, 0);
         const auto row = view->visualRect(index);
@@ -1228,7 +933,7 @@ private slots:
         w.openWorkspace(first.path());
         w.openWorkspace(second.path());
         QTRY_COMPARE(scans.size(), 1);
-        auto* model = w.findChild<ElaListView*>(QStringLiteral("sourceList"))->model();
+        auto* model = w.findChild<QListView*>(QStringLiteral("sourceList"))->model();
         QCOMPARE(model->rowCount(), 1);
         QCOMPARE(model->index(0, 0).data(Qt::UserRole).toString(), QStringLiteral("chosen.sv"));
         QTest::qWait(250);

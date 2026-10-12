@@ -57,6 +57,9 @@ void AnalysisCoordinator::connectSchedulerSignals()
                 dependencies.handleWorkspaceSymbolAnalysisFinished(
                     filesAnalyzed,
                     totalSymbols);
+                // New files and dependent types can arrive in a workspace
+                // publication without a per-file completion signal.
+                refreshActiveEditorForFile(QString());
             });
     connect(scheduler,
             &AnalysisScheduler::relationshipAnalysisFinished,

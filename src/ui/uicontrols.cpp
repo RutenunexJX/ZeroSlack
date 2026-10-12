@@ -37,6 +37,14 @@ template<class Base> class WorkspaceTabBar final : public Base {
 public:
     using Base::Base;
 protected:
+    QSize tabSizeHint(int index) const override {
+        auto hint = Base::tabSizeHint(index);
+        if (this->property("compactIconTabs").toBool()) hint.setWidth(this->iconSize().width() + 24);
+        return hint;
+    }
+    QSize minimumTabSizeHint(int index) const override {
+        return this->property("compactIconTabs").toBool() ? tabSizeHint(index) : Base::minimumTabSizeHint(index);
+    }
     void paintEvent(QPaintEvent* event) override {
         Base::paintEvent(event);
         const QVariant boundary = this->property("temporaryTabBoundary");

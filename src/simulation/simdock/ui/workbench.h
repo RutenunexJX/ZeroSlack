@@ -7,7 +7,6 @@
 #include <QThreadPool>
 #include "../core/workspace.h"
 #include "../core/dependencies.h"
-#include "../core/preparation.h"
 #include <QTimer>
 #include <QPointer>
 #include <atomic>
@@ -42,6 +41,8 @@ public:
     bool openSuiteTarget(const QString& root, const QString& projectId, QString* error);
     bool createProject(const QString& name);
     bool createDemo(const TbOptions& options, QString* error);
+    void setEditorTbCreator(std::function<void(const QString&, const QString&)> creator) { m_editorTbCreator = std::move(creator); }
+    void adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName);
     QString workspace() const { return m_root; }
     void setSimulator(const QString& executable);
     Q_INVOKABLE QString setContext(const QString& workspace);
@@ -59,15 +60,14 @@ signals:
     void scanFinished();
     void preferencesChanged();
 private:
+    std::function<void(const QString&, const QString&)> m_editorTbCreator;
     QString contextError() const;
     QVariant preference(const QString& key, const QVariant& fallback = {}) const;
     void setPreference(const QString& key, const QVariant& value);
     void restoreLayout(const QVariantMap& state);
     QPointer<QWidget> m_sources, m_logs;
-    QWidget *m_graphicalInput = nullptr, *m_existingInput = nullptr, *m_durationInput = nullptr;
-    ElaText *m_emptyState = nullptr, *m_graphicalDuration = nullptr;
-    ElaComboBox* m_inputMode = nullptr;
-    ElaLineEdit* m_generatedPath = nullptr;
+    QWidget *m_existingInput = nullptr, *m_durationInput = nullptr;
+    ElaText *m_emptyState = nullptr, *m_legacyNotice = nullptr;
     QToolButton* m_settings = nullptr;
     QAction* m_generate = nullptr;
     bool m_standalone = false;
@@ -84,10 +84,10 @@ private:
     void updateSources();
     void updateDutChoices();
     void updateControls();
-    void saveCurrent();
+    bool saveCurrent();
+    void renameProject();
     void chooseTb();
     void createTb();
-    void editStimulus();
     void startSimulation();
     void chooseWaveSignals();
     void cancelPreparation();
@@ -100,9 +100,6 @@ private:
     QString m_root, m_simulator;
     Scan m_scan;
     DependencyIndex m_dependencies;
-    std::shared_ptr<const PreparedStimulus> m_preparedStimulus, m_generatedDesign;
-    QJsonObject m_generatedDrawing;
-    QString m_generatedTb;
     std::shared_ptr<std::atomic_bool> m_preparationCancelled;
     quint64 m_preparationId = 0;
     bool m_preparing = false;
@@ -124,8 +121,8 @@ private:
     ElaLineEdit *m_tbFile, *m_tbTop;
     ElaSpinBox* m_duration;
     ElaPlainTextEdit* m_log;
-    QPushButton *m_new, *m_refresh;
-    ElaPushButton *m_stimulus, *m_chooseTb, *m_openTb, *m_run, *m_stop;
+    QPushButton *m_new, *m_refresh, *m_rename;
+    ElaPushButton *m_chooseTb, *m_openTb, *m_run, *m_stop;
     QWidget* m_projectPanel;
 };
 }

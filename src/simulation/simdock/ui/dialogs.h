@@ -36,5 +36,5 @@ private:
     ElaPlainTextEdit* m_preview;
     ElaText* m_error;
 };
-QString askProjectName(QWidget* parent);
+QString askProjectName(QWidget* parent, const QString& currentName = {});
 }

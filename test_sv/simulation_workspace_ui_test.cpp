@@ -15,7 +15,6 @@
 #include "../src/integrations/simdock/simdockcontextview.h"
 #include "../src/simulation/simdock/ui/workbench.h"
 #include "../src/simulation/simdock/core/workspace.h"
-#include "../src/simulation/simdock/core/stimulus.h"
 #include <QtTest>
 #include <QAction>
 #include <QAbstractButton>
@@ -144,6 +143,7 @@ private slots:
             pane->setExpanded(false);
             QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
             QVERIFY(!pane->isExpanded());
+            if (i == 0) capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-collapsed");
             pane->setExpanded(true);
             QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
             QVERIFY(pane->isExpanded());
@@ -228,52 +228,26 @@ private slots:
         click(f.window.get(), "newProject"); QVERIFY(guarded);
         QVERIFY(!f.context()->viewForResource(key)); QVERIFY(f.view()->canClose());
     }
-    void inputModesRetainBothConfigurationsAndDuration() {
+    void existingTestbenchAndRetiredInputs() {
         Host f; QVERIFY(f.open()); ready(f); QVERIFY(f.simulation());
-        auto* mode = child<QComboBox>(f.panel(), "simulationInputMode");
-        QCOMPARE(mode->currentData().toInt(), int(simdock::InputMode::ExistingTb));
+        QVERIFY(!f.panel()->findChild<QWidget*>("simulationInputMode"));
+        QVERIFY(!f.panel()->findChild<QWidget*>("editStimulus"));
+        QVERIFY(!f.panel()->findChild<QWidget*>("generatedTbPath"));
         QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
-        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->toolTip(), QDir::toNativeSeparators(f.workspace + "/tb_manual.sv"));
         click(f.panel(), "openTb");
         QCOMPARE(QFileInfo(f.window->tabManager->getCurrentDocumentMetadata().fileName).fileName(), QString("tb_manual.sv"));
+        const auto manual = read(f.workspace + "/tb_manual.sv");
         child<QSpinBox>(f.panel(), "duration")->setValue(1700);
         QCOMPARE(f.saved().durationNs, 1700LL);
-        const auto manualBytes = read(f.workspace + "/tb_manual.sv");
-        mode->setCurrentIndex(mode->findData(int(simdock::InputMode::Graphical)));
-        QVERIFY(child<QWidget>(f.panel(), "duration")->isHidden() || !child<QWidget>(f.panel(), "duration")->isVisible());
-        QVERIFY(!child<QWidget>(f.panel(), "tbTop")->isVisible());
-        QCOMPARE(f.saved().alternateInput.tbFile, QString("tb_manual.sv"));
-        auto graph = f.saved();
-        const auto scan = simdock::scanWorkspace(f.workspace);
-        simdock::Module dut;
-        for (const auto& source : scan.files) for (const auto& module : source.modules) if (module.name == "dut") dut = module;
-        QString error; simdock::TbOptions options; options.name = "tb_graph"; options.clock = "clk"; options.reset = "rst";
-        const auto drawing = simdock::newStimulus(dut, scan, options, 2345, &error); QVERIFY2(error.isEmpty(), qPrintable(error));
-        QVERIFY2(simdock::saveStimulus(f.workspace, graph, dut, scan, drawing, &error), qPrintable(error));
+        auto* dut = child<QComboBox>(f.panel(), "dutSelector");
+        const auto other = dut->findData(QStringList({"extra.sv", "extra"}));
+        QVERIFY(other >= 0); dut->setCurrentIndex(other);
+        QCOMPARE(f.saved().tbFile, QString("tb_manual.sv"));
         QVERIFY(f.panel()->setContext(f.workspace).isEmpty()); ready(f);
-        QCOMPARE(f.saved().durationNs, 2345LL);
-        QCOMPARE(child<QWidget>(f.panel(), "graphicalDuration")->property("text").toString(), QString("2345 ns"));
-        const auto generatedPath = graph.tbFile;
-        const auto generatedBytes = read(f.workspace + '/' + graph.tbFile);
-        QVERIFY(!generatedBytes.isEmpty());
-        mode->setCurrentIndex(mode->findData(int(simdock::InputMode::ExistingTb)));
-        QCOMPARE(f.saved().durationNs, 1700LL); QCOMPARE(f.saved().tbFile, QString("tb_manual.sv"));
-        QVERIFY(f.saved().stimulus.isEmpty()); QCOMPARE(f.saved().alternateInput.stimulus, drawing);
-        mode->setCurrentIndex(mode->findData(int(simdock::InputMode::Graphical)));
-        QCOMPARE(f.saved().durationNs, 2345LL); QCOMPARE(f.saved().tbFile, generatedPath); QCOMPARE(f.saved().stimulus, drawing);
-        QCOMPARE(read(f.workspace + "/tb_manual.sv"), manualBytes); QCOMPARE(read(f.workspace + '/' + generatedPath), generatedBytes);
-        const auto script = simdock::runScript(f.workspace, f.saved(), f.data.filePath("run"), "modelsim.ini");
-        QVERIFY(script.contains("run 2345 ns"));
-        QVERIFY(f.panel()->setContext(f.workspace).isEmpty()); ready(f);
-        QCOMPARE(mode->currentData().toInt(), int(simdock::InputMode::Graphical));
-        auto* generated = child<QLineEdit>(f.panel(), "generatedTbPath");
-        QCOMPARE(generated->text(), generatedPath);
-        QVERIFY(!generated->toolTip().isEmpty());
-        auto* dutChoices = child<QComboBox>(f.panel(), "dutSelector");
-        const int otherDut = dutChoices->findData(QStringList({"extra.sv", "extra"}));
-        QVERIFY(otherDut >= 0); dutChoices->setCurrentIndex(otherDut);
-        QVERIFY(f.saved().tbFile.isEmpty());
-        QVERIFY(generated->text().isEmpty()); QVERIFY(generated->toolTip().isEmpty());
+        QCOMPARE(f.saved().durationNs, 1700LL);
+        QCOMPARE(read(f.workspace + "/tb_manual.sv"), manual);
+        QVERIFY(child<QWidget>(f.panel(), "duration")->isVisible());
+        QVERIFY(child<QWidget>(f.panel(), "tbTop")->isVisible());
     }
     void logSelectionScrollAndHiddenDelivery() {
         auto* originalClipboard = new QMimeData;
@@ -315,7 +289,12 @@ private slots:
         QVERIFY(f.sources()->height() >= 80); QVERIFY(child<QWidget>(f.window.get(), "projectList")->height() <= 140);
         QVERIFY(f.sources()->isVisible()); QVERIFY(f.log()->isVisible());
         auto* tabs = child<QTabWidget>(f.window.get(), "navigationTabs")->tabBar();
+        for (int i = 0; i < 3; ++i) QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
         for (int i = 0; i < 3; ++i) {
+            QVERIFY(tabs->tabText(i).isEmpty());
+            QVERIFY(!tabs->tabIcon(i).isNull());
+            QVERIFY(!tabs->tabToolTip(i).isEmpty());
+            QCOMPARE(tabs->accessibleTabName(i), tabs->tabToolTip(i));
             tabs->setCurrentIndex(i);
             QTest::qWait(30);
             QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
@@ -336,8 +315,7 @@ private slots:
         auto* action = child<QAction>(f.panel(), "createTb"); QVERIFY(menu->actions().contains(action));
         QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); dialog->reject(); }); action->trigger();
         capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-existing");
-        auto* mode = child<QComboBox>(f.panel(), "simulationInputMode"); mode->setCurrentIndex(mode->findData(int(simdock::InputMode::Graphical)));
-        capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-graphical");
+
     }
     void liveQuestaStartStopFailureRecovery() {
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
@@ -365,11 +343,9 @@ private slots:
         };
         click(f.panel(), "startSimulation");
         QTRY_VERIFY_WITH_TIMEOUT(session->alive(), 20000);
-        QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
         QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
-        QVERIFY(!f.view()->canClose());
-        QVERIFY(!f.window->close());
+        QVERIFY(f.view()->canClose());
         QVERIFY(preserveRun("first-success"));
         click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
         QVERIFY(f.view()->canClose());
@@ -379,9 +355,7 @@ private slots:
         QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
         QVERIFY2(!finished.takeFirst()[0].toBool(), qPrintable(allLog));
         QVERIFY2(allLog.contains("missing_tb_top") && allLog.contains("Questa could not load the testbench"), qPrintable(allLog));
-        QVERIFY(session->alive()); QVERIFY(!f.view()->canClose());
-        QVERIFY(!f.window->close());
-        QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
+        QVERIFY(session->alive()); QVERIFY(f.view()->canClose());
         QVERIFY(preserveRun("invalid-top"));
         click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
         QVERIFY(f.view()->canClose());
@@ -390,13 +364,14 @@ private slots:
         QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(allLog), 130000);
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(allLog));
         QVERIFY2(!allLog.contains("Could not publish Questa state"), qPrintable(allLog));
-        QVERIFY(!f.view()->canClose());
-        QVERIFY(!f.window->close());
-        QVERIFY(!f.sessions()->openWorkspace(f.other)); QVERIFY(!f.context()->closePinnedResource(key));
+        QVERIFY(f.view()->canClose());
         QVERIFY(preserveRun("corrected-top"));
         if (!output.isEmpty()) QVERIFY(put(QDir(output).filePath("questa-host.log"), f.log()->toPlainText().toUtf8()));
-        click(f.panel(), "stopSimulation"); QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
-        QVERIFY(f.view()->canClose()); QVERIFY(f.sessions()->openWorkspace(f.other));
+        const auto lastRun = session->lastRunDirectory();
+        QVERIFY(f.sessions()->openWorkspace(f.other));
+        QTRY_VERIFY_WITH_TIMEOUT(!session->alive(), 10000);
+        QVERIFY(!QFileInfo::exists(lastRun));
+        QVERIFY(f.view()->canClose());
         QVERIFY(f.window->close());
     }
 };

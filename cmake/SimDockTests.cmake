@@ -1,16 +1,23 @@
 # Original SimDock cases compile against the owned implementation. The legacy
 # window is test-only chrome; the real ZeroSlack lifecycle is tested separately.
 find_package(Qt6 REQUIRED COMPONENTS Test)
+add_executable(tb_editor_assistance_test test_sv/tb_editor_assistance_test.cpp)
+target_link_libraries(tb_editor_assistance_test PRIVATE zeroslack_core Qt6::Test)
+target_include_directories(tb_editor_assistance_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
+add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes enumScopeWindow mainWindowWorkflow)
+set_tests_properties(tb_editor_assistance PROPERTIES TIMEOUT 180
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(simulation_workspace_ui_test test_sv/simulation_workspace_ui_test.cpp)
 target_link_libraries(simulation_workspace_ui_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(simulation_workspace_ui_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME simulation_workspace_ui COMMAND simulation_workspace_ui_test
     sourceFirstSingleOwnershipAndSessionRestore navigationSearchAndTransferredModalGuard
-    inputModesRetainBothConfigurationsAndDuration logSelectionScrollAndHiddenDelivery hostVisualsAndMenus)
+    existingTestbenchAndRetiredInputs logSelectionScrollAndHiddenDelivery hostVisualsAndMenus)
 set_tests_properties(simulation_workspace_ui PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
-foreach(pair IN ITEMS "scan_cache;scan_cache_test" "scoreboard;scoreboard_test" "stimulus;stimulus_test" "core;core_test" "workbench_host;workbench_host_test")
+foreach(pair IN ITEMS "scan_cache;scan_cache_test" "storage;storage_test" "core;core_test" "workbench_host;workbench_host_test")
     list(GET pair 0 name)
     list(GET pair 1 source)
     add_executable(simdock_${name}_tests "test_sv/simdock/${source}.cpp")
@@ -33,10 +40,6 @@ if(SuiteApp_FOUND)
     target_link_libraries(simdock_ui_tests PRIVATE SuiteApp::suiteapp)
     target_compile_definitions(simdock_ui_tests PRIVATE SIMDOCK_WITH_APPSUITE=1)
 endif()
-if(TARGET zeroslack_deploy_wave)
-    target_compile_definitions(simdock_ui_tests PRIVATE SIMDOCK_HAS_WAVE_EDITOR=1)
-    add_dependencies(simdock_ui_tests zeroslack_deploy_wave)
-endif()
 add_test(NAME simdock_ui COMMAND simdock_ui_tests -o "${CMAKE_BINARY_DIR}/simdock-ui-1.xml,junitxml" -o -,txt)
 add_test(NAME simdock_ui_200 COMMAND simdock_ui_tests -o "${CMAKE_BINARY_DIR}/simdock-ui-2.xml,junitxml" -o -,txt)
 add_executable(simdock_scan_benchmark test_sv/simdock/scan_benchmark.cpp)
@@ -47,7 +50,7 @@ target_compile_definitions(simdock_legacy_compatibility_test PRIVATE SIMDOCK_LEG
 add_test(NAME simdock_legacy_compatibility COMMAND simdock_legacy_compatibility_test -o "${CMAKE_BINARY_DIR}/simdock-legacy.xml,junitxml" -o -,txt)
 add_executable(simdock_performance test_sv/simdock/performance.cpp)
 target_link_libraries(simdock_performance PRIVATE zeroslack_core Qt6::Test)
-foreach(name IN ITEMS scan_cache scoreboard stimulus core workbench_host ui ui_200 legacy_compatibility)
+foreach(name IN ITEMS scan_cache storage core workbench_host ui ui_200 legacy_compatibility)
     set_tests_properties(simdock_${name} PROPERTIES TIMEOUT 600
         ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;SIMDOCK_TEST_QUESTA="
         ENVIRONMENT_MODIFICATION
@@ -55,17 +58,15 @@ foreach(name IN ITEMS scan_cache scoreboard stimulus core workbench_host ui ui_2
 endforeach()
 set_tests_properties(simdock_ui_200 PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=2;SIMDOCK_TEST_QUESTA=")
 if(ZEROSLACK_TEST_QUESTA_EXECUTABLE)
-    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
-    add_test(NAME simdock_stimulus_live COMMAND simdock_stimulus_tests liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-stimulus-live.xml,junitxml" -o -,txt)
-    add_test(NAME simdock_scoreboard_live COMMAND simdock_scoreboard_tests liveScoreboards -o "${CMAKE_BINARY_DIR}/simdock-scoreboard-live.xml,junitxml" -o -,txt)
+    add_test(NAME simdock_core_live COMMAND simdock_core_tests liveNamedTypeCompilation liveDependencyCompilation liveStateReaderReleasesHandle liveStatePublicationContention liveLoadFailureAndRecovery liveWaveThemes liveCompilationReuse liveReadableProjectPaths liveQuesta -o "${CMAKE_BINARY_DIR}/simdock-core-live.xml,junitxml" -o -,txt)
     add_test(NAME simdock_workbench_host_live COMMAND simdock_workbench_host_tests simulationLifecycle -o "${CMAKE_BINARY_DIR}/simdock-host-live.xml,junitxml" -o -,txt)
-    foreach(name IN ITEMS core stimulus scoreboard workbench_host)
+    foreach(name IN ITEMS core workbench_host)
         set_tests_properties(simdock_${name}_live PROPERTIES TIMEOUT 1200 LABELS "simdock-questa-required"
             ENVIRONMENT "SIMDOCK_TEST_QUESTA=${ZEROSLACK_TEST_QUESTA_EXECUTABLE};QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
             ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
     endforeach()
 endif()
-foreach(target IN ITEMS simdock_scan_cache_tests simdock_scoreboard_tests simdock_stimulus_tests
+foreach(target IN ITEMS simdock_scan_cache_tests simdock_storage_tests
         simdock_core_tests simdock_workbench_host_tests simdock_ui_tests simdock_scan_benchmark
         simdock_performance simdock_legacy_compatibility_test)
     target_include_directories(${target} PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})

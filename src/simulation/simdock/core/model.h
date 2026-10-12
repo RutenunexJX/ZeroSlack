@@ -9,6 +9,7 @@ namespace simdock {
 struct Port {
     QString name, direction, type;
     bool namedType = false;
+    QString initialExpression;
 };
 struct Parameter {
     QString name, type, value;
@@ -52,18 +53,11 @@ struct Project {
     InputConfiguration alternateInput;
     QString waveScope = QStringLiteral("interface");
     QStringList waveSignals;
+    // Retired graphical inputs remain serializable for data compatibility only.
+    QJsonObject preservedInputs;
+    QString storageName, legacyFile;
+    QMap<QString, QByteArray> storageRevisions;
 };
-inline void setInputMode(Project& project, InputMode mode)
-{
-    if (project.inputMode == mode) return;
-    InputConfiguration previous{project.tbFile, project.tbName, project.durationNs, project.stimulus};
-    project.tbFile = project.alternateInput.tbFile;
-    project.tbName = project.alternateInput.tbName;
-    project.durationNs = project.alternateInput.durationNs;
-    project.stimulus = project.alternateInput.stimulus;
-    project.alternateInput = previous;
-    project.inputMode = mode;
-}
 struct TbOptions {
     QString name, clock, reset;
     bool resetActiveLow = true;

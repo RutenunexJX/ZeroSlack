@@ -33,6 +33,7 @@
 #include "editorstructuralinputcontroller.h"
 #include "editortemplateslotcontroller.h"
 #include "ghostannotationservice.h"
+#include "tbinputassistcontroller.h"
 #include "sourcenavigationservice.h"
 
 #include <cstdint>
@@ -192,6 +193,8 @@ struct MyCodeEditorState
         GhostAnnotation,
         EditorGhostAnnotationAnchorTraits> ghostAnnotations;
     EditorRuntimeAnnotationLayer annotationLayer;
+    std::unique_ptr<TbInputAssistController> tbAssist;
+    std::function<bool()> tbAssistDependencyCheck;
     EditorAnnotationDisplayOptions annotationDisplayOptions;
     EditorAnchoredRangeIndex<
         SemanticDecoration,

@@ -3,6 +3,7 @@
 #include "navigationwidget.h"
 #include "applicationthememanager.h"
 #include "editorfileidentity.h"
+#include "roundedicons.h"
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QMenu>
@@ -429,6 +430,8 @@ void NavigationWidget::setupUI()
 
     tabWidget = UiControls::tabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
+    tabWidget->setIconSize(QSize(20, 20));
+    tabWidget->tabBar()->setProperty("compactIconTabs", true);
     mainLayout->insertWidget(0, tabWidget);
     mainLayout->removeWidget(searchLineEdit);
 
@@ -471,7 +474,9 @@ void NavigationWidget::setupFileTab()
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);
 
-    tabWidget->addTab(fileTab, "Files");
+    const auto index = tabWidget->addTab(fileTab, RoundedIcons::icon(RoundedIcons::File), QString());
+    tabWidget->setTabToolTip(index, tr("Files"));
+    tabWidget->tabBar()->setAccessibleTabName(index, tr("Files"));
 }
 
 void NavigationWidget::setupDesignTab()
@@ -502,7 +507,9 @@ void NavigationWidget::setupDesignTab()
     designTabLayout->addWidget(designTreeWidget);
 
     designTab->setLayout(designTabLayout);
-    tabWidget->addTab(designTab, "Design");
+    const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Hierarchy), QString());
+    tabWidget->setTabToolTip(index, tr("Design"));
+    tabWidget->tabBar()->setAccessibleTabName(index, tr("Design"));
     refreshDesignHeader();
 }
 
@@ -515,7 +522,9 @@ int NavigationWidget::activeTab() const { return tabWidget->currentIndex(); }
 void NavigationWidget::setSourceFilesWidget(QWidget* widget)
 {
     if (!widget || tabWidget->count() > SourceFilesTab) return;
-    tabWidget->addTab(widget, tr("Build inputs"));
+    const auto index = tabWidget->addTab(widget, RoundedIcons::icon(RoundedIcons::Module), QString());
+    tabWidget->setTabToolTip(index, tr("Build inputs"));
+    tabWidget->tabBar()->setAccessibleTabName(index, tr("Build inputs"));
 }
 
 void NavigationWidget::setStoredSearchFilter(int index,

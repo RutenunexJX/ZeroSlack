@@ -281,7 +281,7 @@ private slots:
         const QList<QPair<QString, QStringList>> controls{
             {"workspace", {"newProject", "projectList"}},
             {"sources", {"sourceList", "refreshWorkspace", "moveSourceUp", "moveSourceDown"}},
-            {"simulation", {"openSettings", "editStimulus", "dutSelector", "simulationInputMode", "graphicalDuration", "startSimulation", "stopSimulation"}},
+            {"simulation", {"openSettings", "dutSelector", "tbTop", "duration", "startSimulation", "stopSimulation"}},
             {"log", {"simulationLog", "clearLog"}}};
         for (const auto& [page, names] : controls) {
             section(widget, page);
@@ -409,68 +409,29 @@ private slots:
         QTest::qWait(30); // No late callback may touch a destroyed widget.
         QVERIFY(!blocked.isFinished());
     }
-    void embeddedStimulusChecksWorkflow_data() {
+    void existingTestbenchWorkflow_data() {
         QTest::addColumn<int>("width");
         for (int width : {280, 520, 1250}) QTest::newRow(qPrintable(QString::number(width))) << width;
     }
-    void embeddedStimulusChecksWorkflow() {
+    void existingTestbenchWorkflow() {
         QFETCH(int, width);
         QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host);
-        layout.setContentsMargins(0, 0, 0, 0);
-        auto* widget = create(&host, nullptr); QVERIFY(widget); layout.addWidget(widget);
-        host.resize(width, 700); host.show(); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
+        layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
+        auto* widget = create(&host, nullptr); layout.addWidget(widget); host.show();
+        QSignalSpy scanned(widget, SIGNAL(scanFinished()));
         QVERIFY(call(widget, "setContext", root.path()).isEmpty());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         section(widget, "simulation");
-        auto* edit = widget->findChild<QPushButton*>("editStimulus"); QVERIFY(edit && edit->isEnabled());
-        QVERIFY(reachable(edit, widget));
-        QTimer editorPoll;
-        editorPoll.setInterval(10);
-        connect(&editorPoll, &QTimer::timeout, widget, [&] {
-            auto* dialog = widget->findChild<QDialog*>("stimulusDialog");
-            if (!dialog || !dialog->isVisible()) return;
-            editorPoll.stop();
-            QTimer::singleShot(5000, dialog, &QDialog::reject);
-            QVERIFY(!closable(widget)); QVERIFY(!call(widget, "setContext", {}).isEmpty());
-            QVERIFY(!call(widget, "openProject", {}).isEmpty());
-            auto* editor = dialog->findChild<QWidget*>("WaveStimulusEditor"); QVERIFY(editor && editor->autoFillBackground());
-            dialogFits(dialog, QString("stimulus-%1").arg(width));
-            auto* timing = dialog->findChild<QToolButton*>("stimulusTiming"); QVERIFY(reachable(timing, dialog));
-            QTest::mouseClick(timing, Qt::LeftButton); QTest::qWait(200);
-            for (const auto* name : {"stimulusClock", "stimulusReset", "stimulusPeriod", "stimulusDuration", "applyStimulusTiming"})
-                QVERIFY2(reachable(dialog->findChild<QWidget*>(name), dialog), name);
-            dialogFits(dialog, QString("stimulus-timing-%1").arg(width));
-            auto* checksButton = dialog->findChild<QPushButton*>("stimulusChecks");
-            QVERIFY(reachable(checksButton, dialog));
-            QTimer::singleShot(0, dialog, [&] {
-                auto* checks = dialog->findChild<QDialog*>("scoreboardDialog"); QVERIFY(checks);
-                QTimer::singleShot(3000, checks, &QDialog::reject);
-                auto* kind = checks->findChild<QComboBox*>("scoreboardKind"); QVERIFY(kind);
-                kind->setCurrentIndex(kind->findData("uart_tx"));
-                checks->findChild<QSpinBox*>("scoreboard_baud")->setValue(10000000);
-                dialogFits(checks, QString("checks-%1").arg(width));
-                auto* apply = checks->findChild<QPushButton*>("applyScoreboard");
-                QVERIFY(reachable(apply, checks)); QTest::mouseClick(apply, Qt::LeftButton);
-            });
-            QTest::mouseClick(checksButton, Qt::LeftButton);
-            auto* save = dialog->findChild<QPushButton*>("saveStimulus");
-            QVERIFY(reachable(save, dialog)); QTest::mouseClick(save, Qt::LeftButton);
-        });
-        editorPoll.start(); QTest::mouseClick(edit, Qt::LeftButton);
-        QTRY_VERIFY_WITH_TIMEOUT(!editorPoll.isActive(), 10000);
-        QTRY_VERIFY_WITH_TIMEOUT(!widget->findChild<QDialog*>("stimulusDialog"), 10000);
+        QVERIFY(!widget->findChild<QWidget*>("editStimulus"));
+        QVERIFY(!widget->findChild<QWidget*>("simulationInputMode"));
+        QVERIFY(reachable(widget->findChild<QWidget*>("tbTop"), widget));
+        QVERIFY(reachable(widget->findChild<QWidget*>("duration"), widget));
         QVERIFY(closable(widget));
-        QFile project(root.filePath(QString(".simdock/projects/%1.json").arg(id)));
-        QVERIFY(project.open(QIODevice::ReadOnly));
-        const auto saved = QJsonDocument::fromJson(project.readAll()).object();
-        QCOMPARE(saved["stimulus"].toObject()["scoreboard"].toObject()["kind"].toString(), QStringLiteral("uart_tx"));
-        QVERIFY(QFileInfo::exists(root.filePath(saved["tbFile"].toString())));
-        QVERIFY(widget->findChild<QPushButton*>("startSimulation")->isEnabled());
     }
-    void destroyWithOpenDialog_data() { embeddedStimulusChecksWorkflow_data(); }
+    void destroyWithOpenDialog_data() { existingTestbenchWorkflow_data(); }
     void destroyWithOpenDialog() {
         QFETCH(int, width);
-        for (const auto* action : {"openSettings", "newProject", "createTb", "editStimulus"}) {
+        for (const auto* action : {"openSettings", "newProject", "createTb"}) {
             QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
             QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget); layout.addWidget(widget);
@@ -497,7 +458,7 @@ private slots:
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
     }
-    void simulationLifecycle_data() { embeddedStimulusChecksWorkflow_data(); }
+    void simulationLifecycle_data() { existingTestbenchWorkflow_data(); }
     void simulationLifecycle() {
         QFETCH(int, width);
         const auto simulator = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
@@ -536,14 +497,14 @@ private slots:
         QVERIFY(session);
         QVERIFY(reachable(run, widget)); QTest::mouseClick(run, Qt::LeftButton);
         QTRY_VERIFY_WITH_TIMEOUT(session->property("processId").toLongLong() != 0, 15000);
-        QVERIFY(!closable(widget)); QVERIFY(!call(widget, "setContext", {}).isEmpty());
+        QVERIFY(closable(widget));
         auto* log = widget->findChild<QPlainTextEdit*>("simulationLog"); QVERIFY(log);
         section(widget, "log"); QVERIFY(reachable(log, widget));
         // A cold Questa GUI can take most of the session's 120 s deadline on
         // this host. Wait through that deadline and include its log on failure.
         QTRY_VERIFY2_WITH_TIMEOUT(log->toPlainText().contains("Run completed"),
                                  qPrintable(log->toPlainText()), 130000);
-        QVERIFY(!closable(widget));
+        QVERIFY(closable(widget));
         capture(&host, QString("run-completed-%1").arg(width));
         section(widget, "simulation"); QVERIFY(reachable(stop, widget)); QTest::mouseClick(stop, Qt::LeftButton);
         QTRY_COMPARE_WITH_TIMEOUT(session->property("processId").toLongLong(), 0, 10000);

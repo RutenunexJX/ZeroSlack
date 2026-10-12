@@ -1,8 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.31.28`
+Current version: `v0.31.31`
 
-Release 0.31.28 integrates the complete SimDock 0.6.1 workbench into ZeroSlack: projects, stimulus and Timing editing, Checks, Questa execution, waveforms and existing data compatibility. The `simdock` Suite provider now belongs to the ZeroSlack process. The title bar also tracks actual editing intervals, persists the total across restarts and provides Reset without adding an editor row. Old SimDock repositories and packages remain archived.
+Release 0.31.31 adds TB creation and input assistance directly to the editor. New TB creates an editable SystemVerilog framework; enum initializers use verified scope-qualified members, and explicit linear or reciprocal rules display engineering values beside source configuration literals. Edits retain native undo/redo and reject stale or unsupported inputs. Projects use readable names, Files/Design/Build inputs use icons, and owned simulation results are cleaned when replaced or when their session closes. Graphical stimulus editing and its private waveform component have been removed; existing TB and legacy input data are preserved. Questa waveform inspection remains available. SuiteApp SDK/Runtime remains 1.0.2 and native xIPs remains 2.14.2.
 
 Release 0.31.27 hardens document saves, workspace sessions and delayed source navigation against stale inputs. File actions preserve the confirmed source generation across Save All, reject incomplete directory enumeration, and report partial disk commits explicitly. Suite context identity, analysis handoff and template bounds retain the accepted R1–R6 protections. SuiteApp SDK remains 1.0.1; its separately documented multi-instance unregister limitation remains open.
 
@@ -122,8 +122,9 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
 Ownership boundary: native documents and external application data stay with their owners.
-External application resources use the Suite integration boundary. ZeroSlack does not run simulation,
-load waveform-rendering libraries, read another application's database, or include its private headers.
+External application resources use the Suite integration boundary. The integrated simulation
+workbench owns its Questa sessions and transient results; independent application data remains
+with its owner.
 Checks that have never been run on a real desktop are listed in
 [unverified manual checks](docs/unverified-manual-checks.md).
 

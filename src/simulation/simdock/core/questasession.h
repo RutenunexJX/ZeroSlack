@@ -2,9 +2,9 @@
 #include "zeroslackexport.h"
 #include "model.h"
 #include "wavepalette.h"
+#include "sessionfiles.h"
 #include <QObject>
 #include <QProcess>
-#include <QTemporaryDir>
 #include <QTimer>
 #include <memory>
 #include <atomic>
@@ -12,7 +12,7 @@
 namespace simdock {
 QString tclWord(const QString& text);
 QString runScript(const QString& root, const Project& project, const QString& runDir, const QString& iniPath,
-                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false);
+                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {});
 QString simulatorError(const QString& executable);
 QString scoreboardResultScript(const QString& tbName);
 struct PreparedRun {
@@ -50,7 +50,8 @@ private:
     bool sendPending(QString* error);
     QProcess m_process;
     QTimer m_poll, m_deadline;
-    std::unique_ptr<QTemporaryDir> m_sessionDir;
+    void releaseFiles();
+    std::unique_ptr<SessionFiles> m_sessionDir;
     QString m_executable, m_pending, m_runId, m_runDir, m_lastState;
     qint64 m_logOffset = 0;
     bool m_busy = false, m_ready = false, m_stopping = false;
@@ -58,5 +59,7 @@ private:
     void* m_job = nullptr;
     QByteArray m_cachedDesign, m_pendingDesign;
     QString m_cachedWork, m_pendingWork;
+    QString m_activeWork;
+    bool m_oldRunsReleased = false;
 };
 }

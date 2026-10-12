@@ -5,7 +5,6 @@ param(
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$XipsPackageDirectory = '',
-    [string]$TickxComponentDirectory = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
@@ -146,34 +145,6 @@ if ($integratedSimDock.version -ne '0.6.1' -or $integratedSimDock.commit -ne 'e1
     throw 'Integrated SimDock source provenance does not match the reviewed boundary.'
 }
 Copy-Item -LiteralPath (Join-Path $buildRoot 'simdock-source.json') -Destination $outputRoot
-if (-not $TickxComponentDirectory) {
-    $entry = $cache | Where-Object { $_ -match '^ZEROSLACK_TICKX_COMPONENT_DIR:[^=]+=(.+)$' } | Select-Object -First 1
-    if ($entry) { $TickxComponentDirectory = ($entry -split '=', 2)[1] }
-}
-if (-not $TickxComponentDirectory) { throw 'The release requires the pinned Tickx 0.15.2 component and notices.' }
-$waveInput = (Resolve-Path -LiteralPath $TickxComponentDirectory).Path
-$waveRuntime = Join-Path $buildRoot 'components/wave'
-$waveTarget = Join-Path $outputRoot 'components/wave'
-New-Item -ItemType Directory -Path $waveTarget -Force | Out-Null
-$waveHashes = [ordered]@{
-    'wavewidgets.dll' = 'c326b99e68bcbb2f8dd5e3e7585f4def58ba33d77ba384a86c9ede48cd444a70'
-    'WaveWorkbenchEla.dll' = '85bce4affee3c45f4b3afef010eeb6e82d9a0bd42f6bfdc033371bb4ee6aa439'
-}
-foreach ($entry in $waveHashes.GetEnumerator()) {
-    $source = Join-Path $waveRuntime $entry.Key
-    if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) {
-        throw "The deployed Tickx runtime is not the frozen 0.15.2 input: $($entry.Key)"
-    }
-    $target = Join-Path $waveTarget $entry.Key
-    Copy-Item -LiteralPath $source -Destination $target
-    $deployTargets += $target
-}
-$waveNotices = Join-Path $waveInput 'licenses'
-if (-not (Test-Path -LiteralPath $waveNotices -PathType Container)) { throw 'Tickx component notices are missing.' }
-$waveLicenseTarget = Join-Path $outputRoot 'licenses/components/wave'
-New-Item -ItemType Directory -Path (Split-Path -Parent $waveLicenseTarget) -Force | Out-Null
-Copy-Item -LiteralPath $waveNotices -Destination $waveLicenseTarget -Recurse
-$nativeComponents['wave'] = [ordered]@{ directory='components/wave'; files=@($waveHashes.Keys); version='0.15.2'; revision='9730d475b02a59bec9e9c1ca8c6e0a508445dbca'; sha256=$waveHashes }
 & (Join-Path $QtDirectory 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime `
     --no-system-d3d-compiler --no-opengl-sw --dir $outputRoot @deployTargets
 if ($LASTEXITCODE -ne 0) { throw "windeployqt failed: $LASTEXITCODE" }

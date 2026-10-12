@@ -2,7 +2,7 @@
 #include "../../src/simulation/simdock/core/dependencies.h"
 #include "../../src/simulation/simdock/core/questasession.h"
 #include "../../src/simulation/simdock/core/testbench.h"
-#include "../../src/simulation/simdock/core/stimulus.h"
+#include "../../src/simulation/simdock/core/sessionfiles.h"
 #include "../../src/simulation/simdock/core/workspace.h"
 #include <QDir>
 #include <QFile>
@@ -34,13 +34,13 @@ static QByteArray read(const QString& path)
 }
 static QStringList sessionDirectories()
 {
-    return QDir(QDir::tempPath()).entryList({QStringLiteral("simdock-session-*")}, QDir::Dirs | QDir::NoDotAndDotDot);
+    return QDir(SessionFiles::cacheRoot()).entryList({QStringLiteral("session-*")}, QDir::Dirs | QDir::NoDotAndDotDot);
 }
 static QString newSessionDirectory(const QStringList& previous)
 {
     auto directories = sessionDirectories();
     for (const auto& entry : previous) directories.removeAll(entry);
-    return directories.size() == 1 ? QDir(QDir::tempPath()).filePath(directories.first()) : QString();
+    return directories.size() == 1 ? QDir(SessionFiles::cacheRoot()).filePath(directories.first()) : QString();
 }
 static bool captureSession(const QString& phase, const QString& directory, const QuestaSession& session, const QString& log)
 {
@@ -134,7 +134,7 @@ private slots:
         p.waveScope = "selected"; p.waveSignals = {"clk", "data"};
         script = runScript("root", p, "run", "modelsim.ini", WaveTheme::Nord, true);
         QVERIFY(script.contains("add wave \"/tb/data\""));
-        QVERIFY(!script.contains("design.sv")); QVERIFY(script.contains("tb.sv"));
+        QVERIFY(!script.contains("design.sv")); QVERIFY(!script.contains("vlog "));
         QVERIFY(!script.contains("vlib "));
         p.stimulus = QJsonObject{{"scoreboard", QJsonObject{{"kind", "delay"}}}};
         script = runScript("root", p, "run", "modelsim.ini");
@@ -423,6 +423,126 @@ private slots:
     {
         QCOMPARE(tclWord(QStringLiteral("a $x [exec wrong] \\ \" b")), QStringLiteral("\"a \\$x \\[exec wrong\\] \\\\ \\\" b\""));
     }
+    void liveReadableProjectPaths_data()
+    {
+        QTest::addColumn<QString>("name"); QTest::addColumn<bool>("manual");
+        QTest::newRow("ordinary") << QString("Clock demo") << false;
+        QTest::newRow("dollar") << QString("Clock $-demo") << false;
+        QTest::newRow("brackets") << QString("Clock [demo]") << false;
+        QTest::newRow("existing-literal-include") << QString("Clock $$-${ZEROSLACK_PATH_TEST}+ [demo]") << true;
+    }
+    void liveReadableProjectPaths()
+    {
+        QFETCH(QString, name); QFETCH(bool, manual);
+        const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
+        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA for literal project path integration.");
+        const auto parent = qEnvironmentVariable("SIMDOCK_TEST_WORKSPACE_PARENT", QDir::currentPath());
+        QTemporaryDir workspace(QDir(parent).filePath("simdock-project-paths-XXXXXX"));
+        QVERIFY(workspace.isValid());
+        auto project = newProject(name); QString error;
+        project.sources = {"counter.sv"}; project.dutFile = "counter.sv"; project.dutName = "counter";
+        project.tbName = "tb_counter"; project.durationNs = 100;
+        QVERIFY2(saveProject(workspace.path(), project, &error), qPrintable(error));
+        project.tbFile = projectTbPath(project, project.tbName);
+        QCOMPARE(project.tbFile, "sim/" + name + "/tb_counter.sv");
+        const auto inputDir = QFileInfo(workspace.filePath(project.tbFile)).absolutePath();
+        auto rtl = counter();
+        rtl.replace("always_ff", "`include \"step.svh\"\nalways_ff");
+        rtl.replace("count+1'b1", "count+STEP");
+        QByteArray tb;
+        if (manual) {
+            rtl.replace("always_ff", "`include \"priority.svh\"\nalways_ff");
+            QVERIFY(put(workspace.filePath("first $+ [one]/helper.sv"), "module helper; endmodule\n"));
+            QVERIFY(put(workspace.filePath("second/helper.sv"), "module helper2; endmodule\n"));
+            QVERIFY(put(workspace.filePath("first $+ [one]/priority.svh"), "localparam PRIORITY=11;\n"));
+            QVERIFY(put(workspace.filePath("second/priority.svh"), "localparam PRIORITY=22;\n"));
+            QVERIFY(put(QDir(inputDir).filePath("priority.svh"), "localparam PRIORITY=33;\n"));
+            project.sources = {project.tbFile, "first $+ [one]/helper.sv", "second/helper.sv", "counter.sv"};
+            tb = "`timescale 1ns/1ps\nmodule tb_counter;\n`include \"step.svh\"\n"
+                 "logic clk=0, rst_n=0, enable=1; wire [7:0] count; counter dut(.*);\n"
+                 "always #5 clk=~clk; initial begin #2; rst_n=1; #34;\n"
+                 "if (count != 4*STEP || dut.PRIORITY != 11) $fatal(1, \"Include order mismatch\");\n"
+                 "$display(\"LITERAL_INCLUDE_OK\"); end endmodule\n";
+        } else {
+            const auto module = analyzeSource(rtl, "counter.sv").modules.first();
+            tb = generateTestbench(module, suggestedTbOptions(module), project.durationNs, &error).toUtf8();
+            QVERIFY2(!tb.isEmpty(), qPrintable(error));
+        }
+        QVERIFY(put(workspace.filePath("counter.sv"), rtl));
+        const auto header = QDir(inputDir).filePath("step.svh");
+        QVERIFY(put(header, "localparam STEP=1;\n"));
+        QVERIFY(writeNewTb(workspace.path(), project.tbFile, QString::fromUtf8(tb), &error));
+        QVERIFY(saveProject(workspace.path(), project, &error));
+        QString shortPath;
+#ifdef Q_OS_WIN
+        const auto native = QDir::toNativeSeparators(workspace.filePath(project.tbFile));
+        wchar_t buffer[32768]{};
+        const auto size = GetShortPathNameW(reinterpret_cast<const wchar_t*>(native.utf16()), buffer, 32768);
+        QVERIFY(size && size < 32768);
+        shortPath = QDir::fromNativeSeparators(QString::fromWCharArray(buffer, int(size)));
+        if (qEnvironmentVariableIntValue("SIMDOCK_TEST_REQUIRE_LONG_PATHS"))
+            QCOMPARE(shortPath, workspace.filePath(project.tbFile));
+#endif
+        QuestaSession session; QSignalSpy finished(&session, &QuestaSession::finished);
+        QString log; connect(&session, &QuestaSession::logText, this, [&](const QString& text) { log += text; });
+        auto prepared = prepareRun(executable, workspace.path(), project);
+        QVERIFY2(prepared.error.isEmpty(), qPrintable(prepared.error));
+        QVERIFY(!prepared.designFingerprint.isEmpty());
+        QVERIFY(prepared.inputFingerprints.contains(header));
+        if (manual) {
+            QVERIFY(prepared.inputFingerprints.contains(workspace.filePath("first $+ [one]/priority.svh")));
+            QVERIFY(!prepared.inputFingerprints.contains(workspace.filePath("second/priority.svh")));
+            QVERIFY(!prepared.inputFingerprints.contains(QDir(inputDir).filePath("priority.svh")));
+        }
+        const auto fingerprint = prepared.designFingerprint;
+        QVERIFY2(session.start(prepared, &error), qPrintable(error));
+        QTRY_VERIFY2_WITH_TIMEOUT(!finished.isEmpty(), qPrintable(log), 90000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+        if (manual) QVERIFY(log.contains("LITERAL_INCLUDE_OK"));
+        const auto firstRun = session.lastRunDirectory(), directory = QFileInfo(firstRun).absolutePath();
+        const auto pid = session.processId();
+        const auto tag = QString::fromLatin1(QTest::currentDataTag());
+        QVERIFY(captureSession(tag + "-first", directory, session, log));
+        project.durationNs = 200;
+        prepared = prepareRun(executable, workspace.path(), project);
+        QCOMPARE(prepared.designFingerprint, fingerprint);
+        QVERIFY2(session.start(prepared, &error), qPrintable(error));
+        QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
+        QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+        QCOMPARE(session.processId(), pid); QVERIFY(!QFileInfo::exists(firstRun));
+        QVERIFY(log.contains("reusing compiled sources and testbench"));
+        QVERIFY(captureSession(tag + "-repeat", directory, session, log));
+        if (manual) {
+            QVERIFY(put(header, "localparam STEP=2;\n"));
+            prepared = prepareRun(executable, workspace.path(), project);
+            QVERIFY(prepared.designFingerprint != fingerprint);
+            QVERIFY2(session.start(prepared, &error), qPrintable(error));
+            QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
+            QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+            QVERIFY(captureSession(tag + "-header-changed", directory, session, log));
+            QVERIFY(put(workspace.filePath("counter.sv"), rtl + "\nnot valid HDL;\n"));
+            QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+            QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
+            QVERIFY(!finished.takeFirst()[0].toBool());
+            QVERIFY2(log.contains(workspace.filePath("counter.sv") + '('), qPrintable(log));
+            QVERIFY(captureSession(tag + "-compile-error", directory, session, log));
+            QVERIFY(put(workspace.filePath("counter.sv"), rtl));
+            QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
+            QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
+            QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
+            QVERIFY(captureSession(tag + "-recovered", directory, session, log));
+        }
+        session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+        QVERIFY(!QFileInfo::exists(directory));
+        QCOMPARE(read(workspace.filePath("counter.sv")), rtl);
+        QCOMPARE(read(workspace.filePath(project.tbFile)), tb);
+        QCOMPARE(loadProjects(workspace.path()).first().name, name);
+        const auto output = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+        if (!output.isEmpty()) QVERIFY(put(QDir(output).filePath(tag + "-result.json"), QJsonDocument(QJsonObject{
+            {"name", name}, {"existingTb", manual}, {"workspace", workspace.path()}, {"tbFile", project.tbFile},
+            {"shortPath", shortPath}, {"processId", pid}, {"stopped", !session.alive()},
+            {"sessionRemoved", !QFileInfo::exists(directory)}, {"originalSourcesPreserved", true}}).toJson()));
+    }
     void liveDependencyCompilation()
     {
         const QString executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
@@ -522,7 +642,7 @@ private slots:
         const auto unlock = qScopeGuard([&] { if (lock != INVALID_HANDLE_VALUE) CloseHandle(lock); });
         QVERIFY(lock != INVALID_HANDLE_VALUE);
         QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
-        const auto runId = QFileInfo(session.lastRunDirectory()).fileName().toUtf8();
+        const auto runId = QFileInfo(session.lastRunDirectory()).fileName().mid(4).toUtf8();
         QTRY_VERIFY_WITH_TIMEOUT(QFileInfo::exists(QDir(directory).filePath("state.tmp")), 5000);
         QVERIFY(captureSession("contention-locked", directory, session, log));
         QCOMPARE(read(QDir(directory).filePath("state.tmp")).replace("\r\n", "\n"), runId + "|compiling\n");
@@ -652,7 +772,7 @@ private slots:
         project.tbFile = QStringLiteral("tb_colors.sv");
         project.tbName = QStringLiteral("tb_colors");
         project.durationNs = 100;
-        QString script = QStringLiteral("if {[catch {\nnamespace eval ::simdock {}\nproc ::simdock::state {value} {}\n");
+        QString script = QStringLiteral("if {[catch {\nnamespace eval ::simdock { variable runId wave-colors }\nproc ::simdock::state {value} {}\n");
         const QList<WaveTheme> themes{WaveTheme::QuestaDefault, WaveTheme::Mocha, WaveTheme::Nord, WaveTheme::SolarizedLight, WaveTheme::QuestaDefault};
         QStringList formats;
         for (int index = 0; index < themes.size(); ++index) {
@@ -703,7 +823,12 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(process.state() == QProcess::NotRunning, 90000);
         QFile transcript(workspace.filePath(QStringLiteral("transcript")));
         QVERIFY(transcript.open(QIODevice::ReadOnly));
-        const auto log = transcript.readAll() + process.readAllStandardOutput();
+        auto log = transcript.readAll() + process.readAllStandardOutput();
+        for (const auto& format : formats) {
+            QFile runLog(QFileInfo(format).dir().filePath(QStringLiteral("transcript.log")));
+            QVERIFY(runLog.open(QIODevice::ReadOnly));
+            log += runLog.readAll();
+        }
         const auto artifacts = qEnvironmentVariable("SIMDOCK_TEST_WAVE_DIR");
         if (!artifacts.isEmpty()) {
             QVERIFY(put(QDir(artifacts).filePath(QStringLiteral("wave-themes.log")), log));
@@ -748,9 +873,11 @@ private slots:
         const auto scan = scanWorkspace(workspace.path());
         const auto module = analyzeSource(rtl, "counter.sv").modules.first();
         QString error;
-        auto drawing = newStimulus(module, scan, suggestedTbOptions(module), 100, &error);
-        QVERIFY2(!drawing.isEmpty(), qPrintable(error));
-        QVERIFY2(saveStimulus(workspace.path(), p, module, scan, drawing, &error), qPrintable(error));
+        const auto options = suggestedTbOptions(module);
+        p.tbName = options.name; p.tbFile = "manual.sv"; p.durationNs = 100;
+        const auto tb = generateTestbench(module, options, p.durationNs, &error);
+        QVERIFY2(!tb.isEmpty(), qPrintable(error));
+        QVERIFY(put(workspace.filePath(p.tbFile), tb.toUtf8()));
         QuestaSession session; QSignalSpy finished(&session, &QuestaSession::finished);
         QString log; connect(&session, &QuestaSession::logText, this, [&log](const QString &text) { log += text; });
         auto prepared = prepareRun(executable, workspace.path(), p);
@@ -761,8 +888,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 90000);
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
         const auto pid = session.processId();
-        drawing = retimeStimulus(module, scan, drawing, stimulusOptions(drawing), 200, &error);
-        QVERIFY2(saveStimulus(workspace.path(), p, module, scan, drawing, &error), qPrintable(error));
+        const auto firstRun = session.lastRunDirectory();
+        p.durationNs = 200;
         p.waveScope = "selected"; p.waveSignals = {"clk", "count"};
         prepared = prepareRun(executable, workspace.path(), p);
         QCOMPARE(prepared.designFingerprint, firstFingerprint);
@@ -772,10 +899,11 @@ private slots:
         QCOMPARE(session.processId(), pid);
         QFile script(QDir(session.lastRunDirectory()).filePath("run.do"));
         QVERIFY(script.open(QIODevice::ReadOnly));
-        const auto reuseScript = script.readAll();
-        QVERIFY(reuseScript.contains("reusing compiled design"));
+        const auto reuseScript = script.readAll(); script.close();
+        QVERIFY(!QFileInfo::exists(firstRun));
+        QVERIFY(reuseScript.contains("reusing compiled sources and testbench"));
         QVERIFY(!reuseScript.contains("counter.sv"));
-        QVERIFY(log.contains("reusing compiled design"));
+        QVERIFY(log.contains("reusing compiled sources and testbench"));
         QVERIFY2(!log.contains("SimDock warning:"), qPrintable(log));
         QVERIFY(put(workspace.filePath("step.svh"), "localparam STEP=2;\n"));
         prepared = prepareRun(executable, workspace.path(), p);
@@ -784,8 +912,12 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
         QFile changed(QDir(session.lastRunDirectory()).filePath("run.do"));
-        QVERIFY(changed.open(QIODevice::ReadOnly)); QVERIFY(changed.readAll().contains("counter.sv"));
+        QVERIFY(changed.open(QIODevice::ReadOnly)); QVERIFY(changed.readAll().contains("counter.sv")); changed.close();
+        const auto currentRun = session.lastRunDirectory();
+        QVERIFY(QFileInfo(QDir(currentRun).filePath("result.wlf")).size() > 0);
+        QVERIFY(captureSession("reuse-completed", QFileInfo(currentRun).absolutePath(), session, log));
         session.stop(); QTRY_VERIFY_WITH_TIMEOUT(!session.alive(), 5000);
+        QVERIFY(!QFileInfo::exists(currentRun));
     }
     void liveQuesta()
     {
@@ -821,7 +953,7 @@ private slots:
         QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
         QCOMPARE(session.processId(), pid);
         QVERIFY(log.contains(QStringLiteral("Time: 2 us")));
-        QVERIFY(QFileInfo(QDir(firstRun).filePath(QStringLiteral("result.wlf"))).size() > 0);
+        QVERIFY(!QFileInfo::exists(firstRun));
         QVERIFY(put(temp.filePath(QStringLiteral("counter.sv")), counter() + QByteArrayLiteral("\nnot valid HDL;\n")));
         QVERIFY(session.start(executable, temp.path(), p, &error));
         QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);

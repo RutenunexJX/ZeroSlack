@@ -1009,6 +1009,7 @@ HierarchyInstanceContext MyCodeEditorState::hierarchyInstanceContext() const
 
 void MyCodeEditorState::closeSemanticPopup(MyCodeEditor* editor)
 {
+    if (tbAssist) tbAssist->closePopup();
     modes.exit(EditorModeId::InlineCandidates,
                EditorModeExitReason::Canceled);
     modes.exit(EditorModeId::CompletionCandidates,
@@ -1037,6 +1038,7 @@ void MyCodeEditorState::setDocumentFileName(
 {
     if (!identity.set(fileName))
         return;
+    if (tbAssist) tbAssist->invalidate();
 
     modes.exitAll(EditorModeExitReason::FileIdentityChanged);
     cancelSignalDefinitionEditor();

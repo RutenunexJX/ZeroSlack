@@ -1327,6 +1327,38 @@ void MyCodeEditor::setPinloomCodeLinkAnnotations(
     viewport()->update();
 }
 
+void MyCodeEditor::setTbAssistAnnotations(const QList<EditorAnnotation>& annotations)
+{
+    const QString source = QStringLiteral("tb-input-assist");
+    if (annotations.isEmpty()) state->annotationLayer.removeSource(source);
+    else state->annotationLayer.setSourceAnnotations(source, annotations);
+    viewport()->update();
+}
+QList<TbInputAssist> MyCodeEditor::tbInputAssists() const
+{
+    return state->tbAssist ? state->tbAssist->inputs() : QList<TbInputAssist>{};
+}
+QHash<QString, QRect> MyCodeEditor::tbAssistHitRegions() const
+{
+    return state->tbAssist ? state->tbAssist->hitRegions() : QHash<QString, QRect>{};
+}
+bool MyCodeEditor::openTbInputAssist(int index)
+{
+    return state->tbAssist && state->tbAssist->open(index);
+}
+void MyCodeEditor::addTbInputAssistMenu(QMenu* menu, int position)
+{
+    if (state->tbAssist) state->tbAssist->addContextAction(menu, position);
+}
+void MyCodeEditor::setTbAssistDependencyCheck(std::function<bool()> check)
+{
+    state->tbAssistDependencyCheck = std::move(check);
+}
+bool MyCodeEditor::tbAssistDependenciesCurrent() const
+{
+    return !state->tbAssistDependencyCheck || state->tbAssistDependencyCheck();
+}
+
 void MyCodeEditor::setAnnotationDisplayOptions(
     const EditorAnnotationDisplayOptions& options)
 {
@@ -2266,6 +2298,11 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
+        && state->tbAssist && state->tbAssist->click(event->position().toPoint())) {
+        event->accept(); return;
+    }
+    if (state->tbAssist) state->tbAssist->closePopup();
     UserEditScope input(event->button() == Qt::MiddleButton ? this : nullptr, -1, false);
     auto edit = beginSynchronousEditTransaction();
     if (event->button() == Qt::BackButton) {
@@ -2375,6 +2412,8 @@ void MyCodeEditor::focusOutEvent(QFocusEvent* event)
 
 void MyCodeEditor::mouseMoveEvent(QMouseEvent *event)
 {
+    if (event->buttons() == Qt::NoButton && state->tbAssist
+        && state->tbAssist->hover(event->position().toPoint())) { event->accept(); return; }
     auto edit = beginSynchronousEditTransaction();
     if (state->handleMouseMove(this, event))
         return;

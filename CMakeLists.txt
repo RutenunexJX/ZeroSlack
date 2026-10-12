@@ -355,6 +355,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/settings/settingscenterservice.cpp
     src/editor/structuredwhitespaceformatter.cpp
     src/editor/ghostannotationservice.cpp
+    src/editor/tbinputassist.cpp
+    src/editor/tbinputassistcontroller.cpp
+    src/editor/tbeditorworkflow.cpp
     src/insights/graphexportservice.cpp
     src/settings/workspaceconfigurationdialog.cpp
     src/workspace/workspacesessioncoordinator.cpp
@@ -565,6 +568,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/formattercursoranchor.h
     src/editor/formatterservice.h
     src/editor/ghostannotationservice.h
+    src/editor/tbinputassist.h
+    src/editor/tbinputassistcontroller.h
+    src/editor/tbeditorworkflow.h
     src/settings/workspaceconfigurationdialog.h
     src/workspace/workspacesessioncoordinator.h
     src/workspace/workspacesessionstateservice.h
@@ -1573,9 +1579,6 @@ if(BUILD_TESTING)
     target_link_libraries(native_component_integration_test PRIVATE zeroslack_core Qt6::Test)
     if(TARGET zeroslack_deploy_xips)
         add_dependencies(native_component_integration_test zeroslack_deploy_xips)
-    endif()
-    if(TARGET zeroslack_deploy_wave)
-        add_dependencies(native_component_integration_test zeroslack_deploy_wave)
     endif()
     add_executable(native_mainwindow_integration_test test_sv/native_mainwindow_integration_test.cpp)
     target_link_libraries(native_mainwindow_integration_test PRIVATE zeroslack_core Qt6::Test)

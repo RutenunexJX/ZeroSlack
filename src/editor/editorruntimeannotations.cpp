@@ -716,6 +716,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
         ghostQueryCancellation->store(true);
     ghostQueryPending = false;
     if (!editor || identity.current().isEmpty()) {
+        if (tbAssist) tbAssist->invalidate();
         setGhostAnnotations(editor, {});
         return;
     }
@@ -731,6 +732,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     query.documentText = editor->cachedDocumentText();
     query.instanceContext = hierarchyInstance;
     query.documentRevision = semanticDocumentRevision();
+    query.tbDependenciesCurrent = editor->tbAssistDependenciesCurrent();
     ++hotPathMetrics.fullGhostQueries;
 
     const std::uint64_t generation = ghostQueryGeneration;
@@ -755,7 +757,7 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
         watcher,
         &QFutureWatcher<GhostAnnotationReport>::finished,
         editor,
-        [this, editor, watcher, generation, cancellation, query]() {
+        [this, editor, watcher, generation, cancellation, query, snapshot]() {
             const GhostAnnotationReport report = watcher->result();
             ghostQueryWatchers.removeIf(
                 [watcher](const QPointer<QObject>& candidate) {
@@ -766,8 +768,16 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
             if (!cancellation->load()
                 && generation == ghostQueryGeneration
                 && identity.current() == query.fileName
-                && semanticDocumentRevision() == query.documentRevision)
+                && semanticDocumentRevision() == query.documentRevision
+                && snapshot == SemanticIndex::getInstance()->snapshot()) {
                 setGhostAnnotations(editor, report.annotations);
+                if (!tbAssist) tbAssist = std::make_unique<TbInputAssistController>(editor);
+                tbAssist->publish(report.tbInputs);
+            }
+            if (!cancellation->load() && generation == ghostQueryGeneration
+                && identity.current() == query.fileName
+                && semanticDocumentRevision() == query.documentRevision
+                && snapshot != SemanticIndex::getInstance()->snapshot()) ghostQueryPending = true;
             if (ghostQueryPending) refreshGhostAnnotations(editor);
         });
     watcher->setFuture(QtConcurrent::run(
@@ -910,6 +920,7 @@ void MyCodeEditorState::paintGhostAnnotations(
     MyCodeEditor* editor,
     QPaintEvent* event)
 {
+    if (tbAssist) tbAssist->beginPaint();
     if (!editor
         || !event
         || !annotationDisplayOptions.enabled) {
@@ -1052,8 +1063,9 @@ void MyCodeEditorState::paintGhostAnnotations(
         cursor.setPosition(anchorPosition);
         const QRect anchorRect =
             editor->cursorRect(cursor);
-        const int textWidth =
-            metrics.horizontalAdvance(annotation.text);
+        const bool inputAssist = annotation.semanticKey.startsWith(QStringLiteral("tb-input:"));
+        QString displayText = annotation.text;
+        int textWidth = metrics.horizontalAdvance(displayText);
         const qreal laneOffset =
             qMax(0, resolved.lane)
             * (textWidth + kLineTailSpacing);
@@ -1109,6 +1121,10 @@ void MyCodeEditorState::paintGhostAnnotations(
             || x + textWidth <= 2) {
             continue;
         }
+        if (inputAssist && x >= 2 && viewportWidth - x > metrics.horizontalAdvance(QStringLiteral("…")) + 12) {
+            displayText = metrics.elidedText(displayText, Qt::ElideRight, int(viewportWidth - x - 10));
+            textWidth = metrics.horizontalAdvance(displayText);
+        }
         if (annotation.kind
                 != EditorAnnotationKind::PortDefinition
             && (x < 2
@@ -1133,9 +1149,16 @@ void MyCodeEditorState::paintGhostAnnotations(
                    == EditorAnnotationKind::KeywordGhost) {
             annotationColor.setAlpha(104);
         }
+        if (inputAssist) {
+            const QRect hit(qRound(x) - 3, qRound(visualTop), textWidth + 6, qRound(visualBottom - visualTop));
+            QColor fill = editor->palette().color(QPalette::Highlight); fill.setAlpha(25);
+            painter.fillRect(hit, fill);
+            annotationColor = editor->palette().color(QPalette::Link);
+            if (tbAssist) tbAssist->painted(annotation.semanticKey, hit);
+        }
         painter.setPen(annotationColor);
         painter.drawText(
             QPointF(x, baseline),
-            annotation.text);
+            displayText);
     }
 }

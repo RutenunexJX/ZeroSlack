@@ -1,6 +1,7 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "editorcoordinator.h"
+#include "tbeditorworkflow.h"
 #include "filecreation.h"
 
 #include "actionregistry.h"
@@ -298,6 +299,15 @@ void EditorCoordinator::setWorkflowDependencies(
                      newFileCommandCoordinator,
                      newNavigationCommandCoordinator,
                      newSemanticPanelRefresh);
+    if (!tbWorkflow && tabManager && newWorkspaceManager) {
+        tbWorkflow = new TbEditorWorkflow(tabManager, newWorkspaceManager, this);
+        connect(tbWorkflow, &TbEditorWorkflow::testbenchCreated, this, &EditorCoordinator::testbenchCreated);
+    }
+}
+
+void EditorCoordinator::createTestbench(const QString& dutFile, const QString& dutName)
+{
+    if (tbWorkflow) tbWorkflow->create(dutFile, dutName);
 }
 
 void EditorCoordinator::setAppearanceSettings(
@@ -426,6 +436,16 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
 {
     if (!editor)
         return;
+    const QPointer<TabManager> owner(tabManager);
+    const QPointer<MyCodeEditor> target(editor);
+    editor->setTbAssistDependencyCheck([owner, target] {
+        if (!owner || !target) return false;
+        for (const auto* other : owner->openEditors()) {
+            if (other == target || other->document() == target->document()) continue;
+            if (SemanticIndex::getInstance()->getCachedFileContent(other->documentFileName()) != other->cachedDocumentText()) return false;
+        }
+        return true;
+    });
 
     editor->setSemanticContextService(contextService());
     editor->setIncludeFileCompletionProvider(
@@ -1295,6 +1315,12 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
 {
     if (!menu || !editor)
         return;
+    editor->addTbInputAssistMenu(menu, context.cursorPosition);
+    if (tbWorkflow) {
+        auto* create = menu->addAction(QStringLiteral("New testbench…"));
+        create->setObjectName(QStringLiteral("editorNewTestbench"));
+        connect(create, &QAction::triggered, tbWorkflow, [this] { tbWorkflow->create(); });
+    }
 
     const EditorSourceSymbolContextMenuState menuState =
         contextService()->sourceSymbolContextMenuState(context);

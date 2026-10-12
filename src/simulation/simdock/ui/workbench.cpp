@@ -1,5 +1,3 @@
-#include "../core/stimulus.h"
-#include "stimulusdialog.h"
 #include "workbench.h"
 #include "applicationthememanager.h"
 #include "../core/dependencies.h"
@@ -139,29 +137,6 @@ void Workbench::buildUi()
     m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));
     form->addWidget(m_dut);
     form->addWidget(Ui::label(QStringLiteral("Simulation input"), this, Ui::Role::Section));
-    m_inputMode = new ElaComboBox(this);
-    m_inputMode->setObjectName(QStringLiteral("simulationInputMode"));
-    m_inputMode->addItem(QStringLiteral("Graphical stimulus"), int(InputMode::Graphical));
-    m_inputMode->addItem(QStringLiteral("Existing testbench"), int(InputMode::ExistingTb));
-    form->addWidget(m_inputMode);
-    m_graphicalInput = new QWidget(this);
-    auto* graphical = new QVBoxLayout(m_graphicalInput);
-    graphical->setContentsMargins(0, 0, 0, 0);
-    m_stimulus = Ui::button(QStringLiteral("Draw stimulus"), this);
-    m_stimulus->setObjectName(QStringLiteral("editStimulus"));
-    graphical->addWidget(m_stimulus);
-    auto* details = Ui::disclosure(QStringLiteral("Generated TB details"), this);
-    details->setObjectName(QStringLiteral("generatedTbDetailsToggle"));
-    details->setChecked(false);
-    m_generatedPath = new ElaLineEdit(this);
-    m_generatedPath->setObjectName(QStringLiteral("generatedTbPath"));
-    m_generatedPath->setReadOnly(true);
-    m_generatedPath->setPlaceholderText(QStringLiteral("Generated when stimulus is saved"));
-    graphical->addWidget(details);
-    graphical->addWidget(m_generatedPath);
-    m_generatedPath->hide();
-    connect(details, &QToolButton::toggled, m_generatedPath, &QWidget::setVisible);
-    form->addWidget(m_graphicalInput);
     m_existingInput = new QWidget(this);
     auto* existing = new QVBoxLayout(m_existingInput);
     existing->setContentsMargins(0, 0, 0, 0);
@@ -184,11 +159,11 @@ void Workbench::buildUi()
     m_tbTop->setPlaceholderText(QStringLiteral("tb_top"));
     existing->addWidget(m_tbTop);
     form->addWidget(m_existingInput);
+    m_legacyNotice = Ui::label(QString(), this, Ui::Role::Metadata);
+    m_legacyNotice->setObjectName(QStringLiteral("legacyInputNotice"));
+    m_legacyNotice->setWordWrap(true);
+    form->addWidget(m_legacyNotice);
     form->addWidget(Ui::label(QStringLiteral("Duration"), this, Ui::Role::Section));
-    m_graphicalDuration = Ui::label(QString(), this, Ui::Role::Body);
-    m_graphicalDuration->setObjectName(QStringLiteral("graphicalDuration"));
-    m_graphicalDuration->setToolTip(QStringLiteral("Change duration in Edit stimulus > Timing"));
-    form->addWidget(m_graphicalDuration);
     m_durationInput = new QWidget(this);
     auto* timing = new QHBoxLayout(m_durationInput);
     timing->setContentsMargins(0, 0, 0, 0);
@@ -260,6 +235,15 @@ void Workbench::buildUi()
     m_new = UiControls::pushButton(QStringLiteral("New"), projects);
     m_new->setObjectName(QStringLiteral("newProject"));
     projectHeading->addWidget(m_new);
+    m_rename = UiControls::pushButton(QString(), projects);
+    m_rename->setObjectName(QStringLiteral("renameProject"));
+    m_rename->setIcon(RoundedIcons::icon(RoundedIcons::Change));
+    m_rename->setFixedWidth(32);
+    m_rename->setToolTip(QStringLiteral("Rename project"));
+    m_rename->setAccessibleName(QStringLiteral("Rename project"));
+    Ui::enableToolTip(m_rename);
+    projectHeading->addWidget(m_rename);
+    connect(m_rename, &QPushButton::clicked, this, &Workbench::renameProject);
     projectLayout->addLayout(projectHeading);
     m_projectList = UiControls::listView(projects);
     m_projectList->setObjectName(QStringLiteral("projectList"));
@@ -359,12 +343,6 @@ void Workbench::buildUi()
     connect(m_openTb, &QPushButton::clicked, this, [this] {
         if (const auto* p = current(); p && !p->tbFile.isEmpty()) emit openFileRequested(QDir(m_root).filePath(p->tbFile));
     });
-    connect(m_inputMode, &QComboBox::currentIndexChanged, this, [this] {
-        if (m_loading || !current()) return;
-        setInputMode(*current(), InputMode(m_inputMode->currentData().toInt()));
-        saveCurrent();
-        selectProject(m_projectIndex);
-    });
     connect(m_waveScope, &QComboBox::currentIndexChanged, this, [this] {
         if (m_loading || !current()) return;
         current()->waveScope = m_waveScope->currentData().toString();
@@ -388,8 +366,6 @@ void Workbench::buildUi()
         if (identity.size() != 2) return;
         if (p->dutFile != identity[0] || p->dutName != identity[1]) {
             p->dutFile = identity[0]; p->dutName = identity[1];
-            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {}; p->alternateInput = {};
-            m_tbFile->clear(); m_tbTop->clear();
         }
         const auto selection = selectDependencies(m_dependencies, identity[0], p->sources);
         p->sources = selection.sources;
@@ -398,16 +374,15 @@ void Workbench::buildUi()
         saveCurrent(); updateControls();
     });
     connect(m_tbTop, &QLineEdit::editingFinished, this, [this] {
-        if (auto* p = current(); p && p->inputMode == InputMode::ExistingTb) { p->tbName = m_tbTop->text().trimmed(); saveCurrent(); updateControls(); }
+        if (auto* p = current(); p) { p->tbName = m_tbTop->text().trimmed(); saveCurrent(); updateControls(); }
     });
     auto durationChanged = [this] {
-        if (m_loading || !current() || current()->inputMode != InputMode::ExistingTb) return;
+        if (m_loading || !current()) return;
         current()->durationNs = qint64(m_duration->value()) * m_units->currentData().toLongLong();
         saveCurrent(); updateControls();
     };
     connect(m_duration, &QSpinBox::valueChanged, this, durationChanged);
     connect(m_units, &QComboBox::currentIndexChanged, this, durationChanged);
-    connect(m_stimulus, &QPushButton::clicked, this, &Workbench::editStimulus);
     connect(m_generate, &QAction::triggered, this, &Workbench::createTb);
     connect(m_chooseTb, &QPushButton::clicked, this, &Workbench::chooseTb);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
@@ -470,6 +445,7 @@ QString Workbench::setContext(const QString& path)
     const QString root = path.isEmpty() ? QString() : QFileInfo(path).canonicalFilePath();
     if (!path.isEmpty() && (root.isEmpty() || !QFileInfo(root).isDir()))
         return QStringLiteral("The workspace directory does not exist.");
+    m_session.stop();
     if (root.isEmpty()) {
         cancelPreparation();
         if (m_scanCancelled) m_scanCancelled->store(true);
@@ -495,6 +471,8 @@ QString Workbench::setContext(const QString& path)
     m_projectIndex = -1;
     QStringList errors;
     m_projects = loadProjects(m_root, &errors);
+    if (QFileInfo::exists(QDir(m_root).filePath(QStringLiteral(".simdock/runs"))))
+        errors << QStringLiteral("Legacy .simdock/runs files were preserved because ownership and active use cannot be verified. New runs use automatically cleaned session storage.");
     m_projectModel->clear();
     int selected = m_projects.isEmpty() ? -1 : 0;
     for (int i = 0; i < m_projects.size(); ++i) {
@@ -578,13 +556,12 @@ bool Workbench::createProject(const QString& name)
 }
 void Workbench::selectProject(int row)
 {
-    if (m_session.busy()) return;
     cancelPreparation();
+    if (m_projectIndex != row) m_session.stop();
     m_projectIndex = row;
     m_loading = true;
     m_projectList->setCurrentIndex(m_projectModel->index(row, 0));
     const auto* p = current();
-    m_inputMode->setCurrentIndex(m_inputMode->findData(int(p ? p->inputMode : InputMode::Graphical)));
     m_tbTop->setText(p ? p->tbName : QString());
     m_waveScope->setCurrentIndex(qMax(0, m_waveScope->findData(p ? p->waveScope : QStringLiteral("interface"))));
     const qint64 duration = p ? p->durationNs : 1000;
@@ -742,18 +719,33 @@ void Workbench::updateDutChoices()
     m_dut->setCurrentIndex(choice);
     if (choice >= 0) {
         const auto identity = m_dut->itemData(choice).toStringList();
-        if (!p->dutName.isEmpty() && (p->dutName != identity[1] || p->dutFile != identity[0])) {
-            p->tbFile.clear(); p->tbName.clear(); p->stimulus = {}; p->alternateInput = {}; m_tbFile->clear(); m_tbTop->clear();
-        }
         p->dutFile = identity[0]; p->dutName = identity[1];
     }
 }
-void Workbench::saveCurrent()
+bool Workbench::saveCurrent()
 {
-    if (m_loading || !current()) return;
+    if (m_loading || !current()) return false;
     QString error;
-    if (!saveProject(m_root, *current(), &error)) appendLog(QStringLiteral("Settings could not be saved: %1\n").arg(error));
+    if (!saveProject(m_root, *current(), &error)) {
+        appendLog(QStringLiteral("Settings could not be saved: %1\n").arg(error)); return false;
+    }
+    m_projectModel->item(m_projectIndex)->setText(current()->name);
     emit stateChanged();
+    return true;
+}
+void Workbench::renameProject()
+{
+    if (!current() || m_session.busy() || m_preparing) return;
+    QPointer<Workbench> owner(this);
+    const auto id = current()->id;
+    const auto name = askProjectName(this, current()->name);
+    if (!owner || name.isEmpty() || !current() || current()->id != id) return;
+    auto updated = *current(); updated.name = name;
+    QString error;
+    if (!saveProject(m_root, updated, &error)) { appendLog(error + QLatin1Char('\n')); return; }
+    *current() = updated;
+    m_projectModel->item(m_projectIndex)->setText(updated.name);
+    updateControls(); emit stateChanged();
 }
 void Workbench::updateControls()
 {
@@ -763,10 +755,8 @@ void Workbench::updateControls()
     const auto* p = current();
     const auto tbPath = p ? p->tbFile : QString();
     const auto fullPath = tbPath.isEmpty() ? QString() : QDir::toNativeSeparators(QDir(m_root).filePath(tbPath));
-    for (auto* field : {m_tbFile, m_generatedPath}) {
-        field->setText(tbPath);
-        field->setToolTip(fullPath);
-    }
+    m_tbFile->setText(tbPath);
+    m_tbFile->setToolTip(fullPath);
     m_new->setEnabled(!m_root.isEmpty() && !busy);
     m_refresh->setEnabled(!m_root.isEmpty() && !busy && !m_scanning);
     m_projectList->setEnabled(!busy);
@@ -781,23 +771,19 @@ void Workbench::updateControls()
     m_sourceHint->setText(p ? QStringLiteral("Select files and set their compilation order.")
         : QStringLiteral("Select a file to create a simulation project."));
     m_projectPanel->setEnabled(p && !busy && !m_scanning);
-    m_stimulus->setEnabled(p && currentModule() && !busy && !m_scanning);
-    const bool graphical = !p || p->inputMode == InputMode::Graphical;
-    m_graphicalInput->setVisible(graphical);
-    m_existingInput->setVisible(!graphical);
-    m_durationInput->setVisible(!graphical);
-    m_graphicalDuration->setVisible(graphical);
-    m_graphicalDuration->setText(QStringLiteral("%1 ns").arg(p ? p->durationNs : 1000));
     m_emptyState->setVisible(!p);
     m_emptyState->setText(m_root.isEmpty() ? QStringLiteral("Open a ZeroSlack workspace to configure simulation.")
         : QStringLiteral("Create or select a project in Build inputs."));
-    m_openTb->setEnabled(p && !p->tbFile.isEmpty());
-    m_stimulus->setText(p && !p->stimulus.isEmpty() ? QStringLiteral("Edit stimulus") : QStringLiteral("Draw stimulus"));
-    m_tbTop->setReadOnly(graphical);
-    m_duration->setEnabled(!graphical); m_units->setEnabled(!graphical);
-    m_duration->setToolTip(graphical ? QStringLiteral("Change duration in Edit stimulus > Timing") : QString());
+    const bool tbAvailable = p && QFileInfo(QDir(m_root).filePath(p->tbFile)).isFile();
+    m_openTb->setEnabled(tbAvailable);
+    m_legacyNotice->setVisible(p && (!p->preservedInputs.isEmpty() || !tbAvailable));
+    m_legacyNotice->setText(tbAvailable ? QStringLiteral("Saved graphical inputs are preserved. This project runs the existing TB.")
+        : p && !p->preservedInputs.isEmpty()
+            ? QStringLiteral("Choose an existing TB to run. Saved graphical inputs are retained; they are no longer regenerated.")
+            : QStringLiteral("Choose an existing TB to run."));
+    m_rename->setEnabled(p && !busy && !m_scanning);
     m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
-    m_run->setEnabled(p && !p->sources.isEmpty() && !p->tbFile.isEmpty() && !busy && !m_scanning);
+    m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !busy && !m_scanning);
     m_waveSignals->setVisible(p && p->waveScope == QStringLiteral("selected"));
     m_waveSignals->setEnabled(p && p->waveScope == QStringLiteral("selected") && !busy);
     m_stop->setEnabled(m_preparing || m_session.alive());
@@ -822,8 +808,6 @@ void Workbench::chooseTb()
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly) || file.size() > 8 * 1024 * 1024) { appendLog(QStringLiteral("Could not read the TB file.\n")); return; }
     const auto source = analyzeSource(file.readAll(), QDir(m_root).relativeFilePath(path));
-    setInputMode(*p, InputMode::ExistingTb);
-    p->stimulus = {};
     p->tbFile = source.path;
     p->tbName = source.modules.size() == 1 ? source.modules.first().name : QFileInfo(path).completeBaseName();
     m_tbFile->setText(p->tbFile); m_tbTop->setText(p->tbName);
@@ -839,8 +823,6 @@ bool Workbench::createDemo(const TbOptions& options, QString* error)
     if (!error->isEmpty()) return false;
     const QString path = projectTbPath(*p, options.name);
     if (!writeNewTb(m_root, path, text, error)) return false;
-    setInputMode(*p, InputMode::ExistingTb);
-    p->stimulus = {};
     p->tbFile = path; p->tbName = options.name;
     p->durationNs = duration;
     m_tbFile->setText(path); m_tbTop->setText(options.name);
@@ -852,6 +834,10 @@ bool Workbench::createDemo(const TbOptions& options, QString* error)
 void Workbench::createTb()
 {
     if (!current() || !currentModule()) return;
+    if (m_editorTbCreator) {
+        m_editorTbCreator(QDir(m_root).filePath(currentModule()->file), currentModule()->name);
+        return;
+    }
     QPointer<Workbench> owner(this);
     QPointer<TestbenchDialog> dialog = new TestbenchDialog(*currentModule(), current()->durationNs, this);
     const auto result = dialog->exec();
@@ -862,79 +848,20 @@ void Workbench::createTb()
     QString error;
     if (!createDemo(options, &error)) appendLog(error + QLatin1Char('\n'));
 }
+void Workbench::adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName)
+{
+    auto* p = current();
+    if (!p || p->dutName != dutName || resolvedPath(QDir(m_root).filePath(p->dutFile)) != resolvedPath(dutFile)
+        || !insideWorkspace(m_root, tbFile)) return;
+    p->tbFile = QDir(m_root).relativeFilePath(tbFile); p->tbName = tbName;
+    m_tbFile->setText(p->tbFile); m_tbTop->setText(tbName);
+    saveCurrent(); selectProject(m_projectIndex);
+}
 void Workbench::cancelPreparation()
 {
     if (m_preparationCancelled) m_preparationCancelled->store(true);
     ++m_preparationId;
     m_preparing = false;
-}
-void Workbench::editStimulus()
-{
-    const auto* p = current();
-    if (!p || !currentModule() || m_session.busy() || m_preparing || m_scanning) return;
-    const auto project = *p;
-    const auto root = m_root;
-    const auto generation = m_generation, request = ++m_preparationId;
-    m_preparationCancelled = std::make_shared<std::atomic_bool>(false);
-    m_preparing = true;
-    m_status->setText(QStringLiteral("Preparing stimulus…")); updateControls();
-    using Result = std::pair<std::shared_ptr<const PreparedStimulus>, QString>;
-    auto* watcher = new QFutureWatcher<Result>(this);
-    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, project, generation, request] {
-        const auto [prepared, error] = watcher->result(); watcher->deleteLater();
-        if (generation != m_generation || request != m_preparationId) return;
-        m_preparing = false; updateControls();
-        if (!current() || projectJson(*current()) != projectJson(project)) return;
-        if (!error.isEmpty() || !prepared) {
-            appendLog(error + QLatin1Char('\n')); m_status->setText(QStringLiteral("Preparation failed")); return;
-        }
-        m_preparedStimulus = prepared;
-        m_status->setText(QStringLiteral("Editing stimulus"));
-        QPointer<Workbench> owner(this);
-        QPointer<StimulusDialog> dialog = new StimulusDialog(prepared->module, prepared->semantics,
-            project.stimulus, project.durationNs,
-            [this, prepared, project, generation](const QJsonObject& drawing, const QString& content, QString* issue) {
-                if (m_generation != generation || !current() || current()->id != project.id) {
-                    *issue = QStringLiteral("The simulation project changed. Reopen the drawing."); return false;
-                }
-                if (!saveGeneratedStimulus(m_root, *current(), drawing, content, issue)) return false;
-                m_generatedDesign = m_preparedStimulus; m_generatedDrawing = drawing; m_generatedTb = content;
-                return true;
-            }, this);
-        auto saveCancelled = m_preparationCancelled;
-        connect(dialog, &QDialog::finished, this, [saveCancelled] { saveCancelled->store(true); });
-        dialog->setSavePreparer([this, prepared, project, saveCancelled](const QJsonObject& drawing, StimulusDialog::SaveCompletion done) {
-            struct Generated { std::shared_ptr<const PreparedStimulus> design; QString content, error; };
-            auto* generated = new QFutureWatcher<Generated>(this);
-            connect(generated, &QFutureWatcher<Generated>::finished, this, [this, generated, saveCancelled, done = std::move(done)] {
-                const auto result = generated->result(); generated->deleteLater();
-                if (saveCancelled->load()) return;
-                if (result.design) m_preparedStimulus = result.design;
-                done(result.content, result.error);
-            });
-            generated->setFuture(QtConcurrent::run(&m_scanPool, [prepared, drawing, project, saveCancelled, cache = &m_sourceCache] {
-                Generated result;
-                result.design = prepareStimulus(prepared->scan.root, project, prepared, cache, saveCancelled.get(), &result.error);
-                if (result.design)
-                    result.content = stimulusTestbench(result.design->module, result.design->semantics, drawing, &result.error);
-                return result;
-            }));
-        });
-        const auto result = dialog->exec();
-        if (!owner || !dialog) return;
-        const bool run = dialog->runRequested(); delete dialog;
-        m_status->setText(QStringLiteral("Ready"));
-        if (result != QDialog::Accepted) return;
-        selectProject(m_projectIndex);
-        appendLog(QStringLiteral("Saved input waveforms and generated %1\n").arg(current()->tbFile));
-        if (run) startSimulation();
-    });
-    watcher->setFuture(QtConcurrent::run(&m_scanPool,
-        [root, project, previous = m_preparedStimulus, cancelled = m_preparationCancelled, cache = &m_sourceCache] {
-            QString error;
-            auto prepared = prepareStimulus(root, project, previous, cache, cancelled.get(), &error);
-            return Result{prepared, error};
-        }));
 }
 void Workbench::startSimulation()
 {
@@ -944,62 +871,30 @@ void Workbench::startSimulation()
     if (!owner || !current()) return;
     const auto issue = simulatorError(m_simulator);
     if (!issue.isEmpty()) { appendLog(issue + QLatin1Char('\n')); return; }
-    if (current()->stimulus.isEmpty()) { current()->tbName = m_tbTop->text().trimmed(); saveCurrent(); }
+    current()->tbName = m_tbTop->text().trimmed();
+    if (!saveCurrent()) return;
+    m_logTimer.stop(); m_pendingLog.clear(); m_log->clear();
     const auto project = *current();
     const auto root = m_root, executable = m_simulator;
     const auto generation = m_generation, request = ++m_preparationId;
     m_preparationCancelled = std::make_shared<std::atomic_bool>(false);
     m_preparing = true; m_status->setText(QStringLiteral("Preparing simulation…")); updateControls();
-    struct Result { PreparedRun run; std::shared_ptr<const PreparedStimulus> design; QString content; };
-    auto* watcher = new QFutureWatcher<Result>(this);
-    connect(watcher, &QFutureWatcher<Result>::finished, this, [this, watcher, project, generation, request] {
+    auto* watcher = new QFutureWatcher<PreparedRun>(this);
+    connect(watcher, &QFutureWatcher<PreparedRun>::finished, this, [this, watcher, project, generation, request] {
         const auto result = watcher->result(); watcher->deleteLater();
         if (generation != m_generation || request != m_preparationId) return;
         m_preparing = false;
         if (!current() || projectJson(*current()) != projectJson(project)) { updateControls(); return; }
-        QString error = result.run.error;
-        if (error.isEmpty() && !project.stimulus.isEmpty()) {
-            if (saveGeneratedStimulus(m_root, *current(), project.stimulus, result.content, &error)) {
-                m_preparedStimulus = result.design; m_generatedDesign = result.design;
-                m_generatedDrawing = project.stimulus; m_generatedTb = result.content;
-                m_tbFile->setText(current()->tbFile);
-            }
-        }
+        QString error = result.error;
         const auto theme = waveThemeFromId(preference(QStringLiteral("waveform/theme"), QStringLiteral("default")).toString());
-        if (!error.isEmpty() || !m_session.start(result.run, &error, theme)) {
+        if (!error.isEmpty() || !m_session.start(result, &error, theme)) {
             appendLog(error + QLatin1Char('\n')); m_status->setText(QStringLiteral("Not started"));
         }
         updateControls();
     });
-    watcher->setFuture(QtConcurrent::run(&m_scanPool,
-        [root, executable, project, previous = m_preparedStimulus, generated = m_generatedDesign,
-         drawing = m_generatedDrawing, content = m_generatedTb, cancelled = m_preparationCancelled, cache = &m_sourceCache] {
-            Result result;
-            auto updated = project;
-            QMap<QString, QByteArray> overrides;
-            if (!project.stimulus.isEmpty()) {
-                result.design = prepareStimulus(root, project, previous, cache, cancelled.get(), &result.run.error);
-                if (!result.design) return result;
-                result.content = result.design == generated && drawing == project.stimulus ? content
-                    : stimulusTestbench(result.design->module, result.design->semantics, project.stimulus, &result.run.error);
-                if (!result.run.error.isEmpty()) return result;
-                updated = generatedStimulusProject(project, project.stimulus, result.content);
-                overrides.insert(updated.tbFile, result.content.toUtf8());
-            }
-            if (cancelled->load()) { result.run.error = QStringLiteral("Preparation cancelled."); return result; }
-            result.run = prepareRun(executable, root, updated, cancelled.get(), overrides);
-            if (result.run.error.isEmpty() && result.design) {
-                for (const auto& source : result.design->scan.files) {
-                    const auto path = QDir::cleanPath(QDir(root).filePath(source.path));
-                    if (result.run.inputFingerprints.value(path) != QCryptographicHash::hash(source.content, QCryptographicHash::Sha256)) {
-                        result.run.error = QStringLiteral("Sources changed during preparation. Try again."); break;
-                    }
-                }
-                if (!stimulusIncludesCurrent(result.design->semantics, [cancelled] { return cancelled->load(); }))
-                    result.run.error = QStringLiteral("Sources changed during preparation. Try again.");
-            }
-            return result;
-        }));
+    watcher->setFuture(QtConcurrent::run(&m_scanPool, [root, executable, project, cancelled = m_preparationCancelled] {
+        return prepareRun(executable, root, project, cancelled.get());
+    }));
 }
 void Workbench::chooseWaveSignals()
 {
@@ -1106,7 +1001,6 @@ void Workbench::setPreference(const QString& key, const QVariant& value)
 }
 QString Workbench::contextError() const
 {
-    if (m_session.alive()) return QStringLiteral("Close the active Questa session before changing workspace or project.");
     if (m_requestingProject) return QStringLiteral("Finish or cancel the project dialog first.");
     for (const auto* dialog : findChildren<QDialog*>())
         if (dialog->isVisible()) return QStringLiteral("Finish or cancel the open dialog first.");

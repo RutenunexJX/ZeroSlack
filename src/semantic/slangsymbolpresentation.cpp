@@ -6,9 +6,11 @@
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
 #include <slang/ast/EvalContext.h>
+#include <slang/ast/Lookup.h>
 #include <slang/ast/expressions/LiteralExpressions.h>
 #include <slang/ast/expressions/OperatorExpressions.h>
 #include <slang/ast/symbols/CompilationUnitSymbols.h>
+#include <slang/ast/symbols/ClassSymbols.h>
 #include <slang/ast/symbols/InstanceSymbols.h>
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
@@ -369,6 +371,8 @@ QChar identityKind(const SemanticSymbolRecord& record)
         return QLatin1Char('o');
     case CollectorKind::Typedef:
         return QLatin1Char('t');
+    case CollectorKind::EnumVariable:
+        return QLatin1Char('v');
     default:
         return record.declarationKind
                        == SymbolTaxonomy::DeclarationKind::Signal
@@ -1612,8 +1616,69 @@ QString structuredPath(
     return result;
 }
 
+bool resolvesToEnumMember(const QString& expression, const EnumValueSymbol& value,
+                          const Scope* targetScope)
+{
+    if (!targetScope || expression.isEmpty())
+        return false;
+    slang::Diagnostics diagnostics;
+    const auto& name = targetScope->getCompilation().tryParseName(
+        expression.toStdString(), diagnostics);
+    if (!diagnostics.empty())
+        return false;
+    LookupResult result;
+    Lookup::name(name, ASTContext(*targetScope, LookupLocation::max),
+                 LookupFlags::NoSelectors, result);
+    return !result.hasError() && result.selectors.empty() && result.found == &value;
+}
+
+QString enumMemberExpression(const EnumValueSymbol& value, const Scope* targetScope,
+                             QString* failureReason)
+{
+    QStringList path{QString::fromStdString(std::string(value.name))};
+    bool anchored = false;
+    for (const Scope* scope = value.getParentScope(); scope;) {
+        const Symbol& owner = scope->asSymbol();
+        if (owner.kind == SymbolKind::EnumType) {
+            // Enumerands are hoisted into the enum type's declaring scope.
+            scope = owner.getParentScope();
+            continue;
+        }
+        if (owner.kind == SymbolKind::ClassType) {
+            if (owner.as<ClassType>().genericClass) {
+                *failureReason = QStringLiteral(
+                    "Parameterized class enum initializers require manual source editing.");
+                return {};
+            }
+            path.prepend(QString::fromStdString(std::string(owner.name)));
+        } else if (owner.kind == SymbolKind::Package) {
+            path.prepend(QString::fromStdString(std::string(owner.name)));
+            anchored = true;
+            break;
+        } else if (owner.kind == SymbolKind::CompilationUnit) {
+            path.prepend(QStringLiteral("$unit"));
+            anchored = true;
+            break;
+        } else if (owner.kind == SymbolKind::InstanceBody) {
+            // A local name is usable only when lookup proves the same member.
+            anchored = true;
+            break;
+        } else {
+            break;
+        }
+        scope = owner.getParentScope();
+    }
+    const QString expression = path.join(QStringLiteral("::"));
+    if (anchored && resolvesToEnumMember(expression, value, targetScope))
+        return expression;
+    *failureReason = QStringLiteral(
+        "No enum member expression can be verified in this source scope; edit the initializer manually.");
+    return {};
+}
+
 void appendStructuredEnumValues(
     const Type& type,
+    const Scope* targetScope,
     SemanticStructuredLeafFact* leaf)
 {
     if (!leaf)
@@ -1626,6 +1691,10 @@ void appendStructuredEnumValues(
             value.getValue(), value.getType());
         SemanticStructuredEnumValueFact enumValue;
         enumValue.name = QString::fromStdString(std::string(value.name));
+        enumValue.expressionText = enumMemberExpression(
+            value, targetScope, &enumValue.expressionFailureReason);
+        enumValue.unqualifiedReferenceAvailable = resolvesToEnumMember(
+            enumValue.name, value, targetScope);
         enumValue.valueText = info.valueText;
         enumValue.displayValueText = info.displayValueText;
         enumValue.available = info.available;
@@ -1633,8 +1702,18 @@ void appendStructuredEnumValues(
     }
 }
 
+SemanticElaboratedSymbolInfo inputTypeInfo(const Type& type, const Scope* targetScope)
+{
+    auto info = typeInfo(type);
+    SemanticStructuredLeafFact leaf;
+    appendStructuredEnumValues(type, targetScope, &leaf);
+    info.enumValues = std::move(leaf.enumValues);
+    return info;
+}
+
 bool appendStructuredTypeLeaves(
     const Type& type,
+    const Scope* targetScope,
     const slang::SourceManager* sourceManager,
     QList<SemanticStructuredSelectorFact> selectors,
     const QString& direction,
@@ -1664,6 +1743,7 @@ bool appendStructuredTypeLeaves(
             nested.append(std::move(selector));
             if (!appendStructuredTypeLeaves(
                     array.elementType,
+                    targetScope,
                     sourceManager,
                     std::move(nested),
                     direction,
@@ -1693,6 +1773,7 @@ bool appendStructuredTypeLeaves(
             nested.append(std::move(selector));
             if (!appendStructuredTypeLeaves(
                     field->getType(),
+                    targetScope,
                     sourceManager,
                     std::move(nested),
                     direction,
@@ -1741,7 +1822,7 @@ bool appendStructuredTypeLeaves(
         sourceManager,
         true,
         leaf.signedIntegral);
-    appendStructuredEnumValues(canonical, &leaf);
+    appendStructuredEnumValues(canonical, targetScope, &leaf);
     if (leaf.relativePath.isEmpty() || leaf.bitWidth == 0
         || leaf.canonicalTypeId.isEmpty()) {
         *failureReason = QStringLiteral(
@@ -1754,6 +1835,7 @@ bool appendStructuredTypeLeaves(
 
 void fillStructuredTypeLeaves(
     const Type& type,
+    const Scope* targetScope,
     const slang::SourceManager* sourceManager,
     SemanticElaboratedSymbolInfo* info)
 {
@@ -1773,6 +1855,7 @@ void fillStructuredTypeLeaves(
     QString failureReason;
     const bool complete = appendStructuredTypeLeaves(
         type,
+        targetScope,
         sourceManager,
         {},
         {},
@@ -1827,6 +1910,7 @@ void fillInterfaceStructuredLeaves(
         selector.name = QString::fromStdString(std::string(member->name));
         if (!appendStructuredTypeLeaves(
                 member->getType(),
+                port.getParentScope(),
                 sourceManager,
                 {selector},
                 structuredDirection(member->direction),
@@ -2504,7 +2588,7 @@ void gatherScopePresentations(
                         variable.getDeclaredType()),
                     sourceManager);
             storeInfo(variable,
-                      typeInfo(variable.getType()),
+                      inputTypeInfo(variable.getType(), variable.getParentScope()),
                       &typeFacts,
                       [](SemanticSymbolPresentation*) {},
                       true);
@@ -2522,7 +2606,7 @@ void gatherScopePresentations(
                         net.getDeclaredType()),
                     sourceManager);
             storeInfo(net,
-                      typeInfo(net.getType()),
+                      inputTypeInfo(net.getType(), net.getParentScope()),
                       &typeFacts,
                       [](SemanticSymbolPresentation*) {},
                       true);
@@ -2531,8 +2615,8 @@ void gatherScopePresentations(
         [&](auto& nestedVisitor, const PortSymbol& port) {
             if (cancelled())
                 return;
-            SemanticElaboratedSymbolInfo info = typeInfo(port.getType());
-            fillStructuredTypeLeaves(port.getType(), sourceManager, &info);
+            SemanticElaboratedSymbolInfo info = inputTypeInfo(port.getType(), port.getParentScope());
+            fillStructuredTypeLeaves(port.getType(), port.getParentScope(), sourceManager, &info);
             const ValueSymbol* internal =
                 port.internalSymbol
                     && port.internalSymbol->isValue()

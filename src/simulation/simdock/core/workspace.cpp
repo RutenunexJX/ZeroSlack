@@ -40,7 +40,7 @@ bool insideWorkspace(const QString& root, const QString& path)
     constexpr auto cs = Qt::CaseSensitive;
 #endif
     return !base.isEmpty() && !target.isEmpty()
-        && (target.compare(base, cs) == 0 || target.startsWith(base + QLatin1Char('/'), cs));
+        && (target.compare(base, cs) == 0 || target.startsWith(base.endsWith(QLatin1Char('/')) ? base : base + QLatin1Char('/'), cs));
 }
 
 QString projectDirectory(const QString& root) { return QDir(root).filePath(QStringLiteral(".simdock/projects")); }
@@ -125,7 +125,7 @@ Scan scanWorkspace(const QString& root, const std::atomic_bool* cancelled, ScanM
 Project newProject(const QString& name)
 {
     Project p;
-    p.inputMode = InputMode::Graphical;
+    p.inputMode = InputMode::ExistingTb;
     p.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     p.name = name.trimmed();
     return p;
@@ -145,11 +145,12 @@ QJsonObject projectJson(const Project& p)
             {QStringLiteral("tbFile"), p.alternateInput.tbFile}, {QStringLiteral("tbName"), p.alternateInput.tbName},
             {QStringLiteral("durationNs"), double(p.alternateInput.durationNs)},
             {QStringLiteral("stimulus"), p.alternateInput.stimulus}}},
+        {QStringLiteral("preservedInputs"), p.preservedInputs},
         {QStringLiteral("waveScope"), p.waveScope},
         {QStringLiteral("waveSignals"), QJsonArray::fromStringList(p.waveSignals)}};
 }
 
-static QString validateProject(const QString& root, const Project& p)
+QString validateProject(const QString& root, const Project& p)
 {
     if (QUuid(p.id).isNull() || p.name.isEmpty() || p.name.size() > 120)
         return QStringLiteral("Invalid project name or ID.");
@@ -171,73 +172,9 @@ static QString validateProject(const QString& root, const Project& p)
     return {};
 }
 
-bool saveProject(const QString& root, const Project& p, QString* error)
-{
-    *error = validateProject(root, p);
-    const QString directory = projectDirectory(root);
-    if (!error->isEmpty()) return false;
-    if (!insideWorkspace(root, directory) || !QDir().mkpath(directory)) {
-        *error = QStringLiteral("Could not create the project directory inside the workspace.");
-        return false;
-    }
-    const QString filePath = QDir(directory).filePath(p.id + QStringLiteral(".json"));
-    if (!insideWorkspace(root, filePath)) { *error = QStringLiteral("The project configuration path is outside the workspace."); return false; }
-    QSaveFile file(filePath);
-    if (!file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(projectJson(p)).toJson()) < 0 || !file.commit()) {
-        *error = file.errorString();
-        return false;
-    }
-    return true;
-}
-
-QList<Project> loadProjects(const QString& root, QStringList* errors)
-{
-    QList<Project> result;
-    if (!insideWorkspace(root, projectDirectory(root))) return result;
-    for (const auto& item : QDir(projectDirectory(root)).entryInfoList({QStringLiteral("*.json")}, QDir::Files, QDir::Name)) {
-        if (!insideWorkspace(root, item.absoluteFilePath())) continue;
-        QFile file(item.absoluteFilePath());
-        if (item.size() > 8 * 1024 * 1024 || !file.open(QIODevice::ReadOnly)) continue;
-        QJsonParseError parseError;
-        const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
-        const auto o = document.object();
-        Project p;
-        p.id = o.value(QStringLiteral("id")).toString();
-        p.name = o.value(QStringLiteral("name")).toString();
-        for (const auto& v : o.value(QStringLiteral("sources")).toArray()) p.sources << v.toString();
-        p.dutFile = o.value(QStringLiteral("dutFile")).toString();
-        p.dutName = o.value(QStringLiteral("dutName")).toString();
-        p.tbFile = o.value(QStringLiteral("tbFile")).toString();
-        p.tbName = o.value(QStringLiteral("tbName")).toString();
-        p.durationNs = o.value(QStringLiteral("durationNs")).toInteger(1000);
-        p.stimulus = o.value(QStringLiteral("stimulus")).toObject();
-        const auto mode = o.value(QStringLiteral("inputMode")).toString();
-        p.inputMode = mode == QStringLiteral("graphical") || (mode.isEmpty() && (!p.stimulus.isEmpty() || p.tbFile.isEmpty()))
-            ? InputMode::Graphical : InputMode::ExistingTb;
-        const auto alternate = o.value(QStringLiteral("alternateInput")).toObject();
-        p.alternateInput = {alternate.value(QStringLiteral("tbFile")).toString(),
-            alternate.value(QStringLiteral("tbName")).toString(),
-            alternate.value(QStringLiteral("durationNs")).toInteger(1000),
-            alternate.value(QStringLiteral("stimulus")).toObject()};
-        p.waveScope = o.value(QStringLiteral("waveScope")).toString(QStringLiteral("interface"));
-        for (const auto &signal : o.value(QStringLiteral("waveSignals")).toArray())
-            if (signal.isString()) p.waveSignals << signal.toString();
-        QString issue = validateProject(root, p);
-        if (!mode.isEmpty() && mode != QStringLiteral("graphical") && mode != QStringLiteral("existing"))
-            issue = QStringLiteral("Unknown simulation input mode.");
-        if (parseError.error != QJsonParseError::NoError || o.value(QStringLiteral("schema")).toString() != QStringLiteral("simdock.project/v1"))
-            issue = QStringLiteral("Unsupported project format or invalid JSON.");
-        if (p.id + QStringLiteral(".json") != item.fileName()) issue = QStringLiteral("The project ID does not match the file name.");
-        if (!issue.isEmpty()) {
-            if (errors) *errors << item.fileName() + QStringLiteral(": ") + issue;
-        } else result << p;
-    }
-    return result;
-}
-
 QString projectTbPath(const Project& p, const QString& top)
 {
-    return QStringLiteral("sim/%1/%2.sv").arg(p.id.left(8), top);
+    return QStringLiteral("sim/%1/%2.sv").arg(p.storageName.isEmpty() ? p.name : p.storageName, top);
 }
 
 QString validateInputs(const QString& root, const Project& p, QMap<QString, QByteArray>* fingerprints,

@@ -271,10 +271,10 @@ void TestbenchDialog::updatePreview()
     m_error->setVisible(!error.isEmpty());
 }
 
-QString askProjectName(QWidget* parent)
+QString askProjectName(QWidget* parent, const QString& currentName)
 {
     QPointer<ElaDialog> dialog = new ElaDialog(parent);
-    dialog->setWindowTitle(QStringLiteral("New simulation project"));
+    dialog->setWindowTitle(currentName.isEmpty() ? QStringLiteral("New simulation project") : QStringLiteral("Rename simulation project"));
     dialog->setObjectName(QStringLiteral("newProjectDialog"));
     dialog->setIsDefaultClosed(true);
     dialog->setIsStayTop(false);
@@ -289,8 +289,9 @@ QString askProjectName(QWidget* parent)
     name->setObjectName(QStringLiteral("projectNameInput"));
     name->setPlaceholderText(QStringLiteral("e.g. counter_demo"));
     name->setMaxLength(120);
+    name->setText(currentName);
     layout->addWidget(name);
-    auto* create = Ui::button(QStringLiteral("Create project"), dialog.data(), true);
+    auto* create = Ui::button(currentName.isEmpty() ? QStringLiteral("Create project") : QStringLiteral("Rename project"), dialog.data(), true);
     create->setObjectName(QStringLiteral("confirmCreateProject"));
     layout->addWidget(create);
     auto accept = [&] { if (!name->text().trimmed().isEmpty()) dialog->accept(); };

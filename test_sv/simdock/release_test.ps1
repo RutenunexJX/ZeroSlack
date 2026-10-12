@@ -13,17 +13,18 @@ if ($info.integratedFeatures.simdock.owner -ne 'zeroslack_core' -or
     throw 'Missing or incorrect integrated SimDock source identity.'
 }
 if ($info.nativeComponents.PSObject.Properties.Name -contains 'simdock') { throw 'Retired SimDock DLL is still advertised.' }
-if ($info.nativeComponents.wave.version -ne '0.15.2' -or
-    $info.nativeComponents.wave.revision -ne '9730d475b02a59bec9e9c1ca8c6e0a508445dbca') { throw 'Wave component identity mismatch.' }
-$forbidden = @('SimDock.exe', 'simdock-workbench.dll', 'SimDockEla.dll')
+if ($info.integratedFeatures.simdock.graphicalStimulus -ne $false -or
+    $info.integratedFeatures.simdock.retiredWaveEditorSource.version -ne '0.15.2' -or
+    $info.integratedFeatures.simdock.retiredWaveEditorSource.commit -ne '9730d475b02a59bec9e9c1ca8c6e0a508445dbca') { throw 'Retired graphical stimulus source identity mismatch.' }
+if ($info.nativeComponents.PSObject.Properties.Name -contains 'wave') { throw 'Retired graphical stimulus component is still advertised.' }
+$forbidden = @('SimDock.exe', 'simdock-workbench.dll', 'SimDockEla.dll', 'wavewidgets.dll', 'WaveWorkbenchEla.dll')
 $allFiles = @(Get-ChildItem -LiteralPath $package -File -Recurse)
 if (@($allFiles | Where-Object { $_.Name -in $forbidden }).Count) { throw 'Retired standalone runtime found in package.' }
 foreach ($required in @('ZeroSlack.exe','zeroslack-cli.exe','libzeroslack_core.dll','libzeroslack_documents.dll',
-    'libzeroslack_semantic.dll','ElaWidgetTools.dll','simdock-source.json','components/wave/wavewidgets.dll',
-    'components/wave/WaveWorkbenchEla.dll','licenses/simdock/LICENSE','licenses/simdock/ASSET-PROVENANCE.md')) {
+    'libzeroslack_semantic.dll','ElaWidgetTools.dll','simdock-source.json',
+    'licenses/simdock/LICENSE','licenses/simdock/ASSET-PROVENANCE.md')) {
     if (-not (Test-Path -LiteralPath (Join-Path $package $required) -PathType Leaf)) { throw "Missing package file: $required" }
 }
-if (@(Get-ChildItem -LiteralPath (Join-Path $package 'licenses/components/wave') -File -Recurse).Count -lt 1) { throw 'Wave notices missing.' }
 $verified = 0
 foreach ($line in (Get-Content -LiteralPath (Join-Path $package 'SHA256SUMS.txt'))) {
     if ($line -notmatch '^([0-9a-f]{64})  (.+)$') { throw 'Invalid checksum line.' }
@@ -45,8 +46,8 @@ foreach ($name in @('ZeroSlack.exe','libzeroslack_core.dll','libzeroslack_docume
 }
 $result = [ordered]@{schema='zeroslack.integrated-simdock-package-check/v1'; package=$package;
     passed=$true; verifiedFiles=$verified; integratedSource=$info.integratedFeatures.simdock;
-    wave=$info.nativeComponents.wave; imports=$imports;
-    oldInstaller='Retired installer is archived upstream. Formal switch, backup and independent-app retirement remain coordinator-owned.'}
+    retiredWaveEditorSource=$info.integratedFeatures.simdock.retiredWaveEditorSource; imports=$imports;
+    ownership='Simulation is owned by ZeroSlack; independent Tickx and its data are outside this package.'}
 $parent = Split-Path -Parent ([IO.Path]::GetFullPath($ReportPath))
 New-Item -ItemType Directory -Path $parent -Force | Out-Null
 $result | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $ReportPath -Encoding utf8

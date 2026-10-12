@@ -1,9 +1,8 @@
 #include "../../src/integrations/simdock/simdockstate.h"
 #include "../../src/integrations/simdock/simdockcontextview.h"
-#include "../../src/simulation/simdock/core/preparation.h"
+#include "../../src/simulation/simdock/core/workspace.h"
 #include "../../src/simulation/simdock/core/analyzer.h"
 #include "../../src/simulation/simdock/ui/workbench.h"
-#include "../../src/simulation/simdock/ui/stimulusdialog.h"
 #include "mainwindow.h"
 #include "tabmanager.h"
 #include "usertemplateservice.h"
@@ -129,36 +128,31 @@ private slots:
     void productionProjectsAndGeneratedFiles() {
         QFETCH(QString, id); QFETCH(QString, kind);
         QTemporaryDir workspace; QVERIFY(copyTree(fixtures() + "/simdock-0.6.1", workspace.path()));
-        const auto projectFile = workspace.filePath(".simdock/projects/" + id + ".json");
-        const auto originalBytes = read(projectFile);
-        QStringList errors; const auto projects = simdock::loadProjects(workspace.path(), &errors);
-        QVERIFY2(errors.isEmpty(), qPrintable(errors.join('\n')));
+        const auto legacy = workspace.filePath(".simdock/projects/" + id + ".json");
+        const auto original = object(legacy);
+        const auto tbPath = workspace.filePath(original.value("tbFile").toString());
+        const auto edited = read(tbPath) + "\n// User-owned edit must survive.\n";
+        QVERIFY(write(tbPath, edited));
+        QStringList notices;
+        const auto projects = simdock::loadProjects(workspace.path(), &notices);
         const auto found = std::find_if(projects.cbegin(), projects.cend(), [&](const auto& p) { return p.id == id; });
         QVERIFY(found != projects.cend()); auto project = *found;
-        QCOMPARE(read(projectFile), originalBytes);
-        QCOMPARE(project.stimulus.value("scoreboard").toObject().value("kind").toString(), kind);
+        QVERIFY(!QFileInfo::exists(legacy));
+        QCOMPARE(project.preservedInputs.value("stimulus"), original.value("stimulus"));
+        QCOMPARE(project.preservedInputs.value("stimulus").toObject().value("scoreboard").toObject().value("kind").toString(), kind);
+        QCOMPARE(project.inputMode, simdock::InputMode::ExistingTb);
         QCOMPARE(project.durationNs, qint64(2000));
-        QString error; simdock::SourceCache cache;
-        const auto prepared = simdock::prepareStimulus(workspace.path(), project, {}, &cache, nullptr, &error);
-        QVERIFY2(prepared, qPrintable(error));
-        const auto generated = simdock::stimulusTestbench(prepared->module, prepared->semantics, project.stimulus, &error);
-        QVERIFY2(!generated.isEmpty(), qPrintable(error));
-        QCOMPARE(generated.toUtf8(), read(workspace.filePath(project.tbFile)));
-        QCOMPARE(prepared->semantics.inputs.size(), 9);
-        const auto signedPort = std::find_if(prepared->semantics.inputs.cbegin(), prepared->semantics.inputs.cend(), [](const auto& p) { return p.name == "signed_data"; });
-        QVERIFY(signedPort != prepared->semantics.inputs.cend() && signedPort->isSigned);
-        const auto enumPort = std::find_if(prepared->semantics.inputs.cbegin(), prepared->semantics.inputs.cend(), [](const auto& p) { return p.name == "mode"; });
-        QVERIFY(enumPort != prepared->semantics.inputs.cend() && enumPort->enumValues.size() == 3);
-        const auto before = simdock::projectJson(project);
-        QVERIFY2(simdock::saveGeneratedStimulus(workspace.path(), project, project.stimulus, generated, &error), qPrintable(error));
-        QCOMPARE(simdock::projectJson(project), before);
-        const auto edited = generated.toUtf8() + "\n// User-owned edit must survive.\n";
-        QVERIFY(write(workspace.filePath(project.tbFile), edited));
-        const auto savedProject = read(projectFile);
-        QVERIFY(!simdock::saveGeneratedStimulus(workspace.path(), project, project.stimulus, generated, &error));
-        QVERIFY(error.contains("modified"));
-        QCOMPARE(read(workspace.filePath(project.tbFile)), edited);
-        QCOMPARE(read(projectFile), savedProject); QCOMPARE(simdock::projectJson(project), before);
+        QVERIFY2(simdock::validateInputs(workspace.path(), project).isEmpty(), qPrintable(notices.join('\n')));
+        QString error; project.name += " migrated";
+        QVERIFY2(simdock::saveProject(workspace.path(), project, &error), qPrintable(error));
+        QCOMPARE(read(tbPath), edited);
+        const auto restored = simdock::loadProjects(workspace.path());
+        const auto reopened = std::find_if(restored.cbegin(), restored.cend(), [&](const auto& p) { return p.id == id; });
+        QVERIFY(reopened != restored.cend());
+        QCOMPARE(reopened->preservedInputs, project.preservedInputs);
+        QVERIFY(QFile::remove(tbPath));
+        QVERIFY(!simdock::validateInputs(workspace.path(), *reopened).isEmpty());
+        QVERIFY(!QFileInfo::exists(tbPath));
     }
     void legacyCounterUsesCompatibleDefaults() {
         QTemporaryDir workspace; QVERIFY(copyTree(fixtures() + "/legacy-counter", workspace.path()));
@@ -293,20 +287,6 @@ private slots:
         const auto report = qEnvironmentVariable("SIMDOCK_LEGACY_REPORT");
         if (!report.isEmpty()) { QVERIFY(copyTree(profile, report)); qInfo().noquote() << "Isolated session evidence:" << directory.path(); }
     }
-    void missingWaveEditorReportsErrorInIsolatedProcess() {
-        QTemporaryDir profile;
-        const auto executable = profile.filePath("without-wave.exe");
-        QVERIFY(QFile::copy(QCoreApplication::applicationFilePath(), executable));
-        QProcess child; child.setProcessChannelMode(QProcess::MergedChannels);
-        child.start(executable, {"--missing-wave", profile.path()});
-        QVERIFY(child.waitForStarted(5000));
-        const bool completed = child.waitForFinished(15000);
-        if (!completed) { child.kill(); child.waitForFinished(3000); }
-        const auto log = child.readAll();
-        const auto report = qEnvironmentVariable("SIMDOCK_LEGACY_REPORT");
-        if (!report.isEmpty()) QVERIFY(write(report + "/missing-wave.log", log));
-        QVERIFY2(completed && child.exitStatus() == QProcess::NormalExit && child.exitCode() == 0, log.constData());
-    }
 };
 
 int main(int argc, char** argv) {
@@ -314,25 +294,6 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv); app.setQuitOnLastWindowClosed(false);
     const auto args = app.arguments();
     if (args.value(1) == "--session-phase") return sessionPhase(args.value(2), args.value(3), args.value(4));
-    if (args.value(1) == "--missing-wave") {
-        isolate(args.value(2));
-        ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela);
-        ApplicationThemeManager::instance().applyToApplication();
-        simdock::Scan scan;
-        scan.files.append(simdock::analyzeSource("module dut(input logic clk, data); endmodule", "dut.sv"));
-        bool saved = false;
-        simdock::StimulusDialog dialog(scan.files.first().modules.first(), scan, {}, 1000,
-            [&saved](const QJsonObject &, QString *) { saved = true; return true; });
-        dialog.show(); QTest::qWait(30);
-        const auto* message = dialog.findChild<QLabel*>("stimulusError");
-        auto* save = dialog.findChild<QPushButton*>("saveStimulus");
-        if (dialog.ready() || !message || !message->isVisible() || !message->text().contains("component is missing")
-            || !save) return 30;
-        save->click();
-        if (saved || dialog.result() == QDialog::Accepted || !message->isVisible()) return 31;
-        qInfo().noquote() << message->text();
-        return 0;
-    }
     QTemporaryDir profile; isolate(profile.path());
     LegacyCompatibilityTest test; return QTest::qExec(&test, argc, argv);
 }
