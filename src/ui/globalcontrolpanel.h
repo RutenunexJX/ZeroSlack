@@ -9,6 +9,7 @@
 #include <functional>
 
 class QLineEdit;
+class QLabel;
 class QListWidget;
 class QListWidgetItem;
 class QTabBar;
@@ -43,6 +44,7 @@ private:
     QLineEdit* searchEdit = nullptr;
     QTabBar* categoryTabs = nullptr;
     QListWidget* resultList = nullptr;
+    QLabel* availabilityNotice = nullptr;
     QList<GlobalControlItem> currentItems;
     std::function<void(const QString&)> queryChangedHandler;
     std::function<void(GlobalControlCategory)> categoryChangedHandler;

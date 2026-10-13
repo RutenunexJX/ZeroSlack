@@ -3321,55 +3321,6 @@ static void runNoImplicitCompletionRegression()
 
 static void runIncludeCompletionRegression()
 {
-    auto includeProvider = [](const QString&) {
-        return QStringList{
-            QStringLiteral("defs.svh"),
-            QStringLiteral("rtl/top_defs.svh")
-        };
-    };
-
-    MyCodeEditor editor;
-    editor.setIncludeFileCompletionProvider(includeProvider);
-    editor.setPlainText(QString());
-    expectBool("Ctrl+Space include candidates use workspace provider",
-               editor.includeFileCompletionCandidates()
-                   == QStringList({QStringLiteral("defs.svh"),
-                                   QStringLiteral("rtl/top_defs.svh")}),
-               true);
-    QString insertionFailure;
-    expectBool("structured header include inserts at cursor",
-               editor.insertHeaderInclude(QStringLiteral("defs.svh"),
-                                          &insertionFailure)
-                   && editor.toPlainText()
-                          == QStringLiteral("`include \"defs.svh\""),
-               true);
-
-    MyCodeEditor newHeaderEditor;
-    newHeaderEditor.setPlainText(QString());
-    IncludeNewHeaderRequest createdRequest;
-    int createCalls = 0;
-    newHeaderEditor.setIncludeNewHeaderCreator(
-        [&](const IncludeNewHeaderRequest& request) {
-            createdRequest = request;
-            ++createCalls;
-            IncludeNewHeaderResult result;
-            result.success = true;
-            result.includePath =
-                request.fileStem + QLatin1Char('.') + request.extension;
-            return result;
-        });
-    QString createFailure;
-    expectBool("Ctrl+Space new-header route creates and inserts include",
-               newHeaderEditor.createAndInsertHeader(
-                   QStringLiteral("new_defs.svh"), &createFailure)
-                   && createCalls == 1
-                   && createdRequest.fileStem == QStringLiteral("new_defs")
-                   && createdRequest.extension == QStringLiteral("svh")
-                   && createdRequest.templateName == QStringLiteral("empty")
-                   && newHeaderEditor.toPlainText()
-                          == QStringLiteral("`include \"new_defs.svh\""),
-               true);
-
     QTemporaryDir workspaceDir;
     expectBool("include new header workspace temp dir valid",
                workspaceDir.isValid(),
@@ -14457,24 +14408,9 @@ int main(int argc, char** argv)
         GlobalControlPanel* palette =
             openInsertPalette(GlobalControlCategory::Templates,
                               QStringLiteral("guiut"));
-        expectBool("Ctrl+Space exposes user templates",
-                   activatePaletteItem(
-                       palette,
-                       [](const GlobalControlItem& item) {
-                           return item.kind
-                                      == GlobalControlItemKind::Template
-                               && item.id == QStringLiteral(";;guiut");
-                       }),
-                   true);
-        expectBool("Ctrl+Space user template enters Slot Mode",
-                   editor->toPlainText().contains(
-                       QStringLiteral("logic gui_slot;"))
-                       && editor->templateSlotModeActive()
-                       && editor->templateSlotModeSlotCount() == 1
-                       && editor->textCursor().selectedText()
-                              == QStringLiteral("gui_slot"),
-                   true);
-        sendWidgetKey(editor, Qt::Key_Escape);
+        expectBool("Ctrl+Space hides legacy general user templates",
+                   palette && palette->currentItems.isEmpty(), true);
+        if (palette) palette->hide();
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "\n"
@@ -14483,21 +14419,9 @@ int main(int argc, char** argv)
             QTextCursor(editor->document()->findBlockByNumber(1)));
         palette = openInsertPalette(GlobalControlCategory::Templates,
                                     QStringLiteral("import gui"));
-        expectBool("Ctrl+Space package import uses semantic package records",
-                   activatePaletteItem(
-                       palette,
-                       [](const GlobalControlItem& item) {
-                           return item.operation
-                                      == GlobalControlItemOperation::
-                                             InsertPackageImport
-                               && item.parameters
-                                      .value(QStringLiteral("packageName"))
-                                      .toString()
-                                      == QStringLiteral("gui_pkg");
-                       })
-                       && editor->toPlainText().contains(
-                           QStringLiteral("import gui_pkg::*;")),
-                   true);
+        expectBool("Ctrl+Space Templates has no package import entry",
+                   palette && palette->currentItems.isEmpty(), true);
+        if (palette) palette->hide();
 
         editor->setPlainText(QStringLiteral("module gui_top;\n"
                                             "assign lhs = ;\n"

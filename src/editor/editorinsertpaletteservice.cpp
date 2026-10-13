@@ -1,14 +1,9 @@
 #include "editorinsertpaletteservice.h"
-#include "tsdocument.h"
 
-#include "codetemplatecontextanalyzer.h"
-#include "codetemplateservice.h"
 #include "completioncommandkindadapter.h"
 #include "completionservice.h"
-#include "packagetoolservice.h"
 #include "usertemplateservice.h"
 
-#include <QFileInfo>
 #include <QHash>
 #include <QSet>
 #include <Qt>
@@ -290,159 +285,24 @@ bool matchesTemplate(const CodeTemplateItem& item,
         || item.command.value(QStringLiteral("aliases")).toStringList().join(QLatin1Char(' ')).contains(needle, Qt::CaseInsensitive);
 }
 
-bool matchesPaletteItem(const QString& title,
-                        const QString& subtitle,
-                        const QString& filter)
+QList<GlobalControlItem> simulationItems(
+    const QString& text, const GlobalControlQueryContext& context)
 {
-    const QString needle = filter.trimmed();
-    return needle.isEmpty()
-        || title.contains(needle, Qt::CaseInsensitive)
-        || subtitle.contains(needle, Qt::CaseInsensitive);
-}
-
-QString semanticFilter(QString text,
-                       const QStringList& leadingWords)
-{
-    text = text.trimmed();
-    for (const QString& leadingWord : leadingWords) {
-        if (text.compare(leadingWord, Qt::CaseInsensitive) == 0)
-            return {};
-        if (text.startsWith(leadingWord + QLatin1Char(' '),
-                            Qt::CaseInsensitive)) {
-            return text.mid(leadingWord.size()).trimmed();
-        }
-    }
-    return text;
-}
-
-void appendSemanticTemplates(
-    QList<GlobalControlItem>* result,
-    const GlobalControlQueryContext& context,
-    const QString& text,
-    CompletionCommandKind kind,
-    GlobalControlItemOperation operation,
-    const QStringList& leadingWords,
-    const PackageImportSite* importSite = nullptr)
-{
-    if (!result || !context.editorAvailable || result->size() >= 120)
-        return;
-
-    CommandCompletionQuery query;
-    query.prefix = semanticFilter(text, leadingWords);
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    query.packageName = context.packageName;
-    query.documentText = context.documentText;
-    query.cursorLine = context.cursorLine;
-    query.cursorPosition = context.cursorPosition;
-    query.commandKind = kind;
-
-    for (const SemanticSymbolRecord& record :
-         CompletionService::getInstance()
-             ->findCommandCompletionSymbolRecords(query)) {
-        if (importSite && !importSite->canImport(record.name))
-            continue;
-        const CommandSymbolCompletionItem completion =
-            CompletionService::getInstance()->commandSymbolCompletionItem(
-                record, kind, query.prefix);
-        GlobalControlItem item;
-        item.kind = GlobalControlItemKind::Template;
-        item.operation = operation;
-        item.id = QStringLiteral("semantic:%1:%2")
-                      .arg(static_cast<int>(kind))
-                      .arg(completion.uniqueKey);
-        item.title = kind == CompletionCommandKind::Module
-            ? QStringLiteral("Instantiate %1").arg(completion.text)
-            : QStringLiteral("Import %1::*").arg(completion.text);
-        item.subtitle = completion.description;
-        item.insertionText = completion.defaultValue;
-        item.selectionStart = completion.selectionStart;
-        item.selectionLength = completion.selectionLength;
-        item.templateSlots = completion.templateSlots;
-        if (kind == CompletionCommandKind::Package) {
-            item.parameters.insert(QStringLiteral("packageName"),
-                                   record.name);
-        }
-        result->append(item);
-        if (result->size() >= 120)
-            return;
-    }
-}
-
-void appendIncludeTemplates(QList<GlobalControlItem>* result,
-                            const QString& text,
-                            const GlobalControlQueryContext& context)
-{
-    if (!result || !context.editorAvailable || result->size() >= 120)
-        return;
-    const QString filter = semanticFilter(
-        text,
-        {QStringLiteral("include"), QStringLiteral("header")});
-    for (const QString& includePath : context.includeFiles) {
-        const QString title = QStringLiteral("Include %1").arg(includePath);
-        if (!matchesPaletteItem(title,
-                                QStringLiteral("header include"),
-                                text)
-            && !includePath.contains(filter, Qt::CaseInsensitive)) {
-            continue;
-        }
-        GlobalControlItem item;
-        item.kind = GlobalControlItemKind::Template;
-        item.operation = GlobalControlItemOperation::InsertHeaderInclude;
-        item.id = QStringLiteral("include:%1").arg(includePath);
-        item.title = title;
-        item.subtitle = QStringLiteral("header include");
-        item.parameters.insert(QStringLiteral("includePath"), includePath);
-        result->append(item);
-        if (result->size() >= 120)
-            return;
-    }
-
-    const QString normalized = text.simplified();
-    const QStringList prefixes{
-        QStringLiteral("new header "),
-        QStringLiteral("create header "),
-        QStringLiteral("header new "),
-    };
-    QString requestedName;
-    for (const QString& prefix : prefixes) {
-        if (normalized.startsWith(prefix, Qt::CaseInsensitive)) {
-            requestedName = normalized.mid(prefix.size()).trimmed();
-            break;
-        }
-    }
-    if (requestedName.isEmpty() || result->size() >= 120)
-        return;
-    if (QFileInfo(requestedName).suffix().isEmpty())
-        requestedName.append(QStringLiteral(".svh"));
-
-    GlobalControlItem item;
-    item.kind = GlobalControlItemKind::Template;
-    item.operation = GlobalControlItemOperation::CreateHeader;
-    item.id = QStringLiteral("header:new:%1").arg(requestedName);
-    item.title = QStringLiteral("Create %1").arg(requestedName);
-    item.subtitle = QStringLiteral("Create header and insert include");
-    item.parameters.insert(QStringLiteral("fileName"), requestedName);
-    result->append(item);
-}
-
-QList<GlobalControlItem> templateItems(
-    const QString& text,
-    const GlobalControlQueryContext& context,
-    const QList<CodeTemplateItem>& templates,
-    const PackageImportSite& importSite)
-{
+    if (!context.editorAvailable)
+        return {};
+    auto* service = UserTemplateService::getInstance();
+    const auto templates = service->catalogForFile(context.fileName, true);
+    const auto catalogRevision = service->catalogRevision();
     QList<GlobalControlItem> result;
-    for (const CodeTemplateItem& templateItem : templates) {
+    for (const auto& templateItem : templates) {
         if (!matchesTemplate(templateItem, text))
             continue;
         GlobalControlItem item;
         item.kind = GlobalControlItemKind::Template;
+        item.operation = GlobalControlItemOperation::InsertSimulationCommand;
         item.id = templateItem.commandToken;
         item.title = templateItem.label;
         item.subtitle = templateItem.description;
-        item.actionId = templateItem.actionId;
-        item.executionRoute = templateItem.executionRoute;
         item.insertionText = templateItem.insertText.isEmpty()
             ? templateItem.defaultValue : templateItem.insertText;
         item.selectionStart = templateItem.selectionStart;
@@ -452,41 +312,24 @@ QList<GlobalControlItem> templateItems(
         item.parameterSummary = templateItem.command.value(QStringLiteral("summary")).toString();
         if (item.parameterSummary.isEmpty()) {
             QStringList names;
-            for (const auto& slot : item.templateSlots) if (!names.contains(slot.name)) names << slot.name;
+            for (const auto& slot : item.templateSlots)
+                if (!names.contains(slot.name)) names << slot.name;
             item.parameterSummary = names.mid(0, 3).join(QStringLiteral(" · "));
         }
-        if (templateItem.commandToken.startsWith(QLatin1Char('@'))) {
-            item.operation = GlobalControlItemOperation::InsertSimulationCommand;
-            item.replacementStart = context.replacementStart;
-            item.replacementLength = context.replacementLength;
-            if (context.readOnly) item.disabledReason = QStringLiteral("This document is read-only.");
-        }
+        item.replacementStart = context.replacementStart;
+        item.replacementLength = context.replacementLength;
+        item.sourceDocumentRevision = context.documentRevision;
+        item.sourceDocumentInstance = context.documentInstance;
+        item.sourceDocumentTextRevision = context.documentTextRevision;
+        item.sourceFileName = context.fileName;
+        item.sourceCursorPosition = context.cursorPosition;
+        item.sourceTemplateCatalogRevision = catalogRevision;
+        if (context.readOnly)
+            item.disabledReason = QStringLiteral("This document is read-only.");
         result.append(item);
         if (result.size() >= 120)
             break;
     }
-
-    if (context.simulationCommands) return result;
-    appendSemanticTemplates(&result,
-                            context,
-                            text,
-                            CompletionCommandKind::Module,
-                            GlobalControlItemOperation::InsertText,
-                            {QStringLiteral("module"),
-                             QStringLiteral("instantiate")});
-    if (context.editorAvailable && context.cursorPosition >= 0) {
-        if (importSite.valid) {
-            appendSemanticTemplates(
-                &result,
-                context,
-                text,
-                CompletionCommandKind::Package,
-                GlobalControlItemOperation::InsertPackageImport,
-                {QStringLiteral("package"), QStringLiteral("import")},
-                &importSite);
-        }
-    }
-    appendIncludeTemplates(&result, text, context);
     return result;
 }
 
@@ -497,66 +340,8 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
     const QString& text,
     const GlobalControlQueryContext& context) const
 {
-    if (context.simulationCommands) {
-        auto result = templateItems(text, context, UserTemplateService::getInstance()->catalogForFile(context.fileName, true), {});
-        for (auto& item : result) {
-            item.sourceDocumentRevision = context.documentRevision; item.sourceDocumentInstance = context.documentInstance;
-            item.sourceDocumentTextRevision = context.documentTextRevision;
-            item.sourceFileName = context.fileName; item.sourceCursorPosition = context.cursorPosition;
-            item.sourceTemplateCatalogRevision = UserTemplateService::getInstance()->catalogRevision();
-        }
-        return result;
-    }
-    switch (category) {
-    case GlobalControlCategory::Symbols:
-        return symbolItems(text, context);
-    case GlobalControlCategory::Templates: {
-        const auto catalogRevision = UserTemplateService::getInstance()->catalogRevision();
-        const auto snapshot = SemanticIndex::getInstance()->snapshotToken();
-        const bool sameContext = captured && captured->context.fileName == context.fileName
-            && captured->context.documentInstance == context.documentInstance
-            && captured->context.documentRevision == context.documentRevision
-            && captured->context.cursorPosition == context.cursorPosition
-            && captured->context.editorAvailable == context.editorAvailable
-            && captured->context.documentText == context.documentText
-            && captured->semanticSnapshot.snapshot == snapshot.snapshot
-            && captured->semanticSnapshot.revision == snapshot.revision;
-        if (!sameContext) {
-            captured.emplace();
-            captured->context = context;
-            captured->semanticSnapshot = snapshot;
-            ++contextAnalyses;
-            // One request-scoped original syntax input, shared by both facts.
-            // PackageToolService still parses its different probe text.
-            TSDocument originalDocument;
-            if (context.editorAvailable)
-                originalDocument.setText(context.documentText);
-            const auto signalContext = context.editorAvailable
-                ? CodeTemplateContextAnalyzer::analyze(originalDocument, context.cursorPosition, context.fileName)
-                : CodeTemplateSignalContext{};
-            for (const auto& item : CodeTemplateService::getInstance()->catalog())
-                captured->templates.append(CodeTemplateService::getInstance()->matchingTemplates(
-                    item.commandToken, {}, signalContext));
-            if (context.editorAvailable && context.cursorPosition >= 0)
-                captured->importSite = PackageToolService::analyzePackageImportSite(
-                    originalDocument, context.cursorPosition, context.cursorPosition);
-        }
-        captured->catalogRevision = catalogRevision;
-        auto templates = captured->templates;
-        templates.append(UserTemplateService::getInstance()->catalogForFile(context.fileName));
-        auto result = templateItems(text, context, templates, captured->importSite);
-        for (auto& item : result) {
-            item.sourceDocumentRevision = context.documentRevision;
-            item.sourceDocumentInstance = context.documentInstance;
-            item.sourceFileName = context.fileName;
-            item.sourceCursorPosition = context.cursorPosition;
-            item.sourceTemplateCatalogRevision = catalogRevision;
-            if (item.requiresCurrentSemantic) item.sourceSemanticSnapshot = snapshot;
-        }
-        return result;
-    }
-    case GlobalControlCategory::Commands:
-        return {};
-    }
-    return {};
+    if (context.simulationCommands || category == GlobalControlCategory::Templates)
+        return simulationItems(text, context);
+    return category == GlobalControlCategory::Symbols ? symbolItems(text, context)
+                                                      : QList<GlobalControlItem>();
 }

@@ -209,6 +209,11 @@ QString SimulationCommandService::materializeSupport(const QString &workspace, c
 void SimulationCommandService::activate(const GlobalControlItem &selected)
 {
     QPointer<MyCodeEditor> editor = tabs ? tabs->getCurrentEditor() : nullptr;
+    if (editor && editor->isReadOnly())
+    {
+        emit message(QStringLiteral("This document is read-only."));
+        return;
+    }
     if (!current(selected, editor))
     {
         emit message(QStringLiteral(

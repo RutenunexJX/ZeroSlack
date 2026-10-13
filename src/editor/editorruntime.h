@@ -495,16 +495,6 @@ struct MyCodeEditorState
         EditorCompletionWorkflow::IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(
         EditorCompletionWorkflow::IncludeNewHeaderCreator creator);
-    QStringList includeFileCandidates() const;
-    bool insertPackageImportAtCursor(MyCodeEditor* editor,
-                                     const QString& packageName,
-                                     QString* failureReason = nullptr);
-    bool insertHeaderIncludeAtCursor(MyCodeEditor* editor,
-                                     const QString& includePath,
-                                     QString* failureReason = nullptr);
-    bool createAndInsertHeaderAtCursor(MyCodeEditor* editor,
-                                       const QString& fileName,
-                                       QString* failureReason = nullptr);
     void executeEditorActionCommand(MyCodeEditor* editor, const QString& command);
     FormatterReport formatDocument(MyCodeEditor* editor);
     void commentSelectionOrLine(MyCodeEditor* editor);

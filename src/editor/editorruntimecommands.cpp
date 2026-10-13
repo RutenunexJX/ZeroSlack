@@ -852,38 +852,6 @@ void MyCodeEditorState::setIncludeNewHeaderCreator(
     completionWorkflow.setIncludeNewHeaderCreator(std::move(creator));
 }
 
-QStringList MyCodeEditorState::includeFileCandidates() const
-{
-    return completionWorkflow.includeFileCandidates();
-}
-
-bool MyCodeEditorState::insertPackageImportAtCursor(
-    MyCodeEditor*,
-    const QString& packageName,
-    QString* failureReason)
-{
-    return completionWorkflow.insertPackageImportAtCursor(
-        packageName, failureReason);
-}
-
-bool MyCodeEditorState::insertHeaderIncludeAtCursor(
-    MyCodeEditor*,
-    const QString& includePath,
-    QString* failureReason)
-{
-    return completionWorkflow.insertHeaderIncludeAtCursor(
-        includePath, failureReason);
-}
-
-bool MyCodeEditorState::createAndInsertHeaderAtCursor(
-    MyCodeEditor*,
-    const QString& fileName,
-    QString* failureReason)
-{
-    return completionWorkflow.createAndInsertHeaderAtCursor(
-        fileName, failureReason);
-}
-
 void MyCodeEditorState::executeEditorActionCommand(
     MyCodeEditor* editor,
     const QString& command)

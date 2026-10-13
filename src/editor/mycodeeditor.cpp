@@ -892,11 +892,6 @@ void MyCodeEditor::setIncludeNewHeaderCreator(
     state->setIncludeNewHeaderCreator(std::move(creator));
 }
 
-QStringList MyCodeEditor::includeFileCompletionCandidates() const
-{
-    return state->includeFileCandidates();
-}
-
 bool MyCodeEditor::canApplyInsertion(QString* failureReason) const
 {
     if (!document() || isReadOnly()) {
@@ -907,30 +902,6 @@ bool MyCodeEditor::canApplyInsertion(QString* failureReason) const
     if (failureReason)
         failureReason->clear();
     return true;
-}
-
-bool MyCodeEditor::insertPackageImport(
-    const QString& packageName,
-    QString* failureReason)
-{
-    return state->insertPackageImportAtCursor(
-        this, packageName, failureReason);
-}
-
-bool MyCodeEditor::insertHeaderInclude(
-    const QString& includePath,
-    QString* failureReason)
-{
-    return state->insertHeaderIncludeAtCursor(
-        this, includePath, failureReason);
-}
-
-bool MyCodeEditor::createAndInsertHeader(
-    const QString& fileName,
-    QString* failureReason)
-{
-    return state->createAndInsertHeaderAtCursor(
-        this, fileName, failureReason);
 }
 
 void MyCodeEditor::setSemanticContextService(EditorSemanticContextService* service)

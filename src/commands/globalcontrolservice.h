@@ -24,9 +24,6 @@ enum class GlobalControlItemKind {
 
 enum class GlobalControlItemOperation {
     InsertText,
-    InsertPackageImport,
-    InsertHeaderInclude,
-    CreateHeader,
     InsertSimulationCommand
 };
 
@@ -38,7 +35,6 @@ struct GlobalControlQueryContext {
     QString moduleName;
     QString packageName;
     QString documentText;
-    QStringList includeFiles;
     QString initialQuery;
     QStringList memberPath;
     QString expectedTypeIdentifier;

@@ -761,7 +761,8 @@ class SimulationCommandRedesignTest : public QObject
         for (const auto &kind : {QString("driver"), QString("print")})
         {
             QStringList sources;
-            QVERIFY(SimulationCommandService::materializeSupport(root.path(), kind, &sources).isEmpty());
+            const auto supportError = SimulationCommandService::materializeSupport(root.path(), kind, &sources);
+            QVERIFY2(supportError.isEmpty(), qPrintable(kind + ": " + supportError));
             if (kind == "driver")
                 for (const auto *name : {"xips-commands.json", "LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.md"})
                     sources << QDir(QFileInfo(sources.first()).absolutePath()).filePath(name);
@@ -1140,77 +1141,482 @@ class SimulationCommandRedesignTest : public QObject
         QVERIFY(decoder.feed("ZS_EVT_V1|1|Info|746167|7462|74622e7376|1|ff|\n").isEmpty());
         QCOMPARE(decoder.rejectedRecords(), quint64(1));
     }
-    void mainWindowAndLocalExpansion()
-    {
-        QTemporaryDir root;
-        const auto file = root.filePath("tb.sv");
-        const QString source = "module tb; logic clk1; initial begin @q1\n; end endmodule\n";
-        QVERIFY(put(file, source));
-        MainWindow window;
-        window.resize(1100, 760);
-        window.show();
-        QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
-        QVERIFY(window.tabManager->openFileInTab(file));
-        auto *editor = window.tabManager->getCurrentEditor();
-        QVERIFY(editor);
-        auto *service = UserTemplateService::getInstance();
-        UserTemplateRecord q;
-        q.id = "q1";
-        q.commandToken = q.label = "@q1";
-        q.insertText = "@(posedge clk1)";
-        q.command = {{"kind", "snippet"}, {"file", file}};
-        QVERIFY(service->saveRecord(q, true).valid);
-        QTextCursor cursor(editor->document());
-        cursor.setPosition(source.indexOf("@q1") + 3);
-        editor->setTextCursor(cursor);
+    void simulationOnlyPaletteCatalog() {
+      QTemporaryDir root;
+      auto *templates = UserTemplateService::getInstance();
+      const auto previousGlobal = templates->globalTemplateLocation();
+      const auto previousWorkspace = templates->workspaceTemplateLocation();
+      const auto restore = qScopeGuard([&] {
+        templates->setGlobalTemplateFilePath(previousGlobal);
+        templates->setWorkspaceTemplateFilePath(previousWorkspace);
+      });
+      templates->setGlobalTemplateFilePath(root.filePath("global.json"));
+      templates->setWorkspaceTemplateFilePath(root.filePath("workspace.json"));
+      const auto file = root.filePath("tb.sv");
+      const auto package = root.filePath("user_package.sv");
+      QVERIFY(put(package, "package user_package; task run(); endtask function "
+                           "int value(); return 1; endfunction endpackage"));
+      for (const auto &kind :
+           {QString("snippet"), QString("task"), QString("function"),
+            QString("print"), QString("local"), QString("legacy")}) {
+        UserTemplateRecord record;
+        record.id = kind;
+        record.commandToken = record.label =
+            kind == "legacy" ? ";;legacy" : "@user_" + kind;
+        record.insertText = "$display(\"user\");";
+        record.command = {
+            {"kind", kind == "local" || kind == "legacy" ? "snippet" : kind}};
+        if (kind == "task" || kind == "function") {
+          record.insertText.clear();
+          record.command.insert("symbol", kind == "task"
+                                              ? "user_package::run"
+                                              : "user_package::value");
+          record.command.insert("sourceFile", package);
+        }
+        if (kind == "local")
+          record.command.insert("file", file);
+        QVERIFY(templates
+                    ->saveRecord(record, kind == "task" || kind == "print" ||
+                                             kind == "local")
+                    .valid);
+      }
+      const auto globalBefore = bytes(templates->globalTemplateLocation());
+      const auto workspaceBefore =
+          bytes(templates->workspaceTemplateLocation());
+      auto context = contextFor(
+          file, "module tb; initial begin @user\nend endmodule", "@user");
+      context.documentInstance = 23;
+      context.documentTextRevision = 7;
+      EditorInsertPaletteService palette;
+      const auto ordinary =
+          palette.query(GlobalControlCategory::Templates, "", context);
+      context.simulationCommands = true;
+      const auto prefixed =
+          palette.query(GlobalControlCategory::Templates, "", context);
+      QCOMPARE(ordinary.size(), prefixed.size());
+      QStringList ids;
+      for (int i = 0; i < ordinary.size(); ++i) {
+        const auto &item = ordinary.at(i);
+        ids << item.id;
+        QVERIFY(item.id.startsWith('@'));
+        QCOMPARE(item.operation,
+                 GlobalControlItemOperation::InsertSimulationCommand);
+        QCOMPARE(item.id, prefixed.at(i).id);
+        QCOMPARE(item.parameters, prefixed.at(i).parameters);
+        QCOMPARE(item.sourceDocumentTextRevision, context.documentTextRevision);
+        QCOMPARE(item.sourceDocumentInstance, context.documentInstance);
+      }
+      for (const auto &kind : {"snippet", "task", "function", "print", "local"})
+        QVERIFY(ids.contains("@user_" + QString(kind)));
+      for (const auto &builtin : UserTemplateService::simulationBuiltins())
+        QVERIFY(ids.contains(builtin.commandToken));
+      for (const auto &removed :
+           {";;legacy", "instantiate", "import ", "include ", "new header"})
+        QVERIFY(
+            palette.query(GlobalControlCategory::Templates, removed, context)
+                .isEmpty());
+      context.fileName = root.filePath("other.sv");
+      QVERIFY(
+          palette
+              .query(GlobalControlCategory::Templates, "@user_local", context)
+              .isEmpty());
+      QCOMPARE(bytes(templates->globalTemplateLocation()), globalBefore);
+      QCOMPARE(bytes(templates->workspaceTemplateLocation()), workspaceBefore);
+      evidence("simulation-catalog.json",
+               QJsonDocument::fromVariant(
+                   QVariantMap{{"ids", ids},
+                               {"ordinaryAndPrefixMatch", true},
+                               {"legacyStoragePreserved", true}})
+                   .toJson());
+    }
+    void templateKeyboardInsertion_data() {
+      QTest::addColumn<bool>("prefix");
+      QTest::addColumn<bool>("listFocus");
+      QTest::newRow("templates-search") << false << false;
+      QTest::newRow("templates-list") << false << true;
+      QTest::newRow("prefix-search") << true << false;
+      QTest::newRow("prefix-list") << true << true;
+    }
+    void templateKeyboardInsertion() {
+      QFETCH(bool, prefix);
+      QFETCH(bool, listFocus);
+      QTemporaryDir root;
+      const auto file = root.filePath("tb.sv");
+      const QString token = prefix ? "@key_" : "";
+      const QString source = "module tb;\nlogic clk;\ninitial begin\n    " +
+                             token + "\nend\nendmodule\n";
+      const int start = source.indexOf("    ") + 4;
+      QVERIFY(put(file, source));
+      MainWindow window;
+      window.resize(1100, 760);
+      window.show();
+      window.activateWindow();
+      QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
+      QVERIFY(window.tabManager->openFileInTab(file));
+      auto *editor = window.tabManager->getCurrentEditor();
+      QVERIFY(editor);
+      auto *templates = UserTemplateService::getInstance();
+      for (const auto &name : {QString("alpha"), QString("beta")}) {
+        UserTemplateRecord record;
+        record.id = "key_" + name;
+        record.commandToken = record.label = "@key_" + name;
+        record.insertText = "$display(\"" + name + "\");";
+        record.command = {{"kind", "snippet"}, {"file", file}};
+        QVERIFY(templates->saveRecord(record, true).valid);
+      }
+      QTextCursor cursor(editor->document());
+      cursor.setPosition(start + token.size());
+      editor->setTextCursor(cursor);
+      editor->setFocus();
+      cursor.insertText(" ");
+      cursor.deletePreviousChar();
+      editor->setTextCursor(cursor);
+      QCOMPARE(editor->toPlainText(), source);
+      const auto *shared = window.tabManager->sharedDocumentForEditor(editor);
+      QVERIFY(shared && shared->textRevision() > 0);
+      QSignalSpy messages(window.simulationCommands.get(),
+                          &SimulationCommandService::message);
+      auto *panel = window.globalControlCoordinator->panel.get();
+      for (int repeat = 0; repeat < 2; ++repeat) {
+        messages.clear();
+        window.activateWindow();
         editor->setFocus();
+        QTRY_VERIFY_WITH_TIMEOUT(editor->hasFocus(), 5000);
         QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
-        QTRY_VERIFY(window.globalControlCoordinator->panel->isVisible());
-        QTest::qWait(100);
-        screenshot(&window, "mainwindow-prefix.png");
-        screenshot(window.globalControlCoordinator->panel.get(), "completion-prefix.png");
-        QTest::keyClick(window.globalControlCoordinator->panel.get(), Qt::Key_Escape);
-        QCOMPARE(editor->toPlainText(), source);
-        EditorInsertPaletteService palette;
-        auto request = window.simulationCommands->currentRequest();
-        request.context.simulationCommands = true;
-        request.context.replacementStart = source.indexOf("@q1");
-        request.context.replacementLength = 3;
-        auto items = palette.query(GlobalControlCategory::Templates, "q1", request.context);
-        QVERIFY(!items.isEmpty());
-        window.simulationCommands->activate(items.first());
-        QTRY_VERIFY_WITH_TIMEOUT(editor->toPlainText().contains("@(posedge clk1)"), 15000);
-        QCOMPARE(editor->toPlainText(), QString(source).replace("@q1", "@(posedge clk1)"));
+        QTRY_VERIFY(panel->isVisible());
+        auto *search = panel->findChild<QLineEdit *>("globalControlSearchEdit");
+        auto *list = panel->findChild<QListWidget *>("globalControlResultList");
+        QVERIFY(search && list);
+        QTRY_VERIFY(search->hasFocus());
+        const auto capturedContext =
+            window.globalControlCoordinator->currentContext;
+        evidence(QString("keyboard-%1-%2-open.json")
+                     .arg(QTest::currentDataTag())
+                     .arg(repeat),
+                 QJsonDocument::fromVariant(
+                     QVariantMap{{"simulationCommands",
+                                  capturedContext.simulationCommands},
+                                 {"cursor", capturedContext.cursorPosition},
+                                 {"initialQuery", capturedContext.initialQuery},
+                                 {"source", capturedContext.documentText},
+                                 {"category", int(panel->category())},
+                                 {"sourceTextRevision",
+                                  capturedContext.documentTextRevision}})
+                     .toJson());
+        if (!prefix) {
+          auto *categories =
+              panel->findChild<QTabBar *>("globalControlCategoryTabs");
+          QVERIFY(categories && categories->isVisible());
+          QTest::mouseClick(categories, Qt::LeftButton, Qt::NoModifier,
+                            categories->tabRect(1).center());
+          QCOMPARE(panel->category(), GlobalControlCategory::Templates);
+          search->setFocus();
+          QTest::keyClicks(search, "key_");
+        }
+        QCOMPARE(list->count(), 2);
+        QCOMPARE(list->currentItem()->text(), QString("@key_alpha"));
+        if (listFocus) {
+          QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier,
+                            list->visualItemRect(list->currentItem()).center());
+          QTRY_VERIFY(list->hasFocus());
+        }
+        QWidget *focus = listFocus ? static_cast<QWidget *>(list)
+                                   : static_cast<QWidget *>(search);
+        QTest::keyClick(focus, Qt::Key_Down);
+        QCOMPARE(list->currentItem()->text(), QString("@key_beta"));
+        QTest::keyClick(focus, Qt::Key_Up);
+        QCOMPARE(list->currentItem()->text(), QString("@key_alpha"));
+        QTest::keyClick(focus, Qt::Key_Down);
+        const auto selected = panel->currentItems.at(list->currentRow());
+        const auto expectedRevision = shared->textRevision();
+        screenshot(panel, QString("keyboard-%1-%2-before.png")
+                              .arg(QTest::currentDataTag())
+                              .arg(repeat));
+        QTest::keyClick(focus, listFocus ? Qt::Key_Enter : Qt::Key_Return);
+        QTRY_VERIFY(!panel->isVisible());
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
+        const QString expected =
+            QString(source).replace(start, token.size(), "$display(\"beta\");");
+        evidence(QString("keyboard-%1-%2.json")
+                     .arg(QTest::currentDataTag())
+                     .arg(repeat),
+                 QJsonDocument::fromVariant(
+                     QVariantMap{{"sourceTextRevision", expectedRevision},
+                                 {"candidateTextRevision",
+                                  selected.sourceDocumentTextRevision},
+                                 {"focus", listFocus ? "list" : "search"},
+                                 {"prefix", prefix},
+                                 {"selected", selected.id},
+                                 {"message", messages.last().first()},
+                                 {"actual", editor->toPlainText()},
+                                 {"expected", expected}})
+                     .toJson());
+        QVERIFY2(editor->toPlainText() == expected,
+                 qPrintable(messages.last().first().toString()));
+        QTRY_VERIFY(editor->hasFocus());
         QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
         QCOMPARE(editor->toPlainText(), source);
-        TemplateManagerDialog dialog(service, window.simulationCommands->currentRequest(), root.path(),
-                                     &window);
-        dialog.show();
-        QTest::qWait(100);
-        screenshot(&dialog, "template-manager.png");
-        QVERIFY(dialog.findChild<QLineEdit *>("templateName"));
-        dialog.name->setText("q2");
-        dialog.body->setPlainText("@(negedge clk1)");
-        auto *actions = dialog.findChild<QDialogButtonBox *>();
-        QVERIFY(actions);
-        QAbstractButton *saveButton = nullptr;
-        for (auto *button : actions->buttons())
-            if (actions->buttonRole(button) == QDialogButtonBox::AcceptRole)
-                saveButton = button;
-        QVERIFY(saveButton);
-        QTest::mouseClick(saveButton, Qt::LeftButton);
-        QVERIFY2(dialog.notice->text() == "Template saved.", qPrintable(dialog.notice->text()));
-        dialog.reject();
-        auto *eventsButton = window.findChild<QAbstractButton *>("bottomPanelButton_simulationEvents");
-        QVERIFY(eventsButton);
-        QVERIFY(eventsButton->isVisible());
-        QTest::mouseClick(eventsButton, Qt::LeftButton);
-        auto *eventsPanel = window.findChild<simdock::SimulationEventsPanel *>();
-        QVERIFY(eventsPanel);
-        QTRY_VERIFY(eventsPanel->isVisible());
-        screenshot(&window, "mainwindow-events.png");
-        editor->document()->setModified(false);
-        window.close();
+        QTest::keyClick(editor, Qt::Key_Y, Qt::ControlModifier);
+        QCOMPARE(editor->toPlainText(), expected);
+        QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
+        QCOMPARE(editor->toPlainText(), source);
+        cursor.setPosition(start + token.size());
+        editor->setTextCursor(cursor);
+      }
+      editor->document()->setModified(false);
+    }
+    void builtinTemplateKeyboardInput_data() {
+      QTest::addColumn<bool>("prefix");
+      QTest::newRow("templates") << false;
+      QTest::newRow("prefix") << true;
+    }
+    void builtinTemplateKeyboardInput() {
+      QFETCH(bool, prefix);
+      QTemporaryDir root;
+      const auto file = root.filePath("tb.sv");
+      const QString token = prefix ? "@print" : "";
+      const QString source =
+          "module tb; timeunit 1ns; timeprecision 1ps;\ninitial begin\n    " +
+          token + "\nend\nendmodule\n";
+      const int position = source.indexOf("    ") + 4 + token.size();
+      QVERIFY(put(file, source));
+      auto project = simdock::newProject("Keyboard print");
+      project.sources = {"tb.sv"};
+      project.tbFile = "tb.sv";
+      project.tbName = "tb";
+      QString projectError;
+      QVERIFY2(simdock::saveProject(root.path(), project, &projectError),
+               qPrintable(projectError));
+      MainWindow window;
+      window.show();
+      QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
+      QVERIFY2(window.openSimDockTarget(root.path(), project.id, &projectError),
+               qPrintable(projectError));
+      QVERIFY(window.tabManager->openFileInTab(file));
+      auto *editor = window.tabManager->getCurrentEditor();
+      QTextCursor cursor(editor->document());
+      cursor.setPosition(position);
+      editor->setTextCursor(cursor);
+      window.activateWindow();
+      editor->setFocus();
+      QTRY_VERIFY(editor->hasFocus());
+      QSignalSpy messages(window.simulationCommands.get(),
+                          &SimulationCommandService::message);
+      QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+      auto *panel = window.globalControlCoordinator->panel.get();
+      QTRY_VERIFY(panel->isVisible());
+      auto *search = panel->findChild<QLineEdit *>("globalControlSearchEdit");
+      auto *list = panel->findChild<QListWidget *>("globalControlResultList");
+      QTRY_VERIFY(search->hasFocus());
+      if (!prefix) {
+        QTest::keyClick(search, Qt::Key_Tab);
+        QCOMPARE(panel->category(), GlobalControlCategory::Templates);
+        QTest::keyClicks(search, "print");
+      }
+      QVERIFY(list->currentItem());
+      QCOMPARE(list->currentItem()->text(), QString("@print"));
+      QTest::keyClick(search, Qt::Key_Return);
+      QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
+      QVERIFY2(editor->toPlainText().contains(
+                   "zeroslack_events_package::emit_event"),
+               qPrintable(messages.last().first().toString()));
+      QVERIFY(editor->templateSlotModeActive());
+      QVERIFY(editor->templateSlotModeSlotCount() >= 1);
+      QCOMPARE(editor->textCursor().selectedText(), QString("\"message\""));
+      auto *buildInputs = window.findChild<simdock::Workbench *>();
+      QVERIFY(buildInputs);
+      QCOMPARE(buildInputs->activeProjectId(), project.id);
+      const auto inputs = buildInputs->activeCompilationInputs();
+      QCOMPARE(inputs.size(), 2);
+      QVERIFY(inputs.first().endsWith("zeroslack_events_package.sv"));
+      QCOMPARE(QFileInfo(inputs.last()).canonicalFilePath(),
+               QFileInfo(file).canonicalFilePath());
+      const auto inserted = editor->toPlainText();
+      screenshot(&window,
+                 QString("keyboard-print-%1.png").arg(QTest::currentDataTag()));
+      evidence(QString("keyboard-print-%1.json").arg(QTest::currentDataTag()),
+               QJsonDocument::fromVariant(
+                   QVariantMap{{"text", inserted},
+                               {"slots", editor->templateSlotModeSlotCount()},
+                               {"message", messages.last().first()}})
+                   .toJson());
+      QTest::keyClick(editor, Qt::Key_Tab);
+      QTest::keyClick(editor, Qt::Key_Tab, Qt::ShiftModifier);
+      QTest::keyClick(editor, Qt::Key_Escape);
+      QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(editor->toPlainText(), source);
+      QTest::keyClick(editor, Qt::Key_Y, Qt::ControlModifier);
+      QCOMPARE(editor->toPlainText(), inserted);
+      editor->document()->setModified(false);
+    }
+    void templateKeyboardGuards_data() {
+      QTest::addColumn<bool>("prefix");
+      QTest::addColumn<QString>("change");
+      for (bool prefix : {false, true})
+        for (const auto *change :
+             {"document", "cursor", "catalog", "readonly", "readonly-before"})
+          QTest::newRow(qPrintable(
+              QString("%1-%2").arg(prefix ? "prefix" : "templates", change)))
+              << prefix << QString(change);
+    }
+    void templateKeyboardGuards() {
+      QFETCH(bool, prefix);
+      QFETCH(QString, change);
+      QTemporaryDir root;
+      const auto file = root.filePath("tb.sv");
+      const QString token = prefix ? "@guard" : "";
+      const QString source =
+          "module tb;\ninitial begin\n    " + token + "\nend\nendmodule\n";
+      QVERIFY(put(file, source));
+      MainWindow window;
+      window.show();
+      QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
+      QVERIFY(window.tabManager->openFileInTab(file));
+      auto *editor = window.tabManager->getCurrentEditor();
+      UserTemplateRecord record;
+      record.id = "keyboard-guard";
+      record.commandToken = record.label = "@guard";
+      record.insertText = "$display(\"guard\");";
+      record.command = {{"kind", "snippet"}, {"file", file}};
+      auto *templates = UserTemplateService::getInstance();
+      QVERIFY(templates->saveRecord(record, true).valid);
+      QTextCursor cursor(editor->document());
+      cursor.setPosition(source.indexOf("    ") + 4 + token.size());
+      editor->setTextCursor(cursor);
+      if (change == "readonly-before")
+        editor->setReadOnly(true);
+      window.activateWindow();
+      editor->setFocus();
+      QTRY_VERIFY(editor->hasFocus());
+      QSignalSpy messages(window.simulationCommands.get(),
+                          &SimulationCommandService::message);
+      QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+      auto *panel = window.globalControlCoordinator->panel.get();
+      QTRY_VERIFY(panel->isVisible());
+      auto *search = panel->findChild<QLineEdit *>("globalControlSearchEdit");
+      QTRY_VERIFY(search->hasFocus());
+      if (!prefix || change == "readonly-before") {
+        QTest::keyClick(search, Qt::Key_Tab);
+        QCOMPARE(panel->category(), GlobalControlCategory::Templates);
+        QTest::keyClick(search, Qt::Key_A, Qt::ControlModifier);
+        QTest::keyClicks(search, "guard");
+      }
+      if (change == "document")
+        editor->insertPlainText(" ");
+      if (change == "cursor") {
+        cursor.movePosition(QTextCursor::NextCharacter);
+        editor->setTextCursor(cursor);
+      }
+      if (change == "catalog")
+        templates->reload();
+      if (change == "readonly")
+        editor->setReadOnly(true);
+      const auto before = editor->toPlainText();
+      const auto undo = editor->document()->availableUndoSteps();
+      QTest::keyClick(search, Qt::Key_Return);
+      QString reason;
+      if (change == "readonly-before") {
+        auto *notice = panel->findChild<QLabel *>("globalControlNotice");
+        QVERIFY(notice && notice->isVisible());
+        reason = notice->text();
+        QVERIFY(reason.contains("read-only"));
+        QVERIFY(panel->isVisible());
+        screenshot(panel,
+                   QString("keyboard-%1.png").arg(QTest::currentDataTag()));
+        QTest::keyClick(search, Qt::Key_Escape);
+      } else {
+        QTRY_VERIFY_WITH_TIMEOUT(!messages.isEmpty(), 15000);
+        reason = messages.last().first().toString();
+        QVERIFY(
+            reason.contains(change == "readonly" ? "read-only" : "changed"));
+        QVERIFY(!panel->isVisible());
+      }
+      QCOMPARE(editor->toPlainText(), before);
+      QCOMPARE(editor->document()->availableUndoSteps(), undo);
+      evidence(
+          QString("keyboard-guard-%1.json").arg(QTest::currentDataTag()),
+          QJsonDocument::fromVariant(
+              QVariantMap{{"reason", reason},
+                          {"textPreserved", editor->toPlainText() == before},
+                          {"undoSteps", undo}})
+              .toJson());
+      editor->setReadOnly(false);
+      editor->document()->setModified(false);
+    }
+    void mainWindowAndLocalExpansion() {
+      QTemporaryDir root;
+      const auto file = root.filePath("tb.sv");
+      const QString source =
+          "module tb; logic clk1; initial begin @q1\n; end endmodule\n";
+      QVERIFY(put(file, source));
+      MainWindow window;
+      window.resize(1100, 760);
+      window.show();
+      QVERIFY(window.workspaceSessionCoordinator->openWorkspace(root.path()));
+      QVERIFY(window.tabManager->openFileInTab(file));
+      auto *editor = window.tabManager->getCurrentEditor();
+      QVERIFY(editor);
+      auto *service = UserTemplateService::getInstance();
+      UserTemplateRecord q;
+      q.id = "q1";
+      q.commandToken = q.label = "@q1";
+      q.insertText = "@(posedge clk1)";
+      q.command = {{"kind", "snippet"}, {"file", file}};
+      QVERIFY(service->saveRecord(q, true).valid);
+      QTextCursor cursor(editor->document());
+      cursor.setPosition(source.indexOf("@q1") + 3);
+      editor->setTextCursor(cursor);
+      window.activateWindow();
+      editor->setFocus();
+      QTRY_VERIFY(editor->hasFocus());
+      QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+      QTRY_VERIFY(window.globalControlCoordinator->panel->isVisible());
+      QTest::qWait(100);
+      screenshot(&window, "mainwindow-prefix.png");
+      screenshot(window.globalControlCoordinator->panel.get(),
+                 "completion-prefix.png");
+      auto *search =
+          window.globalControlCoordinator->panel->findChild<QLineEdit *>(
+              "globalControlSearchEdit");
+      QVERIFY(search && search->hasFocus());
+      QTest::keyClick(search, Qt::Key_Return);
+      QTRY_VERIFY_WITH_TIMEOUT(
+          editor->toPlainText().contains("@(posedge clk1)"), 15000);
+      QCOMPARE(editor->toPlainText(),
+               QString(source).replace("@q1", "@(posedge clk1)"));
+      QTest::keyClick(editor, Qt::Key_Z, Qt::ControlModifier);
+      QCOMPARE(editor->toPlainText(), source);
+      TemplateManagerDialog dialog(service,
+                                   window.simulationCommands->currentRequest(),
+                                   root.path(), &window);
+      dialog.show();
+      QTest::qWait(100);
+      screenshot(&dialog, "template-manager.png");
+      QVERIFY(dialog.findChild<QLineEdit *>("templateName"));
+      dialog.name->setText("q2");
+      dialog.body->setPlainText("@(negedge clk1)");
+      auto *actions = dialog.findChild<QDialogButtonBox *>();
+      QVERIFY(actions);
+      QAbstractButton *saveButton = nullptr;
+      for (auto *button : actions->buttons())
+        if (actions->buttonRole(button) == QDialogButtonBox::AcceptRole)
+          saveButton = button;
+      QVERIFY(saveButton);
+      QTest::mouseClick(saveButton, Qt::LeftButton);
+      QVERIFY2(dialog.notice->text() == "Template saved.",
+               qPrintable(dialog.notice->text()));
+      dialog.reject();
+      auto *eventsButton = window.findChild<QAbstractButton *>(
+          "bottomPanelButton_simulationEvents");
+      QVERIFY(eventsButton);
+      QVERIFY(eventsButton->isVisible());
+      QTest::mouseClick(eventsButton, Qt::LeftButton);
+      auto *eventsPanel = window.findChild<simdock::SimulationEventsPanel *>();
+      QVERIFY(eventsPanel);
+      QTRY_VERIFY(eventsPanel->isVisible());
+      screenshot(&window, "mainwindow-events.png");
+      editor->document()->setModified(false);
+      window.close();
     }
     void packageCreationAndBinding()
     {

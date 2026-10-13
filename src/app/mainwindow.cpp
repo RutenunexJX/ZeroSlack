@@ -1571,8 +1571,7 @@ void MainWindow::setupGlobalControl()
             return result.handled;
         });
     const auto insertPalette = std::make_shared<EditorInsertPaletteService>();
-    globalControlCoordinator->setOpeningHandler([this, insertPalette]() {
-        insertPalette->invalidate();
+    globalControlCoordinator->setOpeningHandler([this]() {
         if (MyCodeEditor* editor =
                 tabManager ? tabManager->getCurrentEditor() : nullptr) {
             editor->exitInteractionModes(
@@ -1595,8 +1594,6 @@ void MainWindow::setupGlobalControl()
         context.moduleName = editorContext.moduleName;
         context.packageName = editorContext.packageName;
         context.documentText = editorContext.documentText;
-        context.includeFiles =
-            editor->includeFileCompletionCandidates();
         context.cursorLine = editorContext.cursorLine;
         context.cursorPosition = editorContext.cursorPosition;
         const EditorSymbolPaletteContext paletteContext =
@@ -1630,21 +1627,18 @@ void MainWindow::setupGlobalControl()
                 if (simulationCommands) simulationCommands->activate(item);
                 return;
             }
-            if (item.kind == GlobalControlItemKind::Symbol
-                || item.kind == GlobalControlItemKind::Template) {
+            if (item.kind == GlobalControlItemKind::Symbol) {
                 MyCodeEditor* editor =
                     tabManager ? tabManager->getCurrentEditor() : nullptr;
                 QString failureReason;
                 bool inserted = false;
                 if (!item.disabledReason.isEmpty()) { postActivityMessage(item.disabledReason, 5000); return; }
-                if (editor && (item.kind == GlobalControlItemKind::Template || item.requiresCurrentSemantic)) {
+                if (editor && item.requiresCurrentSemantic) {
                     const auto* shared = tabManager->sharedDocumentForEditor(editor);
                     if (editor->document()->revision() != item.sourceDocumentRevision
                         || editor->textCursor().position() != item.sourceCursorPosition
                         || !shared || shared->instanceSerial() != item.sourceDocumentInstance
-                        || !EditorFileIdentity::same(shared->fileName(), item.sourceFileName)
-                        || (item.kind == GlobalControlItemKind::Template
-                            && UserTemplateService::getInstance()->catalogRevision() != item.sourceTemplateCatalogRevision)) {
+                        || !EditorFileIdentity::same(shared->fileName(), item.sourceFileName)) {
                         postActivityMessage(QStringLiteral("The document, cursor, or template catalog changed. Reopen the insertion palette."), 5000);
                         return;
                     }
@@ -1683,24 +1677,6 @@ void MainWindow::setupGlobalControl()
                             item.selectionStart,
                             item.selectionLength,
                             item.templateSlots,
-                            &failureReason);
-                        break;
-                    case GlobalControlItemOperation::InsertPackageImport:
-                        inserted = editor->insertPackageImport(
-                            item.parameters.value(
-                                QStringLiteral("packageName")).toString(),
-                            &failureReason);
-                        break;
-                    case GlobalControlItemOperation::InsertHeaderInclude:
-                        inserted = editor->insertHeaderInclude(
-                            item.parameters.value(
-                                QStringLiteral("includePath")).toString(),
-                            &failureReason);
-                        break;
-                    case GlobalControlItemOperation::CreateHeader:
-                        inserted = editor->createAndInsertHeader(
-                            item.parameters.value(
-                                QStringLiteral("fileName")).toString(),
                             &failureReason);
                         break;
                     case GlobalControlItemOperation::InsertSimulationCommand:

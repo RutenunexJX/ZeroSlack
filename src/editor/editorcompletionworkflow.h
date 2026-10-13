@@ -15,7 +15,6 @@ class EditorSelection;
 class MyCodeEditor;
 class QKeyEvent;
 class QModelIndex;
-struct StructuredInlineInsertionPlan;
 
 class EditorCompletionWorkflow
 {
@@ -45,13 +44,6 @@ public:
     void handleCursorPositionChanged();
     void setIncludeFileProvider(IncludeFileProvider provider);
     void setIncludeNewHeaderCreator(IncludeNewHeaderCreator creator);
-    QStringList includeFileCandidates() const;
-    bool insertPackageImportAtCursor(const QString& packageName,
-                                     QString* failureReason = nullptr);
-    bool insertHeaderIncludeAtCursor(const QString& includePath,
-                                     QString* failureReason = nullptr);
-    bool createAndInsertHeaderAtCursor(const QString& fileName,
-                                       QString* failureReason = nullptr);
 
 private:
     bool insertionAllowed(QString* failureReason = nullptr) const;
@@ -126,9 +118,7 @@ private:
     bool applyPackageImport(const QString& packageName);
     void applyIncludeCompletion(const QString& includePath);
     void applyIncludeNewHeaderChoice(const QString& choice);
-    bool applyStructuredInsertionPlan(
-        const StructuredInlineInsertionPlan& plan,
-        QString* failureReason);
+
 
     MyCodeEditor* editor = nullptr;
     EditorCompletionUi* completion = nullptr;

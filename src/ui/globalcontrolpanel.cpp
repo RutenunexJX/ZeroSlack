@@ -99,6 +99,11 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     resultList->setUniformItemSizes(true);
     resultList->installEventFilter(this);
     layout->addWidget(resultList);
+    availabilityNotice = UiControls::label(QString(), this);
+    availabilityNotice->setObjectName(QStringLiteral("globalControlNotice"));
+    availabilityNotice->setWordWrap(true);
+    availabilityNotice->hide();
+    layout->addWidget(availabilityNotice);
 
     connect(searchEdit, &QLineEdit::textChanged,
             this, [this](const QString& text) {
@@ -132,12 +137,16 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
     }
     for (int i = 0; i < currentItems.size(); ++i)
         if (currentItems.at(i).disabledReason.isEmpty()) { resultList->setCurrentRow(i); break; }
+    const bool unavailable = !currentItems.isEmpty() && resultList->currentRow() < 0;
+    availabilityNotice->setText(unavailable ? currentItems.first().disabledReason : QString());
+    availabilityNotice->setVisible(unavailable);
 }
 
 void GlobalControlPanel::setSimulationOnly(bool enabled)
 {
     categoryTabs->setVisible(!enabled);
     setProperty("simulationOnly", enabled);
+    updatePlaceholder();
 }
 
 void GlobalControlPanel::setCategory(GlobalControlCategory value)
@@ -302,12 +311,16 @@ void GlobalControlPanel::updatePlaceholder()
 {
     if (!searchEdit)
         return;
+    if (property("simulationOnly").toBool()) {
+        searchEdit->setPlaceholderText(QStringLiteral("Filter simulation templates"));
+        return;
+    }
     switch (category()) {
     case GlobalControlCategory::Symbols:
-        searchEdit->setPlaceholderText(QStringLiteral("Search symbols and templates"));
+        searchEdit->setPlaceholderText(QStringLiteral("Search symbols"));
         break;
     case GlobalControlCategory::Templates:
-        searchEdit->setPlaceholderText(QStringLiteral("Filter templates"));
+        searchEdit->setPlaceholderText(QStringLiteral("Filter simulation templates"));
         break;
     case GlobalControlCategory::Commands:
         searchEdit->setPlaceholderText(QStringLiteral("Filter commands, ow, or fd"));

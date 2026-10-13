@@ -7,6 +7,7 @@
 #define private public
 #include "mainwindow.h"
 #include "globalcontrolcoordinator.h"
+#include "editorcoordinator.h"
 #undef private
 #include "analysisscheduler.h"
 #include "completionservice.h"
@@ -52,59 +53,13 @@ void exercise(const QString& root) {
         QTextCursor c(editor->document()); c.setPosition(15); editor->setTextCursor(c);
         editor->setFocus(); QApplication::processEvents();
     };
-    const QString package="package p; parameter N=1; endpackage\n";
-    const auto packagePath=QDir(root).filePath("p.sv");
-    const auto record=SemanticFixtureRecordBuilder("p",SymbolTaxonomy::DeclarationKind::Package)
-        .withFile(packagePath).withLocalHandle(1).withLine(1,9).record();
-    const auto packageSnapshot=std::make_shared<SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords({record},{},{},{{packagePath,package}}));
+    reset();
     auto* coordinator=window.globalControlCoordinator.get();
-    const auto capture=[&](GlobalControlItemOperation operation,const QString& filter) {
-        SemanticIndex::getInstance()->setSnapshot(packageSnapshot);
-        auto context=coordinator->contextProvider();
-        const auto items=coordinator->itemProvider(GlobalControlCategory::Templates,filter,context);
-        for(const auto& item:items) if(item.operation==operation) return item;
-        const auto site=PackageToolService::analyzePackageImportSite(context.documentText,context.cursorPosition,context.cursorPosition);
-        std::printf("Missing operation=%d available=%d pos=%d module=%s site=%d reason=%s items=%d\n",int(operation),context.editorAvailable,
-            context.cursorPosition,context.moduleName.toUtf8().constData(),site.valid,site.failureMessage.toUtf8().constData(),int(items.size()));
-        CommandCompletionQuery query; query.fileName=context.fileName; query.commandKind=CompletionCommandKind::Package;
-        std::printf("Package records=%d\n",int(CompletionService::getInstance()->findCommandCompletionSymbolRecords(query).size()));
-        check(false,"production provider supplies requested structured operation"); return GlobalControlItem{};
-    };
-    const QList<GlobalControlItemOperation> operations={GlobalControlItemOperation::InsertPackageImport,
-        GlobalControlItemOperation::InsertHeaderInclude,GlobalControlItemOperation::CreateHeader};
-    const QStringList filters={"import p","include existing.svh","new header readonly.svh"};
-    for(int i=0;i<3;++i) {
-        reset(); auto item=capture(operations[i],filters[i]); editor->setReadOnly(true);
-        const auto before=editor->toPlainText(); const int undo=editor->document()->availableUndoSteps();
-        const auto tabs=window.tabManager->getDocumentModel()->openDocuments().size();
-        QString reason; bool success=false;
-        if(i==0) success=editor->insertPackageImport("p",&reason);
-        if(i==1) success=editor->insertHeaderInclude("existing.svh",&reason);
-        if(i==2) success=editor->createAndInsertHeader("readonly.svh",&reason);
-        check(!success && reason.contains("read-only"),"public structured insertion rejects editor read-only state");
-        coordinator->dispatch(item);
-        check(editor->toPlainText()==before && editor->document()->availableUndoSteps()==undo
-            && window.tabManager->getDocumentModel()->openDocuments().size()==tabs
-            && !QFileInfo::exists(QDir(root).filePath("readonly.svh")),
-            "real palette and public readonly attempts leave text undo files and tabs unchanged");
-    }
-    reset(); auto stale=capture(GlobalControlItemOperation::CreateHeader,"new header stale.svh");
-    editor->insertPlainText(" "); const auto changed=editor->toPlainText(); coordinator->dispatch(stale);
-    check(editor->toPlainText()==changed && !QFileInfo::exists(QDir(root).filePath("stale.svh")),
-        "structured palette rejects changed source revision before file creation");
-    reset(); stale=capture(GlobalControlItemOperation::CreateHeader,"new header stale.svh");
-    check(window.tabManager->openFileInTab(headerPath),"different palette target opened");
-    coordinator->dispatch(stale);
-    check(!QFileInfo::exists(QDir(root).filePath("stale.svh")) && editor->toPlainText()==QString::fromUtf8(source),
-        "structured palette rejects another document instance");
-    for(int i=0;i<3;++i) {
-        reset(); auto item=capture(operations[i],i==2?"new header writable.svh":filters[i]);
-        coordinator->dispatch(item);
-        check(editor->toPlainText()!=QString::fromUtf8(source),"fresh writable structured palette insertion succeeds");
-        editor->undo(); check(editor->toPlainText()==QString::fromUtf8(source),"structured insertion is one reversible text operation");
-        editor->redo(); check(editor->toPlainText()!=QString::fromUtf8(source),"structured insertion redo restores text");
-    }
+    const auto context=coordinator->contextProvider();
+    for(const auto& filter:QStringList{"import p", "include existing.svh", "new header readonly.svh", "instantiate"})
+        check(coordinator->itemProvider(GlobalControlCategory::Templates,filter,context).isEmpty(),
+            "Templates exposes no legacy structured creation route");
+    check(!QFileInfo::exists(QDir(root).filePath("readonly.svh")),"removed palette route creates no header");
 
     WorkspaceFileOperationService files;
     // Every fault enters the same callers as the product. The probe is reached
@@ -130,7 +85,13 @@ void exercise(const QString& root) {
         const int tabs=window.tabManager->getDocumentModel()->openDocuments().size();
         bool success=false; QString reason;
         if(entry==0) { const auto result=files.apply(files.planCreateFile(root,root,name)); success=result.succeeded; reason=result.failureReason; }
-        if(entry==1) success=editor->createAndInsertHeader(name,&reason);
+        if(entry==1) {
+            IncludeNewHeaderRequest request; request.fileStem=QFileInfo(name).completeBaseName();
+            request.extension="svh"; request.currentFileName=sourcePath; request.templateName="empty";
+            request.templateBody="// header\n__CURSOR__"; request.cursorToken="__CURSOR__";
+            const auto result=window.editorCoordinator->createIncludeNewHeader(request);
+            success=result.success; reason=result.errorMessage;
+        }
         if(entry==2) success=window.ensureUserTemplateJsonFile(path,&reason);
         FileCreation::exchangeProbeForTesting(std::move(old));
         const bool expected=scenario==0 || (entry==2 && scenario==1);

@@ -406,8 +406,8 @@ void runTemplateCacheAndWriterRegression()
     service->setGlobalTemplateFilePath(global);
     service->setWorkspaceTemplateFilePath(workspace);
     UserTemplateRecord record;
-    record.id = "cache"; record.commandToken = ";;cache"; record.label = "Cache fixture";
-    record.insertText = "logic cached_a;";
+    record.id = "cache"; record.commandToken = "@cache"; record.label = "Cache fixture";
+    record.insertText = "logic cached_a;"; record.command = {{"kind", "snippet"}};
     expect("retained template writer commits valid input", service->setRecords({record}).valid);
     auto context = queryContext(temp.filePath("fixture.sv"), fixtureText());
     EditorInsertPaletteService palette;
@@ -415,29 +415,29 @@ void runTemplateCacheAndWriterRegression()
     const auto reads = service->fileReadsForTesting();
     for (int i = 0; i < 25; ++i) palette.query(GlobalControlCategory::Templates, "cache", context);
     expect("repeated template filters reuse context and file contents",
-        !first.isEmpty() && palette.contextAnalysesForTesting() == 1 && service->fileReadsForTesting() == reads);
+        !first.isEmpty() && service->fileReadsForTesting() == reads);
     const auto revision = service->catalogRevision();
     expect("external same-size template update writes",
-        writeText(global, QStringLiteral("{\"templates\":[{\"command\":\";;cache\",\"body\":\"logic cached_b;\"}]}")));
+        writeText(global, QStringLiteral("{\"templates\":[{\"command\":\"@cache\",\"body\":\"logic cached_b;\"}]}")));
     const auto updated = palette.query(GlobalControlCategory::Templates, "cache", context);
     expect("external file version invalidates catalog without reparsing unchanged document",
-        service->catalogRevision() > revision && palette.contextAnalysesForTesting() == 1
+        service->catalogRevision() > revision
         && std::any_of(updated.cbegin(), updated.cend(), [](const auto& item) { return item.insertionText == "logic cached_b;"; }));
     const auto beforeReload = service->fileReadsForTesting();
     service->reload();
     expect("manual Reload rereads the catalog", service->fileReadsForTesting() > beforeReload);
     ++context.documentRevision;
-    palette.query(GlobalControlCategory::Templates, "cache", context);
+    ++context.documentTextRevision;
     --context.cursorPosition;
-    palette.query(GlobalControlCategory::Templates, "cache", context);
-    palette.invalidate();
-    palette.query(GlobalControlCategory::Templates, "cache", context);
-    expect("revision cursor and session invalidation refresh facts", palette.contextAnalysesForTesting() == 4);
     context.fileName = temp.filePath("renamed.sv");
-    palette.query(GlobalControlCategory::Templates, "cache", context);
     ++context.documentInstance;
-    palette.query(GlobalControlCategory::Templates, "cache", context);
-    expect("file and view identity invalidate captured template facts", palette.contextAnalysesForTesting() == 6);
+    const auto refreshed = palette.query(GlobalControlCategory::Templates, "cache", context);
+    expect("template candidates capture current document text cursor and identity",
+        refreshed.size() == 1 && refreshed.first().sourceDocumentRevision == context.documentRevision
+        && refreshed.first().sourceDocumentTextRevision == context.documentTextRevision
+        && refreshed.first().sourceDocumentInstance == context.documentInstance
+        && refreshed.first().sourceFileName == context.fileName
+        && refreshed.first().sourceCursorPosition == context.cursorPosition);
     expect("workspace templates can be added externally",
         writeText(workspace, "[{\"command\":\";;workspace\",\"body\":\"logic workspace;\"}]"));
     expect("new workspace file invalidates absence cache", service->matchingTemplates(";;workspace").size() == 1);
@@ -473,6 +473,10 @@ void runTemplateInsertionVersionGuards(const QString& path)
     service->setGlobalTemplateFilePath(templates.filePath("global.json"));
     service->setWorkspaceTemplateFilePath(templates.filePath("workspace.json"));
     auto* editor = window.tabManager->getCurrentEditor();
+    UserTemplateRecord simulation;
+    simulation.id = "guard"; simulation.commandToken = simulation.label = "@guard";
+    simulation.insertText = "logic guard;"; simulation.command = {{"kind", "snippet"}};
+    expect("simulation guard fixture is retained", service->saveRecord(simulation, false).valid);
     QTextCursor cursor(editor->document()); cursor.setPosition(16); editor->setTextCursor(cursor);
     window.show();
     window.activateWindow();
@@ -486,7 +490,7 @@ void runTemplateInsertionVersionGuards(const QString& path)
         const auto items = coordinator->itemProvider(GlobalControlCategory::Templates, "", context);
         const auto found = std::find_if(items.begin(), items.end(), [](const auto& item) {
             return item.kind == GlobalControlItemKind::Template
-                && item.operation == GlobalControlItemOperation::InsertText && !item.insertionText.isEmpty();
+                && item.operation == GlobalControlItemOperation::InsertSimulationCommand && item.id == "@guard";
         });
         expect("production template provider returns an insertion", found != items.end());
         return found != items.end() ? *found : GlobalControlItem{};
@@ -507,7 +511,7 @@ void runTemplateInsertionVersionGuards(const QString& path)
     expect("document edit invalidates a captured template insertion", editor->toPlainText() == before);
     item = capture();
     coordinator->dispatch(item);
-    expect("fresh production template insertion still succeeds", editor->toPlainText() != before);
+    expect("fresh production template insertion still succeeds", waitUntil([&] { return editor->toPlainText() != before; }));
     window.tabManager->clearCrashRecoveryAfterNormalClose();
     service->setGlobalTemplateFilePath(previousGlobal);
     service->setWorkspaceTemplateFilePath(previousWorkspace);

@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.1`
+Current version: `v0.32.2`
+
+Release 0.32.2 limits Templates completion to simulation templates and fixes Enter insertion from the ordinary Templates category. Both ordinary and @-filtered entries share complete document revision and catalog guards. Built-in, user and file-local simulation templates retain input slots and undo/redo. SuiteApp SDK/Runtime remains 1.0.2; native xIPs remains 2.14.2 with the existing separate asset adapter.
 
 Release 0.32.1 moves simulation templates into ZeroSlack, with @-filtered Ctrl+Space completion, single-line results, scoped inputs and file-local commands. Package assets use explicit versioned synchronization with recoverable project-reference updates. Structured simulation events appear in the bottom panel. zeroslack-cli format shares the editor formatter and supports check/write modes. SuiteApp SDK/Runtime remains 1.0.2; native xIPs is 2.14.2 with a separate asset adapter.
 
@@ -107,7 +109,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Sessions | Tabs, layout, navigation filters and scan state restore from local application storage; a workspace `.zs` file is only a read-only legacy import source. | [manual §4.3](用户手册.md) |
 | Editing | Incremental highlighting, folding, structural navigation, formatter with ordinary and type-parameter alignment, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
 | Editing | The editor context menu is a compact icon-only ring; unavailable actions stay gray and explain why on hover. | [manual §6.1](用户手册.md) |
-| Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), templates and application commands, with horizontal category switching and `m <filter>` module lookup. | [manual §7](用户手册.md) |
+| Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), simulation templates and application commands. Templates contains built-in, user and file-local simulation snippets/calls/print presets; `@` filters the same catalog. `m <filter>` module lookup remains in Symbols. | [manual §7](用户手册.md) |
 | Command layer | `F24` is an explicit command search layer: Enter runs a fuzzy result, `F24+D` deletes the selection, and an empty tap repeats the last valid repeatable action. | [manual §8](用户手册.md) |
 | Semantics | Slang-backed symbols, diagnostics, definitions, references, relationships, hierarchy, hover and effective compile-time values from the current workspace snapshot. | [manual §10–§11](用户手册.md) |
 | Semantics | A clean `Ctrl+S` is a true no-op; changed saves classify their impact and schedule only the needed work off the UI thread, and trivia-only edits never invoke Slang. | [manual §20](用户手册.md) |
@@ -198,7 +200,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.1`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.2`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

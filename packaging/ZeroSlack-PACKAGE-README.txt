@@ -1,4 +1,9 @@
-ZeroSlack v0.32.1 Windows package
+ZeroSlack v0.32.2 Windows package
+
+Release 0.32.2 keeps only simulation templates in Templates completion and
+fixes Enter insertion from the ordinary Templates category. Both entry paths
+share document and catalog guards. Simulation slots, undo/redo and user data
+remain supported. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.1 provides ZeroSlack-owned simulation templates, @-filtered
 Ctrl+Space completion, compact results, scoped inputs and local commands.
