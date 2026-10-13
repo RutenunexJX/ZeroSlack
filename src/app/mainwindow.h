@@ -79,6 +79,7 @@ struct SettingsCenterSnapshot;
 struct ScopedSearchPanelContext;
 enum class ScopedSearchScope;
 struct ContextResource;
+class XipsHdlCommandService;
 struct LiveInsightToolContext;
 
 
@@ -121,6 +122,7 @@ private:
     std::unique_ptr<NotificationCenter> notificationCenter;
     std::unique_ptr<EditingTimeService> editingTimeService;
     std::unique_ptr<SimDockContextView> simulationWorkspace;
+    std::unique_ptr<XipsHdlCommandService> xipsCommands;
     SignalUsageHotspotPanel* hotspotPanel = nullptr;
     std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;

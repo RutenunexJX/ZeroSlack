@@ -527,6 +527,7 @@ void EditorTemplateSlotController::clear(
             EditorModeId::TemplateSlots);
     stopBlinkTimer();
     ranges.clear();
+    pendingLinkedEdits.clear();
     currentIndex = -1;
     sessionStart = -1;
     sessionEnd = -1;
@@ -676,20 +677,26 @@ void EditorTemplateSlotController::handleContentsChange(
         clear(editor, QString(), updatePresentation);
         return;
     }
-    const QString insertedText =
-        charsAdded > 0
-        ? editor->cachedDocumentSlice(position,
-                                      charsAdded)
-        : QString();
-    mirrorLinkedEdit(editor,
-                     sourcePhysicalIndex,
-                     relativeStart,
-                     relativeEnd,
-                     insertedText);
+    // Capture now, but mirror after Qt finishes its contentsChange notification.
+    // Qt suppresses nested document notifications, which would stale the syntax cache.
+    QTextCursor insertion(editor->document());
+    insertion.setPosition(position);
+    insertion.setPosition(position + charsAdded, QTextCursor::KeepAnchor);
+    const QString insertedText = insertion.selectedText().replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+    pendingLinkedEdits.append({sourcePhysicalIndex, relativeStart, relativeEnd, insertedText});
     if (updatePresentation)
         refreshPresentation(editor);
     else
         publishVisibleAnnotations(editor);
+}
+
+void EditorTemplateSlotController::flushPendingLinkedEdits(MyCodeEditor* editor)
+{
+    const auto edits = std::exchange(pendingLinkedEdits, {});
+    for (const auto& edit : edits) {
+        if (!active()) break;
+        mirrorLinkedEdit(editor, edit.source, edit.start, edit.end, edit.text);
+    }
 }
 
 void EditorTemplateSlotController::handleCursorChanged(

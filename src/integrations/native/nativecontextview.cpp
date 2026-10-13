@@ -353,6 +353,7 @@ void NativeContextView::retry()
     setProperty("nativeComponentReady", true);
     panel->show();
     synchronizeTheme();
+    emit componentReady();
 }
 
 void NativeContextView::synchronizeTheme()

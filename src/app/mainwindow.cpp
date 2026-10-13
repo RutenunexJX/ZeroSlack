@@ -5,6 +5,7 @@
 #include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
 #include "../integrations/simdock/simdockcontextview.h"
+#include "../integrations/xips/xipshdlcommandservice.h"
 #include "../simulation/simdock/ui/workbench.h"
 
 #include "actionregistry.h"
@@ -401,6 +402,7 @@ MainWindow::~MainWindow()
     // Stop chrome observers before editor teardown emits document state signals.
     workspaceSwitcher.reset();
     workspaceSessionCoordinator.reset();
+    xipsCommands.reset();
     simulationWorkspace.reset();
 
     // TabManager owns SharedDocuments whose teardown rebinds every attached
@@ -1574,6 +1576,7 @@ void MainWindow::setupGlobalControl()
                 tabManager ? tabManager->getCurrentEditor() : nullptr) {
             editor->exitInteractionModes(
                 EditorModeExitReason::ExternalControl);
+            if (xipsCommands) xipsCommands->prepare();
         }
     });
     globalControlCoordinator->setContextProvider([this]() {
@@ -1610,31 +1613,51 @@ void MainWindow::setupGlobalControl()
         return context;
     });
     globalControlCoordinator->setItemProvider(
-        [insertPalette](GlobalControlCategory category,
+        [this, insertPalette](GlobalControlCategory category,
            const QString& text,
            const GlobalControlQueryContext& context) {
-            return insertPalette->query(
-                category, text, context);
+            auto result = insertPalette->query(category, text, context);
+            if (category == GlobalControlCategory::Symbols && xipsCommands)
+                result = xipsCommands->items(text, context) + result;
+            return result;
         });
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
+            if (item.operation == GlobalControlItemOperation::UseXipsCommand) {
+                if (xipsCommands) xipsCommands->activate(item);
+                return;
+            }
             if (item.kind == GlobalControlItemKind::Symbol
                 || item.kind == GlobalControlItemKind::Template) {
                 MyCodeEditor* editor =
                     tabManager ? tabManager->getCurrentEditor() : nullptr;
                 QString failureReason;
                 bool inserted = false;
-                if (editor && item.kind == GlobalControlItemKind::Template) {
+                if (!item.disabledReason.isEmpty()) { postActivityMessage(item.disabledReason, 5000); return; }
+                if (editor && (item.kind == GlobalControlItemKind::Template || item.requiresCurrentSemantic)) {
                     const auto* shared = tabManager->sharedDocumentForEditor(editor);
                     if (editor->document()->revision() != item.sourceDocumentRevision
                         || editor->textCursor().position() != item.sourceCursorPosition
                         || !shared || shared->instanceSerial() != item.sourceDocumentInstance
-                        || UserTemplateService::getInstance()->catalogRevision() != item.sourceTemplateCatalogRevision) {
+                        || !EditorFileIdentity::same(shared->fileName(), item.sourceFileName)
+                        || (item.kind == GlobalControlItemKind::Template
+                            && UserTemplateService::getInstance()->catalogRevision() != item.sourceTemplateCatalogRevision)) {
                         postActivityMessage(QStringLiteral("The document, cursor, or template catalog changed. Reopen the insertion palette."), 5000);
                         return;
                     }
                 }
                 if (editor) {
+                    if (item.requiresCurrentSemantic) {
+                        auto* semantic = SemanticIndex::getInstance();
+                        const auto snapshot = semantic->snapshotToken();
+                        if (!snapshot.isValid() || snapshot.snapshot != item.sourceSemanticSnapshot.snapshot
+                            || snapshot.revision != item.sourceSemanticSnapshot.revision
+                            || semantic->getCachedFileContent(item.sourceFileName) != editor->toPlainText()
+                            || !editor->tbAssistDependenciesCurrent()) {
+                            postActivityMessage(QStringLiteral("Semantic analysis changed or is pending. Reopen the insertion palette when analysis completes."), 5000);
+                            return;
+                        }
+                    }
                     switch (item.operation) {
                     case GlobalControlItemOperation::InsertText:
                         if (item.replacementStart >= 0) {
@@ -1676,6 +1699,8 @@ void MainWindow::setupGlobalControl()
                             item.parameters.value(
                                 QStringLiteral("fileName")).toString(),
                             &failureReason);
+                        break;
+                    case GlobalControlItemOperation::UseXipsCommand:
                         break;
                     }
                 }
@@ -1744,6 +1769,8 @@ void MainWindow::setupGlobalControl()
                 }
             }
         });
+    if (xipsCommands) connect(xipsCommands.get(), &XipsHdlCommandService::catalogChanged,
+        globalControlCoordinator.get(), &GlobalControlCoordinator::refreshVisibleItems);
     globalControlCoordinator->install();
 }
 
@@ -4632,6 +4659,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     QString componentError;
     if ((simulationWorkspace && !simulationWorkspace->canClose(&componentError))
+        || (xipsCommands && !xipsCommands->canClose(&componentError))
         || (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError))) {
         event->ignore();
         postActivityMessage(componentError, 6000);

@@ -1586,9 +1586,6 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
 
-    Q_UNUSED(position)
-    Q_UNUSED(charsRemoved)
-    Q_UNUSED(charsAdded)
     const DocumentChange change = syntax.lastChange();
     if (!change.changesText() && change.oldLength == change.newLength)
         return;
@@ -1743,9 +1740,9 @@ void MyCodeEditorState::handleDocumentContentsChange(
 
     templateSlots.markPresentationPending();
     handleTemplateSlotContentsChange(editor,
-                                     change.position,
-                                     change.removedLength,
-                                     change.insertedText.size(),
+                                     position,
+                                     charsRemoved,
+                                     charsAdded,
                                      false);
     remapGhostAnnotations(editor, change);
     finishDocumentChangePhase(
@@ -2843,6 +2840,8 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
     lifecycleTrace("transaction.end-enter");
     if (synchronousEditTransactionDepth <= 0)
         return;
+    if (synchronousEditTransactionDepth == 1)
+        templateSlots.flushPendingLinkedEdits(editor);
     --synchronousEditTransactionDepth;
     if (synchronousEditTransactionDepth != 0)
         return;

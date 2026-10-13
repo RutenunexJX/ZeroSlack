@@ -2,6 +2,7 @@
 #define GLOBALCONTROLSERVICE_H
 
 #include "completiontypes.h"
+#include "semanticindex.h"
 
 #include <QString>
 #include <QStringList>
@@ -25,7 +26,8 @@ enum class GlobalControlItemOperation {
     InsertText,
     InsertPackageImport,
     InsertHeaderInclude,
-    CreateHeader
+    CreateHeader,
+    UseXipsCommand
 };
 
 struct GlobalControlQueryContext {
@@ -48,6 +50,9 @@ struct GlobalControlQueryContext {
 };
 
 struct GlobalControlItem {
+    QString disabledReason;
+    bool requiresCurrentSemantic = false;
+    SemanticSnapshotToken sourceSemanticSnapshot;
     GlobalControlItemKind kind = GlobalControlItemKind::Command;
     QString id;
     QString title;

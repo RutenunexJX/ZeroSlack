@@ -753,6 +753,10 @@ target_sources(zeroslack_core PRIVATE
     src/integrations/simdock/simdockcontextprovider.h
     src/integrations/xips/xipscontextprovider.cpp
     src/integrations/xips/xipscontextprovider.h
+    src/integrations/xips/xipshdlcommandservice.cpp
+    src/integrations/xips/xipshdlcommandservice.h
+    src/integrations/xips/xipshdlcallbuilder.cpp
+    src/integrations/xips/xipshdlcallbuilder.h
     resources/zeroslack_xips.qrc
     src/commands/exposesignaltotopservice.cpp
     src/commands/exposesignaltotoppreview.cpp

@@ -161,3 +161,8 @@ void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)
     if (actionHandler)
         actionHandler(item);
 }
+
+void GlobalControlCoordinator::refreshVisibleItems()
+{
+    if (panel && panel->isVisible()) refresh(panel->queryText());
+}

@@ -3,50 +3,104 @@
 #include "semanticindex.h"
 #include "editorfileidentity.h"
 #include "effectivevalueservice.h"
+#include <algorithm>
 
 namespace simdock {
 bool completeTestbenchTypes(Module& module, SemanticIndex& index, const QString& file,
                            const QString& content, QString* error)
 {
     error->clear();
+    module.limitations = {QStringLiteral("Current Slang facts have not been validated for this DUT.")};
     if (index.getCachedFileContent(file) != content) {
         *error = QStringLiteral("Wait for semantic analysis of the current DUT document before creating its TB."); return false;
     }
-    const auto records = index.getSymbolRecords(file);
+    const auto definitions = index.getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Module);
+    QList<SemanticSymbolRecord> matches;
+    for (const auto& record : definitions)
+        if (record.name == module.name) matches << record;
+    if (matches.size() != 1 || !EditorFileIdentity::same(matches.first().location.fileName, file)) {
+        *error = QStringLiteral("No unambiguous current Slang module is available."); return false;
+    }
+    auto records = index.getSymbolRecordsByOwner(module.name);
+    if (!matches.first().presentation.moduleDefinitionAvailable
+        || !matches.first().presentation.tbGenerationIssue.isEmpty()) {
+        *error = matches.first().presentation.tbGenerationIssue.isEmpty()
+            ? QStringLiteral("The current Slang module definition is not ready.") : matches.first().presentation.tbGenerationIssue;
+        return false;
+    }
+    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
+        return a.location.position < b.location.position;
+    });
     EffectiveValueService localValues(&index);
     auto* values = &index == SemanticIndex::getInstance() ? EffectiveValueService::getInstance() : &localValues;
     QStringList issues;
-    for (auto& port : module.ports) {
-        QList<SemanticSymbolRecord> matches;
-        for (const auto& record : records)
-            if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Port
-                && record.owner.name == module.name && record.name == port.name) matches << record;
-        if (matches.size() != 1) { issues << QStringLiteral("Port %1 has no unambiguous Slang type.").arg(port.name); continue; }
-        const auto& facts = matches.first().presentation.defaultInfo;
-        EffectiveValueQuery query; query.symbol = matches.first(); query.documentText = content;
+    module.ports.clear(); module.parameters.clear(); module.imports.clear(); module.limitations.clear();
+    // External type spellings are qualified by Slang; retain direct imports as source context.
+    for (const auto& record : records)
+        if (record.collectorKind == SymbolTaxonomy::CollectorKind::PackageImport)
+            module.imports << QStringLiteral("import %1::%2;").arg(record.name, record.type.rawTypeText);
+    module.imports.removeDuplicates();
+    for (const auto& record : records) {
+        const bool portRecord = record.declarationKind == SymbolTaxonomy::DeclarationKind::Port;
+        const bool parameterRecord = record.declarationKind == SymbolTaxonomy::DeclarationKind::Parameter
+            || record.declarationKind == SymbolTaxonomy::DeclarationKind::Localparam;
+        if ((!portRecord && !parameterRecord) || record.usageRole != SymbolTaxonomy::SymbolUsageRole::Declaration) continue;
+        const auto& facts = record.presentation.defaultInfo;
+        EffectiveValueQuery query; query.symbol = record; query.documentText = content;
         if (!values->resolve(query).current()) {
-            issues << QStringLiteral("Port %1 has pending or invalid semantic facts.").arg(port.name); continue;
+            issues << QStringLiteral("%1 has pending or invalid semantic facts.").arg(record.name); continue;
         }
         if (!facts.available || !facts.fixedSize || !facts.integral || facts.unpackedArray || facts.interfaceType) {
-            issues << QStringLiteral("Port %1 needs a manual declaration: %2").arg(port.name, facts.resolvedTypeText); continue;
+            issues << QStringLiteral("%1 needs a manual declaration: %2").arg(record.name, facts.resolvedTypeText); continue;
         }
-        if (port.direction != QStringLiteral("input")) continue;
-        if (!facts.enumValues.isEmpty()) {
+        if (parameterRecord) {
+            if (!facts.enumValues.isEmpty()) { issues << QStringLiteral("Enum parameter %1 requires a manual TB.").arg(record.name); continue; }
+            if (facts.valueText.isEmpty()) { issues << QStringLiteral("No constant default for %1.").arg(record.name); continue; }
+            module.parameters.append({record.name, QStringLiteral("logic %1[%2:0]")
+                .arg(facts.signedIntegral ? QStringLiteral("signed ") : QString()).arg(facts.bitWidth - 1),
+                facts.valueText, record.declarationKind == SymbolTaxonomy::DeclarationKind::Localparam});
+            continue;
+        }
+        Port port; port.name = record.name; port.bitWidth = facts.bitWidth;
+        switch (record.collectorKind) {
+        case SymbolTaxonomy::CollectorKind::PortInput: port.direction = QStringLiteral("input"); break;
+        case SymbolTaxonomy::CollectorKind::PortOutput: port.direction = QStringLiteral("output"); break;
+        case SymbolTaxonomy::CollectorKind::PortInout: port.direction = QStringLiteral("inout"); break;
+        default: issues << QStringLiteral("Port %1 requires a manual direction/type contract.").arg(port.name); continue;
+        }
+        const auto& declared = record.presentation.defaultDeclaredTypeFacts;
+        if (!declared.complete) {
+            issues << QStringLiteral("Port %1 requires a manual aggregate or unresolved declaration.").arg(port.name); continue;
+        }
+        port.type = declared.externalDeclarationBaseText;
+        port.namedType = !declared.typedefChain.isEmpty();
+        if (port.type.isEmpty()) {
+            issues << QStringLiteral("Port %1 uses a local type that is not visible in a new TB.").arg(port.name); continue;
+        }
+        for (const auto& dimension : declared.dimensions) if (dimension.emitInDeclaration) {
+            QString left, right;
+            for (const auto& node : declared.constants.evaluationNodes) if (node.evaluated) {
+                if (node.id == dimension.leftEvaluationNodeId) left = node.resultValueText;
+                if (node.id == dimension.rightEvaluationNodeId) right = node.resultValueText;
+            }
+            if (left.isEmpty() || right.isEmpty()) issues << QStringLiteral("Port %1 has an unresolved dimension.").arg(port.name);
+            else port.type += QStringLiteral(" [%1:%2]").arg(left, right);
+        }
+        if (port.direction == QStringLiteral("input") && !facts.enumValues.isEmpty()) {
             for (const auto& value : facts.enumValues) if (value.available && !value.expressionText.isEmpty()) {
                 port.initialExpression = value.expressionText; break;
             }
             if (port.initialExpression.isEmpty()) issues << QStringLiteral("No legal enum initializer is available for %1.").arg(port.name);
-        } else if (facts.structuredLeavesAvailable) {
-            issues << QStringLiteral("Port %1 is an aggregate; specify its field initializers manually.").arg(port.name);
         }
+        module.ports << port;
     }
     *error = issues.join(QLatin1Char('\n'));
+    module.limitations = issues;
     return issues.isEmpty();
 }
 bool isTimingInput(const Port& port)
 {
-    return port.direction == QStringLiteral("input") && !port.namedType
-        && !port.type.contains(QLatin1Char('['));
+    return port.direction == QStringLiteral("input") && !port.namedType && port.bitWidth == 1;
 }
 
 TbOptions suggestedTbOptions(const Module& module)
@@ -89,7 +143,7 @@ QString generateTestbench(const Module& m, const TbOptions& o, qint64 durationNs
     if (!m.parameters.isEmpty()) s += QLatin1Char('\n');
     for (const auto& p : m.ports) {
         QString type = p.type;
-        if (p.direction == QStringLiteral("inout")) type.replace(QStringLiteral("logic"), QStringLiteral("wire"));
+        if (p.direction == QStringLiteral("inout")) type.prepend(QStringLiteral("wire "));
         s += QStringLiteral("    %1 %2;\n").arg(type, p.name);
     }
     s += QStringLiteral("\n    %1").arg(m.name);

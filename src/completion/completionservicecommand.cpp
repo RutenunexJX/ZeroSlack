@@ -128,12 +128,13 @@ QList<CodeTemplateItem> matchingCodeTemplateItems(
     const QString& commandToken,
     const QString& seedText,
     const QString& documentText,
-    int cursorPosition)
+    int cursorPosition,
+    const QString& fileName)
 {
     const CodeTemplateSignalContext signalContext =
         commandToken == QStringLiteral(";;af")
         ? CodeTemplateContextAnalyzer::analyze(documentText,
-                                               cursorPosition)
+                                               cursorPosition, fileName)
         : CodeTemplateSignalContext();
     QList<CodeTemplateItem> result =
         CodeTemplateService::getInstance()->matchingTemplates(
@@ -431,7 +432,7 @@ CommandModeCompletionState CompletionService::commandModeCompletionState(
             state.descriptor.label,
             state.completionPrefix,
             query.documentText,
-            query.cursorPosition);
+            query.cursorPosition, query.fileName);
         state.showCompletions = true;
         return state;
     }
@@ -535,6 +536,27 @@ CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
             moduleInstantiationTemplateForRecord(semanticIndex(), record);
         item.defaultValue = instantiation.text;
         item.templateSlots = instantiation.slotMetadata;
+        if (!item.templateSlots.isEmpty()) {
+            item.selectionStart = item.templateSlots.first().start;
+            item.selectionLength = item.templateSlots.first().length;
+        }
+    }
+    if ((record.declarationKind == SymbolTaxonomy::DeclarationKind::Task
+         || record.declarationKind == SymbolTaxonomy::DeclarationKind::Function)
+        && record.presentation.callableSignatureAvailable) {
+        item.defaultValue = record.name + QLatin1Char('(');
+        item.templateSlots.clear();
+        for (const auto& argument : record.presentation.callableArguments) {
+            if (!item.templateSlots.isEmpty()) item.defaultValue += QStringLiteral(", ");
+            item.defaultValue += QLatin1Char('.') + argument.name + QLatin1Char('(');
+            const QString value = argument.hasDefault ? QString() : argument.name;
+            item.templateSlots.append({argument.name, int(item.defaultValue.size()), int(value.size()),
+                                       int(item.templateSlots.size()) + 1, true});
+            item.defaultValue += value + QLatin1Char(')');
+        }
+        const bool task = record.declarationKind == SymbolTaxonomy::DeclarationKind::Task;
+        item.defaultValue += task ? QStringLiteral(");") : QStringLiteral(")");
+        item.description = task ? QStringLiteral("task call") : QStringLiteral("function call → %1").arg(record.presentation.callableReturnType);
         if (!item.templateSlots.isEmpty()) {
             item.selectionStart = item.templateSlots.first().start;
             item.selectionLength = item.templateSlots.first().length;

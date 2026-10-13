@@ -132,6 +132,10 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     files.removeAll(p.tbFile);
     files << p.tbFile;
     QStringList dirs{QDir::fromNativeSeparators(root)};
+    for (const auto& dir : p.includeDirectories) {
+        const auto absolute = QDir::fromNativeSeparators(QDir(root).filePath(dir));
+        if (!dirs.contains(absolute)) dirs << absolute;
+    }
     for (const auto& f : files) {
         const QString dir = QDir::fromNativeSeparators(QFileInfo(QDir(root).filePath(f)).absolutePath());
         if (!dirs.contains(dir)) dirs << dir;
@@ -156,27 +160,10 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     s += QStringLiteral("if {[runStatus] eq \"nodesign\"} {\n"
         "    error \"Questa could not load the testbench. Check the compiler and elaboration errors above.\"\n}\n");
     s += QStringLiteral("onbreak {resume}\nview wave\ncatch {delete wave *}\n");
-    if (p.waveScope == QStringLiteral("all")) s += QStringLiteral("add wave -r /*\nlog -r /*\n");
-    else if (p.waveScope == QStringLiteral("selected")) {
-        for (const auto &signal : p.waveSignals) {
-            const auto path = tclWord(QStringLiteral("/%1/%2").arg(p.tbName, signal));
-            s += QStringLiteral("add wave %1\nlog %1\n").arg(path);
-        }
-    } else {
-        const auto path = tclWord(QStringLiteral("/%1/*").arg(p.tbName));
-        s += QStringLiteral("add wave %1\nlog %1\n").arg(path);
-    }
+    s += QStringLiteral("add wave -r /*\nlog -r /*\n");
     if (legacyChecks(p))
         s += QStringLiteral("log -r %1\n").arg(tclWord(QStringLiteral("/%1/__simdock_scoreboard/*").arg(p.tbName)));
-    QString colorSignals = QStringLiteral("[find signals -r /*]");
-    if (p.waveScope == QStringLiteral("interface"))
-        colorSignals = QStringLiteral("[find signals %1]").arg(tclWord(QStringLiteral("/%1/*").arg(p.tbName)));
-    else if (p.waveScope == QStringLiteral("selected")) {
-        colorSignals = QStringLiteral("[list");
-        for (const auto &signal : p.waveSignals) colorSignals += QLatin1Char(' ') + tclWord(QStringLiteral("/%1/%2").arg(p.tbName, signal));
-        colorSignals += QLatin1Char(']');
-    }
-    s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, colorSignals);
+    s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("[find signals -r /*]"));
     s += QStringLiteral("::simdock::state running\nrun %1 ns\nwave zoom full\n").arg(p.durationNs);
     if (legacyChecks(p))
         s += scoreboardResultScript(p.tbName);
@@ -365,19 +352,12 @@ PreparedRun prepareRun(const QString& executable, const QString& root, const Pro
     result.error = validateInputs(root, p, &fingerprints, cancelled, overrides);
     if (!result.error.isEmpty()) return result;
     result.inputFingerprints = fingerprints;
-    if (p.waveScope == QStringLiteral("selected") && p.waveSignals.isEmpty()) {
-        result.error = QStringLiteral("Choose at least one waveform signal, or use Interface / All."); return result;
-    }
-    const QRegularExpression identifier(QStringLiteral("^[A-Za-z_][A-Za-z0-9_$]*$"));
-    for (const auto &signal : p.waveSignals) if (!identifier.match(signal).hasMatch()) {
-        result.error = QStringLiteral("Invalid waveform signal: %1").arg(signal); return result;
-    }
     // Reuse the entire unchanged compilation, including user TB compilation
     // units. Every run still unloads and elaborates a fresh simulation.
     QByteArray key;
     QDataStream stream(&key, QIODevice::WriteOnly);
     stream.setVersion(QDataStream::Qt_6_0);
-    stream << QStringLiteral("simdock.questa-design/v3") << root << p.sources << p.tbFile << p.tbName;
+    stream << QStringLiteral("simdock.questa-design/v4") << root << p.sources << p.includeDirectories << p.tbFile << p.tbName;
     stream << QStringLiteral("vlog:-work work;-sv by suffix;literal-incdir=root,ordered-source-dirs,tb-dir")
            << QFileInfo(p.tbFile).path() << QProcessEnvironment::systemEnvironment().toStringList();
     stream << fingerprints;

@@ -3,9 +3,11 @@
 #include "zeroslackexport.h"
 #include <QObject>
 #include <QPointer>
+#include <functional>
 
 class TabManager;
 class WorkspaceManager;
+class XipsHdlCommandService;
 
 class ZEROSLACK_API XipsHostBridge final : public QObject
 {
@@ -15,6 +17,7 @@ class ZEROSLACK_API XipsHostBridge final : public QObject
     Q_INVOKABLE QString destinationError(const QString &path);
     Q_INVOKABLE QString exportCompleted(const QVariantMap &receipt);
     Q_INVOKABLE QStringList collectionSources();
+    std::function<QString(const QVariantMap&)> adoptHdlReceipt;
 
   private:
     QPointer<TabManager> tabs;
@@ -24,7 +27,7 @@ class ZEROSLACK_API XipsHostBridge final : public QObject
 class ZEROSLACK_API XipsContextProvider final : public IContextContentProvider
 {
   public:
-    XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces);
+    XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces, XipsHdlCommandService* commands = nullptr);
     QString providerId() const override;
     QString displayName() const override;
     QString iconKey() const override;
@@ -40,4 +43,5 @@ class ZEROSLACK_API XipsContextProvider final : public IContextContentProvider
   private:
     QPointer<TabManager> tabs;
     QPointer<WorkspaceManager> workspaces;
+    QPointer<XipsHdlCommandService> commands;
 };

@@ -301,19 +301,17 @@ private slots:
         }
         tabs->setCurrentIndex(2);
         QVERIFY(!f.panel()->findChild<QWidget*>("workbenchSection"));
-        auto* waves = child<QAbstractButton>(f.panel(), "waveOptionsToggle"); QVERIFY(!waves->isChecked()); waves->click();
-        auto* scope = child<QComboBox>(f.panel(), "waveScope"); QCOMPARE(scope->count(), 3);
-        QVERIFY(!child<QWidget>(f.panel(), "chooseWaveSignals")->isVisible());
-        scope->setCurrentIndex(scope->findData("selected")); QVERIFY(child<QWidget>(f.panel(), "chooseWaveSignals")->isVisible());
-        bool opened = false;
-        QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); opened = true; dialog->reject(); });
-        click(f.panel(), "chooseWaveSignals"); QVERIFY(opened);
-        scope->setCurrentIndex(scope->findData("all")); QVERIFY(!child<QWidget>(f.panel(), "chooseWaveSignals")->isVisible()); waves->click();
+        QVERIFY(!f.panel()->findChild<QWidget*>("waveOptionsToggle"));
+        QVERIFY(!f.panel()->findChild<QWidget*>("waveScope"));
+        QVERIFY(!f.panel()->findChild<QWidget*>("chooseWaveSignals"));
         QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); QCOMPARE(dialog->objectName(), QString("settingsDialog")); dialog->reject(); });
         settings->click();
         auto* menu = child<QToolButton>(f.panel(), "simulationActions")->menu(); QVERIFY(menu);
         auto* action = child<QAction>(f.panel(), "createTb"); QVERIFY(menu->actions().contains(action));
-        QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); dialog->reject(); }); action->trigger();
+        action->trigger();
+        auto* popup = f.window->findChild<QWidget*>(QStringLiteral("newTbEditorPopup"));
+        QVERIFY(popup && popup->isVisible());
+        child<QAbstractButton>(popup, "tbCreateCancel")->click();
         capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-existing");
 
     }

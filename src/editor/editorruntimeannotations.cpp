@@ -711,6 +711,10 @@ void MyCodeEditorState::setSemanticDecorations(
 
 void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
 {
+    if (!TbInputAssistService::interactiveEnabled() && tbAssist) {
+        tbAssist->invalidate();
+        tbAssist.reset();
+    }
     ++ghostQueryGeneration;
     if (ghostQueryCancellation)
         ghostQueryCancellation->store(true);
@@ -732,7 +736,8 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
     query.documentText = editor->cachedDocumentText();
     query.instanceContext = hierarchyInstance;
     query.documentRevision = semanticDocumentRevision();
-    query.tbDependenciesCurrent = editor->tbAssistDependenciesCurrent();
+    if (TbInputAssistService::interactiveEnabled())
+        query.tbDependenciesCurrent = editor->tbAssistDependenciesCurrent();
     ++hotPathMetrics.fullGhostQueries;
 
     const std::uint64_t generation = ghostQueryGeneration;
@@ -771,8 +776,10 @@ void MyCodeEditorState::refreshGhostAnnotations(MyCodeEditor* editor)
                 && semanticDocumentRevision() == query.documentRevision
                 && snapshot == SemanticIndex::getInstance()->snapshot()) {
                 setGhostAnnotations(editor, report.annotations);
-                if (!tbAssist) tbAssist = std::make_unique<TbInputAssistController>(editor);
-                tbAssist->publish(report.tbInputs);
+                if (TbInputAssistService::interactiveEnabled()) {
+                    if (!tbAssist) tbAssist = std::make_unique<TbInputAssistController>(editor);
+                    tbAssist->publish(report.tbInputs);
+                }
             }
             if (!cancellation->load() && generation == ghostQueryGeneration
                 && identity.current() == query.fileName

@@ -16,10 +16,12 @@ class CodeTemplateContextAnalyzer
 public:
     // Borrowed only for this synchronous call; no syntax/text is retained.
     static CodeTemplateSignalContext analyze(const TSDocument& document,
-                                              int cursorPosition);
+                                              int cursorPosition,
+                                              const QString& fileName = {});
     static CodeTemplateSignalContext analyze(
         const QString& documentText,
-        int cursorPosition);
+        int cursorPosition,
+        const QString& fileName = {});
 };
 
 #endif // CODETEMPLATECONTEXTANALYZER_H

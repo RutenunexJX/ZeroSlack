@@ -12,6 +12,9 @@ class QObject;
 // setContext(QString library, QString workspace), collectPaths(QStringList),
 // isCatalogBusy()->bool, revealAsset(QString), refresh(), saveState()->QVariantMap,
 // restoreState(QVariantMap).
+// Optional capability hdl-commands-v1 adds hdlCommandCatalog()->QVariantMap,
+// useHdlCommand(QVariantMap)->QVariantMap and openHdlCommands(), plus
+// hdlCommandCatalogChanged(QString) and hdlCommandUseFinished(QVariantMap).
 // Optional host invokables: destinationError(QString)->QString,
 // exportCompleted(QVariantMap)->QString (empty on success),
 // collectionSources()->QStringList (saved source files, empty on cancellation).

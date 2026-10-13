@@ -1,4 +1,5 @@
 #include "xipscontextprovider.h"
+#include "xipshdlcommandservice.h"
 #include "tabmanager.h"
 #include "uicontrols.h"
 #include "workspacemanager.h"
@@ -105,7 +106,7 @@ QString XipsHostBridge::exportCompleted(const QVariantMap &receipt)
     entry.remove(QStringLiteral("schema"));
     entry.insert(QStringLiteral("path"), QDir(root).relativeFilePath(path));
     auto assets = document.value(QStringLiteral("assets")).toArray();
-    assets.append(entry);
+    if (!assets.contains(entry)) assets.append(entry);
     document.insert(QStringLiteral("assets"), assets);
     QSaveFile file(target);
     file.setDirectWriteFallback(false);
@@ -116,6 +117,10 @@ QString XipsHostBridge::exportCompleted(const QVariantMap &receipt)
         return tr("Files were exported; their origin could not be saved.");
     if (workspaces && workspaces->getWorkspacePath() == root)
         workspaces->refreshWorkspaceFiles();
+    if (receipt.contains(QStringLiteral("hdlCommand")) && adoptHdlReceipt) {
+        const auto error = adoptHdlReceipt(receipt);
+        if (!error.isEmpty()) return error;
+    }
     if (tabs && workspaces && workspaces->getWorkspacePath() == root && QFileInfo(path).isFile() &&
         QStringList{QStringLiteral("v"), QStringLiteral("sv"), QStringLiteral("svh"),
                     QStringLiteral("vh")}
@@ -123,8 +128,8 @@ QString XipsHostBridge::exportCompleted(const QVariantMap &receipt)
         tabs->openFileInTab(path);
     return {};
 }
-XipsContextProvider::XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces)
-    : tabs(tabs), workspaces(workspaces)
+XipsContextProvider::XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces, XipsHdlCommandService* commands)
+    : tabs(tabs), workspaces(workspaces), commands(commands)
 {
 
 }
@@ -153,6 +158,7 @@ ContextResource XipsContextProvider::activationResource(const QString &workspace
 }
 QWidget *XipsContextProvider::createView(const ContextResource &resource, QWidget *parent)
 {
+    if (commands) return commands->view(parent);
     auto *host = new NativeContextView(parent);
     host->setHostBridge(new XipsHostBridge(tabs, workspaces, host));
     if (workspaces) {

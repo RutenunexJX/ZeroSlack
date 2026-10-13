@@ -27,6 +27,7 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
+#include "../src/integrations/xips/xipshdlcommandservice.h"
 
 namespace {
 int checks = 0;
@@ -248,6 +249,11 @@ void runCatalogAndPanelRegression(const QString& path)
     expect("main window owns the live semantic search provider", provider != nullptr);
     if (!provider)
         return;
+    const auto containsName = [&](const QString& name) {
+        const auto candidates = provider->query(name);
+        return std::any_of(candidates.cbegin(), candidates.cend(),
+                           [&](const auto& result) { return result.title == name; });
+    };
     const QString source = fixtureText();
     installSource(path, source);
     ProjectSnapshot project;
@@ -289,12 +295,35 @@ void runCatalogAndPanelRegression(const QString& path)
                && waitUntil([&] { return provider->semanticCatalogReady()
                    && !provider->query("added_later").isEmpty(); }));
 
+    // Publish compatibility fixtures before asynchronous file analysis can
+    // supersede these intentionally synthetic snapshots of the same file.
+    index->clearSemanticState();
+    SlangManager slang;
+    const QString nativeA = QStringLiteral("module native_first; endmodule\n");
+    index->updateSymbolRecordsForFile(
+        path, slang.extractSymbolRecords(path, nativeA), nativeA);
+    notifyFile();
+    expect("compatibility writes publish refreshable records",
+           waitUntil([&] { return provider->semanticCatalogReady()
+               && containsName("native_first"); }));
+    const QString nativeB = QStringLiteral("module native_second; endmodule\n");
+    index->updateSymbolRecordsForFile(
+        path, slang.extractSymbolRecords(path, nativeB), nativeB);
+    notifyFile();
+    const bool replaced = waitUntil([&] { return provider->semanticCatalogReady()
+               && containsName("native_second")
+               && !containsName("native_first"); });
+    if (!replaced) qWarning() << "Compatibility publication" << index->snapshotRevision()
+        << window.temporaryEditorCatalogSnapshotRevision << index->getCachedFileContent(path)
+        << provider->query("native_second").size() << provider->query("native_first").size();
+    expect("compatibility writes advance the publication and replace old records", replaced);
+
     window.analysisScheduler->symbolAnalyzer->analyzeFileContent(
         path, QStringLiteral("module single_file_new; endmodule\n"));
     expect("standalone file completion refreshes new published data",
            waitUntil([&] { return provider->semanticCatalogReady()
                && !provider->query("single_file_new").isEmpty()
-               && provider->query("added_later").isEmpty(); }));
+               && provider->query("native_second").isEmpty(); }));
 
     // Exercise the actual Ctrl+Space coordinator, panel and Enter dispatch.
     expect("editor file opens", writeText(path, source)
@@ -336,24 +365,6 @@ void runCatalogAndPanelRegression(const QString& path)
         }
         editor->document()->setModified(false);
     }
-    index->clearSemanticState();
-    SlangManager slang;
-    const QString nativeA = QStringLiteral("module native_first; endmodule\n");
-    index->updateSymbolRecordsForFile(
-        path, slang.extractSymbolRecords(path, nativeA), nativeA);
-    notifyFile();
-    expect("compatibility writes publish refreshable records",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && !provider->query("native_first").isEmpty(); }));
-    const QString nativeB = QStringLiteral("module native_second; endmodule\n");
-    index->updateSymbolRecordsForFile(
-        path, slang.extractSymbolRecords(path, nativeB), nativeB);
-    notifyFile();
-    expect("compatibility writes advance the publication and replace old records",
-           waitUntil([&] { return provider->semanticCatalogReady()
-               && !provider->query("native_second").isEmpty()
-               && provider->query("native_first").isEmpty(); }));
-
     QTemporaryDir workspaces;
     QDir root(workspaces.path());
     root.mkpath("a");
@@ -361,18 +372,16 @@ void runCatalogAndPanelRegression(const QString& path)
     expect("small workspace fixtures are created",
            writeText(root.filePath("a/a.sv"), "module catalog_a; endmodule\n")
                && writeText(root.filePath("b/b.sv"), "module catalog_b; endmodule\n"));
-    const auto containsName = [&](const QString& name) {
-        const auto candidates = provider->query(name);
-        return std::any_of(candidates.cbegin(), candidates.cend(),
-                           [&](const auto& result) { return result.title == name; });
-    };
     auto* sessions = window.findChild<WorkspaceSessionCoordinator*>();
     const auto ready = [&](const QString& name) {
         return waitUntil([&] {
             return !window.analysisScheduler->isSemanticAnalysisActive()
+                && window.xipsCommands->canClose(nullptr)
                 && containsName(name);
         });
     };
+    expect("preloaded xIPs catalog settles before workspace transition",
+           waitUntil([&] { return window.xipsCommands->canClose(nullptr); }));
     expect("opening workspace A refreshes its catalog",
            sessions && sessions->openWorkspace(root.filePath("a")) && ready("catalog_a"));
     expect("switching to workspace B replaces A's catalog",

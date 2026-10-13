@@ -250,7 +250,7 @@ private slots:
         QVERIFY2(simdock::completeTestbenchTypes(module, index, file, design, &error), qPrintable(error));
         const auto generated = simdock::generateTestbench(module, simdock::suggestedTbOptions(module), 1000, &error);
         QVERIFY2(error.isEmpty(), qPrintable(error)); QVERIFY(generated.contains("mode = drive_pkg::IDLE"));
-        QVERIFY(generated.contains("W = drive_pkg::WIDTH")); QVERIFY(!generated.contains("observed =")); QVERIFY(generated.contains("assign pin = 'z"));
+        QVERIFY(generated.contains("W = 16")); QVERIFY(!generated.contains("observed =")); QVERIFY(generated.contains("assign pin = 'z"));
     }
     void semanticEnumScopes_data() {
         QTest::addColumn<QString>("source");
@@ -313,8 +313,7 @@ private slots:
         index.setSnapshot(analyze({{file, classSource}}));
         auto module = simdock::analyzeSource(classSource.toUtf8(), "class.sv").modules.first();
         QString error;
-        QVERIFY2(simdock::completeTestbenchTypes(module, index, file, classSource, &error), qPrintable(error));
-        simdock::generateTestbench(module, simdock::suggestedTbOptions(module), 1000, &error);
+        QVERIFY(!simdock::completeTestbenchTypes(module, index, file, classSource, &error));
         QVERIFY(!error.isEmpty()); // Class-typed new TB generation remains outside the supported contract.
     }
     void enumScopeWindow() {

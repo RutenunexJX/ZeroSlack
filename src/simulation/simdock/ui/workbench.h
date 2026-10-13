@@ -43,6 +43,9 @@ public:
     bool createDemo(const TbOptions& options, QString* error);
     void setEditorTbCreator(std::function<void(const QString&, const QString&)> creator) { m_editorTbCreator = std::move(creator); }
     void adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName);
+    QString activeProjectId() const;
+    QStringList activeCompilationInputs() const;
+    QString adoptHdlInputs(const QString& expectedProject, const QStringList& files, const QStringList& includeDirectories);
     QString workspace() const { return m_root; }
     void setSimulator(const QString& executable);
     Q_INVOKABLE QString setContext(const QString& workspace);
@@ -89,7 +92,6 @@ private:
     void chooseTb();
     void createTb();
     void startSimulation();
-    void chooseWaveSignals();
     void cancelPreparation();
     void moveSource(int offset);
     void appendLog(const QString& text);
@@ -116,8 +118,6 @@ private:
     QListView *m_projectList, *m_fileList;
     QStandardItemModel *m_projectModel, *m_fileModel;
     ElaComboBox *m_dut, *m_units;
-    ElaComboBox* m_waveScope;
-    ElaPushButton* m_waveSignals;
     ElaLineEdit *m_tbFile, *m_tbTop;
     ElaSpinBox* m_duration;
     ElaPlainTextEdit* m_log;

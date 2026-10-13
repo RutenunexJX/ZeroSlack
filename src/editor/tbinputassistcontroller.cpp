@@ -27,6 +27,7 @@ QLabel* label(const QString& text, QWidget* parent) {
 }
 }
 TbInputAssistController::TbInputAssistController(MyCodeEditor* e) : QObject(e), editor(e) {
+    if (!TbInputAssistService::interactiveEnabled()) return;
     editor->installEventFilter(this);
     connect(editor, &QPlainTextEdit::textChanged, this, &TbInputAssistController::invalidate);
     refreshTimer.setSingleShot(true); refreshTimer.setInterval(180);
@@ -36,6 +37,7 @@ TbInputAssistController::TbInputAssistController(MyCodeEditor* e) : QObject(e), 
     connect(&refreshTimer, &QTimer::timeout, editor, &MyCodeEditor::refreshSemanticPresentation);
 }
 void TbInputAssistController::publish(const QList<TbInputAssist>& inputs) {
+    if (!TbInputAssistService::interactiveEnabled()) { invalidate(); return; }
     if (document != editor->document() || file != editor->documentFileName()
         || revision != editor->semanticDocumentRevision()
         || token.snapshot != SemanticIndex::getInstance()->snapshot()
@@ -62,7 +64,7 @@ void TbInputAssistController::publish(const QList<TbInputAssist>& inputs) {
 }
 void TbInputAssistController::invalidate() {
     closePopup(); items.clear(); regions.clear(); token = {};
-    if (document != editor->document() || file != editor->documentFileName()) { hasInputContext = false; refreshTimer.stop(); }
+    if (!TbInputAssistService::interactiveEnabled() || document != editor->document() || file != editor->documentFileName()) { hasInputContext = false; refreshTimer.stop(); }
     editor->setTbAssistAnnotations({});
 }
 void TbInputAssistController::closePopup() {
@@ -86,7 +88,7 @@ bool TbInputAssistController::eventFilter(QObject* watched, QEvent* event) {
     return false;
 }
 bool TbInputAssistController::valid(const TbInputAssist& input) const {
-    return document && editor->document() == document && file == editor->documentFileName()
+    return TbInputAssistService::interactiveEnabled() && document && editor->document() == document && file == editor->documentFileName()
         && revision == editor->semanticDocumentRevision() && token.isValid()
         && token.snapshot == SemanticIndex::getInstance()->snapshot()
         && editor->tbAssistDependenciesCurrent()

@@ -18,6 +18,7 @@ private:
     struct CapturedFacts {
         GlobalControlQueryContext context;
         quint64 catalogRevision = 0;
+        SemanticSnapshotToken semanticSnapshot;
         QList<CodeTemplateItem> templates;
         PackageImportSite importSite;
     };

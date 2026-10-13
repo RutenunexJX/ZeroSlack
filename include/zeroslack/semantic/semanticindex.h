@@ -246,6 +246,7 @@ struct SemanticTypedefResolutionStep {
 };
 
 struct SemanticDeclaredTypeFacts {
+    QString externalDeclarationBaseText;
     QString rootTypeId;
     QString canonicalTypeId;
     QString declarationShapeId;
@@ -270,7 +271,22 @@ enum class SemanticEffectiveScopeKind {
     CompilationUnit
 };
 
+struct SemanticCallableArgument {
+    QString name;
+    bool hasDefault = false;
+    QString typeText;
+    bool input = true;
+};
+
 struct SemanticSymbolPresentation {
+    bool moduleDefinitionAvailable = false;
+    QString tbGenerationIssue;
+    bool callableSignatureAvailable = false;
+    QList<SemanticCallableArgument> callableArguments;
+    QString callableQualifiedName;
+    QString callableReturnType;
+    bool callableReturnsVoid = false;
+    bool directModuleVariable = false;
     QString declarationText;
     QString expressionText;
     QString enumTypeName;

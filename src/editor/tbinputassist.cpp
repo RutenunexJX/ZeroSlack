@@ -7,10 +7,12 @@
 #include <QRegularExpression>
 #include <QSet>
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstring>
 
 namespace {
+std::atomic<quint64> analysisCount{0};
 bool is(TSNode n, const char* type) { return !ts_node_is_null(n) && std::strcmp(ts_node_type(n), type) == 0; }
 int start(TSNode n) { return int(ts_node_start_byte(n) / 2); }
 int end(TSNode n) { return int(ts_node_end_byte(n) / 2); }
@@ -241,9 +243,11 @@ TbEngineeringPreview TbInputAssistService::preview(const TbInputAssist& input, c
     return result;
 }
 
+quint64 TbInputAssistService::analysisCountForTesting() { return analysisCount.load(); }
 QList<TbInputAssist> TbInputAssistService::analyze(const QString& file, const QString& source,
     SemanticIndex& index, const std::function<bool()>& cancelled,
     const EffectiveValueService* values, quint64 documentRevision) {
+    ++analysisCount;
     QList<TbInputAssist> result;
     if (source.size() > 4 * 1024 * 1024 || (cancelled && cancelled())) return result;
     TSDocument syntax;

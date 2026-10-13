@@ -25,6 +25,8 @@ public:
     void retire();
     QWidget *component() const { return panel; }
     bool isReady() const { return property("nativeComponentReady").toBool(); }
+signals:
+    void componentReady();
 
 public slots:
     void retry();

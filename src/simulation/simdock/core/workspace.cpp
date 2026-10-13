@@ -136,6 +136,7 @@ QJsonObject projectJson(const Project& p)
     return {{QStringLiteral("schema"), QStringLiteral("simdock.project/v1")},
         {QStringLiteral("id"), p.id}, {QStringLiteral("name"), p.name},
         {QStringLiteral("sources"), QJsonArray::fromStringList(p.sources)},
+        {QStringLiteral("includeDirectories"), QJsonArray::fromStringList(p.includeDirectories)},
         {QStringLiteral("dutFile"), p.dutFile}, {QStringLiteral("dutName"), p.dutName},
         {QStringLiteral("tbFile"), p.tbFile}, {QStringLiteral("tbName"), p.tbName},
         {QStringLiteral("durationNs"), double(p.durationNs)},
@@ -163,6 +164,7 @@ QString validateProject(const QString& root, const Project& p)
     if (QJsonDocument(projectJson(p)).toJson().size() > 8 * 1024 * 1024)
         return QStringLiteral("The project exceeds the 8 MiB size limit.");
     QStringList paths = p.sources;
+    paths += p.includeDirectories;
     paths << p.dutFile << p.tbFile << p.alternateInput.tbFile;
     for (const auto& path : paths) {
         if (path.isEmpty()) continue;
@@ -193,6 +195,11 @@ QString validateInputs(const QString& root, const Project& p, QMap<QString, QByt
     pending.removeAll(p.tbFile);
     pending << p.tbFile;
     QStringList includeDirs{root};
+    for (const auto& dir : p.includeDirectories) {
+        const auto absolute = QDir(root).filePath(dir);
+        if (!QFileInfo(absolute).isDir()) return QStringLiteral("Include directory is missing: %1").arg(dir);
+        if (!includeDirs.contains(absolute)) includeDirs << absolute;
+    }
     for (const auto& path : pending) {
         const auto dir = QFileInfo(QDir(root).filePath(path)).absolutePath();
         if (!includeDirs.contains(dir)) includeDirs << dir;

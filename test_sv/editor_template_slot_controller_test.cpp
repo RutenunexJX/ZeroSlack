@@ -605,6 +605,24 @@ int main(int argc, char* argv[])
         semanticIndex->setSnapshot(previousSnapshot);
     }
 
+    {
+        MyCodeEditor editor;
+        const QString source = QStringLiteral("type(payload) first; type(payload) second; payload = first;\n");
+        editor.setPlainText(source);
+        CodeTemplateSlotList linkedSlots;
+        for (int at = source.indexOf(QStringLiteral("payload")); at >= 0;
+             at = source.indexOf(QStringLiteral("payload"), at + 7))
+            linkedSlots.append({QStringLiteral("signal"), at, 7, 1, false});
+        editor.startTemplateSlotMode(0, source.size(), linkedSlots);
+        for (const QChar letter : QStringLiteral("alternate")) {
+            QKeyEvent key(QEvent::KeyPress, letter.toUpper().unicode(), Qt::NoModifier, QString(letter));
+            QCoreApplication::sendEvent(&editor, &key);
+        }
+        QString expected = source; expected.replace(QStringLiteral("payload"), QStringLiteral("alternate"));
+        expect("continuous typing preserves all linked ranges beyond their original length", editor.toPlainText() == expected);
+        expect("linked typing preserves the document snapshot", editor.cachedDocumentText() == expected);
+    }
+
     std::printf("%d checks, %d failed\n",
                 checks,
                 failures);

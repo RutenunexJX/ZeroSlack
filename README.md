@@ -1,8 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.31.31`
+Current version: `v0.32.0`
 
-Release 0.31.31 adds TB creation and input assistance directly to the editor. New TB creates an editable SystemVerilog framework; enum initializers use verified scope-qualified members, and explicit linear or reciprocal rules display engineering values beside source configuration literals. Edits retain native undo/redo and reject stale or unsupported inputs. Projects use readable names, Files/Design/Build inputs use icons, and owned simulation results are cleaned when replaced or when their session closes. Graphical stimulus editing and its private waveform component have been removed; existing TB and legacy input data are preserved. Questa waveform inspection remains available. SuiteApp SDK/Runtime remains 1.0.2 and native xIPs remains 2.14.2.
+Release 0.32.0 adds xIPs-owned HDL commands to the default Ctrl+Space search. Reset, ramp and random behaviors, plus user task/function commands, export versioned package sources and insert Slang-checked calls with dependency order and undo/redo. Enum switching and engineering-value overlays are temporarily disabled, including their dedicated analysis and refresh. New TB still creates an editable framework with valid initial values. Simulation records all signal hierarchies; the waveform scope controls are removed and transient results still clean up automatically. SuiteApp SDK/Runtime remains 1.0.2; native xIPs is 2.15.0.
 
 Release 0.31.27 hardens document saves, workspace sessions and delayed source navigation against stale inputs. File actions preserve the confirmed source generation across Save All, reject incomplete directory enumeration, and report partial disk commits explicitly. Suite context identity, analysis handoff and template bounds retain the accepted R1–R6 protections. SuiteApp SDK remains 1.0.1; its separately documented multi-instance unregister limitation remains open.
 
@@ -194,7 +194,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.31.28`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.0`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

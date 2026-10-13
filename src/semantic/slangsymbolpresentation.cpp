@@ -15,6 +15,7 @@
 #include <slang/ast/symbols/MemberSymbols.h>
 #include <slang/ast/symbols/ParameterSymbols.h>
 #include <slang/ast/symbols/PortSymbols.h>
+#include <slang/ast/symbols/SubroutineSymbols.h>
 #include <slang/ast/symbols/VariableSymbols.h>
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
@@ -352,6 +353,8 @@ void mergePortSourcePresentation(
 
 QChar identityKind(const SemanticSymbolRecord& record)
 {
+    if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Task
+        || record.declarationKind == SymbolTaxonomy::DeclarationKind::Function) return QLatin1Char('s');
     using CollectorKind = SymbolTaxonomy::CollectorKind;
     switch (record.collectorKind) {
     case CollectorKind::Parameter:
@@ -384,6 +387,8 @@ QChar identityKind(const SemanticSymbolRecord& record)
 QChar identityKind(const Symbol& symbol)
 {
     switch (symbol.kind) {
+    case SymbolKind::Subroutine:
+        return QLatin1Char('s');
     case SymbolKind::Parameter:
         return QLatin1Char('p');
     case SymbolKind::EnumValue:
@@ -1344,6 +1349,15 @@ SemanticDeclaredTypeFacts declaredTypeFacts(
                 QString::fromStdString(
                     current->toString());
         }
+    }
+
+    if (rootAlias) {
+        const auto* scope = rootAlias->getParentScope();
+        if (scope && scope->asSymbol().kind == SymbolKind::Package)
+            result.externalDeclarationBaseText = QString::fromStdString(std::string(scope->asSymbol().name))
+                + QStringLiteral("::") + QString::fromStdString(std::string(rootAlias->name));
+    } else if (current && current->isIntegral() && current->kind != SymbolKind::EnumType) {
+        result.externalDeclarationBaseText = result.declarationBaseText;
     }
 
     QStringList declarationShape{
@@ -2472,6 +2486,23 @@ void gatherScopePresentations(
             // their instance trees. Static-scope collection must not publish
             // their members as compilation-unit defaults.
         },
+        [&](auto& nestedVisitor, const SubroutineSymbol& subroutine) {
+            if (cancelled()) return;
+            storeInfo(subroutine, {}, nullptr, [&](SemanticSymbolPresentation* presentation) {
+                presentation->callableSignatureAvailable = true;
+                presentation->callableQualifiedName = QString::fromStdString(subroutine.getLexicalPath());
+                presentation->callableReturnType = QString::fromStdString(subroutine.getReturnType().toString());
+                presentation->callableReturnsVoid = subroutine.getReturnType().isVoid();
+                presentation->callableArguments.clear();
+                for (const auto* argument : subroutine.getArguments())
+                    presentation->callableArguments.append({
+                        QString::fromStdString(std::string(argument->name)),
+                        argument->getDefaultValue() != nullptr,
+                        QString::fromStdString(argument->getType().toString()),
+                        argument->direction == ArgumentDirection::In});
+            }, false);
+            nestedVisitor.visitDefault(subroutine);
+        },
         [&](auto& nestedVisitor, const ParameterSymbol& parameter) {
             if (cancelled())
                 return;
@@ -2590,7 +2621,10 @@ void gatherScopePresentations(
             storeInfo(variable,
                       inputTypeInfo(variable.getType(), variable.getParentScope()),
                       &typeFacts,
-                      [](SemanticSymbolPresentation*) {},
+                      [&](SemanticSymbolPresentation* presentation) {
+                          const auto* scope = variable.getParentScope();
+                          presentation->directModuleVariable = scope && scope->asSymbol().kind == SymbolKind::InstanceBody;
+                      },
                       true);
             nestedVisitor.visitDefault(variable);
         },
@@ -2929,10 +2963,28 @@ void slang_symbols::populateSymbolPresentations(
                                  isCancelled);
     }
 
+    QSet<QString> parseErrorFiles;
+    for (const auto& diagnostic : compilation.getParseDiagnostics()) if (diagnostic.isError()) {
+        const auto position = slang_symbols::detail::qTextDocumentSourcePosition(sourceManager, diagnostic.location);
+        parseErrorFiles.insert(normalizedFileName(position.fileName));
+    }
     QList<SemanticSymbolRecord> updatedRecords = records;
     for (SemanticSymbolRecord& record : updatedRecords) {
         if (cancelled())
             return;
+        if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module) {
+            for (const auto* definition : definitions) {
+                if (QString::fromStdString(std::string(definition->name)) != record.name) continue;
+                record.presentation.moduleDefinitionAvailable = true;
+                if (parseErrorFiles.contains(normalizedFileName(record.location.fileName)))
+                    record.presentation.tbGenerationIssue = QStringLiteral("Resolve Slang parser / preprocessor errors before creating the TB.");
+                if (!definitionHasDefaults(*definition))
+                    record.presentation.tbGenerationIssue = QStringLiteral("DUT parameters require defaults before TB generation.");
+                for (const auto& parameter : definition->parameters)
+                    if (parameter.isTypeParam)
+                        record.presentation.tbGenerationIssue = QStringLiteral("Type parameters require a manually authored TB.");
+            }
+        }
         const QChar kind = identityKind(record);
         if (kind == QLatin1Char('?'))
             continue;

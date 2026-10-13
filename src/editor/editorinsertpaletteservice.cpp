@@ -160,6 +160,17 @@ QList<GlobalControlItem> symbolItems(
             item.replacementStart = context.replacementStart;
             item.replacementLength = context.replacementLength;
             item.sourceDocumentRevision = context.documentRevision;
+            item.sourceDocumentInstance = context.documentInstance;
+            item.sourceFileName = context.fileName;
+            item.sourceCursorPosition = context.cursorPosition;
+            if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Task
+                || record.declarationKind == SymbolTaxonomy::DeclarationKind::Function) {
+                item.requiresCurrentSemantic = true;
+                item.sourceSemanticSnapshot = SemanticIndex::getInstance()->snapshotToken();
+                if (SemanticIndex::getInstance()->getCachedFileContent(context.fileName) != context.documentText
+                    || !record.presentation.callableSignatureAvailable)
+                    item.disabledReason = QStringLiteral("等待当前 task/function 的 Slang 语义分析完成。");
+            }
             result.append(item);
             if (result.size() >= 120)
                 return;
@@ -474,15 +485,19 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
         return symbolItems(text, context);
     case GlobalControlCategory::Templates: {
         const auto catalogRevision = UserTemplateService::getInstance()->catalogRevision();
+        const auto snapshot = SemanticIndex::getInstance()->snapshotToken();
         const bool sameContext = captured && captured->context.fileName == context.fileName
             && captured->context.documentInstance == context.documentInstance
             && captured->context.documentRevision == context.documentRevision
             && captured->context.cursorPosition == context.cursorPosition
             && captured->context.editorAvailable == context.editorAvailable
-            && captured->context.documentText == context.documentText;
+            && captured->context.documentText == context.documentText
+            && captured->semanticSnapshot.snapshot == snapshot.snapshot
+            && captured->semanticSnapshot.revision == snapshot.revision;
         if (!sameContext) {
             captured.emplace();
             captured->context = context;
+            captured->semanticSnapshot = snapshot;
             ++contextAnalyses;
             // One request-scoped original syntax input, shared by both facts.
             // PackageToolService still parses its different probe text.
@@ -490,7 +505,7 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
             if (context.editorAvailable)
                 originalDocument.setText(context.documentText);
             const auto signalContext = context.editorAvailable
-                ? CodeTemplateContextAnalyzer::analyze(originalDocument, context.cursorPosition)
+                ? CodeTemplateContextAnalyzer::analyze(originalDocument, context.cursorPosition, context.fileName)
                 : CodeTemplateSignalContext{};
             for (const auto& item : CodeTemplateService::getInstance()->catalog())
                 captured->templates.append(CodeTemplateService::getInstance()->matchingTemplates(
@@ -509,6 +524,7 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
             item.sourceFileName = context.fileName;
             item.sourceCursorPosition = context.cursorPosition;
             item.sourceTemplateCatalogRevision = catalogRevision;
+            if (item.requiresCurrentSemantic) item.sourceSemanticSnapshot = snapshot;
         }
         return result;
     }

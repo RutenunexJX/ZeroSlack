@@ -37,7 +37,7 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     categoryTabs = UiControls::tabBar(this);
     categoryTabs->setObjectName(QStringLiteral("globalControlCategoryTabs"));
     categoryTabs->setExpanding(true);
-    categoryTabs->addTab(QStringLiteral("Symbols"));
+    categoryTabs->addTab(QStringLiteral("All"));
     categoryTabs->addTab(QStringLiteral("Templates"));
     categoryTabs->addTab(QStringLiteral("Commands"));
     layout->addWidget(categoryTabs);
@@ -76,15 +76,17 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
     resultList->clear();
     for (int i = 0; i < currentItems.size(); ++i) {
         const GlobalControlItem& item = currentItems.at(i);
-        const QString label = item.subtitle.isEmpty()
+        const QString label = !item.disabledReason.isEmpty() ? QStringLiteral("%1\n%2").arg(item.title, item.disabledReason) : item.subtitle.isEmpty()
             ? item.title
             : QStringLiteral("%1\n%2").arg(item.title, item.subtitle);
         auto* listItem = new QListWidgetItem(label, resultList);
         listItem->setData(Qt::UserRole, i);
+        listItem->setToolTip(item.disabledReason.isEmpty() ? item.insertionText : item.disabledReason);
+        if (!item.disabledReason.isEmpty()) listItem->setFlags(listItem->flags() & ~Qt::ItemIsEnabled);
         resultList->addItem(listItem);
     }
-    if (resultList->count() > 0)
-        resultList->setCurrentRow(0);
+    for (int i = 0; i < currentItems.size(); ++i)
+        if (currentItems.at(i).disabledReason.isEmpty()) { resultList->setCurrentRow(i); break; }
 }
 
 void GlobalControlPanel::setCategory(GlobalControlCategory value)
@@ -218,6 +220,7 @@ void GlobalControlPanel::activateCurrentItem()
     if (!CandidatePopupNavigation::canActivate(resultList) || row < 0 || row >= currentItems.size())
         return;
     const GlobalControlItem selected = currentItems.at(row);
+    if (!selected.disabledReason.isEmpty()) return;
     if (selected.kind == GlobalControlItemKind::Domain && searchEdit) {
         searchEdit->setText(selected.id);
         searchEdit->setCursorPosition(searchEdit->text().size());
@@ -250,7 +253,7 @@ void GlobalControlPanel::updatePlaceholder()
         return;
     switch (category()) {
     case GlobalControlCategory::Symbols:
-        searchEdit->setPlaceholderText(QStringLiteral("Filter visible symbols"));
+        searchEdit->setPlaceholderText(QStringLiteral("Search symbols and xIPs commands"));
         break;
     case GlobalControlCategory::Templates:
         searchEdit->setPlaceholderText(QStringLiteral("Filter templates"));

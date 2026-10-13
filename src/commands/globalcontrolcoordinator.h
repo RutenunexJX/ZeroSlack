@@ -35,6 +35,7 @@ public:
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
+    void refreshVisibleItems();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

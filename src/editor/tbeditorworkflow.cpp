@@ -5,13 +5,13 @@
 #include "editorfileidentity.h"
 #include "semanticindex.h"
 #include "uicontrols.h"
-#include "../simulation/simdock/core/analyzer.h"
 #include "../simulation/simdock/core/testbench.h"
 #include "../simulation/simdock/core/workspace.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QFileInfo>
+#include <QFile>
 #include <QFormLayout>
 #include <QFrame>
 #include <QHBoxLayout>
@@ -91,7 +91,8 @@ void TbEditorWorkflow::create(const QString& requestedFile, const QString& reque
             QStringList{module.location.fileName, module.name});
     auto currentText = [this](const QString& file) {
         for (const auto* e : tabs->openEditors()) if (EditorFileIdentity::same(e->documentFileName(), file)) return e->cachedDocumentText();
-        return SemanticIndex::getInstance()->getCachedFileContent(file);
+        QFile source(file);
+        return source.open(QIODevice::ReadOnly) ? QString::fromUtf8(source.readAll()) : QString();
     };
     const auto options = [=] { auto o = simdock::suggestedTbOptions(state->module); o.name = name->text().trimmed(); o.clock = clock->currentData().toString(); o.reset = reset->currentData().toString(); o.clockPeriodNs = period->value(); o.resetActiveLow = activeLow->isChecked(); return o; };
     const auto refresh = [=] {
@@ -121,10 +122,10 @@ void TbEditorWorkflow::create(const QString& requestedFile, const QString& reque
         clock->clear(); reset->clear(); clock->addItem(QStringLiteral("None"), QString()); reset->addItem(QStringLiteral("None"), QString());
         if (identity.size() == 2) {
             state->file = identity[0]; state->content = currentText(state->file); state->token = index->snapshotToken();
-            if (state->content.size() <= 4 * 1024 * 1024) {
-                const auto source = simdock::analyzeSource(state->content.toUtf8(), QDir(root).relativeFilePath(state->file));
-                for (const auto& m : source.modules) if (m.name == identity[1]) state->module = m;
-            }
+            state->module.name = identity[1];
+            state->module.file = QDir(root).relativeFilePath(state->file);
+            QString semanticIssue;
+            simdock::completeTestbenchTypes(state->module, *index, state->file, state->content, &semanticIssue);
             const auto suggested = simdock::suggestedTbOptions(state->module);
             name->setText(suggested.name); path->setText(QStringLiteral("sim/%1.sv").arg(suggested.name));
             for (const auto& p : state->module.ports) if (simdock::isTimingInput(p)) { clock->addItem(p.name, p.name); reset->addItem(p.name, p.name); }

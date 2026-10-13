@@ -32,6 +32,9 @@ struct TbEngineeringPreview {
 
 class ZEROSLACK_API TbInputAssistService {
 public:
+    // Product-level pause; shared semantic facts and stored rules remain intact.
+    static constexpr bool interactiveEnabled() { return false; }
+    static quint64 analysisCountForTesting();
     static QList<TbInputAssist> analyze(
         const QString& file, const QString& text, SemanticIndex& index,
         const std::function<bool()>& cancelled = {},

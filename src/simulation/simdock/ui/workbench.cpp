@@ -1,4 +1,5 @@
 #include "workbench.h"
+#include "semanticindex.h"
 #include "applicationthememanager.h"
 #include "../core/dependencies.h"
 #include "../core/analyzer.h"
@@ -180,26 +181,6 @@ void Workbench::buildUi()
     timing->addWidget(m_duration, 1);
     timing->addWidget(m_units);
     form->addWidget(m_durationInput);
-    auto* waveToggle = Ui::disclosure(QStringLiteral("Waveform options"), this);
-    waveToggle->setObjectName(QStringLiteral("waveOptionsToggle"));
-    waveToggle->setChecked(false);
-    form->addWidget(waveToggle);
-    auto* waveOptions = new QWidget(this);
-    auto* waves = new QVBoxLayout(waveOptions);
-    waves->setContentsMargins(0, 0, 0, 0);
-    waves->addWidget(Ui::label(QStringLiteral("Waveform scope"), this, Ui::Role::Section));
-    m_waveScope = new ElaComboBox(this);
-    m_waveScope->setObjectName(QStringLiteral("waveScope"));
-    m_waveScope->addItem(QStringLiteral("Interface (TB top)"), QStringLiteral("interface"));
-    m_waveScope->addItem(QStringLiteral("Selected signals"), QStringLiteral("selected"));
-    m_waveScope->addItem(QStringLiteral("All signals"), QStringLiteral("all"));
-    m_waveSignals = Ui::button(QStringLiteral("Choose signals"), this);
-    m_waveSignals->setObjectName(QStringLiteral("chooseWaveSignals"));
-    waves->addWidget(m_waveScope);
-    waves->addWidget(m_waveSignals);
-    form->addWidget(waveOptions);
-    waveOptions->hide();
-    connect(waveToggle, &QToolButton::toggled, waveOptions, &QWidget::setVisible);
     form->addStretch();
     scroll->setWidget(m_projectPanel);
     outer->addWidget(scroll, 1);
@@ -343,12 +324,6 @@ void Workbench::buildUi()
     connect(m_openTb, &QPushButton::clicked, this, [this] {
         if (const auto* p = current(); p && !p->tbFile.isEmpty()) emit openFileRequested(QDir(m_root).filePath(p->tbFile));
     });
-    connect(m_waveScope, &QComboBox::currentIndexChanged, this, [this] {
-        if (m_loading || !current()) return;
-        current()->waveScope = m_waveScope->currentData().toString();
-        saveCurrent(); updateControls();
-    });
-    connect(m_waveSignals, &QPushButton::clicked, this, &Workbench::chooseWaveSignals);
     connect(m_new, &QPushButton::clicked, this, [this] {
         QPointer<Workbench> owner(this);
         const auto name = askProjectName(this);
@@ -533,6 +508,48 @@ Project* Workbench::current()
 {
     return m_projectIndex >= 0 && m_projectIndex < m_projects.size() ? &m_projects[m_projectIndex] : nullptr;
 }
+QString Workbench::activeProjectId() const
+{
+    return m_projectIndex >= 0 && m_projectIndex < m_projects.size() ? m_projects[m_projectIndex].id : QString();
+}
+QStringList Workbench::activeCompilationInputs() const
+{
+    if (m_projectIndex < 0 || m_projectIndex >= m_projects.size()) return {};
+    const auto& project = m_projects[m_projectIndex];
+    QStringList inputs;
+    for (const auto& file : project.sources) inputs << QDir(m_root).filePath(file);
+    if (!project.tbFile.isEmpty()) inputs << QDir(m_root).filePath(project.tbFile);
+    inputs.removeDuplicates();
+    return inputs;
+}
+QString Workbench::adoptHdlInputs(const QString& expectedProject, const QStringList& files, const QStringList& includeDirectories)
+{
+    if (!current() || activeProjectId() != expectedProject)
+        return QStringLiteral("Select the same project in Build inputs before using this command.");
+    if (m_session.busy() || m_preparing) return QStringLiteral("Stop the simulation before changing Build inputs.");
+    auto updated = *current();
+    QStringList ordered;
+    for (const auto& file : files) {
+        if (!insideWorkspace(m_root, file) || !QFileInfo(file).isFile())
+            return QStringLiteral("The exported compilation input is missing or outside the workspace: %1").arg(file);
+        const auto relative = QDir(m_root).relativeFilePath(file);
+        if (!ordered.contains(relative)) ordered << relative;
+    }
+    for (const auto& file : updated.sources) if (!ordered.contains(file)) ordered << file;
+    updated.sources = ordered;
+    for (const auto& dir : includeDirectories) {
+        if (!insideWorkspace(m_root, dir) || !QFileInfo(dir).isDir())
+            return QStringLiteral("The exported include directory is unavailable: %1").arg(dir);
+        const auto relative = QDir(m_root).relativeFilePath(dir);
+        if (!updated.includeDirectories.contains(relative)) updated.includeDirectories << relative;
+    }
+    QString error;
+    if (!saveProject(m_root, updated, &error)) return error;
+    *current() = updated;
+    refreshFiles();
+    emit stateChanged();
+    return {};
+}
 const Module* Workbench::currentModule() const
 {
     const auto identity = m_dut->currentData().toStringList();
@@ -563,7 +580,6 @@ void Workbench::selectProject(int row)
     m_projectList->setCurrentIndex(m_projectModel->index(row, 0));
     const auto* p = current();
     m_tbTop->setText(p ? p->tbName : QString());
-    m_waveScope->setCurrentIndex(qMax(0, m_waveScope->findData(p ? p->waveScope : QStringLiteral("interface"))));
     const qint64 duration = p ? p->durationNs : 1000;
     const int unit = duration % 1000000 == 0 ? 2 : (duration % 1000 == 0 ? 1 : 0);
     m_units->setCurrentIndex(unit);
@@ -784,8 +800,6 @@ void Workbench::updateControls()
     m_rename->setEnabled(p && !busy && !m_scanning);
     m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
     m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !busy && !m_scanning);
-    m_waveSignals->setVisible(p && p->waveScope == QStringLiteral("selected"));
-    m_waveSignals->setEnabled(p && p->waveScope == QStringLiteral("selected") && !busy);
     m_stop->setEnabled(m_preparing || m_session.alive());
     m_stop->setText(m_preparing ? QStringLiteral("Cancel preparation") : busy ? QStringLiteral("Stop simulation") : QStringLiteral("Close session"));
 }
@@ -819,7 +833,13 @@ bool Workbench::createDemo(const TbOptions& options, QString* error)
     const auto* module = currentModule();
     if (!p || !module) { *error = QStringLiteral("Select a DUT first."); return false; }
     const auto duration = p->durationNs;
-    const QString text = generateTestbench(*module, options, duration, error);
+    auto semanticModule = *module;
+    auto* semantic = SemanticIndex::getInstance();
+    const auto file = QDir(m_root).filePath(module->file);
+    QFile source(file);
+    if (!source.open(QIODevice::ReadOnly)) { *error = source.errorString(); return false; }
+    if (!completeTestbenchTypes(semanticModule, *semantic, file, QString::fromUtf8(source.readAll()), error)) return false;
+    const QString text = generateTestbench(semanticModule, options, duration, error);
     if (!error->isEmpty()) return false;
     const QString path = projectTbPath(*p, options.name);
     if (!writeNewTb(m_root, path, text, error)) return false;
@@ -838,8 +858,17 @@ void Workbench::createTb()
         m_editorTbCreator(QDir(m_root).filePath(currentModule()->file), currentModule()->name);
         return;
     }
+    auto module = *currentModule();
+    auto* semantic = SemanticIndex::getInstance();
+    const auto file = QDir(m_root).filePath(module.file);
+    QString semanticError;
+    QFile source(file);
+    if (!source.open(QIODevice::ReadOnly)) { appendLog(source.errorString()); return; }
+    if (!completeTestbenchTypes(module, *semantic, file, QString::fromUtf8(source.readAll()), &semanticError)) {
+        appendLog(semanticError + QLatin1Char('\n')); return;
+    }
     QPointer<Workbench> owner(this);
-    QPointer<TestbenchDialog> dialog = new TestbenchDialog(*currentModule(), current()->durationNs, this);
+    QPointer<TestbenchDialog> dialog = new TestbenchDialog(module, current()->durationNs, this);
     const auto result = dialog->exec();
     if (!owner || !dialog) return;
     const auto options = dialog->options();
@@ -895,45 +924,6 @@ void Workbench::startSimulation()
     watcher->setFuture(QtConcurrent::run(&m_scanPool, [root, executable, project, cancelled = m_preparationCancelled] {
         return prepareRun(executable, root, project, cancelled.get());
     }));
-}
-void Workbench::chooseWaveSignals()
-{
-    if (!current() || m_preparing || m_session.busy()) return;
-    QPointer<Workbench> owner(this);
-    QPointer<ElaDialog> dialog = new ElaDialog(this);
-    dialog->setWindowTitle(QStringLiteral("Choose waveform signals"));
-    dialog->setObjectName(QStringLiteral("waveSignalsDialog"));
-    dialog->resize(420, 500);
-    auto* layout = new QVBoxLayout(dialog);
-    auto* list = new ElaListView(dialog);
-    auto* model = new QStandardItemModel(list);
-    list->setModel(model);
-    QStringList names = current()->waveSignals;
-    if (const auto* module = currentModule()) for (const auto& port : module->ports)
-        if (!names.contains(port.name)) names << port.name;
-    for (const auto& name : names) {
-        auto* item = new QStandardItem(name);
-        item->setCheckable(true); item->setEditable(false);
-        item->setCheckState(current()->waveSignals.contains(name) ? Qt::Checked : Qt::Unchecked);
-        model->appendRow(item);
-    }
-    layout->addWidget(list);
-    auto* buttons = new QHBoxLayout;
-    auto* cancel = Ui::button(QStringLiteral("Cancel"), dialog);
-    auto* save = Ui::button(QStringLiteral("Apply"), dialog, true);
-    buttons->addStretch(); buttons->addWidget(cancel); buttons->addWidget(save); layout->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, dialog, &QDialog::reject);
-    connect(save, &QPushButton::clicked, dialog, &QDialog::accept);
-    Ui::constrainDialog(dialog);
-    const auto result = dialog->exec();
-    if (!owner || !dialog) return;
-    if (result == QDialog::Accepted && current()) {
-        QStringList selected;
-        for (int i = 0; i < model->rowCount(); ++i)
-            if (model->item(i)->checkState() == Qt::Checked) selected << model->item(i)->text();
-        current()->waveSignals = selected; saveCurrent();
-    }
-    delete dialog;
 }
 void Workbench::moveSource(int offset)
 {
@@ -1026,12 +1016,11 @@ QVariantMap Workbench::saveState() const
     }
     return {{QStringLiteral("version"), 1}, {QStringLiteral("workspace"), m_root},
         {QStringLiteral("projectId"), m_projectIndex >= 0 && m_projectIndex < m_projects.size() ? m_projects[m_projectIndex].id : QString()},
-        {QStringLiteral("preferences"), preferences},
-        {QStringLiteral("layout/waveOptionsExpanded"), findChild<QToolButton*>(QStringLiteral("waveOptionsToggle"))->isChecked()}};
+        {QStringLiteral("preferences"), preferences}};
 }
-void Workbench::restoreLayout(const QVariantMap& state)
+void Workbench::restoreLayout(const QVariantMap&)
 {
-    findChild<QToolButton*>(QStringLiteral("waveOptionsToggle"))->setChecked(state.value(QStringLiteral("layout/waveOptionsExpanded"), false).toBool());
+    // Old waveform disclosure state has no corresponding control.
 }
 QString Workbench::restoreState(const QVariantMap& state)
 {
@@ -1065,11 +1054,7 @@ QString Workbench::restoreState(const QVariantMap& state)
 }
 void Workbench::savePreferences()
 {
-    const auto state = saveState();
-    for (const auto& key : {"layout/waveOptionsExpanded"}) {
-        const auto name = QString::fromLatin1(key);
-        setPreference(name, state.value(name));
-    }
+    // Preferences are persisted by their individual setters.
 }
 void Workbench::shutdown()
 {

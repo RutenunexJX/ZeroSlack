@@ -8,6 +8,8 @@
 #include "../../src/simulation/simdock/ui/dialogs.h"
 #include "../../src/simulation/simdock/core/analyzer.h"
 #include "../../src/simulation/simdock/core/testbench.h"
+#include "slangmanager.h"
+#include "semanticindexsnapshot.h"
 #include "../../src/simulation/simdock/core/workspace.h"
 #include "../../src/simulation/simdock/ui/uistyle.h"
 #include <ElaApplication.h>
@@ -56,6 +58,22 @@
 #include <QUrlQuery>
 #endif
 using namespace simdock;
+
+static simdock::Module semanticModule(const QByteArray& content, const QString& file, const QString& root = {})
+{
+    const auto absolute = QFileInfo(file).absoluteFilePath();
+    QHash<QString, QString> contents{{absolute, QString::fromUtf8(content)}};
+    if (!root.isEmpty()) for (const auto& source : simdock::scanWorkspace(root).files)
+        contents.insert(QDir(root).filePath(source.path), QString::fromUtf8(source.content));
+    SlangManager slang;
+    SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
+    auto module = simdock::analyzeSource(content, absolute).modules.first();
+    QString error;
+    if (!simdock::completeTestbenchTypes(module, *SemanticIndex::getInstance(), absolute, QString::fromUtf8(content), &error))
+        module.limitations = {error};
+    return module;
+}
 
 class UiTest : public QObject {
     Q_OBJECT
@@ -271,7 +289,7 @@ private slots:
         auto* dut = w.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
         QCOMPARE(dut->count(), 1);
         QString error;
-        const auto module = analyzeSource(input, QStringLiteral("counter.sv")).modules.first();
+        const auto module = semanticModule(input, workspace.filePath("counter.sv"), workspace.path());
         QVERIFY2(w.createDemo(suggestedTbOptions(module), &error), qPrintable(error));
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
         QVERIFY(!w.createDemo(suggestedTbOptions(module), &error));
@@ -391,10 +409,10 @@ private slots:
         QVERIFY(model);
         for (int row = 0; row < model->rowCount(); ++row)
             if (model->item(row)->text().contains(QStringLiteral("dut.sv"))) model->item(row)->setCheckState(Qt::Checked);
-        const auto module = analyzeSource(input, QStringLiteral("dut.sv")).modules.first();
+        const auto module = semanticModule(input, workspace.filePath("dut.sv"), workspace.path());
         TestbenchDialog dialog(module, 1000, &w);
         QVERIFY(dialog.content().contains(QStringLiteral("import demo_types::*;")));
-        QVERIFY(dialog.content().contains(QStringLiteral("mode = mode_e'('0);")));
+        QVERIFY(dialog.content().contains(QStringLiteral("mode = demo_types::IDLE;")));
         for (const auto* box : dialog.findChildren<ElaComboBox*>()) QVERIFY(box->findData(QStringLiteral("mode")) < 0);
         QTest::mouseClick(dialog.findChild<ElaPushButton*>(QStringLiteral("confirmCreateTb")), Qt::LeftButton);
         QCOMPARE(dialog.result(), int(QDialog::Accepted));
@@ -673,20 +691,17 @@ private slots:
         w.openWorkspace(workspace.path());
         QTRY_COMPARE(scans.size(), 1);
         QVERIFY(w.createProject(QStringLiteral("Form state")));
-        auto* toggle = w.findChild<QToolButton*>("waveOptionsToggle"); QVERIFY(toggle);
-        QVERIFY(!toggle->isChecked());
+        QVERIFY(!w.findChild<QToolButton*>("waveOptionsToggle"));
         QVERIFY(!w.findChild<QWidget*>("workbenchSection"));
         QVERIFY(!w.findChild<QWidget*>("openWorkspace"));
-        auto* scope = w.findChild<ElaComboBox*>("waveScope"); QVERIFY(scope);
-        toggle->click(); QVERIFY(scope->isVisible());
+        QVERIFY(!w.findChild<ElaComboBox*>("waveScope"));
         auto* field = w.findChild<ElaLineEdit*>("tbFile"); field->setText("tb/preserve.sv");
         QPointer<ElaLineEdit> identity(field);
-        toggle->click(); toggle->click();
         QCOMPARE(identity.data(), field); QCOMPARE(field->text(), QString("tb/preserve.sv"));
         auto* workbench = w.findChild<Workbench*>(); QVERIFY(workbench);
         auto state = workbench->saveState();
-        toggle->setChecked(false); QVERIFY(workbench->restoreState(state).isEmpty());
-        QVERIFY(toggle->isChecked());
+        state.insert(QStringLiteral("layout/waveOptionsExpanded"), true);
+        QVERIFY(workbench->restoreState(state).isEmpty());
         ApplicationThemeManager::instance().setMode(ThemeMode::Dark);
         QCOMPARE(identity.data(), field);
         w.close();
@@ -944,7 +959,7 @@ private slots:
     }
     void numericControlsAndDialogKeys()
     {
-        const auto module = analyzeSource(QByteArrayLiteral("module demo(input logic clk, rst_n); endmodule"), QStringLiteral("demo.sv")).modules.first();
+        const auto module = semanticModule(QByteArrayLiteral("module demo(input logic clk, rst_n); endmodule"), QStringLiteral("demo.sv"));
         TestbenchDialog dialog(module, 1000);
         dialog.show();
         for (auto* spin : dialog.findChildren<ElaSpinBox*>()) {

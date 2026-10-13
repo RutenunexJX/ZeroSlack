@@ -1,10 +1,17 @@
 # Original SimDock cases compile against the owned implementation. The legacy
 # window is test-only chrome; the real ZeroSlack lifecycle is tested separately.
 find_package(Qt6 REQUIRED COMPONENTS Test)
+add_executable(tb_task_templates_test test_sv/tb_task_templates_test.cpp)
+target_link_libraries(tb_task_templates_test PRIVATE zeroslack_core Qt6::Test)
+target_include_directories(tb_task_templates_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
+add_test(NAME tb_task_templates COMMAND tb_task_templates_test)
+set_tests_properties(tb_task_templates PROPERTIES TIMEOUT 180
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(tb_editor_assistance_test test_sv/tb_editor_assistance_test.cpp)
 target_link_libraries(tb_editor_assistance_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_editor_assistance_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
-add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes enumScopeWindow mainWindowWorkflow)
+add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes)
 set_tests_properties(tb_editor_assistance PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")

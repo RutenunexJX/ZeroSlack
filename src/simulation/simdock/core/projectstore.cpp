@@ -37,6 +37,7 @@ Project decode(const QJsonObject& object)
     p.id = object.value(QStringLiteral("id")).toString();
     p.name = object.value(QStringLiteral("name")).toString();
     for (const auto& value : object.value(QStringLiteral("sources")).toArray()) p.sources << value.toString();
+    for (const auto& value : object.value(QStringLiteral("includeDirectories")).toArray()) p.includeDirectories << value.toString();
     p.dutFile = object.value(QStringLiteral("dutFile")).toString();
     p.dutName = object.value(QStringLiteral("dutName")).toString();
     p.tbFile = object.value(QStringLiteral("tbFile")).toString();

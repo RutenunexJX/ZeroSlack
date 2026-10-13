@@ -10,6 +10,7 @@ struct Port {
     QString name, direction, type;
     bool namedType = false;
     QString initialExpression;
+    quint64 bitWidth = 0;
 };
 struct Parameter {
     QString name, type, value;
@@ -46,12 +47,14 @@ struct InputConfiguration {
 struct Project {
     QString id, name;
     QStringList sources;
+    QStringList includeDirectories;
     QString dutFile, dutName, tbFile, tbName;
     qint64 durationNs = 1000;
     QJsonObject stimulus;
     InputMode inputMode = InputMode::ExistingTb;
     InputConfiguration alternateInput;
-    QString waveScope = QStringLiteral("interface");
+    // Legacy selection metadata is preserved; every run records all hierarchy signals.
+    QString waveScope = QStringLiteral("all");
     QStringList waveSignals;
     // Retired graphical inputs remain serializable for data compatibility only.
     QJsonObject preservedInputs;

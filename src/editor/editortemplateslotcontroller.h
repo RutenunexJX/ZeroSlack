@@ -44,6 +44,7 @@ public:
                               int charsAdded,
                               bool updatePresentation = true);
     void handleCursorChanged(MyCodeEditor* editor);
+    void flushPendingLinkedEdits(MyCodeEditor* editor);
 
     void markPresentationPending();
     void flushPendingPresentation(MyCodeEditor* editor);
@@ -73,6 +74,8 @@ private:
     bool ignoreNextCursorCheck = false;
     bool presentationPending = false;
     bool applyingLinkedEdit = false;
+    struct LinkedEdit { int source; int start; int end; QString text; };
+    QList<LinkedEdit> pendingLinkedEdits;
     quint64 presentationGeneration = 0;
 
     int physicalIndexForCursor(MyCodeEditor* editor) const;
