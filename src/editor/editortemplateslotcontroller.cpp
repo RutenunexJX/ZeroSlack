@@ -1,4 +1,6 @@
 #include "editortemplateslotcontroller.h"
+#include "templateinputservice.h"
+#include <QSet>
 
 #include "annotationlayer.h"
 #include "editormodecontroller.h"
@@ -422,6 +424,8 @@ void EditorTemplateSlotController::start(
 
         SlotRange range;
         range.name = slotInfo.name;
+        range.input = slotInfo.input;
+        range.inputContext = slotInfo.inputContext;
         range.tabStop = slotInfo.tabStop;
         range.visibleWhenEmpty =
             slotInfo.visibleWhenEmpty;
@@ -573,9 +577,10 @@ bool EditorTemplateSlotController::handleKeyPress(
     }
 
     if (event->key() == Qt::Key_Escape) {
+        const auto issue = validationError(editor, firstPhysicalIndexForGroup(currentIndex));
         clear(
             editor,
-            QStringLiteral("Slot Mode canceled"));
+            issue.isEmpty() ? QStringLiteral("Slot Mode canceled") : QStringLiteral("Slot Mode canceled. %1").arg(issue));
         event->accept();
         return true;
     }
@@ -607,6 +612,11 @@ bool EditorTemplateSlotController::handleKeyPress(
             clear(editor);
             return false;
         }
+        const auto issue = validationError(editor, firstPhysicalIndexForGroup(currentIndex));
+        if (!issue.isEmpty() && !backward) {
+            emit editor->editorStatusMessageRequested(issue);
+            event->accept(); return true;
+        }
         // currentIndex is the logical slot selected by the controller.  Do
         // not infer it again from a shared endpoint immediately before
         // navigation; adjacent empty slots can occupy the same cursor
@@ -620,6 +630,26 @@ bool EditorTemplateSlotController::handleKeyPress(
         return true;
     }
 
+    const int activePhysical = firstPhysicalIndexForGroup(currentIndex);
+    if ((event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)
+        && modifiers == Qt::NoModifier && activePhysical >= 0 && cursorInsideActiveRange(editor)) {
+        const auto slot = ranges.at(activePhysical);
+        if (!slot.input.isEmpty() && slot.input.value("kind").toString() != "Value") {
+            const TemplateInputContext empty;
+            const auto choices = TemplateInputService::candidates(slot.input,
+                slot.inputContext ? *slot.inputContext : empty, bindings(editor));
+            if (choices.values.isEmpty()) emit editor->editorStatusMessageRequested(choices.reason);
+            else {
+                const int previous = choices.values.indexOf(bindings(editor).value(slot.name));
+                const int next = previous < 0 ? (event->key() == Qt::Key_Up ? choices.values.size() - 1 : 0)
+                    : (previous + (event->key() == Qt::Key_Up ? -1 : 1) + choices.values.size()) % choices.values.size();
+                replaceSlot(editor, activePhysical, choices.values.at(next));
+                invalidateDependents(editor, {slot.name});
+                select(editor, currentIndex);
+            }
+            event->accept(); return true;
+        }
+    }
     const int cursorPhysicalIndex =
         physicalIndexForCursor(editor);
     const int cursorGroupIndex =
@@ -684,25 +714,93 @@ void EditorTemplateSlotController::handleContentsChange(
     insertion.setPosition(position + charsAdded, QTextCursor::KeepAnchor);
     const QString insertedText = insertion.selectedText().replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
     pendingLinkedEdits.append({sourcePhysicalIndex, relativeStart, relativeEnd, insertedText});
-    if (updatePresentation)
-        refreshPresentation(editor);
-    else
-        publishVisibleAnnotations(editor);
+    // Qt has not updated its layout while contentsChange is being delivered.
+    // The editor transaction publishes annotations after layout catches up.
+    markPresentationPending();
 }
 
 void EditorTemplateSlotController::flushPendingLinkedEdits(MyCodeEditor* editor)
 {
     const auto edits = std::exchange(pendingLinkedEdits, {});
+    QStringList changed;
     for (const auto& edit : edits) {
         if (!active()) break;
         mirrorLinkedEdit(editor, edit.source, edit.start, edit.end, edit.text);
+        if (edit.source >= 0 && edit.source < ranges.size()) changed << ranges.at(edit.source).name;
+    }
+    if (active() && !changed.isEmpty()) invalidateDependents(editor, changed);
+}
+
+QHash<QString, QString> EditorTemplateSlotController::bindings(MyCodeEditor* editor) const
+{
+    QHash<QString, QString> result;
+    if (!editor) return result;
+    for (const auto& slot : ranges) {
+        QTextCursor cursor(editor->document());
+        const int limit = editor->document()->characterCount() - 1;
+        if (slot.start < 0 || slot.end > limit) return {};
+        cursor.setPosition(slot.start); cursor.setPosition(slot.end, QTextCursor::KeepAnchor);
+        result.insert(slot.name, cursor.selectedText().replace(QChar::ParagraphSeparator, QLatin1Char('\n')));
+    }
+    return result;
+}
+
+QString EditorTemplateSlotController::validationError(MyCodeEditor* editor, int physicalIndex) const
+{
+    if (physicalIndex < 0 || physicalIndex >= ranges.size()) return {};
+    const auto& slot = ranges.at(physicalIndex);
+    const TemplateInputContext empty;
+    const auto values = bindings(editor);
+    const auto issue = TemplateInputService::validate(slot.input, values.value(slot.name),
+        slot.inputContext ? *slot.inputContext : empty, values);
+    return issue.isEmpty() ? issue : slot.name + QStringLiteral(": ") + issue;
+}
+
+void EditorTemplateSlotController::replaceSlot(MyCodeEditor* editor, int physicalIndex, const QString& value, bool joinPrevious)
+{
+    if (!editor || physicalIndex < 0 || physicalIndex >= ranges.size()) return;
+    const auto group = ranges.at(physicalIndex).groupIndex;
+    QList<int> targets;
+    for (int i = 0; i < ranges.size(); ++i) if (ranges.at(i).groupIndex == group) targets << i;
+    std::sort(targets.begin(), targets.end(), [this](int a, int b) { return ranges.at(a).start > ranges.at(b).start; });
+    applyingLinkedEdit = true;
+    QTextCursor transaction(editor->document());
+    if (joinPrevious) transaction.joinPreviousEditBlock(); else transaction.beginEditBlock();
+    for (int index : targets) {
+        const auto slot = ranges.at(index);
+        QTextCursor cursor(editor->document());
+        cursor.setPosition(slot.start); cursor.setPosition(slot.end, QTextCursor::KeepAnchor);
+        cursor.insertText(value);
+        applyRangeChange(index, slot.start, slot.end, value.size() - (slot.end - slot.start));
+    }
+    transaction.endEditBlock();
+    applyingLinkedEdit = false;
+    refreshPresentation(editor);
+}
+
+void EditorTemplateSlotController::invalidateDependents(MyCodeEditor* editor, const QStringList& changed)
+{
+    QStringList pending = changed;
+    QSet<QString> visited;
+    while (active() && !pending.isEmpty()) {
+        const auto upstream = pending.takeFirst();
+        if (visited.contains(upstream)) continue;
+        visited.insert(upstream);
+        for (int i = 0; i < ranges.size(); ++i) {
+            const auto slot = ranges.at(i);
+            if (slot.input.value("instanceSlot").toString() != upstream && slot.input.value("enumOf").toString() != upstream) continue;
+            if (bindings(editor).value(slot.name).isEmpty() || validationError(editor, i).isEmpty()) continue;
+            replaceSlot(editor, i, QString(), true);
+            pending << slot.name;
+            emit editor->editorStatusMessageRequested(QStringLiteral("%1 changed; fill %2 again.").arg(upstream, slot.name));
+        }
     }
 }
 
 void EditorTemplateSlotController::handleCursorChanged(
     MyCodeEditor* editor)
 {
-    if (!active())
+    if (!active() || applyingLinkedEdit)
         return;
     if (ignoreNextCursorCheck) {
         ignoreNextCursorCheck = false;

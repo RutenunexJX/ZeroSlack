@@ -103,6 +103,8 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     src/settings/workspaceconfigurationservice.cpp
 )
 set(ZEROSLACK_DOCUMENT_SOURCES
+    src/editor/formatterservice.cpp
+    src/editor/structuredwhitespaceformatter.cpp
     include/zeroslack/documents/crashrecoveryservice.h
     include/zeroslack/documents/documentbuffer.h
     include/zeroslack/documents/documentchange.h

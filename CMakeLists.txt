@@ -349,11 +349,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/workspace/filecommandcoordinator.cpp
     src/insights/fsmgraphlayout.cpp
     src/editor/formattercursoranchor.cpp
-    src/editor/formatterservice.cpp
     src/settings/settingscenterschema.cpp
     src/settings/settingscenterpanel.cpp
     src/settings/settingscenterservice.cpp
-    src/editor/structuredwhitespaceformatter.cpp
     src/editor/ghostannotationservice.cpp
     src/editor/tbinputassist.cpp
     src/editor/tbinputassistcontroller.cpp
@@ -480,6 +478,14 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/workspaceanalysisplanservice.cpp
     src/workspace/workspaceignoreservice.cpp
     src/completion/usertemplateservice.cpp
+    src/completion/simulationcommandprefix.cpp
+    src/completion/templateinputservice.cpp
+    resources/simulation/simulation.qrc
+    src/completion/simulationcommandplanner.cpp
+    src/completion/simulationcommandservice.cpp
+    src/completion/simulationcommandservice.h
+    src/ui/templatemanagerdialog.cpp
+    src/ui/templatemanagerdialog.h
     src/analysis/workspaceanalysisrequestqueue.cpp
     src/analysis/workspacesymbolanalysiscontroller.cpp
     src/analysis/workspacesymbolanalysiscontrollerlifecycle.cpp
@@ -745,6 +751,16 @@ message(STATUS
     "ZeroSlack core library type: ${ZEROSLACK_CORE_LIBRARY_TYPE}")
 
 add_subdirectory(components/rtleditcore)
+set(ZEROSLACK_XIPS_ASSET_ADAPTER_DIR "" CACHE PATH "Verified independent xIPs 2.14.2 adapter runtime")
+if(ZEROSLACK_XIPS_ASSET_ADAPTER_DIR)
+    if(NOT EXISTS "${ZEROSLACK_XIPS_ASSET_ADAPTER_DIR}/xips-asset-adapter.exe" OR NOT EXISTS "${ZEROSLACK_XIPS_ASSET_ADAPTER_DIR}/xips-cli.exe")
+        message(FATAL_ERROR "The xIPs asset adapter and pinned verification CLI are required together.")
+    endif()
+    add_custom_command(TARGET zeroslack_core POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ZEROSLACK_XIPS_ASSET_ADAPTER_DIR}"
+            "$<TARGET_FILE_DIR:zeroslack_core>/components/xips-asset-adapter" VERBATIM)
+endif()
+
 
 target_sources(zeroslack_core PRIVATE
     src/integrations/native/nativecontextview.cpp
@@ -753,10 +769,10 @@ target_sources(zeroslack_core PRIVATE
     src/integrations/simdock/simdockcontextprovider.h
     src/integrations/xips/xipscontextprovider.cpp
     src/integrations/xips/xipscontextprovider.h
-    src/integrations/xips/xipshdlcommandservice.cpp
-    src/integrations/xips/xipshdlcommandservice.h
-    src/integrations/xips/xipshdlcallbuilder.cpp
-    src/integrations/xips/xipshdlcallbuilder.h
+    src/integrations/xips/xipsassetsync.cpp
+    src/integrations/xips/xipsassetsync.h
+    src/ui/xipsassetsyncdialog.cpp
+    src/ui/xipsassetsyncdialog.h
     resources/zeroslack_xips.qrc
     src/commands/exposesignaltotopservice.cpp
     src/commands/exposesignaltotoppreview.cpp
@@ -969,6 +985,9 @@ if(BUILD_TESTING)
 
     add_executable(completion_test test_sv/completion_test.cpp)
     target_link_libraries(completion_test PRIVATE zeroslack_core)
+
+    add_executable(simulation_command_redesign_test test_sv/simulation_command_redesign_test.cpp)
+    target_link_libraries(simulation_command_redesign_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(insert_palette_catalog_test
         test_sv/insert_palette_catalog_test.cpp)

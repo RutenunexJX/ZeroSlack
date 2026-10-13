@@ -130,6 +130,7 @@ void GlobalControlCoordinator::open()
         : QPoint();
     currentContext = contextProvider
         ? contextProvider() : GlobalControlQueryContext();
+    panel->setSimulationOnly(currentContext.simulationCommands);
     panel->setCategory(currentContext.editorAvailable
                            ? GlobalControlCategory::Symbols
                            : GlobalControlCategory::Commands);
@@ -147,7 +148,7 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
 {
     if (!panel)
         return;
-    const GlobalControlCategory category = panel->category();
+    const GlobalControlCategory category = currentContext.simulationCommands ? GlobalControlCategory::Templates : panel->category();
     panel->setItems(
         category == GlobalControlCategory::Commands
             ? service.query(category, queryText, currentContext)

@@ -2438,6 +2438,7 @@ QByteArray jsonLine(const QJsonObject& object)
 ZeroSlackCliResult ZeroSlackCliService::execute(
     const ZeroSlackCliRequest& request) const
 {
+    if (request.command == QStringLiteral("format")) return formatFile(request);
     ZeroSlackCliResult result;
     static const QSet<QString> commands{
         QStringLiteral("scan"), QStringLiteral("status"),
@@ -2656,8 +2657,10 @@ QByteArray ZeroSlackCliService::render(const QJsonObject& envelope,
 QString ZeroSlackCliService::usageText()
 {
     return QStringLiteral(
-        "ZeroSlack read-only AI workspace CLI\n\n"
+        "ZeroSlack workspace and file CLI\n\n"
         "Usage:\n"
+        "  zeroslack-cli format <file> [--check | --write] [--format json|jsonl|markdown]\n"
+        "      Default: check only. Exit 0: unchanged or written; 1: changes needed; 2: error.\n"
         "  zeroslack-cli scan <workspace> [--format json|jsonl|markdown]\n"
         "  zeroslack-cli status <workspace> [--require-current]\n"
         "  zeroslack-cli summary <workspace>\n"
@@ -2670,7 +2673,8 @@ QString ZeroSlackCliService::usageText()
         "  zeroslack-cli suite-context <workspace> [--file <path>] [--line <n>]\n"
         "      [--symbol <name-or-id>] [--include all|pinloom|wave|regmap]\n"
         "      [--max-tokens <n>]\n\n"
-        "Global options:\n"
+        "Workspace queries above are read-only. Only format --write edits the explicit file.\n\n"
+        "Query options (--format also applies to format):\n"
         "  --cache-dir <path>   Override the user cache directory.\n"
         "  --refresh            Rebuild a current cache.\n"
         "  --no-refresh         Fail instead of rebuilding a stale cache.\n"

@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QSet>
+#include <QJsonDocument>
 #include <QTextStream>
 
 #include <utility>
@@ -47,18 +48,32 @@ bool parseArguments(const QStringList& arguments,
                     ZeroSlackCliRequest* request,
                     QString* failureReason)
 {
-    if (!request || arguments.size() < 2) {
+    if (request && !arguments.isEmpty()) request->command = arguments.first().trimmed().toLower();
+    if (!request || arguments.size() < 2 || arguments.at(1).startsWith(QStringLiteral("--"))) {
         if (failureReason)
-            *failureReason = QStringLiteral("Command and workspace are required.");
+            *failureReason = QStringLiteral("A command and its workspace or explicit file are required.");
         return false;
     }
     request->command = arguments.at(0).trimmed().toLower();
-    request->workspaceRoot = arguments.at(1);
+    if (request->command == QStringLiteral("format")) request->filePath = arguments.at(1);
+    else request->workspaceRoot = arguments.at(1);
     QStringList positional;
     bool includeSpecified = false;
     for (int index = 2; index < arguments.size(); ++index) {
         const QString argument = arguments.at(index);
-        if (argument == QStringLiteral("--format")) {
+        if (request->command == QStringLiteral("format")
+            && argument != "--format" && argument != "--write" && argument != "--check") {
+            *failureReason = QStringLiteral("format accepts only one file, --check or --write, and --format.");
+            return false;
+        }
+        if (argument == "--write" || argument == "--check") {
+            if (request->command != "format" || request->formatWrite || request->formatCheck) {
+                *failureReason = QStringLiteral("--write and --check are mutually exclusive and only valid for format.");
+                return false;
+            }
+            request->formatWrite = argument == "--write";
+            request->formatCheck = argument == "--check";
+        } else if (argument == QStringLiteral("--format")) {
             if (!takeValue(arguments, &index, &request->format, failureReason))
                 return false;
         } else if (argument == QStringLiteral("--cache-dir")) {
@@ -214,8 +229,15 @@ int main(int argc, char* argv[])
     ZeroSlackCliRequest request;
     QString failure;
     if (!parseArguments(allArguments, &request, &failure)) {
-        output << failure << QStringLiteral("\n\n")
-               << ZeroSlackCliService::usageText();
+        if (request.command == "format") {
+            const QJsonObject envelope{{"schema", "zeroslack.cli/v1"}, {"schemaVersion", 1}, {"command", "format"},
+                {"ok", false}, {"error", QJsonObject{{"code", "invalid_arguments"}, {"message", failure}}},
+                {"data", QJsonObject{{"file", request.filePath}, {"changed", false}, {"written", false},
+                    {"outcome", "Rejected"}, {"diagnostic", failure}, {"formattedLines", 0}}}};
+            output << ZeroSlackCliService::render(envelope, request.format);
+        } else {
+            output << failure << QStringLiteral("\n\n") << ZeroSlackCliService::usageText();
+        }
         return 2;
     }
 

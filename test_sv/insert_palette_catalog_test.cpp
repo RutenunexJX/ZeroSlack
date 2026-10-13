@@ -27,7 +27,7 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
-#include "../src/integrations/xips/xipshdlcommandservice.h"
+#include "simulationcommandservice.h"
 
 namespace {
 int checks = 0;
@@ -376,12 +376,12 @@ void runCatalogAndPanelRegression(const QString& path)
     const auto ready = [&](const QString& name) {
         return waitUntil([&] {
             return !window.analysisScheduler->isSemanticAnalysisActive()
-                && window.xipsCommands->canClose(nullptr)
+                && window.simulationCommands->canClose(nullptr)
                 && containsName(name);
         });
     };
     expect("preloaded xIPs catalog settles before workspace transition",
-           waitUntil([&] { return window.xipsCommands->canClose(nullptr); }));
+           waitUntil([&] { return window.simulationCommands->canClose(nullptr); }));
     expect("opening workspace A refreshes its catalog",
            sessions && sessions->openWorkspace(root.filePath("a")) && ready("catalog_a"));
     expect("switching to workspace B replaces A's catalog",

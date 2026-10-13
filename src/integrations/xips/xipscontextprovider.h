@@ -7,7 +7,7 @@
 
 class TabManager;
 class WorkspaceManager;
-class XipsHdlCommandService;
+class SimulationCommandService;
 
 class ZEROSLACK_API XipsHostBridge final : public QObject
 {
@@ -17,7 +17,11 @@ class ZEROSLACK_API XipsHostBridge final : public QObject
     Q_INVOKABLE QString destinationError(const QString &path);
     Q_INVOKABLE QString exportCompleted(const QVariantMap &receipt);
     Q_INVOKABLE QStringList collectionSources();
-    std::function<QString(const QVariantMap&)> adoptHdlReceipt;
+    static QVariantList workspaceReferences(const QString &workspace, QString *error = nullptr);
+    static QVariantList sourceBindings(const QString &workspace, const QStringList &sourceFiles);
+    static QString recordPublishedVersion(const QString &workspace, const QVariantMap &expected,
+                                          const QVariantMap &published, const QString &requestId,
+                                          QVariantMap *saveFailure = nullptr);
 
   private:
     QPointer<TabManager> tabs;
@@ -27,7 +31,8 @@ class ZEROSLACK_API XipsHostBridge final : public QObject
 class ZEROSLACK_API XipsContextProvider final : public IContextContentProvider
 {
   public:
-    XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces, XipsHdlCommandService* commands = nullptr);
+    XipsContextProvider(TabManager *tabs, WorkspaceManager *workspaces,
+                        SimulationCommandService *commands = nullptr);
     QString providerId() const override;
     QString displayName() const override;
     QString iconKey() const override;
@@ -43,5 +48,5 @@ class ZEROSLACK_API XipsContextProvider final : public IContextContentProvider
   private:
     QPointer<TabManager> tabs;
     QPointer<WorkspaceManager> workspaces;
-    QPointer<XipsHdlCommandService> commands;
+    QPointer<SimulationCommandService> commands;
 };

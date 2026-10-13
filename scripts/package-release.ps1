@@ -5,6 +5,7 @@ param(
     [string]$QtDirectory = 'E:/QT6/6.10.2/mingw_64',
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$XipsPackageDirectory = '',
+    [string]$XipsAssetAdapterDirectory = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
@@ -140,6 +141,48 @@ foreach ($component in @(
         revision=$(if ($componentInfo.revision) { $componentInfo.revision } elseif ($componentInfo.sourceCommit) { $componentInfo.sourceCommit } else { $null })
     }
 }
+# Keep the asset adapter in its own process/runtime; its Qt DLLs are not host DLLs.
+$adapterRoot = if ($XipsAssetAdapterDirectory) {
+    (Resolve-Path -LiteralPath $XipsAssetAdapterDirectory).Path
+} else { Join-Path $buildRoot 'components/xips-asset-adapter' }
+$assetAdapter = $null
+if (-not (Test-Path -LiteralPath $adapterRoot -PathType Container)) {
+    if ($Formal) { throw 'The formal package requires the independent xIPs asset adapter runtime.' }
+} else {
+    $adapterInfo = Get-Content -LiteralPath (Join-Path $adapterRoot 'build-info.json') -Raw | ConvertFrom-Json
+    if ($adapterInfo.schema -ne 'xips.asset-adapter.build/v1' -or $adapterInfo.protocolVersion -ne 1 -or
+        $adapterInfo.buildType -ne 'Release' -or $adapterInfo.qt -ne '6.10.2' -or
+        $adapterInfo.coreVersion -ne $nativeComponents.xips.version -or
+        $adapterInfo.coreCommit -ne $nativeComponents.xips.revision) {
+        throw 'The asset adapter identity does not match the native xIPs component.'
+    }
+    foreach ($entry in @(
+        @{ name='xips-asset-adapter.exe'; hash=$adapterInfo.executableSha256 },
+        @{ name='ADAPTER-PROTOCOL.json'; hash=$adapterInfo.protocolSha256 }
+    )) {
+        if ((Get-FileHash -LiteralPath (Join-Path $adapterRoot $entry.name)).Hash.ToLowerInvariant() -ne $entry.hash) {
+            throw "Asset adapter identity mismatch: $($entry.name)"
+        }
+    }
+    $adapterFiles = @('xips-asset-adapter.exe','xips-cli.exe','Qt6Core.dll','Qt6Sql.dll',
+        'libgcc_s_seh-1.dll','libstdc++-6.dll','libwinpthread-1.dll','sqldrivers/qsqlite.dll',
+        'qt.conf','build-info.json','ADAPTER-PROTOCOL.json','README.txt','LICENSE','NOTICE',
+        'licenses/ADAPTER-NOTICE.txt','licenses/GCC-COPYING.RUNTIME.txt','licenses/GCC-COPYING3.LIB.txt',
+        'licenses/GCC-COPYING3.txt','licenses/MinGW-w64-COPYING.txt','licenses/Qt-LGPLv3.txt',
+        'licenses/winpthreads-COPYING.txt')
+    $adapterTarget = Join-Path $outputRoot 'components/xips-asset-adapter'
+    foreach ($name in $adapterFiles) {
+        $source = Join-NativeRuntimePath $adapterRoot $name
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing asset adapter runtime: $name" }
+        $target = Join-NativeRuntimePath $adapterTarget $name
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Copy-Item -LiteralPath $source -Destination $target
+    }
+    $assetAdapter = [ordered]@{ directory='components/xips-asset-adapter'; files=$adapterFiles;
+        artifactId=$adapterInfo.artifactId; protocolVersion=$adapterInfo.protocolVersion;
+        coreVersion=$adapterInfo.coreVersion; coreCommit=$adapterInfo.coreCommit;
+        adapterSourceSha256=$adapterInfo.adapterSourceSha256; executableSha256=$adapterInfo.executableSha256 }
+}
 $integratedSimDock = Get-Content -LiteralPath (Join-Path $buildRoot 'simdock-source.json') -Raw | ConvertFrom-Json
 if ($integratedSimDock.version -ne '0.6.1' -or $integratedSimDock.commit -ne 'e1747735735f0e50e06587d729784546efba56eb' -or $integratedSimDock.owner -ne 'zeroslack_core') {
     throw 'Integrated SimDock source provenance does not match the reviewed boundary.'
@@ -172,6 +215,11 @@ foreach ($name in @('libgcc_s_seh-1.dll', 'libstdc++-6.dll', 'libwinpthread-1.dl
 $licenseRoot = Join-Path $outputRoot 'licenses'
 New-Item -ItemType Directory -Path $licenseRoot -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'resources/licenses/simdock') -Destination $licenseRoot -Recurse
+$behaviorNotices = Join-Path $licenseRoot 'simulation-behaviors'
+New-Item -ItemType Directory -Path $behaviorNotices -Force | Out-Null
+foreach ($name in @('LICENSE','NOTICE','THIRD-PARTY-NOTICES.md')) {
+    Copy-Item -LiteralPath (Join-Path $sourceRoot "resources/simulation/tb-behaviors/$name") -Destination $behaviorNotices
+}
 $licenses = [ordered]@{
     'slang-MIT.txt' = 'thirdparty/slang/LICENSE'
     'tree-sitter-MIT.txt' = 'thirdparty/tree_sitter/LICENSE'
@@ -213,6 +261,7 @@ if ($Formal -and -not $dirty) {
 }
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
+    assetAdapter=$assetAdapter;
     integratedFeatures=[ordered]@{ simdock=$integratedSimDock };
     appSuiteEnabled=[bool]$suiteBuild.enabled; distribution='standalone';
     suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;

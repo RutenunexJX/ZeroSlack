@@ -16,6 +16,9 @@ struct UserTemplateRecord {
     int selectionStart = -1;
     int selectionLength = 0;
     CodeTemplateSlotList templateSlots;
+    QVariantMap command;
+    QString storageSource;
+    QVariantMap extraFields;
 };
 
 struct UserTemplateIssue {
@@ -52,6 +55,14 @@ public:
     void setWorkspaceTemplateFilePath(const QString& filePath);
     UserTemplateLoadReport reload() const;
     QList<UserTemplateRecord> records() const;
+    QList<UserTemplateRecord> recordsForFile(const QString& fileName, bool simulationOnly = false) const;
+    QList<CodeTemplateItem> catalogForFile(const QString& fileName, bool simulationOnly = false) const;
+    UserTemplateSaveReport saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision = 0) const;
+    UserTemplateSaveReport deleteRecord(const QString& id, bool workspace, quint64 expectedRevision = 0) const;
+    UserTemplateSaveReport migrateXipsCommands(const QString& metadataPath, const QVariantMap& asset = {}) const;
+    static QList<UserTemplateRecord> simulationBuiltins();
+    QVariantMap signalRoles() const;
+    QString setSignalRoles(const QVariantMap& roles) const;
     QList<CodeTemplateItem> catalog() const;
     quint64 catalogRevision() const;
     quint64 fileReadsForTesting() const { return fileReads; }

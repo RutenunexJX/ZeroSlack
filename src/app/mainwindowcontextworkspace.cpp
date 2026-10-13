@@ -13,7 +13,7 @@
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
 #include "../integrations/xips/xipscontextprovider.h"
-#include "../integrations/xips/xipshdlcommandservice.h"
+#include "simulationcommandservice.h"
 #include "pinloomhostclient.h"
 #include "settingscenterservice.h"
 #include "temporaryeditorcontextprovider.h"
@@ -349,11 +349,11 @@ void MainWindow::setupContextWorkspace()
     contextWorkspaceController->registerProvider(
         std::move(pinloomProvider));
 
-    xipsCommands = std::make_unique<XipsHdlCommandService>(tabManager.get(), workspaceManager.get(), simulationWorkspace->workbench(), this);
-    xipsCommands->showBrowser = [this] { contextWorkspaceController->openTool(QStringLiteral("xips")); };
-    connect(xipsCommands.get(), &XipsHdlCommandService::message, this, [this](const QString& message) { postActivityMessage(message, 8000); });
+    simulationCommands = std::make_unique<SimulationCommandService>(tabManager.get(), workspaceManager.get(), simulationWorkspace->workbench(), this);
+    simulationCommands->showBrowser = [this] { contextWorkspaceController->openTool(QStringLiteral("xips")); };
+    connect(simulationCommands.get(), &SimulationCommandService::message, this, [this](const QString& message) { postActivityMessage(message, 8000); });
     contextWorkspaceController->registerProvider(
-        std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get(), xipsCommands.get()));
+        std::make_unique<XipsContextProvider>(tabManager.get(), workspaceManager.get(), simulationCommands.get()));
     contextWorkspaceController->registerProvider(std::make_unique<SimDockContextProvider>(simulationWorkspace.get()));
 
     connect(contextWorkspaceController.get(), &ContextWorkspaceController::resourceCloseRejected,
@@ -361,7 +361,7 @@ void MainWindow::setupContextWorkspace()
     if (workspaceManager) {
         const QPointer<ContextWorkspaceController> controller(contextWorkspaceController.get());
         const QPointer<SimDockContextView> simulation(simulationWorkspace.get());
-        const QPointer<XipsHdlCommandService> commands(xipsCommands.get());
+        const QPointer<SimulationCommandService> commands(simulationCommands.get());
         workspaceManager->setWorkspaceTransitionGuard([controller, simulation, commands] {
             QString error;
             if (simulation && !simulation->canClose(&error)) return error;

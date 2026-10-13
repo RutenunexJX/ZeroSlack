@@ -1,7 +1,9 @@
 # Original SimDock cases compile against the owned implementation. The legacy
 # window is test-only chrome; the real ZeroSlack lifecycle is tested separately.
 find_package(Qt6 REQUIRED COMPONENTS Test)
-add_executable(tb_task_templates_test test_sv/tb_task_templates_test.cpp)
+# Preserve legacy source-generation regressions without shipping the retired xIPs command builder.
+add_executable(tb_task_templates_test test_sv/tb_task_templates_test.cpp
+    src/integrations/xips/xipshdlcallbuilder.cpp)
 target_link_libraries(tb_task_templates_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_task_templates_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME tb_task_templates COMMAND tb_task_templates_test)

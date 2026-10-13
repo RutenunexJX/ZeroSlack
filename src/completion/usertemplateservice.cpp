@@ -1,5 +1,6 @@
 #include "usertemplateservice.h"
 #include <QSaveFile>
+#include <QLockFile>
 #include <QDateTime>
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
@@ -9,6 +10,7 @@
 #endif
 
 #include "codetemplateservice.h"
+#include "templateinputservice.h"
 
 #include <QDir>
 #include <QFile>
@@ -19,6 +21,8 @@
 #include <QJsonParseError>
 #include <QSet>
 #include <QStandardPaths>
+#include <QRegularExpression>
+#include <QCryptographicHash>
 
 #include <algorithm>
 #include <memory>
@@ -189,6 +193,9 @@ QJsonArray slotsToJson(const CodeTemplateSlotList& slotList)
         object.insert(QString::fromLatin1(kUserTemplateSlotName), slot.name);
         object.insert(QString::fromLatin1(kUserTemplateSlotStart), slot.start);
         object.insert(QString::fromLatin1(kUserTemplateSlotLength), slot.length);
+        object.insert(QStringLiteral("tabStop"), slot.tabStop);
+        object.insert(QStringLiteral("visibleWhenEmpty"), slot.visibleWhenEmpty);
+        if (!slot.input.isEmpty()) object.insert(QStringLiteral("input"), QJsonObject::fromVariantMap(slot.input));
         array.append(object);
     }
     return array;
@@ -248,6 +255,9 @@ CodeTemplateSlotList slotsFromJson(const QJsonValue& value,
         }
         slot.start = startValue.toInt(-1);
         slot.length = lengthValue.toInt(-1);
+        slot.tabStop = object.value(QStringLiteral("tabStop")).toInt(-1);
+        slot.visibleWhenEmpty = object.value(QStringLiteral("visibleWhenEmpty")).toBool();
+        slot.input = object.value(QStringLiteral("input")).toObject().toVariantMap();
         if (!slotRangeWithinText(slot.start, slot.length, insertText)) {
             appendIssue(report,
                         source,
@@ -272,6 +282,8 @@ CodeTemplateItem itemFromRecord(const UserTemplateRecord& record)
     item.selectionStart = record.selectionStart;
     item.selectionLength = record.selectionLength;
     item.templateSlots = record.templateSlots;
+    item.command = record.command;
+    item.command.insert(QStringLiteral("id"), record.id);
     return item;
 }
 
@@ -287,6 +299,10 @@ UserTemplateRecord recordFromJsonObject(const QJsonObject& object,
                                         UserTemplateLoadReport* report)
 {
     UserTemplateRecord record;
+    record.extraFields = object.toVariantMap();
+    record.command = object.value(QStringLiteral("simulation")).toObject().toVariantMap();
+    record.storageSource = source;
+    record.id = object.value(QStringLiteral("id")).toString();
     record.commandToken =
         object.value(QString::fromLatin1(kUserTemplateCommand)).toString();
     if (record.commandToken.trimmed().isEmpty()) {
@@ -296,11 +312,9 @@ UserTemplateRecord recordFromJsonObject(const QJsonObject& object,
     }
     record.commandToken = normalizedCommandToken(record.commandToken);
     record.id = normalizedTemplateId(record);
-    record.label = record.commandToken;
+    record.label = object.value(QStringLiteral("label")).toString(record.commandToken);
     record.description =
-        object.value(QString::fromLatin1(kUserTemplateDescription))
-            .toString()
-            .trimmed();
+        object.value(QString::fromLatin1(kUserTemplateDescription)).toString();
     record.insertText =
         object.value(QString::fromLatin1(kUserTemplateBody)).toString();
     if (record.insertText.isEmpty()) {
@@ -431,14 +445,16 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     UserTemplateRecord record = input;
     record.id = normalizedTemplateId(record);
     record.commandToken = normalizedCommandToken(record.commandToken);
-    record.label = record.commandToken;
-    record.description = record.description.trimmed();
+    if (record.label.isEmpty()) record.label = record.commandToken;
+    if (!record.command.value(QStringLiteral("file")).toString().isEmpty())
+        record.command.insert(QStringLiteral("file"), normalizePath(record.command.value(QStringLiteral("file")).toString()));
     const QString issueCommand = record.commandToken.isEmpty()
         ? record.id
         : record.commandToken;
 
     const QString lowerId = record.id.toCaseFolded();
-    const QString lowerCommand = record.commandToken.toCaseFolded();
+    const QString lowerCommand = record.commandToken.toCaseFolded() + QLatin1Char('\n')
+        + normalizePath(record.command.value(QStringLiteral("file")).toString()).toCaseFolded();
     const int issueCountBefore = report->issues.size();
 
     if (record.id.isEmpty()) {
@@ -456,14 +472,14 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                     QStringLiteral("Template id must be unique."));
     }
 
-    if (!record.commandToken.startsWith(QStringLiteral(";;"))
-        || record.commandToken.size() <= 2
+    const bool simulation = QRegularExpression(QStringLiteral("^@[A-Za-z_][A-Za-z0-9_.:-]*$")).match(record.commandToken).hasMatch();
+    if ((!simulation && (!record.commandToken.startsWith(QStringLiteral(";;")) || record.commandToken.size() <= 2))
         || commandTokenHasWhitespace(record.commandToken)) {
         appendIssue(report,
                     source,
                     issueCommand,
                     QStringLiteral("command"),
-                    QStringLiteral("Template command token must be a compact ;; token."));
+                    QStringLiteral("Use an @name simulation command or a compact legacy ;; token."));
     }
     if (record.commandToken.startsWith(QStringLiteral(";:"))) {
         appendIssue(report,
@@ -494,7 +510,9 @@ bool appendValidRecord(UserTemplateLoadReport* report,
                     QStringLiteral("command"),
                     QStringLiteral("Template command token must be unique."));
     }
-    if (record.insertText.isEmpty()) {
+    if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
+        && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
+        && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,
                     source,
                     issueCommand,
@@ -532,6 +550,15 @@ bool appendValidRecord(UserTemplateLoadReport* report,
         normalizedSlots.append(slot);
     }
     record.templateSlots = normalizedSlots;
+    auto configuredInputs = record.templateSlots;
+    const auto inputMap = record.command.value(QStringLiteral("inputs")).toMap();
+    for (auto it = inputMap.cbegin(); it != inputMap.cend(); ++it) {
+        if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_]*$")).match(it.key()).hasMatch())
+            appendIssue(report, source, issueCommand, QStringLiteral("inputs"), QStringLiteral("Input names must be identifiers."));
+        configuredInputs.append({it.key(), 0, 0, -1, true, it.value().toMap()});
+    }
+    const auto dependencyIssue = TemplateInputService::dependencyError(configuredInputs);
+    if (!dependencyIssue.isEmpty()) appendIssue(report, source, issueCommand, QStringLiteral("inputs"), dependencyIssue);
     if (record.selectionStart < 0 && !record.templateSlots.isEmpty()) {
         record.selectionStart = record.templateSlots.first().start;
         record.selectionLength = record.templateSlots.first().length;
@@ -599,12 +626,14 @@ void mergeLoadedRecords(UserTemplateLoadReport* report,
 
         UserTemplateRecord validRecord = candidateReport.records.first();
         const QString lowerCommand =
-            validRecord.commandToken.trimmed().toCaseFolded();
+            validRecord.commandToken.trimmed().toCaseFolded() + QLatin1Char('\n')
+            + validRecord.command.value(QStringLiteral("file")).toString().toCaseFolded();
         const auto existing =
             std::find_if(report->records.begin(),
                          report->records.end(),
                          [&lowerCommand](const UserTemplateRecord& existingRecord) {
-                             return existingRecord.commandToken.trimmed().toCaseFolded()
+                             return existingRecord.commandToken.trimmed().toCaseFolded() + QLatin1Char('\n')
+                                 + existingRecord.command.value(QStringLiteral("file")).toString().toCaseFolded()
                                  == lowerCommand;
                          });
         if (existing != report->records.end()) {
@@ -625,11 +654,18 @@ void mergeLoadedRecords(UserTemplateLoadReport* report,
 
 QJsonObject recordToJsonObject(const UserTemplateRecord& record)
 {
-    QJsonObject object;
+    QJsonObject object = QJsonObject::fromVariantMap(record.extraFields);
+    object.insert(QStringLiteral("id"), record.id);
+    object.insert(QStringLiteral("label"), record.label);
+    object.insert(QStringLiteral("selectionStart"), record.selectionStart);
+    object.insert(QStringLiteral("selectionLength"), record.selectionLength);
+    if (!record.command.isEmpty()) object.insert(QStringLiteral("simulation"), QJsonObject::fromVariantMap(record.command));
+    else object.remove(QStringLiteral("simulation"));
     object.insert(QString::fromLatin1(kUserTemplateCommand), record.commandToken);
     object.insert(QString::fromLatin1(kUserTemplateDescription),
                   record.description);
     object.insert(QString::fromLatin1(kUserTemplateBody), record.insertText);
+    object.remove(QString::fromLatin1(kUserTemplateSlots));
     if (!record.templateSlots.isEmpty()) {
         object.insert(QString::fromLatin1(kUserTemplateSlots),
                       slotsToJson(record.templateSlots));
@@ -660,6 +696,9 @@ bool writeRecordsToJsonFile(const QString& filePath,
         array.append(recordToJsonObject(record));
 
     QJsonObject root;
+    QFile previous(filePath);
+    if (previous.open(QIODevice::ReadOnly)) root = QJsonDocument::fromJson(previous.readAll()).object();
+    previous.close();
     root.insert(QString::fromLatin1(kUserTemplateTemplates), array);
     QSaveFile file(filePath);
     file.setDirectWriteFallback(false);
@@ -886,4 +925,229 @@ void UserTemplateService::clear() const
         QFile::remove(globalTemplateFilePath);
     if (!workspaceTemplateFilePath.isEmpty())
         QFile::remove(workspaceTemplateFilePath);
+}
+
+QList<UserTemplateRecord> UserTemplateService::recordsForFile(const QString& fileName, bool simulationOnly) const
+{
+    auto result = simulationBuiltins();
+    QHash<QString, int> priorities;
+    for (const auto& record : result) priorities.insert(record.commandToken.toCaseFolded(), 0);
+    const auto file = normalizePath(fileName);
+    for (const auto& record : records()) {
+        const auto local = record.command.value(QStringLiteral("file")).toString();
+        if (!local.isEmpty() && normalizePath(local).compare(file, Qt::CaseInsensitive) != 0) continue;
+        if (simulationOnly && !record.commandToken.startsWith(QLatin1Char('@'))) continue;
+        const int priority = !local.isEmpty() ? 3 : record.storageSource == workspaceTemplateFilePath ? 2 : 1;
+        const auto key = record.commandToken.toCaseFolded();
+        if (priorities.contains(key) && priorities.value(key) > priority) continue;
+        auto it = std::find_if(result.begin(), result.end(), [&](const auto& previous) { return previous.commandToken.toCaseFolded() == key; });
+        if (it == result.end()) result.append(record); else *it = record;
+        priorities.insert(key, priority);
+    }
+    return result;
+}
+
+QList<CodeTemplateItem> UserTemplateService::catalogForFile(const QString& fileName, bool simulationOnly) const
+{
+    QList<CodeTemplateItem> result;
+    for (const auto& record : recordsForFile(fileName, simulationOnly))
+        if (!record.command.value(QStringLiteral("disabled")).toBool()) result << itemFromRecord(record);
+    return result;
+}
+
+UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision) const
+{
+    const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile lock(path + QStringLiteral(".lock"));
+    UserTemplateLoadReport loaded;
+    if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
+    if (expectedRevision && catalogRevision() != expectedRevision) {
+        loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
+        return loaded;
+    }
+    auto next = readTemplateFile(path, workspace ? UserTemplateScope::Workspace : UserTemplateScope::Global, &loaded);
+    if (!loaded.issues.isEmpty()) return loaded;
+    const auto id = normalizedTemplateId(record);
+    auto found = std::find_if(next.begin(), next.end(), [&](const auto& previous) { return previous.id == id; });
+    if (found == next.end()) next << record; else *found = record;
+    auto report = validateRecordsForSave(next, path);
+    if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
+    if (report.valid) cacheValid = false;
+    return report;
+}
+
+UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool workspace, quint64 expectedRevision) const
+{
+    const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile lock(path + QStringLiteral(".lock"));
+    UserTemplateLoadReport loaded;
+    if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
+    if (expectedRevision && catalogRevision() != expectedRevision) {
+        loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
+        return loaded;
+    }
+    auto next = readTemplateFile(path, workspace ? UserTemplateScope::Workspace : UserTemplateScope::Global, &loaded);
+    if (!loaded.issues.isEmpty()) return loaded;
+    next.erase(std::remove_if(next.begin(), next.end(), [&](const auto& record) { return record.id == id; }), next.end());
+    auto report = validateRecordsForSave(next, path);
+    if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
+    if (report.valid) cacheValid = false;
+    return report;
+}
+
+QList<UserTemplateRecord> UserTemplateService::simulationBuiltins()
+{
+    QList<UserTemplateRecord> result;
+    const QStringList tokens{QStringLiteral("reset"), QStringLiteral("ramp"), QStringLiteral("random"), QStringLiteral("random_window")};
+    const QStringList symbols{QStringLiteral("tb_reset_package::reset_driver::run"), QStringLiteral("tb_sequence_package::ramp_driver::run"),
+        QStringLiteral("tb_random_package::random_driver::run"), QStringLiteral("tb_random_package::random_driver::window")};
+    const QStringList descriptions{QStringLiteral("Assert and release a reset on selected clock edges"), QStringLiteral("Drive an incrementing sequence"),
+        QStringLiteral("Drive a bounded random sequence"), QStringLiteral("Drive random values within an absolute time window")};
+    for (int i = 0; i < tokens.size(); ++i) {
+        UserTemplateRecord record;
+        record.id = QStringLiteral("builtin:") + tokens[i]; record.commandToken = QLatin1Char('@') + tokens[i]; record.label = record.commandToken;
+        record.description = descriptions[i]; record.storageSource = QStringLiteral("builtin");
+        record.command = {{QStringLiteral("kind"), QStringLiteral("driver")}, {QStringLiteral("symbol"), symbols[i]},
+            {QStringLiteral("builtinAsset"), QStringLiteral("tb-behaviors")},
+            {QStringLiteral("summary"), i == 0 ? QStringLiteral("reset · cycles") : i == 1 ? QStringLiteral("signal · range · step") : i == 2 ? QStringLiteral("signal · range · cycles") : QStringLiteral("signal · range · time")}};
+        result << record;
+    }
+    UserTemplateRecord print;
+    print.id = QStringLiteral("builtin:print"); print.commandToken = print.label = QStringLiteral("@print"); print.storageSource = QStringLiteral("builtin");
+    print.description = QStringLiteral("Emit a structured simulation event with runtime values");
+    print.command = {{QStringLiteral("kind"), QStringLiteral("print")}, {QStringLiteral("summary"), QStringLiteral("message · values · condition")}};
+    result << print;
+    return result;
+}
+
+UserTemplateSaveReport UserTemplateService::migrateXipsCommands(const QString& metadataPath, const QVariantMap& asset) const
+{
+    UserTemplateSaveReport report;
+    QFile input(metadataPath);
+    if (!input.open(QIODevice::ReadOnly)) { report.failureReason = input.errorString(); return report; }
+    QJsonParseError parse;
+    const auto document = QJsonDocument::fromJson(input.readAll(), &parse);
+    const auto commands = document.object().value(QStringLiteral("commands"));
+    if (parse.error != QJsonParseError::NoError || !commands.isArray()) { report.failureReason = QStringLiteral("Invalid xIPs command metadata; original data was preserved."); return report; }
+    const auto path = workspaceTemplateFilePath.isEmpty() ? globalTemplateFilePath : workspaceTemplateFilePath;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(0)) { report.failureReason = QStringLiteral("Another operation is updating Templates."); return report; }
+    auto next = readTemplateFile(path, UserTemplateScope::Workspace, &report);
+    if (!report.issues.isEmpty()) return report;
+    const auto root = QFileInfo(metadataPath).absolutePath();
+    const auto origin = normalizePath(metadataPath);
+    const auto identity = asset.value(QStringLiteral("assetId")).toString().isEmpty() ? origin
+        : asset.value(QStringLiteral("library")).toString() + QLatin1Char('|') + asset.value(QStringLiteral("assetId")).toString();
+    bool changed = false;
+    const auto safeSource = [&](const QString& relative) {
+        if (relative.isEmpty() || QDir::isAbsolutePath(relative)) return QString();
+        const auto path = normalizePath(QDir(root).filePath(relative));
+        const auto canonical = QFileInfo(path).canonicalFilePath();
+        const auto base = QFileInfo(root).canonicalFilePath() + QLatin1Char('/');
+        return canonical.startsWith(base, Qt::CaseInsensitive) && QFileInfo(path).isFile() ? path : QString();
+    };
+    for (const auto& value : commands.toArray()) {
+        const auto entry = value.toObject();
+        const auto mapping = entry.value(QStringLiteral("id")).toString();
+        const auto symbol = entry.value(QStringLiteral("symbol")).toString();
+        if (mapping.isEmpty() || symbol.isEmpty()) { report.failureReason = QStringLiteral("A legacy command has no mapping identity or symbol; no migration was committed."); return report; }
+        const auto id = QStringLiteral("xips:") + QString::fromLatin1(QCryptographicHash::hash((identity + QLatin1Char('|') + mapping).toUtf8(), QCryptographicHash::Sha256).toHex());
+        if (std::any_of(next.cbegin(), next.cend(), [&](const auto& existing) { return existing.id == id; })) continue;
+        UserTemplateRecord record;
+        record.id = id; record.label = entry.value(QStringLiteral("name")).toString();
+        record.description = entry.value(QStringLiteral("description")).toString();
+        QString token = record.label.trimmed();
+        if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_.:-]*$")).match(token).hasMatch()) token = QStringLiteral("command_") + mapping.left(8);
+        record.commandToken = QLatin1Char('@') + token;
+        QVariantList files;
+        for (const auto& file : entry.value(QStringLiteral("files")).toArray()) {
+            const auto resolved = safeSource(file.toString());
+            if (resolved.isEmpty()) { report.failureReason = QStringLiteral("A legacy dependency is missing or leaves its asset directory; no migration was committed."); return report; }
+            files << resolved;
+        }
+        const auto source = safeSource(entry.value(QStringLiteral("file")).toString());
+        if (source.isEmpty() || !files.contains(source)) { report.failureReason = QStringLiteral("The legacy declaration source is missing from its compilation inputs."); return report; }
+        QStringList includes;
+        for (const auto& value : entry.value(QStringLiteral("includeDirectories")).toArray()) {
+            const auto relative = value.toString();
+            const auto resolved = QFileInfo(QDir(root).filePath(relative)).canonicalFilePath();
+            const auto canonicalRoot = QFileInfo(root).canonicalFilePath();
+            if (relative.isEmpty() || QDir::isAbsolutePath(relative) || !QFileInfo(resolved).isDir()
+                || (resolved != canonicalRoot && !resolved.startsWith(canonicalRoot + '/', Qt::CaseInsensitive))) {
+                report.failureReason = QStringLiteral("A legacy include folder is missing or outside its asset directory."); return report;
+            }
+            includes << resolved;
+        }
+        record.command = {{QStringLiteral("kind"), QStringLiteral("call")}, {QStringLiteral("symbol"), symbol},
+            {QStringLiteral("includeDirectories"), includes},
+            {QStringLiteral("sourceFile"), source},
+            {QStringLiteral("compileOrder"), files}, {QStringLiteral("asset"), asset},
+            {QStringLiteral("aliases"), entry.value(QStringLiteral("aliases")).toVariant()},
+            {QStringLiteral("migrationSource"), origin}, {QStringLiteral("migrationId"), mapping},
+            {QStringLiteral("legacyMapping"), entry.toVariantMap()}};
+        if (document.object().value(QStringLiteral("origin")).toString() == QStringLiteral("builtin")) {
+            for (const auto& builtin : simulationBuiltins()) if (builtin.command.value(QStringLiteral("symbol")).toString() == symbol) {
+                record.commandToken = builtin.commandToken; record.label = builtin.label; record.description = builtin.description;
+                record.command.insert(QStringLiteral("kind"), QStringLiteral("driver"));
+                record.command.insert(QStringLiteral("summary"), builtin.command.value(QStringLiteral("summary")));
+            }
+        }
+        next << record; changed = true;
+    }
+    if (!changed) { report.valid = true; report.records = next; return report; }
+    report = validateRecordsForSave(next, path);
+    if (report.valid && !writeRecordsToJsonFile(path, report.records, &report.failureReason)) report.valid = false;
+    if (report.valid) cacheValid = false;
+    return report;
+}
+
+QVariantMap UserTemplateService::signalRoles() const
+{
+    QVariantMap roles;
+    for (const auto& path : {globalTemplateFilePath, workspaceTemplateFilePath}) {
+        if (path.isEmpty()) continue;
+        QFile file(path);
+        if (file.open(QIODevice::ReadOnly)) {
+            const auto values = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("signalRoles")).toObject().toVariantMap();
+            for (auto it = values.cbegin(); it != values.cend(); ++it) {
+                if (it.value().isNull()) roles.remove(it.key()); else roles.insert(it.key(), it.value());
+            }
+        }
+    }
+    return roles;
+}
+QString UserTemplateService::setSignalRoles(const QVariantMap& roles) const
+{
+    for (auto it = roles.cbegin(); it != roles.cend(); ++it)
+        if (it.value().toString() != QStringLiteral("Clock") && it.value().toString() != QStringLiteral("Reset")) return QStringLiteral("Role must be Clock or Reset.");
+    const auto path = workspaceTemplateFilePath.isEmpty() ? globalTemplateFilePath : workspaceTemplateFilePath;
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile lock(path + QStringLiteral(".lock"));
+    if (!lock.tryLock(0)) return QStringLiteral("Another operation is updating Templates.");
+    QJsonObject root;
+    if (QFileInfo::exists(path)) {
+        QFile file(path); if (!file.open(QIODevice::ReadOnly)) return file.errorString();
+        QJsonParseError error; const auto data = QJsonDocument::fromJson(file.readAll(), &error);
+        if (error.error != QJsonParseError::NoError) return QStringLiteral("The template file is invalid; its contents were preserved.");
+        root = data.isArray() ? QJsonObject{{QStringLiteral("templates"), data.array()}} : data.object();
+    }
+    if (!root.contains(QStringLiteral("templates"))) root.insert(QStringLiteral("templates"), QJsonArray{});
+    auto storedRoles = QJsonObject::fromVariantMap(roles);
+    if (!workspaceTemplateFilePath.isEmpty()) {
+        QFile global(globalTemplateFilePath);
+        if (global.open(QIODevice::ReadOnly)) {
+            const auto inherited = QJsonDocument::fromJson(global.readAll()).object().value(QStringLiteral("signalRoles")).toObject();
+            for (auto it = inherited.begin(); it != inherited.end(); ++it)
+                if (!roles.contains(it.key())) storedRoles.insert(it.key(), QJsonValue::Null);
+        }
+    }
+    root.insert(QStringLiteral("signalRoles"), storedRoles);
+    if (!QDir().mkpath(QFileInfo(path).absolutePath())) return QStringLiteral("Cannot create the template folder.");
+    QSaveFile file(path); file.setDirectWriteFallback(false); const auto bytes = QJsonDocument(root).toJson();
+    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit()) return file.errorString();
+    cacheValid = false;
+    return {};
 }

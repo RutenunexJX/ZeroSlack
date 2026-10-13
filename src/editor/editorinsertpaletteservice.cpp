@@ -151,6 +151,7 @@ QList<GlobalControlItem> symbolItems(
             item.kind = GlobalControlItemKind::Symbol;
             item.id = stable;
             item.title = completion.text;
+            item.typeBadge = SymbolTaxonomy::symbolTypeLabel({record.declarationKind, record.usageRole, record.owner.kind, record.visibility, record.sourceRole, record.collectorKind});
             item.subtitle = completion.description;
             item.insertionText = completion.defaultValue.isEmpty()
                 ? completion.text : completion.defaultValue;
@@ -169,7 +170,7 @@ QList<GlobalControlItem> symbolItems(
                 item.sourceSemanticSnapshot = SemanticIndex::getInstance()->snapshotToken();
                 if (SemanticIndex::getInstance()->getCachedFileContent(context.fileName) != context.documentText
                     || !record.presentation.callableSignatureAvailable)
-                    item.disabledReason = QStringLiteral("等待当前 task/function 的 Slang 语义分析完成。");
+                    item.disabledReason = QStringLiteral("Wait for the current task/function Slang analysis.");
             }
             result.append(item);
             if (result.size() >= 120)
@@ -284,7 +285,9 @@ bool matchesTemplate(const CodeTemplateItem& item,
     return needle.isEmpty()
         || item.label.contains(needle, Qt::CaseInsensitive)
         || item.commandToken.contains(needle, Qt::CaseInsensitive)
-        || item.description.contains(needle, Qt::CaseInsensitive);
+        || item.description.contains(needle, Qt::CaseInsensitive)
+        || item.command.value(QStringLiteral("symbol")).toString().contains(needle, Qt::CaseInsensitive)
+        || item.command.value(QStringLiteral("aliases")).toStringList().join(QLatin1Char(' ')).contains(needle, Qt::CaseInsensitive);
 }
 
 bool matchesPaletteItem(const QString& title,
@@ -445,11 +448,25 @@ QList<GlobalControlItem> templateItems(
         item.selectionStart = templateItem.selectionStart;
         item.selectionLength = templateItem.selectionLength;
         item.templateSlots = templateItem.templateSlots;
+        item.parameters = templateItem.command;
+        item.parameterSummary = templateItem.command.value(QStringLiteral("summary")).toString();
+        if (item.parameterSummary.isEmpty()) {
+            QStringList names;
+            for (const auto& slot : item.templateSlots) if (!names.contains(slot.name)) names << slot.name;
+            item.parameterSummary = names.mid(0, 3).join(QStringLiteral(" · "));
+        }
+        if (templateItem.commandToken.startsWith(QLatin1Char('@'))) {
+            item.operation = GlobalControlItemOperation::InsertSimulationCommand;
+            item.replacementStart = context.replacementStart;
+            item.replacementLength = context.replacementLength;
+            if (context.readOnly) item.disabledReason = QStringLiteral("This document is read-only.");
+        }
         result.append(item);
         if (result.size() >= 120)
             break;
     }
 
+    if (context.simulationCommands) return result;
     appendSemanticTemplates(&result,
                             context,
                             text,
@@ -480,6 +497,16 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
     const QString& text,
     const GlobalControlQueryContext& context) const
 {
+    if (context.simulationCommands) {
+        auto result = templateItems(text, context, UserTemplateService::getInstance()->catalogForFile(context.fileName, true), {});
+        for (auto& item : result) {
+            item.sourceDocumentRevision = context.documentRevision; item.sourceDocumentInstance = context.documentInstance;
+            item.sourceDocumentTextRevision = context.documentTextRevision;
+            item.sourceFileName = context.fileName; item.sourceCursorPosition = context.cursorPosition;
+            item.sourceTemplateCatalogRevision = UserTemplateService::getInstance()->catalogRevision();
+        }
+        return result;
+    }
     switch (category) {
     case GlobalControlCategory::Symbols:
         return symbolItems(text, context);
@@ -516,7 +543,7 @@ QList<GlobalControlItem> EditorInsertPaletteService::query(
         }
         captured->catalogRevision = catalogRevision;
         auto templates = captured->templates;
-        templates.append(UserTemplateService::getInstance()->catalog());
+        templates.append(UserTemplateService::getInstance()->catalogForFile(context.fileName));
         auto result = templateItems(text, context, templates, captured->importSite);
         for (auto& item : result) {
             item.sourceDocumentRevision = context.documentRevision;

@@ -1457,6 +1457,13 @@ void fillSemanticDimensions(const Type& type,
 
     result->packedDimensionsText = packed.join(QLatin1Char(' '));
     result->unpackedDimensionsText = unpacked.join(QLatin1Char(' '));
+    // Rank also includes dynamic, associative and queue dimensions resolved by Slang.
+    result->packedRank = 0;
+    result->unpackedRank = 0;
+    for (const Type* dimension = &type; dimension; dimension = dimension->getArrayElementType()) {
+        if (dimension->isPackedArray()) ++result->packedRank;
+        if (dimension->isUnpackedArray()) ++result->unpackedRank;
+    }
     if (hasUnpackedElements && unpackedElements > 0) {
         result->unpackedElementCountText =
             QString::number(unpackedElements);
@@ -1709,6 +1716,15 @@ void appendStructuredEnumValues(
             value, targetScope, &enumValue.expressionFailureReason);
         enumValue.unqualifiedReferenceAvailable = resolvesToEnumMember(
             enumValue.name, value, targetScope);
+        const Scope* enumScope = value.getParentScope();
+        while (enumScope && enumScope->asSymbol().kind == SymbolKind::EnumType)
+            enumScope = enumScope->asSymbol().getParentScope();
+        const auto hierarchical = enumScope ? QString::fromStdString(enumScope->asSymbol().getHierarchicalPath())
+            + QLatin1Char('.') + enumValue.name : QString();
+        if (resolvesToEnumMember(hierarchical, value, &value.getParentScope()->getCompilation().getRoot()))
+            enumValue.hierarchicalExpressionText = hierarchical;
+        else if (enumValue.expressionText.contains(QStringLiteral("::")))
+            enumValue.hierarchicalExpressionText = enumValue.expressionText;
         enumValue.valueText = info.valueText;
         enumValue.displayValueText = info.displayValueText;
         enumValue.available = info.available;
@@ -2438,6 +2454,7 @@ void gatherScopePresentations(
             if (storeElaboratedInfo) {
                 presentation.instanceInfoByPath.insert(
                     instancePath, info);
+                presentation.objectInfoByPath.insert(QString::fromStdString(symbol.getHierarchicalPath()), info);
             }
             if (declaredType) {
                 presentation.declaredTypeFactsByPath.insert(
@@ -2522,6 +2539,7 @@ void gatherScopePresentations(
             // make the declaration text redundant.
             info.sourceTextDisplaysEffectiveValue =
                 !parameter.isOverridden() && sourceDisplaysValue;
+            info.readable = true;
             info.expressionText = parameterExpressionText(parameter);
             info.valueSourceText = parameterValueSourceText(parameter);
             storeInfo(parameter, info,
@@ -2618,8 +2636,11 @@ void gatherScopePresentations(
                     static_cast<const DeclaredType*>(
                         variable.getDeclaredType()),
                     sourceManager);
+            auto variableInfo = inputTypeInfo(variable.getType(), variable.getParentScope());
+            variableInfo.readable = true;
+            variableInfo.writable = !variable.flags.has(VariableFlags::Const);
             storeInfo(variable,
-                      inputTypeInfo(variable.getType(), variable.getParentScope()),
+                      variableInfo,
                       &typeFacts,
                       [&](SemanticSymbolPresentation* presentation) {
                           const auto* scope = variable.getParentScope();
@@ -2639,8 +2660,10 @@ void gatherScopePresentations(
                     static_cast<const DeclaredType*>(
                         net.getDeclaredType()),
                     sourceManager);
+            auto netInfo = inputTypeInfo(net.getType(), net.getParentScope());
+            netInfo.readable = true;
             storeInfo(net,
-                      inputTypeInfo(net.getType(), net.getParentScope()),
+                      netInfo,
                       &typeFacts,
                       [](SemanticSymbolPresentation*) {},
                       true);
@@ -2650,6 +2673,10 @@ void gatherScopePresentations(
             if (cancelled())
                 return;
             SemanticElaboratedSymbolInfo info = inputTypeInfo(port.getType(), port.getParentScope());
+            info.portDirection = structuredDirection(port.direction);
+            info.readable = true;
+            info.writable = port.internalSymbol && port.internalSymbol->kind == SymbolKind::Variable
+                && !port.internalSymbol->as<VariableSymbol>().flags.has(VariableFlags::Const);
             fillStructuredTypeLeaves(port.getType(), port.getParentScope(), sourceManager, &info);
             const ValueSymbol* internal =
                 port.internalSymbol
@@ -2969,10 +2996,18 @@ void slang_symbols::populateSymbolPresentations(
         parseErrorFiles.insert(normalizedFileName(position.fileName));
     }
     QList<SemanticSymbolRecord> updatedRecords = records;
+    QHash<QString, QStringList> actualInstances;
+    auto instanceVisitor = makeVisitor([&](auto& visitor, const InstanceSymbol& instance) {
+        const auto key = identityKey(sourceManager, instance.getDefinition());
+        actualInstances[key] << QString::fromStdString(instance.getHierarchicalPath());
+        visitor.visitDefault(instance);
+    });
+    for (const auto* top : root.topInstances) if (top) top->visit(instanceVisitor);
     for (SemanticSymbolRecord& record : updatedRecords) {
         if (cancelled())
             return;
         if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module) {
+            record.presentation.elaboratedInstancePaths = actualInstances.value(identityKey(record));
             for (const auto* definition : definitions) {
                 if (QString::fromStdString(std::string(definition->name)) != record.name) continue;
                 record.presentation.moduleDefinitionAvailable = true;

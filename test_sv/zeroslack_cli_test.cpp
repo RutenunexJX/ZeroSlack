@@ -3,6 +3,8 @@
 #include <zeroslack/semantic/slangmanager.h>
 #include <zeroslack/semantic/suitecontextcatalog.h>
 #include "zeroslackcli.h"
+#include "../src/editor/formatterservice.h"
+#include <zeroslack/documents/documentfileread.h>
 #include <zeroslack/semantic/workspaceconfigurationservice.h>
 #include <QDateTime>
 
@@ -1270,6 +1272,116 @@ private slots:
         QCOMPARE(QFileInfo(snapshot.resources.first().filePath)
                      .canonicalFilePath(),
                  QFileInfo(fixture.topFile).canonicalFilePath());
+    }
+
+    void formatCommandProcess()
+    {
+        QTemporaryDir root;
+        QVERIFY(root.isValid());
+        QJsonArray evidence;
+        const auto invoke = [&](const QStringList& arguments) {
+            QProcess process;
+            process.start(QDir(QCoreApplication::applicationDirPath()).filePath("zeroslack-cli.exe"), arguments);
+            if (!process.waitForStarted(10000) || !process.waitForFinished(45000))
+                return qMakePair(-999, QJsonObject{});
+            const auto output = process.readAllStandardOutput();
+            const auto json = QJsonDocument::fromJson(output).object();
+            evidence.append(QJsonObject{{"arguments", QJsonArray::fromStringList(arguments)}, {"exitCode", process.exitCode()},
+                                        {"stdout", QString::fromUtf8(output)}, {"stderr", QString::fromUtf8(process.readAllStandardError())}});
+            return qMakePair(process.exitCode(), json);
+        };
+        const auto raw = [](const QString& path) { QFile file(path); return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{}; };
+        const auto write = [](const QString& path, const QByteArray& value) { QFile file(path); return file.open(QIODevice::WriteOnly) && file.write(value) == value.size(); };
+        const QString text = "module formatted;\nlogic q;\ninitial begin\nq=1; // keep 中文 Ω\n$display(\"spacing   \\t stays\");\nend\nendmodule\n";
+        const auto expected = FormatterService::getInstance()->formatDocument(text);
+        QVERIFY(expected.changed);
+        int index = 0;
+        for (const auto encoding : {QStringConverter::Utf8, QStringConverter::Utf16LE, QStringConverter::Utf16BE,
+                                   QStringConverter::Utf32LE, QStringConverter::Utf32BE}) {
+            for (const auto eol : {QString("\n"), QString("\r\n")}) {
+                DocumentFileFormat format;
+                format.encoding = encoding; format.byteOrderMark = true; format.lineEnding = eol;
+                const auto path = root.filePath(QString("unicode-%1.sv").arg(index++));
+                const auto original = encodeDocumentText(text, format);
+                QVERIFY(write(path, original));
+                const auto time = QFileInfo(path).lastModified();
+                auto result = invoke({"format", path});
+                QCOMPARE(result.first, 1); QVERIFY(result.second.value("ok").toBool());
+                const auto data = result.second.value("data").toObject();
+                QVERIFY(data.value("changed").toBool()); QVERIFY(!data.value("written").toBool());
+                QCOMPARE(data.value("outcome").toString(), QString("Applied"));
+                QCOMPARE(data.value("formattedLines").toInt(), expected.formattedLines);
+                QCOMPARE(raw(path), original); QCOMPARE(QFileInfo(path).lastModified(), time);
+                result = invoke({"format", path, "--write"});
+                QCOMPARE(result.first, 0); QVERIFY(result.second.value("data").toObject().value("written").toBool());
+                QCOMPARE(raw(path), encodeDocumentText(expected.formattedText, format));
+                const auto writtenTime = QFileInfo(path).lastModified();
+                result = invoke({"format", path, "--write"});
+                QCOMPARE(result.first, 0); QVERIFY(!result.second.value("data").toObject().value("written").toBool());
+                QCOMPARE(QFileInfo(path).lastModified(), writtenTime);
+                QCOMPARE(invoke({"format", path, "--check"}).first, 0);
+            }
+        }
+        const auto path = root.filePath("plain.sv");
+        QVERIFY(write(path, text.toUtf8()));
+        QCOMPARE(invoke({"format", path, "--check"}).first, 1);
+        QCOMPARE(invoke({"format", path, "--write"}).first, 0);
+        QCOMPARE(raw(path), expected.formattedText.toUtf8());
+        const QString preprocessor = "`define MSG \"literal  spacing\"\n`ifdef TEST\nmodule pp;\ninitial begin\n$display(`MSG); /* exact  comment */\nend\nendmodule\n`endif\n";
+        QVERIFY(write(path, preprocessor.toUtf8()));
+        const auto ppExpected = FormatterService::getInstance()->formatDocument(preprocessor);
+        QCOMPARE(invoke({"format", path, "--write"}).first, 0);
+        QCOMPARE(raw(path), ppExpected.formattedText.toUtf8());
+        QVERIFY(raw(path).contains("\"literal  spacing\""));
+        QVERIFY(raw(path).contains("/* exact  comment */"));
+        for (const auto input : {QByteArray("module x;\r\n logic a;\nendmodule\n"), QByteArray("module x;\xff\nendmodule\n"),
+                                QByteArray("a\0b", 3), QString("// nonbreaking\u00a0space\n").toUtf8()}) {
+            QVERIFY(write(path, input));
+            auto result = invoke({"format", path, "--write"});
+            QCOMPARE(result.first, 2); QCOMPARE(result.second.value("data").toObject().value("outcome").toString(), QString("Rejected"));
+            QCOMPARE(raw(path), input);
+        }
+        QVERIFY(write(path, "module incomplete(\n\tinput logic a,\n"));
+        auto fallback = invoke({"format", path, "--write"});
+        QCOMPARE(fallback.first, 0);
+        QCOMPARE(fallback.second.value("data").toObject().value("outcome").toString(), QString("ConservativeFallback"));
+        QVERIFY(!fallback.second.value("data").toObject().value("diagnostic").toString().isEmpty());
+        QVERIFY(write(path, text.toUtf8()));
+        QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::ReadUser));
+        const auto denied = invoke({"format", path, "--write"});
+        QVERIFY(QFile::setPermissions(path, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadUser | QFileDevice::WriteUser));
+        QCOMPARE(denied.first, 2); QCOMPARE(raw(path), text.toUtf8());
+        for (const QStringList args : {QStringList{"format"}, QStringList{"format", "--write"},
+            QStringList{"format", path, "--write", "--check"}, QStringList{"format", path, "--cache-dir", root.path()},
+            QStringList{"format", path, "--format", "unsupported"}, QStringList{"format", path, "extra.sv"},
+            QStringList{"format", root.filePath("missing.sv")}, QStringList{"format", root.path()}}) {
+            auto result = invoke(args); QCOMPARE(result.first, 2); QVERIFY(!result.second.value("ok").toBool());
+        }
+        QCOMPARE(invoke({"format", path, "--format", "jsonl"}).first, 1);
+        QCOMPARE(invoke({"format", path, "--format", "markdown"}).first, 1);
+        const auto folder = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+        if (!folder.isEmpty()) QVERIFY(write(QDir(folder).filePath("formatter-cli.json"), QJsonDocument(evidence).toJson()));
+    }
+    void formatRejectsExternalChanges()
+    {
+        QTemporaryDir root;
+        const auto path = root.filePath("format.sv");
+        const QString source = "module x;\ninitial begin\n$display(\"keep\");\nend\nendmodule\n";
+        const QString external = "// external edit must survive\n" + source;
+        for (const auto stage : {ZeroSlackCliService::ObservationStage::FormatCaptured, ZeroSlackCliService::ObservationStage::BeforeFormatWrite}) {
+            QVERIFY(writeText(path, source));
+            ZeroSlackCliRequest request;
+            request.command = "format"; request.filePath = path; request.formatWrite = true;
+            bool changed = false;
+            ZeroSlackCliService service([&](ZeroSlackCliService::ObservationStage current) {
+                if (current == stage) changed = writeText(path, external);
+            });
+            const auto result = service.execute(request);
+            QVERIFY(changed); QCOMPARE(result.exitCode, 2);
+            QCOMPARE(result.envelope.value("error").toObject().value("code").toString(), QString("source_changed"));
+            QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly));
+            QCOMPARE(QString::fromUtf8(file.readAll()).replace("\r\n", "\n"), external);
+        }
     }
 
     void suiteContextRejectsInvalidProviderAndLineScope()

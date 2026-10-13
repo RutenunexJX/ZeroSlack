@@ -5,7 +5,7 @@
 #include <zeroslack/documents/documentfileread.h>
 #include "uicontrols.h"
 #include "../integrations/simdock/simdockcontextview.h"
-#include "../integrations/xips/xipshdlcommandservice.h"
+#include "simulationcommandservice.h"
 #include "../simulation/simdock/ui/workbench.h"
 
 #include "actionregistry.h"
@@ -68,6 +68,7 @@
 #include "temporaryeditorcontextprovider.h"
 #include "temporaryeditorsearchprovider.h"
 #include "usertemplateservice.h"
+#include "simulationcommandprefix.h"
 #include "activitylogpanelcoordinator.h"
 #include "activitylogservice.h"
 #include "problemspanelcoordinator.h"
@@ -402,7 +403,7 @@ MainWindow::~MainWindow()
     // Stop chrome observers before editor teardown emits document state signals.
     workspaceSwitcher.reset();
     workspaceSessionCoordinator.reset();
-    xipsCommands.reset();
+    simulationCommands.reset();
     simulationWorkspace.reset();
 
     // TabManager owns SharedDocuments whose teardown rebinds every attached
@@ -1576,7 +1577,7 @@ void MainWindow::setupGlobalControl()
                 tabManager ? tabManager->getCurrentEditor() : nullptr) {
             editor->exitInteractionModes(
                 EditorModeExitReason::ExternalControl);
-            if (xipsCommands) xipsCommands->prepare();
+            if (simulationCommands) simulationCommands->prepare();
         }
     });
     globalControlCoordinator->setContextProvider([this]() {
@@ -1607,9 +1608,13 @@ void MainWindow::setupGlobalControl()
         context.replacementStart = paletteContext.replacementStart;
         context.replacementLength = paletteContext.replacementLength;
         context.documentRevision = paletteContext.documentRevision;
-        if (const auto* shared = tabManager->sharedDocumentForEditor(editor))
+        if (const auto* shared = tabManager->sharedDocumentForEditor(editor)) {
             context.documentInstance = shared->instanceSerial();
+            context.documentTextRevision = shared->textRevision();
+        }
         context.memberAccess = paletteContext.memberAccess;
+        context.readOnly = editor->isReadOnly();
+        SimulationCommandPrefix::capture(context);
         return context;
     });
     globalControlCoordinator->setItemProvider(
@@ -1617,14 +1622,12 @@ void MainWindow::setupGlobalControl()
            const QString& text,
            const GlobalControlQueryContext& context) {
             auto result = insertPalette->query(category, text, context);
-            if (category == GlobalControlCategory::Symbols && xipsCommands)
-                result = xipsCommands->items(text, context) + result;
             return result;
         });
     globalControlCoordinator->setActionHandler(
         [this](const GlobalControlItem& item) {
-            if (item.operation == GlobalControlItemOperation::UseXipsCommand) {
-                if (xipsCommands) xipsCommands->activate(item);
+            if (item.operation == GlobalControlItemOperation::InsertSimulationCommand) {
+                if (simulationCommands) simulationCommands->activate(item);
                 return;
             }
             if (item.kind == GlobalControlItemKind::Symbol
@@ -1700,7 +1703,7 @@ void MainWindow::setupGlobalControl()
                                 QStringLiteral("fileName")).toString(),
                             &failureReason);
                         break;
-                    case GlobalControlItemOperation::UseXipsCommand:
+                    case GlobalControlItemOperation::InsertSimulationCommand:
                         break;
                     }
                 }
@@ -1769,7 +1772,7 @@ void MainWindow::setupGlobalControl()
                 }
             }
         });
-    if (xipsCommands) connect(xipsCommands.get(), &XipsHdlCommandService::catalogChanged,
+    if (simulationCommands) connect(simulationCommands.get(), &SimulationCommandService::catalogChanged,
         globalControlCoordinator.get(), &GlobalControlCoordinator::refreshVisibleItems);
     globalControlCoordinator->install();
 }
@@ -1892,6 +1895,12 @@ void MainWindow::setupPanelLayoutController()
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());
     registerPanel(QStringLiteral("simulationLog"), runLogDock);
+    auto* eventsDock = new QDockWidget(tr("Simulation events"), this);
+    eventsDock->setObjectName(QStringLiteral("simulationEventsDock"));
+    eventsDock->setWidget(simulation->eventsWidget());
+    registerPanel(QStringLiteral("simulationEvents"), eventsDock);
+    connect(simulation, &simdock::Workbench::openSourceRequested, this,
+        [this](const QString& file, int line) { revealSuiteSource(file, line, 1); });
     {
         hotspotPanel = new SignalUsageHotspotPanel(this);
         auto* hotspotDock = new QDockWidget(tr("Hotspot"), this);
@@ -2409,8 +2418,11 @@ void MainWindow::setupToolsMenu()
     toolsMenu = UiControls::addMenu(menuBar(), tr("&Tools"));
     toolsMenu->setObjectName(QStringLiteral("toolsMenu"));
 
-    userTemplatesMenu = UiControls::addMenu(toolsMenu, tr("User Templates"));
+    userTemplatesMenu = UiControls::addMenu(toolsMenu, tr("Templates"));
     userTemplatesMenu->setObjectName(QStringLiteral("userTemplatesMenu"));
+    auto* manageTemplates = userTemplatesMenu->addAction(QStringLiteral("Manage Templates…"));
+    manageTemplates->setObjectName(QStringLiteral("manageSimulationTemplates"));
+    connect(manageTemplates, &QAction::triggered, this, [this] { if (simulationCommands) simulationCommands->manage(); });
 
     QAction* openGlobalAction =
         addRegistryMenuAction(
@@ -4659,7 +4671,7 @@ void MainWindow::closeEvent(QCloseEvent *event)
 {
     QString componentError;
     if ((simulationWorkspace && !simulationWorkspace->canClose(&componentError))
-        || (xipsCommands && !xipsCommands->canClose(&componentError))
+        || (simulationCommands && !simulationCommands->canClose(&componentError))
         || (contextWorkspaceController && !contextWorkspaceController->canCloseResources(&componentError))) {
         event->ignore();
         postActivityMessage(componentError, 6000);

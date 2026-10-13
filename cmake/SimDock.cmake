@@ -14,8 +14,10 @@ target_sources(zeroslack_core PRIVATE
     src/simulation/simdock/core/dependencies.cpp
     src/simulation/simdock/core/testbench.cpp
     src/simulation/simdock/core/questasession.cpp
+    src/simulation/simdock/core/simulationevents.cpp
     src/simulation/simdock/core/wavepalette.cpp
     src/simulation/simdock/ui/workbench.cpp
+    src/simulation/simdock/ui/simulationeventspanel.cpp
     src/simulation/simdock/ui/dialogs.cpp
     src/simulation/simdock/ui/uistyle.cpp
     src/integrations/simdock/simdockcontextview.cpp

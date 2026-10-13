@@ -1,13 +1,13 @@
 # ZeroSlack integrations
 
-ZeroSlack owns the read-only CLI and explicit external resource associations. The cross-application family contract is in [AppSuite integration](suite.md).
+ZeroSlack owns the workspace/file CLI and explicit external resource associations. The cross-application family contract is in [AppSuite integration](suite.md).
 
-## Read-only CLI
+## Workspace and file CLI
 
 ### Purpose
 
-`zeroslack-cli.exe` provides a read-only, machine-oriented view of a ZeroSlack
-workspace. Its primary consumer is an AI agent that must inspect a large RTL
+`zeroslack-cli.exe` provides read-only, machine-oriented workspace queries and
+an explicit-file formatting command. Its primary consumer is an AI agent that must inspect a large RTL
 project and its Pinloom code links without opening the GUI or loading complete
 source files into one prompt.
 
@@ -30,14 +30,15 @@ enrich the bounded local metadata through `resource.resolve`.
 
 ### Boundaries
 
-- The CLI never edits RTL, workspace configuration, `.zs`, or Pinloom links.
+- Workspace queries never edit RTL, workspace configuration, `.zs`, or Pinloom links.
+  Only `format <file> --write` edits its explicitly named file.
 - Semantic cache files live under the operating-system user cache directory,
   or an explicit `--cache-dir`; no cache is written into the workspace.
 - The existing Slang/SemanticIndex pipeline remains the semantic authority.
 - Pinloom links are read through `PinloomCodeLinkStore`; Pinloom databases are
   not accessed directly and linked content is not fetched eagerly.
-- Every response uses the versioned `zeroslack.cli/v1` envelope and carries a
-  workspace revision. Symbol results expose both a semantic ID intended to
+- Every response uses the versioned `zeroslack.cli/v1` envelope. Workspace query
+  responses carry a workspace revision. Symbol results expose both a semantic ID intended to
   survive line movement and an exact snapshot ID for auditability.
 - `suite-context` also returns an independent `suiteRevision` over its explicit
   association files and referenced Wave/RegMap projects, so suite-only changes
@@ -46,6 +47,7 @@ enrich the bounded local metadata through `resource.resolve`.
 ### Commands
 
 ```text
+zeroslack-cli format <file> [--check | --write]
 zeroslack-cli scan <workspace>
 zeroslack-cli status <workspace> [--require-current]
 zeroslack-cli summary <workspace>
@@ -60,6 +62,33 @@ zeroslack-cli bundle <workspace> --query <text> --max-tokens <n>
 Global output formats are `json` (default), `jsonl`, and `markdown`. Queries
 refresh a stale cache unless `--no-refresh` is supplied. `scan` always rebuilds
 the cache, while `status` only inspects it.
+
+### Explicit-file formatting
+
+`format <file>` defaults to `--check`; `--write` and `--check` are mutually
+exclusive. `--format json|jsonl|markdown` still selects output serialization.
+The command opens only the explicit file and uses the editor's
+`FormatterService::formatDocument` with its default options, without starting
+the GUI, scanning a workspace, or querying Suite/Questa.
+
+The `data` object contains `file`, `changed`, `written`, `outcome`, `diagnostic`,
+and `formattedLines`. Outcomes are `Applied`, `Unchanged`,
+`ConservativeFallback`, and `Rejected`. A conservative result preserves the
+formatter's diagnostic and is not reported as complete formatting. Exit codes
+are 0 for unchanged checks or successful writes, 1 for a check needing changes,
+and 2 for arguments, I/O, lossless conversion, or safety rejection. `ok` means
+the request was handled successfully; it remains true for exit 1.
+
+The existing UTF-8 and BOM-selected UTF-16/UTF-32 reader and encoder must round
+trip the original bytes before formatting. Uniform LF, CRLF, and CR line endings
+and the BOM are retained; mixed endings and text changed by the reader's
+normalization are rejected. Immutable tokens, comments, strings and existing
+preprocessor protections remain enforced. A changed write uses `QSaveFile`
+without direct-write fallback and rechecks the original bytes, physical path and
+modification time immediately before replacement. Cooperative formatter writes
+share a per-file lock. An unrelated process replacing the file after that final
+check is outside this local compare-before-replace boundary. Unchanged files
+are not rewritten. Query cache behavior is unaffected.
 
 ### Cache and identity
 

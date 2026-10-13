@@ -121,6 +121,7 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     QString s = QStringLiteral("if {[runStatus] ne \"nodesign\"} {quit -sim}\n"
         "if {[runStatus] ne \"nodesign\"} {error \"The previous simulation could not be released.\"}\n"
         "transcript file %2\ntranscript on\n"
+        "puts \"ZS_RUN_V1|$::simdock::runId\"\n"
         "set released [open %1 w]\nputs $released $::simdock::runId\nclose $released\n"
         "::simdock::state compiling\n")
         .arg(tclWord(QDir(directory).filePath(QStringLiteral("previous-released"))),
@@ -446,6 +447,8 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork);
     if (!writeFile(QDir(runDir).filePath(QStringLiteral("run.do")), script, error)) return false;
     m_runId = runId; m_runDir = runDir;
+    m_events.reset(runId);
+    emit eventRunStarted(runId);
     m_pendingDesign = prepared.designFingerprint; m_pendingWork = work;
     m_activeWork = work; m_oldRunsReleased = false;
     m_pending = QStringLiteral("set ::simdock::runId %1\n").arg(tclWord(m_runId)) + script;
@@ -487,12 +490,19 @@ void QuestaSession::poll()
     if (log.open(QIODevice::ReadOnly)) {
         if (log.size() < m_logOffset) m_logOffset = 0;
         log.seek(m_logOffset);
-        const auto bytes = log.read(256 * 1024);
-        m_logOffset += bytes.size();
-        log.close();
-        if (!bytes.isEmpty()) {
+        do {
+            const auto bytes = log.read(256 * 1024);
+            if (bytes.isEmpty()) break;
+            m_logOffset += bytes.size();
             emit logText(QString::fromLocal8Bit(bytes));
-        }
+            const auto rejected = m_events.rejectedRecords();
+            const auto events = m_events.feed(bytes);
+            if (!events.isEmpty()) emit eventsReady(events);
+            if (m_events.rejectedRecords() != rejected) emit eventRecordsRejected(m_events.rejectedRecords());
+        } while (!log.atEnd() && !alive());
+        const bool remaining = !log.atEnd();
+        log.close();
+        if (remaining) return;
     }
     QByteArray record;
     {
@@ -552,6 +562,8 @@ void QuestaSession::stop()
     m_poll.stop();
     if (m_busy) finish(false, QStringLiteral("Simulation stopped and the SimDock-managed Questa session closed."));
     releaseFiles();
+    m_events.reset({});
+    emit eventRunCleared();
 }
 void QuestaSession::releaseFiles()
 {
@@ -583,5 +595,7 @@ void QuestaSession::releaseFiles()
     m_sessionDir.reset();
     m_activeWork.clear();
     m_cachedDesign.clear(); m_cachedWork.clear();
+    m_events.reset({});
+    emit eventRunCleared();
 }
 }

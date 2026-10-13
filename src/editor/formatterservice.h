@@ -2,6 +2,7 @@
 #define FORMATTERSERVICE_H
 
 #include <QString>
+#include <zeroslack/documents/documentsapi.h>
 #include <memory>
 namespace StructuredWhitespaceFormatter { class SyntaxContext; }
 
@@ -44,7 +45,7 @@ struct FormatterReport {
     }
 };
 
-class FormatterService
+class ZEROSLACK_DOCUMENTS_API FormatterService
 {
 public:
     static FormatterService* getInstance();

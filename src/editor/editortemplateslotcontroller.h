@@ -60,6 +60,8 @@ private:
         int tabStop = -1;
         int groupIndex = -1;
         bool visibleWhenEmpty = false;
+        QVariantMap input;
+        std::shared_ptr<const TemplateInputContext> inputContext;
     };
 
     EditorModeController* modeController = nullptr;
@@ -97,6 +99,10 @@ private:
     void stopBlinkTimer();
     void ensureBlinkTimer(MyCodeEditor* editor);
     void select(MyCodeEditor* editor, int index);
+    QHash<QString, QString> bindings(MyCodeEditor* editor) const;
+    QString validationError(MyCodeEditor* editor, int physicalIndex) const;
+    void replaceSlot(MyCodeEditor* editor, int physicalIndex, const QString& value, bool joinPrevious = false);
+    void invalidateDependents(MyCodeEditor* editor, const QStringList& changed);
 };
 
 #endif // EDITORTEMPLATESLOTCONTROLLER_H

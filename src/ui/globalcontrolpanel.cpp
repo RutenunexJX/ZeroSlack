@@ -16,7 +16,51 @@
 #include <QSignalBlocker>
 #include <QTabBar>
 #include <QVBoxLayout>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QStyle>
 #include <utility>
+
+namespace {
+class CompactCandidateDelegate final : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex&) const override {
+        return {420, qMax(30, QFontMetrics(option.font).height() + 12)};
+    }
+    void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override {
+        QStyleOptionViewItem row(option); initStyleOption(&row, index); row.text.clear();
+        const auto* style = row.widget ? row.widget->style() : QApplication::style();
+        style->drawControl(QStyle::CE_ItemViewItem, &row, painter, row.widget);
+        painter->save(); painter->setFont(option.font);
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const auto foreground = option.palette.color(selected ? QPalette::HighlightedText : QPalette::Text);
+        auto rect = option.rect.adjusted(10, 4, -10, -4);
+        const auto badge = index.data(Qt::UserRole + 1).toString();
+        const auto summary = index.data(Qt::UserRole + 2).toString();
+        const QFontMetrics metrics(option.font);
+        if (!badge.isEmpty()) {
+            QColor color = badge.contains(QStringLiteral("enum")) ? QColor("#c76812")
+                : badge == QStringLiteral("module") || badge == QStringLiteral("instance") ? QColor("#366dcc")
+                : badge == QStringLiteral("function") || badge == QStringLiteral("task") ? QColor("#8058b4")
+                : badge == QStringLiteral("parameter") || badge == QStringLiteral("localparam") ? QColor("#93721a") : QColor("#258274");
+            const int width = metrics.horizontalAdvance(badge) + 12;
+            QRect box(rect.right() - width + 1, rect.top(), width, rect.height());
+            painter->fillRect(box, color); painter->setPen(Qt::white);
+            painter->drawText(box, Qt::AlignCenter, badge); rect.setRight(box.left() - 12);
+        } else if (!summary.isEmpty()) {
+            const int width = qMin(rect.width() / 2, metrics.horizontalAdvance(summary));
+            QRect details(rect.right() - width + 1, rect.top(), width, rect.height());
+            auto muted = foreground; muted.setAlpha(150); painter->setPen(muted);
+            painter->drawText(details, Qt::AlignRight | Qt::AlignVCenter, metrics.elidedText(summary, Qt::ElideRight, width));
+            rect.setRight(details.left() - 16);
+        }
+        painter->setPen(option.state.testFlag(QStyle::State_Enabled) ? foreground : option.palette.color(QPalette::Disabled, QPalette::Text));
+        painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, metrics.elidedText(index.data().toString(), Qt::ElideRight, rect.width()));
+        painter->restore();
+    }
+};
+}
 
 GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     : QFrame(parent, Qt::Popup | Qt::FramelessWindowHint)
@@ -51,6 +95,8 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
     resultList->setObjectName(QStringLiteral("globalControlResultList"));
     resultList->setMinimumHeight(260);
     resultList->setMouseTracking(true);
+    resultList->setItemDelegate(new CompactCandidateDelegate(resultList));
+    resultList->setUniformItemSizes(true);
     resultList->installEventFilter(this);
     layout->addWidget(resultList);
 
@@ -76,17 +122,22 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
     resultList->clear();
     for (int i = 0; i < currentItems.size(); ++i) {
         const GlobalControlItem& item = currentItems.at(i);
-        const QString label = !item.disabledReason.isEmpty() ? QStringLiteral("%1\n%2").arg(item.title, item.disabledReason) : item.subtitle.isEmpty()
-            ? item.title
-            : QStringLiteral("%1\n%2").arg(item.title, item.subtitle);
-        auto* listItem = new QListWidgetItem(label, resultList);
+        auto* listItem = new QListWidgetItem(item.title, resultList);
         listItem->setData(Qt::UserRole, i);
+        listItem->setData(Qt::UserRole + 1, item.typeBadge);
+        listItem->setData(Qt::UserRole + 2, item.parameterSummary);
         listItem->setToolTip(item.disabledReason.isEmpty() ? item.insertionText : item.disabledReason);
         if (!item.disabledReason.isEmpty()) listItem->setFlags(listItem->flags() & ~Qt::ItemIsEnabled);
         resultList->addItem(listItem);
     }
     for (int i = 0; i < currentItems.size(); ++i)
         if (currentItems.at(i).disabledReason.isEmpty()) { resultList->setCurrentRow(i); break; }
+}
+
+void GlobalControlPanel::setSimulationOnly(bool enabled)
+{
+    categoryTabs->setVisible(!enabled);
+    setProperty("simulationOnly", enabled);
 }
 
 void GlobalControlPanel::setCategory(GlobalControlCategory value)
@@ -253,7 +304,7 @@ void GlobalControlPanel::updatePlaceholder()
         return;
     switch (category()) {
     case GlobalControlCategory::Symbols:
-        searchEdit->setPlaceholderText(QStringLiteral("Search symbols and xIPs commands"));
+        searchEdit->setPlaceholderText(QStringLiteral("Search symbols and templates"));
         break;
     case GlobalControlCategory::Templates:
         searchEdit->setPlaceholderText(QStringLiteral("Filter templates"));

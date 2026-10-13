@@ -3,6 +3,7 @@
 #include "model.h"
 #include "wavepalette.h"
 #include "sessionfiles.h"
+#include "simulationevents.h"
 #include <QObject>
 #include <QProcess>
 #include <QTimer>
@@ -43,6 +44,10 @@ signals:
     void logText(const QString& text);
     void stateChanged(const QString& state);
     void finished(bool completed, const QString& message);
+    void eventRunStarted(const QString& runId);
+    void eventsReady(const QList<simdock::SimulationEvent>& events);
+    void eventRecordsRejected(quint64 count);
+    void eventRunCleared();
 private:
     bool launch(const QString& executable, QString* error);
     void poll();
@@ -61,5 +66,6 @@ private:
     QString m_cachedWork, m_pendingWork;
     QString m_activeWork;
     bool m_oldRunsReleased = false;
+    SimulationEventDecoder m_events;
 };
 }

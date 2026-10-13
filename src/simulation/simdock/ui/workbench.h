@@ -29,6 +29,7 @@ class QListView;
 class QPushButton;
 
 namespace simdock {
+class SimulationEventsPanel;
 class ZEROSLACK_API Workbench : public QWidget {
     Q_OBJECT
 public:
@@ -36,6 +37,7 @@ public:
     ~Workbench() override;
     QWidget* sourceFilesWidget() const { return m_sources; }
     QWidget* runLogWidget() const { return m_logs; }
+    QWidget* eventsWidget() const;
     void initialize();
     void openWorkspace(const QString& path);
     bool openSuiteTarget(const QString& root, const QString& projectId, QString* error);
@@ -59,6 +61,7 @@ public:
     QSize minimumSizeHint() const override;
 signals:
     void openFileRequested(const QString& file);
+    void openSourceRequested(const QString& file, int line);
     void stateChanged();
     void scanFinished();
     void preferencesChanged();
@@ -69,6 +72,7 @@ private:
     void setPreference(const QString& key, const QVariant& value);
     void restoreLayout(const QVariantMap& state);
     QPointer<QWidget> m_sources, m_logs;
+    SimulationEventsPanel* m_events = nullptr;
     QWidget *m_existingInput = nullptr, *m_durationInput = nullptr;
     ElaText *m_emptyState = nullptr, *m_legacyNotice = nullptr;
     QToolButton* m_settings = nullptr;

@@ -7,6 +7,9 @@
 #include <QWriteLocker>
 
 #include <slang/ast/ScriptSession.h>
+#include <slang/ast/symbols/ParameterSymbols.h>
+#include <slang/ast/symbols/CompilationUnitSymbols.h>
+#include <slang/ast/types/Type.h>
 
 #include <algorithm>
 #include <limits>
@@ -684,17 +687,30 @@ void EffectiveValueService::clearPublishedFacts()
 
 EffectiveLiteralResult EffectiveValueService::evaluateLiteral(
     const QString& expressionText,
-    bool stringLiteral)
+    bool stringLiteral,
+    const QHash<QString, QString>& constants)
 {
     EffectiveLiteralResult result;
     if (expressionText.trimmed().isEmpty())
         return result;
     try {
         slang::ast::ScriptSession session;
+        for (auto it = constants.cbegin(); it != constants.cend(); ++it)
+            session.eval(QStringLiteral("localparam %1 = %2;").arg(it.key(), it.value()).toStdString());
         std::string source = expressionText.toStdString();
         if (stringLiteral)
             source = "string'(" + source + ")";
         const slang::ConstantValue value = session.eval(source);
+        session.eval("localparam __zeroslack_literal_fact = (" + source + ");");
+        if (const auto* symbol = session.scope.find("__zeroslack_literal_fact");
+            symbol && symbol->kind == slang::ast::SymbolKind::Parameter) {
+            const auto& type = symbol->as<slang::ast::ParameterSymbol>().getType();
+            result.integral = type.isIntegral();
+            for (const auto* element = &type; element; element = element->getArrayElementType()) {
+                if (element->isPackedArray()) ++result.packedRank;
+                if (element->isUnpackedArray()) ++result.unpackedRank;
+            }
+        }
         if (!value) {
             result.failureReason = QStringLiteral(
                 "Slang did not produce a constant value.");
@@ -707,6 +723,10 @@ EffectiveLiteralResult EffectiveValueService::evaluateLiteral(
                 std::numeric_limits<slang::bitwidth_t>::max(),
                 true));
             populateIntegerLiteralResult(integer, &result);
+            if (!integer.hasUnknown()) result.numericValueText = QString::fromStdString(integer.toString(slang::LiteralBase::Decimal, false));
+        } else if (value.isReal()) {
+            result.available = true;
+            result.numericValueText = result.valueText = QString::number(value.real(), 'g', 17);
         } else if (value.isString()) {
             const std::string& decoded = value.str();
             if (stringLiteral) {

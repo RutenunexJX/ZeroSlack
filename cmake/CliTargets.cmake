@@ -1,5 +1,5 @@
-add_library(zeroslack_cli_support STATIC src/cli/zeroslackcli.cpp src/cli/zeroslackcli.h)
-target_include_directories(zeroslack_cli_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/cli")
+add_library(zeroslack_cli_support STATIC src/cli/zeroslackcli.cpp src/cli/zeroslackcli.h src/cli/cliformat.cpp)
+target_include_directories(zeroslack_cli_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/cli" PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/editor")
 target_link_libraries(zeroslack_cli_support PUBLIC Qt6::Core PRIVATE ZeroSlack::Semantic)
 if(SuiteApp_FOUND)
     target_link_libraries(zeroslack_cli_support PRIVATE SuiteApp::suiteapp)

@@ -1,8 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.0`
+Current version: `v0.32.1`
 
-Release 0.32.0 adds xIPs-owned HDL commands to the default Ctrl+Space search. Reset, ramp and random behaviors, plus user task/function commands, export versioned package sources and insert Slang-checked calls with dependency order and undo/redo. Enum switching and engineering-value overlays are temporarily disabled, including their dedicated analysis and refresh. New TB still creates an editable framework with valid initial values. Simulation records all signal hierarchies; the waveform scope controls are removed and transient results still clean up automatically. SuiteApp SDK/Runtime remains 1.0.2; native xIPs is 2.15.0.
+Release 0.32.1 moves simulation templates into ZeroSlack, with @-filtered Ctrl+Space completion, single-line results, scoped inputs and file-local commands. Package assets use explicit versioned synchronization with recoverable project-reference updates. Structured simulation events appear in the bottom panel. zeroslack-cli format shares the editor formatter and supports check/write modes. SuiteApp SDK/Runtime remains 1.0.2; native xIPs is 2.14.2 with a separate asset adapter.
 
 Release 0.31.27 hardens document saves, workspace sessions and delayed source navigation against stale inputs. File actions preserve the confirmed source generation across Save All, reject incomplete directory enumeration, and report partial disk commits explicitly. Suite context identity, analysis handoff and template bounds retain the accepted R1–R6 protections. SuiteApp SDK remains 1.0.1; its separately documented multi-instance unregister limitation remains open.
 
@@ -118,7 +118,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Insights | State-transition and FSM views, nested module block diagrams, signal-kernel graphs, and usage hotspots with Track/Matrix views. | [manual §15](用户手册.md) |
 | Insights | Each insight section renders the real view through the same surface the full view uses; source Actions retarget and pin the matching section instead of opening a central tab. | [manual §3, §16](用户手册.md), [architecture](ARCHITECTURE.md) |
 | RTL edits | Preview-first rename, connection transform, expose-to-top, scoped replace, instance-pair connection and multi-signal propagation, including module-port synchronization across all instances in one Change Preview transaction. | [manual §17](用户手册.md) |
-| Suite | Independent context panels and versioned cross-application associations remain available through public contracts and the read-only CLI. | [AppSuite integration](docs/suite.md), [manual §20](用户手册.md) |
+| Suite | Independent context panels and versioned cross-application associations remain available through public contracts and read-only CLI queries. | [AppSuite integration](docs/suite.md), [manual §20](用户手册.md) |
 | Settings | Themes including Catppuccin, fonts, shortcuts by Action ID, annotations, analysis, integration and layout; every category except the theme can be scoped globally or per workspace. | [manual §18](用户手册.md) |
 
 Ownership boundary: native documents and external application data stay with their owners.
@@ -144,15 +144,19 @@ to run normally and only suite discovery is unavailable. The complete contract
 and cross-application verification record are in
 [AppSuite integration](docs/suite.md).
 
-## Read-only AI CLI
+## Workspace and file CLI
 
 `zeroslack-cli.exe` reuses the Slang semantic pipeline without opening a GUI.
 It emits versioned JSON, JSONL, or Markdown for workspace summaries, source
 context, stable symbols, Pinloom code-link metadata, impact graphs, Git changes,
 and token-bounded AI bundles. Its semantic cache is stored in the user cache
-directory and never in the RTL workspace.
+directory and never in the RTL workspace. The explicit-file `format` command
+uses the same formatter and defaults as the editor; check is the default, and
+only `--write` changes the file. Other commands remain read-only.
 
 ```powershell
+zeroslack-cli format rtl/top.sv --check
+zeroslack-cli format rtl/top.sv --write
 zeroslack-cli scan <workspace>
 zeroslack-cli summary <workspace>
 zeroslack-cli context <workspace> --file rtl/top.sv --line 120
@@ -194,7 +198,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.0`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.1`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -310,7 +314,7 @@ Existing classic user settings remain separate. See
 
 Maintain a focused SystemVerilog editor with Tree-sitter structural editing and Slang semantic
 authority. Provider-based Context Workspace, live insights
-and the read-only AI CLI are implemented. Native documents and external application
+and the AI CLI (read-only queries plus explicit-file formatting) are implemented. Native documents and external application
 data remain with their owners. Context content is placed by the user: sections stack in the
 sidebar, and detachable views, including the shared temporary source editor, open in Ela
 floating windows with workspace geometry memory. Each floating window has one title bar for
@@ -477,7 +481,7 @@ coverage.
 - Classify first-party sources under `src/` and keep CMake and source-policy checks aligned.
 - Remove superseded local build/package outputs; keep the active Release build, current release
   evidence, toolchain inputs and referenced test fixtures.
-- Preserve semantic ownership, generation checks and read-only CLI boundaries.
+- Preserve semantic ownership, generation checks and read-only query boundaries and explicit-file write guards.
 - Run tests relevant to changed behavior; record the configuration and date.
 
 ## Documentation

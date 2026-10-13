@@ -1,0 +1,11 @@
+<RCC><qresource prefix="/simulation">
+<file>zeroslack_events_package.sv</file>
+<file>tb-behaviors/tb_signal_package.sv</file>
+<file>tb-behaviors/tb_reset_package.sv</file>
+<file>tb-behaviors/tb_sequence_package.sv</file>
+<file>tb-behaviors/tb_random_package.sv</file>
+<file>tb-behaviors/xips-commands.json</file>
+<file>tb-behaviors/LICENSE</file>
+<file>tb-behaviors/NOTICE</file>
+<file>tb-behaviors/THIRD-PARTY-NOTICES.md</file>
+</qresource></RCC>

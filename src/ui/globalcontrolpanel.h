@@ -19,6 +19,7 @@ public:
     explicit GlobalControlPanel(QWidget* parent = nullptr);
 
     void setItems(const QList<GlobalControlItem>& items);
+    void setSimulationOnly(bool enabled);
     void setCategory(GlobalControlCategory category);
     GlobalControlCategory category() const;
     QString queryText() const;

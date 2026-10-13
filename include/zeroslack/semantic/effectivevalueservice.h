@@ -135,6 +135,10 @@ struct EffectiveValueFact {
 
 struct EffectiveLiteralResult {
     bool available = false;
+    bool integral = false;
+    int packedRank = 0;
+    int unpackedRank = 0;
+    QString numericValueText;
     QString valueText;
     QStringList radixRepresentations;
     QString bitWidthText;
@@ -208,7 +212,8 @@ public:
     void clearPublishedFacts();
     static EffectiveLiteralResult evaluateLiteral(
         const QString& expressionText,
-        bool stringLiteral = false);
+        bool stringLiteral = false,
+        const QHash<QString, QString>& constants = {});
     static QString documentContentFingerprint(const QString& text);
 
     static QString stableSourceIdentity(

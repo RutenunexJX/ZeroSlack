@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QString>
+#include <QVariantMap>
 
 enum class CompletionCommandKind {
     User,
@@ -51,6 +52,7 @@ enum class CompletionActivationAction {
     ExecuteEditorAction
 };
 
+struct TemplateInputContext;
 struct CodeTemplateSlot {
     QString name;
     int start = -1;
@@ -59,6 +61,9 @@ struct CodeTemplateSlot {
     int tabStop = -1;
     // Requests a rendered/navigation marker when length is zero.
     bool visibleWhenEmpty = false;
+    // Simulation input constraints; empty retains ordinary text-slot behavior.
+    QVariantMap input;
+    std::shared_ptr<const TemplateInputContext> inputContext;
 };
 
 using CodeTemplateSlotList = QList<CodeTemplateSlot>;
@@ -179,6 +184,7 @@ struct CodeTemplateItem {
     CodeTemplateSlotList templateSlots;
     QString actionId;
     QString executionRoute;
+    QVariantMap command;
 };
 
 struct CommandModeMatch {

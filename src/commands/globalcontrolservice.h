@@ -27,11 +27,13 @@ enum class GlobalControlItemOperation {
     InsertPackageImport,
     InsertHeaderInclude,
     CreateHeader,
-    UseXipsCommand
+    InsertSimulationCommand
 };
 
 struct GlobalControlQueryContext {
     bool editorAvailable = false;
+    bool readOnly = false;
+    bool simulationCommands = false;
     QString fileName;
     QString moduleName;
     QString packageName;
@@ -46,6 +48,7 @@ struct GlobalControlQueryContext {
     int replacementLength = 0;
     int documentRevision = -1;
     quint64 documentInstance = 0;
+    quint64 documentTextRevision = 0;
     bool memberAccess = false;
 };
 
@@ -57,6 +60,8 @@ struct GlobalControlItem {
     QString id;
     QString title;
     QString subtitle;
+    QString typeBadge;
+    QString parameterSummary;
     QString actionId;
     QString executionRoute;
     QVariantMap parameters;
@@ -68,6 +73,7 @@ struct GlobalControlItem {
     int replacementLength = 0;
     int sourceDocumentRevision = -1;
     quint64 sourceDocumentInstance = 0;
+    quint64 sourceDocumentTextRevision = 0;
     QString sourceFileName;
     int sourceCursorPosition = -1;
     quint64 sourceTemplateCatalogRevision = 0;

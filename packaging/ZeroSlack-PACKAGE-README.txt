@@ -1,11 +1,12 @@
-ZeroSlack v0.32.0 Windows package
+ZeroSlack v0.32.1 Windows package
 
-Release 0.32.0 adds source-backed xIPs HDL commands to the default Ctrl+Space
-search, with real package export, Slang validation and undo/redo. Enum switching
-and engineering-value overlays and their dedicated refresh are temporarily
-disabled. New TB remains available. Simulation always records all signal
-hierarchies, and transient run results retain automatic cleanup.
-SuiteApp SDK/Runtime remains 1.0.2; native xIPs is 2.15.0.
+Release 0.32.1 provides ZeroSlack-owned simulation templates, @-filtered
+Ctrl+Space completion, compact results, scoped inputs and local commands.
+Explicit package-asset synchronization supports versioned saves and recovery
+of project references without duplicate versions. Simulation events appear in
+the bottom panel. zeroslack-cli format supports shared editor check/write modes.
+SuiteApp SDK/Runtime remains 1.0.2. Embedded xIPs is 2.14.2 with an isolated
+asset adapter runtime. Existing TBs and disabled enum/value assistance remain.
 
 Release 0.31.28 integrates the complete SimDock 0.6.1 workbench into ZeroSlack: projects, stimulus and Timing editing, Checks, Questa execution, waveforms and existing data compatibility. The `simdock` Suite provider now belongs to the ZeroSlack process. The title bar also tracks actual editing intervals, persists the total across restarts and provides Reset without adding an editor row. Old SimDock repositories and packages remain archived.
 

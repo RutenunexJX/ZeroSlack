@@ -117,6 +117,7 @@ struct SemanticStructuredEnumValueFact {
     QString displayValueText;
     bool available = false;
     QString expressionFailureReason;
+    QString hierarchicalExpressionText;
     bool unqualifiedReferenceAvailable = false;
 };
 
@@ -139,6 +140,11 @@ struct SemanticStructuredLeafFact {
 
 struct SemanticElaboratedSymbolInfo {
     bool available = false;
+    QString portDirection;
+    bool readable = false;
+    bool writable = false;
+    int packedRank = 0;
+    int unpackedRank = 0;
     // Machine-readable Slang type facts. Action planners consume these
     // directly and never infer propagatability from presentation strings.
     bool fixedSize = false;
@@ -302,6 +308,9 @@ struct SemanticSymbolPresentation {
     // Usually one or two large values. QHash's minimum 48 value slots per
     // populated span dominated retained workspace memory for these rows.
     QMap<QString, SemanticElaboratedSymbolInfo> instanceInfoByPath;
+    // Exact elaborated object paths retain generate indices and specializations.
+    QMap<QString, SemanticElaboratedSymbolInfo> objectInfoByPath;
+    QStringList elaboratedInstancePaths;
     SemanticDeclaredTypeFacts defaultDeclaredTypeFacts;
     QMap<QString, SemanticDeclaredTypeFacts>
         declaredTypeFactsByPath;

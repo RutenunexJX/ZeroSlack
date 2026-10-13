@@ -23,6 +23,8 @@ struct ZeroSlackCliRequest {
     bool forceRefresh = false;
     bool allowRefresh = true;
     bool requireCurrent = false;
+    bool formatWrite = false;
+    bool formatCheck = false;
 };
 
 struct ZeroSlackCliResult {
@@ -36,7 +38,7 @@ struct ZeroSlackCliResult {
 class ZeroSlackCliService
 {
 public:
-    enum class ObservationStage { WorkspaceCaptured, BeforeOutput };
+    enum class ObservationStage { WorkspaceCaptured, BeforeOutput, FormatCaptured, BeforeFormatWrite };
     // Deterministic interleaving for contract tests; no command-line switch or
     // process-global callback can enable it in the shipped CLI.
     using ObservationHook = std::function<void(ObservationStage)>;
@@ -53,6 +55,7 @@ public:
                              const QString& format);
     static QString usageText();
 private:
+    ZeroSlackCliResult formatFile(const ZeroSlackCliRequest& request) const;
     ObservationHook observationHook;
     QString suiteRuntimeEndpoint;
 };

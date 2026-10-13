@@ -1,4 +1,5 @@
 #include "workbench.h"
+#include "simulationeventspanel.h"
 #include "semanticindex.h"
 #include "applicationthememanager.h"
 #include "../core/dependencies.h"
@@ -63,6 +64,12 @@ Workbench::Workbench(QWidget* parent, bool standalone)
     setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
     m_scanPool.setMaxThreadCount(1);
     buildUi();
+    m_events = new SimulationEventsPanel(this); m_events->hide();
+    connect(&m_session, &QuestaSession::eventRunStarted, m_events, &SimulationEventsPanel::startRun);
+    connect(&m_session, &QuestaSession::eventsReady, m_events, &SimulationEventsPanel::append);
+    connect(&m_session, &QuestaSession::eventRecordsRejected, m_events, &SimulationEventsPanel::reject);
+    connect(&m_session, &QuestaSession::eventRunCleared, m_events, [this] { m_events->startRun({}); });
+    connect(m_events, &SimulationEventsPanel::sourceRequested, this, &Workbench::openSourceRequested);
     m_simulator = preference(QStringLiteral("simulator/path")).toString();
     m_logTimer.setSingleShot(true);
     m_logTimer.setInterval(16);
@@ -86,7 +93,10 @@ Workbench::~Workbench()
     m_scanPool.waitForDone();
     delete m_sources;
     delete m_logs;
+    delete m_events;
 }
+
+QWidget* Workbench::eventsWidget() const { return m_events; }
 
 QSize Workbench::minimumSizeHint() const { return {280, 240}; }
 
