@@ -373,7 +373,7 @@ void TemplateManagerDialog::addInput(const QString &inputName, const QVariantMap
     put(inputTable, row, 0, inputName);
     inputTable->item(row, 0)->setData(Qt::UserRole, input);
     auto *combo =
-        choices({"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value"}, inputTable);
+        choices({"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"}, inputTable);
     combo->setCurrentText(input.value("kind", "Value").toString());
     inputTable->setCellWidget(row, 1, combo);
     put(inputTable, row, 2, input.value("default").toString());
@@ -409,6 +409,7 @@ void TemplateManagerDialog::configureInput(int row)
                                         {"role", "Signal role"},
                                         {"direction", "Port direction"},
                                         {"access", "Required access"},
+                                        {"content", "Code container content"},
                                         {"unit", "Range time unit"},
                                         {"instanceSlot", "Instance input"},
                                         {"enumOf", "Enum signal input"},
@@ -426,6 +427,7 @@ void TemplateManagerDialog::configureInput(int row)
     for (const auto &entry :
          QList<QPair<QString, QStringList>>{{"scope", {"visible", "instance", "hierarchy", "package"}},
                                             {"role", {"", "Clock", "Reset"}},
+                                            {"content", {"statements", "declarations"}},
                                             {"direction", {"any", "input", "output", "inout", "ref"}},
                                             {"access", {"read", "write", "readwrite"}},
                                             {"unit", {"", "s", "ms", "us", "ns", "ps", "fs"}}})
@@ -570,7 +572,7 @@ void TemplateManagerDialog::save()
                 status("Configure input " + inputName + " in Inputs before saving.");
                 return;
             }
-            const auto value = input.value("default", "__" + inputName + "__").toString();
+            const auto value = input.value("default", input.value("kind").toString() == "Code" ? QString() : "__" + inputName + "__").toString();
             if (!stops.contains(inputName))
                 stops.insert(inputName, stops.size() + 1);
             record.templateSlots << CodeTemplateSlot{

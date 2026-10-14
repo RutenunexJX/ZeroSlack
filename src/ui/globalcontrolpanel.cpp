@@ -117,11 +117,12 @@ GlobalControlPanel::GlobalControlPanel(QWidget* parent)
                 updatePlaceholder();
                 if (categoryChangedHandler)
                     categoryChangedHandler(category());
+                updatePopupGeometry();
             });
     updatePlaceholder();
 }
 
-void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
+void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items, const QString& notice)
 {
     currentItems = items;
     resultList->clear();
@@ -138,8 +139,11 @@ void GlobalControlPanel::setItems(const QList<GlobalControlItem>& items)
     for (int i = 0; i < currentItems.size(); ++i)
         if (currentItems.at(i).disabledReason.isEmpty()) { resultList->setCurrentRow(i); break; }
     const bool unavailable = !currentItems.isEmpty() && resultList->currentRow() < 0;
-    availabilityNotice->setText(unavailable ? currentItems.first().disabledReason : QString());
-    availabilityNotice->setVisible(unavailable);
+    const auto message = !notice.isEmpty() ? notice
+        : unavailable ? currentItems.first().disabledReason : QString();
+    availabilityNotice->setText(message);
+    availabilityNotice->setVisible(!message.isEmpty());
+    updatePopupGeometry();
 }
 
 void GlobalControlPanel::setSimulationOnly(bool enabled)
@@ -147,6 +151,7 @@ void GlobalControlPanel::setSimulationOnly(bool enabled)
     categoryTabs->setVisible(!enabled);
     setProperty("simulationOnly", enabled);
     updatePlaceholder();
+    updatePopupGeometry();
 }
 
 void GlobalControlPanel::setCategory(GlobalControlCategory value)
@@ -196,23 +201,81 @@ void GlobalControlPanel::showAt(QWidget* anchor,
                                 const QPoint& globalAnchor)
 {
     if (!isVisible()) previousFocus = QApplication::focusWidget();
-    adjustSize();
-    QScreen* screen = QGuiApplication::screenAt(globalAnchor);
-    if (!screen && anchor)
-        screen = anchor->screen();
+    positioningWidget = anchor;
+    popupAnchor = globalAnchor;
+    updatePopupGeometry(true);
+    show();
+    raise();
+    focusSearch(false);
+}
+
+void GlobalControlPanel::updatePopupGeometry(bool chooseDirection)
+{
+    if (!chooseDirection && !isVisible()) return;
+    const bool compact = property("simulationOnly").toBool()
+        || category() == GlobalControlCategory::Templates;
+    if (!compact && !compactLayout && !chooseDirection) return;
+    ensurePolished();
+    for (auto* child : findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+        child->ensurePolished();
+    QScreen* screen = QGuiApplication::screenAt(popupAnchor);
+    if (!screen && positioningWidget)
+        screen = positioningWidget->screen();
     if (!screen)
         screen = QGuiApplication::primaryScreen();
     const QRect available = screen
         ? screen->availableGeometry()
-        : QRect(globalAnchor, size());
-    int y = globalAnchor.y() + 8;
-    if (y + height() > available.bottom() + 1)
-        y = globalAnchor.y() - height() - 8;
+        : QRect(popupAnchor, sizeHint());
+    if (compact) {
+        // The template popup owns its height; an intermediate list/notice
+        // update must not grow the native window through a stale layout minimum.
+        layout()->setSizeConstraint(QLayout::SetNoConstraint);
+        setMinimumHeight(0);
+        const int preferredWidth = chooseDirection ? sizeHint().width() : this->width();
+        const int width = qMin(available.width(), qBound(minimumWidth(), preferredWidth, maximumWidth()));
+        const int count = qMin(8, resultList->count());
+        const int rowHeight = count ? resultList->sizeHintForRow(0) + 2 * resultList->spacing() : 0;
+        const int frameHeight = count ? 2 * resultList->frameWidth() : 0;
+        resultList->setVisible(count > 0);
+        resultList->setFixedHeight(0);
+        layout()->invalidate();
+        const auto heightForWidth = [this, width] {
+            return layout()->hasHeightForWidth() ? layout()->totalHeightForWidth(width)
+                : layout()->totalSizeHint().height();
+        };
+        const int chromeHeight = heightForWidth();
+        const int below = qMax(0, available.bottom() + 1 - popupAnchor.y() - 8);
+        const int above = qMax(0, popupAnchor.y() - 8 - available.top());
+        const int desiredHeight = chromeHeight + count * rowHeight + frameHeight;
+        if (chooseDirection)
+            opensAbove = desiredHeight > below && above > below;
+        int space = opensAbove ? above : below;
+        const int opposite = opensAbove ? below : above;
+        if (space < chromeHeight + rowHeight + frameHeight && opposite > space) {
+            opensAbove = !opensAbove;
+            space = opposite;
+        }
+        // Keep the chosen side while filtering. Reduce whole visible rows
+        // before letting the shared bounds helper move the popup at an edge.
+        const int rows = count ? qBound(1, (space - chromeHeight - frameHeight) / rowHeight, count) : 0;
+        resultList->setFixedHeight(rows * rowHeight + frameHeight);
+        layout()->invalidate();
+        layout()->activate();
+        resize(width, heightForWidth());
+    } else {
+        layout()->setSizeConstraint(QLayout::SetDefaultConstraint);
+        resultList->show();
+        resultList->setMinimumHeight(260);
+        resultList->setMaximumHeight(QWIDGETSIZE_MAX);
+        layout()->invalidate();
+        layout()->activate();
+        adjustSize();
+        opensAbove = popupAnchor.y() + 8 + height() > available.bottom() + 1;
+    }
+    compactLayout = compact;
+    const int y = opensAbove ? popupAnchor.y() - height() - 8 : popupAnchor.y() + 8;
     setGeometry(CandidatePopupNavigation::fitToBounds(
-        QRect(QPoint(globalAnchor.x(), y), size()), available));
-    show();
-    raise();
-    focusSearch(false);
+        QRect(QPoint(popupAnchor.x(), y), size()), available));
 }
 
 void GlobalControlPanel::focusSearch(bool selectAll)

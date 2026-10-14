@@ -2,6 +2,8 @@
 
 #include "editorfileidentity.h"
 #include "mycodeeditor.h"
+#include "documenttemplatemodel.h"
+#include "workspacesessionstateservice.h"
 
 #include <QCryptographicHash>
 #include <QFile>
@@ -51,6 +53,11 @@ SharedDocument::SharedDocument(const QString& documentId, const QString& fileNam
         return result;
     }(), initialFile)
 {
+    auto* templates = DocumentTemplateModel::get(document);
+    QString error;
+    const auto metadata = WorkspaceSessionStateService().loadDocumentTemplates(fileName, &error);
+    templates->restore(metadata, fileName);
+    if (!error.isEmpty()) templates->invalidate(error);
 }
 
 SharedDocument::~SharedDocument()

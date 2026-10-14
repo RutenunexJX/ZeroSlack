@@ -1,5 +1,6 @@
 #include "workspacesessionstateservice.h"
 #include "contextresource.h"
+#include "editorfileidentity.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -926,6 +927,33 @@ QString WorkspaceSessionStateService::
             QStringLiteral(
                 "ZeroSlack/ZeroSlack/"
                 "workspace-sessions.ini")));
+}
+
+QJsonObject WorkspaceSessionStateService::loadDocumentTemplates(const QString& fileName, QString* error) const
+{
+    if (fileName.isEmpty()) return {};
+    SessionStorage storage(localStoragePath());
+    if (!storage.available) { if (error) *error = storage.message; return {}; }
+    const auto key = QCryptographicHash::hash(EditorFileIdentity::lookupKey(fileName).toUtf8(), QCryptographicHash::Sha256).toHex();
+    const auto data = storage.settings->value(QStringLiteral("templateDocuments/v1/%1").arg(QString::fromLatin1(key))).toByteArray();
+    if (data.isEmpty()) return {};
+    const auto json = QJsonDocument::fromJson(data);
+    if (!json.isObject() && error) *error = QStringLiteral("Template metadata is invalid; source text was retained.");
+    return json.object();
+}
+
+bool WorkspaceSessionStateService::saveDocumentTemplates(const QString& fileName, const QJsonObject& state, QString* error) const
+{
+    if (fileName.isEmpty()) return false;
+    const auto path = localStoragePath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile lock(path + QStringLiteral(".write.lock"));
+    if (!lock.tryLock(0)) { if (error) *error = QStringLiteral("Workspace state is busy; template metadata was not saved. Save again."); return false; }
+    SessionStorage storage(path);
+    if (!storage.available) { if (error) *error = storage.message; return false; }
+    const auto key = QCryptographicHash::hash(EditorFileIdentity::lookupKey(fileName).toUtf8(), QCryptographicHash::Sha256).toHex();
+    storage.settings->setValue(QStringLiteral("templateDocuments/v1/%1").arg(QString::fromLatin1(key)), QJsonDocument(state).toJson(QJsonDocument::Compact));
+    return storage.commit(error);
 }
 
 bool WorkspaceSessionStateService::

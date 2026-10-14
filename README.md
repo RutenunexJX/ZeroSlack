@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.2`
+Current version: `v0.32.3`
+
+Release 0.32.3 fixes module-scope simulation driver insertion and adds F24 template authoring in the existing editor. Nested editing regions mix handwritten code and child templates while fixed code remains protected in locked mode. Input slots, undo/redo and saved nesting are preserved. Code slots reuse structural indentation; applicable candidates are filtered before the result limit and the template popup contracts with its results. SDK/Runtime remains 1.0.2 and native xIPs remains 2.14.2.
 
 Release 0.32.2 limits Templates completion to simulation templates and fixes Enter insertion from the ordinary Templates category. Both ordinary and @-filtered entries share complete document revision and catalog guards. Built-in, user and file-local simulation templates retain input slots and undo/redo. SuiteApp SDK/Runtime remains 1.0.2; native xIPs remains 2.14.2 with the existing separate asset adapter.
 
@@ -200,7 +202,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.2`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.3`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

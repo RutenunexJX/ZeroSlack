@@ -12,6 +12,7 @@
 enum class EditorModeId
 {
     None,
+    TemplateAuthoring,
     CommandMode,
     InlineCandidates,
     CompletionCandidates,

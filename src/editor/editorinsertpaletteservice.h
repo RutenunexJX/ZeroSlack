@@ -9,7 +9,8 @@ public:
     QList<GlobalControlItem> query(
         GlobalControlCategory category,
         const QString& text,
-        const GlobalControlQueryContext& context) const;
+        const GlobalControlQueryContext& context,
+        QString* availabilityNotice = nullptr) const;
 };
 
 #endif // EDITORINSERTPALETTESERVICE_H

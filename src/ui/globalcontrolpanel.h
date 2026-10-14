@@ -19,7 +19,7 @@ class GlobalControlPanel : public QFrame
 public:
     explicit GlobalControlPanel(QWidget* parent = nullptr);
 
-    void setItems(const QList<GlobalControlItem>& items);
+    void setItems(const QList<GlobalControlItem>& items, const QString& notice = {});
     void setSimulationOnly(bool enabled);
     void setCategory(GlobalControlCategory category);
     GlobalControlCategory category() const;
@@ -41,6 +41,10 @@ protected:
 
 private:
     QPointer<QWidget> previousFocus;
+    QPointer<QWidget> positioningWidget;
+    QPoint popupAnchor;
+    bool opensAbove = false;
+    bool compactLayout = false;
     QLineEdit* searchEdit = nullptr;
     QTabBar* categoryTabs = nullptr;
     QListWidget* resultList = nullptr;
@@ -55,6 +59,7 @@ private:
     void moveCategory(int delta);
     bool handleKey(QKeyEvent* event);
     void updatePlaceholder();
+    void updatePopupGeometry(bool chooseDirection = false);
 };
 
 #endif // GLOBALCONTROLPANEL_H

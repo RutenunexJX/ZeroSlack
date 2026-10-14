@@ -16,35 +16,113 @@ bool nodeIs(TSNode node, const char *type)
 }
 struct Site
 {
-    bool procedural = false, function = false;
+    bool procedural = false, function = false, moduleItem = false;
     int declaration = -1;
 };
-Site siteFor(const GlobalControlQueryContext &context, int position, int length)
+Site parseSite(const GlobalControlQueryContext &context, int position, int length)
 {
+    const QString probe = QStringLiteral("__template_probe();");
     auto text = context.documentText;
-    text.replace(position, length, QStringLiteral("__template_probe();"));
+    text.replace(position, length, probe);
     TSDocument syntax;
     syntax.setText(text);
     auto node = ts_node_descendant_for_byte_range(syntax.rootNode(), position * 2, position * 2 + 2);
     Site site;
+    bool statement = false;
     auto child = node;
     for (; !ts_node_is_null(node); child = node, node = ts_node_parent(node))
     {
+        if (nodeIs(node, "ERROR") || ts_node_is_missing(node))
+            break;
+        if (nodeIs(node, "subroutine_call_statement") && !ts_node_has_error(node) &&
+            ts_node_start_byte(node) == position * 2 && ts_node_end_byte(node) == (position + probe.size()) * 2)
+            statement = true;
         if (nodeIs(node, "function_declaration"))
             site.function = site.procedural = true;
-        if (nodeIs(node, "initial_construct") || nodeIs(node, "always_construct") ||
-            nodeIs(node, "task_declaration"))
+        if (nodeIs(node, "initial_construct") || nodeIs(node, "always_construct") || nodeIs(node, "task_declaration"))
             site.procedural = true;
         if (nodeIs(node, "module_declaration"))
         {
-            site.declaration = ts_node_start_byte(child) / 2;
+            if (nodeIs(child, "module_item") && ts_node_named_child_count(child) == 1)
+                child = ts_node_named_child(child, 0);
+            if (nodeIs(child, "initial_construct") || nodeIs(child, "always_construct") ||
+                nodeIs(child, "task_declaration"))
+                site.declaration = ts_node_start_byte(child) / 2;
             const int margin = text.lastIndexOf('\n', qMax(0, site.declaration - 1)) + 1;
-            if (text.mid(margin, site.declaration - margin).trimmed().isEmpty())
+            if (site.declaration >= margin && text.mid(margin, site.declaration - margin).trimmed().isEmpty())
                 site.declaration = margin;
             break;
         }
     }
+    site.procedural = site.procedural && statement;
+    if (site.procedural || site.function)
+        return site;
+
+    // A module item must occupy a syntax gap, not a recovered expression,
+    // declaration, port, comment or string. Confirm both the original gap
+    // and the exact initial construct parsed at that location.
+    text = context.documentText;
+    text.replace(position, length, QString(length, QLatin1Char(' ')));
+    syntax.setText(text);
+    node = ts_node_descendant_for_byte_range(syntax.rootNode(), position * 2, position * 2);
+    if (!nodeIs(node, "module_declaration"))
+        return {};
+    const QString moduleProbe = QStringLiteral("initial begin __template_probe(); end");
+    text.replace(position, length, moduleProbe);
+    syntax.setText(text);
+    node = ts_node_descendant_for_byte_range(syntax.rootNode(), position * 2, (position + moduleProbe.size()) * 2);
+    if (!nodeIs(node, "initial_construct") || ts_node_has_error(node) || ts_node_start_byte(node) != position * 2 ||
+        ts_node_end_byte(node) != (position + moduleProbe.size()) * 2)
+        return {};
+    auto parent = ts_node_parent(node);
+    if (nodeIs(parent, "module_item"))
+        parent = ts_node_parent(parent);
+    if (!nodeIs(parent, "module_declaration"))
+        return {};
+    site.moduleItem = true;
+    site.declaration = position;
+    const int margin = text.lastIndexOf('\n', qMax(0, position - 1)) + 1;
+    if (text.mid(margin, position - margin).trimmed().isEmpty())
+        site.declaration = margin;
     return site;
+}
+Site siteFor(const GlobalControlQueryContext& context, int position, int length)
+{
+    // Palette filtering visits every candidate for the same captured document.
+    // Keep one immutable syntax result per thread, not one parse per candidate.
+    struct Cache { QString text; int position = -1, length = -1; Site site; };
+    static thread_local Cache cache;
+    if (cache.position != position || cache.length != length || cache.text != context.documentText) {
+        cache = {context.documentText, position, length, parseSite(context, position, length)};
+    }
+    return cache.site;
+}
+bool snippetMatches(const QString& snippet, const QString& content)
+{
+    if (snippet.trimmed().isEmpty()) return true;
+    const QString prefix = content == "declarations" ? QStringLiteral("module __template;\n")
+        : QStringLiteral("module __template; initial begin __probe();\n");
+    TSDocument syntax;
+    syntax.setText(prefix + snippet + (content == "declarations" ? "\nendmodule" : "\nend endmodule"));
+    if (syntax.hasError()) return false;
+    auto root = syntax.rootNode();
+    if (content != "declarations") return true;
+    for (uint32_t i = 0; i < ts_node_named_child_count(root); ++i) {
+        const auto module = ts_node_named_child(root, i);
+        if (!nodeIs(module, "module_declaration")) continue;
+        for (uint32_t j = 0; j < ts_node_named_child_count(module); ++j) {
+            auto item = ts_node_named_child(module, j);
+            if (ts_node_start_byte(item) < prefix.size() * 2 || nodeIs(item, "comment")) continue;
+            while (!nodeIs(item, "data_declaration") && !nodeIs(item, "net_declaration")
+                && !nodeIs(item, "parameter_declaration") && !nodeIs(item, "local_parameter_declaration")
+                && !nodeIs(item, "type_declaration") && ts_node_named_child_count(item) == 1)
+                item = ts_node_named_child(item, 0);
+            if (!nodeIs(item, "data_declaration") && !nodeIs(item, "net_declaration")
+                && !nodeIs(item, "parameter_declaration") && !nodeIs(item, "local_parameter_declaration")
+                && !nodeIs(item, "type_declaration")) return false;
+        }
+    }
+    return true;
 }
 struct Builder
 {
@@ -59,8 +137,7 @@ struct Builder
     {
         if (!stops.contains(name))
             stops.insert(name, stops.size() + 1);
-        placeholders << CodeTemplateSlot{name, int(text.size()), int(value.size()), stops.value(name), true,
-                                         input};
+        placeholders << CodeTemplateSlot{name, int(text.size()), int(value.size()), stops.value(name), true, input};
         text += value;
     }
 };
@@ -103,6 +180,42 @@ bool SimulationCommandPlanner::sourcesCurrent(const std::shared_ptr<const Semant
             return false;
     return true;
 }
+QString SimulationCommandPlanner::placementError(const GlobalControlQueryContext& context, const QVariantMap& command, const QString& content, const QString& snippet)
+{
+    return placement(context, command, content, snippet).reason;
+}
+SimulationPlacement SimulationCommandPlanner::placement(const GlobalControlQueryContext& context, const QVariantMap& command, const QString& content, const QString& snippet)
+{
+    using Status = SimulationPlacementStatus;
+    const int start = context.replacementStart >= 0 ? context.replacementStart : context.cursorPosition;
+    if (start < 0) return {Status::Unavailable, QStringLiteral("Select an insertion position.")};
+    if (context.replacementLength < 0 || start > context.documentText.size()
+        || context.replacementLength > context.documentText.size() - start)
+        return {Status::Unavailable, QStringLiteral("The insertion position changed. Reopen the template search.")};
+    if (!context.templateBoundaryError.isEmpty())
+        return {Status::Incompatible, context.templateBoundaryError};
+    const auto kind = command.value("kind", "snippet").toString();
+    const auto placement = command.value("placement").toString();
+    const auto type = command.value("content").toString();
+    if (!content.isEmpty() && !type.isEmpty() && type != content)
+        return {Status::Incompatible, QStringLiteral("This template does not match the container content type.")};
+    if (content == "declarations" && (kind == "driver" || kind == "print" || kind == "task" || kind == "call"))
+        return {Status::Incompatible, QStringLiteral("This container accepts declarations.")};
+    if (!content.isEmpty() && kind == "snippet" && !snippetMatches(snippet, content))
+        return {Status::Incompatible, QStringLiteral("The template syntax is not valid %1 content.").arg(content)};
+    const auto site = siteFor(context, start, context.replacementLength);
+    if ((content == "statements" || placement == "statement") && (!site.procedural || site.function))
+        return {Status::Incompatible, QStringLiteral("This template needs a procedural statement position.")};
+    if ((content == "declarations" || placement == "module") && !site.moduleItem)
+        return {Status::Incompatible, QStringLiteral("This template needs a module declaration position.")};
+    if (kind == "driver" && ((!site.procedural && !site.moduleItem) || site.function))
+        return {Status::Incompatible, QStringLiteral("Insert a driver at a module-item gap or a procedural statement position, outside a function.")};
+    if ((kind == "print" || kind == "task") && (!site.procedural || site.function))
+        return {Status::Incompatible, QStringLiteral("Insert this command at a procedural statement position, outside a function.")};
+    if (context.readOnly) return {Status::Unavailable, QStringLiteral("This document is read-only.")};
+    return {};
+}
+
 SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandRequest &request)
 {
     SimulationCommandPlan result;
@@ -112,22 +225,19 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
             QDir::temp().filePath(QStringLiteral("__zeroslack_untitled_%1.sv").arg(context.documentInstance));
     const auto config = request.item.parameters;
     const auto commandKind = config.value("kind", "snippet").toString();
-    result.start =
-        request.item.replacementStart >= 0 ? request.item.replacementStart : context.cursorPosition;
+    result.start = request.item.replacementStart >= 0 ? request.item.replacementStart : context.cursorPosition;
     result.length = request.item.replacementLength;
-    if (context.readOnly || result.start < 0 || result.start + result.length > context.documentText.size())
+    if (context.readOnly || result.start < 0 || result.length < 0
+        || result.start > context.documentText.size() || result.length > context.documentText.size() - result.start)
     {
         result.error = QStringLiteral("This insertion range is no longer editable.");
         return result;
     }
+    context.replacementStart = result.start;
+    context.replacementLength = result.length;
+    result.error = placementError(context, config, request.item.templateContent, request.item.insertionText);
+    if (!result.error.isEmpty()) return result;
     const auto site = siteFor(context, result.start, result.length);
-    if ((commandKind == "driver" || commandKind == "print" || commandKind == "task") &&
-        (!site.procedural || site.function))
-    {
-        result.error =
-            QStringLiteral("Insert this command at a procedural statement position, outside a function.");
-        return result;
-    }
     auto source = context.documentText;
     source.replace(result.start, result.length, QString(result.length, QLatin1Char(' ')));
     SemanticAnalysisRequest semanticRequest;
@@ -149,16 +259,16 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
         }
         const auto probe = context.fileName + QStringLiteral(".zeroslack-command-probe.sv");
         semanticRequest.sourceOverrides.insert(
-            probe, QStringLiteral(
-                       "package __zeroslack_command_probe; typedef %1#(logic [7:0]) callable_t; endpackage\n")
-                       .arg(symbol.left(separator)));
+            probe,
+            QStringLiteral("package __zeroslack_command_probe; typedef %1#(logic [7:0]) callable_t; endpackage\n")
+                .arg(symbol.left(separator)));
         orderedFiles << probe;
     }
     SemanticInputCapture capture(semanticRequest);
     SlangManager slang;
     const auto cancelled = [flag = request.cancelled] { return flag && flag->load(); };
-    auto analysis = slang.analyzeCapturedWorkspace(capture, orderedFiles, request.includeDirectories,
-                                                   request.defines, {}, cancelled, {true, true, false});
+    auto analysis = slang.analyzeCapturedWorkspace(capture, orderedFiles, request.includeDirectories, request.defines,
+                                                   {}, cancelled, {true, true, false});
     if (analysis.cancelled || !analysis.error.isEmpty() || !capture.stillMatchesDisk(cancelled))
     {
         result.error = analysis.error.isEmpty()
@@ -171,8 +281,7 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
         if (diagnostic.severity == SemanticDiagnostic::Error &&
             !EditorFileIdentity::same(diagnostic.fileName, context.fileName))
         {
-            result.error =
-                QStringLiteral("Resolve the package error before inserting: %1").arg(diagnostic.message);
+            result.error = QStringLiteral("Resolve the package error before inserting: %1").arg(diagnostic.message);
             return result;
         }
     }
@@ -191,8 +300,7 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     {
         SemanticIndex local;
         local.setSnapshot(result.inputs->snapshot);
-        const bool eventSignal =
-            SimulationCommandPrefix::refersToValue(prefix.mid(1), local, result.inputs->location);
+        const bool eventSignal = SimulationCommandPrefix::refersToValue(prefix.mid(1), local, result.inputs->location);
         if (eventSignal)
         {
             result.error = QStringLiteral("This @ expression refers to an SV event signal.");
@@ -257,8 +365,7 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
                 }
                 else
                     b.add(field.value("expression").toString());
-                b.add("), " + stringLiteral(radix) + ", " + stringLiteral(field.value("unit").toString()) +
-                      ")");
+                b.add("), " + stringLiteral(radix) + ", " + stringLiteral(field.value("unit").toString()) + ")");
             }
             b.add("}");
         }
@@ -268,8 +375,7 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     }
     else
     {
-        const auto symbol = config.value("symbol").toString(),
-                   sourceFile = config.value("sourceFile").toString();
+        const auto symbol = config.value("symbol").toString(), sourceFile = config.value("sourceFile").toString();
         SemanticSymbolRecord callable;
         QSet<QString> identities;
         for (const auto &record : analysis.symbols)
@@ -289,8 +395,9 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
             return result;
         }
         const bool task = callable.declarationKind == Kind::Task;
-        if ((task && (!site.procedural || site.function)) ||
-            (callable.presentation.callableReturnsVoid && !site.procedural))
+        const bool driver = commandKind == "driver";
+        const bool callableSite = site.procedural || (driver && site.moduleItem);
+        if ((task && (!callableSite || site.function)) || (callable.presentation.callableReturnsVoid && !callableSite))
         {
             result.error = QStringLiteral("The resolved callable requires a procedural statement position.");
             return result;
@@ -302,7 +409,6 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
         }
         Builder b;
         QString callName = symbol;
-        const bool driver = commandKind == "driver";
         QString binding, valueType;
         if (driver)
         {
@@ -337,20 +443,27 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
                                    {"maxWidth", 1},
                                    {"minWidth", 1},
                                    {"unpackedRank", 0}});
+            // The adapter is declared at module scope, so procedural locals
+            // cannot be referenced by its typedef or virtual methods.
+            target.insert("moduleVariable", true);
+            clock.insert("moduleVariable", true);
             b.add("typedef type(");
             b.slot("signal", initial(target, "__signal__"), target);
-            b.add(") " + valueType + ";\nclass " + binding + " extends tb_signal_package::signal_driver#(" +
-                  valueType + ");\n  virtual task wait_edge(input bit rising);\n    if (rising) @(posedge ");
+            b.add(") " + valueType + ";\nclass " + binding + " extends tb_signal_package::signal_driver#(" + valueType +
+                  ");\n  virtual task wait_edge(input bit rising);\n    if (rising) @(posedge ");
             b.slot("clock", initial(clock, "__clock__"), clock);
             b.add("); else @(negedge ");
             b.slot("clock", initial(clock, "__clock__"), clock);
             b.add(");\n  endtask\n  virtual function void drive(input " + valueType + " value); ");
             b.slot("signal", initial(target, "__signal__"), target);
             b.add(" = value; endfunction\nendclass\n\n");
+            result.instance.preservedStart = b.text.size();
+            result.instance.preservedLength = result.start - site.declaration;
+            result.instance.fragments << TemplateFragment{0, int(b.text.size()), true};
             b.add(context.documentText.mid(site.declaration, result.start - site.declaration));
             result.length += result.start - site.declaration;
             result.start = site.declaration;
-            b.add("begin\n  " + binding +
+            b.add((site.moduleItem ? QStringLiteral("initial begin\n  ") : QStringLiteral("begin\n  ")) + binding +
                   " driver;\n  tb_signal_package::status_t status;\n  driver = new;\n  ");
             const auto separator = symbol.lastIndexOf("::");
             callName = symbol.left(separator) + "#(" + valueType + ")" + symbol.mid(separator);
@@ -413,6 +526,15 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
         result.text = b.text;
         result.placeholders = b.placeholders;
     }
+    if (result.instance.fragments.isEmpty()) result.instance.fragments << TemplateFragment{0, int(result.text.size()), false};
+    else {
+        const int call = result.instance.preservedStart + result.instance.preservedLength;
+        result.instance.fragments << TemplateFragment{call, int(result.text.size()) - call, false};
+    }
+    result.instance.label = request.item.title;
+    result.instance.snapshot = config;
+    result.instance.snapshot.insert("templateText", request.item.insertionText);
+    result.instance.snapshot.insert("schema", 1);
     result.error = TemplateInputService::dependencyError(result.placeholders);
     for (auto &slot : result.placeholders)
         slot.inputContext = result.inputs;

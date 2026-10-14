@@ -564,6 +564,8 @@ CrashRecoveryIsolatedRecord isolateRecord(
 
 QString defaultRecoveryRoot()
 {
+    const auto isolated = qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT");
+    if (!isolated.isEmpty()) return QDir(isolated).filePath(QStringLiteral("recovery-v1"));
     const QString base =
         QStandardPaths::writableLocation(
             QStandardPaths::AppLocalDataLocation);

@@ -78,7 +78,7 @@ void EditingTimeService::attachEditor(MyCodeEditor* editor)
 
 void EditingTimeService::beginInput(MyCodeEditor* editor, int key, bool repeat)
 {
-    if (!editor->isVisible() || editor->isReadOnly()) return;
+    if (!editor->isVisible() || editor->documentReadOnly()) return;
     Input input{clock(), -1, key, repeat};
     if (key == 0 && shortcutEditor == editor)
         input = shortcutInput;

@@ -293,6 +293,12 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documentregistryreader.cpp
     src/documents/documentregistrystate.cpp
     src/documents/shareddocument.cpp
+    src/documents/documenttemplatemodel.cpp
+    src/documents/documenttemplatemodel.h
+    src/editor/editortemplateauthoring.cpp
+    src/documents/documenttemplatemodel.cpp
+    src/documents/documenttemplatemodel.h
+    src/editor/editortemplateauthoring.cpp
     src/documents/documentrecoveryqueue.cpp
     src/documents/documentrecoveryqueue.h
     src/documents/externaldocumentsynccontroller.cpp
@@ -988,6 +994,11 @@ if(BUILD_TESTING)
 
     add_executable(simulation_command_redesign_test test_sv/simulation_command_redesign_test.cpp)
     target_link_libraries(simulation_command_redesign_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(simulation_driver_insertion_test test_sv/simulation_driver_insertion_test.cpp)
+    target_link_libraries(simulation_driver_insertion_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(template_authoring_test test_sv/template_authoring_test.cpp)
+    target_link_libraries(template_authoring_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(insert_palette_catalog_test
         test_sv/insert_palette_catalog_test.cpp)

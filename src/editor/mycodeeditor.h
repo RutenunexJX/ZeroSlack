@@ -22,6 +22,7 @@
 #include <QPointer>
 #include <QStringList>
 #include <QVariantMap>
+#include <QTextBlock>
 #include <cstdint>
 #include <functional>
 
@@ -57,6 +58,8 @@ struct EditorSourceNavigationTarget;
 struct SourceLineNavigationTarget;
 enum class SourceSymbolAction;
 struct MyCodeEditorState;
+class DocumentTemplateModel;
+struct TemplateInsertionSpec;
 
 struct EditorAlwaysScopeTarget {
     int startPosition = -1;
@@ -221,6 +224,29 @@ public:
         std::function<IncludeNewHeaderResult(
             const IncludeNewHeaderRequest& request)> creator);
     bool canApplyInsertion(QString* failureReason = nullptr) const;
+    bool documentReadOnly() const;
+    void setReadOnly(bool value);
+    bool templateAuthoringLocked() const;
+    bool templateInputEditing() const;
+    bool templateSelectionEditable() const;
+    QString selectedTemplateId() const;
+    DocumentTemplateModel* templateModel() const;
+    void setTemplateAuthoringLocked(bool locked);
+    void templateNavigate(int direction);
+    bool editTemplateInstance(const QString& id = {}, const QString& inputName = {}, int position = -1);
+    void finishTemplateInput();
+    void setTemplateSearchActive(bool active);
+    bool replaceTemplateInput(const QTextCursor& cursor, const QString& text);
+    bool replaceTemplateSlotValue(int absoluteStart, int length, const QString& value);
+    bool templateCodeSegmentEmpty() const;
+    QString templateContainerContent() const;
+    void templateInsertionContext(QString* parentId, QString* slotName) const;
+    QString simulationTemplateInsertionError(int start, int removed, const TemplateInsertionSpec& spec,
+                                             const QString& parentId, const QString& parentSlot) const;
+    bool insertSimulationTemplate(const QString& text, const CodeTemplateSlotList& slotMetadata,
+                                  const TemplateInsertionSpec& spec, const QString& parentId,
+                                  const QString& parentSlot, QString* error);
+    void refreshTemplateSlotRanges();
     void setSemanticContextService(EditorSemanticContextService* service);
     void setHierarchyInstanceContext(
         const HierarchyInstanceContext& context);
@@ -389,6 +415,7 @@ public:
         int cursorPosition) const;
 
 protected:
+    bool focusNextPrevChild(bool next) override;
     void keyPressEvent(QKeyEvent *event) override;
     void inputMethodEvent(QInputMethodEvent* event) override;
     void paintEvent(QPaintEvent *event) override;
@@ -417,6 +444,18 @@ private:
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
+    bool authoringLock = false, templateEditing = false, templateSearching = false;
+    bool sourceReadOnlyState = false, templateMutation = false;
+    QString activeTemplate;
+    QTextBlock templatePreeditBlock;
+    void clearTemplatePreedit();
+    QMetaObject::Connection templateModelConnection;
+    void bindTemplateModel();
+    void updateTemplatePresentation();
+    bool handleTemplateInputKey(QKeyEvent* event);
+    bool insertTemplateNewline();
+    void indentTemplateContinuation(const QString& indent);
+    void paintTemplateBackground(QPainter& painter, QPaintEvent* event);
     int userEditDepth = 0;
     QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
 

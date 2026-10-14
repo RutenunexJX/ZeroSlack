@@ -105,7 +105,7 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
     context.fileName = editor->documentFileName();
     context.documentText = editor->cachedDocumentText();
     context.cursorPosition = editor->textCursor().position();
-    context.readOnly = editor->isReadOnly();
+    context.readOnly = editor->documentReadOnly();
     context.documentRevision = editor->document()->revision();
     const auto semantic = editor->editorSemanticContextForPosition(-1, true);
     context.moduleName = semantic.moduleName;
@@ -134,7 +134,7 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
 }
 bool SimulationCommandService::current(const GlobalControlItem &item, MyCodeEditor *editor) const
 {
-    if (!tabs || !editor || editor->isReadOnly() || tabs->getCurrentEditor() != editor)
+    if (!tabs || !editor || editor->documentReadOnly() || tabs->getCurrentEditor() != editor)
         return false;
     const auto *document = tabs->sharedDocumentForEditor(editor);
     return document && document->instanceSerial() == item.sourceDocumentInstance &&
@@ -209,7 +209,7 @@ QString SimulationCommandService::materializeSupport(const QString &workspace, c
 void SimulationCommandService::activate(const GlobalControlItem &selected)
 {
     QPointer<MyCodeEditor> editor = tabs ? tabs->getCurrentEditor() : nullptr;
-    if (editor && editor->isReadOnly())
+    if (editor && editor->documentReadOnly())
     {
         emit message(QStringLiteral("This document is read-only."));
         return;
@@ -226,6 +226,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
         return;
     }
     auto request = currentRequest();
+    const bool authoringLocked = editor->templateAuthoringLocked();
     request.item = selected;
     request.context.replacementStart = selected.replacementStart;
     request.context.replacementLength = selected.replacementLength;
@@ -270,7 +271,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                 cancel();
                 const auto unchanged = [=, this]() -> QString
                 {
-                    if (!editor || editor->isReadOnly() || !tabs || tabs->getCurrentEditor() != editor ||
+                    if (!editor || editor->documentReadOnly() || editor->templateAuthoringLocked() != authoringLocked || !tabs || tabs->getCurrentEditor() != editor ||
                         !workspaces || workspaces->getWorkspacePath() != workspace ||
                         (buildInputs && buildInputs->activeProjectId() != project))
                         return QStringLiteral("The active document or project changed.");
@@ -322,6 +323,9 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                     emit message(issue + QStringLiteral(" Reopen the insertion palette."));
                     return;
                 }
+                const auto boundaryIssue = editor->simulationTemplateInsertionError(result.start, result.length,
+                    result.instance, selected.templateParentId, selected.templateParentSlot);
+                if (!boundaryIssue.isEmpty()) { emit message(boundaryIssue); return; }
                 if (!dependencies.isEmpty() && buildInputs)
                 {
                     const auto error = buildInputs->adoptHdlInputs(project, dependencies, packageIncludes);
@@ -348,7 +352,8 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                 cursor.setPosition(result.start + result.length, QTextCursor::KeepAnchor);
                 editor->setTextCursor(cursor);
                 QString error;
-                if (!editor->insertCompletionText(result.text, -1, 0, result.placeholders, &error))
+                if (!editor->insertSimulationTemplate(result.text, result.placeholders, result.instance,
+                                                       selected.templateParentId, selected.templateParentSlot, &error))
                     emit message(error);
                 else
                 {

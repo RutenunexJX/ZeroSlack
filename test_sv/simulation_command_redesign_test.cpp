@@ -1208,8 +1208,10 @@ class SimulationCommandRedesignTest : public QObject
       }
       for (const auto &kind : {"snippet", "task", "function", "print", "local"})
         QVERIFY(ids.contains("@user_" + QString(kind)));
-      for (const auto &builtin : UserTemplateService::simulationBuiltins())
-        QVERIFY(ids.contains(builtin.commandToken));
+      for (const auto &token : {"@reset", "@ramp", "@random", "@random_window", "@print", "@repeat"})
+        QVERIFY(ids.contains(token));
+      QVERIFY(!ids.contains("@definitions"));
+      QVERIFY(!ids.contains("@process"));
       for (const auto &removed :
            {";;legacy", "instantiate", "import ", "include ", "new header"})
         QVERIFY(

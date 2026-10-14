@@ -285,10 +285,25 @@ MainWindow::MainWindow(QWidget *parent)
         workspaceSessionCoordinator.get(), [this] {
             fileCommandCoordinator->openDirectoryAsWorkspace();
         }, this);
+    auto* titleStatus = new QWidget(this);
+    auto* titleStatusLayout = new QHBoxLayout(titleStatus);
+    titleStatusLayout->setContentsMargins(0, 0, 0, 0);
+    auto* modeLabel = new QLabel(titleStatus);
+    modeLabel->setObjectName(QStringLiteral("editorTemplateModeStatus"));
+    modeLabel->setMaximumWidth(340);
+    modeLabel->hide();
+    titleStatusLayout->addWidget(modeLabel);
+    titleStatusLayout->addWidget(new EditingTimeWidget(editingTimeService.get(), titleStatus));
+    editorCoordinator->setModeStateHandler([modeLabel](const EditorModeSnapshot& snapshot) {
+        const bool visible = snapshot.activeModes.contains(EditorModeId::TemplateAuthoring);
+        modeLabel->setText(modeLabel->fontMetrics().elidedText(snapshot.displayText, Qt::ElideRight, 340));
+        modeLabel->setToolTip(snapshot.displayText + QLatin1Char('\n') + snapshot.detailText);
+        modeLabel->setVisible(visible);
+    });
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
             showDockWidget(settingsCenterDock);
-    }, workspaceSwitcher.get(), new EditingTimeWidget(editingTimeService.get(), this));
+    }, workspaceSwitcher.get(), titleStatus);
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
                 if (visible)
@@ -1610,15 +1625,21 @@ void MainWindow::setupGlobalControl()
             context.documentTextRevision = shared->textRevision();
         }
         context.memberAccess = paletteContext.memberAccess;
-        context.readOnly = editor->isReadOnly();
+        context.readOnly = editor->documentReadOnly();
+        editor->templateInsertionContext(&context.templateParentId, &context.templateParentSlot);
+        context.templateContent = editor->templateContainerContent();
         SimulationCommandPrefix::capture(context);
+        if (!context.readOnly)
+            context.templateBoundaryError = editor->simulationTemplateInsertionError(
+                context.replacementStart >= 0 ? context.replacementStart : context.cursorPosition,
+                context.replacementLength, {}, context.templateParentId, context.templateParentSlot);
         return context;
     });
     globalControlCoordinator->setItemProvider(
         [this, insertPalette](GlobalControlCategory category,
            const QString& text,
-           const GlobalControlQueryContext& context) {
-            auto result = insertPalette->query(category, text, context);
+           const GlobalControlQueryContext& context, QString* notice) {
+            auto result = insertPalette->query(category, text, context, notice);
             return result;
         });
     globalControlCoordinator->setActionHandler(
@@ -2833,7 +2854,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
             }
             editor->selectAll();
         } else {
-            if (editor->isReadOnly()) {
+            if (editor->isReadOnly() && !editor->templateSelectionEditable()) {
                 return fail(QStringLiteral(
                     "The editor is read-only."));
             }

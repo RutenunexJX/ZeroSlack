@@ -31,6 +31,8 @@ struct GlobalControlQueryContext {
     bool editorAvailable = false;
     bool readOnly = false;
     bool simulationCommands = false;
+    QString templateParentId, templateParentSlot, templateContent;
+    QString templateBoundaryError;
     QString fileName;
     QString moduleName;
     QString packageName;
@@ -50,6 +52,7 @@ struct GlobalControlQueryContext {
 
 struct GlobalControlItem {
     QString disabledReason;
+    QString templateParentId, templateParentSlot, templateContent;
     bool requiresCurrentSemantic = false;
     SemanticSnapshotToken sourceSemanticSnapshot;
     GlobalControlItemKind kind = GlobalControlItemKind::Command;

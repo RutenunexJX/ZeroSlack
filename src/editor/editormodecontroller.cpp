@@ -11,13 +11,18 @@ using Input = EditorModeInput;
 const QList<EditorModeDescriptor>& descriptors()
 {
     static const QList<EditorModeDescriptor> value = {
+        {EditorModeId::TemplateAuthoring, EditorModeOwner::TemplateInsertion,
+         QStringLiteral("template-authoring"), QStringLiteral("Template mode"),
+         QStringLiteral("Enter edits inputs; Ctrl+Enter returns; Esc exits"), 130,
+         Input::Escape | Input::Enter | Input::Text | Input::Navigation,
+         EditorModeEscapeBehavior::Close},
         {
             EditorModeId::CommandMode,
             EditorModeOwner::Command,
             QStringLiteral("command-mode"),
             QStringLiteral("Command mode"),
             QStringLiteral(
-                "Type to filter actions; Enter executes; Esc or F24 release "
+                "Type to filter actions; Enter executes; Esc or shortcut release "
                 "returns to the editor"),
             120,
             Input::Escape | Input::Tab | Input::Backtab
@@ -393,6 +398,8 @@ bool EditorModeController::canCoexist(EditorModeId left,
         return false;
     }
     if (left == right)
+        return true;
+    if (left == EditorModeId::TemplateAuthoring || right == EditorModeId::TemplateAuthoring)
         return true;
 
     const bool multiVirtual =

@@ -83,41 +83,41 @@ bool EditorStructuralInputController::handleKeyPress(
         || handlePairInput(editor, event, syntax);
 }
 
-bool EditorStructuralInputController::alignClosingKeyword(
-    MyCodeEditor* editor, QTextCursor* cursor, const EditorSyntaxState& syntax)
+EditorStructuralInputController::Edit EditorStructuralInputController::closingKeywordEdit(
+    const QTextCursor& cursor, const EditorSyntaxState& syntax)
 {
-    if (!editor || !cursor || cursor->hasSelection() || !syntax.tsDocument())
-        return false;
-    const QTextBlock block = cursor->block();
+    if (cursor.isNull() || cursor.hasSelection() || !syntax.tsDocument())
+        return {};
+    const QTextBlock block = cursor.block();
     const QString text = block.text();
-    const int column = cursor->position() - block.position();
+    const int column = cursor.position() - block.position();
     const int whitespace = indentLength(text);
     const QString keyword = text.mid(whitespace, column - whitespace);
     if (keyword != QLatin1String("end") && keyword != QLatin1String("endcase")
         && keyword != QLatin1String("endmodule") && keyword != QLatin1String("else"))
-        return false;
+        return {};
     if (column < text.size() && identifierCharacter(text.at(column)))
-        return false;
+        return {};
     QString indent;
     if (!syntax.tsDocument()->structuralClosingIndent(
             block.position() + whitespace, keyword, &indent))
-        return false;
+        return {};
 
     // Only a marked generated keyword can be reused. The marker is restored by
     // undo together with its text, including when the user edits after undo.
     int duplicateEnd = -1;
     if (keyword == QLatin1String("end")) {
-        const int documentEnd = editor->document()->characterCount() - 1;
-        int next = cursor->position();
-        while (next < documentEnd && editor->document()->characterAt(next).isSpace())
+        const int documentEnd = cursor.document()->characterCount() - 1;
+        int next = cursor.position();
+        while (next < documentEnd && cursor.document()->characterAt(next).isSpace())
             ++next;
         if (next + 3 <= documentEnd) {
-            QTextCursor generated(editor->document());
+            QTextCursor generated(cursor.document());
             generated.setPosition(next);
             generated.setPosition(next + 3, QTextCursor::KeepAnchor);
             bool marked = generated.selectedText() == QLatin1String("end")
                 && (next + 3 == documentEnd
-                    || !identifierCharacter(editor->document()->characterAt(next + 3)));
+                    || !identifierCharacter(cursor.document()->characterAt(next + 3)));
             generated.setPosition(next + 1);
             generated.setPosition(next + 2, QTextCursor::KeepAnchor);
             marked = marked && generated.charFormat().boolProperty(kGeneratedEndProperty);
@@ -126,17 +126,24 @@ bool EditorStructuralInputController::alignClosingKeyword(
         }
     }
     if (indent == text.left(whitespace) && duplicateEnd < 0)
+        return {};
+    return {block.position(), qMax(cursor.position(), duplicateEnd),
+            int(indent.size() + keyword.size()), indent + keyword, false};
+}
+
+bool EditorStructuralInputController::alignClosingKeyword(
+    MyCodeEditor* editor, QTextCursor* cursor, const EditorSyntaxState& syntax)
+{
+    if (!editor || !cursor)
+        return false;
+    const Edit edit = closingKeywordEdit(*cursor, syntax);
+    if (!edit.valid())
         return false;
     cursor->beginEditBlock();
-    if (duplicateEnd >= 0) {
-        QTextCursor duplicate = *cursor;
-        duplicate.setPosition(duplicateEnd, QTextCursor::KeepAnchor);
-        duplicate.removeSelectedText();
-    }
-    cursor->setPosition(block.position());
-    cursor->setPosition(block.position() + whitespace, QTextCursor::KeepAnchor);
-    cursor->insertText(indent);
-    cursor->setPosition(block.position() + indent.size() + keyword.size());
+    cursor->setPosition(edit.start);
+    cursor->setPosition(edit.end, QTextCursor::KeepAnchor);
+    cursor->insertText(edit.text);
+    cursor->setPosition(edit.start + edit.caretOffset);
     cursor->endEditBlock();
     return true;
 }
@@ -160,29 +167,17 @@ bool EditorStructuralInputController::handleKeywordBoundary(
     return true;
 }
 
-bool EditorStructuralInputController::handleStructuralEnter(
-    MyCodeEditor* editor,
-    QKeyEvent* event,
-    const EditorSyntaxState& syntax)
+EditorStructuralInputController::Edit EditorStructuralInputController::newlineEdit(
+    const QTextCursor& cursor, const EditorSyntaxState& syntax, int writableStart)
 {
-    if (!editor
-        || !event
-        || hasCommandModifier(event)
-        || (event->key() != Qt::Key_Return
-            && event->key() != Qt::Key_Enter)) {
-        return false;
-    }
-
-    QTextCursor cursor = editor->textCursor();
-    if (cursor.hasSelection())
-        return false;
-    const bool aligned = alignClosingKeyword(editor, &cursor, syntax);
+    if (cursor.isNull() || cursor.hasSelection())
+        return {};
     const int originalPosition = cursor.position();
     const TSStructuralNewlineTarget target =
         syntax.structuralNewlineTargetAt(
             originalPosition, 4);
     if (!target.ok())
-        return false;
+        return {};
 
     int insertionStart = originalPosition;
     const QTextBlock block = cursor.block();
@@ -199,31 +194,51 @@ bool EditorStructuralInputController::handleStructuralEnter(
             ++leadingWhitespace;
         }
         if (column <= leadingWhitespace) {
-            insertionStart = block.position();
-            cursor.setPosition(insertionStart);
-            cursor.setPosition(originalPosition,
-                               QTextCursor::KeepAnchor);
+            insertionStart = qMax(block.position(), writableStart);
         }
     }
 
+    return {insertionStart, originalPosition, target.caretOffset,
+            target.insertionText, target.insertedClosingKeyword};
+}
+
+void EditorStructuralInputController::markGeneratedClosing(QTextDocument* document,
+                                                           const Edit& edit)
+{
+    if (!document || !edit.generatedClosingKeyword)
+        return;
+    QTextCursor generated(document);
+    const int end = edit.start + edit.text.size();
+    // Only the interior character carries the undoable generated marker.
+    generated.setPosition(end - 2);
+    generated.setPosition(end - 1, QTextCursor::KeepAnchor);
+    QTextCharFormat format = generated.charFormat();
+    format.setProperty(kGeneratedEndProperty, true);
+    generated.setCharFormat(format);
+}
+
+bool EditorStructuralInputController::handleStructuralEnter(
+    MyCodeEditor* editor, QKeyEvent* event, const EditorSyntaxState& syntax)
+{
+    if (!editor || !event || hasCommandModifier(event)
+        || (event->key() != Qt::Key_Return && event->key() != Qt::Key_Enter))
+        return false;
+    QTextCursor cursor = editor->textCursor();
+    if (cursor.hasSelection())
+        return false;
+    const bool aligned = alignClosingKeyword(editor, &cursor, syntax);
+    const Edit edit = newlineEdit(cursor, syntax);
+    if (!edit.valid())
+        return false;
     if (aligned)
         cursor.joinPreviousEditBlock();
     else
         cursor.beginEditBlock();
-    cursor.insertText(target.insertionText);
-    cursor.setPosition(
-        insertionStart + target.caretOffset);
-    if (target.insertedClosingKeyword) {
-        QTextCursor generated(editor->document());
-        const int end = insertionStart + target.insertionText.size();
-        // Mark only the interior character so typing after "end" cannot inherit
-        // the marker and accidentally turn user text into a generated keyword.
-        generated.setPosition(end - 2);
-        generated.setPosition(end - 1, QTextCursor::KeepAnchor);
-        QTextCharFormat format = generated.charFormat();
-        format.setProperty(kGeneratedEndProperty, true);
-        generated.setCharFormat(format);
-    }
+    cursor.setPosition(edit.start);
+    cursor.setPosition(edit.end, QTextCursor::KeepAnchor);
+    cursor.insertText(edit.text);
+    cursor.setPosition(edit.start + edit.caretOffset);
+    markGeneratedClosing(editor->document(), edit);
     cursor.endEditBlock();
     editor->setTextCursor(cursor);
     event->accept();

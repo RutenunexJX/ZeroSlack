@@ -446,7 +446,7 @@ void appendCommandLayerActions(QList<ActionDescriptor>* out)
                    ActionRecoveryPolicy::Explain);
     deleteSelection.aliases.append(
         alias(ActionSurface::ActionCatalog,
-              QStringLiteral("F24+D"),
+              QStringLiteral("Delete Selection"),
               QStringLiteral("Delete Selection"),
               deleteSelection.description));
     out->append(deleteSelection);
@@ -1857,8 +1857,6 @@ void appendApplicationMenuActions(
             QStringLiteral(
                 "Open an editor tab before entering Command Mode."),
             ActionRecoveryPolicy::Explain);
-    commandMode.defaultShortcut =
-        QStringLiteral("F24");
     commandMode.repeatable = false;
     commandMode.aliases.append(
         alias(
@@ -3277,8 +3275,11 @@ QString effectiveActionShortcut(
 {
     const QVariantMap& overrides =
         shortcutOverridesStorage();
-    if (overrides.contains(actionId))
-        return overrides.value(actionId).toString();
+    if (overrides.contains(actionId)) {
+        const auto value = overrides.value(actionId).toString();
+        if (QKeySequence::fromString(value, QKeySequence::PortableText).toString().contains(QStringLiteral("F24"))) return {};
+        return value;
+    }
     const ActionDescriptor* descriptor =
         findActionById(actionId);
     return descriptor

@@ -89,6 +89,8 @@ QString normalizePath(const QString& path)
 
 QString defaultGlobalTemplatePath()
 {
+    const auto isolated = qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT");
+    if (!isolated.isEmpty()) return QDir(isolated).filePath(QString::fromLatin1(kUserTemplateFileName));
     QString configRoot =
         QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
     if (configRoot.isEmpty())
@@ -1019,6 +1021,19 @@ QList<UserTemplateRecord> UserTemplateService::simulationBuiltins()
     print.description = QStringLiteral("Emit a structured simulation event with runtime values");
     print.command = {{QStringLiteral("kind"), QStringLiteral("print")}, {QStringLiteral("summary"), QStringLiteral("message · values · condition")}};
     result << print;
+    const auto container = [&](const QString& token, const QString& description, const QString& text, const QString& content, const QString& placement, int start, int length) {
+        UserTemplateRecord record;
+        record.id = QStringLiteral("builtin:") + token; record.commandToken = record.label = QLatin1Char('@') + token;
+        record.description = description; record.storageSource = QStringLiteral("builtin"); record.insertText = text;
+        record.command = {{"kind", "snippet"}, {"content", content}, {"placement", placement}, {"summary", "body · mixed code and child templates"}};
+        record.templateSlots << CodeTemplateSlot{"body", start, length, 1, true, {{"kind", "Code"}, {"content", content == "declarations" && token == "definitions" ? "declarations" : "statements"}, {"allowEmpty", true}}};
+        result << record;
+    };
+    container("definitions", "Module declaration region", "\n  \n", "declarations", "module", 1, 2);
+    container("process", "Simulation process with a code container", "initial begin\n  \nend\n", "process", "module", 14, 2);
+    container("repeat", "Repeat a simulation statement sequence", "repeat (3) begin\n  \nend\n", "statements", "statement", 17, 2);
+    result.last().templateSlots.first().tabStop = 2;
+    result.last().templateSlots.prepend(CodeTemplateSlot{"count", 8, 1, 1, true, {{"kind", "Value"}, {"integer", true}, {"minimum", "0"}}});
     return result;
 }
 

@@ -6,11 +6,13 @@
 
 #include <QObject>
 #include <QPoint>
+#include <QPointer>
 #include <functional>
 #include <memory>
 
 class GlobalControlPanel;
 class QWidget;
+class MyCodeEditor;
 
 class ZEROSLACK_API GlobalControlCoordinator : public QObject
 {
@@ -27,7 +29,7 @@ public:
         std::function<QList<GlobalControlItem>(
             GlobalControlCategory,
             const QString&,
-            const GlobalControlQueryContext&)> provider);
+            const GlobalControlQueryContext&, QString*)> provider);
     void setOpenRequestHandler(
         std::function<bool()> handler);
     void setAnchorPositionProvider(
@@ -35,6 +37,7 @@ public:
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
+    void openTemplates(MyCodeEditor* editor, const QString& query, bool rawPrefix = false);
     void refreshVisibleItems();
 
 protected:
@@ -50,11 +53,16 @@ private:
     std::function<QList<GlobalControlItem>(
         GlobalControlCategory,
         const QString&,
-        const GlobalControlQueryContext&)> itemProvider;
+        const GlobalControlQueryContext&, QString*)> itemProvider;
     std::function<bool()> openRequestHandler;
     std::function<QPoint()> anchorPositionProvider;
     bool installed = false;
     GlobalControlQueryContext currentContext;
+    QPointer<MyCodeEditor> templateEditor;
+    bool f24Held = false, nativePrefixPending = false;
+    bool toggleSpaceHeld = false;
+    bool handleTemplateEvent(QObject* watched, QEvent* event);
+    bool restoreNativePrefix(const QString& query);
 
     void refresh(const QString& queryText = QString());
     void dispatch(const GlobalControlItem& item);

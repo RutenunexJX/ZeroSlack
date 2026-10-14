@@ -14,6 +14,7 @@ enum class EditorAnnotationKind {
     PortDefinition,
     EffectiveValue,
     TemplateSlot,
+    TemplateInstance,
     KeywordGhost,
     ColumnCaret,
     InsightTarget

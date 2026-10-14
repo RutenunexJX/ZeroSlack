@@ -1,6 +1,8 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "editorcoordinator.h"
+#include <QApplication>
+#include <QClipboard>
 #include "tbeditorworkflow.h"
 #include "filecreation.h"
 
@@ -1348,6 +1350,7 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     request.actionContext = actionContext;
     request.symbolAvailable = symbolAvailable;
     const bool editable = !editor->isReadOnly();
+    const bool clipboardEditable = editable || editor->templateSelectionEditable();
     const bool hasSelection =
         editor->textCursor().hasSelection();
     const EditorColumnModeSnapshot columnSelection =
@@ -1527,8 +1530,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            true);
     append(QStringLiteral("edit.cut"),
            true,
-           editable && hasSelection,
-           editable
+           clipboardEditable && hasSelection,
+           clipboardEditable
                ? QStringLiteral("Select text to cut.")
                : QStringLiteral("The editor is read-only."),
            true);
@@ -1539,8 +1542,8 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
            true);
     append(QStringLiteral("edit.paste"),
            true,
-           editable && editor->canPaste(),
-           editable
+           clipboardEditable && (editor->canPaste() || (editor->templateSelectionEditable() && !QApplication::clipboard()->text().isEmpty())),
+           clipboardEditable
                ? QStringLiteral(
                      "The clipboard has no text that can be pasted.")
                : QStringLiteral("The editor is read-only."),

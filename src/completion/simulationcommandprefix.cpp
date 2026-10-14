@@ -3,6 +3,26 @@
 #include "tsdocument.h"
 #include <QRegularExpression>
 
+bool SimulationCommandPrefix::nativeEventInput(const QString& pending)
+{
+    if (!pending.trimmed().startsWith('@')) return false;
+    // Parse a pending event control in the same SystemVerilog grammar used by
+    // completion. A synthetic operand lets incomplete @(... and @* recover
+    // immediately; named events remain pending until their terminating ';'.
+    const auto tail = pending.trimmed().mid(1).trimmed();
+    if (!(tail.startsWith('(') || tail.startsWith('*') || tail.endsWith(';'))) return false;
+    QString probe = pending;
+    if (tail == "(") probe += "posedge __template_event) ;";
+    else if (tail == "*") probe += " ;";
+    else if (tail.startsWith('(') && !tail.endsWith(';')) probe += ") ;";
+    const QString prefix = QStringLiteral("module __template_event_probe; initial begin ");
+    TSDocument syntax; syntax.setText(prefix + probe + QStringLiteral(" end endmodule"));
+    const auto byte = quint32((prefix.size() + pending.indexOf('@')) * sizeof(QChar));
+    auto node = ts_node_descendant_for_byte_range(syntax.rootNode(), byte, byte + sizeof(QChar));
+    for (; !ts_node_is_null(node); node = ts_node_parent(node)) if (QByteArray(ts_node_type(node)) == "event_control") return true;
+    return false;
+}
+
 bool SimulationCommandPrefix::refersToValue(const QString &expression, SemanticIndex &index,
                                             const SemanticQueryContext &context)
 {

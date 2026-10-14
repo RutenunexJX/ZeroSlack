@@ -14,6 +14,18 @@ class QTextDocument;
 class EditorStructuralInputController
 {
 public:
+    struct Edit {
+        int start = -1, end = -1, caretOffset = 0;
+        QString text;
+        bool generatedClosingKeyword = false;
+        bool valid() const { return start >= 0; }
+    };
+    static Edit closingKeywordEdit(const QTextCursor& cursor,
+                                   const EditorSyntaxState& syntax);
+    static Edit newlineEdit(const QTextCursor& cursor,
+                            const EditorSyntaxState& syntax,
+                            int writableStart = 0);
+    static void markGeneratedClosing(QTextDocument* document, const Edit& edit);
     bool handleKeyPress(MyCodeEditor* editor,
                         QKeyEvent* event,
                         const EditorSyntaxState& syntax);

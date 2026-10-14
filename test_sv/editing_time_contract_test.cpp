@@ -1,6 +1,7 @@
 #include "actionregistry.h"
 #include "activitylogservice.h"
 #include "analysisscheduler.h"
+#include "documenttemplatemodel.h"
 #include "editingtimeservice.h"
 #include "editingtimestore.h"
 #include "editorsplitcontroller.h"
@@ -60,6 +61,33 @@ bool put(const QString& path, const QByteArray& bytes)
 {
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+}
+
+bool insertTimingTemplate(MyCodeEditor* editor, const QVariantMap& input = {{"kind", "Value"}})
+{
+    editor->setPlainText("module timer;\n  int hits = 0;\n\nendmodule\n");
+    QTextCursor cursor(editor->document());
+    cursor.setPosition(editor->toPlainText().indexOf("\nendmodule"));
+    editor->setTextCursor(cursor);
+    const QString body = "initial begin\n  hits += 1;\n  hits += 1;\n  \nend\n";
+    TemplateInsertionSpec spec;
+    spec.label = "@timing";
+    spec.snapshot = {{"kind", "snippet"}, {"schema", 1}};
+    spec.fragments = {{0, int(body.size()), false}};
+    const CodeTemplateSlotList inputs = {
+        {"value", int(body.indexOf("1;")), 1, 1, true, input},
+        {"value", int(body.lastIndexOf("1;")), 1, 1, true, input},
+        {"body", int(body.indexOf("  \nend") + 2), 0, 2, true,
+         {{"kind", "Code"}, {"content", "statements"}, {"allowEmpty", true}}}
+    };
+    return editor->insertSimulationTemplate(body, inputs, spec, {}, {}, nullptr);
+}
+
+void lockTemplates(MyCodeEditor* editor)
+{
+    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyClick(editor, Qt::Key_Space);
+    QTest::keyRelease(editor, Qt::Key_F24);
 }
 
 int writerProcess(const QStringList& arguments)
@@ -266,6 +294,223 @@ private slots:
         f.press(Qt::Key_V, {}, Qt::ControlModifier);
         f.now += 50 * ms; f.release(Qt::Key_V);
         QCOMPARE(f.timer.totalNanoseconds(), 124 * ms);
+    }
+
+    void mainWindowTemplateKeyIntervals_data()
+    {
+        QTest::addColumn<int>("mode");
+        QTest::newRow("ordinary") << 0;
+        QTest::newRow("slot-unlocked") << 1;
+        QTest::newRow("slot-locked") << 2;
+    }
+    void mainWindowTemplateKeyIntervals()
+    {
+        QFETCH(int, mode);
+        WindowFixture f;
+        auto* editor = f.editor();
+        qint64 now = 1000 * ms;
+        EditingTimeService measured(f.directory.filePath("measured.json"), nullptr, [&] { return now; });
+        measured.attachEditor(editor);
+        if (mode == 0) {
+            editor->setPlainText("1");
+            editor->selectAll();
+        } else {
+            QVERIFY(insertTimingTemplate(editor));
+            if (mode == 2) {
+                lockTemplates(editor);
+                QVERIFY(editor->templateAuthoringLocked());
+                QTest::keyClick(editor, Qt::Key_Return);
+            }
+            QVERIFY(editor->templateInputEditing());
+        }
+        QCOMPARE(measured.totalNanoseconds(), qint64(0));
+        QSignalSpy started(editor, &MyCodeEditor::userEditStarted);
+        QSignalSpy finished(editor, &MyCodeEditor::userEditFinished);
+        auto press = [&](int code, const QString& text, Qt::KeyboardModifiers mods,
+                         bool changes, qint64 duration = 250 * ms) {
+            started.clear(); finished.clear();
+            const auto before = editor->toPlainText();
+            const auto elapsed = measured.totalNanoseconds();
+            key(editor, QEvent::KeyPress, code, text, mods);
+            QCOMPARE(editor->toPlainText() != before, changes);
+            QCOMPARE(started.count(), 1);
+            QCOMPARE(finished.count(), 1);
+            QCOMPARE(finished.first().first().toBool(), changes);
+            QCOMPARE(measured.isActive(), changes);
+            QCOMPARE(f.timer()->isActive(), changes);
+            now += duration;
+            key(editor, QEvent::KeyRelease, code);
+            QCOMPARE(measured.totalNanoseconds() - elapsed, changes ? duration : 0);
+            QVERIFY(!measured.isActive() && !f.timer()->isActive());
+            now += 10000 * ms;
+            QCOMPARE(measured.totalNanoseconds() - elapsed, changes ? duration : 0);
+        };
+        press(Qt::Key_2, "2", Qt::NoModifier, true);
+        QCOMPARE(measured.totalNanoseconds(), 250 * ms);
+        qInfo() << "250ms input:" << QTest::currentDataTag() << measured.totalNanoseconds();
+        if (mode == 0) return;
+        QCOMPARE(editor->toPlainText().count("hits += 2;"), 2);
+        const auto id = editor->selectedTemplateId();
+        QVERIFY(editor->editTemplateInstance(id, "value"));
+        press(Qt::Key_2, "2", Qt::NoModifier, false); // identical linked replacement
+        press(Qt::Key_Backspace, {}, Qt::NoModifier, true);
+        QApplication::clipboard()->setText("3");
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString("3"));
+        press(Qt::Key_V, {}, Qt::ControlModifier, true);
+        QVERIFY(editor->editTemplateInstance(id, "value"));
+        press(Qt::Key_X, {}, Qt::ControlModifier, true);
+        QVERIFY(editor->editTemplateInstance(id, "value"));
+        press(Qt::Key_V, {}, Qt::ControlModifier, true);
+        QVERIFY(editor->editTemplateInstance(id, "value"));
+        press(Qt::Key_Delete, {}, Qt::NoModifier, true);
+        QApplication::clipboard()->clear();
+        QTRY_VERIFY(QApplication::clipboard()->text().isEmpty());
+        press(Qt::Key_V, {}, Qt::ControlModifier, false);
+        press(Qt::Key_1, "1", Qt::NoModifier, true);
+        press(Qt::Key_Tab, {}, Qt::NoModifier, false);
+        press(Qt::Key_A, "a", Qt::NoModifier, true);
+        press(Qt::Key_Return, "\r", Qt::NoModifier, true);
+        press(Qt::Key_Left, {}, Qt::NoModifier, false);
+        if (mode == 2) {
+            editor->selectAll();
+            press(Qt::Key_Delete, {}, Qt::NoModifier, false);
+            press(Qt::Key_X, {}, Qt::ControlModifier, false);
+        }
+    }
+
+    void mainWindowTemplateCommandsAndIme_data()
+    {
+        QTest::addColumn<bool>("locked");
+        QTest::newRow("slot-unlocked") << false;
+        QTest::newRow("slot-locked") << true;
+    }
+    void mainWindowTemplateCommandsAndIme()
+    {
+        QFETCH(bool, locked);
+        WindowFixture f;
+        auto* editor = f.editor();
+        QVERIFY(insertTimingTemplate(editor, {{"kind", "Choice"}, {"choices", QStringList{"1", "2"}}}));
+        if (locked) {
+            lockTemplates(editor);
+            QTest::keyClick(editor, Qt::Key_Return);
+        }
+        qint64 now = 1000 * ms;
+        EditingTimeService measured(f.directory.filePath("measured.json"), nullptr, [&] { return now; });
+        measured.attachEditor(editor);
+        QSignalSpy started(editor, &MyCodeEditor::userEditStarted);
+        QSignalSpy finished(editor, &MyCodeEditor::userEditFinished);
+        key(editor, QEvent::KeyPress, Qt::Key_Down);
+        QVERIFY(measured.isActive() && f.timer()->isActive());
+        QCOMPARE(editor->toPlainText().count("hits += 2;"), 2);
+        now += 25 * ms;
+        key(editor, QEvent::KeyRelease, Qt::Key_Down);
+        QCOMPARE(measured.totalNanoseconds(), 25 * ms);
+        QCOMPARE(started.count(), 1);
+        QCOMPARE(finished.count(), 1);
+        QTest::keyClick(editor, Qt::Key_Tab);
+        QVERIFY(!measured.isActive());
+        const auto processing = connect(editor, &MyCodeEditor::documentChangeApplied, editor,
+            [&](const DocumentChange&) { now += 200000; });
+        auto verifyCommit = [&](auto action) {
+            started.clear(); finished.clear();
+            const auto before = measured.totalNanoseconds();
+            action();
+            QCOMPARE(started.count(), 1);
+            QCOMPARE(finished.count(), 1);
+            QVERIFY(finished.first().first().toBool());
+            QCOMPARE(measured.totalNanoseconds() - before, qint64(200000));
+            QVERIFY(!measured.isActive() && !f.timer()->isActive());
+        };
+        const auto beforeIme = editor->toPlainText();
+        QInputMethodEvent preedit(QStringLiteral("zhong"), {});
+        QApplication::sendEvent(editor, &preedit);
+        now += 30000 * ms;
+        QCOMPARE(editor->toPlainText(), beforeIme);
+        QCOMPARE(measured.totalNanoseconds(), 25 * ms);
+        QInputMethodEvent cancel;
+        QApplication::sendEvent(editor, &cancel);
+        QCOMPARE(measured.totalNanoseconds(), 25 * ms);
+        QInputMethodEvent commit;
+        commit.setCommitString(QString::fromUtf8("中"));
+        verifyCommit([&] { QApplication::sendEvent(editor, &commit); });
+        QInputMethodEvent deletion;
+        deletion.setCommitString({}, -1, 1);
+        verifyCommit([&] { QApplication::sendEvent(editor, &deletion); });
+        auto invoke = [&](const QString& id) {
+            bool handled = false;
+            editor->registeredActionRequested(id,
+                {{"editorViewId", editor->property("editorViewId")}}, &handled);
+            return handled;
+        };
+        QApplication::clipboard()->setText("// pasted\n");
+        QTRY_COMPARE(QApplication::clipboard()->text(), QString("// pasted\n"));
+        verifyCommit([&] { QVERIFY(invoke("edit.paste")); });
+        QTextCursor selection(editor->document());
+        selection.setPosition(editor->toPlainText().indexOf("// pasted"));
+        selection.setPosition(selection.position() + 10, QTextCursor::KeepAnchor);
+        editor->setTextCursor(selection);
+        verifyCommit([&] { QVERIFY(invoke("edit.cut")); });
+        const auto beforeSearch = measured.totalNanoseconds();
+        if (locked) {
+            const auto before = editor->toPlainText();
+            QTest::keyClicks(editor, "@");
+            QVERIFY(QApplication::focusWidget() != editor);
+            now += 30000 * ms;
+            QCOMPARE(editor->toPlainText(), before);
+            QCOMPARE(measured.totalNanoseconds(), beforeSearch);
+            verifyCommit([&] { QTest::keyClicks(QApplication::focusWidget(), "*"); });
+            QVERIFY(editor->toPlainText().contains("@*"));
+        }
+        editor->setReadOnly(true);
+        const auto before = measured.totalNanoseconds();
+        const auto text = editor->toPlainText();
+        QApplication::sendEvent(editor, &commit);
+        QTest::keyClick(editor, Qt::Key_2);
+        invoke("edit.paste");
+        now += 30000 * ms;
+        QCOMPARE(measured.totalNanoseconds(), before);
+        QCOMPARE(editor->toPlainText(), text);
+        QVERIFY(!measured.isActive() && !f.timer()->isActive());
+        disconnect(processing);
+    }
+
+    void templateTimingSessionEnds_data()
+    {
+        QTest::addColumn<int>("boundary");
+        QTest::newRow("unlocked-escape") << 0;
+        QTest::newRow("locked-escape") << 1;
+        QTest::newRow("locked-toggle") << 2;
+        QTest::newRow("finish-input") << 3;
+        QTest::newRow("source-readonly-while-locked") << 4;
+        QTest::newRow("locked-focus-out") << 5;
+        QTest::newRow("locked-deactivate") << 6;
+    }
+    void templateTimingSessionEnds()
+    {
+        QFETCH(int, boundary);
+        EditorFixture f;
+        QVERIFY(insertTimingTemplate(&f.editor));
+        if (boundary != 0) {
+            f.editor.setTemplateAuthoringLocked(true);
+            QVERIFY(f.editor.editTemplateInstance());
+        }
+        f.press(Qt::Key_2, "2");
+        QVERIFY(f.timer.isActive());
+        f.now += 17 * ms;
+        if (boundary <= 1) QTest::keyClick(&f.editor, Qt::Key_Escape);
+        else if (boundary == 2) f.editor.setTemplateAuthoringLocked(false);
+        else if (boundary == 3) QTest::keyClick(&f.editor, Qt::Key_Return, Qt::ControlModifier);
+        else if (boundary == 4) f.editor.setReadOnly(true);
+        else if (boundary == 5) {
+            QFocusEvent event(QEvent::FocusOut); QApplication::sendEvent(&f.editor, &event);
+        } else {
+            QEvent event(QEvent::ApplicationDeactivate); QApplication::sendEvent(qApp, &event);
+        }
+        QVERIFY(!f.timer.isActive());
+        QCOMPARE(f.timer.totalNanoseconds(), 17 * ms);
+        f.now += 60000 * ms;
+        f.release(Qt::Key_2);
+        QCOMPARE(f.timer.totalNanoseconds(), 17 * ms);
     }
 
     void lifecycleEndsActivity_data()

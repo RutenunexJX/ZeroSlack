@@ -66,9 +66,11 @@ QString TemplateInputService::specificationError(const QVariantMap &input)
 {
     if (input.isEmpty())
         return {};
-    const QStringList kinds{"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value"};
+    const QStringList kinds{"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"};
     if (!kinds.contains(input.value("kind").toString()))
-        return QStringLiteral("Choose Instance, Port, Internal, Signal, Parameter, Choice or Value.");
+        return QStringLiteral("Choose Instance, Port, Internal, Signal, Parameter, Choice, Value or Code.");
+    if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations"}.contains(input.value("content", "statements").toString()))
+        return QStringLiteral("Code containers accept statements or declarations.");
     const auto role = input.value("role").toString();
     if (!role.isEmpty() && role != "Clock" && role != "Reset")
         return QStringLiteral("Role must be Clock or Reset; use explicit role assignments.");
@@ -195,6 +197,8 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     const auto scope = input.value("scope", dependency.isEmpty() ? "visible" : "instance").toString();
     for (const auto &record : all)
     {
+        if (input.value("moduleVariable").toBool() && !record.presentation.directModuleVariable)
+            continue;
         if (kind == "Instance")
         {
             for (const auto &path : record.presentation.elaboratedInstancePaths)
@@ -284,6 +288,7 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
                                        const TemplateInputContext &context,
                                        const QHash<QString, QString> &bindings)
 {
+    if (input.value("kind").toString() == "Code") return specificationError(input);
     if (input.isEmpty())
         return {};
     if (context.current && !context.current())

@@ -127,6 +127,7 @@ bool EditorAnnotation::isValid() const
 {
     const bool textRequired =
         kind != EditorAnnotationKind::TemplateSlot
+        && kind != EditorAnnotationKind::TemplateInstance
         && kind != EditorAnnotationKind::ColumnCaret
         && kind != EditorAnnotationKind::InsightTarget;
     return range.isValid() && (!textRequired || !text.isEmpty());
@@ -324,6 +325,8 @@ int AnnotationLayer::defaultPriority(EditorAnnotationKind kind)
         return 550;
     case EditorAnnotationKind::TemplateSlot:
         return 500;
+    case EditorAnnotationKind::TemplateInstance:
+        return 1;
     case EditorAnnotationKind::InsightTarget:
         return 480;
     case EditorAnnotationKind::ColumnCaret:

@@ -9,6 +9,7 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QJsonObject>
 
 struct WorkspaceSessionTabState {
     QString filePath;
@@ -91,6 +92,8 @@ public:
         const QString& workspaceRoot);
 
     QString localStoragePath() const;
+    QJsonObject loadDocumentTemplates(const QString& fileName, QString* error = nullptr) const;
+    bool saveDocumentTemplates(const QString& fileName, const QJsonObject& state, QString* error) const;
     bool sessionExists(
         const QString& workspaceRoot) const;
     WorkspaceSessionSaveResult save(

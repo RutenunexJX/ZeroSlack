@@ -1,6 +1,7 @@
 #include "uidialogs.h"
 #include "uicontrols.h"
 #include "mycodeeditor.h"
+#include "documenttemplatemodel.h"
 #include "applicationthememanager.h"
 #include "actionregistry.h"
 #include "editorruntime.h"
@@ -12,6 +13,7 @@
 #include "tsdocument.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QCheckBox>
 #include <QDialog>
 #include <QFrame>
@@ -37,6 +39,7 @@
 #include <QTextBlock>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QVBoxLayout>
 
 #include <cstdio>
@@ -388,6 +391,7 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     viewport()->setAutoFillBackground(false);
     state->attachToEditor(this);
     ApplicationThemeManager::instance().preserveClassicSurface(this);
+    bindTemplateModel();
 }
 
 MyCodeEditor::SynchronousEditTransaction::SynchronousEditTransaction(
@@ -442,20 +446,24 @@ void MyCodeEditor::attachSharedDocument(
 {
     emit editingInteractionEnded();
     state->rebindDocument(this, sharedDocument, textRevision);
+    bindTemplateModel();
 }
 
 void MyCodeEditor::setPlainText(const QString& text)
 {
+    if (authoringLock) return;
     emit editingInteractionEnded();
     {
         auto edit = beginSynchronousEditTransaction();
         QPlainTextEdit::setPlainText(text);
     }
     emit insightScopeChanged();
+    bindTemplateModel();
 }
 
 void MyCodeEditor::insertPlainText(const QString& text)
 {
+    if (replaceTemplateInput(textCursor(), text)) return;
     if (!canApplyInsertion())
         return;
     auto edit = beginSynchronousEditTransaction();
@@ -464,6 +472,7 @@ void MyCodeEditor::insertPlainText(const QString& text)
 
 void MyCodeEditor::clear()
 {
+    if (!canApplyInsertion()) return;
     auto edit = beginSynchronousEditTransaction();
     QPlainTextEdit::clear();
 }
@@ -476,6 +485,13 @@ void MyCodeEditor::copy()
 
 void MyCodeEditor::cut()
 {
+    if (templateInputEditing()) {
+        const auto cursor = textCursor();
+        if (cursor.hasSelection() && templateModel()->inputAt(activeTemplate, cursor.selectionStart(), cursor.selectionEnd()) >= 0) {
+            QPlainTextEdit::copy(); replaceTemplateInput(cursor, {}); return;
+        }
+        if (authoringLock) return;
+    }
     auto edit = beginSynchronousEditTransaction();
     state->executeClipboardAction(
         this, QStringLiteral("edit.cut"));
@@ -483,6 +499,7 @@ void MyCodeEditor::cut()
 
 void MyCodeEditor::paste()
 {
+    if (replaceTemplateInput(textCursor(), QApplication::clipboard()->text())) return;
     auto edit = beginSynchronousEditTransaction();
     if (isReadOnly() || !document())
         return;
@@ -502,14 +519,18 @@ void MyCodeEditor::paste()
 
 void MyCodeEditor::undo()
 {
-    if (!canApplyInsertion())
+    if (documentReadOnly())
         return;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
     state->beginUndoRedo(this);
-    QPlainTextEdit::undo();
+    templateModel()->beginReplay();
+    if (authoringLock) document()->undo(); else QPlainTextEdit::undo();
+    templateModel()->endReplay();
+    templateEditing = false;
+    updateTemplatePresentation();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
@@ -519,14 +540,18 @@ void MyCodeEditor::undo()
 
 void MyCodeEditor::redo()
 {
-    if (!canApplyInsertion())
+    if (documentReadOnly())
         return;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
     state->beginUndoRedo(this);
-    QPlainTextEdit::redo();
+    templateModel()->beginReplay();
+    if (authoringLock) document()->redo(); else QPlainTextEdit::redo();
+    templateModel()->endReplay();
+    templateEditing = false;
+    updateTemplatePresentation();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
         : 0;
@@ -967,6 +992,7 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
         QPainter painter(viewport());
         state->background.paint(painter, viewport()->rect(), event->rect(),
                                 viewport()->devicePixelRatioF(), palette().color(QPalette::Base));
+        paintTemplateBackground(painter, event);
     }
     if (state->projection.active())
         state->projection.paint(this, event);
@@ -1971,6 +1997,7 @@ bool MyCodeEditor::editorModeActiveForTest(EditorModeId id) const
 void MyCodeEditor::exitInteractionModes(EditorModeExitReason reason)
 {
     state->exitInteractionModes(reason);
+    updateTemplatePresentation();
 }
 
 void MyCodeEditor::highlightSearchMatches(
@@ -2012,6 +2039,7 @@ void MyCodeEditor::setEditorBackground(const QString& preset, const QString& cus
 void MyCodeEditor::keyPressEvent(QKeyEvent *event)
 {
     auto input = beginUserEdit(event->key(), event->isAutoRepeat());
+    if (handleTemplateInputKey(event)) { event->accept(); return; }
     lifecycleTrace("key.enter");
     auto edit = beginSynchronousEditTransaction();
     lifecycleTrace("key.transaction");
@@ -2128,6 +2156,26 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
 {
     UserEditScope input((!event->commitString().isEmpty() || event->replacementLength() != 0)
                            ? this : nullptr, -1, false);
+    if (templateInputEditing()) {
+        clearTemplatePreedit();
+        QTextCursor edit = textCursor();
+        if (event->replacementStart() || event->replacementLength()) {
+            const int start = edit.position() + event->replacementStart();
+            if (start < 0 || start + event->replacementLength() >= document()->characterCount()) { event->ignore(); return; }
+            edit.setPosition(start); edit.setPosition(start + event->replacementLength(), QTextCursor::KeepAnchor);
+        }
+        const bool writable = !documentReadOnly() && templateModel()->inputAt(activeTemplate, edit.selectionStart(), edit.selectionEnd()) >= 0;
+        if (writable) {
+            if (!event->commitString().isEmpty() || event->replacementLength())
+                replaceTemplateInput(edit, event->commitString());
+            if (!event->preeditString().isEmpty()) {
+                templatePreeditBlock = textCursor().block();
+                templatePreeditBlock.layout()->setPreeditArea(textCursor().positionInBlock(), event->preeditString());
+            }
+            viewport()->update(); event->accept(); return;
+        }
+        if (authoringLock) { event->ignore(); return; }
+    }
     if (!canApplyInsertion()) {
         if (event)
             event->ignore();
@@ -2239,6 +2287,7 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::dropEvent(QDropEvent* event)
 {
+    if (authoringLock) { event->ignore(); return; }
     auto input = beginUserEdit(-1);
     auto edit = beginSynchronousEditTransaction();
     state->projection.ensure(this, state->folding.collapsedLineRanges());
@@ -2474,6 +2523,9 @@ void MyCodeEditor::leaveEvent(QEvent *event)
 QVariant MyCodeEditor::inputMethodQuery(
     Qt::InputMethodQuery query) const
 {
+    if (query == Qt::ImEnabled && authoringLock)
+        return templateInputEditing() && !documentReadOnly()
+            && templateModel()->inputAt(activeTemplate, textCursor().selectionStart(), textCursor().selectionEnd()) >= 0;
     if (viewProjectionActive()) {
         if (query == Qt::ImCursorRectangle)
             return cursorRect();

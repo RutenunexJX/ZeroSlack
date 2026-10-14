@@ -50,18 +50,35 @@ int main(int argc, char *argv[])
         QStringLiteral("Widget style: classic, qlementine or ela (default: %1).")
             .arg(defaultStyle),
         QStringLiteral("style"), defaultStyle);
-#if defined(ZEROSLACK_PREVIEW_BUILD) || defined(ZEROSLACK_ELA_BUILD)
-    // All legacy explicit ZeroSlack QSettings constructors also use this INI root.
-    QSettings::setDefaultFormat(QSettings::IniFormat);
-    const QString previewSettings = QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
-    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, previewSettings);
-    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, previewSettings + QStringLiteral("/system"));
-    qputenv("ZEROSLACK_SESSION_STORAGE_PATH",
-            (previewSettings + QStringLiteral("/workspace-sessions.ini")).toUtf8());
-#endif
+    const QCommandLineOption isolatedProfileOption(QStringLiteral("isolated-profile"),
+        QStringLiteral("Use an independent local profile and do not register SuiteApp IPC."), QStringLiteral("directory"));
+    parser.addOption(isolatedProfileOption);
     parser.addOption(styleOption);
     parser.addOption({QStringLiteral("no-ui-animations"), QStringLiteral("Disable Qlementine control animations.")});
     parser.process(a);
+    const bool isolated = parser.isSet(isolatedProfileOption);
+    const QString isolatedProfile = isolated ? QFileInfo(parser.value(isolatedProfileOption)).absoluteFilePath() : QString();
+    if (isolated && (parser.value(isolatedProfileOption).isEmpty() || !QDir().mkpath(isolatedProfile))) return 2;
+    if (isolated) {
+        qputenv("ZEROSLACK_PROFILE_ROOT", isolatedProfile.toUtf8());
+        qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH", (isolatedProfile + "/editing-time.json").toUtf8());
+        qputenv("ZEROSLACK_SIMULATION_CACHE_ROOT", (isolatedProfile + "/simulation").toUtf8());
+        qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", (isolatedProfile + "/legacy.ini").toUtf8());
+        qputenv("XIPS_ASSET_ADAPTER_STATE", (isolatedProfile + "/asset-adapter").toUtf8());
+        qputenv("XIPS_LIBRARY", (isolatedProfile + "/library").toUtf8());
+    }
+#if defined(ZEROSLACK_PREVIEW_BUILD) || defined(ZEROSLACK_ELA_BUILD)
+    const bool iniProfile = true;
+#else
+    const bool iniProfile = isolated;
+#endif
+    if (iniProfile) {
+        QSettings::setDefaultFormat(QSettings::IniFormat);
+        const auto settings = isolated ? isolatedProfile : QStandardPaths::writableLocation(QStandardPaths::AppConfigLocation);
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings);
+        QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, settings + "/system");
+        qputenv("ZEROSLACK_SESSION_STORAGE_PATH", (settings + "/workspace-sessions.ini").toUtf8());
+    }
 #if defined(ZEROSLACK_ELA_BUILD)
     if (parser.isSet(versionOption)) {
         QTextStream(stdout) << QGuiApplication::applicationDisplayName() << ' '
@@ -93,6 +110,7 @@ int main(int argc, char *argv[])
     w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
     w.show();
+    if (isolated) w.setWindowTitle(QStringLiteral("ZeroSlack — isolated profile: %1").arg(QFileInfo(isolatedProfile).fileName()));
     const QStringList files = parser.positionalArguments();
     QTimer::singleShot(0, &w, [&w, files] {
         for (const QString& file : files)
@@ -100,8 +118,8 @@ int main(int argc, char *argv[])
     });
 #ifdef ZEROSLACK_HAS_SUITEAPP
     ZeroSlackSuiteIntegration suiteIntegration(&w);
-    QTimer::singleShot(0, &a, [&suiteIntegration]() {
-        suiteIntegration.start();
+    QTimer::singleShot(0, &a, [&suiteIntegration, isolated]() {
+        if (!isolated) suiteIntegration.start();
     });
 #endif
     return a.exec();

@@ -35,6 +35,9 @@ public:
     int slotCount() const;
     bool blinkOn() const;
     bool containsPosition(int position) const;
+    void selectIndex(MyCodeEditor* editor, int index) { select(editor, index); }
+    void syncPersistentRanges(MyCodeEditor* editor, const CodeTemplateSlotList& inputs);
+    QString currentValidationError(MyCodeEditor* editor) const { return validationError(editor, firstPhysicalIndexForGroup(currentIndex)); }
 
     bool handleKeyPress(MyCodeEditor* editor,
                         QKeyEvent* event);

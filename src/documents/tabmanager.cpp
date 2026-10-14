@@ -1,4 +1,6 @@
 #include "tabmanager.h"
+#include "documenttemplatemodel.h"
+#include "workspacesessionstateservice.h"
 
 #include "actionregistry.h"
 #include "documentmodel.h"
@@ -2659,10 +2661,16 @@ bool TabManager::saveEditor(
         QFileInfo(fileName).lastModified().toUTC();
     document->markSaved(savedRawFingerprint,
                         savedModifiedUtc);
-    clearRecoverySnapshot(document, true);
     if (externalDocumentSync)
-        externalDocumentSync->noteDocumentSaved(
-            document, savedRawFingerprint);
+        externalDocumentSync->noteDocumentSaved(document, savedRawFingerprint);
+    QString templateError;
+    auto* templates = DocumentTemplateModel::get(document->textDocument());
+    if (!WorkspaceSessionStateService().saveDocumentTemplates(document->fileName(), templates->serialize(document->fileName()), &templateError)) {
+        document->textDocument()->setModified(true);
+        emit fileSaveFailed(document->fileName(), QStringLiteral("Source saved, but template metadata was not saved: ") + templateError);
+        return false;
+    }
+    clearRecoverySnapshot(document, true);
     updateTitlesForDocument(document);
     if (renamedDocument)
         applyWorkspaceScope();

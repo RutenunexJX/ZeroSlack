@@ -1,4 +1,5 @@
 #include "editortemplateslotcontroller.h"
+#include "documenttemplatemodel.h"
 #include "templateinputservice.h"
 #include <QSet>
 
@@ -214,7 +215,19 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
     annotations.reserve(ranges.size());
     const int documentEnd =
         qMax(0, editor->document()->characterCount() - 1);
-    for (const SlotRange& slot : std::as_const(ranges)) {
+    for (const SlotRange& original : std::as_const(ranges)) {
+        auto slot = original;
+        if (slot.input.value("kind").toString() == "Code") {
+            if (slot.groupIndex != currentIndex) continue;
+            const int position = editor->textCursor().position();
+            if (position < slot.start || position > slot.end) continue;
+            const auto* model = editor->templateModel();
+            if (model->inputAt(editor->selectedTemplateId(), position, position) < 0) continue;
+            // A container is not one writable rectangle: children own their
+            // fixed text. Mark only the active handwriting caret.
+            slot.start = slot.end = position;
+            slot.visibleWhenEmpty = true;
+        }
         if (slot.end <= slot.start
             && !slot.visibleWhenEmpty) {
             continue;
@@ -288,8 +301,7 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
                 presentationGeneration;
             annotation.active =
                 slot.groupIndex == currentIndex;
-            annotation.phaseVisible =
-                currentBlinkOn;
+            annotation.phaseVisible = editor->templateInputEditing() || currentBlinkOn;
             annotations.append(
                 std::move(annotation));
         }
@@ -367,7 +379,9 @@ void EditorTemplateSlotController::select(
     const SlotRange& slot = ranges.at(physicalIndex);
     QTextCursor cursor(editor->document());
     cursor.setPosition(slot.start);
-    if (slot.end > slot.start) {
+    if (slot.input.value("kind").toString() == "Code") {
+        cursor.setPosition(slot.end);
+    } else if (slot.end > slot.start) {
         cursor.setPosition(
             slot.end,
             QTextCursor::KeepAnchor);
@@ -399,7 +413,7 @@ void EditorTemplateSlotController::start(
     clear(editor);
     if (!editor
         || !editor->document()
-        || editor->isReadOnly()
+        || editor->documentReadOnly()
         || insertedLength < 0
         || slotMetadata.isEmpty()
         || !modeController) {
@@ -491,7 +505,25 @@ void EditorTemplateSlotController::start(
         EditorModeId::TemplateSlots,
         EditorModeEntryReason::TemplateInserted);
     select(editor, 0);
-    ensureBlinkTimer(editor);
+    if (!editor->templateInputEditing()) ensureBlinkTimer(editor);
+}
+
+void EditorTemplateSlotController::syncPersistentRanges(MyCodeEditor* editor, const CodeTemplateSlotList& inputs)
+{
+    if (!active() || ranges.size() != inputs.size()) {
+        const auto cursor = editor->textCursor();
+        start(editor, 0, editor->document()->characterCount() - 1, inputs);
+        editor->setTextCursor(cursor);
+        return;
+    }
+    for (int i = 0; i < inputs.size(); ++i) {
+        ranges[i].start = inputs[i].start;
+        ranges[i].end = inputs[i].start + inputs[i].length;
+        ranges[i].inputContext = inputs[i].inputContext;
+    }
+    sessionEnd = editor->document()->characterCount() - 1;
+    pendingLinkedEdits.clear();
+    refreshPresentation(editor);
 }
 
 bool EditorTemplateSlotController::active() const
@@ -634,7 +666,7 @@ bool EditorTemplateSlotController::handleKeyPress(
     if ((event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)
         && modifiers == Qt::NoModifier && activePhysical >= 0 && cursorInsideActiveRange(editor)) {
         const auto slot = ranges.at(activePhysical);
-        if (!slot.input.isEmpty() && slot.input.value("kind").toString() != "Value") {
+        if (!slot.input.isEmpty() && slot.input.value("kind").toString() != "Value" && slot.input.value("kind").toString() != "Code") {
             const TemplateInputContext empty;
             const auto choices = TemplateInputService::candidates(slot.input,
                 slot.inputContext ? *slot.inputContext : empty, bindings(editor));
@@ -673,7 +705,7 @@ void EditorTemplateSlotController::handleContentsChange(
     int charsAdded,
     bool updatePresentation)
 {
-    if (!editor || !active() || applyingLinkedEdit)
+    if (!editor || !active() || applyingLinkedEdit || editor->templateModel()->changing())
         return;
 
     const int changeStart = position;
@@ -759,6 +791,8 @@ QString EditorTemplateSlotController::validationError(MyCodeEditor* editor, int 
 void EditorTemplateSlotController::replaceSlot(MyCodeEditor* editor, int physicalIndex, const QString& value, bool joinPrevious)
 {
     if (!editor || physicalIndex < 0 || physicalIndex >= ranges.size()) return;
+    if (editor->replaceTemplateSlotValue(ranges.at(physicalIndex).start, ranges.at(physicalIndex).end - ranges.at(physicalIndex).start, value)) return;
+    if (editor->isReadOnly()) return;
     const auto group = ranges.at(physicalIndex).groupIndex;
     QList<int> targets;
     for (int i = 0; i < ranges.size(); ++i) if (ranges.at(i).groupIndex == group) targets << i;
@@ -833,7 +867,7 @@ void EditorTemplateSlotController::handleCursorChanged(
         }
         return;
     }
-    if (!cursorInsideActiveRange(editor))
+    if (!cursorInsideActiveRange(editor) && !editor->templateAuthoringLocked())
         clear(editor);
 }
 
