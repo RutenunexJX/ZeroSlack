@@ -76,7 +76,7 @@ TemplateManagerDialog::TemplateManagerDialog(UserTemplateService *s, const Simul
     name->setPlaceholderText("@q1");
     scope = choices({"This file", "Workspace", "User global"}, right);
     scope->setObjectName("templateScope");
-    kind = choices({"snippet", "task", "function", "call", "print", "driver"}, right);
+    kind = choices({"snippet", "operations", "task", "function", "call", "print", "driver"}, right);
     kind->setObjectName("templateKind");
     description = UiControls::lineEdit(right);
     aliases = UiControls::lineEdit(right);
@@ -609,7 +609,7 @@ void TemplateManagerDialog::save()
         preset.insert("fields", values);
         record.command.insert("print", preset);
     }
-    else
+    else if (kind->currentText() != "operations")
     {
         if (symbol->text().isEmpty())
         {

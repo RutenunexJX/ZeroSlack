@@ -1,4 +1,6 @@
+#include "usertemplateservice.h"
 #include "globalcontrolcoordinator.h"
+#include "templatecapabilities.h"
 
 #include "actionregistry.h"
 #include "globalcontrolpanel.h"
@@ -150,6 +152,30 @@ bool GlobalControlCoordinator::handleTemplateEvent(QObject* watched, QEvent* eve
         key->accept(); return true;
     }
     if (inPalette) return false;
+    if (locked && !editor->templateInputEditing() && key->modifiers() == Qt::NoModifier &&
+        (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter)) {
+        const auto* selected = editor->templateModel()->instance(editor->selectedTemplateId());
+        if (selected && TemplateCapabilities::module(selected->snapshot) && selected->fragments.size() == 1) {
+            const auto context = contextProvider ? contextProvider() : GlobalControlQueryContext();
+            GlobalControlItem item;
+            item.operation = GlobalControlItemOperation::InsertSimulationCommand;
+            item.title = selected->label;
+            item.parameters = selected->snapshot;
+            item.parameters.insert("replaceId", selected->id);
+            item.templateParentId = selected->parentId;
+            item.templateParentSlot = selected->parentSlot;
+            item.templateContent = "instances";
+            item.replacementStart = selected->fragments.first().start;
+            item.replacementLength = selected->fragments.first().length;
+            item.sourceDocumentInstance = context.documentInstance;
+            item.sourceDocumentTextRevision = context.documentTextRevision;
+            item.sourceCursorPosition = context.cursorPosition;
+            item.sourceFileName = context.fileName;
+            item.sourceTemplateCatalogRevision = UserTemplateService::getInstance()->catalogRevision();
+            dispatch(item);
+            key->accept(); return true;
+        }
+    }
     const bool text = !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) && !key->text().isEmpty()
         && key->key() != Qt::Key_Return && key->key() != Qt::Key_Enter && key->key() != Qt::Key_Tab && key->key() != Qt::Key_Backspace;
     if (text && (f24Held || (locked && !editor->templateInputEditing()))) {
@@ -275,6 +301,19 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
                    ? itemProvider(category, queryText.startsWith('@') ? queryText.mid(1) : queryText, currentContext, &notice)
                    : QList<GlobalControlItem>());
     panel->setItems(items, notice);
+    if (panel->isVisible() && templateEditor && templateEditor->templateAuthoringLocked() &&
+        !templateEditor->templateInputEditing() && currentContext.templateParentId.isEmpty()) {
+        const auto typed = queryText.startsWith('@') ? queryText.mid(1) : queryText;
+        QList<GlobalControlItem> direct;
+        for (const auto& item : items)
+            if (item.id.mid(item.id.startsWith('@') ? 1 : 0).startsWith(typed, Qt::CaseInsensitive)) direct << item;
+        if (direct.size() == 1 && direct.first().disabledReason.isEmpty() &&
+            TemplateCapabilities::root(direct.first().parameters) &&
+            TemplateCapabilities::activationQuery(direct.first().parameters) == typed && !typed.isEmpty()) {
+            const auto selected = direct.first();
+            panel->hide(); dispatch(selected);
+        }
+    }
 }
 
 void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)

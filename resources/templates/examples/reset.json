@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "user:reset",
+      "command": "@reset",
+      "label": "@reset",
+      "description": "Parallel reset: hold time in ns; polarity 0 active-low, 1 active-high",
+      "body": "initial begin\n  real hold_ns;\n  int active_level;\n  hold_ns = 200.0;\n  active_level = 0;\n  if (!({{=valid_hold}}) ||\n      !({{=valid_polarity}}))\n    $fatal(1, \"Reset requires finite non-negative ns and polarity 0 or 1\");\n  else begin\n    __reset__ = {{=assert_level}};\n    #({{=delay}});\n    __reset__ = {{=release_level}};\n  end\nend\n",
+      "slots": [
+        {
+          "name": "time_ns",
+          "start": 62,
+          "length": 5,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Value",
+            "finite": true,
+            "minimum": "0",
+            "displayUnit": "ns"
+          }
+        },
+        {
+          "name": "polarity",
+          "start": 86,
+          "length": 1,
+          "tabStop": 3,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Choice",
+            "choices": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        {
+          "name": "reset_name",
+          "start": 240,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Reset"
+          }
+        },
+        {
+          "name": "reset_name",
+          "start": 294,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Reset"
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "module",
+        "content": "process",
+        "contract": "reset-time-v1",
+        "summary": "reset_name · time_ns · polarity",
+        "requireValidCommit": true,
+        "capabilityVersion": 1,
+        "capability": "moduleProcess",
+        "render": {
+          "bindings": {
+            "hold": "hold_ns",
+            "active": "active_level"
+          },
+          "expressions": {
+            "valid_hold": {
+              "op": "&&",
+              "args": [
+                {
+                  "op": ">=",
+                  "args": [
+                    {
+                      "variable": "hold"
+                    },
+                    {
+                      "number": "0.0"
+                    }
+                  ]
+                },
+                {
+                  "op": "<=",
+                  "args": [
+                    {
+                      "variable": "hold"
+                    },
+                    {
+                      "number": "1.7976931348623157e308"
+                    }
+                  ]
+                }
+              ]
+            },
+            "valid_polarity": {
+              "op": "||",
+              "args": [
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "variable": "active"
+                    },
+                    {
+                      "number": "0"
+                    }
+                  ]
+                },
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "variable": "active"
+                    },
+                    {
+                      "number": "1"
+                    }
+                  ]
+                }
+              ]
+            },
+            "delay": {
+              "unit": "ns",
+              "value": {
+                "variable": "hold"
+              }
+            },
+            "assert_level": {
+              "op": "==",
+              "args": [
+                {
+                  "variable": "active"
+                },
+                {
+                  "number": "1"
+                }
+              ]
+            },
+            "release_level": {
+              "op": "==",
+              "args": [
+                {
+                  "variable": "active"
+                },
+                {
+                  "number": "0"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

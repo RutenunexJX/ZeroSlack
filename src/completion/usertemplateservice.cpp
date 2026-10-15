@@ -1,4 +1,5 @@
 #include "usertemplateservice.h"
+#include "templatecapabilities.h"
 #include <QSaveFile>
 #include <QLockFile>
 #include <QDateTime>
@@ -514,6 +515,7 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     }
     if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
+        && !TemplateCapabilities::module(record.command)
         && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,
                     source,
@@ -534,6 +536,8 @@ bool appendValidRecord(UserTemplateLoadReport* report,
         record.selectionLength = 0;
 
     CodeTemplateSlotList normalizedSlots;
+    const auto capability = TemplateCapabilities::render(record.command, record.insertText, record.templateSlots);
+    if (!capability.error.isEmpty()) appendIssue(report, source, issueCommand, "simulation", capability.error);
     normalizedSlots.reserve(record.templateSlots.size());
     int slotCounter = 0;
     for (CodeTemplateSlot slot : record.templateSlots) {
@@ -1030,6 +1034,7 @@ QList<UserTemplateRecord> UserTemplateService::simulationBuiltins()
         result << record;
     };
     container("definitions", "Module declaration region", "\n  \n", "declarations", "module", 1, 2);
+    result.last().command.insert("containerRole", "definitions");
     container("process", "Simulation process with a code container", "initial begin\n  \nend\n", "process", "module", 14, 2);
     container("repeat", "Repeat a simulation statement sequence", "repeat (3) begin\n  \nend\n", "statements", "statement", 17, 2);
     result.last().templateSlots.first().tabStop = 2;

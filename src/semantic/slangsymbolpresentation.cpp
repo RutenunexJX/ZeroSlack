@@ -375,6 +375,8 @@ QChar identityKind(const SemanticSymbolRecord& record)
     case CollectorKind::Typedef:
         return QLatin1Char('t');
     case CollectorKind::EnumVariable:
+    case CollectorKind::PackedStructVariable:
+    case CollectorKind::UnpackedStructVariable:
         return QLatin1Char('v');
     default:
         return record.declarationKind

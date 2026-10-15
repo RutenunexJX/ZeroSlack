@@ -389,19 +389,18 @@ void EditorTemplateSlotController::select(
     ignoreNextCursorCheck = true;
     editor->setTextCursor(cursor);
     refreshPresentation(editor);
+    const auto unit = slot.input.value("displayUnit").toString();
+    const auto label = QStringLiteral("Slot %1/%2").arg(index + 1).arg(groupCount())
+        + (unit.isEmpty() ? QString() : QStringLiteral(" · %1 (%2)").arg(slot.name, unit));
     if (modeController) {
         modeController->updatePresentation(
             EditorModeId::TemplateSlots,
-            QStringLiteral("Slot %1/%2")
-                .arg(index + 1)
-                .arg(groupCount()),
+            label,
             QStringLiteral(
                 "Tab/Shift+Tab cycles slots; Esc finishes"));
     }
     emit editor->editorStatusMessageRequested(
-        QStringLiteral("SLOT %1/%2")
-            .arg(index + 1)
-            .arg(groupCount()));
+        label);
 }
 
 void EditorTemplateSlotController::start(
@@ -678,6 +677,8 @@ bool EditorTemplateSlotController::handleKeyPress(
                 replaceSlot(editor, activePhysical, choices.values.at(next));
                 invalidateDependents(editor, {slot.name});
                 select(editor, currentIndex);
+                if (!choices.evidence.value(choices.values.at(next)).isEmpty())
+                    emit editor->editorStatusMessageRequested(choices.evidence.value(choices.values.at(next)));
             }
             event->accept(); return true;
         }
@@ -777,6 +778,15 @@ QHash<QString, QString> EditorTemplateSlotController::bindings(MyCodeEditor* edi
     return result;
 }
 
+QString EditorTemplateSlotController::allValidationError(MyCodeEditor* editor) const
+{
+    for (int group = 0; group < groupCount(); ++group) {
+        const auto issue = validationError(editor, firstPhysicalIndexForGroup(group));
+        if (!issue.isEmpty()) return issue;
+    }
+    return {};
+}
+
 QString EditorTemplateSlotController::validationError(MyCodeEditor* editor, int physicalIndex) const
 {
     if (physicalIndex < 0 || physicalIndex >= ranges.size()) return {};
@@ -792,7 +802,7 @@ void EditorTemplateSlotController::replaceSlot(MyCodeEditor* editor, int physica
 {
     if (!editor || physicalIndex < 0 || physicalIndex >= ranges.size()) return;
     if (editor->replaceTemplateSlotValue(ranges.at(physicalIndex).start, ranges.at(physicalIndex).end - ranges.at(physicalIndex).start, value)) return;
-    if (editor->isReadOnly()) return;
+    if (editor->isReadOnly() || editor->templateInputEditing()) return;
     const auto group = ranges.at(physicalIndex).groupIndex;
     QList<int> targets;
     for (int i = 0; i < ranges.size(); ++i) if (ranges.at(i).groupIndex == group) targets << i;

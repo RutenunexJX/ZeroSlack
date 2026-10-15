@@ -262,11 +262,21 @@ void DocumentTemplateModel::endChange() {
 bool DocumentTemplateModel::replaceInput(const QString &id, int input,
                                          const QTextCursor &cursor,
                                          const QString &value,
-                                         int *nextPosition) {
+                                         int *nextPosition, bool candidateSelection) {
   if (!allows(id, input, cursor.selectionStart(), cursor.selectionEnd()))
     return false;
   const auto original = *instance(id);
   const auto slot = original.inputs.at(input);
+  if (slot.input.value("closedChoice").toBool()) {
+    if (!candidateSelection || cursor.selectionStart() != slot.start ||
+        cursor.selectionEnd() != slot.start + slot.length) return false;
+    QHash<QString, QString> bindings;
+    for (const auto &s : original.inputs)
+      bindings[s.name] = text->toPlainText().mid(s.start, s.length);
+    const TemplateInputContext empty;
+    if (!TemplateInputService::validate(slot.input, value,
+          slot.inputContext ? *slot.inputContext : empty, bindings).isEmpty()) return false;
+  }
   const bool code = slot.input.value("kind").toString() == "Code";
   const int relative = cursor.selectionStart() - slot.start,
             removed = cursor.selectionEnd() - cursor.selectionStart();
@@ -303,6 +313,87 @@ bool DocumentTemplateModel::replaceInput(const QString &id, int input,
   endChange();
   return true;
 }
+bool DocumentTemplateModel::applyEdits(QList<TemplateDocumentEdit> edits,
+                                       QString *selectedId, QString *error) {
+  const auto fail = [&](const QString &reason) {
+    if (error) *error = reason;
+    return false;
+  };
+  if (edits.isEmpty()) return fail("No template changes were prepared.");
+  QSet<QString> replaced;
+  for (const auto &edit : edits) {
+    if (!edit.replaceId.isEmpty()) {
+      const auto *old = instance(edit.replaceId);
+      if (!old || replaced.contains(old->id) || old->fragments.size() != 1 ||
+          old->fragments.first().start != edit.start ||
+          old->fragments.first().length != edit.length ||
+          old->parentId != edit.parentId || old->parentSlot != edit.parentSlot ||
+          old->fixedHash != fixedDigest(*old))
+        return fail("The instance changed; reopen its inputs.");
+      for (const auto &child : items)
+        if (child.parentId == old->id)
+          return fail("An instance containing child templates cannot be replaced.");
+      replaced.insert(old->id);
+    }
+  }
+  // Check against a copy without the explicitly replaced leaves. Text and undo
+  // history stay untouched until every target and relative range is validated.
+  const auto saved = items;
+  items.removeIf([&](const auto &item) { return replaced.contains(item.id); });
+  bool allowed = true;
+  for (int i = 0; i < edits.size(); ++i) {
+    const auto &edit = edits[i];
+    allowed &= canInsert(edit.start, edit.length, edit.parentId, edit.parentSlot);
+    for (int j = 0; j < i; ++j)
+      allowed &= !intersects(edit.start, edit.start + edit.length,
+                             edits[j].start, edits[j].start + edits[j].length)
+                 && edit.start != edits[j].start;
+    for (const auto &slot : edit.inputs)
+      allowed &= slot.start >= 0 && slot.length >= 0 &&
+                 slot.start + slot.length <= edit.text.size();
+    allowed &= TemplateInputService::dependencyError(edit.inputs).isEmpty();
+    allowed &= edit.text.isEmpty() || !edit.instance.snapshot.isEmpty();
+  }
+  items = saved;
+  if (!allowed) return fail("A prepared template target is no longer editable.");
+  const int selectedStart = edits.first().start;
+  std::stable_sort(edits.begin(), edits.end(), [](const auto &a, const auto &b) {
+    return a.start > b.start;
+  });
+  beginChange();
+  items.removeIf([&](const auto &item) { return replaced.contains(item.id); });
+  QTextCursor transaction(text);
+  transaction.beginEditBlock();
+  for (const auto &edit : edits) {
+    int input = -1;
+    if (const auto *parent = instance(edit.parentId))
+      for (int i = 0; i < parent->inputs.size(); ++i)
+        if (parent->inputs[i].name == edit.parentSlot) input = i;
+    QTextCursor cursor(text);
+    cursor.setPosition(edit.start);
+    cursor.setPosition(edit.start + edit.length, QTextCursor::KeepAnchor);
+    cursor.insertText(edit.text);
+    applyChange(edit.start, edit.length, edit.text.size(), edit.parentId, input);
+    if (!edit.text.isEmpty()) {
+      TemplateInstance value;
+      value.id = edit.replaceId;
+      value.parentId = edit.parentId;
+      value.parentSlot = edit.parentSlot;
+      value.label = edit.instance.label;
+      value.snapshot = edit.instance.snapshot;
+      value.fragments = {{edit.start, int(edit.text.size()), false}};
+      value.inputs = edit.inputs;
+      for (auto &slot : value.inputs) slot.start += edit.start;
+      const auto id = add(value);
+      if (selectedId && edit.start == selectedStart) *selectedId = id;
+    }
+  }
+  transaction.endEditBlock();
+  endChange();
+  if (error) error->clear();
+  return true;
+}
+
 void DocumentTemplateModel::beginReplay() {
   if (!replay) {
     history[text->availableUndoSteps()] = items;

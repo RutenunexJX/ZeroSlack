@@ -517,6 +517,14 @@ void MyCodeEditor::paste()
     transaction.endEditBlock();
 }
 
+void MyCodeEditor::insertFromMimeData(const QMimeData* source)
+{
+    if (!source || isReadOnly()) return;
+    if (templateInputEditing() && replaceTemplateInput(textCursor(), source->text())) return;
+    if (authoringLock) return;
+    QPlainTextEdit::insertFromMimeData(source);
+}
+
 void MyCodeEditor::undo()
 {
     if (documentReadOnly())
@@ -2163,6 +2171,11 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
             const int start = edit.position() + event->replacementStart();
             if (start < 0 || start + event->replacementLength() >= document()->characterCount()) { event->ignore(); return; }
             edit.setPosition(start); edit.setPosition(start + event->replacementLength(), QTextCursor::KeepAnchor);
+        }
+        const int templateInput = templateModel()->inputAt(activeTemplate, edit.selectionStart(), edit.selectionEnd());
+        if (templateInput >= 0 && templateModel()->instance(activeTemplate)->inputs[templateInput].input.value("closedChoice").toBool()) {
+            emit editorStatusMessageRequested("Use Up/Down to select an identified signal; IME entry is disabled for this input.");
+            event->accept(); return;
         }
         const bool writable = !documentReadOnly() && templateModel()->inputAt(activeTemplate, edit.selectionStart(), edit.selectionEnd()) >= 0;
         if (writable) {

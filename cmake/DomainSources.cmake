@@ -85,6 +85,7 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     src/semantic/slangrelationshiphelpers.cpp
     src/semantic/slangrelationshiphelpers.h
     src/semantic/slangsymbolcollector.cpp
+    src/semantic/slangsignalroles.cpp
     src/semantic/slangsymbolcollector.h
     src/semantic/slangsymbolcollectorhelpers.cpp
     src/semantic/slangsymbolcollectorhelpers.h

@@ -60,6 +60,7 @@ enum class SourceSymbolAction;
 struct MyCodeEditorState;
 class DocumentTemplateModel;
 struct TemplateInsertionSpec;
+struct TemplateDocumentEdit;
 
 struct EditorAlwaysScopeTarget {
     int startPosition = -1;
@@ -236,7 +237,10 @@ public:
     bool editTemplateInstance(const QString& id = {}, const QString& inputName = {}, int position = -1);
     void finishTemplateInput();
     void setTemplateSearchActive(bool active);
-    bool replaceTemplateInput(const QTextCursor& cursor, const QString& text);
+    bool replaceTemplateInput(const QTextCursor& cursor, const QString& text, bool candidateSelection = false);
+    QVariantMap templateSignalRoles() const;
+    void configureTemplateInputContext(const std::shared_ptr<TemplateInputContext>& inputs,
+                                       const QString& ownerId = {}, bool prepared = false);
     bool replaceTemplateSlotValue(int absoluteStart, int length, const QString& value);
     bool templateCodeSegmentEmpty() const;
     QString templateContainerContent() const;
@@ -247,6 +251,7 @@ public:
                                   const TemplateInsertionSpec& spec, const QString& parentId,
                                   const QString& parentSlot, QString* error);
     void refreshTemplateSlotRanges();
+    bool applyTemplateEdits(const QList<TemplateDocumentEdit>& edits, QString* error);
     void setSemanticContextService(EditorSemanticContextService* service);
     void setHierarchyInstanceContext(
         const HierarchyInstanceContext& context);
@@ -418,6 +423,7 @@ protected:
     bool focusNextPrevChild(bool next) override;
     void keyPressEvent(QKeyEvent *event) override;
     void inputMethodEvent(QInputMethodEvent* event) override;
+    void insertFromMimeData(const QMimeData* source) override;
     void paintEvent(QPaintEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;

@@ -138,6 +138,22 @@ struct SemanticStructuredLeafFact {
     QList<SemanticStructuredEnumValueFact> enumValues;
 };
 
+struct SemanticSignalRoleEvidence {
+    QString role;
+    QString edge;
+    int activeLevel = -1;
+    QString rule;
+    QString sourceSignal;
+    QString sourceInstance;
+    QString sourceFile;
+    int sourceLine = 0;
+    QStringList mappingChain;
+    QMap<QString, QString> parameters;
+    QString analysisIdentity;
+    QMap<QString, QByteArray> sourceHashes;
+    static QByteArray sourceHash(QString text);
+};
+
 struct SemanticElaboratedSymbolInfo {
     bool available = false;
     QString portDirection;
@@ -163,6 +179,11 @@ struct SemanticElaboratedSymbolInfo {
     std::uint64_t continuousDriverCount = 0;
     std::uint64_t proceduralDriverCount = 0;
     std::uint64_t portConnectionDriverCount = 0;
+    // Derived from actual elaborated processes and connections. Explicit user
+    // annotations remain outside these facts and never become Slang evidence.
+    QList<SemanticSignalRoleEvidence> signalRoles;
+    QStringList signalRoleIssues;
+    bool signalRoleConflict = false;
     // True only when Slang proved that the direct value written at this
     // symbol's declaration anchor is numerically identical to the final
     // elaborated value. An override written elsewhere never sets this flag.

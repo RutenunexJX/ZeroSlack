@@ -350,7 +350,7 @@ void GlobalControlPanel::activateCurrentItem()
         focusSearch();
         return;
     }
-    hide();
+    if (closeOnActivation) hide();
     if (itemActivatedHandler)
         itemActivatedHandler(selected);
 }

@@ -1,6 +1,7 @@
 #include "slangsymbolcollector.h"
 #include "slangsymbolpresentation.h"
 #include "slangsymbolcollectorhelpers.h"
+#include "slangsignalroles.h"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
@@ -533,6 +534,7 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     if (!cancellationReached && !cancelled()) {
         slang_symbols::populateSymbolDriverSummaries(
             compilation, outList, cancelled);
+        slang_symbols::populateSignalRoles(compilation, outList, cancelled);
     }
     if (cancellationReached || cancelled()) {
         outList.clear();

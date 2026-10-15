@@ -10,6 +10,7 @@ class WorkspaceManager;
 class MyCodeEditor;
 class NativeContextView;
 class QWidget;
+class DutTemplateSession;
 namespace simdock
 {
 class Workbench;
@@ -43,4 +44,5 @@ class ZEROSLACK_API SimulationCommandService final : public QObject
     QPointer<QWidget> owner;
     QPointer<NativeContextView> nativeView;
     std::shared_ptr<std::atomic_bool> pending;
+    QPointer<DutTemplateSession> dutSession;
 };

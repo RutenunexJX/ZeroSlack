@@ -1,0 +1,426 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "user:tb-root",
+      "command": "@tb",
+      "label": "@tb",
+      "description": "Testbench with definitions, instances and behaviors",
+      "body": "module tb;\n  timeunit 1ns;\n  timeprecision 1ps;\n\n  // Definitions\n  \n  // Instances\n  \n  // Behaviors\n  \nendmodule\n",
+      "slots": [
+        {
+          "name": "name",
+          "start": 7,
+          "length": 2,
+          "tabStop": 1,
+          "visibleWhenEmpty": true
+        },
+        {
+          "name": "definitions",
+          "start": 66,
+          "length": 3,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "declarations",
+            "allowEmpty": true
+          }
+        },
+        {
+          "name": "instances",
+          "start": 84,
+          "length": 3,
+          "tabStop": 3,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "instances",
+            "allowEmpty": true
+          }
+        },
+        {
+          "name": "behaviors",
+          "start": 102,
+          "length": 3,
+          "tabStop": 4,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "behaviors",
+            "allowEmpty": true
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "root",
+        "role": "tbRoot",
+        "summary": "name \u00b7 definitions \u00b7 instances \u00b7 behaviors",
+        "capabilityVersion": 1,
+        "capability": "moduleRoot",
+        "nameSlot": "name",
+        "activation": {
+          "mode": "exactLockedFileGap",
+          "query": "tb"
+        },
+        "regions": {
+          "declarations": "definitions",
+          "instances": "instances",
+          "behaviors": "behaviors"
+        }
+      }
+    },
+    {
+      "id": "user:dut",
+      "command": "@dut",
+      "label": "@dut",
+      "description": "Resolve a DUT and create its signals and connections",
+      "body": "",
+      "simulation": {
+        "kind": "operations",
+        "placement": "module",
+        "content": "instances",
+        "summary": "module \u00b7 parameters \u00b7 explicit connections",
+        "capabilityVersion": 1,
+        "capability": "moduleInstance",
+        "semanticInputs": {
+          "moduleSource": "compilation",
+          "parameters": "selectedModule",
+          "ports": "elaboratedPorts"
+        },
+        "operations": [
+          {
+            "op": "declareSignals",
+            "target": "definitions",
+            "reuse": "explicit",
+            "namePattern": "${instance}_${port}",
+            "label": "DUT signals"
+          },
+          {
+            "op": "instantiateModule",
+            "target": "instances",
+            "bindings": "named"
+          }
+        ]
+      }
+    },
+    {
+      "id": "user:clk_init",
+      "command": "@clk_init",
+      "label": "@clk_init",
+      "description": "Parallel clock: frequency in MHz, starts at zero, 50% duty cycle",
+      "body": "initial begin\n  real frequency_mhz;\n  realtime half_period;\n  realtime started_at;\n  frequency_mhz = 100.0;\n  __clock__ = 1'b0;\n  if (!({{=valid_frequency}}))\n    $fatal(1, \"Clock frequency must be positive and finite (MHz)\");\n  else begin\n    half_period = {{=half_period}};\n    started_at = $realtime;\n    #(half_period);\n    if (!($realtime > started_at))\n      $fatal(1, \"Clock half-period rounds to zero at the active timeprecision\");\n    else forever begin\n      __clock__ = ~__clock__;\n      #(half_period);\n    end\n  end\nend\n",
+      "slots": [
+        {
+          "name": "freq_mhz",
+          "start": 101,
+          "length": 5,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Value",
+            "finite": true,
+            "minimum": "0",
+            "exclusiveMinimum": true,
+            "displayUnit": "MHz"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 110,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 469,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 482,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "module",
+        "content": "process",
+        "contract": "clk_init-time-v1",
+        "summary": "clk_name \u00b7 freq_mhz",
+        "requireValidCommit": true,
+        "capabilityVersion": 1,
+        "capability": "moduleProcess",
+        "render": {
+          "bindings": {
+            "frequency": "frequency_mhz"
+          },
+          "expressions": {
+            "half_period": {
+              "unit": "ns",
+              "value": {
+                "op": "/",
+                "args": [
+                  {
+                    "number": "500.0"
+                  },
+                  {
+                    "variable": "frequency"
+                  }
+                ]
+              }
+            },
+            "valid_frequency": {
+              "op": "&&",
+              "args": [
+                {
+                  "op": ">",
+                  "args": [
+                    {
+                      "variable": "frequency"
+                    },
+                    {
+                      "number": "0.0"
+                    }
+                  ]
+                },
+                {
+                  "op": "<=",
+                  "args": [
+                    {
+                      "variable": "frequency"
+                    },
+                    {
+                      "number": "1.7976931348623157e308"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "user:reset",
+      "command": "@reset",
+      "label": "@reset",
+      "description": "Parallel reset: hold time in ns; polarity 0 active-low, 1 active-high",
+      "body": "initial begin\n  real hold_ns;\n  int active_level;\n  hold_ns = 200.0;\n  active_level = 0;\n  if (!({{=valid_hold}}) ||\n      !({{=valid_polarity}}))\n    $fatal(1, \"Reset requires finite non-negative ns and polarity 0 or 1\");\n  else begin\n    __reset__ = {{=assert_level}};\n    #({{=delay}});\n    __reset__ = {{=release_level}};\n  end\nend\n",
+      "slots": [
+        {
+          "name": "time_ns",
+          "start": 62,
+          "length": 5,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Value",
+            "finite": true,
+            "minimum": "0",
+            "displayUnit": "ns"
+          }
+        },
+        {
+          "name": "polarity",
+          "start": 86,
+          "length": 1,
+          "tabStop": 3,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Choice",
+            "choices": [
+              "0",
+              "1"
+            ]
+          }
+        },
+        {
+          "name": "reset_name",
+          "start": 240,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Reset"
+          }
+        },
+        {
+          "name": "reset_name",
+          "start": 294,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Reset"
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "module",
+        "content": "process",
+        "contract": "reset-time-v1",
+        "summary": "reset_name \u00b7 time_ns \u00b7 polarity",
+        "requireValidCommit": true,
+        "capabilityVersion": 1,
+        "capability": "moduleProcess",
+        "render": {
+          "bindings": {
+            "hold": "hold_ns",
+            "active": "active_level"
+          },
+          "expressions": {
+            "valid_hold": {
+              "op": "&&",
+              "args": [
+                {
+                  "op": ">=",
+                  "args": [
+                    {
+                      "variable": "hold"
+                    },
+                    {
+                      "number": "0.0"
+                    }
+                  ]
+                },
+                {
+                  "op": "<=",
+                  "args": [
+                    {
+                      "variable": "hold"
+                    },
+                    {
+                      "number": "1.7976931348623157e308"
+                    }
+                  ]
+                }
+              ]
+            },
+            "valid_polarity": {
+              "op": "||",
+              "args": [
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "variable": "active"
+                    },
+                    {
+                      "number": "0"
+                    }
+                  ]
+                },
+                {
+                  "op": "==",
+                  "args": [
+                    {
+                      "variable": "active"
+                    },
+                    {
+                      "number": "1"
+                    }
+                  ]
+                }
+              ]
+            },
+            "delay": {
+              "unit": "ns",
+              "value": {
+                "variable": "hold"
+              }
+            },
+            "assert_level": {
+              "op": "==",
+              "args": [
+                {
+                  "variable": "active"
+                },
+                {
+                  "number": "1"
+                }
+              ]
+            },
+            "release_level": {
+              "op": "==",
+              "args": [
+                {
+                  "variable": "active"
+                },
+                {
+                  "number": "0"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

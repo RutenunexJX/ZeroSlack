@@ -1,3 +1,5 @@
+#include "duttemplateplanner.h"
+#include "templatecapabilities.h"
 #include "simulationcommandplanner.h"
 #include "editorfileidentity.h"
 #include "simulationcommandprefix.h"
@@ -65,10 +67,15 @@ Site parseSite(const GlobalControlQueryContext &context, int position, int lengt
     text.replace(position, length, QString(length, QLatin1Char(' ')));
     syntax.setText(text);
     node = ts_node_descendant_for_byte_range(syntax.rootNode(), position * 2, position * 2);
+    // A Code region can end immediately before the module's closing token.
+    // This is still a module-item gap; a position inside that token is not.
+    if (nodeIs(node, "endmodule") && ts_node_start_byte(node) == position * 2 &&
+        nodeIs(ts_node_parent(node), "module_declaration"))
+        node = ts_node_parent(node);
     if (!nodeIs(node, "module_declaration"))
         return {};
     const QString moduleProbe = QStringLiteral("initial begin __template_probe(); end");
-    text.replace(position, length, moduleProbe);
+    text.replace(position, length, moduleProbe + QLatin1Char('\n'));
     syntax.setText(text);
     node = ts_node_descendant_for_byte_range(syntax.rootNode(), position * 2, (position + moduleProbe.size()) * 2);
     if (!nodeIs(node, "initial_construct") || ts_node_has_error(node) || ts_node_start_byte(node) != position * 2 ||
@@ -197,16 +204,39 @@ SimulationPlacement SimulationCommandPlanner::placement(const GlobalControlQuery
     const auto kind = command.value("kind", "snippet").toString();
     const auto placement = command.value("placement").toString();
     const auto type = command.value("content").toString();
-    if (!content.isEmpty() && !type.isEmpty() && type != content)
+    const auto capabilityError = TemplateCapabilities::validate(command);
+    if (!capabilityError.isEmpty()) return {Status::Unavailable, capabilityError};
+    if (placement == "root") {
+        if (!content.isEmpty() || !context.templateParentId.isEmpty())
+            return {Status::Incompatible, "A TB root must be outside another template."};
+        auto text = context.documentText;
+        text.replace(start, context.replacementLength, QString(context.replacementLength, ' '));
+        TSDocument syntax; syntax.setText(text);
+        const auto node = ts_node_descendant_for_byte_range(syntax.rootNode(), start * 2, start * 2);
+        if (!ts_node_eq(node, syntax.rootNode()))
+            return {Status::Incompatible, "Insert a TB at a source-file gap outside modules, comments and strings."};
+        if (context.readOnly) return {Status::Unavailable, "This document is read-only."};
+        return {};
+    }
+    if (TemplateCapabilities::module(command) && (content != "instances" || context.templateParentId.isEmpty()))
+        return {Status::Incompatible, "Insert a DUT inside a TB instance region."};
+    if (content == "instances" && !TemplateCapabilities::module(command))
+        return {Status::Incompatible, "This region accepts DUT instances."};
+    if (content == "behaviors" && (kind != "snippet" || type != "process"))
+        return {Status::Incompatible, "This region accepts module-level process templates."};
+    if (content == "declarations" && command.value("containerRole").toString() == "definitions")
+        return {Status::Incompatible, "This TB already has a definitions region; add declarations within it."};
+
+    if (!content.isEmpty() && !type.isEmpty() && type != content && !(content == "behaviors" && type == "process"))
         return {Status::Incompatible, QStringLiteral("This template does not match the container content type.")};
     if (content == "declarations" && (kind == "driver" || kind == "print" || kind == "task" || kind == "call"))
         return {Status::Incompatible, QStringLiteral("This container accepts declarations.")};
-    if (!content.isEmpty() && kind == "snippet" && !snippetMatches(snippet, content))
+    if (!content.isEmpty() && content != "behaviors" && kind == "snippet" && !snippetMatches(snippet, content))
         return {Status::Incompatible, QStringLiteral("The template syntax is not valid %1 content.").arg(content)};
     const auto site = siteFor(context, start, context.replacementLength);
     if ((content == "statements" || placement == "statement") && (!site.procedural || site.function))
         return {Status::Incompatible, QStringLiteral("This template needs a procedural statement position.")};
-    if ((content == "declarations" || placement == "module") && !site.moduleItem)
+    if ((content == "declarations" || content == "instances" || content == "behaviors" || placement == "module") && !site.moduleItem)
         return {Status::Incompatible, QStringLiteral("This template needs a module declaration position.")};
     if (kind == "driver" && ((!site.procedural && !site.moduleItem) || site.function))
         return {Status::Incompatible, QStringLiteral("Insert a driver at a module-item gap or a procedural statement position, outside a function.")};
@@ -288,7 +318,7 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     result.captured = capture.seal();
     result.inputs = std::make_shared<TemplateInputContext>();
     result.inputs->snapshot = std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(analysis.symbols, {}, {}, semanticRequest.sourceOverrides));
+        SemanticIndexSnapshot::fromSymbolRecords(analysis.symbols, {}, {}, capture.contents()));
     result.inputs->location.fileName = context.fileName;
     result.inputs->location.moduleName = context.moduleName;
     result.inputs->location.packageName = context.packageName;
@@ -309,8 +339,28 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     }
     if (commandKind == "snippet" || commandKind.isEmpty())
     {
-        result.text = request.item.insertionText;
-        result.placeholders = request.item.templateSlots;
+        const auto rendered = TemplateCapabilities::render(config, request.item.insertionText, request.item.templateSlots);
+        if (!rendered.error.isEmpty()) { result.error = rendered.error; return result; }
+        result.text = rendered.text;
+        result.placeholders = rendered.placeholders;
+        // Closed writable signal slots must begin with a valid choice. Leaving
+        // an undeclared placeholder would invalidate the shared compilation
+        // that supplies the choices for subsequent edits.
+        QHash<QString, QString> selected;
+        for (const auto &slot : result.placeholders) if (slot.input.value("closedChoice").toBool()) {
+            const auto choices = TemplateInputService::candidates(slot.input, *result.inputs, {});
+            if (choices.values.isEmpty()) { result.error = choices.reason; return result; }
+            selected[slot.name] = choices.values.first();
+        }
+        QList<int> order;
+        for (int i=0; i<result.placeholders.size(); ++i) if (selected.contains(result.placeholders[i].name)) order << i;
+        std::sort(order.begin(), order.end(), [&](int a, int b) { return result.placeholders[a].start > result.placeholders[b].start; });
+        for (const int i : order) {
+            auto &slot = result.placeholders[i]; const auto value = selected.value(slot.name);
+            const int start = slot.start, delta = value.size() - slot.length;
+            result.text.replace(start, slot.length, value); slot.length = value.size();
+            for (int j=0; j<result.placeholders.size(); ++j) if (j != i && result.placeholders[j].start > start) result.placeholders[j].start += delta;
+        }
     }
     else if (commandKind == "print")
     {
@@ -535,6 +585,11 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     result.instance.snapshot = config;
     result.instance.snapshot.insert("templateText", request.item.insertionText);
     result.instance.snapshot.insert("schema", 1);
+    if (TemplateCapabilities::root(config)) {
+        TemplateInstance root; root.snapshot = config; root.inputs = result.placeholders;
+        result.error = DutTemplatePlanner::rootError(root);
+        if (!result.error.isEmpty()) return result;
+    }
     result.error = TemplateInputService::dependencyError(result.placeholders);
     for (auto &slot : result.placeholders)
         slot.inputContext = result.inputs;

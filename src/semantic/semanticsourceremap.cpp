@@ -189,6 +189,15 @@ SemanticSourceRemapper::remapSnapshot(
     if (!snapshot || fileName.isEmpty())
         return snapshot;
 
+    // A role proof also carries cross-file process locations and input identity.
+    // Let the normal semantic worker refresh it rather than publishing a mixture
+    // of remapped declarations and stale connection / process evidence.
+    for (const auto &record : snapshot->getSymbolRecords())
+        for (const auto &info : record.presentation.objectInfoByPath)
+            for (const auto &proof : info.signalRoles)
+                for (auto source = proof.sourceHashes.cbegin(); source != proof.sourceHashes.cend(); ++source)
+                    if (RemapFileMatcher(fileName).matches(source.key())) return nullptr;
+
     const RemapFileMatcher fileMatcher(fileName);
     const TextLineIndex oldLineIndex(oldText);
     const TextLineIndex newLineIndex(newText);

@@ -251,6 +251,8 @@ Copy-Item -LiteralPath (Join-Path $CompilerDirectory 'licenses/mingw-w64/COPYING
 foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $outputRoot
 }
+# Ship editable user-template definitions and their non-destructive merge tool.
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'resources/templates') -Destination $outputRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
 $channel = if ($Formal) { 'formal' } else { 'preview' }
 $releaseTag = $null

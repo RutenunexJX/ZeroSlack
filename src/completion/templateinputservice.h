@@ -9,11 +9,14 @@ struct TemplateInputContext
     SemanticQueryContext location;
     QVariantMap roles;
     std::function<bool()> current;
+    std::function<std::shared_ptr<const SemanticIndexSnapshot>()> liveSnapshot;
+    std::function<QVariantMap()> liveRoles;
 };
 struct TemplateInputCandidates
 {
     QStringList values;
     QString reason;
+    QMap<QString, QString> evidence;
 };
 class TemplateInputService
 {

@@ -69,8 +69,8 @@ QString TemplateInputService::specificationError(const QVariantMap &input)
     const QStringList kinds{"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"};
     if (!kinds.contains(input.value("kind").toString()))
         return QStringLiteral("Choose Instance, Port, Internal, Signal, Parameter, Choice, Value or Code.");
-    if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations"}.contains(input.value("content", "statements").toString()))
-        return QStringLiteral("Code containers accept statements or declarations.");
+    if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations", "instances", "behaviors"}.contains(input.value("content", "statements").toString()))
+        return QStringLiteral("Unknown Code container content.");
     const auto role = input.value("role").toString();
     if (!role.isEmpty() && role != "Clock" && role != "Reset")
         return QStringLiteral("Role must be Clock or Reset; use explicit role assignments.");
@@ -143,7 +143,15 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
                                                          const TemplateInputContext &context,
                                                          const QHash<QString, QString> &bindings)
 {
+    if (input.value("closedChoice").toBool() && context.liveSnapshot) {
+        auto live = context;
+        live.snapshot = context.liveSnapshot();
+        if (context.liveRoles) live.roles = context.liveRoles();
+        live.liveSnapshot = {}; live.liveRoles = {};
+        return candidates(input, live, bindings);
+    }
     TemplateInputCandidates result;
+    QMap<QString, QByteArray> currentHashes;
     result.reason = specificationError(input);
     if (!result.reason.isEmpty())
         return result;
@@ -197,6 +205,7 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     const auto scope = input.value("scope", dependency.isEmpty() ? "visible" : "instance").toString();
     for (const auto &record : all)
     {
+        if (input.value("variableOnly").toBool() && record.collectorKind == SymbolTaxonomy::CollectorKind::Wire) continue;
         if (input.value("moduleVariable").toBool() && !record.presentation.directModuleVariable)
             continue;
         if (kind == "Instance")
@@ -228,8 +237,47 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
                 if (!validate(numeric, info.valueText, context, bindings).isEmpty())
                     return;
             }
-            if (!role.isEmpty() && context.roles.value(roleKey(record, path)).toString() != role)
-                return;
+            if (!role.isEmpty()) {
+                const auto manual = context.roles.value(roleKey(record, path)).toString();
+                if (input.value("closedChoice").toBool()) {
+                    if (info.signalRoleConflict) {
+                        result.reason = path + ": " + info.signalRoleIssues.join(" "); return;
+                    }
+                    QString automatic;
+                    for (const auto &proof : info.signalRoles) {
+                        bool fresh = true;
+                        for (auto source = proof.sourceHashes.cbegin(); source != proof.sourceHashes.cend(); ++source) {
+                            if (!currentHashes.contains(source.key())) {
+                                const auto cached = context.snapshot->cachedFileSource(source.key());
+                                currentHashes[source.key()] = cached.exists ? SemanticSignalRoleEvidence::sourceHash(cached.text) : QByteArray();
+                            }
+                            if (currentHashes[source.key()] != source.value()) { fresh = false; break; }
+                        }
+                        if (!fresh) { result.reason = "DUT role evidence is stale; wait for the current semantic analysis."; return; }
+                        automatic = proof.role;
+                        if (automatic == role) result.evidence[text] = QString("%1 (%2), %3:%4; %5; analysis %6, revision %7")
+                            .arg(role, proof.rule, proof.sourceFile).arg(proof.sourceLine)
+                            .arg(proof.mappingChain.join("; "), proof.analysisIdentity)
+                            .arg(record.presentation.computationRevision)
+                            + QString("; edge %1; active level %2; instance %3; parameters %4")
+                                .arg(proof.edge, proof.activeLevel < 0 ? "unspecified" : QString::number(proof.activeLevel),
+                                     proof.sourceInstance, [&] {
+                                         QStringList values;
+                                         for (auto it = proof.parameters.cbegin(); it != proof.parameters.cend(); ++it)
+                                             values << it.key() + "=" + it.value();
+                                         return values.join(", ");
+                                     }());
+                    }
+                    if (!manual.isEmpty() && !automatic.isEmpty() && manual != automatic) {
+                        result.reason = path + ": explicit annotation conflicts with Slang usage."; return;
+                    }
+                    if (automatic != role && manual != role) {
+                        if (!info.signalRoleIssues.isEmpty()) result.reason = path + ": " + info.signalRoleIssues.join(" ");
+                        return;
+                    }
+                    if (automatic.isEmpty()) result.evidence[text] = "Explicit user annotation: " + role;
+                } else if (manual != role) return;
+            }
             if (kind == "Choice")
             {
                 if (text != enumExpression && path != enumExpression)
@@ -250,8 +298,13 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
             const auto resolved = local.resolveVisibleValueRecord(record.name, context.location);
             if ((parameter && visibleParameters.contains(symbolStableKeyText(record.stableKey))) ||
                 resolved.stableKey == record.stableKey)
-                consider(record.name, record.presentation.qualifiedScopePath + QLatin1Char('.') + record.name,
-                         record.presentation.defaultInfo);
+            {
+                const auto path = record.presentation.qualifiedScopePath + QLatin1Char('.') + record.name;
+                const auto actual = record.presentation.objectInfoByPath.constFind(path);
+                if (input.value("closedChoice").toBool() && actual == record.presentation.objectInfoByPath.cend()) continue;
+                consider(record.name, path, actual == record.presentation.objectInfoByPath.cend()
+                    ? record.presentation.defaultInfo : actual.value());
+            }
         }
         else if (scope == "package")
         {
@@ -277,9 +330,11 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     }
     result.values.removeDuplicates();
     result.values.sort(Qt::CaseSensitive);
-    if (result.values.isEmpty())
+    if (result.values.isEmpty() && result.reason.isEmpty())
         result.reason =
-            !role.isEmpty()
+            input.value("closedChoice").toBool()
+                ? QStringLiteral("No current compatible %1 signal has a supported DUT usage and connection, or an explicit annotation. Unresolved signals remain unavailable.").arg(role)
+            : !role.isEmpty()
                 ? QStringLiteral("No matching %1 role is assigned. Use Signal roles in Templates.").arg(role)
                 : QStringLiteral("No current Slang objects satisfy these input constraints.");
     return result;
@@ -311,6 +366,11 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
     const auto literal = EffectiveValueService::evaluateLiteral(text, false, values);
     if (!literal.available)
         return QStringLiteral("Slang could not evaluate this Value: %1").arg(literal.failureReason);
+    if (input.value("finite").toBool()) {
+        bool ok = false;
+        const double number = literal.numericValueText.toDouble(&ok);
+        if (!ok || !std::isfinite(number)) return QStringLiteral("Enter a finite numeric value.");
+    }
     if ((input.value("integer").toBool() || input.value("integral").toBool()) && !literal.integral)
         return QStringLiteral("This input requires an integral value.");
     if (input.value("known", true).toBool() && literal.integral && literal.numericValueText.isEmpty())
@@ -333,12 +393,13 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
             continue;
         const auto unit = input.value("unit").toString();
         const auto measured = unit.isEmpty() ? text : QStringLiteral("(%1) / 1%2").arg(text, unit);
+        const auto comparison = bound.first == "minimum" && input.value("exclusiveMinimum").toBool() ? QStringLiteral(">") : bound.second;
         const auto compared = EffectiveValueService::evaluateLiteral(
-            QStringLiteral("((%1) %2 (%3))").arg(measured, bound.second, input.value(bound.first).toString()),
+            QStringLiteral("((%1) %2 (%3))").arg(measured, comparison, input.value(bound.first).toString()),
             false, values);
         if (!compared.available || compared.numericValueText != "1")
             return QStringLiteral("Value must be %1 %2.")
-                .arg(bound.second, input.value(bound.first).toString());
+                .arg(comparison, input.value(bound.first).toString());
     }
     return {};
 }

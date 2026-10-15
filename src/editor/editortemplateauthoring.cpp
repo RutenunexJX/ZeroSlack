@@ -1,4 +1,5 @@
 #include "documenttemplatemodel.h"
+#include "editorfileidentity.h"
 #include "editorruntime.h"
 #include "mycodeeditor.h"
 #include "templateinputservice.h"
@@ -179,7 +180,7 @@ bool MyCodeEditor::editTemplateInstance(const QString &requested,
   inputs->location.packageName = location.packageName;
   inputs->location.cursorLine = location.cursorLine;
   inputs->location.cursorPosition = textCursor().position();
-  inputs->roles = UserTemplateService::getInstance()->signalRoles();
+  configureTemplateInputContext(inputs, activeTemplate);
   templateModel()->setInputContext(activeTemplate, inputs);
   templateEditing = true;
   const auto copy = *templateModel()->instance(activeTemplate);
@@ -217,7 +218,12 @@ void MyCodeEditor::finishTemplateInput() {
   emit editingInteractionEnded();
   clearTemplatePreedit();
   const auto *item = templateModel()->instance(activeTemplate);
-  const auto issue = state->templateSlots.currentValidationError(this);
+  const auto issue = item && item->snapshot.value("requireValidCommit").toBool()
+      ? state->templateSlots.allValidationError(this) : state->templateSlots.currentValidationError(this);
+  if (item && item->snapshot.value("requireValidCommit").toBool() && !issue.isEmpty()) {
+    emit editorStatusMessageRequested(issue);
+    return;
+  }
   QString parent, input, indent;
   int position = -1;
   if (item) {
@@ -322,18 +328,22 @@ bool MyCodeEditor::insertTemplateNewline() {
   return result;
 }
 bool MyCodeEditor::replaceTemplateInput(const QTextCursor &cursor,
-                                        const QString &value) {
+                                        const QString &value, bool candidateSelection) {
   if (!templateInputEditing() || documentReadOnly())
     return false;
   const int input = templateModel()->inputAt(
       activeTemplate, cursor.selectionStart(), cursor.selectionEnd());
   if (input < 0)
     return false;
+  if (templateModel()->instance(activeTemplate)->inputs[input].input.value("closedChoice").toBool() && !candidateSelection) {
+    emit editorStatusMessageRequested("Use Up/Down to select an identified signal; text entry is disabled for this input.");
+    return true;
+  }
   templateMutation = true;
   int position = -1;
   auto edit = beginSynchronousEditTransaction();
   const bool result = templateModel()->replaceInput(activeTemplate, input,
-                                                    cursor, value, &position);
+                                                    cursor, value, &position, candidateSelection);
   templateMutation = false;
   if (result) {
     refreshTemplateSlotRanges();
@@ -350,7 +360,7 @@ bool MyCodeEditor::replaceTemplateSlotValue(int start, int length,
   QTextCursor cursor(document());
   cursor.setPosition(start);
   cursor.setPosition(start + length, QTextCursor::KeepAnchor);
-  return replaceTemplateInput(cursor, value);
+  return replaceTemplateInput(cursor, value, true);
 }
 void MyCodeEditor::templateInsertionContext(QString *parentId,
                                             QString *slotName) const {
@@ -369,6 +379,43 @@ void MyCodeEditor::templateInsertionContext(QString *parentId,
       slotName->clear();
     }
   }
+}
+QVariantMap MyCodeEditor::templateSignalRoles() const {
+  return UserTemplateService::getInstance()->signalRoles();
+}
+void MyCodeEditor::configureTemplateInputContext(const std::shared_ptr<TemplateInputContext>& inputs,
+                                                const QString& ownerId, bool prepared) {
+  inputs->roles = templateSignalRoles();
+  const QPointer<MyCodeEditor> self(this);
+  const auto captured = inputs->snapshot;
+  const auto outside = [self, ownerId]() -> QString {
+    if (!self || ownerId.isEmpty()) return {};
+    const auto* owner = self->templateModel()->instance(ownerId);
+    if (!owner) return {};
+    auto text = self->cachedDocumentText();
+    auto fragments = owner->fragments;
+    std::sort(fragments.begin(), fragments.end(), [](const auto& a, const auto& b) { return a.start > b.start; });
+    for (const auto& fragment : fragments) text.remove(fragment.start, fragment.length);
+    return text;
+  };
+  const auto boundary = outside();
+  const auto originalFile = documentFileName();
+  const QPointer<QTextDocument> originalDocument(document());
+  const auto indexAtCapture = SemanticIndex::getInstance()->snapshot();
+  const bool reusable = captured && !ownerId.isEmpty() && (prepared ||
+      captured->getCachedFileContent(originalFile) == cachedDocumentText());
+  inputs->liveSnapshot = [self, captured, outside, boundary, reusable, originalFile, originalDocument, indexAtCapture, prepared]() -> std::shared_ptr<const SemanticIndexSnapshot> {
+    if (!self || !self->tbAssistDependenciesCurrent()) return {};
+    if (self->document() != originalDocument || self->documentFileName() != originalFile) return {};
+    const auto snapshot = SemanticIndex::getInstance()->snapshot();
+    if (snapshot && snapshot->getCachedFileContent(originalFile) == self->cachedDocumentText()) return snapshot;
+    // Only the current fixed template and its inputs may differ. The service's
+    // existing captured-source/project guard remains authoritative for prepared
+    // contexts; a reopened context also retains its shared publication identity.
+    if (reusable && outside() == boundary && (prepared || snapshot == indexAtCapture)) return captured;
+    return {};
+  };
+  inputs->liveRoles = [self] { return self ? self->templateSignalRoles() : QVariantMap(); };
 }
 QString MyCodeEditor::templateContainerContent() const {
   QString parent, name;
@@ -606,6 +653,31 @@ bool MyCodeEditor::insertSimulationTemplate(
   if (error)
     error->clear();
   return true;
+}
+
+bool MyCodeEditor::applyTemplateEdits(const QList<TemplateDocumentEdit>& edits, QString* error) {
+  if (documentReadOnly()) {
+    if (error) *error = "This document is read-only.";
+    return false;
+  }
+  auto transaction = beginSynchronousEditTransaction();
+  templateMutation = true;
+  QString selected;
+  const bool changed = templateModel()->applyEdits(edits, &selected, error);
+  templateMutation = false;
+  if (changed) {
+    clearTemplatePreedit();
+    state->templateSlots.clear(this);
+    templateEditing = false;
+    activeTemplate = selected.isEmpty() ? edits.first().parentId : selected;
+    if (const auto* value = templateModel()->instance(activeTemplate)) {
+      QTextCursor cursor(document());
+      cursor.setPosition(value->fragments.first().start);
+      setTextCursor(cursor);
+    }
+    updateTemplatePresentation();
+  }
+  return changed;
 }
 
 void MyCodeEditor::paintTemplateBackground(QPainter &painter,

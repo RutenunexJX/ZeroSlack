@@ -1,4 +1,6 @@
-ZeroSlack v0.32.3 Windows package
+ZeroSlack v0.32.4 Windows package
+
+Release 0.32.4 adds data-defined @tb, @dut, @clk_init and @reset user templates. Existing capability v1 operations, constrained inputs and expressions allow same-class additions without rebuilding ZeroSlack. DUT ports and clock/reset roles use Slang evidence. Editable catalogs and the preserving merge utility ship under templates/. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.32.3 fixes module-scope driver insertion and adds F24 template
 authoring, nested editing regions and mixed code slots in the existing editor.

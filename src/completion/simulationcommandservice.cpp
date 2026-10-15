@@ -1,4 +1,6 @@
 #include "simulationcommandservice.h"
+#include "templatecapabilities.h"
+#include "duttemplatesession.h"
 #include "../integrations/native/nativecontextview.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "../simulation/simdock/ui/workbench.h"
@@ -40,6 +42,7 @@ SimulationCommandService::~SimulationCommandService()
 }
 void SimulationCommandService::cancel()
 {
+    if (dutSession) delete dutSession.data();
     if (pending)
         pending->store(true);
     pending.reset();
@@ -118,6 +121,8 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
     }
     if (buildInputs)
         request.orderedFiles = buildInputs->activeCompilationInputs();
+    if (request.orderedFiles.isEmpty() && workspaces)
+        request.orderedFiles = workspaces->projectSnapshot().designSourceFiles();
     if (!request.orderedFiles.contains(context.fileName))
         request.orderedFiles << context.fileName;
     if (workspaces)
@@ -129,7 +134,7 @@ SimulationCommandRequest SimulationCommandService::currentRequest() const
     for (const auto *open : tabs->openEditors())
         if (!open->documentFileName().isEmpty())
             request.contents.insert(open->documentFileName(), open->cachedDocumentText());
-    request.roles = UserTemplateService::getInstance()->signalRoles();
+    request.roles = editor->templateSignalRoles();
     return request;
 }
 bool SimulationCommandService::current(const GlobalControlItem &item, MyCodeEditor *editor) const
@@ -235,6 +240,29 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
     const auto compilation = buildInputs ? buildInputs->activeCompilationInputs() : QStringList();
     QStringList dependencies = selected.parameters.value("compileOrder").toStringList();
     const auto kind = selected.parameters.value("kind").toString();
+    if (TemplateCapabilities::module(selected.parameters)) {
+        if (dutSession) delete dutSession.data();
+        const auto snapshot = workspaces->projectSnapshot();
+        if (compilation.isEmpty()) {
+            request.orderedFiles = snapshot.designSourceFiles();
+            if (!request.orderedFiles.contains(request.context.fileName)) request.orderedFiles << request.context.fileName;
+        }
+        const auto valid = [=, this]() -> QString {
+            if (!current(selected, editor) || editor->templateAuthoringLocked() != authoringLocked ||
+                workspaces->getWorkspacePath() != workspace ||
+                (buildInputs && (buildInputs->activeProjectId() != project || buildInputs->activeCompilationInputs() != compilation)))
+                return "The document, cursor, template catalog or project changed. Reopen DUT inputs.";
+            const auto latest = workspaces->projectSnapshot();
+            if (latest.includeDirs != request.includeDirectories || latest.defines != request.defines ||
+                latest.designSourceFiles() != snapshot.designSourceFiles() || currentRequest().contents != request.contents)
+                return "DUT sources or compilation settings changed. Reopen DUT inputs.";
+            return {};
+        };
+        dutSession = new DutTemplateSession(editor, request, valid,
+            [this](const QString &text) { emit message(text); }, this);
+        dutSession->start();
+        return;
+    }
     if ((kind == "driver" || kind == "print") && dependencies.isEmpty())
     {
         QStringList support;
@@ -281,7 +309,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                     if (UserTemplateService::getInstance()->catalogRevision() !=
                         selected.sourceTemplateCatalogRevision)
                         return QStringLiteral("The template catalog changed.");
-                    if (UserTemplateService::getInstance()->signalRoles() != request.roles)
+                    if (editor->templateSignalRoles() != request.roles)
                         return QStringLiteral("The signal roles changed.");
                     QSet<QString> openFiles;
                     for (auto *open : tabs->openEditors())
@@ -348,6 +376,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                            SimulationCommandPlanner::sourcesCurrent(captured);
                 };
                 QTextCursor cursor(editor->document());
+                editor->configureTemplateInputContext(result.inputs);
                 cursor.setPosition(result.start);
                 cursor.setPosition(result.start + result.length, QTextCursor::KeepAnchor);
                 editor->setTextCursor(cursor);
@@ -357,6 +386,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                     emit message(error);
                 else
                 {
+                    editor->configureTemplateInputContext(result.inputs, editor->selectedTemplateId(), true);
                     editor->setFocus();
                     emit message(result.placeholders.isEmpty()
                                      ? QStringLiteral("Inserted template.")

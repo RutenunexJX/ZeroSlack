@@ -29,6 +29,13 @@ struct TemplateInsertionSpec {
   int preservedStart = -1, preservedLength = 0;
 };
 
+struct TemplateDocumentEdit {
+  int start = -1, length = 0;
+  QString text, parentId, parentSlot, replaceId;
+  TemplateInsertionSpec instance;
+  CodeTemplateSlotList inputs;
+};
+
 // One authority per QTextDocument, shared by all views. UI modes never own a
 // tree.
 class ZEROSLACK_API DocumentTemplateModel : public QObject {
@@ -48,7 +55,9 @@ public:
   bool canInsert(int position, int removed, const QString &parentId,
                  const QString &parentSlot) const;
   bool replaceInput(const QString &id, int input, const QTextCursor &cursor,
-                    const QString &text, int *nextPosition = nullptr);
+                    const QString &text, int *nextPosition = nullptr, bool candidateSelection = false);
+  bool applyEdits(QList<TemplateDocumentEdit> edits, QString *selectedId,
+                  QString *error);
   void beginChange();
   void applyChange(int position, int removed, int added,
                    const QString &owner = {}, int input = -1);

@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "user:tb-root",
+      "command": "@tb",
+      "label": "@tb",
+      "description": "Testbench with definitions, instances and behaviors",
+      "body": "module tb;\n  timeunit 1ns;\n  timeprecision 1ps;\n\n  // Definitions\n  \n  // Instances\n  \n  // Behaviors\n  \nendmodule\n",
+      "slots": [
+        {
+          "name": "name",
+          "start": 7,
+          "length": 2,
+          "tabStop": 1,
+          "visibleWhenEmpty": true
+        },
+        {
+          "name": "definitions",
+          "start": 66,
+          "length": 3,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "declarations",
+            "allowEmpty": true
+          }
+        },
+        {
+          "name": "instances",
+          "start": 84,
+          "length": 3,
+          "tabStop": 3,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "instances",
+            "allowEmpty": true
+          }
+        },
+        {
+          "name": "behaviors",
+          "start": 102,
+          "length": 3,
+          "tabStop": 4,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Code",
+            "content": "behaviors",
+            "allowEmpty": true
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "root",
+        "role": "tbRoot",
+        "summary": "name · definitions · instances · behaviors",
+        "capabilityVersion": 1,
+        "capability": "moduleRoot",
+        "nameSlot": "name",
+        "activation": {
+          "mode": "exactLockedFileGap",
+          "query": "tb"
+        },
+        "regions": {
+          "declarations": "definitions",
+          "instances": "instances",
+          "behaviors": "behaviors"
+        }
+      }
+    }
+  ]
+}

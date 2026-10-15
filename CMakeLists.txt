@@ -487,6 +487,10 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/simulationcommandprefix.cpp
     src/completion/templateinputservice.cpp
     resources/simulation/simulation.qrc
+    src/completion/moduleinstantiationtemplate.cpp
+    src/completion/duttemplateplanner.cpp
+    src/completion/templatecapabilities.cpp
+    src/completion/duttemplatesession.cpp
     src/completion/simulationcommandplanner.cpp
     src/completion/simulationcommandservice.cpp
     src/completion/simulationcommandservice.h
@@ -999,6 +1003,9 @@ if(BUILD_TESTING)
     target_link_libraries(simulation_driver_insertion_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(template_authoring_test test_sv/template_authoring_test.cpp)
     target_link_libraries(template_authoring_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(tb_dut_template_test test_sv/tb_dut_template_test.cpp)
+    target_link_libraries(tb_dut_template_test PRIVATE zeroslack_core Qt6::Test)
+    target_compile_definitions(tb_dut_template_test PRIVATE TB_TEMPLATE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/tb-dut.json")
 
     add_executable(insert_palette_catalog_test
         test_sv/insert_palette_catalog_test.cpp)

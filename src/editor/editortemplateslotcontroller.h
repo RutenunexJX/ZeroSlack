@@ -38,6 +38,7 @@ public:
     void selectIndex(MyCodeEditor* editor, int index) { select(editor, index); }
     void syncPersistentRanges(MyCodeEditor* editor, const CodeTemplateSlotList& inputs);
     QString currentValidationError(MyCodeEditor* editor) const { return validationError(editor, firstPhysicalIndexForGroup(currentIndex)); }
+    QString allValidationError(MyCodeEditor* editor) const;
 
     bool handleKeyPress(MyCodeEditor* editor,
                         QKeyEvent* event);

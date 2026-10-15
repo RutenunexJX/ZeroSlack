@@ -1,0 +1,146 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "user:clk_init",
+      "command": "@clk_init",
+      "label": "@clk_init",
+      "description": "Parallel clock: frequency in MHz, starts at zero, 50% duty cycle",
+      "body": "initial begin\n  real frequency_mhz;\n  realtime half_period;\n  realtime started_at;\n  frequency_mhz = 100.0;\n  __clock__ = 1'b0;\n  if (!({{=valid_frequency}}))\n    $fatal(1, \"Clock frequency must be positive and finite (MHz)\");\n  else begin\n    half_period = {{=half_period}};\n    started_at = $realtime;\n    #(half_period);\n    if (!($realtime > started_at))\n      $fatal(1, \"Clock half-period rounds to zero at the active timeprecision\");\n    else forever begin\n      __clock__ = ~__clock__;\n      #(half_period);\n    end\n  end\nend\n",
+      "slots": [
+        {
+          "name": "freq_mhz",
+          "start": 101,
+          "length": 5,
+          "tabStop": 2,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Value",
+            "finite": true,
+            "minimum": "0",
+            "exclusiveMinimum": true,
+            "displayUnit": "MHz"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 110,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 469,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        },
+        {
+          "name": "clk_name",
+          "start": 482,
+          "length": 9,
+          "tabStop": 1,
+          "visibleWhenEmpty": true,
+          "input": {
+            "kind": "Signal",
+            "scope": "visible",
+            "access": "write",
+            "integral": true,
+            "minWidth": 1,
+            "maxWidth": 1,
+            "unpackedRank": 0,
+            "moduleVariable": true,
+            "variableOnly": true,
+            "closedChoice": true,
+            "role": "Clock"
+          }
+        }
+      ],
+      "simulation": {
+        "kind": "snippet",
+        "placement": "module",
+        "content": "process",
+        "contract": "clk_init-time-v1",
+        "summary": "clk_name · freq_mhz",
+        "requireValidCommit": true,
+        "capabilityVersion": 1,
+        "capability": "moduleProcess",
+        "render": {
+          "bindings": {
+            "frequency": "frequency_mhz"
+          },
+          "expressions": {
+            "half_period": {
+              "unit": "ns",
+              "value": {
+                "op": "/",
+                "args": [
+                  {
+                    "number": "500.0"
+                  },
+                  {
+                    "variable": "frequency"
+                  }
+                ]
+              }
+            },
+            "valid_frequency": {
+              "op": "&&",
+              "args": [
+                {
+                  "op": ">",
+                  "args": [
+                    {
+                      "variable": "frequency"
+                    },
+                    {
+                      "number": "0.0"
+                    }
+                  ]
+                },
+                {
+                  "op": "<=",
+                  "args": [
+                    {
+                      "variable": "frequency"
+                    },
+                    {
+                      "number": "1.7976931348623157e308"
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "user:dut",
+      "command": "@dut",
+      "label": "@dut",
+      "description": "Resolve a DUT and create its signals and connections",
+      "body": "",
+      "simulation": {
+        "kind": "operations",
+        "placement": "module",
+        "content": "instances",
+        "summary": "module · parameters · explicit connections",
+        "capabilityVersion": 1,
+        "capability": "moduleInstance",
+        "semanticInputs": {
+          "moduleSource": "compilation",
+          "parameters": "selectedModule",
+          "ports": "elaboratedPorts"
+        },
+        "operations": [
+          {
+            "op": "declareSignals",
+            "target": "definitions",
+            "reuse": "explicit",
+            "namePattern": "${instance}_${port}",
+            "label": "DUT signals"
+          },
+          {
+            "op": "instantiateModule",
+            "target": "instances",
+            "bindings": "named"
+          }
+        ]
+      }
+    }
+  ]
+}

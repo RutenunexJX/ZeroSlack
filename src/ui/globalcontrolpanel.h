@@ -28,6 +28,7 @@ public:
     void showCentered(QWidget* anchor);
     void showAt(QWidget* anchor, const QPoint& globalAnchor);
     void focusSearch(bool selectAll = true);
+    void setCloseOnActivation(bool value) { closeOnActivation = value; }
     void setQueryChangedHandler(std::function<void(const QString&)> handler);
     void setCategoryChangedHandler(
         std::function<void(GlobalControlCategory)> handler);
@@ -45,6 +46,7 @@ private:
     QPoint popupAnchor;
     bool opensAbove = false;
     bool compactLayout = false;
+    bool closeOnActivation = true;
     QLineEdit* searchEdit = nullptr;
     QTabBar* categoryTabs = nullptr;
     QListWidget* resultList = nullptr;
