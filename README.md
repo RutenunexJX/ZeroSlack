@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.4`
+Current version: `v0.32.5`
+
+Release 0.32.5 requires Enter to insert every template, exposes selectable TB regions and keeps Up/Down navigation within the current parent. Enter descends; Ctrl+Enter leaves input editing and then returns one level at a time. The editor shows persistent F24-held and template-lock feedback with the current path. Existing nested templates, input boundaries, undo/redo and saved data remain compatible. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.4 adds data-defined @tb, @dut, @clk_init and @reset user templates. Existing capability v1 operations, constrained inputs and expressions allow same-class additions without rebuilding ZeroSlack. DUT ports and clock/reset roles use Slang evidence. Editable catalogs and the preserving merge utility ship under templates/. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
@@ -204,7 +206,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.4`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.5`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.

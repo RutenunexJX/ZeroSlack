@@ -529,6 +529,8 @@ void MyCodeEditor::undo()
 {
     if (documentReadOnly())
         return;
+    if (templateInputEditing()) updateTemplatePresentation();
+    templateEditing = false;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -537,7 +539,6 @@ void MyCodeEditor::undo()
     templateModel()->beginReplay();
     if (authoringLock) document()->undo(); else QPlainTextEdit::undo();
     templateModel()->endReplay();
-    templateEditing = false;
     updateTemplatePresentation();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -550,6 +551,8 @@ void MyCodeEditor::redo()
 {
     if (documentReadOnly())
         return;
+    if (templateInputEditing()) updateTemplatePresentation();
+    templateEditing = false;
     auto edit = beginSynchronousEditTransaction();
     const int beforeUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -558,7 +561,6 @@ void MyCodeEditor::redo()
     templateModel()->beginReplay();
     if (authoringLock) document()->redo(); else QPlainTextEdit::redo();
     templateModel()->endReplay();
-    templateEditing = false;
     updateTemplatePresentation();
     const int afterUndoSteps = document()
         ? document()->availableUndoSteps()
@@ -990,6 +992,7 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
     QPlainTextEdit::resizeEvent(event);
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     state->handleResize(this, false);
+    layoutTemplateRegionBar();
 }
 
 void MyCodeEditor::paintEvent(QPaintEvent *event)
@@ -1012,6 +1015,8 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintMultiCursor(this, event);
     state->paintColumnSelection(this, event);
     state->paintDiagnosticOverview(this, event);
+    QPainter painter(viewport());
+    paintTemplateRegions(painter, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -2332,6 +2337,10 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
+        && handleTemplateRegionMouse(event->position().toPoint(), false)) {
+        event->accept(); return;
+    }
+    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
         && state->tbAssist && state->tbAssist->click(event->position().toPoint())) {
         event->accept(); return;
     }
@@ -2403,6 +2412,10 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
+        && handleTemplateRegionMouse(event->position().toPoint(), true)) {
+        event->accept(); return;
+    }
     if (event && event->button() == Qt::LeftButton) {
         state->tripleClickPosition = event->position().toPoint();
         state->tripleClickTimer.restart();

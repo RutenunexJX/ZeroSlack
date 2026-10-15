@@ -61,6 +61,7 @@ private:
     QPointer<MyCodeEditor> templateEditor;
     bool f24Held = false, nativePrefixPending = false;
     bool toggleSpaceHeld = false;
+    void setF24Held(bool held, MyCodeEditor* editor = nullptr);
     bool handleTemplateEvent(QObject* watched, QEvent* event);
     bool restoreNativePrefix(const QString& query);
 

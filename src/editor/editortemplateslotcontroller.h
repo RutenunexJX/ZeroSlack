@@ -32,6 +32,7 @@ public:
 
     bool active() const;
     int activeIndex() const;
+    QString activeInputName() const;
     int slotCount() const;
     bool blinkOn() const;
     bool containsPosition(int position) const;

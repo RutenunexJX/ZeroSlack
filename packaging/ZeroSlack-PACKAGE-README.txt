@@ -1,4 +1,6 @@
-ZeroSlack v0.32.4 Windows package
+ZeroSlack v0.32.5 Windows package
+
+Release 0.32.5 requires Enter to insert every template, exposes selectable TB regions and keeps Up/Down navigation within the current parent. Enter descends; Ctrl+Enter leaves input editing and then returns one level at a time. The editor shows persistent F24-held and template-lock feedback with the current path. Existing nested templates, input boundaries, undo/redo and saved data remain compatible. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.4 adds data-defined @tb, @dut, @clk_init and @reset user templates. Existing capability v1 operations, constrained inputs and expressions allow same-class additions without rebuilding ZeroSlack. DUT ports and clock/reset roles use Slang evidence. Editable catalogs and the preserving merge utility ship under templates/. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 

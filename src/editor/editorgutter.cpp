@@ -90,6 +90,7 @@ void EditorGutter::init(MyCodeEditor* editor)
 {
     widget = new LineNumberWidget(editor, this);
     appliedLeftMargin = -1;
+    appliedTopMargin = -1;
     updateNumberFont(editor);
 }
 
@@ -98,6 +99,7 @@ void EditorGutter::destroy()
     delete widget;
     widget = nullptr;
     appliedLeftMargin = -1;
+    appliedTopMargin = -1;
 }
 
 int EditorGutter::totalWidth(MyCodeEditor* editor) {
@@ -143,9 +145,11 @@ void EditorGutter::updateViewportMargins(MyCodeEditor* editor) const
 {
     updateNumberFont(editor);
     const int leftWidth = widthFor(editor);
-    if (leftWidth != appliedLeftMargin) {
-        editor->setViewportMargins(leftWidth, 0, 0, 0);
+    const int topHeight = editor->templateRegionBarHeight();
+    if (leftWidth != appliedLeftMargin || topHeight != appliedTopMargin) {
+        editor->setViewportMargins(leftWidth, topHeight, 0, 0);
         appliedLeftMargin = leftWidth;
+        appliedTopMargin = topHeight;
     }
 }
 

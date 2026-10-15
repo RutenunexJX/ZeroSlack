@@ -29,7 +29,7 @@ python merge_tb_templates.py --existing <现有user_templates.json> --templates 
 | `kind` | 根/过程使用 `snippet`，模块结构操作使用 `operations` |
 | `placement` / `content` | 文件根、模块级过程、实例区域等，仍受结构解析和父级区域约束 |
 | `regions` / `nameSlot` | 根模板定义声明、实例、行为三类 Code 槽的实际名称，以及模块名槽；每类恰好一个，按声明→实例→行为排列 |
-| `activation` | 仅根模板可声明 `{mode: exactLockedFileGap, query: tb}`；只有锁定文件空隙中的完整且唯一查询才直接插入 |
+| `activation` | 兼容读取旧根模板的字段，不再触发自动插入；所有入口均须 Enter 确认候选 |
 | `semanticInputs` | 模块来自 `compilation`，参数来自 `selectedModule`，端口来自 `elaboratedPorts`；可用 `namePrefix` 缩小模块集合 |
 | `operations` | 有序的 `declareSignals`、`instantiateModule`，目标必须对应当前根的声明区/实例区；作为同一个撤销事务提交 |
 | `declareSignals` | `target`、`reuse`（`explicit` 或 `never`）、`namePattern`、`label`；命名可用 `${instance}`、`${port}`、`${module}`，冲突用稳定数字后缀 |
@@ -41,6 +41,10 @@ python merge_tb_templates.py --existing <现有user_templates.json> --templates 
 派生表达式生成 SV，随槽所赋变量在仿真时求值；不运行宿主脚本，不访问文件、网络或命令。条件/循环过程由模板正文表达；端口集合的重复生成由受限结构操作执行。当前不提供任意集合查询、自由组合操作图或宿主求值语言。确实新增语义算法或新的结构操作仍需修改核心。
 
 ## 输入与时序
+
+F24 按住时显示临时触发提示，F24+Space 切换锁定。输入指令只筛选候选，Enter 才插入，Esc 取消。锁定标识和当前层级显示在编辑区顶部。
+
+根模板的 Code 槽显示为区域按钮与源码边界。单击按钮进入该区域的手写段；空区也保留入口，固定文本及子模板仍受保护。键盘导航时 ↑/↓ 只选择同级对象，Enter 逐层进入模板、区域和手写入口，Ctrl+Enter 逐层返回。具有输入与子项的模板提供 Inputs 项；输入编辑期间保留 Tab/Shift+Tab 切换与已有候选上下选择。Esc 或 F24+Space 退出锁定。
 
 `slots[].input` 沿用现有输入模型。Value 支持十进制小数、`finite`、`minimum`、`exclusiveMinimum`、`maximum`；`displayUnit` 显示单位。Signal 使用可见/可驱动范围及类型过滤；Clock/Reset 能力输入必须同时为封闭、可写、单比特模块变量，↑/↓ 选候选，Tab/Shift+Tab 切换输入。键入、粘贴、IME 不能绕过。没有可靠候选时给出原因。
 

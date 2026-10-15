@@ -296,6 +296,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documenttemplatemodel.cpp
     src/documents/documenttemplatemodel.h
     src/editor/editortemplateauthoring.cpp
+    src/editor/editortemplateregions.cpp
     src/documents/documenttemplatemodel.cpp
     src/documents/documenttemplatemodel.h
     src/editor/editortemplateauthoring.cpp

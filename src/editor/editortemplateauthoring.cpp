@@ -51,6 +51,8 @@ void MyCodeEditor::bindTemplateModel() {
   clearTemplatePreedit();
   QObject::disconnect(templateModelConnection);
   activeTemplate.clear();
+  activeTemplateRegion.clear();
+  templateTargetKind = TemplateTargetKind::Instance;
   templateEditing = false;
   templateModelConnection =
       connect(templateModel(), &DocumentTemplateModel::changed, this, [this] {
@@ -59,22 +61,33 @@ void MyCodeEditor::bindTemplateModel() {
         if (!activeTemplate.isEmpty() &&
             !templateModel()->instance(activeTemplate)) {
           activeTemplate.clear();
+          activeTemplateRegion.clear();
+          templateTargetKind = TemplateTargetKind::Instance;
           templateEditing = false;
           state->templateSlots.clear(this);
         }
         updateTemplatePresentation();
         viewport()->update();
       });
+  updateTemplatePresentation();
 }
 void MyCodeEditor::updateTemplatePresentation() {
+  if (templateInputEditing()) {
+    activeTemplateRegion = selectedTemplateRegion();
+    const auto* item = templateModel()->instance(activeTemplate);
+    const bool container = item && std::any_of(item->inputs.begin(), item->inputs.end(), [](const auto& input) {
+      return input.input.value("kind").toString() == "Code";
+    });
+    templateTargetKind = !activeTemplateRegion.isEmpty() ? TemplateTargetKind::Handwriting
+        : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance;
+  }
+  updateTemplateRegionBar();
   if (!authoringLock)
     return;
   if (!state->modes.isActive(EditorModeId::TemplateAuthoring))
     state->modes.enter(EditorModeId::TemplateAuthoring,
                        EditorModeEntryReason::Restore);
-  const auto *item = templateModel()->instance(activeTemplate);
-  const QString label =
-      item ? item->label : QStringLiteral("No template selected");
+  const QString label = templateTargetPath();
   state->modes.updatePresentation(
       EditorModeId::TemplateAuthoring,
       QStringLiteral("Template mode · %1 · %2")
@@ -82,7 +95,7 @@ void MyCodeEditor::updateTemplatePresentation() {
                       : templateEditing ? QStringLiteral("Inputs")
                                         : QStringLiteral("Navigate")),
       QStringLiteral(
-          "Enter: inputs · Ctrl+Enter: parent/navigation · Esc: exit"));
+          "Enter: enter · Up/Down: siblings · Ctrl+Enter: parent · Esc: exit"));
 }
 void MyCodeEditor::setTemplateAuthoringLocked(bool locked) {
   if (locked == authoringLock)
@@ -93,6 +106,8 @@ void MyCodeEditor::setTemplateAuthoringLocked(bool locked) {
     state->exitInteractionModes(EditorModeExitReason::ExternalControl);
     authoringLock = true;
     templateEditing = false;
+    activeTemplateRegion.clear();
+    templateTargetKind = TemplateTargetKind::Instance;
     QPlainTextEdit::setReadOnly(true);
     const auto id = templateModel()->containerAt(textCursor().position());
     if (!id.isEmpty())
@@ -113,47 +128,12 @@ void MyCodeEditor::setTemplateAuthoringLocked(bool locked) {
     if (!issue.isEmpty())
       emit editorStatusMessageRequested(issue);
   }
+  updateTemplateRegionBar();
   viewport()->update();
 }
 void MyCodeEditor::setTemplateSearchActive(bool active) {
   templateSearching = active;
   updateTemplatePresentation();
-}
-void MyCodeEditor::templateNavigate(int direction) {
-  auto entries = templateModel()->instances();
-  std::stable_sort(entries.begin(), entries.end(),
-                   [](const auto &a, const auto &b) {
-                     const auto position = [](const auto &value) {
-                       for (const auto &f : value.fragments)
-                         if (!f.auxiliary)
-                           return f.start;
-                       return value.fragments.first().start;
-                     };
-                     return position(a) < position(b);
-                   });
-  if (entries.isEmpty())
-    return;
-  int index = -1;
-  for (int i = 0; i < entries.size(); ++i)
-    if (entries.at(i).id == activeTemplate)
-      index = i;
-  index = index < 0 ? (direction < 0 ? entries.size() - 1 : 0)
-                    : (index + direction + entries.size()) % entries.size();
-  activeTemplate = entries.at(index).id;
-  templateEditing = false;
-  state->templateSlots.clear(this);
-  int position = entries.at(index).fragments.first().start;
-  for (const auto &f : entries.at(index).fragments)
-    if (!f.auxiliary) {
-      position = f.start;
-      break;
-    }
-  QTextCursor cursor(document());
-  cursor.setPosition(position);
-  setTextCursor(cursor);
-  ensureCursorVisible();
-  updateTemplatePresentation();
-  viewport()->update();
 }
 bool MyCodeEditor::editTemplateInstance(const QString &requested,
                                         const QString &inputName,
@@ -162,6 +142,7 @@ bool MyCodeEditor::editTemplateInstance(const QString &requested,
     return false;
   if (!requested.isEmpty())
     activeTemplate = requested;
+  activeTemplateRegion.clear();
   const auto *item = templateModel()->instance(activeTemplate);
   if (!item)
     return false;
@@ -212,9 +193,23 @@ void MyCodeEditor::refreshTemplateSlotRanges() {
   const auto *item = templateModel()->instance(activeTemplate);
   if (!item || !templateEditing)
     return;
+  const bool restoreRegion = !state->templateSlots.active() && !activeTemplateRegion.isEmpty();
   state->templateSlots.syncPersistentRanges(this, item->inputs);
+  if (restoreRegion) {
+    QList<int> stops;
+    for (const auto& slot : item->inputs) if (!stops.contains(slot.tabStop)) stops << slot.tabStop;
+    std::sort(stops.begin(), stops.end());
+    for (const auto& slot : item->inputs) if (slot.name == activeTemplateRegion) {
+      state->templateSlots.selectIndex(this, stops.indexOf(slot.tabStop));
+      break;
+    }
+  }
 }
 void MyCodeEditor::finishTemplateInput() {
+  if (!templateInputEditing()) {
+    leaveTemplateTarget();
+    return;
+  }
   emit editingInteractionEnded();
   clearTemplatePreedit();
   const auto *item = templateModel()->instance(activeTemplate);
@@ -224,28 +219,12 @@ void MyCodeEditor::finishTemplateInput() {
     emit editorStatusMessageRequested(issue);
     return;
   }
-  QString parent, input, indent;
-  int position = -1;
-  if (item) {
-    parent = item->parentId;
-    input = item->parentSlot;
-    for (const auto &f : item->fragments)
-      if (!f.auxiliary) {
-        QTextCursor context(document());
-        context.setPosition(f.start);
-        const auto plan = EditorStructuralInputController::newlineEdit(context, state->syntax);
-        indent = plan.text.left(plan.caretOffset).mid(1);
-        position = qMax(position, f.end());
-      }
-  }
-  state->templateSlots.clear(this);
-  templateEditing = false;
-  if (!parent.isEmpty()) {
-    if (editTemplateInstance(parent, input, position))
-      indentTemplateContinuation(indent);
-  }
-  else
-    updateTemplatePresentation();
+  const QString region = selectedTemplateRegion();
+  const bool container = item && std::any_of(item->inputs.begin(), item->inputs.end(), [](const auto& slot) {
+    return slot.input.value("kind").toString() == "Code";
+  });
+  selectTemplateTarget({activeTemplate, region, !region.isEmpty() ? TemplateTargetKind::Handwriting
+      : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance});
   if (!issue.isEmpty())
     emit editorStatusMessageRequested(issue);
 }
@@ -267,6 +246,14 @@ void MyCodeEditor::indentTemplateContinuation(const QString &indent) {
          (document()->characterAt(end) == ' ' || document()->characterAt(end) == '\t'))
     ++end;
   if (!line.mid(end - block.position()).isEmpty()) {
+    if (atIndent && cursor.position() == item->inputs.at(input).start + item->inputs.at(input).length) {
+      const int position = cursor.position();
+      if (replaceTemplateInput(cursor, indent + '\n')) {
+        cursor.setPosition(position + indent.size());
+        setTextCursor(cursor);
+      }
+      return;
+    }
     // Existing handwriting or a following child owns the remainder of this line.
     if (atIndent) {
       cursor.setPosition(end);
@@ -482,7 +469,7 @@ bool MyCodeEditor::handleTemplateInputKey(QKeyEvent *event) {
       return true;
     }
     if (!templateInputEditing() && authoringLock) {
-      editTemplateInstance();
+      enterTemplateTarget();
       return true;
     }
   }
@@ -544,6 +531,8 @@ QString MyCodeEditor::simulationTemplateInsertionError(
     const QString &parent, const QString &parentSlot) const {
   if (documentReadOnly())
     return QStringLiteral("This document is read-only.");
+  if (authoringLock && !templateInputEditing() && !activeTemplateRegion.isEmpty())
+    return QStringLiteral("Press Enter to enter the selected region's handwritten code before inserting a template.");
   const int preserved = spec.preservedStart >= 0 ? spec.preservedLength : 0;
   if (authoringLock && parent.isEmpty() && removed != preserved)
     return QStringLiteral("Source outside a container is read-only in template "
@@ -642,6 +631,8 @@ bool MyCodeEditor::insertSimulationTemplate(
     model->applyChange(start, removed, adjusted.size(), parent, parentInput);
   }
   activeTemplate = model->add(instance);
+  activeTemplateRegion.clear();
+  templateTargetKind = TemplateTargetKind::Instance;
   change.endEditBlock();
   model->endChange();
   templateMutation = false;
@@ -670,6 +661,8 @@ bool MyCodeEditor::applyTemplateEdits(const QList<TemplateDocumentEdit>& edits, 
     state->templateSlots.clear(this);
     templateEditing = false;
     activeTemplate = selected.isEmpty() ? edits.first().parentId : selected;
+    activeTemplateRegion.clear();
+    templateTargetKind = TemplateTargetKind::Instance;
     if (const auto* value = templateModel()->instance(activeTemplate)) {
       QTextCursor cursor(document());
       cursor.setPosition(value->fragments.first().start);

@@ -53,6 +53,12 @@ void cursor(MyCodeEditor *editor, int start, int end = -1) {
     position.setPosition(end, QTextCursor::KeepAnchor);
   editor->setTextCursor(position);
 }
+void returnToParentCode(MyCodeEditor* editor, const QString& parent) {
+  for (int i = 0; i < 5 && (editor->templateInputEditing() || editor->selectedTemplateId() != parent); ++i)
+    QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+  QTest::keyClick(editor, Qt::Key_Return);
+  QTest::keyClick(editor, Qt::Key_Return);
+}
 class PopupLifecycleObserver : public QObject {
 public:
   int shows = 0, hides = 0, activations = 0;
@@ -444,7 +450,7 @@ private slots:
       QCOMPARE(e->textCursor().positionInBlock(), childColumn);
       const auto before = e->toPlainText();
       const auto beforeData = e->templateModel()->serialize(f.path);
-      QTest::keyClick(e, Qt::Key_Return, Qt::ControlModifier);
+      returnToParentCode(e, parent);
       QCOMPARE(e->selectedTemplateId(), parent);
       QCOMPARE(e->textCursor().positionInBlock(), parentColumn);
       const auto continued = e->toPlainText();
@@ -1033,20 +1039,20 @@ private slots:
     QCOMPARE(editor->toPlainText().mid(outerValue->inputs.first().start,
                                        outerValue->inputs.first().length),
              QString("2"));
-    QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+    returnToParentCode(editor, inner);
     QCOMPARE(editor->selectedTemplateId(), inner);
     QVERIFY(editor->templateInputEditing());
     type("\n  // inner tail\n");
-    QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+    returnToParentCode(editor, outer);
     QCOMPARE(editor->selectedTemplateId(), outer);
     type("\n hits += 1;\n");
-    QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+    returnToParentCode(editor, process);
     QCOMPARE(editor->selectedTemplateId(), process);
     type("\n hits += 3;\n");
     insert(f, "step", true);
     const auto sibling = editor->selectedTemplateId();
     type("5");
-    QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+    returnToParentCode(editor, process);
     QCOMPARE(editor->selectedTemplateId(), process);
     const auto mixed = editor->toPlainText();
     const auto metadata = editor->templateModel()->serialize(f.path);
@@ -1222,9 +1228,10 @@ private slots:
     insert(f, "definitions");
     const auto definitions = e->selectedTemplateId();
     insert(f, "decl", true);
-    QTest::keyClick(e, Qt::Key_Return, Qt::ControlModifier);
+    returnToParentCode(e, definitions);
     QCOMPARE(e->selectedTemplateId(), definitions);
     type("parameter int N = 2;\n");
+    QVERIFY(e->toPlainText().contains("parameter int N = 2;"));
     GlobalControlQueryContext context;
     context.documentText = e->toPlainText();
     context.cursorPosition = e->textCursor().position();
@@ -1238,6 +1245,8 @@ private slots:
             context, {{"kind", "snippet"}}, "declarations",
             "typedef logic [3:0] word_t;\nparameter int X = 1;\nwire value;")
             .isEmpty());
+    e->finishTemplateInput();
+    e->finishTemplateInput();
     e->finishTemplateInput();
     cursor(e, e->toPlainText().indexOf("\nendmodule"));
     insert(f, "process");
@@ -1326,6 +1335,7 @@ private slots:
     const auto id = e->selectedTemplateId();
     e->finishTemplateInput();
     e->finishTemplateInput();
+    QTest::keyClick(e, Qt::Key_Return);
     QTest::keyClick(e, Qt::Key_Down);
     QCOMPARE(e->selectedTemplateId(), id);
     QTest::keyClick(e, Qt::Key_Return);

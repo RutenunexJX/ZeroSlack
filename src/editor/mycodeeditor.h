@@ -231,12 +231,14 @@ public:
     bool templateInputEditing() const;
     bool templateSelectionEditable() const;
     QString selectedTemplateId() const;
+    QString selectedTemplateRegion() const;
     DocumentTemplateModel* templateModel() const;
     void setTemplateAuthoringLocked(bool locked);
     void templateNavigate(int direction);
     bool editTemplateInstance(const QString& id = {}, const QString& inputName = {}, int position = -1);
     void finishTemplateInput();
     void setTemplateSearchActive(bool active);
+    void setTemplateTriggerHeld(bool held);
     bool replaceTemplateInput(const QTextCursor& cursor, const QString& text, bool candidateSelection = false);
     QVariantMap templateSignalRoles() const;
     void configureTemplateInputContext(const std::shared_ptr<TemplateInputContext>& inputs,
@@ -453,6 +455,34 @@ private:
     bool authoringLock = false, templateEditing = false, templateSearching = false;
     bool sourceReadOnlyState = false, templateMutation = false;
     QString activeTemplate;
+    QString activeTemplateRegion;
+    enum class TemplateTargetKind { Instance, Inputs, Region, Handwriting };
+    TemplateTargetKind templateTargetKind = TemplateTargetKind::Instance;
+    struct TemplateNavigationTarget {
+        QString owner, input;
+        TemplateTargetKind kind = TemplateTargetKind::Instance;
+    };
+    QList<TemplateNavigationTarget> templateChildren(const QString& owner, const QString& input = {}) const;
+    void selectTemplateTarget(const TemplateNavigationTarget& target);
+    void enterTemplateTarget();
+    void leaveTemplateTarget();
+    QString templateTargetPath() const;
+    bool templateTriggerHeld = false;
+    struct TemplateRegionTarget {
+        QString owner, name, label, content;
+        int start = 0, length = 0, depth = 0;
+    };
+    QList<TemplateRegionTarget> templateRegions() const;
+    int templateRegionEntry(const TemplateRegionTarget& region) const;
+    bool selectTemplateRegion(const QString& owner, const QString& name, bool enter);
+    void updateTemplateRegionBar();
+    int templateRegionBarHeight() const;
+    void layoutTemplateRegionBar();
+    bool handleTemplateRegionMouse(const QPoint& point, bool enter);
+    void paintTemplateRegions(QPainter& painter, QPaintEvent* event);
+    QPointer<QWidget> templateRegionBar;
+    QString templateRegionBarKey;
+    bool updatingTemplateRegionBar = false;
     QTextBlock templatePreeditBlock;
     void clearTemplatePreedit();
     QMetaObject::Connection templateModelConnection;

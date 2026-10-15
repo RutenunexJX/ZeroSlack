@@ -539,6 +539,12 @@ int EditorTemplateSlotController::activeIndex() const
     return currentIndex;
 }
 
+QString EditorTemplateSlotController::activeInputName() const
+{
+    const int index = firstPhysicalIndexForGroup(currentIndex);
+    return active() && index >= 0 ? ranges.at(index).name : QString();
+}
+
 int EditorTemplateSlotController::slotCount() const
 {
     return groupCount();

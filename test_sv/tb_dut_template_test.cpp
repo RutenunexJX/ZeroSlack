@@ -11,6 +11,7 @@
 #include <QtWidgets>
 #define private public
 #include "mainwindow.h"
+#include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
 #undef private
 #include "tabmanager.h"
@@ -369,6 +370,158 @@ endmodule
         session->start(); QTRY_VERIFY_WITH_TIMEOUT(feedback.contains("Source identity changed"), 10000);
         QCOMPARE(editor.toPlainText(), before); QCOMPARE(editor.templateModel()->instances().size(), 1);
     }
+    void confirmationAndModeFeedback() {
+        QTemporaryDir dir;
+        put(dir.filePath("tb.sv"), {});
+        auto* service = UserTemplateService::getInstance();
+        const auto original = service->globalTemplateLocation();
+        QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
+        service->setGlobalTemplateFilePath(dir.filePath("templates.json"));
+        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        window.workspaceSessionCoordinator->setRestoreOnActivation(false);
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.workspaceSessionCoordinator->openWorkspace(dir.path());
+        window.tabManager->openFileInTab(dir.filePath("tb.sv"));
+        auto* editor = window.tabManager->getCurrentEditor();
+        editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
+        auto* panel = window.globalControlCoordinator->panel.get();
+        const auto badge = [&] { return editor->findChild<QLabel*>("templateModeBadge"); };
+        const auto capture = [&](const QString& name) {
+            const auto path = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+            if (!path.isEmpty()) window.grab().save(QDir(path).filePath(name + ".png"));
+        };
+        QTest::keyPress(editor, Qt::Key_F24);
+        QVERIFY(badge() && badge()->isVisible()); QVERIFY(badge()->text().contains("F24 HELD"));
+        capture("mainwindow-f24-held");
+        QTest::keyRelease(editor, Qt::Key_F24);
+        QVERIFY(!badge()->isVisible());
+        QTest::keyPress(editor, Qt::Key_F24);
+        QEvent deactivate(QEvent::ApplicationDeactivate); QApplication::sendEvent(qApp, &deactivate);
+        QVERIFY(!badge()->isVisible()); QTest::keyRelease(editor, Qt::Key_F24);
+        for (int mode = 0; mode < 3; ++mode) {
+            editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
+            if (mode == 0) QTest::keyPress(editor, Qt::Key_F24);
+            else {
+                QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space);
+                QTest::keyRelease(editor, Qt::Key_F24);
+                QVERIFY(badge()->text().contains("TEMPLATE LOCK"));
+                if (mode == 2) QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+            }
+            keys("tb");
+            if (mode == 0) QTest::keyRelease(QApplication::focusWidget(), Qt::Key_F24);
+            QVERIFY(panel->isVisible()); QCOMPARE(panel->currentItems.size(), 1);
+            QCOMPARE(editor->toPlainText(), QString());
+            QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+            QCoreApplication::processEvents(); QCOMPARE(editor->toPlainText(), QString());
+            editor->setTemplateAuthoringLocked(false);
+        }
+        QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space); QTest::keyRelease(editor, Qt::Key_F24);
+        keys("tb"); enter(); QTRY_COMPARE(editor->templateModel()->instances().size(), 1);
+        auto* stableBadge = badge(); keys("tb_confirmed"); QCOMPARE(badge(), stableBadge);
+        QVERIFY(badge()->text().contains("Editing inputs"));
+        capture("mainwindow-inputs-empty-regions");
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QVERIFY(badge()->text().contains("Select"));
+        capture("mainwindow-locked-navigation");
+        auto* defs = editor->findChild<QToolButton*>("templateRegion_definitions");
+        QVERIFY(defs && defs->isVisible()); QTest::mouseClick(defs, Qt::LeftButton);
+        const auto before = editor->toPlainText(); keys("@dut");
+        QVERIFY(panel->isVisible()); QVERIFY(panel->availabilityNotice->text().contains("instance", Qt::CaseInsensitive));
+        QCOMPARE(editor->toPlainText(), before);
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+        editor->document()->setModified(false);
+        service->setGlobalTemplateFilePath(original);
+    }
+    void regionHierarchyAndRecovery() {
+        MyCodeEditor editor; editor.resize(900, 650); editor.show(); editor.activateWindow(); editor.setFocus();
+        QTRY_VERIFY(editor.hasFocus());
+        const auto firstRoot = installRoot(editor);
+        place(editor, editor.toPlainText().size()); const auto secondRoot = installRoot(editor);
+        const auto add = [&](const QString& parent, const QString& name, bool container) {
+            const auto slot = region(*editor.templateModel()->instance(parent), name);
+            editor.editTemplateInstance(parent, name, slot.start + slot.length);
+            const QString source = container ? "initial begin\n  \nend\n" : "hits += 1;\n";
+            CodeTemplateSlotList inputs = container ? CodeTemplateSlotList{{"body", int(source.indexOf("  \n")), 3, 1, true, {{"kind", "Code"}}}}
+                : CodeTemplateSlotList{{"count", 8, 1, 1, true, {{"kind", "Choice"}, {"choices", QStringList{"1", "2"}}}}};
+            TemplateInsertionSpec spec; spec.label = container ? "@process" : "@step";
+            spec.snapshot = {{"kind", "snippet"}}; spec.fragments = {{0, int(source.size()), false}};
+            QString error;
+            if (!editor.insertSimulationTemplate(source, inputs, spec, parent, name, &error)) qFatal("%s", qPrintable(error));
+            return editor.selectedTemplateId();
+        };
+        const auto branch = add(firstRoot, "behaviors", true);
+        const auto one = add(branch, "body", false), two = add(branch, "body", false);
+        const auto otherBranch = add(secondRoot, "behaviors", true);
+        editor.setTemplateAuthoringLocked(true); QVERIFY(editor.editTemplateInstance(one));
+        QTest::keyClick(&editor, Qt::Key_Down); QVERIFY(editor.toPlainText().contains("hits += 2;"));
+        QCOMPARE(editor.selectedTemplateId(), one);
+        QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QTest::keyClick(&editor, Qt::Key_Down); QCOMPARE(editor.selectedTemplateId(), two);
+        QTest::keyClick(&editor, Qt::Key_Down); QCOMPARE(editor.selectedTemplateId(), branch);
+        QCOMPARE(editor.selectedTemplateRegion(), "body");
+        QTest::keyClick(&editor, Qt::Key_Down); QCOMPARE(editor.selectedTemplateId(), one);
+        QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QCOMPARE(editor.selectedTemplateId(), branch); QCOMPARE(editor.selectedTemplateRegion(), "body");
+        QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QCOMPARE(editor.selectedTemplateId(), branch); QVERIFY(editor.selectedTemplateRegion().isEmpty());
+        QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QCOMPARE(editor.selectedTemplateId(), firstRoot); QCOMPARE(editor.selectedTemplateRegion(), "behaviors");
+        QTest::keyClick(&editor, Qt::Key_Down);
+        QCOMPARE(editor.selectedTemplateId(), firstRoot); QVERIFY(editor.selectedTemplateRegion().isEmpty());
+        QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QTest::keyClick(&editor, Qt::Key_Down); QCOMPARE(editor.selectedTemplateId(), secondRoot);
+        QTest::keyClick(&editor, Qt::Key_Return);
+        for (int i = 0; i < 3; ++i) QTest::keyClick(&editor, Qt::Key_Down);
+        QCOMPARE(editor.selectedTemplateRegion(), "behaviors");
+        QTest::keyClick(&editor, Qt::Key_Return); QTest::keyClick(&editor, Qt::Key_Down);
+        QCOMPARE(editor.selectedTemplateId(), otherBranch);
+        QTest::keyClick(&editor, Qt::Key_Return); QCOMPARE(editor.selectedTemplateRegion(), "body");
+        QTest::keyClick(&editor, Qt::Key_Return); QTest::keyClick(&editor, Qt::Key_Return);
+        QVERIFY(editor.templateInputEditing());
+        const auto before = editor.toPlainText(); QTest::keyClicks(&editor, "// handwritten"); QVERIFY(editor.toPlainText() != before);
+        editor.undo(); editor.redo();
+        const auto child = *editor.templateModel()->instance(otherBranch);
+        TemplateDocumentEdit remove; remove.start = child.fragments.first().start; remove.length = child.fragments.first().length;
+        remove.parentId = child.parentId; remove.parentSlot = child.parentSlot; remove.replaceId = child.id;
+        QString error; QVERIFY2(editor.applyTemplateEdits({remove}, &error), qPrintable(error));
+        auto* empty = editor.findChild<QToolButton*>("templateRegion_behaviors"); QVERIFY(empty && empty->text().contains("Empty"));
+        editor.undo(); QVERIFY(editor.templateModel()->instance(otherBranch)); editor.redo();
+        empty = editor.findChild<QToolButton*>("templateRegion_behaviors"); QVERIFY(empty && empty->text().contains("Empty"));
+        QTest::mouseClick(empty, Qt::LeftButton); QVERIFY(editor.templateSelectionEditable());
+        const auto text = editor.toPlainText(); const auto metadata = editor.templateModel()->serialize("hierarchy.sv");
+        MyCodeEditor restored; restored.setPlainText(text); QVERIFY(restored.templateModel()->restore(metadata, "hierarchy.sv"));
+        QVERIFY(restored.findChild<QToolButton*>("templateRegion_instances"));
+    }
+    void savedRootCompatibility() {
+        const auto directory = qEnvironmentVariable("TB_TEST_SAVED_ROOT");
+        if (directory.isEmpty()) QSKIP("Set TB_TEST_SAVED_ROOT to a retained 0.32.4 source/metadata pair.");
+        QFile source(QDir(directory).filePath("main-window-tb.sv")), metadata(QDir(directory).filePath("main-window-metadata.json"));
+        QVERIFY(source.open(QIODevice::ReadOnly)); QVERIFY(metadata.open(QIODevice::ReadOnly));
+        const auto text = QString::fromUtf8(source.readAll());
+        const auto saved = QJsonDocument::fromJson(metadata.readAll()).object();
+        MyCodeEditor editor; editor.resize(900, 650); editor.show(); editor.activateWindow(); editor.setPlainText(text);
+        QVERIFY(editor.templateModel()->restore(saved, saved["file"].toString()));
+        QCOMPARE(editor.templateModel()->instances().size(), saved["instances"].toArray().size());
+        QCOMPARE(editor.toPlainText(), text);
+        QCOMPARE(editor.templateModel()->serialize(saved["file"].toString()), saved);
+        auto* button = editor.findChild<QToolButton*>("templateRegion_instances");
+        QVERIFY(button && button->isVisible()); QTest::mouseClick(button, Qt::LeftButton);
+        QVERIFY(editor.templateInputEditing()); QCOMPARE(editor.templateContainerContent(), "instances");
+        if (editor.toPlainText() != text) {
+            const auto prepared = editor.toPlainText();
+            qInfo() << "before undo" << editor.selectedTemplateId() << editor.selectedTemplateRegion() << editor.templateInputEditing();
+            editor.undo(); QCOMPARE(editor.toPlainText(), text);
+            qInfo() << "after undo" << editor.selectedTemplateId() << editor.selectedTemplateRegion() << editor.templateInputEditing();
+            QCOMPARE(editor.templateModel()->serialize(saved["file"].toString()), saved);
+            editor.redo(); QCOMPARE(editor.toPlainText(), prepared);
+            qInfo() << "after redo" << editor.selectedTemplateId() << editor.selectedTemplateRegion() << editor.templateInputEditing();
+        }
+        if (editor.templateInputEditing()) QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        QCOMPARE(editor.selectedTemplateRegion(), "instances");
+        QTest::keyClick(&editor, Qt::Key_Down);
+        const auto* child = editor.templateModel()->instance(editor.selectedTemplateId());
+        QVERIFY(child && !child->parentId.isEmpty()); QCOMPARE(child->parentSlot, "instances");
+    }
     void mainWindowKeyboard() {
         QTemporaryDir dir;
         put(dir.filePath("dut.sv"), timingDut); put(dir.filePath("tb.sv"), {});
@@ -378,7 +531,7 @@ endmodule
         service->setGlobalTemplateFilePath(dir.filePath("templates.json"));
         QString rootCommand, moduleCommand, clockCommand, resetCommand;
         for (const auto& record : service->records()) {
-            if (TemplateCapabilities::root(record.command)) rootCommand = TemplateCapabilities::activationQuery(record.command);
+            if (TemplateCapabilities::root(record.command)) rootCommand = record.commandToken.mid(1);
             else if (TemplateCapabilities::module(record.command)) moduleCommand = record.commandToken;
             else for (const auto& slot : record.templateSlots) {
                 if (slot.input.value("role") == "Clock") clockCommand = record.commandToken;
@@ -393,12 +546,24 @@ endmodule
         auto *editor = window.tabManager->getCurrentEditor(); editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
         QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space); QTest::keyRelease(editor, Qt::Key_F24);
         keys(rootCommand);
+        QCOMPARE(editor->toPlainText(), QString());
+        QVERIFY(window.globalControlCoordinator->panel->isVisible());
+        enter();
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 1, 20000);
         QVERIFY(editor->templateInputEditing());
         keys("tb_example"); QCOMPARE(editor->templateModel()->instances().size(), 1);
-        QTest::keyClick(editor, Qt::Key_Tab); QTest::keyClick(editor, Qt::Key_Tab);
+        auto* instancesButton = editor->findChild<QToolButton*>("templateRegion_" + TemplateCapabilities::region(editor->templateModel()->instances().first().snapshot, "instances"));
+        QVERIFY(instancesButton && instancesButton->isVisible());
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QTest::keyClick(editor, Qt::Key_Down); QTest::keyClick(editor, Qt::Key_Down);
+        QCOMPARE(editor->selectedTemplateRegion(), instancesButton->property("regionName").toString());
+        enter(); enter();
         QCOMPARE(editor->templateContainerContent(), "instances");
-        keys(moduleCommand); enter();
+        keys(moduleCommand);
+        QCOMPARE(editor->selectedTemplateRegion(), instancesButton->property("regionName").toString());
+        QVERIFY(editor->findChild<QLabel*>("templateLocation")->property("fullText").toString().contains(
+            editor->selectedTemplateRegion(), Qt::CaseInsensitive));
+        enter();
         QPointer<QWidget> panel;
         QTRY_VERIFY_WITH_TIMEOUT((panel = window.findChild<QFrame*>("dutTemplateInputs")) && panel->isVisible(), 20000);
         QVERIFY(panel->accessibleName().contains("DUT module")); keys("CRE"); enter();
@@ -420,10 +585,11 @@ endmodule
         TemplateInstance root;
         for (const auto &item : editor->templateModel()->instances()) if (TemplateCapabilities::root(item.snapshot)) root = item;
         const auto behaviors = TemplateCapabilities::region(root.snapshot, "behaviors");
-        QTest::keyClick(editor, Qt::Key_Down); QCOMPARE(editor->selectedTemplateId(), root.id);
-        enter(); QTest::keyClick(editor, Qt::Key_Backtab);
+        auto* behaviorsButton = editor->findChild<QToolButton*>("templateRegion_" + behaviors);
+        QVERIFY(behaviorsButton && behaviorsButton->isVisible());
+        QTest::mouseClick(behaviorsButton, Qt::LeftButton);
         QCOMPARE(editor->templateContainerContent(), "behaviors");
-        QCOMPARE(editor->textCursor().position(), region(root,behaviors).start + region(root,behaviors).length);
+        QVERIFY(editor->templateSelectionEditable());
         keys(clockCommand); enter();
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 4, 20000);
         const auto clockId = editor->selectedTemplateId();
@@ -440,6 +606,8 @@ endmodule
         QTest::keyClick(editor, Qt::Key_Tab); keys("156.25");
         QVERIFY(editor->toPlainText().contains("frequency_mhz = 156.25;"));
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QVERIFY(!editor->templateInputEditing());
+        QTest::mouseClick(behaviorsButton, Qt::LeftButton);
         QCOMPARE(editor->templateContainerContent(), "behaviors");
         keys(resetCommand); enter();
         QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 5, 20000);
