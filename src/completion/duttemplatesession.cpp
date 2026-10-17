@@ -5,7 +5,6 @@
 #include "mycodeeditor.h"
 #include <QEvent>
 #include <QFutureWatcher>
-#include <QTimer>
 #include <QtConcurrent/QtConcurrentRun>
 
 DutTemplateSession::DutTemplateSession(MyCodeEditor *e, SimulationCommandRequest r,
@@ -13,11 +12,12 @@ DutTemplateSession::DutTemplateSession(MyCodeEditor *e, SimulationCommandRequest
     : QObject(parent), editor(e), panel(new GlobalControlPanel(e->window())), request(std::move(r)),
       instances(e->templateModel()->instances()), current(std::move(valid)), message(std::move(report)) {
     panel->setObjectName("dutTemplateInputs");
+    panel->setProperty("templateInputEditor", QVariant::fromValue(static_cast<QObject*>(e)));
     panel->setSimulationOnly(true);
     panel->setCategory(GlobalControlCategory::Templates);
     panel->setCloseOnActivation(false);
     panel->installEventFilter(this);
-    panel->setQueryChangedHandler([this](const QString &query) { refresh(query); });
+    panel->setQueryChangedHandler([this](const QString &query) { if (!busy) refresh(query); });
     panel->setItemActivatedHandler([this](const GlobalControlItem &item) { accept(item); });
     request.cancelled = std::make_shared<std::atomic_bool>(false);
     const auto config = request.item.parameters;
@@ -35,12 +35,13 @@ DutTemplateSession::DutTemplateSession(MyCodeEditor *e, SimulationCommandRequest
     }
 }
 DutTemplateSession::~DutTemplateSession() {
+    done = true;
     request.cancelled->store(true);
     delete panel;
 }
 bool DutTemplateSession::eventFilter(QObject *object, QEvent *event) {
-    if (object == panel && event->type() == QEvent::Hide)
-        QTimer::singleShot(0, this, [this] { if (!done && !busy && !panel->isVisible()) close("DUT inputs cancelled; source unchanged."); });
+    if (object == panel && event->type() == QEvent::Hide && !done)
+        close("DUT inputs cancelled; source unchanged.");
     return false;
 }
 void DutTemplateSession::close(const QString &reason) {
@@ -48,7 +49,10 @@ void DutTemplateSession::close(const QString &reason) {
     done = true;
     request.cancelled->store(true);
     panel->hide();
-    if (editor) editor->setFocus();
+    if (editor) {
+        editor->setTemplateSearchActive(false);
+        if (editor->isVisible()) editor->setFocus();
+    }
     if (!reason.isEmpty()) message(reason);
     deleteLater();
 }
@@ -58,16 +62,16 @@ void DutTemplateSession::start() {
 }
 void DutTemplateSession::load(std::function<void()> next) {
     const auto error = current();
-    if (!error.isEmpty()) { close(error); return; }
-    busy = true;
-    panel->hide();
+    if (!error.isEmpty()) { fail(error); return; }
+    preparing();
     auto *watcher = new QFutureWatcher<DutTemplateAnalysis>(this);
     connect(watcher, &QFutureWatcher<DutTemplateAnalysis>::finished, this, [this, watcher, next] {
+        if (done) { watcher->deleteLater(); return; }
         analysis = watcher->result(); watcher->deleteLater(); busy = false;
         auto error = current();
         if (error.isEmpty()) error = analysis.error;
         if (error.isEmpty() && !SimulationCommandPlanner::sourcesCurrent(analysis.captured)) error = "A DUT source changed; reopen its inputs.";
-        if (!error.isEmpty()) { close(error); return; }
+        if (!error.isEmpty()) { fail(error); return; }
         next();
     });
     watcher->setFuture(QtConcurrent::run([r=request, items=instances, selected=options] {
@@ -77,10 +81,30 @@ void DutTemplateSession::load(std::function<void()> next) {
 void DutTemplateSession::show(Stage next, const QString &value) {
     if (!editor) { close(); return; }
     stage = next;
+    panel->setQueryReadOnly(stage == Stage::Failure || stage == Stage::Action || stage == Stage::Confirm);
+    editor->setTemplateSearchActive(true);
     panel->resetQuery(value);
     refresh(value);
     if (!panel->isVisible()) panel->showAt(editor->window(), editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()));
     panel->focusSearch(true);
+}
+void DutTemplateSession::preparing() {
+    busy = true;
+    panel->setQueryReadOnly(true);
+    panel->resetQuery({});
+    panel->setAccessibleName("Preparing DUT · Esc cancels");
+    panel->setItems({}, "Preparing DUT. Esc cancels without changing source.");
+    if (editor) {
+        editor->setTemplateSearchActive(true);
+        if (!panel->isVisible()) panel->showAt(editor->window(), editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()));
+        panel->focusSearch(false);
+    }
+}
+void DutTemplateSession::fail(const QString &reason) {
+    if (done) return;
+    busy = false; failure = reason;
+    show(Stage::Failure);
+    message(reason);
 }
 void DutTemplateSession::refresh(const QString &query) {
     QList<GlobalControlItem> items;
@@ -95,7 +119,8 @@ void DutTemplateSession::refresh(const QString &query) {
         prompt = "DUT · Enter selects · Esc cancels";
         add("edit", "Edit DUT inputs"); add("remove", "Remove DUT instance", "TB signals and handwritten declarations are retained."); break;
     case Stage::Module:
-        prompt = "DUT module · type to filter · Enter selects · Esc cancels";
+        prompt = options.replaceId.isEmpty() ? "DUT module · Enter generates defaults · Esc cancels"
+            : "DUT module · Enter selects for adjustment · Esc cancels";
         {
             CommandLayerPickerQuery picker;
             picker.snapshot = std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(analysis.records));
@@ -133,14 +158,34 @@ void DutTemplateSession::refresh(const QString &query) {
     case Stage::Confirm:
         prompt = "DUT · " + options.module + " · " + options.instance + " · Enter applies · Esc cancels";
         add("apply", "Apply DUT and connections", "One undo step includes declarations, instance and template boundaries."); break;
+    case Stage::Failure:
+        prompt = "DUT not applied · " + failure + "\nSource unchanged. Esc closes; reopen @dut if the target changed.";
+        if (current().isEmpty()) {
+            add("retry", "Retry generation");
+            add("choose", "Choose another module");
+        }
+        add("dismiss", "Close"); break;
     }
     panel->setAccessibleName(prompt);
     panel->setItems(items, prompt);
 }
 void DutTemplateSession::accept(const GlobalControlItem &item) {
     if (busy || done) return;
+    if (stage == Stage::Failure) {
+        if (item.id == "dismiss") { close(); return; }
+        if (item.id == "choose") {
+            const auto replacement = options.replaceId;
+            options = {}; options.replaceId = replacement;
+            load([this] { show(Stage::Module); }); return;
+        }
+        if (options.module.isEmpty()) load([this] { show(Stage::Module); }); else finish();
+        return;
+    }
     const auto error = current();
-    if (!error.isEmpty()) { close(error); return; }
+    if (!error.isEmpty()) { fail(error); return; }
+    if (analysis.captured && !SimulationCommandPlanner::sourcesCurrent(analysis.captured)) {
+        fail("A DUT source changed; choose the module again to use its current definition."); return;
+    }
     if (stage == Stage::Action) {
         if (item.id == "remove") { finish(true); return; }
         const auto module = options.module;
@@ -152,7 +197,8 @@ void DutTemplateSession::accept(const GlobalControlItem &item) {
         }
         options.module = item.parameters.value("module").toString();
         options.moduleFile = item.parameters.value("file").toString();
-        load([this] { options.instance = analysis.instance; show(Stage::Instance, options.instance); });
+        if (options.replaceId.isEmpty()) finish();
+        else load([this] { options.instance = analysis.instance; show(Stage::Instance, options.instance); });
     } else if (stage == Stage::Instance) {
         options.instance = item.id; field = 0;
         if (analysis.parameters.isEmpty()) bindings();
@@ -178,7 +224,7 @@ void DutTemplateSession::bindings() {
     });
 }
 void DutTemplateSession::finish(bool remove) {
-    busy = true; panel->hide();
+    preparing();
     if (remove) {
         TemplateDocumentEdit edit;
         edit.start = request.item.replacementStart; edit.length = request.item.replacementLength;
@@ -186,16 +232,18 @@ void DutTemplateSession::finish(bool remove) {
         edit.replaceId = options.replaceId;
         QString error = current();
         if (error.isEmpty() && editor) editor->applyTemplateEdits({edit}, &error);
-        close(error.isEmpty() ? "Removed DUT; TB declarations retained." : error); return;
+        if (!error.isEmpty()) fail(error); else close("Removed DUT; TB declarations retained."); return;
     }
     auto *watcher = new QFutureWatcher<DutTemplatePlan>(this);
     connect(watcher, &QFutureWatcher<DutTemplatePlan>::finished, this, [this, watcher] {
+        if (done) { watcher->deleteLater(); return; }
         auto plan = watcher->result(); watcher->deleteLater();
         QString error = current();
         if (error.isEmpty()) error = plan.error;
         if (error.isEmpty() && !SimulationCommandPlanner::sourcesCurrent(plan.captured)) error = "A source changed; no DUT changes were applied.";
         if (error.isEmpty() && editor) editor->applyTemplateEdits(plan.edits, &error);
-        close(error.isEmpty() ? "DUT applied. Enter edits its inputs; Ctrl+Z undoes the complete change." : error);
+        if (!error.isEmpty()) fail(error);
+        else close("DUT applied. Enter optionally adjusts its inputs; Ctrl+Z undoes the complete change.");
     });
     watcher->setFuture(QtConcurrent::run([r=request, items=instances, selected=options] {
         return DutTemplatePlanner::prepare(r, items, selected);

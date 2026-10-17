@@ -78,7 +78,7 @@ void MyCodeEditor::updateTemplatePresentation() {
     const bool container = item && std::any_of(item->inputs.begin(), item->inputs.end(), [](const auto& input) {
       return input.input.value("kind").toString() == "Code";
     });
-    templateTargetKind = !activeTemplateRegion.isEmpty() ? TemplateTargetKind::Handwriting
+    templateTargetKind = !activeTemplateRegion.isEmpty() ? TemplateTargetKind::Region
         : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance;
   }
   updateTemplateRegionBar();
@@ -95,7 +95,7 @@ void MyCodeEditor::updateTemplatePresentation() {
                       : templateEditing ? QStringLiteral("Inputs")
                                         : QStringLiteral("Navigate")),
       QStringLiteral(
-          "Enter: enter · Up/Down: siblings · Ctrl+Enter: parent · Esc: exit"));
+          "Enter: enter · Up/Down: siblings · Ctrl+Enter: parent · Esc: cancel · F24+Space: unlock"));
 }
 void MyCodeEditor::setTemplateAuthoringLocked(bool locked) {
   if (locked == authoringLock)
@@ -194,6 +194,7 @@ void MyCodeEditor::refreshTemplateSlotRanges() {
   if (!item || !templateEditing)
     return;
   const bool restoreRegion = !state->templateSlots.active() && !activeTemplateRegion.isEmpty();
+  const auto cursor = textCursor();
   state->templateSlots.syncPersistentRanges(this, item->inputs);
   if (restoreRegion) {
     QList<int> stops;
@@ -203,6 +204,8 @@ void MyCodeEditor::refreshTemplateSlotRanges() {
       state->templateSlots.selectIndex(this, stops.indexOf(slot.tabStop));
       break;
     }
+    // Resuming a suspended slot must preserve the live caret and selection.
+    setTextCursor(cursor);
   }
 }
 void MyCodeEditor::finishTemplateInput() {
@@ -223,8 +226,9 @@ void MyCodeEditor::finishTemplateInput() {
   const bool container = item && std::any_of(item->inputs.begin(), item->inputs.end(), [](const auto& slot) {
     return slot.input.value("kind").toString() == "Code";
   });
-  selectTemplateTarget({activeTemplate, region, !region.isEmpty() ? TemplateTargetKind::Handwriting
-      : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance});
+  const auto children = region.isEmpty() ? QList<TemplateNavigationTarget>() : templateChildren(activeTemplate, region);
+  selectTemplateTarget(!children.isEmpty() ? children.first() : TemplateNavigationTarget{activeTemplate, region,
+      !region.isEmpty() ? TemplateTargetKind::Region : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance});
   if (!issue.isEmpty())
     emit editorStatusMessageRequested(issue);
 }
@@ -440,7 +444,7 @@ bool MyCodeEditor::handleTemplateInputKey(QKeyEvent *event) {
   if (templateInputEditing() && !state->templateSlots.active())
     refreshTemplateSlotRanges();
   if (event->key() == Qt::Key_Escape && authoringLock) {
-    setTemplateAuthoringLocked(false);
+    clearTemplatePreedit();
     return true;
   }
   if (event->matches(QKeySequence::Undo)) {

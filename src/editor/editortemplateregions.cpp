@@ -66,8 +66,6 @@ QList<MyCodeEditor::TemplateNavigationTarget> MyCodeEditor::templateChildren(
                 result << TemplateNavigationTarget{owner, region.name, TemplateTargetKind::Region};
         return result;
     }
-    if (!owner.isEmpty())
-        result << TemplateNavigationTarget{owner, input, TemplateTargetKind::Handwriting};
     auto entries = templateModel()->instances();
     std::stable_sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
         return mainPosition(a) < mainPosition(b);
@@ -125,7 +123,6 @@ void MyCodeEditor::templateNavigate(int direction) {
         }
     } else {
         owner = activeTemplate;
-        if (templateTargetKind == TemplateTargetKind::Handwriting) input = activeTemplateRegion;
     }
     const auto siblings = templateChildren(owner, input);
     if (siblings.isEmpty()) return;
@@ -141,8 +138,7 @@ void MyCodeEditor::templateNavigate(int direction) {
 void MyCodeEditor::enterTemplateTarget() {
     if (activeTemplate.isEmpty()) { templateNavigate(1); return; }
     if (templateTargetKind == TemplateTargetKind::Region) {
-        const auto children = templateChildren(activeTemplate, activeTemplateRegion);
-        if (!children.isEmpty()) selectTemplateTarget(children.first());
+        selectTemplateRegion(activeTemplate, activeTemplateRegion, true);
         return;
     }
     if (templateTargetKind == TemplateTargetKind::Instance) {
@@ -152,17 +148,11 @@ void MyCodeEditor::enterTemplateTarget() {
         });
         if (container) { selectTemplateTarget(children.first()); return; }
     }
-    if (templateTargetKind == TemplateTargetKind::Handwriting) {
-        selectTemplateRegion(activeTemplate, activeTemplateRegion, true);
-        return;
-    }
     editTemplateInstance();
 }
 
 void MyCodeEditor::leaveTemplateTarget() {
-    if (templateTargetKind == TemplateTargetKind::Handwriting) {
-        selectTemplateTarget({activeTemplate, activeTemplateRegion, TemplateTargetKind::Region});
-    } else if (templateTargetKind != TemplateTargetKind::Instance) {
+    if (templateTargetKind != TemplateTargetKind::Instance) {
         selectTemplateTarget({activeTemplate, {}, TemplateTargetKind::Instance});
     } else if (const auto* item = templateModel()->instance(activeTemplate); item && !item->parentId.isEmpty()) {
         selectTemplateTarget({item->parentId, item->parentSlot, TemplateTargetKind::Region});
@@ -179,7 +169,7 @@ bool MyCodeEditor::selectTemplateRegion(const QString& owner, const QString& nam
     }
     for (const auto& region : templateRegions()) {
         if (region.owner != owner || region.name != name) continue;
-        selectTemplateTarget({owner, name, enter ? TemplateTargetKind::Handwriting : TemplateTargetKind::Region});
+        selectTemplateTarget({owner, name, TemplateTargetKind::Region});
         if (enter) {
             QTextCursor context(document()); context.setPosition(region.start);
             const auto plan = EditorStructuralInputController::newlineEdit(context, state->syntax);
@@ -211,7 +201,6 @@ QString MyCodeEditor::templateTargetPath() const {
     if (selected && !region.isEmpty()) {
         for (const auto& input : selected->inputs)
             if (input.name == region) { path << inputLabel(input); break; }
-        if (!templateEditing && templateTargetKind == TemplateTargetKind::Handwriting) path << "Handwritten code";
     } else if (selected && (templateEditing || templateTargetKind == TemplateTargetKind::Inputs)) {
         path << "Inputs";
     }
@@ -291,7 +280,7 @@ void MyCodeEditor::updateTemplateRegionBar() {
     if (mode->styleSheet() != style) mode->setStyleSheet(style);
     auto* path = templateRegionBar->findChild<QLabel*>("templateLocation");
     const QString full = templateTargetPath();
-    path->setProperty("fullText", full); path->setToolTip(full + "\nEnter: enter · ↑/↓: siblings · Ctrl+Enter: parent · Esc: exit lock");
+    path->setProperty("fullText", full); path->setToolTip(full + "\nEnter: enter · ↑/↓: siblings · Ctrl+Enter: parent · Esc: cancel · F24+Space: unlock");
     for (const auto& region : regions) if (region.owner == owner) {
         auto* button = templateRegionBar->findChild<QToolButton*>("templateRegion_" + region.name);
         const bool empty = cachedDocumentText().mid(region.start, region.length).trimmed().isEmpty();

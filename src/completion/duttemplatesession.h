@@ -14,7 +14,7 @@ public:
 protected:
     bool eventFilter(QObject *, QEvent *) override;
 private:
-    enum class Stage { Action, Module, Instance, Parameter, Binding, Confirm };
+    enum class Stage { Action, Module, Instance, Parameter, Binding, Confirm, Failure };
     QPointer<MyCodeEditor> editor;
     GlobalControlPanel *panel;
     SimulationCommandRequest request;
@@ -24,6 +24,7 @@ private:
     Stage stage = Stage::Module;
     int field = 0;
     bool busy = false, done = false;
+    QString failure;
     std::function<QString()> current;
     std::function<void(const QString&)> message;
     void load(std::function<void()> next);
@@ -33,4 +34,6 @@ private:
     void bindings();
     void finish(bool remove = false);
     void close(const QString &reason = {});
+    void preparing();
+    void fail(const QString &reason);
 };

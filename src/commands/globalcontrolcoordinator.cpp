@@ -125,9 +125,13 @@ bool GlobalControlCoordinator::handleTemplateEvent(QObject* watched, QEvent* eve
     auto* focus = QApplication::focusWidget();
     auto* editor = qobject_cast<MyCodeEditor*>(focus);
     const bool inPalette = panel->isVisible() && (focus == panel.get() || panel->isAncestorOf(focus));
+    auto* popup = QApplication::activePopupWidget();
+    auto* popupEditor = popup ? qobject_cast<MyCodeEditor*>(popup->property("templateInputEditor").value<QObject*>()) : nullptr;
+    const bool inTemplatePopup = popupEditor && (focus == popup || popup->isAncestorOf(focus));
+    if (inTemplatePopup) editor = popupEditor;
     if (inPalette) editor = templateEditor;
     if (QApplication::activeModalWidget() || !editor || !anchor || editor->window() != anchor->window()
-        || (QApplication::activePopupWidget() && QApplication::activePopupWidget() != panel.get())) {
+        || (popup && popup != panel.get() && !inTemplatePopup)) {
         setF24Held(false);
         return false;
     }
@@ -150,6 +154,7 @@ bool GlobalControlCoordinator::handleTemplateEvent(QObject* watched, QEvent* eve
     if (f24Held && key->key() == Qt::Key_Space) {
         if (!key->isAutoRepeat()) {
             panel->hide(); nativePrefixPending = false;
+            if (inTemplatePopup) popup->hide();
             editor->setTemplateAuthoringLocked(!locked); editor->setFocus();
             setF24Held(false);
             toggleSpaceHeld = true;
@@ -157,10 +162,13 @@ bool GlobalControlCoordinator::handleTemplateEvent(QObject* watched, QEvent* eve
         key->accept(); return true;
     }
     if (locked && key->key() == Qt::Key_Escape) {
-        nativePrefixPending = false; setF24Held(false); panel->hide(); editor->setTemplateAuthoringLocked(false);
+        if (inTemplatePopup) return false;
+        nativePrefixPending = false; setF24Held(false);
+        if (!inPalette) return false;
+        panel->hide(); editor->setFocus();
         key->accept(); return true;
     }
-    if (inPalette) return false;
+    if (inPalette || inTemplatePopup) return false;
     if (locked && !editor->templateInputEditing() && key->modifiers() == Qt::NoModifier &&
         (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter)) {
         const auto* selected = editor->templateModel()->instance(editor->selectedTemplateId());

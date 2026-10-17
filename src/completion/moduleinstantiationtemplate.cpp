@@ -110,7 +110,7 @@ CodeTemplateSlot instantiationSlot(const QString& name, int start, int length)
 
 ModuleInstantiationTemplate moduleInstantiationTemplateForRecord(
     SemanticIndex* semanticIndex,
-    const SemanticSymbolRecord& moduleRecord, const QHash<QString, QString>& values)
+    const SemanticSymbolRecord& moduleRecord, const QHash<QString, QString>& values, bool explicitParametersOnly)
 {
     ModuleInstantiationTemplate result;
     const QString moduleName = moduleRecord.name;
@@ -123,7 +123,8 @@ ModuleInstantiationTemplate moduleInstantiationTemplateForRecord(
     const QList<SemanticSymbolRecord> memberRecords =
         recordsForSelectedModule(semanticIndex, moduleRecord);
     for (const SemanticSymbolRecord& record : memberRecords) {
-        if (isModuleInstantiationParameterRecord(record, moduleName)) {
+        if (isModuleInstantiationParameterRecord(record, moduleName) &&
+            (!explicitParametersOnly || values.contains("parameter:" + record.name))) {
             parameters.append(record);
         } else if (isModuleInstantiationPortRecord(record, moduleName)) {
             ports.append(record);

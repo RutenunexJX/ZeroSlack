@@ -456,7 +456,7 @@ private:
     bool sourceReadOnlyState = false, templateMutation = false;
     QString activeTemplate;
     QString activeTemplateRegion;
-    enum class TemplateTargetKind { Instance, Inputs, Region, Handwriting };
+    enum class TemplateTargetKind { Instance, Inputs, Region };
     TemplateTargetKind templateTargetKind = TemplateTargetKind::Instance;
     struct TemplateNavigationTarget {
         QString owner, input;

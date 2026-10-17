@@ -34,6 +34,10 @@ QString fileName(const SimulationCommandRequest &request) {
 }
 SlangWorkspaceAnalysis compile(const SimulationCommandRequest &request, const QString &source,
                                const QString &top, std::shared_ptr<const SemanticAnalysisInput> *captured) {
+    if (*captured && !SimulationCommandPlanner::sourcesCurrent(*captured)) {
+        SlangWorkspaceAnalysis result; result.error = "A DUT source changed during preparation; reopen its inputs.";
+        return result;
+    }
     SemanticAnalysisRequest semantic;
     semantic.sourceOverrides = request.contents;
     semantic.sourceOverrides.remove(QString());
@@ -47,7 +51,8 @@ SlangWorkspaceAnalysis compile(const SimulationCommandRequest &request, const QS
     const auto cancelled = [flag = request.cancelled] { return flag && flag->load(); };
     auto result = slang.analyzeCapturedWorkspace(capture, files, request.includeDirectories,
         request.defines, top, cancelled, {true, true, false});
-    if (result.cancelled || !capture.stillMatchesDisk(cancelled))
+    if (result.cancelled || !capture.stillMatchesDisk(cancelled) ||
+        (*captured && !SimulationCommandPlanner::sourcesCurrent(*captured)))
         result.error = "DUT preparation was cancelled or a source changed.";
     *captured = capture.seal();
     return result;
@@ -174,37 +179,53 @@ DutTemplateAnalysis DutTemplatePlanner::analyze(const SimulationCommandRequest &
         result.error = module.presentation.tbGenerationIssue.isEmpty() ? "DUT semantic facts are unavailable." : module.presentation.tbGenerationIssue;
         return result;
     }
-    for (const auto &record : members(index, module)) if (record.declarationKind == Kind::Parameter) {
-        const auto value = record.presentation.defaultInfo.valueText;
-        if (value.isEmpty()) { result.error = "Unresolved parameter: " + record.name; return result; }
-        result.parameters << record.name;
-        result.defaults[record.name] = value;
-    }
     auto selected = options;
     selected.instance = availableName(options.instance.isEmpty() ? "u_" + moduleInstanceStem(options.module) : options.instance, result.names);
     if (!identifier(selected.instance)) { result.error = "The DUT instance name must be an SV identifier."; return result; }
     result.instance = selected.instance;
-    for (const auto &name : result.parameters) {
-        if (!selected.parameters.contains(name)) selected.parameters[name] = result.defaults[name];
+    for (const auto &name : selected.parameters.keys()) {
         const auto literal = EffectiveValueService::evaluateLiteral(selected.parameters[name]);
         if (!literal.available || !literal.integral || literal.numericValueText.isEmpty()) {
             result.error = "Use a resolved integral constant for parameter " + name; return result;
         }
     }
-    auto probeValues = values(selected);
-    for (const auto &record : members(index, module))
-        if (record.declarationKind == Kind::Port) probeValues["port:" + record.name] = {};
-    const auto probe = moduleInstantiationTemplateForRecord(&index, module, probeValues).text;
     const int start = request.item.replacementStart;
     if (start < instanceRegion.start || start > instanceRegion.start + instanceRegion.length) {
         result.error = "The DUT insertion position left the instance region."; return result;
     }
-    source.insert(start, probe);
-    analysis = compile(request, source, top, &result.captured);
-    result.error = diagnostics(analysis);
-    if (!result.error.isEmpty()) return result;
-    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(analysis.symbols)));
     const auto path = top + "." + selected.instance;
+    // A definition referenced only by another, inactive top may not yet have
+    // elaborated members. Discover defaults through this actual TB instance.
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        auto probeValues = values(selected);
+        QSet<QString> emittedParameters;
+        const auto currentModule = moduleRecord(index, options.module);
+        for (const auto& record : members(index, currentModule)) {
+            if (record.declarationKind == Kind::Port) probeValues["port:" + record.name] = {};
+            if (record.declarationKind == Kind::Parameter && selected.parameters.contains(record.name))
+                emittedParameters.insert(record.name);
+        }
+        auto probeSource = source;
+        probeSource.insert(start, moduleInstantiationTemplateForRecord(&index, currentModule, probeValues, true).text);
+        analysis = compile(request, probeSource, top, &result.captured);
+        result.error = diagnostics(analysis);
+        if (!result.error.isEmpty()) return result;
+        index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(analysis.symbols)));
+        result.parameters.clear(); result.defaults.clear();
+        for (const auto& record : members(index, moduleRecord(index, options.module))) if (record.declarationKind == Kind::Parameter) {
+            const auto info = record.presentation.instanceInfoByPath.value(path);
+            if (!info.available || info.valueText.isEmpty()) { result.error = "Unresolved parameter: " + record.name; return result; }
+            const auto literal = EffectiveValueService::evaluateLiteral(info.valueText);
+            if (!literal.available || !literal.integral || literal.numericValueText.isEmpty()) {
+                result.error = "Use a resolved integral constant for parameter " + record.name; return result;
+            }
+            result.parameters << record.name; result.defaults[record.name] = info.valueText;
+        }
+        for (const auto& name : selected.parameters.keys()) if (!result.parameters.contains(name)) {
+            result.error = "Unknown or non-overridable DUT parameter: " + name; return result;
+        }
+        if (emittedParameters.size() == selected.parameters.size()) break;
+    }
     for (const auto &record : members(index, moduleRecord(index, options.module))) if (record.declarationKind == Kind::Port) {
         DutTemplatePort port; port.name = record.name;
         const auto facts = record.presentation.instanceInfoByPath.value(path);
@@ -273,7 +294,7 @@ DutTemplatePlan DutTemplatePlanner::prepare(const SimulationCommandRequest &requ
     TemplateDocumentEdit main;
     main.start = request.item.replacementStart; main.length = request.item.replacementLength;
     main.parentId = root->id; main.parentSlot = request.item.templateParentSlot; main.replaceId = options.replaceId;
-    main.text = moduleInstantiationTemplateForRecord(&index, moduleRecord(index, options.module), values(selected)).text + "\n";
+    main.text = moduleInstantiationTemplateForRecord(&index, moduleRecord(index, options.module), values(selected), true).text + "\n";
     main.instance.label = request.item.title;
     auto snapshot = request.item.parameters;
     QVariantMap parameters, bindings;

@@ -29,6 +29,7 @@ public:
     void showAt(QWidget* anchor, const QPoint& globalAnchor);
     void focusSearch(bool selectAll = true);
     void setCloseOnActivation(bool value) { closeOnActivation = value; }
+    void setQueryReadOnly(bool readOnly);
     void setQueryChangedHandler(std::function<void(const QString&)> handler);
     void setCategoryChangedHandler(
         std::function<void(GlobalControlCategory)> handler);

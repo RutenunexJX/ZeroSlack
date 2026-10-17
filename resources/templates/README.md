@@ -44,7 +44,9 @@ python merge_tb_templates.py --existing <现有user_templates.json> --templates 
 
 F24 按住时显示临时触发提示，F24+Space 切换锁定。输入指令只筛选候选，Enter 才插入，Esc 取消。锁定标识和当前层级显示在编辑区顶部。
 
-根模板的 Code 槽显示为区域按钮与源码边界。单击按钮进入该区域的手写段；空区也保留入口，固定文本及子模板仍受保护。键盘导航时 ↑/↓ 只选择同级对象，Enter 逐层进入模板、区域和手写入口，Ctrl+Enter 逐层返回。具有输入与子项的模板提供 Inputs 项；输入编辑期间保留 Tab/Shift+Tab 切换与已有候选上下选择。Esc 或 F24+Space 退出锁定。
+根模板的 Code 槽显示为区域按钮与源码边界。选中 Definitions、Instances 或 Behaviors 后，一次 Enter 即进入该区的代码输入；单击区域按钮也可进入。空区保留入口，固定文本及子模板仍受保护，不另设手写代码导航项。↑/↓ 只选择同级对象，Enter 进入；Ctrl+Enter 结束输入，区域内已有子模板时选中第一个子模板，随后可选择同级模板或逐层返回。具有输入与子项的模板提供 Inputs 项；输入编辑期间保留 Tab/Shift+Tab 切换与已有候选上下选择。Esc 只取消当前搜索或弹窗，保持 Lock；F24+Space 切换锁定。
+
+在 Instances 输入 `@dut`，从模块候选中选择并按 Enter，即以默认参数、自动实例名和信号名一次生成定义与例化。生成后选中 DUT 并按 Enter 可调整参数、实例名和连接。默认插入及调整均整次提交、整次撤销；准备期间可按 Esc 取消，失败窗口保留具体原因并提供重试或重新选择模块。
 
 `slots[].input` 沿用现有输入模型。Value 支持十进制小数、`finite`、`minimum`、`exclusiveMinimum`、`maximum`；`displayUnit` 显示单位。Signal 使用可见/可驱动范围及类型过滤；Clock/Reset 能力输入必须同时为封闭、可写、单比特模块变量，↑/↓ 选候选，Tab/Shift+Tab 切换输入。键入、粘贴、IME 不能绕过。没有可靠候选时给出原因。
 

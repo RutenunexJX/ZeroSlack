@@ -1,4 +1,6 @@
-ZeroSlack v0.32.5 Windows package
+ZeroSlack v0.32.6 Windows package
+
+Release 0.32.6 enters a selected TB region with one Enter. Selecting a DUT module applies default parameters and creates declarations, an instance and port connections together; optional customization remains available. Package-qualified UART ports are preserved. Escape cancels search without unlocking, and subsequent code input retains its cursor or selection. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.5 requires Enter to insert every template, exposes selectable TB regions and keeps Up/Down navigation within the current parent. Enter descends; Ctrl+Enter leaves input editing and then returns one level at a time. The editor shows persistent F24-held and template-lock feedback with the current path. Existing nested templates, input boundaries, undo/redo and saved data remain compatible. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 

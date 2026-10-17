@@ -62,6 +62,14 @@ SemanticDiagnostic::Severity mapDiagnosticSeverity(slang::DiagnosticSeverity sev
     }
 }
 
+bool suppressedPackageDiagnostic(const slang::Diagnostic& diagnostic,
+                                 std::span<const slang::SourceLocation> packageLocations)
+{
+    return diagnostic.code == slang::diag::MissingTimeScale
+        && std::find(packageLocations.begin(), packageLocations.end(),
+                     diagnostic.location) != packageLocations.end();
+}
+
 bool appendDiagnostics(const slang::SourceManager& sourceManager,
                        const slang::Diagnostics& diagnostics,
                        QList<SemanticDiagnostic>* result,
@@ -76,9 +84,7 @@ bool appendDiagnostics(const slang::SourceManager& sourceManager,
     for (const slang::Diagnostic& diagnostic : diagnostics) {
         if (isCancelled && isCancelled())
             return false;
-        if (diagnostic.code == slang::diag::MissingTimeScale
-            && std::find(packageLocations.begin(), packageLocations.end(),
-                         diagnostic.location) != packageLocations.end()) {
+        if (suppressedPackageDiagnostic(diagnostic, packageLocations)) {
             continue;
         }
         const slang::DiagnosticSeverity severity =
@@ -189,6 +195,25 @@ std::vector<slang::SourceLocation> packageDeclarationLocations(
 }
 
 } // namespace
+
+bool slang_collectors::hasBlockingErrors(Compilation& compilation)
+{
+    const auto& diagnostics = compilation.getAllDiagnostics();
+    const auto* manager = compilation.getSourceManager();
+    if (!manager)
+        return compilation.hasIssuedErrors();
+    slang::DiagnosticEngine engine(*manager);
+    const auto packageLocations = packageDeclarationLocations(compilation);
+    for (const auto& diagnostic : diagnostics) {
+        if (suppressedPackageDiagnostic(diagnostic, packageLocations))
+            continue;
+        const auto severity = engine.getSeverity(diagnostic.code, diagnostic.location);
+        if (severity == slang::DiagnosticSeverity::Error
+            || severity == slang::DiagnosticSeverity::Fatal)
+            return true;
+    }
+    return compilation.hasFatalErrors();
+}
 
 QList<SemanticDiagnostic> slang_collectors::diagnostics(
     Compilation& compilation, slang::syntax::SyntaxTree& tree,

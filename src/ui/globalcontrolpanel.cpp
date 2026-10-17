@@ -337,6 +337,11 @@ bool GlobalControlPanel::handleKey(QKeyEvent* event)
     return true;
 }
 
+void GlobalControlPanel::setQueryReadOnly(bool readOnly)
+{
+    searchEdit->setReadOnly(readOnly);
+}
+
 void GlobalControlPanel::activateCurrentItem()
 {
     const int row = resultList ? resultList->currentRow() : -1;

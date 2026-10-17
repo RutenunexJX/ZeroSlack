@@ -57,7 +57,6 @@ void returnToParentCode(MyCodeEditor* editor, const QString& parent) {
   for (int i = 0; i < 5 && (editor->templateInputEditing() || editor->selectedTemplateId() != parent); ++i)
     QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
   QTest::keyClick(editor, Qt::Key_Return);
-  QTest::keyClick(editor, Qt::Key_Return);
 }
 class PopupLifecycleObserver : public QObject {
 public:
@@ -949,7 +948,6 @@ private slots:
     QVERIFY(!f.window.globalControlCoordinator->panel->isVisible());
     QTest::keyRelease(editor, Qt::Key_F24);
     QTest::keyClick(editor, Qt::Key_Escape);
-    lock(editor);
     QVERIFY(editor->templateAuthoringLocked());
     QCOMPARE(editor->document()->availableUndoSteps(), undo);
     insert(f, "process");
@@ -992,7 +990,7 @@ private slots:
     QVERIFY(editor->toPlainText().startsWith("// free"));
     lock(editor);
     QTest::keyClick(editor, Qt::Key_Escape);
-    QVERIFY(!editor->templateAuthoringLocked());
+    QVERIFY(editor->templateAuthoringLocked());
   }
   void mixedNestingHistoryAndPersistence() {
     Fixture f;
@@ -1166,7 +1164,7 @@ private slots:
     QVERIFY(e->editTemplateInstance(child));
     type("bad");
     QTest::keyClick(e, Qt::Key_Escape);
-    QVERIFY(!e->templateAuthoringLocked());
+    QVERIFY(e->templateAuthoringLocked());
     QVERIFY(e->toPlainText().contains("repeat (bad)"));
     e->undo();
     QCOMPARE(e->toPlainText(),
@@ -1199,6 +1197,7 @@ private slots:
     QCOMPARE(e->toPlainText(), source);
     QVERIFY(e->templateModel()->restore(snapshot, f.path));
     // Ordinary edits to fixed code invalidate ownership, and undo restores it.
+    lock(e); QVERIFY(!e->templateAuthoringLocked());
     cursor(e, source.indexOf("initial"), source.indexOf("initial") + 7);
     e->insertPlainText("always");
     QVERIFY(e->templateModel()->instances().isEmpty());
@@ -1310,6 +1309,11 @@ private slots:
     QCOMPARE(e->toPlainText(), before);
     QCOMPARE(e->textCursor().block().layout()->preeditAreaText(),
              QString::fromUtf8("拼"));
+    QTest::keyClick(e, Qt::Key_Escape);
+    QVERIFY(e->templateAuthoringLocked()); QVERIFY(e->templateInputEditing());
+    QVERIFY(e->textCursor().block().layout()->preeditAreaText().isEmpty());
+    QCOMPARE(e->toPlainText(), before);
+    QApplication::sendEvent(e, &preedit);
     QInputMethodEvent commit;
     commit.setCommitString("// composition\n");
     QApplication::sendEvent(e, &commit);
@@ -1336,7 +1340,8 @@ private slots:
     e->finishTemplateInput();
     e->finishTemplateInput();
     QTest::keyClick(e, Qt::Key_Return);
-    QTest::keyClick(e, Qt::Key_Down);
+    QVERIFY(e->templateInputEditing());
+    QTest::keyClick(e, Qt::Key_Return, Qt::ControlModifier);
     QCOMPARE(e->selectedTemplateId(), id);
     QTest::keyClick(e, Qt::Key_Return);
     QVERIFY(e->templateInputEditing());
@@ -1351,7 +1356,7 @@ private slots:
     e->setFocus();
     QTRY_VERIFY(e->hasFocus());
     QTest::keyClick(e, Qt::Key_Escape);
-    QVERIFY(!e->templateAuthoringLocked());
+    QVERIFY(e->templateAuthoringLocked());
   }
   void metadataSaveFailureAndRecovery() {
     Fixture f;

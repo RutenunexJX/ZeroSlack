@@ -7,4 +7,4 @@ struct ModuleInstantiationTemplate {
 QString moduleInstanceStem(const QString& moduleName);
 ModuleInstantiationTemplate moduleInstantiationTemplateForRecord(
     SemanticIndex* index, const SemanticSymbolRecord& module,
-    const QHash<QString, QString>& values = {});
+    const QHash<QString, QString>& values = {}, bool explicitParametersOnly = false);

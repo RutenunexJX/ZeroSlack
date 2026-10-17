@@ -1,4 +1,5 @@
 #include "slangsignalroles.h"
+#include "slangcompilationcollectors.h"
 #include "slangsymbolcollectorhelpers.h"
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/expressions/AssertionExpr.h>
@@ -112,7 +113,7 @@ void slang_symbols::populateSignalRoles(slang::ast::Compilation &compilation,
     for (const auto &record : records)
         for (auto it = record.presentation.objectInfoByPath.cbegin(); it != record.presentation.objectInfoByPath.cend(); ++it)
             known.insert(it.key(), it.value());
-    if (compilation.hasIssuedErrors()) {
+    if (slang_collectors::hasBlockingErrors(compilation)) {
         for (auto &record : records) for (auto &info : record.presentation.objectInfoByPath)
             info.signalRoleIssues << QStringLiteral("Slang compilation has errors; role inference is unavailable.");
         return;

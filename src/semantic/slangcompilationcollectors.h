@@ -6,6 +6,7 @@ namespace slang::ast { class Compilation; }
 namespace slang::syntax { class SyntaxTree; }
 
 namespace slang_collectors {
+bool hasBlockingErrors(slang::ast::Compilation& compilation);
 QList<SemanticDiagnostic> diagnostics(slang::ast::Compilation& compilation,
                                      slang::syntax::SyntaxTree& tree,
                                      const std::function<bool()>& cancelled);
