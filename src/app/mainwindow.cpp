@@ -2963,7 +2963,8 @@ ActionExecutionResult MainWindow::executeActionRoute(
                             "editor.format.unindentLines")
             || route == QStringLiteral(
                             "editor.format.document");
-        if (editsDocument && editor->isReadOnly()) {
+        const bool formatter = route == QStringLiteral("editor.format.document");
+        if (editsDocument && (formatter ? editor->documentReadOnly() : editor->isReadOnly())) {
             return fail(QStringLiteral(
                 "The editor is read-only."));
         }

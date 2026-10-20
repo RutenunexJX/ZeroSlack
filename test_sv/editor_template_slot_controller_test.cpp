@@ -193,12 +193,12 @@ int main(int argc, char* argv[])
             visualAt(initialVisuals, secondReset);
         const SlotVisual* bodyVisual =
             visualAt(initialVisuals, bodyPosition);
-        expect("linked physical slots publish one active annotation state",
+        expect("only the current physical mirror publishes an active annotation",
                initialVisuals.size() == 3
                    && firstVisual
                    && secondVisual
                    && firstVisual->active
-                   && secondVisual->active
+                   && !secondVisual->active
                    && firstVisual->lane == 0
                    && secondVisual->lane == 0
                    && firstVisual->phaseVisible
@@ -218,6 +218,10 @@ int main(int argc, char* argv[])
             QEventLoop::AllEvents, 10);
         expect("moving into a linked range retains its logical number",
                editor.templateSlotModeActiveIndex() == 0);
+        const auto movedVisuals = slotVisuals(editor);
+        expect("active feedback follows the caret into the other mirror",
+               visualAt(movedVisuals, firstReset) && !visualAt(movedVisuals, firstReset)->active
+                   && visualAt(movedVisuals, secondReset) && visualAt(movedVisuals, secondReset)->active);
 
         expect("Tab owns navigation before editor indentation",
                sendKey(editor, Qt::Key_Tab)

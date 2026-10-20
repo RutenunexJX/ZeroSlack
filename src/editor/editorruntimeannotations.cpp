@@ -239,10 +239,8 @@ void paintTemplateSlotAnnotation(
     if (!event->rect().intersects(highlight))
         return;
 
-    const int weakAlpha =
-        annotation.phaseVisible ? 58 : 26;
-    const int activeAlpha =
-        annotation.phaseVisible ? 118 : 82;
+    const int weakAlpha = 26;
+    const int activeAlpha = annotation.phaseVisible ? 145 : 30;
     QColor background = annotation.active
         ? InsightVisualStyle::theme().semantic.read
         : InsightVisualStyle::theme().accent;
@@ -257,7 +255,7 @@ void paintTemplateSlotAnnotation(
     underline.setStyle(
         annotation.active
             ? Qt::DashLine : Qt::SolidLine);
-    underline.setWidth(annotation.active ? 2 : 1);
+    underline.setWidth(annotation.active && annotation.phaseVisible ? 3 : 1);
     painter.setPen(underline);
     painter.drawLine(
         highlight.left(),

@@ -151,18 +151,6 @@ bool MyCodeEditor::editTemplateInstance(const QString &requested,
     updateTemplatePresentation();
     return true;
   }
-  auto inputs = std::make_shared<TemplateInputContext>();
-  // Reopened instances use the current semantic service and role configuration.
-  // No serialized semantic snapshot or old asynchronous callback is revived.
-  const auto location = editorSemanticContextForPosition(-1, false);
-  inputs->snapshot = SemanticIndex::getInstance()->snapshot();
-  inputs->location.fileName = documentFileName();
-  inputs->location.moduleName = location.moduleName;
-  inputs->location.packageName = location.packageName;
-  inputs->location.cursorLine = location.cursorLine;
-  inputs->location.cursorPosition = textCursor().position();
-  configureTemplateInputContext(inputs, activeTemplate);
-  templateModel()->setInputContext(activeTemplate, inputs);
   templateEditing = true;
   const auto copy = *templateModel()->instance(activeTemplate);
   state->templateSlots.start(this, 0, document()->characterCount() - 1,
@@ -185,6 +173,19 @@ bool MyCodeEditor::editTemplateInstance(const QString &requested,
     cursor.setPosition(qBound(0, position, document()->characterCount() - 1));
     setTextCursor(cursor);
   }
+  // The selected input (or restored caret) owns the semantic location. A whole
+  // document replacement may have left the incoming cursor after endmodule.
+  auto inputs = std::make_shared<TemplateInputContext>();
+  const auto location = editorSemanticContextForPosition(-1, false);
+  inputs->snapshot = SemanticIndex::getInstance()->snapshot();
+  inputs->location.fileName = documentFileName();
+  inputs->location.moduleName = location.moduleName;
+  inputs->location.packageName = location.packageName;
+  inputs->location.cursorLine = location.cursorLine;
+  inputs->location.cursorPosition = textCursor().position();
+  configureTemplateInputContext(inputs, activeTemplate);
+  templateModel()->setInputContext(activeTemplate, inputs);
+  state->templateSlots.syncPersistentRanges(this, templateModel()->instance(activeTemplate)->inputs);
   setAttribute(Qt::WA_InputMethodEnabled, true);
   updateTemplatePresentation();
   return true;
@@ -218,10 +219,6 @@ void MyCodeEditor::finishTemplateInput() {
   const auto *item = templateModel()->instance(activeTemplate);
   const auto issue = item && item->snapshot.value("requireValidCommit").toBool()
       ? state->templateSlots.allValidationError(this) : state->templateSlots.currentValidationError(this);
-  if (item && item->snapshot.value("requireValidCommit").toBool() && !issue.isEmpty()) {
-    emit editorStatusMessageRequested(issue);
-    return;
-  }
   const QString region = selectedTemplateRegion();
   const bool container = item && std::any_of(item->inputs.begin(), item->inputs.end(), [](const auto& slot) {
     return slot.input.value("kind").toString() == "Code";
@@ -230,7 +227,7 @@ void MyCodeEditor::finishTemplateInput() {
   selectTemplateTarget(!children.isEmpty() ? children.first() : TemplateNavigationTarget{activeTemplate, region,
       !region.isEmpty() ? TemplateTargetKind::Region : container ? TemplateTargetKind::Inputs : TemplateTargetKind::Instance});
   if (!issue.isEmpty())
-    emit editorStatusMessageRequested(issue);
+    emit editorStatusMessageRequested(QStringLiteral("Unfinished inputs retained. %1 Enter to resume.").arg(issue));
 }
 void MyCodeEditor::indentTemplateContinuation(const QString &indent) {
   auto cursor = textCursor();
@@ -341,6 +338,7 @@ bool MyCodeEditor::replaceTemplateInput(const QTextCursor &cursor,
     QTextCursor next(document());
     next.setPosition(position);
     setTextCursor(next);
+    updateTemplatePresentation();
   }
   return result;
 }
@@ -389,21 +387,32 @@ void MyCodeEditor::configureTemplateInputContext(const std::shared_ptr<TemplateI
     for (const auto& fragment : fragments) text.remove(fragment.start, fragment.length);
     return text;
   };
-  const auto boundary = outside();
+  const auto initialBoundary = outside();
   const auto originalFile = documentFileName();
   const QPointer<QTextDocument> originalDocument(document());
   const auto indexAtCapture = SemanticIndex::getInstance()->snapshot();
-  const bool reusable = captured && !ownerId.isEmpty() && (prepared ||
+  const bool initiallyReusable = captured && !ownerId.isEmpty() && (prepared ||
       captured->getCachedFileContent(originalFile) == cachedDocumentText());
-  inputs->liveSnapshot = [self, captured, outside, boundary, reusable, originalFile, originalDocument, indexAtCapture, prepared]() -> std::shared_ptr<const SemanticIndexSnapshot> {
+  inputs->liveSnapshot = [self, retained = captured, outside, boundary = initialBoundary, reusable = initiallyReusable,
+                         originalFile, originalDocument, publication = indexAtCapture, prepared, ownerId]() mutable
+      -> std::shared_ptr<const SemanticIndexSnapshot> {
     if (!self || !self->tbAssistDependenciesCurrent()) return {};
     if (self->document() != originalDocument || self->documentFileName() != originalFile) return {};
+    if (!ownerId.isEmpty() && !self->templateModel()->instance(ownerId)) return {};
     const auto snapshot = SemanticIndex::getInstance()->snapshot();
-    if (snapshot && snapshot->getCachedFileContent(originalFile) == self->cachedDocumentText()) return snapshot;
+    if (snapshot && snapshot->getCachedFileContent(originalFile) == self->cachedDocumentText()) {
+      // Analysis may finish after formatting restored this context. Retain that
+      // exact-source publication for subsequent edits confined to this owner.
+      retained = snapshot;
+      boundary = outside();
+      publication = snapshot;
+      reusable = !ownerId.isEmpty();
+      return snapshot;
+    }
     // Only the current fixed template and its inputs may differ. The service's
     // existing captured-source/project guard remains authoritative for prepared
     // contexts; a reopened context also retains its shared publication identity.
-    if (reusable && outside() == boundary && (prepared || snapshot == indexAtCapture)) return captured;
+    if (reusable && outside() == boundary && (prepared || snapshot == publication)) return retained;
     return {};
   };
   inputs->liveRoles = [self] { return self ? self->templateSignalRoles() : QVariantMap(); };
@@ -468,7 +477,7 @@ bool MyCodeEditor::handleTemplateInputKey(QKeyEvent *event) {
     return true;
   }
   if (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) {
-    if (event->modifiers() == Qt::ControlModifier && authoringLock) {
+    if (event->modifiers() == Qt::ControlModifier && (authoringLock || templateInputEditing())) {
       finishTemplateInput();
       return true;
     }
@@ -727,9 +736,10 @@ void MyCodeEditor::paintTemplateBackground(QPainter &painter,
         painter.fillRect(rect, color);
         const bool selected =
             item.id == activeTemplate && (authoringLock || templateEditing);
-        QPen border(selected ? palette().color(QPalette::Highlight)
+        QPen border(selected ? QColor(templateEditing ? "#169d8b" : "#c38a20")
                              : color.darker(dark ? 70 : 112));
         border.setWidth(selected ? 2 : 1);
+        if (selected && templateEditing) border.setStyle(Qt::DashLine);
         painter.setPen(border);
         painter.drawLine(rect.topLeft(), rect.bottomLeft());
         if (line == start.blockNumber())

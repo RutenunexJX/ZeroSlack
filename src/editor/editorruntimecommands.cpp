@@ -7,6 +7,7 @@
 #include "symboltaxonomy.h"
 #include "formatterservice.h"
 #include "mycodeeditor.h"
+#include "documenttemplatemodel.h"
 #include "tsdocument.h"
 
 #include <QApplication>
@@ -669,6 +670,10 @@ void MyCodeEditorState::handleTemplateSlotContentsChange(
     int charsAdded,
     bool updatePresentation)
 {
+    // Persistent inputs are remapped atomically by the document model. Lock's
+    // QWidget read-only flag must not tear down their session on every key.
+    if (editor && editor->templateModel()->changing())
+        return;
     // Document notifications reach every attached view. Only the view whose
     // synchronous input transaction caused this change may expand linked slots.
     // A raw document edit (reload, batch rewrite, another view) invalidates the
@@ -871,7 +876,8 @@ FormatterReport MyCodeEditorState::formatDocument(
         return unavailable;
     }
     QString failureReason;
-    if (!editor->canApplyInsertion(&failureReason)) {
+    if (editor->documentReadOnly()) {
+        failureReason = QStringLiteral("This document is read-only.");
         FormatterReport unavailable;
         unavailable.outcome = FormatterOutcome::Rejected;
         unavailable.diagnostic = failureReason;
@@ -880,7 +886,7 @@ FormatterReport MyCodeEditorState::formatDocument(
     }
 
     const QString oldText = editor->toPlainText();
-    const FormatterReport report =
+    FormatterReport report =
         FormatterService::getInstance()->formatDocument(
             oldText);
     if (!report.changed) {
@@ -891,28 +897,48 @@ FormatterReport MyCodeEditorState::formatDocument(
         return report;
     }
 
-    modes.exit(EditorModeId::TemplateSlots,
-               EditorModeExitReason::ExternalControl);
-
     FormatterTriviaPositionMapper positionMapper(
         oldText,
         report.formattedText);
     QList<QPair<MyCodeEditor*, FormatterCursorAnchor>> anchors;
+    QHash<MyCodeEditor*, EditorLogicalCursorState> templateStates;
     for (MyCodeEditor* view :
          editor->sharedDocumentViewsForFormatting()) {
         FormatterCursorAnchor anchor;
-        if (anchor.capture(view, positionMapper))
+        if (anchor.capture(view, positionMapper)) {
             anchors.append(qMakePair(view, anchor));
+            templateStates.insert(view, view->state->captureLogicalCursorState(view));
+            view->state->beginSynchronousEditTransaction(view);
+            view->templateMutation = true;
+        }
     }
-
-    QTextCursor cursor = editor->textCursor();
-    cursor.beginEditBlock();
-    cursor.select(QTextCursor::Document);
-    cursor.insertText(report.formattedText);
-    cursor.endEditBlock();
+    const bool applied = editor->templateModel()->applyFormatting(report.formattedText, positionMapper, &failureReason);
     for (const auto& anchoredView : anchors) {
-        anchoredView.second.restore(
-            anchoredView.first, positionMapper);
+        auto* view = anchoredView.first;
+        view->templateMutation = false;
+        if (applied) {
+            view->state->synchronousEditFormatting = true;
+            if (!templateStates.value(view).templateEditing)
+                view->state->modes.exit(EditorModeId::TemplateSlots, EditorModeExitReason::ExternalControl);
+            anchoredView.second.restore(view, positionMapper);
+            if (templateStates.value(view).templateEditing) {
+                const auto logical = templateStates.value(view);
+                QTextCursor input(view->document());
+                input.setPosition(positionMapper.mapBoundary(logical.anchor, logical.anchor > logical.position));
+                input.setPosition(positionMapper.mapBoundary(logical.position, logical.position > logical.anchor), QTextCursor::KeepAnchor);
+                view->setTextCursor(input);
+            }
+            view->state->restoreTemplateView(view, templateStates.value(view));
+            view->updateTemplatePresentation();
+        }
+        view->state->endSynchronousEditTransaction(view);
+    }
+    if (!applied) {
+        report.changed = false;
+        report.outcome = FormatterOutcome::Rejected;
+        report.diagnostic = failureReason;
+        emit editor->editorStatusMessageRequested(failureReason);
+        return report;
     }
     QString message =
         QStringLiteral("Formatted document (%1 lines)")

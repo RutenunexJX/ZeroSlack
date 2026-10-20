@@ -44,6 +44,7 @@ public:
                           TriviaPositionLeafPolicy::SemanticOnly);
 
     int map(int position, bool endAffinity) const;
+    int mapBoundary(int position, bool endAffinity) const;
     TriviaLogicalPosition capture(
         int position,
         bool endAffinity) const;
@@ -55,6 +56,7 @@ public:
 private:
     QVector<SemanticLeafSpan> oldLeaves;
     QVector<SemanticLeafSpan> newLeaves;
+    QString beforeText, afterText;
     int oldLength = 0;
     int newLength = 0;
     SourceTextDelta fallback;

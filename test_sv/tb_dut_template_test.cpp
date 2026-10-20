@@ -9,6 +9,10 @@
 #include "duttemplatesession.h"
 #include "editorfileidentity.h"
 #include "workspacesessionstateservice.h"
+#include "formatterservice.h"
+#include "formattercursoranchor.h"
+#include "shareddocument.h"
+#include "annotationlayer.h"
 #include <QtTest>
 #include <QtWidgets>
 #define private public
@@ -80,6 +84,358 @@ void enter() { QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return); QCo
 class TbDutTemplateTest : public QObject {
     Q_OBJECT
 private slots:
+    void formatKeepsLiveDutCandidates_data() {
+        QTest::addColumn<QString>("token");
+        QTest::addColumn<bool>("numeric");
+        for (const auto& token : {"clk_init", "reset"})
+            for (bool numeric : {false, true})
+                QTest::newRow(qPrintable(QString("%1-%2").arg(token, numeric ? "numeric" : "signal")))
+                    << QString(token) << numeric;
+    }
+    void formatKeepsLiveDutCandidates() {
+        QFETCH(QString, token); QFETCH(bool, numeric);
+        QTemporaryDir dir; const auto path = dir.filePath("tb.sv"); put(path, {});
+        auto source = timingDut;
+        source.replace("input logic a, b,", "input logic a, b, c, d,");
+        source.replace("output logic [W-1:0] data_out", "output logic [W-1:0] data_out, other_out");
+        source.replace("endmodule", "always_ff @(posedge c or negedge d)\n"
+            "  if (!d) other_out <= '0; else other_out <= data_in;\nendmodule");
+        put(dir.filePath("dut.sv"), source);
+        auto* catalog = UserTemplateService::getInstance(); const auto original = catalog->globalTemplateLocation();
+        const auto restore = qScopeGuard([&] { catalog->setGlobalTemplateFilePath(original); });
+        QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
+        catalog->setGlobalTemplateFilePath(dir.filePath("templates.json"));
+        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        window.workspaceSessionCoordinator->setRestoreOnActivation(false);
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.workspaceSessionCoordinator->openWorkspace(dir.path());
+        QVERIFY(window.tabManager->openFileInTab(path));
+        auto* editor = window.tabManager->getCurrentEditor();
+        const auto discard = qScopeGuard([&] { for (auto* view : window.tabManager->openEditors()) view->document()->setModified(false); });
+        editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
+        QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space); QTest::keyRelease(editor, Qt::Key_F24);
+        keys("tb"); enter(); QTRY_COMPARE(editor->templateModel()->instances().size(), 1);
+        keys("tb_format");
+        QTest::mouseClick(editor->findChild<QToolButton*>("templateRegion_instances"), Qt::LeftButton);
+        keys("@dut"); enter();
+        QPointer<QFrame> dutPanel;
+        QTRY_VERIFY_WITH_TIMEOUT((dutPanel = window.findChild<QFrame*>("dutTemplateInputs"))
+            && dutPanel->accessibleName().contains("DUT module"), 15000);
+        keys("core"); enter(); QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 3, 15000);
+        QTest::mouseClick(editor->findChild<QToolButton*>("templateRegion_behaviors"), Qt::LeftButton);
+        keys("@" + token); enter(); QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 4, 15000);
+        const auto child = editor->selectedTemplateId();
+        const QString signalName = token == "clk_init" ? "clk_name" : "reset_name";
+        const QString numberName = token == "clk_init" ? "freq_mhz" : "time_ns";
+        const QStringList expected = token == "clk_init" ? QStringList{"u_core_a", "u_core_c"} : QStringList{"u_core_b", "u_core_d"};
+        const auto fresh = [&] {
+            const auto snapshot = SemanticIndex::getInstance()->snapshot();
+            return snapshot && snapshot->getCachedFileContent(path) == editor->toPlainText();
+        };
+        const auto candidates = [&] {
+            const auto* item = editor->templateModel()->instance(child);
+            const auto slot = region(*item, signalName);
+            QHash<QString, QString> bindings;
+            for (const auto& input : item->inputs)
+                bindings[input.name] = editor->toPlainText().mid(input.start, input.length);
+            return TemplateInputService::candidates(slot.input, *slot.inputContext, bindings);
+        };
+        QJsonArray trace; MyCodeEditor* secondary = nullptr;
+        const auto record = [&](const QString& phase) {
+            const auto slot = region(*editor->templateModel()->instance(child), signalName);
+            const auto choices = candidates();
+            trace << QJsonObject{{"phase",phase},{"module",slot.inputContext->location.moduleName},
+                {"line",slot.inputContext->location.cursorLine},{"position",slot.inputContext->location.cursorPosition},
+                {"cursor",editor->textCursor().position()},{"fresh",fresh()},
+                {"editing",editor->templateInputEditing()},{"otherEditing",secondary && secondary->templateInputEditing()},
+                {"undoSteps",editor->document()->availableUndoSteps()},
+                {"values",QJsonArray::fromStringList(choices.values)},{"reason",choices.reason}};
+            evidence(QString("live-format-%1.json").arg(QTest::currentDataTag()), QJsonDocument(trace).toJson());
+        };
+        QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("before");
+        QCOMPARE(candidates().values, expected);
+        QTest::keyClick(editor, Qt::Key_Down);
+        QTest::keyClick(editor, Qt::Key_Tab); QTest::keyClicks(editor, token == "clk_init" ? "156.25" : "12.5");
+        if (!numeric) QTest::keyClick(editor, Qt::Key_Backtab);
+        auto* shared = qobject_cast<SharedDocument*>(editor->document()->parent()); QVERIFY(shared);
+        MyCodeEditor other;
+        secondary = &other;
+        shared->attachView(&other); other.setTemplateAuthoringLocked(true);
+        auto detach = qScopeGuard([&] { shared->detachView(&other); });
+        QVERIFY(other.editTemplateInstance(child, numeric ? signalName : numberName));
+        const auto oldText = editor->toPlainText();
+        const auto oldMetadata = editor->templateModel()->serialize(path);
+        const auto selection = editor->textCursor().selectedText(), otherSelection = other.textCursor().selectedText();
+        const auto report = editor->formatDocument();
+        QVERIFY2(report.accepted(), qPrintable(report.diagnostic)); QVERIFY(report.changed);
+        const auto formatted = editor->toPlainText();
+        const auto formattedMetadata = editor->templateModel()->serialize(path);
+        QVERIFY(editor->templateAuthoringLocked() && editor->templateInputEditing());
+        QVERIFY(other.templateAuthoringLocked() && other.templateInputEditing());
+        QCOMPARE(editor->selectedTemplateId(), child); QCOMPARE(other.selectedTemplateId(), child);
+        QCOMPARE(editor->templateSlotModeActiveIndex(), numeric ? 1 : 0);
+        QCOMPARE(other.templateSlotModeActiveIndex(), numeric ? 0 : 1);
+        QCOMPARE(editor->textCursor().selectedText(), selection); QCOMPARE(other.textCursor().selectedText(), otherSelection);
+        QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("formatted-current-analysis");
+        QCOMPARE(candidates().values, expected);
+        // Each view retains its own slot controller as well as the shared model context.
+        if (numeric) QTest::keyClick(editor, Qt::Key_Backtab);
+        const auto selectedSignal = editor->textCursor().selectedText();
+        QTest::keyClick(editor, Qt::Key_Down);
+        QVERIFY(editor->textCursor().selectedText() != selectedSignal);
+        QVERIFY(expected.contains(editor->textCursor().selectedText()));
+        record("candidate-selected");
+        QCOMPARE(candidates().values, expected);
+        QTest::keyClick(editor, Qt::Key_Up);
+        QCOMPARE(editor->toPlainText(), formatted);
+        // Remove the two candidate-selection edits before undoing the formatter.
+        editor->undo(); record("undo-selection-1"); editor->undo(); record("undo-selection-2");
+        other.undo(); record("undo-format"); QCOMPARE(editor->toPlainText(), oldText);
+        QCOMPARE(editor->templateModel()->serialize(path), oldMetadata);
+        QVERIFY(editor->templateInputEditing() && other.templateInputEditing());
+        QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("undo-current-analysis"); QCOMPARE(candidates().values, expected);
+        editor->redo(); QCOMPARE(editor->toPlainText(), formatted);
+        QCOMPARE(editor->templateModel()->serialize(path), formattedMetadata);
+        QVERIFY(editor->templateInputEditing() && other.templateInputEditing());
+        QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("redo-current-analysis"); QCOMPARE(candidates().values, expected);
+        QVERIFY(!editor->formatDocument().changed);
+        QCOMPARE(candidates().values, expected);
+        auto* signalView = numeric ? &other : editor;
+        const auto otherSignal = signalView->textCursor().selectedText();
+        QTest::keyClick(signalView, Qt::Key_Down);
+        QVERIFY(signalView->textCursor().selectedText() != otherSignal);
+        auto* numberView = numeric ? editor : &other;
+        QTest::keyClick(numberView, Qt::Key_Backtab); QTest::keyClick(numberView, Qt::Key_Tab);
+        QTest::keyClicks(numberView, token == "clk_init" ? "125.5" : "20.5");
+        const auto number = region(*editor->templateModel()->instance(child), numberName);
+        QCOMPARE(editor->toPlainText().mid(number.start, number.length).trimmed(), token == "clk_init" ? "125.5" : "20.5");
+        QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("changed-inputs"); QCOMPARE(candidates().values, expected);
+        shared->detachView(&other); detach.dismiss();
+        const auto savedText = editor->toPlainText();
+        QVERIFY(window.tabManager->closeTabsInWorkspace(dir.path()));
+        QVERIFY(window.tabManager->openFileInTab(path)); editor = window.tabManager->getCurrentEditor();
+        QCOMPARE(editor->toPlainText(), savedText);
+        editor->setTemplateAuthoringLocked(true);
+        QVERIFY(editor->editTemplateInstance(child, signalName));
+        QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
+        record("reopened"); QCOMPARE(candidates().values, expected);
+        QTest::keyClick(editor, Qt::Key_Down);
+        QVERIFY(expected.contains(editor->textCursor().selectedText()));
+        // A pending edit in a real DUT must invalidate proof until fresh analysis.
+        QVERIFY(window.tabManager->saveCurrentTab());
+        QVERIFY(window.tabManager->openFileInTab(dir.filePath("dut.sv")));
+        const auto changedDut = source.replace("posedge a", "posedge b").replace("negedge b", "negedge a")
+            .replace("if (!b)", "if (!a)").replace("posedge c", "posedge d").replace("negedge d", "negedge c").replace("if (!d)", "if (!c)");
+        window.tabManager->getCurrentEditor()->setPlainText(QString::fromUtf8(changedDut));
+        record("dut-source-changed");
+        QVERIFY(candidates().values.isEmpty());
+        const auto retained = editor->toPlainText();
+        QTest::keyClick(editor, Qt::Key_Down); QCOMPARE(editor->toPlainText(), retained);
+        QVERIFY(window.tabManager->saveCurrentTab());
+        QTRY_VERIFY_WITH_TIMEOUT(fresh() && SemanticIndex::getInstance()->snapshot()->getCachedFileContent(dir.filePath("dut.sv"))
+            == QString::fromUtf8(changedDut), 15000);
+        record("dut-reanalyzed");
+        QCOMPARE(candidates().values, token == "clk_init" ? QStringList({"u_core_b","u_core_d"}) : QStringList({"u_core_a","u_core_c"}));
+        QVERIFY(!editor->templateModel()->validationIssue(child).isEmpty());
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QVERIFY(!editor->templateInputEditing()); QVERIFY(editor->templateAuthoringLocked());
+    }
+    void incompleteInputNavigation_data() {
+        QTest::addColumn<QString>("token");
+        QTest::newRow("clock-invalid-value") << QString("clk_init");
+        QTest::newRow("reset-invalid-value") << QString("reset");
+    }
+    void incompleteInputNavigation() {
+        QFETCH(QString, token);
+        QTemporaryDir dir; const auto path = dir.filePath("tb.sv"); put(path, {});
+        put(dir.filePath("dut.sv"), timingDut);
+        auto* catalog = UserTemplateService::getInstance(); const auto original = catalog->globalTemplateLocation();
+        const auto restore = qScopeGuard([&] { catalog->setGlobalTemplateFilePath(original); });
+        QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
+        catalog->setGlobalTemplateFilePath(dir.filePath("templates.json"));
+        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        window.workspaceSessionCoordinator->setRestoreOnActivation(false);
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.workspaceSessionCoordinator->openWorkspace(dir.path());
+        QVERIFY(window.tabManager->openFileInTab(path));
+        auto* editor = window.tabManager->getCurrentEditor();
+        const auto discard = qScopeGuard([&] { for (auto* view : window.tabManager->openEditors()) view->document()->setModified(false); });
+        editor->setFocus(); QTRY_VERIFY(editor->hasFocus());
+        QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space); QTest::keyRelease(editor, Qt::Key_F24);
+        keys("tb"); enter(); QTRY_COMPARE(editor->templateModel()->instances().size(), 1);
+        keys("tb_incomplete");
+        QTest::mouseClick(editor->findChild<QToolButton*>("templateRegion_instances"), Qt::LeftButton);
+        keys("@dut"); enter();
+        QPointer<QFrame> dutPanel;
+        QTRY_VERIFY_WITH_TIMEOUT((dutPanel = window.findChild<QFrame*>("dutTemplateInputs")) && dutPanel->accessibleName().contains("DUT module"), 15000);
+        keys("core"); enter(); QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 3, 15000);
+        QTest::mouseClick(editor->findChild<QToolButton*>("templateRegion_behaviors"), Qt::LeftButton);
+        QStringList messages;
+        connect(editor, &MyCodeEditor::editorStatusMessageRequested, &window, [&](const QString& text) { messages << text; });
+        keys("@" + token); enter(); QTRY_COMPARE_WITH_TIMEOUT(editor->templateModel()->instances().size(), 4, 15000);
+        const auto child = editor->selectedTemplateId();
+        const auto activeVisuals = [&] {
+            AnnotationLayerQuery query; query.firstVisibleLine = 0; query.lastVisibleLine = editor->blockCount();
+            query.maxAnnotationsPerLine = 64; query.maxLanes = 16;
+            QList<EditorAnnotation> result;
+            for (const auto& entry : editor->annotationLayerReportForTest(query).annotations)
+                if (entry.annotation.kind == EditorAnnotationKind::TemplateSlot && entry.annotation.active) result << entry.annotation;
+            return result;
+        };
+        QTRY_COMPARE(activeVisuals().size(), 1);
+        const auto firstPhase = activeVisuals().first().phaseVisible;
+        QTRY_VERIFY_WITH_TIMEOUT(activeVisuals().first().phaseVisible != firstPhase, 1600);
+        const auto timers = [&] { QList<QTimer*> result; for (auto* timer : editor->findChildren<QTimer*>())
+            if (timer->isActive() && timer->interval() == 500) result << timer; return result; };
+        const auto initialTimers = timers(); QVERIFY(!initialTimers.isEmpty());
+        QTest::keyClick(editor, Qt::Key_Tab); QCOMPARE(editor->templateSlotModeActiveIndex(), 1);
+        keys("-1");
+        QCOMPARE(timers(), initialTimers);
+        QVERIFY(editor->findChild<QLabel*>("templateLocation")->property("fullText").toString().contains(token == "clk_init" ? "Freq mhz" : "Time ns"));
+        const auto initial = editor->toPlainText();
+        QTest::keyClick(editor, Qt::Key_Tab);
+        const int afterTab = editor->templateSlotModeActiveIndex();
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        const bool afterReturn = editor->templateInputEditing();
+        evidence("incomplete-" + token + ".json", QJsonDocument(QJsonObject{
+            {"afterTab",afterTab},{"editingAfterReturn",afterReturn},{"messages",QJsonArray::fromStringList(messages)},
+            {"source",editor->toPlainText()},{"metadata",editor->templateModel()->serialize(path)}}).toJson());
+        QCOMPARE(afterTab, token == "clk_init" ? 0 : 2); QVERIFY(!afterReturn);
+        QVERIFY(editor->templateAuthoringLocked()); QCOMPARE(editor->toPlainText(), initial);
+        QCOMPARE(editor->selectedTemplateId(), child);
+        QVERIFY(activeVisuals().isEmpty());
+        QVERIFY(editor->findChild<QLabel*>("templateInputFeedback")->property("fullText").toString().contains("Unfinished"));
+        QTest::keyClick(editor, Qt::Key_Return);
+        QVERIFY(editor->templateInputEditing());
+        QTest::keyClick(editor, Qt::Key_Tab); keys(token == "clk_init" ? "156.25" : "12.5");
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QVERIFY(!editor->templateInputEditing());
+        for (const auto state : {"pending", "no-candidates", "stale-context"}) {
+            QVERIFY(editor->editTemplateInstance(child));
+            auto context = std::make_shared<TemplateInputContext>(*editor->templateModel()->instance(child)->inputs.first().inputContext);
+            context->current = [state] { return QString(state) != "stale-context"; };
+            context->liveSnapshot = [state]() -> std::shared_ptr<const SemanticIndexSnapshot> {
+                return QString(state) == "pending" ? nullptr : std::make_shared<const SemanticIndexSnapshot>();
+            };
+            editor->templateModel()->setInputContext(child, context);
+            editor->refreshTemplateSlotRanges();
+            const auto retained = editor->toPlainText();
+            QTest::keyClick(editor, Qt::Key_Down); QCOMPARE(editor->toPlainText(), retained);
+            QTest::keyClick(editor, Qt::Key_Tab); QCOMPARE(editor->templateSlotModeActiveIndex(), 1);
+            QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+            QVERIFY(!editor->templateInputEditing()); QVERIFY(editor->templateAuthoringLocked());
+            QCOMPARE(editor->toPlainText(), retained);
+            QVERIFY(editor->findChild<QLabel*>("templateInputFeedback")->property("fullText").toString().contains("Unfinished"));
+        }
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        QCOMPARE(editor->selectedTemplateRegion(), "behaviors");
+        QVERIFY(editor->templateModel()->instance(child));
+        QVERIFY(window.tabManager->saveCurrentTab());
+    }
+    void formatPreservesTemplateIdentity_data() {
+        QTest::addColumn<bool>("locked"); QTest::addColumn<bool>("editing");
+        QTest::newRow("unlocked") << false << false;
+        QTest::newRow("locked-browse") << true << false;
+        QTest::newRow("locked-edit") << true << true;
+    }
+    void formatPreservesTemplateIdentity() {
+        QFETCH(bool, locked); QFETCH(bool, editing);
+        MyCodeEditor editor; editor.show(); editor.setFocus();
+        const auto root = installRoot(editor);
+        if (locked) editor.setTemplateAuthoringLocked(true);
+        if (editing) QVERIFY(editor.editTemplateInstance(root, "name"));
+        else if (editor.templateInputEditing()) QTest::keyClick(&editor, Qt::Key_Return, Qt::ControlModifier);
+        const auto before = editor.toPlainText();
+        const auto report = editor.formatDocument();
+        evidence(QString("format-%1.json").arg(QTest::currentDataTag()), QJsonDocument(QJsonObject{
+            {"accepted",report.accepted()},{"changed",report.changed},{"diagnostic",report.diagnostic},
+            {"before",before},{"after",editor.toPlainText()},{"instances",editor.templateModel()->instances().size()}}).toJson());
+        QVERIFY2(report.accepted(), qPrintable(report.diagnostic)); QVERIFY(report.changed);
+        QVERIFY(editor.templateModel()->instance(root));
+        QCOMPARE(editor.templateAuthoringLocked(), locked); QCOMPARE(editor.templateInputEditing(), editing);
+        const auto formatted = editor.toPlainText();
+        editor.undo(); QCOMPARE(editor.toPlainText(), before); QVERIFY(editor.templateModel()->instance(root));
+        QCOMPARE(editor.templateInputEditing(), editing);
+        editor.redo(); QCOMPARE(editor.toPlainText(), formatted); QVERIFY(editor.templateModel()->instance(root));
+        QCOMPARE(editor.templateInputEditing(), editing);
+        QVERIFY(!editor.formatDocument().changed);
+        if (locked) {
+            place(editor, 0); const auto fixed = editor.toPlainText(); QTest::keyClicks(&editor, "forbidden");
+            QCOMPARE(editor.toPlainText(), fixed);
+        }
+    }
+    void formatReadOnlyAndAtomicRejection() {
+        MyCodeEditor editor; const auto root = installRoot(editor);
+        editor.setReadOnly(true); editor.setTemplateAuthoringLocked(true);
+        const auto before = editor.toPlainText(); const auto metadata = editor.templateModel()->serialize("tb.sv");
+        QVERIFY(!editor.formatDocument().accepted()); QCOMPARE(editor.toPlainText(), before);
+        editor.setReadOnly(false);
+        const auto changed = before + "module unexpected; endmodule\n";
+        FormatterTriviaPositionMapper mapper(before, changed); QString error;
+        QVERIFY(!editor.templateModel()->applyFormatting(changed, mapper, &error));
+        QCOMPARE(editor.toPlainText(), before); QCOMPARE(editor.templateModel()->serialize("tb.sv"), metadata);
+        QVERIFY(editor.templateModel()->instance(root));
+    }
+    void formatOldMetadataWithSharedViews() {
+        const auto fixture = qEnvironmentVariable("TB_TEST_CANCEL_FIXTURE");
+        if (fixture.isEmpty()) QSKIP("Supply the isolated 0.32.6 source and metadata fixture.");
+        QFile source(QDir(fixture).filePath("tb.sv")); QVERIFY(source.open(QIODevice::ReadOnly));
+        QFile saved(QDir(fixture).filePath("metadata.json")); QVERIFY(saved.open(QIODevice::ReadOnly));
+        const auto metadata = QJsonDocument::fromJson(saved.readAll()).object();
+        SharedDocument shared("format-old", metadata["file"].toString(), QString::fromUtf8(source.readAll()));
+        MyCodeEditor editor, other;
+        shared.attachView(&editor); shared.attachView(&other);
+        const auto detach = qScopeGuard([&] { shared.detachView(&other); shared.detachView(&editor); });
+        QVERIFY(editor.templateModel()->restore(metadata, metadata["file"].toString()));
+        QString root;
+        for (const auto& item : editor.templateModel()->instances()) if (item.parentId.isEmpty()) root = item.id;
+        QVERIFY(!root.isEmpty()); QCOMPARE(editor.templateModel()->instances().size(), 3);
+        editor.setTemplateAuthoringLocked(true); other.setTemplateAuthoringLocked(true);
+        QVERIFY(editor.editTemplateInstance(root, "behaviors"));
+        const auto regionBefore = region(*editor.templateModel()->instance(root), "behaviors");
+        place(editor, regionBefore.start);
+        const QString nestedText = "initial begin\nrepeat (2) begin\n  \nend\nend\n";
+        TemplateInsertionSpec nested; nested.label = "@nested"; nested.snapshot = {{"kind","snippet"}};
+        nested.fragments = {{0, int(nestedText.size()), false}};
+        CodeTemplateSlotList inputs{{"count", int(nestedText.indexOf('2')), 1, 1, false, {{"kind","Value"}}},
+            {"body", int(nestedText.indexOf("  \n")), 3, 2, true, {{"kind","Code"},{"content","statements"}}}};
+        QString error;
+        QVERIFY2(editor.insertSimulationTemplate(nestedText, inputs, nested, root, "behaviors", &error), qPrintable(error));
+        const auto child = editor.selectedTemplateId();
+        QVERIFY(editor.editTemplateInstance(child, "body"));
+        QVERIFY(editor.replaceTemplateInput(editor.textCursor(), "  // handwritten\n  $display(\"keep\");\n"));
+        QVERIFY(other.editTemplateInstance(root, "name"));
+        const auto oldSource = editor.toPlainText(); const auto oldMetadata = editor.templateModel()->serialize(metadata["file"].toString());
+        const int oldPosition = editor.textCursor().position(), otherAnchor = other.textCursor().anchor();
+        const auto otherSelection = other.textCursor().selectedText();
+        const auto report = editor.formatDocument();
+        QVERIFY2(report.accepted(), qPrintable(report.diagnostic)); QVERIFY(report.changed);
+        QCOMPARE(editor.templateModel()->instances().size(), 4);
+        QCOMPARE(editor.selectedTemplateId(), child); QCOMPARE(editor.selectedTemplateRegion(), "body");
+        QVERIFY(editor.templateInputEditing()); QVERIFY(other.templateInputEditing());
+        QCOMPARE(other.textCursor().selectedText(), otherSelection);
+        const auto formatted = editor.toPlainText(); const auto formattedMetadata = editor.templateModel()->serialize(metadata["file"].toString());
+        for (const auto& oldItem : oldMetadata["instances"].toArray()) {
+            const auto item = oldItem.toObject(); const auto* now = editor.templateModel()->instance(item["id"].toString());
+            QVERIFY(now); QCOMPARE(now->parentId, item["parent"].toString()); QCOMPARE(now->parentSlot, item["parentSlot"].toString());
+            QCOMPARE(now->fragments.size(), item["fragments"].toArray().size());
+        }
+        other.undo(); QCOMPARE(editor.toPlainText(), oldSource); QCOMPARE(editor.templateModel()->serialize(metadata["file"].toString()), oldMetadata);
+        QVERIFY(editor.templateInputEditing()); QVERIFY(other.templateInputEditing());
+        QCOMPARE(editor.textCursor().position(), oldPosition); QCOMPARE(other.textCursor().anchor(), otherAnchor);
+        editor.redo(); QCOMPARE(editor.toPlainText(), formatted); QCOMPARE(editor.templateModel()->serialize(metadata["file"].toString()), formattedMetadata);
+        QVERIFY(editor.templateInputEditing()); QVERIFY(other.templateInputEditing());
+        MyCodeEditor reopened; reopened.setPlainText(formatted);
+        QVERIFY(reopened.templateModel()->restore(formattedMetadata, metadata["file"].toString()));
+        QCOMPARE(reopened.templateModel()->instances().size(), 4);
+        QVERIFY(!editor.formatDocument().changed);
+        evidence("formatted-old-shared.sv", formatted.toUtf8()); evidence("formatted-old-shared.json", QJsonDocument(formattedMetadata).toJson());
+    }
     void searchCancellationPreservesCodeInput_data() {
         QTest::addColumn<QString>("area");
         QTest::addColumn<QString>("scenario");
@@ -773,12 +1129,12 @@ endmodule
         QTest::keyPress(editor, Qt::Key_F24); QTest::keyClick(editor, Qt::Key_Space); QTest::keyRelease(editor, Qt::Key_F24);
         keys("tb"); enter(); QTRY_COMPARE(editor->templateModel()->instances().size(), 1);
         auto* stableBadge = badge(); keys("tb_confirmed"); QCOMPARE(badge(), stableBadge);
-        QVERIFY(badge()->text().contains("Editing inputs"));
+        QVERIFY(badge()->text().contains("EDITING INPUT"));
         capture("mainwindow-inputs-empty-regions");
         QTest::keyClick(editor, Qt::Key_Escape);
         QVERIFY(editor->templateAuthoringLocked()); QVERIFY(editor->templateInputEditing());
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
-        QVERIFY(badge()->text().contains("Select"));
+        QVERIFY(badge()->text().contains("BROWSE"));
         QTest::keyClick(editor, Qt::Key_Escape); QVERIFY(editor->templateAuthoringLocked());
         capture("mainwindow-locked-navigation");
         auto* defs = editor->findChild<QToolButton*>("templateRegion_definitions");
@@ -1087,7 +1443,8 @@ endmodule
         QCOMPARE(editor->toPlainText(), closed);
         QTest::keyClick(editor, Qt::Key_Down); QTest::keyClick(editor, Qt::Key_Tab); keys("0");
         QTest::keyClick(editor, Qt::Key_Backtab); QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
-        QVERIFY(editor->templateInputEditing()); QCOMPARE(editor->selectedTemplateId(), clockId);
+        QVERIFY(!editor->templateInputEditing()); QCOMPARE(editor->selectedTemplateId(), clockId);
+        QTest::keyClick(editor, Qt::Key_Return); QVERIFY(editor->templateInputEditing());
         QTest::keyClick(editor, Qt::Key_Tab); keys("156.25");
         QVERIFY(editor->toPlainText().contains("frequency_mhz = 156.25;"));
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
@@ -1101,6 +1458,19 @@ endmodule
         QVERIFY(editor->toPlainText().contains("hold_ns = 12.5;"));
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
         QCOMPARE(editor->templateContainerContent(), "behaviors");
+        const auto beforeFormat = editor->toPlainText();
+        const auto beforeFormatMetadata = editor->templateModel()->serialize(dir.filePath("tb.sv"));
+        QTest::keyClick(editor, Qt::Key_I, Qt::ControlModifier | Qt::ShiftModifier);
+        QVERIFY(editor->toPlainText() != beforeFormat); QCOMPARE(editor->templateModel()->instances().size(), 5);
+        QVERIFY(editor->templateAuthoringLocked()); QVERIFY(!editor->templateInputEditing());
+        const auto afterFormat = editor->toPlainText();
+        editor->undo(); QCOMPARE(editor->toPlainText(), beforeFormat);
+        QCOMPARE(editor->templateModel()->serialize(dir.filePath("tb.sv")), beforeFormatMetadata);
+        editor->redo(); QCOMPARE(editor->toPlainText(), afterFormat);
+        QVERIFY(editor->editTemplateInstance(clockId, "freq_mhz"));
+        QTest::keyClick(editor, Qt::Key_I, Qt::ControlModifier | Qt::ShiftModifier);
+        QCOMPARE(editor->toPlainText(), afterFormat); QVERIFY(editor->templateInputEditing());
+        QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
         QVERIFY(window.tabManager->saveCurrentTab());
         const auto saved = editor->toPlainText();
         QFile catalogFile(dir.filePath("templates.json")); QVERIFY(catalogFile.open(QIODevice::ReadOnly));

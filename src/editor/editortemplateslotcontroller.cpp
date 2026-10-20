@@ -215,7 +215,10 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
     annotations.reserve(ranges.size());
     const int documentEnd =
         qMax(0, editor->document()->characterCount() - 1);
+    const int activePhysical = physicalIndexForCursor(editor);
+    int physical = -1;
     for (const SlotRange& original : std::as_const(ranges)) {
+        ++physical;
         auto slot = original;
         if (slot.input.value("kind").toString() == "Code") {
             if (slot.groupIndex != currentIndex) continue;
@@ -300,8 +303,8 @@ void EditorTemplateSlotController::publishVisibleAnnotations(
             annotation.sourceGeneration =
                 presentationGeneration;
             annotation.active =
-                slot.groupIndex == currentIndex;
-            annotation.phaseVisible = editor->templateInputEditing() || currentBlinkOn;
+                slot.groupIndex == currentIndex && physical == activePhysical;
+            annotation.phaseVisible = !annotation.active || currentBlinkOn;
             annotations.append(
                 std::move(annotation));
         }
@@ -376,6 +379,7 @@ void EditorTemplateSlotController::select(
     }
 
     currentIndex = index;
+    currentBlinkOn = true;
     const SlotRange& slot = ranges.at(physicalIndex);
     QTextCursor cursor(editor->document());
     cursor.setPosition(slot.start);
@@ -504,7 +508,7 @@ void EditorTemplateSlotController::start(
         EditorModeId::TemplateSlots,
         EditorModeEntryReason::TemplateInserted);
     select(editor, 0);
-    if (!editor->templateInputEditing()) ensureBlinkTimer(editor);
+    ensureBlinkTimer(editor);
 }
 
 void EditorTemplateSlotController::syncPersistentRanges(MyCodeEditor* editor, const CodeTemplateSlotList& inputs)
@@ -650,7 +654,7 @@ bool EditorTemplateSlotController::handleKeyPress(
             return false;
         }
         const auto issue = validationError(editor, firstPhysicalIndexForGroup(currentIndex));
-        if (!issue.isEmpty() && !backward) {
+        if (!issue.isEmpty() && !backward && !editor->templateInputEditing()) {
             emit editor->editorStatusMessageRequested(issue);
             event->accept(); return true;
         }
@@ -786,6 +790,8 @@ QHash<QString, QString> EditorTemplateSlotController::bindings(MyCodeEditor* edi
 
 QString EditorTemplateSlotController::allValidationError(MyCodeEditor* editor) const
 {
+    if (editor && editor->templateInputEditing())
+        return editor->templateModel()->validationIssue(editor->selectedTemplateId());
     for (int group = 0; group < groupCount(); ++group) {
         const auto issue = validationError(editor, firstPhysicalIndexForGroup(group));
         if (!issue.isEmpty()) return issue;
@@ -850,7 +856,7 @@ void EditorTemplateSlotController::invalidateDependents(MyCodeEditor* editor, co
 void EditorTemplateSlotController::handleCursorChanged(
     MyCodeEditor* editor)
 {
-    if (!active() || applyingLinkedEdit)
+    if (!active() || applyingLinkedEdit || (editor && editor->templateModel()->changing()))
         return;
     if (ignoreNextCursorCheck) {
         ignoreNextCursorCheck = false;
@@ -881,6 +887,7 @@ void EditorTemplateSlotController::handleCursorChanged(
                         "Tab/Shift+Tab cycles slots; Esc finishes"));
             }
         }
+        refreshPresentation(editor);
         return;
     }
     if (!cursorInsideActiveRange(editor) && !editor->templateAuthoringLocked())

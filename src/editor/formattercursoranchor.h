@@ -61,6 +61,7 @@ public:
         int newDocumentLength) const override;
 
     bool isCompatible() const;
+    int mapBoundary(int position, bool endAffinity = false) const;
 
 private:
     std::unique_ptr<TriviaPositionMap> positionMap;

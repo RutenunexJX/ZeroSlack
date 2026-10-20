@@ -8,6 +8,7 @@
 #include <QTextCursor>
 
 class QTextDocument;
+class FormatterTriviaPositionMapper;
 
 struct TemplateFragment {
   int start = 0, length = 0;
@@ -58,6 +59,9 @@ public:
                     const QString &text, int *nextPosition = nullptr, bool candidateSelection = false);
   bool applyEdits(QList<TemplateDocumentEdit> edits, QString *selectedId,
                   QString *error);
+  bool applyFormatting(const QString &formatted,
+                       const FormatterTriviaPositionMapper &mapper, QString *error);
+  QString validationIssue(const QString &id) const;
   void beginChange();
   void applyChange(int position, int removed, int added,
                    const QString &owner = {}, int input = -1);

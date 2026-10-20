@@ -286,6 +286,11 @@ int FormatterTriviaPositionMapper::restorePosition(
         newDocumentLength);
 }
 
+int FormatterTriviaPositionMapper::mapBoundary(int position, bool endAffinity) const
+{
+    return positionMap->mapBoundary(position, endAffinity);
+}
+
 bool FormatterTriviaPositionMapper::isCompatible() const
 {
     return positionMap && positionMap->isCompatible();

@@ -104,7 +104,7 @@ TriviaPositionMap::TriviaPositionMap(
     const QString& newText,
     const SourceTextDelta& fallbackDelta,
     TriviaPositionLeafPolicy leafPolicy)
-    : oldLength(oldText.size()),
+    : beforeText(oldText), afterText(newText), oldLength(oldText.size()),
       newLength(newText.size()),
       fallback(fallbackDelta)
 {
@@ -129,6 +129,39 @@ TriviaPositionMap::TriviaPositionMap(
             && oldLeaves.at(index).text
                 == newLeaves.at(index).text;
     }
+}
+
+int TriviaPositionMap::mapBoundary(int position, bool endAffinity) const
+{
+    if (!compatible || position < 0 || position > oldLength) return -1;
+    if (position == 0) return 0;
+    if (position == oldLength) return newLength;
+    const auto next = std::lower_bound(oldLeaves.cbegin(), oldLeaves.cend(), position,
+        [](const SemanticLeafSpan& leaf, int p) { return leaf.start < p; });
+    const int index = int(std::distance(oldLeaves.cbegin(), next));
+    if (index > 0 && position <= oldLeaves[index - 1].end) {
+        if (position < oldLeaves[index - 1].end || endAffinity || next == oldLeaves.cend() || next->start != position)
+            return newLeaves[index - 1].start + position - oldLeaves[index - 1].start;
+    }
+    if (next != oldLeaves.cend() && next->start == position) return newLeaves[index].start;
+    const int oldStart = index > 0 ? oldLeaves[index - 1].end : 0;
+    const int newStart = index > 0 ? newLeaves[index - 1].end : 0;
+    const int oldEnd = index < oldLeaves.size() ? oldLeaves[index].start : oldLength;
+    const int newEnd = index < newLeaves.size() ? newLeaves[index].start : newLength;
+    // Keep blank-line regions and indentation boundaries inside the same trivia
+    // gap. Cursor token snapping would collapse or invert these editable ranges.
+    int oldLine = oldStart, newLine = newStart;
+    for (int p = oldStart; p < position; ++p) if (beforeText[p] == '\n') {
+        oldLine = p + 1;
+        const int newline = afterText.indexOf('\n', newLine);
+        newLine = newline >= 0 && newline < newEnd ? newline + 1 : newEnd;
+    }
+    int oldLineEnd = beforeText.indexOf('\n', oldLine);
+    if (oldLineEnd < 0 || oldLineEnd > oldEnd) oldLineEnd = oldEnd;
+    int newLineEnd = afterText.indexOf('\n', newLine);
+    if (newLineEnd < 0 || newLineEnd > newEnd) newLineEnd = newEnd;
+    const int width = oldLineEnd - oldLine;
+    return width <= 0 ? newLine : newLine + int(qint64(position - oldLine) * (newLineEnd - newLine) / width);
 }
 
 int TriviaPositionMap::map(int position,

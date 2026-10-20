@@ -201,7 +201,12 @@ QString MyCodeEditor::templateTargetPath() const {
     if (selected && !region.isEmpty()) {
         for (const auto& input : selected->inputs)
             if (input.name == region) { path << inputLabel(input); break; }
-    } else if (selected && (templateEditing || templateTargetKind == TemplateTargetKind::Inputs)) {
+    } else if (selected && templateInputEditing()) {
+        path << "Inputs";
+        const auto name = state->templateSlots.activeInputName();
+        for (const auto& input : selected->inputs)
+            if (input.name == name) { path << inputLabel(input); break; }
+    } else if (selected && templateTargetKind == TemplateTargetKind::Inputs) {
         path << "Inputs";
     }
     return path.isEmpty() ? QStringLiteral("Document") : path.join(" / ");
@@ -223,11 +228,14 @@ void MyCodeEditor::layoutTemplateRegionBar() {
     templateRegionBar->setGeometry(rect.left(), rect.top(), rect.width(), templateRegionBarHeight());
     if (auto* path = templateRegionBar->findChild<QLabel*>("templateLocation"))
         path->setText(path->fontMetrics().elidedText(path->property("fullText").toString(), Qt::ElideLeft, qMax(0, path->width())));
+    if (auto* feedback = templateRegionBar->findChild<QLabel*>("templateInputFeedback"))
+        feedback->setText(feedback->fontMetrics().elidedText(feedback->property("fullText").toString(), Qt::ElideRight, qMax(0, feedback->width())));
 }
 
 void MyCodeEditor::updateTemplateRegionBar() {
     if (updatingTemplateRegionBar) return;
     updatingTemplateRegionBar = true;
+    const int previousHeight = templateRegionBarHeight();
     const auto regions = templateRegions();
     if (!templateRegionBar && !authoringLock && !templateTriggerHeld && regions.isEmpty()) {
         updatingTemplateRegionBar = false;
@@ -252,8 +260,13 @@ void MyCodeEditor::updateTemplateRegionBar() {
         auto* status = new QHBoxLayout;
         auto* mode = new QLabel(templateRegionBar); mode->setObjectName("templateModeBadge");
         auto* path = new QLabel(templateRegionBar); path->setObjectName("templateLocation");
+        auto pathFont = path->font(); pathFont.setBold(true); path->setFont(pathFont);
         path->setMinimumWidth(0); path->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         status->addWidget(mode); status->addWidget(path, 1); rows->addLayout(status);
+        auto* feedback = new QLabel(templateRegionBar); feedback->setObjectName("templateInputFeedback");
+        feedback->setMinimumWidth(0); feedback->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        feedback->setMinimumHeight(feedback->fontMetrics().height() + 4);
+        rows->addWidget(feedback);
         auto* buttons = new QHBoxLayout; buttons->setSpacing(5);
         for (const auto& region : regions) if (region.owner == owner) {
             auto* button = new QToolButton(templateRegionBar);
@@ -270,17 +283,37 @@ void MyCodeEditor::updateTemplateRegionBar() {
     }
     const bool visible = authoringLock || templateTriggerHeld || !regions.isEmpty();
     auto* mode = templateRegionBar->findChild<QLabel*>("templateModeBadge");
-    const auto stateLabel = authoringLock ? (templateSearching ? "Search" : templateEditing ? "Editing inputs" : "Select") : "";
+    const auto stateLabel = authoringLock ? (templateSearching ? "SEARCH" : templateEditing ? "EDITING INPUT" : "BROWSE") : "";
     mode->setText(authoringLock ? QString("TEMPLATE LOCK · %1").arg(stateLabel) :
         templateTriggerHeld ? "F24 HELD · Type to search · Space to lock" :
         templateEditing ? "TEMPLATE INPUTS · Editing" : "TEMPLATE REGIONS · Normal editing");
     const bool dark = palette().color(QPalette::Base).lightnessF() < 0.5;
-    const QString color = authoringLock ? (dark ? "#71c6ff" : "#075b9a") : (dark ? "#dedede" : "#303030");
-    const auto style = QString("QLabel { font-weight: 600; color: %1; padding: 2px 4px; border: 1px solid %1; border-radius: 3px; }").arg(color);
+    const QString color = templateEditing ? (dark ? "#07665c" : "#00685e")
+        : authoringLock ? (dark ? "#876019" : "#825700") : (dark ? "#474747" : "#505050");
+    const auto style = QString("QLabel { font-weight: 700; color: white; background: %1; padding: 5px 8px; border-radius: 3px; }").arg(color);
     if (mode->styleSheet() != style) mode->setStyleSheet(style);
     auto* path = templateRegionBar->findChild<QLabel*>("templateLocation");
     const QString full = templateTargetPath();
     path->setProperty("fullText", full); path->setToolTip(full + "\nEnter: enter · ↑/↓: siblings · Ctrl+Enter: parent · Esc: cancel · F24+Space: unlock");
+    auto* feedback = templateRegionBar->findChild<QLabel*>("templateInputFeedback");
+    const auto issue = templateModel()->validationIssue(activeTemplate);
+    QString hint = templateInputEditing()
+        ? "Tab / Shift+Tab: inputs · Ctrl+Enter: return · Esc: cancel local action"
+        : "Enter: enter selection · ↑ / ↓: siblings · Ctrl+Enter: parent";
+    if (templateInputEditing()) {
+        const auto* item = templateModel()->instance(activeTemplate);
+        if (item) for (const auto& input : item->inputs) if (input.name == state->templateSlots.activeInputName()) {
+            const auto kind = input.input.value("kind").toString();
+            hint.prepend(input.input.value("closedChoice").toBool() || (kind != "Value" && kind != "Code" && !kind.isEmpty())
+                ? "↑ / ↓: choose candidate · " : "Type in the blinking input · ");
+            break;
+        }
+    }
+    if (!issue.isEmpty()) hint = "Unfinished · " + issue + (templateInputEditing()
+        ? " · Tab: next input · Ctrl+Enter: keep values and return" : " · Enter: resume inputs");
+    feedback->setProperty("fullText", hint); feedback->setToolTip(hint);
+    const auto feedbackStyle = issue.isEmpty() ? QString() : QString("color: %1; font-weight: 600;").arg(dark ? "#ffd47a" : "#875000");
+    if (feedback->styleSheet() != feedbackStyle) feedback->setStyleSheet(feedbackStyle);
     for (const auto& region : regions) if (region.owner == owner) {
         auto* button = templateRegionBar->findChild<QToolButton*>("templateRegion_" + region.name);
         const bool empty = cachedDocumentText().mid(region.start, region.length).trimmed().isEmpty();
@@ -288,8 +321,10 @@ void MyCodeEditor::updateTemplateRegionBar() {
         button->setChecked(region.owner == activeTemplate && region.name == selectedTemplateRegion());
     }
     templateRegionBar->setVisible(visible);
-    state->gutter.updateViewportMargins(this);
-    state->gutter.resizeTo(this, contentsRect());
+    if (previousHeight != templateRegionBarHeight()) {
+        state->gutter.updateViewportMargins(this);
+        state->gutter.resizeTo(this, contentsRect());
+    }
     layoutTemplateRegionBar();
     updatingTemplateRegionBar = false;
 }
@@ -304,8 +339,9 @@ void MyCodeEditor::paintTemplateRegions(QPainter& painter, QPaintEvent* event) {
         QRectF rect(7 + 9 * region.depth, a.top + 1, qMax(1, viewport()->width() - 17 - 9 * region.depth), b.top + b.height - a.top - 2);
         if (!rect.intersects(event->rect())) continue;
         const bool selected = activeTemplate == region.owner && selectedTemplateRegion() == region.name;
-        auto color = palette().color(selected ? QPalette::Highlight : QPalette::Mid);
-        painter.setPen(QPen(color, selected ? 2 : 1, selected ? Qt::SolidLine : Qt::DashLine));
+        auto color = selected && !templateEditing ? QColor("#c38a20") : palette().color(QPalette::Mid);
+        painter.setPen(QPen(color, selected && !templateEditing ? 2 : 1,
+            selected && !templateEditing ? Qt::SolidLine : Qt::DashLine));
         painter.drawRoundedRect(rect, 3, 3);
         if (cachedDocumentText().mid(region.start, region.length).trimmed().isEmpty() && first.text().trimmed().isEmpty()) {
             painter.setPen(palette().color(QPalette::PlaceholderText));

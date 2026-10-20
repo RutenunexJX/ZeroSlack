@@ -1,5 +1,6 @@
 #include "documenttemplatemodel.h"
 #include "editorfileidentity.h"
+#include "formattercursoranchor.h"
 #include "templateinputservice.h"
 #include <QCryptographicHash>
 #include <QJsonArray>
@@ -239,6 +240,67 @@ void DocumentTemplateModel::remember() {
     it = history.erase(it);
   history[step] = items;
 }
+QString DocumentTemplateModel::validationIssue(const QString &id) const {
+  const auto *item = instance(id);
+  if (!item) return {};
+  const auto source = text->toPlainText();
+  QHash<QString, QString> bindings;
+  for (const auto &input : item->inputs)
+    bindings[input.name] = source.mid(input.start, input.length);
+  QSet<QString> checked;
+  const TemplateInputContext empty;
+  for (const auto &input : item->inputs) {
+    if (checked.contains(input.name)) continue;
+    checked.insert(input.name);
+    const auto issue = TemplateInputService::validate(input.input, bindings.value(input.name),
+        input.inputContext ? *input.inputContext : empty, bindings);
+    if (!issue.isEmpty()) return input.name + ": " + issue;
+  }
+  return {};
+}
+
+bool DocumentTemplateModel::applyFormatting(const QString &formatted,
+    const FormatterTriviaPositionMapper &mapper, QString *error) {
+  const auto fail = [&](const QString &reason) { if (error) *error = reason; return false; };
+  if (changing()) return fail("Finish the current document operation before formatting.");
+  if (!mapper.isCompatible()) return fail("Formatting changed source tokens; template boundaries were kept unchanged.");
+  if (!valid(items)) return fail("Template boundaries are inconsistent; formatting was not applied.");
+  const auto original = text->toPlainText();
+  auto mapped = items;
+  const auto significant = [](QString value) {
+    value.removeIf([](QChar c) { return c.isSpace(); });
+    return value;
+  };
+  const auto mapRange = [&](int &start, int &length) {
+    const int nextStart = mapper.mapBoundary(start);
+    const int nextEnd = length == 0 ? nextStart : mapper.mapBoundary(start + length, true);
+    if (nextStart < 0 || nextEnd < nextStart || nextEnd > formatted.size() ||
+        significant(original.mid(start, length)) != significant(formatted.mid(nextStart, nextEnd - nextStart))) return false;
+    start = nextStart; length = nextEnd - nextStart;
+    return true;
+  };
+  for (auto &item : mapped) {
+    for (auto &fragment : item.fragments)
+      if (!mapRange(fragment.start, fragment.length)) return fail("A template fragment could not be mapped safely.");
+    for (auto &input : item.inputs)
+      if (!mapRange(input.start, input.length)) return fail("A template input could not be mapped safely.");
+  }
+  QTextDocument preview;
+  preview.setPlainText(formatted);
+  DocumentTemplateModel candidate(&preview);
+  for (auto &item : mapped) item.fixedHash = candidate.fixedDigest(item);
+  if (!candidate.valid(mapped)) return fail("Formatting would invalidate template ownership; the document was kept unchanged.");
+  beginChange();
+  QTextCursor cursor(text);
+  cursor.beginEditBlock();
+  cursor.select(QTextCursor::Document);
+  cursor.insertText(formatted);
+  items = std::move(mapped);
+  cursor.endEditBlock();
+  endChange();
+  return true;
+}
+
 void DocumentTemplateModel::beginChange() {
   if (!manual)
     remember();

@@ -160,7 +160,7 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
         return result;
     if (context.current && !context.current())
     {
-        result.reason = QStringLiteral("Source or project context changed; insert the command again.");
+        result.reason = QStringLiteral("Source or project context changed; reopen the inputs.");
         return result;
     }
     if (kind == "Choice" && input.value("enumOf").toString().isEmpty())
@@ -183,7 +183,7 @@ TemplateInputCandidates TemplateInputService::candidates(const QVariantMap &inpu
     }
     if (!context.snapshot)
     {
-        result.reason = QStringLiteral("Current Slang facts are not available.");
+        result.reason = QStringLiteral("Current Slang facts are not available. Retry Up/Down after analysis.");
         return result;
     }
     SemanticIndex local;
@@ -347,13 +347,13 @@ QString TemplateInputService::validate(const QVariantMap &input, const QString &
     if (input.isEmpty())
         return {};
     if (context.current && !context.current())
-        return QStringLiteral("Source or project context changed; insert the command again.");
+        return QStringLiteral("Source or project context changed; reopen the inputs.");
     const auto issue = specificationError(input);
     if (!issue.isEmpty())
         return issue;
     if (text.trimmed().isEmpty())
         return input.value("allowEmpty").toBool() ? QString()
-                                                  : QStringLiteral("Fill this input before moving on.");
+                                                  : QStringLiteral("Required input is empty.");
     if (input.value("kind").toString() != "Value")
     {
         const auto result = candidates(input, context, bindings);

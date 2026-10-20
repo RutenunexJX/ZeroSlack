@@ -5,6 +5,7 @@
 #include "editorruntime.h"
 
 #include "mycodeeditor.h"
+#include "documenttemplatemodel.h"
 
 #include "actionregistry.h"
 #include "editorcontextmenumodel.h"
@@ -1590,9 +1591,22 @@ void MyCodeEditorState::handleDocumentContentsChange(
     if (!change.changesText() && change.oldLength == change.newLength)
         return;
     columnMode.handleDocumentChange();
-    // Foreign edits invalidate view-local undo intentions, including rectangles.
-    if (synchronousEditTransactionDepth == 0)
-        undoCursorEntries.clear();
+    // Shared formatter entries restore every view. Keep them across a peer's
+    // known undoable edits, while discarding ordinary view-local intentions.
+    if (synchronousEditTransactionDepth == 0 && !undoCursorEntries.isEmpty()) {
+        const MyCodeEditorState* editOwner = nullptr;
+        for (auto* view : editor->sharedDocumentViewsForFormatting())
+            if (view != editor && view->state->synchronousEditTransactionDepth > 0) {
+                editOwner = view->state.get();
+                break;
+            }
+        undoCursorEntries.erase(std::remove_if(undoCursorEntries.begin(), undoCursorEntries.end(),
+            [&](const auto& entry) {
+                return !editOwner || !entry.formatting || (!editOwner->synchronousEditIsUndoRedo
+                    && (editor->document()->availableUndoSteps() == 0
+                        || entry.afterUndoSteps > editOwner->synchronousEditStartUndoSteps));
+            }), undoCursorEntries.end());
+    }
     if (insightTargetPick.active())
         insightTargetPick.clear(editor, QString(), EditorModeExitReason::DocumentChanged);
     const int newLength = change.newLength;
@@ -2799,11 +2813,7 @@ bool MyCodeEditorState::handleKeyPress(MyCodeEditor* editor, QKeyEvent* event)
     return false;
 }
 
-namespace {
-EditorLogicalCursorState captureLogicalCursorState(
-    MyCodeEditor* editor,
-    const EditorColumnModeController& columnMode,
-    const EditorMultiCursorController& multiCursor)
+EditorLogicalCursorState MyCodeEditorState::captureLogicalCursorState(MyCodeEditor* editor) const
 {
     EditorLogicalCursorState state;
     if (!editor)
@@ -2813,8 +2823,26 @@ EditorLogicalCursorState captureLogicalCursorState(
     state.position = cursor.position();
     state.column = columnMode.snapshotForTest();
     state.multiCursor = multiCursor.snapshot();
+    state.templateOwner = editor->activeTemplate;
+    state.templateRegion = editor->selectedTemplateRegion();
+    state.templateInput = templateSlots.activeInputName();
+    state.templateTarget = int(editor->templateTargetKind);
+    state.templateEditing = editor->templateInputEditing();
     return state;
 }
+
+void MyCodeEditorState::restoreTemplateView(MyCodeEditor* editor, const EditorLogicalCursorState& logical)
+{
+    editor->templateEditing = false;
+    editor->activeTemplate = logical.templateOwner;
+    editor->activeTemplateRegion = logical.templateRegion;
+    editor->templateTargetKind = static_cast<MyCodeEditor::TemplateTargetKind>(logical.templateTarget);
+    if (logical.templateEditing && editor->templateModel()->instance(logical.templateOwner)) {
+        const auto cursor = editor->textCursor();
+        editor->editTemplateInstance(logical.templateOwner, logical.templateInput, cursor.position());
+        editor->setTextCursor(cursor);
+    } else
+        editor->updateTemplatePresentation();
 }
 
 void MyCodeEditorState::beginSynchronousEditTransaction(
@@ -2827,9 +2855,9 @@ void MyCodeEditorState::beginSynchronousEditTransaction(
         synchronousEditStartUndoSteps = editor && editor->document()
             ? editor->document()->availableUndoSteps()
             : 0;
-        synchronousEditStartCursor = captureLogicalCursorState(
-            editor, columnMode, multiCursor);
+        synchronousEditStartCursor = captureLogicalCursorState(editor);
         synchronousEditIsUndoRedo = false;
+        synchronousEditFormatting = false;
         undoRedoViewportCaptured = false;
     }
     ++synchronousEditTransactionDepth;
@@ -2863,19 +2891,19 @@ void MyCodeEditorState::endSynchronousEditTransaction(MyCodeEditor* editor)
                 undoCursorEntries.removeLast();
             }
             const EditorLogicalCursorState finalCursor =
-                captureLogicalCursorState(editor,
-                                          columnMode,
-                                          multiCursor);
+                captureLogicalCursorState(editor);
             if (!undoCursorEntries.isEmpty()
                 && undoCursorEntries.constLast().afterUndoSteps
                        == finalUndoSteps) {
                 undoCursorEntries.last().after = finalCursor;
+                undoCursorEntries.last().formatting |= synchronousEditFormatting;
             } else {
                 undoCursorEntries.append({
                     synchronousEditStartUndoSteps,
                     finalUndoSteps,
                     synchronousEditStartCursor,
                     finalCursor,
+                    synchronousEditFormatting,
                 });
             }
         }
@@ -2962,6 +2990,7 @@ void MyCodeEditorState::restoreCursorAfterUndoRedo(
     cursor.setPosition(qBound(0, logical.position, documentEnd),
                        QTextCursor::KeepAnchor);
     editor->setTextCursor(cursor);
+    if (match->formatting) restoreTemplateView(editor, logical);
     columnMode.restoreSnapshot(editor, logical.column);
     if (logical.multiCursor.active
         && !logical.multiCursor.carets.isEmpty()) {

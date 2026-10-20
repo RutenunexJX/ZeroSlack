@@ -67,6 +67,9 @@ struct EditorLogicalCursorState
     int position = -1;
     EditorColumnModeSnapshot column;
     EditorMultiCursorSnapshot multiCursor;
+    QString templateOwner, templateRegion, templateInput;
+    int templateTarget = 0;
+    bool templateEditing = false;
 };
 
 struct EditorUndoCursorEntry
@@ -75,6 +78,7 @@ struct EditorUndoCursorEntry
     int afterUndoSteps = 0;
     EditorLogicalCursorState before;
     EditorLogicalCursorState after;
+    bool formatting = false;
 };
 
 struct EditorGhostAnnotationAnchorTraits
@@ -239,6 +243,7 @@ struct MyCodeEditorState
     int synchronousEditStartRevision = -1;
     int synchronousEditStartUndoSteps = 0;
     bool synchronousEditIsUndoRedo = false;
+    bool synchronousEditFormatting = false;
     bool undoRedoViewportCaptured = false;
     int undoRedoVerticalScroll = 0;
     int undoRedoHorizontalScroll = 0;
@@ -382,6 +387,8 @@ struct MyCodeEditorState
     void beginSynchronousEditTransaction(MyCodeEditor* editor);
     void endSynchronousEditTransaction(MyCodeEditor* editor);
     void beginUndoRedo(MyCodeEditor* editor);
+    EditorLogicalCursorState captureLogicalCursorState(MyCodeEditor* editor) const;
+    void restoreTemplateView(MyCodeEditor* editor, const EditorLogicalCursorState& logical);
     void restoreCursorAfterUndoRedo(MyCodeEditor* editor,
                                     bool redo,
                                     int beforeUndoSteps,

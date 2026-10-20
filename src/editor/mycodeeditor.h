@@ -485,6 +485,7 @@ private:
     bool updatingTemplateRegionBar = false;
     QTextBlock templatePreeditBlock;
     void clearTemplatePreedit();
+    void replayDocumentUndo(bool redo);
     QMetaObject::Connection templateModelConnection;
     void bindTemplateModel();
     void updateTemplatePresentation();

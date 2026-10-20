@@ -527,46 +527,40 @@ void MyCodeEditor::insertFromMimeData(const QMimeData* source)
 
 void MyCodeEditor::undo()
 {
-    if (documentReadOnly())
-        return;
-    if (templateInputEditing()) updateTemplatePresentation();
-    templateEditing = false;
-    auto edit = beginSynchronousEditTransaction();
-    const int beforeUndoSteps = document()
-        ? document()->availableUndoSteps()
-        : 0;
-    state->beginUndoRedo(this);
-    templateModel()->beginReplay();
-    if (authoringLock) document()->undo(); else QPlainTextEdit::undo();
-    templateModel()->endReplay();
-    updateTemplatePresentation();
-    const int afterUndoSteps = document()
-        ? document()->availableUndoSteps()
-        : 0;
-    state->restoreCursorAfterUndoRedo(
-        this, false, beforeUndoSteps, afterUndoSteps);
+    replayDocumentUndo(false);
 }
 
 void MyCodeEditor::redo()
 {
-    if (documentReadOnly())
-        return;
-    if (templateInputEditing()) updateTemplatePresentation();
-    templateEditing = false;
-    auto edit = beginSynchronousEditTransaction();
-    const int beforeUndoSteps = document()
-        ? document()->availableUndoSteps()
-        : 0;
-    state->beginUndoRedo(this);
+    replayDocumentUndo(true);
+}
+
+void MyCodeEditor::replayDocumentUndo(bool redo)
+{
+    if (documentReadOnly()) return;
+    const int beforeUndoSteps = document()->availableUndoSteps();
+    const bool formatting = std::any_of(state->undoCursorEntries.cbegin(), state->undoCursorEntries.cend(),
+        [&](const auto& entry) { return entry.formatting && (redo ? entry.beforeUndoSteps : entry.afterUndoSteps) == beforeUndoSteps; });
+    const auto views = formatting ? sharedDocumentViewsForFormatting() : QList<MyCodeEditor*>{this};
+    for (auto* view : views) {
+        if (view->templateInputEditing()) view->updateTemplatePresentation();
+        view->templateEditing = false;
+        view->state->beginSynchronousEditTransaction(view);
+        view->state->beginUndoRedo(view);
+    }
     templateModel()->beginReplay();
-    if (authoringLock) document()->redo(); else QPlainTextEdit::redo();
+    if (redo) {
+        if (authoringLock) document()->redo(); else QPlainTextEdit::redo();
+    } else {
+        if (authoringLock) document()->undo(); else QPlainTextEdit::undo();
+    }
     templateModel()->endReplay();
-    updateTemplatePresentation();
-    const int afterUndoSteps = document()
-        ? document()->availableUndoSteps()
-        : 0;
-    state->restoreCursorAfterUndoRedo(
-        this, true, beforeUndoSteps, afterUndoSteps);
+    const int afterUndoSteps = document()->availableUndoSteps();
+    for (auto* view : views) {
+        view->state->restoreCursorAfterUndoRedo(view, redo, beforeUndoSteps, afterUndoSteps);
+        view->updateTemplatePresentation();
+        view->state->endSynchronousEditTransaction(view);
+    }
 }
 
 bool MyCodeEditor::find(const QString& expression,
