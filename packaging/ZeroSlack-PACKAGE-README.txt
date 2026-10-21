@@ -1,6 +1,6 @@
-ZeroSlack v0.32.7 Windows package
+ZeroSlack v0.32.8 Windows package
 
-Release 0.32.7 highlights the active template input, distinguishes browsing from editing and shows the current hierarchy. Incomplete clk_init/reset inputs can return without losing values. Formatting works in template lock and preserves instances, slots, undo/redo and live Slang candidates. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
+Release 0.32.8 highlights the active template input, distinguishes browsing from editing and shows the current hierarchy. Incomplete clk_init/reset inputs can return without losing values. Formatting works in template lock and preserves instances, slots, undo/redo and live Slang candidates. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.6 enters a selected TB region with one Enter. Selecting a DUT module applies default parameters and creates declarations, an instance and port connections together; optional customization remains available. Package-qualified UART ports are preserved. Escape cancels search without unlocking, and subsequent code input retains its cursor or selection. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 

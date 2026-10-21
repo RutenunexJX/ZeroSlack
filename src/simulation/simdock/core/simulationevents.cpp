@@ -6,7 +6,7 @@ namespace simdock
 {
 namespace
 {
-QString decoded(const QByteArray &hex, bool &valid)
+QString decoded(const QByteArray &hex, bool &valid, bool nativeFileName = false)
 {
     if (hex.size() % 2)
         valid = false;
@@ -16,7 +16,20 @@ QString decoded(const QByteArray &hex, bool &valid)
     if (!valid)
         return {};
     QStringDecoder utf8(QStringDecoder::Utf8);
-    const QString value = utf8.decode(QByteArray::fromHex(hex));
+    const auto bytes = QByteArray::fromHex(hex);
+    QString value = utf8.decode(bytes);
+#ifdef Q_OS_WIN
+    // Questa's __FILE__ is encoded using the Windows system code page. Other
+    // event fields retain the protocol's strict UTF-8 validation.
+    if (utf8.hasError() && nativeFileName) {
+        QStringDecoder local(QStringDecoder::System);
+        value = local.decode(bytes);
+        valid &= !local.hasError();
+        return value;
+    }
+#else
+    Q_UNUSED(nativeFileName);
+#endif
     valid &= !utf8.hasError();
     return value;
 }
@@ -82,7 +95,7 @@ void SimulationEventDecoder::consume(QByteArray line, QList<SimulationEvent> &re
         (event.level == "Info" || event.level == "Warning" || event.level == "Error");
     event.tag = decoded(fields[3], valid);
     event.instance = decoded(fields[4], valid);
-    event.sourceFile = decoded(fields[5], valid);
+    event.sourceFile = decoded(fields[5], valid, true);
     bool lineValid = false;
     event.sourceLine = fields[6].toInt(&lineValid);
     valid &= lineValid && event.sourceLine > 0;

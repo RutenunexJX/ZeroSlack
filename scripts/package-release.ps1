@@ -254,6 +254,10 @@ foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
 # Ship editable user-template definitions and their non-destructive merge tool.
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'resources/templates') -Destination $outputRoot -Recurse
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
+# Public CLI documentation and the headless Qt platform are runtime payload.
+New-Item -ItemType Directory -Path (Join-Path $outputRoot 'docs') -Force | Out-Null
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'docs/cli-automation.md') -Destination (Join-Path $outputRoot 'docs/cli-automation.md')
+Copy-Item -LiteralPath (Join-Path $QtDirectory 'plugins/platforms/qoffscreen.dll') -Destination (Join-Path $outputRoot 'platforms/qoffscreen.dll')
 $channel = if ($Formal) { 'formal' } else { 'preview' }
 $releaseTag = $null
 if ($Formal -and -not $dirty) {

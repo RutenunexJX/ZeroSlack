@@ -581,6 +581,44 @@ bool Workbench::createProject(const QString& name)
     selectProject(m_projects.size() - 1);
     return true;
 }
+QString Workbench::automationProjectWriteIssue(const Project* baseline) const
+{
+    const auto contextIssue = contextError();
+    if (!contextIssue.isEmpty()) return contextIssue;
+    if (m_preparing || m_scanning || m_session.busy()) return QStringLiteral("Simulation workbench is busy.");
+    if (automationProjectEditing()) return QStringLiteral("Finish editing simulation inputs before applying automation changes.");
+    if (baseline) for (const auto& project : m_projects) if (project.id == baseline->id
+        && (projectJson(project) != projectJson(*baseline) || project.storageRevisions != baseline->storageRevisions))
+        return QStringLiteral("The workbench and disk project revisions differ; existing workbench content was retained.");
+    return {};
+}
+bool Workbench::automationProjectEditing() const
+{
+    const auto* focus = QApplication::focusWidget();
+    for (const auto* control : {static_cast<QWidget*>(m_tbTop), static_cast<QWidget*>(m_duration), static_cast<QWidget*>(m_units)})
+        if (control->hasFocus() || (focus && control->isAncestorOf(focus))) return true;
+    return false;
+}
+void Workbench::adoptAutomationProject(const Project& project)
+{
+    int row = -1;
+    for (int i = 0; i < m_projects.size(); ++i) if (m_projects[i].id == project.id) { row = i; break; }
+    if (row < 0) { row = m_projects.size(); m_projects << project; m_projectModel->appendRow(new QStandardItem(project.name)); }
+    else { m_projects[row] = project; m_projectModel->item(row)->setText(project.name); }
+    if (m_projectIndex == row) selectProject(row);
+    emit stateChanged();
+}
+QJsonObject Workbench::automationProjectState(const Project& disk) const
+{
+    for (const auto& project : m_projects) if (project.id == disk.id) {
+        return {{"present", true}, {"project", projectJson(project)},
+            {"matchesDisk", projectJson(project) == projectJson(disk) && project.storageRevisions == disk.storageRevisions},
+            {"selected", activeProjectId() == disk.id}, {"editing", automationProjectEditing()},
+            {"busy", m_preparing || m_scanning || m_session.busy()}};
+    }
+    return {{"present", false}, {"matchesDisk", false}};
+}
+
 void Workbench::selectProject(int row)
 {
     cancelPreparation();

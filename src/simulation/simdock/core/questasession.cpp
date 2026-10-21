@@ -114,7 +114,7 @@ proc ::simdock::compile {directories commands} {
     for (const auto& directory : directories) script += QLatin1Char(' ') + tclWord(directory);
     return script + QStringLiteral("] ") + tclWord(commands) + QLatin1Char('\n');
 }
-QString runScript(const QString& root, const Project& p, const QString& runDir, const QString& iniPath, WaveTheme waveTheme, bool reuseDesign, const QString& workDirectory)
+QString runScript(const QString& root, const Project& p, const QString& runDir, const QString& iniPath, WaveTheme waveTheme, bool reuseDesign, const QString& workDirectory, bool interactive)
 {
     const QString directory = simulatorPath(runDir);
     const QString ini = simulatorPath(iniPath);
@@ -160,12 +160,13 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     // Questa can return normally from Tcl's vsim command after elaboration fails.
     s += QStringLiteral("if {[runStatus] eq \"nodesign\"} {\n"
         "    error \"Questa could not load the testbench. Check the compiler and elaboration errors above.\"\n}\n");
-    s += QStringLiteral("onbreak {resume}\nview wave\ncatch {delete wave *}\n");
-    s += QStringLiteral("add wave -r /*\nlog -r /*\n");
+    s += QStringLiteral("onbreak {resume}\nlog -r /*\n");
+    if (interactive) s += QStringLiteral("view wave\ncatch {delete wave *}\nadd wave -r /*\n");
     if (legacyChecks(p))
         s += QStringLiteral("log -r %1\n").arg(tclWord(QStringLiteral("/%1/__simdock_scoreboard/*").arg(p.tbName)));
-    s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("[find signals -r /*]"));
-    s += QStringLiteral("::simdock::state running\nrun %1 ns\nwave zoom full\n").arg(p.durationNs);
+    if (interactive) s += waveAppearanceScript(waveTheme) + waveSignalColorsScript(waveTheme, QStringLiteral("[find signals -r /*]"));
+    s += QStringLiteral("::simdock::state running\nrun %1 ns\n").arg(p.durationNs);
+    if (interactive) s += QStringLiteral("wave zoom full\n");
     if (legacyChecks(p))
         s += scoreboardResultScript(p.tbName);
     return s;
@@ -196,6 +197,15 @@ QuestaSession::QuestaSession(QObject* parent) : QObject(parent)
     connect(&m_process, &QProcess::readyReadStandardOutput, this, [this] {
         const auto bytes = m_process.readAllStandardOutput();
         if (!bytes.isEmpty()) emit logText(QString::fromLocal8Bit(bytes));
+        // Console Questa writes Tcl puts (including the run marker) only to
+        // stdout. Decode one authoritative stream; the transcript duplicates
+        // HDL output but does not carry that marker in console mode.
+        if (!m_interactive) {
+            const auto rejected = m_events.rejectedRecords();
+            const auto events = m_events.feed(bytes);
+            if (!events.isEmpty()) emit eventsReady(events);
+            if (m_events.rejectedRecords() != rejected) emit eventRecordsRejected(m_events.rejectedRecords());
+        }
     });
     connect(&m_process, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error == QProcess::FailedToStart) { finish(false, m_process.errorString()); releaseFiles(); }
@@ -322,6 +332,7 @@ proc ::simdock::poll {} {
         "} else {after 150 ::simdock::poll}\n")
         .arg(tclWord(QDir(base).filePath(QStringLiteral("transcript.log"))));
     const QString bootstrap = QDir(base).filePath(QStringLiteral("bootstrap.do"));
+    if (!m_interactive) script += QStringLiteral("vwait ::simdock::shutdown\n");
     if (!writeFile(bootstrap, script, error)) return false;
 #ifdef Q_OS_WIN
     if (m_job) CloseHandle(HANDLE(m_job));
@@ -337,7 +348,7 @@ proc ::simdock::poll {} {
     environment.insert(QStringLiteral("MODELSIM_PREFERENCES"), QDir(base).filePath(QStringLiteral("preferences")));
     m_process.setProcessEnvironment(environment);
     m_process.setWorkingDirectory(base);
-    m_process.setArguments({QStringLiteral("-gui"), QStringLiteral("-do"), QStringLiteral("source -encoding utf-8 ") + tclWord(bootstrap)});
+    m_process.setArguments({m_interactive ? QStringLiteral("-gui") : QStringLiteral("-c"), QStringLiteral("-do"), QStringLiteral("source -encoding utf-8 ") + tclWord(bootstrap)});
     m_process.start();
     m_poll.start();
     return true;
@@ -444,7 +455,7 @@ bool QuestaSession::start(const PreparedRun& prepared, QString* error, WaveTheme
     QString iniText = QStringLiteral("[Library]\nwork = %1\n").arg(mappedWork);
     if (QFileInfo(installedIni).isFile()) iniText += QStringLiteral("others = %1\n").arg(QDir::cleanPath(installedIni));
     if (!writeFile(ini, iniText, error)) return false;
-    const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork);
+    const QString script = runScript(root, p, runDir, ini, waveTheme, reuse, mappedWork, m_interactive);
     if (!writeFile(QDir(runDir).filePath(QStringLiteral("run.do")), script, error)) return false;
     m_runId = runId; m_runDir = runDir;
     m_events.reset(runId);
@@ -494,11 +505,13 @@ void QuestaSession::poll()
             const auto bytes = log.read(256 * 1024);
             if (bytes.isEmpty()) break;
             m_logOffset += bytes.size();
-            emit logText(QString::fromLocal8Bit(bytes));
-            const auto rejected = m_events.rejectedRecords();
-            const auto events = m_events.feed(bytes);
-            if (!events.isEmpty()) emit eventsReady(events);
-            if (m_events.rejectedRecords() != rejected) emit eventRecordsRejected(m_events.rejectedRecords());
+            if (m_interactive) {
+                emit logText(QString::fromLocal8Bit(bytes));
+                const auto rejected = m_events.rejectedRecords();
+                const auto events = m_events.feed(bytes);
+                if (!events.isEmpty()) emit eventsReady(events);
+                if (m_events.rejectedRecords() != rejected) emit eventRecordsRejected(m_events.rejectedRecords());
+            }
         } while (!log.atEnd() && !alive());
         const bool remaining = !log.atEnd();
         log.close();
@@ -530,7 +543,9 @@ void QuestaSession::poll()
     if (value == QStringLiteral("compiling")) emit stateChanged(QStringLiteral("Compiling"));
     else if (value == QStringLiteral("loading")) emit stateChanged(QStringLiteral("Loading TB"));
     else if (value == QStringLiteral("running")) emit stateChanged(QStringLiteral("Running"));
-    else if (value == QStringLiteral("completed")) finish(true, QStringLiteral("Run completed. Questa remains open for waveform inspection."));
+    else if (value == QStringLiteral("completed")) finish(true, m_interactive
+        ? QStringLiteral("Run completed. Questa remains open for waveform inspection.")
+        : QStringLiteral("Run completed."));
     else if (value == QStringLiteral("failed")) finish(false, QStringLiteral("Compilation or simulation failed. Check the log."));
 }
 

@@ -1,5 +1,6 @@
 #include "uidialogs.h"
 #include "tabfileio.h"
+#include "workspacesessionstateservice.h"
 
 #include <QCryptographicHash>
 #include <QDebug>
@@ -78,7 +79,8 @@ bool TabFileIo::writeTextFile(
     QByteArray* rawSha256,
     QByteArray* logicalTextSha256,
     const std::function<bool(QString*)>& revalidateOverwrite,
-    const DocumentFileFormat& format) const
+    const DocumentFileFormat& format,
+    const QJsonObject* templateMetadata) const
 {
     Q_UNUSED(parent);
     if (failureReason)
@@ -93,9 +95,24 @@ bool TabFileIo::writeTextFile(
     const QByteArray rawDigest = QCryptographicHash::hash(
         logicalBytes, QCryptographicHash::Sha256);
 
+    QString expectedDiskRevision = QStringLiteral("missing");
+    if (templateMetadata && QFileInfo::exists(fileName)) {
+        const auto source = readDocumentFile(fileName);
+        if (!source.available) {
+            if (failureReason) *failureReason = source.failureReason;
+            return false;
+        }
+        expectedDiskRevision = QString::fromLatin1(QCryptographicHash::hash(source.rawBytes, QCryptographicHash::Sha256).toHex());
+    }
+
     QElapsedTimer recoveryTimer;
     for (int attempt = 0; ; ++attempt) {
         if (revalidateOverwrite && !revalidateOverwrite(failureReason)) return false;
+        QFileDevice::FileError error = QFileDevice::NoError;
+        if (templateMetadata) {
+            if (WorkspaceSessionStateService().saveDocumentWithTemplates(fileName, logicalBytes,
+                    expectedDiskRevision, *templateMetadata, failureReason, revalidateOverwrite, &error)) break;
+        } else {
         QSaveFile file(fileName);
         const auto reportFailure = [&](const char* stage) {
             const auto error = file.error();
@@ -124,8 +141,9 @@ bool TabFileIo::writeTextFile(
             return false;
         }
         if (file.commit()) break;
-        const auto error = file.error();
+        error = file.error();
         reportFailure("commit");
+        }
 #ifdef Q_OS_WIN
         // Windows readers can allow reading/writing but deny the atomic rename.
         // Recover only that stage, with a fresh conflict check before each new

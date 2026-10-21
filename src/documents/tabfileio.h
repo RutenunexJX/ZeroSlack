@@ -7,6 +7,7 @@
 #include <zeroslack/documents/documentfileread.h>
 
 class QWidget;
+class QJsonObject;
 
 class TabFileIo
 {
@@ -31,7 +32,8 @@ public:
         QByteArray* rawSha256 = nullptr,
         QByteArray* logicalTextSha256 = nullptr,
         const std::function<bool(QString*)>& revalidateOverwrite = {},
-        const DocumentFileFormat& format = {}) const;
+        const DocumentFileFormat& format = {},
+        const QJsonObject* templateMetadata = nullptr) const;
 };
 
 #endif // TABFILEIO_H

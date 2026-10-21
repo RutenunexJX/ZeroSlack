@@ -2656,7 +2656,16 @@ QByteArray ZeroSlackCliService::render(const QJsonObject& envelope,
 
 QString ZeroSlackCliService::usageText()
 {
-    return QStringLiteral(
+    QString automation;
+#ifdef ZEROSLACK_CLI_AUTOMATION
+    automation = QStringLiteral("Automation (JSON, exit 0 success / 2 invalid or failed / 3 conflict):\n"
+        "  zeroslack-cli capabilities\n"
+        "  zeroslack-cli api <request.json|-> [--profile <directory>] [--session <id>]\n"
+        "  zeroslack-cli sessions\n"
+        "  zeroslack-cli serve [--profile <directory>]\n"
+        "  Use capabilities and docs/cli-automation.md for schemas and end-to-end examples.\n\n");
+#endif
+    return automation + QStringLiteral(
         "ZeroSlack workspace and file CLI\n\n"
         "Usage:\n"
         "  zeroslack-cli format <file> [--check | --write] [--format json|jsonl|markdown]\n"

@@ -20,6 +20,32 @@
 #include <memory>
 
 namespace {
+QString templateSourceRevision(const QString& fileName)
+{
+    QFile file(fileName);
+    if (!file.exists()) return QStringLiteral("missing");
+    if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("unreadable");
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    if (!hash.addData(&file)) return QStringLiteral("unreadable");
+    return QString::fromLatin1(hash.result().toHex());
+}
+QJsonObject templateGeneration(const QJsonObject& stored, const QString& revision)
+{
+    const auto owned = [](const QJsonObject& metadata) {
+        return metadata.value("version").toInt() == 1 && metadata.value("instances").isArray()
+            && metadata.value("instances").toArray().isEmpty() ? QJsonObject{} : metadata;
+    };
+    if (stored.value("transactionVersion").toInt() != 1) return owned(stored);
+    const auto generations = stored.value("generations").toArray();
+    if (generations.isEmpty()) return stored;
+    for (const auto& value : generations) {
+        const auto generation = value.toObject();
+        if (generation.value("diskRevision") == revision) return owned(generation.value("metadata").toObject());
+    }
+    // Retain the mismatch for DocumentTemplateModel's normal validation,
+    // instead of silently dropping ownership after an unrelated disk edit.
+    return owned(generations.first().toObject().value("metadata").toObject());
+}
 QJsonArray floatingInstancesToJson(const QList<ContextFloatingInstanceState>& instances)
 {
     QJsonArray result;
@@ -939,7 +965,7 @@ QJsonObject WorkspaceSessionStateService::loadDocumentTemplates(const QString& f
     if (data.isEmpty()) return {};
     const auto json = QJsonDocument::fromJson(data);
     if (!json.isObject() && error) *error = QStringLiteral("Template metadata is invalid; source text was retained.");
-    return json.object();
+    return templateGeneration(json.object(), templateSourceRevision(fileName));
 }
 
 bool WorkspaceSessionStateService::saveDocumentTemplates(const QString& fileName, const QJsonObject& state, QString* error) const
@@ -954,6 +980,59 @@ bool WorkspaceSessionStateService::saveDocumentTemplates(const QString& fileName
     const auto key = QCryptographicHash::hash(EditorFileIdentity::lookupKey(fileName).toUtf8(), QCryptographicHash::Sha256).toHex();
     storage.settings->setValue(QStringLiteral("templateDocuments/v1/%1").arg(QString::fromLatin1(key)), QJsonDocument(state).toJson(QJsonDocument::Compact));
     return storage.commit(error);
+}
+
+bool WorkspaceSessionStateService::saveDocumentWithTemplates(const QString& fileName, const QByteArray& bytes,
+    const QString& expectedDiskRevision, const QJsonObject& state, QString* error,
+    const std::function<bool(QString*)>& commitGuard, QFileDevice::FileError* fileError) const
+{
+    QString localError;
+    if (!error) error = &localError;
+    if (fileError) *fileError = QFileDevice::NoError;
+    const auto path = localStoragePath();
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    QLockFile stateLock(path + QStringLiteral(".write.lock"));
+    QLockFile sourceLock(fileName + QStringLiteral(".zeroslack-format.lock"));
+    if (!stateLock.tryLock(0) || !sourceLock.tryLock(0)) {
+        *error = QStringLiteral("Source or template storage is busy; nothing was written."); return false;
+    }
+    const auto currentRevision = [&] {
+        QFile source(fileName);
+        if (!source.exists()) return QStringLiteral("missing");
+        if (!source.open(QIODevice::ReadOnly)) return QStringLiteral("unreadable");
+        return QString::fromLatin1(QCryptographicHash::hash(source.readAll(), QCryptographicHash::Sha256).toHex());
+    };
+    if (expectedDiskRevision.isEmpty() || currentRevision() != expectedDiskRevision) {
+        *error = QStringLiteral("Source revision conflict; nothing was written."); return false;
+    }
+    SessionStorage storage(path);
+    if (!storage.available) { *error = storage.message; return false; }
+    QSaveFile source(fileName);
+    source.setDirectWriteFallback(false);
+    if (!source.open(QIODevice::WriteOnly) || source.write(bytes) != bytes.size()) {
+        if (fileError) *fileError = source.error();
+        *error = source.errorString(); return false;
+    }
+    const auto key = QStringLiteral("templateDocuments/v1/%1").arg(QString::fromLatin1(
+        QCryptographicHash::hash(EditorFileIdentity::lookupKey(fileName).toUtf8(), QCryptographicHash::Sha256).toHex()));
+    const auto previous = templateGeneration(QJsonDocument::fromJson(storage.settings->value(key).toByteArray()).object(), expectedDiskRevision);
+    const QJsonObject generations{{"transactionVersion", 1}, {"generations", QJsonArray{
+        QJsonObject{{"diskRevision", QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex())}, {"metadata", state}},
+        QJsonObject{{"diskRevision", expectedDiskRevision}, {"metadata", previous}}}}};
+    storage.settings->setValue(key, QJsonDocument(generations).toJson(QJsonDocument::Compact));
+    if (commitGuard && !commitGuard(error)) return false;
+    if (currentRevision() != expectedDiskRevision) { *error = QStringLiteral("Source changed before commit."); return false; }
+    // Publish hash-bound metadata first, so a source watcher can only observe
+    // a generation with its matching metadata already available.
+    if (!storage.commit(error)) return false;
+    if (currentRevision() == expectedDiskRevision && (!commitGuard || commitGuard(error)) && source.commit()) return true;
+    if (fileError) *fileError = source.error();
+    *error = QStringLiteral("Source commit failed or conflicted; previous metadata restored. ") + source.errorString();
+    QSaveFile rollback(path);
+    rollback.setDirectWriteFallback(false);
+    if (!rollback.open(QIODevice::WriteOnly) || rollback.write(storage.original) != storage.original.size() || !rollback.commit())
+        *error = QStringLiteral("Source was not replaced; metadata rollback failed: ") + rollback.errorString();
+    return false;
 }
 
 bool WorkspaceSessionStateService::

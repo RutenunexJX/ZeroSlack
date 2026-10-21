@@ -141,7 +141,7 @@ bool saveProject(const QString& root, Project& project, QString* error)
     return true;
 }
 
-QList<Project> loadProjects(const QString& root, QStringList* errors)
+QList<Project> loadProjects(const QString& root, QStringList* errors, bool migrateLegacy)
 {
     QList<Project> result;
     const auto base = projectDirectory(root);
@@ -182,7 +182,7 @@ QList<Project> loadProjects(const QString& root, QStringList* errors)
                 if (!validateStorageName(p.name).isEmpty()) p.name = QStringLiteral("Imported project");
             }
             QString migrationError;
-            const bool migrated = saveProject(root, p, &migrationError);
+            const bool migrated = migrateLegacy && saveProject(root, p, &migrationError);
             if (!migrationError.isEmpty() && errors)
                 *errors << (migrated ? migrationError : QStringLiteral("Legacy project remains readable; migration was not saved: %1").arg(migrationError));
         } else p.storageName = QFileInfo(path).dir().dirName();

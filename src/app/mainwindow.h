@@ -80,6 +80,7 @@ struct ScopedSearchPanelContext;
 enum class ScopedSearchScope;
 struct ContextResource;
 class SimulationCommandService;
+namespace simdock { class Workbench; }
 struct LiveInsightToolContext;
 
 
@@ -106,6 +107,7 @@ public:
                            int lineNumber = 1,
                            int columnNumber = 1);
     bool openSimDockTarget(const QString& workspace, const QString& projectId, QString* error);
+    simdock::Workbench* simulationWorkbench() const;
 
 protected:
     void closeEvent(QCloseEvent *event) override;

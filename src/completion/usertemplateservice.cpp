@@ -961,13 +961,33 @@ QList<CodeTemplateItem> UserTemplateService::catalogForFile(const QString& fileN
     return result;
 }
 
-UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision) const
+QString UserTemplateService::storageRevision(bool workspace) const
+{
+    QFile file(workspace ? workspaceTemplateFilePath : globalTemplateFilePath);
+    if (!file.exists()) return QStringLiteral("missing");
+    if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("unreadable");
+    return QString::fromLatin1(QCryptographicHash::hash(file.readAll(), QCryptographicHash::Sha256).toHex());
+}
+
+QJsonObject UserTemplateService::toJson(const UserTemplateRecord& record) { return recordToJsonObject(record); }
+UserTemplateLoadReport UserTemplateService::fromJson(const QJsonObject& object)
+{
+    UserTemplateLoadReport report;
+    const auto record = recordFromJsonObject(object, QStringLiteral("request"), &report);
+    if (!report.issues.isEmpty()) return report;
+    return validateRecordsForSave({record}, QStringLiteral("request"));
+}
+
+UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision, const QString& expectedStorageRevision) const
 {
     const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
     QDir().mkpath(QFileInfo(path).absolutePath());
     QLockFile lock(path + QStringLiteral(".lock"));
     UserTemplateLoadReport loaded;
     if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
+    if (!expectedStorageRevision.isEmpty() && storageRevision(workspace) != expectedStorageRevision) {
+        loaded.failureReason = QStringLiteral("Template storage revision conflict; no records were written."); return loaded;
+    }
     if (expectedRevision && catalogRevision() != expectedRevision) {
         loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
         return loaded;
@@ -983,13 +1003,16 @@ UserTemplateSaveReport UserTemplateService::saveRecord(const UserTemplateRecord&
     return report;
 }
 
-UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool workspace, quint64 expectedRevision) const
+UserTemplateSaveReport UserTemplateService::deleteRecord(const QString& id, bool workspace, quint64 expectedRevision, const QString& expectedStorageRevision) const
 {
     const auto path = workspace ? workspaceTemplateFilePath : globalTemplateFilePath;
     QDir().mkpath(QFileInfo(path).absolutePath());
     QLockFile lock(path + QStringLiteral(".lock"));
     UserTemplateLoadReport loaded;
     if (!lock.tryLock(0)) { loaded.failureReason = QStringLiteral("Another operation is updating Templates. Retry after it finishes."); return loaded; }
+    if (!expectedStorageRevision.isEmpty() && storageRevision(workspace) != expectedStorageRevision) {
+        loaded.failureReason = QStringLiteral("Template storage revision conflict; no records were written."); return loaded;
+    }
     if (expectedRevision && catalogRevision() != expectedRevision) {
         loaded.failureReason = QStringLiteral("Templates changed before this write. Reopen the manager; the current configuration was retained.");
         return loaded;

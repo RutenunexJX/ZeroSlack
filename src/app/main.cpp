@@ -3,6 +3,9 @@
 #include "applicationthememanager.h"
 #include "symbolrelationshipengine.h"
 #include "version.h"
+#ifdef ZEROSLACK_AUTOMATION_TRANSPORT
+#include "automationhost.h"
+#endif
 
 #ifdef ZEROSLACK_HAS_SUITEAPP
 #include "suiteappintegration.h"
@@ -110,6 +113,11 @@ int main(int argc, char *argv[])
     w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
     w.show();
+#ifdef ZEROSLACK_AUTOMATION_TRANSPORT
+    ZeroSlackAutomationHost automation(&w);
+    QString automationError;
+    if (!automation.start(&automationError)) qWarning().noquote() << automationError;
+#endif
     if (isolated) w.setWindowTitle(QStringLiteral("ZeroSlack — isolated profile: %1").arg(QFileInfo(isolatedProfile).fileName()));
     const QStringList files = parser.positionalArguments();
     QTimer::singleShot(0, &w, [&w, files] {

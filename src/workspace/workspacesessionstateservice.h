@@ -10,6 +10,8 @@
 #include <QString>
 #include <QStringList>
 #include <QJsonObject>
+#include <QFileDevice>
+#include <functional>
 
 struct WorkspaceSessionTabState {
     QString filePath;
@@ -94,6 +96,9 @@ public:
     QString localStoragePath() const;
     QJsonObject loadDocumentTemplates(const QString& fileName, QString* error = nullptr) const;
     bool saveDocumentTemplates(const QString& fileName, const QJsonObject& state, QString* error) const;
+    bool saveDocumentWithTemplates(const QString& fileName, const QByteArray& bytes,
+        const QString& expectedDiskRevision, const QJsonObject& state, QString* error,
+        const std::function<bool(QString*)>& commitGuard = {}, QFileDevice::FileError* fileError = nullptr) const;
     bool sessionExists(
         const QString& workspaceRoot) const;
     WorkspaceSessionSaveResult save(

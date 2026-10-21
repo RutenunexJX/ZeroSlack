@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/templates">
+    <file alias="tb-dut.json">tb-dut.json</file>
+  </qresource>
+</RCC>

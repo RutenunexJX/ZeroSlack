@@ -8,6 +8,17 @@
 #include <QTextStream>
 
 #include <utility>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
+#ifdef ZEROSLACK_CLI_AUTOMATION
+#include "cliautomation.h"
+#include <QApplication>
+#endif
 
 namespace {
 
@@ -205,13 +216,34 @@ bool parseArguments(const QStringList& arguments,
 
 int main(int argc, char* argv[])
 {
+    // Qt consumes its own --session option. Preserve the public CLI arguments
+    // before constructing QApplication, including Windows' Unicode paths.
+    QStringList allArguments;
+#ifdef Q_OS_WIN
+    int argumentCount = 0;
+    auto** wideArguments = CommandLineToArgvW(GetCommandLineW(), &argumentCount);
+    for (int i = 1; wideArguments && i < argumentCount; ++i)
+        allArguments << QString::fromWCharArray(wideArguments[i]);
+    if (wideArguments) LocalFree(wideArguments);
+#else
+    for (int i = 1; i < argc; ++i) allArguments << QString::fromLocal8Bit(argv[i]);
+#endif
+#ifdef ZEROSLACK_CLI_AUTOMATION
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QApplication application(argc, argv);
+#else
     QCoreApplication application(argc, argv);
+#endif
     QCoreApplication::setApplicationName(QStringLiteral("zeroslack-cli"));
     QCoreApplication::setOrganizationName(QStringLiteral("ZeroSlack"));
     QCoreApplication::setApplicationVersion(QString::fromLatin1(APP_VERSION));
 
     QTextStream output(stdout);
-    const QStringList allArguments = application.arguments().mid(1);
+#ifdef ZEROSLACK_CLI_AUTOMATION
+    configureZeroSlackCliProfile();
+    if (QStringList{"api", "capabilities", "sessions", "serve"}.contains(allArguments.value(0)))
+        return runZeroSlackAutomationCli(allArguments);
+#endif
     if (allArguments.isEmpty()
         || allArguments.contains(QStringLiteral("--help"))
         || allArguments.contains(QStringLiteral("-h"))) {

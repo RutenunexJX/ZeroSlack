@@ -48,6 +48,10 @@ public:
     QString activeProjectId() const;
     QStringList activeCompilationInputs() const;
     QString adoptHdlInputs(const QString& expectedProject, const QStringList& files, const QStringList& includeDirectories);
+    QString automationProjectWriteIssue(const Project* baseline) const;
+    void adoptAutomationProject(const Project& project);
+    QJsonObject automationProjectState(const Project& disk) const;
+    bool automationProjectEditing() const;
     QString workspace() const { return m_root; }
     void setSimulator(const QString& executable);
     Q_INVOKABLE QString setContext(const QString& workspace);

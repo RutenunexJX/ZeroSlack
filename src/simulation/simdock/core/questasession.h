@@ -13,7 +13,7 @@
 namespace simdock {
 QString tclWord(const QString& text);
 QString runScript(const QString& root, const Project& project, const QString& runDir, const QString& iniPath,
-                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {});
+                  WaveTheme waveTheme = WaveTheme::QuestaDefault, bool reuseDesign = false, const QString& workDirectory = {}, bool interactive = true);
 QString simulatorError(const QString& executable);
 QString scoreboardResultScript(const QString& tbName);
 struct PreparedRun {
@@ -40,6 +40,7 @@ public:
     qint64 processId() const { return m_process.processId(); }
     QString lastRunDirectory() const { return m_runDir; }
     void setWallTimeout(int ms) { m_wallTimeout = ms; }
+    void setInteractive(bool enabled) { if (!alive()) m_interactive = enabled; }
 signals:
     void logText(const QString& text);
     void stateChanged(const QString& state);
@@ -60,6 +61,7 @@ private:
     QString m_executable, m_pending, m_runId, m_runDir, m_lastState;
     qint64 m_logOffset = 0;
     bool m_busy = false, m_ready = false, m_stopping = false;
+    bool m_interactive = true;
     int m_wallTimeout = 120000;
     void* m_job = nullptr;
     QByteArray m_cachedDesign, m_pendingDesign;

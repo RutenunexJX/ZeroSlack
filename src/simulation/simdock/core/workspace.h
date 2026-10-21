@@ -20,7 +20,7 @@ bool insideWorkspace(const QString& root, const QString& path);
 QString projectDirectory(const QString& root);
 Scan scanWorkspace(const QString& root, const std::atomic_bool* cancelled = nullptr,
                    ScanMetrics* metrics = nullptr, SourceCache* cache = nullptr);
-QList<Project> loadProjects(const QString& root, QStringList* errors = nullptr);
+QList<Project> loadProjects(const QString& root, QStringList* errors = nullptr, bool migrateLegacy = true);
 bool saveProject(const QString& root, Project& project, QString* error);
 Project newProject(const QString& name);
 QString validateStorageName(const QString& name);

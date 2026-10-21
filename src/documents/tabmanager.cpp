@@ -2606,6 +2606,8 @@ bool TabManager::saveEditor(
         return !overwritesCurrentSource || !externalDocumentSync
             || externalDocumentSync->canOverwriteDocument(document, reason);
     };
+    auto* templates = DocumentTemplateModel::get(document->textDocument());
+    const auto templateMetadata = templates->serialize(fileName);
     if (!fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
             writePath,
@@ -2613,7 +2615,7 @@ bool TabManager::saveEditor(
             &saveFailure,
             &savedRawFingerprint,
             nullptr,
-            revalidateOverwrite, document->fileFormat())) {
+            revalidateOverwrite, document->fileFormat(), &templateMetadata)) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,
@@ -2663,13 +2665,6 @@ bool TabManager::saveEditor(
                         savedModifiedUtc);
     if (externalDocumentSync)
         externalDocumentSync->noteDocumentSaved(document, savedRawFingerprint);
-    QString templateError;
-    auto* templates = DocumentTemplateModel::get(document->textDocument());
-    if (!WorkspaceSessionStateService().saveDocumentTemplates(document->fileName(), templates->serialize(document->fileName()), &templateError)) {
-        document->textDocument()->setModified(true);
-        emit fileSaveFailed(document->fileName(), QStringLiteral("Source saved, but template metadata was not saved: ") + templateError);
-        return false;
-    }
     clearRecoverySnapshot(document, true);
     updateTitlesForDocument(document);
     if (renamedDocument)

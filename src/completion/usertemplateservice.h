@@ -5,6 +5,7 @@
 
 #include <QList>
 #include <QString>
+#include <QJsonObject>
 #include <memory>
 
 struct UserTemplateRecord {
@@ -57,8 +58,11 @@ public:
     QList<UserTemplateRecord> records() const;
     QList<UserTemplateRecord> recordsForFile(const QString& fileName, bool simulationOnly = false) const;
     QList<CodeTemplateItem> catalogForFile(const QString& fileName, bool simulationOnly = false) const;
-    UserTemplateSaveReport saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision = 0) const;
-    UserTemplateSaveReport deleteRecord(const QString& id, bool workspace, quint64 expectedRevision = 0) const;
+    UserTemplateSaveReport saveRecord(const UserTemplateRecord& record, bool workspace, quint64 expectedRevision = 0, const QString& expectedStorageRevision = {}) const;
+    UserTemplateSaveReport deleteRecord(const QString& id, bool workspace, quint64 expectedRevision = 0, const QString& expectedStorageRevision = {}) const;
+    QString storageRevision(bool workspace) const;
+    static QJsonObject toJson(const UserTemplateRecord& record);
+    static UserTemplateLoadReport fromJson(const QJsonObject& object);
     UserTemplateSaveReport migrateXipsCommands(const QString& metadataPath, const QVariantMap& asset = {}) const;
     static QList<UserTemplateRecord> simulationBuiltins();
     QVariantMap signalRoles() const;

@@ -55,6 +55,11 @@ bool MainWindow::revealSuiteSource(const QString& filePath,
     return revealed;
 }
 
+simdock::Workbench* MainWindow::simulationWorkbench() const
+{
+    return simulationWorkspace ? simulationWorkspace->workbench() : nullptr;
+}
+
 bool MainWindow::openSimDockTarget(const QString& workspace, const QString& projectId, QString* error)
 {
     const auto fail = [error](const QString& message) {
