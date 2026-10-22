@@ -28,7 +28,7 @@ private:
     QTableWidget* definesTable = nullptr;
     QListWidget* ignoredDirsList = nullptr;
     QListWidget* fileExtensionsList = nullptr;
-    QLineEdit* topModuleEdit = nullptr;
+    QString legacyTopModule;
     QTableWidget* virtualSourceGroupsTable = nullptr;
 
     QListWidget* createStringListEditor(

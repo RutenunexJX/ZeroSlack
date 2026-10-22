@@ -145,7 +145,7 @@ void ProjectModel::setWorkspaceConfiguration(
         pathRules.uniquePreservingOrder(pathRules.normalizePathList(includeDirs));
     current.defines = pathRules.normalizeDefines(defines);
     current.fileExtensions = pathRules.normalizeFileExtensions(fileExtensions);
-    current.topModule = topModule.trimmed();
+    if (!current.explicitDesignSelection) current.topModule = topModule.trimmed();
     current.ignoredPaths =
         pathRules.uniqueSorted(pathRules.normalizePathList(ignoredPaths));
     applyScannedFiles(rawScannedFiles);
@@ -155,6 +155,20 @@ void ProjectModel::setWorkspaceConfiguration(
 ProjectSnapshot ProjectModel::snapshot() const
 {
     return current;
+}
+
+void ProjectModel::setActiveDesignProject(const QString& id, const QString& module, const QString& file)
+{
+    if (current.explicitDesignSelection && current.activeDesignProjectId == id
+        && current.activeDesignTopModule == module && current.activeDesignTopFile == file) return;
+    current.explicitDesignSelection = true;
+    current.activeDesignProjectId = id;
+    current.activeDesignTopFile = file;
+    current.activeDesignTopModule = module;
+    // A selected project is an editor context, not a restriction on workspace
+    // elaboration: inactive Design roots must retain their own instance trees.
+    current.topModule.clear();
+    publishChanged();
 }
 
 QString ProjectModel::workspaceRoot() const

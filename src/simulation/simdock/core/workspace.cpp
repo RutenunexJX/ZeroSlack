@@ -1,5 +1,6 @@
 #include "workspace.h"
 #include "analyzer.h"
+#include "dependencies.h"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -135,6 +136,7 @@ QJsonObject projectJson(const Project& p)
 {
     return {{QStringLiteral("schema"), QStringLiteral("simdock.project/v1")},
         {QStringLiteral("id"), p.id}, {QStringLiteral("name"), p.name},
+        {QStringLiteral("designTopFile"), p.designTopFile}, {QStringLiteral("designTopModule"), p.designTopModule},
         {QStringLiteral("sources"), QJsonArray::fromStringList(p.sources)},
         {QStringLiteral("includeDirectories"), QJsonArray::fromStringList(p.includeDirectories)},
         {QStringLiteral("dutFile"), p.dutFile}, {QStringLiteral("dutName"), p.dutName},
@@ -165,7 +167,7 @@ QString validateProject(const QString& root, const Project& p)
         return QStringLiteral("The project exceeds the 8 MiB size limit.");
     QStringList paths = p.sources;
     paths += p.includeDirectories;
-    paths << p.dutFile << p.tbFile << p.alternateInput.tbFile;
+    paths << p.designTopFile << p.dutFile << p.tbFile << p.alternateInput.tbFile;
     for (const auto& path : paths) {
         if (path.isEmpty()) continue;
         if (QDir::isAbsolutePath(path) || !insideWorkspace(root, QDir(root).filePath(path)))
@@ -180,7 +182,7 @@ QString projectTbPath(const Project& p, const QString& top)
 }
 
 QString validateInputs(const QString& root, const Project& p, QMap<QString, QByteArray>* fingerprints,
-                       const std::atomic_bool* cancelled, const QMap<QString, QByteArray>& overrides)
+                       const std::atomic_bool* cancelled, const QMap<QString, QByteArray>& overrides, BuildInputPlan* outputPlan)
 {
     if (fingerprints) fingerprints->clear();
     const QString issue = validateProject(root, p);
@@ -189,56 +191,15 @@ QString validateInputs(const QString& root, const Project& p, QMap<QString, QByt
     if (p.tbFile.isEmpty() || p.tbName.isEmpty()) return QStringLiteral("Create or select a TB first.");
     if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_$]*$")).match(p.tbName).hasMatch())
         return QStringLiteral("Invalid TB top-level name.");
-    QStringList pending = p.sources;
-    // Match runScript: the TB is always compiled last, including when it was
-    // explicitly selected as a source. Include-directory precedence must agree.
-    pending.removeAll(p.tbFile);
-    pending << p.tbFile;
-    QStringList includeDirs{root};
-    for (const auto& dir : p.includeDirectories) {
-        const auto absolute = QDir(root).filePath(dir);
-        if (!QFileInfo(absolute).isDir()) return QStringLiteral("Include directory is missing: %1").arg(dir);
-        if (!includeDirs.contains(absolute)) includeDirs << absolute;
+    const auto plan = planBuildInputs(root, p, cancelled, overrides);
+    if (outputPlan) *outputPlan = plan;
+    if (fingerprints && plan.order.input) {
+        for (auto it = plan.order.input->sources.cbegin(); it != plan.order.input->sources.cend(); ++it)
+            fingerprints->insert(it.key(), it->readable
+                ? (it->overridden ? QCryptographicHash::hash(it->text.toUtf8(), QCryptographicHash::Sha256) : it->rawSha256)
+                : QByteArray());
     }
-    for (const auto& path : pending) {
-        const auto dir = QFileInfo(QDir(root).filePath(path)).absolutePath();
-        if (!includeDirs.contains(dir)) includeDirs << dir;
-    }
-    QSet<QString> visited;
-    while (!pending.isEmpty()) {
-        if (cancelled && cancelled->load()) return QStringLiteral("Preparation cancelled.");
-        const QString relative = pending.takeLast();
-        const QString absolute = QDir(root).filePath(relative);
-        if (!insideWorkspace(root, absolute)) return QStringLiteral("File is outside the workspace: %1").arg(relative);
-        const QString key = resolvedPath(absolute);
-        if (visited.contains(key)) continue;
-        visited.insert(key);
-        QByteArray bytes;
-        if (overrides.contains(relative)) bytes = overrides.value(relative);
-        else {
-            QFile file(absolute);
-            if (!file.open(QIODevice::ReadOnly)) return QStringLiteral("Could not read %1: %2").arg(relative, file.errorString());
-            if (file.size() > 8 * 1024 * 1024) return QStringLiteral("File exceeds the 8 MiB analysis limit: %1").arg(relative);
-            bytes = file.readAll();
-            if (file.error() != QFileDevice::NoError) return file.errorString();
-        }
-        if (fingerprints) fingerprints->insert(QDir::cleanPath(absolute), QCryptographicHash::hash(bytes, QCryptographicHash::Sha256));
-        const auto source = analyzeSource(bytes, relative);
-        if (source.dynamicInclude) return QStringLiteral("%1 uses a macro include. Only literal include paths inside the workspace are supported.").arg(relative);
-        for (const auto& inc : source.includes) {
-            QString found;
-            QStringList dirs{QFileInfo(absolute).absolutePath()};
-            dirs += includeDirs;
-            for (const auto& dir : dirs) {
-                const QString candidate = QDir(dir).filePath(inc);
-                if (QFileInfo(candidate).isFile()) { found = candidate; break; }
-                if (fingerprints) fingerprints->insert(QDir::cleanPath(candidate), {});
-            }
-            if (found.isEmpty()) return QStringLiteral("%1: include file not found: %2").arg(relative, inc);
-            if (!insideWorkspace(root, found)) return QStringLiteral("%1 includes a file outside the workspace: %2").arg(relative, inc);
-            pending << QDir(root).relativeFilePath(found);
-        }
-    }
+    if (!plan.order.valid()) return plan.error();
     return {};
 }
 

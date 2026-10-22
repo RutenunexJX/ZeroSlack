@@ -8,6 +8,8 @@
 #include "navigationwidget.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
+#include "../simulation/simdock/ui/workbench.h"
+#include <QMessageBox>
 #include "roundedicons.h"
 
 #include <QAction>
@@ -105,8 +107,6 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                     designCacheLru.clear();
                     ++designRequestGeneration;
                     pendingDesignRequest.reset();
-                    caches.designTopModule.clear();
-                    caches.designTopInferred = true;
                     if (navigationWidget)
                         navigationWidget->clearDesignHierarchy();
                     if (currentView == DesignHierarchyView) {
@@ -255,6 +255,7 @@ NavigationManager::requestDesignNodeAction(
     ActionInvocation invocation;
     invocation.workspaceId =
         context.currentWorkspacePath;
+    invocation.parameters.insert(QStringLiteral("definitionFile"), node.definitionFile);
     invocation.parameters.insert(
         QStringLiteral("nodeId"), node.id);
     invocation.parameters.insert(
@@ -338,14 +339,23 @@ void NavigationManager::onDesignNodeContextMenuRequested(
     auto* refresh = menu.addAction(RoundedIcons::icon(RoundedIcons::Refresh), tr("Refresh"));
     refresh->setObjectName(QStringLiteral("refreshDesignAction"));
     refresh->setEnabled(navigationService && !getSystemVerilogFiles().isEmpty());
-    auto* automatic = menu.addAction(tr("Use automatic design tops"));
-    automatic->setObjectName(QStringLiteral("automaticDesignTopsAction"));
-    automatic->setEnabled(!caches.designTopInferred);
+    auto* add = menu.addAction(tr("Add design project…"));
+    QAction *activate = nullptr, *remove = nullptr;
+    if (node.isTop && !node.projectId.isEmpty()) {
+        activate = menu.addAction(tr("Activate project"));
+        activate->setEnabled(!node.unresolved && !node.inSelectedTop);
+        remove = menu.addAction(tr("Remove from Design (keep project files)"));
+    }
     QAction* selected = menu.exec(globalPos);
     if (!selected)
         return;
     if (selected == refresh) { refreshDesignHierarchy(true); return; }
-    if (selected == automatic) { clearDesignTop(); return; }
+    if (selected == add) { chooseDesignProject(); return; }
+    if (connectedWorkbench && (selected == activate || selected == remove)) {
+        const auto issue = selected == activate ? connectedWorkbench->openProject(node.projectId) : connectedWorkbench->removeDesignRoot(node.projectId);
+        if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
+        return;
+    }
     const QString actionId =
         selected->property("actionId").toString();
     if (!actionId.isEmpty())
@@ -374,6 +384,11 @@ void NavigationManager::navigateToDesignNodeFile(
     if (filePath.isEmpty())
         return;
 
+    if (connectedWorkbench && node.projectId != connectedWorkbench->activeProjectId()) {
+        emit navigationRequested(filePath, lineNumber);
+        return;
+    }
+
     HierarchyInstanceContext instanceContext;
     instanceContext.workspacePath = context.currentWorkspacePath;
     instanceContext.activeTopModule = node.rootModule;
@@ -387,6 +402,20 @@ void NavigationManager::setupConnections()
 {
     if (!navigationWidget) return;
 
+    connect(navigationWidget, &NavigationWidget::addDesignProjectRequested, this, &NavigationManager::chooseDesignProject);
+    connect(navigationWidget, &NavigationWidget::designExpansionChanged, this, [this](const QString& id, bool expanded) {
+        if (connectedWorkbench) connectedWorkbench->setDesignExpanded(id, expanded);
+        for (auto& root : caches.designRoots) if (root.projectId == id) root.expanded = expanded;
+        for (auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id) node.expanded = expanded;
+    });
+    connect(navigationWidget, &NavigationWidget::designProjectActivated, this, [this](const QString& id) {
+        if (!connectedWorkbench) return;
+        for (const auto& node : caches.designHierarchy.nodes) if (node.isTop && node.projectId == id && node.unresolved) {
+            QMessageBox::information(navigationWidget, tr("Design project"), node.unresolvedReason); return;
+        }
+        const auto issue = connectedWorkbench->openProject(id);
+        if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
+    });
     // Wire NavigationWidget signals.
     connect(navigationWidget, SIGNAL(fileDoubleClicked(QString)),
             this, SLOT(onFileTreeDoubleClicked(QString)));

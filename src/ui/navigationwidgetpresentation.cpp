@@ -48,19 +48,19 @@ QIcon NavigationWidget::getSymbolIcon(SymbolOutlineIconKind iconKind)
         icon = RoundedIcons::icon(RoundedIcons::Wave);
         break;
     case SymbolOutlineIconKind::Subroutine:
-        icon = RoundedIcons::icon(RoundedIcons::Change);
+        icon = RoundedIcons::icon(RoundedIcons::Subroutine);
         break;
     case SymbolOutlineIconKind::Parameter:
-        icon = RoundedIcons::icon(RoundedIcons::File);
+        icon = RoundedIcons::icon(RoundedIcons::Parameter);
         break;
     case SymbolOutlineIconKind::Port:
-        icon = style()->standardIcon(QStyle::SP_ArrowRight);
+        icon = RoundedIcons::icon(RoundedIcons::Port);
         break;
     case SymbolOutlineIconKind::Instance:
         icon = RoundedIcons::icon(RoundedIcons::Hierarchy);
         break;
     case SymbolOutlineIconKind::Type:
-        icon = style()->standardIcon(QStyle::SP_FileIcon);
+        icon = RoundedIcons::icon(RoundedIcons::Type);
         break;
     case SymbolOutlineIconKind::Symbol:
     default:
@@ -79,8 +79,7 @@ QIcon NavigationWidget::getDirectoryIcon(bool virtualGroup)
     const auto cached = fileIconCache.constFind(cacheKey);
     if (cached != fileIconCache.constEnd())
         return cached.value();
-    const QIcon icon = fileTreeWidget->style()->standardIcon(
-        virtualGroup ? QStyle::SP_DirLinkIcon : QStyle::SP_DirIcon);
+    const QIcon icon = RoundedIcons::icon(RoundedIcons::Folder);
     fileIconCache.insert(cacheKey, icon);
     return icon;
 }
@@ -91,7 +90,6 @@ void NavigationWidget::refreshThemePresentation()
     symbolIconCache.clear();
     refreshFileTreeIcons();
     refreshDesignTreeIcons();
-    refreshFileTreeDirectoryDimming();
     if (fileTreeWidget && fileTreeWidget->viewport())
         fileTreeWidget->viewport()->update();
     if (designTreeWidget && designTreeWidget->viewport())

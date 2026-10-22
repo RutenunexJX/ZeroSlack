@@ -4,6 +4,8 @@
 #include "applicationthememanager.h"
 #include "editorfileidentity.h"
 #include "roundedicons.h"
+#include "navigationrowstyle.h"
+#include <QToolButton>
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QMenu>
@@ -224,10 +226,7 @@ void NavigationWidget::setDesignHierarchyPending(bool pending)
 {
     if (designTreeWidget)
         designTreeWidget->setEnabled(!pending);
-    if (pending && designTopLabel)
-        designTopLabel->setText(tr("Updating design hierarchy…"));
-    else
-        refreshDesignHeader();
+
 }
 
 void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged)
@@ -252,48 +251,22 @@ void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, 
                     : QStringLiteral("instance %1:%2\nmodule %3:%4").arg(next->instanceFile).arg(next->instanceLine)
                           .arg(next->definitionFile).arg(next->definitionLine);
                 (*it)->setToolTip(0, next->unresolved ? location + '\n' + next->unresolvedReason : location);
-                (*it)->setToolTip(1, (*it)->toolTip(0));
             }
         }
     }
     setDesignHierarchyPending(false);
     designTreeRefreshPending |= structureChanged;
-    designParticipatingFiles = report.participatingFiles;
-    designTopFiles.clear();
-    for (const auto& node : report.nodes) {
-        if (node.isTop && (report.selectedTopModule.isEmpty() || node.moduleType == report.selectedTopModule)
-            && !node.definitionFile.isEmpty())
-            designTopFiles.insert(normalizedFileItemPath(node.definitionFile));
-    }
-    refreshDesignHeader();
-    if (hideUnrelatedFiles)
-        populateFileTree();
-    else
-        refreshFileTreeDirectoryDimming();
+
 }
 
 void NavigationWidget::clearDesignHierarchy()
 {
     currentDesignHierarchy = {};
     setDesignHierarchyPending(false);
-    designParticipatingFiles.clear();
-    designTopFiles.clear();
-    refreshDesignHeader();
     populateDesignTree();
-    if (hideUnrelatedFiles)
-        populateFileTree();
-    else
-        refreshFileTreeDirectoryDimming();
 }
 
-void NavigationWidget::setDesignParticipatingFiles(const QSet<QString>& fileNames)
-{
-    designParticipatingFiles = fileNames;
-    if (hideUnrelatedFiles)
-        populateFileTree();
-    else
-        refreshFileTreeDirectoryDimming();
-}
+
 
 void NavigationWidget::highlightFile(const QString& filePath)
 {
@@ -457,7 +430,7 @@ void NavigationWidget::setupFileTab()
     fileTreeWidget->setAlternatingRowColors(false);
     fileTreeWidget->setProperty("workspaceNavigationList", true);
     fileTreeWidget->setMouseTracking(true);
-    fileTreeWidget->setRootIsDecorated(true);
+    new NavigationRowStyle(fileTreeWidget, false);
     fileTreeWidget->setSortingEnabled(false);
     fileTreeWidget->header()->hide();
 
@@ -468,9 +441,6 @@ void NavigationWidget::setupFileTab()
             this,
             &NavigationWidget::processFileTreePopulationChunk);
 
-    hideUnrelatedFilesCheckBox = UiControls::checkBox(QStringLiteral("Hide unrelated"), fileTab);
-    hideUnrelatedFilesCheckBox->setChecked(false);
-    fileTabLayout->addWidget(hideUnrelatedFilesCheckBox);
     fileTabLayout->addWidget(fileTreeWidget);
     fileTab->setLayout(fileTabLayout);
 
@@ -486,31 +456,45 @@ void NavigationWidget::setupDesignTab()
     designTabLayout->setContentsMargins(2, 2, 2, 2);
     designTabLayout->setSpacing(8);
 
-    designTopLabel = UiControls::label(designTab);
-    designTopLabel->setWordWrap(true);
-    UiTypography::apply(designTopLabel, UiTypography::Role::Metadata);
-    designTabLayout->addWidget(designTopLabel);
+    auto* actions = new QHBoxLayout;
+    actions->setContentsMargins(0, 0, 0, 0);
+    actions->addStretch();
+    auto* add = UiControls::toolButton(designTab);
+    add->setObjectName(QStringLiteral("addDesignProject"));
+    add->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
+    add->setToolTip(tr("Add design project from a module"));
+    add->setAccessibleName(tr("Add design project"));
+    actions->addWidget(add);
+    connect(add, &QToolButton::clicked, this, &NavigationWidget::addDesignProjectRequested);
+    designTabLayout->addLayout(actions);
 
     designTreeWidget = UiControls::treeWidget(designTab);
     designTreeWidget->setObjectName(QStringLiteral("navigationDesignTree"));
     UiControls::enableTreeTransitions(designTreeWidget);
-    designTreeWidget->setColumnCount(2);
-    designTreeWidget->setHeaderLabels({QStringLiteral("Instance"),
-                                       QStringLiteral("Module")});
+    designTreeWidget->setColumnCount(1);
+    designTreeWidget->setHeaderHidden(true);
+    auto* rows = new NavigationRowStyle(designTreeWidget, true);
+    rows->activateProject = [this](const QString& id) { emit designProjectActivated(id); };
+    const auto expansion = [this](QTreeWidgetItem* item, bool expanded) {
+        if (populatingDesignTree || !designSearchFilter.isEmpty()) return;
+        const auto id = item->data(0, NavigationRowStyle::ProjectRole).toString();
+        if (!id.isEmpty()) emit designExpansionChanged(id, expanded);
+    };
+    connect(designTreeWidget, &QTreeWidget::itemExpanded, this, [expansion](QTreeWidgetItem* item) { expansion(item, true); });
+    connect(designTreeWidget, &QTreeWidget::itemCollapsed, this, [expansion](QTreeWidgetItem* item) { expansion(item, false); });
     designTreeWidget->setAlternatingRowColors(false);
     designTreeWidget->setProperty("workspaceNavigationList", true);
     designTreeWidget->setMouseTracking(true);
-    designTreeWidget->setRootIsDecorated(true);
+
     designTreeWidget->setSortingEnabled(false);
     designTreeWidget->header()->setStretchLastSection(true);
-    designTreeWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    designTreeWidget->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     designTabLayout->addWidget(designTreeWidget);
 
     designTab->setLayout(designTabLayout);
     const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Hierarchy), QString());
     tabWidget->setTabToolTip(index, tr("Design"));
     tabWidget->tabBar()->setAccessibleTabName(index, tr("Design"));
-    refreshDesignHeader();
 }
 
 QString NavigationWidget::searchFilterForIndex(int index) const
@@ -522,7 +506,7 @@ int NavigationWidget::activeTab() const { return tabWidget->currentIndex(); }
 void NavigationWidget::setSourceFilesWidget(QWidget* widget)
 {
     if (!widget || tabWidget->count() > SourceFilesTab) return;
-    const auto index = tabWidget->addTab(widget, RoundedIcons::icon(RoundedIcons::Module), QString());
+    const auto index = tabWidget->addTab(widget, RoundedIcons::icon(RoundedIcons::BuildInputs), QString());
     tabWidget->setTabToolTip(index, tr("Build inputs"));
     tabWidget->tabBar()->setAccessibleTabName(index, tr("Build inputs"));
 }
@@ -552,14 +536,6 @@ void NavigationWidget::setupConnections()
     fileTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(fileTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onFileTreeContextMenuRequested);
-    connect(hideUnrelatedFilesCheckBox,
-            &QCheckBox::toggled,
-            this,
-            [this](bool checked) {
-                hideUnrelatedFiles = checked;
-                populateFileTree();
-            });
-
     connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onDesignTreeDoubleClicked);
     designTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);

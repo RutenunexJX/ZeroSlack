@@ -21,6 +21,8 @@
 #include "uicontrols.h"
 #include "uitypography.h"
 #include "roundedicons.h"
+#include "sidebarsectionbutton.h"
+#include <zeroslack/semantic/workspaceconfigurationservice.h>
 #include <QAction>
 #include <QApplication>
 #include <QLabel>
@@ -45,6 +47,7 @@
 #include <QStyleFactory>
 #include <QSignalBlocker>
 #include <QScrollArea>
+#include <QJsonArray>
 #include <QScopedValueRollback>
 #include <QStandardItemModel>
 #include <QTextCursor>
@@ -64,6 +67,10 @@ Workbench::Workbench(QWidget* parent, bool standalone)
     setLocale(QLocale(QLocale::English, QLocale::UnitedStates));
     m_scanPool.setMaxThreadCount(1);
     buildUi();
+    m_orderTimer.setSingleShot(true); m_orderTimer.setInterval(120);
+    connect(&m_orderTimer, &QTimer::timeout, this, &Workbench::refreshCompilationOrder);
+    connect(&m_inputWatcher, &QFileSystemWatcher::fileChanged, this, [this] { scheduleCompilationOrder(); });
+    connect(&m_inputWatcher, &QFileSystemWatcher::directoryChanged, this, [this] { scheduleCompilationOrder(); });
     m_events = new SimulationEventsPanel(this); m_events->hide();
     connect(&m_session, &QuestaSession::eventRunStarted, m_events, &SimulationEventsPanel::startRun);
     connect(&m_session, &QuestaSession::eventsReady, m_events, &SimulationEventsPanel::append);
@@ -219,16 +226,20 @@ void Workbench::buildUi()
     projectLayout->setSpacing(4);
     auto* projectHeading = new QHBoxLayout;
     projectHeading->setSpacing(8);
-    auto* projectsLabel = UiControls::label(QStringLiteral("Projects"), projects);
-    UiTypography::apply(projectsLabel, UiTypography::Role::Section);
+    auto* projectsLabel = new SidebarSectionButton(QStringLiteral("Projects"), projects);
+    m_projectsHeading = projectsLabel;
+    projectsLabel->setObjectName(QStringLiteral("projectsDisclosure"));
     projectHeading->addWidget(projectsLabel);
-    projectHeading->addStretch();
-    m_new = UiControls::pushButton(QStringLiteral("New"), projects);
+    m_new = UiControls::pushButton(QString(), projects);
+    m_new->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
+    m_new->setFixedSize(28,28);
+    m_new->setAccessibleName(tr("New project"));
+    m_new->setToolTip(tr("New project"));
     m_new->setObjectName(QStringLiteral("newProject"));
     projectHeading->addWidget(m_new);
     m_rename = UiControls::pushButton(QString(), projects);
     m_rename->setObjectName(QStringLiteral("renameProject"));
-    m_rename->setIcon(RoundedIcons::icon(RoundedIcons::Change));
+    m_rename->setIcon(RoundedIcons::icon(RoundedIcons::Rename));
     m_rename->setFixedWidth(32);
     m_rename->setToolTip(QStringLiteral("Rename project"));
     m_rename->setAccessibleName(QStringLiteral("Rename project"));
@@ -244,9 +255,16 @@ void Workbench::buildUi()
     m_projectModel = new QStandardItemModel(this);
     m_projectList->setModel(m_projectModel);
     projectLayout->addWidget(m_projectList, 1);
+    m_projectsBody = m_projectList;
+    projectsLabel->setChecked(QSettings().value("integrations/simdock/projectsExpanded", true).toBool());
+    m_projectList->setVisible(projectsLabel->isChecked());
+    connect(projectsLabel, &QPushButton::toggled, this, [this](bool expanded) {
+        m_projectsBody->setVisible(expanded);
+        QSettings().setValue("integrations/simdock/projectsExpanded", expanded);
+        emit stateChanged();
+    });
 
     m_projectList->setMinimumHeight(42);
-    m_projectList->setMaximumHeight(140);
     sourceLayout->addWidget(projects);
     auto* files = new QWidget(sources);
     files->setObjectName(QStringLiteral("sourcePanel"));
@@ -254,17 +272,27 @@ void Workbench::buildUi()
     fileLayout->setContentsMargins(0, 0, 0, 0);
     fileLayout->setSpacing(6);
     auto* fileHeading = new QHBoxLayout;
-    auto* inputsLabel = UiControls::label(QStringLiteral("Build inputs"), files);
-    UiTypography::apply(inputsLabel, UiTypography::Role::Section);
+    auto* inputsLabel = new SidebarSectionButton(QStringLiteral("Build inputs"), files);
+    m_inputsHeading = inputsLabel;
+    inputsLabel->setObjectName(QStringLiteral("inputsDisclosure"));
     fileHeading->addWidget(inputsLabel, 1);
-    m_refresh = UiControls::pushButton(QStringLiteral("Rescan"), files);
+    m_refresh = UiControls::pushButton(QString(), files);
+    m_refresh->setIcon(RoundedIcons::icon(RoundedIcons::Refresh));
+    m_refresh->setFixedSize(28,28);
+    m_refresh->setAccessibleName(tr("Rescan build inputs"));
+    m_refresh->setToolTip(tr("Rescan build inputs"));
     m_refresh->setObjectName(QStringLiteral("refreshWorkspace"));
     fileHeading->addWidget(m_refresh);
     fileLayout->addLayout(fileHeading);
-    m_sourceHint = UiControls::label(QStringLiteral("Select files and set their compilation order."), files);
+    m_inputsBody = new QWidget(files);
+    auto* inputLayout = new QVBoxLayout(m_inputsBody);
+    inputLayout->setContentsMargins(0, 0, 0, 0); inputLayout->setSpacing(4);
+    fileLayout->addWidget(m_inputsBody, 1);
+    m_sourceHint = UiControls::label(QStringLiteral("Compilation order follows dependencies."), files);
+    m_sourceHint->setObjectName(QStringLiteral("buildInputsStatus"));
     UiTypography::apply(m_sourceHint, UiTypography::Role::Metadata);
     m_sourceHint->setWordWrap(true);
-    fileLayout->addWidget(m_sourceHint);
+    inputLayout->addWidget(m_sourceHint);
     m_fileList = new QListView(files);
     m_fileList->setObjectName(QStringLiteral("sourceList"));
     auto* fileStyle = ElaListView::createStyle(qApp, qMax(28, m_fileList->fontMetrics().height() + 10));
@@ -286,27 +314,31 @@ void Workbench::buildUi()
     m_fileList->setModel(m_fileModel);
     m_fileList->setUniformItemSizes(true);
     UiControls::enableSmoothScrolling(m_fileList);
-    fileLayout->addWidget(m_fileList, 1);
-    auto* fileActions = new QHBoxLayout;
-    fileActions->setSpacing(8);
-    auto* up = UiControls::pushButton(QStringLiteral("Move up"), files);
-    auto* down = UiControls::pushButton(QStringLiteral("Move down"), files);
-    up->setObjectName(QStringLiteral("moveSourceUp"));
-    down->setObjectName(QStringLiteral("moveSourceDown"));
-    up->setToolTip(QStringLiteral("Compile the selected file earlier"));
-    down->setToolTip(QStringLiteral("Compile the selected file later"));
-    Ui::enableToolTip(up);
-    Ui::enableToolTip(down);
-    Ui::enableToolTip(m_fileList);
-    fileActions->addWidget(up);
-    fileActions->addWidget(down);
-    fileLayout->addLayout(fileActions);
+    inputLayout->addWidget(m_fileList, 1);
     m_fileList->setMinimumHeight(80);
     m_scanStatus = UiControls::label(QStringLiteral("Open a ZeroSlack workspace."), files);
     UiTypography::apply(m_scanStatus, UiTypography::Role::Metadata);
     m_scanStatus->setWordWrap(true);
-    fileLayout->addWidget(m_scanStatus);
+    inputLayout->addWidget(m_scanStatus);
     sourceLayout->addWidget(files, 1);
+    sourceLayout->addStretch();
+    inputsLabel->setChecked(QSettings().value("integrations/simdock/inputsExpanded", true).toBool());
+    m_inputsBody->setVisible(inputsLabel->isChecked());
+    const auto updateSections = [this, sourceLayout, files, projects, projectsLabel, inputsLabel] {
+        const bool inputs = inputsLabel->isChecked(), projectsOpen = projectsLabel->isChecked();
+        sourceLayout->setStretchFactor(files, inputs ? 1 : 0);
+        sourceLayout->setStretchFactor(projects, projectsOpen && !inputs ? 1 : 0);
+        sourceLayout->setStretch(sourceLayout->count() - 1, !inputs && !projectsOpen ? 1 : 0);
+        updateControls();
+    };
+    connect(projectsLabel, &QPushButton::toggled, this, updateSections);
+    connect(inputsLabel, &QPushButton::toggled, this, [this, updateSections](bool expanded) {
+        m_inputsBody->setVisible(expanded);
+        updateSections();
+        QSettings().setValue("integrations/simdock/inputsExpanded", expanded);
+        emit stateChanged();
+    });
+    QTimer::singleShot(0, this, updateSections);
     sources->hide();
     auto* logs = new QWidget(this);
     m_logs = logs;
@@ -352,9 +384,7 @@ void Workbench::buildUi()
         if (p->dutFile != identity[0] || p->dutName != identity[1]) {
             p->dutFile = identity[0]; p->dutName = identity[1];
         }
-        const auto selection = selectDependencies(m_dependencies, identity[0], p->sources);
-        p->sources = selection.sources;
-        for (const auto& message : selection.messages) appendLog(message + QLatin1Char('\n'));
+        if (!p->sources.contains(identity[0])) p->sources << identity[0];
         refreshFiles();
         saveCurrent(); updateControls();
     });
@@ -384,8 +414,6 @@ void Workbench::buildUi()
         m_pendingLog.clear();
         m_log->clear();
     });
-    connect(up, &QPushButton::clicked, this, [this] { moveSource(-1); });
-    connect(down, &QPushButton::clicked, this, [this] { moveSource(1); });
 }
 
 void Workbench::initialize()
@@ -431,12 +459,17 @@ QString Workbench::setContext(const QString& path)
     if (!path.isEmpty() && (root.isEmpty() || !QFileInfo(root).isDir()))
         return QStringLiteral("The workspace directory does not exist.");
     m_session.stop();
+    ++m_orderGeneration;
+    if (m_orderCancelled) m_orderCancelled->store(true);
+    m_orderTimer.stop();
+    if (!m_inputWatcher.files().isEmpty()) m_inputWatcher.removePaths(m_inputWatcher.files());
+    if (!m_inputWatcher.directories().isEmpty()) m_inputWatcher.removePaths(m_inputWatcher.directories());
     if (root.isEmpty()) {
         cancelPreparation();
         if (m_scanCancelled) m_scanCancelled->store(true);
         ++m_generation;
         m_scanning = false;
-        m_root.clear(); m_scan = {}; m_dependencies = DependencyIndex(); m_projects.clear(); m_projectIndex = -1;
+        m_root.clear(); m_scan = {}; m_projects.clear(); m_projectIndex = -1;
         m_loading = true; m_projectModel->clear(); m_loading = false;
         selectProject(-1);
 
@@ -451,7 +484,7 @@ QString Workbench::setContext(const QString& path)
     m_root = root;
     m_status->setText(QStringLiteral("Ready"));
     setPreference(QStringLiteral("workspace/last"), m_root);
-    m_scan = {}; m_dependencies = DependencyIndex();
+    m_scan = {};
     m_loading = true;
     m_projectIndex = -1;
     QStringList errors;
@@ -459,15 +492,17 @@ QString Workbench::setContext(const QString& path)
     if (QFileInfo::exists(QDir(m_root).filePath(QStringLiteral(".simdock/runs"))))
         errors << QStringLiteral("Legacy .simdock/runs files were preserved because ownership and active use cannot be verified. New runs use automatically cleaned session storage.");
     m_projectModel->clear();
-    int selected = m_projects.isEmpty() ? -1 : 0;
+    int selected = -1;
+    const auto savedId = QSettings().value(workspacePreferenceKey() + "/activeProject").toString();
     for (int i = 0; i < m_projects.size(); ++i) {
         auto* item = new QStandardItem(m_projects[i].name);
-        item->setSizeHint(QSize(180, 38));
+        item->setSizeHint(QSize(180, 28));
         m_projectModel->appendRow(item);
-        if (m_projects[i].id == previousId) selected = i;
+        if (m_projects[i].id == (previousId.isEmpty() ? savedId : previousId)) selected = i;
     }
     m_loading = false;
     selectProject(selected);
+    emit designProjectsChanged();
     for (const auto& error : errors) appendLog(error + QLatin1Char('\n'));
     m_scanning = true;
     m_scanStatus->setText(QStringLiteral("Analyzing workspace..."));
@@ -479,13 +514,13 @@ QString Workbench::setContext(const QString& path)
         watcher->deleteLater();
         if (generation != m_generation) return;
         m_scan = result;
-        m_dependencies = DependencyIndex(m_scan);
         m_scanning = false;
         int modules = 0;
         for (const auto& file : m_scan.files) modules += file.modules.size();
         m_scanStatus->setText(QStringLiteral("%1 HDL files | %2 modules").arg(m_scan.files.size()).arg(modules));
         for (const auto& message : m_scan.messages) appendLog(message + QLatin1Char('\n'));
         refreshFiles();
+        scheduleCompilationOrder();
         updateControls();
         emit scanFinished();
     });
@@ -522,6 +557,132 @@ QString Workbench::activeProjectId() const
 {
     return m_projectIndex >= 0 && m_projectIndex < m_projects.size() ? m_projects[m_projectIndex].id : QString();
 }
+QString Workbench::workspacePreferenceKey() const
+{
+    const auto root = QDir::fromNativeSeparators(m_root).toCaseFolded().toUtf8();
+    return QStringLiteral("integrations/simdock/workspaces/")
+        + QString::fromLatin1(QCryptographicHash::hash(root, QCryptographicHash::Sha256).toHex());
+}
+QList<DesignHierarchyRoot> Workbench::designRoots() const
+{
+    QList<DesignHierarchyRoot> roots;
+    for (const auto& project : m_projects) {
+        if (project.designTopModule.isEmpty()) continue;
+        roots << DesignHierarchyRoot{project.id, project.name, project.designTopModule,
+            project.designTopFile.isEmpty() ? QString() : QDir(m_root).filePath(project.designTopFile),
+            QSettings().value(workspacePreferenceKey() + "/expanded/" + project.id, true).toBool()};
+    }
+    return roots;
+}
+void Workbench::setDesignExpanded(const QString& id, bool expanded)
+{
+    for (const auto& project : m_projects) if (project.id == id) {
+        QSettings().setValue(workspacePreferenceKey() + "/expanded/" + id, expanded);
+        return;
+    }
+}
+bool Workbench::designMigrationCompleted() const
+{ return QSettings().value(workspacePreferenceKey() + "/explicitTopMigrated", false).toBool(); }
+void Workbench::markDesignMigrationCompleted()
+{ QSettings().setValue(workspacePreferenceKey() + "/explicitTopMigrated", true); }
+
+QString Workbench::addDesignProject(const QString& file, const QString& module, bool activate)
+{
+    const auto issue = contextError();
+    if (!issue.isEmpty()) return issue;
+    if (m_root.isEmpty() || module.isEmpty()) return tr("Open a workspace and choose a module first.");
+    if (m_session.busy() || m_preparing) return tr("Stop the simulation before changing design projects.");
+    if (!file.isEmpty() && !insideWorkspace(m_root, file)) return tr("The design module must belong to this workspace.");
+    const auto relative = file.isEmpty() ? QString() : QDir(m_root).relativeFilePath(file);
+    for (auto& project : m_projects) if (project.designTopModule == module && project.designTopFile.isEmpty() && !relative.isEmpty()) {
+        auto updated = project; updated.designTopFile = relative;
+        if (!updated.sources.contains(relative)) updated.sources << relative;
+        QString error;
+        if (!saveProject(m_root, updated, &error)) return error;
+        project = updated; emit designProjectsChanged(); emit stateChanged();
+        return activate ? openProject(project.id) : QString();
+    }
+    for (const auto& project : m_projects)
+        if (project.designTopModule == module && project.designTopFile == relative)
+            return activate ? openProject(project.id) : QString();
+    auto project = newProject(module);
+    // An explicit design root is separate from the DUT and simulation TB.
+    project.designTopFile = relative; project.designTopModule = module;
+    if (!relative.isEmpty()) project.sources << relative;
+    QString error;
+    if (!saveProject(m_root, project, &error)) return error;
+    adoptAutomationProject(project);
+    if (activate) return openProject(project.id);
+    return {};
+}
+QString Workbench::removeDesignRoot(const QString& id)
+{
+    if (m_session.busy() || m_preparing) return tr("Stop the simulation before changing design projects.");
+    for (auto& project : m_projects) if (project.id == id) {
+        auto updated = project; updated.designTopFile.clear(); updated.designTopModule.clear();
+        QString error;
+        if (!saveProject(m_root, updated, &error)) return error;
+        project = updated;
+        emit designProjectsChanged(); emit stateChanged();
+        return {};
+    }
+    return tr("The project no longer exists.");
+}
+void Workbench::scheduleCompilationOrder()
+{
+    ++m_orderGeneration;
+    if (m_orderCancelled) m_orderCancelled->store(true);
+    m_orderPending = current() && !m_root.isEmpty();
+    m_orderIssue.clear();
+    if (m_orderPending) m_orderTimer.start();
+    else m_orderTimer.stop();
+}
+void Workbench::refreshCompilationOrder()
+{
+    if (!current() || m_root.isEmpty() || m_scanning) return;
+    const auto project = *current();
+    const auto root = m_root;
+    const auto generation = ++m_orderGeneration;
+    if (m_orderCancelled) m_orderCancelled->store(true);
+    m_orderCancelled = std::make_shared<std::atomic_bool>(false);
+    m_orderPending = true; updateControls();
+    auto* watcher = new QFutureWatcher<BuildInputPlan>(this);
+    connect(watcher, &QFutureWatcher<BuildInputPlan>::finished, this, [this, watcher, root, project, generation] {
+        const auto plan = watcher->result(); watcher->deleteLater();
+        if (generation != m_orderGeneration || root != m_root || !current()) return;
+        if (projectJson(*current()) != projectJson(project)) { scheduleCompilationOrder(); updateControls(); return; }
+        m_orderPending = false;
+        m_orderIssue = plan.error();
+        const auto oldFiles = m_inputWatcher.files(), oldDirectories = m_inputWatcher.directories();
+        if (!oldFiles.isEmpty()) m_inputWatcher.removePaths(oldFiles);
+        if (!oldDirectories.isEmpty()) m_inputWatcher.removePaths(oldDirectories);
+        QStringList files, directories;
+        if (plan.order.input) {
+            files = plan.order.input->watchFiles;
+            directories = plan.order.input->watchDirectories;
+        }
+        const auto config = WorkspaceConfigurationService::projectFilePath(root);
+        if (QFileInfo(config).isFile()) files << config;
+        directories << root << QFileInfo(config).absolutePath();
+        files.removeDuplicates(); directories.removeDuplicates();
+        files.removeIf([](const auto& path) { return !QFileInfo(path).isFile(); });
+        directories.removeIf([](const auto& path) { return !QFileInfo(path).isDir(); });
+        if (!files.isEmpty()) m_inputWatcher.addPaths(files);
+        if (!directories.isEmpty()) m_inputWatcher.addPaths(directories);
+        if (plan.order.valid()) {
+            auto updated = project; plan.apply(updated, root);
+            if (updated.sources != project.sources) {
+                QString error;
+                if (saveProject(root, updated, &error)) { *current() = updated; emit stateChanged(); }
+                else m_orderIssue = error;
+            } else *current() = updated;
+        }
+        refreshFiles(); updateControls();
+    });
+    watcher->setFuture(QtConcurrent::run(&m_scanPool, [root, project, cancelled = m_orderCancelled] {
+        return planBuildInputs(root, project, cancelled.get());
+    }));
+}
 QStringList Workbench::activeCompilationInputs() const
 {
     if (m_projectIndex < 0 || m_projectIndex >= m_projects.size()) return {};
@@ -556,6 +717,7 @@ QString Workbench::adoptHdlInputs(const QString& expectedProject, const QStringL
     QString error;
     if (!saveProject(m_root, updated, &error)) return error;
     *current() = updated;
+    scheduleCompilationOrder();
     refreshFiles();
     emit stateChanged();
     return {};
@@ -576,7 +738,7 @@ bool Workbench::createProject(const QString& name)
     if (!saveProject(m_root, project, &error)) { appendLog(error + QLatin1Char('\n')); return false; }
     m_projects << project;
     auto* item = new QStandardItem(project.name);
-    item->setSizeHint(QSize(180, 38));
+    item->setSizeHint(QSize(180, 28));
     m_projectModel->appendRow(item);
     selectProject(m_projects.size() - 1);
     return true;
@@ -603,9 +765,15 @@ void Workbench::adoptAutomationProject(const Project& project)
 {
     int row = -1;
     for (int i = 0; i < m_projects.size(); ++i) if (m_projects[i].id == project.id) { row = i; break; }
-    if (row < 0) { row = m_projects.size(); m_projects << project; m_projectModel->appendRow(new QStandardItem(project.name)); }
+    if (row < 0) {
+        row = m_projects.size(); m_projects << project;
+        auto* item = new QStandardItem(project.name);
+        item->setSizeHint(QSize(180, 28));
+        m_projectModel->appendRow(item);
+    }
     else { m_projects[row] = project; m_projectModel->item(row)->setText(project.name); }
     if (m_projectIndex == row) selectProject(row);
+    emit designProjectsChanged();
     emit stateChanged();
 }
 QJsonObject Workbench::automationProjectState(const Project& disk) const
@@ -614,6 +782,9 @@ QJsonObject Workbench::automationProjectState(const Project& disk) const
         return {{"present", true}, {"project", projectJson(project)},
             {"matchesDisk", projectJson(project) == projectJson(disk) && project.storageRevisions == disk.storageRevisions},
             {"selected", activeProjectId() == disk.id}, {"editing", automationProjectEditing()},
+            {"compilationPending", activeProjectId() == disk.id && m_orderPending},
+            {"compilationDiagnostics", activeProjectId() == disk.id ? m_orderIssue : QString()},
+            {"compilationOrder", QJsonArray::fromStringList(project.compilationUnits)},
             {"busy", m_preparing || m_scanning || m_session.busy()}};
     }
     return {{"present", false}, {"matchesDisk", false}};
@@ -624,6 +795,7 @@ void Workbench::selectProject(int row)
     cancelPreparation();
     if (m_projectIndex != row) m_session.stop();
     m_projectIndex = row;
+    if (!m_root.isEmpty()) QSettings().setValue(workspacePreferenceKey() + "/activeProject", activeProjectId());
     m_loading = true;
     m_projectList->setCurrentIndex(m_projectModel->index(row, 0));
     const auto* p = current();
@@ -634,15 +806,22 @@ void Workbench::selectProject(int row)
     m_duration->setValue(int(duration / m_units->currentData().toLongLong()));
     m_loading = false;
     refreshFiles();
+    scheduleCompilationOrder();
     updateControls();
+    emit designProjectsChanged();
     emit stateChanged();
 }
 void Workbench::refreshFiles()
 {
     m_loading = true;
     const auto* p = current();
-    QStringList paths = p ? p->sources : QStringList();
-    const QSet<QString> selected(paths.begin(), paths.end());
+    QStringList selectedPaths = p ? p->sources : QStringList();
+    if (p && !p->tbFile.isEmpty() && !selectedPaths.contains(p->tbFile)) selectedPaths << p->tbFile;
+    const QSet<QString> selected(selectedPaths.begin(), selectedPaths.end());
+    QStringList paths;
+    if (p) for (const auto& unit : p->compilationUnits)
+        if (selected.contains(unit) && !paths.contains(unit)) paths << unit;
+    for (const auto& path : selectedPaths) if (!paths.contains(path)) paths << path;
     QSet<QString> available, seen = selected;
     for (const auto& source : m_scan.files) {
         available.insert(source.path);
@@ -662,8 +841,11 @@ void Workbench::refreshFiles()
             item->setData(path, Qt::UserRole);
             item->setCheckable(true);
             item->setCheckState(selected.contains(path) ? Qt::Checked : Qt::Unchecked);
-            item->setToolTip(path);
-            item->setSizeHint(QSize(200, 32));
+            item->setToolTip(p && path == p->tbFile ? path + tr("\nThe simulation entry is always included. Choose another TB to replace it.") : path);
+            const auto suffix = QFileInfo(path).suffix().toLower();
+            if (suffix == "vh" || suffix == "svh")
+                item->setToolTip(path + tr("\nInclude only; not compiled as a standalone source."));
+            item->setSizeHint(QSize(200, 28));
             if (!available.contains(path) && !QFileInfo(QDir(m_root).filePath(path)).isFile()) {
                 item->setText(path + QStringLiteral("  | File missing"));
                 item->setForeground(QColor(QStringLiteral("#D14B4B")));
@@ -693,6 +875,7 @@ void Workbench::toggleSource(const QModelIndex& index)
     if (!index.isValid() || m_scanning || m_session.busy() || m_requestingProject) return;
     if (current()) {
         auto* item = m_fileModel->itemFromIndex(index);
+        if (item->data(Qt::UserRole).toString() == current()->tbFile) return;
         item->setCheckState(item->checkState() == Qt::Checked ? Qt::Unchecked : Qt::Checked);
         return;
     }
@@ -717,10 +900,12 @@ void Workbench::toggleSource(const QModelIndex& index)
 void Workbench::updateSources()
 {
     if (!current() || m_session.busy()) return;
+    const bool explicitTb = current()->sources.contains(current()->tbFile);
     current()->sources.clear();
     for (int i = 0; i < m_fileModel->rowCount(); ++i) {
         const auto* item = m_fileModel->item(i);
-        if (item->checkState() == Qt::Checked) current()->sources << item->data(Qt::UserRole).toString();
+        const auto file = item->data(Qt::UserRole).toString();
+        if (item->checkState() == Qt::Checked && (file != current()->tbFile || explicitTb)) current()->sources << file;
     }
     updateDutChoices();
     saveCurrent();
@@ -729,15 +914,18 @@ void Workbench::updateSources()
 void Workbench::sourceChanged(QStandardItem* item)
 {
     if (m_loading || !current() || m_session.busy()) return;
+    if (item->data(Qt::UserRole).toString() == current()->tbFile && item->checkState() != Qt::Checked) {
+        const QSignalBlocker blocker(m_fileModel); item->setCheckState(Qt::Checked); return;
+    }
     if (item->checkState() != Qt::Checked) { updateSources(); return; }
     auto* p = current();
     const QString path = item->data(Qt::UserRole).toString();
-    const auto selection = selectDependencies(m_dependencies, path, p->sources);
-    p->sources = selection.sources;
+    if (!p->sources.contains(path)) p->sources << path;
     if (p->dutName.isEmpty()) {
         for (const auto& file : m_scan.files) {
             if (file.path != path || file.modules.isEmpty()) continue;
             p->dutFile = path;
+            if (file.modules.size() != 1) break;
             p->dutName = file.modules.first().name;
             break;
         }
@@ -762,7 +950,6 @@ void Workbench::sourceChanged(QStandardItem* item)
     updateDutChoices();
     saveCurrent();
     updateControls();
-    for (const auto& message : selection.messages) appendLog(message + QLatin1Char('\n'));
 }
 void Workbench::updateDutChoices()
 {
@@ -779,7 +966,7 @@ void Workbench::updateDutChoices()
             if (p->dutFile == file.path && p->dutName == module.name) choice = m_dut->count() - 1;
         }
     }
-    if (choice < 0 && m_dut->count() > 0) choice = 0;
+    // Keep an invalid explicit DUT unresolved; never substitute another module.
     m_dut->setCurrentIndex(choice);
     if (choice >= 0) {
         const auto identity = m_dut->itemData(choice).toStringList();
@@ -794,6 +981,8 @@ bool Workbench::saveCurrent()
         appendLog(QStringLiteral("Settings could not be saved: %1\n").arg(error)); return false;
     }
     m_projectModel->item(m_projectIndex)->setText(current()->name);
+    scheduleCompilationOrder();
+    emit designProjectsChanged();
     emit stateChanged();
     return true;
 }
@@ -809,11 +998,16 @@ void Workbench::renameProject()
     if (!saveProject(m_root, updated, &error)) { appendLog(error + QLatin1Char('\n')); return; }
     *current() = updated;
     m_projectModel->item(m_projectIndex)->setText(updated.name);
-    updateControls(); emit stateChanged();
+    scheduleCompilationOrder();
+    updateControls(); emit designProjectsChanged(); emit stateChanged();
 }
 void Workbench::updateControls()
 {
-    m_projectList->setFixedHeight(qBound(42, m_projectModel->rowCount() * 38 + 4, 140));
+    const int rowHeight = qMax(28, m_projectList->sizeHintForRow(0));
+    const int compactHeight = qBound(36, m_projectModel->rowCount() * (rowHeight + 2 * m_projectList->spacing())
+        + 2 * m_projectList->frameWidth() + 4, 140);
+    m_projectList->setMinimumHeight(m_inputsHeading->isChecked() ? compactHeight : 36);
+    m_projectList->setMaximumHeight(m_inputsHeading->isChecked() ? compactHeight : QWIDGETSIZE_MAX);
     const bool busy = m_session.busy() || m_preparing;
     m_settings->setEnabled(!m_preparing);
     const auto* p = current();
@@ -832,7 +1026,7 @@ void Workbench::updateControls()
             if (m_fileModel->item(row)->isCheckable() != checkable) m_fileModel->item(row)->setCheckable(checkable);
     }
     m_fileList->viewport()->update();
-    m_sourceHint->setText(p ? QStringLiteral("Select files and set their compilation order.")
+    m_sourceHint->setText(!m_orderIssue.isEmpty() ? m_orderIssue : m_orderPending ? tr("Checking compilation dependencies…") : p ? QStringLiteral("Compilation order follows dependencies.")
         : QStringLiteral("Select a file to create a simulation project."));
     m_projectPanel->setEnabled(p && !busy && !m_scanning);
     m_emptyState->setVisible(!p);
@@ -847,7 +1041,7 @@ void Workbench::updateControls()
             : QStringLiteral("Choose an existing TB to run."));
     m_rename->setEnabled(p && !busy && !m_scanning);
     m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
-    m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !busy && !m_scanning);
+    m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !busy && !m_scanning && !m_orderPending && m_orderIssue.isEmpty());
     m_stop->setEnabled(m_preparing || m_session.alive());
     m_stop->setText(m_preparing ? QStringLiteral("Cancel preparation") : busy ? QStringLiteral("Stop simulation") : QStringLiteral("Close session"));
 }
@@ -973,18 +1167,6 @@ void Workbench::startSimulation()
         return prepareRun(executable, root, project, cancelled.get());
     }));
 }
-void Workbench::moveSource(int offset)
-{
-    if (m_session.busy() || m_scanning || !current()) return;
-    const int row = m_fileList->currentIndex().row(), target = row + offset;
-    if (row < 0 || target < 0 || target >= m_fileModel->rowCount()) return;
-    m_loading = true;
-    auto items = m_fileModel->takeRow(row);
-    m_fileModel->insertRow(target, items);
-    m_fileList->setCurrentIndex(m_fileModel->index(target, 0));
-    m_loading = false;
-    updateSources();
-}
 void Workbench::appendLog(const QString& text)
 {
     m_pendingLog += text;
@@ -1049,6 +1231,7 @@ QString Workbench::openProject(const QString& id)
 {
     const auto issue = contextError();
     if (!issue.isEmpty()) return issue;
+    if (m_session.busy() || m_preparing) return tr("Stop the simulation before activating another project.");
     if ((current() && current()->id == id) || (!current() && id.isEmpty())) return {};
     if (id.isEmpty()) { selectProject(-1); return {}; }
     for (int i = 0; i < m_projects.size(); ++i)
@@ -1106,6 +1289,8 @@ void Workbench::savePreferences()
 }
 void Workbench::shutdown()
 {
+    m_orderTimer.stop(); ++m_orderGeneration;
+    if (m_orderCancelled) m_orderCancelled->store(true);
     cancelPreparation();
     if (m_scanCancelled) m_scanCancelled->store(true);
     ++m_generation;

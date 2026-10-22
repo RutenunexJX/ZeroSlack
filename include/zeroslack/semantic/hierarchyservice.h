@@ -89,6 +89,8 @@ struct HierarchyReport {
 };
 
 struct DesignHierarchyNode {
+    QString projectId, projectName;
+    bool expanded = true;
     QString id;
     QString parentId;
     QString rootId;
@@ -106,6 +108,12 @@ struct DesignHierarchyNode {
     bool inSelectedTop = true;
     bool unresolved = false;
     QString unresolvedReason;
+};
+
+struct DesignHierarchyRoot {
+    QString projectId, name, module, file;
+    bool expanded = true;
+    bool operator==(const DesignHierarchyRoot&) const = default;
 };
 
 struct DesignHierarchyReport {
@@ -150,6 +158,8 @@ public:
         const QString& selectedTopModule,
         const QSet<QString>& fileScope) const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
+    DesignHierarchyReport explicitDesignHierarchy(const QList<DesignHierarchyRoot>& roots,
+        const QString& activeProjectId, const QSet<QString>& fileScope) const;
     HierarchyQuery queryForPanel(const HierarchyPanelQueryOptions& options) const;
     QList<HierarchyNode> moduleInstantiationChildren(const SymbolStableKey& moduleStableKey) const;
 

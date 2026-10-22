@@ -1,5 +1,7 @@
 # Domain ownership is explicit. Only include/zeroslack is a public interface.
 set(ZEROSLACK_SEMANTIC_SOURCES
+    include/zeroslack/semantic/compilationorderservice.h
+    src/semantic/compilationorderservice.cpp
     include/zeroslack/semantic/effectivevalueservice.h
     include/zeroslack/semantic/fsmgraphservice.h
     include/zeroslack/semantic/hierarchyservice.h

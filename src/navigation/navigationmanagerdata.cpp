@@ -8,6 +8,8 @@
 #include <QPointer>
 #include "tabmanager.h"
 #include "workspacemanager.h"
+#include "projectmodel.h"
+#include "../simulation/simdock/ui/workbench.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -59,7 +61,7 @@ namespace {
 bool reuseDesignRowIds(DesignHierarchyReport& report, const DesignHierarchyReport& previous)
 {
     auto key = [](const DesignHierarchyNode& node) {
-        return QString::number(node.rootModule.size()) + ':' + node.rootModule
+        return node.projectId + ":" + QString::number(node.rootModule.size()) + ':' + node.rootModule
             + QString::number(node.instancePath.size()) + ':' + node.instancePath
             + QString::number(node.moduleType.size()) + ':' + node.moduleType;
     };
@@ -106,13 +108,31 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
         return false;
     const auto token = navigationService->semanticSnapshotToken();
     const auto files = normalizedDesignScopeFiles(getSystemVerilogFiles());
-    const auto top = caches.designTopInferred ? QString() : caches.designTopModule;
+    if (connectedWorkbench && connectedWorkbench->workspace() == context.currentWorkspacePath
+        && !connectedWorkbench->designMigrationCompleted() && connectedWorkspaceManager && token.revision > 0
+        && connectedWorkspaceManager->getProjectModel()->snapshot().sourceDiscoveryComplete
+        && semanticAnalysisContext.stage == SemanticAnalysisStage::Publication) {
+        const auto legacy = connectedWorkspaceManager->workspaceConfiguration().topModule;
+        QString definition;
+        int matches = 0;
+        for (const auto& module : navigationService->availableModules())
+            if (module.name == legacy && files.contains(normalizedDesignScopeFileName(module.location.fileName))) {
+                definition = module.location.fileName; ++matches;
+            }
+        // Never turn inferred candidates into saved projects. A name-only
+        // legacy selection remains unresolved when its source is ambiguous.
+        if (legacy.isEmpty() || !connectedWorkbench->designRoots().isEmpty()
+            || connectedWorkbench->addDesignProject(matches == 1 ? definition : QString(), legacy, true).isEmpty())
+            connectedWorkbench->markDesignMigrationCompleted();
+    }
+    const auto roots = currentDesignRoots();
+    const auto top = connectedWorkbench ? connectedWorkbench->activeProjectId() : QString();
     if (!force && caches.designHierarchyValid && caches.designSnapshotGeneration == token.revision
-        && caches.designFileScope == files && caches.designHierarchy.selectedTopModule == top)
+        && caches.designFileScope == files && caches.activeProjectId == top && caches.designRoots == roots)
         return false;
     auto sameRequest = [&](const std::optional<DesignWorkRequest>& pending) {
         return pending && pending->token.snapshot == token.snapshot && pending->token.revision == token.revision
-            && pending->files == files && pending->selectedTop == top
+            && pending->files == files && pending->selectedTop == top && pending->roots == roots
             && pending->workspace == context.currentWorkspacePath
             && pending->generation == designRequestGeneration;
     };
@@ -122,17 +142,18 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     request.token = token;
     request.files = files;
     request.selectedTop = top;
+    request.roots = roots;
     request.workspace = context.currentWorkspacePath;
     request.telemetry = semanticAnalysisContext;
     request.generation = ++designRequestGeneration;
     request.force = force;
-    if (caches.designFileScope == files && caches.designHierarchy.selectedTopModule == top) {
+    if (caches.designFileScope == files && caches.activeProjectId == top && caches.designRoots == roots) {
         request.previousHierarchy = caches.designHierarchy;
         request.previousFingerprint = caches.designStructureFingerprint;
         request.previousAnchorFingerprint = caches.designAnchorFingerprint;
     }
     caches.designHierarchyValid = false;
-    if (caches.designFileScope != files || caches.designHierarchy.selectedTopModule != top) {
+    if (caches.designFileScope != files || (caches.activeProjectId != top || caches.designRoots != roots)) {
         navigationWidget->clearDesignHierarchy();
         designHierarchyWidgetValid = false;
     }
@@ -160,10 +181,10 @@ void NavigationManager::launchPendingDesignWork()
         activeDesignRequest.reset();
         watcher->deleteLater();
         const auto currentToken = navigationService ? navigationService->semanticSnapshotToken() : SemanticSnapshotToken{};
-        const QString currentTop = caches.designTopInferred ? QString() : caches.designTopModule;
+        const QString currentTop = connectedWorkbench ? connectedWorkbench->activeProjectId() : QString();
         if (!designShuttingDown && request.generation == designRequestGeneration
             && navigationWidget && navigationWidget->isVisible()
-            && context.currentWorkspacePath == request.workspace && currentTop == request.selectedTop
+            && context.currentWorkspacePath == request.workspace && currentTop == request.selectedTop && currentDesignRoots() == request.roots
             && currentToken.snapshot == request.token.snapshot && currentToken.revision == request.token.revision
             && normalizedDesignScopeFiles(getSystemVerilogFiles()) == request.files) {
             QElapsedTimer applyTimer;
@@ -171,11 +192,10 @@ void NavigationManager::launchPendingDesignWork()
             const bool keepTree = designHierarchyWidgetValid && result.reusedStructure && !request.force
                 && caches.designFileScope == request.files
                 && caches.designStructureFingerprint == result.fingerprint
-                && caches.designHierarchy.selectedTopModule == request.selectedTop;
+                && caches.activeProjectId == request.selectedTop && caches.designRoots == request.roots;
             caches.designHierarchy = result.hierarchy;
-            caches.designRootModules = result.roots;
-            if (caches.designTopInferred)
-                caches.designTopModule = result.roots.value(0);
+            caches.designRoots = request.roots;
+            caches.activeProjectId = request.selectedTop;
             caches.designFileScope = request.files;
             caches.designStructureFingerprint = result.fingerprint;
             caches.designAnchorFingerprint = result.anchorFingerprint;
@@ -213,9 +233,7 @@ void NavigationManager::launchPendingDesignWork()
     watcher->setFuture(QtConcurrent::run(&designThreadPool, [request] {
         DesignWorkResult result;
         result.hierarchy.snapshotGeneration = request.token.revision;
-        result.hierarchy.selectedTopModule = request.selectedTop;
-        if (!request.token.snapshot || request.files.isEmpty())
-            return result;
+
         SemanticIndex readIndex(request.token);
         NavigationService reader(&readIndex);
         const auto scope = designScopeSet(request.files);
@@ -227,16 +245,10 @@ void NavigationManager::launchPendingDesignWork()
             result.reusedStructure = true;
             result.hierarchy = request.previousHierarchy;
             result.hierarchy.snapshotGeneration = request.token.revision;
-            result.roots = result.hierarchy.rootModules;
             return result;
         }
-        result.roots = reader.inferDesignTopModules(scope);
-        if (!request.selectedTop.isEmpty() && !result.roots.contains(request.selectedTop))
-            result.roots.prepend(request.selectedTop);
-        if (!result.roots.isEmpty())
-            result.hierarchy = reader.findDesignHierarchy(result.roots, request.selectedTop, scope);
+        result.hierarchy = HierarchyService(&readIndex).explicitDesignHierarchy(request.roots, request.selectedTop, scope);
         result.hierarchy.snapshotGeneration = request.token.revision;
-        result.hierarchy.selectedTopModule = request.selectedTop;
         result.reusedStructure = sameStructure && reuseDesignRowIds(result.hierarchy, request.previousHierarchy);
         return result;
     }));

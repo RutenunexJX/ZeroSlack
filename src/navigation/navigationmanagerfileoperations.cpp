@@ -217,7 +217,13 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
         const QStringList modules =
             navigationService
                 ->modulesDefinedInFile(path);
-        if (!modules.isEmpty()) {
+        if (modules.isEmpty()) {
+            menu.addSeparator();
+            auto* action = menu.addAction(tr("No module definition available for a design project"));
+            action->setEnabled(false);
+            action->setToolTip(tr("Choose an HDL module definition. Packages and headers do not form a design hierarchy."));
+            menu.setToolTipsVisible(true);
+        } else {
             menu.addSeparator();
             const QString setTopActionId =
                 QString::fromLatin1(
@@ -230,10 +236,11 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
                     setTopActionId,
                     true,
                     [this,
-                     setTopActionId,
+                     setTopActionId, path,
                      moduleName]() {
                         DesignHierarchyNode node;
                         node.moduleType = moduleName;
+                        node.definitionFile = path;
                         requestDesignNodeAction(
                             setTopActionId, node);
                     });
@@ -274,11 +281,11 @@ void NavigationManager::onFileTreeNodeContextMenuRequested(
                             &QAction::triggered,
                             this,
                             [this,
-                             setTopActionId,
+                             setTopActionId, path,
                              moduleName]() {
                                 DesignHierarchyNode node;
-                                node.moduleType =
-                                    moduleName;
+                                node.moduleType = moduleName;
+                                node.definitionFile = path;
                                 requestDesignNodeAction(
                                     setTopActionId,
                                     node);
@@ -627,7 +634,8 @@ NavigationManager::executeActionRoute(
                     "The selected hierarchy node has no module type.");
             return actionResult;
         }
-        setDesignTop(moduleType);
+        const auto issue = setDesignTop(moduleType, invocation.parameters.value(QStringLiteral("definitionFile")).toString());
+        if (!issue.isEmpty()) { actionResult.failureReason = issue; return actionResult; }
         actionResult.output.insert(
             QStringLiteral("moduleType"),
             moduleType);

@@ -96,7 +96,7 @@ QIcon contextProviderIcon(
     if (providerId == QStringLiteral("rtlInsight.state")) return icon(StateGraph);
     if (providerId == QStringLiteral("liveInsights")) return icon(Activity);
     if (providerId == QStringLiteral("xips")) return icon(IpCatalog);
-    if (providerId == QStringLiteral("simdock")) return icon(Wave);
+    if (providerId == QStringLiteral("simdock")) return icon(Simulation);
     return icon(Bookmark);
 }
 }

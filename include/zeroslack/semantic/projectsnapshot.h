@@ -16,6 +16,8 @@ struct ProjectSnapshot {
     QStringList fileExtensions;
     QHash<QString, SymbolTaxonomy::SourceRole> sourceRoles;
     QString topModule;
+    QString activeDesignProjectId, activeDesignTopModule, activeDesignTopFile;
+    bool explicitDesignSelection = false;
     QStringList ignoredPaths;
     // Cached/loading file lists are useful for navigation but are not yet a
     // complete semantic input. A completed empty scan is authoritative.

@@ -25,6 +25,7 @@ class NavigationService;
 class TabManager;
 class WorkspaceManager;
 class WorkspaceFileOperationService;
+namespace simdock { class Workbench; }
 struct WorkspaceFileOperationPlan;
 
 struct DesignHierarchyContextAction {
@@ -60,6 +61,7 @@ public:
     // Manager connections
     void connectToTabManager(TabManager* tabManager);
     void connectToWorkspaceManager(WorkspaceManager* workspaceManager);
+    void connectToWorkbench(simdock::Workbench* workbench);
     void setTemporaryEditorOpenHandler(
         std::function<bool(const EditorLocation&)> handler);
 
@@ -73,9 +75,10 @@ public:
 
     // Navigation operations
     void navigateToFile(const QString& filePath, int lineNumber = -1);
-    void setDesignTop(const QString& moduleName);
+    QString setDesignTop(const QString& moduleName, const QString& definitionFile = {});
     void clearDesignTop();
     QString selectedDesignTopModule() const;
+    void chooseDesignProject();
     QList<DesignHierarchyContextAction>
     designNodeContextActions(
         const DesignHierarchyNode& node) const;
@@ -152,8 +155,8 @@ private:
         QStringList fileList;
         DesignHierarchyReport designHierarchy;
         QString fileHierarchyFilter;
-        QString designTopModule;
-        QStringList designRootModules;
+        QList<DesignHierarchyRoot> designRoots;
+        QString activeProjectId;
         QStringList designFileScope;
         QByteArray designStructureFingerprint;
         QByteArray designAnchorFingerprint;
@@ -161,7 +164,6 @@ private:
         bool fileListValid = false;
         bool fileHierarchyValid = false;
         bool designHierarchyValid = false;
-        bool designTopInferred = true;
 
         void clearFileList();
         void clearDesignHierarchy();
@@ -169,14 +171,13 @@ private:
 
     struct DesignHierarchyCacheEntry {
         DesignHierarchyReport hierarchy;
-        QString topModule;
-        QStringList rootModules;
+        QList<DesignHierarchyRoot> roots;
+        QString activeProjectId;
         QStringList fileScope;
         QByteArray structureFingerprint;
         QByteArray anchorFingerprint;
         std::uint64_t snapshotGeneration = 0;
         bool hierarchyValid = false;
-        bool topInferred = true;
     };
 
     NavigationWidget* navigationWidget = nullptr;
@@ -185,6 +186,7 @@ private:
 
     TabManager* connectedTabManager = nullptr;
     WorkspaceManager* connectedWorkspaceManager = nullptr;
+    simdock::Workbench* connectedWorkbench = nullptr;
     QMetaObject::Connection workspaceDiscardConnection;
     std::unique_ptr<WorkspaceFileOperationService>
         fileOperationService;
@@ -203,6 +205,7 @@ private:
         SemanticSnapshotToken token;
         QStringList files;
         QString selectedTop;
+        QList<DesignHierarchyRoot> roots;
         QString workspace;
         SemanticAnalysisTelemetry telemetry;
         std::uint64_t generation = 0;
@@ -216,7 +219,6 @@ private:
         QByteArray fingerprint;
         QByteArray anchorFingerprint;
         bool reusedStructure = false;
-        QStringList roots;
     };
     QThreadPool designThreadPool;
     QFutureWatcher<DesignWorkResult>* designWatcher = nullptr;
@@ -225,6 +227,8 @@ private:
     std::uint64_t designRequestGeneration = 0;
     bool designShuttingDown = false;
     void launchPendingDesignWork();
+    QList<DesignHierarchyRoot> currentDesignRoots() const;
+    void synchronizeDesignProjects();
 
     // Helper methods
     void setupConnections();

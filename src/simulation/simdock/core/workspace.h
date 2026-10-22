@@ -5,6 +5,7 @@
 #include <atomic>
 
 namespace simdock {
+struct BuildInputPlan;
 struct ScanMetrics {
     qint64 readFiles = 0, parsedFiles = 0, reusedFiles = 0;
     qint64 readNs = 0, analysisNs = 0, totalNs = 0;
@@ -29,7 +30,7 @@ QString projectTbPath(const Project& project, const QString& top);
 QString validateInputs(const QString& root, const Project& project,
                        QMap<QString, QByteArray>* fingerprints = nullptr,
                        const std::atomic_bool* cancelled = nullptr,
-                       const QMap<QString, QByteArray>& overrides = {});
+                       const QMap<QString, QByteArray>& overrides = {}, BuildInputPlan* plan = nullptr);
 bool writeNewTb(const QString& root, const QString& relativePath, const QString& content, QString* error);
 QJsonObject projectJson(const Project& project);
 }

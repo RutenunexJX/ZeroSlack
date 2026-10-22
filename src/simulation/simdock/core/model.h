@@ -46,6 +46,7 @@ struct InputConfiguration {
 };
 struct Project {
     QString id, name;
+    QString designTopFile, designTopModule;
     QStringList sources;
     QStringList includeDirectories;
     QString dutFile, dutName, tbFile, tbName;
@@ -60,6 +61,9 @@ struct Project {
     QJsonObject preservedInputs;
     QString storageName, legacyFile;
     QMap<QString, QByteArray> storageRevisions;
+    // Derived only for a prepared run. These are not a second saved selection.
+    QStringList compilationUnits, compilationIncludeDirectories;
+    QHash<QString, QString> compilationDefines;
 };
 struct TbOptions {
     QString name, clock, reset;

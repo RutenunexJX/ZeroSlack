@@ -4,6 +4,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
+#include <QUuid>
 #include <algorithm>
 #include <functional>
 
@@ -591,40 +592,31 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
     const QString& selectedTopModule,
     const QSet<QString>& fileScope) const
 {
+    QList<DesignHierarchyRoot> roots;
+    for (const auto& name : topModules) roots << DesignHierarchyRoot{name, name, name, {}, true};
+    auto report = explicitDesignHierarchy(roots, selectedTopModule, fileScope);
+    if (selectedTopModule.isEmpty())
+        for (auto& node : report.nodes) node.inSelectedTop = true;
+    return report;
+}
+
+DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
+    const QList<DesignHierarchyRoot>& roots, const QString& activeProjectId,
+    const QSet<QString>& fileScope) const
+{
     DesignHierarchyReport report;
     report.snapshotGeneration = semanticIndex()->snapshotRevision();
-
-    const QString selectedTop = selectedTopModule.trimmed();
-    report.selectedTopModule = selectedTop;
-
-    QSet<QString> seenRoots;
-    QStringList roots;
-    auto appendRootName = [&](const QString& moduleName) {
-        const QString trimmed = moduleName.trimmed();
-        if (trimmed.isEmpty() || seenRoots.contains(trimmed))
-            return;
-        seenRoots.insert(trimmed);
-        roots.append(trimmed);
-    };
-    if (!selectedTop.isEmpty())
-        appendRootName(selectedTop);
-    for (const QString& moduleName : topModules)
-        appendRootName(moduleName);
-
-    report.rootModules = roots;
-    report.topModule = selectedTop.isEmpty()
-        ? (roots.isEmpty() ? QString() : roots.first())
-        : selectedTop;
-    if (roots.isEmpty())
-        return report;
-
-    QHash<QString, SemanticSymbolRecord> modulesByName;
-    QList<SemanticSymbolRecord> modules;
-    const QList<SemanticSymbolRecord> records = designRecords(semanticIndex());
+    QHash<QString, QList<SemanticSymbolRecord>> definitions;
+    const auto records = designRecords(semanticIndex());
     const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
-    for (const SemanticSymbolRecord& record : records)
-        appendDesignModuleRecord(&modulesByName, &modules, record, fileScope);
-
+    for (const auto& record : records) {
+        if (!isDesignModuleDeclaration(record) || !designFileScopeContains(fileScope, record.location.fileName)) continue;
+        auto& matches = definitions[record.name];
+        bool duplicate = false;
+        for (const auto& old : matches) duplicate |= old.stableKey == record.stableKey;
+        if (!duplicate) matches << record;
+    }
+    const QString selectedTop = activeProjectId;
     int nextNodeId = 0;
     auto nextId = [&]() {
         return QString::number(nextNodeId++);
@@ -677,10 +669,9 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
 
             const bool targetIsInstance = isDesignInstanceDeclaration(targetRecord);
             QString moduleType = designModuleTypeForRelationship(relationship);
-            const SemanticSymbolRecord definitionRecord = modulesByName.value(moduleType);
+            auto candidates = definitions.value(moduleType);
+            const SemanticSymbolRecord definitionRecord = candidates.size() == 1 ? candidates.first() : SemanticSymbolRecord{};
             if (moduleType.isEmpty())
-                continue;
-            if (moduleType == parentModule.name)
                 continue;
 
             const QString instanceName =
@@ -734,7 +725,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
                 addParticipatingFile(definitionRecord.location.fileName, inSelectedTop);
             } else {
                 node.unresolved = true;
-                node.unresolvedReason = QStringLiteral("module definition not found");
+                node.unresolvedReason = candidates.size() > 1 ? QStringLiteral("multiple module definitions; select an unambiguous build scope") : QStringLiteral("module definition not found");
                 if (!moduleType.isEmpty())
                     unresolvedModules.insert(moduleType);
                 addParticipatingFile(instanceFile, inSelectedTop);
@@ -762,28 +753,47 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
         }
     };
 
-    for (const QString& rootModule : std::as_const(roots)) {
-        const SemanticSymbolRecord topRecord = modulesByName.value(rootModule);
-        if (!topRecord.isValid())
-            continue;
-
-        const bool inSelectedTop = selectedTop.isEmpty() || rootModule == selectedTop;
+    for (const auto& root : roots) {
+        auto candidates = definitions.value(root.module);
+        if (root.file.isEmpty() && !QUuid(root.projectId).isNull()) candidates.clear();
+        if (!root.file.isEmpty()) {
+            const auto file = normalizedDesignHierarchyFileName(root.file);
+            candidates.erase(std::remove_if(candidates.begin(), candidates.end(), [&](const auto& record) {
+#ifdef Q_OS_WIN
+                return normalizedDesignHierarchyFileName(record.location.fileName).compare(file, Qt::CaseInsensitive) != 0;
+#else
+                return normalizedDesignHierarchyFileName(record.location.fileName) != file;
+#endif
+            }), candidates.end());
+        }
+        const bool inSelectedTop = root.projectId == activeProjectId;
+        const SemanticSymbolRecord topRecord = candidates.size() == 1 ? candidates.first() : SemanticSymbolRecord{};
         DesignHierarchyNode topNode;
         topNode.id = nextId();
         topNode.rootId = topNode.id;
-        topNode.rootModule = topRecord.name;
-        topNode.instanceName = topRecord.name;
-        topNode.instancePath = topRecord.name;
-        topNode.moduleType = topRecord.name;
-        topNode.definitionFile =
-            normalizedDesignHierarchyFileName(topRecord.location.fileName);
+        topNode.rootModule = root.module;
+        topNode.projectId = root.projectId;
+        topNode.projectName = root.name;
+        topNode.expanded = root.expanded;
+        topNode.instanceName = topNode.instancePath = topNode.moduleType = root.module;
+        topNode.definitionFile = topRecord.isValid() ? normalizedDesignHierarchyFileName(topRecord.location.fileName) : root.file;
         topNode.definitionLine = topRecord.location.startLine;
         topNode.definitionColumn = topRecord.location.startColumn;
         topNode.isTop = true;
         topNode.inSelectedTop = inSelectedTop;
+        if (!topRecord.isValid()) {
+            topNode.unresolved = true;
+            topNode.unresolvedReason = candidates.size() > 1
+                ? QStringLiteral("Multiple definitions match this module; choose its source explicitly.")
+                : QStringLiteral("The saved module definition is missing or has not been parsed. Its identity was retained.");
+        }
         report.nodes.append(topNode);
+        report.rootModules << root.module;
+        if (report.topModule.isEmpty()) report.topModule = root.module;
+        if (inSelectedTop) report.selectedTopModule = report.topModule = root.module;
+        if (!topRecord.isValid()) { unresolvedModules.insert(root.module); continue; }
         addParticipatingFile(topRecord.location.fileName, inSelectedTop);
-
+        const auto firstChild = report.nodes.size();
         appendChildren(topRecord,
                        topNode.id,
                        topNode.id,
@@ -791,6 +801,7 @@ DesignHierarchyReport HierarchyService::getDesignHierarchyReport(
                        topNode.instancePath,
                        inSelectedTop,
                        {});
+        for (qsizetype i = firstChild; i < report.nodes.size(); ++i) report.nodes[i].projectId = root.projectId;
     }
     report.unresolvedModules = uniqueSortedStringList(unresolvedModules);
     return report;

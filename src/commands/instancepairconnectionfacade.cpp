@@ -1555,9 +1555,6 @@ InstancePairConnectionFacade::analyze(
     query.leftSignalContext.fileName =
         contextFile;
 
-    QStringList roots =
-        hierarchyApi->inferDesignTopModules(
-            query.workspaceFiles);
     const QString activeTop =
         query.leftSignalContext
             .hierarchyInstance.activeTopModule;
@@ -1568,9 +1565,7 @@ InstancePairConnectionFacade::analyze(
             QStringLiteral(
                 "The selected hierarchy has no active design top."));
     }
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
-    roots = uniqueSorted(roots);
+    const QStringList roots{activeTop};
     const DesignHierarchyReport design =
         hierarchyApi->getDesignHierarchyReport(
             roots, activeTop,

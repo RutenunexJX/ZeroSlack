@@ -1,8 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.8`
+Current version: `v0.32.9`
 
-Release 0.32.8 highlights the active template input, distinguishes browsing from editing and shows the current hierarchy. Incomplete clk_init/reset inputs can return without losing values. Formatting works in template lock and preserves instances, slots, undo/redo and live Slang candidates. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
+Release 0.32.9 separates file browsing from explicit Design subprojects, keeps one active project, and infers compilation order with Slang. The sidebar uses compact collapsible sections and rounded icons; the English welcome page adds hover animations. Waveform/Register welcome entries remain unavailable by agreement. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.6 enters a selected TB region with one Enter. Selecting a DUT module applies default parameters and creates declarations, an instance and port connections together; optional customization remains available. Package-qualified UART ports are preserved. Escape cancels search without unlocking, and subsequent code input retains its cursor or selection. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
@@ -210,7 +210,7 @@ Shared signal-relationship analysis, clock/reset facts and semantic Diff renderi
 ## Versioning and release
 
 `VERSION` is the single manually maintained product version source and must contain exactly
-one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.8`.
+one SemVer value in strict `X.Y.Z` numeric form. Current controlled baseline: `v0.32.9`.
 CMake generates `generated/version.h`, which supplies the application title/status version and
 the GUI tests. `version_documentation_guard` checks the generated header and the version
 markers in this README, the user manual and the package README.
@@ -245,7 +245,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.32.8`. Ela is the sole formal package,
+The current release is `0.32.9`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

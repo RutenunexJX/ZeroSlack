@@ -17,6 +17,7 @@
 #include "slangmanager.h"
 #include "editorfileidentity.h"
 #include "../simulation/simdock/core/workspace.h"
+#include "../simulation/simdock/core/dependencies.h"
 #include "../simulation/simdock/core/ownedpaths.h"
 #include "../simulation/simdock/core/questasession.h"
 #include "../simulation/simdock/ui/workbench.h"
@@ -529,7 +530,7 @@ QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, c
         if (!request.value("project").isObject()) return failure("invalid_project", "project must be an object.");
         const auto original = project;
         const auto patch = request.value("project").toObject();
-        const QSet<QString> fields{"name", "sources", "includeDirectories", "dutFile", "dutName", "tbFile", "tbName", "durationNs"};
+        const QSet<QString> fields{"name", "sources", "includeDirectories", "designTopFile", "designTopModule", "dutFile", "dutName", "tbFile", "tbName", "durationNs"};
         for (auto it = patch.begin(); it != patch.end(); ++it) if (!fields.contains(it.key())) return failure("invalid_project", "Unknown or retired project field: " + it.key());
         for (auto it = patch.begin(); it != patch.end(); ++it) {
             if (it.key() == "sources" || it.key() == "includeDirectories") {
@@ -543,6 +544,8 @@ QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, c
         if (patch.contains("name")) project.name = patch.value("name").toString();
         if (patch.contains("sources")) project.sources = stringList(patch.value("sources"));
         if (patch.contains("includeDirectories")) project.includeDirectories = stringList(patch.value("includeDirectories"));
+        if (patch.contains("designTopFile")) project.designTopFile = patch.value("designTopFile").toString();
+        if (patch.contains("designTopModule")) project.designTopModule = patch.value("designTopModule").toString();
         if (patch.contains("dutFile")) project.dutFile = patch.value("dutFile").toString();
         if (patch.contains("dutName")) project.dutName = patch.value("dutName").toString();
         if (patch.contains("tbFile")) project.tbFile = patch.value("tbFile").toString();
@@ -554,16 +557,20 @@ QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, c
         for (auto& path : project.sources) path = relative(path);
         for (auto& path : project.includeDirectories) path = relative(path);
         project.dutFile = relative(project.dutFile); project.tbFile = relative(project.tbFile);
+        project.designTopFile = relative(project.designTopFile);
         QString issue = simdock::validateProject(root, project);
         if (issue.isEmpty()) issue = simdock::validateStorageName(project.name);
         auto* workbench = window ? window->simulationWorkbench() : nullptr;
         const bool adopt = workbench && EditorFileIdentity::same(workbench->workspace(), root);
         if (issue.isEmpty() && adopt) issue = workbench->automationProjectWriteIssue(found ? &original : nullptr);
         if (!issue.isEmpty()) return failure("project_conflict", issue);
-        if (request.value("dryRun").toBool()) return success({{"project", simdock::projectJson(project)}, {"preview", true}, {"written", false}, {"adopted", false}});
+        const auto plan = simdock::planBuildInputs(root, project);
+        if (plan.order.valid()) plan.apply(project, root);
+        if (request.value("dryRun").toBool()) return success({{"project", simdock::projectJson(project)}, {"preview", true}, {"written", false}, {"adopted", false}, {"buildDiagnostics", strings(plan.order.diagnostics)}});
         if (!simdock::saveProject(root, project, &issue)) return failure("write_conflict", issue);
         if (adopt) workbench->adoptAutomationProject(project);
-        return success({{"project", projectObject(project)}, {"written", true}, {"adopted", adopt}, {"diagnostic", issue}, {"viewLocated", false}});
+        return success({{"project", projectObject(project)}, {"written", true}, {"adopted", adopt}, {"diagnostic", issue},
+            {"buildDiagnostics", strings(plan.order.diagnostics)}, {"viewLocated", false}});
     }
     if (!found) return failure("not_found", "Unknown projectId; no implicit active-project selection is performed.");
     if (command == "simulation.open") {
@@ -581,8 +588,13 @@ QJsonObject ZeroSlackAutomationService::simulation(const QJsonObject& request, c
             {"adopted", memory.value("matchesDisk").toBool()}, {"viewLocated", false}});
     }
     if (command == "simulation.validate") {
-        const auto issue = simdock::validateInputs(root, project);
-        return issue.isEmpty() ? success({{"project", projectObject(project)}, {"valid", true}}) : failure("invalid_inputs", issue);
+        simdock::BuildInputPlan plan;
+        const auto issue = simdock::validateInputs(root, project, nullptr, nullptr, {}, &plan);
+        QJsonObject dependencies;
+        for (auto it = plan.order.dependencies.cbegin(); it != plan.order.dependencies.cend(); ++it) dependencies.insert(it.key(), strings(it.value()));
+        const QJsonObject data{{"project", projectObject(project)}, {"valid", issue.isEmpty()}, {"compilationOrder", strings(plan.order.files)},
+            {"includeOnly", strings(plan.order.headers)}, {"dependencies", dependencies}, {"diagnostics", strings(plan.order.diagnostics)}};
+        return issue.isEmpty() ? success(data) : failure("invalid_inputs", issue, data);
     }
     if (command != "simulation.run") return failure("unknown_command", "Unknown simulation operation.");
     if (request.value("expectedRevision").toString() != projectRevision(project)) return failure("revision_conflict", "Read the project revision before starting a run.");

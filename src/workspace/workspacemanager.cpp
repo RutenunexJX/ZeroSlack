@@ -580,6 +580,7 @@ WorkspaceConfiguration WorkspaceManager::workspaceConfiguration() const
         configuration.virtualSourceGroups =
             workspaces.at(activeIndex)
                 .virtualSourceGroups;
+        configuration.topModule = workspaces.at(activeIndex).topModule;
         configuration.storageRevision = workspaces.at(activeIndex).configurationRevision;
     }
     return workspaceConfigurationService

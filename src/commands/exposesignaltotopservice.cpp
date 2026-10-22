@@ -797,13 +797,9 @@ ExposeSignalToTopReport ExposeSignalToTopService::plan(
         normalizedFiles(query.workspaceFiles);
     if (workspaceFiles.isEmpty())
         workspaceFiles.insert(contextDocument->fileName);
-    QStringList roots =
-        hierarchyApi->inferDesignTopModules(workspaceFiles);
     const QString activeTop =
         query.context.hierarchyInstance.activeTopModule;
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
-    roots = uniqueSorted(roots);
+    const QStringList roots{activeTop};
     const DesignHierarchyReport design =
         hierarchyApi->getDesignHierarchyReport(
             roots, activeTop, workspaceFiles);

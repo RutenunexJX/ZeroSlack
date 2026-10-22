@@ -1,3 +1,5 @@
+#include "welcomecard.h"
+#include <QScrollArea>
 #include "uidialogs.h"
 #include "workspacechrome.h"
 #include "mainwindow.h"
@@ -637,46 +639,55 @@ void MainWindow::setupEditorCentralArea()
 
 void MainWindow::setupWelcomePage()
 {
-    welcomePage = new QWidget(centralContentStack);
-    welcomePage->setObjectName(QStringLiteral("welcomePage"));
-    auto* pageLayout = new QHBoxLayout(welcomePage);
-    pageLayout->setContentsMargins(0, 0, 0, 0);
-    pageLayout->setSpacing(0);
-
-    auto* center = new QWidget(welcomePage);
-    auto* centerLayout = new QVBoxLayout(center);
-    centerLayout->setContentsMargins(24, 32, 24, 32);
-    centerLayout->setSpacing(0);
-    centerLayout->addStretch(2);
-    auto* content = new QWidget(center);
-    content->setMinimumWidth(360);
-    content->setMaximumWidth(420);
+    auto* scroll = new QScrollArea(centralContentStack);
+    welcomePage = scroll;
+    scroll->setObjectName(QStringLiteral("welcomePage"));
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    auto* page = new QWidget(scroll);
+    auto* pageLayout = new QVBoxLayout(page);
+    pageLayout->setContentsMargins(24,32,24,32);
+    pageLayout->addStretch(1);
+    auto* content = new QWidget(page);
+    content->setMaximumWidth(1120);
     auto* contentLayout = new QVBoxLayout(content);
-    contentLayout->setContentsMargins(0, 0, 0, 0);
-    contentLayout->setSpacing(12);
-    auto* open = UiControls::toolButton(content);
+    contentLayout->setContentsMargins(0,0,0,0); contentLayout->setSpacing(16);
+    auto* heading = new QHBoxLayout;
+    auto* title = UiControls::label(tr("Get started"), content);
+    QFont titleFont=title->font(); titleFont.setPointSizeF(22); title->setFont(titleFont);
+    heading->addWidget(title,1);
+    auto* open = UiControls::pushButton(tr("Open workspace"), content);
     open->setObjectName(QStringLiteral("welcomeOpenProjectButton"));
     open->setIcon(RoundedIcons::icon(RoundedIcons::OpenProject));
-    open->setIconSize(QSize(68, 68));
-    open->setFixedSize(88, 88);
-    open->setToolTip(tr("Open a project"));
-    open->setAccessibleName(tr("Open a project"));
-    connect(open, &QToolButton::clicked, this, [this]() {
-        if (fileCommandCoordinator)
-            fileCommandCoordinator->openDirectoryAsWorkspace();
-    });
-    contentLayout->addWidget(open, 0, Qt::AlignHCenter);
-    contentLayout->addSpacing(18);
-    auto* recentTitle = UiControls::label(tr("Recent projects"), content);
+    open->setAccessibleName(tr("Open workspace"));
+    heading->addWidget(open);
+    contentLayout->addLayout(heading);
+    auto* subtitle = UiControls::label(tr("Code, waveforms, and registers."),content);
+    subtitle->setForegroundRole(QPalette::PlaceholderText); contentLayout->addWidget(subtitle);
+    auto* cards = new WelcomeCardGrid(content);
+    contentLayout->addWidget(cards);
+    const auto openWorkspace = [this] {
+        if (fileCommandCoordinator) fileCommandCoordinator->openDirectoryAsWorkspace();
+    };
+    connect(open,&QPushButton::clicked,this,openWorkspace);
+    connect(cards->card(0),&QPushButton::clicked,this,openWorkspace);
+    for (int i : {1,2}) {
+        auto* card=cards->card(i);
+        card->setEnabled(false); card->setCursor(Qt::ArrowCursor);
+        card->setToolTip(tr("This document entry is not available in this build."));
+        card->setAccessibleDescription(card->toolTip());
+        card->setAttribute(Qt::WA_AlwaysShowToolTips);
+    }
+    auto* recentTitle = UiControls::label(tr("Recent workspaces"), content);
     recentTitle->setObjectName(QStringLiteral("welcomeRecentTitle"));
     UiTypography::apply(recentTitle, UiTypography::Role::PanelTitle);
-    contentLayout->addWidget(recentTitle, 0, Qt::AlignHCenter);
+    contentLayout->addWidget(recentTitle);
     recentProjectsLayout = new QVBoxLayout;
-    recentProjectsLayout->setSpacing(8);
-    contentLayout->addLayout(recentProjectsLayout);
-    centerLayout->addWidget(content, 0, Qt::AlignHCenter);
-    centerLayout->addStretch(3);
-    pageLayout->addWidget(center, 1);
+    recentProjectsLayout->setSpacing(8); contentLayout->addLayout(recentProjectsLayout);
+    pageLayout->addWidget(content,0,Qt::AlignHCenter);
+    pageLayout->addStretch(2);
+    scroll->setWidget(page);
     centralContentStack->addWidget(welcomePage);
 }
 
@@ -1888,6 +1899,7 @@ void MainWindow::setupPanelLayoutController()
     simulationWorkspace->hide();
     auto* simulation = simulationWorkspace->workbench();
     navigationPane->setSourceFilesWidget(simulation->sourceFilesWidget());
+    navigationManager->connectToWorkbench(simulation);
     auto* runLogDock = new QDockWidget(tr("Run log"), this);
     runLogDock->setObjectName(QStringLiteral("simulationRunLogDock"));
     runLogDock->setWidget(simulation->runLogWidget());

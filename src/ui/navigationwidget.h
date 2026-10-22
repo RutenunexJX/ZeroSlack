@@ -67,7 +67,6 @@ public:
         const QList<WorkspaceVirtualSourceGroup>& groups);
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
-    void setDesignParticipatingFiles(const QSet<QString>& fileNames);
     void updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged = true);
     void setDesignHierarchyPending(bool pending);
 
@@ -87,6 +86,9 @@ signals:
     void designNodeContextMenuRequested(const DesignHierarchyNode& node,
                                         const QPoint& globalPos);
     void designNodeDoubleClicked(const DesignHierarchyNode& node);
+    void designProjectActivated(const QString& projectId);
+    void designExpansionChanged(const QString& projectId, bool expanded);
+    void addDesignProjectRequested();
     void viewChanged(int newTabIndex);
     void searchFilterChanged(int tabIndex, const QString& filter);
 
@@ -107,19 +109,16 @@ private:
     QWidget* fileTab = nullptr;
     QTreeWidget* fileTreeWidget = nullptr;
     QVBoxLayout* fileTabLayout = nullptr;
-    QCheckBox* hideUnrelatedFilesCheckBox = nullptr;
 
     QWidget* designTab = nullptr;
     QTreeWidget* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
-    QLabel* designTopLabel = nullptr;
 
     QStringList currentFileList;
     DesignHierarchyReport currentDesignHierarchy;
-    QSet<QString> designParticipatingFiles;
-    QSet<QString> designTopFiles;
     QHash<int, DesignHierarchyNode> designItemPayloads;
     int nextDesignItemPayloadId = 1;
+    bool populatingDesignTree = false;
 
     QString fileSearchFilter;
     QString designSearchFilter;
@@ -133,7 +132,6 @@ private:
     QList<WorkspaceVirtualSourceGroup>
         visibleVirtualSourceGroups;
     QHash<QString, bool> explicitlyTrackedPaths;
-    bool hideUnrelatedFiles = false;
     QHash<QString, QTreeWidgetItem*> fileItemsByNormalizedPath;
     QTimer* fileTreePopulationTimer = nullptr;
     QStringList pendingFileTreeFiles;
@@ -159,7 +157,6 @@ private:
     QTreeWidgetItem* appendDirectoryTreeItem(
         const QString& directoryPath,
         QHash<QString, QTreeWidgetItem*>* dirItems);
-    void refreshFileTreeDirectoryDimming();
     void populateDesignTree();
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
@@ -168,12 +165,8 @@ private:
     QIcon getSymbolIcon(SymbolOutlineIconKind iconKind);
     void refreshFileTreeIcons();
     void refreshDesignTreeIcons();
-    void applyDesignFileDimming(QTreeWidgetItem* item, bool dimmed);
-    void applyDesignTopPresentation(QTreeWidgetItem* item);
     void applyDesignItemDimming(QTreeWidgetItem* item, bool dimmed);
-    bool fileParticipatesInDesign(const QString& filePath) const;
     QString normalizedFileItemPath(const QString& filePath) const;
-    void refreshDesignHeader();
     QString searchFilterForIndex(int index) const;
     void setStoredSearchFilter(int index, const QString& filter);
     void expandCurrentFileNodes();

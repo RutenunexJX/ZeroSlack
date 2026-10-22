@@ -84,7 +84,8 @@ void NavigationManager::NavigationCaches::clearFileList()
 void NavigationManager::NavigationCaches::clearDesignHierarchy()
 {
     designHierarchy = {};
-    designRootModules.clear();
+    designRoots.clear();
+    activeProjectId.clear();
     designFileScope.clear();
     designStructureFingerprint.clear();
     designAnchorFingerprint.clear();
@@ -119,22 +120,19 @@ void NavigationManager::saveDesignHierarchyCache()
     const QString key = designHierarchyCacheKey();
     if (key.isEmpty())
         return;
-    if (!caches.designHierarchyValid
-        && caches.designTopInferred
-        && caches.designTopModule.isEmpty()) {
+    if (!caches.designHierarchyValid && caches.designRoots.isEmpty()) {
         return;
     }
 
     DesignHierarchyCacheEntry entry;
     entry.hierarchy = caches.designHierarchy;
-    entry.topModule = caches.designTopModule;
-    entry.rootModules = caches.designRootModules;
+    entry.roots = caches.designRoots;
+    entry.activeProjectId = caches.activeProjectId;
     entry.fileScope = caches.designFileScope;
     entry.structureFingerprint = caches.designStructureFingerprint;
     entry.anchorFingerprint = caches.designAnchorFingerprint;
     entry.snapshotGeneration = caches.designSnapshotGeneration;
     entry.hierarchyValid = caches.designHierarchyValid;
-    entry.topInferred = caches.designTopInferred;
     designHierarchyCacheByScope.remove(key);
     designCacheLru.removeAll(key);
     if (entry.hierarchy.nodes.size() > maximumRetainedDesignNodes)
@@ -154,8 +152,6 @@ void NavigationManager::saveDesignHierarchyCache()
 void NavigationManager::restoreDesignHierarchyCache()
 {
     caches.clearDesignHierarchy();
-    caches.designTopModule.clear();
-    caches.designTopInferred = true;
 
     const QString key = designHierarchyCacheKey();
     if (key.isEmpty())
@@ -167,8 +163,8 @@ void NavigationManager::restoreDesignHierarchyCache()
 
     const DesignHierarchyCacheEntry entry = it.value();
     caches.designHierarchy = entry.hierarchy;
-    caches.designTopModule = entry.topModule;
-    caches.designRootModules = entry.rootModules;
+    caches.designRoots = entry.roots;
+    caches.activeProjectId = entry.activeProjectId;
     caches.designFileScope = entry.fileScope;
     caches.designStructureFingerprint = entry.structureFingerprint;
     caches.designAnchorFingerprint = entry.anchorFingerprint;
@@ -178,7 +174,6 @@ void NavigationManager::restoreDesignHierarchyCache()
     caches.designHierarchyValid = false;
     designCacheLru.removeAll(key);
     designCacheLru.append(key);
-    caches.designTopInferred = entry.topInferred;
 }
 
 void NavigationManager::invalidateCurrentDesignHierarchyCache()

@@ -91,7 +91,7 @@ struct Host {
         for (const auto& p : simdock::loadProjects(workspace)) if (p.id == project.id) return p;
         return {};
     }
-    bool open() { return sessions()->openWorkspace(workspace); }
+    bool open() { return sessions()->openWorkspace(workspace) && panel()->openProject(project.id).isEmpty(); }
     bool simulation() {
         return context()->openResource(SimDockContextProvider().activationResource(workspace),
             {ContextSurface::Docked, ContextPersistence::Kept});
@@ -161,8 +161,8 @@ private slots:
         if (tab == 2) {
             QVERIFY(f.sources()->isVisible());
             f.sources()->setCurrentIndex(sourceModel->index(1, 0));
-            click(f.window.get(), "moveSourceUp");
-            QCOMPARE(f.saved().sources, QStringList({"extra.sv", "dut.sv"}));
+            QVERIFY(!f.window->findChild<QWidget*>("moveSourceUp"));
+            QCOMPARE(f.saved().sources, QStringList({"dut.sv", "extra.sv"}));
         }
         capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-motion-restored");
     }
@@ -174,8 +174,9 @@ private slots:
         QVERIFY(f.sources()->isVisible());
         QVERIFY(!f.window->findChild<QWidget*>("openWorkspace"));
         QVERIFY(!panel->findChild<QWidget*>("workbenchSection"));
-        f.sources()->setCurrentIndex(model->index(1, 0)); click(f.window.get(), "moveSourceUp");
-        QCOMPARE(f.saved().sources, QStringList({"extra.sv", "dut.sv"}));
+        f.sources()->setCurrentIndex(model->index(1, 0));
+        QVERIFY(!f.window->findChild<QWidget*>("moveSourceUp"));
+        QCOMPARE(f.saved().sources, QStringList({"dut.sv", "extra.sv"}));
         const auto firstId = f.project.id;
         QVERIFY(panel->createProject("Another project"));
         const auto secondId = panel->saveState().value("projectId").toString();

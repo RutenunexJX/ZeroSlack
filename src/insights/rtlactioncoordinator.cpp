@@ -1565,14 +1565,10 @@ RtlActionCoordinator::executeInstancePairConnectionAction(
 
     HierarchyService* hierarchy =
         HierarchyService::getInstance();
-    QStringList roots =
-        hierarchy->inferDesignTopModules(
-            workspaceFiles);
     const QString activeTop =
         actionContext.resolvedHierarchy
             .activeTopModule;
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
+    const QStringList roots{activeTop};
     const DesignHierarchyReport design =
         hierarchy->getDesignHierarchyReport(
             roots, activeTop, workspaceFiles);
@@ -1953,14 +1949,10 @@ RtlActionCoordinator::executeMultiSignalPropagationAction(
 
     HierarchyService* hierarchy =
         HierarchyService::getInstance();
-    QStringList roots =
-        hierarchy->inferDesignTopModules(
-            workspaceFiles);
     const QString activeTop =
         actionContext.resolvedHierarchy
             .activeTopModule;
-    if (!roots.contains(activeTop))
-        roots.append(activeTop);
+    const QStringList roots{activeTop};
     const DesignHierarchyReport design =
         hierarchy->getDesignHierarchyReport(
             roots, activeTop, workspaceFiles);

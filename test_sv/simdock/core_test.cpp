@@ -125,23 +125,24 @@ private slots:
         p.tbFile = "tb/top.sv"; p.tbName = "tb";
         QMap<QString, QByteArray> fingerprints;
         QVERIFY(validateInputs(workspace.path(), p, &fingerprints).isEmpty());
-        QVERIFY(fingerprints.contains(workspace.filePath("first/defs.svh")));
-        QVERIFY(!fingerprints.contains(workspace.filePath("tb/defs.svh")));
+        QVERIFY(fingerprints.contains(SemanticInputCapture::pathKey(workspace.filePath("first/defs.svh"))));
+        QVERIFY(!fingerprints.contains(SemanticInputCapture::pathKey(workspace.filePath("tb/defs.svh"))));
     }
-    void dependencyIndexOwnsSnapshot()
+    void selectionIsExplicit()
     {
-        Scan scan;
-        scan.files << semanticSource("module top; child c(); endmodule", "top.sv")
-                   << semanticSource("module child; endmodule", "first.sv")
-                   << semanticSource("module child; endmodule", "second.sv");
-        const DependencyIndex index(scan);
-        scan.files.clear();
-        const auto a = selectDependencies(index, "top.sv", {"first.sv"});
-        QCOMPARE(a.sources, QStringList({"first.sv", "top.sv"}));
-        const auto b = selectDependencies(index, "top.sv", {"second.sv"});
-        QCOMPARE(b.sources, QStringList({"second.sv", "top.sv"}));
-        const auto ambiguous = selectDependencies(index, "top.sv", {});
-        QVERIFY(!ambiguous.messages.isEmpty());
+        QTemporaryDir root;
+        QVERIFY(put(root.filePath("top.sv"), "module top; child u(); endmodule"));
+        QVERIFY(put(root.filePath("first.sv"), "module child; endmodule"));
+        QVERIFY(put(root.filePath("second.sv"), "module child; endmodule"));
+        auto project = newProject("Selection");
+        for (const auto& provider : {QString("first.sv"), QString("second.sv")}) {
+            project.sources = {"top.sv", provider};
+            const auto plan = planBuildInputs(root.path(), project);
+            QVERIFY2(plan.order.valid(), qPrintable(plan.error()));
+            QCOMPARE(project.sources, (QStringList{"top.sv", provider}));
+        }
+        project.sources = {"top.sv"};
+        QVERIFY(planBuildInputs(root.path(), project).error().contains("no selected definition"));
     }
     void waveformScopeAndIncrementalScript()
     {
@@ -191,15 +192,18 @@ private slots:
         QVERIFY(put(workspace.filePath(QStringLiteral("include/defs.svh")), QByteArrayLiteral("`include \"more.svh\"\n`define FLAG 1\n")));
         QVERIFY(put(workspace.filePath(QStringLiteral("include/more.svh")), QByteArrayLiteral("`define MORE 1\n")));
         QVERIFY(put(workspace.filePath(QStringLiteral("unrelated.sv")), QByteArrayLiteral("module unrelated; endmodule")));
-        const auto scan = scanWorkspace(workspace.path());
-        const auto selection = selectDependencies(scan, QStringLiteral("a_top.sv"), {});
-        QVERIFY2(selection.messages.isEmpty(), qPrintable(selection.messages.join(QLatin1Char('\n'))));
-        QCOMPARE(selection.sources.size(), 7);
-        QVERIFY(!selection.sources.contains(QStringLiteral("unrelated.sv")));
-        QCOMPARE(selection.sources.last(), QStringLiteral("a_top.sv"));
-        QVERIFY(selection.sources.indexOf(QStringLiteral("pkg/inner.sv")) < selection.sources.indexOf(QStringLiteral("pkg/outer.sv")));
-        QVERIFY(selection.sources.indexOf(QStringLiteral("rtl/leaf.sv")) < selection.sources.indexOf(QStringLiteral("rtl/child.sv")));
-        QVERIFY(selection.sources.indexOf(QStringLiteral("include/more.svh")) < selection.sources.indexOf(QStringLiteral("include/defs.svh")));
+        auto project = newProject("Dependencies");
+        project.sources = {"a_top.sv", "rtl/child.sv", "rtl/leaf.sv", "pkg/outer.sv", "pkg/inner.sv", "include/defs.svh", "include/more.svh"};
+        project.includeDirectories = {"include"};
+        const auto plan = planBuildInputs(workspace.path(), project);
+        QVERIFY2(plan.order.valid(), qPrintable(plan.error()));
+        auto sorted = project; plan.apply(sorted, workspace.path());
+        QCOMPARE(sorted.compilationUnits.size(), 5);
+        QCOMPARE(plan.order.headers.size(), 2);
+        QVERIFY(sorted.compilationUnits.indexOf("pkg/inner.sv") < sorted.compilationUnits.indexOf("pkg/outer.sv"));
+        QVERIFY(sorted.compilationUnits.indexOf("pkg/outer.sv") < sorted.compilationUnits.indexOf("a_top.sv"));
+        QVERIFY(sorted.compilationUnits.indexOf("a_top.sv") < sorted.compilationUnits.indexOf("rtl/child.sv"));
+
     }
     void dependencyAmbiguityCyclesAndScope()
     {
@@ -210,28 +214,28 @@ private slots:
         QVERIFY(put(QDir(root).filePath(QStringLiteral("one.sv")), QByteArrayLiteral("module child; top back(); endmodule")));
         QVERIFY(put(QDir(root).filePath(QStringLiteral("two.sv")), QByteArrayLiteral("module child; endmodule")));
         QVERIFY(put(temp.filePath(QStringLiteral("outside.svh")), QByteArrayLiteral("module missing; endmodule")));
-        const auto scan = scanWorkspace(root);
-        const auto ambiguous = selectDependencies(scan, QStringLiteral("top.sv"), {});
-        QCOMPARE(ambiguous.sources, QStringList{QStringLiteral("top.sv")});
-        const auto messages = ambiguous.messages.join(QLatin1Char('\n'));
-        QVERIFY(messages.contains(QStringLiteral("multiple definitions")));
-        QVERIFY(messages.contains(QStringLiteral("outside the analyzed workspace")));
-        QVERIFY(messages.contains(QStringLiteral("'missing' was not found")));
-        const auto chosen = selectDependencies(scan, QStringLiteral("top.sv"), {QStringLiteral("one.sv")});
-        QCOMPARE(chosen.sources.size(), 2);
-        QVERIFY(chosen.sources.contains(QStringLiteral("one.sv")));
-        QVERIFY(!chosen.sources.contains(QStringLiteral("two.sv")));
-        QVERIFY(chosen.messages.join(QLatin1Char('\n')).contains(QStringLiteral("cycle")));
+        auto project = newProject("Ambiguity"); project.sources = {"top.sv", "one.sv", "two.sv"};
+        const auto problem = planBuildInputs(root, project).error();
+        QVERIFY(problem.contains("multiple selected definitions"));
+        QVERIFY(problem.contains("outside.svh"));
+        QVERIFY(problem.contains("missing"));
+        QVERIFY(put(QDir(root).filePath("top.sv"), "module top; child u(); endmodule"));
+        project.sources = {"top.sv", "one.sv"};
+        const auto chosen = planBuildInputs(root, project);
+        QVERIFY2(chosen.order.valid(), qPrintable(chosen.error())); // instance cycles are elaboration errors, not ordering edges
+
     }
     void interfaceAndEscapedDependencies()
     {
-        Scan scan;
-        scan.files << semanticSource(QByteArrayLiteral("interface bus_if; logic clk; endinterface"), QStringLiteral("bus.sv"));
-        scan.files << semanticSource(QByteArrayLiteral("module \\escaped.leaf ; endmodule"), QStringLiteral("leaf.v"));
-        scan.files << semanticSource(QByteArrayLiteral("module top; bus_if bus(); \\escaped.leaf u(); endmodule"), QStringLiteral("top.sv"));
-        const auto selection = selectDependencies(scan, QStringLiteral("top.sv"), {});
-        QVERIFY2(selection.messages.isEmpty(), qPrintable(selection.messages.join(QLatin1Char('\n'))));
-        QCOMPARE(selection.sources, (QStringList{QStringLiteral("bus.sv"), QStringLiteral("leaf.v"), QStringLiteral("top.sv")}));
+        QTemporaryDir root;
+        QVERIFY(put(root.filePath("bus.sv"), "interface bus_if; logic clk; endinterface"));
+        QVERIFY(put(root.filePath("leaf.v"), "module \\escaped.leaf ; endmodule"));
+        QVERIFY(put(root.filePath("top.sv"), "module top; bus_if bus(); \\escaped.leaf u(); endmodule"));
+        auto project = newProject("Escaped names"); project.sources = {"top.sv", "leaf.v", "bus.sv"};
+        const auto plan = planBuildInputs(root.path(), project);
+        QVERIFY2(plan.order.valid(), qPrintable(plan.error()));
+        QCOMPARE(plan.order.files.size(), 3);
+
     }
     void qualifiedPackageConstants()
     {
@@ -373,8 +377,11 @@ private slots:
         const auto tb = generateTestbench(module, suggestedTbOptions(module), 1000, &error);
         QVERIFY2(!tb.isEmpty(), qPrintable(error));
         QVERIFY(put(workspace.filePath(QStringLiteral("tb.sv")), tb.toUtf8()));
-        const auto selected = selectDependencies(scanWorkspace(workspace.path()), QStringLiteral("dut.sv"), {});
-        QCOMPARE(selected.sources, (QStringList{QStringLiteral("types.sv"), QStringLiteral("dut.sv")}));
+        auto selected = newProject("Named ports"); selected.sources = {"dut.sv", "types.sv"};
+        const auto plan = planBuildInputs(workspace.path(), selected);
+        QVERIFY2(plan.order.valid(), qPrintable(plan.error()));
+        plan.apply(selected, workspace.path());
+        QCOMPARE(selected.sources, (QStringList{"types.sv", "dut.sv"}));
         const QDir tools = QFileInfo(executable).dir();
         const auto compile = [&](const QString& tool, const QStringList& arguments) {
             QProcess process;
@@ -482,7 +489,7 @@ private slots:
                  "if (count != 4*STEP || dut.PRIORITY != 11) $fatal(1, \"Include order mismatch\");\n"
                  "$display(\"LITERAL_INCLUDE_OK\"); end endmodule\n";
         } else {
-            const auto module = semanticSource(rtl, "counter.sv").modules.first();
+            const auto module = semanticSource(counter(), "counter.sv").modules.first();
             tb = generateTestbench(module, suggestedTbOptions(module), project.durationNs, &error).toUtf8();
             QVERIFY2(!tb.isEmpty(), qPrintable(error));
         }
@@ -506,11 +513,11 @@ private slots:
         auto prepared = prepareRun(executable, workspace.path(), project);
         QVERIFY2(prepared.error.isEmpty(), qPrintable(prepared.error));
         QVERIFY(!prepared.designFingerprint.isEmpty());
-        QVERIFY(prepared.inputFingerprints.contains(header));
+        QVERIFY(prepared.inputFingerprints.contains(SemanticInputCapture::pathKey(header)));
         if (manual) {
-            QVERIFY(prepared.inputFingerprints.contains(workspace.filePath("first $+ [one]/priority.svh")));
-            QVERIFY(!prepared.inputFingerprints.contains(workspace.filePath("second/priority.svh")));
-            QVERIFY(!prepared.inputFingerprints.contains(QDir(inputDir).filePath("priority.svh")));
+            QVERIFY(prepared.inputFingerprints.contains(SemanticInputCapture::pathKey(workspace.filePath("first $+ [one]/priority.svh"))));
+            QVERIFY(!prepared.inputFingerprints.contains(SemanticInputCapture::pathKey(workspace.filePath("second/priority.svh"))));
+            QVERIFY(!prepared.inputFingerprints.contains(SemanticInputCapture::pathKey(QDir(inputDir).filePath("priority.svh"))));
         }
         const auto fingerprint = prepared.designFingerprint;
         QVERIFY2(session.start(prepared, &error), qPrintable(error));
@@ -539,11 +546,9 @@ private slots:
             QVERIFY2(finished.takeFirst()[0].toBool(), qPrintable(log));
             QVERIFY(captureSession(tag + "-header-changed", directory, session, log));
             QVERIFY(put(workspace.filePath("counter.sv"), rtl + "\nnot valid HDL;\n"));
-            QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
-            QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
-            QVERIFY(!finished.takeFirst()[0].toBool());
-            QVERIFY2(log.contains(workspace.filePath("counter.sv") + '('), qPrintable(log));
-            QVERIFY(captureSession(tag + "-compile-error", directory, session, log));
+            const auto invalid = prepareRun(executable, workspace.path(), project);
+            QVERIFY(!invalid.error.isEmpty());
+            QVERIFY(invalid.error.contains("counter.sv"));
             QVERIFY(put(workspace.filePath("counter.sv"), rtl));
             QVERIFY2(session.start(executable, workspace.path(), project, &error), qPrintable(error));
             QTRY_VERIFY_WITH_TIMEOUT(!finished.isEmpty(), 45000);
@@ -571,10 +576,9 @@ private slots:
         QVERIFY(put(workspace.filePath(QStringLiteral("child.sv")), QByteArrayLiteral("module child #(parameter int W=cfg::WIDTH)(input logic clk, output logic [W-1:0] data); initial data='0; always @(posedge clk) data<=data+1'b1; endmodule\n")));
         QVERIFY(put(workspace.filePath(QStringLiteral("z_pkg.sv")), QByteArrayLiteral("package cfg; parameter int WIDTH=8; endpackage\n")));
         QVERIFY(put(workspace.filePath(QStringLiteral("include/defs.svh")), QByteArrayLiteral("`define WIDTH 8\n")));
-        const auto selection = selectDependencies(scanWorkspace(workspace.path()), QStringLiteral("a_top.sv"), {});
-        QVERIFY2(selection.messages.isEmpty(), qPrintable(selection.messages.join(QLatin1Char('\n'))));
         auto project = newProject(QStringLiteral("Dependency compilation"));
-        project.sources = selection.sources;
+        project.sources = {"a_top.sv", "child.sv", "z_pkg.sv"};
+        project.includeDirectories = {"include"};
         project.tbFile = QStringLiteral("tb_top.sv");
         project.tbName = QStringLiteral("tb_top");
         const auto module = semanticSource(top, QStringLiteral("a_top.sv")).modules.first();

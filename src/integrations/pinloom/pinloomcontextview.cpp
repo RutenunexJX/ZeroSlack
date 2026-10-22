@@ -2,6 +2,7 @@
 #include "uicontrols.h"
 #include "uidialogs.h"
 #include "pinloomcontextview.h"
+#include "roundedicons.h"
 #include "pinloomcodelinkcoordinator.h"
 
 #include <QApplication>
@@ -671,7 +672,7 @@ void PinloomContextView::buildUi()
     openTargetButton->setEnabled(false);
     copyUriButton = UiControls::toolButton(preview);
     copyUriButton->setObjectName(QStringLiteral("pinloomContextCopyLink"));
-    copyUriButton->setIcon(style()->standardIcon(QStyle::SP_DialogSaveButton));
+    copyUriButton->setIcon(RoundedIcons::icon(RoundedIcons::CopyLink));
     copyUriButton->setToolTip(QStringLiteral("Copy stable Pinloom link"));
     copyUriButton->setEnabled(false);
     titleRow->addWidget(openTargetButton);

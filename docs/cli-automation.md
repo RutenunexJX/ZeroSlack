@@ -94,6 +94,23 @@ supported; use the normal GUI Save As flow when a live document needs a new path
 
 ## Simulation
 
+Simulation Build inputs are an explicit selection. The GUI, `simulation.validate`,
+and actual runs share Slang preprocessing and package dependency ordering.
+`simulation.validate` reports `compilationOrder`, `includeOnly`, `dependencies`,
+and `diagnostics`. Each source is a separate compilation unit; workspace macros
+and include paths apply to every unit. Headers are include-only, and module
+instantiation does not introduce a compilation-order edge. Missing or ambiguous
+providers and package cycles block a run with diagnostics. A source edit or rescan
+refreshes the GUI plan; running always validates the inputs again.
+
+`simulation.put` also accepts `designTopModule` and `designTopFile` to associate
+an explicit, source-qualified Design root with the existing project ID. These
+fields do not replace `dutName`/`dutFile` or `tbName`/`tbFile`. Creating/updating
+a project does not activate it; `simulation.open` selects the same unique active
+project used by Design and Build inputs. Unresolvable saved roots stay visible
+with diagnostics. `simulation.project` reports the GUI's pending/diagnostic/order
+state when connected to a GUI session.
+
 | Command | Input and result |
 | --- | --- |
 | `simulation.projects` | Lists saved projects and storage diagnostics. Querying does not migrate legacy storage. |
@@ -108,7 +125,7 @@ supported; use the normal GUI Save As flow when a live document needs a new path
 | `simulation.cancel` | `runId`; cancels preparation or the owned Questa process tree. Poll until done and `processAlive: false`. |
 | `simulation.clear` | `runId`; releases the retained completed result after process cleanup. |
 
-Project fields: `name`, `sources`, `includeDirectories`, `dutFile`, `dutName`,
+Project fields: `name`, `sources`, `includeDirectories`, `designTopFile`, `designTopModule`, `dutFile`, `dutName`,
 `tbFile`, `tbName`, `durationNs`. Project writes use storage revisions and adopt
 the matching open workbench only after its current edit/busy state is checked.
 Retired graphical stimulus fields are rejected.

@@ -63,6 +63,7 @@ public:
     std::uint64_t semanticSnapshotRevision() const;
     SemanticSnapshotToken semanticSnapshotToken() const;
     QStringList modulesDefinedInFile(const QString& fileName) const;
+    QList<SemanticSymbolRecord> availableModules() const { return moduleRecords(); }
     NavigationModuleTarget resolveModuleTarget(const QString& moduleName) const;
 
 private:

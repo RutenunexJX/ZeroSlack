@@ -1,4 +1,5 @@
 #include "questasession.h"
+#include "dependencies.h"
 #include "workspace.h"
 #include "ownedpaths.h"
 #include <QCryptographicHash>
@@ -111,6 +112,14 @@ proc ::simdock::compile {directories commands} {
     }
 }
 ::simdock::compile [list)tcl");
+#ifdef Q_OS_WIN
+    // vlog expands environment paths using the Windows ANSI code page. Questa's
+    // Tcl default can differ (for example cp1252 on a cp936 Windows host).
+    const auto codePage = GetACP();
+    const auto encoding = codePage == CP_UTF8 ? QStringLiteral("utf-8") : QStringLiteral("cp%1").arg(codePage);
+    script.replace(QStringLiteral("set ::env($name) $directory"),
+        QStringLiteral("set ::env($name) [encoding convertto %1 $directory]").arg(encoding));
+#endif
     for (const auto& directory : directories) script += QLatin1Char(' ') + tclWord(directory);
     return script + QStringLiteral("] ") + tclWord(commands) + QLatin1Char('\n');
 }
@@ -129,9 +138,11 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
     // Unloading releases the previous waveform before its files are reclaimed.
     if (!reuseDesign) s += QStringLiteral("vlib %1\n").arg(tclWord(workDirectory.isEmpty() ? QDir(directory).filePath(QStringLiteral("work")) : simulatorPath(workDirectory)));
     else s += QStringLiteral("puts {SimDock: reusing compiled sources and testbench.}\n");
-    QStringList files = p.sources;
-    files.removeAll(p.tbFile);
-    files << p.tbFile;
+    QStringList files = p.compilationUnits;
+    if (files.isEmpty()) {
+        files = p.sources;
+        if (!files.contains(p.tbFile)) files << p.tbFile;
+    }
     QStringList dirs{QDir::fromNativeSeparators(root)};
     for (const auto& dir : p.includeDirectories) {
         const auto absolute = QDir::fromNativeSeparators(QDir(root).filePath(dir));
@@ -141,16 +152,24 @@ QString runScript(const QString& root, const Project& p, const QString& runDir, 
         const QString dir = QDir::fromNativeSeparators(QFileInfo(QDir(root).filePath(f)).absolutePath());
         if (!dirs.contains(dir)) dirs << dir;
     }
+    if (!p.compilationIncludeDirectories.isEmpty()) dirs = p.compilationIncludeDirectories;
     QString includeArgs;
     for (int index = 0; index < dirs.size(); ++index)
         includeArgs += QLatin1Char(' ') + tclWord(QStringLiteral("+incdir+$ZEROSLACK_SIMDOCK_INCLUDE_DIR_%1").arg(index));
     QString compilation;
+    QString defineArgs;
+    auto defineNames = p.compilationDefines.keys(); defineNames.sort();
+    for (const auto& name : defineNames) {
+        const auto value = p.compilationDefines.value(name);
+        defineArgs += QLatin1Char(' ') + tclWord(QStringLiteral("+define+") + name
+            + (value.isEmpty() ? QString() : QStringLiteral("=") + value));
+    }
     for (const auto& file : files) {
         if (reuseDesign) continue;
         const QString suffix = QFileInfo(file).suffix().toLower();
         if (suffix == QStringLiteral("vh") || suffix == QStringLiteral("svh")) continue;
         compilation += QStringLiteral("vlog -modelsimini %1 -work work %2%3 %4\n")
-            .arg(tclWord(ini), suffix == QStringLiteral("sv") ? QStringLiteral("-sv") : QString(), includeArgs,
+            .arg(tclWord(ini), suffix == QStringLiteral("sv") ? QStringLiteral("-sv") : QString(), includeArgs + defineArgs,
                  tclWord(QDir::fromNativeSeparators(QDir(root).filePath(file))));
     }
     if (!reuseDesign) s += compileWithLiteralDirectories(dirs, compilation);
@@ -361,15 +380,18 @@ PreparedRun prepareRun(const QString& executable, const QString& root, const Pro
     result.error = simulatorError(executable);
     if (!result.error.isEmpty()) return result;
     QMap<QString, QByteArray> fingerprints;
-    result.error = validateInputs(root, p, &fingerprints, cancelled, overrides);
+    BuildInputPlan plan;
+    result.error = validateInputs(root, p, &fingerprints, cancelled, overrides, &plan);
     if (!result.error.isEmpty()) return result;
+    plan.apply(result.project, root);
     result.inputFingerprints = fingerprints;
     // Reuse the entire unchanged compilation, including user TB compilation
     // units. Every run still unloads and elaborates a fresh simulation.
     QByteArray key;
     QDataStream stream(&key, QIODevice::WriteOnly);
     stream.setVersion(QDataStream::Qt_6_0);
-    stream << QStringLiteral("simdock.questa-design/v4") << root << p.sources << p.includeDirectories << p.tbFile << p.tbName;
+    stream << QStringLiteral("simdock.questa-design/v6") << root << result.project.compilationUnits
+           << plan.includeDirectories << plan.defines << p.tbFile << p.tbName;
     stream << QStringLiteral("vlog:-work work;-sv by suffix;literal-incdir=root,ordered-source-dirs,tb-dir")
            << QFileInfo(p.tbFile).path() << QProcessEnvironment::systemEnvironment().toStringList();
     stream << fingerprints;

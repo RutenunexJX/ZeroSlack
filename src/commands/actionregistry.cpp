@@ -1317,7 +1317,7 @@ void appendNavigationContextActions(
          "Set Design Top",
          "Use the selected module as the explicit design-hierarchy root.",
          "navigation.design.setTop",
-         "Set as Design Top",
+         "Add as Design Project",
          ActionCategory::Workspace},
     };
 

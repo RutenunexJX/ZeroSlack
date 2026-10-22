@@ -9,6 +9,8 @@
 #include "../core/dependencies.h"
 #include <QTimer>
 #include <QPointer>
+#include <QFileSystemWatcher>
+#include <zeroslack/semantic/hierarchyservice.h>
 #include <atomic>
 #include <memory>
 #include <optional>
@@ -46,6 +48,13 @@ public:
     void setEditorTbCreator(std::function<void(const QString&, const QString&)> creator) { m_editorTbCreator = std::move(creator); }
     void adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName);
     QString activeProjectId() const;
+    QList<DesignHierarchyRoot> designRoots() const;
+    QString addDesignProject(const QString& file, const QString& module, bool activate = true);
+    QString removeDesignRoot(const QString& projectId);
+    void setDesignExpanded(const QString& projectId, bool expanded);
+    bool designMigrationCompleted() const;
+    void markDesignMigrationCompleted();
+    void refreshCompilationOrder();
     QStringList activeCompilationInputs() const;
     QString adoptHdlInputs(const QString& expectedProject, const QStringList& files, const QStringList& includeDirectories);
     QString automationProjectWriteIssue(const Project* baseline) const;
@@ -68,6 +77,7 @@ signals:
     void openSourceRequested(const QString& file, int line);
     void stateChanged();
     void scanFinished();
+    void designProjectsChanged();
     void preferencesChanged();
 private:
     std::function<void(const QString&, const QString&)> m_editorTbCreator;
@@ -101,7 +111,8 @@ private:
     void createTb();
     void startSimulation();
     void cancelPreparation();
-    void moveSource(int offset);
+    QString workspacePreferenceKey() const;
+    void scheduleCompilationOrder();
     void appendLog(const QString& text);
     void flushLog();
     void applyTheme();
@@ -109,10 +120,17 @@ private:
     const Module* currentModule() const;
     QString m_root, m_simulator;
     Scan m_scan;
-    DependencyIndex m_dependencies;
     std::shared_ptr<std::atomic_bool> m_preparationCancelled;
     quint64 m_preparationId = 0;
     bool m_preparing = false;
+    QTimer m_orderTimer;
+    QFileSystemWatcher m_inputWatcher;
+    quint64 m_orderGeneration = 0;
+    std::shared_ptr<std::atomic_bool> m_orderCancelled;
+    bool m_orderPending = false;
+    QString m_orderIssue;
+    QWidget *m_projectsBody = nullptr, *m_inputsBody = nullptr;
+    QPushButton *m_projectsHeading = nullptr, *m_inputsHeading = nullptr;
     QList<Project> m_projects;
     int m_projectIndex = -1;
     quint64 m_generation = 0;

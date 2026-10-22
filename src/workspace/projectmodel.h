@@ -28,6 +28,7 @@ public:
 
     void setScannedFiles(const QStringList& files, bool discoveryComplete = true);
     void setIgnoredPaths(const QStringList& paths);
+    void setActiveDesignProject(const QString& id, const QString& module, const QString& file);
     void setWorkspaceConfiguration(const QStringList& includeDirs,
                                    const QHash<QString, QString>& defines,
                                    const QStringList& fileExtensions,

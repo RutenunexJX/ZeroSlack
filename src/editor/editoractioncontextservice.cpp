@@ -247,7 +247,8 @@ void EditorActionContextService::updateWorkspaceContext(
 
     const QString workspacePath =
         normalizedActionContextPath(project.workspaceRoot);
-    const QString configuredTopModule = project.topModule.trimmed();
+    const QString configuredTopModule = (project.explicitDesignSelection
+        ? project.activeDesignTopModule : project.topModule).trimmed();
     QStringList sortedFiles;
     QSet<QString> workspaceFiles =
         normalizedWorkspaceFiles(project.allFiles, &sortedFiles);
@@ -258,6 +259,9 @@ void EditorActionContextService::updateWorkspaceContext(
     if (cachedWorkspaceContext.workspacePath == workspacePath
         && cachedWorkspaceContext.configuredTopModule
                == configuredTopModule
+        && cachedWorkspaceContext.configuredTopFile == project.activeDesignTopFile
+        && cachedWorkspaceContext.activeProjectId == project.activeDesignProjectId
+        && cachedWorkspaceContext.explicitDesignSelection == project.explicitDesignSelection
         && cachedWorkspaceContext.workspaceFiles == workspaceFiles) {
         cachedWorkspaceContext.projectRevision = project.revision;
         return;
@@ -266,6 +270,9 @@ void EditorActionContextService::updateWorkspaceContext(
     cachedWorkspaceContext.workspacePath = workspacePath;
     cachedWorkspaceContext.configuredTopModule =
         configuredTopModule;
+    cachedWorkspaceContext.configuredTopFile = project.activeDesignTopFile;
+    cachedWorkspaceContext.activeProjectId = project.activeDesignProjectId;
+    cachedWorkspaceContext.explicitDesignSelection = project.explicitDesignSelection;
     cachedWorkspaceContext.workspaceFiles =
         std::move(workspaceFiles);
     cachedWorkspaceContext.revision = ++workspaceRevisionCounter;
@@ -397,21 +404,22 @@ EditorActionContextService::resolveHierarchyCandidates(
         fileScope = &fallbackFileScope;
     }
 
-    QStringList roots = hierarchyApi->inferDesignTopModules(*fileScope);
+    QStringList roots;
     const QString configuredTop =
         workspace.configuredTopModule;
     if (!configuredTop.isEmpty()) {
-        roots.removeAll(configuredTop);
-        roots.prepend(configuredTop);
+        roots.append(configuredTop);
     }
     if (roots.isEmpty()) {
         return finish(QStringLiteral(
-            "No analyzed design top is available; configure Active Top or analyze the workspace."));
+            "Activate a design project before choosing a hierarchy instance."));
     }
 
     const DesignHierarchyReport report =
-        hierarchyApi->getDesignHierarchyReport(
-            roots, QString(), *fileScope);
+        workspace.explicitDesignSelection
+        ? hierarchyApi->explicitDesignHierarchy({DesignHierarchyRoot{workspace.activeProjectId, configuredTop,
+              configuredTop, workspace.configuredTopFile, true}}, workspace.activeProjectId, *fileScope)
+        : hierarchyApi->getDesignHierarchyReport(roots, configuredTop, *fileScope);
     if (report.snapshotGeneration != snapshotRevision) {
         return finish(QStringLiteral(
             "The hierarchy snapshot changed; wait for analysis to finish and retry."));

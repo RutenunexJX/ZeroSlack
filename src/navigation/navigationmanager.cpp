@@ -4,6 +4,12 @@
 #include "navigationwidget.h"
 #include "workspacefileoperationservice.h"
 #include "workspacemanager.h"
+#include "../simulation/simdock/ui/workbench.h"
+#include "uidialogs.h"
+#include <QInputDialog>
+#include <QMessageBox>
+#include <QDir>
+#include "editorfileidentity.h"
 
 #include <QElapsedTimer>
 #include <QSignalBlocker>
@@ -194,37 +200,86 @@ void NavigationManager::navigateToFile(const QString& filePath, int lineNumber)
     emit navigationRequested(filePath, lineNumber);
 }
 
-void NavigationManager::setDesignTop(const QString& moduleName)
+QList<DesignHierarchyRoot> NavigationManager::currentDesignRoots() const
 {
-    if (moduleName.isEmpty())
-        return;
-    caches.designTopModule = moduleName;
-    caches.designTopInferred = false;
-    invalidateCurrentDesignHierarchyCache();
-    refreshDesignHierarchy(true);
-    if (navigationWidget)
-        navigationWidget->setActiveTab(NavigationWidget::DesignTab);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Navigation"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Selected Design Top %1").arg(moduleName));
+    return connectedWorkbench && EditorFileIdentity::same(connectedWorkbench->workspace(), context.currentWorkspacePath)
+        ? connectedWorkbench->designRoots() : QList<DesignHierarchyRoot>{};
 }
-
+void NavigationManager::connectToWorkbench(simdock::Workbench* workbench)
+{
+    if (connectedWorkbench == workbench) return;
+    if (connectedWorkbench) disconnect(connectedWorkbench, nullptr, this, nullptr);
+    connectedWorkbench = workbench;
+    if (!workbench) return;
+    connect(workbench, &simdock::Workbench::designProjectsChanged, this, &NavigationManager::synchronizeDesignProjects);
+    connect(workbench, &QObject::destroyed, this, [this] { connectedWorkbench = nullptr; });
+    synchronizeDesignProjects();
+}
+void NavigationManager::synchronizeDesignProjects()
+{
+    if (!connectedWorkbench || !EditorFileIdentity::same(connectedWorkbench->workspace(), context.currentWorkspacePath)) return;
+    const auto roots = currentDesignRoots();
+    const auto active = connectedWorkbench->activeProjectId();
+    if (connectedWorkspaceManager) {
+        QString module, file;
+        for (const auto& root : roots) if (root.projectId == active) { module = root.module; file = root.file; }
+        connectedWorkspaceManager->getProjectModel()->setActiveDesignProject(active, module, file);
+    }
+    if (roots == caches.designRoots && active == caches.activeProjectId) return;
+    invalidateCurrentDesignHierarchyCache();
+    if (currentView == DesignHierarchyView) refreshDesignHierarchy();
+    else warmDesignHierarchyCache();
+}
+QString NavigationManager::setDesignTop(const QString& moduleName, const QString& definitionFile)
+{
+    if (!connectedWorkbench || !navigationService) return tr("The workspace project service is unavailable.");
+    QList<SemanticSymbolRecord> matches;
+    const auto scope = getSystemVerilogFiles();
+    for (const auto& module : navigationService->availableModules()) {
+        if (module.name != moduleName || (!definitionFile.isEmpty() && !EditorFileIdentity::same(module.location.fileName, definitionFile))) continue;
+        if (!scope.contains(module.location.fileName, Qt::CaseInsensitive)) continue;
+        matches << module;
+    }
+    if (matches.size() != 1) return matches.isEmpty()
+        ? tr("No current module definition matches this source. Analyze the file before creating a design project.")
+        : tr("Multiple definitions match this module. Choose the module from its source file.");
+    const auto issue = connectedWorkbench->addDesignProject(matches.first().location.fileName, moduleName);
+    if (issue.isEmpty() && navigationWidget) navigationWidget->setActiveTab(NavigationWidget::DesignTab);
+    return issue;
+}
+void NavigationManager::chooseDesignProject()
+{
+    if (!navigationService || !connectedWorkbench) return;
+    QStringList labels;
+    QList<SemanticSymbolRecord> modules;
+    const auto scope = getSystemVerilogFiles();
+    for (const auto& module : navigationService->availableModules()) {
+        if (!scope.contains(module.location.fileName, Qt::CaseInsensitive)) continue;
+        modules << module;
+    }
+    std::sort(modules.begin(), modules.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.name, a.location.fileName) < std::tie(b.name, b.location.fileName);
+    });
+    for (const auto& module : modules) labels << module.name + QStringLiteral(" — ") + QDir(context.currentWorkspacePath).relativeFilePath(module.location.fileName);
+    if (labels.isEmpty()) { QMessageBox::information(navigationWidget, tr("Design project"), tr("No parsed module is available. Package and header files do not define a design root.")); return; }
+    bool accepted = false;
+    const auto choice = QInputDialog::getItem(navigationWidget, tr("Add design project"), tr("Module and defining source"), labels, 0, false, &accepted);
+    if (!accepted) return;
+    const auto index = labels.indexOf(choice);
+    if (index < 0) return;
+    const auto issue = setDesignTop(modules[index].name, modules[index].location.fileName);
+    if (!issue.isEmpty()) QMessageBox::warning(navigationWidget, tr("Design project"), issue);
+}
 void NavigationManager::clearDesignTop()
 {
-    caches.designTopModule.clear();
-    caches.designTopInferred = true;
-    invalidateCurrentDesignHierarchyCache();
-    refreshDesignHierarchy(true);
-    ActivityLogService::getInstance()->append(
-        QStringLiteral("Navigation"),
-        ActivityLogLevel::Info,
-        QStringLiteral("Cleared Design Top override"));
+    if (connectedWorkbench) connectedWorkbench->openProject({});
 }
-
 QString NavigationManager::selectedDesignTopModule() const
 {
-    return caches.designTopModule;
+    if (!connectedWorkbench) return {};
+    for (const auto& root : currentDesignRoots())
+        if (root.projectId == connectedWorkbench->activeProjectId()) return root.module;
+    return {};
 }
 
 void NavigationManager::setSearchFilter(const QString& filter)

@@ -43,6 +43,8 @@ struct EditorActionContextQuery {
 struct EditorActionWorkspaceContext {
     QString workspacePath;
     QString configuredTopModule;
+    QString configuredTopFile, activeProjectId;
+    bool explicitDesignSelection = false;
     QSet<QString> workspaceFiles;
     std::uint64_t revision = 0;
     std::uint64_t projectRevision = 0;

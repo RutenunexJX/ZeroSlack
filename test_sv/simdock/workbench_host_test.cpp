@@ -3,6 +3,7 @@
 #include <QtTest>
 #include <QtConcurrent>
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QAction>
 #include <QComboBox>
 #include <QDialog>
@@ -71,6 +72,8 @@ class WorkbenchHostTest : public QObject {
         if (!file.open(QIODevice::WriteOnly) || file.write(data) != data.size()) qFatal("fixture write failed");
     }
     static void fixture(const QTemporaryDir& root) {
+        const auto key = QStringLiteral("integrations/simdock/workspaces/") + QString::fromLatin1(QCryptographicHash::hash(QDir::fromNativeSeparators(root.path()).toCaseFolded().toUtf8(),QCryptographicHash::Sha256).toHex());
+        QSettings().setValue(key+"/activeProject",QString::fromLatin1(id));
         write(root.filePath("dut.sv"), "module checked(input logic clk,rst,byte_valid,out_ready, input logic [7:0] byte_data, "
               "output logic byte_ready,uart_tx,out_valid,output logic [7:0] out_data); "
               "assign byte_ready=1'b1; assign uart_tx=1'b1; assign out_valid=byte_valid; assign out_data=byte_data; endmodule");
@@ -196,7 +199,10 @@ private slots:
         QCOMPARE(qApp->applicationVersion(), version); QCOMPARE(qApp->font(), font);
         QCOMPARE(qApp->palette(), palette); QCOMPARE(qApp->styleSheet(), sheet); QCOMPARE(qApp->style(), style);
         QCOMPARE(QLocale(), locale); QCOMPARE(qApp->libraryPaths(), paths);
-        QCOMPARE(qApp->quitOnLastWindowClosed(), quitLast); QCOMPARE(QSettings().allKeys(), settingsKeys);
+        QCOMPARE(qApp->quitOnLastWindowClosed(), quitLast);
+        auto hostKeys = QSettings().allKeys();
+        hostKeys.removeIf([](const QString& key) { return key.startsWith("integrations/simdock/"); });
+        QCOMPARE(hostKeys, settingsKeys);
         QCOMPARE(QSettings().value("host/sentinel").toString(), QStringLiteral("untouched"));
     }
     void responsiveGeometry_data() {
@@ -280,7 +286,7 @@ private slots:
         QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
         const QList<QPair<QString, QStringList>> controls{
             {"workspace", {"newProject", "projectList"}},
-            {"sources", {"sourceList", "refreshWorkspace", "moveSourceUp", "moveSourceDown"}},
+            {"sources", {"sourceList", "refreshWorkspace", "inputsDisclosure"}},
             {"simulation", {"openSettings", "dutSelector", "tbTop", "duration", "startSimulation", "stopSimulation"}},
             {"log", {"simulationLog", "clearLog"}}};
         for (const auto& [page, names] : controls) {
@@ -305,11 +311,12 @@ private slots:
         auto* list = widget->findChild<QListView*>("sourceList"); auto* model = list->model();
         QVERIFY(model->setData(model->index(1, 0), Qt::Checked, Qt::CheckStateRole));
         list->setCurrentIndex(model->index(1, 0));
-        widget->findChild<QPushButton*>("moveSourceUp")->click();
+        QVERIFY(!widget->findChild<QPushButton*>("moveSourceUp"));
         const QPersistentModelIndex selected(list->currentIndex());
         const auto path = selected.data(Qt::UserRole);
-        auto* options = widget->findChild<QToolButton*>("waveOptionsToggle"); options->setChecked(true);
-        const auto wideState = state(widget);
+        auto* projects = widget->findChild<QPushButton*>("projectsDisclosure"); QVERIFY(projects);
+        auto* inputs = widget->findChild<QPushButton*>("inputsDisclosure"); QVERIFY(inputs);
+        projects->setChecked(false); inputs->setChecked(true);
         auto* tb = widget->findChild<QLineEdit*>("tbTop"); tb->setText("tb_keep");
         for (int width : {520, 280, 960, 1250, 280, 520, 1250}) {
             host.resize(width, 700); QCoreApplication::processEvents(); section(widget, "sources");
@@ -318,14 +325,14 @@ private slots:
             QVERIFY(selected.isValid()); QCOMPARE(list->currentIndex(), QModelIndex(selected));
             QCOMPARE(selected.data(Qt::UserRole), path); QCOMPARE(selected.data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
             QCOMPARE(tb->text(), QStringLiteral("tb_keep")); QCOMPARE(state(widget)["projectId"].toString(), QString::fromLatin1(id));
-            QCOMPARE(state(widget)["layout/waveOptionsExpanded"].toBool(), true);
+            QVERIFY(!projects->isChecked()); QVERIFY(inputs->isChecked());
         }
         QTest::qWait(120); QCOMPARE(scanned.size(), 1);
         // The current form state survives width changes; obsolete splitters are not restored.
         host.resize(520, 700); QCoreApplication::processEvents();
-        auto saved = state(widget); saved["layout/waveOptionsExpanded"] = wideState["layout/waveOptionsExpanded"];
+        auto saved = state(widget);
         QVERIFY(restore(widget, saved).isEmpty()); host.resize(1250, 700); QCoreApplication::processEvents();
-        QCOMPARE(state(widget)["layout/waveOptionsExpanded"], wideState["layout/waveOptionsExpanded"]);
+        QVERIFY(!projects->isChecked()); QVERIFY(inputs->isChecked());
         section(widget, "simulation");
         QVERIFY(reachable(widget->findChild<QPushButton*>("startSimulation"), widget));
     }
@@ -338,6 +345,8 @@ private slots:
         QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
         auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(width, 700); host.show();
         QSignalSpy scanned(widget, SIGNAL(scanFinished())); section(widget, "workspace");
+        widget->findChild<QPushButton*>("projectsDisclosure")->setChecked(true);
+        widget->findChild<QPushButton*>("inputsDisclosure")->setChecked(true);
         QVERIFY(!widget->findChild<QWidget*>("openWorkspace"));
         QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         auto* add = widget->findChild<QPushButton*>("newProject"); QVERIFY(reachable(add, widget));
@@ -359,11 +368,8 @@ private slots:
             QTest::keyClick(sources, Qt::Key_Space);
             QCOMPARE(model->index(row, 0).data(Qt::CheckStateRole).toInt(), int(Qt::Checked));
         }
-        const auto moved = sources->currentIndex().data(Qt::UserRole);
-        auto* up = widget->findChild<QPushButton*>("moveSourceUp"); QVERIFY(reachable(up, widget)); QTest::mouseClick(up, Qt::LeftButton);
-        QCOMPARE(model->index(0, 0).data(Qt::UserRole), moved);
-        auto* down = widget->findChild<QPushButton*>("moveSourceDown"); QVERIFY(reachable(down, widget)); QTest::mouseClick(down, Qt::LeftButton);
-        QCOMPARE(model->index(1, 0).data(Qt::UserRole), moved);
+        QVERIFY(!widget->findChild<QPushButton*>("moveSourceUp"));
+        QVERIFY(!widget->findChild<QPushButton*>("moveSourceDown"));
         auto* rescan = widget->findChild<QPushButton*>("refreshWorkspace"); QVERIFY(reachable(rescan, widget));
         QTest::mouseClick(rescan, Qt::LeftButton); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 10000);
         section(widget, "workspace"); QVERIFY(reachable(projects, widget));

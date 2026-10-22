@@ -16,7 +16,8 @@ enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
     OpenProject, ZoomIn, ZoomOut, More,
-    KernelGraph, ModuleGraph, HotspotGraph, StateGraph, IpCatalog, Clear };
+    KernelGraph, ModuleGraph, HotspotGraph, StateGraph, IpCatalog, Clear, FolderOpen,
+    BuildInputs, Simulation, Subroutine, Parameter, Port, Type, Rename, CopyLink };
 
 class Engine final : public QIconEngine {
 public:
@@ -44,7 +45,18 @@ public:
             p->drawPath(shape);
         };
         switch (kind) {
-        case Folder: path({{3,7},{3,5},{9,5},{11,7},{21,7},{21,20},{3,20}},true); break;
+        case Folder: {
+            QPainterPath folder; folder.moveTo(3,8); folder.lineTo(3,6);
+            folder.quadTo(3,4.5,4.5,4.5); folder.lineTo(9,4.5); folder.lineTo(11.5,7);
+            folder.lineTo(19.5,7); folder.quadTo(21,7,21,8.5); folder.lineTo(21,18.5);
+            folder.quadTo(21,20,19.5,20); folder.lineTo(4.5,20); folder.quadTo(3,20,3,18.5);
+            folder.closeSubpath(); p->drawPath(folder); break;
+        }
+        case FolderOpen: {
+            path({{3,17},{3,6},{9,6},{11,8},{20,8},{20,10}});
+            QPainterPath folder; folder.moveTo(3,20); folder.lineTo(6,11); folder.lineTo(22,11);
+            folder.lineTo(19,20); folder.closeSubpath(); p->drawPath(folder); break;
+        }
         case File: path({{6,3},{14,3},{19,8},{19,21},{6,21}},true); path({{14,3},{14,8},{19,8}}); line(9,12,16,12); line(9,16,16,16); break;
         case Settings: {
             QPolygonF gear;
@@ -118,6 +130,169 @@ public:
         case Maximize: box(4,4,16,16);break;
         case Grid: for(int x:{3,14})for(int y:{3,14})box(x,y,7,7);break;
         case Sidebar: box(3,4,18,16);line(9,4,9,20);break;
+        case BuildInputs: {
+            QPainterPath shape;
+            shape.moveTo(7.5, 3);
+            shape.lineTo(5, 3);
+            shape.arcTo(3, 3, 4, 4, 90, 90);
+            shape.lineTo(3, 17);
+            shape.arcTo(3, 15, 4, 4, -180, 90);
+            shape.moveTo(15, 5);
+            shape.lineTo(9, 5);
+            shape.arcTo(7, 5, 4, 4, 90, 90);
+            shape.lineTo(7, 19);
+            shape.arcTo(7, 17, 4, 4, -180, 90);
+            shape.lineTo(12, 21);
+            shape.moveTo(15, 5);
+            shape.lineTo(19, 9);
+            shape.lineTo(15, 9);
+            shape.lineTo(15, 5);
+            shape.moveTo(19, 9);
+            shape.lineTo(19, 12);
+            shape.moveTo(10, 10);
+            shape.lineTo(12, 10);
+            shape.moveTo(10, 14);
+            shape.lineTo(13, 14);
+            shape.moveTo(15, 18);
+            shape.lineTo(17.2, 20.2);
+            shape.lineTo(22, 15);
+            p->drawPath(shape);
+            break;
+        }
+        case Simulation: {
+            circle(12, 13, 8.2);
+            QPainterPath shape;
+            shape.moveTo(9, 2);
+            shape.lineTo(15, 2);
+            shape.moveTo(12, 2);
+            shape.lineTo(12, 4.8);
+            shape.moveTo(18.6, 6.6);
+            shape.lineTo(20.3, 4.9);
+            shape.moveTo(10, 9.5);
+            shape.lineTo(15.2, 13);
+            shape.lineTo(10, 16.5);
+            shape.closeSubpath();
+            p->drawPath(shape);
+            break;
+        }
+        case Subroutine: {
+            QPainterPath shape;
+            shape.moveTo(7, 3.5);
+            shape.lineTo(6, 3.5);
+            shape.arcTo(4.5, 3.5, 3, 3, 90, 90);
+            shape.lineTo(4.5, 9.5);
+            shape.cubicTo(4.5, 11, 3.8, 12, 2.5, 12);
+            shape.cubicTo(3.8, 12, 4.5, 13, 4.5, 14.5);
+            shape.lineTo(4.5, 19);
+            shape.arcTo(4.5, 17.5, 3, 3, -180, 90);
+            shape.lineTo(7, 20.5);
+            shape.moveTo(17, 3.5);
+            shape.lineTo(18, 3.5);
+            shape.arcTo(16.5, 3.5, 3, 3, 90, -90);
+            shape.lineTo(19.5, 9.5);
+            shape.cubicTo(19.5, 11, 20.2, 12, 21.5, 12);
+            shape.cubicTo(20.2, 12, 19.5, 13, 19.5, 14.5);
+            shape.lineTo(19.5, 19);
+            shape.arcTo(16.5, 17.5, 3, 3, 0, -90);
+            shape.lineTo(17, 20.5);
+            shape.moveTo(10, 8);
+            shape.lineTo(14.5, 8);
+            shape.lineTo(14.5, 15);
+            shape.lineTo(9.5, 15);
+            shape.moveTo(11.5, 13);
+            shape.lineTo(9.5, 15);
+            shape.lineTo(11.5, 17);
+            p->drawPath(shape);
+            break;
+        }
+        case Parameter: {
+            QPainterPath shape;
+            shape.moveTo(8.3, 3.7);
+            shape.lineTo(15.7, 3.7);
+            shape.arcTo(14.7336479, 3.6994337, 2, 2, 91.9282476, -61.9657035);
+            shape.lineTo(20.8, 11.5);
+            shape.arcTo(18.9339746, 11, 2, 2, 30, -60);
+            shape.lineTo(16.6, 19.8);
+            shape.arcTo(14.7336479, 18.3005663, 2, 2, -29.9625442, -61.9657035);
+            shape.lineTo(8.3, 20.3);
+            shape.arcTo(7.2663521, 18.3005663, 2, 2, -88.0717524, -61.9657035);
+            shape.lineTo(3.2, 12.5);
+            shape.arcTo(3.0660254, 11, 2, 2, -150, -60);
+            shape.lineTo(7.4, 4.2);
+            shape.arcTo(7.2663521, 3.6994337, 2, 2, 150.0374558, -61.9657035);
+            shape.closeSubpath();
+            shape.moveTo(8.7, 10);
+            shape.lineTo(15.3, 10);
+            shape.moveTo(8.7, 14);
+            shape.lineTo(15.3, 14);
+            p->drawPath(shape);
+            break;
+        }
+        case Port: {
+            QPainterPath shape;
+            shape.moveTo(13, 3.5);
+            shape.lineTo(19, 3.5);
+            shape.arcTo(17, 3.5, 4, 4, 90, -90);
+            shape.lineTo(21, 18.5);
+            shape.arcTo(17, 16.5, 4, 4, 0, -90);
+            shape.lineTo(13, 20.5);
+            shape.moveTo(13, 3.5);
+            shape.lineTo(13, 8.7);
+            shape.moveTo(13, 15.3);
+            shape.lineTo(13, 20.5);
+            shape.moveTo(3, 12);
+            shape.lineTo(9.5, 12);
+            p->drawRoundedRect(QRectF(9.5, 8.7, 6.5, 6.6), 1.4, 1.4);
+            p->drawPath(shape);
+            break;
+        }
+        case Type: {
+            p->drawRoundedRect(QRectF(3.5, 3.5, 17, 17), 3, 3);
+            QPainterPath shape;
+            shape.moveTo(8, 8);
+            shape.lineTo(16, 8);
+            shape.moveTo(12, 8);
+            shape.lineTo(12, 17);
+            shape.moveTo(10, 17);
+            shape.lineTo(14, 17);
+            p->drawPath(shape);
+            break;
+        }
+        case Rename: {
+            QPainterPath shape;
+            shape.moveTo(4, 17);
+            shape.lineTo(5, 12.5);
+            shape.lineTo(16.8, 3);
+            shape.arcTo(16.2488826, 2.6617322, 3, 3, 129.2413515, -89.3633671);
+            shape.lineTo(20.2, 4.7);
+            shape.arcTo(17.5382678, 4.1488826, 3, 3, 39.2413515, -89.3633671);
+            shape.lineTo(8.2, 16.3);
+            shape.lineTo(4, 17);
+            shape.closeSubpath();
+            shape.moveTo(14.3, 5);
+            shape.lineTo(17.5, 8.7);
+            shape.moveTo(4, 21);
+            shape.lineTo(20, 21);
+            p->drawPath(shape);
+            break;
+        }
+        case CopyLink: {
+            QPainterPath shape;
+            shape.moveTo(13.7, 5.7);
+            shape.lineTo(15.3, 4.1);
+            shape.arcTo(14.0987807, 2.8987807, 8.2024387, 8.2024387, 135, -180);
+            shape.lineTo(16.6, 14.4);
+            shape.arcTo(9.6, 7.4017247, 8.2, 8.2, -44.9829578, -90.0340843);
+            shape.moveTo(10.3, 18.3);
+            shape.lineTo(8.7, 19.9);
+            shape.arcTo(1.6987807, 12.8987806, 8.2024387, 8.2024387, -45.0000008, -179.9999984);
+            shape.lineTo(7.4, 9.6);
+            shape.arcTo(6.2, 8.3982753, 8.2, 8.2, 135.0170422, -90.0340843);
+            shape.moveTo(8.7, 15.3);
+            shape.lineTo(15.3, 8.7);
+            p->drawPath(shape);
+            break;
+        }
         case OpenProject: {
             p->setPen(QPen(QColor(35, 50, 86), 2.7,
                             Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));

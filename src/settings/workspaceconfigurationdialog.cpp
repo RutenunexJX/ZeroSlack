@@ -155,14 +155,6 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
             this, &WorkspaceConfigurationDialog::removeSelectedDefineRows);
     grid->addWidget(definesGroup, 1, 1);
 
-    auto* topLayout = new QFormLayout();
-    topModuleEdit = UiControls::lineEdit(this);
-    topModuleEdit->setObjectName(QStringLiteral("workspaceTopModuleEdit"));
-    topModuleEdit->setPlaceholderText(QStringLiteral("optional"));
-    UiControls::addFormRow(topLayout, QStringLiteral("Top module / active top"),
-                      topModuleEdit);
-    rootLayout->addLayout(topLayout);
-
     auto* sourceGroups =
         new QGroupBox(
             QStringLiteral(
@@ -322,8 +314,7 @@ void WorkspaceConfigurationDialog::setConfiguration(
     setListValues(includeDirsList, configuration.includeDirs);
     setListValues(ignoredDirsList, configuration.ignoredDirs);
     setListValues(fileExtensionsList, configuration.fileExtensions);
-    if (topModuleEdit)
-        topModuleEdit->setText(configuration.topModule);
+    legacyTopModule = configuration.topModule;
     if (virtualSourceGroupsTable) {
         virtualSourceGroupsTable->setRowCount(0);
         for (const WorkspaceVirtualSourceGroup& group :
@@ -349,8 +340,7 @@ WorkspaceConfiguration WorkspaceConfigurationDialog::configuration() const
     configuration.includeDirs = listValues(includeDirsList);
     configuration.ignoredDirs = listValues(ignoredDirsList);
     configuration.fileExtensions = listValues(fileExtensionsList);
-    configuration.topModule = topModuleEdit ? topModuleEdit->text().trimmed()
-                                            : QString();
+    configuration.topModule = legacyTopModule;
     configuration.virtualSourceGroups =
         virtualSourceGroupsFromTable();
     if (definesTable) {
