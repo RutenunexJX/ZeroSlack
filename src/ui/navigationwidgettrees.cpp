@@ -197,9 +197,13 @@ void NavigationWidget::populateFileTree()
                 Qt::CaseInsensitive);
         for (const QString& configuredFile :
              sourceGroup.files) {
+            // Reuse identities resolved above within this population only;
+            // later refreshes still observe filesystem and alias changes.
+            const auto knownIdentity = sourceIdentitiesByPath.constFind(configuredFile);
             const QString key =
-                EditorFileIdentity::lookupKey(
-                    configuredFile);
+                knownIdentity != sourceIdentitiesByPath.cend()
+                ? knownIdentity.value()
+                : EditorFileIdentity::lookupKey(configuredFile);
             const QString currentPath =
                 sourceFilesByIdentity.value(key);
             if (currentPath.isEmpty())

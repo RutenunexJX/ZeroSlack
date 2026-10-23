@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QFont>
+#include <QSettings>
 #include <QTemporaryDir>
 #include <QTreeWidget>
 
@@ -121,6 +122,9 @@ int main(int argc, char* argv[])
           "temporary workspace is valid");
     if (!workspace.isValid())
         return 1;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, workspace.path());
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, workspace.path());
 
     const QString top =
         normalized(
@@ -276,6 +280,28 @@ int main(int argc, char* argv[])
                       artifactPath),
               "virtual source group navigation screenshot is saved");
     }
+
+    const QString alternateTop = workspace.path() + QStringLiteral("/rtl/../rtl/top.sv");
+    widget.setVirtualSourceGroups({
+        {QStringLiteral("Aliases"), {top, top, alternateTop}},
+        {QStringLiteral("Shared"), {top}},
+    });
+    auto* aliases = itemWithText(tree, QStringLiteral("Aliases"));
+    auto* shared = itemWithText(tree, QStringLiteral("Shared"));
+    check(aliases && aliases->childCount() == 1 && shared && shared->childCount() == 1
+              && fileItemCount(tree, top) == 2 && fileItemCount(tree, helper) == 1,
+          "exact and alternate paths deduplicate within a group and may occur in separate groups");
+
+    const QString movedTop = workspace.path() + QStringLiteral("/rtl/moved.sv");
+    check(QFile::rename(top, movedTop), "source can move between hierarchy refreshes");
+    widget.updateFileHierarchy({movedTop, helper, testbench});
+    check(!itemWithText(tree, QStringLiteral("Aliases")) && !itemWithText(tree, QStringLiteral("Shared"))
+              && fileItemCount(tree, movedTop) == 1,
+          "a later hierarchy refresh does not retain an identity for a moved group member");
+    widget.setVirtualSourceGroups({{QStringLiteral("Moved"), {movedTop, movedTop}}});
+    auto* moved = itemWithText(tree, QStringLiteral("Moved"));
+    check(moved && moved->childCount() == 1 && fileItemCount(tree, movedTop) == 1,
+          "updated group membership resolves the new path without a physical duplicate");
 
     std::cout << "navigation virtual source group checks: "
               << checks << ", failures: "

@@ -1,6 +1,6 @@
-ZeroSlack v0.32.9 Windows package
+ZeroSlack v0.32.10 Windows package
 
-Release 0.32.9 separates file browsing from explicit Design subprojects, keeps one active project, and infers compilation order with Slang. The sidebar uses compact collapsible sections and rounded icons; the English welcome page adds hover animations. Waveform/Register welcome entries remain unavailable by agreement. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
+Release 0.32.10 reduces repeated path resolution while filling grouped Files trees. Existing subprojects, automatic compilation order and template editing remain unchanged. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
 Release 0.32.6 enters a selected TB region with one Enter. Selecting a DUT module applies default parameters and creates declarations, an instance and port connections together; optional customization remains available. Package-qualified UART ports are preserved. Escape cancels search without unlocking, and subsequent code input retains its cursor or selection. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 
