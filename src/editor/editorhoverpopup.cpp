@@ -314,6 +314,25 @@ void EditorHoverPopup::showContent(const PeekContentModel& content,
     raise();
 }
 
+void EditorHoverPopup::showEmbeddedContent(
+    QWidget* body, const QString& title, const QRect& globalAnchorRect,
+    const QFont& editorFont)
+{
+    PeekContentModel content;
+    content.kind = PeekContentKind::PinloomPreview;
+    content.title = title;
+    content.maximumSize = QSize(420, 400);
+    showContent(content, globalAnchorRect, editorFont);
+    auto* scroll = UiControls::scrollArea(this);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setWidgetResizable(true);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setWidget(body);
+    layout->addWidget(scroll);
+    resize(maximumWidth(), maximumHeight());
+    moveNear(globalAnchorRect);
+}
+
 void EditorHoverPopup::applyAppearance()
 {
     const bool card = currentContent.symbolCard;
@@ -990,7 +1009,9 @@ bool EditorHoverPopup::eventFilter(QObject* watched, QEvent* event)
                       == QEvent::NonClientAreaMouseButtonPress) {
         auto* mouseEvent = static_cast<QMouseEvent*>(event);
         const QRect globalRect(mapToGlobal(QPoint(0, 0)), size());
-        if (!globalRect.contains(mouseEvent->globalPosition().toPoint()))
+        const QWidget* activePopup = QApplication::activePopupWidget();
+        if (!globalRect.contains(mouseEvent->globalPosition().toPoint())
+            && !(activePopup && isAncestorOf(activePopup)))
             closePopup();
     } else if ((event->type() == QEvent::ApplicationDeactivate
                 || event->type() == QEvent::WindowDeactivate)

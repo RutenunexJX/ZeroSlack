@@ -49,6 +49,15 @@ void NavigationManager::connectToTabManager(TabManager* tabManager)
                     // file hierarchy; activeDocumentChanged handles highlight.
                     highlightCurrentFileInTree();
                 });
+        const auto refreshDocuments = [this] {
+            if (!connectedWorkspaceManager || !connectedWorkspaceManager->isWorkspaceOpen()) {
+                caches.clearFileList();
+                if (currentView == FileHierarchyView) refreshFileHierarchy();
+            }
+            highlightCurrentFileInTree();
+        };
+        connect(connectedTabManager, &TabManager::webDocumentOpened, this, refreshDocuments);
+        connect(connectedTabManager, &TabManager::documentIdentityChanged, this, refreshDocuments);
 
         connect(connectedTabManager, &TabManager::tabClosed,
                 this, [this](const QString&) {

@@ -489,7 +489,8 @@ int main(int argc, char* argv[])
           QVariantList{PinloomHostEntry::fromJson(readyRectangleEntry)
                            .toVariantMap()}}});
     imageView.show();
-    QApplication::processEvents();
+    check(QTest::qWaitFor([&] { return !imageView.imagePreviewLabel()->pixmap(Qt::ReturnByValue).isNull(); }),
+          "shared asynchronous PNG loader finishes without blocking the UI");
 
     QLabel* imageLabel = imageView.imagePreviewLabel();
     QLabel* imageSummary = imageView.findChild<QLabel*>(
@@ -586,7 +587,8 @@ int main(int argc, char* argv[])
           QVariantList{PinloomHostEntry::fromJson(unavailableRectangleEntry)
                            .toVariantMap()}}});
     unavailableImageView.show();
-    QApplication::processEvents();
+    check(QTest::qWaitFor([&] { return unavailableImageView.statusText() == rendererUnavailable; }),
+          "asynchronous image failure reaches the current sidebar entry");
     check(unavailableImageView.previewEditor()->isVisible()
               && unavailableImageView.previewEditor()->toPlainText().contains(
                      rendererUnavailable)
@@ -694,7 +696,8 @@ int main(int argc, char* argv[])
                 readyPreviewJson(latestPreviewPath, QSize(300, 300), 7),
                 7),
             {});
-        QApplication::processEvents();
+        check(QTest::qWaitFor([&] { return !delayedImageView.imagePreviewLabel()->pixmap(Qt::ReturnByValue).isNull(); }),
+              "latest sidebar image decode completes");
         const QPixmap latestPixmap =
             delayedImageView.imagePreviewLabel()->pixmap(Qt::ReturnByValue);
         const QColor latestColor = latestPixmap.isNull()

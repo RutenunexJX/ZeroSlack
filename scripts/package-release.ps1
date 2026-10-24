@@ -6,6 +6,8 @@ param(
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$XipsPackageDirectory = '',
     [string]$XipsAssetAdapterDirectory = '',
+    [string]$WelcomeResourceDirectory = '',
+    [string]$DocumentEditorDirectory = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
@@ -33,7 +35,8 @@ $revision = & git -C $sourceRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git revision.' }
 $branch = & git -C $sourceRoot branch --show-current
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git branch.' }
-$dirty = [bool](& git -C $sourceRoot status --porcelain)
+$sourceStatus = if ($Formal) { & git -c core.fsmonitor=false -C $sourceRoot status --porcelain } else { & git -c core.fsmonitor=false -C $sourceRoot status --porcelain --ignore-submodules=all }
+$dirty = [bool]$sourceStatus
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git source status.' }
 if ($Formal -and $dirty -and -not $AllowDirty) {
     throw 'Formal packages require clean source unless -AllowDirty is explicitly requested.'
@@ -43,7 +46,7 @@ $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 # Verify the new staging directory before replacing the installed package.
 if (Test-Path -LiteralPath $outputRoot) { throw 'Output must be a new directory.' }
 $binaries = @('ZeroSlack.exe', 'zeroslack-cli.exe', 'libzeroslack_core.dll',
-    'libzeroslack_semantic.dll', 'libzeroslack_documents.dll', 'ElaWidgetTools.dll')
+    'libzeroslack_semantic.dll', 'libzeroslack_documents.dll', 'ElaWidgetTools.dll', 'WebView2Loader.dll')
 foreach ($name in $binaries) {
     if (-not (Test-Path -LiteralPath (Join-Path $buildRoot $name) -PathType Leaf)) { throw "Missing binary: $name" }
 }
@@ -252,7 +255,63 @@ foreach ($name in @('LICENSE', 'THIRD-PARTY-NOTICES.md', '用户手册.md')) {
     Copy-Item -LiteralPath (Join-Path $sourceRoot $name) -Destination $outputRoot
 }
 # Ship editable user-template definitions and their non-destructive merge tool.
-Copy-Item -LiteralPath (Join-Path $sourceRoot 'resources/templates') -Destination $outputRoot -Recurse
+$templateTarget = Join-Path $outputRoot 'templates'
+New-Item -ItemType Directory -Path $templateTarget -Force | Out-Null
+Get-ChildItem -LiteralPath (Join-Path $sourceRoot 'resources/templates') |
+    Where-Object { $_.Name -ne '__pycache__' } |
+    Copy-Item -Destination $templateTarget -Recurse
+# External illustration bundles are copied intact. A caller can explicitly retain
+# a previously customized bundle during an upgrade; no default/custom merging.
+$welcomeSource = if ($WelcomeResourceDirectory) { (Resolve-Path -LiteralPath $WelcomeResourceDirectory).Path } else { Join-Path $sourceRoot 'resources/welcome' }
+$welcomeSource = [IO.Path]::GetFullPath($welcomeSource).TrimEnd('\','/')
+if ($outputRoot.Equals($welcomeSource, [StringComparison]::OrdinalIgnoreCase) -or
+    $outputRoot.StartsWith($welcomeSource + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Package output must be outside the welcome resource bundle.'
+}
+foreach ($name in @('LICENSE','NOTICE.txt')) {
+    if (-not (Test-Path -LiteralPath (Join-Path $welcomeSource $name) -PathType Leaf)) {
+        throw "Use a complete welcome resource bundle, including $name."
+    }
+}
+$welcomeManifestPath = Join-Path $welcomeSource 'manifest.json'
+$welcomeManifest = Get-Content -LiteralPath $welcomeManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+if ($welcomeManifest.format -ne 'zeroslack.welcome.bundle' -or $welcomeManifest.version -ne 1) { throw 'Unsupported welcome resource bundle.' }
+foreach ($id in @('rtl','waveform','registers')) {
+    $entry = $welcomeManifest.cards.$id
+    $path = Join-NativeRuntimePath $welcomeSource $entry.scene
+    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256.ToLowerInvariant()) {
+        throw "Welcome scene checksum mismatch: $id"
+    }
+}
+$welcomeTarget = Join-Path $outputRoot 'resources/welcome'
+New-Item -ItemType Directory -Path (Split-Path -Parent $welcomeTarget) -Force | Out-Null
+Copy-Item -LiteralPath $welcomeSource -Destination $welcomeTarget -Recurse
+$editorSource = if ($DocumentEditorDirectory) { (Resolve-Path -LiteralPath $DocumentEditorDirectory).Path } else { Join-Path $buildRoot 'resources/document-editors' }
+$editorSource = [IO.Path]::GetFullPath($editorSource).TrimEnd('\','/')
+if ($outputRoot.Equals($editorSource, [StringComparison]::OrdinalIgnoreCase) -or
+    $outputRoot.StartsWith($editorSource + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Package output must be outside the document editor bundle.'
+}
+$editorManifestPath = Join-Path $editorSource 'manifest.json'
+$editorManifest = Get-Content -LiteralPath $editorManifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+if ($editorManifest.format -ne 'zeroslack.document-editors' -or $editorManifest.version -ne 1) { throw 'Build the pinned document editor resources before packaging.' }
+foreach ($name in @('WebView2Loader.dll')) {
+    if (-not $editorManifest.runtimeFiles.$name -or
+        (Get-FileHash -LiteralPath (Join-Path $buildRoot $name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $editorManifest.runtimeFiles.$name) {
+        throw "Document editor loader checksum mismatch: $name"
+    }
+}
+foreach ($entry in $editorManifest.files.PSObject.Properties) {
+    $resource = Join-NativeRuntimePath $editorSource $entry.Name
+    if ((Get-FileHash -LiteralPath $resource -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.Value) {
+        throw "Document editor checksum mismatch: $($entry.Name)"
+    }
+}
+foreach ($required in @('markdown/index.html','blocks/index.html','NOTICE.txt','licenses/MarkText-Muya-MIT.txt','licenses/BlockSuite-MPL-2.0.txt','licenses/WebView2-SDK-LICENSE.txt','sources/build-document-editors.py')) {
+    if (-not $editorManifest.files.PSObject.Properties[$required]) { throw "Incomplete document editor bundle: $required" }
+}
+Copy-Item -LiteralPath $editorSource -Destination (Join-Path $outputRoot 'resources/document-editors') -Recurse
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'thirdparty/document-editors/README.txt') -Destination (Join-Path $outputRoot 'DOCUMENT-EDITORS.txt')
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'packaging/ZeroSlack-PACKAGE-README.txt') -Destination (Join-Path $outputRoot 'README.txt')
 # Public CLI documentation and the headless Qt platform are runtime payload.
 New-Item -ItemType Directory -Path (Join-Path $outputRoot 'docs') -Force | Out-Null
@@ -268,6 +327,14 @@ if ($Formal -and -not $dirty) {
 [ordered]@{ version=$version; revision=$revision; branch=$branch; dirty=$dirty; channel=$channel;
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
     assetAdapter=$assetAdapter;
+    sourceStatusIncludesSubmodules=[bool]$Formal;
+    documentEditors=[ordered]@{ format='zeroslack.document-editors'; version=1; directory='resources/document-editors';
+        marktext=$editorManifest.inputs.marktext.commit; blocksuite=$editorManifest.inputs.blocksuite.commit;
+        webview2Sdk=$editorManifest.inputs.webview2.version; runtimeBundled=$false;
+        packagedManifestSha256=(Get-FileHash -LiteralPath $editorManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
+    welcomeResources=[ordered]@{ format='zeroslack.welcome.bundle'; version=1; directory='resources/welcome';
+        origin=$(if ($WelcomeResourceDirectory) { 'custom' } else { 'default' });
+        packagedManifestSha256=(Get-FileHash -LiteralPath $welcomeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() };
     integratedFeatures=[ordered]@{ simdock=$integratedSimDock };
     appSuiteEnabled=[bool]$suiteBuild.enabled; distribution='standalone';
     suiteSdkVersion=$suiteBuild.sdkVersion; suiteGuiProvider=[bool]$suiteBuild.guiProvider;

@@ -45,6 +45,7 @@ struct TSTextStorageMetrics;
 class EditorDocumentGeometry;
 class EditorSemanticContextService;
 class EditorGutter;
+class EditorHoverPopup;
 class EditorFoldingController;
 struct EditorLargeFileSyntaxSnapshot;
 class EditorCompletionWorkflow;
@@ -310,6 +311,7 @@ public:
     bool tbAssistDependenciesCurrent() const;
     void setPinloomCodeLinkAnnotations(
         const QList<EditorAnnotation>& annotations);
+    EditorHoverPopup* beginPinloomLinkPreview();
     void setAnnotationDisplayOptions(
         const EditorAnnotationDisplayOptions& options);
     EditorAnnotationDisplayOptions
@@ -523,6 +525,7 @@ signals:
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);
     void pinloomCodeLinkActivated(const QString& anchorId);
+    void pinloomCodeLinkHovered(const QString& anchorId, const QRect& globalRect);
     void insightScopeChanged();
 };
 

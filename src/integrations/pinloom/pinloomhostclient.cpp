@@ -26,6 +26,7 @@ const QString kProtocol = QStringLiteral("pinloom-host/v1");
 const QString kServer = QStringLiteral("pinloom.Pinloom.Pinloom.host.v1");
 constexpr int kConnectTimeoutMs = 160;
 constexpr int kResponseTimeoutMs = 1800;
+constexpr int kPdfLocationTimeoutMs = 30000;
 constexpr int kLaunchAttempts = 20;
 constexpr qsizetype kMaximumResponseBytes = 4 * 1024 * 1024;
 constexpr qsizetype kMaximumPreviewDescriptorBytes = 16 * 1024;
@@ -74,6 +75,9 @@ RawReply exchangeRequest(const QJsonObject& request,
                          const QString& serverName = kServer)
 {
     const auto cancelled = [&] { return token && token->load(); };
+    const QString method = request.value(QStringLiteral("method")).toString();
+    const int responseTimeoutMs = method == QStringLiteral("resolve") || method == QStringLiteral("open")
+        ? kPdfLocationTimeoutMs : kResponseTimeoutMs;
     const auto connect = [&]() {
         if (cancelled()) return std::unique_ptr<QLocalSocket>();
         auto socket = std::make_unique<QLocalSocket>();
@@ -132,7 +136,7 @@ RawReply exchangeRequest(const QJsonObject& request,
     QByteArray response;
     QElapsedTimer timer;
     timer.start();
-    while (timer.elapsed() < kResponseTimeoutMs) {
+    while (timer.elapsed() < responseTimeoutMs) {
         if (cancelled()) return {{}, QStringLiteral("Request cancelled.")};
         response.append(socket->readAll());
         if (response.size() > kMaximumResponseBytes) {
@@ -166,7 +170,7 @@ RawReply exchangeRequest(const QJsonObject& request,
         }
         if (socket->state() != QLocalSocket::ConnectedState)
             return {{}, QStringLiteral("Pinloom closed the connection before answering.")};
-        const int remaining = kResponseTimeoutMs - int(timer.elapsed());
+        const int remaining = responseTimeoutMs - int(timer.elapsed());
         if (remaining <= 0 || !socket->waitForReadyRead(qMin(25, remaining)))
             continue;
     }
@@ -608,7 +612,11 @@ struct PinloomHostClient::ReadQueue {
     }
 };
 
-PinloomHostClient::~PinloomHostClient() = default;
+PinloomHostClient::~PinloomHostClient()
+{
+    for (const auto& request : std::as_const(inFlight))
+        if (auto token = request.lock()) token->store(true);
+}
 
 bool PinloomHostClient::cancelReadRequests(QObject* consumer)
 {
@@ -688,7 +696,8 @@ void PinloomHostClient::resolve(const PinloomHostIdentity& identity,
 }
 
 void PinloomHostClient::open(const PinloomHostIdentity& identity,
-                             CompletionHandler handler)
+                             CompletionHandler handler,
+                             bool requireVerifiedLocation)
 {
     if (!identity.isValid()) {
         if (handler)
@@ -697,11 +706,17 @@ void PinloomHostClient::open(const PinloomHostIdentity& identity,
     }
     request(QStringLiteral("open"),
             {{QStringLiteral("identity"), identity.toJson()}},
-            [handler = std::move(handler)](
+            [handler = std::move(handler), requireVerifiedLocation](
                 const QJsonObject& result,
                 const QString& error) {
                 if (!handler)
                     return;
+                if (error.isEmpty() && requireVerifiedLocation
+                    && (!result.value(QStringLiteral("positionVerified")).toBool()
+                        || result.value(QStringLiteral("state")).toString() != QStringLiteral("located"))) {
+                    handler(false, QStringLiteral("Pinloom accepted the request, but did not confirm the PDF location. Open links to review the target."));
+                    return;
+                }
                 handler(error.isEmpty(),
                         error.isEmpty()
                             ? result.value(QStringLiteral("message")).toString()
@@ -800,7 +815,13 @@ void PinloomHostClient::sendEnvelope(QJsonObject envelope, RawReplyHandler handl
         return;
     }
 
+    if (!cancelled) cancelled = std::make_shared<std::atomic_bool>(false);
+    inFlight.removeIf([](const auto& request) { return request.expired(); });
+    inFlight.append(cancelled);
+
     const QString configuredPath = configuredExecutablePath;
+    const QString isolatedEndpoint = qEnvironmentVariable("ZEROSLACK_PINLOOM_HOST_SERVER").trimmed();
+    const QString serverName = isolatedEndpoint.isEmpty() ? kServer : isolatedEndpoint;
     auto* watcher = new QFutureWatcher<RawReply>(this);
     connect(watcher,
             &QFutureWatcher<RawReply>::finished,
@@ -812,8 +833,11 @@ void PinloomHostClient::sendEnvelope(QJsonObject envelope, RawReplyHandler handl
                     handler(reply.result, reply.error);
             });
     watcher->setFuture(QtConcurrent::run(
-        [envelope = std::move(envelope), configuredPath, cancelled]() {
+        [envelope = std::move(envelope), configuredPath, cancelled, serverName]() {
             if (cancelled && cancelled->load()) return RawReply{};
-            return exchangeRequest(envelope, discoverExecutablePath(configuredPath), cancelled);
+            // An explicitly routed library must never launch the default library.
+            const QString executable = serverName == kServer
+                ? discoverExecutablePath(configuredPath) : QString();
+            return exchangeRequest(envelope, executable, cancelled, serverName);
         }));
 }

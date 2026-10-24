@@ -1,0 +1,3 @@
+Original package.json, README and published sources accompany these terms.
+For parse-sel and snabbdom-to-html, the package and README declare MIT; the standard text is included without inventing a copyright notice. The published author/credits are retained.
+For snapsvg-cjs, the package declares MIT while the bundled Adobe source headers declare Apache-2.0. Both texts and every original source header are retained.

@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.32.10`
+Current version: `v0.32.11`
+
+Release 0.32.11 adds native document tabs for Markdown (MarkText Muya) and block documents (BlockSuite), externally replaceable welcome animations, and PDF selection previews at code links with enlargement and precise original-document opening through Pinloom. WebView2 Evergreen Runtime is required for document editors. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.32.10 reduces repeated path resolution while filling grouped Files trees. Existing subprojects, automatic compilation order and template editing remain unchanged. SDK/Runtime stays 1.0.2 and embedded xIPs stays 2.14.2.
 

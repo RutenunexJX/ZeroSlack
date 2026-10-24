@@ -20,7 +20,7 @@ int main(int argc, char** argv)
     QLocalServer server;
     check(server.listen(serverName), "isolated local endpoint opens");
     int connections = 0;
-    enum class Mode { Silent, Mismatch, Oversize, Valid } mode = Mode::Silent;
+    enum class Mode { Silent, Mismatch, Oversize, Valid, Delayed } mode = Mode::Silent;
     QObject::connect(&server, &QLocalServer::newConnection, &server, [&] {
         auto* socket = server.nextPendingConnection();
         ++connections;
@@ -31,9 +31,13 @@ int main(int argc, char** argv)
             if (!received->contains('\n')) return;
             if (mode == Mode::Silent) return;
             if (mode == Mode::Oversize) { socket->write(QByteArray(kMaximumResponseBytes + 1, 'x')); return; }
-            QJsonObject reply{{"protocol", kProtocol}, {"requestId", mode == Mode::Mismatch ? "wrong" : "test-request"},
+            const auto request = QJsonDocument::fromJson(received->trimmed()).object();
+            QJsonObject reply{{"protocol", kProtocol}, {"requestId", mode == Mode::Mismatch ? QJsonValue("wrong") : request.value("requestId")},
                 {"ok", true}, {"result", QJsonObject{{"complete", true}}}};
-            socket->write(QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n');
+            const auto bytes = QJsonDocument(reply).toJson(QJsonDocument::Compact) + '\n';
+            if (mode == Mode::Delayed)
+                QTimer::singleShot(2100, socket, [socket, bytes] { socket->write(bytes); });
+            else socket->write(bytes);
         });
     });
     auto token = std::make_shared<std::atomic_bool>(false);
@@ -61,6 +65,32 @@ int main(int argc, char** argv)
     check(run().error.contains("size limit"), "response size remains bounded");
     mode = Mode::Valid;
     check(run().result.value("complete").toBool(), "matching protocol response is accepted");
+    mode = Mode::Delayed;
+    for (const auto& method : {QStringLiteral("resolve"), QStringLiteral("open")}) {
+        envelope.insert(QStringLiteral("method"), method);
+        timeout.restart();
+        check(run().result.value("complete").toBool() && timeout.elapsed() >= 2000,
+              "PDF resolve/open survives the former 1800 ms response deadline");
+    }
+    mode = Mode::Silent;
+    token = std::make_shared<std::atomic_bool>(false);
+    const int beforeCancel = connections;
+    future = QtConcurrent::run([&] { return exchangeRequest(envelope, {}, token, serverName); });
+    check(QTest::qWaitFor([&] { return connections > beforeCancel; }, 1000), "long response request reaches the socket");
+    token->store(true);
+    check(QTest::qWaitFor([&] { return future.isFinished(); }, 1000)
+          && future.result().error.contains("cancelled"), "cancellation interrupts the 30 second response window");
+    mode = Mode::Valid;
+    const QByteArray previousEndpoint = qgetenv("ZEROSLACK_PINLOOM_HOST_SERVER");
+    qputenv("ZEROSLACK_PINLOOM_HOST_SERVER", serverName.toUtf8());
+    PinloomHostClient routedClient;
+    bool routed = false;
+    routedClient.capabilities([&](const QJsonObject& result, const QString& error) {
+        routed = error.isEmpty() && result.value("complete").toBool();
+    });
+    check(QTest::qWaitFor([&] { return routed; }, 2000), "client routes to an explicitly isolated library endpoint");
+    if (previousEndpoint.isNull()) qunsetenv("ZEROSLACK_PINLOOM_HOST_SERVER");
+    else qputenv("ZEROSLACK_PINLOOM_HOST_SERVER", previousEndpoint);
     server.close();
     return failures == 0 ? 0 : 1;
 }

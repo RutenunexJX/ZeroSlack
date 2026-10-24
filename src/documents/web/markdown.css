@@ -1,0 +1,6 @@
+html,body{margin:0;min-height:100%;font:16px/1.6 system-ui,sans-serif;color:#26384a;background:#fff;color-scheme:light}
+#editor{box-sizing:border-box;margin:24px auto;max-width:920px;min-height:calc(100vh - 48px);padding:0 40px}
+html.dark{color-scheme:dark}html.dark,html.dark body{color:#d7e0ed;background:#20242c}
+html.dark{--editor-color:#d7e0ed;--editor-color-80:#e7edf7;--editor-color-50:#a4afbf;--editor-color-30:#727f91;--editor-color-10:#475163;--editor-color-04:#292f39;--editor-bg-color:#20242c;--icon-color:#bac7d9;--code-block-bg-color:#292f39;--table-border-color:#475163;--input-bg-color:#394456;--button-bg-color:#292f39;--button-bg-color-hover:#394456;--button-border:1px solid #475163;--float-bg-color:#292f39;--float-hover-color:#394456;--float-border-color:#475163;--link-color:#87b8ff}
+@media(max-width:600px){#editor{padding:0 18px}}
+.mu-quick-insert .short-cut{display:none}

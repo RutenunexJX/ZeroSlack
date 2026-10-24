@@ -1,0 +1,18 @@
+{
+  "format": "zeroslack.welcome.bundle",
+  "version": 1,
+  "cards": {
+    "rtl": {
+      "scene": "rtl.scene.json",
+      "sha256": "632c02ec8504efb4035e060005582a3bf1e5368821541e97f1879fd3a8198c15"
+    },
+    "waveform": {
+      "scene": "waveform.scene.json",
+      "sha256": "db658050e5c63b67686709ec1e1a0567a8cb28f01bc580b91157fdc5226508b8"
+    },
+    "registers": {
+      "scene": "registers.scene.json",
+      "sha256": "825d60b88004348e81b4a519eb2690e6956978ef488fb42d0c8d14e046cbbf99"
+    }
+  }
+}

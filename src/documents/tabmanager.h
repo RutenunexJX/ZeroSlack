@@ -21,6 +21,7 @@
 #include "unsaveddocumentmanager.h"
 #include "workspacesessionstateservice.h"
 #include "workspacefileoperationservice.h"
+#include "webdocumentpage.h"
 
 enum class TabGroupingMode {
     None,
@@ -42,6 +43,7 @@ struct CrashRecoveryApplyResult :
 class DocumentRecoveryQueue;
 
 struct WorkspacePathMutation {
+    struct WebDocument { QPointer<WebDocumentPage> page; QString path; quint64 revision = 0; std::shared_ptr<void> lock; };
     struct Document {
         QPointer<SharedDocument> document;
         QString identity;
@@ -50,6 +52,7 @@ struct WorkspacePathMutation {
     };
     QPointer<QObject> owner;
     QList<Document> documents;
+    QList<WebDocument> webDocuments;
 };
 
 class ZEROSLACK_API TabManager : public QObject
@@ -69,6 +72,11 @@ public:
 
     // Tab operations
     void createNewTab();
+    WebDocumentPage* createWebDocument(WebDocumentPage::Kind kind, const QString& initialText = QString());
+    WebDocumentPage* currentWebDocument() const;
+    QList<WebDocumentPage*> webDocuments() const;
+    bool hasCurrentDocument() const;
+    bool importMarkdownDocument(const QString& sourcePath = QString());
     bool openFileInTab(const QString& fileName);
     bool saveCurrentTab();
     bool saveAsCurrentTab();
@@ -219,6 +227,7 @@ public:
         QStringList* skippedFiles = nullptr);
 
 signals:
+    void webDocumentOpened(WebDocumentPage* page);
     void tabCreated(MyCodeEditor* editor);
     void auxiliaryViewCreated(MyCodeEditor* editor);
     void auxiliaryViewAboutToClose(MyCodeEditor* editor);
@@ -266,6 +275,8 @@ private:
         SharedDocumentViewState viewState;
         int groupIndex = 0;
         bool locked = false;
+        bool webDocument = false;
+        WebDocumentPage::Kind webKind = WebDocumentPage::Kind::Markdown;
     };
 
     struct RecoveryDocumentState {
@@ -301,6 +312,8 @@ private:
     QStringList scopedWorkspaceRoots;
     QString activeWorkspaceRoot;
     QPointer<MyCodeEditor> previousActiveEditor;
+    QPointer<WebDocumentPage> previousActiveWebDocument;
+    QHash<WebDocumentPage*, QList<CrashRecoveryDocumentKey>> webRecoveryKeys;
     QHash<QString, QPointer<MyCodeEditor>> lastWorkspaceEditors;
     bool changingWorkspaceScope = false;
     bool groupingTabs = false;
@@ -396,6 +409,12 @@ private:
         const QList<MyCodeEditor*>& editors);
     int groupIndex(QTabWidget* group) const;
     QTabWidget* ensureGroupIndex(int index);
+    WebDocumentPage* openWebDocument(const QString& fileName, QTabWidget* group = nullptr);
+    void registerWebDocument(WebDocumentPage* page, QTabWidget* group);
+    bool closeWebDocument(WebDocumentPage* page, bool confirm = true, bool remember = true);
+    bool confirmWebDocuments(const QList<WebDocumentPage*>& pages);
+    void checkpointWebRecovery(WebDocumentPage* page);
+    void clearWebRecovery(WebDocumentPage* page);
 };
 
 #endif // TABMANAGER_H

@@ -87,6 +87,10 @@ inline constexpr quint32 GraphContent = 1u << 6;
 namespace ActionIds {
 inline constexpr const char FileNew[] =
     "file.new";
+inline constexpr const char FileNewMarkdown[] = "file.newMarkdown";
+inline constexpr const char FileNewBlocks[] = "file.newBlocks";
+inline constexpr const char FileImportMarkdown[] = "file.importMarkdown";
+inline constexpr const char FileExportMarkdown[] = "file.exportMarkdown";
 inline constexpr const char FileOpen[] =
     "file.open";
 inline constexpr const char FileSave[] =

@@ -3187,10 +3187,12 @@ bool MyCodeEditorState::handleGutterMouseMove(
                 && annotation.range.firstLine
                        == block.blockNumber()) {
                 closeDiagnosticPeek();
-                UiToolTips::showText(
-                    event->globalPosition().toPoint(),
-                    diagnosticTooltipForLine(block.blockNumber()) + QLatin1Char('\n') + annotation.detail,
-                    editor);
+                QPoint anchor = event->globalPosition().toPoint()
+                    - event->position().toPoint();
+                anchor.ry() += static_cast<int>(geometry.top);
+                emit editor->pinloomCodeLinkHovered(
+                    annotation.semanticKey,
+                    QRect(anchor, QSize(16, qMax(1, static_cast<int>(geometry.height)))));
                 return true;
             }
         }

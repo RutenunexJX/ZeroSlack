@@ -502,6 +502,22 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
         const char* unavailable;
     };
     const Spec specs[] = {
+        {ActionIds::FileNewMarkdown,
+         "New Markdown Document", "Create an unsaved Markdown document.",
+         "ui.file.newMarkdown", "", "new_markdown", ActionScope::Application, 0,
+         "The document tab manager is unavailable."},
+        {ActionIds::FileNewBlocks,
+         "New Block Document", "Create an unsaved block document.",
+         "ui.file.newBlocks", "", "new_blocks", ActionScope::Application, 0,
+         "The document tab manager is unavailable."},
+        {ActionIds::FileImportMarkdown,
+         "Import Markdown as Block Document", "Create an independent block document from Markdown.",
+         "ui.file.importMarkdown", "", "import_markdown", ActionScope::Application, 0,
+         "The document tab manager is unavailable."},
+        {ActionIds::FileExportMarkdown,
+         "Export Block Document as Markdown", "Export the active block document to an independent Markdown file.",
+         "ui.file.exportMarkdown", "", "export_markdown", ActionScope::Application, 0,
+         "Open a block document before exporting."},
         {ActionIds::FileNew,
          "New File",
          "Create a new unsaved editor document.",
@@ -567,13 +583,6 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
             QString::fromLatin1(spec.shortcut);
         descriptor.aliases = {
             alias(
-                ActionSurface::Shortcut,
-                QString::fromLatin1(spec.shortcut),
-                QString::fromLatin1(spec.name),
-                QString::fromLatin1(spec.description),
-                QString(),
-                QString::fromLatin1(spec.adapterKey)),
-            alias(
                 ActionSurface::ActionCatalog,
                 QString::fromLatin1(spec.id),
                 QString::fromLatin1(spec.name),
@@ -584,6 +593,15 @@ void appendFileCommandActions(QList<ActionDescriptor>* out)
                 false,
                 true),
         };
+        if (!descriptor.defaultShortcut.isEmpty()) {
+            descriptor.aliases.prepend(alias(
+                ActionSurface::Shortcut,
+                descriptor.defaultShortcut,
+                QString::fromLatin1(spec.name),
+                QString::fromLatin1(spec.description),
+                QString(),
+                QString::fromLatin1(spec.adapterKey)));
+        }
         out->append(descriptor);
     }
 }

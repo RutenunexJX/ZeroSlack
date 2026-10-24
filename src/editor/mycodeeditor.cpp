@@ -1318,6 +1318,16 @@ void MyCodeEditor::setGhostAnnotations(
     state->setGhostAnnotations(this, annotations);
 }
 
+EditorHoverPopup* MyCodeEditor::beginPinloomLinkPreview()
+{
+    auto* peek = state->sourceNavigation.currentPeek();
+    if (peek && peek->isVisible()
+        && peek->contentModel().kind != PeekContentKind::DiagnosticDetail
+        && peek->contentModel().kind != PeekContentKind::PinloomPreview)
+        return nullptr;
+    return state->sourceNavigation.beginExternalPeek(this, true);
+}
+
 void MyCodeEditor::setPinloomCodeLinkAnnotations(
     const QList<EditorAnnotation>& annotations)
 {

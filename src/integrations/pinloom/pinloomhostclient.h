@@ -119,7 +119,8 @@ public:
                  ResolveHandler handler, QObject* consumer = nullptr);
     bool cancelReadRequests(QObject* consumer);
     void open(const PinloomHostIdentity& identity,
-              CompletionHandler handler);
+              CompletionHandler handler,
+              bool requireVerifiedLocation = false);
     void createSourceAnchor(const QVariantMap& source,
                             const QString& title,
                             CreateSourceAnchorHandler handler,
@@ -141,6 +142,7 @@ private:
                       std::shared_ptr<std::atomic_bool> cancelled = {});
     struct ReadQueue;
     std::unique_ptr<ReadQueue> readQueue;
+    QList<std::weak_ptr<std::atomic_bool>> inFlight;
 
     RequestTransport customTransport;
     QString configuredExecutablePath;

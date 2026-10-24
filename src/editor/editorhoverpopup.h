@@ -37,6 +37,9 @@ public:
     void showContent(const PeekContentModel& content,
                      const QRect& globalAnchorRect,
                      const QFont& editorFont);
+    void showEmbeddedContent(QWidget* body, const QString& title,
+                             const QRect& globalAnchorRect,
+                             const QFont& editorFont);
     void showHover(const SymbolHoverReport& report,
                    const QPoint& globalPosition,
                    const QFont& editorFont);

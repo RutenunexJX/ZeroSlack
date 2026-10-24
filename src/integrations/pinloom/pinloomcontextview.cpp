@@ -1,31 +1,25 @@
 #include "uitypography.h"
 #include "uicontrols.h"
-#include "uidialogs.h"
 #include "pinloomcontextview.h"
+#include "pinloompreviewimage.h"
 #include "roundedicons.h"
 #include "pinloomcodelinkcoordinator.h"
 
 #include <QApplication>
 #include <QClipboard>
-#include <QDialog>
 #include <QDir>
 #include <QFileInfo>
 #include <QFontDatabase>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
-#include <QImageReader>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
-#include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPixmap>
-#include <QResizeEvent>
-#include <QScreen>
-#include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -37,82 +31,7 @@
 #include <algorithm>
 #include <utility>
 
-class PinloomPreviewImageLabel final : public QLabel
-{
-public:
-    explicit PinloomPreviewImageLabel(QWidget* parent = nullptr)
-        : QLabel(parent)
-    {
-        setAlignment(Qt::AlignCenter);
-        setMinimumSize(1, 1);
-        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-    }
-
-    void setSourcePixmap(const QPixmap& pixmap, const QString& altText)
-    {
-        source = pixmap;
-        setAccessibleName(altText);
-        setToolTip(altText.trimmed().isEmpty()
-                       ? QStringLiteral("Click to open a larger preview")
-                       : QStringLiteral("%1\nClick to open a larger preview")
-                             .arg(altText));
-        setCursor(source.isNull()
-                      ? Qt::ArrowCursor
-                      : Qt::PointingHandCursor);
-        updateScaledPixmap();
-    }
-
-    void clearSourcePixmap()
-    {
-        source = {};
-        clear();
-        setAccessibleName({});
-        setToolTip({});
-        setCursor(Qt::ArrowCursor);
-    }
-
-    const QPixmap& sourcePixmap() const
-    {
-        return source;
-    }
-
-    std::function<void()> activated;
-
-protected:
-    void resizeEvent(QResizeEvent* event) override
-    {
-        QLabel::resizeEvent(event);
-        updateScaledPixmap();
-    }
-
-    void mouseReleaseEvent(QMouseEvent* event) override
-    {
-        QLabel::mouseReleaseEvent(event);
-        if (event->button() == Qt::LeftButton
-            && !source.isNull()
-            && activated) {
-            activated();
-        }
-    }
-
-private:
-    QPixmap source;
-
-    void updateScaledPixmap()
-    {
-        if (source.isNull() || size().isEmpty()) {
-            clear();
-            return;
-        }
-        QLabel::setPixmap(source.scaled(
-            size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
-    }
-};
-
 namespace {
-constexpr qint64 kMaximumPreviewFileBytes = 64LL * 1024LL * 1024LL;
-constexpr int kMaximumPreviewDimension = 16384;
-constexpr qint64 kMaximumPreviewPixels = 64LL * 1024LL * 1024LL;
 
 QString entrySecondaryText(const PinloomHostEntry& entry)
 {
@@ -171,31 +90,12 @@ QStringList variantStringList(const QVariant& value)
     return lines;
 }
 
-QString documentFileName(const PinloomHostDocument& document)
-{
-    QString result =
-        document.details.value(QStringLiteral("fileName")).toString().trimmed();
-    if (result.isEmpty()) {
-        result = document.entry.metadata
-                     .value(QStringLiteral("fileName")).toString().trimmed();
-    }
-    if (!result.isEmpty())
-        return result;
-    QString location = document.entry.location.trimmed();
-    const QUrl locationUrl(location, QUrl::StrictMode);
-    if (locationUrl.isLocalFile())
-        location = locationUrl.toLocalFile();
-    result = QFileInfo(location).fileName().trimmed();
-    if (result.isEmpty() && !document.preview.filePath.isEmpty())
-        result = QFileInfo(document.preview.filePath).fileName().trimmed();
-    return result;
-}
 
 QString summaryDetailsText(const PinloomHostDocument& document)
 {
     QStringList lines;
     QStringList locationParts;
-    const QString fileName = documentFileName(document);
+    const QString fileName = pinloomDocumentFileName(document);
     if (!fileName.isEmpty())
         locationParts.append(fileName);
     int page = document.preview.page;
@@ -278,119 +178,7 @@ QString technicalDetailsText(const PinloomHostDocument& document)
     return lines.join(QLatin1Char('\n'));
 }
 
-QString normalizedLocalPath(const QString& path)
-{
-    QFileInfo info(path);
-    QString result = info.canonicalFilePath();
-    if (result.isEmpty())
-        result = info.absoluteFilePath();
-    result = QDir::cleanPath(result);
-#ifdef Q_OS_WIN
-    result = result.toLower();
-#endif
-    return result;
-}
 
-struct PreviewImageLoadResult {
-    QPixmap pixmap;
-    QString error;
-};
-
-PreviewImageLoadResult loadPreviewImage(const PinloomHostPreview& preview)
-{
-    if (!preview.validationError.isEmpty())
-        return {{}, preview.validationError};
-    if (!preview.isImage())
-        return {{}, QStringLiteral("Pinloom preview is not an image.")};
-    if (!preview.isReady()) {
-        return {{}, preview.error.trimmed().isEmpty()
-                        ? QStringLiteral("Pinloom image preview is unavailable.")
-                        : preview.error.trimmed()};
-    }
-
-    QString uriPath;
-    if (!preview.uri.isEmpty()) {
-        if (!preview.uri.isValid()
-            || !preview.uri.isLocalFile()
-            || !preview.uri.host().isEmpty()) {
-            return {{}, QStringLiteral(
-                            "Pinloom preview URI is not a local file URI.")};
-        }
-        uriPath = preview.uri.toLocalFile();
-    }
-    QString filePath = preview.filePath.trimmed();
-    if (!filePath.isEmpty()
-        && (!QFileInfo(filePath).isAbsolute()
-            || QDir::fromNativeSeparators(filePath)
-                   .startsWith(QStringLiteral("//")))) {
-        return {{}, QStringLiteral(
-                        "Pinloom preview file path is not an absolute local path.")};
-    }
-    if (!filePath.isEmpty() && !uriPath.isEmpty()
-        && normalizedLocalPath(filePath) != normalizedLocalPath(uriPath)) {
-        return {{}, QStringLiteral(
-                        "Pinloom preview URI and file path refer to different files.")};
-    }
-    if (filePath.isEmpty())
-        filePath = uriPath;
-    if (filePath.isEmpty())
-        return {{}, QStringLiteral("Pinloom preview has no local file path.")};
-
-    const QFileInfo info(filePath);
-    if (!info.exists()) {
-        return {{}, QStringLiteral("Pinloom preview file does not exist: %1")
-                        .arg(QDir::toNativeSeparators(info.absoluteFilePath()))};
-    }
-    if (!info.isFile() || !info.isReadable()) {
-        return {{}, QStringLiteral("Pinloom preview file is not readable: %1")
-                        .arg(QDir::toNativeSeparators(info.absoluteFilePath()))};
-    }
-    if (info.size() < 0 || info.size() > kMaximumPreviewFileBytes) {
-        return {{}, QStringLiteral(
-                        "Pinloom preview file exceeds the 64 MiB safety limit.")};
-    }
-    if (!preview.mimeType.isEmpty()
-        && preview.mimeType.compare(QStringLiteral("image/png"),
-                                    Qt::CaseInsensitive) != 0) {
-        return {{}, QStringLiteral("Pinloom preview MIME type is not image/png.")};
-    }
-
-    QImageReader reader(info.absoluteFilePath());
-    reader.setDecideFormatFromContent(true);
-    if (!reader.canRead()) {
-        return {{}, QStringLiteral("Pinloom preview PNG cannot be read: %1")
-                        .arg(reader.errorString())};
-    }
-    if (reader.format().compare(QByteArrayLiteral("png"),
-                                Qt::CaseInsensitive) != 0) {
-        return {{}, QStringLiteral("Pinloom preview file is not a PNG image.")};
-    }
-    const QSize imageSize = reader.size();
-    if (!imageSize.isValid()
-        || imageSize.isEmpty()
-        || imageSize.width() > kMaximumPreviewDimension
-        || imageSize.height() > kMaximumPreviewDimension
-        || qint64(imageSize.width())
-               > kMaximumPreviewPixels / imageSize.height()) {
-        return {{}, QStringLiteral(
-                        "Pinloom preview dimensions exceed the safety limit.")};
-    }
-    const QImage image = reader.read();
-    if (image.isNull()) {
-        return {{}, QStringLiteral("Pinloom preview PNG decoding failed: %1")
-                        .arg(reader.errorString())};
-    }
-    if (image.width() > kMaximumPreviewDimension
-        || image.height() > kMaximumPreviewDimension
-        || qint64(image.width()) > kMaximumPreviewPixels / image.height()) {
-        return {{}, QStringLiteral(
-                        "Decoded Pinloom preview dimensions exceed the safety limit.")};
-    }
-    const QPixmap pixmap = QPixmap::fromImage(image);
-    if (pixmap.isNull())
-        return {{}, QStringLiteral("Pinloom preview could not be displayed.")};
-    return {pixmap, {}};
-}
 }
 
 PinloomContextView::PinloomContextView(PinloomHostClient* client,
@@ -399,6 +187,7 @@ PinloomContextView::PinloomContextView(PinloomHostClient* client,
     , clientValue(client)
 {
     setObjectName(QStringLiteral("pinloomContextView"));
+    imageLoader = new PinloomPreviewImageLoader(this);
     buildUi();
 }
 
@@ -409,7 +198,8 @@ PinloomContextView::~PinloomContextView()
 
 void PinloomContextView::hideEvent(QHideEvent* event)
 {
-    if (clientValue && clientValue->cancelReadRequests(this)) {
+    const bool loadingImage = imageLoader->cancel();
+    if ((clientValue && clientValue->cancelReadRequests(this)) || loadingImage) {
         ++searchGeneration;
         ++resolveGeneration;
         resumeReadRequests = true;
@@ -446,6 +236,7 @@ QVariantMap PinloomContextView::saveState() const
 void PinloomContextView::restoreState(const QVariantMap& state)
 {
     if (clientValue) clientValue->cancelReadRequests(this);
+    imageLoader->cancel();
     ++searchGeneration;
     ++resolveGeneration;
     resumeReadRequests = false;
@@ -910,6 +701,7 @@ void PinloomContextView::resolveEntry(
     const PinloomHostIdentity& identity,
     bool announceChange)
 {
+    imageLoader->cancel();
     const quint64 generation = ++resolveGeneration;
     if (!clientValue) {
         showDocument({}, QStringLiteral("Pinloom client is unavailable."),
@@ -955,19 +747,20 @@ void PinloomContextView::showDocument(
     technicalDetailsLabel->hide();
 
     if (document.preview.present) {
-        const PreviewImageLoadResult loaded =
-            loadPreviewImage(document.preview);
-        if (!loaded.error.isEmpty()) {
-            showImageFailure(loaded.error);
-        } else {
-            imagePreview->setSourcePixmap(
-                loaded.pixmap, document.preview.altText);
-            previewStack->setCurrentWidget(imagePreview);
-            openTargetButton->setText(
-                QStringLiteral("Open original location"));
-            openTargetButton->setToolTip(
-                QStringLiteral("Open the original location through Pinloom"));
-        }
+        showTextPreview(QStringLiteral("Loading image..."));
+        openTargetButton->setText(QStringLiteral("Open original location"));
+        openTargetButton->setToolTip(QStringLiteral("Open the original location through Pinloom"));
+        const QPointer<PinloomContextView> self(this);
+        imageLoader->load(document.preview, [self, generation, altText = document.preview.altText](const PinloomPreviewImageResult& loaded) {
+            if (!self || generation != self->resolveGeneration) return;
+            if (!loaded.error.isEmpty() || loaded.image.isNull()) {
+                self->showImageFailure(loaded.error);
+            } else {
+                self->imagePreview->setSourcePixmap(QPixmap::fromImage(loaded.image), altText);
+                self->previewStack->setCurrentWidget(self->imagePreview);
+                self->setStatus({});
+            }
+        });
     } else {
         openTargetButton->setText(QStringLiteral("Open"));
         openTargetButton->setToolTip(
@@ -989,6 +782,7 @@ void PinloomContextView::showDocument(
 
 void PinloomContextView::showTextPreview(const QString& text)
 {
+    imageLoader->cancel();
     imagePreview->clearSourcePixmap();
     contentPreview->setPlainText(text);
     previewStack->setCurrentWidget(contentPreview);
@@ -1009,39 +803,7 @@ void PinloomContextView::showImageFailure(const QString& reason)
 
 void PinloomContextView::openImagePreview()
 {
-    if (!imagePreview || imagePreview->sourcePixmap().isNull())
-        return;
-
-    auto* dialog = new UiDialog(this, Qt::Window);
-    dialog->setObjectName(QStringLiteral("pinloomContextImageDialog"));
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle(titleLabel->text());
-    auto* layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(8, 8, 8, 8);
-    auto* scroll = UiControls::scrollArea(dialog);
-    scroll->setObjectName(QStringLiteral("pinloomContextImageScroll"));
-    scroll->setAlignment(Qt::AlignCenter);
-    scroll->setWidgetResizable(false);
-    auto* image = new QLabel(scroll);
-    image->setObjectName(QStringLiteral("pinloomContextLargeImage"));
-    image->setAlignment(Qt::AlignCenter);
-    image->setPixmap(imagePreview->sourcePixmap());
-    image->resize(imagePreview->sourcePixmap().size());
-    image->setAccessibleName(imagePreview->accessibleName());
-    scroll->setWidget(image);
-    layout->addWidget(scroll);
-
-    QSize available(1200, 800);
-    if (QScreen* screen = QGuiApplication::screenAt(mapToGlobal(rect().center())))
-        available = screen->availableGeometry().size();
-    const QSize maximum(qMax(480, available.width() * 4 / 5),
-                        qMax(320, available.height() * 4 / 5));
-    QSize target = imagePreview->sourcePixmap().size() + QSize(40, 70);
-    target = target.expandedTo(QSize(480, 320)).boundedTo(maximum);
-    dialog->resize(target);
-    dialog->show();
-    dialog->raise();
-    dialog->activateWindow();
+    openPinloomImagePreview(this, imagePreview->sourcePixmap(), titleLabel->text(), imagePreview->accessibleName());
 }
 
 void PinloomContextView::openCurrentEntry()

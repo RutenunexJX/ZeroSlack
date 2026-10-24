@@ -176,6 +176,16 @@ MainWindow::MainWindow(QWidget *parent)
     delete ui->tabWidget;
     ui->tabWidget = nullptr;
     tabManager = std::unique_ptr<TabManager>(new TabManager(initialEditorTabs, this));
+    connect(tabManager.get(), &TabManager::webDocumentOpened, this, [this](WebDocumentPage* page) {
+        connect(page, &WebDocumentPage::fontZoomRequested, this, [this](int steps) {
+            if (editorAppearanceSettings)
+                editorAppearanceSettings->setFontSizePt(editorAppearanceSettings->options().fontSizePt + steps);
+        });
+        if (editorAppearanceSettings) {
+            const auto options = editorAppearanceSettings->options();
+            page->setAppearance(options.fontFamily, options.fontSizePt, options.lineHeight);
+        }
+    });
     workspaceManager = std::unique_ptr<WorkspaceManager>(new WorkspaceManager(this));
     tabManager->setRegisteredTabActionRequestHandler(
         [this](const QString& actionId,
@@ -1503,11 +1513,16 @@ void MainWindow::setupFileCommandCoordinator()
         tabManager.get(), workspaceManager.get(), this);
     const QStringList actionIds = {
         QString::fromLatin1(ActionIds::FileNew),
+        QString::fromLatin1(ActionIds::FileNewMarkdown),
+        QString::fromLatin1(ActionIds::FileNewBlocks),
         QString::fromLatin1(ActionIds::FileOpen),
         QString::fromLatin1(ActionIds::FileSave),
         QString::fromLatin1(ActionIds::FileSaveAs),
+        QString::fromLatin1(ActionIds::FileImportMarkdown),
+        QString::fromLatin1(ActionIds::FileExportMarkdown),
         QString::fromLatin1(ActionIds::WorkspaceOpen),
     };
+    auto* fileMenu = UiControls::addMenu(menuBar(), tr("&File"));
     for (const QString& actionId : actionIds) {
         const ActionDescriptor* descriptor =
             findActionById(actionId);
@@ -1532,6 +1547,7 @@ void MainWindow::setupFileCommandCoordinator()
                 effectiveActionShortcut(descriptor->id),
                 QKeySequence::PortableText));
         addAction(action);
+        fileMenu->addAction(action);
         connect(
             action,
             &QAction::triggered,
@@ -2217,7 +2233,7 @@ void MainWindow::setupViewMenu()
             ActionAvailabilityContext context;
             context.editorAvailable =
                 tabManager
-                && tabManager->getCurrentEditor();
+                && tabManager->hasCurrentDocument();
             context.workspaceAvailable =
                 workspaceManager
                 && workspaceManager->isWorkspaceOpen();
@@ -2708,6 +2724,16 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return fail();
         if (route == QStringLiteral("ui.file.new")) {
             fileCommandCoordinator->newFile();
+        } else if (route == QStringLiteral("ui.file.newMarkdown")) {
+            if (!tabManager || !tabManager->createWebDocument(WebDocumentPage::Kind::Markdown)) return fail();
+        } else if (route == QStringLiteral("ui.file.newBlocks")) {
+            if (!tabManager || !tabManager->createWebDocument(WebDocumentPage::Kind::Blocks)) return fail();
+        } else if (route == QStringLiteral("ui.file.importMarkdown")) {
+            if (!tabManager || !tabManager->importMarkdownDocument()) return fail();
+        } else if (route == QStringLiteral("ui.file.exportMarkdown")) {
+            if (!tabManager || !tabManager->currentWebDocument() || tabManager->currentWebDocument()->documentKind() != WebDocumentPage::Kind::Blocks)
+                return fail(QStringLiteral("Open a block document to export it as Markdown."));
+            if (!tabManager->currentWebDocument()->exportMarkdown()) return fail();
         } else if (route
                    == QStringLiteral("ui.file.open")) {
             fileCommandCoordinator->openFile();
@@ -2718,8 +2744,8 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     .value(QStringLiteral("editorViewId"))
                     .toString();
             if (!tabManager
-                || !tabManager->editorActionTarget(
-                    preferredViewId)) {
+                || (!tabManager->editorActionTarget(preferredViewId)
+                    && !(preferredViewId.isEmpty() && tabManager->currentWebDocument()))) {
                 return fail();
             }
             fileCommandCoordinator->saveEditor(
@@ -2731,8 +2757,8 @@ ActionExecutionResult MainWindow::executeActionRoute(
                     .value(QStringLiteral("editorViewId"))
                     .toString();
             if (!tabManager
-                || !tabManager->editorActionTarget(
-                    preferredViewId)) {
+                || (!tabManager->editorActionTarget(preferredViewId)
+                    && !(preferredViewId.isEmpty() && tabManager->currentWebDocument()))) {
                 return fail();
             }
             fileCommandCoordinator->saveEditor(
@@ -2840,6 +2866,10 @@ ActionExecutionResult MainWindow::executeActionRoute(
             invocation.parameters
                 .value(QStringLiteral("editorViewId"))
                 .toString();
+        if (preferredViewId.isEmpty() && tabManager && tabManager->currentWebDocument()) {
+            tabManager->currentWebDocument()->executeCommand(route.section(QLatin1Char('.'), -1));
+            return succeeded();
+        }
         MyCodeEditor* editor = tabManager
             ? tabManager->editorActionTarget(
                   preferredViewId)
@@ -3325,7 +3355,6 @@ ActionExecutionResult MainWindow::executeActionRoute(
         [this, &fail, &succeeded](
             EditorSplitDirection direction) {
             if (!tabManager
-                || !tabManager->getCurrentEditor()
                 || !tabManager
                         ->splitCurrentView(direction)) {
                 return fail();
@@ -3360,7 +3389,7 @@ ActionExecutionResult MainWindow::executeActionRoute(
         == QStringLiteral(
             "ui.editorLayout.split.toggleMaximized")) {
         if (!tabManager
-            || !tabManager->getCurrentEditor()) {
+            || !tabManager->hasCurrentDocument()) {
             return fail();
         }
         tabManager->toggleCurrentSplitMaximized();
@@ -4488,6 +4517,8 @@ void MainWindow::applySettingsCenterSnapshot(
         options.backgroundImagePath = snapshot.value(QStringLiteral("appearance.editorBackgroundImagePath")).toString();
         options.backgroundOpacity = snapshot.value(QStringLiteral("appearance.editorBackgroundOpacity")).toInt();
         editorAppearanceSettings->setOptions(options);
+        if (tabManager) for (auto* page : tabManager->webDocuments())
+            page->setAppearance(options.fontFamily, options.fontSizePt, options.lineHeight);
     }
 
     if (workspaceSessionCoordinator) {
@@ -4605,6 +4636,7 @@ void MainWindow::setupEditorCoordinator()
         pinloomCodeLinkCoordinator
             ? pinloomCodeLinkCoordinator->store()
             : nullptr);
+    editorCoordinator->setPinloomHostClient(pinloomHostClient.get());
     editorCoordinator->setStatusMessageHandler(
         [this](const QString& message, int timeoutMs) {
             {

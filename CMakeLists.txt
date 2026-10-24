@@ -253,6 +253,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/analysis/analysisschedulerrelationships.cpp
     src/analysis/analysisschedulerwiring.cpp
     src/ui/applicationthememanager.cpp
+    src/ui/welcomeanimation.cpp
+    src/ui/welcomeanimation.h
     src/navigation/codepreviewservice.cpp
     src/editor/columnnumbertool.cpp
     src/commands/commandlayercommandregistry.cpp
@@ -397,6 +399,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/integrations/pinloom/pinloomhostclient.cpp
     src/integrations/pinloom/pinloomcodelinkcoordinator.cpp
     src/integrations/pinloom/pinloomcontextview.cpp
+    src/integrations/pinloom/pinloompreviewimage.cpp
+    src/integrations/pinloom/pinloomcodelinkhover.cpp
     src/integrations/pinloom/pinloomcontextprovider.cpp
     src/ui/temporaryeditorsession.cpp
     src/ui/temporaryeditorcontextview.cpp
@@ -715,6 +719,30 @@ endif()
 add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES})
 
+target_sources(zeroslack_core PRIVATE
+    src/documents/webeditorcontainer.cpp src/documents/webeditorcontainer.h
+    src/documents/webdocumentpage.cpp src/documents/webdocumentpage.h
+    src/documents/tabmanagerweb.cpp)
+set(ZEROSLACK_WEBVIEW2_SDK_DIR "" CACHE PATH "Pinned WebView2 SDK 1.0.4314.35 directory")
+set(ZEROSLACK_DOCUMENT_EDITORS_DIR "" CACHE PATH "Built offline Muya and BlockSuite resources")
+if(WIN32)
+    if(NOT EXISTS "${ZEROSLACK_WEBVIEW2_SDK_DIR}/build/native/include/WebView2.h")
+        message(FATAL_ERROR "Set ZEROSLACK_WEBVIEW2_SDK_DIR to the prepared WebView2 SDK 1.0.4314.35 directory.")
+    endif()
+    target_include_directories(zeroslack_core PRIVATE "${ZEROSLACK_WEBVIEW2_SDK_DIR}/build/native/include")
+    target_link_libraries(zeroslack_core PRIVATE ole32 user32 shlwapi)
+    add_custom_command(TARGET zeroslack_core POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ZEROSLACK_WEBVIEW2_SDK_DIR}/build/native/x64/WebView2Loader.dll"
+            "$<TARGET_FILE_DIR:zeroslack_core>/WebView2Loader.dll" VERBATIM)
+endif()
+if(ZEROSLACK_DOCUMENT_EDITORS_DIR)
+    add_custom_target(zeroslack_document_editor_resources ALL
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ZEROSLACK_DOCUMENT_EDITORS_DIR}"
+            "$<TARGET_FILE_DIR:zeroslack_core>/resources/document-editors" VERBATIM)
+    add_dependencies(zeroslack_core zeroslack_document_editor_resources)
+endif()
+
 if(ZEROSLACK_SHARED_CORE)
     target_compile_definitions(zeroslack_core PUBLIC
         ZEROSLACK_CORE_SHARED=1)
@@ -911,6 +939,19 @@ else()
 endif()
 
 target_link_libraries(demo PRIVATE zeroslack_core)
+cmake_policy(PUSH)
+if(POLICY CMP0112)
+    cmake_policy(SET CMP0112 NEW)
+endif()
+add_custom_target(zeroslack_welcome_resources ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome"
+        "$<TARGET_FILE_DIR:demo>/resources/welcome"
+    COMMENT "Deploying external welcome illustrations and animation resources"
+    VERBATIM)
+cmake_policy(POP)
+add_dependencies(zeroslack_core zeroslack_welcome_resources)
+add_dependencies(demo zeroslack_welcome_resources)
 target_sources(zeroslack_core PRIVATE src/automation/automationservice.cpp src/automation/automationservice.h resources/templates/templates.qrc)
 target_include_directories(zeroslack_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src/automation")
 target_link_libraries(zeroslack_cli_support PRIVATE zeroslack_core)
@@ -1556,6 +1597,14 @@ if(BUILD_TESTING)
     target_link_libraries(ui_navigation_rail_test PRIVATE zeroslack_core Qt6::Test)
     add_executable(navigation_switch_test test_sv/navigation_switch_test.cpp)
     target_link_libraries(navigation_switch_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(welcome_resource_test test_sv/welcome_resource_test.cpp)
+    target_link_libraries(welcome_resource_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(welcome_mainwindow_test test_sv/welcome_mainwindow_test.cpp)
+    target_link_libraries(welcome_mainwindow_test PRIVATE zeroslack_core Qt6::Test)
+    if(WIN32)
+        add_executable(web_document_integration_test test_sv/web_document_integration_test.cpp)
+        target_link_libraries(web_document_integration_test PRIVATE zeroslack_core Qt6::Test user32)
+    endif()
     add_executable(navigation_runtime_benchmark test_sv/navigation_runtime_benchmark.cpp)
     target_link_libraries(navigation_runtime_benchmark PRIVATE zeroslack_core Qt6::Test)
     if(WIN32)
@@ -1617,6 +1666,9 @@ if(BUILD_TESTING)
         test_sv/pinloom_context_provider_test.cpp)
     target_link_libraries(pinloom_context_provider_test
         PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(pinloom_hover_test test_sv/pinloom_hover_test.cpp)
+    target_link_libraries(pinloom_hover_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(pinloom_code_link_store_test
         test_sv/pinloom_code_link_store_test.cpp)
@@ -2233,6 +2285,14 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:compact_layout_test>)
+    foreach(WELCOME_TEST IN ITEMS welcome_resource welcome_mainwindow)
+        add_test(NAME ${WELCOME_TEST}_test
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                $<TARGET_FILE:${WELCOME_TEST}_test> -o -,txt)
+        set_tests_properties(${WELCOME_TEST}_test PROPERTIES TIMEOUT 90)
+    endforeach()
     foreach(HIGH_DPI_SCALE IN ITEMS 1 1.25 1.5 2)
         if(ZEROSLACK_ENABLE_ELA)
             foreach(ELA_TEST IN ITEMS ela_controls ela_navigation ela_motion ui_dialog_contract ui_popup_contract ui_item_menu_contract ui_window_chrome ui_navigation_rail ui_text_view ui_label_contract ui_sidebar_contract ui_panel_motion panel_layout_controller high_dpi_layout)
@@ -2463,6 +2523,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:pinloom_context_provider_test>
     )
+    add_test(NAME pinloom_hover_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            $<TARGET_FILE:pinloom_hover_test>)
+    set_tests_properties(pinloom_hover_test PROPERTIES TIMEOUT 60)
     add_test(NAME pinloom_code_link_store_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

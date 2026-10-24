@@ -17,6 +17,7 @@ class QPlainTextEdit;
 class QStackedWidget;
 class QToolButton;
 class PinloomPreviewImageLabel;
+class PinloomPreviewImageLoader;
 struct PinloomSourceLinkResult;
 
 class ZEROSLACK_API PinloomContextView final : public QWidget
@@ -70,6 +71,7 @@ private:
     QLabel* technicalDetailsLabel = nullptr;
     QStackedWidget* previewStack = nullptr;
     QPlainTextEdit* contentPreview = nullptr;
+    PinloomPreviewImageLoader* imageLoader = nullptr;
     PinloomPreviewImageLabel* imagePreview = nullptr;
     QLabel* statusLabel = nullptr;
     QToolButton* reloadButton = nullptr;

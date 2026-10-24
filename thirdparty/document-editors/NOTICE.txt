@@ -1,0 +1,37 @@
+ZeroSlack document editor resources
+
+Markdown: MarkText 0.23.0, Muya workspace source, commit
+18fdc1eddc7d36d9b205180d058982f71f4f6373. MIT license.
+Block documents: BlockSuite 0.22.4, source commit
+a5091e72365a47351f370ca23f212ef43a9d42f0. The upstream root license is
+MPL-2.0. Published npm metadata also declares MIT for individual packages;
+those declarations are retained with their package.json files. This bundle
+does not replace the upstream MPL notice with an MIT-only assertion.
+
+The complete pinned upstream source archives are provided in sources/.
+The build recipes, lockfiles, host adapters and modified BlockSuite code
+source are also provided there. Published npm dependencies are identified
+in licenses/*-dependencies.json. Their licenses and font notices accompany
+the corresponding package metadata. WebView2Loader is distributed under
+the included Microsoft WebView2 SDK license. WebView2 Runtime is a separate
+machine prerequisite; the resource bundle does not redistribute that runtime.
+
+Build adaptations:
+- Muya Prism dynamic language imports become explicit local bundle chunks.
+- Muya relative image display uses the host's bounded virtual asset origin;
+  Markdown retains its relative paths. The modified resolver is in sources/.
+- The unused BlockSuite React icon barrel is omitted; Lit icons are retained.
+- Unknown BlockSuite code language labels are preserved while their code is
+  displayed as plain text, instead of clearing the stored language value.
+- Encoded BlockSuite clipboard items are forwarded to the ZeroSlack native
+  clipboard writer; the upstream rich-text and block snapshot encoding remains.
+- The BlockSuite pointer watcher checks the current event's pressed buttons,
+  keeping the existing drag handle stable before native drag start.
+- BlockSuite CSS is compiled with vanilla-extract; fonts and assets are local.
+All other editing behavior is supplied by the pinned upstream implementations.
+
+Open Sans font metadata identifies Version 3.000 and Copyright 2020 The
+Open Sans Project Authors (https://github.com/googlefonts/opensans).
+The matching OFL 1.1 text was obtained from that project's OFL.txt:
+https://raw.githubusercontent.com/googlefonts/opensans/main/OFL.txt
+SHA-256: 01cd5ffb3a528c219a86e49a814c6c53bd8a69b9a3c305dd237074ba1c811af7

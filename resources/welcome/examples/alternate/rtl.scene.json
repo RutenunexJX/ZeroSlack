@@ -1,0 +1,104 @@
+{
+  "format": "zeroslack.welcome.scene",
+  "version": 1,
+  "canvas": [
+    230,
+    180
+  ],
+  "durationMs": 1800,
+  "accent": "#a544b8",
+  "layers": [
+    {
+      "type": "rect",
+      "x": 26,
+      "y": 30,
+      "width": 178,
+      "height": 128,
+      "radius": 24,
+      "fill": "@base",
+      "stroke": "@accent",
+      "strokeWidth": 3
+    },
+    {
+      "type": "ellipse",
+      "x": 88,
+      "y": 42,
+      "width": 54,
+      "height": 54,
+      "fill": "@accent",
+      "fillOpacity": 0.18,
+      "stroke": "@accent",
+      "strokeWidth": 2,
+      "tracks": {
+        "translateX": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              -35
+            ],
+            [
+              0.5,
+              35
+            ],
+            [
+              1,
+              -35
+            ]
+          ]
+        },
+        "fillOpacity": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0.15
+            ],
+            [
+              0.5,
+              0.7
+            ],
+            [
+              1,
+              0.15
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "ALT RTL",
+      "x": 30,
+      "y": 103,
+      "stroke": "@accent",
+      "fontSize": 18,
+      "width": 170,
+      "height": 30,
+      "align": "center"
+    },
+    {
+      "type": "line",
+      "x": 52,
+      "y": 144,
+      "width": 126,
+      "stroke": "@accent",
+      "strokeWidth": 2,
+      "tracks": {
+        "width": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              126
+            ]
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -12,7 +12,8 @@ enum class PeekContentKind {
     DiagnosticDetail,
     DeclarationPreview,
     CodePreview,
-    ActionPlanPreview
+    ActionPlanPreview,
+    PinloomPreview
 };
 
 enum class PeekContentRowRole {

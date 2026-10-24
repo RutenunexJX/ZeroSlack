@@ -21,6 +21,7 @@
 #include "navigationcommandcoordinator.h"
 #include "packagetoolservice.h"
 #include "pinloomcodelinkstore.h"
+#include "pinloomcodelinkhover.h"
 #include "semanticindex.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "tabmanager.h"
@@ -382,6 +383,13 @@ void EditorCoordinator::setRegisteredActionRequestHandler(
         std::move(handler);
 }
 
+void EditorCoordinator::setPinloomHostClient(PinloomHostClient* client)
+{
+    delete pinloomHover;
+    pinloomHover = client ? new PinloomCodeLinkHover(client, this) : nullptr;
+    if (pinloomHover) pinloomHover->setStore(pinloomCodeLinkStore);
+}
+
 void EditorCoordinator::setPinloomCodeLinkStore(
     PinloomCodeLinkStore* store)
 {
@@ -390,6 +398,7 @@ void EditorCoordinator::setPinloomCodeLinkStore(
         pinloomCodeLinkStore->setChangedHandler({});
     }
     pinloomCodeLinkStore = store;
+    if (pinloomHover) pinloomHover->setStore(store);
     if (pinloomCodeLinkStore) {
         const QPointer<EditorCoordinator> self(this);
         pinloomCodeLinkStore->setChangedHandler([self]() {
@@ -555,6 +564,10 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                 appearanceSettings->setFontSizePt(
                     options.fontSizePt + steps);
             });
+    connect(editor, &MyCodeEditor::pinloomCodeLinkHovered, this,
+            [this, editor](const QString& anchorId, const QRect& rect) {
+        if (pinloomHover && pinloomMarkersVisible) pinloomHover->hover(editor, anchorId, rect);
+    });
     connect(editor,
             &MyCodeEditor::pinloomCodeLinkActivated,
             this,
@@ -666,6 +679,7 @@ void EditorCoordinator::refreshPinloomCodeLinks(
 
 void EditorCoordinator::refreshPinloomCodeLinksForOpenEditors() const
 {
+    if (pinloomHover) pinloomHover->dismiss();
     if (!tabManager)
         return;
     for (MyCodeEditor* editor : tabManager->openEditors())
@@ -1941,6 +1955,7 @@ void EditorCoordinator::handleExposeSignalToTopRequested(
 
 void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
 {
+    if (pinloomHover) pinloomHover->dismiss();
     if (tabManager) {
         for (int i = 0; i < tabManager->editorCount(); ++i) {
             if (MyCodeEditor* openEditor = tabManager->getEditorAt(i)) {

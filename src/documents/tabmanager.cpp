@@ -13,6 +13,7 @@
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFileInfo>
+#include <QJsonDocument>
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QScopedValueRollback>
@@ -494,6 +495,10 @@ bool TabManager::writeRecoverySnapshot(SharedDocument* document, bool force)
 void TabManager::completeRecoverySnapshot(QObject* owner, const CrashRecoverySnapshotRequest& request,
                                          const CrashRecoveryWriteResult& result)
 {
+    if (auto* page = qobject_cast<WebDocumentPage*>(owner)) {
+        if (!result.succeeded()) emit crashRecoveryOperationFailed(page->documentId(), result.reason);
+        return;
+    }
     auto* document = qobject_cast<SharedDocument*>(owner);
     auto found = recoveryDocumentStates.find(document);
     if (!document || found == recoveryDocumentStates.end()
@@ -635,9 +640,14 @@ TabManager::compareCrashRecoveryCandidate(
                 "Crash recovery service is unavailable.");
         return result;
     }
-    return crashRecoveryService->readComparison(
+    auto result = crashRecoveryService->readComparison(
         recoveryWorkspacePath(workspaceRoot),
         recoveryId);
+    if (result.succeeded() && (WebDocumentPage::supportsFile(result.candidate.originalFilePath) || result.candidate.untitledDocumentId.startsWith(QStringLiteral("web:")))) {
+        const auto record = QJsonDocument::fromJson(result.recoveredText.toUtf8()).object();
+        if (record.value("format") == QStringLiteral("zeroslack.web-recovery")) result.recoveredText = record.value("content").toString();
+    }
+    return result;
 }
 
 CrashRecoveryRecoverResult
@@ -698,6 +708,21 @@ TabManager::applyCrashRecoveryCandidate(
     }
 
     SharedDocument* document = nullptr;
+    if (WebDocumentPage::supportsFile(comparison.candidate.originalFilePath)
+        || comparison.candidate.untitledDocumentId.startsWith(QStringLiteral("web:"))) {
+        const QString source = comparison.candidate.originalFilePath.isEmpty() ? comparison.candidate.untitledDocumentId : comparison.candidate.originalFilePath;
+        auto* page = new WebDocumentPage(WebDocumentPage::kindForFile(source), activeTabWidget()); QString error;
+        if (!page->restoreRecovery(comparison.recoveredText, &error)) { delete page; result.status = CrashRecoveryStatus::CorruptRecord; result.reason = error; return result; }
+        const auto claimed = crashRecoveryService->recoverText(comparison.candidate.workspacePath, comparison.candidate.recoveryId);
+        if (!claimed.succeeded() || !sameReviewedRecoveryCandidate(comparison.candidate, claimed.candidate)) {
+            delete page; result.status = claimed.succeeded() ? CrashRecoveryStatus::IdentityMismatch : claimed.status; result.reason = claimed.reason; return result;
+        }
+        registerWebDocument(page, activeTabWidget());
+        webRecoveryKeys[page].append({claimed.candidate.workspacePath, claimed.candidate.originalFilePath, claimed.candidate.untitledDocumentId});
+        result.status = CrashRecoveryStatus::Success; result.documentId = page->documentId(); result.openedView = true;
+        result.reason = QStringLiteral("Recovered into an independent unsaved document. Use Save As after reviewing it; the source file was not overwritten.");
+        return result;
+    }
     if (!comparison.candidate
              .originalFilePath.isEmpty()) {
         document =
@@ -886,6 +911,7 @@ TabManager::discardCrashRecoveryCandidate(
 
 void TabManager::checkpointCrashRecovery()
 {
+    for (auto* page : webDocuments()) checkpointWebRecovery(page);
     for (SharedDocument* document :
          std::as_const(observedDocuments)) {
         if (document && document->dirty())
@@ -896,6 +922,7 @@ void TabManager::checkpointCrashRecovery()
 void TabManager::clearCrashRecoveryAfterNormalClose()
 {
     recoveryClosing = true;
+    for (auto* page : webDocuments()) clearWebRecovery(page);
     for (SharedDocument* document :
          std::as_const(observedDocuments)) {
         if (document)
@@ -965,6 +992,7 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
         return true;
     }
 
+    if (WebDocumentPage::supportsFile(fileName)) return openWebDocument(fileName) != nullptr;
     SharedDocument* document =
         acquireFileDocument(fileName);
     if (!document)
@@ -979,11 +1007,13 @@ bool TabManager::openFileInTab(const QString& requestedFileName)
 
 bool TabManager::saveCurrentTab()
 {
+    if (auto* page = currentWebDocument()) return page->save();
     return saveEditor(getCurrentEditor(), false);
 }
 
 bool TabManager::saveAsCurrentTab()
 {
+    if (auto* page = currentWebDocument()) return page->save(true);
     return saveEditor(getCurrentEditor(), true);
 }
 
@@ -1004,6 +1034,7 @@ void TabManager::enableSplitLayout(QWidget* host)
 bool TabManager::splitCurrentView(
     EditorSplitDirection direction)
 {
+    if (currentWebDocument()) return moveCurrentViewToSplit(direction);
     MyCodeEditor* current = getCurrentEditor();
     SharedDocument* document =
         sharedDocumentForEditor(current);
@@ -1022,6 +1053,7 @@ bool TabManager::splitCurrentView(
 bool TabManager::moveCurrentViewToSplit(
     EditorSplitDirection direction)
 {
+    if (auto* page = currentWebDocument()) return splitController && splitController->movePageToSplit(page, direction, activeTabWidget());
     MyCodeEditor* current = getCurrentEditor();
     return current && splitController
         && splitController->movePageToSplit(
@@ -1381,6 +1413,9 @@ bool TabManager::saveExternalConflictLocalAs(
 bool TabManager::closeOtherTabs()
 {
     QTabWidget* group = activeTabWidget();
+    QList<WebDocumentPage*> webTargets;
+    for (auto* page : webDocuments()) if (splitController->groupForPage(page) == group && page != currentWebDocument()) webTargets.append(page);
+    if (!confirmWebDocuments(webTargets)) return false;
     MyCodeEditor* current = getCurrentEditor();
     QList<MyCodeEditor*> targets;
     for (int index = 0; group && index < group->count(); ++index) {
@@ -1389,7 +1424,9 @@ bool TabManager::closeOtherTabs()
         if (editor && editor != current && !isTabLocked(editor))
             targets.append(editor);
     }
-    return closeEditorsAtomically(targets);
+    if (!closeEditorsAtomically(targets)) return false;
+    for (auto* page : webTargets) closeWebDocument(page, false);
+    return true;
 }
 
 bool TabManager::closeTabsToRight()
@@ -1397,6 +1434,9 @@ bool TabManager::closeTabsToRight()
     QTabWidget* group = activeTabWidget();
     if (!group)
         return false;
+    QList<WebDocumentPage*> webTargets;
+    for (auto* page : webDocuments()) if (splitController->groupForPage(page) == group && group->indexOf(page) > group->currentIndex()) webTargets.append(page);
+    if (!confirmWebDocuments(webTargets)) return false;
     QList<MyCodeEditor*> targets;
     for (int index = group->currentIndex() + 1;
          index < group->count();
@@ -1406,17 +1446,23 @@ bool TabManager::closeTabsToRight()
         if (editor && !isTabLocked(editor))
             targets.append(editor);
     }
-    return closeEditorsAtomically(targets);
+    if (!closeEditorsAtomically(targets)) return false;
+    for (auto* page : webTargets) closeWebDocument(page, false);
+    return true;
 }
 
 bool TabManager::closeAllTabs()
 {
+    const auto webTargets = webDocuments();
+    if (!confirmWebDocuments(webTargets)) return false;
     QList<MyCodeEditor*> targets;
     for (MyCodeEditor* editor : allEditors()) {
         if (!isTabLocked(editor))
             targets.append(editor);
     }
-    return closeEditorsAtomically(targets);
+    if (!closeEditorsAtomically(targets)) return false;
+    for (auto* page : webTargets) closeWebDocument(page, false);
+    return true;
 }
 
 bool TabManager::reopenClosedTab()
@@ -1425,6 +1471,10 @@ bool TabManager::reopenClosedTab()
         return false;
     const ClosedTabState state =
         recentlyClosedTabs.takeLast();
+    if (state.webDocument) {
+        if (activateOpenFile(state.fileName)) return true;
+        return openWebDocument(state.fileName, ensureGroupIndex(state.groupIndex)) != nullptr;
+    }
     SharedDocument* document = nullptr;
     if (state.fileName.isEmpty()) {
         document =
@@ -1515,12 +1565,19 @@ MyCodeEditor* TabManager::getEditorAt(int index) const
 
 DocumentSnapshot TabManager::getCurrentDocument() const
 {
+    if (currentWebDocument()) return getCurrentDocumentMetadata();
     return documentQueries.currentDocument(
         getCurrentEditor());
 }
 
 DocumentSnapshot TabManager::getCurrentDocumentMetadata() const
 {
+    if (auto* page = currentWebDocument()) {
+        DocumentSnapshot value;
+        value.documentId = page->documentId(); value.fileName = page->fileName();
+        value.dirty = page->dirty(); value.saved = !page->fileName().isEmpty();
+        return value;
+    }
     return documentQueries.currentDocumentMetadata(
         getCurrentEditor());
 }
@@ -1533,6 +1590,9 @@ DocumentSnapshot TabManager::getDocumentForEditor(
 
 bool TabManager::activateOpenFile(const QString& fileName)
 {
+    for (auto* page : webDocuments()) if (!page->fileName().isEmpty() && EditorFileIdentity::same(page->fileName(), fileName)) {
+        if (auto* group = splitController->groupForPage(page)) { splitController->setActiveGroup(group); group->setCurrentWidget(page); page->setFocus(); return true; }
+    }
     if (!sharedDocuments || !splitController)
         return false;
     SharedDocument* document =
@@ -1644,7 +1704,9 @@ QString TabManager::getPlainTextFromOpenFile(
 
 QStringList TabManager::getAllOpenFileNames() const
 {
-    return documentQueries.allOpenFileNames();
+    QStringList result = documentQueries.allOpenFileNames();
+    for (auto* page : webDocuments()) if (!page->fileName().isEmpty() && !result.contains(page->fileName())) result.append(page->fileName());
+    return result;
 }
 
 QStringList TabManager::getOpenSystemVerilogFiles() const
@@ -1779,6 +1841,7 @@ bool TabManager::isTemporaryEditor(MyCodeEditor* editor) const
 
 bool TabManager::workspaceHasUnsavedChanges(const QString& workspaceRoot) const
 {
+    for (auto* page : webDocuments()) if (page->dirty() && identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot)) return true;
     for (const auto* document : sharedDocuments->documents()) {
         if (document->dirty()
             && identityKey(workspaceForFile(document->fileName())) == identityKey(workspaceRoot))
@@ -1792,6 +1855,9 @@ bool TabManager::closeTabsInWorkspace(
 {
     if (workspaceRoot.isEmpty())
         return false;
+    QList<WebDocumentPage*> webPending;
+    for (auto* page : webDocuments()) if (identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot)) webPending.append(page);
+    if (!confirmWebDocuments(webPending)) return false;
     QList<MyCodeEditor*> pending;
     for (MyCodeEditor* editor : allEditors()) {
         const DocumentSnapshot snapshot =
@@ -1812,6 +1878,7 @@ bool TabManager::closeTabsInWorkspace(
             && !documents.contains(document)) documents.append(document);
     }
     if (!resolvePendingDocuments(documents, nullptr)) return false;
+    for (auto* page : webPending) closeWebDocument(page, false);
     for (MyCodeEditor* editor : auxiliary) {
         if (documents.contains(sharedDocumentForEditor(editor)))
             closeAuxiliaryViewInternal(editor, true);
@@ -1828,12 +1895,14 @@ bool TabManager::closeTabsInWorkspace(
 
 bool TabManager::hasUnsavedChanges() const
 {
+    for (auto* page : webDocuments()) if (page->dirty()) return true;
     return documentQueries.hasUnsavedChanges();
 }
 
 bool TabManager::resolvePendingDocuments(
     QWidget* dialogParent)
 {
+    if (!confirmWebDocuments(webDocuments())) return false;
     return resolvePendingDocuments(
         sharedDocuments
             ? sharedDocuments->documents()
@@ -1861,6 +1930,17 @@ bool TabManager::prepareWorkspacePathMutation(
     }
 
     QList<SharedDocument*> affectedDocuments;
+    QList<WebDocumentPage*> affectedWebDocuments;
+    for (auto* page : webDocuments()) if (documentPathMatchesMutation(page->fileName(), sourcePath, recursive)) affectedWebDocuments.append(page);
+    QList<WorkspacePathMutation::WebDocument> confirmedWebDocuments;
+    for (auto* page : affectedWebDocuments) {
+        if (!page->confirmClose()) return false;
+        if (!documentPathMatchesMutation(page->fileName(), sourcePath, recursive)) continue;
+        const quint64 revision = page->currentRevision();
+        auto lock = page->lockForPathMutation(revision, failureReason);
+        if (!lock) return false;
+        confirmedWebDocuments.append({page, page->fileName(), revision, std::move(lock)});
+    }
     QList<WorkspacePathMutation::Document> confirmedDocuments;
     for (SharedDocument* document :
          sharedDocuments->documents()) {
@@ -1902,6 +1982,7 @@ bool TabManager::prepareWorkspacePathMutation(
     }
     if (guard.validate && !guard.validate(failureReason)) return false;
     prepared->owner = this;
+    prepared->webDocuments = confirmedWebDocuments;
     for (const auto& entry : confirmedDocuments) {
         // Save As may have deliberately moved a pending document away.
         if (entry.document && entry.document->documentId() != entry.identity
@@ -1921,6 +2002,8 @@ bool TabManager::validateWorkspacePathMutation(const WorkspacePathMutation& prep
         return false;
     };
     if (prepared.owner != this) return fail();
+    for (const auto& entry : prepared.webDocuments)
+        if (!entry.page || !entry.lock || entry.page->fileName() != entry.path || entry.page->currentRevision() != entry.revision || !entry.page->busy()) return fail();
     for (const auto& entry : prepared.documents) {
         if (!entry.document || entry.document->documentId() != entry.identity
             || entry.document->textRevision() != entry.revision
@@ -1941,6 +2024,13 @@ bool TabManager::finalizeWorkspacePathMutation(const WorkspacePathMutation& prep
 
     closingBatch = true;
     bool closedAll = true;
+    for (const auto& entry : prepared.webDocuments) {
+        auto* page = entry.page.data();
+        auto* group = splitController->groupForPage(page);
+        if (!page || !group) { closedAll = false; continue; }
+        const QString name = page->fileName();
+        clearWebRecovery(page); group->removeTab(group->indexOf(page)); page->deleteLater(); emit tabClosed(name);
+    }
     for (const auto& guardedEditor : std::as_const(affectedEditors)) {
         auto* editor = guardedEditor.data();
         if (!editor)
@@ -1985,6 +2075,13 @@ TabManager::workspaceSessionTabs(
         for (int index = 0;
              group && index < group->count();
              ++index) {
+            if (auto* page = qobject_cast<WebDocumentPage*>(group->widget(index))) {
+                if (identityKey(workspaceForFile(page->fileName())) == identityKey(workspaceRoot) && QFileInfo(page->fileName()).isFile()) {
+                    WorkspaceSessionTabState state; state.filePath = page->fileName(); state.groupIndex = groupPosition; state.tabIndex = index;
+                    state.active = page == currentWebDocument(); state.viewId = page->documentId(); states.append(state);
+                }
+                continue;
+            }
             MyCodeEditor* editor =
                 qobject_cast<MyCodeEditor*>(
                     group->widget(index));
@@ -2044,10 +2141,19 @@ QStringList TabManager::restoreWorkspaceSessionTabs(
         return restoredFiles;
 
     QPointer<MyCodeEditor> activeEditor;
+    QPointer<WebDocumentPage> activeWebPage;
     QSet<MyCodeEditor*> restoredViews;
     for (const WorkspaceSessionTabState& tab : tabs) {
         const QString filePath =
             lexicalPath(tab.filePath);
+        if (WebDocumentPage::supportsFile(filePath) && identityKey(workspaceForFile(filePath)) == identityKey(workspaceRoot) && QFileInfo(filePath).isFile()) {
+            WebDocumentPage* page = nullptr;
+            for (auto* existing : webDocuments()) if (EditorFileIdentity::same(existing->fileName(), filePath)) { page = existing; break; }
+            if (!page) page = openWebDocument(filePath, ensureGroupIndex(tab.groupIndex));
+            if (page) { restoredFiles.append(filePath); if (tab.active) activeWebPage = page; }
+            else if (skippedFiles) skippedFiles->append(filePath);
+            continue;
+        }
         if (identityKey(workspaceForFile(filePath)) != identityKey(workspaceRoot)
             || !QFileInfo(filePath).isFile()
             || !fileIo.isSystemVerilogFile(filePath)) {
@@ -2126,7 +2232,9 @@ QStringList TabManager::restoreWorkspaceSessionTabs(
             activeEditor = editor;
     }
 
-    if (activeEditor) {
+    if (activeWebPage) {
+        if (auto* group = splitController->groupForPage(activeWebPage)) { splitController->setActiveGroup(group); group->setCurrentWidget(activeWebPage); }
+    } else if (activeEditor) {
         QTabWidget* group =
             splitController->groupForPage(
                 activeEditor);
@@ -2157,9 +2265,9 @@ void TabManager::applyWorkspaceScope()
                 MyCodeEditor* editor =
                     qobject_cast<MyCodeEditor*>(
                         group->widget(index));
-                const bool visible =
-                    editorVisibleInWorkspaceScope(
-                        editor);
+                const auto* web = qobject_cast<WebDocumentPage*>(group->widget(index));
+                const QString webOwner = web ? workspaceForFile(web->fileName()) : QString();
+                const bool visible = web ? (webOwner.isEmpty() || identityKey(webOwner) == identityKey(activeWorkspaceRoot)) : editorVisibleInWorkspaceScope(editor);
                 group->setTabVisible(index, visible);
                 if (visible
                     && firstVisibleIndex < 0) {
@@ -2564,6 +2672,12 @@ bool TabManager::saveEditor(
         : explicitFileName;
     if (fileName.isEmpty())
         return false;
+    for (auto* page : webDocuments()) {
+        if (!page->fileName().isEmpty() && EditorFileIdentity::same(fileName, page->fileName())) {
+            emit fileSaveFailed(fileName, QStringLiteral("This file is already open in a document editor. Choose another path."));
+            return false;
+        }
+    }
     SharedDocument* conflictingDocument =
         sharedDocuments
         ? sharedDocuments->documentForFile(
@@ -2789,6 +2903,7 @@ bool TabManager::closePage(QTabWidget* group, const int index)
     if (!group || index < 0 || index >= group->count())
         return false;
     QWidget* page = group->widget(index);
+    if (auto* document = qobject_cast<WebDocumentPage*>(page)) return closeWebDocument(document);
     if (auto* editor = qobject_cast<MyCodeEditor*>(page))
         return closeEditor(editor);
     if (!page || !page->property("toolPage").toBool())
@@ -3118,6 +3233,8 @@ void TabManager::handleCurrentTabChanged(
 {
     if (!group)
         return;
+    if (previousActiveWebDocument && previousActiveWebDocument != group->widget(index)) checkpointWebRecovery(previousActiveWebDocument);
+    previousActiveWebDocument = qobject_cast<WebDocumentPage*>(group->widget(index));
     if (previousActiveEditor) {
         SharedDocument* previousDocument =
             sharedDocumentForEditor(
@@ -3159,7 +3276,9 @@ void TabManager::handleCurrentTabChanged(
     } else {
         emit activeTabChanged(nullptr);
         emit activeDocumentChanged(
-            DocumentSnapshot());
+            getCurrentDocumentMetadata());
+        if (auto* page = currentWebDocument()) if (auto* host = qobject_cast<QWidget*>(parent()))
+            host->setWindowTitle(page->title() + QStringLiteral(" - ZeroSlack"));
     }
     emit workspaceSessionStateChanged();
 }
@@ -3232,6 +3351,7 @@ bool TabManager::executeRegisteredTabAction(
     if (actionId
         == QString::fromLatin1(
             ActionIds::ViewEditorTabClose)) {
+        if (auto* page = currentWebDocument()) return closeWebDocument(page) ? succeed() : fail(QStringLiteral("The document was not closed"));
         if (!editor)
             return fail(QStringLiteral("No editor tab is selected"));
         if (isTabLocked(editor))
@@ -3257,7 +3377,7 @@ bool TabManager::executeRegisteredTabAction(
     if (actionId
         == QString::fromLatin1(
             ActionIds::ViewEditorTabCloseAll)) {
-        if (editorCount() <= 0)
+        if (editorCount() <= 0 && webDocuments().isEmpty())
             return fail(QStringLiteral("No editor tabs are open"));
         return closeAllTabs()
             ? succeed()

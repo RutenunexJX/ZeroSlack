@@ -115,6 +115,8 @@ bool FileCommandCoordinator::CommandTargets::saveEditor(
 {
     if (!tabManager)
         return false;
+    if (preferredViewId.isEmpty() && tabManager->currentWebDocument())
+        return forceSaveAs ? tabManager->saveAsCurrentTab() : tabManager->saveCurrentTab();
     MyCodeEditor* editor =
         tabManager->editorActionTarget(preferredViewId);
     return editor

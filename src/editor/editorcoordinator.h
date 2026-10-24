@@ -26,6 +26,8 @@ class MyCodeEditor;
 class TbEditorWorkflow;
 class NavigationCommandCoordinator;
 class PinloomCodeLinkStore;
+class PinloomHostClient;
+class PinloomCodeLinkHover;
 class QMenu;
 class SemanticPanelRefreshCoordinator;
 class TabManager;
@@ -63,6 +65,7 @@ public:
         std::function<void(const QString&,
                            const QVariantMap&)> handler);
     void setPinloomCodeLinkStore(PinloomCodeLinkStore* store);
+    void setPinloomHostClient(PinloomHostClient* client);
     void togglePinloomCodeLinkMarkers();
     bool pinloomCodeLinkMarkersVisible() const;
     void refreshPinloomCodeLinkMarkers();
@@ -198,6 +201,7 @@ private:
                        const QVariantMap&)>
         registeredActionRequestHandler;
     PinloomCodeLinkStore* pinloomCodeLinkStore = nullptr;
+    PinloomCodeLinkHover* pinloomHover = nullptr;
     bool pinloomMarkersVisible = true;
     bool signalsConnected = false;
 };

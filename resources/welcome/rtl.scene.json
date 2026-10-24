@@ -1,0 +1,230 @@
+{
+  "format": "zeroslack.welcome.scene",
+  "version": 1,
+  "canvas": [
+    230,
+    180
+  ],
+  "durationMs": 2400,
+  "accent": "#4278dc",
+  "layers": [
+    {
+      "type": "rect",
+      "x": 7,
+      "y": 26,
+      "width": 210,
+      "height": 126,
+      "radius": 7,
+      "fill": "@base",
+      "stroke": "@ink",
+      "strokeOpacity": 0.6862745098039216,
+      "strokeWidth": 1.6
+    },
+    {
+      "type": "line",
+      "x": 7,
+      "y": 46,
+      "width": 210,
+      "stroke": "@ink",
+      "strokeOpacity": 0.6862745098039216,
+      "strokeWidth": 1.6
+    },
+    {
+      "type": "ellipse",
+      "x": 15.5,
+      "y": 34.5,
+      "width": 3,
+      "height": 3,
+      "fill": "@ink"
+    },
+    {
+      "type": "ellipse",
+      "x": 22.5,
+      "y": 34.5,
+      "width": 3,
+      "height": 3,
+      "fill": "@ink"
+    },
+    {
+      "type": "ellipse",
+      "x": 29.5,
+      "y": 34.5,
+      "width": 3,
+      "height": 3,
+      "fill": "@ink"
+    },
+    {
+      "type": "text",
+      "text": "top.sv",
+      "x": 70,
+      "y": 28,
+      "stroke": "@ink",
+      "fontSize": 9,
+      "width": 137,
+      "height": 16,
+      "align": "right",
+      "strokeOpacity": 0.6862745098039216
+    },
+    {
+      "type": "text",
+      "text": "1",
+      "x": 17,
+      "y": 69,
+      "stroke": "@ink",
+      "fontSize": 9,
+      "strokeOpacity": 0.6862745098039216
+    },
+    {
+      "type": "text",
+      "text": "module top;",
+      "x": 35,
+      "y": 69,
+      "stroke": "@accent",
+      "fontSize": 9,
+      "characters": 11,
+      "tracks": {
+        "characters": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0
+            ],
+            [
+              0.3333333333333333,
+              11
+            ],
+            [
+              1,
+              11
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "2",
+      "x": 17,
+      "y": 89,
+      "stroke": "@ink",
+      "fontSize": 9,
+      "strokeOpacity": 0.6862745098039216
+    },
+    {
+      "type": "text",
+      "text": "  logic clk, rst_n;",
+      "x": 35,
+      "y": 89,
+      "stroke": "@accent",
+      "fontSize": 9,
+      "characters": 19,
+      "tracks": {
+        "characters": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0
+            ],
+            [
+              0.3333333333333333,
+              0
+            ],
+            [
+              0.6666666666666666,
+              19
+            ],
+            [
+              1,
+              19
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "type": "text",
+      "text": "3",
+      "x": 17,
+      "y": 109,
+      "stroke": "@ink",
+      "fontSize": 9,
+      "strokeOpacity": 0.6862745098039216
+    },
+    {
+      "type": "text",
+      "text": "endmodule",
+      "x": 35,
+      "y": 109,
+      "stroke": "@accent",
+      "fontSize": 9,
+      "characters": 9,
+      "tracks": {
+        "characters": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0
+            ],
+            [
+              0.6666666666666666,
+              0
+            ],
+            [
+              1,
+              9
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "type": "line",
+      "x": 35,
+      "y": 133,
+      "width": 135,
+      "stroke": "@accent",
+      "strokeWidth": 1.6,
+      "tracks": {
+        "width": {
+          "mode": "linear",
+          "keys": [
+            [
+              0,
+              0
+            ],
+            [
+              1,
+              135
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "type": "rect",
+      "x": 179,
+      "y": 128,
+      "width": 46,
+      "height": 42,
+      "radius": 8,
+      "fill": "@card",
+      "stroke": "@ink",
+      "strokeOpacity": 0.6862745098039216,
+      "strokeWidth": 2
+    },
+    {
+      "type": "text",
+      "text": "</>",
+      "x": 179,
+      "y": 128,
+      "stroke": "@accent",
+      "fontSize": 14,
+      "width": 46,
+      "height": 42,
+      "align": "center"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "format": "zeroslack.document-editor-inputs",
+  "version": 1,
+  "marktext": {
+    "version": "0.23.0",
+    "commit": "18fdc1eddc7d36d9b205180d058982f71f4f6373",
+    "file": "marktext-18fdc1eddc7d36d9b205180d058982f71f4f6373.tar.gz",
+    "url": "https://codeload.github.com/marktext/marktext/tar.gz/18fdc1eddc7d36d9b205180d058982f71f4f6373",
+    "sha256": "87c2487406b0ccc8b340748fe59fe15c0b431b1e17a78e1f433b6ad453d3c86f"
+  },
+  "blocksuite": {
+    "version": "0.22.4",
+    "commit": "a5091e72365a47351f370ca23f212ef43a9d42f0",
+    "file": "blocksuite-a5091e72365a47351f370ca23f212ef43a9d42f0.tar.gz",
+    "url": "https://codeload.github.com/toeverything/blocksuite/tar.gz/a5091e72365a47351f370ca23f212ef43a9d42f0",
+    "sha256": "97ef1e895a4524740e98bb28b0909ce7ad0d39b2c190103c582f638ecc1b3b86"
+  },
+  "pnpm": {
+    "version": "10.33.4",
+    "file": "pnpm-10.33.4.tgz",
+    "url": "https://registry.npmjs.org/pnpm/-/pnpm-10.33.4.tgz",
+    "sha256": "8e70ddc6649b18bc3d895cf3a908c0291ea4c38039ad8722c47e018daf1e9cfc"
+  },
+  "webview2": {
+    "version": "1.0.4314.35",
+    "file": "webview2-1.0.4314.35.nupkg",
+    "url": "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/1.0.4314.35/microsoft.web.webview2.1.0.4314.35.nupkg",
+    "sha256": "90778deb1b77e36292828b4b5833c9255c27533f40e0ddd55891ae718944edc4"
+  }
+}

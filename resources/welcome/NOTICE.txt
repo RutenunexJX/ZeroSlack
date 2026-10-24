@@ -1,0 +1,4 @@
+ZeroSlack welcome illustrations and alternate examples
+Original vector scenes extracted from the application-owned drawings.
+Licensed under the Apache License, Version 2.0; see LICENSE.
+No third-party artwork or font files are bundled. Fonts are resolved by Qt on the host system.
