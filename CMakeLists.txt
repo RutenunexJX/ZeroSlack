@@ -720,6 +720,8 @@ add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES})
 
 target_sources(zeroslack_core PRIVATE
+    src/ui/linkedcontextcontroller.cpp src/ui/linkedcontextcontroller.h
+    src/ui/linkedcontextstate.cpp src/ui/linkedcontextstate.h
     src/documents/webeditorcontainer.cpp src/documents/webeditorcontainer.h
     src/documents/webdocumentpage.cpp src/documents/webdocumentpage.h
     src/documents/tabmanagerweb.cpp)

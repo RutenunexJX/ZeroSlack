@@ -679,6 +679,7 @@ void EditorCoordinator::refreshPinloomCodeLinks(
 
 void EditorCoordinator::refreshPinloomCodeLinksForOpenEditors() const
 {
+    emit pinloomCodeLinksChanged();
     if (pinloomHover) pinloomHover->dismiss();
     if (!tabManager)
         return;

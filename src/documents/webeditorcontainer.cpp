@@ -285,7 +285,7 @@ WebEditorContainer::WebEditorContainer(const QString& runtimeDirectory, const QS
     d->entry = QUrl(QStringLiteral("https://editor.zeroslack.invalid/%1/index.html").arg(editorKind));
     QTimer::singleShot(0, this, [this, editorKind] {
         if (!*d->alive) return;
-        if ((editorKind != QStringLiteral("markdown") && editorKind != QStringLiteral("blocks"))
+        if ((editorKind != QStringLiteral("markdown") && editorKind != QStringLiteral("blocks") && editorKind != QStringLiteral("linked"))
             || d->runtimeRoot.isEmpty() || !QFileInfo::exists(QDir(d->runtimeRoot).filePath(editorKind + QStringLiteral("/index.html")))) {
             emit initializationFailed(QStringLiteral("The document editor resources are missing. Restore resources/document-editors from the application package.")); return;
         }

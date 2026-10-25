@@ -84,6 +84,7 @@ public:
         const ActionInvocation& invocation) const;
 
 signals:
+    void pinloomCodeLinksChanged() const;
     void testbenchCreated(const QString& dutFile, const QString& dutName,
                           const QString& tbFile, const QString& tbName);
 private:

@@ -20,6 +20,9 @@ importers:
       marked:
         specifier: 18.1.0
         version: 18.1.0
+      lit:
+        specifier: 3.3.3
+        version: 3.3.3
       rxjs:
         specifier: 7.8.2
         version: 7.8.2

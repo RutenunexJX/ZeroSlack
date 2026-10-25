@@ -4,6 +4,7 @@
 #include "../simulation/simdock/ui/workbench.h"
 
 #include "contextworkspacecontroller.h"
+#include "linkedcontextcontroller.h"
 #include "liveinsightscontextprovider.h"
 #include "liveinsightsession.h"
 #include "liveinsightgraphreport.h"
@@ -367,12 +368,14 @@ void MainWindow::setupContextWorkspace()
         const QPointer<ContextWorkspaceController> controller(contextWorkspaceController.get());
         const QPointer<SimDockContextView> simulation(simulationWorkspace.get());
         const QPointer<SimulationCommandService> commands(simulationCommands.get());
-        workspaceManager->setWorkspaceTransitionGuard([controller, simulation, commands] {
+        workspaceManager->setWorkspaceTransitionGuard([this, controller, simulation, commands] {
             QString error;
             if (simulation && !simulation->canClose(&error)) return error;
             if (commands && !commands->canClose(&error)) return error;
             if (controller && !controller->canCloseResources(&error))
                 return error.isEmpty() ? QStringLiteral("An embedded component is busy.") : error;
+            if (linkedContextController && !linkedContextController->setActive(false))
+                return QStringLiteral("The linked board could not be saved. Save a recovery copy or reload the board before switching workspaces.");
             return QString();
         });
     }

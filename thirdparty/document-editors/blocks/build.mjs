@@ -38,9 +38,15 @@ const litOnlyIcons={name:'lit-only-icon-entry',setup(builder){
 }};
 const product=path.join(process.env.ZEROSLACK_SOURCE_ROOT,'src/documents/web');
 const output=process.env.ZEROSLACK_WEB_OUTPUT;
-const result=await build({entryPoints:[path.join(product,'blocks.ts')],nodePaths:[path.resolve('node_modules')],bundle:true,outdir:output,entryNames:'editor',format:'esm',splitting:true,minify:true,legalComments:'external',
+const options={nodePaths:[path.resolve('node_modules')],bundle:true,entryNames:'editor',format:'esm',splitting:true,minify:true,legalComments:'external',
  target:'chrome120',loader:{'.svg':'text','.png':'file','.jpg':'file','.woff':'file','.woff2':'file','.ttf':'file','.wasm':'file'},
  tsconfigRaw:{compilerOptions:{experimentalDecorators:false,useDefineForClassFields:false}},
- define:{'process.env.NODE_ENV':'"production"'},plugins:[litOnlyIcons,vanillaExtractPlugin()],metafile:true,logLevel:'info'});
+ define:{'process.env.NODE_ENV':'"production"'},plugins:[litOnlyIcons,vanillaExtractPlugin()],metafile:true,logLevel:'info'};
+const result=await build({...options,entryPoints:[path.join(product,'blocks.ts')],outdir:output});
 await copyFile(path.join(product,'index.html'),path.join(output,'index.html'));
+const linkedOutput=path.join(path.dirname(output),'linked');
+const linked=await build({...options,entryPoints:[path.join(product,'linked.ts')],outdir:linkedOutput});
+await copyFile(path.join(product,'index.html'),path.join(linkedOutput,'index.html'));
+Object.assign(result.metafile.inputs,linked.metafile.inputs);
+Object.assign(result.metafile.outputs,linked.metafile.outputs);
 await writeFile('build-meta.json',JSON.stringify(result.metafile));

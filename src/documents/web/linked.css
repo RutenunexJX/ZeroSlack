@@ -1,0 +1,5 @@
+:root{--affine-font-family:system-ui,sans-serif;--affine-font-base:14px;--affine-font-sm:13px;--affine-font-xs:12px;--affine-line-height:1.5;--affine-text-primary-color:#26384a;--affine-text-secondary-color:#69778b;--affine-text-disable-color:#8895a6;--affine-background-primary-color:#fff;--affine-background-secondary-color:#f1f4f8;--affine-hover-color:#e8eef7;--affine-primary-color:#2769c8;--affine-border-color:#d7dee8;--affine-black-10:rgba(0,0,0,.1);--affine-z-index-popover:20}
+html,body,#editor,editor-host{width:100%;height:100%;margin:0;overflow:hidden;display:block;font-family:system-ui,sans-serif;color:var(--affine-text-primary-color);background:var(--affine-background-secondary-color)}
+#editor{position:relative;container:viewport/inline-size}
+zeroslack-source-bookmark.source-related .affine-bookmark-container{outline:2px solid #3478d4;outline-offset:3px;border-radius:8px}
+html.dark{color-scheme:dark;--affine-text-primary-color:#d7e0ed;--affine-text-secondary-color:#a4afbf;--affine-background-primary-color:#20242c;--affine-background-secondary-color:#292f39;--affine-hover-color:#394456;--affine-border-color:#475163}

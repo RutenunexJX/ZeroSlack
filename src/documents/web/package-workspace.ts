@@ -82,9 +82,10 @@ export class PackageWorkspace implements Workspace {
 export function bytesToBase64(bytes:Uint8Array){let text='';for(let i=0;i<bytes.length;i+=32768)text+=String.fromCharCode(...bytes.subarray(i,i+32768));return btoa(text)}
 export function base64ToBytes(value:string){return Uint8Array.from(atob(value),c=>c.charCodeAt(0))}
 
-export function validateDocument(workspace:PackageWorkspace,document:PackageDoc){
+export function validateDocument(workspace:PackageWorkspace,document:PackageDoc,edgeless=false){
   const allowed=new Set(['affine:page','affine:surface','affine:note','affine:paragraph','affine:list','affine:code','affine:image','affine:table','affine:divider','affine:latex','affine:callout']);
   const versions=document.getStore().schema.versions;
+  if(edgeless)for(const flavour of Object.keys(versions))allowed.add(flavour);
   const parents=new Map<string,string>();const roots:string[]=[];
   for(const [id,block] of document.yBlocks){
     const flavour=String(block.get('sys:flavour'));
@@ -106,25 +107,35 @@ export function validateDocument(workspace:PackageWorkspace,document:PackageDoc)
   if(seen.size!==document.yBlocks.size)throw new Error('The block tree contains unreachable content.');
 }
 
-export async function snapshotPackage(workspace:PackageWorkspace,document:PackageDoc){
-  validateDocument(workspace,document);
+export async function snapshotPackage(workspace:PackageWorkspace,document:PackageDoc,edgeless=false){
+  validateDocument(workspace,document,edgeless);
+  const documents=[];
+  if(edgeless)for(const current of workspace.docs.values()){
+    validateDocument(workspace,current,true);
+    documents.push({id:current.id,state:bytesToBase64(Y.encodeStateAsUpdate(current.spaceDoc))});
+  }
+  const root=bytesToBase64(Y.encodeStateAsUpdate(workspace.doc));
+  const state=bytesToBase64(Y.encodeStateAsUpdate(document.spaceDoc));
+  const blobs=[...workspace.blobs.map];
   const attachments=[];
-  for(const [id,blob] of workspace.blobs.map){
+  for(const [id,blob] of blobs){
     const bytes=new Uint8Array(await blob.arrayBuffer());
     const hash=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
     attachments.push({id,mime:blob.type,size:bytes.length,sha256:[...hash].map(n=>n.toString(16).padStart(2,'0')).join(''),data:bytesToBase64(bytes)});
   }
-  return {format:'zeroslack.blocks',version:1,engine:'blocksuite-0.22.4',workspaceId:workspace.id,documentId:document.id,
-    root:bytesToBase64(Y.encodeStateAsUpdate(workspace.doc)),state:bytesToBase64(Y.encodeStateAsUpdate(document.spaceDoc)),attachments};
+  return {format:edgeless?'zeroslack.linked-board':'zeroslack.blocks',version:1,engine:'blocksuite-0.22.4',workspaceId:workspace.id,documentId:document.id,
+    root,state,attachments,
+    ...(edgeless?{documents}:{})};
 }
 
-export async function restorePackage(text:string,extensions:ExtensionType[]) {
+export async function restorePackage(text:string,extensions:ExtensionType[],edgeless=false) {
   const value=JSON.parse(text);
-  if(value.format!=='zeroslack.blocks'||value.version!==1||value.engine!=='blocksuite-0.22.4')throw new Error('Unsupported block document format or engine.');
+  if(value.format!==(edgeless?'zeroslack.linked-board':'zeroslack.blocks')||value.version!==1||value.engine!=='blocksuite-0.22.4')throw new Error('Unsupported block document format or engine.');
   if(typeof value.workspaceId!=='string'||!value.workspaceId||typeof value.documentId!=='string'||!value.documentId||!Array.isArray(value.attachments))throw new Error('Incomplete block document.');
   const workspace=new PackageWorkspace(extensions,value.workspaceId,base64ToBytes(value.root));
   try{
-    if(workspace.meta.docMetas.length!==1||!workspace.meta.getDocMeta(value.documentId))throw new Error('The package must contain exactly one document.');
+    const documents=edgeless&&Array.isArray(value.documents)?value.documents:[{id:value.documentId,state:value.state}];
+    if(workspace.meta.docMetas.length!==documents.length||!workspace.meta.getDocMeta(value.documentId))throw new Error('The package document identities are incomplete.');
     for(const attachment of value.attachments){
       if(workspace.blobs.map.has(attachment.id))throw new Error('Duplicate attachment.');
       const bytes=base64ToBytes(attachment.data);
@@ -132,8 +143,11 @@ export async function restorePackage(text:string,extensions:ExtensionType[]) {
       if(bytes.length!==attachment.size||[...hash].map(n=>n.toString(16).padStart(2,'0')).join('')!==attachment.sha256)throw new Error(`Damaged attachment: ${attachment.id}`);
       workspace.blobs.map.set(attachment.id,new Blob([bytes],{type:attachment.mime}));
     }
-    const document=workspace.restoreDoc(value.documentId,base64ToBytes(value.state));
-    validateDocument(workspace,document);
+    for(const current of documents){
+      if(typeof current.id!=='string'||!current.id||typeof current.state!=='string')throw new Error('Invalid internal board document.');
+      const restored=workspace.restoreDoc(current.id,base64ToBytes(current.state));validateDocument(workspace,restored,edgeless);
+    }
+    const document=workspace.getDoc(value.documentId);if(!document)throw new Error('The primary document is missing.');
     return {workspace,document};
   }catch(error){workspace.dispose();throw error}
 }

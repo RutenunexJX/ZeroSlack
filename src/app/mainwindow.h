@@ -43,6 +43,8 @@ class LiveInsightSession;
 class LiveInsightToolPage;
 class PinloomCodeLinkCoordinator;
 class PinloomHostClient;
+class LinkedContextController;
+struct WorkspaceSessionUiState;
 class EditorCoordinator;
 class EditorActionContextService;
 class FileCommandCoordinator;
@@ -138,6 +140,9 @@ private:
     std::unique_ptr<PinloomCodeLinkCoordinator>
         pinloomCodeLinkCoordinator;
     std::unique_ptr<PinloomHostClient> pinloomHostClient;
+    std::unique_ptr<LinkedContextController> linkedContextController;
+    std::unique_ptr<WorkspaceSessionUiState> linkedNormalState;
+    void setupLinkedContext();
     std::unique_ptr<EditorCoordinator> editorCoordinator;
     std::unique_ptr<TemporaryEditorSearchProvider>
         temporaryEditorSearchProvider;

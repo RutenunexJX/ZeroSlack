@@ -81,6 +81,7 @@ public:
     bool saveCurrentTab();
     bool saveAsCurrentTab();
     void closeTab(int index);
+    void setEditorTransitionGuard(std::function<bool(MyCodeEditor*)> guard);
     void enableSplitLayout(QWidget* host);
     bool splitCurrentView(EditorSplitDirection direction);
     bool moveCurrentViewToSplit(EditorSplitDirection direction);
@@ -407,6 +408,7 @@ private:
                          int index);
     bool closeEditorsAtomically(
         const QList<MyCodeEditor*>& editors);
+    std::function<bool(MyCodeEditor*)> editorTransitionGuard;
     int groupIndex(QTabWidget* group) const;
     QTabWidget* ensureGroupIndex(int index);
     WebDocumentPage* openWebDocument(const QString& fileName, QTabWidget* group = nullptr);

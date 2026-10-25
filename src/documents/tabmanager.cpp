@@ -1025,6 +1025,11 @@ void TabManager::closeTab(int index)
     closePage(group, index);
 }
 
+void TabManager::setEditorTransitionGuard(std::function<bool(MyCodeEditor*)> guard)
+{
+    editorTransitionGuard = std::move(guard);
+}
+
 void TabManager::enableSplitLayout(QWidget* host)
 {
     if (splitController)
@@ -1952,6 +1957,10 @@ bool TabManager::prepareWorkspacePathMutation(
             continue;
         }
         for (MyCodeEditor* view : document->views()) {
+            if (editorTransitionGuard && !editorTransitionGuard(view)) {
+                if (failureReason) *failureReason = QStringLiteral("Save the linked board before changing this file path.");
+                return false;
+            }
             if (view && isTabLocked(view)) {
                 if (failureReason) {
                     *failureReason = QStringLiteral(
@@ -2672,6 +2681,8 @@ bool TabManager::saveEditor(
         : explicitFileName;
     if (fileName.isEmpty())
         return false;
+    if (!sameLexicalPath(fileName, document->fileName()) && editorTransitionGuard && !editorTransitionGuard(editor))
+        return false;
     for (auto* page : webDocuments()) {
         if (!page->fileName().isEmpty() && EditorFileIdentity::same(fileName, page->fileName())) {
             emit fileSaveFailed(fileName, QStringLiteral("This file is already open in a document editor. Choose another path."));
@@ -2836,6 +2847,8 @@ bool TabManager::closeEditor(
     bool remember)
 {
     if (!editor || isTabLocked(editor))
+        return false;
+    if (!closingBatch && editorTransitionGuard && !editorTransitionGuard(editor))
         return false;
     SharedDocument* document =
         sharedDocumentForEditor(editor);
@@ -3451,6 +3464,9 @@ bool TabManager::closeEditorsAtomically(
 {
     if (editors.isEmpty())
         return true;
+    for (auto* editor : editors)
+        if (editor && !isTabLocked(editor) && editorTransitionGuard && !editorTransitionGuard(editor))
+            return false;
     QSet<SharedDocument*> closingDocuments;
     QHash<SharedDocument*, int> closingViewCounts;
     for (MyCodeEditor* editor : editors) {

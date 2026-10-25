@@ -38,6 +38,10 @@
 #include "notificationcenter.h"
 #include "panellayoutcontroller.h"
 #include "contextworkspacecontroller.h"
+#include "linkedcontextcontroller.h"
+#include "contextrail.h"
+#include "contextpeekhost.h"
+#include <QStatusBar>
 #include "contextfloatingwindow.h"
 #include "pinloomcodelinkcoordinator.h"
 #include "pinloomcontextprovider.h"
@@ -256,6 +260,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupGlobalControl();
     setupCommandLayer();
     setupEditorCoordinator();
+    setupLinkedContext();
     editingTimeService = std::make_unique<EditingTimeService>(
         EditingTimeService::defaultStoragePath(), this);
     connect(editingTimeService.get(), &EditingTimeService::persistenceFailed, this,
@@ -410,6 +415,7 @@ void MainWindow::setupNotificationCenter()
 
 MainWindow::~MainWindow()
 {
+    linkedContextController.reset();
     // Flush while activity-message consumers and editor lifetimes are intact.
     editingTimeService.reset();
     // Qt destroys its dock layout before the child docks. Abort active drags
@@ -703,6 +709,8 @@ void MainWindow::setupWelcomePage()
 
 void MainWindow::refreshWelcomePage()
 {
+    if (linkedContextController && linkedContextController->isActive())
+        return;
     if (!welcomePage || !recentProjectsLayout || !centralContentStack)
         return;
     while (QLayoutItem* item = recentProjectsLayout->takeAt(0)) {
@@ -2068,6 +2076,68 @@ void MainWindow::setupRtlActionCoordinator()
             std::move(callbacks),
             notificationCenter.get(),
             this);
+}
+
+void MainWindow::setupLinkedContext()
+{
+    if (!pinloomCodeLinkCoordinator || !pinloomHostClient || !viewMenu)
+        return;
+    QList<QWidget*> chrome{statusBar()};
+    if (panelLayoutController) {
+        chrome.append(panelLayoutController->buttonBar());
+        chrome.append(panelLayoutController->resizeHandle());
+    }
+    if (contextWorkspaceController) {
+        chrome.append(contextWorkspaceController->rail());
+        chrome.append(contextWorkspaceController->peekHost());
+        for (auto* floating : contextWorkspaceController->floatingWindows())
+            chrome.append(floating);
+    }
+    linkedContextController = std::make_unique<LinkedContextController>(
+        this, centralContentStack, editorCentralPage, tabManager.get(),
+        pinloomCodeLinkCoordinator->store(), pinloomHostClient.get(), chrome, this);
+    linkedContextController->setObjectName(QStringLiteral("linkedContextController"));
+    auto* action = viewMenu->addAction(tr("Linked context"));
+    action->setObjectName(QStringLiteral("actionLinkedContext"));
+    action->setCheckable(true);
+    connect(action, &QAction::triggered, this, [this, action](bool checked) {
+        if (!linkedContextController->setActive(checked)) {
+            QSignalBlocker blocker(action);
+            action->setChecked(linkedContextController->isActive());
+        }
+    });
+    connect(linkedContextController.get(), &LinkedContextController::aboutToEnter, this, [this] {
+        linkedNormalState = std::make_unique<WorkspaceSessionUiState>();
+        linkedNormalState->mainWindowGeometry = saveGeometry();
+        linkedNormalState->mainWindowState = saveState();
+        if (panelLayoutController)
+            linkedNormalState->panelLayout = panelLayoutController->layoutState();
+        if (navigationPane) {
+            linkedNormalState->navigationFilesQuery = navigationPane->filesSearchQuery();
+            linkedNormalState->navigationDesignQuery = navigationPane->designSearchQuery();
+            linkedNormalState->navigationActiveTab = navigationPane->activeTab();
+        }
+        if (contextWorkspaceController)
+            linkedNormalState->contextWorkspace = contextWorkspaceController->captureState();
+    });
+    connect(linkedContextController.get(), &LinkedContextController::activeChanged, this, [this, action](bool active) {
+        QSignalBlocker blocker(action);
+        action->setChecked(active);
+        if (!active) {
+            if (linkedNormalState && panelLayoutController)
+                panelLayoutController->restoreLayoutState(linkedNormalState->panelLayout);
+            linkedNormalState.reset();
+            refreshWelcomePage();
+        }
+    });
+    connect(linkedContextController.get(), &LinkedContextController::message, this,
+        [this](const QString& text) { postActivityMessage(text, 5000); });
+    connect(editorCoordinator.get(), &EditorCoordinator::pinloomCodeLinksChanged,
+        linkedContextController.get(), &LinkedContextController::refreshAnchors);
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceActivated, this,
+        [this] { linkedContextController->setActive(false); });
+    connect(workspaceManager.get(), &WorkspaceManager::workspaceClosed, this,
+        [this] { linkedContextController->setActive(false); });
 }
 
 void MainWindow::setupViewMenu()
@@ -3859,6 +3929,8 @@ void MainWindow::setupWorkspaceSessionCoordinator()
     WorkspaceSessionUiBridge bridge;
     bridge.captureUiState =
         [this](bool rememberPanelState) {
+            if (linkedContextController && linkedContextController->isActive() && linkedNormalState)
+                return *linkedNormalState;
             WorkspaceSessionUiState state;
             if (rememberPanelState) {
                 state.mainWindowGeometry = saveGeometry();
@@ -3884,6 +3956,8 @@ void MainWindow::setupWorkspaceSessionCoordinator()
     bridge.restoreUiState =
         [this](const WorkspaceSessionUiState& state,
                bool rememberPanelState) {
+            if (linkedContextController)
+                linkedContextController->setActive(false);
             WorkspaceSessionUiRestoreResult result;
             if (rememberPanelState
                 && !state.mainWindowGeometry.isEmpty()) {
@@ -4711,6 +4785,10 @@ void MainWindow::setupEditorCoordinator()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (linkedContextController && !linkedContextController->setActive(false)) {
+        event->ignore();
+        return;
+    }
     QString componentError;
     if ((simulationWorkspace && !simulationWorkspace->canClose(&componentError))
         || (simulationCommands && !simulationCommands->canClose(&componentError))
