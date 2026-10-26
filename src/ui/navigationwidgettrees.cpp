@@ -502,9 +502,7 @@ void NavigationWidget::populateDesignTree()
     nextDesignItemPayloadId = 1;
 
     if (currentDesignHierarchy.nodes.isEmpty()) {
-        QTreeWidgetItem* emptyItem = new QTreeWidgetItem(designTreeWidget);
-        emptyItem->setText(0, "No design projects. Use + or a source file to choose a module.");
-        emptyItem->setFlags(Qt::ItemIsEnabled);
+        updateDesignPresentation();
         return;
     }
 
@@ -518,7 +516,8 @@ void NavigationWidget::populateDesignTree()
         for (const DesignHierarchyNode& node :
              std::as_const(currentDesignHierarchy.nodes)) {
             const bool matches =
-                node.instanceName.contains(designSearchFilter,
+                node.projectName.contains(designSearchFilter, Qt::CaseInsensitive)
+                || node.instanceName.contains(designSearchFilter,
                                            Qt::CaseInsensitive)
                 || node.moduleType.contains(designSearchFilter,
                                             Qt::CaseInsensitive)
@@ -536,10 +535,7 @@ void NavigationWidget::populateDesignTree()
             }
         }
         if (visibleIds.isEmpty()) {
-            QTreeWidgetItem* emptyItem =
-                new QTreeWidgetItem(designTreeWidget);
-            emptyItem->setText(0, QStringLiteral("No design matches"));
-            emptyItem->setFlags(Qt::ItemIsEnabled);
+            updateDesignPresentation();
             return;
         }
     }
@@ -563,6 +559,8 @@ void NavigationWidget::populateDesignTree()
         const auto payload = designItemPayloads.value(root->data(0, Qt::UserRole + 1).toInt());
         root->setExpanded(!designSearchFilter.isEmpty() || payload.expanded);
     }
+    updateDesignPresentation();
+    revealPendingDesignProject();
 }
 
 QTreeWidgetItem* NavigationWidget::createFileItem(const QString& filePath)
@@ -589,16 +587,18 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
 
     const QString instanceName =
         node.instanceName.isEmpty() ? QStringLiteral("<unnamed>") : node.instanceName;
-    QString moduleType =
+    const QString moduleType =
         node.moduleType.isEmpty() ? QStringLiteral("<unknown>") : node.moduleType;
-    if (node.unresolved)
-        moduleType += QStringLiteral(" (unresolved)");
     const bool top = node.isTop && node.inSelectedTop;
     const QString projectName = node.projectName.isEmpty() ? instanceName : node.projectName;
-    item->setText(0, node.isTop
-        ? projectName + (projectName == moduleType ? QString() : QStringLiteral(" [%1]").arg(moduleType))
-            + (top ? QStringLiteral("  · Active") : QString())
-        : instanceName + QStringLiteral("[%1]").arg(moduleType));
+    const QString name = node.isTop ? projectName : instanceName;
+    const QString type = node.isTop && name == moduleType ? QString() : moduleType;
+    item->setText(0, name + (type.isEmpty() ? QString() : QStringLiteral(" [%1]").arg(type)));
+    item->setData(0, NavigationRowStyle::NameRole, name);
+    item->setData(0, NavigationRowStyle::TypeRole, type);
+    item->setData(0, NavigationRowStyle::UnresolvedRole, node.unresolved);
+    item->setData(0, NavigationRowStyle::MissingNameRole, node.isTop ? node.projectName.isEmpty() && node.instanceName.isEmpty() : node.instanceName.isEmpty());
+    item->setData(0, NavigationRowStyle::MissingTypeRole, node.moduleType.isEmpty());
     if (node.isTop) item->setData(0, NavigationRowStyle::ProjectRole, node.projectId);
     item->setData(0, NavigationRowStyle::ActiveRole, top);
     item->setIcon(0, getSymbolIcon(node.isTop
@@ -610,7 +610,7 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
     item->setData(0, Qt::UserRole + 1, payloadId);
     item->setData(0, DesignTopRole, top);
     QFont font = item->font(0);
-    font.setBold(top);
+    font.setBold(false);
     item->setFont(0, font);
     const QString location = node.isTop
         ? QStringLiteral("%1:%2").arg(node.definitionFile).arg(node.definitionLine)
@@ -619,9 +619,12 @@ QTreeWidgetItem* NavigationWidget::createDesignItem(const DesignHierarchyNode& n
               .arg(node.instanceLine)
               .arg(node.definitionFile)
               .arg(node.definitionLine);
-    item->setToolTip(0, node.unresolved
-                            ? QStringLiteral("%1\n%2").arg(location, node.unresolvedReason)
-                            : location);
+    const QString status = node.unresolved ? tr("Unresolved: %1").arg(node.unresolvedReason)
+        : top ? tr("Active project") : node.isTop ? tr("Activate project using the pin") : QString();
+    const auto description = item->text(0) + '\n' + location + (status.isEmpty() ? QString() : '\n' + status);
+    item->setToolTip(0, description);
+    item->setData(0, Qt::AccessibleTextRole, item->text(0));
+    item->setData(0, Qt::AccessibleDescriptionRole, description);
     applyDesignItemDimming(item, !node.inSelectedTop);
     return item;
 }

@@ -46,6 +46,9 @@ public:
     bool hasOverride(const QString& fieldId,
                      SettingsCenterScope scope) const;
     bool isScopeDirty(SettingsCenterScope scope) const;
+    void commitPendingEditors();
+    QStringList unappliedScopes() const;
+    void discardUnappliedChanges();
     QList<SettingsCenterValidationIssue> currentIssues() const;
 
     QWidget* fieldEditor(const QString& fieldId) const;

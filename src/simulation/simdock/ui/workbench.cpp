@@ -1,4 +1,5 @@
 #include "workbench.h"
+#include <QMessageBox>
 #include "simulationeventspanel.h"
 #include "semanticindex.h"
 #include "applicationthememanager.h"
@@ -83,7 +84,8 @@ Workbench::Workbench(QWidget* parent, bool standalone)
     connect(&m_logTimer, &QTimer::timeout, this, &Workbench::flushLog);
     connect(&m_session, &QuestaSession::logText, this, &Workbench::appendLog);
     connect(&m_session, &QuestaSession::stateChanged, this, [this](const QString& state) {
-        m_status->setText(state);
+        m_status->setText(state==QStringLiteral("Failed")?tr("Simulation failed. See the Run log.")
+            :state==QStringLiteral("Timed out")?tr("Simulation timed out. See the Run log."):state);
         updateControls();
     });
     connect(&m_session, &QuestaSession::finished, this, [this] { updateControls(); });
@@ -111,9 +113,10 @@ void Workbench::buildUi()
 {
     auto* outer = new QVBoxLayout(this);
     outer->setContentsMargins(12, 10, 12, 10);
-    outer->setSpacing(10);
+    outer->setSpacing(6);
     auto* heading = new QHBoxLayout;
-    heading->addWidget(Ui::label(QStringLiteral("Simulation"), this, Ui::Role::PanelTitle), 1);
+    if(m_standalone)heading->addWidget(Ui::label(QStringLiteral("Simulation"), this, Ui::Role::PanelTitle), 1);
+    else heading->addStretch();
     auto* auxiliary = UiControls::toolButton(this);
     auxiliary->setObjectName(QStringLiteral("simulationActions"));
     auxiliary->setIcon(RoundedIcons::icon(RoundedIcons::More));
@@ -122,6 +125,14 @@ void Workbench::buildUi()
     auto* menu = UiControls::menu(this);
     m_generate = menu->addAction(QStringLiteral("Create Demo TB"));
     m_generate->setObjectName(QStringLiteral("createTb"));
+    m_closeSession=menu->addAction(QStringLiteral("Close session"));
+    m_closeSession->setObjectName(QStringLiteral("closeSimulationSession"));
+    m_legacyInfo=menu->addAction(QStringLiteral("Saved graphical inputs…"));
+    m_legacyInfo->setObjectName(QStringLiteral("savedGraphicalInputs"));
+    connect(m_legacyInfo,&QAction::triggered,this,[this]{
+        QMessageBox::information(this,QStringLiteral("Saved graphical inputs"),
+            QStringLiteral("Saved graphical inputs are preserved. Simulation uses the selected TB; graphical inputs are no longer regenerated."));
+    });
     auxiliary->setMenu(menu);
     auxiliary->setPopupMode(QToolButton::InstantPopup);
     heading->addWidget(auxiliary);
@@ -146,15 +157,8 @@ void Workbench::buildUi()
     m_projectPanel = new QWidget(scroll);
     auto* form = new QVBoxLayout(m_projectPanel);
     form->setContentsMargins(0, 0, 4, 0);
-    form->setSpacing(8);
-    form->addWidget(Ui::label(QStringLiteral("DUT module"), this, Ui::Role::Section));
-    m_dut = new ElaComboBox(this);
-    m_dut->setObjectName(QStringLiteral("dutSelector"));
-    m_dut->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-    m_dut->setMinimumContentsLength(1);
-    m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));
-    form->addWidget(m_dut);
-    form->addWidget(Ui::label(QStringLiteral("Simulation input"), this, Ui::Role::Section));
+    form->setSpacing(6);
+    form->addWidget(Ui::label(QStringLiteral("Testbench"), this, Ui::Role::Section));
     m_existingInput = new QWidget(this);
     auto* existing = new QVBoxLayout(m_existingInput);
     existing->setContentsMargins(0, 0, 0, 0);
@@ -162,25 +166,31 @@ void Workbench::buildUi()
     m_tbFile->setObjectName(QStringLiteral("tbFile"));
     m_tbFile->setReadOnly(true);
     m_tbFile->setPlaceholderText(QStringLiteral("Select a TB inside the workspace"));
-    existing->addWidget(m_tbFile);
+    m_tbFile->setAccessibleName(QStringLiteral("Testbench file"));
+    m_tbFile->setMinimumWidth(0);m_tbFile->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
     auto* tbActions = new QHBoxLayout;
-    m_openTb = Ui::button(QStringLiteral("Open TB"), this);
+    tbActions->setSpacing(4);tbActions->addWidget(m_tbFile,1);
+    m_openTb = UiControls::toolButton(this);
+    m_openTb->setText(QStringLiteral("Open"));m_openTb->setAccessibleName(QStringLiteral("Open TB"));m_openTb->setToolTip(QStringLiteral("Open TB"));
     m_openTb->setObjectName(QStringLiteral("openTb"));
-    m_chooseTb = Ui::button(QStringLiteral("Choose TB"), this);
+    m_chooseTb = UiControls::toolButton(this);
+    m_chooseTb->setText(QStringLiteral("Choose…"));m_chooseTb->setAccessibleName(QStringLiteral("Choose TB"));m_chooseTb->setToolTip(QStringLiteral("Choose TB"));
     m_chooseTb->setObjectName(QStringLiteral("chooseTb"));
     tbActions->addWidget(m_openTb);
     tbActions->addWidget(m_chooseTb);
     existing->addLayout(tbActions);
-    existing->addWidget(Ui::label(QStringLiteral("TB top level"), this, Ui::Role::Section));
+    auto* topRow=new QHBoxLayout;
+    topRow->addWidget(Ui::label(QStringLiteral("TB top"), this, Ui::Role::Section));
     m_tbTop = new ElaLineEdit(this);
     m_tbTop->setObjectName(QStringLiteral("tbTop"));
     m_tbTop->setPlaceholderText(QStringLiteral("tb_top"));
-    existing->addWidget(m_tbTop);
+    m_tbTop->setAccessibleName(QStringLiteral("Simulation top module"));m_tbTop->setMinimumWidth(0);m_tbTop->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
+    topRow->addWidget(m_tbTop,1);existing->addLayout(topRow);
     form->addWidget(m_existingInput);
-    m_legacyNotice = Ui::label(QString(), this, Ui::Role::Metadata);
-    m_legacyNotice->setObjectName(QStringLiteral("legacyInputNotice"));
-    m_legacyNotice->setWordWrap(true);
-    form->addWidget(m_legacyNotice);
+    m_inputNotice = Ui::label(QString(), this, Ui::Role::Metadata);
+    m_inputNotice->setObjectName(QStringLiteral("simulationInputNotice"));
+    m_inputNotice->setWordWrap(true);
+    form->addWidget(m_inputNotice);
     form->addWidget(Ui::label(QStringLiteral("Duration"), this, Ui::Role::Section));
     m_durationInput = new QWidget(this);
     auto* timing = new QHBoxLayout(m_durationInput);
@@ -198,6 +208,15 @@ void Workbench::buildUi()
     timing->addWidget(m_duration, 1);
     timing->addWidget(m_units);
     form->addWidget(m_durationInput);
+    auto* demoHeading=new SidebarSectionButton(QStringLiteral("Demo TB configuration"),m_projectPanel);
+    demoHeading->setObjectName(QStringLiteral("demoTbConfiguration"));demoHeading->setChecked(false);form->addWidget(demoHeading);
+    auto* demoBody=new QWidget(m_projectPanel);auto* demoLayout=new QVBoxLayout(demoBody);demoLayout->setContentsMargins(0,0,0,0);demoLayout->setSpacing(4);
+    demoLayout->addWidget(Ui::label(QStringLiteral("DUT module"),demoBody,Ui::Role::Section));
+    m_dut=new ElaComboBox(demoBody);m_dut->setObjectName(QStringLiteral("dutSelector"));
+    m_dut->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);m_dut->setMinimumContentsLength(1);
+    m_dut->setMinimumWidth(0);m_dut->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
+    m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));m_dut->setAccessibleName(QStringLiteral("DUT for Demo TB"));demoLayout->addWidget(m_dut);
+    form->addWidget(demoBody);demoBody->hide();connect(demoHeading,&QPushButton::toggled,demoBody,&QWidget::setVisible);
     form->addStretch();
     scroll->setWidget(m_projectPanel);
     outer->addWidget(scroll, 1);
@@ -229,7 +248,7 @@ void Workbench::buildUi()
     auto* projectsLabel = new SidebarSectionButton(QStringLiteral("Projects"), projects);
     m_projectsHeading = projectsLabel;
     projectsLabel->setObjectName(QStringLiteral("projectsDisclosure"));
-    projectHeading->addWidget(projectsLabel);
+    projectHeading->addWidget(projectsLabel,1);
     m_new = UiControls::pushButton(QString(), projects);
     m_new->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
     m_new->setFixedSize(28,28);
@@ -288,7 +307,7 @@ void Workbench::buildUi()
     auto* inputLayout = new QVBoxLayout(m_inputsBody);
     inputLayout->setContentsMargins(0, 0, 0, 0); inputLayout->setSpacing(4);
     fileLayout->addWidget(m_inputsBody, 1);
-    m_sourceHint = UiControls::label(QStringLiteral("Compilation order follows dependencies."), files);
+    m_sourceHint = UiControls::label(QString(), files);
     m_sourceHint->setObjectName(QStringLiteral("buildInputsStatus"));
     UiTypography::apply(m_sourceHint, UiTypography::Role::Metadata);
     m_sourceHint->setWordWrap(true);
@@ -316,10 +335,7 @@ void Workbench::buildUi()
     UiControls::enableSmoothScrolling(m_fileList);
     inputLayout->addWidget(m_fileList, 1);
     m_fileList->setMinimumHeight(80);
-    m_scanStatus = UiControls::label(QStringLiteral("Open a ZeroSlack workspace."), files);
-    UiTypography::apply(m_scanStatus, UiTypography::Role::Metadata);
-    m_scanStatus->setWordWrap(true);
-    inputLayout->addWidget(m_scanStatus);
+    m_scanSummary=QStringLiteral("Open a workspace to add build inputs.");
     sourceLayout->addWidget(files, 1);
     sourceLayout->addStretch();
     inputsLabel->setChecked(QSettings().value("integrations/simdock/inputsExpanded", true).toBool());
@@ -363,7 +379,7 @@ void Workbench::buildUi()
     logs->hide();
     Ui::normalizeControls(this);
     connect(m_settings, &QToolButton::clicked, this, &Workbench::openSettings);
-    connect(m_openTb, &QPushButton::clicked, this, [this] {
+    connect(m_openTb, &QToolButton::clicked, this, [this] {
         if (const auto* p = current(); p && !p->tbFile.isEmpty()) emit openFileRequested(QDir(m_root).filePath(p->tbFile));
     });
     connect(m_new, &QPushButton::clicked, this, [this] {
@@ -399,7 +415,7 @@ void Workbench::buildUi()
     connect(m_duration, &QSpinBox::valueChanged, this, durationChanged);
     connect(m_units, &QComboBox::currentIndexChanged, this, durationChanged);
     connect(m_generate, &QAction::triggered, this, &Workbench::createTb);
-    connect(m_chooseTb, &QPushButton::clicked, this, &Workbench::chooseTb);
+    connect(m_chooseTb, &QToolButton::clicked, this, &Workbench::chooseTb);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
     connect(m_stop, &QPushButton::clicked, this, [this] {
         if (m_preparing) {
@@ -409,6 +425,7 @@ void Workbench::buildUi()
         }
         updateControls();
     });
+    connect(m_closeSession,&QAction::triggered,m_stop,&QPushButton::click);
     connect(clear, &QPushButton::clicked, this, [this] {
         m_logTimer.stop();
         m_pendingLog.clear();
@@ -473,7 +490,7 @@ QString Workbench::setContext(const QString& path)
         m_loading = true; m_projectModel->clear(); m_loading = false;
         selectProject(-1);
 
-        m_scanStatus->setText(QStringLiteral("Open a ZeroSlack workspace."));
+        m_scanSummary=QStringLiteral("Open a workspace to add build inputs.");
         m_status->setText(QStringLiteral("Ready"));
         return {};
     }
@@ -505,7 +522,7 @@ QString Workbench::setContext(const QString& path)
     emit designProjectsChanged();
     for (const auto& error : errors) appendLog(error + QLatin1Char('\n'));
     m_scanning = true;
-    m_scanStatus->setText(QStringLiteral("Analyzing workspace..."));
+    m_scanSummary=QStringLiteral("Analyzing workspace…");
     updateControls();
     const auto generation = ++m_generation;
     auto* watcher = new QFutureWatcher<Scan>(this);
@@ -517,7 +534,7 @@ QString Workbench::setContext(const QString& path)
         m_scanning = false;
         int modules = 0;
         for (const auto& file : m_scan.files) modules += file.modules.size();
-        m_scanStatus->setText(QStringLiteral("%1 HDL files | %2 modules").arg(m_scan.files.size()).arg(modules));
+        m_scanSummary=QStringLiteral("%1 HDL files | %2 modules").arg(m_scan.files.size()).arg(modules);
         for (const auto& message : m_scan.messages) appendLog(message + QLatin1Char('\n'));
         refreshFiles();
         scheduleCompilationOrder();
@@ -1014,6 +1031,7 @@ void Workbench::updateControls()
     const auto tbPath = p ? p->tbFile : QString();
     const auto fullPath = tbPath.isEmpty() ? QString() : QDir::toNativeSeparators(QDir(m_root).filePath(tbPath));
     m_tbFile->setText(tbPath);
+    m_tbFile->setCursorPosition(0);
     m_tbFile->setToolTip(fullPath);
     m_new->setEnabled(!m_root.isEmpty() && !busy);
     m_refresh->setEnabled(!m_root.isEmpty() && !busy && !m_scanning);
@@ -1026,24 +1044,39 @@ void Workbench::updateControls()
             if (m_fileModel->item(row)->isCheckable() != checkable) m_fileModel->item(row)->setCheckable(checkable);
     }
     m_fileList->viewport()->update();
-    m_sourceHint->setText(!m_orderIssue.isEmpty() ? m_orderIssue : m_orderPending ? tr("Checking compilation dependencies…") : p ? QStringLiteral("Compilation order follows dependencies.")
-        : QStringLiteral("Select a file to create a simulation project."));
+    m_sourceHint->setText(m_root.isEmpty()?tr("Open a workspace to add build inputs.")
+        :m_scanning?tr("Analyzing workspace…")
+        :!m_orderIssue.isEmpty()?m_orderIssue:m_orderPending?tr("Checking compilation dependencies…")
+        :m_scan.files.isEmpty()?tr("Add HDL files, then rescan build inputs.")
+        :!p?tr("Select a file to create a simulation project.")
+        :p->sources.isEmpty()?tr("Select build inputs for this project."):QString());
+    m_sourceHint->setVisible(!m_sourceHint->text().isEmpty());
+    m_inputsHeading->setToolTip(m_scanSummary);
     m_projectPanel->setEnabled(p && !busy && !m_scanning);
+    m_projectPanel->setVisible(p!=nullptr);
     m_emptyState->setVisible(!p);
     m_emptyState->setText(m_root.isEmpty() ? QStringLiteral("Open a ZeroSlack workspace to configure simulation.")
         : QStringLiteral("Create or select a project in Build inputs."));
     const bool tbAvailable = p && QFileInfo(QDir(m_root).filePath(p->tbFile)).isFile();
     m_openTb->setEnabled(tbAvailable);
-    m_legacyNotice->setVisible(p && (!p->preservedInputs.isEmpty() || !tbAvailable));
-    m_legacyNotice->setText(tbAvailable ? QStringLiteral("Saved graphical inputs are preserved. This project runs the existing TB.")
-        : p && !p->preservedInputs.isEmpty()
-            ? QStringLiteral("Choose an existing TB to run. Saved graphical inputs are retained; they are no longer regenerated.")
-            : QStringLiteral("Choose an existing TB to run."));
+    m_legacyInfo->setVisible(p&&!p->preservedInputs.isEmpty());
+    const auto toolIssue=simulatorError(m_simulator);
+    m_inputNotice->setText(!p?QString():!tbAvailable?tr("Choose a TB file to run.")
+        :p->tbName.trimmed().isEmpty()?tr("Enter the TB top module to run.")
+        :m_scanning?tr("Analyzing workspace…")
+        :m_orderPending?tr("Checking compilation dependencies…")
+        :!m_orderIssue.isEmpty()?tr("Resolve the error shown in Build inputs.")
+        :p->sources.isEmpty()?tr("Select files in Build inputs.")
+        :!toolIssue.isEmpty()?tr("Choose a valid Questa installation in Simulation settings."):QString());
+    m_inputNotice->setVisible(!busy&&!m_inputNotice->text().isEmpty());
     m_rename->setEnabled(p && !busy && !m_scanning);
     m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
-    m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !busy && !m_scanning && !m_orderPending && m_orderIssue.isEmpty());
+    m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !p->tbName.trimmed().isEmpty() && !busy && !m_scanning && !m_orderPending && m_orderIssue.isEmpty());
     m_stop->setEnabled(m_preparing || m_session.alive());
+    m_stop->setVisible(busy);
     m_stop->setText(m_preparing ? QStringLiteral("Cancel preparation") : busy ? QStringLiteral("Stop simulation") : QStringLiteral("Close session"));
+    m_closeSession->setVisible(m_session.alive()&&!busy);
+    m_status->setVisible(!m_status->text().isEmpty()&&m_status->text()!=QStringLiteral("Ready"));
 }
 void Workbench::chooseTb()
 {
@@ -1159,7 +1192,7 @@ void Workbench::startSimulation()
         QString error = result.error;
         const auto theme = waveThemeFromId(preference(QStringLiteral("waveform/theme"), QStringLiteral("default")).toString());
         if (!error.isEmpty() || !m_session.start(result, &error, theme)) {
-            appendLog(error + QLatin1Char('\n')); m_status->setText(QStringLiteral("Not started"));
+            appendLog(error + QLatin1Char('\n')); m_status->setText(error);
         }
         updateControls();
     });

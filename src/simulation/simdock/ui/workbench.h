@@ -88,9 +88,9 @@ private:
     QPointer<QWidget> m_sources, m_logs;
     SimulationEventsPanel* m_events = nullptr;
     QWidget *m_existingInput = nullptr, *m_durationInput = nullptr;
-    ElaText *m_emptyState = nullptr, *m_legacyNotice = nullptr;
+    ElaText *m_emptyState = nullptr, *m_inputNotice = nullptr;
     QToolButton* m_settings = nullptr;
-    QAction* m_generate = nullptr;
+    QAction *m_generate = nullptr, *m_closeSession = nullptr, *m_legacyInfo = nullptr;
     bool m_standalone = false;
     QVariantMap m_preferences;
     std::optional<bool> m_hostDarkTheme;
@@ -140,7 +140,8 @@ private:
     QTimer m_logTimer;
     QString m_pendingLog;
     ElaText *m_status;
-    QLabel *m_scanStatus, *m_sourceHint;
+    QLabel* m_sourceHint;
+    QString m_scanSummary;
     QListView *m_projectList, *m_fileList;
     QStandardItemModel *m_projectModel, *m_fileModel;
     ElaComboBox *m_dut, *m_units;
@@ -148,7 +149,8 @@ private:
     ElaSpinBox* m_duration;
     ElaPlainTextEdit* m_log;
     QPushButton *m_new, *m_refresh, *m_rename;
-    ElaPushButton *m_chooseTb, *m_openTb, *m_run, *m_stop;
+    QToolButton *m_chooseTb, *m_openTb;
+    ElaPushButton *m_run, *m_stop;
     QWidget* m_projectPanel;
 };
 }

@@ -5,6 +5,8 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QStyleOption>
+#include <QTabBar>
+#include <QToolButton>
 
 #include "ElaTheme.h"
 ElaTabBarStyle::ElaTabBarStyle(QStyle* style)
@@ -18,6 +20,18 @@ ElaTabBarStyle::ElaTabBarStyle(QStyle* style)
 
 ElaTabBarStyle::~ElaTabBarStyle()
 {
+}
+
+int ElaTabBarStyle::pixelMetric(PixelMetric metric, const QStyleOption* option, const QWidget* widget) const
+{
+    int value = QProxyStyle::pixelMetric(metric, option, widget);
+    if (_nativeTabBehavior && metric == PM_TabBarScrollButtonWidth) {
+        if (const auto* bar = qobject_cast<const QTabBar*>(widget)) {
+            for (const auto* button : bar->findChildren<QToolButton*>(QString(), Qt::FindDirectChildrenOnly))
+                value = qMax(value, button->minimumSizeHint().width());
+        }
+    }
+    return value;
 }
 
 void ElaTabBarStyle::drawPrimitive(PrimitiveElement pe, const QStyleOption* opt, QPainter* p, const QWidget* w) const

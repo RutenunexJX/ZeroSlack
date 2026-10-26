@@ -1,4 +1,5 @@
 #include "workspaceconfigurationservice.h"
+#include "../common/defaultsourceextensions.h"
 
 #include <QDir>
 #include <QFile>
@@ -397,10 +398,7 @@ QStringList
 WorkspaceConfigurationService::
     defaultFileExtensions()
 {
-    return {QStringLiteral(".sv"),
-            QStringLiteral(".svh"),
-            QStringLiteral(".v"),
-            QStringLiteral(".vh")};
+    return SourceFiles::defaultExtensions();
 }
 
 QString WorkspaceConfigurationService::

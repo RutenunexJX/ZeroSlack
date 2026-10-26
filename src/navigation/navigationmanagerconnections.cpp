@@ -134,6 +134,12 @@ void NavigationManager::connectToWorkspaceManager(WorkspaceManager* workspaceMan
                         refreshDesignHierarchy();
                 });
 
+        connect(connectedWorkspaceManager, &WorkspaceManager::workspaceScanStarted, this,
+                [this](const QString& path) {
+            if (navigationWidget && context.currentWorkspacePath == path)
+                navigationWidget->setDesignCandidateContext(getSystemVerilogFiles(), !currentDesignRoots().isEmpty(), true);
+        });
+
         connect(connectedWorkspaceManager, &WorkspaceManager::fileChanged,
                 this, [this](const QString&) {
                     if (currentView == DesignHierarchyView) {
@@ -217,10 +223,17 @@ NavigationManager::designNodeContextActions(
             : contextAlias.label;
         item.executionRoute =
             descriptor->executionRoute;
+        auto availability = contextAvailability;
+        // Files supplies an exact module definition without an instance path.
+        // This is a bound add target; the submission still validates its current
+        // file scope and unique definition in setDesignTop().
+        if (descriptor->id == QString::fromLatin1(ActionIds::NavigationDesignSetTop)
+            && !node.moduleType.isEmpty() && !node.definitionFile.isEmpty())
+            availability.hierarchyBound = true;
         item.enabled = spec.enabled
             && evaluateActionAvailability(
                    *descriptor,
-                   contextAvailability)
+                   availability)
                    .executable;
         item.separatorBefore =
             spec.separatorBefore;
@@ -412,6 +425,11 @@ void NavigationManager::setupConnections()
     if (!navigationWidget) return;
 
     connect(navigationWidget, &NavigationWidget::addDesignProjectRequested, this, &NavigationManager::chooseDesignProject);
+    connect(navigationWidget, &NavigationWidget::designModuleChosen, this,
+            [this](const QString& file, const QString& module) {
+        const auto issue = setDesignTop(module, file);
+        if (!issue.isEmpty()) navigationWidget->finishDesignProjectSelection(issue, file, module);
+    });
     connect(navigationWidget, &NavigationWidget::designExpansionChanged, this, [this](const QString& id, bool expanded) {
         if (connectedWorkbench) connectedWorkbench->setDesignExpanded(id, expanded);
         for (auto& root : caches.designRoots) if (root.projectId == id) root.expanded = expanded;

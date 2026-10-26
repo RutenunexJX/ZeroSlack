@@ -851,14 +851,14 @@ int main()
     const ActionDescriptor* commandModeAction =
         findActionById(QString::fromLatin1(
             ActionIds::ViewCommandMode));
-    expect("Command Mode hold shortcut is registry-owned and non-repeatable",
+    expect("Command Mode is non-repeatable and leaves F24 to template input routing",
            commandModeAction
                && commandModeAction->executionRoute
                       == QStringLiteral(
                           "ui.commandMode.show")
-               && commandModeAction->defaultShortcut
-                      == QStringLiteral("F24")
-               && commandModeAction->hasSurface(
+               && commandModeAction->defaultShortcut.isEmpty()
+               && effectiveActionShortcut(commandModeAction->id).isEmpty()
+               && !commandModeAction->hasSurface(
                       ActionSurface::Shortcut)
                && commandModeAction->hasSurface(
                       ActionSurface::ActionCatalog)
@@ -876,6 +876,13 @@ int main()
                invalidCommandModeShortcut,
                &invalidCommandModeIssues)
                && !invalidCommandModeIssues.isEmpty());
+    configureActionShortcutOverrides({});
+
+    QVariantMap reservedTemplateShortcut;
+    reservedTemplateShortcut.insert(QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F24"));
+    expect("legacy F24 override cannot claim the template trigger",
+           configureActionShortcutOverrides(reservedTemplateShortcut)
+               && effectiveActionShortcut(QString::fromLatin1(ActionIds::ViewCommandMode)).isEmpty());
     configureActionShortcutOverrides({});
 
     const ActionDescriptor* columnNumbersAction =
@@ -1007,7 +1014,7 @@ int main()
          true},
         {ActionIds::NavigationDesignSetTop,
          "navigation.design.setTop",
-         "Set as Design Top",
+         "Add as Design Project",
          ActionScope::Hierarchy,
          ActionRequirements::Workspace
              | ActionRequirements::Hierarchy,

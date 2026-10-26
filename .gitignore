@@ -41,6 +41,7 @@ CMakeLists.txt.user.*
 !cmake/DomainSources.cmake
 !cmake/DomainTargets.cmake
 !cmake/CliTargets.cmake
+!cmake/run_qt_gui_test.cmake
 !thirdparty/qlementine/cmake/*.cmake
 !scripts/suite_ui_pilot/*.cmake
 

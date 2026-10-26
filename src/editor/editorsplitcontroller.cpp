@@ -608,6 +608,7 @@ void EditorSplitController::configureGroup(QTabWidget* group)
     group->setTabsClosable(true);
     group->setMovable(true);
     group->setElideMode(Qt::ElideMiddle);
+    group->tabBar()->setProperty("editorFileTabs", true);
     group->tabBar()->setExpanding(false);
     group->tabBar()->setUsesScrollButtons(true);
     if (!group->tabBar()->property("zeroslackElaControl").toBool())

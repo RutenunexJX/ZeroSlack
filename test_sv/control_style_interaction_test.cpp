@@ -6,6 +6,7 @@
 #include "insightvisualstyle.h"
 #include "mainwindow.h"
 #include "settingscenterpanel.h"
+#include "settingsdialog.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "uicontrols.h"
 
@@ -226,6 +227,9 @@ private slots:
             QVERIFY(settingsButton->inherits("ElaToolButton"));
         QTest::mouseClick(settingsButton, Qt::LeftButton); settle();
         auto* settings = window.findChild<SettingsCenterPanel*>(); QVERIFY(settings);
+        auto* settingsHost = window.findChild<SettingsDialog*>(); QVERIFY(settingsHost);
+        QVERIFY(settingsHost->isVisible() && settings->window() == settingsHost);
+        QVERIFY(!settingsHost->isModal());
         settings->selectCategory("analysis"); settle();
         auto* enabled = qobject_cast<QCheckBox*>(settings->fieldEditor("analysis.enabled")); QVERIFY(enabled);
         auto* overrideCheck = settings->findChild<QCheckBox*>(
@@ -264,7 +268,7 @@ private slots:
             QTest::keyClick(enabled, Qt::Key_Space); settle();
             QCOMPARE(enabled->isChecked(), !original);
             QVERIFY(apply->isEnabled()); QVERIFY(revert->isEnabled());
-            capture(&window, QString("main-settings-%1").arg(int(mode)));
+            capture(settingsHost, QString("main-settings-%1").arg(int(mode)));
             QTest::mouseClick(revert, Qt::LeftButton); settle();
             QCOMPARE(enabled->isChecked(), original);
             QVERIFY(!apply->isEnabled()); QCOMPARE(enabled->font(), font);

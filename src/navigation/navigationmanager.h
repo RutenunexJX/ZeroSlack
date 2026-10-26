@@ -19,6 +19,7 @@
 #include "hierarchyservice.h"
 #include "semanticanalysisrequest.h"
 #include "symbolpresentationservice.h"
+#include "designcandidates.h"
 
 class NavigationWidget;
 class NavigationService;
@@ -204,6 +205,7 @@ private:
     struct DesignWorkRequest {
         SemanticSnapshotToken token;
         QStringList files;
+        QStringList candidateFiles;
         QString selectedTop;
         QList<DesignHierarchyRoot> roots;
         QString workspace;
@@ -219,6 +221,8 @@ private:
         QByteArray fingerprint;
         QByteArray anchorFingerprint;
         bool reusedStructure = false;
+        QList<DesignFileCandidate> candidates;
+        QStringList likelyTops;
     };
     QThreadPool designThreadPool;
     QFutureWatcher<DesignWorkResult>* designWatcher = nullptr;

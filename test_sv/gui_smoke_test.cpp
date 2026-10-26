@@ -140,6 +140,7 @@
 #include "semanticpanelrefreshcoordinator.h"
 #include "semanticruntimecoordinator.h"
 #include "settingscenterpanel.h"
+#include "settingsdialog.h"
 #include "signalkernelgraphpanelcoordinator.h"
 #include "signalusagehotspotpanel.h"
 #include "slangmanager.h"
@@ -8088,7 +8089,7 @@ static void runTreeSitterFoldingProviderRegression()
 
 }
 
-static void runNavigationHierarchyModelRegression()
+static void runNavigationHierarchyModelRegression(bool tabsOnly = false)
 {
     printf("\n-- navigation hierarchy model regression --\n");
 
@@ -8096,12 +8097,22 @@ static void runNavigationHierarchyModelRegression()
     expectBool("navigation only exposes files and design tabs",
                widget.tabWidget && widget.tabWidget->count() == 2
                    && widget.tabWidget->tabText(0) == QStringLiteral("Files")
-                   && widget.tabWidget->tabText(1) == QStringLiteral("Design"),
+                   && widget.tabWidget->tabText(1).isEmpty()
+                   && widget.tabWidget->tabToolTip(1) == QStringLiteral("Design"),
                true);
     widget.setSearchFilter(NavigationWidget::FileTab,
                            QStringLiteral("rtl/top"));
     widget.setSearchFilter(NavigationWidget::DesignTab,
                            QStringLiteral("u_stage"));
+    QTemporaryDir firstWorkspace;
+    QTemporaryDir secondWorkspace;
+    expectBool("navigation query fixtures are isolated",
+               firstWorkspace.isValid() && secondWorkspace.isValid(), true);
+    widget.setWorkspaceRoot(firstWorkspace.path());
+    const QString candidateFile = firstWorkspace.filePath(QStringLiteral("alu.sv"));
+    widget.setDesignCandidateContext({candidateFile}, false, false);
+    widget.updateDesignCandidates(firstWorkspace.path(),
+                                  {{candidateFile, {{"alu", false, false}}, true, false}}, {});
     widget.setActiveTab(NavigationWidget::FileTab);
     expectBool("Files search keeps its independent query",
                widget.searchLineEdit
@@ -8109,16 +8120,97 @@ static void runNavigationHierarchyModelRegression()
                           == QStringLiteral("rtl/top"),
                true);
     widget.setActiveTab(NavigationWidget::DesignTab);
-    expectBool("Design search restores its independent query",
+    expectBool("empty Design opens candidate search without consuming hierarchy query",
                widget.searchLineEdit
-                   && widget.searchLineEdit->text()
-                          == QStringLiteral("u_stage")
+                   && widget.searchLineEdit->text().isEmpty()
                    && widget.searchLineEdit->placeholderText().contains(
-                          QStringLiteral("instances")),
+                          QStringLiteral("files"))
+                   && widget.searchFilter(NavigationWidget::DesignTab)
+                          == QStringLiteral("u_stage"),
                true);
+    QSignalSpy queryChanges(&widget, &NavigationWidget::searchFilterChanged);
+    widget.searchLineEdit->setText(QStringLiteral("alu"));
+    expectBool("candidate query does not overwrite Files or hierarchy filters",
+               queryChanges.isEmpty()
+                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top")
+                   && widget.searchFilter(NavigationWidget::DesignTab) == QStringLiteral("u_stage"),
+               true);
+    widget.setActiveTab(NavigationWidget::FileTab);
+    expectBool("Files query survives candidate search",
+               widget.searchLineEdit->text() == QStringLiteral("rtl/top"), true);
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    expectBool("candidate query survives tab round trip",
+               widget.searchLineEdit->text() == QStringLiteral("alu"), true);
+
+    DesignHierarchyReport existingDesign;
+    DesignHierarchyNode root;
+    root.id = QStringLiteral("query-root");
+    root.rootId = root.id;
+    root.projectId = QStringLiteral("query-project");
+    root.moduleType = QStringLiteral("top");
+    root.instanceName = QStringLiteral("top");
+    root.isTop = true;
+    root.expanded = true;
+    DesignHierarchyNode stage;
+    stage.id = QStringLiteral("query-stage");
+    stage.parentId = root.id;
+    stage.rootId = root.id;
+    stage.moduleType = QStringLiteral("alu");
+    stage.instanceName = QStringLiteral("u_stage");
+    existingDesign.nodes = {root, stage};
+    widget.updateDesignHierarchy(existingDesign);
+    expectBool("existing Design restores hierarchy search and matching ancestors",
+               widget.searchLineEdit->text() == QStringLiteral("u_stage")
+                   && widget.searchLineEdit->placeholderText().contains(QStringLiteral("instances"))
+                   && widget.designTreeWidget->topLevelItemCount() == 1
+                   && widget.designTreeWidget->topLevelItem(0)->childCount() == 1, true);
+    widget.setActiveTab(NavigationWidget::FileTab);
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    expectBool("hierarchy query survives tab round trip",
+               widget.searchLineEdit->text() == QStringLiteral("u_stage"), true);
+    widget.beginDesignProjectSelection();
+    expectBool("entering Add restores its separate candidate query",
+               widget.searchLineEdit->text() == QStringLiteral("alu"), true);
+    widget.searchLineEdit->setText(QStringLiteral("alu-new"));
+    auto* back = widget.findChild<QAbstractButton*>(QStringLiteral("cancelDesignSelection"));
+    expectBool("candidate cancellation control exists", back != nullptr, true);
+    if (back) back->click();
+    expectBool("cancel Add restores hierarchy without clearing the candidate draft",
+               widget.searchLineEdit->text() == QStringLiteral("u_stage")
+                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top"),
+               true);
+    widget.beginDesignProjectSelection();
+    expectBool("re-entering Add restores edited candidate query",
+               widget.searchLineEdit->text() == QStringLiteral("alu-new"), true);
+    widget.setWorkspaceRoot(firstWorkspace.path());
+    expectBool("refreshing the same workspace preserves candidate query",
+               widget.searchLineEdit->text() == QStringLiteral("alu-new"), true);
+    widget.setWorkspaceRoot(secondWorkspace.path());
+    expectBool("workspace switch clears only transient candidate search",
+               widget.searchLineEdit->text().isEmpty()
+                   && widget.searchFilter(NavigationWidget::FileTab) == QStringLiteral("rtl/top")
+                   && widget.searchFilter(NavigationWidget::DesignTab) == QStringLiteral("u_stage"),
+               true);
+    widget.setActiveTab(NavigationWidget::FileTab);
+    expectBool("Files query remains available after workspace switch",
+               widget.searchLineEdit->text() == QStringLiteral("rtl/top"), true);
+    widget.updateDesignHierarchy(existingDesign);
+    widget.setActiveTab(NavigationWidget::DesignTab);
+    expectBool("restored hierarchy keeps its filter after workspace switch",
+               widget.searchLineEdit->text() == QStringLiteral("u_stage"), true);
+    widget.beginDesignProjectSelection();
+    expectBool("new workspace does not inherit the previous Add query",
+               widget.searchLineEdit->text().isEmpty(), true);
+    widget.setWorkspaceRoot(firstWorkspace.path());
+    expectBool("returning to a workspace does not resurrect a discarded Add query",
+               widget.searchLineEdit->text().isEmpty(), true);
+    widget.setWorkspaceRoot(QString());
+    widget.clearDesignHierarchy();
     widget.setSearchFilter(NavigationWidget::DesignTab, QString());
     widget.setActiveTab(NavigationWidget::FileTab);
     widget.setSearchFilter(NavigationWidget::FileTab, QString());
+
+    if (tabsOnly) return;
 
     const QString fileTabPath = QStringLiteral("C:/fixture/relationship_top.sv");
     widget.updateFileHierarchy({fileTabPath});
@@ -9520,19 +9612,19 @@ static void runGlobalControlRegression(MainWindow& window,
         dispatched = item.id == QStringLiteral("ow 1");
     });
     dispatcherProbe.dispatch(
-        GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("ow 1"),
-                          QStringLiteral("ow 1"),
-                          QStringLiteral("Open 1 workspace")});
+        GlobalControlItem{.kind=GlobalControlItemKind::Command,
+                          .id=QStringLiteral("ow 1"),
+                          .title=QStringLiteral("ow 1"),
+                          .subtitle=QStringLiteral("Open 1 workspace")});
     expectBool("global control dispatches command",
                dispatched,
                true);
 
     window.globalControlCoordinator->dispatch(
-        GlobalControlItem{GlobalControlItemKind::Command,
-                          QStringLiteral("ow r"),
-                          QStringLiteral("ow r"),
-                          QStringLiteral("Recent Workspaces")});
+        GlobalControlItem{.kind=GlobalControlItemKind::Command,
+                          .id=QStringLiteral("ow r"),
+                          .title=QStringLiteral("ow r"),
+                          .subtitle=QStringLiteral("Recent Workspaces")});
     QCoreApplication::processEvents(QEventLoop::AllEvents, 100);
     QDialog* recentDialog =
         window.findChild<QDialog*>(QStringLiteral("recentWorkspacesDialog"));
@@ -11483,6 +11575,47 @@ int main(int argc, char** argv)
                           == QSettings::IniFormat,
                true);
 
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--navigation-tabs-only")) {
+        runNavigationHierarchyModelRegression(true);
+        printf("%d checks, %d failed\n", g_checks, g_fails);
+        return g_fails == 0 ? 0 : 1;
+    }
+    if (argc == 2 && QString::fromLocal8Bit(argv[1]) == QStringLiteral("--settings-dialog-only")) {
+        MainWindow window;
+        window.show();
+        expectBool("settings dialog is created lazily", !window.settingsDialog && !window.settingsCenterPanel, true);
+        auto* gear = window.findChild<QToolButton*>(QStringLiteral("settingsRailButton"));
+        expectBool("settings gear exists", gear != nullptr, true);
+        if (gear) gear->click();
+        auto* host = window.settingsDialog;
+        auto* panel = window.settingsCenterPanel;
+        expectBool("gear opens a single nonmodal host", host && host->isVisible() && !host->isModal(), true);
+        const auto* settingsDescriptor = findActionById(
+            QString::fromLatin1(ActionIds::ViewSettingsCenter));
+        expectBool("Settings action retains its show route",
+            settingsDescriptor && settingsDescriptor->executionRoute == QStringLiteral("ui.settingsCenter.show"), true);
+        const auto route = window.executeRegisteredUiAction(QString::fromLatin1(ActionIds::ViewSettingsCenter), {});
+        expectBool("show route focuses the existing host", route.succeeded && window.settingsDialog == host
+            && window.settingsCenterPanel == panel && host->isVisible(), true);
+        auto* view = window.findChild<QAction*>(QStringLiteral("viewSettingsCenterAction"));
+        if (view) { view->trigger(); view->trigger(); }
+        expectBool("repeated View calls keep Settings open", view && host && host->isVisible(), true);
+        window.showPanelById(QStringLiteral("editorAppearance"));
+        window.showPanelById(QStringLiteral("settingsCenter"));
+        expectBool("compatibility ids share one host without a dock or tool page",
+            window.findChildren<SettingsDialog*>().size() == 1
+                && !window.findChild<QDockWidget*>(QStringLiteral("settingsContentHost"))
+                && !window.tabManager->toolPage(QStringLiteral("settingsCenter")), true);
+        if (gear) gear->click();
+        expectBool("gear requests closing the existing host", host && !host->isVisible(), true);
+        if (view) view->trigger();
+        expectBool("reopen keeps object identity", window.settingsDialog == host && window.settingsCenterPanel == panel
+            && host && host->isVisible(), true);
+        if (host) host->close();
+        window.close();
+        printf("%d checks, %d failed\n", g_checks, g_fails);
+        return g_fails == 0 ? 0 : 1;
+    }
     runActivityLogServiceRegression();
     runActivityInboxRegression();
     runRtlInsightsOnDemandRegression();
@@ -11763,21 +11896,24 @@ int main(int argc, char** argv)
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("foldShelf"))
                    && !window.panelLayoutController->buttonForPanel(QStringLiteral("connections"))->isVisible(), true);
     settingsButton->click();
-    QWidget* settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
-    expectBool("Settings opens in the center and keeps the dock hidden",
-               settingsPage && settingsPage->isAncestorOf(window.settingsCenterPanel)
-                   && !window.settingsCenterDock->isVisible()
+    auto* settingsHost = window.findChild<SettingsDialog*>();
+    auto* initialSettingsPanel = window.settingsCenterPanel;
+    expectBool("Settings opens in its nonmodal window without changing the sidebar",
+               settingsHost && settingsHost->isVisible() && !settingsHost->isModal()
+                   && settingsHost->isAncestorOf(initialSettingsPanel)
+                   && !window.tabManager->toolPage(QStringLiteral("settingsCenter"))
                    && fileTree->isVisible() && projectSidebar->width() == sidebarWidth, true);
     saveEditorLayoutScreenshot(window, QStringLiteral("project-sidebar-settings.png"));
     settingsButton->click();
-    expectBool("second Settings click closes its central page",
-               !window.tabManager->toolPage(QStringLiteral("settingsCenter")), true);
+    expectBool("second Settings click hides the same window",
+               settingsHost && !settingsHost->isVisible(), true);
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     settingsButton->click();
-    settingsPage = window.tabManager->toolPage(QStringLiteral("settingsCenter"));
-    expectBool("Settings content survives closing and reopening its central tab",
-               settingsPage && settingsPage->isAncestorOf(window.settingsCenterPanel), true);
-    window.tabManager->closeTab(window.tabManager->activeTabWidget()->indexOf(settingsPage));
+    expectBool("Settings window and content are reused when reopened",
+               settingsHost && settingsHost->isVisible()
+                   && window.findChildren<SettingsDialog*>().size() == 1
+                   && window.settingsCenterPanel == initialSettingsPanel, true);
+    settingsHost->close();
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     window.panelLayoutController->restorePanel(QStringLiteral("connections"));
     QWidget* connectionsPage = window.tabManager->toolPage(QStringLiteral("connections"));
@@ -11963,34 +12099,27 @@ int main(int argc, char** argv)
         "all fixed menu actions are unique Action Registry adapters",
         fixedMenuActionsUseRegistry,
         true);
-    QDockWidget* settingsCenterDock =
-        window.findChild<QDockWidget*>(
-            QStringLiteral("settingsContentHost"));
+    auto* settingsCenterHost = window.findChild<SettingsDialog*>();
     QAction* viewSettingsCenterAction =
         window.findChild<QAction*>(
             QStringLiteral("viewSettingsCenterAction"));
     expectBool("unified Settings Center replaces appearance panel",
-               settingsCenterDock
-                   && settingsCenterDock->windowTitle()
+               settingsCenterHost
+                   && settingsCenterHost->windowTitle()
                           == QStringLiteral("Settings")
-                   && settingsCenterDock->widget()
-                          == window.settingsCenterPanel
+                   && settingsCenterHost->isAncestorOf(window.settingsCenterPanel)
                    && window.settingsCenterPanel
                    && window.findChild<QWidget*>(
                           QStringLiteral(
                               "editorAppearancePanel")) == nullptr,
                true);
-    expectBool("Settings Center keeps legacy dock identity",
-               window.dockForPanelId(
-                   QStringLiteral("settingsCenter"))
-                       == settingsCenterDock
-                   && window.dockForPanelId(
-                          QStringLiteral("editorAppearance"))
-                          == settingsCenterDock
-                   && settingsCenterDock
-                   && settingsCenterDock->property(
-                          "legacyPanelId").toString()
-                          == QStringLiteral("editorAppearance"),
+    window.showPanelById(QStringLiteral("editorAppearance"));
+    expectBool("legacy Settings identity opens the same dialog without a second dock",
+               settingsCenterHost && settingsCenterHost->isVisible()
+                   && !window.findChild<QDockWidget*>(QStringLiteral("settingsContentHost"))
+                   && !window.dockForPanelId(QStringLiteral("settingsCenter"))
+                   && !window.dockForPanelId(QStringLiteral("editorAppearance"))
+                   && window.findChildren<SettingsDialog*>().size() == 1,
                true);
     if (viewSettingsCenterAction) {
         viewSettingsCenterAction->trigger();
@@ -11999,15 +12128,14 @@ int main(int argc, char** argv)
     }
     expectBool("Settings Center has one View entry",
                viewSettingsCenterAction
-                   && settingsCenterDock
-                   && window.tabManager->toolPage(QStringLiteral("settingsCenter"))
-                   && !settingsCenterDock->isVisible()
+                   && settingsCenterHost && settingsCenterHost->isVisible()
+                   && !window.tabManager->toolPage(QStringLiteral("settingsCenter"))
                    && window.findChild<QAction*>(
                           QStringLiteral(
                               "viewEditorAppearanceAction")) == nullptr,
                true);
-    if (settingsCenterDock)
-        settingsCenterDock->hide();
+    if (settingsCenterHost)
+        settingsCenterHost->close();
     expectBool("Search Navigate Help menus removed",
                window.findChild<QMenu*>(
                    QStringLiteral("searchMenu")) == nullptr

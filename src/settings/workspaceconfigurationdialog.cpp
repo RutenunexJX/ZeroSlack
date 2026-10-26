@@ -288,10 +288,11 @@ WorkspaceConfigurationDialog::WorkspaceConfigurationDialog(QWidget* parent)
         });
 
     auto* buttons = UiDialogs::buttonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel | QDialogButtonBox::Reset,
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
         this);
-    buttons->button(QDialogButtonBox::Reset)->setText(tr("Reload"));
-    connect(buttons->button(QDialogButtonBox::Reset), &QPushButton::clicked, this, [this] {
+    auto* reload = UiDialogs::addButton(buttons, QDialogButtonBox::Reset);
+    reload->setText(tr("Reload"));
+    connect(reload, &QPushButton::clicked, this, [this] {
         const auto current = WorkspaceConfigurationService::getInstance()->loadWithResult(workspaceRoot);
         if (current.usable()) setConfiguration(current.configuration);
         else UiDialogs::warning(this, tr("Workspace Configuration"), current.message);

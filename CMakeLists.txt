@@ -360,6 +360,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/formattercursoranchor.cpp
     src/settings/settingscenterschema.cpp
     src/settings/settingscenterpanel.cpp
+    src/settings/settingsdialog.cpp
     src/settings/settingscenterservice.cpp
     src/editor/ghostannotationservice.cpp
     src/editor/tbinputassist.cpp
@@ -430,6 +431,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/navigation/navigationservicehierarchy.cpp
     src/ui/navigationwidgetpresentation.cpp
     src/ui/navigationwidgettrees.cpp
+    src/ui/navigationwidgetdesign.cpp
     src/ui/navigationwidget.cpp
     src/ui/notificationcenter.cpp
     src/ui/problemspanelcoordinator.cpp
@@ -1018,6 +1020,16 @@ endif()
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
+    function(zeroslack_qt_test_command output name target)
+        set(${output} ${CMAKE_COMMAND}
+            "-DQT_TEST_NAME=${name}"
+            "-DQT_TEST_EXECUTABLE=$<TARGET_FILE:${target}>"
+            "-DQT_TEST_ARGUMENTS=${ARGN}"
+            "-DQT_TEST_LOG_ROOT=${CMAKE_CURRENT_BINARY_DIR}/Testing/QtGui"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_qt_gui_test.cmake"
+            PARENT_SCOPE)
+    endfunction()
+
     if(SuiteApp_FOUND)
         add_executable(zeroslack_suiteapp_integration_test
             test_sv/suiteapp_integration_test.cpp
@@ -1057,6 +1069,21 @@ if(BUILD_TESTING)
 
     add_executable(simulation_command_redesign_test test_sv/simulation_command_redesign_test.cpp)
     target_link_libraries(simulation_command_redesign_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(design_inline_selection_test test_sv/design_inline_selection_test.cpp)
+    target_link_libraries(design_inline_selection_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME design_inline_selection_test COMMAND design_inline_selection_test)
+    set_tests_properties(design_inline_selection_test PROPERTIES TIMEOUT 180)
+
+    add_executable(rounded_icons_content_box_test test_sv/rounded_icons_content_box_test.cpp)
+    target_link_libraries(rounded_icons_content_box_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME rounded_icons_content_box_test COMMAND rounded_icons_content_box_test)
+    set_tests_properties(rounded_icons_content_box_test PROPERTIES TIMEOUT 60)
+
+    add_executable(settings_dialog_test test_sv/settings_dialog_test.cpp)
+    target_link_libraries(settings_dialog_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME settings_dialog_test COMMAND settings_dialog_test)
+    set_tests_properties(settings_dialog_test PROPERTIES TIMEOUT 180)
 
     add_executable(simulation_driver_insertion_test test_sv/simulation_driver_insertion_test.cpp)
     target_link_libraries(simulation_driver_insertion_test PRIVATE zeroslack_core Qt6::Test)
@@ -1357,6 +1384,7 @@ if(BUILD_TESTING)
         src/ui/insightvisualstyle.cpp
         src/ui/navigationwidget.cpp
         src/ui/navigationwidgettrees.cpp
+        src/ui/navigationwidgetdesign.cpp
         src/ui/navigationwidgetpresentation.cpp
         src/editor/editorfileidentity.cpp
         src/semantic/symboltaxonomy.cpp)
@@ -1476,6 +1504,7 @@ if(BUILD_TESTING)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
+        src/editor/editorfileidentity.cpp
         src/ui/contextresource.cpp
         src/settings/workspaceconfigurationservice.cpp
         src/workspace/workspacesessionstateservice.cpp)
@@ -1556,6 +1585,10 @@ if(BUILD_TESTING)
 
     add_executable(gui_smoke_test test_sv/gui_smoke_test.cpp)
     target_link_libraries(gui_smoke_test PRIVATE zeroslack_core Qt6::Test)
+    option(ZEROSLACK_SELF_CONTAINED_FIXTURES "Exclude local fixture identifiers from bounded GUI tests" OFF)
+    if(ZEROSLACK_SELF_CONTAINED_FIXTURES)
+        target_compile_definitions(gui_smoke_test PRIVATE ZEROSLACK_SELF_CONTAINED_FIXTURES=1)
+    endif()
 
     add_executable(temporary_editor_context_search_test
         test_sv/temporary_editor_context_search_test.cpp)
@@ -2281,12 +2314,13 @@ if(BUILD_TESTING)
             "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:editing_time_contract_test>)
     set_tests_properties(editing_time_contract_test PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(COMPACT_TEST_COMMAND compact_layout_test compact_layout_test)
     add_test(NAME compact_layout_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:compact_layout_test>)
+            ${COMPACT_TEST_COMMAND})
     foreach(WELCOME_TEST IN ITEMS welcome_resource welcome_mainwindow)
         add_test(NAME ${WELCOME_TEST}_test
             COMMAND ${CMAKE_COMMAND} -E env
@@ -2298,16 +2332,17 @@ if(BUILD_TESTING)
     foreach(HIGH_DPI_SCALE IN ITEMS 1 1.25 1.5 2)
         if(ZEROSLACK_ENABLE_ELA)
             foreach(ELA_TEST IN ITEMS ela_controls ela_navigation ela_motion ui_dialog_contract ui_popup_contract ui_item_menu_contract ui_window_chrome ui_navigation_rail ui_text_view ui_label_contract ui_sidebar_contract ui_panel_motion panel_layout_controller high_dpi_layout)
-                set(ELA_TEST_ARGUMENTS)
+                set(ELA_TEST_COMMAND $<TARGET_FILE:${ELA_TEST}_test>)
                 if(NOT ELA_TEST STREQUAL "high_dpi_layout" AND NOT ELA_TEST STREQUAL "panel_layout_controller")
-                    set(ELA_TEST_ARGUMENTS -o -,txt)
+                    zeroslack_qt_test_command(ELA_TEST_COMMAND
+                        ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test ${ELA_TEST}_test)
                 endif()
                 add_test(NAME ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test
                     COMMAND ${CMAKE_COMMAND} -E env
                         "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                         "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                         "ZEROSLACK_TEST_UI_STYLE=ela"
-                        $<TARGET_FILE:${ELA_TEST}_test> ${ELA_TEST_ARGUMENTS})
+                        ${ELA_TEST_COMMAND})
                 set_tests_properties(ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
             endforeach()
             add_test(NAME ela_main_window_${HIGH_DPI_SCALE}_test
@@ -2386,11 +2421,12 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:ui_item_menu_contract_test> -o -,txt)
     set_tests_properties(ui_item_menu_contract_test PROPERTIES TIMEOUT 60)
+    zeroslack_qt_test_command(MOTION_CLASSIC_COMMAND ela_motion_classic_test ela_motion_test)
     add_test(NAME ela_motion_classic_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ela_motion_test> -o -,txt)
+            ${MOTION_CLASSIC_COMMAND})
     set_tests_properties(ela_motion_classic_test PROPERTIES TIMEOUT 60)
     add_test(NAME ui_window_chrome_classic_test
         COMMAND ${CMAKE_COMMAND} -E env

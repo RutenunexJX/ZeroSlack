@@ -177,7 +177,14 @@ private slots:
         panel.showCentered(&anchor); settle();
         auto* results = panel.findChild<QListWidget*>("globalControlResultList"); QVERIFY(results);
         QCOMPARE(results->property("zeroslackElaControl").toBool(), usesEla());
-        QVERIFY(results->visualItemRect(results->item(0)).height() >= results->fontMetrics().height() * 2);
+        const QRect row = results->visualItemRect(results->item(0));
+        const int textHeight = results->fontMetrics().height();
+        QVERIFY(row.height() >= textHeight + 4);
+        QVERIFY(row.height() < textHeight * 2);
+        QVERIFY(results->viewport()->rect().contains(row));
+        QVERIFY(row.width() > results->fontMetrics().horizontalAdvance(item.title));
+        QCOMPARE(results->item(0)->text(), item.title);
+        QVERIFY(!results->item(0)->text().contains('\n'));
         int activations = 0;
         panel.setItemActivatedHandler([&](const GlobalControlItem& selected) {
             if (selected.title == item.title) ++activations;

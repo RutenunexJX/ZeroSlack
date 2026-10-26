@@ -251,6 +251,7 @@ void SettingsCenterPanel::setWorkspaceSnapshot(const SettingsCenterSnapshot& sna
     const auto previousKey = workspaceDraftKey(activeWorkspaceRoot);
     const auto nextKey = workspaceDraftKey(snapshot.workspaceRoot);
     if (previousKey == nextKey) return;
+    commitPendingEditors();
     if (!previousKey.isEmpty() && isScopeDirty(SettingsCenterScope::Workspace))
         workspaceDrafts.insert(previousKey, {loadedSnapshot, workspaceDraft});
     else
@@ -323,6 +324,7 @@ void SettingsCenterPanel::setScope(
     if (activeScope == requestedScope)
         return;
 
+    commitPendingEditors();
     activeScope = requestedScope;
     const QSignalBlocker blocker(scopeCombo);
     const int index = scopeCombo->findData(
@@ -447,6 +449,57 @@ void SettingsCenterPanel::revertCurrentScope()
     emit issuesReported({});
     if (previousFocus)
         previousFocus->setFocus(Qt::OtherFocusReason);
+}
+
+void SettingsCenterPanel::commitPendingEditors()
+{
+    QPointer<QWidget> focus = QApplication::focusWidget();
+    if (!focus || (focus != this && !isAncestorOf(focus)))
+        return;
+    bool tableEditor = false;
+    for (QWidget* editor = focus; editor && editor != this; editor = editor->parentWidget()) {
+        if (auto* spin = qobject_cast<QAbstractSpinBox*>(editor))
+            spin->interpretText();
+        if (qobject_cast<QTableView*>(editor))
+            tableEditor = true;
+    }
+    // Normal focus-out commits an active item delegate before the dirty query.
+    focus->clearFocus();
+    if (!tableEditor && focus && focus->isVisible() && focus->isEnabled())
+        focus->setFocus(Qt::OtherFocusReason);
+}
+
+QStringList SettingsCenterPanel::unappliedScopes() const
+{
+    QStringList scopes;
+    const bool invalidEditor = !localStringMapIssues(activeScope).isEmpty();
+    if (isScopeDirty(SettingsCenterScope::Global)
+        || (activeScope == SettingsCenterScope::Global && invalidEditor))
+        scopes.append(tr("Global"));
+    if (!activeWorkspaceRoot.isEmpty()
+        && (isScopeDirty(SettingsCenterScope::Workspace)
+            || (activeScope == SettingsCenterScope::Workspace && invalidEditor)))
+        scopes.append(tr("Workspace: %1").arg(QDir::toNativeSeparators(activeWorkspaceRoot)));
+    QStringList cached;
+    for (auto it = workspaceDrafts.cbegin(); it != workspaceDrafts.cend(); ++it) {
+        if (it->values != it->baseline.workspaceValues)
+            cached.append(tr("Workspace: %1").arg(QDir::toNativeSeparators(it->baseline.workspaceRoot)));
+    }
+    cached.sort();
+    scopes.append(cached);
+    scopes.removeDuplicates();
+    return scopes;
+}
+
+void SettingsCenterPanel::discardUnappliedChanges()
+{
+    globalDraft = loadedSnapshot.globalValues;
+    workspaceDraft = loadedSnapshot.workspaceValues;
+    workspaceDrafts.clear();
+    populateFields();
+    displayedIssues.clear();
+    reportStatus(tr("Unapplied changes discarded."), false);
+    emit issuesReported({});
 }
 
 void SettingsCenterPanel::buildUi()

@@ -1,4 +1,5 @@
 #include "projectmodel.h"
+#include "../common/defaultsourceextensions.h"
 
 #include <QDir>
 #include <QDataStream>
@@ -285,10 +286,7 @@ QStringList ProjectModel::ProjectPathRules::defaultIncludeDirsForFiles(
 
 QStringList ProjectModel::ProjectPathRules::defaultFileExtensions() const
 {
-    return {QStringLiteral(".sv"),
-            QStringLiteral(".svh"),
-            QStringLiteral(".v"),
-            QStringLiteral(".vh")};
+    return SourceFiles::defaultExtensions();
 }
 
 QStringList ProjectModel::ProjectPathRules::normalizeFileExtensions(

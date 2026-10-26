@@ -25,7 +25,7 @@ SimDockContextView::SimDockContextView(QWidget* parent) : QWidget(parent)
     status->setObjectName(QStringLiteral("nativeComponentStatus"));
     status->setWordWrap(true);
     status->setTextFormat(Qt::PlainText);
-    retryButton = UiControls::pushButton(tr("Reload SimDock"), this);
+    retryButton = UiControls::pushButton(tr("Reload Simulation"), this);
     retryButton->setObjectName(QStringLiteral("nativeComponentRetry"));
     resetButton = UiControls::pushButton(tr("Reset saved panel state"), this);
     resetButton->setObjectName(QStringLiteral("nativeComponentResetState"));
@@ -155,7 +155,7 @@ bool SimDockContextView::canClose(QString* error) const
 {
     const auto* modal = QApplication::activeModalWidget();
     const bool allowed = !(modal && (modal == this || isAncestorOf(modal))) && panel->canClose();
-    if (!allowed && error) *error = tr("SimDock is busy. Finish or stop its operation before closing it or changing workspace.");
+    if (!allowed && error) *error = tr("Simulation is busy. Finish or stop its operation before closing it or changing workspace.");
     return allowed;
 }
 

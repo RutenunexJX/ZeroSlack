@@ -11,6 +11,8 @@
 #include "usertemplateservice.h"
 #include "crashrecoveryservice.h"
 #include "testuistyle.h"
+#include "uicontrols.h"
+#include "roundedicons.h"
 #include "../src/integrations/simdock/simdockcontextprovider.h"
 #include "../src/integrations/simdock/simdockcontextview.h"
 #include "../src/simulation/simdock/ui/workbench.h"
@@ -42,6 +44,9 @@
 #include <QToolButton>
 #include <QTabBar>
 #include <QTabWidget>
+#include <QTranslator>
+#include <QStyleHints>
+#include <cmath>
 
 namespace {
 bool put(const QString& path, const QByteArray& bytes) {
@@ -102,6 +107,28 @@ struct Host {
 
 class SimulationWorkspaceUiTest : public QObject {
     Q_OBJECT
+    void recordNavigation(QTabBar* bar,const QString& name) {
+        const auto output=qEnvironmentVariable("ZEROSLACK_NAVIGATION_UI_REPORT");if(output.isEmpty())return;
+        QDir().mkpath(output);QTest::qWait(20);
+        const auto pixels=bar->grab();const auto image=pixels.toImage();const qreal dpr=pixels.devicePixelRatio();
+        QVERIFY(pixels.save(QDir(output).filePath(name+".png")));
+        QJsonArray items;
+        for(int i=0;i<bar->count();++i){const auto r=bar->tabRect(i);items.append(QJsonObject{{"index",i},{"rect",QJsonArray{r.x(),r.y(),r.width(),r.height()}},{"text",bar->tabText(i)},{"accessible",bar->accessibleTabName(i)},{"tooltip",bar->tabToolTip(i)}});}
+        QJsonObject record{{"width",bar->width()},{"minimum",bar->minimumSizeHint().width()},{"dpr",dpr},{"fontPointSize",bar->font().pointSizeF()},{"fontHeight",bar->fontMetrics().height()},{"iconWidth",bar->iconSize().width()},{"current",bar->currentIndex()},{"focus",bar->hasFocus()},{"tabs",items}};
+        if(bar->currentIndex()>=0){
+            const auto r=bar->tabRect(bar->currentIndex());const auto text=bar->tabText(bar->currentIndex());
+            record["labelWidth"]=bar->fontMetrics().horizontalAdvance(text);record["textSpace"]=r.width()-qMax(36,bar->iconSize().width()+24)-6;
+            const auto sample=[&](int x,int y){return image.pixelColor(qBound(0,qRound(x*dpr),image.width()-1),qBound(0,qRound(y*dpr),image.height()-1));};
+            const QColor fill=sample(r.left()+10,r.top()+5);record["selectedFill"]=fill.name();
+            QCOMPARE(fill.lightness()<128,isDarkTheme(ApplicationThemeManager::instance().mode()));
+            const bool dark=fill.lightness()<128;QColor ink=fill;
+            for(int x=r.left()+38;x<r.right()-12;++x)for(int y=r.top()+7;y<r.bottom()-7;++y){const auto c=sample(x,y);if(dark?c.lightness()>ink.lightness():c.lightness()<ink.lightness())ink=c;}
+            const auto luminance=[](QColor c){const auto linear=[](double v){return v<=.04045?v/12.92:std::pow((v+.055)/1.055,2.4);};return .2126*linear(c.redF())+.7152*linear(c.greenF())+.0722*linear(c.blueF());};
+            const double a=luminance(ink),b=luminance(fill);record["sampledInk"]=ink.name();record["sampledContrast"]=(qMax(a,b)+.05)/(qMin(a,b)+.05);
+            if(!text.isEmpty()&&record["textSpace"].toInt()>=record["labelWidth"].toInt())QVERIFY(record["sampledContrast"].toDouble()>=4.5);
+        }
+        QVERIFY(put(QDir(output).filePath(name+".json"),QJsonDocument(record).toJson()));
+    }
     void ready(Host& f) { QTRY_VERIFY_WITH_TIMEOUT(child<QComboBox>(f.panel(), "dutSelector")->count() > 0, 15000); }
     void capture(Host& f, const QString& name) {
         const auto output = qEnvironmentVariable("ZEROSLACK_SIMULATION_UI_REPORT");
@@ -116,6 +143,107 @@ class SimulationWorkspaceUiTest : public QObject {
             {"screenWidth", bounds.width()}, {"screenHeight", bounds.height()}}).toJson()));
     }
 private slots:
+    void navigationCompactGeometry() {
+        const QStringList names{QStringLiteral("Files"),QStringLiteral("Design"),QStringLiteral("Build inputs")};
+        for (int count=0;count<=3;++count) {
+            std::unique_ptr<QTabWidget> tabs(UiControls::navigationTabWidget());
+            tabs->setIconSize(QSize(20,20));auto* bar=tabs->tabBar();
+            for(int i=0;i<count;++i){tabs->addTab(new QWidget,RoundedIcons::icon(RoundedIcons::File),QString());bar->setAccessibleTabName(i,names[i]);bar->setTabToolTip(i,names[i]);}
+            const auto labels=[&]{for(int i=0;i<count;++i)tabs->setTabText(i,i==tabs->currentIndex()?names[i]:QString());};
+            connect(tabs.get(),&QTabWidget::currentChanged,tabs.get(),labels);labels();
+            if(count)tabs->setCurrentIndex(count-1);
+            const int minimum=count*44;
+            QCOMPARE(bar->minimumSizeHint().width(),minimum);
+            for(int extra:{0,28,70,300}) {
+                tabs->setFixedSize(qMax(50,minimum+extra+4),150);tabs->show();QTest::qWait(40);
+                QVERIFY(!bar->usesScrollButtons());
+                for(int i=0;i<count;++i) {
+                    QVERIFY2(bar->rect().contains(bar->tabRect(i)),qPrintable(QString("count %1, extra %2, bar %3, tab %4: %5..%6").arg(count).arg(extra).arg(bar->width()).arg(i).arg(bar->tabRect(i).left()).arg(bar->tabRect(i).right())));
+                    QVERIFY(bar->tabRect(i).width()>=44);
+                    QCOMPARE(bar->tabText(i),i==bar->currentIndex()?names[i]:QString());
+                    QCOMPARE(bar->accessibleTabName(i),names[i]);QCOMPARE(bar->tabToolTip(i),names[i]);
+                }
+                for(auto* button:bar->findChildren<QToolButton*>())QVERIFY(!button->isVisible());
+                if(count==3)recordNavigation(bar,QString("geometry-%1").arg(extra));
+            }
+            while(tabs->count())tabs->removeTab(tabs->count()-1);
+            QCOMPARE(bar->currentIndex(),-1);QCOMPARE(bar->minimumSizeHint().width(),0);
+        }
+    }
+    void navigationInitializationAndMetrics() {
+        NavigationWidget navigation;navigation.resize(500,400);navigation.show();
+        auto* tabs=child<QTabWidget>(&navigation,"navigationTabs");auto* bar=tabs->tabBar();
+        QCOMPARE(tabs->count(),2);QCOMPARE(tabs->tabText(0),QString("Files"));QVERIFY(tabs->tabText(1).isEmpty());
+        navigation.setActiveTab(NavigationWidget::DesignTab);navigation.setSourceFilesWidget(new QWidget);
+        QCOMPARE(tabs->count(),3);QCOMPARE(tabs->currentIndex(),1);QCOMPARE(tabs->tabText(1),QString("Design"));
+        class Translation final : public QTranslator {
+        public:
+            bool isEmpty() const override { return false; }
+            QString translate(const char* context,const char* text,const char*,int) const override {
+                if(QByteArray(context)!="NavigationWidget")return {};
+                if(QByteArray(text)=="Files")return QStringLiteral("Workspace source documents");
+                if(QByteArray(text)=="Build inputs")return QString::fromUtf8("e\xCC\x81 中文 compilation dependencies");
+                return {};
+            }
+        } translation;
+        QVERIFY(QCoreApplication::installTranslator(&translation));QCoreApplication::processEvents();
+        navigation.setActiveTab(NavigationWidget::SourceFilesTab);QTest::qWait(30);
+        QVERIFY(bar->tabText(2).startsWith(QString::fromUtf8("e\xCC\x81")));
+        QCOMPARE(bar->accessibleTabName(0),QString("Workspace source documents"));
+        QFont large=bar->font();large.setPointSizeF(22);bar->setFont(large);navigation.resize(200,400);QTest::qWait(40);
+        for(int i=0;i<3;++i){QVERIFY(bar->rect().contains(bar->tabRect(i)));QVERIFY(bar->tabRect(i).width()>=44);}
+        recordNavigation(bar,"translated-large-font");
+        navigation.hide();navigation.resize(600,400);navigation.show();QTest::qWait(40);recordNavigation(bar,"translated-restored");
+        QCoreApplication::removeTranslator(&translation);QCoreApplication::processEvents();
+        QCOMPARE(bar->tabText(2),QString("Build inputs"));
+        QCOMPARE(bar->accessibleTabName(0),QString("Files"));
+    }
+    void navigationInputTargets() {
+        NavigationWidget navigation;navigation.resize(650,350);navigation.show();
+        navigation.setSourceFilesWidget(new QWidget);
+        auto* tabs=child<QTabWidget>(&navigation,"navigationTabs");auto* bar=tabs->tabBar();
+        // A longer translated first label makes a stationary second click hit the following tab after reflow.
+        tabs->setTabText(0,QStringLiteral("Workspace source documents"));QTest::qWait(40);
+        const auto original=bar->tabRect(1);const QPoint position=original.center();
+        QSignalSpy changed(tabs,&QTabWidget::currentChanged);QSignalSpy clicked(bar,&QTabBar::tabBarClicked);
+        QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,position);
+        QCOMPARE(tabs->currentIndex(),1);QVERIFY(bar->tabRect(1).left()!=original.left());
+        QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,position);
+        QCOMPARE(tabs->currentIndex(),1);
+        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,position);
+        QTest::mouseDClick(bar,Qt::LeftButton,Qt::NoModifier,position);
+        QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,position);
+        QCOMPARE(tabs->currentIndex(),1);QCOMPARE(changed.size(),1);
+        for(const auto& args:clicked)QCOMPARE(args[0].toInt(),1);
+        recordNavigation(bar,"stationary-double-click");
+        QTest::keyClick(bar,Qt::Key_Right);QCOMPARE(tabs->currentIndex(),2);
+        QTest::keyClick(bar,Qt::Key_Left);QCOMPARE(tabs->currentIndex(),1);
+        QTest::mousePress(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(0).center());
+        QTest::mouseMove(bar,QPoint(-30,-30));QTest::mouseRelease(bar,Qt::LeftButton,Qt::NoModifier,QPoint(-30,-30));
+        QCOMPARE(tabs->currentIndex(),0);
+        QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(2).center());QCOMPARE(tabs->currentIndex(),2);
+        recordNavigation(bar,"keyboard-and-cancel");
+    }
+    void navigationCompactMainWindow_data() {
+        QTest::addColumn<int>("width");QTest::addColumn<bool>("dark");
+        QTest::newRow("wide-light")<<1280<<false;QTest::newRow("wide-dark")<<1280<<true;
+        QTest::newRow("narrow-light")<<780<<false;QTest::newRow("narrow-dark")<<780<<true;
+    }
+    void navigationCompactMainWindow() {
+        QFETCH(int,width);QFETCH(bool,dark);Host f;QVERIFY(f.open());ready(f);
+        f.window->resize(width,720);ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
+        auto* tabs=child<QTabWidget>(f.window.get(),"navigationTabs");auto* bar=tabs->tabBar();
+        for(int target=0;target<3;++target) {
+            QTest::keyClick(bar,Qt::Key_Right);
+            QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,bar->tabRect(target).center());QCOMPARE(tabs->currentIndex(),target);
+            QTest::qWait(40);
+            for(int i=0;i<3;++i){QCOMPARE(bar->tabText(i),i==target?bar->accessibleTabName(i):QString());QVERIFY(bar->rect().contains(bar->tabRect(i)));}
+            recordNavigation(bar,QString("%1-tab%2").arg(QTest::currentDataTag()).arg(target));
+            capture(f,QString("navigation-%1-tab%2").arg(QTest::currentDataTag()).arg(target));
+        }
+        QVERIFY(f.sessions()->saveSession(false));QVERIFY(f.sessions()->openWorkspace(f.other));QVERIFY(f.sessions()->openWorkspace(f.workspace));
+        QCOMPARE(tabs->currentIndex(),2);QCOMPARE(bar->tabText(2),QString("Build inputs"));
+    }
     void navigationMotionRetainsBuildInputs_data() {
         QTest::addColumn<int>("tab"); QTest::addColumn<int>("width"); QTest::addColumn<bool>("dark");
         QTest::newRow("files-light") << 0 << 1280 << false;
@@ -135,6 +263,8 @@ private slots:
         f.window->resize(width, 720);
         pane->setActiveTab(tab); pane->setExpanded(true, false); QTest::qWait(80);
         const auto sourceModel = f.sources()->model();
+        QSignalSpy scanned(f.panel(), &simdock::Workbench::scanFinished);
+        QSignalSpy resets(sourceModel, &QAbstractItemModel::modelReset);
         const auto projectId = f.saved().id;
         const auto compilationOrder = f.saved().sources;
         const int expandedWidth = pane->dock()->width();
@@ -157,6 +287,8 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(!pane->isAnimating(), 1500);
         QVERIFY(pane->isExpanded()); QCOMPARE(pane->activeTab(), tab);
         QCOMPARE(f.sources()->model(), sourceModel);
+        QCOMPARE(scanned.size(), 0);
+        QCOMPARE(resets.size(), 0);
         QCOMPARE(f.saved().id, projectId); QCOMPARE(f.saved().sources, compilationOrder);
         if (tab == 2) {
             QVERIFY(f.sources()->isVisible());
@@ -215,8 +347,12 @@ private slots:
         QVERIFY(!search->isVisible());
         f.navigation()->setSearchFilter(NavigationWidget::SourceFilesTab, "ignored");
         QCOMPARE(f.navigation()->searchFilter(NavigationWidget::FileTab), QString("dut"));
-        f.navigation()->setActiveTab(NavigationWidget::DesignTab); QVERIFY(search->isVisible());
-        QCOMPARE(search->text(), QString("dut"));
+        f.navigation()->setActiveTab(NavigationWidget::DesignTab);
+        QTRY_VERIFY_WITH_TIMEOUT(search->isVisible(),10000);
+        QCOMPARE(search->text(), QString());
+        QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab), QString("dut"));
+        search->setText("extra");
+        QCOMPARE(f.navigation()->searchFilter(NavigationWidget::DesignTab), QString("dut"));
         f.navigation()->setActiveTab(NavigationWidget::FileTab); QCOMPARE(search->text(), QString("dut"));
         f.navigation()->setActiveTab(NavigationWidget::SourceFilesTab);
         bool guarded = false;
@@ -292,7 +428,7 @@ private slots:
         auto* tabs = child<QTabWidget>(f.window.get(), "navigationTabs")->tabBar();
         for (int i = 0; i < 3; ++i) QVERIFY(tabs->rect().contains(tabs->tabRect(i)));
         for (int i = 0; i < 3; ++i) {
-            QVERIFY(tabs->tabText(i).isEmpty());
+            QCOMPARE(tabs->tabText(i),i==tabs->currentIndex()?tabs->accessibleTabName(i):QString());
             QVERIFY(!tabs->tabIcon(i).isNull());
             QVERIFY(!tabs->tabToolTip(i).isEmpty());
             QCOMPARE(tabs->accessibleTabName(i), tabs->tabToolTip(i));

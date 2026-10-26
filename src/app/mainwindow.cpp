@@ -69,6 +69,9 @@
 #include "scopedreplaceworkflow.h"
 #include "shareddocument.h"
 #include "settingscenterpanel.h"
+#include "settingsdialog.h"
+#include <QScopeGuard>
+#include <QScopedValueRollback>
 #include "settingscenterservice.h"
 #include "searchservice.h"
 #include "temporaryeditorcontextprovider.h"
@@ -275,8 +278,6 @@ MainWindow::MainWindow(QWidget *parent)
     applyModernShellStyle();
     applyRegisteredActionShortcuts();
 
-    if (settingsCenterDock)
-        settingsCenterDock->hide();
     if (semanticDocks) {
         if (semanticDocks->activityLogPanelCoordinator()
             && semanticDocks->activityLogPanelCoordinator()->dock())
@@ -318,8 +319,10 @@ MainWindow::MainWindow(QWidget *parent)
         modeLabel->setVisible(visible);
     });
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
-        if (!tabManager->closeActiveToolPage(QStringLiteral("settingsCenter")))
-            showDockWidget(settingsCenterDock);
+        if (settingsDialog && settingsDialog->isVisible())
+            settingsDialog->close();
+        else
+            showSettingsCenter();
     }, workspaceSwitcher.get(), titleStatus);
     connect(navigationPane->dock(), &QDockWidget::visibilityChanged,
             this, [this](bool visible) {
@@ -3664,13 +3667,13 @@ ActionExecutionResult MainWindow::executeActionRoute(
     if (route
         == QStringLiteral(
             "ui.settingsCenter.show")) {
-        if (!settingsCenterDock) {
+        if (!settingsCenterService) {
             result.failureReason =
                 QStringLiteral(
                     "Settings Center is unavailable.");
             return result;
         }
-        showDockWidget(settingsCenterDock);
+        showSettingsCenter();
         result.succeeded = true;
         return result;
     }
@@ -4239,10 +4242,6 @@ QDockWidget* MainWindow::dockForPanelId(const QString& panelId) const
     }
     if (panelId == QStringLiteral("connections"))
         return semanticDocks ? semanticDocks->connectionsDock() : nullptr;
-    if (panelId == QStringLiteral("settingsCenter")
-        || panelId == QStringLiteral("editorAppearance")) {
-        return settingsCenterDock;
-    }
     return nullptr;
 }
 
@@ -4251,15 +4250,6 @@ void MainWindow::showDockWidget(QDockWidget* dock,
 {
     if (!dock)
         return;
-
-    if (dock == settingsCenterDock) {
-        ensureSettingsCenterPanel();
-        const QString id = QStringLiteral("settingsCenter");
-        if (tabManager->toolPage(id)) tabManager->activateToolPage(id);
-        else tabManager->openToolPage(new BorrowedPanelPage(settingsCenterPanel, dock), id, tr("Settings"));
-        dock->hide();
-        return;
-    }
 
     if (panelLayoutController
         && panelLayoutController->isBottomPanel(dock)) {
@@ -4279,6 +4269,11 @@ void MainWindow::showDockWidget(QDockWidget* dock,
 
 void MainWindow::showPanelById(const QString& panelId)
 {
+    if (panelId == QStringLiteral("settingsCenter")
+        || panelId == QStringLiteral("editorAppearance")) {
+        showSettingsCenter();
+        return;
+    }
     if (panelId == QStringLiteral("rtlInsights")
         || panelId == QStringLiteral("signalKernelGraph")) {
         const LiveInsightKind kind =
@@ -4458,8 +4453,6 @@ void MainWindow::resetPanelLayout()
         RtlHighRiskEditPanelCoordinator::panelId());
     QDockWidget* connectionsDock = dockForPanelId(
         QStringLiteral("connections"));
-    QDockWidget* settingsCenterDockWidget =
-        dockForPanelId(QStringLiteral("settingsCenter"));
 
     if (navigationDock)
         addDockWidget(Qt::LeftDockWidgetArea, navigationDock);
@@ -4492,8 +4485,6 @@ void MainWindow::resetPanelLayout()
             problemsDock->raise();
     }
 
-    if (settingsCenterDockWidget) settingsCenterDockWidget->hide();
-
     if (workspaceSessionCoordinator)
         workspaceSessionCoordinator->scheduleSessionSave();
         postActivityMessage(tr("Panel layout reset"), 3000);
@@ -4511,20 +4502,6 @@ void MainWindow::setupSettingsCenter()
     editorAppearanceSettings =
         std::make_unique<EditorAppearanceSettings>(
             std::unique_ptr<QSettings>());
-
-    settingsCenterDock = new QDockWidget(tr("Settings"), this);
-    // Keep the dock object name so QMainWindow::restoreState continues to
-    // restore layouts saved before the Settings Center migration.
-    settingsCenterDock->setObjectName(
-        QStringLiteral("settingsContentHost"));
-    settingsCenterDock->setProperty(
-        "settingsCenterPanelId", QStringLiteral("settingsCenter"));
-    settingsCenterDock->setProperty(
-        "legacyPanelId", QStringLiteral("editorAppearance"));
-    settingsCenterDock->setAllowedAreas(
-        Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
-    settingsCenterDock->hide();
-
 
     connect(&ApplicationThemeManager::instance(),
             &ApplicationThemeManager::themeChanged,
@@ -4545,12 +4522,18 @@ void MainWindow::ensureSettingsCenterPanel()
         settingsCenterService.get(),
         workspaceManager ? workspaceManager->getWorkspacePath()
                          : QString(),
-        settingsCenterDock);
-    settingsCenterDock->setWidget(settingsCenterPanel);
+        this);
+    settingsDialog = new SettingsDialog(settingsCenterPanel, this);
     connect(settingsCenterPanel, &SettingsCenterPanel::settingsApplied, this,
             [this](SettingsCenterScope) {
                 applySettingsCenterSnapshot(settingsCenterService->load(settingsCenterPanel->workspaceRoot()));
             });
+}
+
+void MainWindow::showSettingsCenter()
+{
+    ensureSettingsCenterPanel();
+    settingsDialog->showSettings();
 }
 
 void MainWindow::applySettingsCenterSnapshot(
@@ -4785,6 +4768,19 @@ void MainWindow::setupEditorCoordinator()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    if (closeInProgress) {
+        event->ignore();
+        return;
+    }
+    QScopedValueRollback<bool> closing(closeInProgress, true);
+    if (settingsDialog && !settingsDialog->prepareForHostClose()) {
+        event->ignore();
+        return;
+    }
+    const auto finishSettingsClose = qScopeGuard([this, event] {
+        if (settingsDialog)
+            settingsDialog->completeHostClose(event->isAccepted());
+    });
     if (linkedContextController && !linkedContextController->setActive(false)) {
         event->ignore();
         return;

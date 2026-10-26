@@ -1,4 +1,6 @@
 #include "applicationthememanager.h"
+#include "testuistyle.h"
+#include "roundedicons.h"
 #include "compactlayout.h"
 #include <QLineEdit>
 #include <QPushButton>
@@ -35,6 +37,11 @@
 #include <QSettings>
 #include <QLabel>
 #include <QScreen>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMenu>
+#include <QSignalSpy>
 
 namespace {
 class TextEngine : public QPaintEngine {
@@ -93,6 +100,28 @@ Counts audit(QWidget* root) {
         }
     }
     return result;
+}
+bool recordAudit(QWidget* root, const Counts& counts, const QString& phase={}) {
+    const QString directory=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (directory.isEmpty()) return true;
+    QDir().mkpath(directory);
+    const QString name=QString::fromLatin1(QTest::currentTestFunction())+"_"+QTest::currentDataTag()+phase;
+    QJsonArray controls;
+    for (auto* w:root->findChildren<QWidget*>()) {
+        if (!w->isVisible() || !w->objectName().startsWith("signalUsageHotspot")) continue;
+        if (!qobject_cast<QAbstractButton*>(w) && !qobject_cast<QLineEdit*>(w)) continue;
+        const QPoint at=w->mapTo(root,QPoint());
+        controls.append(QJsonObject{{"name",w->objectName()},{"x",at.x()},{"y",at.y()},
+            {"width",w->width()},{"height",w->height()},{"minimumWidth",w->minimumSizeHint().width()}});
+    }
+    const QJsonObject record{{"case",name},{"logicalWidth",root->width()},{"logicalHeight",root->height()},
+        {"actualDpr",root->devicePixelRatioF()},{"scaleFactor",qEnvironmentVariable("QT_SCALE_FACTOR")},
+        {"actualUiBackend",ApplicationThemeManager::instance().backend()==UiStyleBackend::Ela?"ela":"classic"},
+        {"overlap",counts.overlap},{"outside",counts.outside},{"clipped",counts.clipped},{"controls",controls}};
+    QFile file(directory+"/compact-measurements.jsonl");
+    if (!file.open(QIODevice::Append)) return false;
+    file.write(QJsonDocument(record).toJson(QJsonDocument::Compact)+"\n");
+    return root->grab().save(directory+"/"+name+".png");
 }
 }
 class CompactLayoutTest : public QObject {
@@ -163,15 +192,29 @@ private slots:
         }
         qInfo()<<"main window"<<window.size()<<"center"<<center->geometry()<<"layout"<<window.layout()->geometry();
     }
+    void editorTabs_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::addColumn<bool>("largeFont");
+        for (bool dark : {false,true}) for (bool large : {false,true})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(dark?"dark":"light").arg(large?"large":"normal")))
+                << dark << large;
+    }
     void editorTabs() {
+        QFETCH(bool,dark); QFETCH(bool,largeFont);
+        auto& theme=ApplicationThemeManager::instance();
+        const auto oldTheme=theme.mode();
+        const auto restore=qScopeGuard([&]{theme.setMode(oldTheme);});
+        theme.setMode(dark?ThemeMode::Dark:ThemeMode::Light);
         for (bool split : {false,true}) {
             QWidget host;
-            auto* tabs=new QTabWidget(&host);
+            auto* tabs=UiControls::editorTabWidget(&host);
             auto* layout=new QVBoxLayout(&host);layout->setContentsMargins(0,0,0,0);layout->addWidget(tabs);
             EditorSplitController controller(tabs); controller.setHost(&host);
             auto fill=[](QTabWidget* group) {
                 for (const QString& name:{"uart_receive_controller.sv","uart_transmit_controller.sv","reset_synchronizer.sv","clock_generator.sv","axi_register_bank.sv","stream_fifo.sv","packet_decoder.sv","byte_serializer.sv"})
                     group->addTab(new QWidget,name);
+                for (int i=0;i<group->count();i+=2)
+                    group->setTabIcon(i,RoundedIcons::icon(RoundedIcons::File));
             };
             fill(tabs);
             if (split) fill(controller.createSplit(tabs,EditorSplitDirection::Right));
@@ -180,6 +223,18 @@ private slots:
             for (auto* group:controller.groups())
                 group->tabBar()->setStyleSheet(InsightVisualStyle::tabBarStyleSheet(group->tabBar()->objectName()));
             host.resize(split ? 900 : 615,700);host.show();QTest::qWait(30);
+            if (largeFont) {
+                for (auto* group:controller.groups()) {
+                    auto font=group->tabBar()->font();
+                    if (font.pixelSize()>0) font.setPixelSize(qRound(font.pixelSize()*1.5));
+                    else font.setPointSizeF(font.pointSizeF()*1.5);
+                    group->tabBar()->setFont(font);
+                }
+            }
+            QJsonArray evidence;
+            for (int width : (split ? QList<int>{900,760,900} : QList<int>{615,480,615})) {
+            host.resize(width,700);QApplication::processEvents();
+            QCOMPARE(host.width(),width);
             for (auto* group:controller.groups()) {
                 auto* bar=group->tabBar();
                 QList<int> widths;
@@ -187,24 +242,67 @@ private slots:
                 for (int i=0;i<bar->count();++i) {
                     group->setCurrentIndex(i);QTest::qWait(1);
                     widths.append(bar->tabRect(i).width());
-                    QVERIFY(bar->tabRect(i).width()>=108);
-                    TextDevice device(bar->size());bar->render(&device);
+                    if (ApplicationThemeManager::instance().backend()==UiStyleBackend::Classic)
+                        QVERIFY(bar->tabRect(i).width()>=108);
+                    else
+                        QVERIFY(bar->tabRect(i).width()>=bar->fontMetrics().horizontalAdvance("aaa"));
+                    TextDevice device(bar->size());
+                    // Observe tab labels, excluding child arrow/close controls.
+                    bar->render(&device,QPoint(),QRegion(),QWidget::DrawWindowBackground);
                     QVERIFY2(!device.engine.labels.isEmpty(),"Actual tab label painting was not observed");
                     for (QString text:device.engine.labels) {
                         text.remove(QChar(0x2026));text.remove("...");
                         shortestPaintedText=qMin(shortestPaintedText,int(text.trimmed().size()));
                         QVERIFY2(text.trimmed().size()>=3,qPrintable(text));
                     }
+                    const QRect visible=bar->tabRect(i).intersected(bar->rect());
+                    QVERIFY(!visible.isEmpty());
+                    QCOMPARE(bar->tabAt(visible.center()),i);
+                    QSignalSpy selected(bar,&QTabBar::tabBarClicked);
+                    QTest::mouseClick(bar,Qt::LeftButton,Qt::NoModifier,visible.center());
+                    QCOMPARE(selected.count(),1);QCOMPARE(selected.first().first().toInt(),i);
+                    QCOMPARE(group->currentIndex(),i);
                 }
                 bool scrollVisible=false;
                 for (auto* button:bar->findChildren<QToolButton*>()) {
                     scrollVisible|=button->isVisible();
-                    if (button->isVisible()) QVERIFY(button->width()>=button->minimumSizeHint().width());
+                    if (button->isVisible()) QVERIFY2(button->width()>=button->minimumSizeHint().width(),
+                        qPrintable(QString("%1 width=%2 minimum=%3 hint=%4 metric=%5 style=%6")
+                            .arg(button->objectName()).arg(button->width()).arg(button->minimumSizeHint().width())
+                            .arg(button->sizeHint().width()).arg(bar->style()->pixelMetric(QStyle::PM_TabBarScrollButtonWidth,nullptr,bar))
+                            .arg(button->style()->metaObject()->className())));
                 }
                 qInfo() << "I1/I2 split=" << split << "widths=" << widths << "scroll=" << bar->usesScrollButtons() << scrollVisible;
                 qInfo()<<"Tab geometry"<<host.size()<<group->size()<<bar->size()<<bar->isVisible()<<group->parentWidget()->isVisible();
                 qInfo()<<"I2 shortest painted label excluding ellipsis"<<shortestPaintedText;
                 QVERIFY(bar->usesScrollButtons());QVERIFY(scrollVisible);
+                evidence.append(QJsonObject{{"split",split},{"hostWidth",width},{"group",group->objectName()},
+                    {"barWidth",bar->width()},{"actualDpr",bar->devicePixelRatioF()},
+                    {"shortestPaintedText",shortestPaintedText},{"fontPointSize",bar->font().pointSizeF()},
+                    {"fontPixelSize",bar->font().pixelSize()}});
+                // Exercise native close hit targets for the current and a visible
+                // non-current tab; the controller must route the exact index.
+                group->setCurrentIndex(0);QApplication::processEvents();
+                for (int i : {0,1}) {
+                    QWidget* close=bar->tabButton(i,QTabBar::RightSide);
+                    if (!close) close=bar->tabButton(i,QTabBar::LeftSide);
+                    QVERIFY(close && close->isVisible());
+                    QVERIFY(bar->rect().contains(QRect(close->mapTo(bar,QPoint()),close->size())));
+                    QSignalSpy requested(&controller,&EditorSplitController::tabCloseRequested);
+                    QTest::mouseClick(close,Qt::LeftButton);
+                    QCOMPARE(requested.count(),1);
+                    QCOMPARE(qvariant_cast<QTabWidget*>(requested.first().at(0)),group);
+                    QCOMPARE(requested.first().at(1).toInt(),i);
+                }
+            }
+            }
+            const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+            if (!artifacts.isEmpty()) {
+                const QString stem=artifacts+QString("/editor-tabs-%1-%2-%3")
+                    .arg(dark?"dark":"light").arg(largeFont?"large":"normal").arg(split?"split":"single");
+                QFile output(stem+".json");QVERIFY(output.open(QIODevice::WriteOnly));
+                output.write(QJsonDocument(evidence).toJson());
+                QVERIFY(host.grab().save(stem+".png"));
             }
         }
     }
@@ -321,11 +419,22 @@ private slots:
         QVERIFY(suggested.canvas>0 && suggested.content>0);
         QVERIFY(suggested.canvas*10>=suggested.content*4);
     }
+    void contextWidths_data() {
+        QTest::addColumn<int>("width");
+        QTest::addColumn<bool>("withSurface");
+        QTest::addColumn<bool>("dark");
+        for (bool dark:{false,true}) for (bool surface:{false,true}) for (int width:{220,270,340,480})
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(dark?"dark":"light").arg(surface?"surface":"summary").arg(width)))
+                << width << surface << dark;
+    }
     void contextWidths() {
+        QFETCH(int,width); QFETCH(bool,withSurface); QFETCH(bool,dark);
+        auto& theme=ApplicationThemeManager::instance();
+        const auto original=theme.mode();
+        const auto restore=qScopeGuard([&]{theme.setMode(original);});
+        theme.setMode(dark?ThemeMode::Dark:ThemeMode::Light);
         // withSurface repeats the audit for the product path, where the
         // section hosts the real insight surface instead of the summary card.
-        for (bool withSurface : {false,true}) {
-        for (int width : {220,270,340,480}) {
             ContextDockHost host;
             auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
             auto* view=new LiveInsightsContextView(nullptr,LiveInsightKind::Hotspot);
@@ -344,6 +453,7 @@ private slots:
             host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
             QVERIFY(withSurface ? view->surfaceForTest()!=nullptr : view->surfaceForTest()==nullptr);
             auto c=audit(&host);
+            QVERIFY(recordAudit(&host,c));
             const QString artifacts=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
             if (withSurface && !artifacts.isEmpty() && (width==340 || width==480)) {
                 QDir().mkpath(artifacts);
@@ -363,11 +473,19 @@ private slots:
             }
             QVERIFY(host.width()==width);
             QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
-        }
-        }
+    }
+    void fullViewWidths_data() {
+        QTest::addColumn<int>("width");
+        QTest::addColumn<bool>("dark");
+        for (bool dark:{false,true}) for (int width:{220,270,340,480})
+            QTest::newRow(qPrintable(QString("%1-%2").arg(dark?"dark":"light").arg(width))) << width << dark;
     }
     void fullViewWidths() {
-        for (int width : {220,270,340,480}) {
+        QFETCH(int,width); QFETCH(bool,dark);
+        auto& theme=ApplicationThemeManager::instance();
+        const auto original=theme.mode();
+        const auto restore=qScopeGuard([&]{theme.setMode(original);});
+        theme.setMode(dark?ThemeMode::Dark:ThemeMode::Light);
             ContextDockHost host;
             auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
             auto* page=new LiveInsightToolPage(LiveInsightKind::Hotspot);
@@ -383,6 +501,7 @@ private slots:
             QVERIFY(host.addResource(resource,page,true));
             host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
             auto c=audit(&host);
+            QVERIFY(recordAudit(&host,c));
             qInfo() << "Full view" << width << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
             const QString root=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
             if (!root.isEmpty() && (width==220 || width==480)) {
@@ -390,7 +509,24 @@ private slots:
             }
             QVERIFY(host.width()==width);
             QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
-        }
+            auto* matrix=hotspot->findChild<QPushButton*>("signalUsageHotspotMatrixModeButton");
+            auto* track=hotspot->findChild<QPushButton*>("signalUsageHotspotTrackModeButton");
+            auto* search=hotspot->findChild<QLineEdit*>("signalUsageHotspotSearch");
+            auto* more=hotspot->findChild<QToolButton*>("signalUsageHotspotMoreButton");
+            QVERIFY(matrix && track && search && more && more->menu());
+            QTest::mouseClick(matrix,Qt::LeftButton); QVERIFY(hotspot->matrixModeForTest());
+            QTest::mouseClick(track,Qt::LeftButton); QVERIFY(!hotspot->matrixModeForTest());
+            search->setText("byte_data");
+            for (auto* action:hotspot->graphViewActionsForTest()) QVERIFY(more->menu()->actions().contains(action));
+            for (int resized:{480,220,width}) {
+                host.setFixedWidth(resized);QTest::qWait(30);
+                const auto after=audit(&host);
+                QVERIFY(recordAudit(&host,after,QString("-resize-%1").arg(resized)));
+                QVERIFY(after.overlap==0 && after.outside==0 && after.clipped==0);
+                QCOMPARE(search->text(),QString("byte_data"));
+                QVERIFY(!hotspot->matrixModeForTest());
+                QVERIFY(matrix->isVisible() && track->isVisible() && more->isVisible());
+            }
     }
 };
 int main(int argc,char** argv) {
@@ -398,6 +534,7 @@ int main(int argc,char** argv) {
     QTemporaryDir settings;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat,QSettings::UserScope,settings.path());
+    if (!initializeUiStyleForTest()) return 3;
     ApplicationThemeManager::instance().applyToApplication();
     CompactLayoutTest test; return QTest::qExec(&test,argc,argv);
 }

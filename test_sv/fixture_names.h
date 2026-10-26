@@ -14,7 +14,7 @@
 //
 // Any macro that file defines wins; the rest fall back to the placeholders.
 
-#if defined(__has_include)
+#if !defined(ZEROSLACK_SELF_CONTAINED_FIXTURES) && defined(__has_include)
 #  if __has_include("local_fixture_names.h")
 #    include "local_fixture_names.h"
 #  endif

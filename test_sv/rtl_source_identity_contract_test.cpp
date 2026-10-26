@@ -19,6 +19,9 @@
 #include "workspacemanager.h"
 #include "workspaceeditdocumentmanager.h"
 #include "workspaceedittransactionservice.h"
+#include "navigationmanager.h"
+#include "navigationservice.h"
+#include "../src/simulation/simdock/ui/workbench.h"
 #include "testuistyle.h"
 
 namespace {
@@ -94,6 +97,20 @@ void workflowCases(const QString& root) {
     auto* editor=tabs.getCurrentEditor(); if (!editor) return;
     auto* index=SemanticIndex::getInstance(); index->clearSemanticState();
     index->setSnapshot(publication(contents,order));
+    simdock::Workbench workbench;
+    QSignalSpy scanned(&workbench, &simdock::Workbench::scanFinished);
+    check(workbench.setContext(real).isEmpty(), "real Design workbench opens the fixture workspace");
+    check(!scanned.isEmpty() || scanned.wait(10000), "Design workbench source scan completes");
+    NavigationService navigationService(index);
+    NavigationManager navigation;
+    navigation.setNavigationService(&navigationService);
+    navigation.connectToWorkspaceManager(&workspace);
+    navigation.connectToWorkbench(&workbench);
+    check(navigation.setDesignTop("top",top).isEmpty(), "production navigation creates and activates the Design project");
+    check(!workbench.activeProjectId().isEmpty()
+          && workspace.projectSnapshot().activeDesignProjectId==workbench.activeProjectId()
+          && workspace.projectSnapshot().activeDesignTopModule=="top",
+          "workspace action context follows the active Design project");
     const auto snapshot=index->snapshot();
     for (const auto& name : inputFiles) {
         const auto resolved=snapshot->cachedFileSource(name);
@@ -104,7 +121,7 @@ void workflowCases(const QString& root) {
           && !snapshot->cachedFileSource(QDir(real).filePath("Absent.sv")).exists, "empty source is distinct from missing source");
     auto* hierarchy=HierarchyService::getInstance();
     const QSet<QString> originalFiles(order.cbegin(),order.cend());
-    const auto design=hierarchy->getDesignHierarchyReport({"top"},"top",originalFiles);
+    const auto design=hierarchy->explicitDesignHierarchy(workbench.designRoots(),workbench.activeProjectId(),originalFiles);
     QString sourcePath,sinkPath;
     for (const auto& node : design.nodes) {
         if (node.instanceName=="u_source") sourcePath=node.instancePath;
@@ -126,6 +143,23 @@ void workflowCases(const QString& root) {
         return contextService.resolve(query);
     };
     RtlActionCoordinator coordinator(&tabs,&workspace,&docks,&layout,&host,callbacks);
+    auto* documents=docks.rtlActionDocumentManager();
+    const auto liveTexts = [&] {
+        QHash<QString,QString> result;
+        for (const auto& name : order) {
+            const auto live=documents->snapshot(name.toUtf8().toStdString());
+            if (live) result.insert(name,QString::fromUtf8(live->text));
+        }
+        return result;
+    };
+    const auto diskTexts = [&] {
+        QHash<QString,QString> result;
+        for (const auto& name : order) {
+            QFile file(name);
+            if (file.open(QIODevice::ReadOnly|QIODevice::Text)) result.insert(name,QString::fromUtf8(file.readAll()));
+        }
+        return result;
+    };
     WorkspaceEditTransactionService::getInstance()->clearHistory();
     ActionInvocation invocation; invocation.parameters.insert("signalNames",QStringList{"payload","flags"});
     const auto* multiAction=findActionById(QString::fromLatin1(ActionIds::RtlPropagateMultipleSignals));
@@ -147,12 +181,19 @@ void workflowCases(const QString& root) {
     if (!confirmed.succeeded()) std::printf("Multi confirm: %s\n",qPrintable(confirmed.message));
     check(confirmed.state==MultiSignalPropagationWorkflowState::Applied && editor->toPlainText()!=sourceText,
           "multi-signal confirmation applies to the real shared QTextDocument");
+    const auto multiApplied=liveTexts(), multiDisk=diskTexts();
     const auto undone=docks.multiSignalPropagationWorkflow()->undo();
     check(undone.state==MultiSignalPropagationWorkflowState::Undone && editor->toPlainText()==sourceText,
           "one real multi-signal undo restores the source document");
-    auto* documents=docks.rtlActionDocumentManager();
     const auto topRestored=documents->snapshot(top.toUtf8().toStdString());
     check(topRestored && QString::fromUtf8(topRestored->text)==topText, "same undo restores the companion workspace file");
+    check(liveTexts()==contents && diskTexts()==contents, "multi-signal undo restores all live documents and disk files");
+    auto* transactions=WorkspaceEditTransactionService::getInstance();
+    check(transactions->canRedo() && transactions->redo(*documents).status==rtledit::TransactionStatus::Redone
+          && liveTexts()==multiApplied && diskTexts()==multiDisk,
+          "multi-signal redo restores the exact applied live and disk state");
+    check(transactions->undo(*documents).status==rtledit::TransactionStatus::Undone
+          && liveTexts()==contents && diskTexts()==contents, "multi-signal repeated undo restores the fixture");
     index->setSnapshot(publication(contents,order));
     tabsWidget->setCurrentWidget(editor);
     cursor=editor->textCursor(); cursor.setPosition(sourceText.indexOf("payload")+2); editor->setTextCursor(cursor);
@@ -172,6 +213,7 @@ void workflowCases(const QString& root) {
     if (!pairConfirm.succeeded()) std::printf("Pair confirm: %s\n",qPrintable(pairConfirm.message));
     check(pairConfirm.state==InstancePairConnectionWorkflowState::Applied && editor->toPlainText()!=sourceText,
           "instance-pair confirmation updates actual Qt document and workspace");
+    const auto pairApplied=liveTexts(), pairDisk=diskTexts();
     const auto pairUndo=docks.instancePairConnectionWorkflow()->undo();
     bool restored=true;
     for (auto it=contents.cbegin();it!=contents.cend();++it) {
@@ -180,6 +222,12 @@ void workflowCases(const QString& root) {
     }
     check(pairUndo.state==InstancePairConnectionWorkflowState::Undone && restored,
           "one actual instance-pair undo restores every file");
+    check(diskTexts()==contents, "instance-pair undo restores disk files");
+    check(transactions->canRedo() && transactions->redo(*documents).status==rtledit::TransactionStatus::Redone
+          && liveTexts()==pairApplied && diskTexts()==pairDisk,
+          "instance-pair redo restores the exact applied live and disk state");
+    check(transactions->undo(*documents).status==rtledit::TransactionStatus::Undone
+          && liveTexts()==contents && diskTexts()==contents, "instance-pair repeated undo restores the fixture");
 
     if (originalMultiQuery) {
         auto captureMulti=[&] {

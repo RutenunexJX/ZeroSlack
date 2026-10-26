@@ -46,6 +46,7 @@
 #include "editoractioncontextservice.h"
 #include "editorcontextmenumodel.h"
 #include "actionregistry.h"
+#include "../src/simulation/simdock/ui/workbench.h"
 
 class AnalysisSchedulerTestAccess
 {
@@ -3054,9 +3055,9 @@ void runDesignHierarchyTopologyFingerprint()
                 {top, child, other, instance},
                 {instantiates},
                 {},
-                {{topFile, QStringLiteral("module top; endmodule\n")},
-                 {childFile, QStringLiteral("module child; endmodule\n")},
-                 {otherFile, QStringLiteral("module other; endmodule\n")}}));
+                {{topFile, QString(positionShift, '\n') + QStringLiteral("module top; %1 u(); endmodule\n").arg(targetModule)},
+                 {childFile, QString(positionShift, '\n') + QStringLiteral("module child; endmodule\n")},
+                 {otherFile, QString(positionShift, '\n') + QStringLiteral("module other; endmodule\n")}}));
     };
 
     SemanticIndex index;
@@ -3087,10 +3088,29 @@ void runDesignHierarchyTopologyFingerprint()
     navigation.setNavigationWidget(&view);
     navigation.connectToTabManager(&tabs);
     navigation.setNavigationService(&service);
+    WorkspaceManager workspace;
+    workspace.setRecentWorkspacePersistenceEnabledForTesting(false);
+    expect("topology workspace opens", workspace.openWorkspace(directory.path()));
+    expect("topology workspace scan completes", waitUntil([&] { return !workspace.isWorkspaceScanActive(); }, 10000));
+    simdock::Workbench workbench;
+    QSignalSpy scanned(&workbench, &simdock::Workbench::scanFinished);
+    expect("topology Design workbench opens", workbench.setContext(directory.path()).isEmpty());
+    expect("topology Design scan completes", waitUntil([&] { return !scanned.isEmpty(); }, 10000));
+    navigation.connectToWorkspaceManager(&workspace);
+    navigation.connectToWorkbench(&workbench);
     index.setSnapshot(topologySnapshot(0, QStringLiteral("child")));
+    expect("topology explicit Design project activates", navigation.setDesignTop("top", topFile).isEmpty());
+    expect("topology project context follows the workbench", !workbench.activeProjectId().isEmpty()
+        && workspace.projectSnapshot().activeDesignProjectId == workbench.activeProjectId());
     navigation.setActiveView(NavigationManager::DesignHierarchyView);
     QSignalSpy refreshed(&navigation, &NavigationManager::dataRefreshed);
     expect("initial visible Design hierarchy becomes ready", waitUntil([&] { return !refreshed.isEmpty(); }, 5000));
+    auto* designTree = view.findChild<QTreeWidget*>(QStringLiteral("navigationDesignTree"));
+    auto* originalRow = designTree && designTree->topLevelItemCount() ? designTree->topLevelItem(0) : nullptr;
+    expect("active Design has a concrete navigation row", originalRow != nullptr);
+    if (!originalRow) return;
+    originalRow->setExpanded(true);
+    designTree->setCurrentItem(originalRow);
     QStringList refreshDetails;
     QObject::connect(
         &navigation,
@@ -3100,19 +3120,44 @@ void runDesignHierarchyTopologyFingerprint()
             refreshDetails.append(telemetry.detail);
         });
 
-    index.setSnapshot(topologySnapshot(10, QStringLiteral("child")));
-    navigation.onBatchSymbolAnalysisCompleted(1, 4);
+    const auto publishText = [&](int shift, const QString& target) {
+        auto publication = topologySnapshot(shift, target);
+        for (const auto& file : {topFile,childFile,otherFile}) {
+            tabs.openFileInTab(file);
+            tabs.getCurrentEditor()->setPlainText(publication->cachedFileSource(file).text);
+        }
+        index.setSnapshot(publication);
+        navigation.onBatchSymbolAnalysisCompleted(1, 4);
+        return index.snapshotRevision();
+    };
+    publishText(10, QStringLiteral("child"));
     expect("non-topology snapshot generation causes zero hierarchy rebuild",
            waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(
                    QStringLiteral("hierarchyRebuild=0")));
-    auto* designTree = view.findChild<QTreeWidget*>(QStringLiteral("navigationDesignTree"));
     expect("source-only Design publication refreshes navigation anchors",
            designTree && designTree->topLevelItemCount() > 0
                && designTree->topLevelItem(0)->toolTip(0).contains(QStringLiteral(":11")));
+    expect("source-only publication preserves row identity expansion and selection",
+           designTree->topLevelItem(0)==originalRow && originalRow->isExpanded()
+               && designTree->currentItem()==originalRow);
+    QSignalSpy navigationRequest(&navigation, &NavigationManager::instanceNavigationRequested);
+    designTree->itemDoubleClicked(originalRow,0);
+    expect("actual Design row dispatches the updated definition anchor",
+           navigationRequest.size()==1 && EditorFileIdentity::same(navigationRequest.first().at(0).toString(),topFile)
+               && navigationRequest.first().at(1).toInt()==11);
     refreshDetails.clear();
-    index.setSnapshot(topologySnapshot(10, QStringLiteral("other")));
-    navigation.onBatchSymbolAnalysisCompleted(1, 4);
+    const auto superseded=publishText(20,QStringLiteral("child"));
+    const auto newest=publishText(30,QStringLiteral("child"));
+    expect("latest source publication updates the visible anchor", waitUntil([&] {
+        return !refreshDetails.isEmpty() && refreshDetails.last().contains(QString("snapshot=%1 ").arg(newest));
+    },5000) && designTree->topLevelItem(0)->toolTip(0).contains(":31"));
+    expect("superseded Design result never reaches the visible tree",
+           std::none_of(refreshDetails.cbegin(),refreshDetails.cend(),[&](const QString& detail) {
+               return detail.contains(QString("snapshot=%1 ").arg(superseded));
+           }));
+    refreshDetails.clear();
+    publishText(30, QStringLiteral("other"));
     expect("real instance topology change causes one hierarchy rebuild",
            waitUntil([&] { return !refreshDetails.isEmpty(); }, 5000)
                && refreshDetails.last().contains(

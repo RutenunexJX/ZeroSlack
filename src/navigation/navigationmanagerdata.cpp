@@ -9,6 +9,7 @@
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "projectmodel.h"
+#include "editorfileidentity.h"
 #include "../simulation/simdock/ui/workbench.h"
 
 #include <QDir>
@@ -126,6 +127,9 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
             connectedWorkbench->markDesignMigrationCompleted();
     }
     const auto roots = currentDesignRoots();
+    const auto candidateFiles = context.currentWorkspacePath.isEmpty() ? QStringList() : getSystemVerilogFiles();
+    navigationWidget->setDesignCandidateContext(candidateFiles, !roots.isEmpty(),
+        connectedWorkspaceManager && connectedWorkspaceManager->isWorkspaceScanActive());
     const auto top = connectedWorkbench ? connectedWorkbench->activeProjectId() : QString();
     if (!force && caches.designHierarchyValid && caches.designSnapshotGeneration == token.revision
         && caches.designFileScope == files && caches.activeProjectId == top && caches.designRoots == roots)
@@ -141,6 +145,7 @@ bool NavigationManager::updateDesignHierarchyData(bool force)
     DesignWorkRequest request;
     request.token = token;
     request.files = files;
+    request.candidateFiles = candidateFiles;
     request.selectedTop = top;
     request.roots = roots;
     request.workspace = context.currentWorkspacePath;
@@ -201,6 +206,7 @@ void NavigationManager::launchPendingDesignWork()
             caches.designAnchorFingerprint = result.anchorFingerprint;
             caches.designSnapshotGeneration = request.token.revision;
             caches.designHierarchyValid = true;
+            navigationWidget->updateDesignCandidates(request.workspace, result.candidates, result.likelyTops);
             saveDesignHierarchyCache();
             QPointer<NavigationManager> self(this);
             if (currentView == DesignHierarchyView) {
@@ -237,6 +243,29 @@ void NavigationManager::launchPendingDesignWork()
         SemanticIndex readIndex(request.token);
         NavigationService reader(&readIndex);
         const auto scope = designScopeSet(request.files);
+        result.likelyTops = reader.inferDesignTopModules(scope);
+        QHash<QString, QHash<QString, int>> definitions;
+        for (const auto& module : reader.availableModules())
+            ++definitions[EditorFileIdentity::lookupKey(module.location.fileName)][module.name];
+        for (const auto& file : request.candidateFiles) {
+            DesignFileCandidate candidate;
+            candidate.file = file;
+            if (request.token.snapshot) {
+                candidate.analyzed = request.token.snapshot->cachedFileSource(file).exists;
+                candidate.hasDiagnostics = !request.token.snapshot->getDiagnostics(file).isEmpty();
+            }
+            const auto counts = definitions.value(EditorFileIdentity::lookupKey(file));
+            auto names = counts.keys();
+            std::sort(names.begin(), names.end());
+            for (const auto& name : names) {
+                bool added = false;
+                for (const auto& root : request.roots)
+                    added |= root.module == name && EditorFileIdentity::same(root.file, file);
+                candidate.modules.append({name, counts.value(name) != 1, added});
+            }
+            candidate.analyzed |= !candidate.modules.isEmpty();
+            result.candidates.append(std::move(candidate));
+        }
         result.fingerprint = reader.designStructureFingerprint(scope, request.selectedTop);
         result.anchorFingerprint = reader.designStructureFingerprint(scope, request.selectedTop, true);
         const bool sameStructure = !request.force && !request.previousFingerprint.isEmpty()

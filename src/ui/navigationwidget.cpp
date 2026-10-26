@@ -6,6 +6,7 @@
 #include "roundedicons.h"
 #include "navigationrowstyle.h"
 #include <QToolButton>
+#include <QEvent>
 #include <QFileInfo>
 #include <QHeaderView>
 #include <QMenu>
@@ -56,6 +57,7 @@ void NavigationWidget::setSearchFilter(NavigationTab tab,
     if (index != FileTab && index != DesignTab) return;
     const QString normalized = filter.trimmed();
     setStoredSearchFilter(index, normalized);
+    if (index == DesignTab && designAdding) return;
     if (!tabWidget || tabWidget->currentIndex() != index)
         return;
     if (searchLineEdit && searchLineEdit->text() != normalized)
@@ -72,6 +74,11 @@ void NavigationWidget::setWorkspaceRoot(
     if (workspaceFileTreeRootPath == normalized)
         return;
     workspaceFileTreeRootPath = normalized;
+    designCandidates.clear(); designLikelyTops.clear(); designAddSearchFilter.clear();
+    pendingDesignFile.clear(); pendingDesignModule.clear();
+    designAdding = true; designSelectionExplicit = false; designHasProjects = false; designScanning = false;
+    designSelectionError->clear();
+    populateDesignCandidates();
     explicitlyTrackedPaths.clear();
     populateFileTree();
 }
@@ -224,14 +231,19 @@ void NavigationWidget::updateDesignHierarchy(const DesignHierarchyReport& report
 
 void NavigationWidget::setDesignHierarchyPending(bool pending)
 {
+    designAnalysisPending = pending;
     if (designTreeWidget)
         designTreeWidget->setEnabled(!pending);
-
+    updateDesignPresentation();
 }
 
 void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged)
 {
     currentDesignHierarchy = report;
+    if (!report.nodes.isEmpty()) {
+        designHasProjects = true;
+        if (!designSelectionExplicit) designAdding = false;
+    }
     if (!structureChanged && designTreeWidget) {
         QHash<QString, DesignHierarchyNode> nodes;
         for (const auto& node : report.nodes) nodes.insert(node.id, node);
@@ -250,13 +262,18 @@ void NavigationWidget::updateDesignSummary(const DesignHierarchyReport& report, 
                     ? QStringLiteral("%1:%2").arg(next->definitionFile).arg(next->definitionLine)
                     : QStringLiteral("instance %1:%2\nmodule %3:%4").arg(next->instanceFile).arg(next->instanceLine)
                           .arg(next->definitionFile).arg(next->definitionLine);
-                (*it)->setToolTip(0, next->unresolved ? location + '\n' + next->unresolvedReason : location);
+                const auto status = next->unresolved ? tr("Unresolved: %1").arg(next->unresolvedReason)
+                    : next->isTop && next->inSelectedTop ? tr("Active project")
+                    : next->isTop ? tr("Activate project using the pin") : QString();
+                const auto description = (*it)->text(0) + QChar(10) + location + (status.isEmpty() ? QString() : QChar(10) + status);
+                (*it)->setToolTip(0, description);
+                (*it)->setData(0, Qt::AccessibleDescriptionRole, description);
             }
         }
     }
     setDesignHierarchyPending(false);
     designTreeRefreshPending |= structureChanged;
-
+    updateDesignPresentation();
 }
 
 void NavigationWidget::clearDesignHierarchy()
@@ -291,13 +308,15 @@ void NavigationWidget::highlightFile(const QString& filePath)
 
 void NavigationWidget::onTabChanged(int index)
 {
+    refreshTabLabels();
+    if (index < 0) return;
     searchLineEdit->setVisible(index != SourceFilesTab);
     if (index == SourceFilesTab) { emit viewChanged(index); return; }
     (index == DesignTab ? designTabLayout : fileTabLayout)->insertWidget(0, searchLineEdit);
     searchLineEdit->show();
     if (searchLineEdit) {
         const QSignalBlocker blocker(searchLineEdit);
-        searchLineEdit->setText(searchFilterForIndex(index));
+        searchLineEdit->setText(index == DesignTab && designAdding ? designAddSearchFilter : searchFilterForIndex(index));
         searchLineEdit->setPlaceholderText(
             index == DesignTab
                 ? QStringLiteral("Search instances or modules...")
@@ -307,6 +326,7 @@ void NavigationWidget::onTabChanged(int index)
         populateDesignTree();
     else if (index == FileTab && fileTreeRefreshPending)
         populateFileTree();
+    if (index == DesignTab) updateDesignPresentation();
     emit viewChanged(index);
 }
 
@@ -315,6 +335,14 @@ void NavigationWidget::onSearchTextChanged(const QString& text)
     const int index = tabWidget ? tabWidget->currentIndex() : FileTab;
     if (index != FileTab && index != DesignTab) return;
     const QString normalized = text.trimmed();
+    if (index == DesignTab && designAdding) {
+        if (designAddSearchFilter != normalized) {
+            designAddSearchFilter = normalized;
+            designSelectionError->clear();
+            populateDesignCandidates();
+        }
+        return;
+    }
     if (searchFilterForIndex(index) == normalized
         && !(index == DesignTab ? designTreeRefreshPending : fileTreeRefreshPending))
         return;
@@ -401,15 +429,15 @@ void NavigationWidget::setupUI()
     searchLineEdit->setClearButtonEnabled(true);
     mainLayout->addWidget(searchLineEdit);
 
-    tabWidget = UiControls::tabWidget(this);
+    tabWidget = UiControls::navigationTabWidget(this);
     tabWidget->setObjectName(QStringLiteral("navigationTabs"));
     tabWidget->setIconSize(QSize(20, 20));
-    tabWidget->tabBar()->setProperty("compactIconTabs", true);
     mainLayout->insertWidget(0, tabWidget);
     mainLayout->removeWidget(searchLineEdit);
 
     setupFileTab();
     setupDesignTab();
+    refreshTabLabels();
     fileTabLayout->insertWidget(0, searchLineEdit);
 
     setLayout(mainLayout);
@@ -458,10 +486,18 @@ void NavigationWidget::setupDesignTab()
 
     auto* actions = new QHBoxLayout;
     actions->setContentsMargins(0, 0, 0, 0);
+    designBackButton = UiControls::toolButton(designTab);
+    designBackButton->setObjectName(QStringLiteral("cancelDesignSelection"));
+    designBackButton->setIcon(RoundedIcons::icon(RoundedIcons::Left));
+    designBackButton->setText(tr("Back"));
+    static_cast<QToolButton*>(designBackButton)->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    designBackButton->setAccessibleName(tr("Cancel adding a design project"));
+    connect(designBackButton, &QAbstractButton::clicked, this, &NavigationWidget::cancelDesignProjectSelection);
+    actions->addWidget(designBackButton);
     actions->addStretch();
     auto* add = UiControls::toolButton(designTab);
     add->setObjectName(QStringLiteral("addDesignProject"));
-    add->setIcon(RoundedIcons::icon(RoundedIcons::ZoomIn));
+    add->setIcon(RoundedIcons::icon(RoundedIcons::Add));
     add->setToolTip(tr("Add design project from a module"));
     add->setAccessibleName(tr("Add design project"));
     actions->addWidget(add);
@@ -490,6 +526,7 @@ void NavigationWidget::setupDesignTab()
     designTreeWidget->header()->setStretchLastSection(true);
     designTreeWidget->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     designTabLayout->addWidget(designTreeWidget);
+    setupDesignSelector();
 
     designTab->setLayout(designTabLayout);
     const auto index = tabWidget->addTab(designTab, RoundedIcons::icon(RoundedIcons::Hierarchy), QString());
@@ -509,6 +546,23 @@ void NavigationWidget::setSourceFilesWidget(QWidget* widget)
     const auto index = tabWidget->addTab(widget, RoundedIcons::icon(RoundedIcons::BuildInputs), QString());
     tabWidget->setTabToolTip(index, tr("Build inputs"));
     tabWidget->tabBar()->setAccessibleTabName(index, tr("Build inputs"));
+    refreshTabLabels();
+}
+
+void NavigationWidget::refreshTabLabels()
+{
+    const QStringList titles{tr("Files"),tr("Design"),tr("Build inputs")};
+    for (int i=0;i<tabWidget->count() && i<titles.size();++i) {
+        tabWidget->setTabToolTip(i,titles[i]);
+        tabWidget->tabBar()->setAccessibleTabName(i,titles[i]);
+        tabWidget->setTabText(i,i==tabWidget->currentIndex()?titles[i]:QString());
+    }
+}
+
+void NavigationWidget::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type()==QEvent::LanguageChange && tabWidget) refreshTabLabels();
 }
 
 void NavigationWidget::setStoredSearchFilter(int index,

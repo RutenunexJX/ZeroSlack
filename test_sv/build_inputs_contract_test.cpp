@@ -203,7 +203,7 @@ private slots:
         QTest::mouseClick(design->viewport(),Qt::LeftButton,{},bounds.center()); QVERIFY(!row->isExpanded()); QVERIFY(activation.isEmpty());
         QTest::mouseClick(design->viewport(),Qt::LeftButton,{},QPoint(bounds.right()-12,bounds.center().y()));
         QCOMPARE(activation.size(),1); QVERIFY(!row->isExpanded());
-        QCOMPARE(row->child(0)->text(0),QString("u[leaf]"));
+        QCOMPARE(row->child(0)->text(0),QString("u [leaf]"));
     }
 };
 

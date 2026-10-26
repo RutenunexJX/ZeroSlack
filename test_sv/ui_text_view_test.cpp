@@ -205,7 +205,7 @@ private slots:
         for (auto* bar : {area->horizontalScrollBar(), area->verticalScrollBar()}) {
             QCOMPARE(bar->inherits("ElaScrollBar"), usesEla());
             QVERIFY(bar->isVisible()); QVERIFY(bar->maximum() > 0);
-            QVERIFY(!bar->property("smoothWheelEnabled").toBool());
+            QCOMPARE(bar->property("smoothWheelEnabled").toBool(), usesEla());
         }
         area->ensureWidgetVisible(target); settle();
         QVERIFY(area->viewport()->rect().contains(QRect(target->mapTo(area->viewport(), QPoint()), target->size())));

@@ -11,13 +11,25 @@
 #include <cmath>
 
 namespace RoundedIcons {
+// New icon paths use this 24-unit grid and the [3,21] content box. Align the
+// leading outline at x=3; keep its natural width in [13,18] without stretching.
+// Use the shared round stroke and scale uniformly with the outer icon rect.
+// Folder/FolderOpen/File follow this convention; other legacy kinds are not
+// redrawn here and must be audited when they are next changed.
+inline constexpr qreal GridSize = 24;
+inline constexpr qreal ContentLeading = 3;
+inline constexpr qreal ContentTrailing = 21;
+inline constexpr qreal MinimumContentWidth = 13;
+inline constexpr qreal NormalStroke = 1.75;
+inline constexpr qreal SelectedStroke = 2.1;
 enum Kind { Folder, File, Settings, Search, Replace, Filter, Refresh, Context,
     Module, Hierarchy, Signals, Wave, Connections, Bookmark, Pin, Warning,
     Activity, Error, Info, Success, Change, Left, Right, Down, Up,
     Expand, Collapse, Close, Minimize, Restore, Maximize, Grid, Sidebar,
     OpenProject, ZoomIn, ZoomOut, More,
     KernelGraph, ModuleGraph, HotspotGraph, StateGraph, IpCatalog, Clear, FolderOpen,
-    BuildInputs, Simulation, Subroutine, Parameter, Port, Type, Rename, CopyLink };
+    BuildInputs, Simulation, Subroutine, Parameter, Port, Type, Rename, CopyLink,
+    Add = ZoomIn }; // Reuse the existing pure plus glyph with its action meaning.
 
 class Engine final : public QIconEngine {
 public:
@@ -27,13 +39,13 @@ public:
         p->save();
         const qreal side = qMin(rect.width(), rect.height());
         p->translate(rect.center().x() - side / 2, rect.center().y() - side / 2);
-        p->scale(side / 24, side / 24);
+        p->scale(side / GridSize, side / GridSize);
         p->setRenderHint(QPainter::Antialiasing);
         const auto palette = QApplication::palette();
         const QColor color = mode == QIcon::Disabled
             ? palette.color(QPalette::Disabled, QPalette::Text)
             : palette.color(QPalette::Text);
-        p->setPen(QPen(color, state == QIcon::On ? 2.1 : 1.75, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->setPen(QPen(color, state == QIcon::On ? SelectedStroke : NormalStroke, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p->setBrush(Qt::NoBrush);
         auto line = [p](qreal x, qreal y, qreal a, qreal b) { p->drawLine(QPointF(x,y), QPointF(a,b)); };
         auto box = [p](qreal x, qreal y, qreal w, qreal h) { p->drawRoundedRect(QRectF(x,y,w,h), 2, 2); };
@@ -46,18 +58,24 @@ public:
         };
         switch (kind) {
         case Folder: {
-            QPainterPath folder; folder.moveTo(3,8); folder.lineTo(3,6);
-            folder.quadTo(3,4.5,4.5,4.5); folder.lineTo(9,4.5); folder.lineTo(11.5,7);
-            folder.lineTo(19.5,7); folder.quadTo(21,7,21,8.5); folder.lineTo(21,18.5);
-            folder.quadTo(21,20,19.5,20); folder.lineTo(4.5,20); folder.quadTo(3,20,3,18.5);
+            QPainterPath folder; folder.moveTo(ContentLeading,8); folder.lineTo(ContentLeading,6);
+            folder.quadTo(ContentLeading,4.5,4.5,4.5); folder.lineTo(9,4.5); folder.lineTo(11.5,7);
+            folder.lineTo(19.5,7); folder.quadTo(ContentTrailing,7,ContentTrailing,8.5); folder.lineTo(ContentTrailing,18.5);
+            folder.quadTo(ContentTrailing,20,19.5,20); folder.lineTo(4.5,20); folder.quadTo(ContentLeading,20,ContentLeading,18.5);
             folder.closeSubpath(); p->drawPath(folder); break;
         }
         case FolderOpen: {
-            path({{3,17},{3,6},{9,6},{11,8},{20,8},{20,10}});
-            QPainterPath folder; folder.moveTo(3,20); folder.lineTo(6,11); folder.lineTo(22,11);
-            folder.lineTo(19,20); folder.closeSubpath(); p->drawPath(folder); break;
+            path({{ContentLeading,17},{ContentLeading,6},{9,6},{11,8},{20,8},{20,10}});
+            QPainterPath folder; folder.moveTo(ContentLeading,20); folder.lineTo(6,11); folder.lineTo(ContentTrailing,11);
+            folder.lineTo(18,20); folder.closeSubpath(); p->drawPath(folder); break;
         }
-        case File: path({{6,3},{14,3},{19,8},{19,21},{6,21}},true); path({{14,3},{14,8},{19,8}}); line(9,12,16,12); line(9,16,16,16); break;
+        case File: {
+            const qreal right = ContentLeading + MinimumContentWidth;
+            const qreal fold = right - 5;
+            path({{ContentLeading,3},{fold,3},{right,8},{right,21},{ContentLeading,21}},true);
+            path({{fold,3},{fold,8},{right,8}});
+            line(ContentLeading+3,12,right-3,12); line(ContentLeading+3,16,right-3,16); break;
+        }
         case Settings: {
             QPolygonF gear;
             for (int i=0;i<32;++i) { qreal a=i*6.28318530718/32; qreal r=(i%4==0 || i%4==3)?9:7.3; gear<<QPointF(12+std::cos(a)*r,12+std::sin(a)*r); }

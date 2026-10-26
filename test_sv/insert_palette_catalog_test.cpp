@@ -487,7 +487,7 @@ void runTemplateInsertionVersionGuards(const QString& path)
         const auto context = coordinator->contextProvider();
         expect("production insertion context belongs to the focused document", context.editorAvailable
             && context.documentInstance == window.tabManager->sharedDocumentForEditor(editor)->instanceSerial());
-        const auto items = coordinator->itemProvider(GlobalControlCategory::Templates, "", context);
+        const auto items = coordinator->itemProvider(GlobalControlCategory::Templates, "", context, nullptr);
         const auto found = std::find_if(items.begin(), items.end(), [](const auto& item) {
             return item.kind == GlobalControlItemKind::Template
                 && item.operation == GlobalControlItemOperation::InsertSimulationCommand && item.id == "@guard";

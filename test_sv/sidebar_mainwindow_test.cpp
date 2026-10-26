@@ -3,6 +3,7 @@
 #include "welcomecard.h"
 #include "navigationmanager.h"
 #include "navigationwidget.h"
+#include "navigationrowstyle.h"
 #include "navigationpanecoordinator.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
@@ -173,7 +174,13 @@ private slots:
         QCOMPARE(root.file.isEmpty(),module=="gone_module");
         auto* tree=h.window->findChild<QTreeWidget*>("navigationDesignTree");
         QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItemCount(),1,15000);
-        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItem(0)->text(0).contains("unresolved"),module=="gone_module",15000);
+        QTRY_COMPARE_WITH_TIMEOUT(tree->topLevelItem(0)->data(0, NavigationRowStyle::UnresolvedRole).toBool(),
+                                  module=="gone_module",15000);
+        const auto* row = tree->topLevelItem(0);
+        QVERIFY(!row->text(0).contains("(unresolved)"));
+        QCOMPARE(row->toolTip(0).contains("Unresolved:", Qt::CaseInsensitive), module=="gone_module");
+        QCOMPARE(row->data(0, Qt::AccessibleDescriptionRole).toString().contains("Unresolved:", Qt::CaseInsensitive),
+                 module=="gone_module");
         QVERIFY(h.sessions()->openWorkspace(h.other));
         QVERIFY(h.sessions()->openWorkspace(h.workspace));
         QCOMPARE(h.workbench()->designRoots().size(),1);
@@ -235,14 +242,17 @@ private slots:
         QCOMPARE(tree->columnCount(),1); QVERIFY(tree->isHeaderHidden());
         QTRY_VERIFY_WITH_TIMEOUT(tree->topLevelItem(0)->childCount()==1,15000);
         auto* parentRow=tree->topLevelItem(0); auto* leafRow=tree->topLevelItem(1);
-        QCOMPARE(parentRow->child(0)->text(0),QString("u_leaf[sidebar_leaf]"));
+        QCOMPARE(parentRow->child(0)->text(0),QString("u_leaf [sidebar_leaf]"));
         const auto parentRect=tree->visualItemRect(parentRow);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},parentRect.center());
         QVERIFY(!parentRow->isExpanded()); QCOMPARE(workbench->activeProjectId(),leaf);
         QTest::mouseClick(tree->viewport(),Qt::LeftButton,{},QPoint(parentRect.right()-12,parentRect.center().y()));
         QTRY_COMPARE(workbench->activeProjectId(),parent);
         QCOMPARE(h.window->workspaceManager->getProjectModel()->snapshot().activeDesignProjectId,parent);
-        QTRY_VERIFY(tree->topLevelItem(0)->text(0).contains("Active"));
+        QTRY_VERIFY(tree->topLevelItemCount()==2
+                    && tree->topLevelItem(0)->data(0, NavigationRowStyle::ActiveRole).toBool());
+        QVERIFY(tree->topLevelItem(0)->toolTip(0).contains("Active project"));
+        QVERIFY(tree->topLevelItem(0)->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
         QVERIFY(!tree->topLevelItem(0)->isExpanded()); capture(h,"design-projects");
         h.navigation()->setActiveTab(NavigationWidget::FileTab);
         auto* files=h.window->findChild<QTreeWidget*>("navigationFileTree"); QVERIFY(files);
@@ -259,11 +269,12 @@ private slots:
         auto saved=[&] { for(const auto& p:simdock::loadProjects(h.workspace))if(p.id==parent)return p; return simdock::Project{}; };
         QTRY_VERIFY_WITH_TIMEOUT(saved().sources.indexOf("z_pkg.sv")<saved().sources.indexOf("a_use.sv"),10000);
         auto* status=h.window->findChild<QLabel*>("buildInputsStatus"); QVERIFY(status);
-        QTRY_VERIFY(status->text().contains("follows dependencies"));
+        QTRY_VERIFY(status->text().isEmpty() && status->isHidden());
         put(h.workspace+"/z_pkg.sv","package changed_pkg; endpackage\n");
         QTRY_VERIFY_WITH_TIMEOUT(status->text().contains("build_pkg"),10000);
+        QVERIFY(!status->isHidden());
         put(h.workspace+"/z_pkg.sv","package build_pkg; typedef logic [3:0] word_t; endpackage\n");
-        QTRY_VERIFY_WITH_TIMEOUT(status->text().contains("follows dependencies"),10000);
+        QTRY_VERIFY_WITH_TIMEOUT(status->text().isEmpty() && status->isHidden(),10000);
         auto* projectList=h.window->findChild<QListView*>("projectList"); QVERIFY(projectList);
         QTRY_VERIFY(projectList->visualRect(projectList->model()->index(1,0)).bottom()<projectList->viewport()->height());
         capture(h,"build-inputs");

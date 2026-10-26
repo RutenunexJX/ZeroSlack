@@ -725,11 +725,11 @@ int main(int argc, char* argv[])
     check(containsAll(
               hotspotSource,
               {QStringLiteral(
-                   "bindGraphViewButton("),
+                   "for (auto* action : graphViewActions()) menu->addAction(action)"),
                QStringLiteral(
-                   "menu.addAction(fitViewAction)"),
+                   "more->setMenu(menu)"),
                QStringLiteral(
-                   "menu.addAction(centerCurrentViewAction)"),
+                   "createGraphViewAction(QString::fromLatin1(ActionIds::GraphViewCenterCurrent))"),
                QStringLiteral(
                    "ActionIds::GraphViewFit"),
                QStringLiteral(

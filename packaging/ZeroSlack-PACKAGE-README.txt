@@ -1,4 +1,6 @@
-ZeroSlack v0.32.12 Windows package
+ZeroSlack v0.32.13 Windows package
+
+Release 0.32.13 streamlines Linked context, Simulation and Build inputs, adds compact navigation tabs and inline Design top selection, and opens Settings in a reusable nonmodal dialog. Files icons share a consistent content box, and narrow Ela editor tabs preserve readable labels. Related UI regression fixtures and per-test diagnostic logs are updated. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.32.12 adds Linked context mode: the native code editor stays editable beside the complete AFFiNE Edgeless canvas. Code-linked references support enlargement, original-document opening, native grouping and connectors, per-file saved boards, and conflict-safe recovery. Open Project > View > Linked context. WebView2 Evergreen Runtime is required. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 

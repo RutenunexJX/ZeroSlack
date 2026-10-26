@@ -4,7 +4,11 @@
 #include "documentmodel.h"
 #include "editorlocation.h"
 #include "navigationmanager.h"
+#include "navigationservice.h"
 #include "navigationwidget.h"
+#include "semantic_fixture_records.h"
+#include "semanticindexsnapshot.h"
+#include "../src/simulation/simdock/ui/workbench.h"
 #include "shareddocument.h"
 #include "tabmanager.h"
 #include "temporaryeditorsession.h"
@@ -21,6 +25,7 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -382,7 +387,7 @@ int main(int argc, char** argv)
     expect("action-route revision fixture is written",
            writeText(routeSource, "abcd")
                && writeText(hierarchyDefinitionTarget,
-                            "module target; endmodule\n"));
+                            "\n\n\nmodule child; endmodule\n"));
     WorkspaceManager workspaceManager;
     workspaceManager
         .setRecentWorkspacePersistenceEnabledForTesting(
@@ -598,10 +603,35 @@ int main(int argc, char** argv)
                && temporaryEditorFailureReason
                       == missingTemporaryResult.failureReason);
 
-    const ActionExecutionResult setTopResult =
+    const ActionExecutionResult unavailableProject =
         navigationManager.requestDesignNodeAction(
             QString::fromLatin1(
                 ActionIds::NavigationDesignSetTop),
+            hierarchyNode);
+    expect("Add Design Project rejects a missing project service",
+           unavailableProject.handled && !unavailableProject.succeeded
+               && unavailableProject.failureReason.contains(QStringLiteral("service"))
+               && navigationManager.selectedDesignTopModule().isEmpty());
+    SemanticIndex projectIndex;
+    projectIndex.setSnapshot(std::make_shared<SemanticIndexSnapshot>(
+        SemanticIndexSnapshot::fromSymbolRecords({
+            SemanticFixtureRecordBuilder(QStringLiteral("child"),
+                SymbolTaxonomy::DeclarationKind::Module)
+                .withFile(hierarchyDefinitionTarget).record()
+        })));
+    NavigationService projectNavigation(&projectIndex);
+    simdock::Workbench projectWorkbench;
+    QSignalSpy projectScan(&projectWorkbench, &simdock::Workbench::scanFinished);
+    const QString projectContextIssue = projectWorkbench.setContext(workspace);
+    expect("Design action project service opens the same workspace",
+           projectContextIssue.isEmpty()
+               && (!projectScan.isEmpty() || projectScan.wait(10000)));
+    projectWorkbench.markDesignMigrationCompleted();
+    navigationManager.setNavigationService(&projectNavigation);
+    navigationManager.connectToWorkbench(&projectWorkbench);
+    const ActionExecutionResult setTopResult =
+        navigationManager.requestDesignNodeAction(
+            QString::fromLatin1(ActionIds::NavigationDesignSetTop),
             hierarchyNode);
     DesignHierarchyNode topNode = hierarchyNode;
     topNode.isTop = true;
@@ -609,7 +639,7 @@ int main(int argc, char** argv)
         topNodeActions =
             navigationManager
                 .designNodeContextActions(topNode);
-    expect("Set Design Top Action updates selection and root availability",
+    expect("Add Design Project Action persists selection and preserves root availability",
            setTopResult.succeeded
                && navigationManager
                       .selectedDesignTopModule()
@@ -618,7 +648,20 @@ int main(int argc, char** argv)
                && !topNodeActions.first().enabled
                && topNodeActions.value(1).enabled
                && topNodeActions.value(2).enabled
-               && topNodeActions.value(3).enabled);
+               && topNodeActions.value(3).enabled
+               && projectWorkbench.designRoots().size() == 1
+               && EditorFileIdentity::same(projectWorkbench.designRoots().first().file,
+                                           hierarchyDefinitionTarget)
+               && !projectWorkbench.activeProjectId().isEmpty());
+    const QString createdProject = projectWorkbench.activeProjectId();
+    const auto repeatedProject = navigationManager.requestDesignNodeAction(
+        QString::fromLatin1(ActionIds::NavigationDesignSetTop), hierarchyNode);
+    expect("Repeated Add Design Project reuses the persisted project",
+           repeatedProject.succeeded
+               && projectWorkbench.designRoots().size() == 1
+               && projectWorkbench.activeProjectId() == createdProject);
+    navigationManager.connectToWorkbench(nullptr);
+    navigationManager.setNavigationService(NavigationService::getInstance());
 
     const ActionDescriptor* routeRenameDescriptor =
         findActionById(

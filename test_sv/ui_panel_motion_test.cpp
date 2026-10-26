@@ -123,7 +123,21 @@ private slots:
         auto* motion = window.findChild<ElaDrawerArea*>("contextSidebarDrawer"); QVERIFY(motion);
         auto* action = window.findChild<QAction*>(toolbox ? "contextRail.toolbox" : "contextRail.temporaryEditor"); QVERIFY(action);
         context->setDockVisible(false); motion->finishDrawerAnimation(); QTest::qWait(40);
+        const auto geometry = [&] {
+            QJsonArray docks;
+            for (auto* dock : window.findChildren<QDockWidget*>(QString(), Qt::FindDirectChildrenOnly)) {
+                if (!dock->isVisible() || dock->isFloating()) continue;
+                docks.append(QJsonObject{{"name",dock->objectName()}, {"width",dock->width()},
+                    {"height",dock->height()}, {"x",dock->x()}, {"y",dock->y()}});
+            }
+            return QJsonObject{{"windowWidth",window.width()}, {"windowHeight",window.height()},
+                {"viewportWidth",editor->viewport()->width()}, {"docks",docks},
+                {"actualDpr",window.devicePixelRatioF()}};
+        };
+        qInfo().noquote() << "Initial closed geometry" << QJsonDocument(geometry()).toJson(QJsonDocument::Compact);
         const int closedWidth = editor->viewport()->width();
+        auto* navigationDock = window.findChild<QDockWidget*>("navigationDock"); QVERIFY(navigationDock);
+        const QSize windowSize = window.size();
         const QString original = editor->toPlainText();
         const auto sample = [&](const QString& phase) {
             QJsonArray rows;
@@ -176,15 +190,23 @@ private slots:
         window.resizeDocks({context->dockWidget()}, {420}, Qt::Horizontal);
         QTest::qWait(30);
         const int preferred = context->dockWidget()->width();
+        qInfo().noquote() << "User resized geometry" << QJsonDocument(geometry()).toJson(QJsonDocument::Compact);
         const int beforeClose = editor->viewport()->width();
+        const int navigationWidthAfterResize = navigationDock->width();
+        // resizeDocks can redistribute both side docks. Closing releases the
+        // current right dock and separator, not the layout before that resize.
+        const int resizedClosedWidth = beforeClose + preferred + separator;
         action->trigger();
         QVERIFY(motion->isDrawerAnimating());
         QCOMPARE(context->captureState().dockWidth, preferred);
         const auto closing = sample("close");
+        qInfo().noquote() << "Final closed geometry" << QJsonDocument(geometry()).toJson(QJsonDocument::Compact);
         QVERIFY(checkContinuous(closing, false));
-        QVERIFY2(intermediateWidths(closing, beforeClose, closedWidth) >= 3,
+        QVERIFY2(intermediateWidths(closing, beforeClose, resizedClosedWidth) >= 3,
                  "Closing must resize the actual editor viewport through intermediate widths");
-        QCOMPARE(editor->viewport()->width(), closedWidth);
+        QCOMPARE(window.size(), windowSize);
+        QCOMPARE(navigationDock->width(), navigationWidthAfterResize);
+        QCOMPARE(editor->viewport()->width(), resizedClosedWidth);
         action->trigger(); QTest::qWait(45);
         const int midWidth = editor->viewport()->width();
         action->trigger();

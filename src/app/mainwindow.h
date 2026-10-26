@@ -20,6 +20,7 @@
 class AnalysisProgressCoordinator;
 class EditorAppearanceSettings;
 class SettingsCenterPanel;
+class SettingsDialog;
 class SettingsCenterService;
 class MyCodeEditor;
 class TabManager;
@@ -163,7 +164,8 @@ private:
     std::unique_ptr<SettingsCenterService> settingsCenterService;
     std::unique_ptr<EditorAppearanceSettings> editorAppearanceSettings;
     SettingsCenterPanel* settingsCenterPanel = nullptr;
-    QDockWidget* settingsCenterDock = nullptr;
+    SettingsDialog* settingsDialog = nullptr;
+    bool closeInProgress = false;
     QMenu* viewMenu = nullptr;
     QMenu* workspaceMenu = nullptr;
     QAction* closeActiveWorkspaceAction = nullptr;
@@ -261,6 +263,7 @@ private:
     void refreshDiagnosticsAnalysisState();
     void setupSettingsCenter();
     void ensureSettingsCenterPanel();
+    void showSettingsCenter();
     void applySettingsCenterSnapshot(
         const SettingsCenterSnapshot& snapshot);
     void applyRegisteredActionShortcuts();

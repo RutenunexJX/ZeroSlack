@@ -232,6 +232,7 @@ SignalUsageHotspotPanel::SignalUsageHotspotPanel(QWidget* parent) : QWidget(pare
     toolbar->addWidget(mainAreaButton);
     toolbar->addWidget(more);
     root->addLayout(toolbar);
+    CompactFlowLayout::replaceRows(root);
 
     auto* legendHost = new CompactToolbar(this);
     legendHost->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);

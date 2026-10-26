@@ -4,6 +4,7 @@
 #include "zeroslackexport.h"
 
 #include <QWidget>
+#include <QAbstractButton>
 #include <QTabWidget>
 #include <QTreeWidget>
 #include <QLineEdit>
@@ -20,6 +21,7 @@
 #include "hierarchyservice.h"
 #include "symboloutlinemodel.h"
 #include "workspaceconfigurationservice.h"
+#include "designcandidates.h"
 
 class ZEROSLACK_API NavigationWidget : public QWidget
 {
@@ -69,6 +71,11 @@ public:
     void clearDesignHierarchy();
     void updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged = true);
     void setDesignHierarchyPending(bool pending);
+    void setDesignCandidateContext(const QStringList& files, bool hasProjects, bool scanning);
+    void updateDesignCandidates(const QString& workspace, const QList<DesignFileCandidate>& files,
+                                const QStringList& likelyTops);
+    void beginDesignProjectSelection();
+    void finishDesignProjectSelection(const QString& issue, const QString& file, const QString& module);
 
     void highlightFile(const QString& filePath);
 
@@ -89,8 +96,12 @@ signals:
     void designProjectActivated(const QString& projectId);
     void designExpansionChanged(const QString& projectId, bool expanded);
     void addDesignProjectRequested();
+    void designModuleChosen(const QString& file, const QString& module);
     void viewChanged(int newTabIndex);
     void searchFilterChanged(int tabIndex, const QString& filter);
+
+protected:
+    void changeEvent(QEvent* event) override;
 
 private slots:
     void onTabChanged(int index);
@@ -102,6 +113,7 @@ private slots:
     void onDesignTreeContextMenuRequested(const QPoint& pos);
 
 private:
+    void refreshTabLabels();
     QVBoxLayout* mainLayout = nullptr;
     QTabWidget* tabWidget = nullptr;
     QLineEdit* searchLineEdit = nullptr;
@@ -113,6 +125,22 @@ private:
     QWidget* designTab = nullptr;
     QTreeWidget* designTreeWidget = nullptr;
     QVBoxLayout* designTabLayout = nullptr;
+    QTreeWidget* designCandidateTree = nullptr;
+    QLabel* designStateLabel = nullptr;
+    QLabel* designSelectionError = nullptr;
+    QAbstractButton* designBackButton = nullptr;
+    QAbstractButton* designClearSearchButton = nullptr;
+    QList<DesignFileCandidate> designCandidates;
+    QStringList designLikelyTops;
+    QString designAddSearchFilter;
+    QString pendingDesignFile, pendingDesignModule;
+    bool designAdding = true;
+    bool designSelectionExplicit = false;
+    bool designHasProjects = false;
+    bool designScanning = false;
+    bool designAnalysisPending = false;
+    int savedDesignScroll = 0;
+    QString savedDesignSelection;
 
     QStringList currentFileList;
     DesignHierarchyReport currentDesignHierarchy;
@@ -158,6 +186,12 @@ private:
         const QString& directoryPath,
         QHash<QString, QTreeWidgetItem*>* dirItems);
     void populateDesignTree();
+    void setupDesignSelector();
+    void populateDesignCandidates();
+    void updateDesignPresentation();
+    void cancelDesignProjectSelection();
+    void activateDesignCandidate(QTreeWidgetItem* item);
+    void revealPendingDesignProject();
     QTreeWidgetItem* createFileItem(const QString& filePath);
     QTreeWidgetItem* createDesignItem(const DesignHierarchyNode& node);
     QIcon getFileIcon(const QString& filePath);

@@ -16,6 +16,7 @@
 #include <QSignalSpy>
 #include <QSpinBox>
 #include <QTemporaryDir>
+#include <QTableWidget>
 #include <QTest>
 #include <QTextCursor>
 #include <QTimer>
@@ -282,6 +283,42 @@ private slots:
             if (mask) QVERIFY(!mask->isVisible());
             QCOMPARE(dialog.clickedButton(), static_cast<QAbstractButton*>(cancel));
         }
+    }
+
+    void configurationReloadKeepsDialogOpen() {
+        QTemporaryDir workspace;
+        QVERIFY(workspace.isValid());
+        auto* service = WorkspaceConfigurationService::getInstance();
+        auto config = service->defaultConfiguration(workspace.path());
+        config.defines.insert("WIDTH", "32");
+        QVERIFY(service->save(config));
+        WorkspaceConfigurationDialog dialog;
+        dialog.setConfiguration(service->load(workspace.path()));
+        dialog.show();
+        QApplication::processEvents();
+        auto* defines = dialog.findChild<QTableWidget*>("workspaceDefinesTable");
+        auto* box = dialog.findChild<QDialogButtonBox*>();
+        QVERIFY(defines && box);
+        QCOMPARE(defines->rowCount(), 1);
+        defines->item(0, 1)->setText("64");
+        QCOMPARE(dialog.configuration().defines.value("WIDTH"), QString("64"));
+        QPushButton* reload = nullptr;
+        for (auto* button : box->buttons())
+            if (box->buttonRole(button) == QDialogButtonBox::ResetRole)
+                reload = qobject_cast<QPushButton*>(button);
+        QVERIFY(reload);
+        QCOMPARE(reload->text(), QString("Reload"));
+        if (usesEla()) QVERIFY(reload->inherits("ElaPushButton"));
+        QSignalSpy accepted(&dialog, &QDialog::accepted);
+        QSignalSpy rejected(&dialog, &QDialog::rejected);
+        reload->click();
+        QCOMPARE(dialog.configuration().defines.value("WIDTH"), QString("32"));
+        QCOMPARE(defines->item(0, 1)->text(), QString("32"));
+        QVERIFY(dialog.isVisible());
+        QCOMPARE(accepted.count(), 0);
+        QCOMPARE(rejected.count(), 0);
+        QCOMPARE(service->load(workspace.path()).defines.value("WIDTH"), QString("32"));
+        dialog.reject();
     }
 
     void configurationUsesCompactElaShell() {

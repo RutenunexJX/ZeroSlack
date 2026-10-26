@@ -57,7 +57,7 @@ void exercise(const QString& root) {
     auto* coordinator=window.globalControlCoordinator.get();
     const auto context=coordinator->contextProvider();
     for(const auto& filter:QStringList{"import p", "include existing.svh", "new header readonly.svh", "instantiate"})
-        check(coordinator->itemProvider(GlobalControlCategory::Templates,filter,context).isEmpty(),
+        check(coordinator->itemProvider(GlobalControlCategory::Templates,filter,context,nullptr).isEmpty(),
             "Templates exposes no legacy structured creation route");
     check(!QFileInfo::exists(QDir(root).filePath("readonly.svh")),"removed palette route creates no header");
 

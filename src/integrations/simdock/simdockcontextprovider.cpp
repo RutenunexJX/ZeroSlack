@@ -32,7 +32,7 @@ SimDockContextProvider::SimDockContextProvider(SimDockContextView* workspace)
 SimDockContextProvider::~SimDockContextProvider() { QObject::disconnect(stateConnection); }
 
 QString SimDockContextProvider::providerId() const { return QStringLiteral("simdock"); }
-QString SimDockContextProvider::displayName() const { return QStringLiteral("SimDock"); }
+QString SimDockContextProvider::displayName() const { return QStringLiteral("Simulation"); }
 QString SimDockContextProvider::iconKey() const { return QStringLiteral("media-playback-start"); }
 ContextResource SimDockContextProvider::activationResource(const QString &workspace) const
 {

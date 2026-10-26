@@ -287,10 +287,16 @@ private slots:
         const QList<QPair<QString, QStringList>> controls{
             {"workspace", {"newProject", "projectList"}},
             {"sources", {"sourceList", "refreshWorkspace", "inputsDisclosure"}},
-            {"simulation", {"openSettings", "dutSelector", "tbTop", "duration", "startSimulation", "stopSimulation"}},
+            {"simulation", {"openSettings", "demoTbConfiguration", "tbFile", "chooseTb", "tbTop", "duration", "startSimulation"}},
             {"log", {"simulationLog", "clearLog"}}};
         for (const auto& [page, names] : controls) {
             section(widget, page);
+            if(page=="simulation"){
+                QVERIFY(!widget->findChild<QWidget*>("stopSimulation")->isVisible());
+                QVERIFY(!widget->findChild<QWidget*>("dutSelector")->isVisible());
+                auto* disclosure=widget->findChild<QAbstractButton*>("demoTbConfiguration");QVERIFY(disclosure);
+                disclosure->click();QVERIFY(reachable(widget->findChild<QWidget*>("dutSelector"),widget));disclosure->click();
+            }
             for (const auto& name : names) {
                 auto* control = widget->findChild<QWidget*>(name);
                 QVERIFY2(reachable(control, widget), qPrintable(QString("%1 at %2: %3x%4").arg(name).arg(width)
@@ -487,7 +493,7 @@ private slots:
                 if (button->text() == "Create file") { QVERIFY(reachable(button, dialog)); QTest::mouseClick(button, Qt::LeftButton); return; }
         });
         generate->trigger();
-        auto* choose = widget->findChild<QPushButton*>("chooseTb"); QVERIFY(reachable(choose, widget));
+        auto* choose = widget->findChild<QAbstractButton*>("chooseTb"); QVERIFY(reachable(choose, widget));
         const auto tbFile = widget->findChild<QLineEdit*>("tbFile")->text(); QVERIFY(!tbFile.isEmpty());
         QTimer::singleShot(0, widget, [&] {
             auto* dialog = widget->findChild<QFileDialog*>(); QVERIFY(dialog);
@@ -512,7 +518,8 @@ private slots:
                                  qPrintable(log->toPlainText()), 130000);
         QVERIFY(closable(widget));
         capture(&host, QString("run-completed-%1").arg(width));
-        section(widget, "simulation"); QVERIFY(reachable(stop, widget)); QTest::mouseClick(stop, Qt::LeftButton);
+        section(widget, "simulation");
+        auto* closeSession=widget->findChild<QAction*>("closeSimulationSession");QVERIFY(closeSession&&closeSession->isVisible());closeSession->trigger();
         QTRY_COMPARE_WITH_TIMEOUT(session->property("processId").toLongLong(), 0, 10000);
         QVERIFY(closable(widget));
         section(widget, "log"); auto* clear = widget->findChild<QPushButton*>("clearLog");

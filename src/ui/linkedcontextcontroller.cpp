@@ -6,6 +6,8 @@
 #include "pinloomcodelinkstore.h"
 #include "pinloomhostclient.h"
 #include "pinloompreviewimage.h"
+#include "uicontrols.h"
+#include "roundedicons.h"
 #include <QApplication>
 #include <QBuffer>
 #include <QCryptographicHash>
@@ -21,6 +23,8 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QMainWindow>
+#include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QPushButton>
@@ -33,6 +37,7 @@
 #include <QTextBrowser>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QUuid>
 #include <QVBoxLayout>
 #include <algorithm>
@@ -41,6 +46,41 @@
 namespace {
 QString sourceKey(const PinloomHostIdentity& identity) { return identity.toUri().toString(QUrl::FullyEncoded); }
 QString shortKey(const QString& value) { return QString::fromLatin1(QCryptographicHash::hash(value.toUtf8(), QCryptographicHash::Sha256).toHex()); }
+class CodeBoundary final : public QSlider {
+public:
+    explicit CodeBoundary(QWidget* parent) : QSlider(Qt::Horizontal,parent) {
+        setAttribute(Qt::WA_NativeWindow);setAttribute(Qt::WA_Hover);
+        setRange(30,70);setValue(50);setFocusPolicy(Qt::StrongFocus);setCursor(Qt::SplitHCursor);
+        setAccessibleName(QStringLiteral("Resize code area"));setToolTip(QStringLiteral("Drag to resize code area"));
+    }
+    double ratioPerPixel=0;
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter painter(this);
+        painter.fillRect(rect(),palette().brush(QPalette::Window));
+        const bool highlighted=underMouse()||hasFocus()||isSliderDown();
+        painter.setPen(QPen(palette().color(highlighted?QPalette::Highlight:QPalette::Mid),highlighted?2:1));
+        painter.drawLine(width()/2,0,width()/2,height());
+        painter.setPen(QPen(palette().color(highlighted?QPalette::Highlight:QPalette::Text),2));
+        for(int y=-8;y<=8;y+=8)painter.drawPoint(width()/2,height()/2+y);
+    }
+    void mousePressEvent(QMouseEvent* event) override {
+        if(event->button()!=Qt::LeftButton){event->ignore();return;}
+        origin=event->globalPosition().x();initial=value();scale=ratioPerPixel;
+        setFocus(Qt::MouseFocusReason);setSliderDown(true);event->accept();update();
+    }
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if(isSliderDown())setValue(initial+qRound((event->globalPosition().x()-origin)*scale));
+        event->accept();
+    }
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if(event->button()==Qt::LeftButton){setSliderDown(false);event->accept();update();}
+    }
+    void wheelEvent(QWheelEvent* event) override { event->ignore(); }
+private:
+    double origin=0,scale=0;
+    int initial=50;
+};
 class AnchorOverlay final : public QWidget {
 public:
     explicit AnchorOverlay(MyCodeEditor* owner) : QWidget(owner->viewport()), editor(owner) {
@@ -86,12 +126,12 @@ struct LinkedContextController::Private {
     QPointer<QWidget> originalFocus;
     struct EditorView { QPointer<MyCodeEditor> editor; QPointer<QTextDocument> document; int position=0,anchor=0,vertical=0,horizontal=0; };
     QList<EditorView> originalViews;
-    QPointer<QWidget> page,canvas,center,detail;
+    QPointer<QWidget> page,canvas,center,detail,statusRow;
     QPointer<WebEditorContainer> web;
     QPointer<QLabel> notice,detailTitle;
     QPointer<QTextBrowser> detailText;
     QPointer<PinloomPreviewImageLabel> detailImage;
-    QPointer<QSlider> ratioControl;
+    QPointer<CodeBoundary> leftBoundary,rightBoundary;
     QPointer<QPushButton> saveCopyButton,primaryBoardButton;
     QPointer<AnchorOverlay> overlay;
     QPointer<MyCodeEditor> editor;
@@ -130,7 +170,16 @@ struct LinkedContextController::Private {
         QObject::connect(&geometryTimer,&QTimer::timeout,q,[this]{sendGeometry();});
         QObject::connect(&saveTimer,&QTimer::timeout,q,[this]{save();});
     }
-    void status(const QString& text) { if(notice) notice->setText(text);if(saveCopyButton)saveCopyButton->setVisible(!board.error.isEmpty()&&!boardState.isEmpty());emit q->message(text); }
+    void status(const QString& text) {
+        const bool recovery=!board.path.isEmpty()&&!board.error.isEmpty()&&!boardState.isEmpty();
+        if(notice){notice->setText(text);notice->setToolTip(text);}
+        if(saveCopyButton)saveCopyButton->setVisible(recovery);
+        if(statusRow)statusRow->setVisible(!text.isEmpty()||recovery);
+        if(!text.isEmpty())emit q->message(text);
+    }
+    void syncBoundaries() {
+        for(auto boundary:{leftBoundary,rightBoundary})if(boundary){QSignalBlocker block(boundary);boundary->setValue(qRound(codeRatio*100));}
+    }
     void post(QJsonObject object) { object[QStringLiteral("session")]=session;if(web)web->postMessage(object); }
     void command(const QString& name) { post({{"type","command"},{"name",name}}); }
     QString boardKey() const { return workspace+QLatin1Char('\n')+(file.isEmpty()&&editor?editor->property("sharedDocumentId").toString():file); }
@@ -183,22 +232,30 @@ struct LinkedContextController::Private {
         page=new QWidget(stack);page->setObjectName("linkedContextPage");
         auto* layout=new QVBoxLayout(page);layout->setContentsMargins(0,0,0,0);layout->setSpacing(0);
         auto* bar=new QWidget(page);bar->setObjectName("linkedContextControls");auto* row=new QHBoxLayout(bar);row->setContentsMargins(8,5,8,5);
-        auto button=[this,row,bar](const QString& title,const QString& name,auto handler){auto* b=new QPushButton(title,bar);b->setObjectName(name);row->addWidget(b);QObject::connect(b,&QPushButton::clicked,q,handler);return b;};
-        button(QStringLiteral("Exit linked context"),"exitLinkedContext",[this]{q->setActive(false);});
-        button(QStringLiteral("Restore references"),"linkedRestoreReferences",[this]{command("restoreReferences");});
-        button(QStringLiteral("Save layout"),"linkedSave",[this]{flush();});
-        button(QStringLiteral("Reload board"),"linkedReload",[this]{q->reloadBoard();});
+        auto button=[this,row,bar](const QString& title,const QString& name,auto handler){auto* b=UiControls::pushButton(title,bar);b->setObjectName(name);row->addWidget(b);QObject::connect(b,&QPushButton::clicked,q,handler);return b;};
+        auto* exit=button(QStringLiteral("Exit linked context"),"exitLinkedContext",[this]{q->setActive(false);});
+        exit->setIcon(RoundedIcons::icon(RoundedIcons::Left));
+        row->addStretch();
         primaryBoardButton=button(QStringLiteral("Back to file board"),"linkedPrimaryBoard",[this]{command("primaryDocument");});primaryBoardButton->hide();
-        saveCopyButton=button(QStringLiteral("Save a copy…"),"linkedSaveCopy",[this]{
+        auto* more=UiControls::toolButton(bar);more->setObjectName("linkedContextActions");
+        more->setIcon(RoundedIcons::icon(RoundedIcons::More));more->setAccessibleName(QStringLiteral("Linked context actions"));more->setToolTip(QStringLiteral("Linked context actions"));
+        auto* menu=UiControls::menu(more);more->setMenu(menu);more->setPopupMode(QToolButton::InstantPopup);row->addWidget(more);
+        auto action=[this,menu](const QString& title,const QString& name,auto handler){auto* a=menu->addAction(title);a->setObjectName(name);QObject::connect(a,&QAction::triggered,q,handler);};
+        action(QStringLiteral("Restore references"),"linkedRestoreReferences",[this]{command("restoreReferences");});
+        action(QStringLiteral("Save layout"),"linkedSave",[this]{flush();});
+        action(QStringLiteral("Reload board"),"linkedReload",[this]{q->reloadBoard();});
+        layout->addWidget(bar);
+        statusRow=new QWidget(page);auto* statusLayout=new QHBoxLayout(statusRow);statusLayout->setContentsMargins(8,2,8,5);
+        notice=new QLabel(statusRow);notice->setObjectName("linkedContextStatus");notice->setWordWrap(true);notice->setMinimumWidth(0);statusLayout->addWidget(notice,1);
+        saveCopyButton=UiControls::pushButton(QStringLiteral("Save a copy…"),statusRow);saveCopyButton->setObjectName("linkedSaveCopy");statusLayout->addWidget(saveCopyButton);
+        QObject::connect(saveCopyButton,&QPushButton::clicked,q,[this]{
             if(!flush(false))return;
             const auto destination=QFileDialog::getSaveFileName(window,QStringLiteral("Save board recovery copy"),board.path+QStringLiteral(".copy.json"),QStringLiteral("Board state (*.json)"));
             if(destination.isEmpty())return;QString error;
             if(board.writeCopy(destination,boardState,&error)){exportedState=boardState;status(QStringLiteral("Recovery copy saved: ")+destination);}else status(error);
         });saveCopyButton->hide();
-        row->addWidget(new QLabel(QStringLiteral("Code width"),bar));ratioControl=new QSlider(Qt::Horizontal,bar);ratioControl->setObjectName("linkedCodeWidth");ratioControl->setRange(30,70);ratioControl->setValue(50);ratioControl->setMaximumWidth(110);row->addWidget(ratioControl);
-        QObject::connect(ratioControl,&QSlider::valueChanged,q,[this](int v){codeRatio=v/100.;arrange();saveTimer.start();});
-        notice=new QLabel(bar);notice->setObjectName("linkedContextStatus");notice->setMinimumWidth(100);row->addWidget(notice,1);
-        layout->addWidget(bar);canvas=new QWidget(page);canvas->setObjectName("linkedContextCanvas");canvas->installEventFilter(q);layout->addWidget(canvas,1);
+        statusRow->hide();layout->addWidget(statusRow);
+        canvas=new QWidget(page);canvas->setObjectName("linkedContextCanvas");canvas->installEventFilter(q);layout->addWidget(canvas,1);
         const QString profileRoot=qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT");
         const QString profile=(profileRoot.isEmpty()?QStandardPaths::writableLocation(QStandardPaths::CacheLocation):profileRoot)+QStringLiteral("/linked-context-webview");
         web=new WebEditorContainer(QCoreApplication::applicationDirPath()+QStringLiteral("/resources/document-editors"),profile,"linked",canvas);
@@ -219,24 +276,40 @@ struct LinkedContextController::Private {
         center=new QWidget(canvas);center->setObjectName("linkedContextNativeCenter");center->setAttribute(Qt::WA_NativeWindow);
         auto* centralLayout=new QVBoxLayout(center);centralLayout->setContentsMargins(0,0,0,0);
         stack->removeWidget(editorPage);centralLayout->addWidget(editorPage);editorPage->show();
+        leftBoundary=new CodeBoundary(canvas);leftBoundary->setObjectName("linkedCodeBoundaryLeft");
+        rightBoundary=new CodeBoundary(canvas);rightBoundary->setObjectName("linkedCodeBoundaryRight");
+        for(auto boundary:{leftBoundary,rightBoundary})QObject::connect(boundary,&QSlider::valueChanged,q,[this](int value){codeRatio=value/100.;syncBoundaries();arrange();saveTimer.start();});
         detail=new QWidget(canvas);detail->setObjectName("linkedContextDetail");detail->setAttribute(Qt::WA_NativeWindow);
-        auto* detailLayout=new QVBoxLayout(detail);detailTitle=new QLabel(detail);detailTitle->setWordWrap(true);detailLayout->addWidget(detailTitle);
+        auto* detailLayout=new QVBoxLayout(detail);auto* detailHeader=new QHBoxLayout;detailLayout->addLayout(detailHeader);
+        auto* back=UiControls::toolButton(detail);back->setIcon(RoundedIcons::icon(RoundedIcons::Left));back->setAccessibleName(QStringLiteral("Back to board"));back->setToolTip(QStringLiteral("Back to board"));back->setObjectName("linkedDetailBack");detailHeader->addWidget(back);QObject::connect(back,&QToolButton::clicked,q,[this]{expanded.clear();detail->hide();arrange();demand(demanded.values());});
+        detailTitle=new QLabel(detail);detailTitle->setMinimumWidth(0);detailTitle->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);detailHeader->addWidget(detailTitle,1);
+        auto* original=UiControls::pushButton(QStringLiteral("Open original"),detail);original->setObjectName("linkedDetailOpen");detailHeader->addWidget(original);QObject::connect(original,&QPushButton::clicked,q,[this]{open(expanded);});
         detailImage=new PinloomPreviewImageLabel(detail);detailLayout->addWidget(detailImage,2);
         detailText=new QTextBrowser(detail);detailText->setOpenLinks(false);detailText->setOpenExternalLinks(false);detailLayout->addWidget(detailText,1);
-        auto* original=new QPushButton(QStringLiteral("Open original"),detail);detailLayout->addWidget(original);QObject::connect(original,&QPushButton::clicked,q,[this]{open(expanded);});
-        auto* back=new QPushButton(QStringLiteral("Back to board"),detail);back->setObjectName("linkedDetailBack");detailLayout->addWidget(back);QObject::connect(back,&QPushButton::clicked,q,[this]{expanded.clear();detail->hide();arrange();demand(demanded.values());});
         detail->hide();stack->addWidget(page);stack->setCurrentWidget(page);arrange();
     }
     void arrange() {
         if(!canvas||!center||!web)return;
         const int w=canvas->width(),h=canvas->height();
-        const int centerWidth=qBound(qMin(280,w),qRound(w*(expanded.isEmpty()?codeRatio:.4)),w);
+        const int available=qMax(0,w-10);
+        const int centerWidth=qBound(qMin(280,available),qRound(w*(expanded.isEmpty()?codeRatio:.4)),available);
         const int x=expanded.isEmpty()&&w>=1280?(w-centerWidth)/2:0;
         center->setGeometry(x,0,centerWidth,qMax(0,h-76));web->setGeometry(canvas->rect());
         QRegion visible(canvas->rect());visible-=QRegion(center->geometry());
         if(expanded.isEmpty()){visible+=popupRegion;center->setMask(QRegion(center->rect()).subtracted(popupRegion.translated(-center->pos())));}
         else center->clearMask();
         if(!expanded.isEmpty()){detail->setGeometry(centerWidth+8,0,qMax(0,w-centerWidth-8),h);detail->show();visible-=QRegion(detail->geometry());detail->raise();}
+        for(auto boundary:{leftBoundary,rightBoundary})if(boundary){
+            const bool left=boundary==leftBoundary;
+            boundary->setVisible(expanded.isEmpty()&&(!left||x>0));
+            if(!boundary->isHidden()){
+                boundary->setGeometry(left?x-10:x+centerWidth,0,10,center->height());
+                boundary->ratioPerPixel=(left?-200.:x>0?200.:100.)/qMax(1,w);
+                const auto mask=QRegion(boundary->rect()).subtracted(popupRegion.translated(-boundary->pos()));
+                if(mask.isEmpty())boundary->hide();
+                else {boundary->setMask(mask);visible-=mask.translated(boundary->pos());boundary->raise();}
+            }
+        }
         web->setMask(visible);center->raise();geometryTimer.start();
         if(overlay&&editor){overlay->setGeometry(editor->viewport()->rect());overlay->raise();overlay->update();}
     }
@@ -295,7 +368,7 @@ struct LinkedContextController::Private {
         if(board.path.isEmpty()&&memoryBoards.contains(boardKey()))boardState=memoryBoards.value(boardKey());
         if(renamed&&boardState.isEmpty()&&board.error.isEmpty())boardState=previousState;
         restoreExpandedReferences();
-        codeRatio=boardState.value("codeRatio").toDouble(.5);if(ratioControl){QSignalBlocker block(ratioControl);ratioControl->setValue(qRound(codeRatio*100));}
+        codeRatio=boardState.value("codeRatio").toDouble(.5);syncBoundaries();
         overlay=new AnchorOverlay(editor);overlay->show();editor->viewport()->installEventFilter(q);
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::textChanged,q,[this]{anchorTimer.start();geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::cursorPositionChanged,q,[this]{selected.clear();if(overlay)overlay->selected.clear();geometryTimer.start();}));
@@ -315,9 +388,10 @@ struct LinkedContextController::Private {
         bool added=true;
         while(added){added=false;for(const auto& r:references)if(!r.parent.isEmpty()&&!direct.contains(r.id)&&direct.contains(r.parent)){direct.insert(r.id,r);added=true;}}
         references=direct;if(overlay)overlay->anchors=anchors;
-        if(!board.error.isEmpty())status(board.error);
+        if(board.path.isEmpty())status(QStringLiteral("Layout kept for this session"));
+        else if(!board.error.isEmpty())status(board.error);
         else if(!links->loadFailureReason().isEmpty())status(links->loadFailureReason());
-        else status(references.isEmpty()?QStringLiteral("No linked references. Attach a Pinloom link to a code selection."):QStringLiteral("%1 references · layouts save automatically").arg(references.size()));
+        else status(references.isEmpty()?QStringLiteral("Attach a Pinloom link to a code selection to add references."):QString());
         if(initialized)post({{"type","references"},{"references",referenceJson()}});
         geometryTimer.start();
     }
@@ -337,7 +411,7 @@ struct LinkedContextController::Private {
         const auto identity=references[id].identity;
         if(!identity.isValid()){status(QStringLiteral("This reference has no valid Pinloom identity."));return;}
         const QString token=session;
-        pinloom->open(identity,[self=QPointer<LinkedContextController>(q),token](bool ok,const QString& error){if(self&&self->d->session==token)self->d->status(ok?QStringLiteral("Original location opened."):error);},true);
+        pinloom->open(identity,[self=QPointer<LinkedContextController>(q),token](bool ok,const QString& error){if(self&&self->d->session==token&&!ok)self->d->status(error);},true);
     }
     void showDetail(const QString& id) {
         if(!references.contains(id))return;expanded=id;select(id);arrange();
@@ -347,6 +421,7 @@ struct LinkedContextController::Private {
         if(expanded.isEmpty()||!references.contains(expanded))return;
         const auto ref=references.value(expanded);const auto resource=resources.value(sourceKey(ref.identity));
         detailTitle->setText(resource&& !resource->document.entry.title.isEmpty()?resource->document.entry.title:ref.title);
+        detailTitle->setToolTip(detailTitle->text());
         detailText->setPlainText(resource?(resource->error.isEmpty()?resource->document.content:resource->error):QStringLiteral("Loading reference…"));
         if(resource&&!resource->image.isNull()){detailImage->setSourcePixmap(QPixmap::fromImage(resource->image),resource->document.preview.altText);detailImage->show();}
         else {detailImage->clearSourcePixmap();detailImage->hide();}
@@ -489,7 +564,7 @@ void LinkedContextController::reloadBoard(){
     d->boardReadOnly=!d->board.path.isEmpty()&&!d->board.error.isEmpty();
     ++d->generation;d->dropResources();d->initialized=false;d->expanded.clear();d->detail->hide();d->popupRegion=QRegion();
     d->session=QUuid::createUuid().toString(QUuid::WithoutBraces);d->restoreExpandedReferences();
-    d->codeRatio=d->boardState.value("codeRatio").toDouble(.5);{QSignalBlocker block(d->ratioControl);d->ratioControl->setValue(qRound(d->codeRatio*100));}
+    d->codeRatio=d->boardState.value("codeRatio").toDouble(.5);d->syncBoundaries();
     d->resolveAnchors();d->arrange();d->initialize();
 }
 bool LinkedContextController::eventFilter(QObject* watched,QEvent* event){

@@ -31,21 +31,55 @@
 #include <QLabel>
 #include <QFormLayout>
 #include <QStackedWidget>
+#include <QElapsedTimer>
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QStyleHints>
+#include <QTextBoundaryFinder>
+#include <QCursor>
 
 namespace {
 template<class Base> class WorkspaceTabBar final : public Base {
 public:
     using Base::Base;
+    QSize minimumSizeHint() const override {
+        if (!currentLabels()) return Base::minimumSizeHint();
+        return QSize(this->count() * iconWidth(), this->count() ? tabHeight() : 0);
+    }
 protected:
     QSize tabSizeHint(int index) const override {
+        if (currentLabels()) {
+            const auto text = this->tabText(index);
+            return QSize(iconWidth() + (text.isEmpty() ? 0 : textGap + this->fontMetrics().horizontalAdvance(text)), tabHeight());
+        }
         auto hint = Base::tabSizeHint(index);
         if (this->property("compactIconTabs").toBool()) hint.setWidth(this->iconSize().width() + 24);
         return hint;
     }
     QSize minimumTabSizeHint(int index) const override {
-        return this->property("compactIconTabs").toBool() ? tabSizeHint(index) : Base::minimumTabSizeHint(index);
+        if (currentLabels()) return QSize(iconWidth(), tabHeight());
+        if (this->property("compactIconTabs").toBool()) return tabSizeHint(index);
+        auto hint = Base::minimumTabSizeHint(index);
+        if (this->property("editorFileTabs").toBool() && this->property("zeroslackElaControl").toBool()) {
+            const QString text = this->tabText(index);
+            const auto metrics = this->fontMetrics();
+            const int fullWidth = metrics.horizontalAdvance(text);
+            int low = 0, high = fullWidth;
+            while (low < high) {
+                const int width = low + (high - low) / 2;
+                QString label = metrics.elidedText(text, this->elideMode(), width);
+                label.remove(QChar(0x2026));
+                if (label.size() >= qMin(3, int(text.size()))) high = width;
+                else low = width + 1;
+            }
+            // Qt's full hint includes the actual style padding, icon and
+            // close button. Replace only its text budget, keeping those costs.
+            hint.setWidth(qMax(hint.width(), tabSizeHint(index).width() - fullWidth + low));
+        }
+        return hint;
     }
     void paintEvent(QPaintEvent* event) override {
+        if (currentLabels()) { paintNavigation(); return; }
         Base::paintEvent(event);
         const QVariant boundary = this->property("temporaryTabBoundary");
         if (!boundary.isValid() || boundary.toInt() < 0) return;
@@ -54,6 +88,122 @@ protected:
         painter.setPen(this->palette().color(QPalette::Mid));
         painter.drawLine(tab.left(), tab.top() + 9, tab.left(), tab.bottom() - 9);
     }
+    void mousePressEvent(QMouseEvent* event) override {
+        if (!currentLabels() || event->button() != Qt::LeftButton) { Base::mousePressEvent(event); return; }
+        pressNavigation(event);
+    }
+    void mouseDoubleClickEvent(QMouseEvent* event) override {
+        if (!currentLabels() || event->button() != Qt::LeftButton) { Base::mouseDoubleClickEvent(event); return; }
+        pressNavigation(event);
+        emit this->tabBarDoubleClicked(pressedTarget);
+    }
+    void mouseReleaseEvent(QMouseEvent* event) override {
+        if (!currentLabels() || event->button() != Qt::LeftButton) { Base::mouseReleaseEvent(event); return; }
+        if (pressedTarget >= 0 && pressRect.contains(event->globalPosition().toPoint())
+            && (event->globalPosition() - pressPosition).manhattanLength() <= QApplication::startDragDistance()) {
+            lastTarget = pressedTarget;
+            lastPosition = event->globalPosition();
+            lastClick = pressClock;
+        } else clearClick();
+        pressedTarget = -1;
+        event->accept();
+        this->update();
+    }
+    void mouseMoveEvent(QMouseEvent* event) override {
+        if (!currentLabels()) { Base::mouseMoveEvent(event); return; }
+        this->update();
+        event->accept();
+    }
+    void keyPressEvent(QKeyEvent* event) override {
+        if (currentLabels()) clearClick();
+        Base::keyPressEvent(event);
+    }
+    bool event(QEvent* event) override {
+        if (currentLabels()) {
+            if (event->type() == QEvent::Hide || event->type() == QEvent::WindowDeactivate
+                || (event->type() == QEvent::UngrabMouse && pressedTarget >= 0)) { pressedTarget = -1; clearClick(); }
+            if (event->type() == QEvent::Enter || event->type() == QEvent::Leave
+                || event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut) this->update();
+        }
+        return Base::event(event);
+    }
+    void tabInserted(int index) override { clearClick(); Base::tabInserted(index); }
+    void tabRemoved(int index) override { clearClick(); Base::tabRemoved(index); }
+private:
+    static constexpr int textGap = 6;
+    bool currentLabels() const { return this->property("currentLabelTabs").toBool(); }
+    int iconWidth() const { return qMax(36, this->iconSize().width() + 24); }
+    int tabHeight() const { return qMax(this->iconSize().height(), this->fontMetrics().height()) + 12; }
+    QString displayText(int index, int width) const {
+        const QString text = this->tabText(index);
+        const int available = width - iconWidth() - textGap;
+        if (text.isEmpty() || available <= 0) return {};
+        const auto metrics = this->fontMetrics();
+        if (metrics.horizontalAdvance(text) <= available) return text;
+        QTextBoundaryFinder boundary(QTextBoundaryFinder::Grapheme, text);
+        const int first = boundary.toNextBoundary();
+        if (first <= 0 || metrics.horizontalAdvance(text.left(first) + QChar(0x2026)) > available) return {};
+        return metrics.elidedText(text, Qt::ElideRight, available);
+    }
+    void paintNavigation() {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const bool dark = isDarkTheme(ApplicationThemeManager::instance().mode());
+        const QColor selected = dark ? QColor(56,56,56) : QColor(227,227,227);
+        const QColor hover = dark ? QColor(43,43,43) : QColor(238,238,238);
+        const QColor textColor = dark ? QColor(240,240,240) : QColor(32,32,32);
+        const QColor focus = dark ? QColor(184,184,184) : QColor(90,90,90);
+        const QPoint pointer = this->mapFromGlobal(QCursor::pos());
+        for (int i=0; i<this->count(); ++i) {
+            if (!this->isTabVisible(i)) continue;
+            const QRect rect = this->tabRect(i);
+            const QRect pill = rect.adjusted(2,2,-2,-2);
+            const bool active = i == this->currentIndex();
+            if (active || (this->underMouse() && rect.contains(pointer))) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(active ? selected : hover);
+                painter.drawRoundedRect(pill, 6, 6);
+            }
+            const QString text = displayText(i,rect.width());
+            const QSize icon = this->iconSize();
+            const int x = text.isEmpty() ? rect.center().x() - icon.width()/2 : rect.left()+12;
+            const QRect iconRect(QPoint(x,rect.center().y()-icon.height()/2),icon);
+            this->tabIcon(i).paint(&painter,iconRect,Qt::AlignCenter,this->isTabEnabled(i)?QIcon::Normal:QIcon::Disabled);
+            if (!text.isEmpty()) {
+                painter.setPen(this->isTabEnabled(i)?textColor:this->palette().color(QPalette::Disabled,QPalette::Text));
+                painter.drawText(QRect(iconRect.right()+1+textGap,rect.top(),rect.right()-12-iconRect.right()-textGap,rect.height()),Qt::AlignVCenter|Qt::AlignLeft|Qt::TextSingleLine,text);
+            }
+            if (active && this->hasFocus()) {
+                painter.setPen(QPen(focus,1,Qt::DotLine)); painter.setBrush(Qt::NoBrush);
+                painter.drawRoundedRect(pill.adjusted(1,1,-1,-1),5,5);
+            }
+        }
+    }
+    void clearClick() { lastTarget=-1; lastClick.invalidate(); }
+    void pressNavigation(QMouseEvent* event) {
+        int target=this->tabAt(event->position().toPoint());
+        const auto* hints=QGuiApplication::styleHints();
+        if (lastClick.isValid() && lastClick.elapsed() <= hints->mouseDoubleClickInterval()
+            && qMax(qAbs(event->globalPosition().x()-lastPosition.x()),qAbs(event->globalPosition().y()-lastPosition.y())) <= hints->mouseDoubleClickDistance()
+            && lastTarget>=0 && lastTarget<this->count()) target=lastTarget;
+        pressedTarget=-1;
+        if (target>=0 && this->isTabEnabled(target) && this->isTabVisible(target)) {
+            pressedTarget=target;
+            pressClock.start();
+            pressPosition=event->globalPosition();
+            pressRect=QRect(this->mapToGlobal(this->tabRect(target).topLeft()),this->tabRect(target).size());
+            // The second press may occupy a neighbour's new rectangle after reflow.
+            pressRect=pressRect.united(QRect(event->globalPosition().toPoint(),QSize(1,1)));
+            this->setFocus(Qt::MouseFocusReason);
+            this->setCurrentIndex(target);
+            emit this->tabBarClicked(target);
+        }
+        event->accept(); this->update();
+    }
+    int pressedTarget=-1,lastTarget=-1;
+    QPointF pressPosition,lastPosition;
+    QRect pressRect;
+    QElapsedTimer lastClick,pressClock;
 };
 
 class ToolButtonBadge {
@@ -607,6 +757,22 @@ void UiControls::enableTreeTransitions(QTreeView* tree) {
 
 QTabWidget* UiControls::tabWidget(QWidget* parent) {
     return new UiTabWidget(parent);
+}
+QTabWidget* UiControls::navigationTabWidget(QWidget* parent) {
+    class NavigationTabs final : public UiTabWidget {
+    public:
+        explicit NavigationTabs(QWidget* parent) : UiTabWidget(parent) {
+            setTabBar(UiControls::tabBar(this));
+            auto* bar=tabBar();
+            bar->setProperty("currentLabelTabs",true);
+            bar->setExpanding(false);bar->setUsesScrollButtons(false);bar->setDrawBase(false);
+            bar->setElideMode(Qt::ElideNone);bar->setMouseTracking(true);bar->setFocusPolicy(Qt::StrongFocus);
+#ifdef ZEROSLACK_ENABLE_ELA
+            if (auto* ela=qobject_cast<ElaTabBar*>(bar)) ela->setSmoothScrollEnabled(false);
+#endif
+        }
+    };
+    return new NavigationTabs(parent);
 }
 QListWidget* UiControls::listWidget(QWidget* parent) {
     auto* list = new QListWidget(parent);

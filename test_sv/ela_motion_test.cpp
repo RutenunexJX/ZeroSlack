@@ -5,6 +5,7 @@
 #include "uicontrols.h"
 
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QListWidget>
 #include <QPointer>
 #include <QScrollArea>
@@ -23,6 +24,13 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(20); }
+void waitForSample(const char* stage, int milliseconds) {
+    QElapsedTimer elapsed;
+    elapsed.start();
+    QTest::qWait(milliseconds);
+    qInfo() << "motion-sample" << stage << "requestedMs" << milliseconds
+            << "elapsedMs" << elapsed.elapsed();
+}
 bool wheel(QWidget* target, QPoint angle, QPoint pixel = {}, Qt::KeyboardModifiers modifiers = Qt::NoModifier) {
     const QPoint at = target->rect().center();
     QWheelEvent event(at, target->mapToGlobal(at), pixel, angle, Qt::NoButton, modifiers,
@@ -41,6 +49,12 @@ bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyle
 class ElaMotionTest final : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        QWidget probe;
+        qInfo() << "motion-environment" << QApplication::platformName()
+                << "scaleFactor" << qEnvironmentVariable("QT_SCALE_FACTOR")
+                << "devicePixelRatio" << probe.devicePixelRatioF() << "usesEla" << usesEla();
+    }
     void wheelReversalPrecisionAndExternalNavigation() {
         std::unique_ptr<QListWidget> list(UiControls::listWidget());
         UiControls::enableSmoothScrolling(list.get());
@@ -54,21 +68,25 @@ private slots:
         QVERIFY(bar->property("smoothWheelEnabled").toBool());
         QVERIFY(bar->maximum() > 1000);
         QVERIFY(wheel(list->viewport(), {0, -120}));
-        QTest::qWait(45);
+        waitForSample("wheel-intermediate", 45);
         const int intermediate = bar->value();
+        qInfo() << "wheel-intermediate" << intermediate;
         QVERIFY(intermediate > 0);
-        QTest::qWait(190);
+        waitForSample("wheel-final", 190);
+        qInfo() << "wheel-final" << bar->value() << "intermediate" << intermediate;
         QVERIFY(bar->value() > intermediate);
         const int resting = bar->value();
         QTest::qWait(180); QCOMPARE(bar->value(), resting);
 
         bar->setValue(1000);
         for (int i = 0; i < 6; ++i) wheel(list->viewport(), {0, -120});
-        QTest::qWait(40);
+        waitForSample("wheel-before-reversal", 40);
         const int reversingAt = bar->value();
+        qInfo() << "wheel-before-reversal" << reversingAt;
         QVERIFY(reversingAt > 1000);
         wheel(list->viewport(), {0, 120});
-        QTest::qWait(190);
+        waitForSample("wheel-reversed", 190);
+        qInfo() << "wheel-reversed" << bar->value() << "reversingAt" << reversingAt;
         QVERIFY(bar->value() < reversingAt);
 
         bar->setValue(0);
@@ -138,15 +156,20 @@ private slots:
         const QSize secondSize = bar->tabRect(1).size();
         QVERIFY(firstSize.width() != secondSize.width());
         const int before = bar->tabRect(0).x();
-        wheel(bar, {0, -120}); QTest::qWait(45);
+        wheel(bar, {0, -120}); waitForSample("tabs-intermediate", 45);
+        qInfo() << "tabs-intermediate" << bar->tabRect(0).x() << "before" << before;
         QVERIFY(bar->tabRect(0).x() < before);
         const int intermediate = bar->tabRect(0).x();
-        QTest::qWait(190); QVERIFY(bar->tabRect(0).x() < intermediate);
+        waitForSample("tabs-final", 190);
+        qInfo() << "tabs-final" << bar->tabRect(0).x() << "intermediate" << intermediate;
+        QVERIFY(bar->tabRect(0).x() < intermediate);
         QCOMPARE(tabs->currentIndex(), index); QCOMPARE(tabs->currentWidget(), page.data());
         QCOMPARE(bar->tabRect(0).size(), firstSize); QCOMPARE(bar->tabRect(1).size(), secondSize);
         for (int i = 0; i < 4; ++i) wheel(bar, {0, -120});
-        QTest::qWait(35); const int reversingAt = bar->tabRect(0).x();
-        wheel(bar, {0, 120}); QTest::qWait(190);
+        waitForSample("tabs-before-reversal", 35); const int reversingAt = bar->tabRect(0).x();
+        qInfo() << "tabs-before-reversal" << reversingAt;
+        wheel(bar, {0, 120}); waitForSample("tabs-reversed", 190);
+        qInfo() << "tabs-reversed" << bar->tabRect(0).x() << "reversingAt" << reversingAt;
         QVERIFY(bar->tabRect(0).x() > reversingAt);
 
         const int pixelStart = bar->tabRect(0).x();
@@ -193,7 +216,7 @@ private slots:
         QVERIFY(trees.size() >= 2);
         for (auto* tree : trees) {
             QCOMPARE(tree->isAnimated(), usesEla());
-            QVERIFY(!tree->verticalScrollBar()->property("smoothWheelEnabled").toBool());
+            QCOMPARE(tree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
         }
         std::unique_ptr<QTreeWidget> tree(UiControls::treeWidget());
         UiControls::enableTreeTransitions(tree.get());
@@ -207,6 +230,13 @@ private slots:
         QTest::keyClick(tree.get(), Qt::Key_Right); QTest::qWait(250);
         QVERIFY(root->isExpanded());
         QVERIFY(!tree->visualItemRect(root->child(0)).isEmpty());
+        auto* scroll = tree->verticalScrollBar();
+        QVERIFY(scroll->maximum() > 0);
+        QVERIFY(wheel(tree->viewport(), {0, -120}));
+        QTRY_VERIFY_WITH_TIMEOUT(scroll->value() > 0, 1000);
+        tree->scrollToItem(root, QAbstractItemView::PositionAtTop);
+        QTest::qWait(250);
+        QCOMPARE(scroll->value(), 0);
         tree->collapseItem(root); QTest::qWait(20);
         tree->clear(); settle(); QTest::qWait(250);
         QCOMPARE(tree->topLevelItemCount(), 0);

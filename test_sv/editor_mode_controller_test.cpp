@@ -23,6 +23,7 @@ int main()
     const QList<EditorModeDescriptor>& descriptors =
         editorModeDescriptors();
     const QList<EditorModeId> expectedModes = {
+        EditorModeId::TemplateAuthoring,
         EditorModeId::CommandMode,
         EditorModeId::InlineCandidates,
         EditorModeId::CompletionCandidates,
@@ -65,6 +66,9 @@ int main()
             if (left == right)
                 continue;
             const bool expectedCoexistence =
+                left == EditorModeId::TemplateAuthoring
+                || right == EditorModeId::TemplateAuthoring
+                ||
                 (left == EditorModeId::MultiCursor
                  && right == EditorModeId::VirtualCursor)
                 || (left == EditorModeId::VirtualCursor

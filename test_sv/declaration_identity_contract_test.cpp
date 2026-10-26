@@ -10,6 +10,7 @@
 #undef private
 #include "analysisscheduler.h"
 #include "completionservice.h"
+#include "codetemplateservice.h"
 #include "definitionservice.h"
 #include "editorinsertpaletteservice.h"
 #include "semanticindexsnapshot.h"
@@ -209,7 +210,7 @@ void productCases(const QString& root) {
     position(text.indexOf("item.alpha =")+5);
     auto context=palette->contextProvider();
     check(context.memberAccess && context.moduleName=="top_a", "real editor context captures module and member access");
-    auto items=palette->itemProvider(GlobalControlCategory::Symbols,{},context);
+    auto items=palette->itemProvider(GlobalControlCategory::Symbols,{},context,nullptr);
     check(titles(items)==QStringList({"ALPHA","alpha"}), "actual palette provider isolates same-name member declarations");
     const auto alpha=std::find_if(items.cbegin(),items.cend(),[](const auto& i){return i.title=="alpha";});
     check(alpha!=items.cend(),"correct member selectable");
@@ -220,12 +221,12 @@ void productCases(const QString& root) {
         editor->setPlainText(text);
     }
     position(text.indexOf("state = A_IDLE;")+8); context=palette->contextProvider();
-    items=palette->itemProvider(GlobalControlCategory::Symbols,{},context);
+    items=palette->itemProvider(GlobalControlCategory::Symbols,{},context,nullptr);
     check(context.expectedTypeIdentifier=="state" && titles(items).contains("A_IDLE")
           && titles(items).contains("A_RUN") && !titles(items).contains("B_IDLE") && !titles(items).contains("B_RUN"),
           "actual MainWindow expected enum candidates use bound type");
     position(text.indexOf("endmodule")); context=palette->contextProvider();
-    items=palette->itemProvider(GlobalControlCategory::Symbols,"m case_child",context);
+    items=palette->itemProvider(GlobalControlCategory::Symbols,"m case_child",context,nullptr);
     check(items.size()==1,"real module palette returns selected declaration");
     if(items.size()==1) {
         const auto& item=items.first();
@@ -246,13 +247,16 @@ void productCases(const QString& root) {
     }
     // The built-in asynchronous always_ff template has two linked reset slots.
     editor->setPlainText("module shared;\n\nendmodule\n"); position(15);
-    items=palette->itemProvider(GlobalControlCategory::Templates,"always_ff",palette->contextProvider());
-    const auto templateItem=std::find_if(items.cbegin(),items.cend(),[](const auto& item){
-        return item.insertionText.contains("negedge rst_n") && item.insertionText.contains("if (!rst_n)");
+    items=palette->itemProvider(GlobalControlCategory::Templates,"always_ff",palette->contextProvider(),nullptr);
+    check(items.isEmpty(),"template palette does not restore removed code-template entries");
+    const auto templates=CodeTemplateService::getInstance()->matchingTemplates(";;af");
+    const auto templateItem=std::find_if(templates.cbegin(),templates.cend(),[](const auto& item){
+        return item.insertText.contains("negedge rst_n") && item.insertText.contains("if (!rst_n)");
     });
-    check(templateItem!=items.cend(),"real template palette returns asynchronous reset template");
-    if(templateItem!=items.cend()) {
-        palette->dispatch(*templateItem);
+    check(templateItem!=templates.cend(),"built-in catalog retains linked asynchronous reset slots");
+    if(templateItem!=templates.cend()) {
+        check(editor->insertCompletionText(templateItem->insertText,-1,0,templateItem->templateSlots),
+              "real editor completion path inserts linked reset slots");
         QTest::keyClick(editor,Qt::Key_Tab);
         check(editor->templateSlotModeActive() && editor->textCursor().selectedText()=="rst_n",
               "MainWindow built-in template activates linked reset slots");

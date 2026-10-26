@@ -926,6 +926,41 @@ private slots:
     QFETCH(QString, text);
     QVERIFY(SimulationCommandPrefix::nativeEventInput(text));
   }
+  void f24RepeatAndFocusBoundary() {
+    Fixture f;
+    auto* editor=f.editor;
+    auto* coordinator=f.window.globalControlCoordinator.get();
+    QTRY_VERIFY(editor->hasFocus());
+    const auto original=editor->toPlainText();
+    const int undo=editor->document()->availableUndoSteps();
+    QTest::keyPress(editor,Qt::Key_F24);
+    QVERIFY(coordinator->f24Held);
+    QKeyEvent repeatedRelease(QEvent::KeyRelease,Qt::Key_F24,Qt::NoModifier,{},true);
+    QApplication::sendEvent(editor,&repeatedRelease);
+    QVERIFY(coordinator->f24Held);
+    QTest::keyPress(editor,Qt::Key_Space);
+    QVERIFY(editor->templateAuthoringLocked());
+    QKeyEvent repeatedSpace(QEvent::KeyPress,Qt::Key_Space,Qt::NoModifier," ",true);
+    QApplication::sendEvent(editor,&repeatedSpace);
+    QVERIFY(editor->templateAuthoringLocked());
+    QTest::keyRelease(editor,Qt::Key_Space);
+    QTest::keyRelease(editor,Qt::Key_F24);
+    QVERIFY(!coordinator->f24Held);
+    lock(editor);
+    QVERIFY(!editor->templateAuthoringLocked());
+    QCOMPARE(editor->toPlainText(),original);
+    QCOMPARE(editor->document()->availableUndoSteps(),undo);
+    QDialog dialog(&f.window);
+    QLineEdit field(&dialog);
+    dialog.show();field.setFocus();QTRY_VERIFY(field.hasFocus());
+    QTest::keyPress(&field,Qt::Key_F24);
+    QTest::keyClick(&field,Qt::Key_Space);
+    QTest::keyRelease(&field,Qt::Key_F24);
+    QVERIFY(!coordinator->f24Held);
+    QVERIFY(!editor->templateAuthoringLocked());
+    QVERIFY(!coordinator->panel->isVisible());
+    QCOMPARE(field.text(),QString(" "));
+  }
   void lifecycleAndProtection() {
     Fixture f;
     auto *editor = f.editor;

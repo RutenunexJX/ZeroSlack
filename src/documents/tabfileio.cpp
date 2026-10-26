@@ -1,5 +1,6 @@
 #include "uidialogs.h"
 #include "tabfileio.h"
+#include "../common/defaultsourceextensions.h"
 #include "workspacesessionstateservice.h"
 
 #include <QCryptographicHash>
@@ -24,15 +25,8 @@ bool TabFileIo::isSystemVerilogFile(const QString& fileName) const
     if (fileName.isEmpty())
         return false;
 
-    static const QStringList svExtensions = {
-        "sv",
-        "v",
-        "vh",
-        "svh",
-        "vp",
-        "svp"};
-    const QString suffix = QFileInfo(fileName).suffix().toLower();
-    return svExtensions.contains(suffix);
+    const QString suffix = QLatin1Char('.') + QFileInfo(fileName).suffix().toLower();
+    return SourceFiles::defaultExtensions().contains(suffix);
 }
 
 QString TabFileIo::promptOpenFile(QWidget* parent) const

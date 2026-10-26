@@ -491,6 +491,59 @@ int main(int argc, char* argv[])
         }
     }
 
+    {
+        const QString a = temporary.filePath("discard-a");
+        const QString b = temporary.filePath("discard-b");
+        QDir().mkpath(a); QDir().mkpath(b);
+        SettingsCenterService isolated(temporary.filePath("discard-global.ini"));
+        check(isolated.saveGlobal({{"font.sizePt", 14}}).saved
+                  && isolated.saveWorkspace(a, {{"font.sizePt", 20}}).saved
+                  && isolated.saveWorkspace(b, {{"font.sizePt", 22}}).saved,
+              "all-scope discard baselines are persisted");
+        SettingsCenterPanel drafts(&isolated, a);
+        auto* font = qobject_cast<QSpinBox*>(drafts.fieldEditor("font.sizePt"));
+        auto* theme = qobject_cast<QComboBox*>(drafts.fieldEditor("appearance.theme"));
+        drafts.setScope(SettingsCenterScope::Workspace); font->setValue(21);
+        drafts.setWorkspaceRoot(b); font->setValue(23);
+        drafts.setScope(SettingsCenterScope::Global); font->setValue(18);
+        theme->setCurrentText("Dark");
+        drafts.setWorkspaceRoot({});
+        check(drafts.unappliedScopes().size() == 3,
+              "query includes Global and both cached workspaces after closing the workspace");
+        const auto before = isolated.load(a);
+        drafts.discardUnappliedChanges();
+        check(drafts.unappliedScopes().isEmpty()
+                  && isolated.load(a).globalRevision == before.globalRevision
+                  && isolated.load(a).workspaceRevision == before.workspaceRevision
+                  && isolated.load(a).globalValues.value("appearance.theme").toString() == "Dark",
+              "discard writes nothing and retains a successfully applied immediate field");
+        drafts.setWorkspaceRoot(a); drafts.setScope(SettingsCenterScope::Workspace);
+        check(font->value() == 20, "A's discarded cache does not reappear");
+        drafts.setWorkspaceRoot(b);
+        check(font->value() == 22, "B's discarded cache does not reappear");
+    }
+    {
+        const QString path = temporary.filePath("immediate-failure.ini");
+        SettingsCenterService isolated(path);
+        check(isolated.saveGlobal({{"appearance.theme", "Light"}}).saved, "write-failure baseline is saved");
+        SettingsCenterPanel failure(&isolated);
+        int applied = 0;
+        QObject::connect(&failure, &SettingsCenterPanel::settingsApplied,
+                         &failure, [&](SettingsCenterScope) { ++applied; });
+        check(QFile::rename(path, path + ".before") && QDir().mkpath(path),
+              "isolated global destination becomes an unwritable file target");
+        auto* theme = qobject_cast<QComboBox*>(failure.fieldEditor("appearance.theme"));
+        theme->setCurrentText("Dark");
+        auto* status = failure.findChild<QLabel*>("settingsCenterStatusLabel");
+        check(theme->currentText() == "Light" && status
+                  && status->property("settingsCenterError").toBool()
+                  && !status->text().isEmpty() && applied == 0
+                  && !failure.isScopeDirty(SettingsCenterScope::Global),
+              "failed immediate save restores the field and reports failure");
+        failure.discardUnappliedChanges();
+        check(QFileInfo(path).isDir(), "discard does not attempt to persist a failed immediate value");
+    }
+
     std::cout << "settings_center_panel_test: "
               << (checks - failures) << '/' << checks
               << " checks passed\n";
