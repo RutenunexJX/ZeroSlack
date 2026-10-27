@@ -1,4 +1,6 @@
-ZeroSlack v0.32.13 Windows package
+ZeroSlack v0.33.0 Windows package
+
+Release 0.33.0 adds native signal tracing, usage heatmaps and static feedback analysis from semantic dependency evidence. Trace branches, selections and references remain consistent across modes and panel hosts. Primary controls are compact, references open on demand, and feedback diagrams connect at node boundaries with bounded automatic fitting. Design remains the shared hierarchy source. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.32.13 streamlines Linked context, Simulation and Build inputs, adds compact navigation tabs and inline Design top selection, and opens Settings in a reusable nonmodal dialog. Files icons share a consistent content box, and narrow Ela editor tabs preserve readable labels. Related UI regression fixtures and per-test diagnostic logs are updated. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
