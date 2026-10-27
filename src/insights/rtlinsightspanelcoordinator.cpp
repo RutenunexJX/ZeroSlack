@@ -6,12 +6,11 @@
 #include "graphexportui.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
-#include "moduleblockdiagramtoolbar.h"
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightsgraphconstants.h"
 #include "rtlinsightspanelviewstate.h"
 #include "rtlinsightspresenter.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
 
 #include <QAction>
 #include <QCheckBox>
@@ -80,13 +79,13 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     actionLayout->setContentsMargins(0, 0, 0, 0);
     actionLayout->setSpacing(4);
     viewState->signalUsageHotspotButton =
-        UiControls::pushButton(QStringLiteral("Usage Hotspot"), panel);
+        UiControls::pushButton(QStringLiteral("Signal Heatmap"), panel);
     viewState->signalUsageHotspotButton->setObjectName(
         QStringLiteral("rtlSignalUsageHotspotButton"));
     viewState->fsmGraphButton = UiControls::pushButton(QStringLiteral("FSM Graph"), panel);
     viewState->fsmGraphButton->setObjectName(QStringLiteral("rtlFsmGraphButton"));
     viewState->moduleBlockDiagramButton =
-        UiControls::pushButton(QStringLiteral("Module Block Diagram"), panel);
+        UiControls::pushButton(QStringLiteral("Open in Design"), panel);
     viewState->moduleBlockDiagramButton->setObjectName(
         QStringLiteral("rtlModuleBlockDiagramButton"));
     viewState->graphZoomOutButton = UiControls::pushButton(QStringLiteral("-"), panel);
@@ -223,10 +222,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->insightsTree->header()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
 
     viewState->insightsGraphScene = new QGraphicsScene(panel);
-    QObject::connect(viewState->insightsGraphScene, &QGraphicsScene::selectionChanged,
-                     viewState->graphCallbackContext, [this]() {
-                         graphController->refreshModuleBlockSelectionActions();
-                     });
     QObject::connect(
         viewState->insightsGraphScene,
         &QGraphicsScene::changed,
@@ -244,11 +239,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
         [this](const QPoint& viewPoint,
                Qt::MouseButton button,
                Qt::KeyboardModifiers) {
-            if (viewState->currentGraphMode == QStringLiteral("module-block")
-                && (button == Qt::BackButton || button == Qt::ForwardButton)) {
-                graphController->navigateModuleBlockHistory(button == Qt::BackButton ? -1 : 1);
-                return true;
-            }
             if (button != Qt::LeftButton
                 || !viewState->insightsGraphView
                 || (viewState->currentGraphMode != QStringLiteral("state-transition")
@@ -265,8 +255,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphPanelLayout->setContentsMargins(0, 0, 0, 0);
     graphPanelLayout->setSpacing(6);
 
-    viewState->moduleBlockToolbar = new ModuleBlockDiagramToolbar(viewState->insightsGraphPanel);
-    graphPanelLayout->addWidget(viewState->moduleBlockToolbar);
     viewState->graphToolbar = new QWidget(viewState->insightsGraphPanel);
     auto* legacyToolbarLayout = new QVBoxLayout(viewState->graphToolbar);
     legacyToolbarLayout->setContentsMargins(0, 0, 0, 0);
@@ -298,23 +286,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(viewState->graphMoreButton);
     legacyToolbarLayout->addLayout(graphToolbarLayout);
     CompactFlowLayout::replaceRows(legacyToolbarLayout);
-
-    auto* moduleBar = viewState->moduleBlockToolbar;
-    const QPointer<QObject> callbackContext = viewState->graphCallbackContext;
-    QObject::connect(moduleBar->fitAction, &QAction::triggered, callbackContext, [this]() { graphController->focusFit(); });
-    auto* moduleResizeTimer = new QTimer(callbackContext);
-    moduleResizeTimer->setSingleShot(true);
-    moduleResizeTimer->setInterval(60);
-    QObject::connect(moduleResizeTimer, &QTimer::timeout, callbackContext, [this]() {
-        if (viewState->currentGraphMode == QStringLiteral("module-block"))
-            graphController->mapModuleBlockDiagram(viewState->currentModuleBlockReport);
-    });
-    viewState->insightsGraphView->setViewportResizeHandler([this, callbackContext, moduleResizeTimer]() {
-        if (callbackContext && viewState->currentGraphMode == QStringLiteral("module-block")) moduleResizeTimer->start();
-    });
-    viewState->insightsGraphView->setViewportInteractionHandler([this, callbackContext]() {
-        if (callbackContext) viewState->moduleBlockAutoFit = false;
-    });
 
     viewState->graphInspector = UiControls::treeWidget(panel);
     viewState->graphInspector->setObjectName(QStringLiteral("rtlGraphInspector"));
@@ -391,14 +362,14 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     viewState->graphTable->setMaximumHeight(190);
     graphPanelLayout->addWidget(viewState->graphTable, 0);
 
-    viewState->signalUsageHotspotPanel = new SignalUsageHotspotPanel(panel);
+    viewState->signalTracePanel = new SignalTracePanel(panel);
 
     viewState->insightsStack = new QStackedWidget(panel);
     viewState->insightsStack->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     viewState->insightsStack->setMinimumHeight(0);
     viewState->insightsStack->addWidget(viewState->insightsTree);
     viewState->insightsStack->addWidget(viewState->insightsGraphPanel);
-    viewState->insightsStack->addWidget(viewState->signalUsageHotspotPanel);
+    viewState->insightsStack->addWidget(viewState->signalTracePanel);
     layout->addWidget(viewState->insightsStack, 1);
     CompactFlowLayout::replaceRows(graphPanelLayout);
     CompactFlowLayout::makeScrollable(viewState->insightsGraphPanel);
@@ -482,14 +453,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
                          viewState->graphSearchText = text.trimmed();
                          graphController->applySearchHighlight();
                      });
-    QObject::connect(viewState->graphLayoutCombo,
-                     qOverload<int>(&QComboBox::currentIndexChanged),
-                     viewState->insightsDock,
-                     [this](int) {
-                         if (viewState->currentGraphMode == QStringLiteral("module-block"))
-                             graphController->mapModuleBlockDiagram(
-                                 viewState->currentModuleBlockReport);
-                     });
     QObject::connect(viewState->graphTable,
                      &QTableWidget::cellDoubleClicked,
                      viewState->insightsDock,
@@ -525,6 +488,12 @@ RtlInsightsPanelCoordinator::~RtlInsightsPanelCoordinator()
     }
 }
 
+void RtlInsightsPanelCoordinator::setDesignHandler(std::function<void(const QString&,const QString&)> handler)
+{
+    viewState->designHandler=std::move(handler);
+    presenter->updateActionState();
+}
+
 void RtlInsightsPanelCoordinator::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
@@ -545,13 +514,13 @@ void RtlInsightsPanelCoordinator::setSourceNavigationHandler(
 {
     viewState->sourceNavigationHandler =
         std::move(handler);
-    if (viewState->signalUsageHotspotPanel) {
-        viewState->signalUsageHotspotPanel->setNavigationHandler(
-            [this](const QString& file, int line, int column) {
+    if (viewState->signalTracePanel) {
+        viewState->signalTracePanel->setNavigationHandler(
+            [this](const SignalTraceEvidence& evidence) {
                 RtlInsightSourceLocation location;
-                location.fileName = file;
-                location.line = line;
-                location.column = column;
+                location.fileName = evidence.range.fileName;
+                location.line = evidence.range.line;
+                location.column = evidence.range.column;
                 location.moduleName = viewState->currentModuleName;
                 location.symbolName = viewState->currentSignalName;
                 return viewState->sourceNavigationHandler && viewState->sourceNavigationHandler(location);
@@ -563,8 +532,8 @@ void RtlInsightsPanelCoordinator::setStatusMessageHandler(
     std::function<void(const QString&, int)> handler)
 {
     viewState->statusMessageHandler = std::move(handler);
-    if (viewState->signalUsageHotspotPanel) {
-        viewState->signalUsageHotspotPanel->setStatusMessageHandler(
+    if (viewState->signalTracePanel) {
+        viewState->signalTracePanel->setStatusMessageHandler(
             viewState->statusMessageHandler);
     }
 }

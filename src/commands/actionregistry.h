@@ -344,6 +344,7 @@ struct ActionDescriptor {
     bool sharedExecutionRoute = false;
     bool repeatable = false;
     bool rememberParameters = false;
+    bool retired = false;
     ActionExecutionFunction execute;
     QList<ActionAliasDescriptor> aliases;
 

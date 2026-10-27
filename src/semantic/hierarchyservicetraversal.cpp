@@ -607,9 +607,11 @@ DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
     DesignHierarchyReport report;
     report.snapshotGeneration = semanticIndex()->snapshotRevision();
     QHash<QString, QList<SemanticSymbolRecord>> definitions;
+    QHash<QString, QList<SemanticSymbolRecord>> instanceDeclarations;
     const auto records = designRecords(semanticIndex());
     const QSet<QString> interfaceNames = designInterfaceNames(records, fileScope);
     for (const auto& record : records) {
+        if(isDesignInstanceDeclaration(record))instanceDeclarations[record.owner.name].append(record);
         if (!isDesignModuleDeclaration(record) || !designFileScopeContains(fileScope, record.location.fileName)) continue;
         auto& matches = definitions[record.name];
         bool duplicate = false;
@@ -686,6 +688,20 @@ DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
                 designRelationshipLine(relationship, targetRecord);
             const int instanceColumn =
                 designRelationshipColumn(relationship, targetRecord);
+            const bool actualParent=parentModule.presentation.elaboratedInstancePaths.contains(parentInstancePath);
+            QStringList instancePaths;
+            if(actualParent){
+                for(const auto& declaration:instanceDeclarations.value(parentModule.name)){
+                    if(declaration.name!=instanceName || declaration.location.startLine!=instanceLine
+                        || (instanceColumn>0 && declaration.location.startColumn!=instanceColumn)
+                        || normalizedDesignHierarchyFileName(declaration.location.fileName).compare(instanceFile,Qt::CaseInsensitive)!=0)continue;
+                    for(const auto& path:declaration.presentation.elaboratedInstancePaths)
+                        if(path.startsWith(parentInstancePath+QLatin1Char('.')))instancePaths.append(path);
+                }
+                instancePaths.removeDuplicates();
+                // A declared generate branch absent from this exact specialization is not an instance.
+                if(instancePaths.isEmpty())continue;
+            }else instancePaths.append(parentInstancePath+QLatin1Char('.')+instanceName);
             const QString relationshipKey =
                 semanticRelationshipStableKeyText(relationship.relationship);
             const QString edgeKey = relationshipKey.isEmpty()
@@ -701,16 +717,14 @@ DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
                 continue;
             emittedEdges.insert(edgeKey);
 
+            for(const auto& instancePath:instancePaths){
             DesignHierarchyNode node;
             node.id = nextId();
             node.parentId = parentNodeId;
             node.rootId = rootNodeId;
             node.rootModule = rootModule;
-            node.instanceName = instanceName;
-            node.instancePath = parentInstancePath.isEmpty()
-                ? instanceName
-                : QStringLiteral("%1.%2")
-                      .arg(parentInstancePath, instanceName);
+            node.instanceName = actualParent ? instancePath.mid(parentInstancePath.size()+1) : instanceName;
+            node.instancePath = instancePath;
             node.moduleType = moduleType;
             node.instanceFile = instanceFile;
             node.instanceLine = instanceLine;
@@ -736,10 +750,11 @@ DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
                 continue;
 
             const QString childPathKey = definitionRecord.stableKey.toString();
-            if (!childPathKey.isEmpty() && modulePath.contains(childPathKey)) {
+            if ((!actualParent && !childPathKey.isEmpty() && modulePath.contains(childPathKey))
+                || report.nodes.size()>=4096 || instancePath.count(QLatin1Char('.'))>=128) {
                 DesignHierarchyNode& cyclicNode = report.nodes.last();
                 cyclicNode.unresolved = true;
-                cyclicNode.unresolvedReason = QStringLiteral("cyclic instantiation");
+                cyclicNode.unresolvedReason = actualParent ? QStringLiteral("hierarchy display limit reached") : QStringLiteral("cyclic instantiation");
                 unresolvedModules.insert(moduleType);
                 continue;
             }
@@ -750,6 +765,7 @@ DesignHierarchyReport HierarchyService::explicitDesignHierarchy(
                            node.instancePath,
                            inSelectedTop,
                            modulePath);
+            }
         }
     };
 

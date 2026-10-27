@@ -73,6 +73,13 @@ struct TimingSignalInfo {
     SemanticValueReference reference;
 };
 
+struct SignalDependencyInfo {
+    SemanticValueReference from;
+    SemanticValueReference to;
+    SemanticSourceRange evidence;
+    SemanticSignalDependency dependency;
+};
+
 /// All relationship facts extracted from one Slang parse.
 struct RelationshipExtractionInfo {
     QVector<ModuleInstantiationInfo> moduleInstantiations;
@@ -80,6 +87,7 @@ struct RelationshipExtractionInfo {
     QVector<AssignmentInfo> assignments;
     QVector<ConditionReferenceInfo> conditionReferences;
     QVector<TimingSignalInfo> timingSignals;
+    QVector<SignalDependencyInfo> signalDependencies;
 };
 
 class SemanticInputCapture;

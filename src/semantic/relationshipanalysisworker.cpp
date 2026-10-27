@@ -24,6 +24,7 @@ QVector<RelationshipToAdd> publishedRelationships(
         item.fromAccessPath = relationship.fromAccessPath;
         item.toAccessPath = relationship.toAccessPath;
         item.exactValueForward = relationship.exactValueForward;
+        item.signalDependency = relationship.signalDependency;
         result.append(std::move(item));
     }
     return result;

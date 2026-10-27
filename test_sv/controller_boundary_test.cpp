@@ -708,46 +708,15 @@ int main(int argc, char* argv[])
     check(sourceLineCount(insightsSource) <= 900,
           QStringLiteral(
               "src/insights/rtlinsightspanelcoordinator.cpp is at most 900 lines"));
-    check(containsAll(
-              hotspotHeader,
-              {QStringLiteral(
-                   "public ActionExecutionHost"),
-               QStringLiteral(
-                   "requestGraphViewAction("),
-               QStringLiteral(
-                   "executeActionRoute(")})
-              && !hotspotActionsSource.isEmpty()
-              && cmake.contains(
-                  QStringLiteral(
-                      "src/insights/signalusagehotspotpanelactions.cpp")),
-          QStringLiteral(
-              "Usage Hotspot composes a dedicated graph-view Action host"));
-    check(containsAll(
-              hotspotSource,
-              {QStringLiteral(
-                   "for (auto* action : graphViewActions()) menu->addAction(action)"),
-               QStringLiteral(
-                   "more->setMenu(menu)"),
-               QStringLiteral(
-                   "createGraphViewAction(QString::fromLatin1(ActionIds::GraphViewCenterCurrent))"),
-               QStringLiteral(
-                   "ActionIds::GraphViewFit"),
-               QStringLiteral(
-                   "ActionIds::GraphViewZoomIn"),
-               QStringLiteral(
-                   "ActionIds::GraphViewZoomOut")})
-              && containsAll(
-                  hotspotActionsSource,
-                  {QStringLiteral(
-                       "insight.graphView.fit"),
-                   QStringLiteral(
-                       "insight.graphView.centerCurrent"),
-                   QStringLiteral(
-                       "insight.graphView.resetLayout"),
-                   QStringLiteral(
-                       "executeAction(*descriptor, *this)")}),
-          QStringLiteral(
-              "Usage Hotspot toolbar, context menu, and Focus adapters share Registry routes"));
+    check(hotspotHeader.isEmpty() && hotspotSource.isEmpty() && hotspotActionsSource.isEmpty()
+        && !cmake.contains("src/insights/signalusagehotspotpanelactions.cpp"),
+        "Retired Track/Matrix scenes and their exclusive graph Action host are removed");
+    const auto traceHeader=readSource(root,"src/insights/signaltracepanel.h");
+    const auto traceSource=readSource(root,"src/insights/signaltracepanel.cpp");
+    check(traceHeader.contains("SignalTraceContext") && traceHeader.contains("setNavigationHandler")
+        && traceSource.contains("SignalTraceService") && traceSource.contains("new QTableView")
+        && !traceSource.contains("SlangManager") && !traceSource.contains("MainWindow"),
+        "Native Trace and Heatmap consume explicit semantic context through host callbacks");
     check(containsNone(
               hotspotSource,
               {QStringLiteral(

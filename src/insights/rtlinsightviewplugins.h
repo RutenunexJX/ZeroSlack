@@ -3,6 +3,7 @@
 
 #include "insightgraphcore.h"
 #include "zeroslackexport.h"
+#include "semanticindex.h"
 
 #include <QString>
 #include <memory>
@@ -24,6 +25,9 @@ struct ZEROSLACK_API InsightViewContext {
     QString moduleName;
     QString signalName;
     QString signalAccessPath;
+    QString projectId;
+    QString instancePath;
+    SemanticSnapshotToken semantic;
 };
 
 struct ZEROSLACK_API InsightViewBuildResult {

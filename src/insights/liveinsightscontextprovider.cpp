@@ -101,13 +101,13 @@ ContextResource LiveInsightsContextProvider::resourceForKind(
     resource.uri = uriForKind(kind);
     switch (kind) {
     case LiveInsightKind::Kernel:
-        resource.title = QStringLiteral("Signal Kernel Graph");
+        resource.title = QStringLiteral("Signal Trace");
         break;
     case LiveInsightKind::Module:
-        resource.title = QStringLiteral("Module Block Diagram");
+        resource.title = QStringLiteral("Design");
         break;
     case LiveInsightKind::Hotspot:
-        resource.title = QStringLiteral("Signal Hotspot");
+        resource.title = QStringLiteral("Signal Heatmap");
         break;
     case LiveInsightKind::State:
         resource.title = QStringLiteral("State Transition Graph");

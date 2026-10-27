@@ -1348,6 +1348,13 @@ void MyCodeEditor::setTbAssistAnnotations(const QList<EditorAnnotation>& annotat
     else state->annotationLayer.setSourceAnnotations(source, annotations);
     viewport()->update();
 }
+void MyCodeEditor::setSignalTraceAnnotations(const QString& owner,const QList<EditorAnnotation>& annotations)
+{
+    const QString source=QStringLiteral("signal-trace/")+owner;
+    if(annotations.isEmpty())state->annotationLayer.removeSource(source);
+    else state->annotationLayer.setSourceAnnotations(source,annotations);
+    viewport()->update();
+}
 QList<TbInputAssist> MyCodeEditor::tbInputAssists() const
 {
     return state->tbAssist ? state->tbAssist->inputs() : QList<TbInputAssist>{};

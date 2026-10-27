@@ -94,9 +94,9 @@ void SmartRelationshipBuilder::analyzeModuleInstantiations(const QString& conten
             getContainingModuleLocalHandle(record.location.startLine, context);
         if (ownerModuleHandle == -1)
             ownerModuleHandle = context.currentModuleLocalHandle;
+        // An unresolved or recursive declaration still has its own stable instance identity.
+        if(moduleTypeHandle==-1 || moduleTypeHandle==ownerModuleHandle)moduleTypeHandle=record.localHandle;
         if (moduleTypeHandle != -1 && ownerModuleHandle != -1) {
-            if (moduleTypeHandle == ownerModuleHandle)
-                continue;
             const QString key =
                 QStringLiteral("%1:%2:%3")
                     .arg(ownerModuleHandle)
@@ -221,6 +221,27 @@ void SmartRelationshipBuilder::analyzeVariableReferences(const QString& content,
                 );
             }
         }
+    }
+}
+
+void SmartRelationshipBuilder::analyzeSignalDependencies(const QString& content, AnalysisContext& context)
+{
+    ensureRelationshipInfo(content,context);
+    for (const auto& captured : std::as_const(context.relationshipInfo.signalDependencies)) {
+        if (checkCancellation(context.currentFileName)) return;
+        const int to=findValueHandle(captured.to,{},context,captured.evidence.line);
+        if (to<0) continue;
+        const int from=findValueHandle(captured.from,{},context,captured.evidence.line);
+        auto fact=std::make_shared<SemanticSignalDependency>(captured.dependency);
+        if (from<0) {
+            fact->kind=SignalDependencyKind::Coverage;
+            fact->boundary=SignalStorageBoundary::Unknown;
+            fact->complete=false;
+            fact->limitations << QStringLiteral("The dependency source is not present in this snapshot.");
+        }
+        RelationshipToAdd item{from<0 ? to : from,to,SymbolRelationshipEngine::SIGNAL_DEPENDENCY,
+            captured.dependency.processKind,100,captured.evidence,captured.from.accessPath,captured.to.accessPath,fact->bitwiseForward,fact};
+        if (collectResults) collectResults->append(std::move(item));
     }
 }
 

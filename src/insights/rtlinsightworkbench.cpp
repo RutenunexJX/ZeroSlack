@@ -7,7 +7,6 @@
 #include "insightviewsurface.h"
 #include "insightcanvas.h"
 #include "insightgraphview.h"
-#include "moduleblockdiagramtoolbar.h"
 #include "insightvisualstyle.h"
 
 #include <QFileDialog>
@@ -96,13 +95,22 @@ bool RtlInsightWorkbench::setViewKind(InsightWorkbenchViewKind kind)
     }
     if (canvasValue && currentKind != kind)
         saveCurrentViewState();
-    if (specializedViews && (!surface || currentKind != kind)) {
+    const bool nativeSurface=specializedViews || (kind!=InsightWorkbenchViewKind::StateTransition
+        && !buildOverrides.contains(static_cast<int>(kind)));
+    if (nativeSurface && (!surface || currentKind != kind)) {
         surface.reset();
         surface = std::make_unique<InsightViewSurface>(kind, this);
         surface->setNavigationHandler(navigationHandler);
         surface->setStatusHandler(statusHandler);
+        surface->setDesignHandler(designHandler);
         static_cast<QVBoxLayout*>(layout())->addWidget(surface->widget(), 1);
     }
+    if(!nativeSurface)surface.reset();
+    if(canvasValue)canvasValue->setVisible(!nativeSurface);
+    for(auto* control:{static_cast<QWidget*>(searchEdit),static_cast<QWidget*>(panButton),static_cast<QWidget*>(minimapButton)})
+        if(control)control->setVisible(!nativeSurface);
+    for(auto* control:findChildren<QPushButton*>(QString(),Qt::FindDirectChildrenOnly))
+        if(control!=detachButton)control->setVisible(!nativeSurface);
     currentKind = kind;
     if (titleLabel) {
         titleLabel->setText(
@@ -132,10 +140,11 @@ QString RtlInsightWorkbench::currentPluginId() const
 void RtlInsightWorkbench::setContext(const InsightViewContext& contextValue)
 {
     const bool sameDocument = currentContext.workspaceId == contextValue.workspaceId
+        && currentContext.projectId == contextValue.projectId
         && currentContext.documentId == contextValue.documentId
         && currentContext.fileName == contextValue.fileName;
-    if (!sameDocument && surface && surface->kernel())
-        surface->kernel()->resetViewState();
+    if (!sameDocument && surface && surface->trace())
+        surface->trace()->clearTarget();
     if (specializedViews && sameDocument) {
         if (contextValue.documentRevision < currentContext.documentRevision
             || (contextValue.documentRevision == currentContext.documentRevision
@@ -201,6 +210,12 @@ bool RtlInsightWorkbench::refresh()
     return result.available;
 }
 
+void RtlInsightWorkbench::setDesignHandler(std::function<void(const QString&,const QString&)> handler)
+{
+    designHandler=std::move(handler);
+    if(surface)surface->setDesignHandler(designHandler);
+}
+
 void RtlInsightWorkbench::setNavigationHandler(
     std::function<bool(const QString&, int, int)> handler)
 {
@@ -247,6 +262,7 @@ void RtlInsightWorkbench::setBuildOverrideForTest(
         buildOverrides.insert(key, std::move(builder));
     else
         buildOverrides.remove(key);
+    if(currentKind==kind)setViewKind(kind);
 }
 
 QPushButton* RtlInsightWorkbench::detachButtonForTest() const
@@ -266,8 +282,6 @@ void RtlInsightWorkbench::setCompactChrome(bool compact)
             panel->layout()->setContentsMargins(0, 0, 0, 0);
             panel->layout()->setSpacing(0);
         }
-        if (auto* bar = surface->widget()->findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar")))
-            static_cast<ModuleBlockDiagramToolbar*>(bar)->setHosted(compact);
     }
     if (titleLabel)
         titleLabel->setVisible(!compact);
@@ -451,8 +465,8 @@ void RtlInsightWorkbench::setStatusHandler(std::function<void(const QString&, in
 { statusHandler = std::move(handler); if (surface) surface->setStatusHandler(statusHandler); }
 RtlInsightsPanelCoordinator* RtlInsightWorkbench::rtlSurfaceForTest() const
 { return surface ? surface->rtl() : nullptr; }
-SignalKernelGraphPanelCoordinator* RtlInsightWorkbench::kernelSurfaceForTest() const
-{ return surface ? surface->kernel() : nullptr; }
+SignalTracePanel* RtlInsightWorkbench::traceSurface() const
+{ return surface ? surface->trace() : nullptr; }
 
 void RtlInsightWorkbench::showEvent(QShowEvent* event)
 {
@@ -495,10 +509,10 @@ void RtlInsightWorkbench::fitNewSurface()
 {
     // Kernel owns first-visible fitting and cancels it on user interaction.
     // A host timer must not overwrite the panel's restored or newly panned view.
-    if (surface && surface->kernel()) return;
+    if (surface && surface->trace()) return;
     if (!surface || !surfaceNeedsFit || !isVisible()) return;
     QTimer::singleShot(0, this, [this] {
-        if (surface && !surface->kernel() && surfaceNeedsFit && isVisible()) {
+        if (surface && !surface->trace() && surfaceNeedsFit && isVisible()) {
             surface->fit();
             surfaceNeedsFit = false;
         }

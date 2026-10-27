@@ -19,7 +19,7 @@ class InsightCanvas;
 class LiveInsightSession;
 class InsightViewSurface;
 class RtlInsightsPanelCoordinator;
-class SignalKernelGraphPanelCoordinator;
+class SignalTracePanel;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -49,9 +49,10 @@ public:
         std::function<bool(const QString&, int, int)> handler);
 
     void setStatusHandler(std::function<void(const QString&, int)> handler);
+    void setDesignHandler(std::function<void(const QString&,const QString&)> handler);
     LiveInsightSession* graphSession() const;
     RtlInsightsPanelCoordinator* rtlSurfaceForTest() const;
-    SignalKernelGraphPanelCoordinator* kernelSurfaceForTest() const;
+    SignalTracePanel* traceSurface() const;
     InsightGraphCore* graphCore();
     InsightCanvas* canvas() const;
     InsightGraphUpdate lastUpdate() const;
@@ -94,6 +95,7 @@ private:
     QHash<int, ViewState> viewStates;
     bool specializedViews = false;
     std::unique_ptr<InsightViewSurface> surface;
+    std::function<void(const QString&,const QString&)> designHandler;
     InsightGraphCore core;
     InsightCanvas* canvasValue = nullptr;
     QLabel* titleLabel = nullptr;

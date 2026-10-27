@@ -1019,7 +1019,8 @@ void MyCodeEditorState::paintGhostAnnotations(
             continue;
         }
         if (annotation.kind
-            == EditorAnnotationKind::InsightTarget) {
+            == EditorAnnotationKind::InsightTarget
+            || annotation.kind == EditorAnnotationKind::SignalTrace) {
             paintInsightTargetAnnotation(
                 editor,
                 painter,

@@ -303,6 +303,7 @@ public:
     void setGhostAnnotations(
         const QList<GhostAnnotation>& annotations);
     void setTbAssistAnnotations(const QList<EditorAnnotation>& annotations);
+    void setSignalTraceAnnotations(const QString& owner,const QList<EditorAnnotation>& annotations);
     QList<TbInputAssist> tbInputAssists() const;
     QHash<QString, QRect> tbAssistHitRegions() const;
     bool openTbInputAssist(int index);

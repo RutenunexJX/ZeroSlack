@@ -34,7 +34,8 @@ class NavigationPaneCoordinator;
 class NotificationCenter;
 class EditingTimeService;
 class SimDockContextView;
-class SignalUsageHotspotPanel;
+class SignalTracePanel;
+struct SignalTraceEvidence;
 class PanelLayoutController;
 class AnalysisCoordinator;
 class AnalysisScheduler;
@@ -121,6 +122,7 @@ signals:
 
 private:
     friend class BottomPanelsUiTest;
+    friend class SignalTraceUiTest;
     Ui::MainWindow *ui;
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;
@@ -128,7 +130,14 @@ private:
     std::unique_ptr<EditingTimeService> editingTimeService;
     std::unique_ptr<SimDockContextView> simulationWorkspace;
     std::unique_ptr<SimulationCommandService> simulationCommands;
-    SignalUsageHotspotPanel* hotspotPanel = nullptr;
+    SignalTracePanel* hotspotPanel = nullptr;
+    void updateSignalTraceContext();
+    void configureSignalTracePanel(SignalTracePanel* panel);
+    bool traceEvidenceMatches(const SignalTraceEvidence& evidence);
+    struct TraceSourceHash { QString documentId; quint64 revision=0; QByteArray hash; };
+    QHash<QString,TraceSourceHash> traceSourceHashes;
+    QList<QPointer<SignalTracePanel>> tracePanels;
+    QString traceSelectionKey;
     std::unique_ptr<PanelLayoutController> panelLayoutController;
     std::unique_ptr<SemanticRuntimeCoordinator> semanticRuntime;
     std::unique_ptr<AnalysisCoordinator> analysisCoordinator;

@@ -24,6 +24,9 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     include/zeroslack/semantic/semanticsourcerange.h
     include/zeroslack/semantic/semanticstableidentity.h
     include/zeroslack/semantic/signaljourneyservice.h
+    include/zeroslack/semantic/signaldependencyfacts.h
+    include/zeroslack/semantic/signaltraceservice.h
+    include/zeroslack/semantic/signalfeedbackservice.h
     include/zeroslack/semantic/slangmanager.h
     include/zeroslack/semantic/smartrelationshipbuilder.h
     include/zeroslack/semantic/statetransitiongraphservice.h
@@ -78,9 +81,13 @@ set(ZEROSLACK_SEMANTIC_SOURCES
     src/semantic/semanticsourceremap.h
     src/semantic/semanticstableidentity.cpp
     src/semantic/signaljourneyservice.cpp
+    src/semantic/signaltraceservice.cpp
+    src/semantic/signalfeedbackservice.cpp
     src/semantic/slangcompilationcontext.cpp
     src/semantic/slangmanagerdiagnostics.cpp
     src/semantic/slangmanagerrelationships.cpp
+    src/semantic/slangsignaldependencies.cpp
+    src/semantic/slangsignaldependencies.h
     src/semantic/slangmanagersymbols.cpp
     src/semantic/slangpreprocessorfacts.cpp
     src/semantic/slangpreprocessorfacts.h

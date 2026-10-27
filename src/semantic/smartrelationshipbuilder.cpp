@@ -67,6 +67,9 @@ QVector<RelationshipToAdd> SmartRelationshipBuilder::computeRelationships(
         analyzeVariableAssignments(content, context);
         if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
 
+        analyzeSignalDependencies(content, context);
+        if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
+
         analyzeVariableReferences(content, context);
         if (checkCancellation(fileName)) { collectResults = nullptr; return result; }
 

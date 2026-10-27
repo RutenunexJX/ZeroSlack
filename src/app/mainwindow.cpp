@@ -60,7 +60,7 @@
 #include "instancepairconnectionpanel.h"
 #include "multisignalpropagationpanel.h"
 #include "semanticdockcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
 #include "semanticindex.h"
 #include "semanticindexsnapshot.h"
 #include "semanticpanelrefreshcoordinator.h"
@@ -418,6 +418,9 @@ void MainWindow::setupNotificationCenter()
 
 MainWindow::~MainWindow()
 {
+    for(const auto& panel:tracePanels)if(panel){
+        panel->cancel();panel->setMarkerHandler({});panel->setNavigationHandler({});panel->setSelectionHandler({});
+    }
     linkedContextController.reset();
     // Flush while activity-message consumers and editor lifetimes are intact.
     editingTimeService.reset();
@@ -1835,7 +1838,7 @@ void MainWindow::setupPanelLayoutController()
             auto* page = new BorrowedPanelPage(content, home);
             if (id == QStringLiteral("hotspot")) {
                 hotspotPanel->setInMainArea(true);
-                const QPointer<SignalUsageHotspotPanel> hotspot(hotspotPanel);
+                const QPointer<SignalTracePanel> hotspot(hotspotPanel);
                 const QPointer<PanelLayoutController> layout(panelLayoutController.get());
                 const QPointer<WorkspaceManager> manager(workspaceManager.get());
                 const QString workspace = workspaceManager->getWorkspacePath();
@@ -1847,7 +1850,7 @@ void MainWindow::setupPanelLayoutController()
                     });
                 });
             }
-            tabManager->openToolPage(page, id, id == QStringLiteral("hotspot") ? tr("Hotspot") : tr("Connections"));
+            tabManager->openToolPage(page, id, id == QStringLiteral("hotspot") ? tr("Signal Trace") : tr("Connections"));
         }
     });
     panelLayoutController
@@ -1938,18 +1941,13 @@ void MainWindow::setupPanelLayoutController()
     connect(simulation, &simdock::Workbench::openSourceRequested, this,
         [this](const QString& file, int line) { revealSuiteSource(file, line, 1); });
     {
-        hotspotPanel = new SignalUsageHotspotPanel(this);
-        auto* hotspotDock = new QDockWidget(tr("Hotspot"), this);
+        hotspotPanel = new SignalTracePanel(this);
+        auto* hotspotDock = new QDockWidget(tr("Signal Trace"), this);
         hotspotDock->setObjectName(QStringLiteral("signalUsageHotspotDock"));
         hotspotDock->setWidget(hotspotPanel);
         registerPanel(QStringLiteral("hotspot"), hotspotDock);
-        hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
-        hotspotPanel->setNavigationHandler([this](const QString& file, int line, int column) {
-            return revealSuiteSource(file, line, column);
-        });
-        hotspotPanel->setStatusMessageHandler([this](const QString& message, int timeout) {
-            postActivityMessage(message, timeout);
-        });
+        configureSignalTracePanel(hotspotPanel);
+        updateSignalTraceContext();
         hotspotPanel->setMainAreaHandler([this](bool expanded) {
             if (expanded) panelLayoutController->openPanelInMainArea(QStringLiteral("hotspot"));
             else {
@@ -1960,7 +1958,7 @@ void MainWindow::setupPanelLayoutController()
         panelLayoutController->setPanelStateHandlers(QStringLiteral("hotspot"),
             [this] { return hotspotPanel->saveViewState(); },
             [this](const QVariantMap& state) {
-                hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+                updateSignalTraceContext();
                 if (state.isEmpty()) hotspotPanel->clearTarget();
                 else hotspotPanel->restoreViewState(state);
             });
@@ -2752,6 +2750,27 @@ ActionExecutionResult MainWindow::executeActionRoute(
             return dock->isVisible();
         };
 
+    if(route==QStringLiteral("graphExport.signalKernel") || route==QStringLiteral("graphExport.usageHotspotTrack")
+        || route==QStringLiteral("graphExport.usageHotspotMatrix")){
+        result.output={{"schema","zeroslack-export-migration/v1"},{"retiredRoute",route},
+            {"imageAction","signal.trace.exportImage"},{"tableAction","signal.trace.exportHeatmap"}};
+        return fail(QStringLiteral("This graph export was retired. Use Signal Trace image export or heatmap CSV export explicitly."));
+    }
+    if(route==QStringLiteral("signalTrace.exportImage") || route==QStringLiteral("signalTrace.exportHeatmap")){
+        if(!hotspotPanel || !hotspotPanel->currentObject().isValid())return fail(QStringLiteral("Select a signal in Signal Trace before exporting."));
+        const auto path=invocation.parameters.value(QStringLiteral("outputPath")).toString();
+        if(path.isEmpty())return fail(QStringLiteral("An outputPath is required."));
+        QString error;
+        if(route==QStringLiteral("signalTrace.exportHeatmap")){
+            if(!hotspotPanel->exportHeatmap(path,&error))return fail(error);
+            result.output={{"schema","zeroslack-signal-heatmap/v1"},{"format","csv"},{"outputPath",path}};
+        }else{
+            const auto exported=hotspotPanel->exportGraph(path);
+            if(!exported.success)return fail(exported.failureReason);
+            result.output={{"schema","zeroslack-signal-trace-image/v1"},{"outputPath",path},{"bytes",exported.bytesWritten}};
+        }
+        return succeeded();
+    }
     if (RtlActionCoordinator::handlesRoute(route)) {
         if (!rtlActionCoordinator) {
             return fail(QStringLiteral(

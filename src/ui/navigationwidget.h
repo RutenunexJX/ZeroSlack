@@ -69,6 +69,8 @@ public:
         const QList<WorkspaceVirtualSourceGroup>& groups);
     void updateDesignHierarchy(const DesignHierarchyReport& report);
     void clearDesignHierarchy();
+    bool selectDesignInstance(const QString& instancePath,bool reveal=false);
+    bool selectDesignModule(const QString& module,const QString& definitionFile={});
     void updateDesignSummary(const DesignHierarchyReport& report, bool structureChanged = true);
     void setDesignHierarchyPending(bool pending);
     void setDesignCandidateContext(const QStringList& files, bool hasProjects, bool scanning);
@@ -93,6 +95,7 @@ signals:
     void designNodeContextMenuRequested(const DesignHierarchyNode& node,
                                         const QPoint& globalPos);
     void designNodeDoubleClicked(const DesignHierarchyNode& node);
+    void designInstanceSelected(const QString& instancePath);
     void designProjectActivated(const QString& projectId);
     void designExpansionChanged(const QString& projectId, bool expanded);
     void addDesignProjectRequested();

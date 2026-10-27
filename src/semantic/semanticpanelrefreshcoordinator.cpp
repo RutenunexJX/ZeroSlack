@@ -96,7 +96,7 @@ SemanticPanelRefreshCoordinator::SemanticPanelRefreshCoordinator(
     NavigationCommandCoordinator* navigationCommandCoordinator,
     ProblemsPanelCoordinator* problemsPanel,
     RtlInsightsPanelCoordinator* rtlInsightsPanel,
-    SignalKernelGraphPanelCoordinator* signalKernelGraphPanel)
+    SignalTracePanel* signalKernelGraphPanel)
 {
     dependencies.set(tabManager,
                      workspaceManager,

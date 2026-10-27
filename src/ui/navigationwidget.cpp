@@ -592,6 +592,12 @@ void NavigationWidget::setupConnections()
             this, &NavigationWidget::onFileTreeContextMenuRequested);
     connect(designTreeWidget, &QTreeWidget::itemDoubleClicked,
             this, &NavigationWidget::onDesignTreeDoubleClicked);
+    connect(designTreeWidget,&QTreeWidget::itemSelectionChanged,this,[this]{
+        if(populatingDesignTree)return;
+        const auto* item=designTreeWidget->currentItem();if(!item)return;
+        const auto node=designItemPayloads.value(item->data(0,Qt::UserRole+1).toInt());
+        if(node.inSelectedTop && !node.instancePath.isEmpty())emit designInstanceSelected(node.instancePath);
+    });
     designTreeWidget->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(designTreeWidget, &QTreeWidget::customContextMenuRequested,
             this, &NavigationWidget::onDesignTreeContextMenuRequested);

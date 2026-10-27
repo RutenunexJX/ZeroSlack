@@ -17,6 +17,7 @@
 #include <slang/ast/types/AllTypes.h>
 #include <slang/syntax/AllSyntax.h>
 #include <slang/syntax/SyntaxNode.h>
+#include <slang/syntax/SyntaxVisitor.h>
 #include <slang/text/SourceManager.h>
 
 #include <QHash>
@@ -525,6 +526,33 @@ void collectNativeRecords(slang::ast::Compilation& compilation,
     if (cancellationReached || cancelled()) {
         outList.clear();
         return;
+    }
+    // Keep declaration identities for inactive, unresolved and recursive instances.
+    // These are syntax facts, not evidence that a generate branch was elaborated.
+    QSet<QString> instanceDeclarations;
+    const auto instanceKey=[](const SemanticSymbolRecord& record){return record.location.fileName+QLatin1Char('|')+QString::number(record.location.position)+QLatin1Char('|')+record.name;};
+    for(const auto& record:outList)if(record.declarationKind==SymbolTaxonomy::DeclarationKind::Instance)instanceDeclarations.insert(instanceKey(record));
+    for(const auto* symbol:compilation.getDefinitions()){
+        if(cancelled()){outList.clear();return;}
+        const auto* definition=symbol ? symbol->as_if<DefinitionSymbol>() : nullptr;
+        if(!definition || !definition->getSyntax())continue;
+        const auto* syntax=definition->getSyntax();
+        auto declarations=slang::syntax::makeSyntaxVisitor(
+            [&](auto& v,const slang::syntax::ModuleDeclarationSyntax& module){if(&module==syntax)v.visitDefault(module);},
+            [&](auto&,const slang::syntax::HierarchyInstantiationSyntax& declaration){
+                for(const auto* instance:declaration.instances){
+                    if(cancelled() || !instance || !instance->decl)continue;
+                    SemanticSymbolRecord record;
+                    const auto name=QString::fromStdString(std::string(instance->decl->name.valueText()));
+                    if(!fillLocationFromSource(sm,instance->decl->name.location(),name,record))continue;
+                    applyCollectorKind(&record,CollectorKind::Inst);
+                    record.owner.name=QString::fromStdString(std::string(definition->name));
+                    record.type.rawTypeText=QString::fromStdString(std::string(declaration.type.valueText()));
+                    const auto key=instanceKey(record);
+                    if(!instanceDeclarations.contains(key)){instanceDeclarations.insert(key);outList.append(record);}
+                }
+            });
+        syntax->visit(declarations);
     }
     finalizeCollectedSymbolRecords(&outList);
     slang_symbols::populateSymbolPresentations(compilation,

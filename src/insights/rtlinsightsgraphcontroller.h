@@ -73,9 +73,6 @@ public:
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
     RtlInsightSourceLocation selectedSourceLocation() const;
-    bool enterModuleBlockNode(int nodeId);
-    bool navigateModuleBlockHistory(int direction);
-    void refreshModuleBlockSelectionActions();
     bool selectSourceLocation(
         const RtlInsightSourceLocation& location,
         bool centerGraph = true);
@@ -95,8 +92,6 @@ public:
         const FsmGraph& graph,
         const QString& title,
         const QString& mode);
-    void mapModuleBlockDiagram(
-        const ModuleBlockDiagramReport& report);
 
     void focusFit();
     void focusZoomIn();

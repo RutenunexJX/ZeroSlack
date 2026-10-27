@@ -56,7 +56,7 @@ QString panelLabel(const QString& panelId)
     if (panelId == QStringLiteral("activity"))
         return QStringLiteral("Activity");
     if (panelId == QStringLiteral("hotspot"))
-        return QStringLiteral("Hotspot");
+        return QStringLiteral("Signal Trace");
     if (panelId == QStringLiteral("simulationLog"))
         return QStringLiteral("Run log");
     if (panelId == QStringLiteral("simulationEvents"))

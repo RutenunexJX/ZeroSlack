@@ -40,13 +40,13 @@ inline QString liveInsightKindDisplayName(LiveInsightKind kind)
 {
     switch (kind) {
     case LiveInsightKind::Kernel:
-        return QStringLiteral("Kernel");
+        return QStringLiteral("Signal Trace");
     case LiveInsightKind::Module:
-        return QStringLiteral("Block");
+        return QStringLiteral("Design");
     case LiveInsightKind::State:
         return QStringLiteral("State");
     case LiveInsightKind::Hotspot:
-        return QStringLiteral("Hotspot");
+        return QStringLiteral("Signal Heatmap");
     }
     return {};
 }

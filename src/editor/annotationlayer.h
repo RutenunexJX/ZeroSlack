@@ -17,7 +17,8 @@ enum class EditorAnnotationKind {
     TemplateInstance,
     KeywordGhost,
     ColumnCaret,
-    InsightTarget
+    InsightTarget,
+    SignalTrace
 };
 
 enum class EditorAnnotationPlacement {

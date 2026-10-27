@@ -9,7 +9,10 @@
 #include "panellayoutcontroller.h"
 #include "semanticdockcoordinator.h"
 #include "semanticpanelrefreshcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
+#include "signaltracemodels.h"
+#include "navigationmanager.h"
+#include <QTableView>
 #include "semanticindexsnapshot.h"
 #include "projectmodel.h"
 #include "tabmanager.h"
@@ -93,21 +96,17 @@ private slots:
         qInfo() << "file opened";
         auto* layout = window.panelLayoutController.get(); QVERIFY(layout);
         auto* context = window.findChild<ContextWorkspaceController*>(); QVERIFY(context);
-        auto* hotspot = dynamic_cast<SignalUsageHotspotPanel*>(window.findChild<QWidget*>("signalUsageHotspotPanel")); QVERIFY(hotspot);
-        SignalUsageHotspotQuery query;
-        query.signalName = "sig"; query.fileName = file; query.moduleName = "scope_mod";
-        SignalUsageHotspotReport model;
-        qInfo() << "waiting for real semantic report";
-        QTRY_VERIFY_WITH_TIMEOUT((model = SignalUsageHotspotService::getInstance()->buildSignalUsageHotspot(query)).found
-                                && !model.items.isEmpty(), 10000);
-        qInfo() << "semantic report ready" << model.items.size();
+        auto* hotspot = window.findChild<SignalTracePanel*>(); QVERIFY(hotspot);
+        QTRY_VERIFY_WITH_TIMEOUT(SemanticIndex::getInstance()->snapshotToken().snapshot
+            && !SemanticIndex::getInstance()->snapshotToken().snapshot->getSymbolRecordsByName("sig",file).isEmpty(),20000);
+        QVERIFY(window.navigationManager->setDesignTop("scope_mod",file).isEmpty());
         QVERIFY(layout->bottomPanelIds().contains("hotspot"));
         QVERIFY(layout->buttonForPanel("hotspot")->isVisible());
         // Use the real source-action adapter, service snapshot and editor.
         auto* refresh = window.semanticDocks->refreshCoordinator(); QVERIFY(refresh);
         refresh->showSignalUsageHotspotForSymbol("sig", file, "scope_mod");
         qInfo() << "source action dispatched";
-        QTRY_VERIFY_WITH_TIMEOUT(!hotspot->reportBuildInFlightForTest() && hotspot->matrixItemCountForTest() > 0, 10000);
+        QTRY_VERIFY_WITH_TIMEOUT(!hotspot->busy() && hotspot->heatModel()->rowCount()>0, 10000);
         const auto expectedTheme = dark ? ThemeMode::Dark : ThemeMode::Light;
         ApplicationThemeManager::instance().setMode(expectedTheme);
         QApplication::processEvents();
@@ -115,65 +114,48 @@ private slots:
         QCOMPARE(layout->activeBottomPanelId(), QStringLiteral("hotspot"));
         QVERIFY(!layout->isBottomCollapsed());
         QVERIFY(!context->viewForResource(LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot, workspace).stableKey()));
-        hotspot->setMatrixModeForTest(true);
+        hotspot->setHeatmapMode(true);
         const QString prefix = QString::fromLatin1(QTest::currentDataTag());
         capture(window, prefix + "-matrix");
-        const auto& first = model.items.first();
-        QVERIFY(first.snippet.contains("sig") && (first.snippet.contains("<=") || first.snippet.contains("assign")));
-        auto* matrix = hotspot->findChild<QGraphicsView*>("signalUsageHotspotMatrixView"); QVERIFY(matrix);
-        QGraphicsItem* cell = nullptr;
-        for (auto* item : matrix->scene()->items())
-            if (item->toolTip().startsWith(SignalUsageHotspotService::roleDisplayName(first.role) + QString::fromUtf8(" · ")))
-                cell = item;
-        QVERIFY(cell);
-        QTest::mouseClick(matrix->viewport(), Qt::LeftButton, Qt::NoModifier,
-                          matrix->mapFromScene(cell->sceneBoundingRect().center()));
-        QTRY_VERIFY(hotspot->inlineItemsForTest());
-        const int selection = hotspot->selectedItemIndexForTest();
+        const auto first=hotspot->heatModel()->references().first();
+        auto* table=hotspot->heatTable();QVERIFY(table && table->model()==hotspot->heatModel());
+        table->setCurrentIndex(table->model()->index(0,SignalTraceHeatModel::Total));
+        auto* details=hotspot->findChild<QTreeWidget*>("traceReferences");QVERIFY(details && details->topLevelItemCount()>0);
+        const auto selection=hotspot->currentObject().id();
+        details->itemActivated(details->topLevelItem(0),0);
+        QTRY_COMPARE(window.tabManager->getCurrentEditor()->textCursor().blockNumber()+1,first.range.line);
+        auto markerCount=[](MyCodeEditor* editor){int count=0;for(const auto& mark:editor->annotationLayerReportForTest().annotations)
+            count+=mark.annotation.kind==EditorAnnotationKind::SignalTrace;return count;};
+        QTRY_VERIFY(markerCount(window.tabManager->getCurrentEditor())>0);
         hotspot->setFocusSearchText("sig");
-        hotspot->setMatrixModeForTest(false);
-        QCOMPARE(hotspot->selectedItemIndexForTest(), selection);
-        QVERIFY(hotspot->inlineItemsForTest());
-        auto* details = hotspot->inlineItemsForTest();
-        QApplication::processEvents();
-        const QPoint rowCenter = details->visualItemRect(details->topLevelItem(0)).center();
-        QTest::mouseClick(details->viewport(), Qt::LeftButton, Qt::NoModifier, rowCenter);
-        QTest::mouseDClick(details->viewport(), Qt::LeftButton, Qt::NoModifier, rowCenter);
-        QTRY_COMPARE(window.tabManager->getCurrentEditor()->textCursor().blockNumber() + 1, first.line);
-        QCOMPARE(window.tabManager->getCurrentEditor()->textCursor().positionInBlock() + 1, first.column);
-        auto* track = hotspot->findChild<QGraphicsView*>("signalUsageHotspotTrackView"); QVERIFY(track);
-        bool markerFound = false;
-        for (auto* item : track->scene()->items())
-            if (item->data(Qt::UserRole).toString() == "currentEditorLine" && item->isVisible()) markerFound = true;
-        QVERIFY(markerFound);
-        capture(window, prefix + "-track-inline");
+        capture(window,prefix+"-heatmap-details");
         auto* originalParent = hotspot->parentWidget();
-        auto* expand = hotspot->findChild<QToolButton*>("signalUsageHotspotMainAreaButton"); QVERIFY(expand);
+        auto* expand = hotspot->findChild<QToolButton*>("traceMainArea"); QVERIFY(expand);
         expand->click();
         QTRY_VERIFY(hotspot->isInMainArea());
         QVERIFY(hotspot->parentWidget() != originalParent);
         QVERIFY(window.tabManager->toolPage("hotspot"));
         QCOMPARE(hotspot->focusSearchText(), QStringLiteral("sig"));
-        QCOMPARE(hotspot->selectedItemIndexForTest(), selection);
+        QCOMPARE(hotspot->currentObject().id(), selection);
         capture(window, prefix + "-main-area");
         expand->click();
         QTRY_VERIFY(!hotspot->isInMainArea());
         QTRY_COMPARE(hotspot->parentWidget(), originalParent);
         QTRY_VERIFY(!layout->isBottomCollapsed());
-        QCOMPARE(hotspot->selectedItemIndexForTest(), selection);
+        QCOMPARE(hotspot->currentObject().id(), selection);
         QVERIFY(!window.tabManager->toolPage("hotspot"));
         // Persist only the panel's presentation projection and target.
         const auto saved = layout->layoutState();
         hotspot->setFocusSearchText("no-match");
         layout->restoreLayoutState(saved);
-        QTRY_VERIFY(!hotspot->reportBuildInFlightForTest());
+        QTRY_VERIFY(!hotspot->busy());
         QCOMPARE(hotspot->focusSearchText(), QStringLiteral("sig"));
-        QCOMPARE(hotspot->selectedItemIndexForTest(), selection);
+        QCOMPARE(hotspot->currentObject().id(), selection);
         const auto legacy = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot, workspace,
             {{"target", QVariantMap{{"fileName", file}, {"moduleName", "scope_mod"}, {"signalName", "sig"}}}});
         QVERIFY(context->openResource(legacy));
         QVERIFY(!context->viewForResource(legacy.stableKey()));
-        QCOMPARE(dynamic_cast<SignalUsageHotspotPanel*>(window.findChild<QWidget*>("signalUsageHotspotPanel")), hotspot);
+        QCOMPARE(window.findChild<SignalTracePanel*>(), hotspot);
         hotspot->clearTarget();
         ContextWorkspaceState legacyState;
         legacyState.valid = true;
@@ -181,15 +163,14 @@ private slots:
         const auto migrated = context->restoreState(legacyState);
         QCOMPARE(migrated.restoredResources, 1);
         QCOMPARE(migrated.skippedResources, 0);
-        QTRY_VERIFY(!hotspot->reportBuildInFlightForTest() && hotspot->matrixItemCountForTest() > 0);
+        QTRY_VERIFY(!hotspot->busy() && hotspot->heatModel()->rowCount()>0);
         QVERIFY(context->captureState().pinnedResources.isEmpty());
         QCOMPARE(layout->layoutState().bottomPanelViewStates.value("hotspot").value("signal").toString(), QStringLiteral("sig"));
         const QString otherFile = workspace + "/other.sv";
         QVERIFY(write(otherFile, "module other; endmodule\n"));
         QVERIFY(window.tabManager->openFileInTab(otherFile));
         QApplication::processEvents();
-        for (auto* item : track->scene()->items())
-            if (item->data(Qt::UserRole).toString() == "currentEditorLine") QVERIFY(!item->isVisible());
+        QCOMPARE(markerCount(window.tabManager->getCurrentEditor()),0);
         QVERIFY(window.tabManager->activateOpenFile(file));
 
         auto* clear = window.findChild<QToolButton*>("activityPanelActionButton"); QVERIFY(clear);
@@ -214,9 +195,9 @@ private slots:
         // A new workspace invalidates the old target and any delayed report.
         const QString other = data.filePath("other"); QDir().mkpath(other);
         QVERIFY(sessions->openWorkspace(other));
-        QTRY_VERIFY(hotspot->currentDeclarationDisplayNameForTest().isEmpty());
-        QTRY_VERIFY(!hotspot->reportBuildInFlightForTest());
-        QVERIFY(hotspot->trackClustersForTest().isEmpty());
+        QTRY_VERIFY(!hotspot->currentObject().isValid());
+        QTRY_VERIFY(!hotspot->busy());
+        QCOMPARE(hotspot->heatModel()->rowCount(),0);
         QVERIFY(window.close());
     }
 };

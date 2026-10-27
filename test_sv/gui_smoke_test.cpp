@@ -141,8 +141,8 @@
 #include "semanticruntimecoordinator.h"
 #include "settingscenterpanel.h"
 #include "settingsdialog.h"
-#include "signalkernelgraphpanelcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
+
 #include "slangmanager.h"
 #include "smartrelationshipbuilder.h"
 #include "tabmanager.h"
@@ -152,6 +152,7 @@
 #include "workspaceanalysisrequestqueue.h"
 #include "workspacemanager.h"
 #undef private
+#include "signal_trace_test_fixture.h"
 #include "applicationthememanager.h"
 #include "contextdockhost.h"
 #include "contextfloatingwindow.h"
@@ -5038,165 +5039,15 @@ static void runEditorCtrlClickNavigationRegression()
 
 static void runSignalKernelGraphPopupInteractionRegression()
 {
-    QMainWindow host;
-    host.resize(900, 560);
-    SignalKernelGraphPanelCoordinator graph(&host);
-    host.addDockWidget(Qt::BottomDockWidgetArea, graph.dock());
-    host.show();
-    graph.dock()->show();
-
-    SignalKernelGraphReport report;
-    report.found = true;
-    report.kernelModuleName = QStringLiteral("graph_top");
-    report.kernel.id = 10;
-    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
-    report.kernel.displayName = QStringLiteral("kernel_sig");
-    report.kernel.moduleDisplayName = QStringLiteral("graph_top");
-    report.kernel.typeDisplayName = QStringLiteral("logic");
-    report.kernel.detailDisplayName =
-        QStringLiteral("assignment with enough detail to build a popup");
-    report.kernel.navigateCodeLink =
-        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 10, 3);
-
-    SignalKernelGraphNode input;
-    input.id = 11;
-    input.role = SignalKernelGraphNodeRole::Input;
-    input.inputLane = SignalKernelGraphInputLane::Data;
-    input.displayName = QStringLiteral("data_in");
-    input.moduleDisplayName = QStringLiteral("graph_top");
-    input.typeDisplayName = QStringLiteral("logic");
-    report.inputs.append(input);
-
-    SignalKernelGraphNode output;
-    output.id = 12;
-    output.role = SignalKernelGraphNodeRole::Output;
-    output.displayName = QStringLiteral("data_out");
-    output.moduleDisplayName = QStringLiteral("graph_top");
-    output.typeDisplayName = QStringLiteral("logic");
-    report.outputs.append(output);
-    report.edges.append({input.id, report.kernel.id, QString()});
-    report.edges.append({report.kernel.id, output.id, QString()});
-
-    bool graphNavigated = false;
-    graph.setNavigationHandler(
-        [&](const QString& fileName, int line, int column) {
-            graphNavigated =
-                fileName == QStringLiteral("graph_top.sv")
-                && line == 10
-                && column == 3;
-            return graphNavigated;
-        });
-    graph.renderReport(report);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-
-    QGraphicsView* view = graph.view();
-    expectBool("signal kernel graph view exists", view != nullptr, true);
-    expectBool("signal kernel graph popup starts hidden",
-               graph.hoverPopup && !graph.hoverPopup->isVisible(),
-               true);
-    if (!view || !graph.hoverPopup)
-        return;
-
-    const QPoint kernelPoint = view->mapFromScene(QPointF(0, 0));
-    QGraphicsRectItem* kernelRectItem = nullptr;
-    for (QGraphicsItem* item : view->items(kernelPoint)) {
-        auto* rectItem = dynamic_cast<QGraphicsRectItem*>(item);
-        if (!rectItem)
-            continue;
-        const QRectF rect = rectItem->rect();
-        if (rect.width() > 120.0 && rect.width() < 260.0
-            && rect.height() > 40.0 && rect.height() < 90.0) {
-            kernelRectItem = rectItem;
-            break;
-        }
-    }
-    expectBool("signal kernel graph kernel item found",
-               kernelRectItem != nullptr,
-               true);
-    if (!kernelRectItem)
-        return;
-
-    QTest::mouseMove(view->viewport(), kernelPoint);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("signal kernel graph hover does not show popup",
-               !graph.hoverPopup->isVisible(),
-               true);
-
-    QTest::mouseClick(view->viewport(),
-                      Qt::RightButton,
-                      Qt::NoModifier,
-                      kernelPoint);
-    expectBool("signal kernel graph right-click shows popup",
-               waitUntil([&]() { return graph.hoverPopup->isVisible(); },
-                         1000),
-               true);
-    expectBool("signal kernel graph preview is embedded",
-               !graph.hoverPopup->isWindow()
-                   && graph.hoverPopup->window()
-                          == view->window(),
-               true);
-
-    const QRect nodeViewRect =
-        view->mapFromScene(kernelRectItem->sceneBoundingRect())
-            .boundingRect();
-    const QRect nodeGlobalRect(
-        view->viewport()->mapToGlobal(nodeViewRect.topLeft()),
-        view->viewport()->mapToGlobal(nodeViewRect.bottomRight()));
-    const QRect popupRect(
-        graph.hoverPopup->mapToGlobal(QPoint(0, 0)),
-        graph.hoverPopup->size());
-    expectBool("signal kernel graph popup avoids clicked node",
-               !popupRect.intersects(nodeGlobalRect.normalized()),
-               true);
-
-    const QPoint outputPoint = view->mapFromScene(QPointF(430, 0));
-    QTest::mouseClick(view->viewport(),
-                      Qt::RightButton,
-                      Qt::NoModifier,
-                      outputPoint);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    bool outputPopupVisible = false;
-    const QString popupText = visibleEditorHoverPopupText(&outputPopupVisible);
-    expectBool("signal kernel graph right-click switches popup",
-               outputPopupVisible
-                   && popupText.contains(QStringLiteral("Output: data_out")),
-               true);
-
-    const QPoint blankPoint(4, view->viewport()->height() - 4);
-    QTest::mouseClick(view->viewport(),
-                      Qt::LeftButton,
-                      Qt::NoModifier,
-                      blankPoint);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("signal kernel graph blank left-click closes popup",
-               !graph.hoverPopup->isVisible(),
-               true);
-
-    QTest::mouseClick(view->viewport(),
-                      Qt::RightButton,
-                      Qt::NoModifier,
-                      kernelPoint);
-    expectBool("signal kernel graph right-click reopens popup",
-               waitUntil([&]() { return graph.hoverPopup->isVisible(); },
-                         1000),
-               true);
-    QTest::mouseClick(view->viewport(),
-                      Qt::RightButton,
-                      Qt::NoModifier,
-                      blankPoint);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("signal kernel graph blank right-click closes popup",
-               !graph.hoverPopup->isVisible(),
-               true);
-
-    QTest::mouseDClick(view->viewport(),
-                       Qt::LeftButton,
-                       Qt::NoModifier,
-                       kernelPoint);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    expectBool("signal kernel graph double-click navigates",
-               graphNavigated,
-               true);
+    SignalTraceTestFixture fixture;
+    const bool built=fixture.build("module top(input logic data_in,output wire data_out);\nwire kernel_sig;assign kernel_sig=data_in;assign data_out=kernel_sig;endmodule\n");
+    expectBool("trace production fixture",built,true);if(!built)return;
+    SignalTracePanel trace;expectBool("trace target ready",fixture.show(trace,"kernel_sig"),true);
+    bool navigated=false;trace.setNavigationHandler([&](const SignalTraceEvidence& evidence){navigated=evidence.range.fileName==fixture.file && evidence.range.line>0;return navigated;});
+    auto* details=trace.findChild<QTreeWidget*>("traceReferences");
+    expectBool("trace reference details",details && details->topLevelItemCount()>0,true);
+    if(details && details->topLevelItemCount())details->itemActivated(details->topLevelItem(0),0);
+    expectBool("trace reference navigation",navigated,true);
 }
 
 static void runEditorFormatterRegression()
@@ -7660,17 +7511,11 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
     RtlInsightsPanelCoordinator panel(nullptr);
     panel.showModuleInsights(fixturePath, QStringLiteral("insight_top"),
                              QStringLiteral("data_q"));
+    bool designRequested=false;
+    panel.setDesignHandler([&](const QString& file,const QString& module){designRequested=file==fixturePath && module=="insight_top";});
     panel.showModuleBlockDiagram();
-    expectBool("retained block diagram renders module nodes",
-               panel.graphModeForTest() == QStringLiteral("module-block")
-                   && panel.graphNodeItemCountForTest() > 0,
-               true);
-    quint64 builds = panel.graphBuildRequestCountForTest();
-    panel.refresh();
-    expectBool("block refresh remains on the block diagram",
-               panel.graphModeForTest() == QStringLiteral("module-block")
-                   && panel.graphBuildRequestCountForTest() == builds + 1,
-               true);
+    expectBool("module entry forwards to authoritative Design",designRequested,true);
+    quint64 builds=panel.graphBuildRequestCountForTest();
 
     installRtlInsightsFixtureSnapshot();
     panel.showFsmGraph();
@@ -7701,38 +7546,13 @@ static void runRtlInsightsPanelRegression(MainWindow& window, const QString& fix
                    && panel.graphBuildRequestCountForTest() == builds + 1,
                true);
 
-    auto* hotspot = panel.signalUsageHotspotPanelForTest();
-    QList<SignalUsageHotspotQuery> hotspotRequests;
-    hotspot->setReportBuilderForTest(
-        [&hotspotRequests](const SignalUsageHotspotQuery& query,
-                           std::shared_ptr<const SemanticIndexSnapshot>) {
-            hotspotRequests.append(query);
-            SignalUsageHotspotReport report;
-            report.notFoundReasonDisplayName = QStringLiteral("No matching usage");
-            return report;
-        });
-    panel.showSignalUsageHotspotForSignal(
-        fixturePath, QStringLiteral("insight_top"), QStringLiteral("data_q"),
-        QStringLiteral("data_q[0]"));
-    expectBool("hotspot request completes", waitUntil([&]() {
-        return !hotspot->reportBuildInFlightForTest();
-    }, 2000), true);
-    hotspot->setMatrixModeForTest(true);
-    panel.refresh();
-    expectBool("hotspot refresh completes", waitUntil([&]() {
-        return !hotspot->reportBuildInFlightForTest();
-    }, 2000), true);
-    expectBool("hotspot refresh retains its page, matrix mode and access path",
-               panel.stackForTest()->currentWidget() == hotspot
-                   && hotspot->matrixModeForTest()
-                   && hotspotRequests.size() == 2
-                   && hotspotRequests.last().signalAccessPath == QStringLiteral("data_q[0]")
-                   && hotspotRequests.last().moduleName == QStringLiteral("insight_top"),
-               true);
+    auto* hotspot=panel.tracePanelForTest();
+    panel.showSignalUsageHotspotForSignal(fixturePath,"insight_top","data_q","data_q[0]");
+    expectBool("native heatmap request completes",waitUntil([&]{return !hotspot->busy();},2000),true);
+    hotspot->setHeatmapMode(true);panel.refresh();
+    expectBool("native heatmap remains selected",panel.stackForTest()->currentWidget()==hotspot,true);
     panel.setStateViewEnabled(false);
-    expectBool("disabling state view preserves the selected hotspot page",
-               panel.stackForTest()->currentWidget() == hotspot, true);
-    hotspot->setReportBuilderForTest({});
+    expectBool("disabling state view preserves native heatmap",panel.stackForTest()->currentWidget()==hotspot,true);
 
     panel.updateModuleContext({}, {});
     panel.refresh();
@@ -11422,7 +11242,7 @@ void runInsightFocusIntegrationRegression(
         window.semanticDocks
         ? window.semanticDocks->rtlInsightsPanelCoordinator()
         : nullptr;
-    SignalKernelGraphPanelCoordinator* kernel =
+    SignalTracePanel* kernel =
         window.semanticDocks
         ? window.semanticDocks
               ->signalKernelGraphPanelCoordinator()

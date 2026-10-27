@@ -9,7 +9,9 @@
 #include "rtlinsightworkbench.h"
 #include "settingscenterpanel.h"
 #include "settingscenterservice.h"
-#include "signalkernelgraphpanelcoordinator.h"
+#include "signal_trace_test_fixture.h"
+#include "navigationwidget.h"
+#include "hierarchyservice.h"
 #include "semanticindex.h"
 #include "slangmanager.h"
 #include "workspaceconfigurationdialog.h"
@@ -298,18 +300,20 @@ void runCases(const QString& fixture, const QString& settingsDir)
     QFile file(fixture);
     if (!file.open(QIODevice::WriteOnly)) qFatal("Cannot write test fixture");
     file.write(source.toUtf8()); file.close();
-    SlangManager slang;
-    SemanticIndex::getInstance()->updateSymbolRecordsForFile(fixture, slang.extractSymbolRecords(fixture, source), source);
+    SignalTraceTestFixture nativeFixture;
+    if(!nativeFixture.build(source+"\nmodule top;dpi_top u();endmodule\n"))qFatal("Production semantic fixture failed");
+    SemanticIndex::getInstance()->setSnapshot(nativeFixture.context.token.snapshot);
+    const QString analyzedFile=nativeFixture.file;
     QWidget owner;
-    SignalKernelGraphPanelCoordinator kernel(&owner);
-    kernel.showSignalKernelGraphForSymbol("ready", fixture, "dpi_top");
-    capture(kernel.dock()->widget(), "kernel", [&] { kernel.focusFit(); });
-
+    SignalTracePanel trace(&owner);trace.setContext(nativeFixture.context);trace.showForSymbol("ready",analyzedFile,"dpi_top");
+    capture(&trace,"signal-trace",[&]{if(!QTest::qWaitFor([&]{return !trace.busy();},10000))++failures;});
+    trace.setHeatmapMode(true);capture(&trace,"signal-heatmap");
+    NavigationWidget design;
+    const QList<DesignHierarchyRoot> roots{{"main","Main","top",analyzedFile,true}};
+    design.updateDesignHierarchy(HierarchyService(nativeFixture.context.token).explicitDesignHierarchy(roots,"main",{analyzedFile}));
+    design.setActiveTab(NavigationWidget::DesignTab);capture(&design,"design-hierarchy");
     RtlInsightsPanelCoordinator rtl(&owner);
-    rtl.showModuleBlockDiagramForModule(fixture, "dpi_top");
-    if (!waitForLiveInsightReports(rtl)) ++failures;
-    capture(rtl.dock()->widget(), "rtl-module", [&] { rtl.focusFit(); });
-    rtl.showStateTransitionGraphForSignal(fixture, "dpi_top", "next_state");
+    rtl.showStateTransitionGraphForSignal(analyzedFile, "dpi_top", "next_state");
     if (!waitForLiveInsightReports(rtl)) ++failures;
     capture(rtl.dock()->widget(), "rtl-state", [&] { rtl.focusFit(); });
     RtlInsightWorkbench generic;
@@ -333,7 +337,7 @@ void runCases(const QString& fixture, const QString& settingsDir)
     capture(&overview, "context-overview");
     LiveInsightToolContext context;
     context.workspaceId = "dpi-workspace"; context.documentId = "dpi-document";
-    context.fileName = fixture; context.moduleName = "dpi_top"; context.signalName = "ready";
+    context.fileName = analyzedFile; context.projectId=nativeFixture.context.projectId;context.workspaceId=nativeFixture.context.workspaceId;context.documentText=nativeFixture.source; context.moduleName = "dpi_top"; context.signalName = "ready";
     for (auto kind : {LiveInsightKind::Kernel, LiveInsightKind::Module, LiveInsightKind::State, LiveInsightKind::Hotspot}) {
         ContextDockHost sidebar;
         auto resource = LiveInsightsContextProvider::resourceForKind(kind, {});
@@ -356,23 +360,18 @@ void runCases(const QString& fixture, const QString& settingsDir)
         pages.hide();
         capture(&sidebar, "sidebar-" + liveInsightKindId(kind), [&] {
             sidebar.setSectionHeight(resource.stableKey(), sidebar.height());
-            if (kind == LiveInsightKind::Module || kind == LiveInsightKind::State) {
+            if (kind == LiveInsightKind::State) {
                 auto* page = view->surfaceForTest();
                 auto* panel = page ? page->workbenchForTest()->rtlSurfaceForTest() : nullptr;
                 if (!panel || !waitForLiveInsightReports(*panel)) ++failures;
             }
         });
         if (!view->surfaceForTest()) { ++failures; continue; }
-        auto* workbench = view->surfaceForTest()->workbenchForTest();
-        if (workbench->minimumSizeHint().height() > QApplication::primaryScreen()->availableGeometry().height()) ++failures;
-        QJsonObject dimensions{{"case", "sidebar-minimum-" + liveInsightKindId(kind)},
-            {"workbenchMinimum", sizeJson(workbench->minimumSize())},
-            {"workbenchMinimumHint", sizeJson(workbench->minimumSizeHint())}};
-        if (auto* surface = workbench->kernelSurfaceForTest()) dimensions["dockMinimum"] = sizeJson(surface->dock()->minimumSize());
-        if (auto* surface = workbench->rtlSurfaceForTest()) {
-            dimensions["dockMinimum"] = sizeJson(surface->dock()->minimumSize());
-            dimensions["stackMinimum"] = sizeJson(surface->stackForTest()->minimumSize());
-        }
+        auto* page=view->surfaceForTest();auto* workbench=page->workbenchForTest();
+        if(page->minimumSizeHint().height()>QApplication::primaryScreen()->availableGeometry().height())++failures;
+        QJsonObject dimensions{{"case","sidebar-minimum-"+liveInsightKindId(kind)},
+            {"pageMinimum",sizeJson(page->minimumSize())},{"pageMinimumHint",sizeJson(page->minimumSizeHint())}};
+        if(workbench && workbench->rtlSurfaceForTest())dimensions["dockMinimum"]=sizeJson(workbench->rtlSurfaceForTest()->dock()->minimumSize());
         records.append(dimensions);
         if (kind == LiveInsightKind::Kernel) {
             current.moduleName.clear(); current.signalName.clear();

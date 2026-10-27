@@ -4,7 +4,7 @@
 #include <functional>
 #define private public
 #include "editorsourcenavigation.h"
-#include "signalkernelgraphpanelcoordinator.h"
+
 #undef private
 #include "mycodeeditor.h"
 #include "tsdocument.h"
@@ -15,6 +15,7 @@
 #include "slangmanager.h"
 #include "semanticindexsnapshot.h"
 #include "testuistyle.h"
+#include "signal_trace_test_fixture.h"
 
 namespace {
 int checks = 0, failures = 0;
@@ -35,7 +36,9 @@ bool directoryAlias(const QString& target, const QString& alias) {
     QProcess process;
     process.start("cmd.exe", {"/d", "/s", "/c", "mklink", "/J",
         QDir::toNativeSeparators(alias), QDir::toNativeSeparators(target)});
-    return process.waitForFinished(10000) && process.exitCode() == 0 && QFileInfo(alias).isDir();
+    const bool created=process.waitForFinished(10000) && process.exitCode()==0 && QFileInfo(alias).isDir();
+    if(!created)std::printf("Directory alias creation failed: %s; %s; %s\n",qPrintable(process.errorString()),process.readAllStandardOutput().constData(),process.readAllStandardError().constData());
+    return created;
 #else
     return QFile::link(target,alias);
 #endif
@@ -304,33 +307,13 @@ void preview() {
         "open preview identifies its live document");
     {
         QMainWindow graphWindow;
-        SignalKernelGraphPanelCoordinator graph(&graphWindow);
-        graphWindow.addDockWidget(Qt::RightDockWidgetArea,graph.dock()); graphWindow.show();
-        graph.setDocumentModel(tabs.getDocumentModel());
-        SignalKernelGraphService graphService(&index);
-        SignalKernelGraphQuery graphQuery; graphQuery.signalName="ready";
-        graphQuery.fileName=target; graphQuery.moduleName="preview_child";
-        const auto graphReport=graphService.buildSignalKernelGraph(graphQuery);
-        check(graphReport.found && graphReport.locationSnapshot==index.snapshot(),
-            "real graph service carries its coordinate publication to preview");
-        graph.renderReportForTest(graphReport);
-        graph.dock()->show(); QApplication::processEvents();
-        graph.showNodePreview(graphReport.kernel,QRectF(0,0,100,80));
-        if (!graph.hoverPopup->contentModel().navigationTarget.isValid())
-            for(const auto& row:graph.hoverPopup->contentModel().rows) std::printf("Graph preview: %s\n",row.text.toUtf8().constData());
-        check(graph.hoverPopup->isVisible() && graph.hoverPopup->contentModel().navigationTarget.isValid(),
-            "actual graph caller displays a current code preview");
-        const auto builds=graph.graphBuildRequestCountForTest();
-        editor->setPlainText("// inserted before graph node\n"+original);
-        check(!graph.hoverPopup->isVisible() && graph.graphBuildRequestCountForTest()==builds,
-            "document edit expires displayed graph preview without rebuilding analysis");
-        graph.showNodePreview(graphReport.kernel,QRectF(0,0,100,80));
-        bool staleMessage=false;
-        for(const auto& row:graph.hoverPopup->contentModel().rows) staleMessage |= row.text.contains("Refresh analysis");
-        check(staleMessage && !graph.hoverPopup->contentModel().navigationTarget.isValid(),
-            "actual graph caller displays stale-source reason on repeated hover");
-        graph.setDocumentModel(nullptr);
-        check(!graph.hoverPopup->isVisible(),"rebinding preview document model clears presentation and connections");
+        SignalTraceContext traceContext{fixture.path(),"preview-test",{},index.snapshotToken()};
+        auto* trace=new SignalTracePanel(&graphWindow);graphWindow.setCentralWidget(trace);trace->setContext(traceContext);trace->showForSymbol("ready",target,"preview_child");graphWindow.show();
+        check(QTest::qWaitFor([&]{return !trace->busy();},10000) && trace->currentObject().isValid(),"native trace retains the captured source identity");
+        const auto captured=trace->currentObject();editor->setPlainText("// inserted before trace target\n"+original);
+        traceContext.currentSourceHashes[target]=SemanticSignalRoleEvidence::sourceHash(editor->toPlainText());trace->setContext(traceContext);
+        QString staleReason;check(!SignalTraceService(traceContext).validate(captured,&staleReason) && !staleReason.isEmpty(),"edited live source invalidates native trace coordinates without reparsing");
+        check(!trace->exportGraph(fixture.filePath("stale.svg")).success,"stale trace cannot export a current-looking result");
     }
     editor->setPlainText(QString(original).replace("module preview_child;","module preview_child; // dirty preview marker"));
     const auto dirty=definitions.previewForContext(context);

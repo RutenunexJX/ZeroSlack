@@ -7,7 +7,7 @@
 #include "rtlinsightspanelviewstate.h"
 #include "semanticdiffservice.h"
 #include "semanticpanelutils.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
 #include "statetransitiongraphservice.h"
 
 #include <QCheckBox>
@@ -224,9 +224,9 @@ RtlInsightsPresenter::RtlInsightsPresenter(
 }
 void RtlInsightsPresenter::refresh()
 {
-    if (state.insightsStack && state.signalUsageHotspotPanel
-        && state.insightsStack->currentWidget() == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->refreshReport();
+    if (state.insightsStack && state.signalTracePanel
+        && state.insightsStack->currentWidget() == state.signalTracePanel) {
+        state.signalTracePanel->refresh();
         return;
     }
     if (state.currentGraphMode
@@ -285,7 +285,7 @@ void RtlInsightsPresenter::renderActionList()
     createGroupItem(
         state.insightsTree,
         state.currentSignalName.isEmpty()
-            ? QStringLiteral("Select a signal for Usage Hotspot or State Transition Graph, or open Module Block Diagram")
+            ? QStringLiteral("Select a signal for Signal Trace or a state graph, or open its module in Design")
             : QStringLiteral("Current signal: %1").arg(state.currentSignalName),
         0);
     if (state.insightsDock)
@@ -308,7 +308,9 @@ void RtlInsightsPresenter::showFsmGraph()
 
 void RtlInsightsPresenter::showModuleBlockDiagram()
 {
-    requestGraph(LiveInsightGraphMode::Module);
+    cancelGraphRequests();
+    if(state.designHandler)state.designHandler(state.currentFileName,state.currentModuleName);
+    else if(state.statusMessageHandler)state.statusMessageHandler(QStringLiteral("Open this module in the host Design hierarchy."),4000);
 }
 
 void RtlInsightsPresenter::updateActionState()
@@ -319,7 +321,7 @@ void RtlInsightsPresenter::updateActionState()
     if (state.fsmGraphButton)
         state.fsmGraphButton->setEnabled(hasModule);
     if (state.moduleBlockDiagramButton)
-        state.moduleBlockDiagramButton->setEnabled(hasModule);
+        state.moduleBlockDiagramButton->setEnabled(hasModule && bool(state.designHandler));
 }
 
 void RtlInsightsPresenter::logReportStart(const QString& reportName) const
@@ -526,18 +528,21 @@ void RtlInsightsPresenter::showSignalUsageHotspotForSignal(
     setContextDirect(fileName, moduleName, signalName);
     cancelGraphRequests();
     graphController.showHotspotSurface();
-    if (!state.signalUsageHotspotPanel)
+    if (!state.signalTracePanel)
         return;
 
     if (state.insightsDock) {
         state.insightsDock->setWindowTitle(
-            QStringLiteral("RTL Insights: Signal Usage Hotspot %1")
+            QStringLiteral("RTL Insights: Signal Heatmap %1")
                 .arg(signalAccessPath.isEmpty() ? signalName
                                                 : signalAccessPath));
         state.insightsDock->show();
         state.insightsDock->raise();
     }
-    state.signalUsageHotspotPanel->showHotspotForSymbol(signalName,
+    SignalTraceContext traceContext{reportContext.workspaceId,reportContext.projectId,reportContext.instancePath,reportSnapshot};
+    state.signalTracePanel->setContext(traceContext);
+    state.signalTracePanel->setHeatmapMode(true);
+    state.signalTracePanel->showForSymbol(signalName,
                                                   fileName,
                                                   moduleName,
                                                   signalAccessPath);
@@ -547,14 +552,7 @@ void RtlInsightsPresenter::showModuleBlockDiagramForModule(
     const QString& fileName,
     const QString& moduleName)
 {
-    setContextDirect(fileName, moduleName, {});
-    if (!state.moduleBlockPath.isEmpty()) {
-        const ModuleBlockScope& scope = state.moduleBlockPath.last();
-        if (scope.fileName == fileName && scope.moduleName == moduleName) {
-            state.currentSourceLocation.instancePath = scope.instancePath;
-            state.currentSourceLocation.activeTopModule = state.moduleBlockPath.first().moduleName;
-        }
-    }
+    setContextDirect(fileName,moduleName,{});
     showModuleBlockDiagram();
 }
 
@@ -699,14 +697,8 @@ void RtlInsightsPresenter::applyGraphSnapshot(const LiveInsightSnapshot& snapsho
     QString name;
     QString message;
     switch (report->mode) {
-    case LiveInsightGraphMode::Module: {
-        const auto& value = std::get<ModuleBlockDiagramReport>(report->value);
-        graphController.mapModuleBlockDiagram(value);
-        name = QStringLiteral("Module Block Diagram %1").arg(state.currentModuleName);
-        message = value.found ? QStringLiteral("Rendered module block diagram for %1").arg(value.root.moduleDisplayName)
-            : value.notFoundReasonDisplayName;
-        break;
-    }
+    case LiveInsightGraphMode::Module:
+        return; // The host Design tree owns module hierarchy presentation.
     case LiveInsightGraphMode::Fsm: {
         const auto& value = std::get<FsmGraphReport>(report->value);
         name = QStringLiteral("FSM Graph %1").arg(state.currentModuleName);

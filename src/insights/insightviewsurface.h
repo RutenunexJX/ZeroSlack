@@ -1,86 +1,95 @@
 #pragma once
 #include "rtlinsightviewplugins.h"
 #include "rtlinsightspanelcoordinator.h"
-#include "signalkernelgraphpanelcoordinator.h"
-#include <memory>
+#include "signaltracepanel.h"
+#include "compactlayout.h"
+#include <QDockWidget>
 #include <QPushButton>
 #include <QVBoxLayout>
-#include "signalusagehotspotpanel.h"
-#include "compactlayout.h"
-#include "semanticindex.h"
+#include <memory>
 
-// Owns a typed renderer. Reports and view-specific interaction stay inside the panel.
+// A host adapter; identity and semantic snapshots are supplied by the caller.
 class InsightViewSurface final {
 public:
-    InsightViewSurface(InsightWorkbenchViewKind kind, QWidget* parent) : kindValue(kind) {
-        if (kind == InsightWorkbenchViewKind::Kernel)
-            kernelValue = std::make_unique<SignalKernelGraphPanelCoordinator>(parent);
-        else rtlValue = std::make_unique<RtlInsightsPanelCoordinator>(parent);
-        auto* dock = widget();
-        dock->setObjectName(QStringLiteral("insightWorkbenchSurface.%1").arg(static_cast<int>(kind)));
-        if (rtlValue) {
-            for (const char* name : {"rtlSignalUsageHotspotButton", "rtlFsmGraphButton", "rtlModuleBlockDiagramButton", "rtlInsightsTitle", "rtlInsightsPinButton"}) {
-                if (auto* control = dock->findChild<QWidget*>(QString::fromLatin1(name))) control->hide();
-            }
-        }
-        if (rtlValue) {
-            if (auto* graph = dock->findChild<QWidget*>(QStringLiteral("rtlInsightsGraphPanel")))
+    InsightViewSurface(InsightWorkbenchViewKind kind,QWidget* parent):kindValue(kind) {
+        if(kind==InsightWorkbenchViewKind::Kernel || kind==InsightWorkbenchViewKind::Hotspot){
+            dockValue=new QDockWidget(parent);
+            traceValue=new SignalTracePanel(dockValue);
+            traceValue->setHeatmapMode(kind==InsightWorkbenchViewKind::Hotspot);
+            dockValue->setWidget(traceValue);
+        }else if(kind==InsightWorkbenchViewKind::Block){
+            dockValue=new QDockWidget(parent);
+            designButton=new QPushButton(QStringLiteral("Open module in Design"),dockValue);
+            designButton->setEnabled(false);
+            QObject::connect(designButton,&QPushButton::clicked,designButton,[this]{
+                if(designHandler)designHandler(context.fileName,context.moduleName);
+            });
+            dockValue->setWidget(designButton);
+        }else{
+            rtlValue=std::make_unique<RtlInsightsPanelCoordinator>(parent);
+            dockValue=rtlValue->dock();
+            for(const char* name:{"rtlSignalUsageHotspotButton","rtlFsmGraphButton","rtlModuleBlockDiagramButton","rtlInsightsTitle","rtlInsightsPinButton"})
+                if(auto* control=dockValue->findChild<QWidget*>(QString::fromLatin1(name)))control->hide();
+            if(auto* graph=dockValue->findChild<QWidget*>(QStringLiteral("rtlInsightsGraphPanel")))
                 CompactFlowLayout::replaceRows(qobject_cast<QVBoxLayout*>(graph->layout()));
+            rtlValue->stackForTest()->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
         }
-        dock->setMinimumWidth(0);
-        dock->setMinimumHeight(0);
-        // Hidden stack pages keep the wrapped toolbar height they were last
-        // measured at, so an ignored vertical policy stops a page nobody is
-        // looking at from dictating the surface minimum height.
-        dock->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-        if (rtlValue) rtlValue->stackForTest()->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-        dock->setFeatures(QDockWidget::NoDockWidgetFeatures);
-        auto* title = new QWidget(dock);
-        title->setFixedHeight(0);
-        dock->setTitleBarWidget(title);
-        dock->show();
+        dockValue->setObjectName(QStringLiteral("insightWorkbenchSurface.%1").arg(static_cast<int>(kind)));
+        dockValue->setMinimumSize(0,0);
+        dockValue->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Ignored);
+        dockValue->setFeatures(QDockWidget::NoDockWidgetFeatures);
+        auto* title=new QWidget(dockValue);title->setFixedHeight(0);dockValue->setTitleBarWidget(title);
+        dockValue->show();
     }
-    ~InsightViewSurface() { auto* dock = widget(); kernelValue.reset(); rtlValue.reset(); delete dock; }
-    QDockWidget* widget() const { return kernelValue ? kernelValue->dock() : rtlValue->dock(); }
-    RtlInsightsPanelCoordinator* rtl() const { return rtlValue.get(); }
-    SignalKernelGraphPanelCoordinator* kernel() const { return kernelValue.get(); }
-    void fit() { if (kernelValue) kernelValue->focusFit(); else rtlValue->focusFit(); }
-    void setNavigationHandler(std::function<bool(const QString&, int, int)> handler) {
-        if (kernelValue) kernelValue->setNavigationHandler(handler);
-        else rtlValue->setNavigationHandler(handler);
+    ~InsightViewSurface(){rtlValue.reset();delete dockValue;}
+    QDockWidget* widget()const{return dockValue;}
+    RtlInsightsPanelCoordinator* rtl()const{return rtlValue.get();}
+    SignalTracePanel* trace()const{return traceValue;}
+    void fit(){if(traceValue)traceValue->focusFit();else if(rtlValue)rtlValue->focusFit();}
+    void setNavigationHandler(std::function<bool(const QString&,int,int)> handler){
+        if(traceValue)traceValue->setNavigationHandler([handler=std::move(handler)](const SignalTraceEvidence& evidence){
+            return handler && handler(evidence.range.fileName,evidence.range.line,evidence.range.column);
+        });
+        else if(rtlValue)rtlValue->setNavigationHandler(std::move(handler));
     }
-    void setStatusHandler(std::function<void(const QString&, int)> handler) {
-        if (kernelValue) kernelValue->setStatusMessageHandler(handler);
-        else rtlValue->setStatusMessageHandler(handler);
+    void setStatusHandler(std::function<void(const QString&,int)> handler){
+        if(traceValue)traceValue->setStatusMessageHandler(std::move(handler));
+        else if(rtlValue)rtlValue->setStatusMessageHandler(std::move(handler));
     }
-    void setContext(const InsightViewContext& c) {
-        if (kernelValue) {
-            kernelValue->showSignalKernelGraphForSymbol(c.signalName,c.fileName,c.moduleName,c.signalAccessPath);
-            return;
-        }
-        rtlValue->setGraphContext(c, SemanticIndex::getInstance()->snapshotToken());
-        // The explicit show methods set their own context. Passing through
-        // the action list first would cancel a ready target-picker report.
-        switch (kindValue) {
-        case InsightWorkbenchViewKind::Block:
-            rtlValue->showModuleBlockDiagramForModule(c.fileName,c.moduleName); break;
-        case InsightWorkbenchViewKind::Hotspot:
-            rtlValue->showSignalUsageHotspotForSignal(c.fileName,c.moduleName,c.signalName,c.signalAccessPath); break;
-        case InsightWorkbenchViewKind::StateTransition:
-            if (c.signalName.isEmpty()) {
-                rtlValue->updateModuleContext(c.fileName,c.moduleName,c.signalName);
-                rtlValue->showFsmGraph();
-            }
+    void setDesignHandler(std::function<void(const QString&,const QString&)> handler){
+        designHandler=std::move(handler);
+        if(designButton)designButton->setEnabled(bool(designHandler));
+    }
+    void setContext(const InsightViewContext& c){
+        const bool sameTarget=context.workspaceId==c.workspaceId && context.projectId==c.projectId
+            && context.fileName==c.fileName && context.moduleName==c.moduleName
+            && context.signalName==c.signalName && context.signalAccessPath==c.signalAccessPath;
+        context=c;
+        if(traceValue){
+            SignalTraceContext traceContext{c.workspaceId,c.projectId,c.instancePath,c.semantic};
+            LiveInsightRequestKey key;key.kind=kindValue==InsightWorkbenchViewKind::Hotspot?LiveInsightKind::Hotspot:LiveInsightKind::Kernel;
+            key.workspaceId=c.workspaceId;key.documentId=c.documentId;key.documentRevision=c.documentRevision;
+            key.semanticRevision=c.semantic.revision;key.contextKey=c.projectId;
+            traceValue->setContext(traceContext,key);
+            if(!sameTarget)traceValue->showForSymbol(c.signalName,c.fileName,c.moduleName,c.signalAccessPath);
+        }else if(rtlValue){
+            rtlValue->setGraphContext(c,c.semantic);
+            if(c.signalName.isEmpty()){rtlValue->updateModuleContext(c.fileName,c.moduleName,{});rtlValue->showFsmGraph();}
             else rtlValue->showStateTransitionGraphForSignal(c.fileName,c.moduleName,c.signalName);
-            break;
-        default: break;
         }
     }
-    GraphExportResult exportGraph(const QString& path, const GraphExportOptions& options) const {
-        return kernelValue ? kernelValue->exportGraph(path, options) : rtlValue->exportCurrentGraph(path, options);
+    GraphExportResult exportGraph(const QString& path,const GraphExportOptions& options)const{
+        if(traceValue)return traceValue->exportGraph(path,options);
+        if(rtlValue)return rtlValue->exportCurrentGraph(path,options);
+        GraphExportResult result;result.outputPath=path;result.failure=GraphExportFailure::InvalidSource;
+        result.failureReason=QStringLiteral("Module hierarchy is available in Design; the retired diagram has no graph export.");return result;
     }
 private:
     InsightWorkbenchViewKind kindValue;
+    InsightViewContext context;
+    QDockWidget* dockValue=nullptr;
+    SignalTracePanel* traceValue=nullptr;
+    QPushButton* designButton=nullptr;
     std::unique_ptr<RtlInsightsPanelCoordinator> rtlValue;
-    std::unique_ptr<SignalKernelGraphPanelCoordinator> kernelValue;
+    std::function<void(const QString&,const QString&)> designHandler;
 };

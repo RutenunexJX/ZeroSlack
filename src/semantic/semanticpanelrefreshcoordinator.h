@@ -16,7 +16,7 @@ class NavigationCommandCoordinator;
 class NavigationManager;
 class ProblemsPanelCoordinator;
 class RtlInsightsPanelCoordinator;
-class SignalKernelGraphPanelCoordinator;
+class SignalTracePanel;
 class TabManager;
 class WorkspaceManager;
 
@@ -36,7 +36,7 @@ public:
                                     NavigationCommandCoordinator* navigationCommandCoordinator,
                                     ProblemsPanelCoordinator* problemsPanel,
                                     RtlInsightsPanelCoordinator* rtlInsightsPanel,
-                                    SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
+                                    SignalTracePanel* signalKernelGraphPanel);
     ~SemanticPanelRefreshCoordinator();
 
     void setStatusMessageHandler(std::function<void(const QString&, int)> handler);
@@ -101,12 +101,12 @@ private:
     struct PanelSet {
         ProblemsPanelCoordinator* problemsPanel = nullptr;
         RtlInsightsPanelCoordinator* rtlInsightsPanel = nullptr;
-        SignalKernelGraphPanelCoordinator* signalKernelGraphPanel = nullptr;
+        SignalTracePanel* signalKernelGraphPanel = nullptr;
         bool configured = false;
 
         void set(ProblemsPanelCoordinator* problemsPanel,
                  RtlInsightsPanelCoordinator* rtlInsightsPanel,
-                 SignalKernelGraphPanelCoordinator* signalKernelGraphPanel);
+                 SignalTracePanel* signalKernelGraphPanel);
         bool isConfigured() const;
         void markConfigured();
         void configureProblemsPanel(

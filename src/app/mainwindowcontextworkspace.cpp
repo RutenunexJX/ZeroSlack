@@ -21,7 +21,10 @@
 #include "temporaryeditorcontextview.h"
 #include "temporaryeditorsearchprovider.h"
 #include "semanticdockcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
+#include "projectmodel.h"
+#include "navigationpanecoordinator.h"
+#include "navigationwidget.h"
 #include "mycodeeditor.h"
 #include "semanticpanelrefreshcoordinator.h"
 #include "statetransitiongraphservice.h"
@@ -108,18 +111,20 @@ void MainWindow::setupContextWorkspace()
     contextWorkspaceController->setExternalResourceHandler(
         [this](const ContextResource& resource, bool restoring) -> std::optional<bool> {
             LiveInsightKind kind;
-            if (!LiveInsightsContextProvider::kindFromResource(resource, &kind)
-                || kind != LiveInsightKind::Hotspot) return std::nullopt;
+            if (!LiveInsightsContextProvider::kindFromResource(resource, &kind)) return std::nullopt;
+            if(kind==LiveInsightKind::Module){if(navigationPane)navigationPane->showDesign();return true;}
+            if(kind!=LiveInsightKind::Hotspot && kind!=LiveInsightKind::Kernel)return std::nullopt;
             if (!hotspotPanel || !panelLayoutController) return false;
-            hotspotPanel->setWorkspaceRoot(workspaceManager->getWorkspacePath());
+            updateSignalTraceContext();
+            hotspotPanel->setHeatmapMode(kind==LiveInsightKind::Hotspot);
             const auto target = resource.state.value(QStringLiteral("target")).toMap();
             if (!target.isEmpty() && (!restoring || hotspotPanel->saveViewState().value("signal").toString().isEmpty())) {
-                hotspotPanel->showHotspotForSymbol(target.value("signalName").toString(),
+                hotspotPanel->showForSymbol(target.value("signalName").toString(),
                     target.value("fileName").toString(), target.value("moduleName").toString(),
                     target.value("signalAccessPath").toString());
             } else if (!restoring && hotspotPanel->saveViewState().value("signal").toString().isEmpty()) {
                 const auto context = activeLiveInsightToolContext(false);
-                if (!context.signalName.isEmpty()) hotspotPanel->showHotspotForSymbol(context.signalName,
+                if (!context.signalName.isEmpty()) hotspotPanel->showForSymbol(context.signalName,
                     context.fileName, context.moduleName, context.signalAccessPath);
             }
             if (!restoring) panelLayoutController->restorePanel(QStringLiteral("hotspot"));
@@ -398,12 +403,19 @@ LiveInsightToolContext MainWindow::activeLiveInsightToolContext(bool includeDocu
     context.workspaceId = context.workspaceRoot.trimmed().isEmpty()
         ? QStringLiteral("standalone")
         : QDir::cleanPath(context.workspaceRoot);
+    if(workspaceManager && workspaceManager->getProjectModel()){
+        const auto project=workspaceManager->getProjectModel()->snapshot();
+        context.projectId=project.activeDesignProjectId+QLatin1Char('|')+project.semanticIdentity();
+    }
+    if(context.projectId.isEmpty())context.projectId=context.workspaceId;
+    context.configureTrace=[owner=QPointer<MainWindow>(const_cast<MainWindow*>(this))](SignalTracePanel* panel){if(owner)owner->configureSignalTracePanel(panel);};
     if (!tabManager)
         return context;
 
     MyCodeEditor* editor = tabManager->getCurrentEditor();
     if (!editor)
         return context;
+    context.instancePath=editor->hierarchyInstanceContext().instancePath;
     const DocumentSnapshot document =
         tabManager->getCurrentDocumentMetadata();
     context.documentId = document.documentId.trimmed();
@@ -623,13 +635,7 @@ bool MainWindow::beginLiveInsightTargetPick(
 
 void MainWindow::requestLiveInsightUpdates()
 {
-    if (hotspotPanel) {
-        hotspotPanel->setWorkspaceRoot(workspaceManager ? workspaceManager->getWorkspacePath() : QString());
-        auto* editor = tabManager ? tabManager->getCurrentEditor() : nullptr;
-        hotspotPanel->setCurrentEditorLocation(editor ? tabManager->getCurrentDocumentMetadata().fileName : QString(),
-            editor ? editor->textCursor().blockNumber() + 1 : 0);
-        hotspotPanel->refreshSemanticSnapshot();
-    }
+    updateSignalTraceContext();
     if (!liveInsightSession || !tabManager)
         return;
     // Each fixed/pinned/detached graph owns its own request stream. Refresh
@@ -706,11 +712,11 @@ void MainWindow::requestLiveInsightUpdates()
         switch (kind) {
         case LiveInsightKind::Kernel:
             input.insert(QStringLiteral("title"),
-                         QStringLiteral("Signal Kernel Graph"));
+                         QStringLiteral("Signal Trace"));
             input.insert(
                 QStringLiteral("summary"),
                 context.signalName.trimmed().isEmpty()
-                    ? QStringLiteral("Select a signal to trace its data-flow kernel.")
+                    ? QStringLiteral("Select a signal to follow static dependencies.")
                     : QStringLiteral("%1 · inputs and outputs")
                           .arg(context.signalName));
             break;
@@ -719,12 +725,12 @@ void MainWindow::requestLiveInsightUpdates()
             break;
         case LiveInsightKind::Hotspot:
             input.insert(QStringLiteral("title"),
-                         QStringLiteral("Signal Hotspot"));
+                         QStringLiteral("Signal Heatmap"));
             input.insert(
                 QStringLiteral("summary"),
                 context.signalName.trimmed().isEmpty()
                     ? QStringLiteral("Select a signal to rank its evidence.")
-                    : QStringLiteral("%1 · Track / Matrix evidence")
+                    : QStringLiteral("%1 · references and file distribution")
                           .arg(context.signalName));
             break;
         }
@@ -750,9 +756,15 @@ bool MainWindow::openLiveInsightFromSourceAction(
     const QString& moduleName,
     const QString& signalAccessPath)
 {
-    if (kind == LiveInsightKind::Hotspot && hotspotPanel && panelLayoutController) {
-        hotspotPanel->setWorkspaceRoot(workspaceManager ? workspaceManager->getWorkspacePath() : QString());
-        hotspotPanel->showHotspotForSymbol(symbolName, fileName, moduleName, signalAccessPath);
+    if(kind==LiveInsightKind::Module){
+        if(navigationPane)navigationPane->showDesign();
+        if(auto* navigation=findChild<NavigationWidget*>())navigation->selectDesignModule(symbolName.isEmpty()?moduleName:symbolName,fileName);
+        return navigationPane!=nullptr;
+    }
+    if ((kind == LiveInsightKind::Hotspot || kind==LiveInsightKind::Kernel) && hotspotPanel && panelLayoutController) {
+        updateSignalTraceContext();
+        hotspotPanel->showForSymbol(symbolName, fileName, moduleName, signalAccessPath);
+        hotspotPanel->setHeatmapMode(kind==LiveInsightKind::Hotspot);
         panelLayoutController->restorePanel(QStringLiteral("hotspot"));
         requestLiveInsightUpdates();
         return true;
@@ -855,7 +867,8 @@ void MainWindow::openLiveInsightFullView(
         context.signalName = target.value(QStringLiteral("signalName")).toString();
         context.signalAccessPath = target.value(QStringLiteral("signalAccessPath")).toString();
     }
-    if (kind == LiveInsightKind::Hotspot && hotspotPanel) {
+    if(kind==LiveInsightKind::Module){openLiveInsightFromSourceAction(kind,context.moduleName,context.fileName,context.moduleName,{});return;}
+    if ((kind == LiveInsightKind::Hotspot || kind==LiveInsightKind::Kernel) && hotspotPanel) {
         openLiveInsightFromSourceAction(kind, context.signalName, context.fileName, context.moduleName, context.signalAccessPath);
         panelLayoutController->openPanelInMainArea(QStringLiteral("hotspot"));
         return;
@@ -901,11 +914,11 @@ void MainWindow::openLiveInsightFullView(
         });
     page->setContext(context);
     const QString title = kind == LiveInsightKind::Kernel
-            ? QStringLiteral("Signal Kernel Graph")
+            ? QStringLiteral("Signal Trace")
             : kind == LiveInsightKind::Module
-                ? QStringLiteral("Module Block Diagram")
+                ? QStringLiteral("Design")
                 : kind == LiveInsightKind::Hotspot
-                    ? QStringLiteral("Signal Hotspot")
+                    ? QStringLiteral("Signal Heatmap")
                     : QStringLiteral("State Transition Graph");
     tabManager->openToolPage(page, stableId, title);
     liveInsightToolPages.insert(static_cast<int>(kind), page);

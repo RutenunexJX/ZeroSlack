@@ -266,8 +266,8 @@ set(ZEROSLACK_CORE_SOURCES
     src/app/applicationwindow.cpp
     src/app/mainwindow.cpp
     src/app/mainwindowcontextworkspace.cpp
+    src/app/mainwindowsignaltrace.cpp
     src/insights/rtlactioncoordinator.cpp
-    src/insights/moduleblockdiagramtoolbar.cpp
     src/completion/completioncommandmode.cpp
     src/completion/completioncontexthelper.cpp
     src/completion/completionmatcher.cpp
@@ -472,10 +472,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/semantic/semanticruntimecoordinator.cpp
     src/semantic/semanticruntimewiring.cpp
     src/insights/signalkernelgraphservice.cpp
-    src/insights/signalusagehotspotpanel.cpp
-    src/insights/signalusagehotspotpanelactions.cpp
+    src/insights/signaltracepanel.cpp
+    src/insights/signaltracemodels.cpp
     src/insights/signalusagehotspotservice.cpp
-    src/insights/signalkernelgraphpanelcoordinator.cpp
     src/semantic/symbolanalyzer.cpp
     src/semantic/symbolanalyzerasync.cpp
     src/semantic/symbolanalyzerincremental.cpp
@@ -661,9 +660,9 @@ set(ZEROSLACK_CORE_SOURCES
     src/semantic/semanticindexcompletionfilters.h
     src/semantic/semanticruntimecoordinator.h
     src/insights/signalkernelgraphservice.h
-    src/insights/signalusagehotspotpanel.h
+    src/insights/signaltracepanel.h
+    src/insights/signaltracemodels.h
     src/insights/signalusagehotspotservice.h
-    src/insights/signalkernelgraphpanelcoordinator.h
     src/semantic/slangparseoptions.h
     src/semantic/symbolanalyzer.h
     src/semantic/symbolhoverreports.h
@@ -1057,6 +1056,27 @@ if(BUILD_TESTING)
     add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
     target_link_libraries(ts_doc_test
         PRIVATE zeroslack_core zeroslack_tree_sitter)
+
+    add_executable(signal_trace_semantic_test test_sv/signal_trace_semantic_test.cpp)
+    target_link_libraries(signal_trace_semantic_test PRIVATE zeroslack_semantic Qt6::Test)
+    zeroslack_qt_test_command(SIGNAL_TRACE_SEMANTIC_COMMAND signal_trace_semantic_test signal_trace_semantic_test)
+    add_test(NAME signal_trace_semantic_test COMMAND ${CMAKE_COMMAND} -E env
+        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+        ${SIGNAL_TRACE_SEMANTIC_COMMAND})
+    set_tests_properties(signal_trace_semantic_test PROPERTIES TIMEOUT 120)
+    add_executable(signal_trace_ui_test test_sv/signal_trace_ui_test.cpp)
+    target_link_libraries(signal_trace_ui_test PRIVATE zeroslack_core Qt6::Test)
+    zeroslack_qt_test_command(SIGNAL_TRACE_UI_COMMAND signal_trace_ui_test signal_trace_ui_test)
+    add_test(NAME signal_trace_ui_test COMMAND ${CMAKE_COMMAND} -E env
+        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+        ${SIGNAL_TRACE_UI_COMMAND})
+    set_tests_properties(signal_trace_ui_test PROPERTIES TIMEOUT 120)
+
+    add_executable(signal_trace_performance_test test_sv/signal_trace_performance_test.cpp)
+    target_link_libraries(signal_trace_performance_test PRIVATE zeroslack_core Qt6::Test)
+    if(WIN32)
+        target_link_libraries(signal_trace_performance_test PRIVATE psapi)
+    endif()
 
     add_executable(ts_large_file_semantics_test
         test_sv/ts_large_file_semantics_test.cpp
@@ -1690,7 +1710,7 @@ if(BUILD_TESTING)
     endif()
     add_executable(context_floating_preview
         test_sv/context_floating_preview.cpp)
-    target_link_libraries(context_floating_preview PRIVATE zeroslack_core)
+    target_link_libraries(context_floating_preview PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(temporary_editor_context_provider_test
         test_sv/temporary_editor_context_provider_test.cpp)
@@ -2035,12 +2055,13 @@ if(BUILD_TESTING)
     )
     set_tests_properties(live_insights_context_provider_test
         PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(RTL_INSIGHT_WORKBENCH_COMMAND rtl_insight_workbench_test rtl_insight_workbench_test)
     add_test(NAME rtl_insight_workbench_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:rtl_insight_workbench_test>
+            ${RTL_INSIGHT_WORKBENCH_COMMAND}
     )
     set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)

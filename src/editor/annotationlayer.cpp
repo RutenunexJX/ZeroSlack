@@ -329,6 +329,8 @@ int AnnotationLayer::defaultPriority(EditorAnnotationKind kind)
         return 1;
     case EditorAnnotationKind::InsightTarget:
         return 480;
+    case EditorAnnotationKind::SignalTrace:
+        return 470;
     case EditorAnnotationKind::ColumnCaret:
         return 450;
     case EditorAnnotationKind::KeywordGhost:

@@ -138,6 +138,7 @@ private:
     bool hasTargetContext = false;
     TargetPickRequest targetPickRequest;
     QPointer<LiveInsightToolPage> surfaceValue;
+    QVariantMap pendingNativeState;
     QPointer<QWidget> emptyStateValue;
     QPointer<QVBoxLayout> emptyStateList;
     QList<TargetCandidate> recentTargets;

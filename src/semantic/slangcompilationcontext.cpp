@@ -129,6 +129,7 @@ SlangWorkspaceAnalysis SlangManager::analyzeCapturedWorkspace(
                 target.assignments += it->assignments;
                 target.conditionReferences += it->conditionReferences;
                 target.timingSignals += it->timingSignals;
+                target.signalDependencies += it->signalDependencies;
             }
         }
     } catch (const std::exception& error) {

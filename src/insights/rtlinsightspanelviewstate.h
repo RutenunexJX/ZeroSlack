@@ -1,7 +1,6 @@
 #ifndef RTLINSIGHTSPANELVIEWSTATE_H
 #define RTLINSIGHTSPANELVIEWSTATE_H
 
-#include "moduleblockdiagramservice.h"
 #include "rtlinsightlink.h"
 
 #include <QRectF>
@@ -26,16 +25,7 @@ class QTableWidget;
 class QToolButton;
 class QTreeWidget;
 class QWidget;
-class SignalUsageHotspotPanel;
-class ModuleBlockDiagramToolbar;
-
-struct ModuleBlockScope
-{
-    QString fileName;
-    QString moduleName;
-    QString label;
-    QString instancePath;
-};
+class SignalTracePanel;
 
 struct RtlInsightsPanelViewState
 {
@@ -45,13 +35,12 @@ struct RtlInsightsPanelViewState
     QTreeWidget* insightsTree = nullptr;
     QWidget* insightsGraphPanel = nullptr;
     QWidget* graphToolbar = nullptr;
-    ModuleBlockDiagramToolbar* moduleBlockToolbar = nullptr;
     QGraphicsScene* insightsGraphScene = nullptr;
     InsightGraphView* insightsGraphView = nullptr;
     QWidget* graphInspectorPanel = nullptr;
     QTreeWidget* graphInspector = nullptr;
     QTableWidget* graphTable = nullptr;
-    SignalUsageHotspotPanel* signalUsageHotspotPanel =
+    SignalTracePanel* signalTracePanel =
         nullptr;
     QPushButton* signalUsageHotspotButton = nullptr;
     QPushButton* fsmGraphButton = nullptr;
@@ -91,15 +80,7 @@ struct RtlInsightsPanelViewState
     QString graphSearchText;
     QString currentGraphMode;
     QRectF lastGraphFitRect;
-    ModuleBlockDiagramReport currentModuleBlockReport;
-    int currentModuleBlockSelectedNodeId = -1;
-    QList<ModuleBlockScope> moduleBlockPath;
-    QHash<int, QString> moduleBlockInstancePaths;
-    QString moduleBlockTargetPath;
-    QStringList moduleBlockHistory;
-    int moduleBlockHistoryIndex = -1;
-    bool moduleBlockAutoFit = true;
-    QString moduleBlockRenderedScope;
+    std::function<void(const QString&,const QString&)> designHandler;
 
     std::function<bool(const RtlInsightSourceLocation&)>
         sourceNavigationHandler;

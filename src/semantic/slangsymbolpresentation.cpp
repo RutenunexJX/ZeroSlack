@@ -2998,16 +2998,20 @@ void slang_symbols::populateSymbolPresentations(
         parseErrorFiles.insert(normalizedFileName(position.fileName));
     }
     QList<SemanticSymbolRecord> updatedRecords = records;
-    QHash<QString, QStringList> actualInstances;
+    QHash<QString, QStringList> actualInstances,actualInstanceDeclarations;
     auto instanceVisitor = makeVisitor([&](auto& visitor, const InstanceSymbol& instance) {
         const auto key = identityKey(sourceManager, instance.getDefinition());
         actualInstances[key] << QString::fromStdString(instance.getHierarchicalPath());
+        actualInstanceDeclarations[identityKey(sourceManager,instance)] << QString::fromStdString(instance.getHierarchicalPath());
         visitor.visitDefault(instance);
-    });
+    },[&](auto& visitor,const GenerateBlockSymbol& block){if(!block.isUninstantiated)visitor.visitDefault(block);},
+      [&](auto&,const UninstantiatedDefSymbol& instance){actualInstanceDeclarations[identityKey(sourceManager,instance)] << QString::fromStdString(instance.getHierarchicalPath());});
     for (const auto* top : root.topInstances) if (top) top->visit(instanceVisitor);
     for (SemanticSymbolRecord& record : updatedRecords) {
         if (cancelled())
             return;
+        if(record.declarationKind==SymbolTaxonomy::DeclarationKind::Instance)
+            record.presentation.elaboratedInstancePaths=actualInstanceDeclarations.value(identityKey(record));
         if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module) {
             record.presentation.elaboratedInstancePaths = actualInstances.value(identityKey(record));
             for (const auto* definition : definitions) {

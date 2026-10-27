@@ -7,7 +7,9 @@
 #include "mainwindow.h"
 #include "settingscenterpanel.h"
 #include "settingsdialog.h"
-#include "signalkernelgraphpanelcoordinator.h"
+#include "signal_trace_test_fixture.h"
+#include <QComboBox>
+#include <QDockWidget>
 #include "uicontrols.h"
 
 #include <QApplication>
@@ -237,15 +239,10 @@ private slots:
         auto* apply = settings->findChild<QPushButton*>("settingsCenterApplyButton"); QVERIFY(apply);
         auto* revert = settings->findChild<QPushButton*>("settingsCenterRevertButton"); QVERIFY(revert);
         const auto font = enabled->font();
-        SignalKernelGraphPanelCoordinator kernel(&window);
-        SignalKernelGraphReport report;
-        report.found = true; report.kernel.id = 0; report.kernel.displayName = "ready";
-        SignalKernelGraphNode input;
-        input.id = 1; input.role = SignalKernelGraphNodeRole::Input; input.displayName = "start";
-        report.inputs.append(input); report.edges.append({1, 0, "data"});
-        kernel.renderReportForTest(report);
-        auto* panel = kernel.dock()->widget();
-        auto* inputs = panel->findChild<QCheckBox*>("signalKernelGraphShowInputsCheck"); QVERIFY(inputs);
+        SignalTraceTestFixture fixture;QVERIFY(fixture.build("module top(input wire start,output wire ready);assign ready=start;endmodule"));
+        auto* panel=new SignalTracePanel;QVERIFY(fixture.show(*panel,"ready"));
+        auto* traceDock=new QDockWidget(&window);traceDock->setWidget(panel);window.addDockWidget(Qt::BottomDockWidgetArea,traceDock);
+        auto* inputs=panel->findChild<QComboBox*>("traceMode");QVERIFY(inputs);
         ContextFloatingWindow floating(&window, window.centralWidget());
         ContextResource resource; resource.providerId = "control-style-test"; resource.resourceId = "kernel";
         resource.title = "Kernel";
@@ -275,16 +272,16 @@ private slots:
 
             floating.setView(resource, panel); floating.show(); settle();
             QVERIFY(inputs->isVisible());
-            const auto transform = kernel.view()->transform();
+            QTRY_VERIFY(!panel->busy());const auto root=panel->currentObject().id();
             inputs->setFocus(Qt::TabFocusReason);
-            QTest::keyClick(inputs, Qt::Key_Space); settle();
-            QVERIFY(!inputs->isChecked()); QCOMPARE(kernel.visibleGraphNodeCountForTest(), 1);
-            QTest::keyClick(inputs, Qt::Key_Space); settle();
-            QCOMPARE(kernel.visibleGraphNodeCountForTest(), 2);
-            QCOMPARE(kernel.view()->transform(), transform);
+            QTest::keyClick(inputs, inputs->currentIndex()==0 ? Qt::Key_Down : Qt::Key_Up); settle();
+            QCOMPARE(inputs->currentIndex(),1);
+            QTest::keyClick(inputs, inputs->currentIndex()==0 ? Qt::Key_Down : Qt::Key_Up); settle();
+            QCOMPARE(inputs->currentIndex(),0);
+            QCOMPARE(panel->currentObject().id(),root);
             capture(&floating, QString("floating-kernel-%1").arg(int(mode)));
             QCOMPARE(floating.takeView(), panel);
-            kernel.dock()->setWidget(panel); panel->show(); floating.hide(); settle();
+            traceDock->setWidget(panel); panel->show(); floating.hide(); settle();
             QVERIFY(inputs->styleSheet().isEmpty());
             capture(panel, QString("docked-kernel-%1").arg(int(mode)));
         }

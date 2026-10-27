@@ -10,7 +10,9 @@
 #include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "mainwindow.h"
-#include "signalkernelgraphpanelcoordinator.h"
+#include "signal_trace_test_fixture.h"
+#include <QComboBox>
+#include <QDockWidget>
 
 #include <QApplication>
 #include <QAbstractItemView>
@@ -240,16 +242,10 @@ private slots:
             window.showMinimized(); settle(); QVERIFY(window.isMinimized());
             window.showNormal(); settle(); QVERIFY(!window.isMinimized());
         }
-        SignalKernelGraphPanelCoordinator kernel(&window);
-        SignalKernelGraphReport report;
-        report.found = true; report.kernel.id = 0; report.kernel.displayName = "ready";
-        SignalKernelGraphNode input;
-        input.id = 1; input.role = SignalKernelGraphNodeRole::Input; input.displayName = "start";
-        report.inputs.append(input); report.edges.append({1, 0, "data"});
-        kernel.renderReportForTest(report);
-        auto* panel = kernel.dock()->widget();
-        auto* inputs = panel->findChild<QCheckBox*>("signalKernelGraphShowInputsCheck");
-        QVERIFY(inputs);
+        SignalTraceTestFixture fixture;QVERIFY(fixture.build("module top(input wire start,output wire ready);assign ready=start;endmodule"));
+        auto* panel=new SignalTracePanel;QVERIFY(fixture.show(*panel,"ready"));
+        auto* traceDock=new QDockWidget(&window);traceDock->setWidget(panel);window.addDockWidget(Qt::BottomDockWidgetArea,traceDock);
+        auto* inputs=panel->findChild<QComboBox*>("traceMode");QVERIFY(inputs);
         ContextResource resource; resource.providerId = "qlementine-product-test";
         resource.resourceId = "kernel"; resource.title = "Kernel";
         for (auto mode : themes) {
@@ -257,16 +253,16 @@ private slots:
             for (int i = 0; i < 3; ++i) {
                 auto floating = std::make_unique<ContextFloatingWindow>(&window, window.centralWidget());
                 floating->setView(resource, panel); floating->show(); settle();
-                const auto transform = kernel.view()->transform();
-                inputs->setFocus(); QTest::keyClick(inputs, Qt::Key_Space); settle();
-                QCOMPARE(kernel.visibleGraphNodeCountForTest(), 1);
-                QTest::keyClick(inputs, Qt::Key_Space); settle();
-                QCOMPARE(kernel.visibleGraphNodeCountForTest(), 2);
-                QCOMPARE(kernel.view()->transform(), transform);
+                QTRY_VERIFY(!panel->busy());const auto root=panel->currentObject().id();
+                inputs->setFocus(); QTest::keyClick(inputs, inputs->currentIndex()==0 ? Qt::Key_Down : Qt::Key_Up); settle();
+                QCOMPARE(inputs->currentIndex(),1);
+                QTest::keyClick(inputs, inputs->currentIndex()==0 ? Qt::Key_Down : Qt::Key_Up); settle();
+                QCOMPARE(inputs->currentIndex(),0);
+                QCOMPARE(panel->currentObject().id(),root);
                 QVERIFY(inputs->height() >= inputs->minimumSizeHint().height());
                 if (i == 0) capture(floating.get(), QString("floating-%1").arg(int(mode)));
                 QCOMPARE(floating->takeView(), panel);
-                kernel.dock()->setWidget(panel); panel->show();
+                traceDock->setWidget(panel); panel->show();
                 floating.reset(); settle();
             }
         }

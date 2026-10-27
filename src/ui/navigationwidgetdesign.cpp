@@ -20,6 +20,30 @@ QString candidateKey(const QTreeWidgetItem* item)
 }
 }
 
+bool NavigationWidget::selectDesignInstance(const QString& instancePath,bool reveal)
+{
+    for(QTreeWidgetItemIterator it(designTreeWidget);*it;++it){
+        const auto node=designItemPayloads.value((*it)->data(0,Qt::UserRole+1).toInt());
+        if(!node.inSelectedTop || node.instancePath!=instancePath)continue;
+        QSignalBlocker blocker(designTreeWidget);designTreeWidget->setCurrentItem(*it);
+        if(reveal){for(auto* parent=(*it)->parent();parent;parent=parent->parent())parent->setExpanded(true);designTreeWidget->scrollToItem(*it);setActiveTab(DesignTab);}
+        return true;
+    }
+    return false;
+}
+bool NavigationWidget::selectDesignModule(const QString& module,const QString& definitionFile)
+{
+    QTreeWidgetItem* match=nullptr;
+    for(QTreeWidgetItemIterator it(designTreeWidget);*it;++it){
+        const auto node=designItemPayloads.value((*it)->data(0,Qt::UserRole+1).toInt());
+        if(node.moduleType!=module || (!definitionFile.isEmpty() && !EditorFileIdentity::same(node.definitionFile,definitionFile)))continue;
+        if(node.inSelectedTop){match=*it;break;}if(!match)match=*it;
+    }
+    if(!match)return false;
+    for(auto* parent=match->parent();parent;parent=parent->parent())parent->setExpanded(true);
+    designTreeWidget->setCurrentItem(match);designTreeWidget->scrollToItem(match);setActiveTab(DesignTab);return true;
+}
+
 void NavigationWidget::setupDesignSelector()
 {
     designCandidateTree = UiControls::treeWidget(designTab);

@@ -10,7 +10,6 @@
 
 struct FsmGraph;
 struct FsmGraphReport;
-struct ModuleBlockDiagramReport;
 struct StateTransitionGraphReport;
 struct RtlInsightsPanelViewState;
 class QGraphicsItem;
@@ -67,18 +66,12 @@ public:
         const QStringList& rows);
     void populateFsmTransitionsTable(
         const FsmGraph& graph);
-    void selectModuleBlockNode(
-        int nodeId,
-        bool centerGraph = true);
     bool selectItemForInspector(QGraphicsItem* item);
     bool selectItemAtScenePoint(
         const QPointF& scenePoint);
     bool navigateItem(QGraphicsItem* item);
     bool navigateSelectedItem();
     RtlInsightSourceLocation selectedSourceLocation() const;
-    bool enterModuleBlockNode(int nodeId);
-    bool navigateModuleBlockHistory(int direction);
-    void refreshModuleBlockSelectionActions();
     bool selectSourceLocation(
         const RtlInsightSourceLocation& location,
         bool centerGraph = true);
@@ -92,12 +85,8 @@ public:
         const FsmGraph& graph,
         const QString& title,
         const QString& mode);
-    void renderModuleBlockDiagramScene(
-        const ModuleBlockDiagramReport& report);
 
 private:
-    bool activateModuleBlockPath(const QString& path, bool recordHistory, bool navigateSource);
-    void updateModuleBlockFocus(bool fit);
     RtlInsightsPanelViewState& state;
     RtlInsightsGraphController& controller;
 };

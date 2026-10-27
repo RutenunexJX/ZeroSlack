@@ -285,7 +285,7 @@ QString semanticRelationshipStableKeyText(
     if (fromKey.isEmpty() || toKey.isEmpty())
         return QString();
 
-    return QStringLiteral("%1|%2|%3|%4|%5|%6")
+    QString key = QStringLiteral("%1|%2|%3|%4|%5|%6")
         .arg(QString::number(static_cast<int>(relationship.type)),
               fromKey,
               toKey,
@@ -293,6 +293,20 @@ QString semanticRelationshipStableKeyText(
               relationship.toAccessPath,
               relationship.exactValueForward ? QStringLiteral("exact")
                                              : QStringLiteral("derived"));
+    if (relationship.signalDependency) {
+        const auto& fact = *relationship.signalDependency;
+        key += QStringLiteral("|%1|%2|%3|%4|%5|%6|%7|%8|%9|%10|%11")
+            .arg(fact.fromInstance, fact.toInstance, fact.fromObject, fact.toObject,
+                 fact.fromBits.key(), fact.toBits.key(), fact.processId,
+                 QString::number(int(fact.kind)), QString::number(int(fact.boundary)),
+                 QString::number(relationship.evidenceRange.line),
+                 QString::number(relationship.evidenceRange.column));
+        key += QStringLiteral("|%1|%2|%3|%4")
+            .arg(relationship.evidenceRange.fileName)
+            .arg(relationship.evidenceRange.endLine).arg(relationship.evidenceRange.endColumn)
+            .arg(int(fact.referenceRole));
+    }
+    return key;
 }
 
 SemanticIndex* SemanticIndex::getInstance()

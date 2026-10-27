@@ -379,7 +379,7 @@ RtlInsightsPanelCoordinator* SemanticDockCoordinator::rtlInsightsPanelCoordinato
     return nullptr;
 }
 
-SignalKernelGraphPanelCoordinator*
+SignalTracePanel*
 SemanticDockCoordinator::signalKernelGraphPanelCoordinator() const
 {
     return nullptr;

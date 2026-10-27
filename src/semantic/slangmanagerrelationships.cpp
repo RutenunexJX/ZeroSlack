@@ -3,6 +3,7 @@
 #include "semanticanalysisinput.h"
 #include "slangparseoptions.h"
 #include "slangrelationshiphelpers.h"
+#include "slangsignaldependencies.h"
 
 #include <slang/ast/ASTVisitor.h>
 #include <slang/ast/Compilation.h>
@@ -90,6 +91,7 @@ void mergeRelationshipInfo(RelationshipExtractionInfo& target,
     target.assignments += source.assignments;
     target.conditionReferences += source.conditionReferences;
     target.timingSignals += source.timingSignals;
+    target.signalDependencies += source.signalDependencies;
 }
 
 void appendRelationshipInfoForFile(
@@ -112,6 +114,7 @@ void clearRelationshipInfo(RelationshipExtractionInfo* info)
     info->assignments.clear();
     info->conditionReferences.clear();
     info->timingSignals.clear();
+    info->signalDependencies.clear();
 }
 
 void appendModuleInstantiation(RelationshipExtractionInfo& result,
@@ -317,6 +320,8 @@ bool collectWorkspaceRelationships(
                                            isCancelled,
                                            &cancellationReached);
     root.visit(visitor);
+    if (!cancellationReached && !cancelled())
+        allRelationships.signalDependencies = collectSlangSignalDependencies(compilation, isCancelled);
     if (cancellationReached || cancelled()) {
         clearRelationshipInfo(&allRelationships);
         return false;
@@ -364,6 +369,12 @@ bool collectWorkspaceRelationships(
         RelationshipExtractionInfo one;
         one.timingSignals.append(item);
         appendRelationshipInfoForFile(staged, item.sourceRange.fileName, one);
+    }
+    for (const auto& item : std::as_const(allRelationships.signalDependencies)) {
+        if (cancelled()) return false;
+        RelationshipExtractionInfo one;
+        one.signalDependencies.append(item);
+        appendRelationshipInfoForFile(staged,item.evidence.fileName,one);
     }
     if (cancelled())
         return false;

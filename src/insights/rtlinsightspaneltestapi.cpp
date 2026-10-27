@@ -24,11 +24,11 @@ RtlInsightsPanelCoordinator::stackForTest() const
     return viewState->insightsStack;
 }
 
-SignalUsageHotspotPanel*
+SignalTracePanel*
 RtlInsightsPanelCoordinator::
-    signalUsageHotspotPanelForTest() const
+    tracePanelForTest() const
 {
-    return viewState->signalUsageHotspotPanel;
+    return viewState->signalTracePanel;
 }
 
 int RtlInsightsPanelCoordinator::

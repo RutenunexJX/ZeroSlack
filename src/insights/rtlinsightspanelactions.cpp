@@ -178,7 +178,6 @@ void RtlInsightsPanelCoordinator::
                     context);
             const bool enabled =
                 availability.executable
-                && viewState->currentGraphMode != QStringLiteral("module-block")
                 && availabilityButton
                 && availabilityButton->isEnabled();
             action->setEnabled(enabled);
@@ -269,10 +268,6 @@ RtlInsightsPanelCoordinator::executeActionRoute(
     ActionExecutionResult result;
     result.handled = true;
     const QString& route = descriptor.executionRoute;
-    if (viewState && viewState->currentGraphMode == QStringLiteral("module-block")) {
-        result.failureReason = QStringLiteral("Module diagrams use double-click and navigation history.");
-        return result;
-    }
     if (route
         == QStringLiteral(
             "insight.graph.jumpSelected")) {
@@ -319,7 +314,7 @@ GraphExportResult RtlInsightsPanelCoordinator::exportCurrentGraph(
     const GraphExportOptions& options) const
 {
     return GraphExportService::exportGraphicsScene(
-        viewState && viewState->currentGraphMode != QStringLiteral("module-block") ? viewState->insightsGraphScene : nullptr,
+        viewState ? viewState->insightsGraphScene : nullptr,
         outputPath,
         options);
 }

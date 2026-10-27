@@ -18,8 +18,10 @@
 #include "liveinsighttoolpage.h"
 #include "rtlinsightspanelcoordinator.h"
 #include "rtlinsightworkbench.h"
-#include "signalkernelgraphpanelcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "signal_trace_test_fixture.h"
+#include "navigationwidget.h"
+#include <QTreeWidgetItemIterator>
+
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
 #include "semanticindex.h"
@@ -87,90 +89,6 @@ InsightGraphDraft draftFor(const QString& identity,
     draft.nodes.append(root);
     return draft;
 }
-
-SignalUsageHotspotReport hotspotGraphViewFixture()
-{
-    SignalUsageHotspotItem item;
-    item.role = SignalUsageHotspotRole::Read;
-    item.moduleName = QStringLiteral("graph_view_module");
-    item.fileName = QStringLiteral("graph_view.sv");
-    item.line = 12;
-    item.column = 5;
-    item.endLine = 12;
-    item.endColumn = 16;
-    item.snippet = QStringLiteral("sample <= tracked_signal;");
-    item.roleReasonDisplayName = QStringLiteral("read");
-
-    SignalUsageHotspotTrackPosition position;
-    position.itemIndex = 0;
-    position.role = item.role;
-    position.roleDisplayName = item.roleReasonDisplayName;
-    position.line = item.line;
-    position.column = item.column;
-    position.endLine = item.endLine;
-    position.endColumn = item.endColumn;
-
-    SignalUsageHotspotTrackLane lane;
-    lane.moduleName = item.moduleName;
-    lane.fileName = item.fileName;
-    lane.startLine = 1;
-    lane.endLine = 40;
-    lane.count = 1;
-    lane.positions = {position};
-
-    SignalUsageHotspotReport report;
-    report.found = true;
-    report.declarationDisplayName =
-        QStringLiteral("tracked_signal");
-    report.items = {item};
-    report.trackLanes = {lane};
-    return report;
-}
-
-SignalKernelGraphReport signalKernelThemeFixture()
-{
-    SignalKernelGraphReport report;
-    report.found = true;
-    report.kernel.id = 0;
-    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
-    report.kernel.displayName = QStringLiteral("tracked_signal");
-    report.kernel.moduleDisplayName = QStringLiteral("graph_view_module");
-
-    SignalKernelGraphNode input;
-    input.id = 1;
-    input.role = SignalKernelGraphNodeRole::Input;
-    input.inputLane = SignalKernelGraphInputLane::Data;
-    input.displayName = QStringLiteral("source_a");
-    input.moduleDisplayName = QStringLiteral("source_module");
-    report.inputs = {input};
-
-    SignalKernelGraphNode outputA;
-    outputA.id = 2;
-    outputA.role = SignalKernelGraphNodeRole::Output;
-    outputA.displayName = QStringLiteral("sink_a");
-    outputA.moduleDisplayName = QStringLiteral("sink_module");
-    SignalKernelGraphNode outputB = outputA;
-    outputB.id = 3;
-    outputB.displayName = QStringLiteral("sink_b");
-    report.outputs = {outputA, outputB};
-    report.edges = {{1, 0, QStringLiteral("read")},
-                    {0, 2, QStringLiteral("write")},
-                    {0, 3, QStringLiteral("write")}};
-
-    SignalKernelGraphFanoutGroup group;
-    group.id = 7;
-    group.role = SignalKernelGraphNodeRole::Output;
-    group.groupKey = QStringLiteral("output:sink_module");
-    group.displayName = QStringLiteral("sink_module outputs");
-    group.moduleName = QStringLiteral("sink_module");
-    group.nodeIds = {2, 3};
-    group.nodeCount = 2;
-    group.totalRoleNodeCount = 2;
-    group.highFanout = true;
-    report.outputFanoutGroups = {group};
-    return report;
-}
-
 
 QImage iconImage(const QIcon& icon)
 {
@@ -387,448 +305,93 @@ void RtlInsightWorkbenchTest::workbenchPreservesPerViewState()
 
 void RtlInsightWorkbenchTest::toolPagesRouteAllFourWorkbenchViews()
 {
-    const QList<QPair<LiveInsightKind, InsightWorkbenchViewKind>> routes = {
-        {LiveInsightKind::Kernel, InsightWorkbenchViewKind::Kernel},
-        {LiveInsightKind::Module, InsightWorkbenchViewKind::Block},
-        {LiveInsightKind::Hotspot, InsightWorkbenchViewKind::Hotspot},
-        {LiveInsightKind::State, InsightWorkbenchViewKind::StateTransition}
-    };
-    for (const auto& route : routes) {
-        LiveInsightToolPage page(route.first);
-        QVERIFY(page.workbenchForTest());
-        QCOMPARE(page.workbenchForTest()->viewKind(), route.second);
-        QVERIFY(!page.workbenchForTest()->canvas());
-        if (route.first == LiveInsightKind::Kernel) QVERIFY(page.workbenchForTest()->kernelSurfaceForTest());
-        else QVERIFY(page.workbenchForTest()->rtlSurfaceForTest());
+
+    for(auto kind:{LiveInsightKind::Kernel,LiveInsightKind::Hotspot,LiveInsightKind::Module,LiveInsightKind::State}){
+        LiveInsightToolPage page(kind);
+        if(kind==LiveInsightKind::Kernel || kind==LiveInsightKind::Hotspot){QVERIFY(page.traceSurface());QVERIFY(!page.workbenchForTest());}
+        else if(kind==LiveInsightKind::Module){QVERIFY(!page.workbenchForTest());QVERIFY(page.findChild<QPushButton*>("openExistingDesign"));}
+        else{QVERIFY(page.workbenchForTest());QVERIFY(page.workbenchForTest()->rtlSurfaceForTest());QCOMPARE(page.workbenchForTest()->viewKind(),InsightWorkbenchViewKind::StateTransition);}
     }
+
 }
 
 void RtlInsightWorkbenchTest::specializedModesSurviveRouting()
 {
-    QTemporaryDir output;
-    QVERIFY(output.isValid());
-    LiveInsightToolPage hotspotPage(LiveInsightKind::Hotspot);
-    hotspotPage.resize(1120, 760);
-    hotspotPage.show();
-    auto* panel = hotspotPage.workbenchForTest()->rtlSurfaceForTest()->signalUsageHotspotPanelForTest();
-    QVERIFY(panel);
-    auto report = hotspotGraphViewFixture();
-    report.matrixCells = {{QStringLiteral("graph_view_module"), QStringLiteral("graph_view.sv"),
-        SignalUsageHotspotRole::Read, QStringLiteral("Read"), 1}};
-    panel->setReportBuilderForTest([report](const SignalUsageHotspotQuery&, std::shared_ptr<const SemanticIndexSnapshot>) { return report; });
-    LiveInsightToolContext context;
-    context.fileName = QStringLiteral("graph_view.sv");
-    context.documentId = context.fileName;
-    context.moduleName = QStringLiteral("graph_view_module");
-    context.signalName = QStringLiteral("tracked_signal");
-    context.documentRevision = 5;
-    hotspotPage.setContext(context);
-    QTRY_VERIFY(!panel->reportBuildInFlightForTest());
-    QVERIFY(panel->trackBlockCountForTest() > 0);
-    QVERIFY(panel->matrixNonEmptyCellCountForTest() > 0);
-    int navigationCount = 0;
-    hotspotPage.setNavigationHandler([&](const QString&, int, int) { ++navigationCount; return true; });
-    panel->setMatrixModeForTest(true);
-    QVERIFY(panel->matrixModeForTest());
-    const QString reviewDir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
-    if (!reviewDir.isEmpty()) {
-        QDir().mkpath(reviewDir);
-        QCoreApplication::processEvents();
-        hotspotPage.grab().save(reviewDir + "/hotspot-matrix.png");
-    }
-    QVERIFY(panel->selectMatrixCellForTest(SignalUsageHotspotRole::Read, context.moduleName, context.fileName));
-    panel->triggerFirstUsageNavigationForTest();
-    QVERIFY(navigationCount > 0);
-    QVERIFY(panel->exportGraph(SignalUsageHotspotExportSurface::Matrix, output.filePath("matrix.svg")).success);
-    panel->setMatrixModeForTest(false);
-    if (!reviewDir.isEmpty()) {
-        QCoreApplication::processEvents();
-        hotspotPage.grab().save(reviewDir + "/hotspot-track.png");
-    }
-    QVERIFY(panel->exportGraph(SignalUsageHotspotExportSurface::Track, output.filePath("track.svg")).success);
-    const auto builds = panel->reportBuildRequestCountForTest();
-    hotspotPage.setContext(context);
-    QCOMPARE(panel->reportBuildRequestCountForTest(), builds);
-    context.documentRevision = 4;
-    hotspotPage.setContext(context);
-    QCOMPARE(hotspotPage.workbenchForTest()->context().documentRevision, quint64(5));
 
-    LiveInsightToolPage kernelPage(LiveInsightKind::Kernel);
-    auto* kernel = kernelPage.workbenchForTest()->kernelSurfaceForTest();
-    QVERIFY(kernel);
-    kernel->renderReportForTest(signalKernelThemeFixture());
-    const int nodes = kernel->visibleGraphNodeCountForTest();
-    kernel->setGraphFilterForTest(false, true, false);
-    QVERIFY(kernel->visibleGraphNodeCountForTest() < nodes);
-    kernel->setGraphFilterForTest(true, true, false);
-    QVERIFY(kernel->toggleFanoutGroupForTest(QStringLiteral("output:sink_module")));
-    QVERIFY(kernelPage.workbenchForTest()->exportCurrentGraph(output.filePath("kernel.svg")).success);
-    if (!reviewDir.isEmpty()) {
-        kernelPage.resize(1120, 760); kernelPage.show();
-        QCoreApplication::processEvents(); kernel->focusFit();
-        kernelPage.grab().save(reviewDir + "/kernel.png");
+    SignalTraceTestFixture fixture;QVERIFY(fixture.build("module top(input wire s,output wire a);assign a=s;endmodule\n"));
+    auto* index=SemanticIndex::getInstance();const auto previous=index->snapshot();const auto restore=qScopeGuard([&]{index->setSnapshot(previous);});index->setSnapshot(fixture.context.token.snapshot);
+    LiveInsightToolContext context;context.workspaceId=fixture.directory.path();context.projectId="main";context.fileName=context.documentId=fixture.file;
+    context.documentText=fixture.source;context.documentRevision=5;context.moduleName="top";context.signalName="s";
+    for(auto kind:{LiveInsightKind::Kernel,LiveInsightKind::Hotspot}){
+        LiveInsightToolPage page(kind);page.resize(1100,700);page.show();page.setContext(context);auto* panel=page.traceSurface();QVERIFY(panel);QTRY_VERIFY(!panel->busy());
+        QVERIFY(panel->currentObject().isConcrete());QCOMPARE(panel->heatModel()->references().size(),1);
+        panel->setHeatmapMode(true);QVERIFY(panel->exportGraph(fixture.directory.filePath(liveInsightKindId(kind)+".svg")).success);
+        auto* root=panel->traceTree(SignalTraceDirection::Upstream)->topLevelItem(0);page.setContext(context);QCOMPARE(panel->traceTree(SignalTraceDirection::Upstream)->topLevelItem(0),root);
+        auto older=context;older.documentRevision=4;page.setContext(older);QCOMPARE(page.contextForTest().documentRevision,quint64(5));
     }
+
 }
 
 void RtlInsightWorkbenchTest::sidebarSectionTeardownReleasesFocusedControls()
 {
-    auto* index = SemanticIndex::getInstance();
-    const auto previous = index->snapshot();
-    const auto restoreSnapshot = qScopeGuard([&] { index->setSnapshot(previous); });
-    const QString fileName = QDir::tempPath() + QStringLiteral("/ela_teardown.sv");
-    const QHash<QString, QString> contents{{fileName,
-        QStringLiteral("module child(input logic clk); endmodule\n"
-                       "module top(input logic clk); child u_child(.clk(clk)); endmodule\n")}};
-    SlangManager slang;
-    const auto records = slang.extractOverlayWorkspaceSymbolRecords(
-        contents, {}, {}, nullptr, nullptr, {fileName});
-    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
-    QMainWindow window;
-    auto* editor = new QWidget(&window);
-    window.setCentralWidget(editor);
-    ContextWorkspaceController controller(&window, editor);
-    LiveInsightSession session;
-    auto provider = std::make_unique<LiveInsightsContextProvider>(LiveInsightKind::Module, &session);
-    provider->setToolContextSource([fileName] {
-        LiveInsightToolContext context;
-        context.workspaceId = QStringLiteral("workspace");
-        context.documentId = fileName;
-        context.fileName = fileName;
-        context.moduleName = QStringLiteral("top");
-        return context;
-    });
-    QVERIFY(controller.registerProvider(std::move(provider)));
-    window.resize(1280, 800);
-    window.show();
-    const auto resource = LiveInsightsContextProvider::resourceForKind(
-        LiveInsightKind::Module, QStringLiteral("workspace"));
-    for (int repeat = 0; repeat < 3; ++repeat) {
-        QVERIFY(controller.openResource(resource));
-        QPointer<QWidget> view = controller.viewForResource(resource.stableKey());
-        QVERIFY(view);
-        QCoreApplication::processEvents();
-        auto* page = qobject_cast<LiveInsightsContextView*>(view.data())->surfaceForTest();
-        QVERIFY(page && page->graphSession());
-        page->graphSession()->flushPending(LiveInsightKind::Module);
-        QTRY_COMPARE(page->graphSession()->snapshot(LiveInsightKind::Module).phase, LiveInsightPhase::Ready);
-        auto* depth = view->findChild<QSpinBox*>(QStringLiteral("rtlModuleBlockDepthSpin"));
-        auto* breadcrumbs = view->findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
-        auto* more = view->findChild<QToolButton*>(QStringLiteral("rtlModuleMoreButton"));
-        QVERIFY(!depth && !breadcrumbs && !more);
-        auto* navigationRow = view->findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
-        QVERIFY(navigationRow && navigationRow->isHidden());
-        auto* inspector = view->findChild<QWidget*>(QStringLiteral("rtlGraphInspectorPanel"));
-        auto* table = view->findChild<QTableWidget*>(QStringLiteral("rtlGraphDetailTable"));
-        auto* body = view->findChild<QSplitter*>(QStringLiteral("rtlGraphBodySplitter"));
-        QVERIFY(inspector && table && body);
-        QVERIFY(inspector->isHidden());
-        QVERIFY(table->isHidden());
-        QCOMPARE(table->rowCount(), 0);
-        auto* graph = qobject_cast<QGraphicsView*>(body->widget(0));
-        QVERIFY(graph && graph->isVisible());
-        QCOMPARE(graph->frameWidth(), 0);
-        if (repeat == 0) {
-            auto& theme = ApplicationThemeManager::instance();
-            const auto previousMode = theme.mode();
-            theme.setMode(ThemeMode::Dark);
-            QCOMPARE(graph->frameWidth(), 0);
-            theme.setMode(previousMode);
-            QCOMPARE(graph->frameWidth(), 0);
-            QVERIFY(navigationRow->isHidden());
-        }
-        QTRY_COMPARE(graph->width(), body->contentsRect().width());
-        QVERIFY2(graph->height() >= view->height() * 0.75, qPrintable(QStringLiteral("canvas %1 / body %2")
-            .arg(graph->height()).arg(view->height())));
-        QTRY_VERIFY(graph->mapFromScene(graph->sceneRect()).boundingRect().width() > graph->viewport()->width() * 0.65
-                    || graph->mapFromScene(graph->sceneRect()).boundingRect().height() > graph->viewport()->height() * 0.65);
-        const QString review = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
-        if (repeat == 0 && !review.isEmpty()) {
-            QDir().mkpath(review);
-            view->grab().save(review + QStringLiteral("/module-docked.png"));
-        }
-        auto* fit = controller.dockHost()->findChild<QToolButton*>(QStringLiteral("contextSectionFit"));
-        QVERIFY(fit && fit->isVisible());
-        auto* toggle = controller.dockHost()->findChild<QToolButton*>(QStringLiteral("contextSectionToggle"));
-        auto* fullView = controller.dockHost()->findChild<QToolButton*>(QStringLiteral("contextDockFullView"));
-        QVERIFY(toggle && toggle->isHidden());
-        QVERIFY(fullView && fullView->isHidden());
-        QVERIFY(controller.dockHost()->setSectionCollapsed(resource.stableKey(), true, false));
-        QVERIFY(controller.dockHost()->isSectionCollapsed(resource.stableKey()));
-        QVERIFY(controller.dockHost()->setSectionCollapsed(resource.stableKey(), false, false));
-        QVERIFY(!controller.dockHost()->isSectionCollapsed(resource.stableKey()));
-        QVERIFY(view->isVisible());
-        fit->setFocus();
-        fit->click();
-        if (repeat == 0) {
-            const auto key = resource.stableKey();
-            QVERIFY(controller.unpinResource(key));
-            auto* floating = controller.floatingWindow();
-            QVERIFY(floating && floating->view() == view);
-            QVERIFY(floating->windowFlags().testFlag(Qt::FramelessWindowHint));
-            auto* floatingFit = floating->findChild<QToolButton*>(QStringLiteral("contextFloatingFit"));
-            auto* floatingFullView = floating->findChild<QToolButton*>(QStringLiteral("contextFloatingFullView"));
-            QVERIFY(floatingFit && floatingFit->isVisible());
-            QVERIFY(!floatingFullView);
-            QCOMPARE(graph->frameWidth(), 0);
-            floatingFit->click();
-            if (!review.isEmpty()) floating->grab().save(review + QStringLiteral("/module-floating.png"));
-            QVERIFY(controller.pinFloatingResource(key, true));
-            QCOMPARE(controller.viewForResource(key), view.data());
-            QVERIFY(controller.bottomDockWidget()->isVisible());
-            QTRY_VERIFY(view->height() > 120);
-            QTRY_VERIFY(controller.bottomDockWidget()->rect().contains(
-                QRect(view->mapTo(controller.bottomDockWidget(), QPoint()), view->size())));
-            QTRY_VERIFY(graph->isVisibleTo(controller.bottomDockWidget()));
-            QVERIFY(navigationRow->isHidden());
-            QTRY_VERIFY2(graph->height() >= view->height() - 8,
-                qPrintable(QStringLiteral("canvas %1 / body %2").arg(graph->height()).arg(view->height())));
-            QTRY_VERIFY(graph->viewport()->rect().adjusted(-2, -2, 2, 2).contains(
-                graph->mapFromScene(graph->sceneRect()).boundingRect()));
-            QTRY_VERIFY(graph->mapFromScene(graph->sceneRect()).boundingRect().width() > graph->viewport()->width() * 0.65
-                        || graph->mapFromScene(graph->sceneRect()).boundingRect().height() > graph->viewport()->height() * 0.65);
-            if (!review.isEmpty()) window.grab().save(review + QStringLiteral("/module-bottom.png"));
-            QVERIFY(controller.unpinResource(key));
-            QVERIFY(controller.pinFloatingResource(key));
-            QCOMPARE(controller.viewForResource(key), view.data());
-            QVERIFY(controller.dockWidget()->isVisible() && !controller.bottomDockWidget()->isVisible());
-        }
-        QToolButton* close = nullptr;
-        for (auto* button : controller.dockHost()->findChildren<QToolButton*>())
-            if (button->toolTip() == QStringLiteral("Close section")) close = button;
-        QVERIFY(close);
-        QTest::mouseClick(close, Qt::LeftButton);
-        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        QTest::qWait(500);
-        QVERIFY(view.isNull());
-        QCOMPARE(controller.dockHost()->resourceCount(), 0);
+
+    SignalTraceTestFixture fixture;QVERIFY(fixture.build("module top(input wire s,output wire a);assign a=s;endmodule\n"));
+    auto* index=SemanticIndex::getInstance();const auto previous=index->snapshot();const auto restore=qScopeGuard([&]{index->setSnapshot(previous);});index->setSnapshot(fixture.context.token.snapshot);
+    QMainWindow window;auto* editor=new QWidget(&window);window.setCentralWidget(editor);ContextWorkspaceController controller(&window,editor);LiveInsightSession session;
+    auto provider=std::make_unique<LiveInsightsContextProvider>(LiveInsightKind::Kernel,&session);
+    provider->setToolContextSource([&]{LiveInsightToolContext c;c.workspaceId=fixture.directory.path();c.projectId="main";c.fileName=c.documentId=fixture.file;c.moduleName="top";c.signalName="s";c.documentText=fixture.source;return c;});
+    QVERIFY(controller.registerProvider(std::move(provider)));controller.setWorkspaceRoot(fixture.directory.path());window.resize(1280,800);window.show();
+    const auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Kernel,fixture.directory.path());
+    for(int repeat=0;repeat<3;++repeat){
+        QVERIFY(controller.openResource(resource));QPointer<QWidget> view=controller.viewForResource(resource.stableKey());QVERIFY(view);
+        auto* panel=view->findChild<SignalTracePanel*>();QVERIFY(panel);QTRY_VERIFY(!panel->busy());panel->setFocusSearchText("assign");
+        auto* filter=panel->findChild<QLineEdit*>("traceFilter");QVERIFY(filter);filter->setFocus();
+        QVERIFY(controller.unpinResource(resource.stableKey()));QVERIFY(controller.floatingWindow());QCOMPARE(controller.floatingWindow()->view(),view.data());
+        QVERIFY(controller.pinFloatingResource(resource.stableKey(),true));QCOMPARE(controller.viewForResource(resource.stableKey()),view.data());QCOMPARE(panel->focusSearchText(),QString("assign"));
+        QVERIFY(controller.unpinResource(resource.stableKey()));QVERIFY(controller.pinFloatingResource(resource.stableKey()));
+        QToolButton* close=nullptr;for(auto* button:controller.dockHost()->findChildren<QToolButton*>())if(button->toolTip()=="Close section")close=button;
+        QVERIFY(close);close->click();QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);QTRY_VERIFY(view.isNull());QCOMPARE(controller.dockHost()->resourceCount(),0);
     }
-    controller.setWorkspaceRoot(resource.workspaceId);
-    QVERIFY(controller.openResource(resource,
-        {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}));
-    auto saved = controller.captureState();
-    QVERIFY(!saved.dockSections.isEmpty());
-    saved.dockSections.first().collapsed = true;
-    const auto restored = controller.restoreState(saved);
-    QCOMPARE(restored.restoredResources, 1);
-    QVERIFY(!controller.dockHost()->isSectionCollapsed(resource.stableKey()));
-    QVERIFY(controller.viewForResource(resource.stableKey()));
-    QVERIFY(controller.viewForResource(resource.stableKey())->isVisible());
+
 }
 
 void RtlInsightWorkbenchTest::moduleDiagramAdaptsAndNavigatesInstances()
 {
-    auto* index = SemanticIndex::getInstance();
-    const auto previous = index->snapshot();
-    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
-    const QString file = QDir::tempPath() + QStringLiteral("/module_compact_layout.sv");
-    const QHash<QString, QString> contents{{file, QStringLiteral(
-        "module leaf; endmodule\n"
-        "module branch; leaf u_leaf(); leaf u_long_instance_name_for_width(); endmodule\n"
-        "module top; branch u_left(); branch u_right(); endmodule\n")}};
-    SlangManager slang;
-    const auto records = slang.extractOverlayWorkspaceSymbolRecords(contents, {}, {}, nullptr, nullptr, {file});
-    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
-    QMainWindow window;
-    RtlInsightsPanelCoordinator panel(&window);
-    window.addDockWidget(Qt::LeftDockWidgetArea, panel.dock());
-    window.resize(1120, 700);
-    window.show();
-    panel.showModuleBlockDiagramForModule(file, QStringLiteral("top"));
-    QVERIFY(waitForLiveInsightReports(panel));
-    auto* graph = panel.graphView();
-    auto* breadcrumb = window.findChild<QWidget*>(QStringLiteral("rtlModuleBreadcrumbs"));
-    auto* toolbar = window.findChild<QWidget*>(QStringLiteral("rtlModuleBlockToolbar"));
-    auto* fold = window.findChild<QAction*>(QStringLiteral("rtlModuleFoldAction"));
-    auto* back = window.findChild<QAction*>(QStringLiteral("rtlModuleBackAction"));
-    auto* forward = window.findChild<QAction*>(QStringLiteral("rtlModuleForwardAction"));
-    QVERIFY(graph && !breadcrumb && toolbar && !fold && !back && !forward);
-    QCOMPARE(graph->frameWidth(), 0);
-    int navigations = 0;
-    int definitionLine = 0;
-    bool allowNavigation = true;
-    panel.setNavigationHandler([&](const QString& targetFile, int line, int column) {
-        if (!allowNavigation || targetFile != file || line <= 0 || column <= 0) return false;
-        ++navigations;
-        definitionLine = line;
-        return true;
-    });
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        QVERIFY(window.findChild<QAction*>(QStringLiteral("rtlModuleFitAction")));
-    }
-    const auto node = [&graph](const QString& path) -> QGraphicsRectItem* {
-        for (auto* item : graph->scene()->items()) {
-            if (item->data(kGraphKindRole).toString() == QStringLiteral("module")
-                && item->data(kGraphInstancePathRole).toString() == path)
-                return dynamic_cast<QGraphicsRectItem*>(item);
-        }
-        return nullptr;
-    };
-    const auto enter = [&](const QString& path) {
-        const QPoint point = graph->mapFromScene(node(path)->rect().topLeft() + QPointF(26, 16));
-        QTest::mouseClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-        QTest::mouseDClick(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-        QTest::mouseRelease(graph->viewport(), Qt::LeftButton, Qt::NoModifier, point);
-    };
-    const auto selectedPath = [&graph]() {
-        for (auto* item : graph->scene()->items())
-            if (item->isSelected() && item->data(kGraphKindRole).toString() == QStringLiteral("module"))
-                return item->data(kGraphInstancePathRole).toString();
-        return QString();
-    };
-    QTRY_COMPARE(panel.graphNodeItemCountForTest(), 7);
-    QTest::qWait(120);
-    QVERIFY(graph->transform().m11() > 0.0);
-    QVERIFY(node("top.u_left.u_leaf") && node("top.u_left.u_long_instance_name_for_width"));
-    QVERIFY(node("top.u_left.u_leaf")->rect().width() < node("top.u_left.u_long_instance_name_for_width")->rect().width());
-    QVERIFY(node("top.u_left.u_leaf")->rect().height() < 80);
-    const QRectF initialRoot = node("top")->rect();
-    QVERIFY(node("top")->rect().contains(node("top.u_left")->rect()));
-    QVERIFY(node("top.u_left")->rect().contains(node("top.u_left.u_leaf")->rect()));
-    QVERIFY(!node("top.u_left")->rect().intersects(node("top.u_right")->rect()));
-    const auto capture = [&](const QString& name) {
-        const QString dir = qEnvironmentVariable("ZEROSLACK_UI_REVIEW_DIR");
-        if (!dir.isEmpty()) {
-            QDir().mkpath(dir);
-            window.grab().save(dir + QLatin1Char('/') + name + QStringLiteral(".png"));
-        }
-    };
-    capture(QStringLiteral("module-wide"));
 
-    QCOMPARE(node("top.u_left")->brush().color(), node("top.u_right")->brush().color());
-    QVERIFY(node("top")->brush().color() != node("top.u_left")->brush().color());
-    QCOMPARE(node("top.u_left")->cursor().shape(), Qt::ArrowCursor);
-    panel.focusZoomIn();
-    const qreal zoom = graph->transform().m11();
-    window.resize(1100, 680);
-    QTest::qWait(150);
-    QCOMPARE(graph->transform().m11(), zoom);
-    panel.focusFit();
-    enter("top.u_right");
-    QTRY_COMPARE(navigations, 1);
-    QCOMPARE(definitionLine, 2);
-    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
-    QCOMPARE(node("top.u_right")->opacity(), 1.0);
-    QVERIFY(node("top")->opacity() < 0.4);
-    QVERIFY(node("top.u_left")->opacity() < 0.4);
-    QVERIFY(node("top.u_right.u_leaf"));
-    QCOMPARE(selectedPath(), QStringLiteral("top.u_right"));
-    enter("top.u_right.u_leaf");
-    QTRY_COMPARE(navigations, 2);
-    QCOMPARE(definitionLine, 1);
-    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
-    QVERIFY(node("top.u_right.u_leaf"));
-    QCOMPARE(selectedPath(), QStringLiteral("top.u_right.u_leaf"));
-    QTest::mouseClick(graph->viewport(), Qt::BackButton);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top.u_right"));
-    QTest::mouseClick(graph->viewport(), Qt::ForwardButton);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top.u_right.u_leaf"));
-    QTest::mouseClick(graph->viewport(), Qt::BackButton);
-    QTest::mouseClick(graph->viewport(), Qt::BackButton);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top"));
-    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
-    const int rootNavigations = navigations;
-    QTest::mouseClick(graph->viewport(), Qt::BackButton);
-    QCOMPARE(navigations, rootNavigations);
-    allowNavigation = false;
-    enter("top.u_left");
-    QTest::qWait(20);
-    QCOMPARE(navigations, rootNavigations);
-    QCOMPARE(node("top")->opacity(), 1.0);
-    allowNavigation = true;
-    enter("top.u_left");
-    QTRY_COMPARE(navigations, rootNavigations + 1);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top.u_left"));
-    const int branchNavigations = navigations;
-    QTest::mouseClick(graph->viewport(), Qt::ForwardButton);
-    QCOMPARE(navigations, branchNavigations);
-    QCOMPARE(selectedPath(), QStringLiteral("top.u_left"));
-    QTest::mouseClick(graph->viewport(), Qt::BackButton);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top"));
-    QCOMPARE(panel.graphNodeItemCountForTest(), 7);
+    SignalTraceTestFixture fixture;QVERIFY(fixture.build("module leaf;endmodule\nmodule branch;leaf u();endmodule\nmodule other;leaf inactive();endmodule\nmodule top;branch left();branch right();endmodule\n"));
+    const QList<DesignHierarchyRoot> roots{{"main","Main","top",fixture.file,true},{"other","Other","other",fixture.file,true}};
+    const auto report=HierarchyService(fixture.context.token).explicitDesignHierarchy(roots,"main",{fixture.file});
+    QVERIFY(report.nodes.size()>=7);NavigationWidget view;view.resize(600,720);view.updateDesignHierarchy(report);view.setActiveTab(NavigationWidget::DesignTab);view.show();
+    QVERIFY(view.selectDesignInstance("top.left.u",true));auto* tree=view.findChild<QTreeWidget*>("navigationDesignTree");QVERIFY(tree && tree->currentItem());
+    QVERIFY(tree->currentItem()->text(0).contains("u [leaf]"));QVERIFY(view.selectDesignInstance("top.right.u",true));
+    QVERIFY(!view.selectDesignInstance("other.inactive",true));QVERIFY(view.selectDesignModule("leaf",fixture.file));
+    DesignHierarchyNode navigated;connect(&view,&NavigationWidget::designNodeDoubleClicked,&view,[&](const DesignHierarchyNode& n){navigated=n;});
+    tree->itemDoubleClicked(tree->currentItem(),0);QCOMPARE(navigated.moduleType,QString("leaf"));QVERIFY(navigated.instanceLine>0 && navigated.definitionLine>0);
+    QVERIFY(navigated.instanceLine!=navigated.definitionLine);
+    int selectionEvents=0;connect(&view,&NavigationWidget::designInstanceSelected,&view,[&](const QString&){++selectionEvents;});
+    QVERIFY(view.selectDesignInstance("top.left.u"));QCOMPARE(selectionEvents,0);
+    for(QTreeWidgetItemIterator it(tree);*it;++it)QVERIFY((*it)->sizeHint(0).height()<=view.height());
 
-    window.resize(390, 700);
-    QTest::qWait(150);
-    QVERIFY(node("top")->rect().width() < initialRoot.width());
-    QVERIFY(node("top")->rect().height() > initialRoot.height());
-    QVERIFY(node("top.u_left")->rect().bottom() < node("top.u_right")->rect().top());
-    QVERIFY(toolbar->isVisible());
-    capture(QStringLiteral("module-narrow"));
-    panel.focusFit();
-    QVERIFY(graph->transform().m11() > 0.0);
-    const int narrowNavigations = navigations;
-    enter("top.u_right");
-    QTRY_COMPARE(navigations, narrowNavigations + 1);
-    QTRY_COMPARE(selectedPath(), QStringLiteral("top.u_right"));
+    QVERIFY(fixture.build("module leaf;endmodule\nmodule branch #(parameter N=1);for(genvar i=0;i<N;i++)begin:g leaf u();end endmodule\nmodule top;branch #(.N(1)) left();branch #(.N(2)) right();endmodule\n"));
+    const auto specialized=HierarchyService(fixture.context.token).explicitDesignHierarchy({{"main","Main","top",fixture.file,true}},"main",{fixture.file});
+    QSet<QString> paths;for(const auto& node:specialized.nodes)paths.insert(node.instancePath);
+    QVERIFY(paths.contains("top.left.g[0].u"));QVERIFY(paths.contains("top.right.g[0].u"));
+    QVERIFY(paths.contains("top.right.g[1].u"));QVERIFY(!paths.contains("top.left.g[1].u"));
+
 }
 
 void RtlInsightWorkbenchTest::moduleDiagramIncludesDeepDescendantsAndTerminatesCycles()
 {
-    const QString file = QDir::tempPath() + QStringLiteral("/deep_modules.sv");
-    QString source;
-    for (int depth = 0; depth <= 12; ++depth) {
-        source += QStringLiteral("module m%1; ").arg(depth);
-        source += depth < 12 ? QStringLiteral("m%1 u_next(); ").arg(depth + 1)
-                            : QStringLiteral("missing_type u_missing(); ");
-        source += QStringLiteral("endmodule\n");
-    }
-    source += QStringLiteral("module independent; endmodule\n");
-    const QHash<QString, QString> contents{{file, source}};
-    SlangManager slang;
-    const auto records = slang.extractOverlayWorkspaceSymbolRecords(contents, {}, {}, nullptr, nullptr, {file});
-    SemanticIndex index;
-    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(records, {}, {}, contents)));
-    ModuleBlockDiagramService service(&index);
-    ModuleBlockDiagramQuery query;
-    query.fileName = file;
-    query.moduleName = QStringLiteral("m0");
-    const auto report = service.buildModuleBlockDiagram(query);
-    QVERIFY(report.found);
-    QCOMPARE(report.nodes.size(), 14);
-    QCOMPARE(report.nodes.last().depth, 13);
-    QVERIFY(report.nodes.last().unresolved);
-    for (const auto& node : report.nodes) QVERIFY(node.moduleDisplayName != QStringLiteral("independent"));
-    query.maxDepth = 2;
-    QCOMPARE(service.buildModuleBlockDiagram(query).nodes.size(), 3);
 
-    const QString inactiveSource = QStringLiteral(
-        "module leaf; endmodule\n"
-        "module branch; leaf u_leaf(); endmodule\n"
-        "module top; if (0) begin : disabled branch u_branch(); end endmodule\n");
-    const QHash<QString, QString> inactiveContents{{file, inactiveSource}};
-    const auto inactiveRecords = slang.extractOverlayWorkspaceSymbolRecords(
-        inactiveContents, {}, {}, nullptr, nullptr, {file});
-    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(inactiveRecords, {}, {}, inactiveContents)));
-    query.moduleName = QStringLiteral("top");
-    query.maxDepth = -1;
-    const auto inactive = service.buildModuleBlockDiagram(query);
-    QCOMPARE(inactive.nodes.size(), 3);
-    QVERIFY(inactive.nodes.at(1).unresolved);
-    QVERIFY(inactive.nodes.at(2).unresolved);
-    QCOMPARE(inactive.nodes.at(2).depth, 2);
-    QVERIFY(!inactive.nodes.at(2).definitionCodeLink.fileName.isEmpty());
+    SignalTraceTestFixture fixture;QString source="module top;m0 u();endmodule\n";
+    for(int i=0;i<13;++i)source+=QString("module m%1;m%2 u();endmodule\n").arg(i).arg(i+1);
+    source+="module cycle;cycle again();endmodule\n";QVERIFY(fixture.build(source));
+    const QList<DesignHierarchyRoot> roots{{"main","Main","top",fixture.file,true},{"cycle","Cycle","cycle",fixture.file,true}};
+    const auto report=HierarchyService(fixture.context.token).explicitDesignHierarchy(roots,"main",{fixture.file});
+    QVERIFY(report.nodes.size()>=15);QVERIFY(report.nodes.size()<40);bool missing=false,recursive=false;
+    for(const auto& node:report.nodes){if(node.moduleType=="m13")missing|=node.unresolved;if(node.moduleType=="cycle" && !node.isTop)recursive|=node.unresolved;}
+    QVERIFY(missing);QVERIFY(recursive);
 
-    SemanticIndex cycleIndex;
-    const auto a = SemanticFixtureRecordBuilder("cycle_a", SymbolTaxonomy::DeclarationKind::Module)
-        .withFile(file).withLine(1).withLocalHandle(90001).record();
-    const auto b = SemanticFixtureRecordBuilder("cycle_b", SymbolTaxonomy::DeclarationKind::Module)
-        .withFile(file).withLine(2).withLocalHandle(90002).record();
-    cycleIndex.updateSymbolRecordsForFile(file, {a, b}, "module cycle_a; endmodule\nmodule cycle_b; endmodule\n");
-    SymbolRelationshipEngine relationships;
-    cycleIndex.attachRelationshipEngine(&relationships);
-    relationships.addRelationship(a.localHandle, b.localHandle, SymbolRelationshipEngine::INSTANTIATES, "a to b");
-    relationships.addRelationship(b.localHandle, a.localHandle, SymbolRelationshipEngine::INSTANTIATES, "b to a");
-    cycleIndex.setSnapshot(cycleIndex.captureSnapshotPreservingDiagnostics());
-    ModuleBlockDiagramService cycleService(&cycleIndex);
-    query.moduleName = QStringLiteral("cycle_a");
-    query.maxDepth = -1;
-    const auto cycle = cycleService.buildModuleBlockDiagram(query);
-    QCOMPARE(cycle.nodes.size(), 3);
-    QVERIFY(cycle.nodes.last().unresolved);
-    QVERIFY(cycle.nodes.last().unresolvedReason.contains(QStringLiteral("cyclic")));
 }
 
 void RtlInsightWorkbenchTest::windowChromeSupportsNativeSnap()
@@ -1059,7 +622,7 @@ void RtlInsightWorkbenchTest::sidebarRegistersFourDistinctIconsAndResources()
 void RtlInsightWorkbenchTest::toolPageDetachesIntoWindow()
 {
     LiveInsightToolPage page(LiveInsightKind::Kernel);
-    QVERIFY(page.workbenchForTest());
+    QVERIFY(page.traceSurface());
     QMainWindow* detached = page.detachToWindow();
     QVERIFY(detached);
     QCOMPARE(page.detachedWindowForTest(), detached);
@@ -1067,7 +630,7 @@ void RtlInsightWorkbenchTest::toolPageDetachesIntoWindow()
         dynamic_cast<LiveInsightToolPage*>(detached->centralWidget());
     QVERIFY(detachedPage);
     QCOMPARE(detachedPage->kind(), LiveInsightKind::Kernel);
-    QVERIFY(detachedPage->workbenchForTest());
+    QVERIFY(detachedPage->traceSurface());
     LiveInsightToolContext updatedContext;
     updatedContext.workspaceId = QStringLiteral("workspace");
     updatedContext.documentId = QStringLiteral("rtl/updated.sv");
@@ -1076,9 +639,9 @@ void RtlInsightWorkbenchTest::toolPageDetachesIntoWindow()
     updatedContext.moduleName = QStringLiteral("updated_top");
     updatedContext.signalName = QStringLiteral("updated_q");
     page.setContext(updatedContext);
-    QCOMPARE(detachedPage->workbenchForTest()->context().documentRevision,
+    QCOMPARE(detachedPage->contextForTest().documentRevision,
              quint64(7));
-    QCOMPARE(detachedPage->workbenchForTest()->context().signalName,
+    QCOMPARE(detachedPage->contextForTest().signalName,
              QStringLiteral("updated_q"));
     detached->close();
     QCoreApplication::processEvents();
@@ -1137,37 +700,17 @@ void RtlInsightWorkbenchTest::legacyBottomDockDoesNotCarryStateWhenDisabled()
 
 void RtlInsightWorkbenchTest::ordinaryAndSpecializedModuleDepthsDiffer()
 {
-    const QString file = QDir::temp().filePath("depth_contract.sv");
-    const QString source = "module m4; endmodule\nmodule m3; m4 u(); endmodule\n"
-        "module m2; m3 u(); endmodule\nmodule m1; m2 u(); endmodule\nmodule top; m1 u(); endmodule\n";
-    auto* index = SemanticIndex::getInstance();
-    const auto previous = index->snapshot();
-    const auto restore = qScopeGuard([&] { index->setSnapshot(previous); });
-    SlangManager slang;
-    index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(SemanticIndexSnapshot::fromSymbolRecords(
-        slang.extractSymbolRecords(file, source), {}, {}, {{file, source}})));
-    InsightViewContext context;
-    context.workspaceId = "workspace"; context.documentId = file; context.fileName = file;
-    context.moduleName = "top"; context.documentRevision = 1;
-    context.semanticRevision = index->snapshotToken().revision;
-    for (bool specialized : {false, true}) {
-        RtlInsightWorkbench workbench(nullptr, specialized);
-        workbench.setViewKind(InsightWorkbenchViewKind::Block);
-        workbench.show();
-        workbench.setContext(context);
-        auto* session = workbench.graphSession();
-        QVERIFY(session);
-        session->flushPending(LiveInsightKind::Module);
-        QTRY_COMPARE(session->snapshot(LiveInsightKind::Module).phase, LiveInsightPhase::Ready);
-        const auto graph = session->snapshot(LiveInsightKind::Module).payload.value("graphReport").value<LiveInsightGraphReportPtr>();
-        QVERIFY(graph);
-        QCOMPARE(std::get<ModuleBlockDiagramReport>(graph->value).moduleCount, specialized ? 5 : 3);
+
+    InsightViewContext context;context.workspaceId="workspace";context.projectId="project";context.fileName="top.sv";context.moduleName="top";
+    for(bool specialized:{false,true}){
+        RtlInsightWorkbench workbench(nullptr,specialized);QVERIFY(workbench.setViewKind(InsightWorkbenchViewKind::Block));
+        int opened=0;workbench.setDesignHandler([&](const QString& file,const QString& module){if(file==context.fileName && module==context.moduleName)++opened;});
+        workbench.setContext(context);auto* button=workbench.findChild<QPushButton*>();
+        QPushButton* design=nullptr;for(auto* candidate:workbench.findChildren<QPushButton*>())if(candidate->text()=="Open module in Design")design=candidate;
+        QVERIFY(design && design->isEnabled());design->click();QCOMPARE(opened,1);QVERIFY(!workbench.exportCurrentGraph("unused.svg").success);
     }
-    const auto legacy = ModuleBlockInsightViewPlugin().build(context);
-    QVERIFY(legacy.available);
-    int deepest = 0;
-    for (const auto& node : legacy.draft.nodes) deepest = qMax(deepest, node.attributes.value("depth").toInt());
-    QCOMPARE(deepest, 2);
+    const auto legacy=ModuleBlockInsightViewPlugin().build(context);QVERIFY(!legacy.available);QVERIFY(legacy.errorText.contains("Design"));
+
 }
 
 void RtlInsightWorkbenchTest::stateTargetPickerUsesRenderSession()

@@ -2,12 +2,12 @@
 
 #include "problemspanelcoordinator.h"
 #include "rtlinsightspanelcoordinator.h"
-#include "signalkernelgraphpanelcoordinator.h"
+#include "signaltracepanel.h"
 
 void SemanticPanelRefreshCoordinator::PanelSet::set(
     ProblemsPanelCoordinator* newProblemsPanel,
     RtlInsightsPanelCoordinator* newRtlInsightsPanel,
-    SignalKernelGraphPanelCoordinator* newSignalKernelGraphPanel)
+    SignalTracePanel* newSignalKernelGraphPanel)
 {
     problemsPanel = newProblemsPanel;
     rtlInsightsPanel = newRtlInsightsPanel;
@@ -61,9 +61,11 @@ void SemanticPanelRefreshCoordinator::PanelSet::configureSignalKernelGraphPanel(
     if (!signalKernelGraphPanel)
         return;
 
-    signalKernelGraphPanel->setDocumentModel(documentModel);
+    Q_UNUSED(documentModel)
     Q_UNUSED(revealHandler)
-    signalKernelGraphPanel->setNavigationHandler(navigationHandler);
+    signalKernelGraphPanel->setNavigationHandler([navigationHandler](const SignalTraceEvidence& evidence){
+        return navigationHandler && navigationHandler(evidence.range.fileName,evidence.range.line,evidence.range.column);
+    });
     signalKernelGraphPanel->setStatusMessageHandler(statusMessageHandler);
 }
 
@@ -80,7 +82,7 @@ void SemanticPanelRefreshCoordinator::PanelSet::showSignalKernelGraphForSymbol(
     const QString& signalAccessPath) const
 {
     if (signalKernelGraphPanel)
-        signalKernelGraphPanel->showSignalKernelGraphForSymbol(symbolName,
+        signalKernelGraphPanel->showForSymbol(symbolName,
                                                                fileName,
                                                                moduleName,
                                                                signalAccessPath);

@@ -904,15 +904,15 @@ void appendSourceActions(QList<ActionDescriptor>* out)
          semanticSymbol,
          "F12"},
         {"insight.signalKernelGraph",
-         "Signal Kernel Graph",
-         "Inspect the signal kernel graph for the current signal.",
+         "Signal Trace",
+         "Follow upstream and downstream static signal dependencies.",
          "insight.signalKernel.showSymbol",
          ActionCategory::Inspect,
          ActionScope::Symbol,
          semanticSymbol},
         {"insight.signalUsageHotspot",
-         "Signal Usage Hotspot",
-         "Inspect usage hotspots for the current signal.",
+         "Signal Heatmap",
+         "Inspect references and file distribution in Signal Trace.",
          "insight.signalUsageHotspot.showSymbol",
          ActionCategory::Inspect,
          ActionScope::Symbol,
@@ -925,8 +925,8 @@ void appendSourceActions(QList<ActionDescriptor>* out)
          ActionScope::Symbol,
          semanticSymbol},
         {"insight.moduleBlockDiagram",
-         "Module Block Diagram",
-         "Inspect the block diagram for the current module or signal.",
+         "Design",
+         "Locate the current module in the Design hierarchy.",
          "insight.moduleBlock.showSymbol",
          ActionCategory::Inspect,
          ActionScope::Module,
@@ -2509,14 +2509,14 @@ void appendGraphExportActions(QList<ActionDescriptor>* out)
     };
     const Spec specs[] = {
         {ActionIds::GraphExportRtlInsights,
-         "Export FSM / Module Block Graph",
-         "Export the active FSM or module block diagram as SVG, PDF, "
+         "Export FSM Graph",
+         "Export the active FSM graph as SVG, PDF, "
          "or high-resolution PNG.",
          "graphExport.rtlInsights",
          "Export Graph...",
          "rtl-graph",
          "rtlGraphExportAction",
-         "Render an FSM or module block diagram before exporting.",
+         "Render an FSM graph before exporting.",
          ActionScope::Module},
         {ActionIds::GraphExportSignalKernel,
          "Export Signal Kernel Graph",
@@ -2571,7 +2571,20 @@ void appendGraphExportActions(QList<ActionDescriptor>* out)
                   QString::fromLatin1(spec.description),
                   QString::fromLatin1(spec.defaultFileName),
                   QString::fromLatin1(spec.objectName)));
+        if(descriptor.executionRoute!=QStringLiteral("graphExport.rtlInsights")){
+            descriptor.aliases.clear();descriptor.requirementMask=0;descriptor.retired=true;
+            descriptor.description=QStringLiteral("Retired graph export. Use signal.trace.exportImage or signal.trace.exportHeatmap; this action returns a migration error.");
+        }
         out->append(descriptor);
+    }
+    for(const auto& entry:{qMakePair(QStringLiteral("signalTrace.exportImage"),QStringLiteral("Export Signal Trace image")),
+                           qMakePair(QStringLiteral("signalTrace.exportHeatmap"),QStringLiteral("Export Signal Trace heatmap CSV"))}){
+        const QString id=QString(entry.first).replace(QStringLiteral("signalTrace."),QStringLiteral("signal.trace."));
+        auto descriptor=makeAction(id,entry.second,entry.second,ActionCategory::Inspect,ActionScope::Symbol,
+            entry.first,0,QStringLiteral("Open Signal Trace before exporting."),ActionRecoveryPolicy::Explain,
+            ActionParameterKind::FilePath,QStringLiteral("outputPath"),QStringLiteral("<output path>"));
+        descriptor.aliases.append(alias(ActionSurface::GraphPanel,id,entry.second,entry.second,
+            QStringLiteral("signal-trace"),id));out->append(descriptor);
     }
 }
 
@@ -2804,6 +2817,7 @@ QList<ActionCatalogEntry> unifiedActionCatalog()
     QList<ActionCatalogEntry> result;
     result.reserve(actionRegistry().size());
     for (const ActionDescriptor& descriptor : actionRegistry()) {
+        if(descriptor.retired)continue;
         QStringList aliases;
         aliases.reserve(descriptor.aliases.size());
         for (const ActionAliasDescriptor& actionAlias :
@@ -2870,7 +2884,8 @@ bool validateActionRegistry(const QList<ActionDescriptor>& registry,
             || descriptor.scope == ActionScope::Unknown
             || descriptor.executionRoute.trimmed().isEmpty()
             || !descriptor.execute
-            || descriptor.aliases.isEmpty()) {
+            || (!descriptor.retired && descriptor.aliases.isEmpty())
+            || (descriptor.retired && (!descriptor.aliases.isEmpty() || !descriptor.defaultShortcut.isEmpty()))) {
             setReason(reason,
                       QStringLiteral("Incomplete action descriptor: %1")
                           .arg(descriptor.id));

@@ -28,6 +28,7 @@ struct RelationshipToAdd {
     QString fromAccessPath;
     QString toAccessPath;
     bool exactValueForward = false;
+    std::shared_ptr<const SemanticSignalDependency> signalDependency;
 };
 
 class ZEROSLACK_SEMANTIC_API SmartRelationshipBuilder : public QObject
@@ -117,6 +118,7 @@ private:
     void analyzeVariableReferences(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeTaskFunctionCalls(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
     void analyzeAlwaysBlocks(const QString& content, AnalysisContext& context, int lineMin = -1, int lineMax = -1);
+    void analyzeSignalDependencies(const QString& content, AnalysisContext& context);
 
     SemanticSymbolRecord findSymbolRecordByName(
         const QString& symbolName,

@@ -21,7 +21,7 @@ class RtlHighRiskEditPanelCoordinator;
 class RtlInsightsPanelCoordinator;
 class ScopedSearchPanelCoordinator;
 class SemanticPanelRefreshCoordinator;
-class SignalKernelGraphPanelCoordinator;
+class SignalTracePanel;
 class TabManager;
 class WorkspaceManager;
 class WorkspaceEditDocumentManager;
@@ -65,7 +65,7 @@ public:
     QTabWidget* connectionsTabs() const;
     bool showConnectionPage(const QString& panelId);
     RtlInsightsPanelCoordinator* rtlInsightsPanelCoordinator() const;
-    SignalKernelGraphPanelCoordinator* signalKernelGraphPanelCoordinator() const;
+    SignalTracePanel* signalKernelGraphPanelCoordinator() const;
 
 private:
     struct DockDependencies {

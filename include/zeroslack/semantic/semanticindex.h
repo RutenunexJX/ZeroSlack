@@ -2,6 +2,7 @@
 #define SEMANTICINDEX_H
 
 #include <zeroslack/semantic/semanticsourcerange.h>
+#include <zeroslack/semantic/signaldependencyfacts.h>
 #include <zeroslack/semantic/symbolrelationshipengine.h>
 #include <zeroslack/semantic/symboltaxonomy.h>
 
@@ -419,6 +420,7 @@ struct SemanticRelationship {
     QString evidenceText;
     SemanticSourceRange evidenceRange;
     bool exactValueForward = false;
+    std::shared_ptr<const SemanticSignalDependency> signalDependency;
 };
 
 struct SemanticRelationshipResult {

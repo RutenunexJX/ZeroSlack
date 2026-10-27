@@ -63,11 +63,11 @@ QString insightWorkbenchViewDisplayName(InsightWorkbenchViewKind kind)
 {
     switch (kind) {
     case InsightWorkbenchViewKind::Kernel:
-        return QStringLiteral("Signal Kernel Graph");
+        return QStringLiteral("Signal Trace");
     case InsightWorkbenchViewKind::Block:
-        return QStringLiteral("Module Block Diagram");
+        return QStringLiteral("Design");
     case InsightWorkbenchViewKind::Hotspot:
-        return QStringLiteral("Signal Hotspot");
+        return QStringLiteral("Signal Heatmap");
     case InsightWorkbenchViewKind::StateTransition:
         return QStringLiteral("State Transition Graph");
     }
@@ -97,31 +97,8 @@ QString SignalKernelInsightViewPlugin::iconKey() const
 InsightViewBuildResult SignalKernelInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    if (context.signalName.trimmed().isEmpty()) {
-        return unavailable(
-            context,
-            pluginId(),
-            QStringLiteral("kernel"),
-            QStringLiteral("Select a signal to build its kernel graph."));
-    }
-    SignalKernelGraphQuery query;
-    query.signalName = context.signalName;
-    query.signalAccessPath = context.signalAccessPath;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    const SignalKernelGraphReport report =
-        SignalKernelGraphService::getInstance()->buildSignalKernelGraph(query);
-    InsightViewBuildResult result;
-    result.draft = InsightGraphCore::fromSignalKernelGraph(report);
-    stampDraft(result.draft, context, pluginId());
-    result.available = report.found;
-    result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
-    result.summary = report.found
-        ? QStringLiteral("%1 inputs, %2 outputs")
-              .arg(report.inputs.size())
-              .arg(report.outputs.size())
-        : result.errorText;
-    return result;
+    return unavailable(context,pluginId(),QStringLiteral("kernel"),
+        QStringLiteral("This graph renderer was retired. Use SignalTraceService and SignalTracePanel."));
 }
 
 InsightWorkbenchViewKind ModuleBlockInsightViewPlugin::kind() const
@@ -147,15 +124,8 @@ QString ModuleBlockInsightViewPlugin::iconKey() const
 InsightViewBuildResult ModuleBlockInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    LiveInsightGraphInput input;
-    input.mode = LiveInsightGraphMode::Module;
-    input.maxDepth = 2;
-    input.semantic = SemanticIndex::getInstance()->snapshotToken();
-    input.fileName = context.fileName;
-    input.moduleName = context.moduleName;
-    if (!input.semantic.isValid() || context.moduleName.trimmed().isEmpty())
-        return unavailable(context, pluginId(), QStringLiteral("block"), QStringLiteral("Select an analyzed module to build its block diagram."));
-    return insightViewFromGraphReport(*buildLiveInsightGraphReport(input), context, pluginId());
+    return unavailable(context,pluginId(),QStringLiteral("block"),
+        QStringLiteral("This graph renderer was retired. Use the host Design instance hierarchy."));
 }
 
 InsightWorkbenchViewKind SignalHotspotInsightViewPlugin::kind() const
@@ -181,31 +151,8 @@ QString SignalHotspotInsightViewPlugin::iconKey() const
 InsightViewBuildResult SignalHotspotInsightViewPlugin::build(
     const InsightViewContext& context) const
 {
-    if (context.signalName.trimmed().isEmpty()) {
-        return unavailable(
-            context,
-            pluginId(),
-            QStringLiteral("hotspot"),
-            QStringLiteral("Select a signal to calculate hotspot evidence."));
-    }
-    SignalUsageHotspotQuery query;
-    query.signalName = context.signalName;
-    query.signalAccessPath = context.signalAccessPath;
-    query.fileName = context.fileName;
-    query.moduleName = context.moduleName;
-    const SignalUsageHotspotReport report =
-        SignalUsageHotspotService::getInstance()->buildSignalUsageHotspot(query);
-    InsightViewBuildResult result;
-    result.draft = InsightGraphCore::fromSignalUsageHotspot(report);
-    stampDraft(result.draft, context, pluginId());
-    result.available = report.found;
-    result.errorText = report.found ? QString() : report.notFoundReasonDisplayName;
-    result.summary = report.found
-        ? QStringLiteral("%1 semantic uses across %2 tracks")
-              .arg(report.items.size())
-              .arg(report.trackLanes.size())
-        : result.errorText;
-    return result;
+    return unavailable(context,pluginId(),QStringLiteral("hotspot"),
+        QStringLiteral("This graph renderer was retired. Use SignalTraceService::references and the native heatmap."));
 }
 
 InsightWorkbenchViewKind StateTransitionInsightViewPlugin::kind() const

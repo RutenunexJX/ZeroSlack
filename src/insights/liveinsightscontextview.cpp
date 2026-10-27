@@ -273,6 +273,8 @@ void LiveInsightsContextView::ensureSurface()
         QStringLiteral("liveInsightSurface_%1")
             .arg(liveInsightKindId(selected)));
     surfaceValue->setCompactChrome(true);
+    surfaceValue->setDesignHandler([this]{if(fullViewHandler)fullViewHandler(LiveInsightKind::Module);emit openFullViewRequested(LiveInsightKind::Module);});
+    if(!pendingNativeState.isEmpty()){surfaceValue->restoreNativeState(pendingNativeState);pendingNativeState.clear();}
     if (selected == LiveInsightKind::Module || selected == LiveInsightKind::State) {
         surfaceSession = surfaceValue->graphSession();
         if (surfaceSession) {
@@ -315,14 +317,18 @@ LiveInsightToolContext LiveInsightsContextView::effectiveContext() const
 {
     LiveInsightToolContext context =
         toolContextSource ? toolContextSource() : LiveInsightToolContext{};
-    if (hasTargetContext) {
+    if (hasTargetContext && context.workspaceId==targetContext.workspaceId) {
         if (context.fileName == targetContext.fileName) {
             context.moduleName = targetContext.moduleName;
             context.signalName = targetContext.signalName;
             context.signalAccessPath = targetContext.signalAccessPath;
         } else {
             const auto semanticRevision = context.semanticRevision;
+            const auto projectId=context.projectId;
+            const auto configureTrace=context.configureTrace;
             context = targetContext;
+            context.projectId=projectId;
+            context.configureTrace=configureTrace;
             context.semanticRevision = qMax(context.semanticRevision, semanticRevision);
         }
     }
@@ -625,6 +631,7 @@ QVariantMap LiveInsightsContextView::saveState() const
     return {
         {QStringLiteral("schema"), kViewStateSchema},
         {QStringLiteral("kind"), liveInsightKindId(selected)},
+        {QStringLiteral("nativeState"),surfaceValue ? surfaceValue->saveNativeState() : pendingNativeState},
         {QStringLiteral("target"), hasTargetContext ? QVariantMap{
             {QStringLiteral("fileName"), targetContext.fileName},
             {QStringLiteral("moduleName"), targetContext.moduleName},
@@ -650,6 +657,7 @@ void LiveInsightsContextView::restoreState(
         setSelectedKind(restoredKind);
     }
     const QVariantMap target = state.value(QStringLiteral("target")).toMap();
+    pendingNativeState=state.value(QStringLiteral("nativeState")).toMap();
     if (!target.isEmpty()) {
         TargetCandidate candidate;
         candidate.fileName = target.value(QStringLiteral("fileName")).toString();
@@ -659,6 +667,7 @@ void LiveInsightsContextView::restoreState(
         candidate.label = candidate.signalName.isEmpty() ? candidate.moduleName : candidate.signalName;
         applyTargetCandidate(candidate);
     }
+    if(surfaceValue && !pendingNativeState.isEmpty()){surfaceValue->restoreNativeState(pendingNativeState);pendingNativeState.clear();}
 }
 
 QPushButton* LiveInsightsContextView::kindButton(

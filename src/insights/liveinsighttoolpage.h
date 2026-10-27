@@ -14,10 +14,14 @@ class LiveInsightSession;
 class QMainWindow;
 class QHideEvent;
 class QShowEvent;
+class SignalTracePanel;
 
 struct LiveInsightToolContext {
     QString workspaceRoot;
     QString workspaceId;
+    QString projectId;
+    QString instancePath;
+    std::function<void(SignalTracePanel*)> configureTrace;
     QString documentId;
     quint64 documentRevision = 0;
     quint64 semanticRevision = 0;
@@ -66,6 +70,10 @@ public:
 
     LiveInsightSession* graphSession() const;
     RtlInsightWorkbench* workbenchForTest() const;
+    SignalTracePanel* traceSurface() const { return trace; }
+    QVariantMap saveNativeState() const;
+    void restoreNativeState(const QVariantMap& state);
+    void setDesignHandler(std::function<void()> handler);
     QMainWindow* detachToWindow();
     QMainWindow* detachedWindowForTest() const;
 
@@ -80,6 +88,10 @@ private:
     StatusHandler statusHandler;
     VisibilityHandler visibilityHandler;
     RtlInsightWorkbench* workbench = nullptr;
+    SignalTracePanel* trace = nullptr;
+    QString traceTarget;
+    QVariantMap pendingNativeState;
+    std::function<void()> designHandler;
     QPointer<QMainWindow> detachedWindow;
     QPointer<LiveInsightToolPage> detachedPage;
 

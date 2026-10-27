@@ -3,10 +3,9 @@
 #include "rtlinsightsgraphscenemapper.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
-#include "moduleblockdiagramtoolbar.h"
 #include "rtlinsightsgraphconstants.h"
 #include "rtlinsightspanelviewstate.h"
-#include "signalusagehotspotpanel.h"
+#include "signaltracepanel.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -376,12 +375,9 @@ RtlInsightsGraphController::selectedSourceLocation() const
     return sceneMapper->selectedSourceLocation();
 }
 
-bool RtlInsightsGraphController::enterModuleBlockNode(int nodeId)
-{ return sceneMapper->enterModuleBlockNode(nodeId); }
-bool RtlInsightsGraphController::navigateModuleBlockHistory(int direction)
-{ return sceneMapper->navigateModuleBlockHistory(direction); }
-void RtlInsightsGraphController::refreshModuleBlockSelectionActions()
-{ sceneMapper->refreshModuleBlockSelectionActions(); }
+
+
+
 
 bool RtlInsightsGraphController::selectSourceLocation(
     const RtlInsightSourceLocation& location,
@@ -436,28 +432,17 @@ void RtlInsightsGraphController::
         mode);
 }
 
-void RtlInsightsGraphController::
-    mapModuleBlockDiagram(
-        const ModuleBlockDiagramReport& report)
-{
-    ++state.graphBuildGeneration;
-    publishGraphGeneration(state);
-    state.graphDocumentRevision =
-        state.currentSourceLocation.documentRevision;
-    sceneMapper->renderModuleBlockDiagramScene(
-        report);
-}
+
 void RtlInsightsGraphController::focusFit()
 {
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->focusFit();
+               == state.signalTracePanel) {
+        state.signalTracePanel->focusFit();
     } else if (state.insightsGraphView
                && state.insightsStack
                && state.insightsStack->currentWidget()
                       == state.insightsGraphPanel) {
-        state.moduleBlockAutoFit = true;
         state.insightsGraphView->fitScene(Qt::KeepAspectRatio);
     } else if (state.insightsTree) {
         for (int column = 0;
@@ -472,8 +457,8 @@ void RtlInsightsGraphController::focusZoomIn()
 {
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->focusZoomIn();
+               == state.signalTracePanel) {
+        state.signalTracePanel->focusZoomIn();
     } else if (state.insightsGraphView) {
         state.insightsGraphView->zoomIn();
     }
@@ -483,8 +468,8 @@ void RtlInsightsGraphController::focusZoomOut()
 {
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->focusZoomOut();
+               == state.signalTracePanel) {
+        state.signalTracePanel->focusZoomOut();
     } else if (state.insightsGraphView) {
         state.insightsGraphView->zoomOut();
     }
@@ -493,11 +478,10 @@ void RtlInsightsGraphController::focusZoomOut()
 void RtlInsightsGraphController::setFocusSearchText(
     const QString& text)
 {
-    if (state.currentGraphMode == QStringLiteral("module-block")) return;
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->setFocusSearchText(text);
+               == state.signalTracePanel) {
+        state.signalTracePanel->setFocusSearchText(text);
     } else if (state.graphSearchEdit) {
         state.graphSearchEdit->setText(text);
     }
@@ -505,11 +489,10 @@ void RtlInsightsGraphController::setFocusSearchText(
 
 QString RtlInsightsGraphController::focusSearchText() const
 {
-    if (state.currentGraphMode == QStringLiteral("module-block")) return {};
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        return state.signalUsageHotspotPanel->focusSearchText();
+               == state.signalTracePanel) {
+        return state.signalTracePanel->focusSearchText();
     }
     return state.graphSearchEdit
         ? state.graphSearchEdit->text() : state.graphSearchText;
@@ -519,15 +502,13 @@ void RtlInsightsGraphController::focusInspector()
 {
     if (state.insightsStack
         && state.insightsStack->currentWidget()
-               == state.signalUsageHotspotPanel) {
-        state.signalUsageHotspotPanel->focusInspector();
+               == state.signalTracePanel) {
+        state.signalTracePanel->focusInspector();
     } else if (state.insightsStack
                && state.insightsStack->currentWidget()
                       == state.insightsGraphPanel
                && state.insightsGraphView) {
-        if (state.currentGraphMode == QStringLiteral("module-block"))
-            state.insightsGraphView->setFocus();
-        else if (state.graphInspector)
+        if (state.graphInspector)
             state.graphInspector->setFocus();
     } else if (state.insightsTree) {
         state.insightsTree->setFocus();
@@ -581,8 +562,8 @@ void RtlInsightsGraphController::captureThemeViewportState()
 
 void RtlInsightsGraphController::refreshThemePresentation()
 {
-    if (state.signalUsageHotspotPanel)
-        state.signalUsageHotspotPanel->refreshThemePresentation();
+    if (state.signalTracePanel)
+        state.signalTracePanel->refreshThemePresentation();
 
     if (state.insightsTree && state.insightsTree->viewport())
         state.insightsTree->viewport()->update();
@@ -691,8 +672,8 @@ void RtlInsightsGraphController::showGraphSurface()
 
 void RtlInsightsGraphController::showHotspotSurface()
 {
-    if (state.insightsStack && state.signalUsageHotspotPanel)
-        state.insightsStack->setCurrentWidget(state.signalUsageHotspotPanel);
+    if (state.insightsStack && state.signalTracePanel)
+        state.insightsStack->setCurrentWidget(state.signalTracePanel);
     state.currentGraphMode.clear();
 }
 
@@ -747,17 +728,15 @@ void RtlInsightsGraphController::configureToolbarForMode(
     const QString& mode)
 {
     state.currentGraphMode = mode;
-    const bool moduleMode = mode == QStringLiteral("module-block");
     const bool stateMode =
         mode == QStringLiteral("state-transition")
         || mode == QStringLiteral("fsm");
-    const bool graphMode = moduleMode || stateMode;
-    if (state.moduleBlockToolbar) state.moduleBlockToolbar->setModuleMode(moduleMode);
+    const bool graphMode = stateMode;
     if (state.graphToolbar) state.graphToolbar->setVisible(stateMode);
     if (state.insightsGraphView) {
         state.insightsGraphView->setFitUpscalingEnabled(true);
-        state.insightsGraphView->setGridVisible(!moduleMode);
-        state.insightsGraphView->setBorderVisible(!moduleMode);
+        state.insightsGraphView->setGridVisible(true);
+        state.insightsGraphView->setBorderVisible(true);
     }
 
     for (QWidget* widget :
@@ -785,9 +764,7 @@ void RtlInsightsGraphController::configureToolbarForMode(
     if (state.graphLayoutCombo) {
         state.graphLayoutCombo->setVisible(graphMode);
         const QSignalBlocker blocker(state.graphLayoutCombo);
-        if (moduleMode)
-            state.graphLayoutCombo->setCurrentText(QStringLiteral("Nested blocks"));
-        else if (stateMode)
+        if (stateMode)
             state.graphLayoutCombo->setCurrentText(QStringLiteral("State flow"));
     }
     if (state.graphTable)

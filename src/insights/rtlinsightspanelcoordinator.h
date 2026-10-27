@@ -24,7 +24,7 @@ struct SemanticSnapshotToken;
 struct InsightViewContext;
 class QAction;
 class SemanticIndexSnapshot;
-class SignalUsageHotspotPanel;
+class SignalTracePanel;
 class RtlInsightsGraphController;
 class RtlInsightsPresenter;
 struct RtlInsightsPanelViewState;
@@ -52,6 +52,7 @@ public:
             int)> handler);
     void setRegisteredActionRequestHandler(
         RegisteredActionRequestHandler handler);
+    void setDesignHandler(std::function<void(const QString&,const QString&)> handler);
 
     LiveInsightSession* graphSession() const;
     void setGraphContext(const InsightViewContext& context, const SemanticSnapshotToken& snapshot);
@@ -116,8 +117,8 @@ public:
     QTreeWidget* tree() const;
     QGraphicsView* graphView() const;
     QStackedWidget* stackForTest() const;
-    SignalUsageHotspotPanel*
-        signalUsageHotspotPanelForTest() const;
+    SignalTracePanel*
+        tracePanelForTest() const;
 
     int graphNodeItemCountForTest() const;
     int graphEdgeItemCountForTest() const;

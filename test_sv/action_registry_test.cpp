@@ -245,7 +245,7 @@ int main()
                        ActionSurface::ContextMenu).isEmpty()
                && actionDescriptorsForSurface(
                       ActionSurface::GraphPanel).size()
-                      == 11
+                      == 10
                && !findActionById(QString::fromLatin1(ActionIds::GraphSetTopSelected)));
     expect("Wave Simulation command routes are removed",
            !findActionById(QStringLiteral("waveSimulation.runCurrentContext"))
@@ -339,44 +339,21 @@ int main()
     }
     expect("graph selection descriptors own ids, routes, labels and availability",
            graphSelectionDescriptorsComplete);
-    const QStringList graphExportActionIds = {
-        QString::fromLatin1(
-            ActionIds::GraphExportRtlInsights),
-        QString::fromLatin1(
-            ActionIds::GraphExportSignalKernel),
-        QString::fromLatin1(
-            ActionIds::GraphExportUsageHotspotTrack),
-        QString::fromLatin1(
-            ActionIds::GraphExportUsageHotspotMatrix),
-    };
-    bool graphExportDescriptorsComplete = true;
-    for (const QString& id : graphExportActionIds) {
-        const ActionDescriptor* descriptor =
-            findActionById(id);
-        const ActionAliasDescriptor graphAlias =
-            descriptor
-            ? descriptor->aliasForSurface(
-                  ActionSurface::GraphPanel)
-            : ActionAliasDescriptor();
-        graphExportDescriptorsComplete =
-            graphExportDescriptorsComplete
-            && descriptor
-            && descriptor->id == id
-            && descriptor->executionRoute.startsWith(
-                   QStringLiteral("graphExport."))
-            && descriptor->parameterModel.kind
-                   == ActionParameterKind::FilePath
-            && descriptor->parameterModel.name
-                   == QStringLiteral("outputPath")
-            && (descriptor->requirementMask
-                & ActionRequirements::GraphContent)
-            && !descriptor->unavailableReason.isEmpty()
-            && !graphAlias.label.isEmpty()
-            && !graphAlias.defaultValue.isEmpty()
-            && !graphAlias.adapterKey.isEmpty();
+    const auto* fsmExport=findActionById(QString::fromLatin1(ActionIds::GraphExportRtlInsights));
+    bool graphExportDescriptorsComplete=fsmExport && fsmExport->hasSurface(ActionSurface::GraphPanel)
+        && (fsmExport->requirementMask & ActionRequirements::GraphContent);
+    for(const auto& id:{"signal.trace.exportImage","signal.trace.exportHeatmap"}){
+        const auto* descriptor=findActionById(id);graphExportDescriptorsComplete=graphExportDescriptorsComplete
+            && descriptor && !descriptor->retired && descriptor->hasSurface(ActionSurface::GraphPanel)
+            && descriptor->parameterModel.kind==ActionParameterKind::FilePath
+            && descriptor->parameterModel.name=="outputPath" && descriptor->defaultShortcut.isEmpty();
     }
-    expect("graph export descriptors own ids, labels, routes and failures",
-           graphExportDescriptorsComplete);
+    for(const auto* id:{ActionIds::GraphExportSignalKernel,ActionIds::GraphExportUsageHotspotTrack,ActionIds::GraphExportUsageHotspotMatrix}){
+        const auto* descriptor=findActionById(id);graphExportDescriptorsComplete=graphExportDescriptorsComplete
+            && descriptor && descriptor->retired && descriptor->aliases.isEmpty()
+            && descriptor->description.contains("migration") && descriptor->parameterModel.name=="outputPath";
+    }
+    expect("active exports have canonical metadata; retired exports remain explicit API compatibility routes",graphExportDescriptorsComplete);
     const QList<ActionCatalogEntry> catalog =
         unifiedActionCatalog();
     bool catalogHasHelpAliases = false;
@@ -403,8 +380,8 @@ int main()
                     QStringLiteral("Context menu"));
         }
     }
-    expect("unified user-visible catalog exposes every action and alias",
-           catalog.size() == actionRegistry().size()
+    expect("unified user-visible catalog exposes active actions and excludes retired exports",
+           catalog.size() == actionRegistry().size()-3
                && catalogHasHelpAliases
                && catalogHasGlobalSession
                && catalogHasExpose);
@@ -420,7 +397,7 @@ int main()
             && descriptor.scope != ActionScope::Unknown
             && !descriptor.executionRoute.trimmed().isEmpty()
             && static_cast<bool>(descriptor.execute)
-            && !descriptor.aliases.isEmpty();
+            && (descriptor.retired ? descriptor.aliases.isEmpty() && descriptor.defaultShortcut.isEmpty() : !descriptor.aliases.isEmpty());
         if (descriptor.requirementMask != 0) {
             everyDescriptorComplete =
                 everyDescriptorComplete

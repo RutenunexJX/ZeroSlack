@@ -39,7 +39,8 @@ public:
         CLOCKS,
         RESETS,
         GENERATES,
-        CONSTRAINS
+        CONSTRAINS,
+        SIGNAL_DEPENDENCY
     };
     Q_ENUM(RelationType)
 

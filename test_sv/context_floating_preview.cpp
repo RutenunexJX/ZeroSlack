@@ -1,6 +1,7 @@
 #include "applicationthememanager.h"
 #include "contextfloatingwindow.h"
 #include "insightviewsurface.h"
+#include "signal_trace_test_fixture.h"
 
 #include <QApplication>
 #include <QHBoxLayout>
@@ -14,75 +15,6 @@
 #include <QTreeWidget>
 #include <QPlainTextEdit>
 #include <QVBoxLayout>
-
-namespace {
-SignalUsageHotspotReport hotspotReport()
-{
-    SignalUsageHotspotReport report;
-    report.found = true;
-    report.declarationDisplayName = QStringLiteral("byte_data");
-    for (auto role : {SignalUsageHotspotRole::Write, SignalUsageHotspotRole::Read}) {
-        SignalUsageHotspotItem item;
-        item.role = role;
-        item.moduleName = QStringLiteral("uart_engine");
-        item.fileName = QStringLiteral("uart_engine.sv");
-        item.line = role == SignalUsageHotspotRole::Write ? 18 : 42;
-        item.column = 3;
-        item.snippet = role == SignalUsageHotspotRole::Write
-            ? QStringLiteral("byte_data <= rx_data;") : QStringLiteral("tx_data <= byte_data;");
-        item.roleReasonDisplayName = SignalUsageHotspotService::roleDisplayName(role);
-        report.items.append(item);
-        SignalUsageHotspotMatrixCell cell;
-        cell.moduleName = item.moduleName;
-        cell.fileName = item.fileName;
-        cell.role = role;
-        cell.roleDisplayName = item.roleReasonDisplayName;
-        cell.count = 1;
-        report.matrixCells.append(cell);
-    }
-    SignalUsageHotspotTrackLane lane;
-    lane.moduleName = QStringLiteral("uart_engine");
-    lane.fileName = QStringLiteral("uart_engine.sv");
-    lane.startLine = 10;
-    lane.endLine = 50;
-    lane.count = report.items.size();
-    for (int i = 0; i < report.items.size(); ++i) {
-        const auto& item = report.items.at(i);
-        SignalUsageHotspotTrackPosition position;
-        position.itemIndex = i;
-        position.role = item.role;
-        position.roleDisplayName = item.roleReasonDisplayName;
-        position.line = item.line;
-        position.column = item.column;
-        lane.positions.append(position);
-    }
-    report.trackLanes.append(lane);
-    return report;
-}
-
-SignalKernelGraphReport kernelReport()
-{
-    SignalKernelGraphReport report;
-    report.found = true;
-    report.kernel.id = 0;
-    report.kernel.role = SignalKernelGraphNodeRole::Kernel;
-    report.kernel.displayName = QStringLiteral("byte_data");
-    report.kernel.moduleDisplayName = QStringLiteral("uart_engine");
-    SignalKernelGraphNode input;
-    input.id = 1;
-    input.role = SignalKernelGraphNodeRole::Input;
-    input.inputLane = SignalKernelGraphInputLane::Data;
-    input.displayName = QStringLiteral("rx_data");
-    report.inputs = {input};
-    SignalKernelGraphNode output;
-    output.id = 2;
-    output.role = SignalKernelGraphNodeRole::Output;
-    output.displayName = QStringLiteral("tx_data");
-    report.outputs = {output};
-    report.edges = {{1, 0, QStringLiteral("write")}, {0, 2, QStringLiteral("read")}};
-    return report;
-}
-}
 
 // Native desktop fixture for DWM composition, which offscreen tests cannot render.
 int main(int argc, char* argv[])
@@ -121,12 +53,12 @@ int main(int argc, char* argv[])
     controls->addWidget(status);
     auto* tabs = new QTabWidget(content);
     controls->addWidget(tabs, 1);
-    auto* hotspot = new SignalUsageHotspotPanel(tabs);
-    hotspot->renderReportForTest(hotspotReport());
-    tabs->addTab(hotspot, QStringLiteral("Hotspot"));
-    InsightViewSurface kernel(InsightWorkbenchViewKind::Kernel, tabs);
-    kernel.kernel()->renderReportForTest(kernelReport());
-    tabs->addTab(kernel.widget(), QStringLiteral("Kernel"));
+    SignalTraceTestFixture fixture;
+    if(!fixture.build("module top(input logic [7:0] rx_data,output logic [7:0] tx_data);\nlogic [7:0] byte_data;\nassign byte_data=rx_data;\nassign tx_data=byte_data;\nendmodule\n"))return 2;
+    auto* heatmap=new SignalTracePanel(tabs);heatmap->setContext(fixture.context);heatmap->showForSymbol("byte_data",fixture.file,"top");heatmap->setHeatmapMode(true);
+    tabs->addTab(heatmap,QStringLiteral("Heatmap"));
+    auto* trace=new SignalTracePanel(tabs);trace->setContext(fixture.context);trace->showForSymbol("byte_data",fixture.file,"top");
+    tabs->addTab(trace,QStringLiteral("Signal Trace"));
     auto* documents = new QWidget(tabs);
     auto* documentLayout = new QVBoxLayout(documents);
     auto* tree = new QTreeWidget(documents);

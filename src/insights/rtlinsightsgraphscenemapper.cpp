@@ -5,8 +5,6 @@
 #include "fsmgraphservice.h"
 #include "insightgraphview.h"
 #include "insightvisualstyle.h"
-#include "moduleblockdiagramservice.h"
-#include "moduleblockdiagramtoolbar.h"
 #include "roundedicons.h"
 #include "rtlinsightsgraphcontroller.h"
 #include "rtlinsightsgraphconstants.h"
@@ -87,7 +85,6 @@ void setGraphSelectionActionAvailability(
     bool jumpEnabled,
     bool focusEnabled)
 {
-    if (state.currentGraphMode == QStringLiteral("module-block")) jumpEnabled = focusEnabled = false;
     if (state.graphJumpAction)
         state.graphJumpAction->setEnabled(jumpEnabled);
     if (state.graphFocusAction)
@@ -1638,363 +1635,7 @@ void RtlInsightsGraphSceneMapper::renderFsmGraphScene(
     }
 }
 
-void RtlInsightsGraphSceneMapper::renderModuleBlockDiagramScene(
-    const ModuleBlockDiagramReport& report)
-{
-    controller.showGraphSurface();
-    if (!state.insightsGraphScene || !state.insightsGraphView)
-        return;
-    GraphRefreshPresentation presentation =
-        captureGraphRefreshPresentation(
-            state, QStringLiteral("module-block"));
-    controller.configureToolbarForMode(QStringLiteral("module-block"));
-    clearDetails();
-    state.currentModuleBlockReport = report;
-    state.insightsGraphScene->clear();
-    state.insightsGraphView->resetView();
 
-    if (!report.found) {
-        controller.renderUnavailable(
-            report.groupDisplayName.isEmpty()
-                ? QStringLiteral("Module Block Diagram")
-                : report.groupDisplayName,
-            report.notFoundReasonDisplayName);
-        return;
-    }
-    QHash<int, QString> instancePaths;
-    QString rootInstancePath =
-        state.currentSourceLocation.instancePath;
-    if (rootInstancePath.isEmpty()) {
-        rootInstancePath =
-            state.currentSourceLocation.activeTopModule;
-    }
-    if (rootInstancePath.isEmpty())
-        rootInstancePath = report.root.moduleDisplayName;
-    const QString rootFile = report.root.definitionCodeLink.fileName;
-    if (state.moduleBlockPath.isEmpty()
-        || !sameInsightSourcePath(state.moduleBlockPath.first().fileName, rootFile)
-        || state.moduleBlockPath.first().moduleName != report.root.moduleDisplayName
-        || state.moduleBlockPath.first().instancePath != rootInstancePath) {
-        state.moduleBlockPath = {{rootFile, report.root.moduleDisplayName,
-                                  report.root.moduleDisplayName, rootInstancePath}};
-        state.moduleBlockTargetPath = rootInstancePath;
-        state.moduleBlockHistory = {rootInstancePath};
-        state.moduleBlockHistoryIndex = 0;
-        state.moduleBlockAutoFit = true;
-    }
-    const QString scope = normalizedInsightSourcePath(rootFile) + QLatin1Char('|') + rootInstancePath;
-    presentation.preserve = presentation.preserve && state.moduleBlockRenderedScope == scope
-        && !state.moduleBlockAutoFit;
-    state.moduleBlockRenderedScope = scope;
-    if (state.moduleBlockToolbar) {
-        state.moduleBlockToolbar->setToolTip(
-            QStringLiteral("%1 modules · %2 unresolved").arg(report.moduleCount).arg(report.unresolvedInstanceCount));
-    }
-    instancePaths.insert(report.root.nodeId, rootInstancePath);
-    for (int pass = 0; pass < report.nodes.size(); ++pass) {
-        bool changed = false;
-        for (const ModuleBlockDiagramNode& node : report.nodes) {
-            if (instancePaths.contains(node.nodeId))
-                continue;
-            const auto parent = instancePaths.constFind(
-                node.parentNodeId);
-            if (parent == instancePaths.cend())
-                continue;
-            const QString childName =
-                node.instanceDisplayName.trimmed();
-            instancePaths.insert(
-                node.nodeId,
-                childName.isEmpty()
-                    ? parent.value()
-                    : QStringLiteral("%1.%2")
-                          .arg(parent.value(), childName));
-            changed = true;
-        }
-        if (!changed)
-            break;
-    }
-    state.moduleBlockInstancePaths = instancePaths;
-    QSet<QString> reachablePaths;
-    for (const auto& node : report.nodes)
-        if (!node.definitionCodeLink.fileName.isEmpty()) reachablePaths.insert(instancePaths.value(node.nodeId));
-    QStringList history;
-    int historyIndex = -1;
-    for (int i = 0; i < state.moduleBlockHistory.size(); ++i) {
-        const auto& path = state.moduleBlockHistory.at(i);
-        if (!reachablePaths.contains(path)) continue;
-        history.append(path);
-        if (i <= state.moduleBlockHistoryIndex) historyIndex = history.size() - 1;
-    }
-    state.moduleBlockHistory = history.isEmpty() ? QStringList{rootInstancePath} : history;
-    state.moduleBlockHistoryIndex = qMax(0, historyIndex);
-    if (!reachablePaths.contains(state.moduleBlockTargetPath)) {
-        state.moduleBlockTargetPath = state.moduleBlockHistory.at(state.moduleBlockHistoryIndex);
-        state.moduleBlockAutoFit = true;
-    }
-
-    const QFont font = state.insightsGraphView->font();
-    const auto navigate = [this](const RtlInsightGraphElement& element) {
-        if (!navigateGraphElement(state, element)
-            && state.statusMessageHandler) {
-            state.statusMessageHandler(QStringLiteral("RTL graph jump failed"),
-                                  4000);
-        }
-    };
-    const auto select = [this](const RtlInsightGraphElement& element) {
-        setGraphSelectionActionAvailability(
-            state, !element.codeLink.fileName.isEmpty(), true);
-        if (state.statusMessageHandler)
-            state.statusMessageHandler(QStringLiteral("%1: %2")
-                                     .arg(element.kind, element.primary),
-                                 1200);
-    };
-
-    auto addNode = [&](const ModuleBlockDiagramNode& node,
-                       const QRectF& rect,
-                       bool root) {
-        RtlInsightGraphElement element;
-        element.kind = QStringLiteral("module");
-        element.primary = node.moduleDisplayName;
-        element.secondary = !node.instanceDisplayName.isEmpty()
-            ? QStringLiteral("instance: %1").arg(node.instanceDisplayName)
-            : node.moduleTypeDisplayName;
-        element.detail = node.unresolved
-            ? node.unresolvedReason
-            : node.sourceRoleDisplayName;
-        element.codeLink = root || node.instanceCodeLink.fileName.isEmpty()
-            ? node.definitionCodeLink
-            : node.instanceCodeLink;
-        applyCurrentSourceContext(element, state);
-        element.moduleName = node.moduleDisplayName;
-        element.instancePath =
-            instancePaths.value(node.nodeId);
-        if (element.activeTopModule.isEmpty()) {
-            element.activeTopModule =
-                report.root.moduleDisplayName;
-        }
-        if (!node.definitionCodeLink.fileName.isEmpty()) {
-            element.drillModuleName = node.moduleDisplayName;
-            element.drillFileName = node.definitionCodeLink.fileName;
-        }
-        const auto fill = [depth = node.depth]() {
-            const auto& theme = InsightVisualStyle::theme();
-            const bool dark = theme.surface.panel.lightnessF() < 0.5;
-            const int hue = (qMax(0, theme.accent.hslHue()) + depth * 47) % 360;
-            return QColor::fromHsl(hue, dark ? 62 : 105, dark ? 49 : 242);
-        };
-        const auto stroke = [unresolved = node.unresolved]() {
-            return unresolved ? InsightVisualStyle::theme().warning : InsightVisualStyle::theme().borderStrong;
-        };
-        auto* item = new RtlInsightGraphNodeItem(element, rect, fill(), stroke(), font, node.unresolved);
-        item->setThemeColorResolvers(fill, stroke);
-        const bool canEnter = !element.drillModuleName.isEmpty();
-        const QString title = root ? state.moduleBlockPath.first().label : node.instanceDisplayName;
-        item->setModulePresentation(title.isEmpty() ? node.moduleDisplayName : title,
-            root && title == node.moduleDisplayName ? node.moduleTypeDisplayName : node.moduleDisplayName,
-            font);
-        const quint64 generation = state.graphBuildGeneration;
-        if (canEnter) {
-            item->enterHandler = [this, id = node.nodeId, generation]() {
-                QTimer::singleShot(0, state.graphCallbackContext, [this, id, generation]() {
-                    if (state.graphBuildGeneration == generation) enterModuleBlockNode(id);
-                });
-            };
-        }
-        const qreal baseZ = root ? 0.0 : 6.0 + node.depth * 8.0;
-        item->setBaseZValues(baseZ, root ? 1.0 : baseZ + 3.0);
-        item->setData(kGraphNodeIdRole, node.nodeId);
-        item->selectHandler = [this, node](const RtlInsightGraphElement&) {
-            selectModuleBlockNode(node.nodeId, false);
-        };
-        state.insightsGraphScene->addItem(item);
-        return item;
-    };
-    auto addEdge = [&](const ModuleBlockDiagramEdge& edge,
-                       const QRectF& fromRect,
-                       const QRectF& toRect,
-                       bool fromRoot) {
-        const QPointF start = fromRoot
-            ? QPointF(fromRect.left() + 62.0, toRect.center().y())
-            : QPointF(fromRect.right(), fromRect.center().y());
-        const QPointF end = QPointF(toRect.left(), toRect.center().y());
-        QPainterPath path(start);
-        if (std::abs(start.y() - end.y()) < 1.0) {
-            path.lineTo(end);
-        } else {
-            const qreal midX = (start.x() + end.x()) / 2.0;
-            path.cubicTo(QPointF(midX, start.y()),
-                         QPointF(midX, end.y()),
-                         end);
-        }
-        RtlInsightGraphElement element;
-        element.kind = QStringLiteral("module-edge");
-        element.primary = edge.parentModuleDisplayName;
-        element.secondary = edge.childModuleDisplayName;
-        element.detail = edge.childInstanceDisplayName.isEmpty()
-            ? edge.relationshipDisplayName
-            : QStringLiteral("%1: %2")
-                  .arg(edge.relationshipDisplayName,
-                       edge.childInstanceDisplayName);
-        element.codeLink = edge.childInstanceCodeLink.fileName.isEmpty()
-            ? edge.childDefinitionCodeLink
-            : edge.childInstanceCodeLink;
-        applyCurrentSourceContext(element, state);
-        element.moduleName = edge.childModuleDisplayName;
-        element.instancePath =
-            instancePaths.value(edge.toNodeId);
-        if (element.activeTopModule.isEmpty()) {
-            element.activeTopModule =
-                report.root.moduleDisplayName;
-        }
-        if (!edge.unresolved && !edge.childDefinitionCodeLink.fileName.isEmpty()) {
-            element.drillModuleName = edge.childModuleDisplayName;
-            element.drillFileName = edge.childDefinitionCodeLink.fileName;
-        }
-        auto* item = new RtlInsightGraphEdgeItem(
-            element,
-            path,
-            end,
-            std::atan2(end.y() - start.y(), end.x() - start.x()),
-            QString(),
-            font,
-            edge.unresolved ? InsightVisualStyle::theme().textMuted
-                            : InsightVisualStyle::theme().borderStrong);
-        item->setThemeColorResolvers(
-            [unresolved = edge.unresolved]() {
-                return unresolved
-                    ? InsightVisualStyle::theme().textMuted
-                    : InsightVisualStyle::theme().borderStrong;
-            },
-            []() {
-                return InsightVisualStyle::theme().textSecondary;
-            });
-        item->navigateHandler = navigate;
-        item->selectHandler = select;
-        // Containment is represented by the nested boxes, not connection arrows.
-        item->setVisible(false);
-        state.insightsGraphScene->addItem(item);
-    };
-
-    QHash<int, ModuleBlockDiagramNode> nodeById;
-    QHash<int, QList<ModuleBlockDiagramNode>> childrenByParent;
-    QSet<int> visibleNodeIds;
-    visibleNodeIds.insert(report.root.nodeId);
-    for (const ModuleBlockDiagramNode& node : report.nodes) {
-        nodeById.insert(node.nodeId, node);
-        visibleNodeIds.insert(node.nodeId);
-    }
-    for (const ModuleBlockDiagramNode& node : report.nodes) {
-        if (node.parentNodeId >= 0
-            && visibleNodeIds.contains(node.nodeId)
-            && visibleNodeIds.contains(node.parentNodeId)) {
-            childrenByParent[node.parentNodeId].append(node);
-        }
-    }
-    for (auto it = childrenByParent.begin(); it != childrenByParent.end(); ++it) {
-        std::sort(it.value().begin(),
-                  it.value().end(),
-                  [](const ModuleBlockDiagramNode& lhs,
-                     const ModuleBlockDiagramNode& rhs) {
-                      if (lhs.depth != rhs.depth)
-                          return lhs.depth < rhs.depth;
-                      return lhs.nodeId < rhs.nodeId;
-                  });
-    }
-
-    QHash<int, QRectF> rectByNodeId;
-    QHash<int, QSizeF> measuredSizeByNodeId;
-    QHash<int, QPointF> childOffsets;
-    constexpr qreal childGap = 8.0;
-    constexpr qreal childInset = 10.0;
-    const qreal titleBand = moduleHeaderHeight(font);
-    const QFontMetricsF titleMetrics(moduleTitleFont(font));
-    const QFontMetricsF detailMetrics(InsightVisualStyle::compactFont(font));
-    std::function<QSizeF(int, qreal)> measureNode = [&](int nodeId, qreal widthBudget) -> QSizeF {
-        const ModuleBlockDiagramNode& node = nodeById[nodeId];
-        const auto children = childrenByParent.value(nodeId);
-        const bool root = nodeId == report.root.nodeId;
-        QString title = root ? state.moduleBlockPath.first().label : node.instanceDisplayName;
-        if (title.isEmpty()) title = node.moduleDisplayName;
-        const qreal textWidth = qMax(titleMetrics.horizontalAdvance(title),
-                                     detailMetrics.horizontalAdvance(node.moduleDisplayName));
-        QSizeF size(qMax(112.0, qMin(260.0, textWidth) + 20.0), titleBand);
-        if (!children.isEmpty()) {
-            const qreal innerBudget = qMax(112.0, widthBudget - childInset * 2.0);
-            const int maxColumns = qMin(4, int(std::ceil(std::sqrt(double(children.size())))));
-            qreal x = 0.0, y = titleBand, rowHeight = 0.0, rowWidth = 0.0, widestRow = 0.0;
-            int columns = 0;
-            for (const auto& child : children) {
-                const QSizeF measured = measureNode(child.nodeId, innerBudget);
-                if (columns > 0 && (columns >= maxColumns || x + measured.width() > innerBudget)) {
-                    widestRow = qMax(widestRow, rowWidth);
-                    x = 0.0;
-                    y += rowHeight + childGap;
-                    rowHeight = 0.0;
-                    columns = 0;
-                }
-                childOffsets.insert(child.nodeId, QPointF(childInset + x, y));
-                rowWidth = x + measured.width();
-                x = rowWidth + childGap;
-                rowHeight = qMax(rowHeight, measured.height());
-                ++columns;
-            }
-            size.setWidth(qMax(size.width(), qMax(widestRow, rowWidth) + childInset * 2.0));
-            size.setHeight(y + rowHeight + childInset);
-        }
-        measuredSizeByNodeId.insert(nodeId, size);
-        return size;
-    };
-    const QSizeF rootSize = measureNode(report.root.nodeId,
-        qMax(112.0, state.insightsGraphView->viewport()->width() - 32.0));
-    std::function<void(int, QPointF)> placeNode =
-        [&](int nodeId, QPointF topLeft) {
-            const QSizeF size = measuredSizeByNodeId.value(nodeId);
-            const QRectF rect(topLeft, size);
-            rectByNodeId.insert(nodeId, rect);
-            const QList<ModuleBlockDiagramNode> children =
-                childrenByParent.value(nodeId);
-            if (children.isEmpty())
-                return;
-            for (const auto& child : children)
-                placeNode(child.nodeId, topLeft + childOffsets.value(child.nodeId));
-        };
-    const QPointF rootTopLeft(-rootSize.width() / 2.0,
-                              -rootSize.height() / 2.0);
-    placeNode(report.root.nodeId, rootTopLeft);
-
-    const QRectF rootRect = rectByNodeId.value(report.root.nodeId);
-
-    addNode(report.root, rootRect, true);
-
-    for (const ModuleBlockDiagramEdge& edge : report.edges) {
-        if (!rectByNodeId.contains(edge.fromNodeId)
-            || !rectByNodeId.contains(edge.toNodeId)) {
-            continue;
-        }
-        const bool fromRoot = edge.fromNodeId == report.root.nodeId;
-        addEdge(edge,
-                rectByNodeId.value(edge.fromNodeId),
-                rectByNodeId.value(edge.toNodeId),
-                fromRoot);
-    }
-
-    for (const ModuleBlockDiagramNode& node : report.nodes) {
-        if (!rectByNodeId.contains(node.nodeId))
-            continue;
-        if (node.nodeId == report.root.nodeId)
-            continue;
-        addNode(node,
-                rectByNodeId.value(node.nodeId),
-                false);
-    }
-
-    const QRectF bounds =
-        rootRect.adjusted(-16, -16, 16, 16);
-    state.insightsGraphScene->setSceneRect(bounds);
-    state.lastGraphFitRect = bounds;
-    updateModuleBlockFocus(state.moduleBlockAutoFit);
-    restoreGraphRefreshPresentation(state, presentation);
-}
 void RtlInsightsGraphSceneMapper::applySearchHighlight()
 {
     if (!state.insightsGraphScene)
@@ -2002,7 +1643,6 @@ void RtlInsightsGraphSceneMapper::applySearchHighlight()
 
     const QString needle = state.graphSearchText.trimmed();
     const bool active = !needle.isEmpty();
-    if (state.currentGraphMode == QStringLiteral("module-block")) return;
     int firstMatchCount = 0;
     QPointF firstMatchCenter;
     for (QGraphicsItem* item : state.insightsGraphScene->items()) {
@@ -2048,7 +1688,6 @@ void RtlInsightsGraphSceneMapper::clearDetails()
         state.graphTable->setRowCount(0);
         state.graphTable->setColumnCount(0);
     }
-    state.currentModuleBlockSelectedNodeId = -1;
     setGraphSelectionActionAvailability(
         state, false, false);
     if (state.graphInspectorRevealButton)
@@ -2124,59 +1763,9 @@ void RtlInsightsGraphSceneMapper::populateFsmTransitionsTable(
     state.graphTable->horizontalHeader()->setStretchLastSection(true);
 }
 
-void RtlInsightsGraphSceneMapper::selectModuleBlockNode(
-    int nodeId,
-    bool centerGraph)
-{
-    if (nodeId < 0)
-        return;
-    state.currentModuleBlockSelectedNodeId = nodeId;
-    const ModuleBlockDiagramNode* selectedNode = nullptr;
-    for (const ModuleBlockDiagramNode& node : state.currentModuleBlockReport.nodes) {
-        if (node.nodeId == nodeId) {
-            selectedNode = &node;
-            break;
-        }
-    }
-    if (!selectedNode)
-        return;
 
-    if (state.insightsGraphScene) {
-        for (QGraphicsItem* item : state.insightsGraphScene->items()) {
-            if (!dynamic_cast<RtlInsightGraphNodeItem*>(item))
-                continue;
-            const bool match = item->data(kGraphNodeIdRole).toInt() == nodeId;
-            item->setSelected(match);
-            if (match && centerGraph && state.insightsGraphView)
-                state.insightsGraphView->centerOnRect(item->sceneBoundingRect());
-        }
-    }
-    refreshModuleBlockSelectionActions();
-}
 
-void RtlInsightsGraphSceneMapper::refreshModuleBlockSelectionActions()
-{
-    if (state.currentGraphMode != QStringLiteral("module-block") || !state.insightsGraphScene) return;
-    const auto items = state.insightsGraphScene->selectedItems();
-    const int nodeId = items.size() == 1 && items.first()->data(kGraphKindRole).toString() == QStringLiteral("module")
-        ? items.first()->data(kGraphNodeIdRole).toInt() : -1;
-    state.currentModuleBlockSelectedNodeId = nodeId;
-    const auto& nodes = state.currentModuleBlockReport.nodes;
-    const auto selectedNode = std::find_if(nodes.cbegin(), nodes.cend(),
-        [nodeId](const auto& node) { return node.nodeId == nodeId; });
-    if (nodeId < 0 || selectedNode == nodes.cend()) {
-        setGraphSelectionActionAvailability(state, false, !items.isEmpty());
-        return;
-    }
-    const RtlInsightCodeLink& link =
-        selectedNode->instanceCodeLink.fileName.isEmpty()
-            ? selectedNode->definitionCodeLink
-            : selectedNode->instanceCodeLink;
-    setGraphSelectionActionAvailability(
-        state,
-        !link.fileName.isEmpty(),
-        true);
-}
+
 
 bool RtlInsightsGraphSceneMapper::navigateItem(QGraphicsItem* item)
 {
@@ -2301,14 +1890,6 @@ bool RtlInsightsGraphSceneMapper::selectSourceLocation(
 
     if (!bestItem)
         return false;
-    const QVariant nodeId =
-        bestItem->data(kGraphNodeIdRole);
-    if (state.currentGraphMode
-            == QStringLiteral("module-block")
-        && nodeId.isValid()) {
-        selectModuleBlockNode(nodeId.toInt(), centerGraph);
-        return true;
-    }
     if (!selectItemForInspector(bestItem))
         return false;
     if (centerGraph && state.insightsGraphView) {
@@ -2342,90 +1923,13 @@ RtlInsightsGraphSceneMapper::selectedSourceLocation() const
         state.graphBuildGeneration);
 }
 
-bool RtlInsightsGraphSceneMapper::enterModuleBlockNode(int nodeId)
-{
-    return activateModuleBlockPath(state.moduleBlockInstancePaths.value(nodeId), true, true);
-}
 
-bool RtlInsightsGraphSceneMapper::navigateModuleBlockHistory(int direction)
-{
-    if (direction != -1 && direction != 1) return false;
-    const int next = state.moduleBlockHistoryIndex + direction;
-    if (next < 0 || next >= state.moduleBlockHistory.size()) return false;
-    if (!activateModuleBlockPath(state.moduleBlockHistory.at(next), false, true)) return false;
-    state.moduleBlockHistoryIndex = next;
-    updateModuleBlockFocus(false);
-    return true;
-}
 
-bool RtlInsightsGraphSceneMapper::activateModuleBlockPath(
-    const QString& path, bool recordHistory, bool navigateSource)
-{
-    if (state.currentGraphMode != QStringLiteral("module-block") || path.isEmpty()) return false;
-    const auto& nodes = state.currentModuleBlockReport.nodes;
-    const auto target = std::find_if(nodes.cbegin(), nodes.cend(), [&](const auto& node) {
-        return state.moduleBlockInstancePaths.value(node.nodeId) == path;
-    });
-    if (target == nodes.cend() || target->definitionCodeLink.fileName.isEmpty()) return false;
-    const auto node = *target;
-    if (navigateSource) {
-        RtlInsightSourceLocation location = state.currentSourceLocation;
-        location.fileName = node.definitionCodeLink.fileName;
-        location.line = node.definitionCodeLink.line;
-        location.column = node.definitionCodeLink.column;
-        location.moduleName = node.moduleDisplayName;
-        location.symbolName = node.moduleDisplayName;
-        location.instancePath = path;
-        location.activeTopModule = state.currentModuleBlockReport.root.moduleDisplayName;
-        location.elementKind = QStringLiteral("module");
-        location.graphGeneration = state.graphBuildGeneration;
-        location.documentRevision = state.graphDocumentRevision;
-        if (location.fileName.isEmpty()) return false;
-        const QPointer<QObject> lifetime = state.graphCallbackContext;
-        const auto navigate = state.sourceNavigationHandler;
-        const bool navigated = !navigate || navigate(location);
-        if (!lifetime || !navigated) return false;
-    }
-    if (recordHistory && state.moduleBlockTargetPath != path) {
-        state.moduleBlockHistory = state.moduleBlockHistory.mid(0, state.moduleBlockHistoryIndex + 1);
-        state.moduleBlockHistory.append(path);
-        state.moduleBlockHistoryIndex = state.moduleBlockHistory.size() - 1;
-    }
-    state.moduleBlockTargetPath = path;
-    state.moduleBlockAutoFit = true;
-    updateModuleBlockFocus(true);
-    return true;
-}
 
-void RtlInsightsGraphSceneMapper::updateModuleBlockFocus(bool fit)
-{
-    if (!state.insightsGraphScene || !state.insightsGraphView) return;
-    QHash<int, ModuleBlockDiagramNode> nodes;
-    int targetId = state.currentModuleBlockReport.root.nodeId;
-    for (const auto& node : state.currentModuleBlockReport.nodes) {
-        nodes.insert(node.nodeId, node);
-        if (state.moduleBlockInstancePaths.value(node.nodeId) == state.moduleBlockTargetPath)
-            targetId = node.nodeId;
-    }
-    state.moduleBlockTargetPath = state.moduleBlockInstancePaths.value(targetId);
-    state.moduleBlockPath.clear();
-    QSet<int> visited;
-    for (int id = targetId; nodes.contains(id) && !visited.contains(id); id = nodes.value(id).parentNodeId) {
-        visited.insert(id);
-        const auto node = nodes.value(id);
-        state.moduleBlockPath.prepend({node.definitionCodeLink.fileName, node.moduleDisplayName,
-            node.instanceDisplayName.isEmpty() ? node.moduleDisplayName : node.instanceDisplayName,
-            state.moduleBlockInstancePaths.value(id)});
-    }
-    const QString descendantPrefix = state.moduleBlockTargetPath + QLatin1Char('.');
-    for (QGraphicsItem* item : state.insightsGraphScene->items()) {
-        if (item->data(kGraphKindRole).toString() != QStringLiteral("module")) continue;
-        const QString path = item->data(kGraphInstancePathRole).toString();
-        item->setOpacity(path == state.moduleBlockTargetPath || path.startsWith(descendantPrefix) ? 1.0 : 0.28);
-        item->setSelected(item->data(kGraphNodeIdRole).toInt() == targetId);
-    }
-    if (fit) state.insightsGraphView->fitRect(state.lastGraphFitRect, Qt::KeepAspectRatio);
-}
+
+
+
+
 int RtlInsightsGraphSceneMapper::nodeItemCountForTest() const
 {
     if (!state.insightsGraphScene)
@@ -2777,8 +2281,6 @@ bool RtlInsightsGraphSceneMapper::selectItemForTest(
                                           secondaryText);
     if (!item)
         return false;
-    if (state.currentGraphMode == QStringLiteral("module-block"))
-        return selectItemForInspector(item);
     if (state.insightsGraphScene)
         state.insightsGraphScene->clearSelection();
     item->setSelected(true);
@@ -2823,18 +2325,8 @@ bool RtlInsightsGraphSceneMapper::selectItemForInspector(QGraphicsItem* item)
 {
     if (!item || !state.insightsGraphScene)
         return false;
-    if (state.currentGraphMode == QStringLiteral("module-block")
-        && item->data(kGraphNodeIdRole).isValid()) {
-        selectModuleBlockNode(item->data(kGraphNodeIdRole).toInt(), false);
-        return true;
-    }
     state.insightsGraphScene->clearSelection();
     item->setSelected(true);
-    if (state.currentGraphMode == QStringLiteral("module-block")) {
-        setGraphSelectionActionAvailability(
-            state, !item->data(kGraphFileRole).toString().isEmpty(), true);
-        return true;
-    }
     const QString kind = item->data(kGraphKindRole).toString();
     const QString primary = item->data(kGraphPrimaryRole).toString();
     QStringList rows{QStringLiteral("Kind=%1").arg(kind)};
