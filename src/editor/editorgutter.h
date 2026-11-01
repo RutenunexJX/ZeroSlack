@@ -31,7 +31,6 @@ private:
 
     LineNumberWidget* widget = nullptr;
     mutable int appliedLeftMargin = -1;
-    mutable int appliedTopMargin = -1;
 };
 
 #endif // EDITORGUTTER_H

@@ -1,9 +1,12 @@
 #include "signaltracepanel.h"
 #include "signaltracemodels.h"
+#include "signaltracedistributiondelegate.h"
+#include "insightgraphadapter.h"
 #include "compactlayout.h"
 #include "insightvisualstyle.h"
 #include "roundedicons.h"
 #include <QMenu>
+#include <QActionGroup>
 #include <QWidgetAction>
 #include <QResizeEvent>
 #include "semanticindexsnapshot.h"
@@ -32,6 +35,9 @@
 #include <QQueue>
 #include <QSaveFile>
 #include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QStyleOptionToolButton>
+#include <QStyleOptionComboBox>
 #include <QShowEvent>
 #include <QSpinBox>
 #include <QSplitter>
@@ -47,6 +53,13 @@
 
 namespace {
 constexpr int NodeRole=Qt::UserRole+750,MoreRole=NodeRole+1;
+class CurrentPageStack final : public QStackedWidget {
+public:
+    using QStackedWidget::QStackedWidget;
+    QSize minimumSizeHint() const override {
+        return currentWidget()?currentWidget()->minimumSizeHint():QSize();
+    }
+};
 class FeedbackView final : public QGraphicsView {
 public:
     using QGraphicsView::QGraphicsView;
@@ -66,14 +79,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override {QGraphicsView::resizeEvent(event);if(automaticFit)fitContents();}
 };
 QString statusName(SignalTraceStatus status) {
-    switch(status) {
-    case SignalTraceStatus::Ready:return QStringLiteral("Ready");
-    case SignalTraceStatus::DefinitionOnly:return QStringLiteral("Definition only — choose an instance to follow dependencies");
-    case SignalTraceStatus::Partial:return QStringLiteral("Partial");
-    case SignalTraceStatus::Cancelled:return QStringLiteral("Cancelled");
-    case SignalTraceStatus::Stale:return QStringLiteral("Stale — refresh or select the signal again");
-    default:return QStringLiteral("Unavailable");
-    }
+    return insightgraph::traceStatusName(InsightGraphAdapter::status(status));
 }
 bool writeFile(const QString& path,const QByteArray& bytes,QString* error) {
     QSaveFile file(path);
@@ -108,6 +114,15 @@ struct SignalTracePanel::Private {
     QAction *back=nullptr,*forward=nullptr;
     QPushButton *moreReferences=nullptr;
     QToolButton *mainArea=nullptr,*detailsButton=nullptr,*cancelButton=nullptr;
+    QToolButton *compactDirection=nullptr,*compactRole=nullptr,*moreButton=nullptr;
+    QHBoxLayout *toolbar=nullptr,*filters=nullptr;
+    QAction *mainAreaOverflow=nullptr,*cancelOverflow=nullptr,*referencesOverflow=nullptr;
+    QMenu *directionMenu=nullptr,*roleMenu=nullptr,*filterMenu=nullptr;
+    QWidget* filterPopupContent=nullptr;
+    QVBoxLayout* filterPopupLayout=nullptr;
+    bool filterInMenu=false;
+    bool arranging=false;
+    int directionIconIndex=-1;
     QMenu *operations=nullptr,*pathsMenu=nullptr;
     struct ReferenceState { QList<SignalTraceEvidence> values;int cursor=-1;SignalTraceStatus status=SignalTraceStatus::Ready;QStringList limitations; };
     QHash<QString,ReferenceState> referenceCache;
@@ -138,6 +153,99 @@ struct SignalTracePanel::Private {
     std::function<void(bool)> mainAreaHandler;
 
     explicit Private(SignalTracePanel* owner):q(owner) { pool.setMaxThreadCount(1); }
+    void arrangeControls() {
+        if(arranging || !content || !moreButton || !compactRole || !moreReferences)return;
+        const QScopedValueRollback guard(arranging,true);
+        const auto margins=q->layout()->contentsMargins();
+        const int available=qMax(0,q->contentsRect().width()-margins.left()-margins.right());
+        const int gap=toolbar->spacing();
+        const auto width=[](QWidget* widget){return qMax(widget->minimumSizeHint().width(),widget->minimumWidth());};
+        const bool trace=mode->currentIndex()==0;
+        const auto required=[&](bool directionIcon,bool includeMain,bool includeCancel,int referenceWidth){
+            int total=width(mode)+referenceWidth+width(moreButton)+3*gap;
+            if(trace)total+=width(directionIcon?static_cast<QWidget*>(compactDirection):direction)+gap;
+            if(includeMain)total+=width(mainArea)+gap;
+            if(includeCancel)total+=width(cancelButton)+gap;
+            return total;
+        };
+        QStyleOptionToolButton option;option.initFrom(detailsButton);
+        option.icon=detailsButton->icon();option.iconSize=detailsButton->iconSize();
+        option.text=detailsButton->text();option.toolButtonStyle=Qt::ToolButtonTextBesideIcon;
+        const auto font=detailsButton->fontMetrics();
+        const QSize contentSize(font.horizontalAdvance(option.text)+option.iconSize.width()+gap,
+                                qMax(font.height(),option.iconSize.height()));
+        const int fullReferenceWidth=detailsButton->style()->sizeFromContents(QStyle::CT_ToolButton,&option,contentSize,detailsButton).width();
+        const bool compact=required(false,bool(mainAreaHandler),inFlight>0,fullReferenceWidth)>available;
+        const auto style=compact?Qt::ToolButtonIconOnly:Qt::ToolButtonTextBesideIcon;
+        if(detailsButton->toolButtonStyle()!=style)detailsButton->setToolButtonStyle(style);
+        const int referenceWidth=width(detailsButton);
+        bool showMain=bool(mainAreaHandler),showCancel=inFlight>0;
+        if(required(false,showMain,showCancel,referenceWidth)>available)showMain=false;
+        if(required(false,showMain,showCancel,referenceWidth)>available)showCancel=false;
+        const bool directionIcon=trace && required(false,showMain,showCancel,referenceWidth)>available;
+        QWidget* focused=QApplication::focusWidget();
+        direction->setVisible(trace && !directionIcon);compactDirection->setVisible(directionIcon);
+        if(trace && focused==(directionIcon?static_cast<QWidget*>(direction):compactDirection))
+            (directionIcon?static_cast<QWidget*>(compactDirection):direction)->setFocus(Qt::OtherFocusReason);
+        mainArea->setVisible(showMain);cancelButton->setVisible(showCancel);
+        mainAreaOverflow->setVisible(bool(mainAreaHandler) && !showMain);
+        cancelOverflow->setVisible(inFlight>0 && !showCancel);
+        if((!showMain && focused==mainArea) || (!showCancel && focused==cancelButton))moreButton->setFocus(Qt::OtherFocusReason);
+        const QString directionName=direction->currentText();
+        if(directionIconIndex!=direction->currentIndex()){
+            directionIconIndex=direction->currentIndex();
+            compactDirection->setIcon(RoundedIcons::icon(directionIconIndex==0?RoundedIcons::Left:RoundedIcons::Right));
+        }
+        compactDirection->setToolTip(directionName);compactDirection->setAccessibleName(directionName);
+        for(int i=0;i<directionMenu->actions().size();++i)directionMenu->actions()[i]->setChecked(i==direction->currentIndex());
+        const bool detailsOpen=detailsButton->isChecked();
+        const bool filterNeeded=mode->currentIndex()!=2 && (detailsOpen || mode->currentIndex()==1);
+        const bool paging=detailsOpen && mode->currentIndex()!=2 && referenceCursor>=0;
+        auto* view=detailsOpen?static_cast<QAbstractItemView*>(details)
+            :mode->currentIndex()==1?static_cast<QAbstractItemView*>(table):trees[direction->currentIndex()];
+        int header=0;
+        if(auto* tree=qobject_cast<QTreeWidget*>(view);tree && !tree->isHeaderHidden())header=tree->header()->sizeHint().height();
+        if(view==table)header=table->horizontalHeader()->sizeHint().height();
+        const int rowHeight=view==table?table->verticalHeader()->defaultSectionSize():view->fontMetrics().height();
+        int needed=margins.top()+margins.bottom()+toolbar->minimumSize().height()+3*q->layout()->spacing()
+            +header+2*rowHeight+view->horizontalScrollBar()->sizeHint().height();
+        if(!status->isHidden())needed+=status->minimumSizeHint().height()+q->layout()->spacing();
+        if(detailsOpen && !detailSummary->isHidden())needed+=detailSummary->minimumSizeHint().height()+detailPage->layout()->spacing();
+        if(filterNeeded)needed+=filterBar->minimumSizeHint().height()+q->layout()->spacing();
+        if(paging)needed+=moreReferences->sizeHint().height()+detailPage->layout()->spacing();
+        const bool compactFilter=filterNeeded && needed>q->height();
+        if(compactFilter)needed-=filterBar->minimumSizeHint().height()+q->layout()->spacing();
+        const bool compactPaging=paging && needed>q->height();
+        const bool movedFilter=filterInMenu!=compactFilter;
+        const bool filterFocused=filterBar->isAncestorOf(focused);
+        if(movedFilter){
+            filterInMenu=compactFilter;
+            if(filterInMenu){q->layout()->removeWidget(filterBar);filterPopupLayout->addWidget(filterBar);}
+            else {filterPopupLayout->removeWidget(filterBar);static_cast<QVBoxLayout*>(q->layout())->insertWidget(2,filterBar);}
+        }
+        filterBar->setVisible(filterNeeded);
+        if(movedFilter && filterFocused)(filterInMenu?static_cast<QWidget*>(moreButton):focused)->setFocus(Qt::OtherFocusReason);
+        filterMenu->menuAction()->setVisible(compactFilter);
+        filterMenu->setTitle(search->text().isEmpty() && roleMask()==63?QStringLiteral("Filter references"):QStringLiteral("Filter references (active)"));
+        moreReferences->setVisible(paging && !compactPaging);referencesOverflow->setVisible(compactPaging);
+        const int searchWidth=qMax(search->minimumSizeHint().width(),search->fontMetrics().averageCharWidth()*12);
+        filterPopupContent->setMinimumWidth(searchWidth+width(compactRole)+2*filters->spacing());
+        const int filterWidth=filterInMenu?filterPopupContent->contentsRect().width():available;
+        QStyleOptionComboBox roleOption;roleOption.initFrom(role);roleOption.currentText=role->currentText();
+        const QSize roleText(role->fontMetrics().horizontalAdvance(role->currentText()),role->fontMetrics().height());
+        const int roleWidth=qMax(width(role),role->style()->sizeFromContents(QStyle::CT_ComboBox,&roleOption,roleText,role).width());
+        const bool roleIcon=searchWidth+roleWidth+filters->spacing()>filterWidth;
+        role->setVisible(!roleIcon);compactRole->setVisible(roleIcon);
+        if(!filterInMenu && focused==(roleIcon?static_cast<QWidget*>(role):compactRole))
+            (roleIcon?static_cast<QWidget*>(compactRole):role)->setFocus(Qt::OtherFocusReason);
+        role->setToolTip(role->currentText());
+        compactRole->setToolTip(role->currentText());compactRole->setAccessibleName(QStringLiteral("Reference role: ")+role->currentText());
+        auto* customRole=roleMenu->actions().last();
+        customRole->setVisible(role->count()>7);customRole->setText(role->itemText(7));
+        for(int i=0;i<roleMenu->actions().size();++i)roleMenu->actions()[i]->setChecked(i==role->currentIndex());
+        mode->setToolTip(title->text());mode->setAccessibleDescription(title->text());
+        instance->setToolTip(instance->currentText());cycles->setToolTip(cycles->currentText());
+    }
     void presentStatus() {
         const int active=mode->currentIndex();
         QStringList messages;
@@ -146,7 +254,8 @@ struct SignalTracePanel::Private {
         else {messages<<referenceNotice;messages+=queryLimitations[direction->currentIndex()];}
         messages<<notices[active];messages.removeAll(QString());messages.removeDuplicates();
         const auto text=messages.join(QStringLiteral(" · "));
-        status->setText(text);status->setToolTip(text);status->setVisible(!text.isEmpty());
+        status->setText(text);status->setToolTip(text);status->setAccessibleName(text);status->setVisible(!text.isEmpty());
+        arrangeControls();
     }
     void message(const QString& text,bool persistent=true) {
         if(persistent){notices[mode->currentIndex()]=text;presentStatus();}
@@ -166,6 +275,7 @@ struct SignalTracePanel::Private {
             detailSummary->setText(selected.displayName()+QStringLiteral(" · ")+selected.instancePath);
         }
         detailSummary->setVisible(!detailSummary->text().isEmpty());
+        detailSummary->setToolTip(detailSummary->text());detailSummary->setAccessibleName(detailSummary->text());
         moreReferences->setVisible(mode->currentIndex()!=2 && referenceCursor>=0);
         presentStatus();
     }
@@ -173,25 +283,27 @@ struct SignalTracePanel::Private {
         {QSignalBlocker block(detailsButton);detailsButton->setChecked(open);}
         detailsButton->setText(open?QStringLiteral("Back"):QStringLiteral("References"));
         detailsButton->setIcon(RoundedIcons::icon(open?RoundedIcons::Left:RoundedIcons::Info));
-        detailsButton->setToolTip(open?QStringLiteral("Return to the current view"):QStringLiteral("Show source references"));
+        detailsButton->setAccessibleName(open?QStringLiteral("Back"):QStringLiteral("References"));
+        detailsButton->setToolTip(open?QStringLiteral("Back — return to the current view"):QStringLiteral("References — show source references"));
         content->setCurrentIndex(open?1:0);
         filterBar->setVisible(mode->currentIndex()!=2 && (open || mode->currentIndex()==1));
+        arrangeControls();
     }
     void invalidate() {
         cancelled->store(true); pool.clear(); cancelled=std::make_shared<std::atomic_bool>(false);
         if(feedbackLoading)feedbackNotice.clear();
         ++generation; ++selectionGeneration; inFlight=0;feedbackLoading=false;
-        if(cancelButton)cancelButton->hide();
+        if(cancelButton)arrangeControls();
         for (auto& node:nodes) node.loading=false;
         if (markers) markers({});
     }
     template<class Result,class Work,class Apply> void run(Work work,Apply apply) {
         const auto token=cancelled; const auto version=generation; const auto key=requestKey;
-        auto* watcher=new QFutureWatcher<Result>(q); ++inFlight;cancelButton->show();
+        auto* watcher=new QFutureWatcher<Result>(q); ++inFlight;arrangeControls();
         QObject::connect(watcher,&QFutureWatcher<Result>::finished,q,[this,watcher,version,key,token,apply] {
             watcher->deleteLater();
             if (version!=generation || token->load() || !(key==requestKey)) return;
-            --inFlight;cancelButton->setVisible(inFlight>0);
+            --inFlight;arrangeControls();
             if (!watcher->isCanceled() && watcher->future().resultCount()>0) apply(watcher->result());
             if(!inFlight && restoreReading && historyIndex>=0 && historyIndex<history.size()){
                 restoreReading=false;const auto reading=history[historyIndex];
@@ -256,22 +368,24 @@ struct SignalTracePanel::Private {
         run<SignalTracePage>([captured,object,dir,cursor](auto stop) { return captured->oneHop(object,dir,cursor,100,stop); },
             [this,id,cursor](const SignalTracePage& page) {
                 if (!nodes.contains(id)) return;
-                auto& parent=nodes[id]; parent.loading=false; parent.loaded=true; parent.cursor=page.nextCursor;
+                const auto projection = InsightGraphAdapter::tracePage(page, nodes[id].path);
+                auto& parent=nodes[id]; parent.loading=false; parent.loaded=true; parent.cursor=projection.page.nextCursor;
                 if (!cursor) { while (parent.item->childCount()) delete parent.item->takeChild(0); }
                 else for (int i=parent.item->childCount()-1;i>=0;--i) if (parent.item->child(i)->data(0,MoreRole).isValid()) delete parent.item->takeChild(i);
-                const auto parentItem=parent.item; const int dir=parent.direction; const QString path=parent.path;
-                for (const auto& group:page.groups) {
+                const auto parentItem=parent.item; const int dir=parent.direction;
+                for (const auto& branch:projection.branches) {
+                    const auto& group = page.groups.at(branch.groupIndex);
                     if (nodes.size()>=2000) { queryLimitations[dir]<<QStringLiteral("Tree limit reached (2000 objects). Choose a new root."); break; }
                     int existing=0;
                     for (int i=0;i<parentItem->childCount();++i) {
                         const int child=parentItem->child(i)->data(0,NodeRole).toInt();
-                        if (nodes.contains(child) && nodes[child].object.id()==group.object.id() && nodes[child].data==group.dataPath) { existing=child; break; }
+                        if (nodes.contains(child) && nodes[child].object.id()==branch.objectId && nodes[child].data==branch.dataPath) { existing=child; break; }
                     }
                     if (existing) nodes[existing].evidence.append(group.evidence);
-                    else addNode(group.object,parentItem,dir,group.dataPath,group.evidence,path+QLatin1Char('/')+group.object.id()+(group.dataPath?"/data":"/related"));
+                    else addNode(group.object,parentItem,dir,branch.dataPath,group.evidence,branch.path);
                 }
-                if (page.nextCursor>=0) { auto* more=new QTreeWidgetItem(parentItem,{QStringLiteral("Load more…")}); more->setData(0,MoreRole,id); }
-                parentItem->setText(2,page.status==SignalTraceStatus::Ready ? QString() : statusName(page.status));
+                if (projection.page.nextCursor>=0) { auto* more=new QTreeWidgetItem(parentItem,{QStringLiteral("Load more…")}); more->setData(0,MoreRole,id); }
+                parentItem->setText(2,projection.statusText);
                 parentItem->setToolTip(2,page.limitations.join('\n'));
                 queryLimitations[dir]+=page.limitations;queryLimitations[dir].removeDuplicates();
                 if(page.status==SignalTraceStatus::Stale){stale=true;if(markers)markers({});}
@@ -292,7 +406,10 @@ struct SignalTracePanel::Private {
         heat->setReferences(state.values);referenceCursor=state.cursor;
         heat->setComplete(state.cursor<0 && state.status==SignalTraceStatus::Ready);
         referenceNotice=state.status==SignalTraceStatus::Ready ? QString() : statusName(state.status);
-        if(state.cursor>=0)referenceNotice+=QStringLiteral(" Reference counts are partial; load more in References.");
+        if(state.cursor>=0){
+            if(referenceNotice.isEmpty())referenceNotice=QStringLiteral("Partial");
+            referenceNotice+=QStringLiteral(" — reference counts are partial; load more in References.");
+        }
         if(!state.limitations.isEmpty())referenceNotice+=QStringLiteral(" ")+state.limitations.join(QStringLiteral(" · "));
         if(state.status==SignalTraceStatus::Stale){stale=true;if(markers)markers({});}
         present();
@@ -368,17 +485,23 @@ struct SignalTracePanel::Private {
 SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_unique<Private>(this)) {
     setObjectName(QStringLiteral("signalTracePanel"));
     auto* layout=new QVBoxLayout(this); layout->setContentsMargins(6,6,6,6); layout->setSpacing(4);
-    auto* top=new QHBoxLayout;top->setSpacing(4);
+    auto* top=new QHBoxLayout;d->toolbar=top;top->setSpacing(4);
     d->title=new CompactTitleLabel(this);d->title->setText(QStringLiteral("Signal Trace"));
     d->title->setTextInteractionFlags(Qt::TextSelectableByMouse);top->addWidget(d->title,1);
     d->mode=new QComboBox(this);d->mode->setObjectName("traceMode");d->mode->addItems({"Trace","Heatmap","Feedback"});top->addWidget(d->mode);
     d->direction=new QComboBox(this);d->direction->setObjectName("traceDirection");d->direction->addItems({"Upstream","Downstream"});top->addWidget(d->direction);
+    d->compactDirection=new QToolButton(this);d->compactDirection->setObjectName("traceCompactDirection");
+    d->compactDirection->setPopupMode(QToolButton::InstantPopup);d->directionMenu=new QMenu(d->compactDirection);
+    d->compactDirection->setMenu(d->directionMenu);top->addWidget(d->compactDirection);d->compactDirection->hide();
+    auto* directionGroup=new QActionGroup(this);
+    for(int i=0;i<d->direction->count();++i){auto* entry=d->directionMenu->addAction(d->direction->itemText(i));entry->setCheckable(true);directionGroup->addAction(entry);
+        connect(entry,&QAction::triggered,this,[this,i]{d->direction->setCurrentIndex(i);});}
     d->detailsButton=new QToolButton(this);d->detailsButton->setObjectName("traceDetails");d->detailsButton->setCheckable(true);
     d->detailsButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);top->addWidget(d->detailsButton);
     d->cancelButton=new QToolButton(this);d->cancelButton->setObjectName("traceCancel");d->cancelButton->setIcon(RoundedIcons::icon(RoundedIcons::Close));
     d->cancelButton->setToolTip("Cancel query");d->cancelButton->hide();top->addWidget(d->cancelButton);
     connect(d->cancelButton,&QToolButton::clicked,this,&SignalTracePanel::cancel);
-    auto* more=new QToolButton(this);more->setObjectName("traceMore");more->setIcon(RoundedIcons::icon(RoundedIcons::More));more->setToolTip("Trace actions");
+    auto* more=new QToolButton(this);d->moreButton=more;more->setObjectName("traceMore");more->setIcon(RoundedIcons::icon(RoundedIcons::More));more->setToolTip("Trace actions");more->setAccessibleName("Trace actions");
     more->setPopupMode(QToolButton::InstantPopup);d->operations=new QMenu(more);more->setMenu(d->operations);top->addWidget(more);
     const auto action=[this](QMenu* menu,const QString& text,const QString& name,std::function<void()> callback){
         auto* entry=menu->addAction(text);entry->setObjectName(name);connect(entry,&QAction::triggered,this,std::move(callback));return entry;
@@ -401,14 +524,29 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     action(d->operations,"Copy table","traceCopy",[this]{QApplication::clipboard()->setText(QString::fromUtf8(d->heat->csv()));});
     action(d->operations,"Export table…","traceExport",[this]{const auto path=QFileDialog::getSaveFileName(this,"Export heatmap",{},"CSV (*.csv)");if(!path.isEmpty()){QString error;if(!exportHeatmap(path,&error))d->message(error);}});
     d->mainArea=new QToolButton(this);d->mainArea->setObjectName("traceMainArea");d->mainArea->setIcon(RoundedIcons::icon(RoundedIcons::Expand));d->mainArea->setToolTip("Expand into main area");d->mainArea->hide();top->addWidget(d->mainArea);
+    d->mainAreaOverflow=action(d->operations,"Expand into main area","traceMainAreaOverflow",[this]{d->mainArea->click();});
+    d->cancelOverflow=action(d->operations,"Cancel query","traceCancelOverflow",[this]{cancel();});
+    d->referencesOverflow=action(d->operations,"Load more references","traceReferencesOverflow",[this]{d->moreReferences->click();});
+    d->referencesOverflow->setVisible(false);
+    d->mainAreaOverflow->setVisible(false);d->cancelOverflow->setVisible(false);
     connect(d->mainArea,&QToolButton::clicked,this,[this]{if(d->mainAreaHandler)d->mainAreaHandler(!d->expanded);});layout->addLayout(top);
     d->instance=new QComboBox(this);d->instance->setObjectName("traceInstance");d->instance->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);d->instance->hide();layout->addWidget(d->instance);
-    d->filterBar=new QWidget(this);auto* filters=new QHBoxLayout(d->filterBar);filters->setContentsMargins(0,0,0,0);
-    d->search=new QLineEdit(this);d->search->setObjectName("traceFilter");d->search->setPlaceholderText("Filter references");filters->addWidget(d->search,1);
+    d->filterBar=new QWidget(this);auto* filters=new QHBoxLayout(d->filterBar);d->filters=filters;filters->setContentsMargins(0,0,0,0);filters->setSpacing(4);
+    d->search=new QLineEdit(this);d->search->setObjectName("traceFilter");d->search->setPlaceholderText("Filter references");d->search->setAccessibleName("Filter references");filters->addWidget(d->search,1);
     d->role=new QComboBox(this);d->role->setObjectName("traceRole");d->role->addItem("All roles");for(int i=0;i<6;++i)d->role->addItem(SignalTraceService::roleName(SignalTraceRole(i)));filters->addWidget(d->role);layout->addWidget(d->filterBar);
-    d->status=new QLabel(this);d->status->setObjectName("traceStatus");d->status->setWordWrap(true);layout->addWidget(d->status);
-    d->content=new QStackedWidget(this);layout->addWidget(d->content,1);
-    d->pages=new QStackedWidget(d->content);d->content->addWidget(d->pages); d->directions=new QStackedWidget(d->pages);
+    d->compactRole=new QToolButton(d->filterBar);d->compactRole->setObjectName("traceCompactRole");d->compactRole->setIcon(RoundedIcons::icon(RoundedIcons::Filter));
+    d->compactRole->setPopupMode(QToolButton::InstantPopup);d->roleMenu=new QMenu(d->compactRole);d->compactRole->setMenu(d->roleMenu);filters->addWidget(d->compactRole);d->compactRole->hide();
+    auto* roleGroup=new QActionGroup(this);
+    for(int i=0;i<=d->role->count();++i){auto* entry=d->roleMenu->addAction(d->role->itemText(i));entry->setCheckable(true);roleGroup->addAction(entry);
+        connect(entry,&QAction::triggered,this,[this,i]{d->role->setCurrentIndex(i);});}
+    d->filterMenu=d->operations->addMenu("Filter references");d->filterMenu->setObjectName("traceFilterMenu");
+    d->filterPopupContent=new QWidget(d->filterMenu);d->filterPopupLayout=new QVBoxLayout(d->filterPopupContent);
+    d->filterPopupLayout->setContentsMargins(4,4,4,4);
+    auto* filterAction=new QWidgetAction(d->filterMenu);filterAction->setDefaultWidget(d->filterPopupContent);d->filterMenu->addAction(filterAction);
+    connect(d->filterMenu,&QMenu::aboutToShow,this,[this]{QTimer::singleShot(0,d->search,[this]{d->arrangeControls();d->search->setFocus();});});
+    d->status=new CompactTitleLabel(this);d->status->setObjectName("traceStatus");layout->addWidget(d->status);
+    d->content=new CurrentPageStack(this);layout->addWidget(d->content,1);
+    d->pages=new CurrentPageStack(d->content);d->content->addWidget(d->pages); d->directions=new CurrentPageStack(d->pages);
     for(int dir=0;dir<2;++dir) {
         auto* tree=new QTreeWidget(d->directions); d->trees[dir]=tree; tree->setObjectName(dir ? "traceDownstream" : "traceUpstream");
         tree->setHeaderLabels({"Signal / access","Instance","Relation / status"});tree->setHeaderHidden(true); tree->setUniformRowHeights(true); tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
@@ -427,13 +565,13 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     d->table->setItemDelegateForColumn(SignalTraceHeatModel::Distribution,new SignalTraceDistributionDelegate(d->table));
     d->table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents); d->table->horizontalHeader()->setSectionResizeMode(SignalTraceHeatModel::Distribution,QHeaderView::Stretch);
     d->pages->addWidget(d->table);
-    auto* feedbackPage=new QWidget(d->pages); auto* feedbackLayout=new QVBoxLayout(feedbackPage); feedbackLayout->setContentsMargins(0,0,0,0);
+    auto* feedbackPage=new QWidget(d->pages); auto* feedbackLayout=new QVBoxLayout(feedbackPage); feedbackLayout->setContentsMargins(0,0,0,0);feedbackLayout->setSpacing(layout->spacing());
     d->cycles=new QComboBox(feedbackPage); d->cycles->setObjectName("traceCycles");d->cycles->hide(); feedbackLayout->addWidget(d->cycles);
     d->cycleScene=new QGraphicsScene(this); d->cycleView=new FeedbackView(d->cycleScene,feedbackPage); d->cycleView->setObjectName("traceCycleView");
     d->cycleView->setRenderHint(QPainter::Antialiasing); feedbackLayout->addWidget(d->cycleView); d->pages->addWidget(feedbackPage);
     auto* detailPage=new QWidget(d->content);d->detailPage=detailPage;d->content->addWidget(detailPage);
     auto* detailLayout=new QVBoxLayout(detailPage);detailLayout->setContentsMargins(0,0,0,0);
-    d->detailSummary=new QLabel(detailPage);d->detailSummary->setWordWrap(true);detailLayout->addWidget(d->detailSummary);
+    d->detailSummary=new CompactTitleLabel(detailPage);detailLayout->addWidget(d->detailSummary);
     d->details=new QTreeWidget(detailPage); d->details->setObjectName("traceReferences"); d->details->setHeaderLabels({"Role","Source","Evidence"}); d->details->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
     detailLayout->addWidget(d->details); d->moreReferences=new QPushButton("Load more references",detailPage); detailLayout->addWidget(d->moreReferences); d->moreReferences->hide();
     const auto changeMode=[this,coneMenu](int mode){
@@ -478,6 +616,13 @@ SignalTracePanel::SignalTracePanel(QWidget* parent):QWidget(parent),d(std::make_
     changeMode(d->mode->currentIndex());d->historyButtons();d->message("Select a signal to begin.");
 }
 SignalTracePanel::~SignalTracePanel() { d->invalidate(); d->pool.waitForDone(); }
+bool SignalTracePanel::event(QEvent* event) {
+    const bool rearrange=event->type()==QEvent::Resize || event->type()==QEvent::LayoutRequest
+        || event->type()==QEvent::FontChange || event->type()==QEvent::StyleChange;
+    const bool handled=QWidget::event(event);
+    if(rearrange && d)d->arrangeControls();
+    return handled;
+}
 void SignalTracePanel::setContext(SignalTraceContext context,LiveInsightRequestKey key) {
     const bool changed=context.workspaceId!=d->context.workspaceId || context.projectId!=d->context.projectId;
     if (!changed && context.token.revision==d->context.token.revision && context.token.snapshot==d->context.token.snapshot
@@ -537,8 +682,8 @@ void SignalTracePanel::syncInstanceSelection(const QString& instancePath){
         if(it->direction==d->direction->currentIndex() && it->object.instancePath==instancePath && (!selectedId || it.key()<selectedId))selectedId=it.key();
     if(selectedId)syncSelection(d->nodes[selectedId].object);
 }
-void SignalTracePanel::setMainAreaHandler(std::function<void(bool)> handler){d->mainAreaHandler=std::move(handler);d->mainArea->setVisible(bool(d->mainAreaHandler));}
-void SignalTracePanel::setInMainArea(bool expanded){d->expanded=expanded;d->mainArea->setText(expanded?"Dock":"Expand");d->mainArea->setToolTip(expanded?"Dock in bottom panel":"Expand into main area");d->mainArea->setIcon(RoundedIcons::icon(expanded?RoundedIcons::Collapse:RoundedIcons::Expand));}
+void SignalTracePanel::setMainAreaHandler(std::function<void(bool)> handler){d->mainAreaHandler=std::move(handler);d->arrangeControls();}
+void SignalTracePanel::setInMainArea(bool expanded){d->expanded=expanded;d->mainArea->setText(expanded?"Dock":"Expand");d->mainArea->setToolTip(expanded?"Dock in bottom panel":"Expand into main area");d->mainArea->setIcon(RoundedIcons::icon(expanded?RoundedIcons::Collapse:RoundedIcons::Expand));d->mainAreaOverflow->setText(d->mainArea->toolTip());d->arrangeControls();}
 bool SignalTracePanel::isInMainArea()const{return d->expanded;}
 void SignalTracePanel::setFocusSearchText(const QString& text){d->search->setText(text);}
 QString SignalTracePanel::focusSearchText()const{return d->search->text();}
@@ -679,11 +824,9 @@ void SignalTracePanel::analyzeFeedback(){
         if(report.status==SignalTraceStatus::Stale){d->stale=true;if(d->markers)d->markers({});}
         d->feedbackNotice=report.status==SignalTraceStatus::Ready?QString():statusName(report.status)+QStringLiteral(" · ")+report.limitations.join(QStringLiteral(" · "));
         {QSignalBlocker block(d->cycles);d->cycles->clear();
-            for(const auto& finding:report.findings){
-                QStringList names;for(const auto& edge:finding.edges)if(!names.contains(edge.from.displayName()))names<<edge.from.displayName();
-                const auto kind=finding.kind==SignalFeedbackKind::Combinational?QStringLiteral("Combinational"):finding.kind==SignalFeedbackKind::Sequential?QStringLiteral("Sequential"):QStringLiteral("Uncertain");
-                d->cycles->addItem(kind+QStringLiteral(" — ")+names.join(QStringLiteral(" → ")));
-                d->cycles->setItemData(d->cycles->count()-1,SignalFeedbackService::kindName(finding.kind)+QStringLiteral("\n")+finding.limitations.join('\n'),Qt::ToolTipRole);
+            for(const auto& finding:InsightGraphAdapter::feedback(report)){
+                d->cycles->addItem(finding.label);
+                d->cycles->setItemData(d->cycles->count()-1,finding.toolTip,Qt::ToolTipRole);
             }
         }
         d->cycles->setVisible(!report.findings.isEmpty());d->drawCycle(d->cycles->currentIndex());

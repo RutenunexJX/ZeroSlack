@@ -69,7 +69,7 @@ QString TemplateInputService::specificationError(const QVariantMap &input)
     const QStringList kinds{"Instance", "Port", "Internal", "Signal", "Parameter", "Choice", "Value", "Code"};
     if (!kinds.contains(input.value("kind").toString()))
         return QStringLiteral("Choose Instance, Port, Internal, Signal, Parameter, Choice, Value or Code.");
-    if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations", "instances", "behaviors"}.contains(input.value("content", "statements").toString()))
+    if (input.value("kind").toString() == "Code" && !QStringList{"statements", "declarations"}.contains(input.value("content", "statements").toString()))
         return QStringLiteral("Unknown Code container content.");
     const auto role = input.value("role").toString();
     if (!role.isEmpty() && role != "Clock" && role != "Reset")

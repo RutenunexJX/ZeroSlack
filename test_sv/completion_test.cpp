@@ -28,7 +28,12 @@
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
 #include "smartrelationshipbuilder.h"
-#include "signalkernelgraphpanelcoordinator.h"
+#include "trace_repair_fixture.h"
+#include "testuistyle.h"
+#include "signaltracemodels.h"
+#include <QComboBox>
+#include <QTableView>
+#include <QToolButton>
 #include "statetransitiontriggerservice.h"
 #include "symbolanalyzer.h"
 #include "symboltaxonomy.h"
@@ -781,11 +786,113 @@ static SemanticSymbolRecord makeSemanticFixtureRecord(
         .record();
 }
 
+
+static void runSignalTracePanelRegression()
+{
+    SignalTraceTest::Fixture fixture;
+    const bool built = fixture.build(SignalTraceTest::branchingSource());
+    expectBool("Trace production fixture builds", built, true);
+    if (!built) return;
+    QList<SignalTraceEvidence> markers;
+    SignalTraceEvidence navigated;
+    SignalTracePanel panel;
+    panel.resize(760, 320);
+    panel.setContext(fixture.context);
+    panel.setMarkerHandler([&](const auto& values) { markers = values; });
+    panel.setNavigationHandler([&](const auto& evidence) { navigated = evidence; return true; });
+    panel.show();
+    panel.showForSymbol("core", fixture.file, "top");
+    expectBool("Trace initial queries finish", SignalTraceTest::settled(panel), true);
+    expectEq("Trace resolves actual root", panel.currentObject().objectPath, "top.core");
+    auto* up = panel.traceTree(SignalTraceDirection::Upstream);
+    auto* down = panel.traceTree(SignalTraceDirection::Downstream);
+    auto* upRoot = up->topLevelItem(0);
+    auto* downRoot = down->topLevelItem(0);
+    expectBool("Trace keeps both directional roots", upRoot && downRoot, true);
+    if (!upRoot || !downRoot) return;
+    expectBool("Trace upstream identifies source", upRoot->childCount() == 1 && upRoot->child(0)->text(0) == "source", true);
+    expectBool("Trace high fanout first page is bounded", downRoot->childCount() > 1 && downRoot->childCount() <= 101, true);
+    auto* direction = panel.findChild<QComboBox*>("traceDirection");
+    expectBool("Trace direction selector exists", direction != nullptr, true);
+    if (!direction) return;
+    direction->setCurrentIndex(1);
+    expectBool("Trace downstream view selected", down->isVisible() && !up->isVisible(), true);
+    auto* more = downRoot->child(downRoot->childCount()-1);
+    expectBool("Trace high fanout offers additional page", more && more->text(0).startsWith("Load more"), true);
+    const int initialCount = downRoot->childCount();
+    if (more && more->text(0).startsWith("Load more")) down->itemActivated(more, 0);
+    expectBool("Trace next page finishes", SignalTraceTest::settled(panel), true);
+    expectBool("Trace page adds bounded real children", downRoot->childCount() > initialCount && downRoot->childCount() <= 201, true);
+    auto* firstChild = downRoot->child(0);
+    const int loadedCount = downRoot->childCount();
+    downRoot->setExpanded(false);
+    expectBool("Trace high fanout collapses", !downRoot->isExpanded(), true);
+    downRoot->setExpanded(true);
+    expectBool("Trace reexpand finishes", SignalTraceTest::settled(panel), true);
+    expectBool("Trace reexpand retains loaded objects", downRoot->isExpanded() && downRoot->childCount() == loadedCount && downRoot->child(0) == firstChild, true);
+    direction->setCurrentIndex(0);
+    expectBool("Trace upstream view returns unchanged", up->isVisible() && !down->isVisible() && up->topLevelItem(0) == upRoot, true);
+
+    panel.setHeatmapMode(true);
+    panel.setFocusSearchText("leaf consumer");
+    const auto portReferences = panel.heatModel()->references();
+    expectBool("Trace cross-module search preserves port evidence", !portReferences.isEmpty() && std::all_of(portReferences.begin(),portReferences.end(),[](const auto& ref){return ref.text.contains("leaf consumer");}) && std::any_of(portReferences.begin(),portReferences.end(),[](const auto& ref){return ref.role == SignalTraceRole::Port;}), true);
+    panel.setFocusSearchText("reader_7");
+    const auto filtered = panel.heatModel()->references();
+    expectBool("Trace reference search uses source evidence", !filtered.isEmpty() && std::all_of(filtered.begin(),filtered.end(),[](const auto& ref){return ref.role == SignalTraceRole::Read && ref.text.contains("reader_7");}), true);
+    auto* role = panel.findChild<QComboBox*>("traceRole");
+    expectBool("Trace role selector exists", role != nullptr, true);
+    if (!role) return;
+    role->setCurrentIndex(1);
+    expectBool("Trace role and text filters intersect", panel.heatModel()->references().isEmpty(), true);
+    panel.setFocusSearchText({});
+    const auto writes = panel.heatModel()->references();
+    expectBool("Trace write filter preserves true source role", writes.size() == 1 && writes.first().role == SignalTraceRole::Write && writes.first().range.line == 6, true);
+    role->setCurrentIndex(2);
+    const auto reads = panel.heatModel()->references();
+    expectBool("Trace read filter excludes writes", reads.size() >= 240 && std::all_of(reads.begin(),reads.end(),[](const auto& ref){return ref.role == SignalTraceRole::Read;}), true);
+    panel.setFocusSearchText("assign reader_7 = core;");
+    expectBool("Trace exact search identifies one source event", panel.heatModel()->references().size() == 1, true);
+    panel.heatTable()->setCurrentIndex(panel.heatModel()->index(0,SignalTraceHeatModel::Read));
+    panel.focusInspector();
+    auto* details = panel.findChild<QTreeWidget*>("traceReferences");
+    expectBool("Trace search details preserve marker identity", details && details->topLevelItemCount() == 1 && markers.size() == 1 && markers.first().text.contains("reader_7 ="), true);
+    if (details && details->topLevelItemCount() == 1) details->itemActivated(details->topLevelItem(0), 0);
+    expectBool("Trace evidence navigation uses source location", navigated.range.fileName == fixture.file && navigated.range.line > 0 && navigated.role == SignalTraceRole::Read && navigated.text.contains("reader_7 ="), true);
+    auto* back = panel.findChild<QToolButton*>("traceDetails");
+    if (back) back->click();
+    expectBool("Trace details return preserves search and branches", back && panel.heatTable()->isVisible() && panel.focusSearchText() == "assign reader_7 = core;" && down->topLevelItem(0) == downRoot && downRoot->child(0) == firstChild, true);
+}
+
+static void runSelfContainedFormatterFixture()
+{
+    const QString input = QStringLiteral(
+        "module sample_format_top(\n\tinput logic clock_i, // clock\n"
+        " input logic [7:0] payload_i, // payload\n output wire reply_o // reply\n);\n"
+        "assign reply_o = ^payload_i;\nendmodule\n");
+    const auto report = FormatterService::getInstance()->formatDocument(input);
+    const auto lines = report.formattedText.split('\n');
+    const auto lineWith = [&](const QString& name) { for (const auto& line : lines) if (line.contains(name)) return line; return QString(); };
+    expectBool("Formatter self-contained header is present", report.formattedText.contains("module sample_format_top("), true);
+    expectBool("Formatter self-contained header whitespace clean", !report.formattedText.contains('\t') && std::none_of(lines.begin(),lines.end(),[](const QString& line){return line.endsWith(' ');}), true);
+    expectBool("Formatter self-contained port columns align", lineWith("clock_i").indexOf("clock_i") > 0 && lineWith("clock_i").indexOf("clock_i") == lineWith("payload_i").indexOf("payload_i") && lineWith("payload_i").indexOf("payload_i") == lineWith("reply_o").indexOf("reply_o"), true);
+    expectBool("Formatter self-contained token stream invariant", StructuredWhitespaceFormatter::hasIdenticalNonWhitespaceStream(input,report.formattedText), true);
+    const auto stable = FormatterService::getInstance()->formatDocument(report.formattedText);
+    expectBool("Formatter self-contained idempotent", !stable.changed && stable.formattedText == report.formattedText, true);
+}
+
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
 
-    QString path = (argc > 1) ? QString::fromLocal8Bit(argv[1])
-                              : QStringLiteral("test_sv/test_symbols.sv");
+    const bool selfContained = app.arguments().contains(QStringLiteral("--self-contained-only"))
+        || qEnvironmentVariableIsSet("ZEROSLACK_SKIP_LOCAL_FIXTURES");
+    const int pathArgument = argc > 1 && QString::fromLocal8Bit(argv[1]) == "--self-contained-only" ? 2 : 1;
+    QTemporaryDir isolatedSettings;
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+    QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, isolatedSettings.path());
+    expectBool("Maintained UI backend initializes", initializeUiStyleForTest(), true);
+    QString path = argc > pathArgument ? QString::fromLocal8Bit(argv[pathArgument])
+                                       : QStringLiteral("test_sv/test_symbols.sv");
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly | QFile::Text)) {
         fprintf(stderr, "cannot open %s\n", path.toLocal8Bit().constData());
@@ -2887,6 +2994,9 @@ int main(int argc, char** argv) {
                     .changed,
                true);
 
+    if (selfContained) {
+        runSelfContainedFormatterFixture();
+    } else {
     const QString sourceRoot =
         qEnvironmentVariable("ZEROSLACK_SOURCE_DIR");
     QDir formatterFixtureRoot(
@@ -3006,6 +3116,8 @@ int main(int argc, char** argv) {
                        && cpldTopStable.formattedText
                           == cpldTopReport.formattedText,
                    true);
+
+    }
 
     }
 
@@ -8237,194 +8349,7 @@ int main(int argc, char** argv) {
                !unavailableSourceRequest.available,
                true);
 
-    QWidget signalKernelGraphHost;
-    SignalKernelGraphPanelCoordinator signalKernelGraphPanel(
-        &signalKernelGraphHost);
-    SignalKernelGraphReport groupedSignalGraph;
-    groupedSignalGraph.found = true;
-    groupedSignalGraph.kernelModuleName = QStringLiteral("fanout_top");
-    groupedSignalGraph.fanoutGroupingThreshold = 5;
-    groupedSignalGraph.kernel.id = 1;
-    groupedSignalGraph.kernel.role = SignalKernelGraphNodeRole::Kernel;
-    groupedSignalGraph.kernel.displayName = QStringLiteral("fanout_sig");
-    groupedSignalGraph.kernel.moduleDisplayName =
-        QStringLiteral("fanout_top");
-    groupedSignalGraph.kernel.typeDisplayName = QStringLiteral("logic");
-    groupedSignalGraph.kernel.navigateCodeLink =
-        RtlInsightLink::fromFileLine(QStringLiteral("fanout_top.sv"), 10, 1);
-    SignalKernelGraphFanoutGroup outputGroup;
-    outputGroup.id = 1;
-    outputGroup.role = SignalKernelGraphNodeRole::Output;
-    outputGroup.groupKey = QStringLiteral("output:fanout_top");
-    outputGroup.displayName = QStringLiteral("Outputs in fanout_top");
-    outputGroup.moduleName = QStringLiteral("fanout_top");
-    outputGroup.totalRoleNodeCount = 12;
-    outputGroup.highFanout = true;
-    for (int i = 0; i < 12; ++i) {
-        SignalKernelGraphNode outputNode;
-        outputNode.id = 10 + i;
-        outputNode.role = SignalKernelGraphNodeRole::Output;
-        outputNode.displayName = QStringLiteral("reader_%1").arg(i + 1);
-        outputNode.moduleDisplayName = QStringLiteral("fanout_top");
-        outputNode.typeDisplayName = QStringLiteral("logic");
-        outputNode.navigateCodeLink =
-            RtlInsightLink::fromFileLine(QStringLiteral("fanout_top.sv"),
-                                         20 + i,
-                                         1);
-        groupedSignalGraph.outputs.append(outputNode);
-        groupedSignalGraph.edges.append(
-            {groupedSignalGraph.kernel.id, outputNode.id, QString()});
-        outputGroup.nodeIds.append(outputNode.id);
-    }
-    outputGroup.nodeCount = outputGroup.nodeIds.size();
-    groupedSignalGraph.outputFanoutGroups.append(outputGroup);
-    signalKernelGraphPanel.renderReportForTest(groupedSignalGraph);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    const QRectF collapsedFanoutRect =
-        signalKernelGraphPanel.lastRenderedFanoutGroupRectForTest();
-    expectBool("SignalKernelGraphPanel defaults fanout collapsed",
-               signalKernelGraphPanel.collapsedFanoutGroupCountForTest() == 1
-                   && signalKernelGraphPanel.visibleGraphNodeCountForTest() == 1
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 1,
-               true);
-    expectBool("SignalKernelGraphPanel collapsed fanout fixed card",
-               collapsedFanoutRect.isValid()
-                   && collapsedFanoutRect.width() <= 260.0
-                   && collapsedFanoutRect.height() <= 70.0,
-               true);
-    expectBool("SignalKernelGraphPanel expands fanout group",
-               signalKernelGraphPanel.toggleFanoutGroupForTest(
-                   outputGroup.groupKey)
-                   && signalKernelGraphPanel
-                          .collapsedFanoutGroupCountForTest() == 0
-                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
-                          == 13
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 1,
-               true);
-    expectBool("SignalKernelGraphPanel collapses fanout group again",
-               signalKernelGraphPanel.toggleFanoutGroupForTest(
-                   outputGroup.groupKey)
-                   && signalKernelGraphPanel
-                          .collapsedFanoutGroupCountForTest() == 1
-                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
-                          == 1,
-               true);
-
-    SignalKernelGraphReport filteredSignalGraph;
-    filteredSignalGraph.found = true;
-    filteredSignalGraph.kernelModuleName = QStringLiteral("graph_top");
-    filteredSignalGraph.kernel.id = 100;
-    filteredSignalGraph.kernel.role = SignalKernelGraphNodeRole::Kernel;
-    filteredSignalGraph.kernel.displayName = QStringLiteral("core_signal");
-    filteredSignalGraph.kernel.moduleDisplayName =
-        QStringLiteral("graph_top");
-    filteredSignalGraph.kernel.typeDisplayName = QStringLiteral("logic");
-    filteredSignalGraph.kernel.navigateCodeLink =
-        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 12, 1);
-
-    SignalKernelGraphNode localInputNode;
-    localInputNode.id = 101;
-    localInputNode.role = SignalKernelGraphNodeRole::Input;
-    localInputNode.inputLane = SignalKernelGraphInputLane::Control;
-    localInputNode.displayName = QStringLiteral("start_pulse");
-    localInputNode.moduleDisplayName = QStringLiteral("graph_top");
-    localInputNode.typeDisplayName = QStringLiteral("logic");
-    localInputNode.navigateCodeLink =
-        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 18, 1);
-    filteredSignalGraph.inputs.append(localInputNode);
-    filteredSignalGraph.edges.append(
-        {localInputNode.id, filteredSignalGraph.kernel.id, QString()});
-
-    SignalKernelGraphNode localOutputNode;
-    localOutputNode.id = 102;
-    localOutputNode.role = SignalKernelGraphNodeRole::Output;
-    localOutputNode.displayName = QStringLiteral("done_local");
-    localOutputNode.moduleDisplayName = QStringLiteral("graph_top");
-    localOutputNode.typeDisplayName = QStringLiteral("logic");
-    localOutputNode.navigateCodeLink =
-        RtlInsightLink::fromFileLine(QStringLiteral("graph_top.sv"), 22, 1);
-    filteredSignalGraph.outputs.append(localOutputNode);
-    filteredSignalGraph.edges.append(
-        {filteredSignalGraph.kernel.id, localOutputNode.id, QString()});
-
-    SignalKernelGraphFanoutGroup crossOutputGroup;
-    crossOutputGroup.id = 2;
-    crossOutputGroup.role = SignalKernelGraphNodeRole::Output;
-    crossOutputGroup.groupKey = QStringLiteral("output:consumer_mod");
-    crossOutputGroup.displayName =
-        QStringLiteral("Outputs in consumer_mod");
-    crossOutputGroup.moduleName = QStringLiteral("consumer_mod");
-    crossOutputGroup.totalRoleNodeCount = 3;
-    crossOutputGroup.highFanout = true;
-    for (int i = 0; i < 2; ++i) {
-        SignalKernelGraphNode remoteOutputNode;
-        remoteOutputNode.id = 103 + i;
-        remoteOutputNode.role = SignalKernelGraphNodeRole::Output;
-        remoteOutputNode.displayName =
-            i == 0 ? QStringLiteral("result_remote")
-                   : QStringLiteral("status_remote");
-        remoteOutputNode.moduleDisplayName = QStringLiteral("consumer_mod");
-        remoteOutputNode.typeDisplayName = QStringLiteral("logic");
-        remoteOutputNode.crossModule = true;
-        remoteOutputNode.navigateCodeLink =
-            RtlInsightLink::fromFileLine(
-                QStringLiteral("consumer_mod.sv"),
-                30 + i,
-                1);
-        filteredSignalGraph.outputs.append(remoteOutputNode);
-        filteredSignalGraph.edges.append(
-            {filteredSignalGraph.kernel.id, remoteOutputNode.id, QString()});
-        crossOutputGroup.nodeIds.append(remoteOutputNode.id);
-    }
-    crossOutputGroup.nodeCount = crossOutputGroup.nodeIds.size();
-    filteredSignalGraph.outputFanoutGroups.append(crossOutputGroup);
-
-    signalKernelGraphPanel.renderReportForTest(filteredSignalGraph);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    expectBool("SignalKernelGraphPanel filters inputs",
-               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 3
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 1,
-               true);
-    signalKernelGraphPanel.setGraphFilterForTest(true, false, false);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    expectBool("SignalKernelGraphPanel hides outputs",
-               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 2
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 0,
-               true);
-    signalKernelGraphPanel.setGraphFilterForTest(false, true, false);
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    expectBool("SignalKernelGraphPanel hides inputs",
-               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 2
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 1,
-               true);
-    signalKernelGraphPanel.setGraphFilterForTest(true, true, true);
-    signalKernelGraphPanel.setGraphSearchTextForTest(
-        QStringLiteral("status_remote"));
-    QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    expectBool("SignalKernelGraphPanel searches collapsed cross-module group",
-               signalKernelGraphPanel.visibleGraphNodeCountForTest() == 1
-                   && signalKernelGraphPanel
-                          .renderedFanoutGroupItemCountForTest() == 1
-                   && signalKernelGraphPanel.searchMatchCountForTest() == 1
-                   && signalKernelGraphPanel.focusedSearchNodeIdForTest()
-                          == 104,
-               true);
-    expectBool("SignalKernelGraphPanel expands filtered search group",
-               signalKernelGraphPanel.toggleFanoutGroupForTest(
-                   crossOutputGroup.groupKey)
-                   && signalKernelGraphPanel.visibleGraphNodeCountForTest()
-                          == 3
-                   && signalKernelGraphPanel.searchMatchCountForTest() == 1
-                   && signalKernelGraphPanel.focusedSearchNodeIdForTest()
-                          == 104,
-               true);
-    signalKernelGraphPanel.setGraphFilterForTest(true, true, false);
-    signalKernelGraphPanel.setGraphSearchTextForTest(QString());
+    runSignalTracePanelRegression();
 
     CommandCompletionQuery commandQuery;
     commandQuery.fileName = path;

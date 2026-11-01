@@ -1,3 +1,4 @@
+#include "../testuistyle.h"
 #include "../../src/integrations/simdock/simdockcontextprovider.h"
 #include "../../src/integrations/simdock/simdockcontextview.h"
 #include "../../src/simulation/simdock/ui/workbench.h"
@@ -48,7 +49,7 @@ int main(int argc, char** argv)
     QCoreApplication::setApplicationName(QStringLiteral("Performance"));
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
-    ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela);
+    initializeUiStyleForTest();
     ApplicationThemeManager::instance().applyToApplication();
     qputenv("ZEROSLACK_SIMDOCK_LEGACY_SETTINGS_PATH", settings.filePath("legacy.ini").toUtf8());
     simdock::Ui::initialize();

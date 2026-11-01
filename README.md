@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.33.0`
+Current version: `v0.33.1`
+
+Release 0.33.1 retires the TB root/DUT templates, region UI and F24 template lock while preserving ordinary templates, slots, existing TBs and simulation. Ela is the sole UI backend; narrow panels, first-frame layout, recovery and session handling incorporate the accepted fixes. Four analysis views share the in-repository insightgraph component. Release preparation verifies the default ALL build, protected-resource policy and required layout checks. Scoped acceptance retains 29 pre-existing full-regression failures. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.33.0 adds native signal tracing, usage heatmaps and static feedback analysis from semantic dependency evidence. Trace branches, selections and references remain consistent across modes and panel hosts. Primary controls are compact, references open on demand, and feedback diagrams connect at node boundaries with bounded automatic fitting. Design remains the shared hierarchy source. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
@@ -88,8 +90,8 @@ first visible Design readiness by about 0.10 seconds.
 Native xIPs and SimDock workspace panels remain available without the SuiteApp SDK.
 
 Maintenance policy (2026-09-22): Ela is the only maintained UI version.
-Future implementation, validation and releases target the Ela-based `ZeroSlack`; classic and
-Qlementine/SuiteUi paths are historical compatibility code and are no longer maintenance targets.
+Future implementation, validation and releases target the Ela-based `ZeroSlack`.
+Retired backend selection and preview packaging have been removed.
 
 Repository navigation: [source and file categories](ARCHITECTURE.md).
 
@@ -128,7 +130,7 @@ including every shortcut and edge case, lives in the linked chapter or contract 
 | Editing | Incremental highlighting, folding, structural navigation, formatter with ordinary and type-parameter alignment, multi-cursor and column operations, split views, templates, and line/selection operations including triple-click line selection. | [manual §5–§6](用户手册.md), [§13](用户手册.md), [§14](用户手册.md) |
 | Editing | The editor context menu is a compact icon-only ring; unavailable actions stay gray and explain why on hover. | [manual §6.1](用户手册.md) |
 | Completion | `Ctrl+Space` opens one palette at the caret for scoped symbols (enum values included), simulation templates and application commands. Templates contains built-in, user and file-local simulation snippets/calls/print presets; `@` filters the same catalog. `m <filter>` module lookup remains in Symbols. | [manual §7](用户手册.md) |
-| Command layer | `F24` is an explicit command search layer: Enter runs a fuzzy result, `F24+D` deletes the selection, and an empty tap repeats the last valid repeatable action. | [manual §8](用户手册.md) |
+| Templates | Use the unified palette to insert `@definitions`, `@process`, `@repeat` and user templates. Input slots retain validation, nested Code, undo/redo and saved identity; ordinary edits to fixed text invalidate the affected template identity while preserving the source. | [manual §8](用户手册.md) |
 | Semantics | Slang-backed symbols, diagnostics, definitions, references, relationships, hierarchy, hover and effective compile-time values from the current workspace snapshot. | [manual §10–§11](用户手册.md) |
 | Semantics | A clean `Ctrl+S` is a true no-op; changed saves classify their impact and schedule only the needed work off the UI thread, and trivia-only edits never invoke Slang. | [manual §20](用户手册.md) |
 | Semantics | Unsaved comment and whitespace edits recover semantic availability after 250 ms of idle time when worker validation proves equivalence; other unsaved edits still require saving. | [manual §20](用户手册.md) |
@@ -196,12 +198,23 @@ generator, and initialized `thirdparty/slang`, `thirdparty/tree_sitter`, and
 ```powershell
 git submodule update --init --recursive
 cmake -S . -B build/local -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH=<qt-prefix> -DZEROSLACK_ENABLE_ELA=ON
-cmake --build build/local --target demo zeroslack_cli
+cmake --build build/local
 build/local/ZeroSlack.exe
 build/local/zeroslack-cli.exe --help
-$env:ZEROSLACK_TEST_UI_STYLE = 'ela'
-ctest --test-dir build/local --output-on-failure -j1 -E 'classic|qlementine'
+# Resolve CTest before stripping PATH; use absolute tool paths.
+$ctestExe = (Get-Command ctest).Source
+$testSavedPath = $env:PATH
+try {
+    $env:PATH = Join-Path $env:SystemRoot 'System32'
+    & $ctestExe --test-dir build/local --output-on-failure -j1
+} finally {
+    $env:PATH = $testSavedPath
+}
 ```
+
+Bare CTest retains policy-restricted registrations as nonzero failures. The managed
+`scripts/release_gate.py` entry records its selected and restricted sets separately;
+neither entry requires a UI-backend environment override or a name exclusion.
 
 ## Panel lifecycle
 
@@ -253,7 +266,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.33.0`. Ela is the sole formal package,
+The current release is `0.33.1`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.
@@ -401,8 +414,8 @@ scheduled. Released changes and their acceptance results live in the Git history
 原先的建议时长不再作为另一套规格。当前仅维护 Ela 正式包。
 Ela 0.29.39 的左右栏、底栏和右栏区块使用共享合成过渡。图标不缩放、不弹跳；
 代码输入、导航、光标、滚动、图表拖动和连续缩放不等待装饰动画。
-ZeroSlack 的 `--no-ui-animations` 只控制 SuiteUi/Qlementine 控件，不等同于全应用减少动画，
-也不与 RegMap 的 `QT_REDUCE_MOTION`/系统偏好合并。
+ZeroSlack 的 `--no-ui-animations` 关闭已接入的侧栏、底栏、Context、页面切换和起始页动效；
+部分 Ela 控件内部动效仍独立运行，不能视为所有动效或系统减少动画偏好的统一开关。
 
 ### Remaining validation
 
@@ -461,29 +474,12 @@ Version 0.29.30 adds interruptible Ela wheel scrolling to settings and Workspace
 tree expansion transitions to Files/Design/Workspace Hub, and horizontal tab scrolling
 without changing the selected document or its close/split controllers. Pixel-based
 touchpad scrolling is applied directly; scroll ranges remain immediate.
-Ela is mutually exclusive with SuiteUi and Qlementine.
 The editor, window management and specialized diagram models/canvases remain in place.
 
-An isolated Qlementine product preview is available behind the default-off
-`ZEROSLACK_ENABLE_QLEMENTINE` CMake option. It uses an independent application
-profile and `ZeroSlack-Qlementine-Preview.exe`; the formal package remains separate.
-Build, packaging, native validation results and remaining limitations are recorded
-in [control style validation](docs/control-style-consolidation.md).
-
-The separate default-off `ZEROSLACK_ENABLE_SUITEUI` option consumes an installed
-`SuiteUi 0.1.0` package with exact version matching. It is mutually exclusive with
-the vendored preview option. Only push buttons, tool buttons and checkboxes use
-the shared renderer; application fonts, palettes, other controls and professional
-views retain their existing ownership. See [SDK integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入)
-for build switches, deployment, rollback and validation limits.
-Set `SuiteUi_DIR` to the installed SDK's `lib/cmake/SuiteUi` directory when enabling it.
-`scripts/package-release.ps1` stages the maintained Ela formal package and refuses
-classic, Qlementine and SuiteUi configurations.
-
-0.29.23 shipped SuiteUi as the formal default; 0.29.24 reverts that default to
-classic because the SDK control path was judged unacceptably sluggish in real
-desktop use. The cause is not yet diagnosed, so the SDK integration is kept as a
-default-off option rather than removed.
+Ela is the sole UI backend. Theme initialization retains both ElaWidgetTools and
+`RoundedIcons::Style`; editors, radial menus and specialized diagrams keep their
+application-owned drawing. See [control ownership](docs/control-style-consolidation.md).
+`scripts/package-release.ps1` requires the maintained Ela configuration.
 
 Every check that has never been run on a real desktop is tracked in
 [unverified manual checks](docs/unverified-manual-checks.md): native frame measurements,
@@ -515,11 +511,11 @@ The repository keeps eight documents. This README is the entry point; the other 
 | --- | --- |
 | [用户手册](用户手册.md) | Every user-facing interaction, shortcut and edge case (Chinese) |
 | [Architecture](ARCHITECTURE.md) | Ownership, threading, extension constraints, repository layout, visual system |
-| [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, visual contract, dual-application validation and the minimal SuiteUi extraction decision |
+| [AppSuite integration](docs/suite.md) | `suite-app/v1` protocol, visual contract, implemented workflows and application ownership |
 | [Integrations](docs/integrations.md) | Read-only CLI and external application boundaries |
 | [Unverified manual checks](docs/unverified-manual-checks.md) | Checks never run on a real desktop |
 | [Kernel view continuity](docs/kernel-view-continuity-implementation.md) | Baseline, implementation scope and validation of the 0.29.19 view-state work |
-| [Control style consolidation](docs/control-style-consolidation.md) | Button/checkbox ownership, A/C comparison, optional Qlementine preview, native checks and protected-view validation |
+| [Control style consolidation](docs/control-style-consolidation.md) | Current control ownership, motion boundaries and remaining native checks |
 
 Historical acceptance logs and superseded status reports are intentionally
 kept out of this current-facts document. Released changes are recorded in the Git history:

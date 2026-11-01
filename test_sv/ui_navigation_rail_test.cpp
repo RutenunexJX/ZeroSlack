@@ -16,7 +16,6 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(20); }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 }
 
 class UiNavigationRailTest final : public QObject {
@@ -36,7 +35,7 @@ private slots:
         host.resize(640, 460); host.show(); settle();
         auto* action = rail->actions().first();
         QPointer<QToolButton> button = qobject_cast<QToolButton*>(rail->widgetForAction(action));
-        QVERIFY(button); QCOMPARE(button->inherits("ElaToolButton"), usesEla());
+        QVERIFY(button); QCOMPARE(button->inherits("ElaToolButton"), true);
         QCOMPARE(rail->actions().last(), footer);
         QVERIFY(rail->actionGeometry(action).contains(button->geometry().center()));
         QVERIFY(button->size().expandedTo(button->minimumSizeHint()) == button->size());
@@ -90,7 +89,7 @@ private slots:
         auto* setting = host.findChild<QToolButton*>("settingsRailButton"); QVERIFY(setting);
         auto* collapse = host.findChild<QToolButton*>("collapseProjectSidebarButton"); QVERIFY(collapse);
         for (auto* button : {project, setting, collapse}) {
-            QCOMPARE(button->inherits("ElaToolButton"), usesEla());
+            QCOMPARE(button->inherits("ElaToolButton"), true);
             QCOMPARE(button->toolButtonStyle(), Qt::ToolButtonIconOnly);
             QVERIFY(!button->accessibleName().isEmpty());
             QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
@@ -121,7 +120,7 @@ private slots:
         QVERIFY(controller.registerBottomPanel("problems", dock)); controller.finalize();
         host.resize(700, 500); host.show(); settle();
         auto* button = controller.buttonForPanel("problems"); QVERIFY(button);
-        QCOMPARE(button->inherits("ElaToolButton"), usesEla());
+        QCOMPARE(button->inherits("ElaToolButton"), true);
         for (const QString count : {QString("1"), QString("999+")}) {
             controller.setPanelBadge("problems", count, "error"); settle();
             QVERIFY(button->width() >= button->sizeHint().width());

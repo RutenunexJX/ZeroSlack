@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include <QtWidgets>
 #include <QtTest>
 #include <QtConcurrent>
@@ -256,7 +257,7 @@ int main(int argc,char** argv)
 {
     QApplication app(argc,argv);QStandardPaths::setTestModeEnabled(true);
     auto& theme=ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 2;
+    if (!initializeUiStyleForTest()) return 2;
     theme.applyToApplication();
     registrationMutations();evolvingDirectories();restoreAndBackpressure();retireAtInstalledBoundary();semanticCoverage();
     std::printf("checks=%d failures=%d\n",checks,failures);

@@ -1,20 +1,15 @@
-#include "usertemplateservice.h"
 #include "globalcontrolcoordinator.h"
-#include "templatecapabilities.h"
 
 #include "actionregistry.h"
+#include "documenttemplatemodel.h"
 #include "globalcontrolpanel.h"
 #include "mycodeeditor.h"
-#include "documenttemplatemodel.h"
-#include "simulationcommandprefix.h"
 
 #include <QApplication>
 #include <QEvent>
 #include <QKeyEvent>
 #include <QKeySequence>
 #include <QWidget>
-#include <QTimer>
-#include <QTextDocument>
 #include <utility>
 
 GlobalControlCoordinator::GlobalControlCoordinator(QWidget* anchorWidget,
@@ -24,9 +19,12 @@ GlobalControlCoordinator::GlobalControlCoordinator(QWidget* anchorWidget,
 {
     panel = std::make_unique<GlobalControlPanel>(anchorWidget);
     panel->setQueryChangedHandler(
-        [this](const QString& text) { if (!restoreNativePrefix(text)) refresh(text); });
+        [this](const QString& text) { refresh(text); });
     panel->setCategoryChangedHandler(
-        [this](GlobalControlCategory) {
+        [this](GlobalControlCategory category) {
+            if (templateEditor)
+                templateEditor->setTemplateSearchActive(
+                    currentContext.simulationCommands || category == GlobalControlCategory::Templates);
             refresh(panel ? panel->queryText() : QString());
         });
     panel->setItemActivatedHandler(
@@ -88,158 +86,9 @@ void GlobalControlCoordinator::install()
 
 bool GlobalControlCoordinator::eventFilter(QObject* watched, QEvent* event)
 {
-    if (handleTemplateEvent(watched, event)) return true;
+    if (watched == panel.get() && event && event->type() == QEvent::Hide && templateEditor)
+        templateEditor->setTemplateSearchActive(false);
     return handleKeyEvent(event);
-}
-
-void GlobalControlCoordinator::setF24Held(bool held, MyCodeEditor* editor)
-{
-    if (editor && editor != templateEditor) {
-        if (templateEditor) templateEditor->setTemplateTriggerHeld(false);
-        templateEditor = editor;
-    }
-    f24Held = held;
-    if (templateEditor) templateEditor->setTemplateTriggerHeld(held);
-}
-
-bool GlobalControlCoordinator::handleTemplateEvent(QObject* watched, QEvent* event)
-{
-    if (!event) return false;
-    if (event->type() == QEvent::ApplicationDeactivate || event->type() == QEvent::WindowDeactivate) {
-        setF24Held(false);
-        toggleSpaceHeld = false;
-        return false;
-    }
-    if (event->type() == QEvent::FocusOut && watched == templateEditor) {
-        QTimer::singleShot(0, this, [this] {
-            const auto* focus = QApplication::focusWidget();
-            if (!templateEditor || (focus != templateEditor && !(panel->isVisible() && panel->isAncestorOf(focus)))) setF24Held(false);
-        });
-    }
-    if (watched == panel.get() && event->type() == QEvent::Hide) {
-        nativePrefixPending = false;
-        if (templateEditor) templateEditor->setTemplateSearchActive(false);
-    }
-    if (event->type() != QEvent::KeyPress && event->type() != QEvent::KeyRelease && event->type() != QEvent::ShortcutOverride) return false;
-    auto* key = static_cast<QKeyEvent*>(event);
-    auto* focus = QApplication::focusWidget();
-    auto* editor = qobject_cast<MyCodeEditor*>(focus);
-    const bool inPalette = panel->isVisible() && (focus == panel.get() || panel->isAncestorOf(focus));
-    auto* popup = QApplication::activePopupWidget();
-    auto* popupEditor = popup ? qobject_cast<MyCodeEditor*>(popup->property("templateInputEditor").value<QObject*>()) : nullptr;
-    const bool inTemplatePopup = popupEditor && (focus == popup || popup->isAncestorOf(focus));
-    if (inTemplatePopup) editor = popupEditor;
-    if (inPalette) editor = templateEditor;
-    if (QApplication::activeModalWidget() || !editor || !anchor || editor->window() != anchor->window()
-        || (popup && popup != panel.get() && !inTemplatePopup)) {
-        setF24Held(false);
-        return false;
-    }
-    const bool locked = editor->templateAuthoringLocked();
-    if (event->type() == QEvent::ShortcutOverride) {
-        if (key->key() == Qt::Key_F24 || (f24Held && key->key() == Qt::Key_Space) || (locked && key->key() == Qt::Key_Escape)) { key->accept(); return true; }
-        return false;
-    }
-    if (key->key() == Qt::Key_F24) {
-        if (!key->isAutoRepeat()) {
-            setF24Held(event->type() == QEvent::KeyPress, editor);
-        }
-        key->accept(); return true;
-    }
-    if (key->key() == Qt::Key_Space && toggleSpaceHeld) {
-        if (event->type() == QEvent::KeyRelease && !key->isAutoRepeat()) toggleSpaceHeld = false;
-        key->accept(); return true;
-    }
-    if (event->type() != QEvent::KeyPress) return false;
-    if (f24Held && key->key() == Qt::Key_Space) {
-        if (!key->isAutoRepeat()) {
-            panel->hide(); nativePrefixPending = false;
-            if (inTemplatePopup) popup->hide();
-            editor->setTemplateAuthoringLocked(!locked); editor->setFocus();
-            setF24Held(false);
-            toggleSpaceHeld = true;
-        }
-        key->accept(); return true;
-    }
-    if (locked && key->key() == Qt::Key_Escape) {
-        if (inTemplatePopup) return false;
-        nativePrefixPending = false; setF24Held(false);
-        if (!inPalette) return false;
-        panel->hide(); editor->setFocus();
-        key->accept(); return true;
-    }
-    if (inPalette || inTemplatePopup) return false;
-    if (locked && !editor->templateInputEditing() && key->modifiers() == Qt::NoModifier &&
-        (key->key() == Qt::Key_Return || key->key() == Qt::Key_Enter)) {
-        const auto* selected = editor->templateModel()->instance(editor->selectedTemplateId());
-        if (selected && editor->selectedTemplateRegion().isEmpty() && TemplateCapabilities::module(selected->snapshot) && selected->fragments.size() == 1) {
-            const auto context = contextProvider ? contextProvider() : GlobalControlQueryContext();
-            GlobalControlItem item;
-            item.operation = GlobalControlItemOperation::InsertSimulationCommand;
-            item.title = selected->label;
-            item.parameters = selected->snapshot;
-            item.parameters.insert("replaceId", selected->id);
-            item.templateParentId = selected->parentId;
-            item.templateParentSlot = selected->parentSlot;
-            item.templateContent = "instances";
-            item.replacementStart = selected->fragments.first().start;
-            item.replacementLength = selected->fragments.first().length;
-            item.sourceDocumentInstance = context.documentInstance;
-            item.sourceDocumentTextRevision = context.documentTextRevision;
-            item.sourceCursorPosition = context.cursorPosition;
-            item.sourceFileName = context.fileName;
-            item.sourceTemplateCatalogRevision = UserTemplateService::getInstance()->catalogRevision();
-            dispatch(item);
-            key->accept(); return true;
-        }
-    }
-    const bool text = !(key->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) && !key->text().isEmpty()
-        && key->key() != Qt::Key_Return && key->key() != Qt::Key_Enter && key->key() != Qt::Key_Tab && key->key() != Qt::Key_Backspace;
-    if (text && (f24Held || (locked && !editor->templateInputEditing()))) {
-        openTemplates(editor, key->text()); key->accept(); return true;
-    }
-    if (text && locked && key->text() == "@" && editor->templateCodeSegmentEmpty()) {
-        openTemplates(editor, "@", true); key->accept(); return true;
-    }
-    return false;
-}
-
-void GlobalControlCoordinator::openTemplates(MyCodeEditor* editor, const QString& query, bool rawPrefix)
-{
-    if (!editor || !panel) return;
-    templateEditor = editor;
-    currentContext = contextProvider ? contextProvider() : GlobalControlQueryContext();
-    if (!currentContext.editorAvailable) return;
-    currentContext.simulationCommands = true;
-    currentContext.readOnly = editor->documentReadOnly();
-    currentContext.replacementStart = editor->textCursor().selectionStart();
-    currentContext.replacementLength = editor->textCursor().selectionEnd() - currentContext.replacementStart;
-    editor->templateInsertionContext(&currentContext.templateParentId, &currentContext.templateParentSlot);
-    currentContext.templateContent = editor->templateContainerContent();
-    currentContext.templateBoundaryError = currentContext.readOnly ? QString()
-        : editor->simulationTemplateInsertionError(currentContext.replacementStart,
-            currentContext.replacementLength, {}, currentContext.templateParentId, currentContext.templateParentSlot);
-    nativePrefixPending = rawPrefix;
-    if (openingHandler) openingHandler();
-    editor->setTemplateSearchActive(true);
-    panel->setSimulationOnly(true); panel->setCategory(GlobalControlCategory::Templates);
-    panel->resetQuery(query); refresh(query);
-    panel->showAt(anchor, editor->viewport()->mapToGlobal(editor->cursorRect().bottomLeft()));
-    panel->focusSearch(false);
-}
-
-bool GlobalControlCoordinator::restoreNativePrefix(const QString& query)
-{
-    if (!nativePrefixPending || !templateEditor || !SimulationCommandPrefix::nativeEventInput(query)) return false;
-    nativePrefixPending = false;
-    auto* editor = templateEditor.data();
-    panel->hide(); editor->setTemplateSearchActive(false); editor->setFocus();
-    if (editor->cachedDocumentText() != currentContext.documentText || editor->textCursor().position() != currentContext.cursorPosition) {
-        emit editor->editorStatusMessageRequested(QStringLiteral("The input target changed; reopen the template search.")); return true;
-    }
-    auto input = editor->beginUserEdit(-1);
-    editor->insertPlainText(query);
-    return true;
 }
 
 bool GlobalControlCoordinator::handleKeyEvent(QEvent* event)
@@ -277,9 +126,6 @@ bool GlobalControlCoordinator::handleKeyEvent(QEvent* event)
 
 void GlobalControlCoordinator::open()
 {
-    if (auto* editor = qobject_cast<MyCodeEditor*>(QApplication::focusWidget()); editor && editor->templateAuthoringLocked()) {
-        openTemplates(editor, {}); return;
-    }
     if (!panel)
         return;
     if (panel->isVisible()) {
@@ -291,12 +137,30 @@ void GlobalControlCoordinator::open()
         : QPoint();
     currentContext = contextProvider
         ? contextProvider() : GlobalControlQueryContext();
+    templateEditor = nullptr;
+    if (currentContext.editorAvailable)
+        for (auto* focus = QApplication::focusWidget(); focus && !templateEditor; focus = focus->parentWidget())
+            templateEditor = qobject_cast<MyCodeEditor*>(focus);
+    templateContext = currentContext;
+    if (templateEditor && !currentContext.simulationCommands) {
+        // Template insertion uses the captured selection, not the symbol token.
+        const auto cursor = templateEditor->textCursor();
+        templateContext.replacementStart = cursor.selectionStart();
+        templateContext.replacementLength = cursor.selectionEnd() - cursor.selectionStart();
+        templateContext.templateBoundaryError = templateContext.readOnly ? QString()
+            : templateEditor->simulationTemplateInsertionError(
+                templateContext.replacementStart, templateContext.replacementLength, {},
+                templateContext.templateParentId, templateContext.templateParentSlot);
+    }
     panel->setSimulationOnly(currentContext.simulationCommands);
     panel->setCategory(currentContext.editorAvailable
                            ? GlobalControlCategory::Symbols
                            : GlobalControlCategory::Commands);
     if (openingHandler)
         openingHandler();
+    if (templateEditor)
+        templateEditor->setTemplateSearchActive(
+            currentContext.simulationCommands || panel->category() == GlobalControlCategory::Templates);
     panel->resetQuery(currentContext.initialQuery);
     refresh(currentContext.initialQuery);
     if (!popupAnchor.isNull())
@@ -310,19 +174,20 @@ void GlobalControlCoordinator::refresh(const QString& queryText)
     if (!panel)
         return;
     const GlobalControlCategory category = currentContext.simulationCommands ? GlobalControlCategory::Templates : panel->category();
+    const auto& context = category == GlobalControlCategory::Templates
+        ? templateContext : currentContext;
     QString notice;
     const auto items =
         category == GlobalControlCategory::Commands
             ? service.query(category, queryText, currentContext)
             : (itemProvider
-                   ? itemProvider(category, queryText.startsWith('@') ? queryText.mid(1) : queryText, currentContext, &notice)
+                   ? itemProvider(category, queryText.startsWith('@') ? queryText.mid(1) : queryText, context, &notice)
                    : QList<GlobalControlItem>());
     panel->setItems(items, notice);
 }
 
 void GlobalControlCoordinator::dispatch(const GlobalControlItem& item)
 {
-    nativePrefixPending = false;
     if (templateEditor) templateEditor->setTemplateSearchActive(false);
     if (actionHandler)
         actionHandler(item);

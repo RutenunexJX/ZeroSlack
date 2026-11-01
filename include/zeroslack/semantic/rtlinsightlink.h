@@ -5,13 +5,7 @@
 #include <QString>
 #include <QtGlobal>
 
-struct RtlInsightCodeLink {
-    QString fileName;
-    int line = 0;
-    int column = 0;
-    QString fileDisplayName;
-    QString lineDisplayName;
-};
+#include <insightgraph/source.h>
 
 // Stable hand-off between the editor and an already materialized insight
 // graph. A zero graphGeneration means "use the current graph"; a non-zero

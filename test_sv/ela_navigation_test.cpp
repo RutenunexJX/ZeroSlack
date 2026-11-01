@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "crashrecoveryservice.h"
 #include "editorsplitcontroller.h"
@@ -230,7 +231,7 @@ int main(int argc, char** argv) {
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, profile.path());
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH", (profile.path() + "/sessions.ini").toUtf8());
     auto& theme = ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 3;
+    if (!initializeUiStyleForTest()) return 3;
     theme.applyToApplication();
     ElaNavigationTest test;
     return QTest::qExec(&test, argc, argv);

@@ -24,6 +24,56 @@
 #include <QStringConverter>
 
 #include <algorithm>
+#include <cstdio>
+
+namespace {
+QString diagnosticDirectory()
+{
+    const auto artifacts = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    return artifacts.isEmpty() ? qEnvironmentVariable("ZEROSLACK_QT_TEST_LOG_ROOT") : artifacts;
+}
+
+void recordDiagnostic(QJsonObject record)
+{
+    const auto root = diagnosticDirectory();
+    if (root.isEmpty()) return;
+    record.insert("utc", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
+    record.insert("test", QString::fromUtf8(QTest::currentTestFunction() ? QTest::currentTestFunction() : ""));
+    record.insert("dataTag", QString::fromUtf8(QTest::currentDataTag() ? QTest::currentDataTag() : ""));
+    QFile file(QDir(root).filePath("zeroslack-cli-diagnostics.jsonl"));
+    const auto bytes = QJsonDocument(record).toJson(QJsonDocument::Compact) + '\n';
+    if (!QDir().mkpath(root) || !file.open(QIODevice::WriteOnly | QIODevice::Append)
+        || file.write(bytes) != bytes.size())
+        std::fputs("CLI test diagnostic log could not be written\n", stderr);
+}
+
+QJsonObject diagnosticFile(const QString& path)
+{
+    const QFileInfo info(path);
+    return {{"path", path}, {"exists", info.exists()}, {"isFile", info.isFile()},
+            {"isDirectory", info.isDir()}, {"size", double(info.size())},
+            {"modifiedUtc", info.lastModified().toUTC().toString(Qt::ISODateWithMs)}};
+}
+
+void recordProcessStart(const QString& binary, const QStringList& arguments, const QStringList& fixtures)
+{
+    QJsonArray files;
+    for (const auto& path : fixtures) files.append(diagnosticFile(path));
+    recordDiagnostic({{"event", "processStart"}, {"binary", diagnosticFile(binary)},
+                      {"arguments", QJsonArray::fromStringList(arguments)}, {"fixtures", files}});
+}
+
+void recordProcessResult(const QProcess& process, bool completed, const QByteArray& output, const QByteArray& error)
+{
+    recordDiagnostic({{"event", "processResult"}, {"binary", process.program()},
+                      {"arguments", QJsonArray::fromStringList(process.arguments())},
+                      {"workingDirectory", process.workingDirectory().isEmpty() ? QDir::currentPath() : process.workingDirectory()},
+                      {"completed", completed}, {"state", int(process.state())}, {"exitStatus", int(process.exitStatus())},
+                      {"exitCode", process.exitCode()}, {"processError", int(process.error())}, {"errorString", process.errorString()},
+                      {"stdout", QString::fromUtf8(output)}, {"stderr", QString::fromUtf8(error)},
+                      {"stdoutBase64", QString::fromLatin1(output.toBase64())}, {"stderrBase64", QString::fromLatin1(error.toBase64())}});
+}
+}
 
 class ZeroSlackCliTest : public QObject
 {
@@ -130,6 +180,7 @@ private:
             || !writeText(fixture.regMapFile, regMap)
             || !writeText(fixture.suiteReferencesFile,
                           suiteReferences)) {
+            recordDiagnostic({{"event", "fixtureWriteFailed"}, {"workspace", root}});
             fixture.workspace.reset();
             return fixture;
         }
@@ -153,10 +204,25 @@ private:
                               &failure)) {
             fixture.workspace.reset();
         }
+        QJsonArray files;
+        for (const auto& path : {fixture.topFile, fixture.childFile, fixture.waveFile, fixture.regMapFile, fixture.suiteReferencesFile})
+            files.append(diagnosticFile(path));
+        recordDiagnostic({{"event", "fixtureReady"}, {"workspace", root}, {"cache", fixture.cache->path()},
+                          {"valid", bool(fixture.workspace)}, {"reason", failure}, {"files", files}});
         return fixture;
     }
 
 private slots:
+    void init()
+    {
+        recordDiagnostic({{"event", "testStart"}});
+    }
+
+    void cleanup()
+    {
+        recordDiagnostic({{"event", "testEnd"}, {"failed", QTest::currentTestFailed()}});
+    }
+
     void cliDeclarationIdentity_data()
     {
         QTest::addColumn<QString>("source");
@@ -221,18 +287,22 @@ private slots:
             args.append({"--cache-dir", request.cacheDirectory, "--format", "json"});
             if (!request.allowRefresh) args.append("--no-refresh");
             QProcess process;
+            recordProcessStart(binary, args, {root, fixture.filePath("types.sv"), fixture.filePath("shared.svh"), request.cacheDirectory});
             process.start(binary, args);
             ZeroSlackCliResult result;
             result.exitCode = -1;
             if (!process.waitForStarted(5000) || !process.waitForFinished(30000)) {
                 result.rendered = process.errorString().toUtf8();
+                recordProcessResult(process, false, process.readAllStandardOutput(), process.readAllStandardError());
                 return result;
             }
             result.rendered = process.readAllStandardOutput();
             result.envelope = QJsonDocument::fromJson(result.rendered).object();
             if (process.exitStatus() == QProcess::NormalExit && !result.envelope.isEmpty())
                 result.exitCode = process.exitCode();
-            result.rendered += process.readAllStandardError();
+            const auto error = process.readAllStandardError();
+            recordProcessResult(process, true, result.rendered, error);
+            result.rendered += error;
             return result;
         };
         const auto matchesOf = [](const ZeroSlackCliResult& result) {
@@ -700,8 +770,12 @@ private slots:
         const auto root = fixture.filePath("repository"); QDir().mkpath(root);
         const auto git = [&root](const QStringList& args) {
             QProcess process; process.setWorkingDirectory(root);
+            recordProcessStart(QStandardPaths::findExecutable("git"), args, {root});
             process.start("git", args);
-            return process.waitForFinished(15000) && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+            const bool finished = process.waitForFinished(15000);
+            const bool succeeded = finished && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+            recordProcessResult(process, finished, process.readAllStandardOutput(), process.readAllStandardError());
+            return succeeded;
         };
         QVERIFY(git({"init", "-q"}));
         const QStringList paths = {QString::fromUtf8("中文目录/时钟.sv"), "space name.sv", " leading;name.sv", QString::fromUtf8("新建 计数器.sv")};
@@ -1281,13 +1355,19 @@ private slots:
         QJsonArray evidence;
         const auto invoke = [&](const QStringList& arguments) {
             QProcess process;
-            process.start(QDir(QCoreApplication::applicationDirPath()).filePath("zeroslack-cli.exe"), arguments);
-            if (!process.waitForStarted(10000) || !process.waitForFinished(45000))
+            const auto binary = QDir(QCoreApplication::applicationDirPath()).filePath("zeroslack-cli.exe");
+            recordProcessStart(binary, arguments, {root.path(), arguments.value(1)});
+            process.start(binary, arguments);
+            if (!process.waitForStarted(10000) || !process.waitForFinished(45000)) {
+                recordProcessResult(process, false, process.readAllStandardOutput(), process.readAllStandardError());
                 return qMakePair(-999, QJsonObject{});
+            }
             const auto output = process.readAllStandardOutput();
             const auto json = QJsonDocument::fromJson(output).object();
+            const auto error = process.readAllStandardError();
+            recordProcessResult(process, true, output, error);
             evidence.append(QJsonObject{{"arguments", QJsonArray::fromStringList(arguments)}, {"exitCode", process.exitCode()},
-                                        {"stdout", QString::fromUtf8(output)}, {"stderr", QString::fromUtf8(process.readAllStandardError())}});
+                                        {"stdout", QString::fromUtf8(output)}, {"stderr", QString::fromUtf8(error)}});
             return qMakePair(process.exitCode(), json);
         };
         const auto raw = [](const QString& path) { QFile file(path); return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray{}; };
@@ -1410,6 +1490,33 @@ private slots:
     }
 };
 
-QTEST_GUILESS_MAIN(ZeroSlackCliTest)
+int main(int argc, char** argv)
+{
+    TESTLIB_SELFCOVERAGE_START("ZeroSlackCliTest")
+    QCoreApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    auto arguments = app.arguments();
+    const QStringList outputOptions{"-o", "-txt", "-csv", "-junitxml", "-xml", "-lightxml", "-teamcity", "-tap"};
+    const bool explicitOutput = std::any_of(arguments.cbegin(), arguments.cend(),
+        [&](const QString& argument) { return outputOptions.contains(argument); });
+    auto root = qEnvironmentVariable("ZEROSLACK_QT_TEST_LOG_ROOT");
+    if (root.isEmpty()) root = diagnosticDirectory();
+    if (!explicitOutput && !root.isEmpty() && QDir().mkpath(root)) {
+        const auto stem = QDir(root).filePath(QString("zeroslack_cli_test-%1").arg(app.applicationPid()));
+        QFile text(stem + ".txt"), junit(stem + ".junit.xml");
+        if (text.open(QIODevice::WriteOnly | QIODevice::NewOnly)
+            && junit.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
+            text.close();junit.close();
+            arguments.append({"-o", "-,txt", "-o", text.fileName() + ",txt", "-o", junit.fileName() + ",junitxml"});
+        } else {
+            std::fputs("CLI test Qt file logging could not be initialized\n", stderr);
+        }
+    }
+    recordDiagnostic({{"event", "invocation"}, {"arguments", QJsonArray::fromStringList(arguments)},
+                      {"explicitOutputPreserved", explicitOutput}, {"temporaryDirectory", QDir::tempPath()}});
+    ZeroSlackCliTest test;
+    QTEST_SET_MAIN_SOURCE_PATH
+    return QTest::qExec(&test, arguments);
+}
 
 #include "zeroslack_cli_test.moc"

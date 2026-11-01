@@ -1,4 +1,6 @@
-ZeroSlack v0.33.0 Windows package
+ZeroSlack v0.33.1 Windows package
+
+Release 0.33.1 retires the TB root/DUT templates, region UI and F24 template lock while preserving ordinary templates, slots, existing TBs and simulation. Ela is the sole UI backend; narrow panels, first-frame layout, recovery and session handling incorporate the accepted fixes. Four analysis views share the in-repository insightgraph component. Release preparation verifies the default ALL build, protected-resource policy and required layout checks. Scoped acceptance retains 29 pre-existing full-regression failures. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.33.0 adds native signal tracing, usage heatmaps and static feedback analysis from semantic dependency evidence. Trace branches, selections and references remain consistent across modes and panel hosts. Primary controls are compact, references open on demand, and feedback diagrams connect at node boundaries with bounded automatic fitting. Design remains the shared hierarchy source. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
@@ -268,8 +270,8 @@ ZeroSlack/ZeroSlack-Ela. The historical storage name is retained for compatibili
 renaming the executable does not reset or replace this profile. Workspace-local
 files remain with their workspace.
 
-The classic, Qlementine and SuiteUi paths remain historical compatibility code;
-they are no longer maintained or included in current release validation.
+Ela is the sole UI backend; retired backend selection and preview packaging
+have been removed.
 
 Ela controls: welcome page, settings, workspace configuration, navigation filters, Problems,
 Activity and context panel controls. Existing window management,

@@ -103,7 +103,6 @@ public:
     }
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override {
-        if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) return false;
         auto* widget = qobject_cast<QWidget*>(watched);
         if (event->type() == QEvent::ToolTip && widget) {
             auto* help = static_cast<QHelpEvent*>(event);
@@ -179,12 +178,11 @@ void UiToolTips::install() {
 }
 void UiToolTips::showText(const QPoint& position, const QString& text, QWidget* owner, const QRect& anchor, int duration) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        service()->show(position, text, owner, anchor, duration);
-        return;
-    }
-#endif
+    service()->show(position, text, owner, anchor, duration);
+    return;
+#else
     QToolTip::showText(position, text, owner, anchor, duration);
+#endif
 }
 void UiToolTips::hideText() {
 #ifdef ZEROSLACK_ENABLE_ELA

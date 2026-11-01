@@ -5,14 +5,9 @@
 
 #include <QObject>
 #include <QMetaType>
-#include <QPointer>
-#include <QSet>
 
 struct InsightTheme;
-class QStyle;
-class QWidget;
 
-enum class UiStyleBackend { Classic, Qlementine, Ela };
 
 enum class ThemeMode {
     Light,
@@ -40,18 +35,8 @@ public:
 
     void setMode(ThemeMode mode);
     void applyToApplication();
-    // Select once, before creating widgets. Runtime replacement invalidates
-    // style-owned animations; changing the backend requires a restart.
-    bool selectBackend(UiStyleBackend backend);
-    UiStyleBackend backend() const { return currentBackend; }
-    static bool qlementineAvailable();
-    static bool elaAvailable();
     void setAnimationsEnabled(bool enabled);
     bool animationsEnabled() const { return animateControls; }
-    void preserveClassicSurface(QWidget* root);
-
-protected:
-    bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:
     void themeAboutToChange(ThemeMode previousMode,
@@ -61,17 +46,10 @@ signals:
 
 private:
     ApplicationThemeManager();
-    void synchronizeSurface(QWidget* widget);
-    void queueSurfaceUpdate(QWidget* widget);
 
     ThemeMode currentMode = ThemeMode::Light;
-    UiStyleBackend currentBackend = UiStyleBackend::Classic;
     bool installed = false;
     bool animateControls = true;
-    bool updatingSurface = false;
-    QPointer<QStyle> backendStyle;
-    QPointer<QStyle> classicStyle;
-    QSet<QWidget*> classicRoots;
 };
 
 #endif // APPLICATIONTHEMEMANAGER_H

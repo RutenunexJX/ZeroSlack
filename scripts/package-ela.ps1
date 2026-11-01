@@ -6,9 +6,13 @@ param(
     [string]$CompilerDirectory = 'E:/QT6/Tools/mingw1310_64',
     [string]$WelcomeResourceDirectory = '',
     [string]$DocumentEditorDirectory = '',
+    [string]$PreparationPlan = '',
+    [string]$PreparationEvidence = '',
+    [string]$PythonExecutable = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
 
 # Compatibility entry point; Ela now ships as the sole ZeroSlack release.
 & (Join-Path $PSScriptRoot 'package-release.ps1') @PSBoundParameters
+exit $LASTEXITCODE

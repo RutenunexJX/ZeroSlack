@@ -390,7 +390,6 @@ MyCodeEditor::MyCodeEditor(QWidget *parent)
     viewport()->setAttribute(Qt::WA_OpaquePaintEvent);
     viewport()->setAutoFillBackground(false);
     state->attachToEditor(this);
-    ApplicationThemeManager::instance().preserveClassicSurface(this);
     bindTemplateModel();
 }
 
@@ -451,7 +450,6 @@ void MyCodeEditor::attachSharedDocument(
 
 void MyCodeEditor::setPlainText(const QString& text)
 {
-    if (authoringLock) return;
     emit editingInteractionEnded();
     {
         auto edit = beginSynchronousEditTransaction();
@@ -490,7 +488,6 @@ void MyCodeEditor::cut()
         if (cursor.hasSelection() && templateModel()->inputAt(activeTemplate, cursor.selectionStart(), cursor.selectionEnd()) >= 0) {
             QPlainTextEdit::copy(); replaceTemplateInput(cursor, {}); return;
         }
-        if (authoringLock) return;
     }
     auto edit = beginSynchronousEditTransaction();
     state->executeClipboardAction(
@@ -521,7 +518,6 @@ void MyCodeEditor::insertFromMimeData(const QMimeData* source)
 {
     if (!source || isReadOnly()) return;
     if (templateInputEditing() && replaceTemplateInput(textCursor(), source->text())) return;
-    if (authoringLock) return;
     QPlainTextEdit::insertFromMimeData(source);
 }
 
@@ -550,9 +546,9 @@ void MyCodeEditor::replayDocumentUndo(bool redo)
     }
     templateModel()->beginReplay();
     if (redo) {
-        if (authoringLock) document()->redo(); else QPlainTextEdit::redo();
+        QPlainTextEdit::redo();
     } else {
-        if (authoringLock) document()->undo(); else QPlainTextEdit::undo();
+        QPlainTextEdit::undo();
     }
     templateModel()->endReplay();
     const int afterUndoSteps = document()->availableUndoSteps();
@@ -986,7 +982,6 @@ void MyCodeEditor::resizeEvent(QResizeEvent *event)
     QPlainTextEdit::resizeEvent(event);
     state->projection.ensure(this, state->folding.collapsedLineRanges());
     state->handleResize(this, false);
-    layoutTemplateRegionBar();
 }
 
 void MyCodeEditor::paintEvent(QPaintEvent *event)
@@ -1010,7 +1005,6 @@ void MyCodeEditor::paintEvent(QPaintEvent *event)
     state->paintColumnSelection(this, event);
     state->paintDiagnosticOverview(this, event);
     QPainter painter(viewport());
-    paintTemplateRegions(painter, event);
 }
 
 void MyCodeEditor::contextMenuEvent(QContextMenuEvent *event)
@@ -2203,7 +2197,6 @@ void MyCodeEditor::inputMethodEvent(QInputMethodEvent* event)
             }
             viewport()->update(); event->accept(); return;
         }
-        if (authoringLock) { event->ignore(); return; }
     }
     if (!canApplyInsertion()) {
         if (event)
@@ -2316,7 +2309,6 @@ void MyCodeEditor::keyReleaseEvent(QKeyEvent *event)
 
 void MyCodeEditor::dropEvent(QDropEvent* event)
 {
-    if (authoringLock) { event->ignore(); return; }
     auto input = beginUserEdit(-1);
     auto edit = beginSynchronousEditTransaction();
     state->projection.ensure(this, state->folding.collapsedLineRanges());
@@ -2347,10 +2339,6 @@ void MyCodeEditor::dropEvent(QDropEvent* event)
 
 void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
-        && handleTemplateRegionMouse(event->position().toPoint(), false)) {
-        event->accept(); return;
-    }
     if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
         && state->tbAssist && state->tbAssist->click(event->position().toPoint())) {
         event->accept(); return;
@@ -2423,10 +2411,6 @@ void MyCodeEditor::mousePressEvent(QMouseEvent *event)
 
 void MyCodeEditor::mouseDoubleClickEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && event->modifiers() == Qt::NoModifier
-        && handleTemplateRegionMouse(event->position().toPoint(), true)) {
-        event->accept(); return;
-    }
     if (event && event->button() == Qt::LeftButton) {
         state->tripleClickPosition = event->position().toPoint();
         state->tripleClickTimer.restart();
@@ -2560,9 +2544,6 @@ void MyCodeEditor::leaveEvent(QEvent *event)
 QVariant MyCodeEditor::inputMethodQuery(
     Qt::InputMethodQuery query) const
 {
-    if (query == Qt::ImEnabled && authoringLock)
-        return templateInputEditing() && !documentReadOnly()
-            && templateModel()->inputAt(activeTemplate, textCursor().selectionStart(), textCursor().selectionEnd()) >= 0;
     if (viewProjectionActive()) {
         if (query == Qt::ImCursorRectangle)
             return cursorRect();

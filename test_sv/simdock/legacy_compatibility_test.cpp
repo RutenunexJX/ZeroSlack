@@ -1,3 +1,4 @@
+#include "../testuistyle.h"
 #include "../../src/integrations/simdock/simdockstate.h"
 #include "../../src/integrations/simdock/simdockcontextview.h"
 #include "../../src/simulation/simdock/core/workspace.h"
@@ -62,7 +63,7 @@ void isolate(const QString& profile) {
 int sessionPhase(const QString& mode, const QString& workspace, const QString& profile) {
     isolate(profile);
     auto& theme = ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 10;
+    if (!initializeUiStyleForTest()) return 10;
     theme.setAnimationsEnabled(false); theme.applyToApplication();
     MainWindow window;
     window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(profile + "/recovery"));

@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "contextfloatingwindow.h"
 #include "contextworkspacecontroller.h"
@@ -112,8 +113,7 @@ private slots:
         int index = 0;
         for (auto* button : controls) {
             const QString initialStyleSheet = button->styleSheet();
-            if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)
-                QVERIFY(button->property("zeroslackElaControl").toBool());
+            QVERIFY(button->property("zeroslackElaControl").toBool());
             QSignalSpy clicked(button, &QAbstractButton::clicked);
             const QSize hint = button->sizeHint();
             const QSize size = button->size();
@@ -212,7 +212,7 @@ private slots:
         for (const auto& id : {"temporaryEditor", "rtlInsight.kernel", "rtlInsight.block",
                                "rtlInsight.hotspot", "rtlInsight.state", "pinloom"})
             QVERIFY2(contextEntries.contains(QString::fromLatin1(id)), id);
-        if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        {
             auto* splits = window.findChild<EditorSplitController*>();
             QVERIFY(splits);
             auto* initialTabs = splits->initialGroup();
@@ -225,8 +225,7 @@ private slots:
         auto* settingsButton = window.findChild<QToolButton*>("settingsRailButton");
         QVERIFY(settingsButton);
         QTRY_VERIFY(settingsButton->isVisible());
-        if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela)
-            QVERIFY(settingsButton->inherits("ElaToolButton"));
+        QVERIFY(settingsButton->inherits("ElaToolButton"));
         QTest::mouseClick(settingsButton, Qt::LeftButton); settle();
         auto* settings = window.findChild<SettingsCenterPanel*>(); QVERIFY(settings);
         auto* settingsHost = window.findChild<SettingsDialog*>(); QVERIFY(settingsHost);
@@ -322,12 +321,7 @@ int main(int argc, char** argv)
     if (!settings.isValid()) return 2;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, settings.path());
-    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "ela"
-        && !ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela)) return 3;
-    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "qlementine") {
-        if (!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Qlementine)) return 3;
-        ApplicationThemeManager::instance().setAnimationsEnabled(false);
-    }
+    if (!initializeUiStyleForTest()) return 3;
     ApplicationThemeManager::instance().applyToApplication();
     ControlStyleInteractionTest test;
     return QTest::qExec(&test, argc, argv);

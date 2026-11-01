@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "analysisscheduler.h"
 #include "applicationthememanager.h"
 #include "mainwindow.h"
@@ -81,7 +82,7 @@ int main(int argc, char** argv) {
     qputenv("ZEROSLACK_SIMULATION_CACHE_ROOT", profile.filePath("simulation").toUtf8());
     qputenv("XIPS_LIBRARY", profile.filePath("library").toUtf8());
     auto& theme = ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 4;
+    if (!initializeUiStyleForTest()) return 4;
     theme.setMode(ThemeMode::Light); theme.applyToApplication();
     QElapsedTimer init; init.start();
     MainWindow host;

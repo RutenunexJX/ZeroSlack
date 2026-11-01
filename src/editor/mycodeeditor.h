@@ -228,24 +228,19 @@ public:
     bool canApplyInsertion(QString* failureReason = nullptr) const;
     bool documentReadOnly() const;
     void setReadOnly(bool value);
-    bool templateAuthoringLocked() const;
     bool templateInputEditing() const;
+    QString templateInputFeedback() const;
     bool templateSelectionEditable() const;
     QString selectedTemplateId() const;
-    QString selectedTemplateRegion() const;
     DocumentTemplateModel* templateModel() const;
-    void setTemplateAuthoringLocked(bool locked);
-    void templateNavigate(int direction);
     bool editTemplateInstance(const QString& id = {}, const QString& inputName = {}, int position = -1);
     void finishTemplateInput();
     void setTemplateSearchActive(bool active);
-    void setTemplateTriggerHeld(bool held);
     bool replaceTemplateInput(const QTextCursor& cursor, const QString& text, bool candidateSelection = false);
     QVariantMap templateSignalRoles() const;
     void configureTemplateInputContext(const std::shared_ptr<TemplateInputContext>& inputs,
                                        const QString& ownerId = {}, bool prepared = false);
     bool replaceTemplateSlotValue(int absoluteStart, int length, const QString& value);
-    bool templateCodeSegmentEmpty() const;
     QString templateContainerContent() const;
     void templateInsertionContext(QString* parentId, QString* slotName) const;
     QString simulationTemplateInsertionError(int start, int removed, const TemplateInsertionSpec& spec,
@@ -455,37 +450,10 @@ private:
     friend struct MyCodeEditorState;
 
     std::unique_ptr<MyCodeEditorState> state;
-    bool authoringLock = false, templateEditing = false, templateSearching = false;
-    bool sourceReadOnlyState = false, templateMutation = false;
+    bool templateEditing = false, templateSearching = false;
+    bool templateMutation = false;
     QString activeTemplate;
-    QString activeTemplateRegion;
-    enum class TemplateTargetKind { Instance, Inputs, Region };
-    TemplateTargetKind templateTargetKind = TemplateTargetKind::Instance;
-    struct TemplateNavigationTarget {
-        QString owner, input;
-        TemplateTargetKind kind = TemplateTargetKind::Instance;
-    };
-    QList<TemplateNavigationTarget> templateChildren(const QString& owner, const QString& input = {}) const;
-    void selectTemplateTarget(const TemplateNavigationTarget& target);
-    void enterTemplateTarget();
-    void leaveTemplateTarget();
-    QString templateTargetPath() const;
-    bool templateTriggerHeld = false;
-    struct TemplateRegionTarget {
-        QString owner, name, label, content;
-        int start = 0, length = 0, depth = 0;
-    };
-    QList<TemplateRegionTarget> templateRegions() const;
-    int templateRegionEntry(const TemplateRegionTarget& region) const;
-    bool selectTemplateRegion(const QString& owner, const QString& name, bool enter);
-    void updateTemplateRegionBar();
-    int templateRegionBarHeight() const;
-    void layoutTemplateRegionBar();
-    bool handleTemplateRegionMouse(const QPoint& point, bool enter);
-    void paintTemplateRegions(QPainter& painter, QPaintEvent* event);
-    QPointer<QWidget> templateRegionBar;
-    QString templateRegionBarKey;
-    bool updatingTemplateRegionBar = false;
+    QString displayedTemplateInputFeedback;
     QTextBlock templatePreeditBlock;
     void clearTemplatePreedit();
     void replayDocumentUndo(bool redo);
@@ -494,7 +462,6 @@ private:
     void updateTemplatePresentation();
     bool handleTemplateInputKey(QKeyEvent* event);
     bool insertTemplateNewline();
-    void indentTemplateContinuation(const QString& indent);
     void paintTemplateBackground(QPainter& painter, QPaintEvent* event);
     int userEditDepth = 0;
     QList<MyCodeEditor*> sharedDocumentViewsForFormatting() const;
@@ -523,6 +490,7 @@ signals:
     void navigationForwardRequested();
     void editorStatusMessageRequested(const QString& message);
     void editorModeStateChanged(const EditorModeSnapshot& snapshot);
+    void templateInputFeedbackChanged(const QString& feedback);
     void fontZoomRequested(int steps);
     void documentChangeApplied(const DocumentChange& change);
     void pinloomCodeLinkActivated(const QString& anchorId);

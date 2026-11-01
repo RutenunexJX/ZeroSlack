@@ -18,11 +18,11 @@ Unicode code points. Requests are limited to 1 MiB; editable documents to 8 MiB;
 semantic source lists to 512 files. `sources` preserves compilation order;
 alternatively `projectId` uses the saved project's Build inputs and include paths.
 
-## Templates and TB authoring
+## Templates and inputs
 
 | Command | Input and result |
 | --- | --- |
-| `templates.examples` | Returns the bundled, editable TB/DUT/clock/reset sample records. Does not install them. |
+| `templates.examples` | Returns the bundled, editable clock/reset sample records. Does not install them. |
 | `templates.list` | `workspace`, optional `file`, `scope` (`workspace` or `global`). Returns effective records, origin, input contracts, and the selected storage's `revision`. |
 | `templates.get` | Same context plus stable `id`. Returns the effective record. |
 | `templates.validate` | `record`; validates using the normal template service. |
@@ -45,22 +45,18 @@ automatically replaced merely by querying examples.
 | --- | --- |
 | `document.inspect` | Returns text, `revision`, `diskRevision`, instance IDs, input ranges/contracts and ownership tree. A new offline file may be absent. |
 | `document.insert` | `expectedRevision`, `templateId`, `start`; optional `length`, `parentId`, `parentSlot`, `sources`/`projectId`, `dryRun`. |
-| `dut.inspect` | Same insertion context, `templateId` for a module-instance template; optional `module` and expression-string `parameters`. Returns real Slang modules, defaults and elaborated ports. |
 | `document.candidates` | `instanceId`, `slot`, `sources`/`projectId`. Returns values and semantic evidence, including clock/reset roles. |
 | `document.input` | `expectedRevision`, `instanceId`, `slot`, `value`, semantic source context; optional `dryRun`. Enforces the slot contract and updates linked occurrences. |
 | `document.format` | `expectedRevision`, optional `dryRun`. Preserves instance IDs, slots and nesting using the editor's formatter and range mapper. |
 
-For `@dut`, `document.insert` additionally accepts `module`, `instance`,
-`parameters`, `bindings` (maps of expression strings), `reuse` (explicit signal
-names), and `replaceId`. It uses the same declaration and instantiation planner
-as the editor. No signal role is inferred from a spelling convention.
-
-Typical sequence: inspect an empty file; preview then insert the `@tb` record;
-change its name input; inspect the TB's `instances` Code region; inspect and insert
-the DUT there; insert clock and reset templates in the `behaviors` Code region;
-query/edit their inputs; format and inspect again. Insert at an unoccupied range
-inside the selected parent region (for example its end), not inside an existing
-child template. Every mutation must use the latest returned document revision.
+Inspect an existing or handwritten module; preview then insert an
+`@definitions` or `@process` container at a valid module position.
+Inside a process Code input, insert `@repeat` or another compatible template.
+Read instance IDs and input ranges from `document.inspect`; provide
+`parentId` and `parentSlot` for nested insertion, then query/edit inputs,
+format and inspect again. Insert at an unoccupied range in the parent Code
+input, not inside an existing child template. Every mutation must use the latest
+returned document revision. No signal role is inferred from a spelling convention.
 
 Offline changes write the document and hash-bound template metadata to the same
 profile. Reopen with that profile to retain editable ownership. `dryRun` returns

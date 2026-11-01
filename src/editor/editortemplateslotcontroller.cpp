@@ -890,7 +890,7 @@ void EditorTemplateSlotController::handleCursorChanged(
         refreshPresentation(editor);
         return;
     }
-    if (!cursorInsideActiveRange(editor) && !editor->templateAuthoringLocked())
+    if (!cursorInsideActiveRange(editor))
         clear(editor);
 }
 

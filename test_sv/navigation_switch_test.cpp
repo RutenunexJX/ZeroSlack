@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "navigationwidget.h"
 #include <QApplication>
@@ -29,7 +30,7 @@ int main(int argc, char** argv) {
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, profile.path());
     auto& theme = ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 2;
+    if (!initializeUiStyleForTest()) return 2;
     theme.setMode(ThemeMode::Light);
     theme.applyToApplication();
     NavigationWidget navigation;

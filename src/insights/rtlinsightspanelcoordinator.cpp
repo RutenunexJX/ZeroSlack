@@ -275,8 +275,6 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(viewState->stateTransitionCurrentCombo);
     graphToolbarLayout->addWidget(stateNextLabel);
     graphToolbarLayout->addWidget(viewState->stateTransitionNextCombo);
-    graphToolbarLayout->addWidget(viewState->graphSearchEdit, 1);
-    graphToolbarLayout->addWidget(viewState->graphFitButton);
     graphToolbarLayout->addWidget(viewState->stateTransitionResetCheck);
     graphToolbarLayout->addWidget(viewState->stateTransitionErrorCheck);
     graphToolbarLayout->addWidget(viewState->stateTransitionUnreachableCheck);
@@ -284,8 +282,10 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     graphToolbarLayout->addWidget(viewState->graphZoomOutButton);
     graphToolbarLayout->addWidget(viewState->graphZoomInButton);
     graphToolbarLayout->addWidget(viewState->graphMoreButton);
-    legacyToolbarLayout->addLayout(graphToolbarLayout);
-    CompactFlowLayout::replaceRows(legacyToolbarLayout);
+    graphToolbarLayout->insertWidget(0, viewState->graphSearchEdit, 1);
+    graphToolbarLayout->insertWidget(1, viewState->graphFitButton);
+    legacyToolbarLayout->addWidget(new CompactOverflowToolbar(graphToolbarLayout,
+        QStringLiteral("rtlState"), viewState->graphToolbar, viewState->graphMoreButton));
 
     viewState->graphInspector = UiControls::treeWidget(panel);
     viewState->graphInspector->setObjectName(QStringLiteral("rtlGraphInspector"));
@@ -340,13 +340,20 @@ RtlInsightsPanelCoordinator::RtlInsightsPanelCoordinator(QWidget* parent)
     inspectorActionLayout->addWidget(viewState->graphInspectorJumpButton);
     inspectorActionLayout->addWidget(viewState->graphInspectorFocusButton);
     inspectorActionLayout->addWidget(viewState->graphInspectorRevealButton);
-    inspectorLayout->addLayout(inspectorActionLayout);
-    CompactFlowLayout::replaceRows(inspectorLayout);
+    inspectorLayout->addWidget(new CompactOverflowToolbar(inspectorActionLayout,
+        QStringLiteral("rtlInspector"), inspectorPanel));
+    viewState->graphInspector->setMinimumHeight(4 * viewState->graphInspector->fontMetrics().height()
+        + viewState->graphInspector->header()->sizeHint().height()
+        + viewState->graphInspector->horizontalScrollBar()->sizeHint().height() + 4);
 
-    auto* graphBodySplitter = new QSplitter(Qt::Horizontal, panel);
+    auto* graphBodySplitter = new CompactResponsiveSplitter(42 * panel->fontMetrics().averageCharWidth(), panel);
     graphBodySplitter->setObjectName(QStringLiteral("rtlGraphBodySplitter"));
     graphBodySplitter->addWidget(viewState->insightsGraphView);
     graphBodySplitter->addWidget(inspectorPanel);
+    const int graphFrame = 2 * viewState->insightsGraphView->frameWidth();
+    const int graphLine = viewState->insightsGraphView->fontMetrics().height();
+    viewState->insightsGraphView->setMinimumSize(6 * graphLine + graphFrame,
+        4 * graphLine + graphFrame + 4);
     graphBodySplitter->setStretchFactor(0, 1);
     graphBodySplitter->setStretchFactor(1, 0);
     graphPanelLayout->addWidget(graphBodySplitter, 1);

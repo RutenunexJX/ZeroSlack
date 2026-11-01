@@ -1,6 +1,7 @@
 #include "uicontrols.h"
 #include "uitypography.h"
 #include "instancepairconnectionpanel.h"
+#include "compactlayout.h"
 #include "editorfileidentity.h"
 
 #include <QAbstractItemView>
@@ -36,6 +37,23 @@
 #include <vector>
 
 namespace {
+
+class InstanceIdentityLabel : public CompactTitleLabel {
+public:
+    using CompactTitleLabel::CompactTitleLabel;
+    void setSourcePath(const QString& path) {
+        sourcePath = path;
+        updateTip();
+    }
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        CompactTitleLabel::paintEvent(event);
+        updateTip();
+    }
+private:
+    QString sourcePath;
+    void updateTip() { setToolTip(text() + (sourcePath.isEmpty() ? QString() : QLatin1Char('\n') + sourcePath)); }
+};
 
 constexpr int kSemanticSignalRole = Qt::UserRole + 8300;
 constexpr char kTypedSignalMime[] =
@@ -204,7 +222,7 @@ public:
         setFrameShadow(QFrame::Plain);
 
         auto* layout = new QVBoxLayout(this);
-        layout->setContentsMargins(12, 10, 12, 10);
+        layout->setContentsMargins(4, 2, 4, 2);
         title = UiControls::label(
             QStringLiteral("Drop left signal on the right instance"),
             this);
@@ -391,25 +409,25 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     setFocusPolicy(Qt::NoFocus);
 
     auto* root = new QVBoxLayout(this);
-    root->setContentsMargins(8, 8, 8, 8);
-    root->setSpacing(8);
+    root->setContentsMargins(4, 4, 4, 4);
+    root->setSpacing(4);
 
-    auto* heading = UiControls::label(
-        QStringLiteral("Instance Pair Connection"),
-        this);
+    auto* heading = new CompactTitleLabel(this);
+    heading->setText(QStringLiteral("Instance Pair Connection"));
     heading->setObjectName(
         QStringLiteral("instancePairConnectionHeading"));
     QFont headingFont = UiTypography::font(UiTypography::Role::PanelTitle);
     heading->setFont(headingFont);
-    root->addWidget(heading);
+    auto* headingRow = new QHBoxLayout;
+    headingRow->addWidget(heading, 1);
 
-    stateLabel = UiControls::label(this);
+    stateLabel = new CompactTitleLabel(this);
     stateLabel->setObjectName(
         QStringLiteral("instancePairConnectionState"));
-    stateLabel->setWordWrap(true);
     stateLabel->setText(
         QStringLiteral("No instance-pair analysis is loaded."));
-    root->addWidget(stateLabel);
+    headingRow->addWidget(stateLabel, 2);
+    root->addLayout(headingRow);
 
     auto* blockSplitter =
         new QSplitter(Qt::Horizontal, this);
@@ -430,25 +448,28 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
                 ? QStringLiteral("instancePairLeftBlock")
                 : QStringLiteral("instancePairRightBlock"));
         auto* layout = new QVBoxLayout(group);
+        layout->setContentsMargins(4, 4, 4, 4);
+        layout->setSpacing(4);
+        auto* identityRow = new QHBoxLayout;
 
-        *instanceLabel = UiControls::label(group);
+        *instanceLabel = new InstanceIdentityLabel(group);
         (*instanceLabel)->setObjectName(
             side == InstancePairSide::Left
                 ? QStringLiteral("instancePairLeftInstancePath")
                 : QStringLiteral("instancePairRightInstancePath"));
         (*instanceLabel)->setTextInteractionFlags(
             Qt::TextSelectableByMouse);
-        (*instanceLabel)->setWordWrap(true);
-        layout->addWidget(*instanceLabel);
+        identityRow->addWidget(*instanceLabel, 3);
 
-        *moduleLabel = UiControls::label(group);
+        *moduleLabel = new InstanceIdentityLabel(group);
         (*moduleLabel)->setObjectName(
             side == InstancePairSide::Left
                 ? QStringLiteral("instancePairLeftModule")
                 : QStringLiteral("instancePairRightModule"));
         (*moduleLabel)->setTextInteractionFlags(
             Qt::TextSelectableByMouse);
-        layout->addWidget(*moduleLabel);
+        identityRow->addWidget(*moduleLabel, 1);
+        layout->addLayout(identityRow);
 
         if (side == InstancePairSide::Left) {
             auto* signalTree =
@@ -483,6 +504,8 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
             1, QHeaderView::ResizeToContents);
         (*tree)->header()->setSectionResizeMode(
             2, QHeaderView::ResizeToContents);
+        (*tree)->setMinimumHeight((*tree)->header()->sizeHint().height()
+            + 4 * ((*tree)->fontMetrics().height() + 10) + 2 * (*tree)->frameWidth());
         layout->addWidget(*tree, 1);
 
         if (side == InstancePairSide::Right) {
@@ -584,8 +607,15 @@ InstancePairConnectionPanel::InstancePairConnectionPanel(
     actions->addWidget(previewButton);
     actions->addWidget(confirmButton);
     actions->addWidget(undoButton);
-    previewLayout->addLayout(actions);
-    root->addWidget(previewGroup, 3);
+    previewLayout->addWidget(new CompactOverflowToolbar(actions, QStringLiteral("instancePairActions"), previewGroup));
+    previewGroup->setTitle(QString());
+    auto* previewSection = new CompactPreviewSection(QStringLiteral("Change Preview transaction preview"), previewGroup, this);
+    root->addWidget(previewSection);
+    connect(previewSection->toggleButton(), &QToolButton::toggled, this,
+        [previewSection, root](bool expanded) {
+            root->setStretch(root->indexOf(previewSection), expanded ? 3 : 0);
+        });
+    CompactFlowLayout::makeScrollable(this);
 
     connect(
         previewButton,
@@ -776,7 +806,7 @@ void InstancePairConnectionPanel::rebuildBlocks()
                             side.instancePath.isEmpty()
                                 ? QStringLiteral("<unavailable>")
                                 : side.instancePath));
-                instanceLabel->setToolTip(
+                static_cast<InstanceIdentityLabel*>(instanceLabel)->setSourcePath(
                     side.instanceFile);
             }
             if (moduleLabel) {
@@ -786,7 +816,7 @@ void InstancePairConnectionPanel::rebuildBlocks()
                             side.moduleName.isEmpty()
                                 ? QStringLiteral("<unavailable>")
                                 : side.moduleName));
-                moduleLabel->setToolTip(
+                static_cast<InstanceIdentityLabel*>(moduleLabel)->setSourcePath(
                     side.definitionFile);
             }
         };

@@ -144,15 +144,6 @@ void UiMessageDialog::showEvent(QShowEvent* event) {
 }
 
 namespace {
-bool usesEla()
-{
-#ifdef ZEROSLACK_ENABLE_ELA
-    return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
-#else
-    return false;
-#endif
-}
-
 class InputDialog final : public UiDialog {
 public:
     InputDialog(QWidget* parent, const QString& title, const QString& prompt, QWidget* input)
@@ -205,8 +196,9 @@ QPushButton* UiDialogs::addButton(QDialogButtonBox* box, const QString& text,
 
 QPushButton* UiDialogs::addButton(QDialogButtonBox* box, QDialogButtonBox::StandardButton standard)
 {
-    if (!usesEla())
-        return box->addButton(standard);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return box->addButton(standard);
+#else
     QDialogButtonBox prototype(standard);
     auto* native = prototype.button(standard);
     if (!native)
@@ -215,12 +207,14 @@ QPushButton* UiDialogs::addButton(QDialogButtonBox* box, QDialogButtonBox::Stand
     button->setObjectName(QStringLiteral("uiDialogButton_%1").arg(int(standard)));
     button->setProperty("uiDialogStandardButton", int(standard));
     return button;
+#endif
 }
 
 QDialogButtonBox* UiDialogs::buttonBox(QDialogButtonBox::StandardButtons buttons, QWidget* parent)
 {
-    if (!usesEla())
-        return new QDialogButtonBox(buttons, parent);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return new QDialogButtonBox(buttons, parent);
+#else
     auto* box = new QDialogButtonBox(parent);
     for (int value = QDialogButtonBox::FirstButton; value <= QDialogButtonBox::LastButton; value <<= 1) {
         const auto standard = static_cast<QDialogButtonBox::StandardButton>(value);
@@ -228,6 +222,7 @@ QDialogButtonBox* UiDialogs::buttonBox(QDialogButtonBox::StandardButtons buttons
             addButton(box, standard);
     }
     return box;
+#endif
 }
 
 QPushButton* UiDialogs::addButton(QMessageBox* box, const QString& text, QMessageBox::ButtonRole role)
@@ -239,13 +234,15 @@ QPushButton* UiDialogs::addButton(QMessageBox* box, const QString& text, QMessag
 
 QPushButton* UiDialogs::addButton(QMessageBox* box, QMessageBox::StandardButton standard)
 {
-    if (!usesEla())
-        return box->addButton(standard);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return box->addButton(standard);
+#else
     QMessageBox prototype;
     auto* native = prototype.addButton(standard);
     auto* button = addButton(box, native->text(), prototype.buttonRole(native));
     button->setProperty("uiDialogStandardButton", int(standard));
     return button;
+#endif
 }
 
 QPushButton* UiDialogs::addButton(UiMessageDialog* box, const QString& text, QMessageBox::ButtonRole role)
@@ -264,21 +261,28 @@ QPushButton* UiDialogs::addButton(UiMessageDialog* box, QMessageBox::StandardBut
 
 void UiDialogs::warning(QWidget* parent, const QString& title, const QString& text)
 {
-    if (!usesEla()) { QMessageBox::warning(parent, title, text); return; }
+#ifndef ZEROSLACK_ENABLE_ELA
+    QMessageBox::warning(parent, title, text); return;
+#else
     message(parent, title, text, QMessageBox::Warning);
+#endif
 }
 
 void UiDialogs::information(QWidget* parent, const QString& title, const QString& text)
 {
-    if (!usesEla()) { QMessageBox::information(parent, title, text); return; }
+#ifndef ZEROSLACK_ENABLE_ELA
+    QMessageBox::information(parent, title, text); return;
+#else
     message(parent, title, text, QMessageBox::Information);
+#endif
 }
 
 QString UiDialogs::getText(QWidget* parent, const QString& title, const QString& label,
                            QLineEdit::EchoMode mode, const QString& text, bool* accepted)
 {
-    if (!usesEla())
-        return QInputDialog::getText(parent, title, label, mode, text, accepted);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return QInputDialog::getText(parent, title, label, mode, text, accepted);
+#else
     auto* edit = UiControls::lineEdit(text);
     edit->setEchoMode(mode);
     InputDialog dialog(parent, title, label, edit);
@@ -286,13 +290,15 @@ QString UiDialogs::getText(QWidget* parent, const QString& title, const QString&
     const bool result = dialog.exec() == QDialog::Accepted;
     if (accepted) *accepted = result;
     return result ? edit->text() : QString();
+#endif
 }
 
 QString UiDialogs::getItem(QWidget* parent, const QString& title, const QString& label,
                            const QStringList& items, int current, bool editable, bool* accepted)
 {
-    if (!usesEla())
-        return QInputDialog::getItem(parent, title, label, items, current, editable, accepted);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return QInputDialog::getItem(parent, title, label, items, current, editable, accepted);
+#else
     auto* combo = UiControls::comboBox();
     combo->addItems(items);
     combo->setEditable(editable);
@@ -303,13 +309,15 @@ QString UiDialogs::getItem(QWidget* parent, const QString& title, const QString&
     const bool result = dialog.exec() == QDialog::Accepted;
     if (accepted) *accepted = result;
     return result ? combo->currentText() : initial;
+#endif
 }
 
 int UiDialogs::getInt(QWidget* parent, const QString& title, const QString& label,
                       int value, int minimum, int maximum, int step, bool* accepted)
 {
-    if (!usesEla())
-        return QInputDialog::getInt(parent, title, label, value, minimum, maximum, step, accepted);
+#ifndef ZEROSLACK_ENABLE_ELA
+    return QInputDialog::getInt(parent, title, label, value, minimum, maximum, step, accepted);
+#else
     auto* spin = UiControls::spinBox();
     spin->setRange(minimum, maximum);
     spin->setSingleStep(step);
@@ -319,4 +327,5 @@ int UiDialogs::getInt(QWidget* parent, const QString& title, const QString& labe
     const bool result = dialog.exec() == QDialog::Accepted;
     if (accepted) *accepted = result;
     return result ? spin->value() : value;
+#endif
 }

@@ -1,6 +1,7 @@
 #include "problemspanelcoordinator.h"
 
 #include "activitylogservice.h"
+#include "compactlayout.h"
 #include "roundedicons.h"
 #include "uicontrols.h"
 #include "uitypography.h"
@@ -85,7 +86,7 @@ ProblemsPanelCoordinator::ProblemsPanelCoordinator(QWidget* parent) : QObject(pa
     diagnosticStateLabel->setObjectName(QStringLiteral("diagnosticStateLabel"));
     UiTypography::apply(diagnosticStateLabel, UiTypography::Role::Metadata);
     toolbar->addWidget(diagnosticStateLabel);
-    layout->addLayout(toolbar);
+    layout->addWidget(new CompactOverflowToolbar(toolbar, QStringLiteral("problems"), panel));
 
     contentStack = new QStackedWidget(panel);
     contentStack->setObjectName(QStringLiteral("problemsContent"));

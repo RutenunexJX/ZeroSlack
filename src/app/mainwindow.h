@@ -123,6 +123,7 @@ signals:
 private:
     friend class BottomPanelsUiTest;
     friend class SignalTraceUiTest;
+    friend class NarrowLayoutMatrix;
     Ui::MainWindow *ui;
 
     std::unique_ptr<NavigationPaneCoordinator> navigationPane;

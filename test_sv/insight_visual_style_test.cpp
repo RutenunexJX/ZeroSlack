@@ -274,16 +274,27 @@ int main(int argc, char** argv)
                    && app.palette().color(QPalette::HighlightedText)
                           == darkTheme.input.selectionText);
     const QString darkApplicationQss = app.styleSheet();
-    expectTrue("application qss covers popup dialog and form surfaces",
-               darkApplicationQss.contains(QStringLiteral("QToolTip"))
-                   && darkApplicationQss.contains(QStringLiteral("QDialog"))
-                   && darkApplicationQss.contains(QStringLiteral("QCheckBox"))
-                   && darkApplicationQss.contains(QStringLiteral("QRadioButton"))
-                   && darkApplicationQss.contains(QStringLiteral("QGroupBox"))
+#ifdef ZEROSLACK_ENABLE_ELA
+    expectTrue("application installs Ela surfaces without overriding native form controls",
+               darkApplicationQss.startsWith(
+                   InsightVisualStyle::chromeStyleSheet(ThemeMode::Dark, false))
                    && darkApplicationQss.contains(
+                       QStringLiteral("QAbstractSpinBox[zeroslackElaControl=true]"))
+                   && !darkApplicationQss.contains(QStringLiteral("QCheckBox"))
+                   && !darkApplicationQss.contains(QStringLiteral("QRadioButton")));
+#endif
+    const QString darkQtSurfaceQss =
+        InsightVisualStyle::applicationStyleSheet(ThemeMode::Dark);
+    expectTrue("Qt surface qss covers popup dialog and form surfaces",
+               darkQtSurfaceQss.contains(QStringLiteral("QToolTip"))
+                   && darkQtSurfaceQss.contains(QStringLiteral("QDialog"))
+                   && darkQtSurfaceQss.contains(QStringLiteral("QCheckBox"))
+                   && darkQtSurfaceQss.contains(QStringLiteral("QRadioButton"))
+                   && darkQtSurfaceQss.contains(QStringLiteral("QGroupBox"))
+                   && darkQtSurfaceQss.contains(
                        QStringLiteral("QComboBox QAbstractItemView"))
-                   && darkApplicationQss.contains(QStringLiteral(":disabled"))
-                   && darkApplicationQss.contains(
+                   && darkQtSurfaceQss.contains(QStringLiteral(":disabled"))
+                   && darkQtSurfaceQss.contains(
                        QStringLiteral("selection-background-color")));
     themeManager.setMode(ThemeMode::Dark);
     expectTrue("repeating dark theme emits no additional signal",
@@ -515,10 +526,10 @@ int main(int argc, char** argv)
                    && firstColumnBeforeScroll
                           - codeEditor.cursorRect(firstAfterScroll).left()
                           == scrollAmount);
-    expectTrue("tab bar qss is scoped",
-               InsightVisualStyle::tabBarStyleSheet(
-                   QStringLiteral("mainEditorTabBar"))
-                   .contains(QStringLiteral("QTabBar#mainEditorTabBar")));
+    // Real host clearing is covered by CompactLayoutTest::mainWindowEditorTabStyle.
+    expectTrue("maintained editor tabs have no Classic scoped application qss",
+               !app.styleSheet().contains(
+                       QStringLiteral("QTabBar#mainEditorTabBar")));
     expectTrue("status chip qss is scoped",
                InsightVisualStyle::statusChipStyleSheet(
                    InsightStatusTone::Warning,

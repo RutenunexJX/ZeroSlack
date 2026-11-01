@@ -91,7 +91,7 @@ constexpr const char* kSettingsWorkspaces =
     "workspaces";
 constexpr const char* kSettingsState = "state";
 
-// Parse and edit an isolated INI image. QSettings instances for the real path
+// Parse and serialize separate isolated INI images. QSettings instances for the real path
 // share pending writes, so a failed sync must never become a readable baseline.
 struct SessionStorage {
     QString path;
@@ -149,18 +149,38 @@ struct SessionStorage {
         available = true;
     }
 
+    void prepareWrite()
+    {
+        // The parsed input need not be replaceable to serialize a new image.
+        auto output = std::make_unique<QSettings>(
+            staging.filePath(QStringLiteral("serialized.ini")), QSettings::IniFormat);
+        output->setFallbacksEnabled(false);
+        const auto keys = settings->allKeys();
+        for (const auto& key : keys)
+            output->setValue(key, settings->value(key));
+        settings = std::move(output);
+    }
+
     bool commit(QString* reason)
     {
         settings->sync();
-        QFile staged(settings->fileName());
-        if (settings->status() != QSettings::NoError || !staged.open(QIODevice::ReadOnly)) {
+        if (settings->status() != QSettings::NoError) {
             *reason = QStringLiteral("Failed to serialize local workspace session.");
             return false;
         }
-        const QByteArray bytes = staged.readAll();
-        if (staged.error() != QFileDevice::NoError) {
-            *reason = staged.errorString();
-            return false;
+        QByteArray bytes;
+        // QSettings may leave a new, empty image absent after the last key is removed.
+        if (!settings->allKeys().isEmpty()) {
+            QFile staged(settings->fileName());
+            if (!staged.open(QIODevice::ReadOnly)) {
+                *reason = QStringLiteral("Failed to serialize local workspace session.");
+                return false;
+            }
+            bytes = staged.readAll();
+            if (staged.error() != QFileDevice::NoError) {
+                *reason = staged.errorString();
+                return false;
+            }
         }
         QSaveFile output(path);
         output.setDirectWriteFallback(false);
@@ -978,6 +998,7 @@ bool WorkspaceSessionStateService::saveDocumentTemplates(const QString& fileName
     SessionStorage storage(path);
     if (!storage.available) { if (error) *error = storage.message; return false; }
     const auto key = QCryptographicHash::hash(EditorFileIdentity::lookupKey(fileName).toUtf8(), QCryptographicHash::Sha256).toHex();
+    storage.prepareWrite();
     storage.settings->setValue(QStringLiteral("templateDocuments/v1/%1").arg(QString::fromLatin1(key)), QJsonDocument(state).toJson(QJsonDocument::Compact));
     return storage.commit(error);
 }
@@ -1019,6 +1040,7 @@ bool WorkspaceSessionStateService::saveDocumentWithTemplates(const QString& file
     const QJsonObject generations{{"transactionVersion", 1}, {"generations", QJsonArray{
         QJsonObject{{"diskRevision", QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex())}, {"metadata", state}},
         QJsonObject{{"diskRevision", expectedDiskRevision}, {"metadata", previous}}}}};
+    storage.prepareWrite();
     storage.settings->setValue(key, QJsonDocument(generations).toJson(QJsonDocument::Compact));
     if (commitGuard && !commitGuard(error)) return false;
     if (currentRevision() != expectedDiskRevision) { *error = QStringLiteral("Source changed before commit."); return false; }
@@ -1089,6 +1111,7 @@ WorkspaceSessionStateService::save(
         result.retryable = status == WorkspaceSessionReadStatus::ReadError;
         return result;
     }
+    storage.prepareWrite();
     storage.settings->beginGroup(
         settingsGroup(root));
     storage.settings->remove(QString());
@@ -1190,6 +1213,7 @@ bool WorkspaceSessionStateService::clear(
         return false;
     if (!storage.existed)
         return true;
+    storage.prepareWrite();
     storage.settings->beginGroup(group);
     storage.settings->remove(QString());
     storage.settings->endGroup();

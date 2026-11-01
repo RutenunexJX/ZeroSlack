@@ -15,7 +15,12 @@
 #include "liveinsightscontextprovider.h"
 #include "rtlinsightworkbench.h"
 #include "rtlinsightspanelcoordinator.h"
-#include "signalusagehotspotpanel.h"
+#include "trace_repair_fixture.h"
+#include "signaltracemodels.h"
+#include <QComboBox>
+#include <QTableView>
+#include <QTreeWidget>
+#include <QAction>
 #include "tabmanager.h"
 #include "temporaryeditorcontextprovider.h"
 #include <QProxyStyle>
@@ -42,6 +47,9 @@
 #include <QJsonObject>
 #include <QMenu>
 #include <QSignalSpy>
+#include <QScrollArea>
+#include <QScrollBar>
+#include <QSplitter>
 
 namespace {
 class TextEngine : public QPaintEngine {
@@ -88,9 +96,15 @@ Counts audit(QWidget* root) {
             ++result.clipped; qWarning() << "I5" << b << b->text() << b->size() << b->minimumSizeHint();
         }
         if (auto* b=qobject_cast<QAbstractButton*>(w); b && !b->text().isEmpty()) {
+            const auto* tool=qobject_cast<QToolButton*>(b);
+            const bool namedIcon=tool && tool->toolButtonStyle()==Qt::ToolButtonIconOnly
+                && !tool->icon().isNull() && !tool->toolTip().isEmpty() && !tool->accessibleName().isEmpty();
             const QString text=b->text().remove('&');
-            if (b->fontMetrics().horizontalAdvance(text)>b->width()
-                && !(text.endsWith(QChar(0x2026)) && !b->toolTip().isEmpty())) ++result.clipped;
+            if (!namedIcon && b->fontMetrics().horizontalAdvance(text)>b->width()
+                && !(text.endsWith(QChar(0x2026)) && !b->toolTip().isEmpty())) {
+                ++result.clipped; qWarning()<<"I5 text"<<b<<text<<b->size()<<"style"<<(tool?int(tool->toolButtonStyle()):-1)
+                    <<"icon"<<(tool && !tool->icon().isNull())<<"tooltip"<<b->toolTip()<<"accessible"<<b->accessibleName();
+            }
         }
         for (auto* other : all) {
             if (other<=w || !other->isVisible() || other->parentWidget()!=w->parentWidget()) continue;
@@ -108,7 +122,7 @@ bool recordAudit(QWidget* root, const Counts& counts, const QString& phase={}) {
     const QString name=QString::fromLatin1(QTest::currentTestFunction())+"_"+QTest::currentDataTag()+phase;
     QJsonArray controls;
     for (auto* w:root->findChildren<QWidget*>()) {
-        if (!w->isVisible() || !w->objectName().startsWith("signalUsageHotspot")) continue;
+        if (!w->isVisible() || !w->objectName().startsWith("trace")) continue;
         if (!qobject_cast<QAbstractButton*>(w) && !qobject_cast<QLineEdit*>(w)) continue;
         const QPoint at=w->mapTo(root,QPoint());
         controls.append(QJsonObject{{"name",w->objectName()},{"x",at.x()},{"y",at.y()},
@@ -116,7 +130,7 @@ bool recordAudit(QWidget* root, const Counts& counts, const QString& phase={}) {
     }
     const QJsonObject record{{"case",name},{"logicalWidth",root->width()},{"logicalHeight",root->height()},
         {"actualDpr",root->devicePixelRatioF()},{"scaleFactor",qEnvironmentVariable("QT_SCALE_FACTOR")},
-        {"actualUiBackend",ApplicationThemeManager::instance().backend()==UiStyleBackend::Ela?"ela":"classic"},
+        {"actualUiBackend","ela"},
         {"overlap",counts.overlap},{"outside",counts.outside},{"clipped",counts.clipped},{"controls",controls}};
     QFile file(directory+"/compact-measurements.jsonl");
     if (!file.open(QIODevice::Append)) return false;
@@ -192,6 +206,139 @@ private slots:
         }
         qInfo()<<"main window"<<window.size()<<"center"<<center->geometry()<<"layout"<<window.layout()->geometry();
     }
+    void mainWindowEditorTabStyle_data() {
+        QTest::addColumn<bool>("dark");
+        QTest::newRow("light") << false;
+        QTest::newRow("dark") << true;
+    }
+    void mainWindowEditorTabStyle() {
+        QFETCH(bool, dark);
+        auto& theme = ApplicationThemeManager::instance();
+        const auto originalTheme = theme.mode();
+        const auto restore = qScopeGuard([&] { theme.setMode(originalTheme); });
+        const auto startTheme = dark ? ThemeMode::Dark : ThemeMode::Light;
+        const auto otherTheme = dark ? ThemeMode::Light : ThemeMode::Dark;
+        theme.setMode(startTheme);
+
+        QWidget factoryHost;
+        auto* factoryBar = UiControls::tabBar(&factoryHost);
+        QVERIFY(factoryBar->inherits("ElaTabBar"));
+        QVERIFY(!factoryBar->styleSheet().isEmpty());
+
+        MainWindow window;
+        auto* manager = window.findChild<TabManager*>();
+        QVERIFY(manager);
+        auto* controller = manager->editorSplitController();
+        QVERIFY(controller);
+        QCOMPARE(controller->groupCount(), 1);
+        auto* initial = controller->initialGroup();
+        QVERIFY(initial && initial->inherits("ElaTabWidget"));
+        QVERIFY(initial->tabBar()->inherits("ElaTabBar"));
+        QVERIFY2(initial->tabBar()->styleSheet().isEmpty(),
+                 "MainWindow must clear the initial group's factory QSS");
+
+        auto fill = [&](QTabWidget* group) {
+            controller->setActiveGroup(group);
+            while (group->count() < 8)
+                manager->createNewTab();
+            for (int i = 0; i < group->count(); ++i)
+                group->setTabText(i, QString("controller_pipeline_stage_%1.sv").arg(i));
+        };
+        fill(initial);
+        window.resize(1160, 900);
+        window.show();
+        QTest::qWait(100);
+        QJsonArray evidence;
+        auto verifyGroups = [&](const QString& phase) {
+            for (auto* group : controller->groups()) {
+                QVERIFY(group->inherits("ElaTabWidget"));
+                auto* bar = group->tabBar();
+                QVERIFY(bar->inherits("ElaTabBar"));
+                QVERIFY2(bar->styleSheet().isEmpty(), qPrintable(phase));
+                QVERIFY(bar->isVisible());
+                QVERIFY(bar->usesScrollButtons());
+                int shortestPaintedText = 1000;
+                for (int i = 0; i < group->count(); ++i) {
+                    group->setCurrentIndex(i);
+                    QTest::qWait(2);
+                    QVERIFY(bar->tabRect(i).width() >= bar->fontMetrics().horizontalAdvance("aaa"));
+                    TextDevice device(bar->size());
+                    bar->render(&device, QPoint(), QRegion(), QWidget::DrawWindowBackground);
+                    QVERIFY(!device.engine.labels.isEmpty());
+                    for (QString text : device.engine.labels) {
+                        text.remove(QChar(0x2026));
+                        text.remove("...");
+                        shortestPaintedText = qMin(shortestPaintedText, int(text.trimmed().size()));
+                        QVERIFY2(text.trimmed().size() >= 3, qPrintable(text));
+                    }
+                    const QRect visible = bar->tabRect(i).intersected(bar->rect());
+                    QVERIFY(!visible.isEmpty());
+                    QCOMPARE(bar->tabAt(visible.center()), i);
+                    QSignalSpy selected(bar, &QTabBar::tabBarClicked);
+                    QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, visible.center());
+                    QCOMPARE(selected.count(), 1);
+                    QCOMPARE(selected.first().first().toInt(), i);
+                    QCOMPARE(group->currentIndex(), i);
+                }
+                bool scrollVisible = false;
+                for (auto* button : bar->findChildren<QToolButton*>())
+                    scrollVisible |= button->isVisible();
+                QVERIFY(scrollVisible);
+                QVERIFY(!bar->rect().contains(bar->tabRect(0)));
+                evidence.append(QJsonObject{{"phase", phase}, {"group", group->objectName()},
+                    {"groupCount", controller->groupCount()}, {"theme", int(theme.mode())},
+                    {"barClass", bar->metaObject()->className()}, {"localQssEmpty", bar->styleSheet().isEmpty()},
+                    {"barWidth", bar->width()}, {"barHeight", bar->height()},
+                    {"actualDpr", bar->devicePixelRatioF()}, {"shortestPaintedText", shortestPaintedText},
+                    {"selectedIndex", group->currentIndex()}, {"scrollVisible", scrollVisible}});
+            }
+        };
+        for (bool split : {false, true}) {
+            if (split) {
+                QSignalSpy created(manager, &TabManager::tabGroupCreated);
+                QVERIFY(manager->splitCurrentView(EditorSplitDirection::Right));
+                QCOMPARE(created.count(), 1);
+                QCOMPARE(controller->groupCount(), 2);
+                auto* second = controller->activeGroup();
+                QVERIFY(second && second != initial);
+                QCOMPARE(qvariant_cast<QTabWidget*>(created.first().first()), second);
+                QVERIFY2(second->tabBar()->styleSheet().isEmpty(),
+                         "MainWindow's group-created handler must clear the new group's factory QSS");
+                fill(second);
+                QTest::qWait(80);
+            }
+            const QString layout = split ? "split" : "single";
+            verifyGroups(layout + "-initial");
+            QHash<QTabWidget*, QList<QSize>> tabSizes;
+            QHash<QTabWidget*, QWidget*> selectedPages;
+            QHash<QTabWidget*, QStringList> tabTexts;
+            for (auto* group : controller->groups()) {
+                selectedPages[group] = group->currentWidget();
+                for (int i = 0; i < group->count(); ++i) {
+                    tabSizes[group].append(group->tabBar()->tabRect(i).size());
+                    tabTexts[group].append(group->tabText(i));
+                }
+            }
+            for (auto mode : {otherTheme, startTheme}) {
+                theme.setMode(mode);
+                QTest::qWait(80);
+                for (auto* group : controller->groups()) {
+                    QCOMPARE(group->currentWidget(), selectedPages[group]);
+                    for (int i = 0; i < group->count(); ++i) {
+                        QCOMPARE(group->tabBar()->tabRect(i).size(), tabSizes[group].at(i));
+                        QCOMPARE(group->tabText(i), tabTexts[group].at(i));
+                    }
+                }
+                verifyGroups(layout + (mode == startTheme ? "-restored" : "-switched"));
+            }
+        }
+        const QString artifacts = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+        if (!artifacts.isEmpty()) {
+            QFile output(artifacts + QString("/mainwindow-tab-style-%1.json").arg(dark ? "dark" : "light"));
+            QVERIFY(output.open(QIODevice::WriteOnly));
+            output.write(QJsonDocument(evidence).toJson());
+        }
+    }
     void editorTabs_data() {
         QTest::addColumn<bool>("dark");
         QTest::addColumn<bool>("largeFont");
@@ -221,7 +368,7 @@ private slots:
             for (auto* group:controller.groups()) group->show();
             // MainWindow reapplies this style after creating groups and changing themes.
             for (auto* group:controller.groups())
-                group->tabBar()->setStyleSheet(InsightVisualStyle::tabBarStyleSheet(group->tabBar()->objectName()));
+                group->tabBar()->setStyleSheet(QString());
             host.resize(split ? 900 : 615,700);host.show();QTest::qWait(30);
             if (largeFont) {
                 for (auto* group:controller.groups()) {
@@ -242,10 +389,8 @@ private slots:
                 for (int i=0;i<bar->count();++i) {
                     group->setCurrentIndex(i);QTest::qWait(1);
                     widths.append(bar->tabRect(i).width());
-                    if (ApplicationThemeManager::instance().backend()==UiStyleBackend::Classic)
-                        QVERIFY(bar->tabRect(i).width()>=108);
-                    else
-                        QVERIFY(bar->tabRect(i).width()>=bar->fontMetrics().horizontalAdvance("aaa"));
+                    QVERIFY(bar->tabRect(i).isValid());
+                    QVERIFY(bar->tabRect(i).width()>=bar->fontMetrics().horizontalAdvance("aaa"));
                     TextDevice device(bar->size());
                     // Observe tab labels, excluding child arrow/close controls.
                     bar->render(&device,QPoint(),QRegion(),QWidget::DrawWindowBackground);
@@ -338,6 +483,107 @@ private slots:
             QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
         }
     }
+    void contextExtentWeights_data() {
+        QTest::addColumn<int>("area");
+        QTest::newRow("right") << int(Qt::RightDockWidgetArea);
+        QTest::newRow("left") << int(Qt::LeftDockWidgetArea);
+        QTest::newRow("bottom") << int(Qt::BottomDockWidgetArea);
+    }
+    void contextExtentWeights() {
+        QFETCH(int,area);
+        const auto dockArea=Qt::DockWidgetArea(area);
+        const bool bottom=dockArea==Qt::BottomDockWidgetArea;
+        ContextDockHost host;
+        QWidget* surface=bottom ? host.bottomWidget()
+            : dockArea==Qt::LeftDockWidgetArea ? host.leftWidget() : &host;
+        if(surface!=&host)surface->setParent(nullptr);
+        surface->resize(bottom?QSize(1100,260):QSize(520,780));
+        surface->show();
+        QStringList keys;
+        for(int i=0;i<2;++i){
+            ContextResource resource;resource.providerId="extent-regression";
+            resource.resourceId=QString::number(i);resource.title=resource.resourceId;
+            auto* view=new QWidget;view->setMinimumHeight(i?170:48);
+            if(i)view->setProperty("contextScopeText","Scope expanded for this view");
+            QVERIFY(host.addResource(resource,view));
+            keys.append(resource.stableKey());
+            QVERIFY(host.moveResourceToArea(keys.last(),dockArea));
+        }
+        QTest::qWait(30);
+        auto* splitter=surface->findChild<QSplitter*>(bottom?"contextBottomSplitter"
+            : dockArea==Qt::LeftDockWidgetArea?"contextLeftSplitter":"contextSideSplitter");
+        QVERIFY(splitter);
+        auto setRequest=[&](int i,int value){
+            return bottom ? host.setSectionWidth(keys[i],value) : host.setSectionHeight(keys[i],value);
+        };
+        const auto defaultSizes=splitter->sizes();
+        QCOMPARE(defaultSizes.size(),2);
+        const int minimum0=bottom?host.sectionWidget(keys[0])->minimumWidth():host.sectionWidget(keys[0])->minimumHeight();
+        const int minimum1=bottom?host.sectionWidget(keys[1])->minimumWidth():host.sectionWidget(keys[1])->minimumHeight();
+        QVERIFY(minimum0!=minimum1);
+        for(int i=0;i<2;++i)QVERIFY(setRequest(i,600));
+        QTest::qWait(20);
+        const auto equalSizes=splitter->sizes();
+        qInfo()<<"extent weights"<<area<<"DPR"<<surface->devicePixelRatioF()
+            <<"minimums"<<minimum0<<minimum1<<"default"<<defaultSizes<<"equal"<<equalSizes;
+        for(int i=0;i<2;++i)QVERIFY(qAbs(defaultSizes[i]-equalSizes[i])<=1);
+        QVERIFY(setRequest(0,300));QVERIFY(setRequest(1,600));
+        QTest::qWait(20);
+        const auto weighted=splitter->sizes();
+        QVERIFY(qAbs(2*weighted[0]-weighted[1])<=2);
+        QCOMPARE(weighted[0]+weighted[1]+splitter->handleWidth(),bottom?splitter->width():splitter->height());
+        QVERIFY(host.setSectionCollapsed(keys[0],true,false));
+        QTest::qWait(20);
+        if(bottom)QCOMPARE(splitter->sizes(),weighted);
+        else QCOMPARE(host.sectionWidget(keys[0])->height(),host.sectionHeader(keys[0])->height());
+        QVERIFY(host.setSectionCollapsed(keys[0],false,false));
+        QTest::qWait(20);
+        for(int i=0;i<2;++i)QVERIFY(qAbs(splitter->sizes()[i]-weighted[i])<=1);
+        surface->resize(bottom?QSize(900,260):QSize(520,650));
+        QTest::qWait(20);
+        QVERIFY(qAbs(2*splitter->sizes()[0]-splitter->sizes()[1])<=2);
+        QCOMPARE(bottom?host.sectionWidth(keys[0]):host.sectionHeight(keys[0]),300);
+        QCOMPARE(bottom?host.sectionWidth(keys[1]):host.sectionHeight(keys[1]),600);
+        surface->resize(bottom?QSize(220,260):QSize(520,64));
+        QTest::qWait(20);
+        auto* scroll=qobject_cast<QScrollArea*>(splitter->parentWidget()->parentWidget()->parentWidget());
+        QVERIFY(scroll);
+        QVERIFY((bottom?scroll->horizontalScrollBar():scroll->verticalScrollBar())->maximum()>0);
+        QVERIFY(splitter->sizes()[0]>=minimum0 && splitter->sizes()[1]>=minimum1);
+    }
+    void contextExtentProjection_data() {
+        QTest::addColumn<bool>("bottom");
+        QTest::newRow("right") << false;
+        QTest::newRow("bottom") << true;
+    }
+    void contextExtentProjection() {
+        QFETCH(bool,bottom);
+        ContextDockHost host;
+        QWidget* surface=bottom?host.bottomWidget():&host;
+        if(bottom)surface->setParent(nullptr);
+        surface->resize(bottom?QSize(1100,260):QSize(520,620));surface->show();
+        QStringList keys;
+        for(int i=0;i<2;++i){
+            ContextResource resource;resource.providerId="projection-regression";
+            resource.resourceId=QString::number(i);resource.title=resource.resourceId;
+            auto* view=new QWidget;view->setMinimumHeight(i?250:48);
+            if(i)view->setProperty("contextScopeText","Scope expanded for this view");
+            QVERIFY(host.addResource(resource,view));keys.append(resource.stableKey());
+            if(bottom)QVERIFY(host.moveResourceToArea(keys.last(),true));
+        }
+        QTest::qWait(30);
+        auto* incoming=new QWidget;incoming->setMinimumHeight(120);
+        if(bottom)incoming->setMinimumWidth(host.sectionHeader(keys.first())->minimumSizeHint().width());
+        const auto predicted=host.projectedSectionRect(bottom,1,host.viewportGlobalRect(bottom),incoming);
+        ContextResource resource;resource.providerId="projection-regression";
+        resource.resourceId="incoming";resource.title="incoming";
+        QVERIFY(host.addResource(resource,incoming));
+        QVERIFY(bottom?host.moveResourceToArea(resource.stableKey(),true,1):host.moveResource(resource.stableKey(),1));
+        QTest::qWait(30);
+        const auto actual=globalRect(host.sectionWidget(resource.stableKey()));
+        qInfo()<<"extent projection"<<bottom<<"DPR"<<surface->devicePixelRatioF()<<predicted<<actual;
+        QCOMPARE(predicted,actual);
+    }
     void insightSectionHeights() {
         // Three sections share the dock proportionally. Equal saved weights
         // must not change their sizes or leave the canvas below usable size.
@@ -372,9 +618,19 @@ private slots:
             for (const auto& key : keys) {
                 auto* view = qobject_cast<LiveInsightsContextView*>(host.viewForResource(key));
                 auto* surface = view ? view->surfaceForTest() : nullptr;
-                auto* panel = surface ? surface->workbenchForTest()->rtlSurfaceForTest() : nullptr;
-                if (panel && !QTest::qVerify(waitForLiveInsightReports(*panel),
-                    "graph report ready before geometry measurement", "", __FILE__, __LINE__)) return {};
+                if (!QTest::qVerify(surface, "insight surface exists", "", __FILE__, __LINE__)) return {};
+                bool ready = false;
+                if (auto* trace = surface->traceSurface()) {
+                    ready = SignalTraceTest::settled(*trace);
+                } else {
+                    auto* workbench = surface->workbenchForTest();
+                    auto* panel = workbench ? workbench->rtlSurfaceForTest() : nullptr;
+                    // Module now opens Design; only the State surface owns a workbench.
+                    ready = panel ? waitForLiveInsightReports(*panel)
+                                  : surface->findChild<QPushButton*>("openExistingDesign") != nullptr;
+                }
+                if (!QTest::qVerify(ready,
+                    "current insight queries ready before geometry measurement", "", __FILE__, __LINE__)) return {};
             }
             if (suggested>0) { for (const QString& key : keys) host.setSectionHeight(key,suggested); }
             QTest::qWait(30);
@@ -489,17 +745,23 @@ private slots:
             ContextDockHost host;
             auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Hotspot,{});
             auto* page=new LiveInsightToolPage(LiveInsightKind::Hotspot);
-            auto* rtl=page->workbenchForTest()->rtlSurfaceForTest();QVERIFY(rtl);
-            auto* hotspot=rtl->signalUsageHotspotPanelForTest();
-            SignalUsageHotspotReport report;report.found=true;report.declarationDisplayName="byte_data";
-            SignalUsageHotspotItem item;item.role=SignalUsageHotspotRole::Read;item.moduleName="uart";item.fileName="uart.sv";item.line=10;item.snippet="assign out_data = byte_data;";
-            report.items.append(item);
-            SignalUsageHotspotTrackLane lane;lane.moduleName=item.moduleName;lane.fileName=item.fileName;lane.startLine=10;lane.endLine=20;lane.count=1;
-            SignalUsageHotspotTrackPosition position;position.itemIndex=0;position.role=item.role;position.line=10;lane.positions.append(position);report.trackLanes.append(lane);
-            hotspot->renderReportForTest(report);
-            rtl->stackForTest()->setCurrentWidget(hotspot);
+            SignalTraceTest::Fixture fixture;
+            QVERIFY(fixture.build(SignalTraceTest::branchingSource(4)));
+            auto* index=SemanticIndex::getInstance();
+            const auto previous=index->snapshot();
+            const auto restoreSnapshot=qScopeGuard([&]{index->setSnapshot(previous);});
+            index->setSnapshot(fixture.context.token.snapshot);
+            LiveInsightToolContext target;
+            target.workspaceId=fixture.context.workspaceId;target.projectId=fixture.context.projectId;
+            target.fileName=target.documentId=fixture.file;target.documentText=fixture.source;
+            target.moduleName="top";target.signalName="core";
+            page->setContext(target);
+            auto* hotspot=page->traceSurface();QVERIFY(hotspot);
             QVERIFY(host.addResource(resource,page,true));
             host.setFixedWidth(width); host.resize(width,900); host.show(); QTest::qWait(30);
+            QVERIFY(SignalTraceTest::settled(*hotspot));
+            QCOMPARE(hotspot->currentObject().objectPath,QString("top.core"));
+            QVERIFY(hotspot->heatModel()->rowCount()>0);
             auto c=audit(&host);
             QVERIFY(recordAudit(&host,c));
             qInfo() << "Full view" << width << "actual" << host.width() << "I3/I4/I5" << c.overlap << c.outside << c.clipped;
@@ -507,26 +769,44 @@ private slots:
             if (!root.isEmpty() && (width==220 || width==480)) {
                 QDir().mkpath(root);QVERIFY(host.grab().save(root+QString("/context_width_%1.png").arg(width)));
             }
-            QVERIFY(host.width()==width);
-            QVERIFY(c.overlap==0 && c.outside==0 && c.clipped==0);
-            auto* matrix=hotspot->findChild<QPushButton*>("signalUsageHotspotMatrixModeButton");
-            auto* track=hotspot->findChild<QPushButton*>("signalUsageHotspotTrackModeButton");
-            auto* search=hotspot->findChild<QLineEdit*>("signalUsageHotspotSearch");
-            auto* more=hotspot->findChild<QToolButton*>("signalUsageHotspotMoreButton");
-            QVERIFY(matrix && track && search && more && more->menu());
-            QTest::mouseClick(matrix,Qt::LeftButton); QVERIFY(hotspot->matrixModeForTest());
-            QTest::mouseClick(track,Qt::LeftButton); QVERIFY(!hotspot->matrixModeForTest());
-            search->setText("byte_data");
-            for (auto* action:hotspot->graphViewActionsForTest()) QVERIFY(more->menu()->actions().contains(action));
+            bool geometryValid=host.width()==width && c.overlap==0 && c.outside==0 && c.clipped==0;
+            auto* mode=hotspot->findChild<QComboBox*>("traceMode");
+            auto* search=hotspot->findChild<QLineEdit*>("traceFilter");
+            auto* more=hotspot->findChild<QToolButton*>("traceMore");
+            QVERIFY(mode && search && more && more->menu());
+            QCOMPARE(mode->currentText(),QString("Heatmap"));
+            auto* model=hotspot->heatModel();
+            QVERIFY(hotspot->heatTable()->itemDelegateForColumn(SignalTraceHeatModel::Distribution));
+            mode->setCurrentIndex(0);QVERIFY(hotspot->traceTree(SignalTraceDirection::Upstream)->isVisible());
+            mode->setCurrentIndex(1);QVERIFY(hotspot->heatTable()->isVisible());
+            search->setText("assign reader_2 = core;");
+            QCOMPARE(model->references().size(),1);
+            QCOMPARE(model->references().first().role,SignalTraceRole::Read);
+            for(const auto& name:{"traceCopy","traceExport","traceRefresh"}) {
+                auto* action=hotspot->findChild<QAction*>(name);QVERIFY(action);
+                QVERIFY(more->menu()->actions().contains(action));
+            }
+            const auto selected=model->index(0,SignalTraceHeatModel::Read);
+            hotspot->heatTable()->setCurrentIndex(selected);
             for (int resized:{480,220,width}) {
                 host.setFixedWidth(resized);QTest::qWait(30);
-                const auto after=audit(&host);
-                QVERIFY(recordAudit(&host,after,QString("-resize-%1").arg(resized)));
-                QVERIFY(after.overlap==0 && after.outside==0 && after.clipped==0);
-                QCOMPARE(search->text(),QString("byte_data"));
-                QVERIFY(!hotspot->matrixModeForTest());
-                QVERIFY(matrix->isVisible() && track->isVisible() && more->isVisible());
+                for(int zoom=0;zoom<3;++zoom) {
+                    if(zoom==1)hotspot->focusZoomIn();
+                    if(zoom==2)hotspot->focusZoomOut();
+                    QTest::qWait(30);
+                    const auto after=audit(&host);
+                    QVERIFY(recordAudit(&host,after,QString("-resize-%1-zoom-%2").arg(resized).arg(zoom)));
+                    geometryValid=geometryValid && host.width()==resized && after.overlap==0 && after.outside==0 && after.clipped==0;
+                    QCOMPARE(search->text(),QString("assign reader_2 = core;"));
+                    QCOMPARE(mode->currentText(),QString("Heatmap"));
+                    QCOMPARE(hotspot->heatModel(),model);
+                    QCOMPARE(hotspot->heatTable()->currentIndex(),selected);
+                    QCOMPARE(model->references().size(),1);
+                    QVERIFY(mode->isVisible() && search->isVisible() && more->isVisible());
+                }
             }
+            QVERIFY2(geometryValid,"Actual narrow/resize/zoom layout must remain inside its host without overlap or clipped controls; inspect recorded measurements");
+
     }
 };
 int main(int argc,char** argv) {

@@ -8,18 +8,59 @@ param(
     [string]$XipsAssetAdapterDirectory = '',
     [string]$WelcomeResourceDirectory = '',
     [string]$DocumentEditorDirectory = '',
+    [string]$PreparationPlan = '',
+    [string]$PreparationEvidence = '',
+    [string]$PythonExecutable = '',
     [switch]$Formal,
     [switch]$AllowDirty
 )
 $ErrorActionPreference = 'Stop'
 $sourceRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'ReleasePreparation.ps1')
+$originalSourceRoot = $sourceRoot
+if (-not $PreparationEvidence -and -not $PreparationPlan) {
+    throw 'A preparation plan or complete preparation evidence is required before any package write.'
+}
+$python = Resolve-ZeroSlackGatePython $PreparationPlan $PreparationEvidence $PythonExecutable
+if (-not $PreparationEvidence) {
+    if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $sourceRoot $BuildDirectory }
+    $arguments = @('prepare', '--plan', $PreparationPlan, '--work', $BuildDirectory)
+    if ($Formal) { $arguments += '--formal' }
+    Invoke-ZeroSlackGate $python $arguments
+    $PreparationEvidence = Join-Path $BuildDirectory 'preparation.json'
+}
+$arguments = @('verify', '--evidence', $PreparationEvidence, '--source', $originalSourceRoot)
+if ($Formal) { $arguments += '--formal' }
+Invoke-ZeroSlackGate $python $arguments
+$preparation = Get-Content -LiteralPath $PreparationEvidence -Raw | ConvertFrom-Json
+$gitExecutable = $preparation.tools.git.path
+if (-not $gitExecutable) { throw 'Verified preparation must identify its Git executable.' }
+if ($PSBoundParameters.ContainsKey('BuildDirectory') -and -not $PreparationPlan -and
+    [IO.Path]::GetFullPath($BuildDirectory) -ne [IO.Path]::GetFullPath($preparation.buildDirectory) -and
+    [IO.Path]::GetFullPath($BuildDirectory) -ne [IO.Path]::GetFullPath($preparation.work)) {
+    throw 'BuildDirectory does not identify the prepared candidate.'
+}
+if ([IO.Path]::GetFullPath($QtDirectory) -ne [IO.Path]::GetFullPath($preparation.qtDirectory) -or
+    [IO.Path]::GetFullPath($CompilerDirectory) -ne [IO.Path]::GetFullPath($preparation.compilerDirectory)) {
+    throw 'Packaging toolchain differs from the prepared candidate.'
+}
+foreach ($override in @(
+    @{ value=$XipsPackageDirectory; expected=(Join-Path $preparation.buildDirectory 'components/xips') },
+    @{ value=$XipsAssetAdapterDirectory; expected=(Join-Path $preparation.buildDirectory 'components/xips-asset-adapter') },
+    @{ value=$WelcomeResourceDirectory; expected=(Join-Path $preparation.sourceRoot 'resources/welcome') },
+    @{ value=$DocumentEditorDirectory; expected=(Join-Path $preparation.buildDirectory 'resources/document-editors') }
+)) {
+    if ($override.value -and [IO.Path]::GetFullPath($override.value) -ne [IO.Path]::GetFullPath($override.expected)) {
+        throw 'Packaging resource override differs from the prepared candidate; include it in a new preparation plan.'
+    }
+}
+$sourceRoot = $preparation.sourceRoot
+$BuildDirectory = $preparation.buildDirectory
 $version = (Get-Content -LiteralPath (Join-Path $sourceRoot 'VERSION') -Raw).Trim()
 if (-not [IO.Path]::IsPathRooted($BuildDirectory)) { $BuildDirectory = Join-Path $sourceRoot $BuildDirectory }
 $buildRoot = (Resolve-Path -LiteralPath $BuildDirectory).Path
 $cache = Get-Content -LiteralPath (Join-Path $buildRoot 'CMakeCache.txt')
-if ($cache -notcontains 'ZEROSLACK_ENABLE_ELA:BOOL=ON' -or
-    $cache -notcontains 'ZEROSLACK_ENABLE_QLEMENTINE:BOOL=OFF' -or
-    $cache -notcontains 'ZEROSLACK_ENABLE_SUITEUI:BOOL=OFF') { throw 'The maintained release requires the Ela backend.' }
+if ($cache -notcontains 'ZEROSLACK_ENABLE_ELA:BOOL=ON') { throw 'The maintained release requires the Ela backend.' }
 $generatedVersion = [regex]::Match(
     (Get-Content -LiteralPath (Join-Path $buildRoot 'generated/version.h') -Raw),
     '#define\s+APP_VERSION\s+"([^"]+)"')
@@ -31,17 +72,21 @@ if (-not (Test-Path -LiteralPath $suiteBuildPath -PathType Leaf)) {
     throw 'SuiteApp build metadata is missing; reconfigure and rebuild first.'
 }
 $suiteBuild = Get-Content -LiteralPath $suiteBuildPath -Raw | ConvertFrom-Json
-$revision = & git -C $sourceRoot rev-parse HEAD
+$revision = & $gitExecutable -C $originalSourceRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git revision.' }
-$branch = & git -C $sourceRoot branch --show-current
+$branch = & $gitExecutable -C $originalSourceRoot branch --show-current
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git branch.' }
-$sourceStatus = if ($Formal) { & git -c core.fsmonitor=false -C $sourceRoot status --porcelain } else { & git -c core.fsmonitor=false -C $sourceRoot status --porcelain --ignore-submodules=all }
-$dirty = [bool]$sourceStatus
+$sourceStatus = if ($Formal) { & $gitExecutable -c core.fsmonitor=false -C $originalSourceRoot status --porcelain --untracked-files=no } else { & $gitExecutable -c core.fsmonitor=false -C $originalSourceRoot status --porcelain --untracked-files=no --ignore-submodules=all }
 if ($LASTEXITCODE -ne 0) { throw 'Cannot read Git source status.' }
+$trackedNames = @(& $gitExecutable -C $originalSourceRoot ls-files)
+if ($LASTEXITCODE -ne 0) { throw 'Cannot read tracked candidate paths.' }
+$preparedSources = Get-Content -LiteralPath $preparation.sourceManifest -Raw | ConvertFrom-Json
+$untrackedPreparedFiles = @($preparedSources.files.PSObject.Properties.Name | Where-Object { $_ -notin $trackedNames -and $_ -notlike 'thirdparty/*' })
+$dirty = [bool]$sourceStatus -or $untrackedPreparedFiles.Count -gt 0
 if ($Formal -and $dirty -and -not $AllowDirty) {
     throw 'Formal packages require clean source unless -AllowDirty is explicitly requested.'
 }
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $sourceRoot 'build/packages/ZeroSlack-win64' }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $originalSourceRoot 'build/packages/ZeroSlack-win64' }
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 # Verify the new staging directory before replacing the installed package.
 if (Test-Path -LiteralPath $outputRoot) { throw 'Output must be a new directory.' }
@@ -320,7 +365,7 @@ Copy-Item -LiteralPath (Join-Path $QtDirectory 'plugins/platforms/qoffscreen.dll
 $channel = if ($Formal) { 'formal' } else { 'preview' }
 $releaseTag = $null
 if ($Formal -and -not $dirty) {
-    $matchingTags = @(& git -C $sourceRoot tag --points-at $revision --list "v$version")
+    $matchingTags = @(& $gitExecutable -C $originalSourceRoot tag --points-at $revision --list "v$version")
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read release tags.' }
     if ($matchingTags -contains "v$version") { $releaseTag = "v$version" }
 }
@@ -328,6 +373,7 @@ if ($Formal -and -not $dirty) {
     releaseTag=$releaseTag; backend='ela'; qt='6.10.2'; nativeComponents=$nativeComponents;
     assetAdapter=$assetAdapter;
     sourceStatusIncludesSubmodules=[bool]$Formal;
+    preparationEvidenceSha256=(Get-FileHash -LiteralPath $PreparationEvidence -Algorithm SHA256).Hash.ToLowerInvariant();
     documentEditors=[ordered]@{ format='zeroslack.document-editors'; version=1; directory='resources/document-editors';
         marktext=$editorManifest.inputs.marktext.commit; blocksuite=$editorManifest.inputs.blocksuite.commit;
         webview2Sdk=$editorManifest.inputs.webview2.version; runtimeBundled=$false;
@@ -341,6 +387,9 @@ if ($Formal -and -not $dirty) {
     suiteCliClient=[bool]$suiteBuild.cliClient; runtimeBundled=$false;
     upstreamEla='454cac2d57a47d3cc28577dc817793aec1881ca7'; builtAtUtc=[DateTime]::UtcNow.ToString('o') } |
     ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $outputRoot 'build-info.json') -Encoding utf8
+if ($Formal) {
+    Invoke-ZeroSlackGate $python @('seal-package', '--package', $outputRoot, '--evidence', $PreparationEvidence)
+}
 Get-ChildItem -LiteralPath $outputRoot -File -Recurse | Sort-Object FullName | ForEach-Object {
     '{0}  {1}' -f (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.FullName.Substring($outputRoot.Length + 1).Replace('\', '/')
 } | Set-Content -LiteralPath (Join-Path $outputRoot 'SHA256SUMS.txt') -Encoding utf8

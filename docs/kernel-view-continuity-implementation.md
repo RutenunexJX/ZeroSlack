@@ -101,6 +101,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
 
 主要证据：`final-continuity-tests.log`、`final-full-build.log`、`final-full-ctest.log`、`final-LastTest.log`、`gui-smoke-recheck.log`、`gui-smoke-native-notifications-LastTest.log`、`final-system-ctest.log`、`final-system-LastTest.log`、`real-workspace-before-1.log`、`real-workspace-final-{1,2}.log`、`verified-source-hashes.json` 及 `review/`。路径均相对于 `build/evidence/kernel-continuity-20260920/`。
 
-尚未执行原生桌面、DWM、Snap、多屏 DPI 或跨屏独立验收。后续按方案在实际使用工程中复核手感；第 2–5 阶段的第二应用验证和 SuiteUi 提取尚未启动。
+尚未执行原生桌面、DWM、Snap、多屏 DPI 或跨屏独立验收。后续按方案在实际使用工程中复核手感。
 
 实现已纳入 `v0.29.19` 发布提交 `5bccf7b`。正式包保持固定路径 `E:/PinloomRoot/AppPackage/AppSuite/Apps/ZeroSlack-win64`；发布构建、验证与部署记录保存在本地 `build/release-0.29.19/`。

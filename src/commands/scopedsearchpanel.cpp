@@ -1,6 +1,7 @@
 #include <memory>
 #include "uicontrols.h"
 #include "scopedsearchpanel.h"
+#include "compactlayout.h"
 #include "deferredpanel.h"
 
 #include "scopedreplaceworkflow.h"
@@ -457,8 +458,9 @@ void ScopedSearchPanel::buildUi()
         QStringLiteral("Search"), this);
     searchButton->setObjectName(
         QStringLiteral("scopedSearchButton"));
-    searchControls->addWidget(searchButton);
-    rootLayout->addLayout(searchControls);
+    searchControls->insertWidget(1, searchButton);
+    auto* searchToolbar = new CompactOverflowToolbar(searchControls, QStringLiteral("scopedSearch"), this);
+    rootLayout->addWidget(searchToolbar);
 
     searchStatusLabel = UiControls::label(this);
     searchStatusLabel->setObjectName(
@@ -468,7 +470,7 @@ void ScopedSearchPanel::buildUi()
         QSizePolicy::Fixed);
     searchStatusLabel->setText(
         QStringLiteral("Enter a search query."));
-    rootLayout->addWidget(searchStatusLabel);
+    searchToolbar->addOverflowWidget(searchStatusLabel);
 
     resultsTree = UiControls::treeWidget(this);
     resultsTree->setObjectName(
@@ -491,6 +493,10 @@ void ScopedSearchPanel::buildUi()
         1, QHeaderView::Stretch);
     resultsTree->header()->setSectionResizeMode(
         2, QHeaderView::ResizeToContents);
+    resultsTree->header()->setMinimumSectionSize(
+        resultsTree->fontMetrics().horizontalAdvance(QStringLiteral("Stable Context")) + 16);
+    for (int column = 0; column < resultsTree->columnCount(); ++column)
+        resultsTree->headerItem()->setToolTip(column, resultsTree->headerItem()->text(column));
     rootLayout->addWidget(resultsTree, 2);
 
     auto* replaceGroup = new QGroupBox(
@@ -504,13 +510,12 @@ void ScopedSearchPanel::buildUi()
     auto* replaceControls = new QHBoxLayout();
     replaceControls->setContentsMargins(0, 0, 0, 0);
     replaceControls->setSpacing(6);
-    auto* replaceLabel = UiControls::label(
-        QStringLiteral("Replace with:"), replaceGroup);
-    replaceControls->addWidget(replaceLabel);
     replacementEdit = UiControls::lineEdit(replaceGroup);
     replacementEdit->setObjectName(
         QStringLiteral("scopedSearchReplacementEdit"));
     replacementEdit->setClearButtonEnabled(true);
+    replacementEdit->setPlaceholderText(QStringLiteral("Replace with"));
+    replacementEdit->setAccessibleName(QStringLiteral("Replace with"));
     replaceControls->addWidget(replacementEdit, 1);
     buildPreviewButton = UiControls::pushButton(
         QStringLiteral("Build Diff Preview"),
@@ -528,7 +533,7 @@ void ScopedSearchPanel::buildUi()
         QStringLiteral(
             "Build and confirm a transaction plan without changing files."));
     replaceControls->addWidget(dryRunCheck);
-    replaceLayout->addLayout(replaceControls);
+    replaceLayout->addWidget(new CompactOverflowToolbar(replaceControls, QStringLiteral("scopedReplace"), replaceGroup));
 
     replaceTree = UiControls::treeWidget(replaceGroup);
     replaceTree->setObjectName(
@@ -546,6 +551,10 @@ void ScopedSearchPanel::buildUi()
         0, QHeaderView::ResizeToContents);
     replaceTree->header()->setSectionResizeMode(
         1, QHeaderView::Stretch);
+    replaceTree->header()->setMinimumSectionSize(
+        replaceTree->fontMetrics().horizontalAdvance(QStringLiteral("Stable Context")) + 16);
+    for (int column = 0; column < replaceTree->columnCount(); ++column)
+        replaceTree->headerItem()->setToolTip(column, replaceTree->headerItem()->text(column));
     replaceLayout->addWidget(replaceTree, 1);
 
     replaceDiffView =
@@ -558,7 +567,11 @@ void ScopedSearchPanel::buildUi()
         QStringLiteral(
             "The checked files and matches will be rendered here "
             "as a High-risk Diff before confirmation."));
-    replaceDiffView->setMinimumHeight(0);
+    replaceTree->setMinimumHeight(replaceTree->header()->sizeHint().height()
+        + 4 * (replaceTree->fontMetrics().height() + 10)
+        + replaceTree->horizontalScrollBar()->sizeHint().height() + 4);
+    replaceDiffView->setMinimumHeight(4 * replaceDiffView->fontMetrics().lineSpacing()
+        + replaceDiffView->horizontalScrollBar()->sizeHint().height() + 4);
     replaceDiffView->setSizePolicy(
         QSizePolicy::Expanding,
         QSizePolicy::Ignored);
@@ -589,7 +602,7 @@ void ScopedSearchPanel::buildUi()
         QStringLiteral("scopedSearchUndoReplaceButton"));
     undoReplaceButton->setEnabled(false);
     transactionControls->addWidget(undoReplaceButton);
-    replaceLayout->addLayout(transactionControls);
+    replaceLayout->addWidget(new CompactOverflowToolbar(transactionControls, QStringLiteral("scopedReplaceTransaction"), replaceGroup));
 
     replaceStatusLabel = UiControls::label(replaceGroup);
     replaceStatusLabel->setObjectName(
@@ -600,7 +613,20 @@ void ScopedSearchPanel::buildUi()
     replaceStatusLabel->setText(
         QStringLiteral("Run Search before building a preview."));
     replaceLayout->addWidget(replaceStatusLabel);
-    rootLayout->addWidget(replaceGroup, 2);
+    replaceGroup->setTitle(QString());
+    auto* previewSection = new CompactPreviewSection(QStringLiteral("Replace Preview"), replaceGroup, this);
+    auto* previewToggle = previewSection->toggleButton();
+    previewSection->layout()->removeWidget(previewToggle);
+    searchToolbar->addOverflowWidget(previewToggle);
+    rootLayout->addWidget(previewSection);
+    previewSection->hide();
+    connect(previewToggle, &QToolButton::toggled, this,
+        [results = resultsTree, previewSection, previewToggle, rootLayout](bool expanded) {
+            results->setVisible(!expanded);
+            previewSection->setVisible(expanded);
+            rootLayout->setStretch(rootLayout->indexOf(previewSection), expanded ? 1 : 0);
+            if (auto* menu = qobject_cast<QMenu*>(previewToggle->window())) menu->close();
+        });
 
     connect(searchButton,
             &QPushButton::clicked,

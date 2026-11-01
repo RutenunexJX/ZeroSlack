@@ -103,6 +103,11 @@ Workbench::~Workbench()
     delete m_sources;
     delete m_logs;
     delete m_events;
+    // Child styles can consult our stylesheet while detaching. Finish their
+    // teardown before QWidget emits destroyed and clears the parent's cache.
+    // Requery ownership because a destructor can delete or reparent siblings.
+    while (auto* child = findChild<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+        delete child;
 }
 
 QWidget* Workbench::eventsWidget() const { return m_events; }

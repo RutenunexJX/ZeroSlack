@@ -1,7 +1,7 @@
 # ZeroSlack Ela 实际迁移
 
 维护范围（2026-09-22）：仅维护 Ela 版本。后续功能、修复、验证和正式发布均以
-基于 Ela 的 `ZeroSlack` 为目标；classic、Qlementine 和 SuiteUi 保留为历史兼容代码，不再并行维护。
+基于 Ela 的 `ZeroSlack` 为目标；已退役的后端选择与预览打包入口已删除。
 默认 CMake 配置启用 Ela，正式包使用 `ZeroSlack-win64` 目录和 `ZeroSlack.exe`，不再生成 ZIP。
 下文旧版本中的双后端验证与 ZIP 记录仅描述历史发布。
 
@@ -494,9 +494,7 @@ deleteLater 在控件销毁后释放，避免析构期间重新设置弹出窗�
 ```powershell
 cmake -S . -B build/ela-migration -G Ninja `
   -DCMAKE_BUILD_TYPE=Release `
-  -DZEROSLACK_ENABLE_ELA=ON `
-  -DZEROSLACK_ENABLE_SUITEUI=OFF `
-  -DZEROSLACK_ENABLE_QLEMENTINE=OFF
+  -DZEROSLACK_ENABLE_ELA=ON
 cmake --build build/ela-migration --parallel 4
 ctest --test-dir build/ela-migration --output-on-failure
 ```
@@ -504,13 +502,10 @@ ctest --test-dir build/ela-migration --output-on-failure
 Qt、MinGW、Ninja、Python 路径需按本机配置；首次编译所需 fmt 可使用本地缓存。
 Ela 使用 Qt 私有头，CMake 强制检查 Qt 6.10.2。更换 Qt 版本需重新验证。
 
-运行 `build/ela-migration/ZeroSlack-Ela.exe`，默认使用 Ela。
-`--ui-style=classic` 在相同隔离配置中使用原控件，切换后端需重启。
-
-通过 `scripts/package-ela.ps1` 打包到新的独立目录；普通 `package-release.ps1`
-会拒绝 Ela 构建。配置位于 `ZeroSlack/ZeroSlack-Ela` 的 AppConfigLocation，
-近期工作区、编辑器配置和会话存储与经典版隔离。用户显式打开同一工程时，
-工程本地设置和源文件仍是同一份。
+运行 `build/ela-migration/ZeroSlack.exe`，程序直接初始化 Ela，无运行时界面后端选择。
+`scripts/package-release.ps1` 检查并部署 Ela 正式配置。开发验证不自动授权正式发布。
+应用沿用 `ZeroSlack/ZeroSlack-Ela` 配置身份；测试应显式使用隔离配置目录。
+用户打开同一工程时，工程本地设置和源文件仍是同一份。
 
 ## 全屏侧栏开合性能修正（0.29.36 开发版）
 

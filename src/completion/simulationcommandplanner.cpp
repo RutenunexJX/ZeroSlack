@@ -1,4 +1,3 @@
-#include "duttemplateplanner.h"
 #include "templatecapabilities.h"
 #include "simulationcommandplanner.h"
 #include "editorfileidentity.h"
@@ -206,37 +205,19 @@ SimulationPlacement SimulationCommandPlanner::placement(const GlobalControlQuery
     const auto type = command.value("content").toString();
     const auto capabilityError = TemplateCapabilities::validate(command);
     if (!capabilityError.isEmpty()) return {Status::Unavailable, capabilityError};
-    if (placement == "root") {
-        if (!content.isEmpty() || !context.templateParentId.isEmpty())
-            return {Status::Incompatible, "A TB root must be outside another template."};
-        auto text = context.documentText;
-        text.replace(start, context.replacementLength, QString(context.replacementLength, ' '));
-        TSDocument syntax; syntax.setText(text);
-        const auto node = ts_node_descendant_for_byte_range(syntax.rootNode(), start * 2, start * 2);
-        if (!ts_node_eq(node, syntax.rootNode()))
-            return {Status::Incompatible, "Insert a TB at a source-file gap outside modules, comments and strings."};
-        if (context.readOnly) return {Status::Unavailable, "This document is read-only."};
-        return {};
-    }
-    if (TemplateCapabilities::module(command) && (content != "instances" || context.templateParentId.isEmpty()))
-        return {Status::Incompatible, "Insert a DUT inside a TB instance region."};
-    if (content == "instances" && !TemplateCapabilities::module(command))
-        return {Status::Incompatible, "This region accepts DUT instances."};
-    if (content == "behaviors" && (kind != "snippet" || type != "process"))
-        return {Status::Incompatible, "This region accepts module-level process templates."};
     if (content == "declarations" && command.value("containerRole").toString() == "definitions")
-        return {Status::Incompatible, "This TB already has a definitions region; add declarations within it."};
+        return {Status::Incompatible, "A definitions container cannot contain another definitions container."};
 
-    if (!content.isEmpty() && !type.isEmpty() && type != content && !(content == "behaviors" && type == "process"))
+    if (!content.isEmpty() && !type.isEmpty() && type != content)
         return {Status::Incompatible, QStringLiteral("This template does not match the container content type.")};
     if (content == "declarations" && (kind == "driver" || kind == "print" || kind == "task" || kind == "call"))
         return {Status::Incompatible, QStringLiteral("This container accepts declarations.")};
-    if (!content.isEmpty() && content != "behaviors" && kind == "snippet" && !snippetMatches(snippet, content))
+    if (!content.isEmpty() && kind == "snippet" && !snippetMatches(snippet, content))
         return {Status::Incompatible, QStringLiteral("The template syntax is not valid %1 content.").arg(content)};
     const auto site = siteFor(context, start, context.replacementLength);
     if ((content == "statements" || placement == "statement") && (!site.procedural || site.function))
         return {Status::Incompatible, QStringLiteral("This template needs a procedural statement position.")};
-    if ((content == "declarations" || content == "instances" || content == "behaviors" || placement == "module") && !site.moduleItem)
+    if ((content == "declarations" || placement == "module") && !site.moduleItem)
         return {Status::Incompatible, QStringLiteral("This template needs a module declaration position.")};
     if (kind == "driver" && ((!site.procedural && !site.moduleItem) || site.function))
         return {Status::Incompatible, QStringLiteral("Insert a driver at a module-item gap or a procedural statement position, outside a function.")};
@@ -585,11 +566,6 @@ SimulationCommandPlan SimulationCommandPlanner::prepare(const SimulationCommandR
     result.instance.snapshot = config;
     result.instance.snapshot.insert("templateText", request.item.insertionText);
     result.instance.snapshot.insert("schema", 1);
-    if (TemplateCapabilities::root(config)) {
-        TemplateInstance root; root.snapshot = config; root.inputs = result.placeholders;
-        result.error = DutTemplatePlanner::rootError(root);
-        if (!result.error.isEmpty()) return result;
-    }
     result.error = TemplateInputService::dependencyError(result.placeholders);
     for (auto &slot : result.placeholders)
         slot.inputContext = result.inputs;

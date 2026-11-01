@@ -1224,47 +1224,6 @@ QString InsightVisualStyle::chromeStyleSheet(ThemeMode mode, bool styleMenus)
     return result;
 }
 
-QString InsightVisualStyle::tabBarStyleSheet(const QString& objectName)
-{
-    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Classic)
-        return {};
-    const InsightTheme t = theme();
-    const QString selector =
-        objectSelector(QStringLiteral("QTabBar"), objectName);
-    return QStringLiteral(
-               "%1 { background: %2; border-bottom: 1px solid %3; }"
-               "%1::tab {"
-               "  background: %4;"
-               "  color: %5;"
-               "  padding: 8px 14px; font-weight: 400;"
-               "  border: 0; border-top-color: %6; border-bottom: 2px solid transparent;"
-               "  border-top-left-radius: 8px; border-top-right-radius: 8px;"
-               "  margin-right: 2px;"
-               "  min-height: 20px;"
-               "  min-width: 108px;"
-               "}"
-               "%1::tab:selected {"
-               "  background: %7;"
-               "  color: %8;"
-               "  border-bottom-color: %9; font-weight: 600;"
-               "}"
-               "%1::tab:hover {"
-               "  background: %10;"
-               "  color: %11;"
-               "}")
-        .arg(selector,
-             t.tab.barBackground.name(),
-             subtleBorder(t.tab.barBackground, t.textPrimary).name(),
-             t.tab.tabBackground.name(),
-             t.tab.text.name(),
-             t.tab.border.name(),
-             t.tab.tabBackgroundSelected.name(),
-             t.tab.textSelected.name(),
-             t.tab.borderSelected.name(),
-             t.tab.tabBackgroundHover.name(),
-             t.tab.textHover.name());
-}
-
 QString InsightVisualStyle::labelStyleSheet(const QString& objectName,
                                             bool strong)
 {
@@ -1355,62 +1314,10 @@ QString InsightVisualStyle::globalControlPanelStyleSheet(
     const InsightTheme t = theme();
     const QString selector =
         objectSelector(QStringLiteral("QFrame"), objectName);
-    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Classic) {
-        return QStringLiteral(
-            "%1 { background: %2; border: 1px solid %3; border-radius: 8px; }"
-            "%1 QLabel { color: %4; font-weight: 600; padding: 10px 12px 2px; }")
-            .arg(selector, t.panelBackground.name(), t.borderStrong.name(), t.textSecondary.name());
-    }
     return QStringLiteral(
-               "%1 {"
-               "  background: %2;"
-               "  color: %3;"
-               "  border: 1px solid %4;"
-               "  border-radius: 8px;"
-               "}"
-               "%1 QLabel {"
-               "  color: %5;"
-               "  font-weight: 600;"
-               "  padding: 10px 12px 2px 12px;"
-               "}"
-               "%1 QLineEdit {"
-               "  margin: 6px 10px;"
-               "  padding: 8px;"
-               "  border: 1px solid %6;"
-               "  border-radius: 8px;"
-               "  background: %7;"
-               "  color: %3;"
-               "  selection-background-color: %8;"
-               "}"
-               "%1 QLineEdit:focus { border-color: %9; }"
-               "%1 QListWidget {"
-               "  margin: 4px 10px 10px 10px;"
-               "  border: 0;"
-               "  background: %2;"
-               "  color: %10;"
-               "  outline: 0;"
-               "}"
-               "%1 QListWidget::item {"
-               "  padding: 6px 8px;"
-               "  border-radius: 8px;"
-               "}"
-               "%1 QListWidget::item:hover { background: %11; }"
-               "%1 QListWidget::item:selected {"
-               "  background: %12;"
-               "  color: %3;"
-               "}")
-        .arg(selector,
-             t.panelBackground.name(),
-             t.textPrimary.name(),
-             t.borderStrong.name(),
-             t.textSecondary.name(),
-             t.input.border.name(),
-             t.panelSubtle.name(),
-             t.input.selectionBackground.name(),
-             t.input.focusBorder.name(),
-             t.itemView.text.name(),
-             t.itemView.hoverBackground.name(),
-             t.itemView.selectedBackground.name());
+        "%1 { background: %2; border: 1px solid %3; border-radius: 8px; }"
+        "%1 QLabel { color: %4; font-weight: 600; padding: 10px 12px 2px; }")
+        .arg(selector, t.panelBackground.name(), t.borderStrong.name(), t.textSecondary.name());
 }
 
 QString InsightVisualStyle::graphViewStyleSheet(const QString& objectName, bool borderVisible)
@@ -1452,8 +1359,6 @@ QString InsightVisualStyle::titleBarStyleSheet(const QString& objectName)
 QString InsightVisualStyle::compactSearchFieldStyleSheet(
     const QString& objectName)
 {
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Qlementine)
-        return floatingBackgroundRule(QStringLiteral("QLineEdit"), objectName);
     const InsightTheme t = theme();
     return QStringLiteral(
                "%1 {"

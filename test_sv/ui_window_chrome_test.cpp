@@ -19,7 +19,6 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(30); }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 QAbstractButton* button(QWidget* host, const char* name) {
     return host->findChild<QAbstractButton*>(QLatin1String(name));
 }
@@ -45,7 +44,7 @@ private slots:
         const auto flags = host.windowFlags();
         const auto margins = host.contentsMargins();
         auto title = UiWindowChrome::createTitleBar(&host);
-        QCOMPARE(title.widget->inherits("ElaAppBar"), usesEla());
+        QCOMPARE(title.widget->inherits("ElaAppBar"), true);
         QCOMPARE(host.windowFlags(), flags);
         QCOMPARE(host.contentsMargins(), margins);
         host.resize(720, 420);
@@ -76,7 +75,7 @@ private slots:
         auto* close = button(&host, "windowCloseButton"); QVERIFY(close);
         QVERIFY(label->width() >= label->fontMetrics().horizontalAdvance(host.windowTitle()));
         QVERIFY(!minimize->icon().isNull()); QVERIFY(!maximize->icon().isNull()); QVERIFY(!close->icon().isNull());
-        if (usesEla()) {
+        {
             QVERIFY(minimize->inherits("ElaToolButton"));
             QVERIFY(maximize->inherits("ElaToolButton"));
             QVERIFY(close->inherits("ElaIconButton"));
@@ -85,13 +84,12 @@ private slots:
         auto* expand = button(&host, "expandProjectSidebarButton"); QVERIFY(expand);
         QVERIFY(expand->isVisible());
         QTest::mouseClick(expand, Qt::LeftButton); QTest::qWait(250); settle();
-        if (usesEla()) {
+        {
             auto* navigation = host.findChild<QWidget*>("navigationElaBar"); QVERIFY(navigation);
             QVERIFY(pane->dock()->isHidden());
-            QVERIFY(navigation->isVisible() && !navigation->visibleRegion().isEmpty());
+            QVERIFY(navigation->isVisible());
+            QVERIFY(!navigation->visibleRegion().isEmpty());
             QVERIFY(host.centralWidget()->isAncestorOf(navigation));
-        } else {
-            QVERIFY(pane->dock()->isVisible());
         }
         QVERIFY(!expand->isVisible());
         host.setWindowTitle(QString("C:/long directory/%1/uart_engine.sv").arg(QString(200, 'x')));
@@ -117,13 +115,13 @@ private slots:
             QTest::mouseClick(maximize, Qt::LeftButton); settle(); QVERIFY(host.isMaximized());
             const auto restoreIcon = maximize->icon().cacheKey();
             QTest::mouseClick(maximize, Qt::LeftButton); settle(); QVERIFY(!host.isMaximized());
-            if (usesEla()) QVERIFY(restoreIcon != maximize->icon().cacheKey());
+            QVERIFY(restoreIcon != maximize->icon().cacheKey());
             QTest::mouseClick(minimize, Qt::LeftButton); settle(); QVERIFY(host.isMinimized());
             host.showNormal(); settle(); QVERIFY(!host.isMinimized());
         }
         QTest::mouseDClick(label, Qt::LeftButton); settle(); QVERIFY(host.isMaximized());
         QTest::mouseDClick(label, Qt::LeftButton); settle(); QVERIFY(!host.isMaximized());
-        if (usesEla()) {
+        {
             maximize->clearFocus();
             QEvent leave(QEvent::Leave); QApplication::sendEvent(maximize, &leave);
             maximize->setAttribute(Qt::WA_UnderMouse, false);
@@ -160,7 +158,7 @@ private slots:
     }
 
     void navigationPresentationAndInput() {
-        if (!usesEla()) QSKIP("Ela overlay and dock presentations");
+
         QMainWindow host;
         host.setCentralWidget(new QWidget(&host));
         auto* pane = new NavigationPaneCoordinator(&host);
@@ -203,7 +201,7 @@ private slots:
     }
 
     void overlayContentDestroyedBeforeCoordinator() {
-        if (!usesEla()) QSKIP("Overlay ownership is specific to the Ela navigation bar");
+
         QMainWindow host;
         host.setCentralWidget(new QWidget(&host));
         auto* pane = new NavigationPaneCoordinator(&host);
@@ -237,7 +235,7 @@ private slots:
     }
 
     void overlayDestructionDuringTransition() {
-        if (!usesEla()) QSKIP("Ela overlay ownership and animation");
+
         QFETCH(int, phase); QFETCH(bool, closeWindow);
         QPointer<QMainWindow> host = new QMainWindow;
         host->setAttribute(Qt::WA_DeleteOnClose);

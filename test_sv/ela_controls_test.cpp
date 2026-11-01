@@ -1,4 +1,5 @@
 #include "applicationthememanager.h"
+#include "testuistyle.h"
 #include "insightvisualstyle.h"
 #include "mycodeeditor.h"
 #include "navigationwidget.h"
@@ -499,7 +500,9 @@ private slots:
             QCOMPARE(late->font(), controlFont);
         }
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
-        QVERIFY(!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Classic));
+        auto* installedStyle = qApp->style();
+        ApplicationThemeManager::instance().applyToApplication();
+        QVERIFY(qApp->style() == installedStyle);
     }
 
     void visibleControlDestruction() {
@@ -614,8 +617,11 @@ int main(int argc, char** argv) {
     QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, profile.path());
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH", (profile.path() + "/sessions.ini").toUtf8());
     auto& manager = ApplicationThemeManager::instance();
-    if (!manager.selectBackend(UiStyleBackend::Ela)) return 3;
+    if (!initializeUiStyleForTest()) return 4;
+    auto* installedStyle = app.style();
     manager.applyToApplication();
+    if (app.style() != installedStyle) { qCritical("Repeated initialization must preserve the installed style"); return 5; }
+    if (!initializeUiStyleForTest()) return 3;
     ElaControlsTest test;
     return QTest::qExec(&test, argc, argv);
 }

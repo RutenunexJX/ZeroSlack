@@ -1,15 +1,18 @@
 #pragma once
 
 #include "applicationthememanager.h"
+#include "uicontrols.h"
+#include <QDebug>
+#include <QPushButton>
+#include <memory>
 
-// Existing workflow tests can run against the real Ela controls as well as Qt.
 inline bool initializeUiStyleForTest()
 {
-    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") != QStringLiteral("ela"))
-        return true;
-    auto& manager = ApplicationThemeManager::instance();
-    if (!manager.selectBackend(UiStyleBackend::Ela))
-        return false;
-    manager.applyToApplication();
-    return true;
+    ApplicationThemeManager::instance().applyToApplication();
+    const std::unique_ptr<QPushButton> probe(UiControls::pushButton(QString()));
+    const bool valid = probe->inherits("ElaPushButton")
+        && probe->property("zeroslackElaControl").toBool();
+    if (valid) qInfo("Test UI backend: ela");
+    else qCritical("The maintained UI factory did not create an Ela control");
+    return valid;
 }

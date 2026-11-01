@@ -57,6 +57,7 @@ public:
     void analyzeFeedback();
     void expandCone(int depth);
 protected:
+    bool event(QEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void showEvent(QShowEvent* event) override;
     bool eventFilter(QObject* object,QEvent* event) override;

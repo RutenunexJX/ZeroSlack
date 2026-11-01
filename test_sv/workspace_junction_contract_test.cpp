@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include <QtWidgets>
 #include <QtTest>
 #include <QtConcurrent>
@@ -169,7 +170,7 @@ void overlappingNativeKinds()
 int main(int argc,char** argv)
 {
     QApplication app(argc,argv);QStandardPaths::setTestModeEnabled(true);
-    auto& theme=ApplicationThemeManager::instance();if (!theme.selectBackend(UiStyleBackend::Ela)) return 2;theme.applyToApplication();
+    auto& theme=ApplicationThemeManager::instance();if (!initializeUiStyleForTest()) return 2;theme.applyToApplication();
 #ifdef Q_OS_WIN
     cycle("self");cycle("indirect");cycle("self","add");cycle("self","delete");aliasesAndHandoff();overlappingNativeKinds();
 #else

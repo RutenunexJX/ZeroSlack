@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "editorcolumnmodecontroller.h"
 #include "editorsplitcontroller.h"
@@ -479,7 +480,7 @@ int main(int argc, char** argv)
     QCoreApplication::setOrganizationName("ZeroSlackInputBoundaryContract");
     QCoreApplication::setApplicationName("R4");
     auto& theme = ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela))
+    if (!initializeUiStyleForTest())
         return 2;
     theme.applyToApplication();
     readonlyDiskAndDynamic();

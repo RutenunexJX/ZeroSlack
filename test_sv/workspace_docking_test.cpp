@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "mainwindow.h"
 #include "tabmanager.h"
@@ -100,7 +101,7 @@ private slots:
         evidence = qEnvironmentVariable("ZEROSLACK_UI_EVIDENCE_DIR");
         if (!evidence.isEmpty()) QDir().mkpath(evidence);
         auto& theme = ApplicationThemeManager::instance();
-        QVERIFY(theme.selectBackend(UiStyleBackend::Ela));
+        QVERIFY(initializeUiStyleForTest());
         theme.setMode(ThemeMode::Light); theme.applyToApplication();
     }
     void nativeDrag_data() {

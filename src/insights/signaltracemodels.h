@@ -2,7 +2,7 @@
 #include "zeroslackexport.h"
 #include <zeroslack/semantic/signaltraceservice.h>
 #include <QAbstractTableModel>
-#include <QStyledItemDelegate>
+#include <insightgraph/heatmap.h>
 
 class ZEROSLACK_API SignalTraceHeatModel final : public QAbstractTableModel {
 public:
@@ -19,11 +19,12 @@ public:
     void setRoleMaskFilter(const QString& text,int mask);
     QList<SignalTraceEvidence> references(const QModelIndex& index={}) const;
     QByteArray csv() const;
+    QList<qreal> distribution(const QModelIndex& index) const;
     int maximumCount() const { return maximum; }
     void setComplete(bool complete) { completeValue=complete;emit headerDataChanged(Qt::Horizontal,Total,Total); }
     bool isComplete()const{return completeValue;}
 private:
-    struct Row { QString file,module; QList<SignalTraceEvidence> items; int counts[6]={}; bool available=true; };
+    using Row = insightgraph::HeatRow;
     QList<SignalTraceEvidence> items;
     QList<Row> rows;
     QString filter;
@@ -32,11 +33,4 @@ private:
     bool completeValue=true;
     Qt::SortOrder sortOrder=Qt::AscendingOrder;
     void rebuild();
-};
-
-class SignalTraceDistributionDelegate final : public QStyledItemDelegate {
-public:
-    explicit SignalTraceDistributionDelegate(QObject* parent=nullptr) : QStyledItemDelegate(parent) {}
-    void paint(QPainter* painter,const QStyleOptionViewItem& option,const QModelIndex& index) const override;
-    QSize sizeHint(const QStyleOptionViewItem& option,const QModelIndex& index) const override;
 };

@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "mainwindow.h"
 #include "navigationpanecoordinator.h"
@@ -84,7 +85,7 @@ private slots:
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT"));
         QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope, qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT"));
-        auto& theme = ApplicationThemeManager::instance(); QVERIFY(theme.selectBackend(UiStyleBackend::Ela));
+        auto& theme = ApplicationThemeManager::instance(); QVERIFY(initializeUiStyleForTest());
         theme.setMode(ThemeMode::Light); theme.applyToApplication();
         if (const auto* data = QApplication::clipboard()->mimeData()) {
             for (const auto& format : data->formats()) clipboardFormats[format] = data->data(format);

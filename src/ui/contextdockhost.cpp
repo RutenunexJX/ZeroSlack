@@ -33,22 +33,46 @@ constexpr int resizeHeight = 5;
 struct SectionExtent { int minimum; int requested; bool collapsed; };
 QList<int> distributeExtents(int extent, const QList<SectionExtent>& items)
 {
-    int minimumSum = 0, weightSum = 0;
+    qint64 minimumSum = 0, weightSum = 0;
     QList<int> weights, lengths;
-    for (const auto& item : items) {
-        const int weight = item.collapsed ? 0
-            : qMax(1, (item.requested > 0 ? item.requested : extent / qMax(1, int(items.size()))) - item.minimum);
+    QList<int> flexible;
+    int remaining = extent;
+    for (int i = 0; i < items.size(); ++i) {
+        const auto& item = items[i];
+        const int weight = item.collapsed ? 0 : qMax(1,
+            item.requested > 0 ? item.requested : extent / qMax(1, int(items.size())));
         weights.append(weight);
+        lengths.append(item.minimum);
         minimumSum += item.minimum;
         weightSum += weight;
+        if (item.collapsed) remaining -= item.minimum;
+        else flexible.append(i);
     }
-    const int extra = qMax(0, extent - minimumSum);
-    int allocated = 0, accumulatedWeight = 0;
-    for (int i = 0; i < items.size(); ++i) {
-        accumulatedWeight += weights[i];
-        const int next = weightSum ? qint64(extra) * accumulatedWeight / weightSum : 0;
-        lengths.append(items[i].minimum + next - allocated);
-        allocated = next;
+    if (minimumSum >= extent) return lengths;
+    while (!flexible.isEmpty()) {
+        QList<int> constrained;
+        for (int i : flexible) {
+            if (qint64(remaining) * weights[i] < qint64(items[i].minimum) * weightSum)
+                constrained.append(i);
+        }
+        if (constrained.isEmpty()) {
+            int allocated = 0;
+            qint64 accumulatedWeight = 0;
+            for (int i : flexible) {
+                accumulatedWeight += weights[i];
+                const int next = qint64(remaining) * accumulatedWeight / weightSum;
+                lengths[i] = next - allocated;
+                allocated = next;
+            }
+            break;
+        }
+        // Apply minimum sizes after proportional allocation; subtracting them
+        // from the weights would turn equal requests into unequal shares.
+        for (int i : constrained) {
+            remaining -= items[i].minimum;
+            weightSum -= weights[i];
+            flexible.removeOne(i);
+        }
     }
     return lengths;
 }
@@ -394,29 +418,27 @@ bool ContextDockHost::addResource(const ContextResource& resource, QWidget* view
         delete orphan;
     });
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        for (QWidget* handle : {section->header, static_cast<QWidget*>(section->drag)}) {
-            auto* gesture = new ElaDragHandle(handle, this);
-            connect(gesture, &ElaDragHandle::pressed, this, [this, key] { focusSection(key); });
-            connect(gesture, &ElaDragHandle::moved, this, [this, key](const QPoint& position) {
-                const auto* section = sections.value(key);
-                if (section && section->detachable) {
-                    emit dragOutRequested(key, position);
-                    return;
-                }
-                emit sectionDragStarted();
-                showInsertion(position);
-            });
-            connect(gesture, &ElaDragHandle::cancelled, this, [this] {
-                insertionMarker->hide();
-                emit sectionDragFinished();
-            });
-            connect(gesture, &ElaDragHandle::released, this, [this, key](const QPoint& position, bool dragged) {
-                insertionMarker->hide();
-                if (!dragged || !sections.contains(key)) return;
-                finishSectionDrag(key, position);
-            });
-        }
+    for (QWidget* handle : {section->header, static_cast<QWidget*>(section->drag)}) {
+        auto* gesture = new ElaDragHandle(handle, this);
+        connect(gesture, &ElaDragHandle::pressed, this, [this, key] { focusSection(key); });
+        connect(gesture, &ElaDragHandle::moved, this, [this, key](const QPoint& position) {
+            const auto* section = sections.value(key);
+            if (section && section->detachable) {
+                emit dragOutRequested(key, position);
+                return;
+            }
+            emit sectionDragStarted();
+            showInsertion(position);
+        });
+        connect(gesture, &ElaDragHandle::cancelled, this, [this] {
+            insertionMarker->hide();
+            emit sectionDragFinished();
+        });
+        connect(gesture, &ElaDragHandle::released, this, [this, key](const QPoint& position, bool dragged) {
+            insertionMarker->hide();
+            if (!dragged || !sections.contains(key)) return;
+            finishSectionDrag(key, position);
+        });
     }
 #endif
     setSectionDetachable(key, false);
@@ -561,7 +583,8 @@ bool ContextDockHost::setSectionCollapsed(const QString& key, bool collapsed, bo
     return true;
 }
 int ContextDockHost::minimumSectionHeight(const Section* section) const
-{ return section->header->height() + resizeHeight + qMax(48, section->view->minimumHeight()); }
+{ return section->header->height() + resizeHeight
+    + qMax(48, qMax(section->view->minimumHeight(), section->view->minimumSizeHint().height())); }
 bool ContextDockHost::setSectionHeight(const QString& key, int height)
 {
     auto* section = sections.value(key);
@@ -791,6 +814,14 @@ bool ContextDockHost::eventFilter(QObject* watched, QEvent* event)
     const QString key = watched->property("contextResourceKey").toString();
     if (sections.contains(key)) {
         auto* section = sections.value(key);
+        if (watched == section->view && !section->collapsed
+            && section->area != Qt::BottomDockWidgetArea
+            && (event->type() == QEvent::LayoutRequest || event->type() == QEvent::Show)
+            && section->frame->minimumHeight() != minimumSectionHeight(section)) {
+            QTimer::singleShot(0, this, [this, key] {
+                if (sections.contains(key)) arrangeSections();
+            });
+        }
         if (watched == section->view && event->type() == QEvent::DynamicPropertyChange) {
             const QByteArray name = static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
             if (name == "contextStatusText" || name == "contextStatusTooltip"

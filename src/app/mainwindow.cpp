@@ -306,17 +306,16 @@ MainWindow::MainWindow(QWidget *parent)
     auto* titleStatus = new QWidget(this);
     auto* titleStatusLayout = new QHBoxLayout(titleStatus);
     titleStatusLayout->setContentsMargins(0, 0, 0, 0);
-    auto* modeLabel = new QLabel(titleStatus);
-    modeLabel->setObjectName(QStringLiteral("editorTemplateModeStatus"));
-    modeLabel->setMaximumWidth(340);
-    modeLabel->hide();
-    titleStatusLayout->addWidget(modeLabel);
+    auto* inputFeedback = new QLabel(titleStatus);
+    inputFeedback->setObjectName(QStringLiteral("templateInputStatus"));
+    inputFeedback->setMaximumWidth(340);
+    inputFeedback->hide();
+    titleStatusLayout->addWidget(inputFeedback);
     titleStatusLayout->addWidget(new EditingTimeWidget(editingTimeService.get(), titleStatus));
-    editorCoordinator->setModeStateHandler([modeLabel](const EditorModeSnapshot& snapshot) {
-        const bool visible = snapshot.activeModes.contains(EditorModeId::TemplateAuthoring);
-        modeLabel->setText(modeLabel->fontMetrics().elidedText(snapshot.displayText, Qt::ElideRight, 340));
-        modeLabel->setToolTip(snapshot.displayText + QLatin1Char('\n') + snapshot.detailText);
-        modeLabel->setVisible(visible);
+    editorCoordinator->setTemplateInputFeedbackHandler([inputFeedback](const QString& feedback) {
+        inputFeedback->setText(inputFeedback->fontMetrics().elidedText(feedback.simplified(), Qt::ElideRight, 340));
+        inputFeedback->setToolTip(feedback);
+        inputFeedback->setVisible(!feedback.isEmpty());
     });
     new WorkspaceChrome(this, navigationPane.get(), [this]() {
         if (settingsDialog && settingsDialog->isVisible())
@@ -488,8 +487,7 @@ void MainWindow::applyModernShellStyle(bool applyApplicationTheme)
         if (bar) {
             if (bar->objectName().isEmpty())
                 bar->setObjectName(QStringLiteral("mainEditorTabBar"));
-            bar->setStyleSheet(
-                InsightVisualStyle::tabBarStyleSheet(bar->objectName()));
+            bar->setStyleSheet(QString());
         }
     }
 }
@@ -610,9 +608,7 @@ void MainWindow::setupEditorCentralArea()
                 [](QTabWidget* group) {
                     if (!group || !group->tabBar())
                         return;
-                    group->tabBar()->setStyleSheet(
-                        InsightVisualStyle::tabBarStyleSheet(
-                            group->tabBar()->objectName()));
+                    group->tabBar()->setStyleSheet(QString());
                 });
     }
     editorCentralPage = editorContainer;
@@ -4576,7 +4572,11 @@ void MainWindow::applySettingsCenterSnapshot(
     else if (themeName == QStringLiteral("Catppuccin Frappe")) themeMode = ThemeMode::CatppuccinFrappe;
     else if (themeName == QStringLiteral("Catppuccin Macchiato")) themeMode = ThemeMode::CatppuccinMacchiato;
     else if (themeName == QStringLiteral("Catppuccin Mocha")) themeMode = ThemeMode::CatppuccinMocha;
-    ApplicationThemeManager::instance().setMode(themeMode);
+    // Workspace activation reloads settings; an unchanged theme must not
+    // reapply the application stylesheet and repolish every widget.
+    auto& themes = ApplicationThemeManager::instance();
+    if (themes.mode() != themeMode)
+        themes.setMode(themeMode);
 
     if (editorAppearanceSettings) {
         EditorAppearanceOptions options;

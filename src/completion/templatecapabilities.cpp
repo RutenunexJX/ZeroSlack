@@ -60,68 +60,12 @@ struct ExpressionRenderer {
     }
 };
 }
-bool TemplateCapabilities::root(const QVariantMap& config) {
-    return config.value("capability") == "moduleRoot" || (!config.contains("capability") && config.value("role") == "tbRoot");
-}
-bool TemplateCapabilities::module(const QVariantMap& config) {
-    return config.value("capability") == "moduleInstance" || (!config.contains("capability") && config.value("kind") == "dut");
-}
-QString TemplateCapabilities::region(const QVariantMap& config, const QString& content) {
-    return config.value("regions").toMap().value(content).toString();
-}
-QVariantMap TemplateCapabilities::operation(const QVariantMap& config, const QString& op) {
-    for (const auto& value : config.value("operations").toList()) {
-        const auto item = value.toMap(); if (item.value("op") == op) return item;
-    }
-    return {};
-}
-QString TemplateCapabilities::expandName(QString pattern, const QHash<QString, QString>& values) {
-    for (auto it = values.cbegin(); it != values.cend(); ++it) pattern.replace("${" + it.key() + "}", it.value());
-    return pattern;
-}
-QString TemplateCapabilities::activationQuery(const QVariantMap& config) {
-    const auto activation = config.value("activation").toMap();
-    if (activation.value("mode") == "exactLockedFileGap") return activation.value("query").toString();
-    return config.value("directQuery").toString();
-}
 QString TemplateCapabilities::validate(const QVariantMap& config) {
     if (!config.contains("capability")) return {};
     if (!numeric(config.value("capabilityVersion")) || config.value("capabilityVersion").toDouble() != 1.0)
         return "Unsupported template capability version.";
-    const auto capability = config.value("capability").toString();
-    if (!QStringList{"moduleRoot","moduleInstance","moduleProcess"}.contains(capability)) return "Unknown template capability.";
-    if (capability == "moduleInstance") {
-        if (config.value("kind") != "operations") return "Module instantiation requires the operations executor.";
-        const auto inputs = config.value("semanticInputs").toMap();
-        if (inputs.value("moduleSource") != "compilation" || inputs.value("parameters") != "selectedModule" ||
-            inputs.value("ports") != "elaboratedPorts") return "Unsupported semantic input source.";
-        const auto operations = config.value("operations").toList();
-        if (operations.size() != 2 || operations[0].toMap().value("op") != "declareSignals" ||
-            operations[1].toMap().value("op") != "instantiateModule") return "Expected declareSignals followed by instantiateModule.";
-        const auto declaration = operations[0].toMap(), instance = operations[1].toMap();
-        if (!identifier(declaration.value("target").toString()) || !identifier(instance.value("target").toString()) ||
-            declaration.value("target") == instance.value("target")) return "Operations require distinct named target regions.";
-        if (!QStringList{"explicit", "never"}.contains(declaration.value("reuse").toString()) || instance.value("bindings") != "named")
-            return "Only explicit signal reuse and named port bindings are supported.";
-        auto pattern = declaration.value("namePattern").toString();
-        pattern = expandName(pattern, {{"instance","unit"},{"port","value"},{"module","module"}});
-        if (!identifier(pattern)) return "Invalid signal naming pattern.";
-    } else if (config.value("kind") != "snippet") return "This capability requires a snippet body.";
-    if (capability == "moduleRoot") {
-        const auto regions = config.value("regions").toMap(); QSet<QString> names;
-        for (const auto& content : {"declarations", "instances", "behaviors"}) {
-            const auto name = regions.value(content).toString();
-            if (!identifier(name) || names.contains(name)) return "Root regions require three distinct slot names.";
-            names.insert(name);
-        }
-        if (!identifier(config.value("nameSlot").toString())) return "Root module name requires a named input slot.";
-    }
-    if (config.contains("activation")) {
-        const auto activation = config.value("activation").toMap();
-        const auto query = activation.value("query").toString();
-        if (!root(config) || activation.value("mode") != "exactLockedFileGap" || !identifier(query) || query.size() < 2)
-            return "Automatic activation is restricted to an exact root-template query in a locked file gap.";
-    }
+    if (config.value("capability") != "moduleProcess") return "Unknown template capability.";
+    if (config.value("kind") != "snippet") return "This capability requires a snippet body.";
     const auto render = config.value("render").toMap();
     if (config.contains("render") && config.value("render").typeId() != QMetaType::QVariantMap)
         return "Template render must be an object.";

@@ -396,6 +396,81 @@ void runRecoveryQueueRegression()
         restarted.listCandidates(source.path()).candidates.size() == 1);
 }
 
+void runLongPathRecoveryRegression()
+{
+    QTemporaryDir fixture;
+    expect("long recovery integration fixture", fixture.isValid());
+    if (!fixture.isValid()) return;
+    const QString workspace = fixture.filePath("workspace");
+    const QString source = workspace + "/unit.sv";
+    const QString root = fixture.filePath(QString(100, 'r'));
+    const QString baseline = "module base; endmodule\n";
+    expect("long recovery integration source", writeFixture(source, baseline));
+    QTabWidget tabs;
+    TabManager manager(&tabs);
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(root));
+    manager.setWorkspaceScope({workspace}, workspace);
+    expect("long recovery integration opens", manager.openFileInTab(source));
+    auto* document = manager.sharedDocumentForEditor(manager.getCurrentEditor());
+    if (!document) return;
+    const auto edit = [&] (const QString& text) {
+        QTextCursor cursor(document->textDocument());cursor.movePosition(QTextCursor::End);cursor.insertText(text);
+    };
+    edit("// first recovery generation\n");
+    manager.flushCrashRecovery();
+    auto listed = manager.listCrashRecoveryCandidates(workspace);
+    expect("long recovery integration persists exactly one candidate", listed.succeeded() && listed.candidates.size() == 1);
+    if (listed.candidates.size() != 1) return;
+    const auto original = listed.candidates.first();
+    const QString claim = original.storagePath + ".claim";
+    expect("long integration exercises a claim beyond MAX_PATH", claim.size() > 260);
+    std::printf("LONG_RECOVERY_CLAIM length=%lld path=%s\n", static_cast<long long>(claim.size()), qPrintable(claim));
+    expect("long integration initial claim", manager.recoverCrashRecoveryText(original.recoveryId, workspace).succeeded());
+    expect("long integration normal save", manager.saveCurrentTab());
+    manager.flushCrashRecovery();
+    expect("long integration save releases the prior claim", !QFileInfo::exists(claim));
+    edit("// before discard\n");
+    manager.flushCrashRecovery();
+    listed = manager.listCrashRecoveryCandidates(workspace);
+    expect("long integration discard fixture", listed.candidates.size() == 1);
+    if (listed.candidates.size() != 1) return;
+    const auto beforeDiscard = listed.candidates.first();
+    edit("// captured while discarding\n");
+    const auto discardedRevision = document->textRevision();
+    manager.checkpointCrashRecovery();
+    const auto discarded = manager.discardCrashRecoveryCandidate(beforeDiscard.recoveryId, workspace);
+    expect("long integration discard succeeds", discarded.succeeded());
+    manager.checkpointCrashRecovery();manager.flushCrashRecovery();
+    expect("long integration discard cancels old captured generations", manager.listCrashRecoveryCandidates(workspace).candidates.isEmpty()
+           && !QFileInfo::exists(beforeDiscard.storagePath) && !QFileInfo::exists(beforeDiscard.storagePath + ".claim")
+           && document->textRevision() == discardedRevision && document->dirty());
+    edit("// recovery after discard\n");manager.flushCrashRecovery();
+    listed = manager.listCrashRecoveryCandidates(workspace);
+    expect("long integration new edit persists", listed.candidates.size() == 1);
+    if (listed.candidates.size() != 1) return;
+    const auto reviewed = manager.compareCrashRecoveryCandidate(listed.candidates.first().recoveryId, workspace);
+    const auto recovered = manager.recoverCrashRecoveryText(listed.candidates.first().recoveryId, workspace);
+    expect("long integration review and claim preserve current text", reviewed.succeeded() && recovered.succeeded()
+           && recovered.text == document->textDocument()->toPlainText());
+    manager.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(fixture.filePath("continuing")));
+    expect("long integration old owner releases claim", !QFileInfo::exists(reviewed.candidate.storagePath + ".claim"));
+    QTabWidget restoredTabs;TabManager restored(&restoredTabs);
+    restored.setCrashRecoveryService(std::make_unique<CrashRecoveryService>(root));restored.setWorkspaceScope({workspace},workspace);
+    const auto applied = restored.applyCrashRecoveryCandidate(reviewed.candidate);
+    auto* editor = restored.getCurrentEditor();auto* restoredDocument = restored.sharedDocumentForEditor(editor);
+    expect("long integration apply restores dirty revision", applied.succeeded() && applied.openedView && restoredDocument
+           && restoredDocument->dirty() && restoredDocument->textRevision() == applied.documentRevision
+           && restoredDocument->textRevision() >= reviewed.candidate.documentRevision && restored.hasUnsavedChanges());
+    expect("long integration apply synchronizes text and editor cache", restoredDocument && editor
+           && restoredDocument->textDocument()->toPlainText() == recovered.text
+           && restored.getPlainTextFromOpenFile(source) == recovered.text && editor->cachedDocumentText() == recovered.text
+           && editor->semanticDocumentRevision() == restoredDocument->textRevision());
+    QFile unchanged(source);const bool readable=unchanged.open(QIODevice::ReadOnly);
+    expect("long integration recovery never overwrites source", readable
+           && !QString::fromUtf8(unchanged.readAll()).contains("recovery after discard"));
+    restored.clearCrashRecoveryAfterNormalClose();manager.clearCrashRecoveryAfterNormalClose();
+}
+
 int main(int argc, char** argv)
 {
     QApplication application(argc, argv);
@@ -1243,6 +1318,7 @@ int main(int argc, char** argv)
                       .candidates.isEmpty());
 
     exerciseTabIdentityGroupingAndBatchClose();
+    runLongPathRecoveryRegression();
 
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures == 0 ? 0 : 1;

@@ -25,7 +25,7 @@ class UiSidebarContractTest final : public QObject {
 private slots:
     void nativeSidebarReturnsToTheSameFrame() {
 #ifdef ZEROSLACK_ENABLE_ELA
-        if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) QSKIP("Ela backend only");
+
         QMainWindow host;
         host.setCentralWidget(new QWidget);
         auto* dock = new QDockWidget(&host);
@@ -73,10 +73,8 @@ private slots:
         QVERIFY(expanded >= 200 && expanded <= 400);
         pane->setExpanded(false);
         QVERIFY(!pane->isExpanded());
-        const bool nativeMotion = ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
-        QCOMPARE(pane->isAnimating(),nativeMotion);
-        if (nativeMotion)
-            QTRY_VERIFY_WITH_TIMEOUT(dock->width() < expanded * 3 / 4 && dock->width() > 0, 200);
+        QCOMPARE(pane->isAnimating(),true);
+        QTRY_VERIFY_WITH_TIMEOUT(dock->width() < expanded * 3 / 4 && dock->width() > 0, 200);
         QCOMPARE(body->width(), contentWidth);
         QVERIFY(editor->width() > editorWidth);
         QTRY_VERIFY(!pane->isAnimating());
@@ -111,7 +109,7 @@ private slots:
         QCOMPARE(editor->toPlainText(), QString("module counter;\nendmodule\n"));
         QVERIFY(!editor->document()->isModified());
 #ifdef ZEROSLACK_ENABLE_ELA
-        if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
+        {
             auto* bar = qobject_cast<ElaNavigationBar*>(dock->widget()); QVERIFY(bar);
             QCOMPARE(bar->customContent(), body);
             QVERIFY(bar->customHeader());
@@ -123,7 +121,7 @@ private slots:
 
     void nativeOverlayKeepsEditorStableAndAcceptsInput() {
 #ifdef ZEROSLACK_ENABLE_ELA
-        if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) QSKIP("Ela backend only");
+
         QMainWindow host;
         auto* editor = new QPlainTextEdit;
         editor->setPlainText(QString("module counter;\n") + QString(50000, ' ') + "\nendmodule\n");
@@ -289,7 +287,7 @@ private slots:
 
     void nativeModesAndOwnership() {
 #ifdef ZEROSLACK_ENABLE_ELA
-        if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) QSKIP("Ela backend only");
+
         QWidget host;
         auto* row = new QHBoxLayout(&host);
         ElaNavigationBar bar;

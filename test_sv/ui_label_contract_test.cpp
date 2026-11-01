@@ -23,7 +23,6 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(30); }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 const auto modes = {ThemeMode::Light, ThemeMode::Dark, ThemeMode::CatppuccinLatte, ThemeMode::CatppuccinMocha};
 }
 
@@ -37,7 +36,7 @@ private slots:
                           UiTypography::font(UiTypography::Role::Metadata),
                           UiTypography::font(UiTypography::Role::PageTitle), mono}) {
             label.reset(UiControls::label("alpha beta"));
-            QCOMPARE(label->inherits("ElaText"), usesEla());
+            QCOMPARE(label->inherits("ElaText"), true);
             QVERIFY(!label->wordWrap());
             QCOMPARE(label->textFormat(), Qt::AutoText);
             label->setTextInteractionFlags(Qt::TextSelectableByMouse | Qt::TextSelectableByKeyboard);
@@ -110,7 +109,7 @@ private slots:
         UiControls::addFormRow(form, "&Name", field);
         UiControls::addFormRow(form, QString(), other);
         auto* caption = qobject_cast<QLabel*>(form->labelForField(field));
-        QVERIFY(caption); QCOMPARE(caption->inherits("ElaText"), usesEla());
+        QVERIFY(caption); QCOMPARE(caption->inherits("ElaText"), true);
         QCOMPARE(caption->buddy(), field);
         QWidget referenceHost;
         QFormLayout reference(&referenceHost);
@@ -132,7 +131,7 @@ private slots:
         config.topModule = QStringLiteral("counter");
         dialog->setConfiguration(config);
         auto* scroll = dialog->findChild<QScrollArea*>("workspaceConfigurationScroll");
-        QVERIFY(scroll); QCOMPARE(scroll->inherits("ElaScrollArea"), usesEla());
+        QVERIFY(scroll); QCOMPARE(scroll->inherits("ElaScrollArea"), true);
         for (const QSize size : {QSize(800, 620), QSize(1100, 760), QSize(800, 620)}) {
             dialog->resize(size); dialog->show(); settle();
             int views = 0;

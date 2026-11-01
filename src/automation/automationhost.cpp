@@ -87,7 +87,7 @@ QJsonObject ZeroSlackAutomationHost::send(const QString& sessionId, const QJsonO
 }
 QJsonObject ZeroSlackAutomationHost::offlineConflict(const QJsonObject& request) {
     const auto command = request.value("command").toString();
-    const bool documentAccess = command.startsWith("document.") || command == "dut.inspect";
+    const bool documentAccess = command.startsWith("document.");
     const bool storageWrite = !request.value("dryRun").toBool() && (command == "templates.put"
         || command == "templates.delete" || command == "simulation.put" || command == "simulation.run");
     if (!documentAccess && !storageWrite) return {};

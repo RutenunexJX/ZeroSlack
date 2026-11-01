@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "mainwindow.h"
 #include "welcomecard.h"
@@ -23,7 +24,7 @@ private slots:
         qputenv("ZEROSLACK_SIMULATION_CACHE_ROOT",profile.filePath("simulation").toUtf8());
         qputenv("XIPS_LIBRARY",profile.filePath("library").toUtf8());
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
-        auto& theme=ApplicationThemeManager::instance();QVERIFY(theme.selectBackend(UiStyleBackend::Ela));
+        auto& theme=ApplicationThemeManager::instance();QVERIFY(initializeUiStyleForTest());
         theme.setMode(ThemeMode::Light);theme.setAnimationsEnabled(true);theme.applyToApplication();
         auto window=std::make_unique<MainWindow>();window->resize(1400,900);window->show();window->activateWindow();
         window->workspaceManager->setWorkspaceAliasSelector([](QWidget*,const QString& suggested) { return suggested; });

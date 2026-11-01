@@ -25,6 +25,27 @@ struct CrashRecoveryService::Session {
 };
 
 namespace {
+QString lockFilePath(const QString& path)
+{
+#ifdef Q_OS_WIN
+    QString absolute = path;
+    absolute.replace(QLatin1Char('\\'), QLatin1Char('/'));
+    const bool extended = absolute.startsWith(QStringLiteral("//?/"));
+    if (absolute.startsWith(QStringLiteral("//?/UNC/"), Qt::CaseInsensitive))
+        absolute = QStringLiteral("//") + absolute.mid(8);
+    else if (absolute.startsWith(QStringLiteral("//?/")))
+        absolute.remove(0, 4);
+    absolute = QDir::toNativeSeparators(
+        QDir::cleanPath(extended ? absolute : QFileInfo(absolute).absoluteFilePath()));
+    // QLockFile's Windows deletion path needs the same extended form as creation.
+    return absolute.startsWith(QStringLiteral("\\\\"))
+        ? QStringLiteral("\\\\?\\UNC\\") + absolute.mid(2)
+        : QStringLiteral("\\\\?\\") + absolute;
+#else
+    return path;
+#endif
+}
+
 constexpr const char* kSchema =
     "ZeroSlack.CrashRecoverySnapshot";
 constexpr const char* kWorkspacesDirectory =
@@ -616,7 +637,7 @@ bool CrashRecoveryService::ensureSession(QString* reason) const
     if (session->lease && session->lease->isLocked()) return true;
     const QString directory = QDir(configuredRecoveryRoot).filePath("sessions");
     if (!configuredRecoveryRoot.isEmpty() && QDir().mkpath(directory)) {
-        auto lease = std::make_unique<QLockFile>(QDir(directory).filePath(session->id + ".lock"));
+        auto lease = std::make_unique<QLockFile>(lockFilePath(QDir(directory).filePath(session->id + ".lock")));
         lease->setStaleLockTime(0); // Process liveness, never elapsed writing time.
         if (lease->tryLock(0)) { session->lease = std::move(lease); return true; }
     }
@@ -630,7 +651,7 @@ bool CrashRecoveryService::otherSessionActive(const QString& owner) const
         || QUuid(owner).toString(QUuid::WithoutBraces) != owner) return false;
     const QString path = QDir(configuredRecoveryRoot).filePath("sessions/" + owner + ".lock");
     if (!QFileInfo::exists(path)) return false;
-    QLockFile lease(path); lease.setStaleLockTime(0);
+    QLockFile lease(lockFilePath(path)); lease.setStaleLockTime(0);
     return !lease.tryLock(0);
 }
 
@@ -642,7 +663,7 @@ bool CrashRecoveryService::claimRecord(const QString& path, const QString& owner
     }
     QMutexLocker guard(&session->mutex);
     if (session->claims.contains(path)) return true;
-    auto claim = std::make_shared<QLockFile>(path + ".claim");
+    auto claim = std::make_shared<QLockFile>(lockFilePath(path + ".claim"));
     claim->setStaleLockTime(0);
     if (!claim->tryLock(0)) {
         if (reason) *reason = QStringLiteral("Another session has claimed this recovery snapshot.");

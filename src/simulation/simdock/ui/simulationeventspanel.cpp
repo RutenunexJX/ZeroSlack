@@ -1,4 +1,5 @@
 #include "simulationeventspanel.h"
+#include "compactlayout.h"
 #include "uicontrols.h"
 #include <QCheckBox>
 #include <QComboBox>
@@ -178,7 +179,6 @@ SimulationEventsPanel::SimulationEventsPanel(QWidget *parent) : QWidget(parent)
     layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(4);
     auto *toolbar = new QHBoxLayout;
-    layout->addLayout(toolbar);
     auto *search = UiControls::lineEdit(this);
     search->setObjectName("simulationEventFilter");
     search->setPlaceholderText("Filter tag, instance, message or values");
@@ -192,8 +192,10 @@ SimulationEventsPanel::SimulationEventsPanel(QWidget *parent) : QWidget(parent)
     group->addItems({"Run order", "Group by level", "Group by tag", "Group by instance"});
     toolbar->addWidget(group);
     auto *merge = new QCheckBox("Merge repeats", this);
+    merge->setObjectName(QStringLiteral("simulationEventMergeRepeats"));
     toolbar->addWidget(merge);
     auto *columns = new QToolButton(this);
+    columns->setObjectName(QStringLiteral("simulationEventColumns"));
     columns->setText("Columns");
     columns->setPopupMode(QToolButton::InstantPopup);
     toolbar->addWidget(columns);
@@ -217,8 +219,10 @@ SimulationEventsPanel::SimulationEventsPanel(QWidget *parent) : QWidget(parent)
     table->verticalHeader()->setDefaultSectionSize(qMax(25, fontMetrics().height() + 8));
     table->horizontalHeader()->setStretchLastSection(true);
     layout->addWidget(table, 1);
-    status = new QLabel(this);
-    layout->addWidget(status);
+    status = new CompactTitleLabel(this);
+    auto* actionBar = new CompactOverflowToolbar(toolbar, QStringLiteral("simulationEvents"), this);
+    layout->insertWidget(0, actionBar);
+    actionBar->addOverflowWidget(status);
     QSettings settings;
     merge->setChecked(settings.value("simulation/events/mergeRepeats", false).toBool());
     model->setMergeRepeats(merge->isChecked());

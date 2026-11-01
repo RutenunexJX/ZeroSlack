@@ -1,3 +1,4 @@
+#include "../testuistyle.h"
 #include "../../src/simulation/simdock/ui/workbench.h"
 #include "support/mainwindow.h"
 #include "../../src/simulation/simdock/core/questasession.h"
@@ -251,7 +252,7 @@ private slots:
         QCoreApplication::setApplicationName(QStringLiteral("UiTest"));
         QSettings::setDefaultFormat(QSettings::IniFormat);
         QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, m_settings.path());
-        ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela);
+        initializeUiStyleForTest();
         ApplicationThemeManager::instance().applyToApplication();
         Ui::initialize();
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);

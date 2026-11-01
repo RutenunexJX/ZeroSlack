@@ -2,7 +2,7 @@
 #include <QApplication>
 #include <QBrush>
 #include <QFileInfo>
-#include <QPainter>
+#include "insightgraphadapter.h"
 #include <QSet>
 #include <QStyle>
 #include <algorithm>
@@ -10,9 +10,7 @@
 QVariant SignalTraceHeatModel::headerData(int section,Qt::Orientation orientation,int role) const {
     if (role!=Qt::DisplayRole) return {};
     if (orientation==Qt::Vertical) return section+1;
-    if(section==Total && !completeValue)return QStringLiteral("Loaded total");
-    static const QStringList names{"File","Module","Write","Read","Port","Control","Clock / reset","Unknown","Total","File distribution"};
-    return names.value(section);
+    return insightgraph::heatHeading(section, completeValue);
 }
 QVariant SignalTraceHeatModel::data(const QModelIndex& index,int role) const {
     if (!index.isValid() || index.row()>=rows.size()) return {};
@@ -43,32 +41,19 @@ void SignalTraceHeatModel::setFilter(const QString& text,int role) { setRoleMask
 void SignalTraceHeatModel::setRoleMaskFilter(const QString& text,int mask) { filter=text.trimmed();filterMask=mask&63;rebuild(); }
 void SignalTraceHeatModel::sort(int column,Qt::SortOrder order) { if(column<0 || column>=Columns)return;sortColumn=column; sortOrder=order; rebuild(); }
 void SignalTraceHeatModel::rebuild() {
-    beginResetModel(); rows.clear(); maximum=0; QHash<QString,int> indexes;
-    for (const auto& item:items) {
-        if (!(filterMask & (1<<int(item.role)))) continue;
-        if (!filter.isEmpty() && !(item.range.fileName+item.moduleName+item.text+SignalTraceService::roleName(item.role)).contains(filter,Qt::CaseInsensitive)) continue;
-        const QString key=item.range.fileName+QLatin1Char('\n')+item.moduleName;
-        if (!indexes.contains(key)) { indexes[key]=rows.size(); rows.append({item.range.fileName,item.moduleName,{},{},true}); }
-        auto& row=rows[indexes[key]]; row.items.append(item); ++row.counts[int(item.role)];
-        row.available &= !item.sourceHash.isEmpty() && item.fileLineCount>0;
-    }
-    for (const auto& row:rows) for (int count:row.counts) maximum=qMax(maximum,count);
-    std::stable_sort(rows.begin(),rows.end(),[&](const Row& a,const Row& b) {
-        int compared=0;
-        if (sortColumn==File || sortColumn==Distribution) compared=QString::compare(a.file,b.file,Qt::CaseInsensitive);
-        else if (sortColumn==Module) compared=QString::compare(a.module,b.module,Qt::CaseInsensitive);
-        else compared=(sortColumn==Total ? a.items.size() : a.counts[sortColumn-Write])
-            -(sortColumn==Total ? b.items.size() : b.counts[sortColumn-Write]);
-        if (!compared) compared=QString::compare(a.file+a.module,b.file+b.module);
-        return sortOrder==Qt::AscendingOrder ? compared<0 : compared>0;
-    });
+    beginResetModel();
+    auto projection = insightgraph::projectHeatmap(InsightGraphAdapter::heat(items),
+        filter, filterMask, sortColumn, sortOrder);
+    rows = std::move(projection.rows);
+    maximum = projection.maximum;
     endResetModel();
 }
 QList<SignalTraceEvidence> SignalTraceHeatModel::references(const QModelIndex& index) const {
     QList<SignalTraceEvidence> result;
     for (int row=0;row<rows.size();++row) {
         if (index.isValid() && row!=index.row()) continue;
-        for (const auto& item:rows[row].items) {
+        for (int itemIndex:rows[row].items) {
+            const auto& item = items.at(itemIndex);
             if (index.isValid() && index.column()>=Write && index.column()<=Unknown && int(item.role)!=index.column()-Write) continue;
             result.append(item);
         }
@@ -76,35 +61,8 @@ QList<SignalTraceEvidence> SignalTraceHeatModel::references(const QModelIndex& i
     return result;
 }
 QByteArray SignalTraceHeatModel::csv() const {
-    auto escape=[](QString value) { value.replace('"',QStringLiteral("\"\"")); return QLatin1Char('"')+value+QLatin1Char('"'); };
-    QStringList lines; QStringList headings;
-    for (int c=0;c<Distribution;++c) headings<<escape(headerData(c,Qt::Horizontal).toString());
-    headings<<escape(QStringLiteral("Coverage"));
-    lines<<headings.join(',');
-    for (int r=0;r<rows.size();++r) {
-        QStringList values;
-        for (int c=0;c<Distribution;++c) values<<escape(c==File ? rows[r].file : data(index(r,c)).toString());
-        values<<escape(completeValue ? QStringLiteral("Complete") : QStringLiteral("Partial: loaded reference pages only"));
-        lines<<values.join(',');
-    }
-    return (lines.join(QStringLiteral("\r\n"))+QStringLiteral("\r\n")).toUtf8();
+    return insightgraph::heatCsv({rows, maximum}, completeValue);
 }
-void SignalTraceDistributionDelegate::paint(QPainter* painter,const QStyleOptionViewItem& option,const QModelIndex& index) const {
-    QStyledItemDelegate::paint(painter,option,index);
-    const auto* model=dynamic_cast<const SignalTraceHeatModel*>(index.model());
-    if (!model) return;
-    const auto items=model->references(index);
-    const qreal margin=option.fontMetrics.height()*0.45;
-    const QRectF rect=QRectF(option.rect).adjusted(margin,margin,-margin,-margin);
-    painter->save(); painter->setPen(option.palette.color(QPalette::Mid)); painter->drawLine(rect.left(),rect.center().y(),rect.right(),rect.center().y());
-    painter->setPen(QPen(option.palette.color(QPalette::Highlight),qMax(1.0,option.fontMetrics.height()/9.0)));
-    for (const auto& item:items) {
-        if (item.fileLineCount<1) continue;
-        const qreal x=rect.left()+rect.width()*qBound(0.0,double(item.range.line-1)/qMax(1,item.fileLineCount-1),1.0);
-        painter->drawLine(QPointF(x,rect.top()),QPointF(x,rect.bottom()));
-    }
-    painter->restore();
-}
-QSize SignalTraceDistributionDelegate::sizeHint(const QStyleOptionViewItem& option,const QModelIndex& index) const {
-    auto size=QStyledItemDelegate::sizeHint(option,index); size.setHeight(qMax(size.height(),option.fontMetrics.height()*2)); return size;
+QList<qreal> SignalTraceHeatModel::distribution(const QModelIndex& index) const {
+    return insightgraph::distribution(InsightGraphAdapter::heat(references(index)));
 }

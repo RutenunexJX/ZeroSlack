@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include <QMenuBar>
 #include <QToolBar>
 #include "editorgutter.h"
@@ -11383,7 +11384,7 @@ int main(int argc, char** argv)
     ScopedGuiTestSettingsRoot isolatedSettings;
     QApplication app(argc, argv);
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (!ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela))
+    if (!initializeUiStyleForTest())
         return 2;
 #endif
     ApplicationThemeManager::instance().applyToApplication();

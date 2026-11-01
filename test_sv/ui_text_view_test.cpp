@@ -34,7 +34,6 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(20); }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 QStringList lines() {
     QStringList result;
     for (int i = 0; i < 160; ++i)
@@ -48,7 +47,7 @@ class UiTextViewTest final : public QObject {
 private slots:
     void documentFontSelectionAndTheme() {
         std::unique_ptr<QPlainTextEdit> text(UiControls::readOnlyText(lines().join('\n')));
-        QCOMPARE(text->inherits("ElaPlainTextEdit"), usesEla());
+        QCOMPARE(text->inherits("ElaPlainTextEdit"), true);
         QVERIFY(text->isReadOnly());
         const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
         text->setFont(mono);
@@ -77,8 +76,7 @@ private slots:
             QCOMPARE(text->textCursor().selectedText(), selection);
             QCOMPARE(text->verticalScrollBar()->value(), vertical);
             QCOMPARE(text->horizontalScrollBar()->value(), 70);
-            QCOMPARE(text->palette().color(QPalette::Text), usesEla()
-                ? qApp->palette().color(QPalette::Text) : InsightVisualStyle::theme().textPrimary);
+            QCOMPARE(text->palette().color(QPalette::Text), qApp->palette().color(QPalette::Text));
             QVERIFY(!text->grab().isNull());
         }
         QTest::keyClicks(text.get(), "must not alter readonly content");
@@ -104,7 +102,7 @@ private slots:
                 observed = true;
                 const auto actions = popup->actions();
                 QCOMPARE(actions.size(), labels.size());
-                QCOMPARE(popup->inherits("ElaMenu"), usesEla());
+                QCOMPARE(popup->inherits("ElaMenu"), true);
                 for (int i = 0; i < actions.size(); ++i) {
                     QCOMPARE(actions[i]->text(), labels[i]);
                     QCOMPARE(actions[i]->isEnabled(), enabled[i]);
@@ -127,7 +125,7 @@ private slots:
         QCOMPARE(QApplication::clipboard()->text(), QStringLiteral("alpha\nbeta"));
         QCOMPARE(text->toPlainText(), QStringLiteral("alpha\nbeta"));
 
-        if (usesEla()) {
+        {
             const QPoint at(30, 30);
             QContextMenuEvent event(QContextMenuEvent::Mouse, at, text->viewport()->mapToGlobal(at));
             QApplication::sendEvent(text->viewport(), &event); settle();
@@ -140,7 +138,7 @@ private slots:
     }
 
     void nativeFocusCustomPaletteAndTeardown() {
-        if (!usesEla()) QSKIP("Ela-specific style ownership and focus-bus contract");
+
         auto countStyles = [] {
             int count = 0;
             for (auto* object : qApp->children()) if (object->inherits("ElaPlainTextEditStyle")) ++count;
@@ -195,7 +193,7 @@ private slots:
 
     void scrollAreaReachabilityAndOwnership() {
         std::unique_ptr<QScrollArea> area(UiControls::scrollArea());
-        QCOMPARE(area->inherits("ElaScrollArea"), usesEla());
+        QCOMPARE(area->inherits("ElaScrollArea"), true);
         QCOMPARE(area->horizontalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
         QCOMPARE(area->verticalScrollBarPolicy(), Qt::ScrollBarAsNeeded);
         auto* content = new QWidget; content->resize(1400, 1400);
@@ -203,9 +201,9 @@ private slots:
         QSignalSpy clicked(target, &QPushButton::clicked);
         area->setWidget(content); area->resize(330, 220); area->show(); settle();
         for (auto* bar : {area->horizontalScrollBar(), area->verticalScrollBar()}) {
-            QCOMPARE(bar->inherits("ElaScrollBar"), usesEla());
+            QCOMPARE(bar->inherits("ElaScrollBar"), true);
             QVERIFY(bar->isVisible()); QVERIFY(bar->maximum() > 0);
-            QCOMPARE(bar->property("smoothWheelEnabled").toBool(), usesEla());
+            QCOMPARE(bar->property("smoothWheelEnabled").toBool(), true);
         }
         area->ensureWidgetVisible(target); settle();
         QVERIFY(area->viewport()->rect().contains(QRect(target->mapTo(area->viewport(), QPoint()), target->size())));
@@ -226,7 +224,7 @@ private slots:
         host.addDockWidget(Qt::BottomDockWidgetArea, coordinator.dock());
         host.resize(500, 300); host.show(); settle();
         auto* text = host.findChild<QPlainTextEdit*>("activityOutputText"); QVERIFY(text);
-        QCOMPARE(text->inherits("ElaPlainTextEdit"), usesEla());
+        QCOMPARE(text->inherits("ElaPlainTextEdit"), true);
         for (int i = 0; i < 80; ++i) service->append("Test", ActivityLogLevel::Info, QString::number(i));
         settle();
         auto* bar = text->verticalScrollBar(); QVERIFY(bar->maximum() > 0);

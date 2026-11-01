@@ -18,6 +18,7 @@
 #include <QTemporaryDir>
 #include <QTest>
 #include <QToolButton>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QWheelEvent>
 #include <memory>
@@ -28,6 +29,8 @@ void waitForSample(const char* stage, int milliseconds) {
     QElapsedTimer elapsed;
     elapsed.start();
     QTest::qWait(milliseconds);
+    // Deliver frames already due at the sample deadline.
+    QCoreApplication::processEvents(QEventLoop::AllEvents);
     qInfo() << "motion-sample" << stage << "requestedMs" << milliseconds
             << "elapsedMs" << elapsed.elapsed();
 }
@@ -43,7 +46,6 @@ QWidget* closeButton(QTabBar* bar, int index) {
     auto* button = bar->tabButton(index, QTabBar::RightSide);
     return button ? button : bar->tabButton(index, QTabBar::LeftSide);
 }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 }
 
 class ElaMotionTest final : public QObject {
@@ -53,18 +55,26 @@ private slots:
         QWidget probe;
         qInfo() << "motion-environment" << QApplication::platformName()
                 << "scaleFactor" << qEnvironmentVariable("QT_SCALE_FACTOR")
-                << "devicePixelRatio" << probe.devicePixelRatioF() << "usesEla" << usesEla();
+                << "devicePixelRatio" << probe.devicePixelRatioF() << "uiBackend" << "ela";
     }
+    void sampleProcessesTheDeadlineFrame() {
+        bool delivered = false;
+        QTimer frame;
+        frame.setTimerType(Qt::PreciseTimer);
+        frame.setSingleShot(true);
+        connect(&frame, &QTimer::timeout, this, [&] { delivered = true; });
+        frame.start(45);
+        waitForSample("deadline-frame", 45);
+        QVERIFY(delivered);
+    }
+
     void wheelReversalPrecisionAndExternalNavigation() {
         std::unique_ptr<QListWidget> list(UiControls::listWidget());
         UiControls::enableSmoothScrolling(list.get());
         for (int i = 0; i < 200; ++i) list->addItem(QString("Resource %1").arg(i));
         list->resize(330, 230); list->show(); list->setCurrentRow(0); settle();
         auto* bar = list->verticalScrollBar();
-        if (!usesEla()) {
-            QVERIFY(!bar->inherits("ElaScrollBar"));
-            return;
-        }
+        QVERIFY(bar->inherits("ElaScrollBar"));
         QVERIFY(bar->property("smoothWheelEnabled").toBool());
         QVERIFY(bar->maximum() > 1000);
         QVERIFY(wheel(list->viewport(), {0, -120}));
@@ -123,7 +133,7 @@ private slots:
             UiControls::enableSmoothScrolling(area.get());
             area->resize(350, 250); area->show(); settle();
             auto* bar = area->horizontalScrollBar();
-            if (usesEla()) {
+            {
                 QVERIFY(wheel(bar, {0, -120}, {}, Qt::ShiftModifier));
                 QTest::qWait(190); QVERIFY(bar->value() > 0);
                 const int start = bar->value();
@@ -144,10 +154,7 @@ private slots:
             tabs->addTab(new QWidget, QString(i % 2 ? "long_resource_%1.sv" : "r%1.sv").arg(i));
         bar->setTabVisible(4, false);
         tabs->resize(450, 240); tabs->show(); settle();
-        if (!usesEla()) {
-            QVERIFY(!bar->property("smoothScrollEnabled").toBool());
-            return;
-        }
+        QVERIFY(bar->inherits("ElaTabBar"));
         QVERIFY(bar->property("smoothScrollEnabled").toBool());
         QVERIFY(bar->usesScrollButtons());
         const int index = tabs->currentIndex();
@@ -206,17 +213,17 @@ private slots:
         SettingsCenterPanel settings(&service);
         auto* categories = settings.findChild<QListWidget*>("settingsCenterCategoryList");
         QVERIFY(categories);
-        QCOMPARE(categories->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
+        QCOMPARE(categories->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
         for (auto* scroll : settings.findChildren<QScrollArea*>())
-            QCOMPARE(scroll->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
+            QCOMPARE(scroll->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
         for (auto* table : settings.findChildren<QTableView*>())
-            QCOMPARE(table->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
+            QCOMPARE(table->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
         NavigationWidget navigation;
         const auto trees = navigation.findChildren<QTreeWidget*>();
         QVERIFY(trees.size() >= 2);
         for (auto* tree : trees) {
-            QCOMPARE(tree->isAnimated(), usesEla());
-            QCOMPARE(tree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), usesEla());
+            QCOMPARE(tree->isAnimated(), true);
+            QCOMPARE(tree->verticalScrollBar()->property("smoothWheelEnabled").toBool(), true);
         }
         std::unique_ptr<QTreeWidget> tree(UiControls::treeWidget());
         UiControls::enableTreeTransitions(tree.get());

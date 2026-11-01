@@ -16,7 +16,6 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QIcon>
-#include <QMessageBox>
 #include <QSettings>
 #include <QStandardPaths>
 #include <QTextStream>
@@ -29,8 +28,6 @@ int main(int argc, char *argv[])
     // Keep the storage identity so existing settings and sessions remain in place.
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Ela"));
     QGuiApplication::setApplicationDisplayName(QStringLiteral("ZeroSlack"));
-#elif defined(ZEROSLACK_PREVIEW_BUILD)
-    QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack-Qlementine-Preview"));
 #else
     QCoreApplication::setApplicationName(QStringLiteral("ZeroSlack"));
 #endif
@@ -47,17 +44,10 @@ int main(int argc, char *argv[])
 #endif
     parser.addPositionalArgument(QStringLiteral("files"),
         QStringLiteral("Open source files without adding a workspace."), QStringLiteral("[files…]"));
-    const QString defaultStyle = ApplicationThemeManager::elaAvailable() ? QStringLiteral("ela")
-        : ApplicationThemeManager::qlementineAvailable() ? QStringLiteral("qlementine") : QStringLiteral("classic");
-    const QCommandLineOption styleOption(QStringLiteral("ui-style"),
-        QStringLiteral("Widget style: classic, qlementine or ela (default: %1).")
-            .arg(defaultStyle),
-        QStringLiteral("style"), defaultStyle);
     const QCommandLineOption isolatedProfileOption(QStringLiteral("isolated-profile"),
         QStringLiteral("Use an independent local profile and do not register SuiteApp IPC."), QStringLiteral("directory"));
     parser.addOption(isolatedProfileOption);
-    parser.addOption(styleOption);
-    parser.addOption({QStringLiteral("no-ui-animations"), QStringLiteral("Disable Qlementine control animations.")});
+    parser.addOption({QStringLiteral("no-ui-animations"), QStringLiteral("Disable supported application animations; some Ela control animations remain.")});
     parser.process(a);
     const bool isolated = parser.isSet(isolatedProfileOption);
     const QString isolatedProfile = isolated ? QFileInfo(parser.value(isolatedProfileOption)).absoluteFilePath() : QString();
@@ -70,7 +60,7 @@ int main(int argc, char *argv[])
         qputenv("XIPS_ASSET_ADAPTER_STATE", (isolatedProfile + "/asset-adapter").toUtf8());
         qputenv("XIPS_LIBRARY", (isolatedProfile + "/library").toUtf8());
     }
-#if defined(ZEROSLACK_PREVIEW_BUILD) || defined(ZEROSLACK_ELA_BUILD)
+#if defined(ZEROSLACK_ELA_BUILD)
     const bool iniProfile = true;
 #else
     const bool iniProfile = isolated;
@@ -89,16 +79,7 @@ int main(int argc, char *argv[])
         return 0;
     }
 #endif
-    const QString style = parser.value(styleOption);
     auto& theme = ApplicationThemeManager::instance();
-    if ((style != QStringLiteral("classic") && style != QStringLiteral("qlementine") && style != QStringLiteral("ela"))
-        || !theme.selectBackend(style == QStringLiteral("qlementine")
-                                    ? UiStyleBackend::Qlementine : style == QStringLiteral("ela")
-                                    ? UiStyleBackend::Ela : UiStyleBackend::Classic)) {
-        QMessageBox::critical(nullptr, QStringLiteral("ZeroSlack"),
-                             QStringLiteral("The requested UI style is unavailable in this build."));
-        return 2;
-    }
     theme.setAnimationsEnabled(!parser.isSet(QStringLiteral("no-ui-animations")));
     theme.applyToApplication();
     a.setWindowIcon(QIcon(QStringLiteral(":/images/zeroslack_app.png")));
@@ -109,8 +90,6 @@ int main(int argc, char *argv[])
     QMainWindow& w = *applicationWindow;
 #if defined(ZEROSLACK_ELA_BUILD)
     w.setWindowTitle(QStringLiteral("ZeroSlack — %1").arg(QString::fromLatin1(APP_VERSION)));
-#elif defined(ZEROSLACK_PREVIEW_BUILD)
-    w.setWindowTitle(QStringLiteral("ZeroSlack Qlementine Preview — %1").arg(QString::fromLatin1(APP_VERSION)));
 #endif
     w.show();
 #ifdef ZEROSLACK_AUTOMATION_TRANSPORT

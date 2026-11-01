@@ -8,6 +8,7 @@
 #include <zeroslack/ui/applicationwindow.h>
 
 #include <QApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
@@ -161,17 +162,97 @@ private slots:
         QVERIFY(manager.openWorkspace(root));
         QVERIFY(coordinator.restoreSession());
         QCOMPARE(ui.navigationFilesQuery, version ? QString() : QString("legacy"));
-        QVERIFY(coordinator.saveSession());
+        QVERIFY2(coordinator.saveSession(),qPrintable(store + ": " + coordinator.lastSaveOutcome().reason));
         QVERIFY(service.load(root).loaded);
         QSettings saved(store, QSettings::IniFormat);
         QCOMPARE(QJsonDocument::fromJson(saved.value(stateKey(root)).toByteArray()).object().value("version").toInt(), 4);
         coordinator.clearSession();
         QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
+        QCOMPARE(bytesAt(store), QByteArray());
         coordinator.scheduleSessionSave(); coordinator.flushPendingSaves();
         QVERIFY(coordinator.saveBeforeWorkspaceTransition());
         QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
-        QVERIFY(coordinator.saveSession());
+        QVERIFY2(coordinator.saveSession(),qPrintable(store + ": " + coordinator.lastSaveOutcome().reason));
         QVERIFY(service.load(root).loaded); QCOMPARE(bytesAt(root + "/.zs"), legacy);
+    }
+
+    void sessionMutationsPreserveOtherIniValues()
+    {
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const QString store = fixture.filePath("session.ini");
+        const QString root = fixture.filePath("workspace"), other = fixture.filePath("other");
+        QVERIFY(QDir().mkpath(root)); QVERIFY(QDir().mkpath(other));
+        const QMap<QString, QVariant> preserved{
+            {"foreign/nested/text", QString::fromUtf8("保留=;\\\"@Value")},
+            {"foreign/bytes", QByteArray("a\0b\n", 4)},
+            {"foreign/list", QStringList{"one,two", "@three", ""}},
+            {"foreign/point", QPoint(11, 29)}, {"foreign/empty", QString()}};
+        {
+            QSettings seed(store, QSettings::IniFormat);
+            for (auto it = preserved.cbegin(); it != preserved.cend(); ++it) seed.setValue(it.key(), it.value());
+            seed.sync(); QCOMPARE(seed.status(), QSettings::NoError);
+        }
+        WorkspaceSessionStateService service(store);
+        WorkspaceSessionState state; state.workspaceRoot = root; state.ui.navigationFilesQuery = "first";
+        QVERIFY(service.save(state).saved);
+        state.workspaceRoot = other; state.ui.navigationFilesQuery = "other";
+        QVERIFY(service.save(state).saved);
+        QVERIFY(service.clear(root)); QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
+        QCOMPARE(service.load(other).state.ui.navigationFilesQuery, QString("other"));
+        state.workspaceRoot = root; state.ui.navigationFilesQuery = "reopened";
+        QVERIFY(service.save(state).saved);
+        WorkspaceSessionStateService reopened(store);
+        QCOMPARE(reopened.load(root).state.ui.navigationFilesQuery, QString("reopened"));
+        const QString inspection = fixture.filePath("readback.ini");
+        QVERIFY(writeBytes(inspection, bytesAt(store)));
+        QSettings readback(inspection, QSettings::IniFormat);
+        for (auto it = preserved.cbegin(); it != preserved.cend(); ++it) QCOMPARE(readback.value(it.key()), it.value());
+        QCOMPARE(readback.allKeys().size(), preserved.size() + 2);
+    }
+
+    void templateStorageConsumersAndGuard_data()
+    {
+        QTest::addColumn<bool>("rejectAfterMetadata");
+        QTest::newRow("guard-before-metadata") << false;
+        QTest::newRow("guard-after-metadata") << true;
+    }
+
+    void templateStorageConsumersAndGuard()
+    {
+        QFETCH(bool, rejectAfterMetadata);
+        QTemporaryDir fixture; QVERIFY(fixture.isValid());
+        const QString store = fixture.filePath("session.ini"), root = fixture.filePath("workspace");
+        const QString file = root + "/template.sv";
+        const QByteArray before = "module before; endmodule\n", after = "module after; endmodule\n";
+        QVERIFY(writeBytes(file, before));
+        WorkspaceSessionStateService service(store);
+        WorkspaceSessionState session; session.workspaceRoot = root; session.ui.navigationFilesQuery = "retain";
+        QVERIFY(service.save(session).saved);
+        const QJsonObject first{{"owner", "first"}}, next{{"owner", "next"}};
+        QString error;
+        QVERIFY2(service.saveDocumentTemplates(file, first, &error), qPrintable(error));
+        QCOMPARE(service.loadDocumentTemplates(file, &error), first);
+        const auto originalStore = bytesAt(store);
+        const auto revision = QString::fromLatin1(QCryptographicHash::hash(before, QCryptographicHash::Sha256).toHex());
+        int guardCalls = 0;
+        auto guard = [&](QString* reason) {
+            ++guardCalls;
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::UpdateRequest);
+            if (!rejectAfterMetadata || guardCalls == 2) { *reason = "guard rejection"; return false; }
+            return true;
+        };
+        QVERIFY(!service.saveDocumentWithTemplates(file, after, revision, next, &error, guard));
+        QCOMPARE(guardCalls, rejectAfterMetadata ? 2 : 1);
+        QCOMPARE(bytesAt(file), before); QCOMPARE(bytesAt(store), originalStore);
+        QCOMPARE(service.loadDocumentTemplates(file), first);
+        error.clear();
+        QVERIFY2(service.saveDocumentWithTemplates(file, after, revision, next, &error), qPrintable(error));
+        QCOMPARE(bytesAt(file), after); QCOMPARE(service.loadDocumentTemplates(file), next);
+        QCOMPARE(service.load(root).state.ui.navigationFilesQuery, QString("retain"));
+        QVERIFY(service.clear(root));
+        QCOMPARE(service.loadDocumentTemplates(file), next);
+        QVERIFY(!QFileInfo::exists(store + ".write.lock"));
+        QVERIFY(!QFileInfo::exists(file + ".zeroslack-format.lock"));
     }
 
     void sessionFailureRecoveryAndPendingBarrier()
@@ -214,7 +295,7 @@ private slots:
         QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
         QVERIFY(coordinator.saveBeforeWorkspaceTransition());
         QCOMPARE(service.load(root).status, WorkspaceSessionReadStatus::Missing);
-        QVERIFY(coordinator.saveSession());
+        QVERIFY2(coordinator.saveSession(),qPrintable(store + ": " + coordinator.lastSaveOutcome().reason));
 
         QSettings preserved(store, QSettings::IniFormat);
         QCOMPARE(preserved.value(stateKey(otherRoot)).toByteArray(), opaqueOther);

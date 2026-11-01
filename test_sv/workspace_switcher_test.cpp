@@ -43,6 +43,16 @@
 #include <functional>
 
 namespace {
+class StyleChangeObserver final : public QObject {
+public:
+    int changes = 0;
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::StyleChange) ++changes;
+        return QObject::eventFilter(watched, event);
+    }
+};
+
 // Release/change a real read lease only after the OS has rejected the atomic
 // replacement. This synchronizes the race without a timer or a test retry.
 class SaveFailureObserver {
@@ -357,6 +367,49 @@ private slots:
         QTest::mouseClick(bar, Qt::LeftButton, {}, target.center());
         QTRY_COMPARE(window.workspaceManager->getWorkspacePath(), paths.last());
         QVERIFY(!navigation->isExpanded());
+    }
+
+    void workspaceSwitchPreservesUnchangedApplicationStyle() {
+        QTemporaryDir files; QVERIFY(files.isValid());
+        const QString first = files.filePath("first"), second = files.filePath("second");
+        QVERIFY(QDir().mkpath(first)); QVERIFY(QDir().mkpath(second));
+        MainWindow window;
+        window.resize(780, 600); window.show();
+        auto* sessions = window.findChild<WorkspaceSessionCoordinator*>();
+        auto* strip = window.findChild<QTabBar*>("workspaceIconTabs");
+        QVERIFY(sessions && strip);
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        QVERIFY(sessions->openWorkspace(first));
+        QVERIFY(sessions->openWorkspace(second));
+        QTRY_COMPARE(window.workspaceManager->getWorkspacePath(), second);
+
+        QWidget styleProbe;
+        styleProbe.ensurePolished();
+        StyleChangeObserver observer;
+        styleProbe.installEventFilter(&observer);
+        auto& themes = ApplicationThemeManager::instance();
+        const ThemeMode original = themes.mode();
+        const QPalette originalPalette = QApplication::palette();
+        const QString originalStyleSheet = qApp->styleSheet();
+        const ThemeMode changed = isDarkTheme(original) ? ThemeMode::Light : ThemeMode::Dark;
+        themes.setMode(changed);
+        QVERIFY(observer.changes > 0);
+        QCOMPARE(QApplication::palette().color(QPalette::Window),
+                 InsightVisualStyle::applicationPalette(changed).color(QPalette::Window));
+        themes.setMode(original);
+        QCOMPARE(QApplication::palette(), originalPalette);
+        QCOMPARE(qApp->styleSheet(), originalStyleSheet);
+        observer.changes = 0;
+
+        for (const QString& path : {first, second}) {
+            const int index = workspaceTab(strip, path); QVERIFY(index >= 0);
+            QTest::mouseClick(strip, Qt::LeftButton, {}, strip->tabRect(index).center());
+            QTRY_COMPARE(window.workspaceManager->getWorkspacePath(), path);
+            QCOMPARE(themes.mode(), original);
+            QCOMPARE(QApplication::palette(), originalPalette);
+            QCOMPARE(qApp->styleSheet(), originalStyleSheet);
+            QCOMPARE(observer.changes, 0);
+        }
     }
 
     void workspaceIconsOverflowAndOpenFolder() {

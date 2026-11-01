@@ -361,6 +361,12 @@ void EditorCoordinator::setModeStateHandler(
     modeStateHandler = std::move(handler);
 }
 
+void EditorCoordinator::setTemplateInputFeedbackHandler(
+    std::function<void(const QString&)> handler)
+{
+    templateInputFeedbackHandler = std::move(handler);
+}
+
 void EditorCoordinator::setActionContextService(
     EditorActionContextService* service)
 {
@@ -553,6 +559,12 @@ void EditorCoordinator::attachEditor(MyCodeEditor* editor)
                     && tabManager->getCurrentEditor() == editor) {
                     modeStateHandler(snapshot);
                 }
+            });
+    connect(editor, &MyCodeEditor::templateInputFeedbackChanged,
+            this, [this, editor](const QString& feedback) {
+                if (templateInputFeedbackHandler && tabManager
+                    && tabManager->getCurrentEditor() == editor)
+                    templateInputFeedbackHandler(feedback);
             });
     connect(editor, &MyCodeEditor::fontZoomRequested,
             this, [this](int steps) {
@@ -1967,6 +1979,8 @@ void EditorCoordinator::handleActiveEditorChanged(MyCodeEditor* editor)
             }
         }
     }
+    if (templateInputFeedbackHandler)
+        templateInputFeedbackHandler(editor ? editor->templateInputFeedback() : QString());
     if (modeStateHandler) {
         modeStateHandler(editor
                              ? editor->editorModeSnapshot()

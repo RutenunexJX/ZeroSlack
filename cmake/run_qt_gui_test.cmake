@@ -13,7 +13,7 @@ set(report "${QT_TEST_LOG_ROOT}/${QT_TEST_NAME}/${started}-${invocation}")
 file(MAKE_DIRECTORY "${report}")
 file(WRITE "${report}/invocation.txt"
     "test=${QT_TEST_NAME}\nexecutable=${QT_TEST_EXECUTABLE}\narguments=${QT_TEST_ARGUMENTS}\n"
-    "platform=$ENV{QT_QPA_PLATFORM}\nscaleFactor=$ENV{QT_SCALE_FACTOR}\nstyle=$ENV{ZEROSLACK_TEST_UI_STYLE}\n")
+    "platform=$ENV{QT_QPA_PLATFORM}\nscaleFactor=$ENV{QT_SCALE_FACTOR}\n")
 message(STATUS "Qt GUI evidence: ${report}")
 execute_process(
     COMMAND "${QT_TEST_EXECUTABLE}" ${QT_TEST_ARGUMENTS}

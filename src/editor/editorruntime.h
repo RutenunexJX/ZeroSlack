@@ -67,8 +67,7 @@ struct EditorLogicalCursorState
     int position = -1;
     EditorColumnModeSnapshot column;
     EditorMultiCursorSnapshot multiCursor;
-    QString templateOwner, templateRegion, templateInput;
-    int templateTarget = 0;
+    QString templateOwner, templateInput;
     bool templateEditing = false;
 };
 

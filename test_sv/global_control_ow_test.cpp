@@ -5,6 +5,7 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFileInfo>
+#include <QFile>
 #include <QPointer>
 #include <QQueue>
 #include <QSettings>
@@ -21,6 +22,8 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include "testuistyle.h"
+#include "navigationrowstyle.h"
 
 #define private public
 #include "fixture_names.h"
@@ -129,10 +132,12 @@ bool remainsTrueFor(const std::function<bool()>& predicate,
 
 GlobalControlItem openOneWorkspaceItem()
 {
-    return {GlobalControlItemKind::Command,
-            QStringLiteral("ow 1"),
-            QStringLiteral("ow 1"),
-            QStringLiteral("Open 1 workspace")};
+    GlobalControlItem item;
+    item.kind = GlobalControlItemKind::Command;
+    item.id = QStringLiteral("ow 1");
+    item.title = QStringLiteral("ow 1");
+    item.subtitle = QStringLiteral("Open 1 workspace");
+    return item;
 }
 
 bool semanticRecordsBelongTo(const QString& workspaceRoot)
@@ -266,7 +271,7 @@ bool designTreeContainsNestedModule(
 {
     if (!item)
         return false;
-    if (item->text(1) == moduleType && item->parent())
+    if (item->data(0, NavigationRowStyle::TypeRole).toString() == moduleType && item->parent())
         return true;
     for (int i = 0; i < item->childCount(); ++i) {
         if (designTreeContainsNestedModule(item->child(i), moduleType))
@@ -424,16 +429,44 @@ int main(int argc, char** argv)
 {
     QApplication app(argc, argv);
 
-    const QString newWorkspace = argc > 1
-        ? QString::fromLocal8Bit(argv[1])
-        : QDir::current().absoluteFilePath(QStringLiteral("test_sv/new"));
-    const QString hugeWorkspace = argc > 2
-        ? QString::fromLocal8Bit(argv[2])
-        : QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_prj"));
-    check("new workspace fixture exists", QFileInfo(newWorkspace).isDir());
-    check("huge workspace fixture exists", QFileInfo(hugeWorkspace).isDir());
-    if (failures != 0)
-        return failures;
+    const bool selfContained = argc > 1 && QString::fromLocal8Bit(argv[1]) == "--self-contained-only";
+    QTemporaryDir originalProjects;
+    QString newWorkspace, hugeWorkspace;
+    if (selfContained) {
+        check("self-contained workspace root exists", originalProjects.isValid());
+        const auto write = [&](const QString& relative, const QString& source) {
+            const QString path = originalProjects.filePath(relative);
+            if (!QDir().mkpath(QFileInfo(path).absolutePath())) return false;
+            QFile file(path);
+            return file.open(QIODevice::WriteOnly) && file.write(source.toUtf8()) == source.toUtf8().size();
+        };
+        newWorkspace = originalProjects.filePath("workspace-a");
+        hugeWorkspace = originalProjects.filePath("workspace-b");
+        check("original package fixture written", write("workspace-a/PKG_global.sv",
+            "package PKG_global; parameter int P_SW_NUM = 9 * 10; endpackage\n"));
+        check("original hierarchy fixture written", write("workspace-a/elec_phy_import/top/rtl_top.sv",
+            "module phy_top(input logic clk_main, output wire ready); assign ready=clk_main; endmodule\n"
+            "module elec_top(input logic clk_main, output wire ready); phy_top phy(.clk_main(clk_main),.ready(ready)); endmodule\n"
+            "module top_ctrl(input logic clk_main, output wire ready); elec_top elec(.clk_main(clk_main),.ready(ready)); endmodule\n"
+            "module lite_top(input logic clk_main, output wire ready); top_ctrl control(.clk_main(clk_main),.ready(ready)); endmodule\n"
+            "module rtl_top(input logic clk_main, output wire ready);\n"
+            "  localparam int WIDTH = PKG_global::P_SW_NUM;\n"
+            "  wire [WIDTH-1:0] bus_data;\n"
+            "  assign bus_data = '0;\n"
+            "  lite_top lite(.clk_main(clk_main), .ready(ready));\nendmodule\n"));
+        check("original second workspace written", write("workspace-b/control.sv",
+            QStringLiteral("module helper(input logic d, output wire q); assign q=d; endmodule\n"
+                           "module %1(input logic d, output wire q); helper leaf(.d(d),.q(q)); endmodule\n")
+                .arg(QStringLiteral(ZS_FIXTURE_TOP_CTL))));
+    } else {
+        newWorkspace = argc > 1 ? QString::fromLocal8Bit(argv[1])
+                               : QDir::current().absoluteFilePath(QStringLiteral("test_sv/new"));
+        hugeWorkspace = argc > 2 ? QString::fromLocal8Bit(argv[2])
+                                : QDir::current().absoluteFilePath(QStringLiteral("test_sv/huge_prj"));
+    }
+    check("first workspace fixture exists", QFileInfo(newWorkspace).isDir());
+    check("second workspace fixture exists", QFileInfo(hugeWorkspace).isDir());
+    if (failures != 0) return failures;
 
     // The teardown regression intentionally holds the unified semantic worker
     // in a cancellation gate, then restores the process-wide setting after
@@ -476,6 +509,7 @@ int main(int argc, char** argv)
               .saveGlobal(globalSettings,
                           initialSettings.globalRevision)
               .saved);
+    check("maintained UI backend initializes", initializeUiStyleForTest());
 
     {
     MainWindow window;
@@ -665,6 +699,26 @@ int main(int argc, char** argv)
                        ->editorForFile(rtlTopPath));
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    check("design project selection succeeds",
+          window.navigationManager->setDesignTop(QStringLiteral("rtl_top")).isEmpty());
+    window.navigationManager->setActiveView(NavigationManager::DesignHierarchyView);
+    window.navigationManager->refreshCurrentView();
+    QTreeWidget* designTree = window.navigationPane
+        && window.navigationPane->navigationWidget
+        ? window.navigationPane->navigationWidget->designTreeWidget
+        : nullptr;
+    // Selecting a design project can publish a new semantic snapshot. Await
+    // that transaction and its asynchronous projection before the clean-open baseline.
+    check("design projection settles before clean-open baseline",
+          waitUntil([&] {
+              return !window.analysisScheduler->isSemanticAnalysisActive()
+                  && !window.navigationManager->designWatcher
+                  && !window.navigationManager->pendingDesignRequest
+                  && window.navigationManager->caches.designHierarchyValid
+                  && window.navigationManager->caches.designSnapshotGeneration
+                         == semanticIndex->snapshotRevision()
+                  && designTree && designTreeContainsNestedModule(designTree, QStringLiteral("top_ctrl"));
+          }, 10000));
     const std::shared_ptr<const SemanticIndexSnapshot> beforeOpenSnapshot =
         semanticIndex->snapshot();
     const std::uint64_t beforeOpenSnapshotRevision =
@@ -712,16 +766,8 @@ int main(int argc, char** argv)
                                           designFileScope);
     const QSet<QString> designKeysBefore =
         designInstanceKeys(designBefore);
-    window.navigationManager->setDesignTop(QStringLiteral("rtl_top"));
-    window.navigationManager->setActiveView(
-        NavigationManager::DesignHierarchyView);
-    window.navigationManager->refreshCurrentView();
     const QSet<QString> managerDesignKeysBefore = designInstanceKeys(
         window.navigationManager->caches.designHierarchy);
-    QTreeWidget* designTree = window.navigationPane
-        && window.navigationPane->navigationWidget
-        ? window.navigationPane->navigationWidget->designTreeWidget
-        : nullptr;
 
     check("post-analysis baseline snapshot has stable-key relationships",
           beforeOpenSnapshot && !beforeRelationshipKeys.isEmpty());
@@ -909,6 +955,11 @@ int main(int argc, char** argv)
     check("post-analysis rtl_top open preserves Design hierarchy instances",
           !designKeysAfter.isEmpty()
               && designKeysAfter == designKeysBefore);
+    std::printf("[DIAG] clean-open design refreshes=%d keys-before=%lld keys-after=%lld cache-revision=%llu semantic-revision=%llu\n",
+                designRefreshesAfterOpen, static_cast<long long>(managerDesignKeysBefore.size()),
+                static_cast<long long>(managerDesignKeysAfter.size()),
+                static_cast<unsigned long long>(window.navigationManager->caches.designSnapshotGeneration),
+                static_cast<unsigned long long>(semanticIndex->snapshotRevision()));
     check("post-analysis rtl_top open keeps cached Navigation Design",
           designRefreshesAfterOpen == 0
               && !managerDesignKeysAfter.isEmpty()

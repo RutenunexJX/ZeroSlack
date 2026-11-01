@@ -56,6 +56,8 @@ public:
         std::function<void(const QString&, int)> handler);
     void setModeStateHandler(
         std::function<void(const EditorModeSnapshot&)> handler);
+    void setTemplateInputFeedbackHandler(
+        std::function<void(const QString&)> handler);
     void setActionContextService(
         EditorActionContextService* service);
     void setActionContextQueryProvider(
@@ -196,6 +198,7 @@ private:
     EditorActionContextService* actionContextService = nullptr;
     std::function<void(const QString&, int)> statusMessageHandler;
     std::function<void(const EditorModeSnapshot&)> modeStateHandler;
+    std::function<void(const QString&)> templateInputFeedbackHandler;
     std::function<EditorActionContextQuery(
         const EditorSemanticContext&)> actionContextQueryProvider;
     std::function<void(const QString&,

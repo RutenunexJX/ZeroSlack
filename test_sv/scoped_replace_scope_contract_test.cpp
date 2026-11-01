@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include <QtWidgets>
 #include <QtTest>
 #include "mainwindow.h"
@@ -133,7 +134,7 @@ int main(int argc,char** argv)
     qputenv("ZEROSLACK_SESSION_STORAGE_PATH",settings.filePath("sessions.ini").toUtf8());
     QApplication app(argc,argv);app.setQuitOnLastWindowClosed(false);QStandardPaths::setTestModeEnabled(true);
     auto& theme=ApplicationThemeManager::instance();
-    if (!theme.selectBackend(UiStyleBackend::Ela)) return 2;
+    if (!initializeUiStyleForTest()) return 2;
     theme.applyToApplication();
     for (const QString action:{"switch empty","close workspace","exclude source","delete source"}) {
         scenario(action,true);scenario(action,false);

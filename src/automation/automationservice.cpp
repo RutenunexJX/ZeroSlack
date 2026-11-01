@@ -7,8 +7,6 @@
 #include "usertemplateservice.h"
 #include "simulationcommandplanner.h"
 #include "simulationcommandservice.h"
-#include "duttemplateplanner.h"
-#include "templatecapabilities.h"
 #include "formatterservice.h"
 #include "formattercursoranchor.h"
 #include "workspacesessionstateservice.h"
@@ -166,7 +164,7 @@ QJsonObject ZeroSlackAutomationService::capabilities() {
     return success({{"appVersion", QCoreApplication::applicationVersion()}, {"commands", QJsonArray{
         "capabilities", "session.describe", "support.install", "templates.examples", "templates.list", "templates.get", "templates.validate", "templates.put", "templates.delete",
         "document.inspect", "document.open", "document.insert", "document.input", "document.candidates", "document.format",
-        "document.save", "document.undo", "document.redo", "dut.inspect",
+        "document.save", "document.undo", "document.redo",
         "simulation.projects", "simulation.project", "simulation.open", "simulation.put", "simulation.validate",
         "simulation.run", "simulation.status", "simulation.events", "simulation.cancel", "simulation.clear"}},
         {"coordinates", "UTF-16 offsets; start inclusive, length in code units; all paths relative to explicit workspace"},
@@ -226,7 +224,7 @@ QJsonObject ZeroSlackAutomationService::execute(const QJsonObject& request) {
         if (!error.isEmpty()) return failure("support_error", error);
         return success({{"files", strings(files)}, {"available", true}, {"buildInputsAdopted", false}});
     }
-    if (command.startsWith("document.") || command == "dut.inspect") return document(request, root);
+    if (command.startsWith("document.")) return document(request, root);
     if (command.startsWith("simulation.")) return simulation(request, root);
     return failure("unknown_command", "Unknown automation command; use capabilities.");
 }
@@ -322,7 +320,7 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
     data.insert("text", before); data.insert("adopted", bool(editor)); data.insert("written", false);
     data.insert("dirty", editor && editor->document()->isModified()); data.insert("viewLocated", false);
     if (command == "document.inspect") return success(data);
-    const bool readOnly = command == "document.candidates" || command == "dut.inspect";
+    const bool readOnly = command == "document.candidates";
     const bool preview = request.value("dryRun").toBool();
     if (!readOnly && request.value("expectedRevision").toString() != version)
         return failure("revision_conflict", "Read the current document revision before applying a change.", data);
@@ -359,7 +357,7 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
         FormatterTriviaPositionMapper mapper(before, formatting.formattedText);
         if (!model->applyFormatting(formatting.formattedText, mapper, &error)) return failure("format_rejected", error, data);
         data.insert("diagnostic", formatting.diagnostic); data.insert("formattedLines", formatting.formattedLines);
-    } else if (command == "document.insert" || command == "dut.inspect" || command == "document.input" || command == "document.candidates") {
+    } else if (command == "document.insert" || command == "document.input" || command == "document.candidates") {
         SimulationCommandRequest operation;
         auto prepared = request;
         inputOwner = request.value("instanceId").toString();
@@ -414,30 +412,10 @@ QJsonObject ZeroSlackAutomationService::document(const QJsonObject& request, con
                 for (const auto& slot : parent->inputs) if (slot.name == operation.item.templateParentSlot)
                     operation.item.templateContent = operation.context.templateContent = slot.input.value("content").toString();
             }
-            if (TemplateCapabilities::module(operation.item.parameters)) {
-                DutTemplateOptions options; options.module = request.value("module").toString(); options.instance = request.value("instance").toString(); options.replaceId = request.value("replaceId").toString();
-                const auto parameters = request.value("parameters").toObject(), bindings = request.value("bindings").toObject();
-                for (auto it = parameters.begin(); it != parameters.end(); ++it) options.parameters[it.key()] = it.value().toString();
-                for (auto it = bindings.begin(); it != bindings.end(); ++it) options.bindings[it.key()] = it.value().toString();
-                for (const auto& name : request.value("reuse").toArray()) options.reuse.insert(name.toString());
-                if (command == "dut.inspect") {
-                    const auto analysis = DutTemplatePlanner::analyze(operation, model->instances(), options);
-                    if (!analysis.error.isEmpty()) return failure("analysis_failed", analysis.error, data);
-                    QJsonArray ports; QJsonObject defaults;
-                    for (const auto& port : analysis.ports) ports << QJsonObject{{"name", port.name}, {"direction", port.direction}, {"type", port.type}, {"suffix", port.suffix}, {"compatibleSignals", strings(port.compatibleSignals)}};
-                    for (auto it = analysis.defaults.cbegin(); it != analysis.defaults.cend(); ++it) defaults.insert(it.key(), it.value());
-                    data.insert("modules", strings(analysis.modules)); data.insert("parameters", defaults); data.insert("ports", ports); data.insert("instance", analysis.instance); return success(data);
-                }
-                const auto plan = DutTemplatePlanner::prepare(operation, model->instances(), options);
-                if (!plan.error.isEmpty()) return failure("plan_rejected", plan.error, data);
-                edits = plan.edits;
-            } else {
-                if (command == "dut.inspect") return failure("invalid_template", "dut.inspect requires a module-generator template.");
-                const auto plan = SimulationCommandPlanner::prepare(operation);
-                if (!plan.error.isEmpty()) return failure("plan_rejected", plan.error, data);
-                edits << TemplateDocumentEdit{plan.start, plan.length, plan.text, operation.item.templateParentId,
-                    operation.item.templateParentSlot, {}, plan.instance, plan.placeholders};
-            }
+            const auto plan = SimulationCommandPlanner::prepare(operation);
+            if (!plan.error.isEmpty()) return failure("plan_rejected", plan.error, data);
+            edits << TemplateDocumentEdit{plan.start, plan.length, plan.text, operation.item.templateParentId,
+                operation.item.templateParentSlot, {}, plan.instance, plan.placeholders};
             if (!model->applyEdits(edits, &selected, &error)) return failure("plan_rejected", error, data);
         }
         if (inputs->current && !inputs->current()) return failure("source_conflict", "A dependency changed during preparation.", data);

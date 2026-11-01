@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 // Focused regression for the supported insert palette and semantic catalog.
 #include <QtWidgets>
 #include <QtTest>
@@ -531,7 +532,7 @@ int main(int argc, char** argv)
     QApplication app(argc, argv);
     app.setQuitOnLastWindowClosed(false);
 #ifdef ZEROSLACK_ENABLE_ELA
-    ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela);
+    initializeUiStyleForTest();
 #endif
     ApplicationThemeManager::instance().applyToApplication();
     expect("isolated settings directory is available", settings.isValid());

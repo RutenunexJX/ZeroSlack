@@ -272,9 +272,8 @@ QString cssColor(const QColor& color)
 
 void verifyClickGeometryStability(DrawerHarness& harness)
 {
-    check(harness.controller->animationsEnabled()
-              == (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela),
-          "Ela enables composited drawer motion; classic retains immediate layout");
+    check(harness.controller->animationsEnabled(),
+          "Ela enables composited drawer motion");
     harness.controller->restorePanel(QStringLiteral("problems"));
     harness.controller->resetPanelHeight(QStringLiteral("problems"));
     QApplication::processEvents();

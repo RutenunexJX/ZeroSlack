@@ -1,3 +1,4 @@
+#include <QScopeGuard>
 #include "mainwindow.h"
 #include <QLabel>
 #include "editoractioncontextservice.h"
@@ -32,7 +33,7 @@
 #include <QDialog>
 #include <QDockWidget>
 #include <QFile>
-#include <QInputDialog>
+#include <QSpinBox>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
@@ -717,6 +718,8 @@ void runFileActionRegistryShellRegression()
 
 void runContextActionRegistryExecutionRegression()
 {
+    const auto previousShortcuts = actionShortcutOverrides();
+    const auto restoreShortcuts = qScopeGuard([&] { configureActionShortcutOverrides(previousShortcuts); });
     MainWindow window;
     window.resize(900, 600);
     window.show();
@@ -782,15 +785,15 @@ void runContextActionRegistryExecutionRegression()
     commandModeShortcutOverride.insert(
         QString::fromLatin1(
             ActionIds::ViewCommandMode),
-        QStringLiteral("Ctrl+F24"));
+        QStringLiteral("Ctrl+F23"));
     QStringList commandModeShortcutIssues;
     const bool commandModeOverrideAccepted =
         configureActionShortcutOverrides(
             commandModeShortcutOverride,
             &commandModeShortcutIssues);
     resetApplicationActionExecutionHistory();
-    QTest::keyPress(editor, Qt::Key_F24);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     const bool oldCommandModeShortcutInactive =
@@ -798,7 +801,7 @@ void runContextActionRegistryExecutionRegression()
         && !commandModePanel->isVisible();
     QTest::keyPress(
         editor,
-        Qt::Key_F24,
+        Qt::Key_F23,
         Qt::ControlModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
@@ -811,14 +814,14 @@ void runContextActionRegistryExecutionRegression()
                    ActionIds::ViewCommandMode)
         && commandModeTitle
         && commandModeTitle->text().contains(
-               QStringLiteral("Ctrl+F24"));
+               QStringLiteral("Ctrl+F23"));
     QTest::keyRelease(
         editor,
-        Qt::Key_F24,
+        Qt::Key_F23,
         Qt::ControlModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    configureActionShortcutOverrides({});
+    configureActionShortcutOverrides({{QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23")}});
     check("Command Mode hold shortcut consumes its Registry Action",
           commandModeOverrideAccepted
               && commandModeShortcutIssues.isEmpty()
@@ -897,14 +900,14 @@ void runContextActionRegistryExecutionRegression()
         secondSymbolStart + 2);
     editor->setTextCursor(commandSelectionCursor);
     resetApplicationActionExecutionHistory();
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QTest::keyClicks(
         editor,
         QStringLiteral("expand selection"));
     QTest::keyClick(editor, Qt::Key_Return);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     check("Command Mode uses the structural selection Action",
@@ -958,7 +961,7 @@ void runContextActionRegistryExecutionRegression()
         QTextCursor::KeepAnchor);
     editor->setTextCursor(secondCaseCursor);
     editor->setFocus();
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QWidget* commandPanel = window.findChild<QWidget*>(
@@ -967,7 +970,7 @@ void runContextActionRegistryExecutionRegression()
         commandPanel && commandPanel->isVisible();
     QTest::keyClicks(editor, QStringLiteral("repeat action"));
     QTest::keyClick(editor, Qt::Key_Return);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     check("Command Mode repeats the context selection-case Action",
@@ -1185,14 +1188,14 @@ void runContextActionRegistryExecutionRegression()
                      == QString::fromLatin1(
                          ActionIds::EditMoveLinesDown));
 
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QTest::keyClicks(
         editor,
         QStringLiteral("move lines up"));
     QTest::keyClick(editor, Qt::Key_Return);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     const bool commandMoveUp =
@@ -1204,14 +1207,14 @@ void runContextActionRegistryExecutionRegression()
                .lastActionId()
                == QString::fromLatin1(
                    ActionIds::EditMoveLinesUp);
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     QTest::keyClicks(
         editor,
         QStringLiteral("move lines down"));
     QTest::keyClick(editor, Qt::Key_Return);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     check("Command Mode uses line-move Actions",
@@ -1331,7 +1334,7 @@ void runContextActionRegistryExecutionRegression()
         Qt::ControlModifier | Qt::AltModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
-    configureActionShortcutOverrides({});
+    configureActionShortcutOverrides({{QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23")}});
     check("Column Number Tool shortcut executes its Registry route",
           columnNumberOverrideAccepted
               && columnNumberShortcutIssues.isEmpty()
@@ -1462,12 +1465,22 @@ void runContextActionRegistryExecutionRegression()
         0,
         editor,
         [goLineTarget]() {
-            auto* input = qobject_cast<QInputDialog*>(
+            auto* dialog = qobject_cast<QDialog*>(
                 QApplication::activeModalWidget());
-            if (!input)
+            auto* input = dialog
+                ? dialog->findChild<QSpinBox*>(QStringLiteral("uiDialogInput"))
+                : nullptr;
+            const bool expectedInput = dialog
+                && dialog->objectName() == QStringLiteral("uiInputDialog")
+                && input;
+            check("Go to Line exposes its managed integer input", expectedInput);
+            if (!expectedInput) {
+                if (dialog)
+                    dialog->reject();
                 return;
-            input->setIntValue(goLineTarget);
-            input->accept();
+            }
+            input->setValue(goLineTarget);
+            dialog->accept();
         });
     resetApplicationActionExecutionHistory();
     QTest::keyClick(
@@ -1594,7 +1607,7 @@ void runContextActionRegistryExecutionRegression()
         &overriddenShortcutEditor,
         Qt::Key_R,
         Qt::ControlModifier | Qt::AltModifier);
-    configureActionShortcutOverrides({});
+    configureActionShortcutOverrides({{QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23")}});
     check("semantic shortcuts consume Registry overrides",
           semanticOverridesAccepted
               && semanticShortcutIssues.isEmpty()
@@ -1679,10 +1692,10 @@ void runContextActionRegistryExecutionRegression()
         QStringLiteral("u_second")));
     editor->setTextCursor(secondSlotCursor);
     editor->setFocus();
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QTest::keyClicks(editor, QStringLiteral("repeat action"));
     QTest::keyClick(editor, Qt::Key_Return);
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     check("repeated Slot action resolves the current cursor",
@@ -2224,6 +2237,11 @@ void runEditorViewTargetedActionRegression()
 
 void runCommandLayerCompletionPopupRegression()
 {
+    const auto previousShortcuts = actionShortcutOverrides();
+    const auto restoreShortcuts = qScopeGuard([&] { configureActionShortcutOverrides(previousShortcuts); });
+    auto testShortcuts = previousShortcuts;
+    testShortcuts.insert(QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23"));
+    configureActionShortcutOverrides(testShortcuts);
     MainWindow window;
     window.resize(900, 600);
     window.show();
@@ -2274,7 +2292,7 @@ void runCommandLayerCompletionPopupRegression()
           !completionPopup || !completionPopup->isVisible());
     const QString sourceAfterTab = editor->toPlainText();
 
-    QTest::keyPress(editor, Qt::Key_F24);
+    QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
     check("COM opens without a legacy editor completion popup",
           (!completionPopup || !completionPopup->isVisible())
@@ -2282,9 +2300,9 @@ void runCommandLayerCompletionPopupRegression()
     check("COM activation preserves source text",
           editor->toPlainText() == sourceAfterTab);
 
-    QTest::keyRelease(editor, Qt::Key_F24);
+    QTest::keyRelease(editor, Qt::Key_F23);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
-    check("releasing F24 closes the command layer after popup replacement",
+    check("releasing the configured shortcut closes the command layer after popup replacement",
           !commandPanel->isVisible());
     window.hide();
 }

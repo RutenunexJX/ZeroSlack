@@ -1,6 +1,4 @@
 #include "simulationcommandservice.h"
-#include "templatecapabilities.h"
-#include "duttemplatesession.h"
 #include "../integrations/native/nativecontextview.h"
 #include "../integrations/xips/xipscontextprovider.h"
 #include "../simulation/simdock/ui/workbench.h"
@@ -42,7 +40,6 @@ SimulationCommandService::~SimulationCommandService()
 }
 void SimulationCommandService::cancel()
 {
-    if (dutSession) delete dutSession.data();
     if (pending)
         pending->store(true);
     pending.reset();
@@ -231,7 +228,6 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
         return;
     }
     auto request = currentRequest();
-    const bool authoringLocked = editor->templateAuthoringLocked();
     request.item = selected;
     request.context.replacementStart = selected.replacementStart;
     request.context.replacementLength = selected.replacementLength;
@@ -240,29 +236,6 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
     const auto compilation = buildInputs ? buildInputs->activeCompilationInputs() : QStringList();
     QStringList dependencies = selected.parameters.value("compileOrder").toStringList();
     const auto kind = selected.parameters.value("kind").toString();
-    if (TemplateCapabilities::module(selected.parameters)) {
-        if (dutSession) delete dutSession.data();
-        const auto snapshot = workspaces->projectSnapshot();
-        if (compilation.isEmpty()) {
-            request.orderedFiles = snapshot.designSourceFiles();
-            if (!request.orderedFiles.contains(request.context.fileName)) request.orderedFiles << request.context.fileName;
-        }
-        const auto valid = [=, this]() -> QString {
-            if (!current(selected, editor) || editor->templateAuthoringLocked() != authoringLocked ||
-                workspaces->getWorkspacePath() != workspace ||
-                (buildInputs && (buildInputs->activeProjectId() != project || buildInputs->activeCompilationInputs() != compilation)))
-                return "The document, cursor, template catalog or project changed. Reopen DUT inputs.";
-            const auto latest = workspaces->projectSnapshot();
-            if (latest.includeDirs != request.includeDirectories || latest.defines != request.defines ||
-                latest.designSourceFiles() != snapshot.designSourceFiles() || currentRequest().contents != request.contents)
-                return "DUT sources or compilation settings changed. Reopen DUT inputs.";
-            return {};
-        };
-        dutSession = new DutTemplateSession(editor, request, valid,
-            [this](const QString &text) { emit message(text); }, this);
-        dutSession->start();
-        return;
-    }
     if ((kind == "driver" || kind == "print") && dependencies.isEmpty())
     {
         QStringList support;
@@ -299,7 +272,7 @@ void SimulationCommandService::activate(const GlobalControlItem &selected)
                 cancel();
                 const auto unchanged = [=, this]() -> QString
                 {
-                    if (!editor || editor->documentReadOnly() || editor->templateAuthoringLocked() != authoringLocked || !tabs || tabs->getCurrentEditor() != editor ||
+                    if (!editor || editor->documentReadOnly() || !tabs || tabs->getCurrentEditor() != editor ||
                         !workspaces || workspaces->getWorkspacePath() != workspace ||
                         (buildInputs && buildInputs->activeProjectId() != project))
                         return QStringLiteral("The active document or project changed.");

@@ -83,13 +83,6 @@ bool insertTimingTemplate(MyCodeEditor* editor, const QVariantMap& input = {{"ki
     return editor->insertSimulationTemplate(body, inputs, spec, {}, {}, nullptr);
 }
 
-void lockTemplates(MyCodeEditor* editor)
-{
-    QTest::keyPress(editor, Qt::Key_F24);
-    QTest::keyClick(editor, Qt::Key_Space);
-    QTest::keyRelease(editor, Qt::Key_F24);
-}
-
 int writerProcess(const QStringList& arguments)
 {
     if (arguments.size() != 6) return 10;
@@ -301,7 +294,6 @@ private slots:
         QTest::addColumn<int>("mode");
         QTest::newRow("ordinary") << 0;
         QTest::newRow("slot-unlocked") << 1;
-        QTest::newRow("slot-locked") << 2;
     }
     void mainWindowTemplateKeyIntervals()
     {
@@ -316,11 +308,6 @@ private slots:
             editor->selectAll();
         } else {
             QVERIFY(insertTimingTemplate(editor));
-            if (mode == 2) {
-                lockTemplates(editor);
-                QVERIFY(editor->templateAuthoringLocked());
-                QTest::keyClick(editor, Qt::Key_Return);
-            }
             QVERIFY(editor->templateInputEditing());
         }
         QCOMPARE(measured.totalNanoseconds(), qint64(0));
@@ -371,29 +358,13 @@ private slots:
         press(Qt::Key_A, "a", Qt::NoModifier, true);
         press(Qt::Key_Return, "\r", Qt::NoModifier, true);
         press(Qt::Key_Left, {}, Qt::NoModifier, false);
-        if (mode == 2) {
-            editor->selectAll();
-            press(Qt::Key_Delete, {}, Qt::NoModifier, false);
-            press(Qt::Key_X, {}, Qt::ControlModifier, false);
-        }
     }
 
-    void mainWindowTemplateCommandsAndIme_data()
-    {
-        QTest::addColumn<bool>("locked");
-        QTest::newRow("slot-unlocked") << false;
-        QTest::newRow("slot-locked") << true;
-    }
     void mainWindowTemplateCommandsAndIme()
     {
-        QFETCH(bool, locked);
         WindowFixture f;
         auto* editor = f.editor();
         QVERIFY(insertTimingTemplate(editor, {{"kind", "Choice"}, {"choices", QStringList{"1", "2"}}}));
-        if (locked) {
-            lockTemplates(editor);
-            QTest::keyClick(editor, Qt::Key_Return);
-        }
         qint64 now = 1000 * ms;
         EditingTimeService measured(f.directory.filePath("measured.json"), nullptr, [&] { return now; });
         measured.attachEditor(editor);
@@ -451,16 +422,19 @@ private slots:
         editor->setTextCursor(selection);
         verifyCommit([&] { QVERIFY(invoke("edit.cut")); });
         const auto beforeSearch = measured.totalNanoseconds();
-        if (locked) {
-            const auto before = editor->toPlainText();
-            QTest::keyClicks(editor, "@");
-            QVERIFY(QApplication::focusWidget() != editor);
-            now += 30000 * ms;
-            QCOMPARE(editor->toPlainText(), before);
-            QCOMPARE(measured.totalNanoseconds(), beforeSearch);
-            verifyCommit([&] { QTest::keyClicks(QApplication::focusWidget(), "*"); });
-            QVERIFY(editor->toPlainText().contains("@*"));
-        }
+        const auto beforePalette = editor->toPlainText();
+        QTest::keyClick(editor, Qt::Key_Space, Qt::ControlModifier);
+        QVERIFY(QApplication::focusWidget() != editor);
+        QTest::keyClicks(QApplication::focusWidget(), "process");
+        now += 30000 * ms;
+        QCOMPARE(editor->toPlainText(), beforePalette);
+        QCOMPARE(measured.totalNanoseconds(), beforeSearch);
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Escape);
+        QTRY_VERIFY(editor->hasFocus());
+        QInputMethodEvent literalInput;
+        literalInput.setCommitString("@*");
+        verifyCommit([&] { QApplication::sendEvent(editor, &literalInput); });
+        QVERIFY(editor->toPlainText().contains("@*"));
         editor->setReadOnly(true);
         const auto before = measured.totalNanoseconds();
         const auto text = editor->toPlainText();
@@ -477,28 +451,21 @@ private slots:
     void templateTimingSessionEnds_data()
     {
         QTest::addColumn<int>("boundary");
-        QTest::newRow("unlocked-escape") << 0;
-        QTest::newRow("locked-escape") << 1;
-        QTest::newRow("locked-toggle") << 2;
+        QTest::newRow("input-escape") << 0;
         QTest::newRow("finish-input") << 3;
-        QTest::newRow("source-readonly-while-locked") << 4;
-        QTest::newRow("locked-focus-out") << 5;
-        QTest::newRow("locked-deactivate") << 6;
+        QTest::newRow("source-readonly") << 4;
+        QTest::newRow("input-focus-out") << 5;
+        QTest::newRow("input-deactivate") << 6;
     }
     void templateTimingSessionEnds()
     {
         QFETCH(int, boundary);
         EditorFixture f;
         QVERIFY(insertTimingTemplate(&f.editor));
-        if (boundary != 0) {
-            f.editor.setTemplateAuthoringLocked(true);
-            QVERIFY(f.editor.editTemplateInstance());
-        }
         f.press(Qt::Key_2, "2");
         QVERIFY(f.timer.isActive());
         f.now += 17 * ms;
-        if (boundary <= 1) QTest::keyClick(&f.editor, Qt::Key_Escape);
-        else if (boundary == 2) f.editor.setTemplateAuthoringLocked(false);
+        if (boundary == 0) QTest::keyClick(&f.editor, Qt::Key_Escape);
         else if (boundary == 3) QTest::keyClick(&f.editor, Qt::Key_Return, Qt::ControlModifier);
         else if (boundary == 4) f.editor.setReadOnly(true);
         else if (boundary == 5) {

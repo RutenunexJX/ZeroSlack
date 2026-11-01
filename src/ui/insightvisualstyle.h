@@ -286,7 +286,6 @@ public:
     static QString applicationStyleSheet(ThemeMode mode);
     // Application-owned surfaces only; standard controls belong to QStyle.
     static QString chromeStyleSheet(ThemeMode mode, bool styleMenus = true);
-    static QString tabBarStyleSheet(const QString& objectName = {});
     static QString labelStyleSheet(const QString& objectName = {},
                                    bool strong = false);
     static QString statusChipStyleSheet(

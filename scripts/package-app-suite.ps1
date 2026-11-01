@@ -34,10 +34,19 @@ param(
     [string]$CsrioVersion = "",
     [string]$XipsVersion = "",
     [string]$RuntimeVersion = "",
+    [string]$PythonExecutable = "",
     [switch]$ReplaceExisting
 )
 
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot 'ReleasePreparation.ps1')
+$gateReference = Join-Path $ZeroSlackDirectory 'release-gate.json'
+if (-not (Test-Path -LiteralPath $gateReference -PathType Leaf)) {
+    throw 'ZeroSlack package lacks complete release preparation evidence.'
+}
+$gateBinding = Get-Content -LiteralPath $gateReference -Raw | ConvertFrom-Json
+$gatePython = Resolve-ZeroSlackGatePython '' $gateBinding.preparation $PythonExecutable
+Invoke-ZeroSlackGate $gatePython @('verify-package', '--package', $ZeroSlackDirectory)
 
 function Resolve-RequiredDirectory([string]$Path, [string]$Label) {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {

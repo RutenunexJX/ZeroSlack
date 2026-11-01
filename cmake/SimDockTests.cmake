@@ -8,14 +8,14 @@ target_link_libraries(tb_task_templates_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_task_templates_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME tb_task_templates COMMAND tb_task_templates_test)
 set_tests_properties(tb_task_templates PROPERTIES TIMEOUT 180
-    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(tb_editor_assistance_test test_sv/tb_editor_assistance_test.cpp)
 target_link_libraries(tb_editor_assistance_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_editor_assistance_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes)
 set_tests_properties(tb_editor_assistance PROPERTIES TIMEOUT 180
-    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(simulation_workspace_ui_test test_sv/simulation_workspace_ui_test.cpp)
 target_link_libraries(simulation_workspace_ui_test PRIVATE zeroslack_core Qt6::Test)
@@ -24,14 +24,14 @@ add_test(NAME simulation_workspace_ui COMMAND simulation_workspace_ui_test
     sourceFirstSingleOwnershipAndSessionRestore navigationSearchAndTransferredModalGuard
     existingTestbenchAndRetiredInputs logSelectionScrollAndHiddenDelivery hostVisualsAndMenus)
 set_tests_properties(simulation_workspace_ui PROPERTIES TIMEOUT 180
-    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1;ZEROSLACK_TEST_UI_STYLE=ela"
+    ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 foreach(pair IN ITEMS "scan_cache;scan_cache_test" "storage;storage_test" "core;core_test" "workbench_host;workbench_host_test")
     list(GET pair 0 name)
     list(GET pair 1 source)
     add_executable(simdock_${name}_tests "test_sv/simdock/${source}.cpp")
     target_link_libraries(simdock_${name}_tests PRIVATE zeroslack_core Qt6::Test Qt6::Concurrent)
-    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/test_sv/simdock/${source}.cpp" methods REGEX "^    void [A-Za-z0-9_]+\\(")
+    file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/test_sv/simdock/${source}.cpp" methods REGEX "^    void [A-Za-z0-9_]+\\(\\)")
     set(pureMethods)
     foreach(method IN LISTS methods)
         string(REGEX REPLACE "^    void ([A-Za-z0-9_]+).*" "\\1" method "${method}")

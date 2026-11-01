@@ -37,7 +37,6 @@ public:
     void install();
     bool handleKeyEvent(QEvent* event);
     void open();
-    void openTemplates(MyCodeEditor* editor, const QString& query, bool rawPrefix = false);
     void refreshVisibleItems();
 
 protected:
@@ -58,12 +57,8 @@ private:
     std::function<QPoint()> anchorPositionProvider;
     bool installed = false;
     GlobalControlQueryContext currentContext;
+    GlobalControlQueryContext templateContext;
     QPointer<MyCodeEditor> templateEditor;
-    bool f24Held = false, nativePrefixPending = false;
-    bool toggleSpaceHeld = false;
-    void setF24Held(bool held, MyCodeEditor* editor = nullptr);
-    bool handleTemplateEvent(QObject* watched, QEvent* event);
-    bool restoreNativePrefix(const QString& query);
 
     void refresh(const QString& queryText = QString());
     void dispatch(const GlobalControlItem& item);

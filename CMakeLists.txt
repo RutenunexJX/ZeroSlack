@@ -36,8 +36,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 99)            # Used by tree-sitter
 
 include(CTest)
-
 option(ZEROSLACK_CLI_ONLY "Build the independent semantic/document CLI without Widgets or Ela" OFF)
+option(ZEROSLACK_SELF_CONTAINED_FIXTURES "Compile without private local fixture discovery" ON)
+if(BUILD_TESTING)
+    if(ZEROSLACK_CLI_ONLY OR NOT CMAKE_GENERATOR STREQUAL "Ninja" OR NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+        message(FATAL_ERROR "Managed test policy supports the full Ninja/Release configuration; this configuration requires an explicit policy mapping")
+    endif()
+    if(NOT ZEROSLACK_SELF_CONTAINED_FIXTURES)
+        message(FATAL_ERROR "Managed tests require ZEROSLACK_SELF_CONTAINED_FIXTURES=ON")
+    endif()
+    add_compile_definitions(ZEROSLACK_SELF_CONTAINED_FIXTURES=1)
+    include(cmake/TestExecution.cmake)
+endif()
 
 option(ZEROSLACK_SHARED_CORE
     "Build zeroslack_core as a shared library (disable only for compatibility comparisons)"
@@ -298,7 +308,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/documents/documenttemplatemodel.cpp
     src/documents/documenttemplatemodel.h
     src/editor/editortemplateauthoring.cpp
-    src/editor/editortemplateregions.cpp
     src/documents/documenttemplatemodel.cpp
     src/documents/documenttemplatemodel.h
     src/editor/editortemplateauthoring.cpp
@@ -375,6 +384,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/commands/globalcontrolservice.cpp
     src/insights/insightgraphview.cpp
     src/insights/insightgraphcore.cpp
+    src/insights/insightgraphadapter.cpp
     src/insights/insightcanvas.cpp
     src/ui/insightvisualstyle.cpp
     src/insights/liveinsightgraphreport.cpp
@@ -474,6 +484,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/signalkernelgraphservice.cpp
     src/insights/signaltracepanel.cpp
     src/insights/signaltracemodels.cpp
+    src/insights/signaltracedistributiondelegate.cpp
     src/insights/signalusagehotspotservice.cpp
     src/semantic/symbolanalyzer.cpp
     src/semantic/symbolanalyzerasync.cpp
@@ -494,9 +505,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/completion/templateinputservice.cpp
     resources/simulation/simulation.qrc
     src/completion/moduleinstantiationtemplate.cpp
-    src/completion/duttemplateplanner.cpp
     src/completion/templatecapabilities.cpp
-    src/completion/duttemplatesession.cpp
     src/completion/simulationcommandplanner.cpp
     src/completion/simulationcommandservice.cpp
     src/completion/simulationcommandservice.h
@@ -603,6 +612,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/commands/globalcontrolservice.h
     src/insights/insightgraphview.h
     src/insights/insightgraphcore.h
+    src/insights/insightgraphadapter.h
     src/insights/insightcanvas.h
     src/ui/insightvisualstyle.h
     src/insights/liveinsightgraphreport.h
@@ -662,6 +672,7 @@ set(ZEROSLACK_CORE_SOURCES
     src/insights/signalkernelgraphservice.h
     src/insights/signaltracepanel.h
     src/insights/signaltracemodels.h
+    src/insights/signaltracedistributiondelegate.h
     src/insights/signalusagehotspotservice.h
     src/semantic/slangparseoptions.h
     src/semantic/symbolanalyzer.h
@@ -703,7 +714,9 @@ if(ZEROSLACK_SHARED_CORE)
 endif()
 
 include(cmake/source_layout.cmake)
+add_subdirectory(components/insightgraph)
 include(cmake/DomainTargets.cmake)
+target_link_libraries(zeroslack_semantic PUBLIC insightgraph::core)
 include(cmake/CliTargets.cmake)
 if(ZEROSLACK_CLI_ONLY)
     if(BUILD_TESTING)
@@ -821,14 +834,9 @@ target_sources(zeroslack_core PRIVATE
 )
 
 # Main application target.
-option(ZEROSLACK_ENABLE_QLEMENTINE "Build the optional Qlementine style and isolated preview" OFF)
-option(ZEROSLACK_ENABLE_SUITEUI "Build optional controls from the pinned standalone SuiteUi SDK" OFF)
 option(ZEROSLACK_ENABLE_ELA "Build the maintained ZeroSlack Ela application" ON)
 target_sources(zeroslack_core PRIVATE src/ui/uicontrols.cpp src/ui/uidialogs.cpp src/ui/uitooltips.cpp)
 if(ZEROSLACK_ENABLE_ELA)
-    if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
-        message(FATAL_ERROR "Ela and Qlementine/SuiteUi backends must be built separately.")
-    endif()
     # ElaTabBar uses Qt private headers; upgrading Qt requires rebuilding and validation.
     if(NOT Qt6_VERSION VERSION_EQUAL "6.10.2")
         message(FATAL_ERROR "The pinned Ela integration requires Qt 6.10.2.")
@@ -843,45 +851,6 @@ if(ZEROSLACK_ENABLE_ELA)
     # consumer must see the same class layout and link its base-class symbols.
     target_link_libraries(zeroslack_core PUBLIC Ela::WidgetTools)
     target_compile_definitions(zeroslack_core PUBLIC ZEROSLACK_ENABLE_ELA=1)
-else()
-    # Classic Qt hosts consume the same layout owner without the Ela backend.
-    add_library(zeroslack_flow_layout STATIC
-        thirdparty/elawidgettools/ElaFlowLayout.cpp
-        thirdparty/elawidgettools/ElaFlowLayout.h
-        thirdparty/elawidgettools/private/ElaFlowLayoutPrivate.cpp
-        thirdparty/elawidgettools/private/ElaFlowLayoutPrivate.h)
-    target_compile_definitions(zeroslack_flow_layout PUBLIC ELAWIDGETTOOLS_STATIC=1)
-    target_include_directories(zeroslack_flow_layout PUBLIC thirdparty/elawidgettools)
-    target_link_libraries(zeroslack_flow_layout PUBLIC Qt6::Widgets)
-    target_link_libraries(zeroslack_core PUBLIC zeroslack_flow_layout)
-endif()
-set(ZEROSLACK_SUITEUI_NOTICES_DIR "" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
-if(ZEROSLACK_ENABLE_QLEMENTINE AND ZEROSLACK_ENABLE_SUITEUI)
-    message(FATAL_ERROR "Choose either the standalone SuiteUi SDK or the vendored Qlementine preview.")
-endif()
-if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
-    if(ZEROSLACK_ENABLE_SUITEUI)
-        find_package(SuiteUi 0.1.0 EXACT CONFIG REQUIRED)
-        set(ZEROSLACK_SUITEUI_NOTICES_DIR "${SuiteUi_NOTICES_DIR}" CACHE INTERNAL "Installed SDK notices for preview packaging" FORCE)
-        target_sources(zeroslack_core PRIVATE src/ui/suiteuibackend.cpp)
-        target_link_libraries(zeroslack_core PRIVATE SuiteUi::Controls)
-    else()
-        set(QLEMENTINE_BUILD_STATIC ON CACHE BOOL "" FORCE)
-        set(QLEMENTINE_SANDBOX OFF CACHE BOOL "" FORCE)
-        set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "" FORCE)
-        add_subdirectory(thirdparty/qlementine EXCLUDE_FROM_ALL)
-        target_sources(zeroslack_core PRIVATE src/ui/qlementinebackend.cpp)
-        target_link_libraries(zeroslack_core PRIVATE qlementine::qlementine)
-    endif()
-    target_compile_definitions(zeroslack_core PRIVATE ZEROSLACK_ENABLE_QLEMENTINE=1)
-    add_executable(zeroslack_preview src/app/main.cpp)
-    target_compile_definitions(zeroslack_preview PRIVATE ZEROSLACK_PREVIEW_BUILD=1)
-    target_link_libraries(zeroslack_preview PRIVATE zeroslack_core)
-    set_target_properties(zeroslack_preview PROPERTIES OUTPUT_NAME "ZeroSlack-Qlementine-Preview")
-    if(WIN32)
-        target_sources(zeroslack_preview PRIVATE resources/windows/zeroslack.rc)
-        set_target_properties(zeroslack_preview PROPERTIES WIN32_EXECUTABLE ON)
-    endif()
 endif()
 
 add_executable(demo src/app/main.cpp)
@@ -926,6 +895,8 @@ target_link_libraries(zeroslack_core PUBLIC
     zeroslack_semantic
     zeroslack_documents
     rtledit::core
+    insightgraph::core
+    insightgraph::render
     PRIVATE Qt6::Concurrent Qt6::Svg
 )
 target_link_libraries(zeroslack_core PRIVATE Qt6::Network)
@@ -997,24 +968,8 @@ endif()
 # =========================================================
 # 8. Regression Tests
 # =========================================================
-# The regression sources are tracked, but the two real-workspace HDL fixtures
-# test_sv/new and test_sv/huge_prj are kept local only. Tests that need them
-# stay registered and fail loudly rather than being skipped; say so here so a
-# clone knows why, instead of reading the failures as a regression.
-if(BUILD_TESTING)
-    set(ZEROSLACK_MISSING_FIXTURES "")
-    foreach(fixture_dir new huge_prj)
-        if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test_sv/${fixture_dir}")
-            list(APPEND ZEROSLACK_MISSING_FIXTURES "test_sv/${fixture_dir}")
-        endif()
-    endforeach()
-    if(ZEROSLACK_MISSING_FIXTURES)
-        message(STATUS
-            "ZeroSlack: real-workspace fixtures are absent "
-            "(${ZEROSLACK_MISSING_FIXTURES}). Tests that open them will fail; "
-            "they are excluded from version control and must be supplied locally.")
-    endif()
-endif()
+# Resource restrictions are checked by the shared registration wrapper before
+# any prerequisite probe. Configuration must not inspect private fixtures.
 
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
@@ -1049,7 +1004,7 @@ if(BUILD_TESTING)
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(ZEROSLACK_TEST_PATH
-        "${ZEROSLACK_COMPILER_BIN_DIR};${QT_INSTALL_PREFIX}/bin;$ENV{PATH}"
+        "${ZEROSLACK_GIT_BIN_DIR};${ZEROSLACK_COMPILER_BIN_DIR};${QT_INSTALL_PREFIX}/bin;$ENV{PATH}"
     )
     string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
 
@@ -1066,6 +1021,10 @@ if(BUILD_TESTING)
     set_tests_properties(signal_trace_semantic_test PROPERTIES TIMEOUT 120)
     add_executable(signal_trace_ui_test test_sv/signal_trace_ui_test.cpp)
     target_link_libraries(signal_trace_ui_test PRIVATE zeroslack_core Qt6::Test)
+    add_executable(insightgraph_migration_test test_sv/insightgraph_migration_test.cpp)
+    target_link_libraries(insightgraph_migration_test PRIVATE zeroslack_core Qt6::Test)
+    add_test(NAME insightgraph_migration_test COMMAND insightgraph_migration_test)
+    zeroslack_domain_test_runtime(insightgraph_migration_test)
     zeroslack_qt_test_command(SIGNAL_TRACE_UI_COMMAND signal_trace_ui_test signal_trace_ui_test)
     add_test(NAME signal_trace_ui_test COMMAND ${CMAKE_COMMAND} -E env
         "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
@@ -1317,7 +1276,7 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(graph_export_service_test
-        PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg)
+        PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Svg insightgraph::render)
 
     add_executable(graph_export_panel_integration_test
         test_sv/graph_export_panel_integration_test.cpp)
@@ -1365,19 +1324,19 @@ if(BUILD_TESTING)
         PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
     add_test(NAME insertion_creation_contract_test
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
-            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:insertion_creation_contract_test>)
+             $<TARGET_FILE:insertion_creation_contract_test>)
     set_tests_properties(insertion_creation_contract_test PROPERTIES TIMEOUT 60)
     target_link_libraries(source_preview_contract_test
         PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
     add_test(NAME source_preview_contract_test
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
-            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:source_preview_contract_test>)
+             $<TARGET_FILE:source_preview_contract_test>)
     set_tests_properties(source_preview_contract_test PROPERTIES TIMEOUT 40)
     target_link_libraries(navigation_history_contract_test
         PRIVATE zeroslack_core Qt6::Test Qt6::WidgetsPrivate)
     add_test(NAME navigation_history_contract_test
         COMMAND ${CMAKE_COMMAND} -E env "PATH=${ZEROSLACK_TEST_PATH}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" QT_QPA_PLATFORM=offscreen
-            ZEROSLACK_TEST_UI_STYLE=ela $<TARGET_FILE:navigation_history_contract_test>)
+             $<TARGET_FILE:navigation_history_contract_test>)
     set_tests_properties(navigation_history_contract_test PROPERTIES TIMEOUT 40)
     target_link_libraries(editor_source_navigation_test
         PRIVATE zeroslack_core Qt6::Test)
@@ -1401,6 +1360,8 @@ if(BUILD_TESTING)
         test_sv/navigation_virtual_source_group_test.cpp
         src/ui/uicontrols.cpp
         src/ui/applicationthememanager.cpp
+        src/ui/elabackend.cpp
+        src/ui/uitooltips.cpp
         src/ui/insightvisualstyle.cpp
         src/ui/navigationwidget.cpp
         src/ui/navigationwidgettrees.cpp
@@ -1413,7 +1374,7 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(navigation_virtual_source_group_test
-        PRIVATE Qt6::Widgets)
+        PRIVATE Qt6::Widgets insightgraph::core Ela::WidgetTools)
 
     add_executable(workspace_virtual_source_group_ui_test
         test_sv/workspace_virtual_source_group_ui_test.cpp)
@@ -1512,6 +1473,8 @@ if(BUILD_TESTING)
         src/ui/uicontrols.cpp
         src/commands/actionregistry.cpp
         src/ui/applicationthememanager.cpp
+        src/ui/elabackend.cpp
+        src/ui/uitooltips.cpp
         src/editor/editordroppreviewoverlay.cpp
         src/editor/editorsplitcontroller.cpp
         src/ui/insightvisualstyle.cpp)
@@ -1520,7 +1483,7 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(editor_split_controller_test
-        PRIVATE Qt6::Widgets Qt6::Test)
+        PRIVATE Qt6::Widgets Qt6::Test Ela::WidgetTools)
 
     add_executable(workspace_persistence_test
         test_sv/workspace_persistence_test.cpp
@@ -1633,6 +1596,9 @@ if(BUILD_TESTING)
     add_executable(compact_layout_test test_sv/compact_layout_test.cpp)
     target_link_libraries(compact_layout_test PRIVATE zeroslack_core Qt6::Test)
 
+    add_executable(narrow_layout_test test_sv/narrow_layout_test.cpp)
+    target_link_libraries(narrow_layout_test PRIVATE zeroslack_core Qt6::Test)
+
     add_executable(high_dpi_layout_test test_sv/high_dpi_layout_test.cpp)
     target_link_libraries(high_dpi_layout_test PRIVATE zeroslack_core Qt6::Test)
 
@@ -1689,10 +1655,6 @@ if(BUILD_TESTING)
         target_link_libraries(ela_document_tabs_test PRIVATE zeroslack_core Qt6::Test ElaWidgetTools)
         add_executable(ela_navigation_test test_sv/ela_navigation_test.cpp)
         target_link_libraries(ela_navigation_test PRIVATE zeroslack_core Qt6::Test)
-    endif()
-    if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
-        add_executable(qlementine_lifecycle_test test_sv/qlementine_lifecycle_test.cpp)
-        target_link_libraries(qlementine_lifecycle_test PRIVATE zeroslack_core Qt6::Test)
     endif()
 
     add_executable(context_workspace_test
@@ -2023,19 +1985,12 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:settings_center_test>
     )
-    add_test(NAME settings_center_panel_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:settings_center_panel_test>
-    )
     foreach(background_scale IN ITEMS 1 2)
         add_test(NAME editor_background_${background_scale}_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                "QT_SCALE_FACTOR=${background_scale}" "ZEROSLACK_TEST_UI_STYLE=ela"
+                "QT_SCALE_FACTOR=${background_scale}"
                 $<TARGET_FILE:editor_background_test> -o -,txt)
         set_tests_properties(editor_background_${background_scale}_test PROPERTIES TIMEOUT 60)
     endforeach()
@@ -2065,10 +2020,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(rtl_insight_workbench_test
         PROPERTIES TIMEOUT 120)
-    set(MODULE_DIAGRAM_TEST_STYLE classic)
-    if(ZEROSLACK_ENABLE_ELA)
-        set(MODULE_DIAGRAM_TEST_STYLE ela)
-    endif()
     foreach(module_scale IN ITEMS 1.25 1.5 2)
         add_test(NAME module_diagram_${module_scale}_test
             COMMAND ${CMAKE_COMMAND} -E env
@@ -2076,7 +2027,6 @@ if(BUILD_TESTING)
                 "QT_QPA_PLATFORM=offscreen"
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 "QT_SCALE_FACTOR=${module_scale}"
-                "ZEROSLACK_TEST_UI_STYLE=${MODULE_DIAGRAM_TEST_STYLE}"
                 $<TARGET_FILE:rtl_insight_workbench_test>
                 sidebarSectionTeardownReleasesFocusedControls
                 moduleDiagramAdaptsAndNavigatesInstances
@@ -2113,13 +2063,6 @@ if(BUILD_TESTING)
     )
     set_tests_properties(live_insights_ui_snapshot_test
         PROPERTIES TIMEOUT 120)
-    add_test(NAME unified_peek_container_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:unified_peek_container_test>
-    )
     add_test(NAME graph_export_service_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2127,34 +2070,11 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:graph_export_service_test>
     )
-    add_test(NAME graph_export_panel_integration_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:graph_export_panel_integration_test>
-    )
     add_test(NAME search_scope_service_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:search_scope_service_test>
     )
-    add_test(NAME scoped_search_panel_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:scoped_search_panel_test>
-    )
-    add_test(NAME scoped_replace_workflow_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:scoped_replace_workflow_test>
-    )
-    set_tests_properties(scoped_replace_workflow_test
-        PROPERTIES TIMEOUT 120)
     add_test(NAME source_structural_navigation_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2224,15 +2144,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:rtl_transform_workflow_test>
     )
-    add_test(NAME rtl_high_risk_edit_panel_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:rtl_high_risk_edit_panel_test>
-    )
-    set_tests_properties(rtl_high_risk_edit_panel_test
-        PROPERTIES TIMEOUT 120)
     add_test(NAME rtl_action_coordinator_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2252,33 +2163,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:instance_pair_connection_facade_test>
     )
-    add_test(NAME instance_pair_connection_panel_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:instance_pair_connection_panel_test>
-    )
-    set_tests_properties(instance_pair_connection_panel_test
-        PROPERTIES TIMEOUT 120)
-    add_test(NAME instance_pair_connection_workflow_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:instance_pair_connection_workflow_test>
-    )
-    set_tests_properties(instance_pair_connection_workflow_test
-        PROPERTIES TIMEOUT 120)
-    add_test(NAME multi_signal_propagation_panel_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:multi_signal_propagation_panel_test>
-    )
-    set_tests_properties(multi_signal_propagation_panel_test
-        PROPERTIES TIMEOUT 120)
     add_test(NAME editor_file_identity_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2289,13 +2173,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:editor_context_menu_test>
     )
-    add_test(NAME panel_layout_controller_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:panel_layout_controller_test>
-    )
     add_test(NAME editor_split_controller_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2303,19 +2180,11 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_split_controller_test>
     )
-    add_test(NAME temporary_editor_context_search_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:temporary_editor_context_search_test>
-    )
     add_test(NAME delayed_consumer_generation_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:delayed_consumer_generation_test>
     )
     set_tests_properties(delayed_consumer_generation_test PROPERTIES TIMEOUT 120)
@@ -2324,7 +2193,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:workspace_path_confirmation_test>)
     set_tests_properties(workspace_path_confirmation_test PROPERTIES TIMEOUT 120)
     add_test(NAME editing_time_contract_test
@@ -2332,7 +2200,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:editing_time_contract_test>)
     set_tests_properties(editing_time_contract_test PROPERTIES TIMEOUT 120)
     zeroslack_qt_test_command(COMPACT_TEST_COMMAND compact_layout_test compact_layout_test)
@@ -2342,6 +2209,16 @@ if(BUILD_TESTING)
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             ${COMPACT_TEST_COMMAND})
+    foreach(NARROW_SCALE IN ITEMS 1 1.5 2)
+        zeroslack_qt_test_command(NARROW_TEST_COMMAND narrow_layout_test_${NARROW_SCALE} narrow_layout_test)
+        add_test(NAME narrow_layout_test_${NARROW_SCALE}
+            COMMAND ${CMAKE_COMMAND} -E env
+                "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+                "QT_SCALE_FACTOR=${NARROW_SCALE}"
+                ${NARROW_TEST_COMMAND})
+        set_tests_properties(narrow_layout_test_${NARROW_SCALE} PROPERTIES TIMEOUT 240)
+    endforeach()
     foreach(WELCOME_TEST IN ITEMS welcome_resource welcome_mainwindow)
         add_test(NAME ${WELCOME_TEST}_test
             COMMAND ${CMAKE_COMMAND} -E env
@@ -2362,7 +2239,6 @@ if(BUILD_TESTING)
                     COMMAND ${CMAKE_COMMAND} -E env
                         "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                         "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                        "ZEROSLACK_TEST_UI_STYLE=ela"
                         ${ELA_TEST_COMMAND})
                 set_tests_properties(ela_${ELA_TEST}_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
             endforeach()
@@ -2370,7 +2246,6 @@ if(BUILD_TESTING)
                 COMMAND ${CMAKE_COMMAND} -E env
                     "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                     "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                    "ZEROSLACK_TEST_UI_STYLE=ela"
                     $<TARGET_FILE:control_style_interaction_test> mainWindowAndFloating -o -,txt)
             set_tests_properties(ela_main_window_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
         endif()
@@ -2390,25 +2265,6 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:control_style_interaction_test> -o -,txt)
         set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 90)
-        if(ZEROSLACK_ENABLE_ELA)
-            set_tests_properties(control_style_interaction_${HIGH_DPI_SCALE}_test PROPERTIES
-                ENVIRONMENT "ZEROSLACK_TEST_UI_STYLE=ela")
-        endif()
-        if(ZEROSLACK_ENABLE_QLEMENTINE OR ZEROSLACK_ENABLE_SUITEUI)
-            add_test(NAME qlementine_controls_${HIGH_DPI_SCALE}_test
-                COMMAND ${CMAKE_COMMAND} -E env
-                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                    "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                    "ZEROSLACK_TEST_UI_STYLE=qlementine"
-                    $<TARGET_FILE:control_style_interaction_test> -o -,txt)
-            add_test(NAME qlementine_lifecycle_${HIGH_DPI_SCALE}_test
-                COMMAND ${CMAKE_COMMAND} -E env
-                    "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                    "QT_SCALE_FACTOR=${HIGH_DPI_SCALE}" "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                    $<TARGET_FILE:qlementine_lifecycle_test> -o -,txt)
-            set_tests_properties(qlementine_controls_${HIGH_DPI_SCALE}_test
-                qlementine_lifecycle_${HIGH_DPI_SCALE}_test PROPERTIES TIMEOUT 120)
-        endif()
     endforeach()
     if(ZEROSLACK_ENABLE_ELA)
         foreach(ELA_WORKFLOW IN ITEMS scoped_search_panel scoped_replace_workflow
@@ -2425,23 +2281,10 @@ if(BUILD_TESTING)
                 COMMAND ${CMAKE_COMMAND} -E env
                     "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                     "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                    "ZEROSLACK_TEST_UI_STYLE=ela"
                     $<TARGET_FILE:${ELA_WORKFLOW}_test> ${ELA_WORKFLOW_ARGUMENTS})
             set_tests_properties(ela_${ELA_WORKFLOW}_test PROPERTIES TIMEOUT 120)
         endforeach()
     endif()
-    add_test(NAME ui_dialog_contract_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_dialog_contract_test> -o -,txt)
-    set_tests_properties(ui_dialog_contract_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_item_menu_contract_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_item_menu_contract_test> -o -,txt)
-    set_tests_properties(ui_item_menu_contract_test PROPERTIES TIMEOUT 60)
     zeroslack_qt_test_command(MOTION_CLASSIC_COMMAND ela_motion_classic_test ela_motion_test)
     add_test(NAME ela_motion_classic_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -2449,43 +2292,13 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             ${MOTION_CLASSIC_COMMAND})
     set_tests_properties(ela_motion_classic_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_window_chrome_classic_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_window_chrome_test> -o -,txt)
-    set_tests_properties(ui_window_chrome_classic_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_navigation_rail_classic_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_navigation_rail_test> -o -,txt)
-    set_tests_properties(ui_navigation_rail_classic_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_text_view_classic_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_text_view_test> -o -,txt)
-    set_tests_properties(ui_text_view_classic_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_label_contract_classic_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_label_contract_test> -o -,txt)
-    set_tests_properties(ui_label_contract_classic_test PROPERTIES TIMEOUT 60)
-    add_test(NAME ui_sidebar_contract_classic_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:ui_sidebar_contract_test> -o -,txt)
-    set_tests_properties(ui_sidebar_contract_classic_test PROPERTIES TIMEOUT 60)
     if(ZEROSLACK_ENABLE_ELA)
         foreach(FLOATING_SCALE IN ITEMS 1 2)
             foreach(FLOATING_TEST IN ITEMS window background)
                 add_test(NAME ela_context_floating_${FLOATING_TEST}_${FLOATING_SCALE}_test
                     COMMAND ${CMAKE_COMMAND} -E env
                         "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                        "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                        "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                         "QT_SCALE_FACTOR=${FLOATING_SCALE}"
                         $<TARGET_FILE:context_floating_${FLOATING_TEST}_test> -o -,txt)
                 set_tests_properties(ela_context_floating_${FLOATING_TEST}_${FLOATING_SCALE}_test
@@ -2495,7 +2308,7 @@ if(BUILD_TESTING)
         add_test(NAME ela_context_workspace_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:context_workspace_test>)
         set_tests_properties(ela_context_workspace_test PROPERTIES TIMEOUT 120)
         add_test(NAME ela_navigation_switch_test
@@ -2512,25 +2325,6 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:ela_document_tabs_test> -o -,txt)
         set_tests_properties(ela_document_tabs_test PROPERTIES TIMEOUT 90)
     endif()
-    add_test(NAME context_workspace_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:context_workspace_test>
-    )
-    add_test(NAME context_floating_background_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:context_floating_background_test>)
-    add_test(NAME context_floating_window_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:context_floating_window_test> -o -,txt)
-    set_tests_properties(context_floating_window_test PROPERTIES TIMEOUT 60)
     add_test(NAME context_workspace_125pct_dpi_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
@@ -2560,27 +2354,12 @@ if(BUILD_TESTING)
         context_workspace_150pct_dpi_test
         context_workspace_200pct_dpi_test
         PROPERTIES TIMEOUT 120)
-    if(ZEROSLACK_ENABLE_ELA)
-        # These fixtures construct ElaDockWidget when the Ela backend is built.
-        # Initialize the same backend before constructing its native windows.
-        set_tests_properties(
-            context_workspace_test context_floating_window_test context_floating_background_test
-            context_workspace_125pct_dpi_test context_workspace_150pct_dpi_test context_workspace_200pct_dpi_test
-            PROPERTIES ENVIRONMENT "ZEROSLACK_TEST_UI_STYLE=ela")
-    endif()
     add_test(NAME temporary_editor_context_provider_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:temporary_editor_context_provider_test>
-    )
-    add_test(NAME pinloom_context_provider_test
-        COMMAND ${CMAKE_COMMAND} -E env
-            "PATH=${ZEROSLACK_TEST_PATH}"
-            "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:pinloom_context_provider_test>
     )
     add_test(NAME pinloom_hover_test
         COMMAND ${CMAKE_COMMAND} -E env
@@ -2600,13 +2379,12 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=ela"
             $<TARGET_FILE:xips_context_provider_test> -o -,txt)
     set_tests_properties(xips_context_provider_test PROPERTIES TIMEOUT 60)
     add_test(NAME native_component_host_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:native_component_host_test> -o -,txt)
     set_tests_properties(native_component_host_test PROPERTIES TIMEOUT 60)
     option(ZEROSLACK_TEST_REAL_NATIVE_COMPONENTS "Register host integration with the real xIPs component" OFF)
@@ -2617,7 +2395,7 @@ if(BUILD_TESTING)
         add_test(NAME native_component_integration_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 "XIPS_BROWSER_LIBRARY=$<TARGET_FILE_DIR:demo>/components/xips/xips-browser.dll"
                 $<TARGET_FILE:native_component_integration_test> -o -,txt)
         set_tests_properties(native_component_integration_test PROPERTIES TIMEOUT 90 LABELS "native-real")
@@ -2628,7 +2406,7 @@ if(BUILD_TESTING)
             add_test(NAME native_mainwindow_integration_test
                 COMMAND ${CMAKE_COMMAND} -E env
                     "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                    "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                    "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                     "XIPS_BROWSER_LIBRARY=$<TARGET_FILE_DIR:demo>/components/xips/xips-browser.dll"
                     "SIMDOCK_TEST_QUESTA=${ZEROSLACK_TEST_QUESTA_EXECUTABLE}"
                     $<TARGET_FILE:native_mainwindow_integration_test> -o -,txt)
@@ -2646,7 +2424,7 @@ if(BUILD_TESTING)
         add_test(NAME zeroslack_suiteapp_ipc_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
-                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_TEST_UI_STYLE=ela"
+                "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:zeroslack_suiteapp_ipc_test>)
         set_tests_properties(zeroslack_suiteapp_ipc_test PROPERTIES TIMEOUT 90 LABELS "suiteapp-ipc")
     endif()
@@ -2673,14 +2451,12 @@ if(BUILD_TESTING)
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
             $<TARGET_FILE:document_persistence_generation_test> -o -,txt)
     set_tests_properties(document_persistence_generation_test PROPERTIES TIMEOUT 90)
     add_test(NAME semantic_source_generation_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
             $<TARGET_FILE:semantic_source_generation_test> -o -,txt)
     set_tests_properties(semantic_source_generation_test PROPERTIES TIMEOUT 180)
     add_test(NAME user_template_range_contract_test
@@ -2693,7 +2469,6 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            "ZEROSLACK_TEST_UI_STYLE=$<IF:$<BOOL:${ZEROSLACK_ENABLE_ELA}>,ela,classic>"
             $<TARGET_FILE:workspace_switcher_test> -o -,txt
     )
     add_test(NAME controller_boundary_test
@@ -2955,4 +2730,28 @@ endforeach()
 
 if(BUILD_TESTING)
     include(cmake/SimDockTests.cmake)
+endif()
+
+if(BUILD_TESTING)
+    foreach(scale IN ITEMS 1.5 2)
+        zeroslack_qt_test_command(command compact_layout_test_${scale} compact_layout_test)
+        add_test(NAME compact_layout_test_${scale} COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen" "QT_SCALE_FACTOR=${scale}"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" ${command})
+    endforeach()
+    set_property(TEST compact_layout_test APPEND PROPERTY ENVIRONMENT "QT_SCALE_FACTOR=1")
+    add_test(NAME completion_self_contained_test COMMAND ${CMAKE_COMMAND} -E env
+        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+        "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins" "ZEROSLACK_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        $<TARGET_FILE:completion_test> "${CMAKE_SOURCE_DIR}/test_sv/test_symbols.sv" --self-contained-only)
+    add_test(NAME global_control_ow_self_contained_test COMMAND ${CMAKE_COMMAND} -E env
+        "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
+        "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+        $<TARGET_FILE:global_control_ow_test> --self-contained-only)
+    set(policy_guard_command "${Python_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/test_policy.py"
+        guard --config "${CMAKE_BINARY_DIR}/managed-test-config.json")
+    add_custom_target(test_execution_policy_check ALL COMMAND ${policy_guard_command}
+        --output "${CMAKE_BINARY_DIR}/Testing/Policy/build-guard.json" VERBATIM)
+    add_test(NAME test_execution_policy_guard COMMAND ${policy_guard_command} --contracts)
+    zeroslack_finalize_test_policy()
 endif()

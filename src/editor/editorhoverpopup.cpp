@@ -67,15 +67,7 @@ EditorHoverPopup::EditorHoverPopup(QWidget* parent)
         "border-radius: 5px;"
         "}"
         "QLabel { color: palette(text); }")
-        + (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela
-            ? QString() : QStringLiteral(
-        "QLineEdit {"
-        "border: 1px solid palette(highlight);"
-        "border-radius: 3px;"
-        "padding: 3px 6px;"
-        "background: palette(base);"
-        "color: palette(text);"
-        "}")) + QStringLiteral(
+        + QStringLiteral(
         "QPlainTextEdit {"
         "border: 1px solid palette(mid);"
         "border-radius: 3px;"
@@ -390,13 +382,6 @@ void EditorHoverPopup::applyAppearance()
         "QScrollArea#peekSymbolScroll, QWidget#peekSymbolBody, QWidget#peekDetails {background:%1; border:0;}"
         "QPlainTextEdit#peekLongDetail {background:%1; color:%7; border:0;}"
         "QWidget#peekFooter {border-top:1px solid %2; background:transparent;}");
-    if (ApplicationThemeManager::instance().backend() != UiStyleBackend::Ela) {
-        cardStyle += QStringLiteral(
-        "QToolButton {background:transparent; border:0; border-radius:6px; padding:4px; color:%7;}"
-        "QToolButton:hover {background:%6; color:%4;}"
-        "QToolButton#peekSourceLink {color:%5; text-decoration:underline;}"
-        "QToolButton:disabled {color:%7;}");
-    }
     setStyleSheet(cardStyle.arg(surface.name(), border.name(), headerColor.name(), theme.textPrimary.name(),
           accent.name(), tint(surface, accent, dark ? .18 : .12).name(),
           theme.textSecondary.name(), theme.warning.name()));

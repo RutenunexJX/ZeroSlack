@@ -1,5 +1,11 @@
+#include "../testuistyle.h"
 #include "../../src/simulation/simdock/ui/workbench.h"
+#include "../../src/simulation/simdock/ui/dialogs.h"
 #include "applicationthememanager.h"
+#include "insightvisualstyle.h"
+#include "semanticindex.h"
+#include "semanticindexsnapshot.h"
+#include "slangmanager.h"
 #include <QtTest>
 #include <QtConcurrent>
 #include <QApplication>
@@ -30,6 +36,7 @@
 #include <QLineEdit>
 #include <QToolButton>
 #include <cmath>
+#include <new>
 #ifdef Q_OS_WIN
 #include <qt_windows.h>
 #endif
@@ -138,6 +145,132 @@ class WorkbenchHostTest : public QObject {
         const auto x = luminance(a), y = luminance(b);
         return (qMax(x, y) + .05) / (qMin(x, y) + .05);
     }
+    void rebuiltThemeSurfaces(int width) {
+        auto& manager = ApplicationThemeManager::instance();
+        struct RestoreTheme {
+            ThemeMode mode;
+            ~RestoreTheme() { ApplicationThemeManager::instance().setMode(mode); }
+        } restoreTheme{manager.mode()};
+        QWidget host; QVBoxLayout layout(&host);
+        layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
+        struct Storage {
+            alignas(simdock::Workbench) unsigned char bytes[sizeof(simdock::Workbench)];
+            QPointer<simdock::Workbench> widget;
+            void clear() { if (widget) widget.data()->~Workbench(); }
+            ~Storage() { clear(); }
+            simdock::Workbench* create(QWidget* parent) {
+                widget = new (bytes) simdock::Workbench(parent);
+                return widget;
+            }
+        } storage;
+        const auto surface = [&manager](QDialog* dialog) {
+            QVERIFY(dialog);
+            QVERIFY(dialog->isVisible());
+            QVERIFY(dialog->parentWidget());
+            const auto expected = manager.theme().appBackground;
+            QCOMPARE(dialog->parentWidget()->palette().color(QPalette::Window), expected);
+            QCOMPARE(dialog->palette().color(QPalette::Window), expected);
+            for (auto* area : dialog->findChildren<QScrollArea*>())
+                if (area->property("simdockDialogSurface").toBool() && area->widget())
+                    QCOMPARE(area->widget()->palette().color(QPalette::Window), expected);
+        };
+        for (int cycle = 0; cycle < 2; ++cycle) {
+            manager.setMode(ThemeMode::Dark);
+            auto* previous = storage.create(&host); layout.addWidget(previous); host.show();
+            previous->ensurePolished();
+            QCOMPARE(previous->palette().color(QPalette::Window), manager.theme().appBackground);
+            const auto address = static_cast<void*>(previous);
+            storage.clear(); QVERIFY(storage.widget.isNull());
+            manager.setMode(ThemeMode::Light);
+            auto* workbench = storage.create(&host); layout.addWidget(workbench); workbench->show();
+            workbench->ensurePolished();
+            QCOMPARE(static_cast<void*>(workbench), address);
+            QCOMPARE(workbench->palette().color(QPalette::Window), manager.theme().appBackground);
+            for (auto initial : {ThemeMode::Light, ThemeMode::Dark}) {
+                if (manager.mode() != initial) manager.setMode(initial);
+                for (int opening = 0; opening < 2; ++opening) {
+                    bool projectOpened = false;
+                    QTimer::singleShot(0, workbench, [&] {
+                        auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                        projectOpened = dialog && dialog->objectName() == "newProjectDialog";
+                        surface(dialog);
+                        manager.setMode(initial == ThemeMode::Light ? ThemeMode::Dark : ThemeMode::Light);
+                        surface(dialog);
+                        manager.setMode(initial); surface(dialog);
+                        if (dialog) dialog->reject();
+                    });
+                    simdock::askProjectName(workbench);
+                    QVERIFY(projectOpened);
+                    simdock::SettingsDialog dialog(QString(), workbench, false, QStringLiteral("nord"), true);
+                    bool settingsOpened = false;
+                    QTimer::singleShot(0, &dialog, [&] {
+                        settingsOpened = dialog.isVisible(); surface(&dialog);
+                        manager.setMode(initial == ThemeMode::Light ? ThemeMode::Dark : ThemeMode::Light);
+                        surface(&dialog);
+                        manager.setMode(initial); surface(&dialog);
+                        dialog.reject();
+                    });
+                    dialog.exec(); QVERIFY(settingsOpened);
+                }
+            }
+            storage.clear(); QVERIFY(storage.widget.isNull());
+        }
+    }
+    void ownerTeardown(int width) {
+        auto* index = SemanticIndex::getInstance();
+        struct RestoreSnapshot {
+            SemanticIndex* index;
+            std::shared_ptr<const SemanticIndexSnapshot> snapshot;
+            ~RestoreSnapshot() { index->setSnapshot(snapshot); }
+        } restoreSnapshot{index, index->snapshot()};
+        for (const auto* action : {"openSettings", "newProject", "createTb"}) {
+            QTemporaryDir root; fixture(root);
+            if (QByteArray(action) == "createTb") {
+                QFile source(root.filePath("dut.sv")); QVERIFY(source.open(QIODevice::ReadOnly));
+                const QHash<QString, QString> contents{{source.fileName(), QString::fromUtf8(source.readAll())}};
+                SlangManager slang;
+                index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+                    SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
+            }
+            QWidget host, escapedOwner; QVBoxLayout layout(&host);
+            layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
+            QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget);
+            layout.addWidget(widget); host.show();
+            QSignalSpy scanned(widget, SIGNAL(scanFinished()));
+            QVERIFY(call(widget, "setContext", root.path()).isEmpty());
+            QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
+            section(widget, QByteArray(action) == "newProject" ? "workspace" : "simulation");
+            auto* button = widget->findChild<QAbstractButton*>(QString::fromLatin1(action));
+            auto* menuAction = widget->findChild<QAction*>(QString::fromLatin1(action));
+            QVERIFY((button && button->isEnabled()) || (menuAction && menuAction->isEnabled()));
+            bool parentDestroyed = false, childDestroyedBeforeParent = false, opened = false;
+            QPointer<QWidget> first(new QWidget(widget)), doomed(new QWidget(widget)), escaped(new QWidget(widget));
+            QObject callbacks;
+            connect(widget, &QObject::destroyed, &callbacks, [&] { parentDestroyed = true; });
+            connect(first, &QObject::destroyed, &callbacks, [&] {
+                childDestroyedBeforeParent = !parentDestroyed;
+                delete doomed.data();
+                if (escaped) escaped->setParent(&escapedOwner);
+            });
+            auto* panel = qobject_cast<simdock::Workbench*>(widget.data());
+            QPointer<QWidget> sources(panel->sourceFilesWidget()), logs(panel->runLogWidget()), events(panel->eventsWidget());
+            QPointer<QDialog> dialog;
+            QTimer destroy;
+            destroy.setSingleShot(true);
+            connect(&destroy, &QTimer::timeout, &callbacks, [&] {
+                dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget());
+                opened = dialog && dialog->parentWidget() == widget;
+                delete widget.data();
+            });
+            destroy.start(0);
+            if (menuAction) menuAction->trigger(); else button->click();
+            destroy.stop();
+            QVERIFY2(opened, action); QVERIFY(parentDestroyed); QVERIFY(widget.isNull()); QVERIFY(dialog.isNull());
+            QVERIFY(sources.isNull()); QVERIFY(logs.isNull()); QVERIFY(events.isNull());
+            QVERIFY(first.isNull()); QVERIFY(doomed.isNull()); QVERIFY(childDestroyedBeforeParent);
+            QVERIFY(escaped); QCOMPARE(escaped->parentWidget(), &escapedOwner);
+        }
+    }
 private slots:
     void initTestCase() {
         QCoreApplication::setOrganizationName("UnrelatedHost");
@@ -149,7 +282,7 @@ private slots:
         QSettings().setValue("host/sentinel", "untouched");
         qApp->setStyleSheet("QLabel#hostLabel { color: #113355; }");
         QLocale::setDefault(QLocale(QLocale::German));
-        QVERIFY(ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela));
+        QVERIFY(initializeUiStyleForTest());
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         ApplicationThemeManager::instance().applyToApplication();
         QVERIFY(!create(nullptr, nullptr));
@@ -344,9 +477,11 @@ private slots:
     }
     void narrowWorkspaceActions_data() {
         QTest::addColumn<int>("width"); QTest::newRow("280") << 280; QTest::newRow("520") << 520;
+        QTest::newRow("280-address-reuse") << 280; QTest::newRow("520-address-reuse") << 520;
     }
     void narrowWorkspaceActions() {
         QFETCH(int, width);
+        if (QByteArray(QTest::currentDataTag()).endsWith("-address-reuse")) { rebuiltThemeSurfaces(width); return; }
         QTemporaryDir root; fixture(root); write(root.filePath("extra.sv"), "module extra; endmodule");
         QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
         auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(width, 700); host.show();
@@ -440,9 +575,13 @@ private slots:
         QVERIFY(reachable(widget->findChild<QWidget*>("duration"), widget));
         QVERIFY(closable(widget));
     }
-    void destroyWithOpenDialog_data() { existingTestbenchWorkflow_data(); }
+    void destroyWithOpenDialog_data() {
+        existingTestbenchWorkflow_data();
+        QTest::newRow("280-owner-teardown") << 280; QTest::newRow("520-owner-teardown") << 520;
+    }
     void destroyWithOpenDialog() {
         QFETCH(int, width);
+        if (QByteArray(QTest::currentDataTag()).endsWith("-owner-teardown")) { ownerTeardown(width); return; }
         for (const auto* action : {"openSettings", "newProject", "createTb"}) {
             QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);

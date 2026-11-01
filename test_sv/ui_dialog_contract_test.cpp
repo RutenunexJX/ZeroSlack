@@ -11,6 +11,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QDir>
+#include <QLabel>
 #include <QPushButton>
 #include <QSettings>
 #include <QSignalSpy>
@@ -23,7 +24,6 @@
 #include <QVBoxLayout>
 
 namespace {
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 
 template<class Action> void whenModal(Action action)
 {
@@ -50,8 +50,8 @@ private slots:
         whenModal([](QDialog* dialog) {
             auto* edit = input<QLineEdit>(dialog);
             QCOMPARE(edit->text(), QString("original"));
-            if (usesEla()) QVERIFY(edit->inherits("ElaLineEdit"));
-            if (usesEla()) QVERIFY(dialog->inherits("ElaDialog"));
+            QVERIFY(edit->inherits("ElaLineEdit"));
+            QVERIFY(dialog->inherits("ElaDialog"));
             edit->setText(QString::fromUtf8("workspace_中文"));
             QTest::keyClick(edit, Qt::Key_Return);
         });
@@ -72,7 +72,7 @@ private slots:
         bool accepted = false;
         whenModal([](QDialog* dialog) {
             auto* spin = input<QSpinBox>(dialog);
-            if (usesEla()) QVERIFY(spin->inherits("ElaSpinBox"));
+            QVERIFY(spin->inherits("ElaSpinBox"));
             spin->setValue(1000);
             QTest::keyClick(spin, Qt::Key_Return);
         });
@@ -90,7 +90,7 @@ private slots:
         bool accepted = false;
         whenModal([](QDialog* dialog) {
             auto* combo = input<QComboBox>(dialog);
-            if (usesEla()) QVERIFY(combo->inherits("ElaComboBox"));
+            QVERIFY(combo->inherits("ElaComboBox"));
             combo->setCurrentIndex(1);
             combo->showPopup();
             QApplication::processEvents();
@@ -123,7 +123,7 @@ private slots:
         QApplication::processEvents();
         QCOMPARE(box->buttonRole(discard), QDialogButtonBox::DestructiveRole);
         for (auto* button : box->buttons()) {
-            if (usesEla()) QVERIFY(button->inherits("ElaPushButton"));
+            QVERIFY(button->inherits("ElaPushButton"));
             QVERIFY(button->width() >= button->minimumSizeHint().width());
             QVERIFY(button->height() >= button->minimumSizeHint().height());
             QVERIFY(dialog.rect().contains(QRect(button->mapTo(&dialog, QPoint()), button->size())));
@@ -150,7 +150,7 @@ private slots:
             QVERIFY(box);
             QVERIFY(box->defaultButton());
             QVERIFY(box->escapeButton() == box->defaultButton());
-            if (usesEla()) QVERIFY(box->defaultButton()->inherits("ElaPushButton"));
+            QVERIFY(box->defaultButton()->inherits("ElaPushButton"));
             QTest::keyClick(dialog, Qt::Key_Return);
         });
         QVERIFY(!manager.resolve({&document}, nullptr, save));
@@ -183,15 +183,14 @@ private slots:
 
     void warningEscapeAndEditorSearch() {
         whenModal([](QDialog* dialog) {
-            if (usesEla()) {
+            {
                 auto* box = qobject_cast<UiMessageDialog*>(dialog);
                 QVERIFY(box && box->inherits("ElaContentDialog"));
                 QCOMPARE(box->text(), QString("Could not save."));
                 QVERIFY(box->defaultButton()->inherits("ElaPushButton"));
-            } else {
-                auto* box = qobject_cast<QMessageBox*>(dialog);
-                QVERIFY(box);
-                QCOMPARE(box->text(), QString("Could not save."));
+                QCOMPARE(box->windowTitle(), QString("Save"));
+                auto* message = box->findChild<QLabel*>("uiMessageText");
+                QVERIFY(message && message->isVisible());
             }
             QTest::keyClick(dialog, Qt::Key_Escape);
         });
@@ -214,9 +213,9 @@ private slots:
         QVERIFY(bar && bar->isVisible());
         auto* find = bar->findChild<QLineEdit*>("editorFindInput");
         QVERIFY(find);
-        if (usesEla()) QVERIFY(find->inherits("ElaLineEdit"));
+        QVERIFY(find->inherits("ElaLineEdit"));
         for (auto* button : bar->findChildren<QPushButton*>()) {
-            if (usesEla()) QVERIFY(button->inherits("ElaPushButton"));
+            QVERIFY(button->inherits("ElaPushButton"));
             QVERIFY(button->width() >= button->minimumSizeHint().width());
         }
         find->setFocus();
@@ -257,7 +256,7 @@ private slots:
             dialog.show();
             QApplication::processEvents();
             auto* mask = parent.findChild<QWidget*>("ElaMaskWidget");
-            if (usesEla()) QVERIFY(mask && mask->isVisible());
+            QVERIFY(mask && mask->isVisible());
             parent.resize(860 + cycle, 660 + cycle);
             if (mask) QCOMPARE(mask->geometry(), parent.rect());
             auto* toggle = dialog.findChild<QPushButton*>("uiMessageDetailsToggle");
@@ -308,7 +307,7 @@ private slots:
                 reload = qobject_cast<QPushButton*>(button);
         QVERIFY(reload);
         QCOMPARE(reload->text(), QString("Reload"));
-        if (usesEla()) QVERIFY(reload->inherits("ElaPushButton"));
+        QVERIFY(reload->inherits("ElaPushButton"));
         QSignalSpy accepted(&dialog, &QDialog::accepted);
         QSignalSpy rejected(&dialog, &QDialog::rejected);
         reload->click();
@@ -331,7 +330,7 @@ private slots:
         QApplication::processEvents();
         QCOMPARE(owner.contentsMargins(), originalMargins);
         QCOMPARE(owner.windowFlags(), originalFlags);
-        if (usesEla()) {
+        {
             QVERIFY(dialog.inherits("ElaDialog"));
 #ifdef ZEROSLACK_ENABLE_ELA
             QCOMPARE(dialog.getWindowButtonFlags(), ElaAppBarType::ButtonFlags(ElaAppBarType::CloseButtonHint));

@@ -24,7 +24,6 @@
 
 namespace {
 void settle() { QApplication::processEvents(); QTest::qWait(20); }
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 int colorPixels(const QImage& image, QColor ink) {
     int count = 0;
     for (int y = 0; y < image.height(); ++y)
@@ -51,7 +50,7 @@ private slots:
         QWidget host;
         QMenuBar bar(&host);
         auto* menu = UiControls::addMenu(&bar, "&Project");
-        if (usesEla()) QVERIFY(menu->inherits("ElaMenu"));
+        QVERIFY(menu->inherits("ElaMenu"));
         QAction shared("&Open", &host);
         shared.setShortcut(QKeySequence("Ctrl+O"));
         menu->addAction(&shared);
@@ -61,7 +60,7 @@ private slots:
         checked->setCheckable(true);
         checked->setChecked(true);
         auto* child = UiControls::addMenu(menu, "Submenu");
-        if (usesEla()) QVERIFY(child->inherits("ElaMenu"));
+        QVERIFY(child->inherits("ElaMenu"));
         child->addAction("Child action");
         menu->addSeparator();
         QSignalSpy activated(&shared, &QAction::triggered);
@@ -90,7 +89,7 @@ private slots:
 
     void listRolesWrappingAndChecks() {
         std::unique_ptr<QListWidget> list(UiControls::listWidget());
-        QCOMPARE(list->property("zeroslackElaControl").toBool(), usesEla());
+        QCOMPARE(list->property("zeroslackElaControl").toBool(), true);
         const QColor ink(204, 34, 153);
         auto* item = new QListWidgetItem("signal_name\nrtl/long_path/top.sv:42", list.get());
         QFont font = list->font(); font.setPointSize(17); font.setItalic(true);
@@ -121,7 +120,7 @@ private slots:
 
     void tableEditingAndModelSort() {
         std::unique_ptr<QTableWidget> table(UiControls::tableWidget(2, 2));
-        QCOMPARE(table->property("zeroslackElaControl").toBool(), usesEla());
+        QCOMPARE(table->property("zeroslackElaControl").toBool(), true);
         table->setHorizontalHeaderLabels({"Name", "Value"});
         auto* value = new QTableWidgetItem("32");
         table->setItem(0, 0, new QTableWidgetItem("WIDTH")); table->setItem(0, 1, value);
@@ -145,7 +144,7 @@ private slots:
         model.appendRow({new QStandardItem("Zulu"), new QStandardItem("Ctrl+Z")});
         model.appendRow({new QStandardItem("Alpha"), new QStandardItem("Ctrl+A")});
         std::unique_ptr<QTableView> view(UiControls::tableView());
-        if (usesEla()) QVERIFY(view->inherits("ElaTableView"));
+        QVERIFY(view->inherits("ElaTableView"));
         view->setModel(&model); view->setSortingEnabled(true);
         view->sortByColumn(0, Qt::AscendingOrder);
         view->resize(430, 240); view->show(); settle();
@@ -162,8 +161,8 @@ private slots:
         dialog.setConfiguration(config);
         auto* defines = dialog.findChild<QTableWidget*>("workspaceDefinesTable"); QVERIFY(defines);
         auto* dirs = dialog.findChild<QListWidget*>("workspaceIncludeDirsList"); QVERIFY(dirs);
-        QCOMPARE(defines->property("zeroslackElaControl").toBool(), usesEla());
-        QCOMPARE(dirs->property("zeroslackElaControl").toBool(), usesEla());
+        QCOMPARE(defines->property("zeroslackElaControl").toBool(), true);
+        QCOMPARE(dirs->property("zeroslackElaControl").toBool(), true);
         defines->item(0, 1)->setText("64");
         std::unique_ptr<QListWidgetItem> first(dirs->takeItem(0));
         dirs->insertItem(1, first.release());
@@ -176,7 +175,7 @@ private slots:
         QWidget anchor; anchor.resize(900, 700); anchor.show(); settle();
         panel.showCentered(&anchor); settle();
         auto* results = panel.findChild<QListWidget*>("globalControlResultList"); QVERIFY(results);
-        QCOMPARE(results->property("zeroslackElaControl").toBool(), usesEla());
+        QCOMPARE(results->property("zeroslackElaControl").toBool(), true);
         const QRect row = results->visualItemRect(results->item(0));
         const int textHeight = results->fontMetrics().height();
         QVERIFY(row.height() >= textHeight + 4);
@@ -205,7 +204,7 @@ private slots:
             menu->setActiveAction(child->menuAction()); QTest::keyClick(menu.get(), Qt::Key_Right); settle();
             auto list = std::unique_ptr<QListWidget>(UiControls::listWidget()); list->addItem("Visible"); list->show();
             auto table = std::unique_ptr<QTableView>(UiControls::tableView()); table->show(); settle();
-            if (usesEla()) QVERIFY(styleCount() >= baseline + 4);
+            QVERIFY(styleCount() >= baseline + 4);
         }
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete); settle();
         QCOMPARE(styleCount(), baseline);

@@ -515,7 +515,6 @@ bool appendValidRecord(UserTemplateLoadReport* report,
     }
     if (record.insertText.isEmpty() && record.command.value(QStringLiteral("symbol")).toString().isEmpty()
         && record.command.value(QStringLiteral("kind")).toString() != QStringLiteral("print")
-        && !TemplateCapabilities::module(record.command)
         && !record.command.value(QStringLiteral("disabled")).toBool()) {
         appendIssue(report,
                     source,

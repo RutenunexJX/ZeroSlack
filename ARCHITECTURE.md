@@ -450,40 +450,25 @@ into additional archive directories.
 
 ### Button and checkbox ownership
 
-The following describes the default classic backend. Optional builds with
-`ZEROSLACK_ENABLE_QLEMENTINE=ON` also provide a startup-only Qlementine backend and
-an isolated preview executable. `ApplicationThemeManager` selects the backend;
-the public interface exposes no Qlementine types. The preview keeps the existing
-Qt controls and typography, moves standard control drawing to the adapter and
-retains explicit shell QSS. Editor, radial-menu and specialized graph-view trees
-use the classic style on every descendant, including children created later or
-reparented between containers. See [preview validation](docs/control-style-consolidation.md)
-for ownership exceptions, profile isolation, the upstream patch and native limits.
+`ApplicationThemeManager` initializes ElaWidgetTools and installs
+`RoundedIcons::Style` once, then applies the application font, palette and Ela
+stylesheet. Both style layers are active in the maintained Ela build. The theme
+manager has no runtime backend selector or descendant surface-repair filter.
 
-`ZEROSLACK_ENABLE_SUITEUI=ON` is a mutually exclusive optional backend that consumes
-the independently installed `SuiteUi 0.1.0` static package. Its Qt-only public API
-contains control-state colors, a primary-button role and `ControlStyle`.
-`suiteuibackend.cpp` maps application roles and colors; Qlementine types remain
-inside the SDK. The SDK delegates all controls except QPushButton, QToolButton
-and QCheckBox to the application's `RoundedIcons::Style` fallback. It never owns
-application theme selection, fonts, data models, shell layouts or professional
-renderers. The CLI retains its existing core boundary; this change does not move
-UI dependencies into the SuiteApp protocol SDK. See [SuiteUi integration](docs/suite.md#suiteui-第-4-阶段独立-sdk-与双应用接入).
+`UiControls` creates the native Ela controls. `InsightControlStyle` and
+`InsightVisualStyle` retain application roles, dimensions and scoped styling;
+`RoundedIcons::Style` retains the active Qt style and indicator drawing.
+`applicationStyleSheet()` and `chromeStyleSheet()` remain valid interfaces.
+Editor, radial-menu and graph-view renderers retain their own drawing and input
+ownership. They do not require a legacy subtree style override.
 
-`InsightControlStyle` defines the normal, hover, pressed, checked, focus and disabled
-states for application push buttons, tool buttons and checkboxes. Application QSS owns
-their surfaces and spacing. `RoundedIcons::Style` paints only the checkbox indicator,
-including ticks and indeterminate marks; item-view check indicators keep their existing
-delegate/style behavior. Neither layer replaces QWidget input or accessibility behavior.
+SuiteApp is the cross-application protocol and automation integration. Removing
+obsolete UI adapters does not change its SDK discovery, transport, protocol,
+automation host or application lifecycle.
 
-`applyToolbarButton`, `applyPrimaryButton` and `applySegmentedCheckBox` assign roles and
-font/style-derived minimum sizes. They do not install local QSS or theme subscriptions.
-Settings Apply uses the primary role. Explicit shell controls (title bar and rails) retain
-their scoped rules. A constant border width prevents focus transitions from moving content.
-State changes are immediate; this consolidation does not introduce animation.
-
-See [control style validation](docs/control-style-consolidation.md) for the application and
-floating-host coverage, the six-theme/four-DPI matrix, and the remaining native checks.
+See [control ownership](docs/control-style-consolidation.md) for validation
+boundaries. Offscreen captures do not establish native frame pacing, cross-screen
+behavior or physical drag gestures.
 
 ### Non-editor typography
 

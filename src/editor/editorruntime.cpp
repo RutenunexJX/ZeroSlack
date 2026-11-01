@@ -2824,9 +2824,7 @@ EditorLogicalCursorState MyCodeEditorState::captureLogicalCursorState(MyCodeEdit
     state.column = columnMode.snapshotForTest();
     state.multiCursor = multiCursor.snapshot();
     state.templateOwner = editor->activeTemplate;
-    state.templateRegion = editor->selectedTemplateRegion();
     state.templateInput = templateSlots.activeInputName();
-    state.templateTarget = int(editor->templateTargetKind);
     state.templateEditing = editor->templateInputEditing();
     return state;
 }
@@ -2835,8 +2833,6 @@ void MyCodeEditorState::restoreTemplateView(MyCodeEditor* editor, const EditorLo
 {
     editor->templateEditing = false;
     editor->activeTemplate = logical.templateOwner;
-    editor->activeTemplateRegion = logical.templateRegion;
-    editor->templateTargetKind = static_cast<MyCodeEditor::TemplateTargetKind>(logical.templateTarget);
     if (logical.templateEditing && editor->templateModel()->instance(logical.templateOwner)) {
         const auto cursor = editor->textCursor();
         editor->editTemplateInstance(logical.templateOwner, logical.templateInput, cursor.position());

@@ -1,3 +1,4 @@
+#include "testuistyle.h"
 #include "applicationthememanager.h"
 #include "commandlayercoordinator.h"
 #include "contextdockhost.h"
@@ -30,6 +31,7 @@
 #include <QJsonObject>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
 #include <QPointer>
 #include <QScreen>
 #include <QScrollArea>
@@ -39,7 +41,9 @@
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QToolButton>
 #include <QVBoxLayout>
+#include <QWidgetAction>
 
 #include <cstdio>
 
@@ -261,6 +265,23 @@ void capture(QWidget* content, const QString& name, std::function<void()> ready 
     record["contentMinimumSize"] = sizeJson(content->minimumSize());
     record["contentMinimumSizeHint"] = sizeJson(content->minimumSizeHint());
     records.append(record);
+    for (auto* button : content->findChildren<QToolButton*>()) {
+        auto* menu = button->menu();
+        if (!menu || !button->isVisibleTo(&host)) continue;
+        bool hasOverflow = false;
+        for (auto* action : menu->actions()) {
+            auto* widgets = qobject_cast<QWidgetAction*>(action);
+            hasOverflow |= widgets && widgets->isVisible() && widgets->defaultWidget()
+                && widgets->defaultWidget()->objectName().endsWith(QStringLiteral("OverflowScroll"));
+        }
+        if (!hasOverflow) continue;
+        menu->popup(button->mapToGlobal(QPoint(0, button->height())));
+        settle();
+        failures += !menu->isVisible() || !menu->screen()->availableGeometry().contains(menu->geometry());
+        records.append(audit(menu, name + QStringLiteral("-overflow-") + button->objectName()));
+        menu->close();
+        settle();
+    }
     content->hide(); layout->removeWidget(content);
     if (originalDock) originalDock->setWidget(content);
     else content->setParent(originalParent);
@@ -403,8 +424,7 @@ int main(int argc, char** argv)
     if (!temporary.isValid()) return 2;
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings::setPath(QSettings::IniFormat, QSettings::UserScope, temporary.path());
-    if (qEnvironmentVariable("ZEROSLACK_TEST_UI_STYLE") == "ela"
-        && !ApplicationThemeManager::instance().selectBackend(UiStyleBackend::Ela)) return 3;
+    if (!initializeUiStyleForTest()) return 3;
     ApplicationThemeManager::instance().applyToApplication();
     const QString scale = qEnvironmentVariable("QT_SCALE_FACTOR");
     const QString root = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");

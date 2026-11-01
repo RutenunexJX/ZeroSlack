@@ -126,7 +126,11 @@ PanelLayoutController::PanelLayoutController(
     : QObject(parent)
     , window(mainWindow)
 {
-    animationsEnabledValue = ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela;
+#ifdef ZEROSLACK_ENABLE_ELA
+    animationsEnabledValue = true;
+#else
+    animationsEnabledValue = false;
+#endif
     if (window) {
         window->setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
         window->setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);

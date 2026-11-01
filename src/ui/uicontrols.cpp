@@ -308,7 +308,6 @@ private:
 #include <QStyleOptionFrame>
 
 namespace {
-bool usesEla() { return ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela; }
 
 void paintFocusRing(QWidget* widget) {
     if (!widget->hasFocus() || !widget->isEnabled()) return;
@@ -501,74 +500,67 @@ private:
 
 UiTabWidget::UiTabWidget(QWidget* parent) : QTabWidget(parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        prepare(this);
-        // TabManager owns close confirmation, page lifetime, and inter-group moves.
-        setTabBar(UiControls::tabBar(this));
-    }
+    prepare(this);
+    // TabManager owns close confirmation, page lifetime, and inter-group moves.
+    setTabBar(UiControls::tabBar(this));
 #endif
 }
 
 QLabel* UiControls::label(QWidget* parent) { return label(QString(), parent); }
 QLabel* UiControls::label(const QString& text, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* value = prepare(new ElaText(text, parent));
-        value->setThemeColorEnabled(false);
-        value->setStyleSheet(QString());
-        value->setPalette(QPalette());
-        value->setWordWrap(false);
-        return value;
-    }
-#endif
+    auto* value = prepare(new ElaText(text, parent));
+    value->setThemeColorEnabled(false);
+    value->setStyleSheet(QString());
+    value->setPalette(QPalette());
+    value->setWordWrap(false);
+    return value;
+#else
     return new QLabel(text, parent);
+#endif
 }
 void UiControls::addFormRow(QFormLayout* form, const QString& text, QWidget* field) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* caption = text.isEmpty() ? nullptr : label(text, form->parentWidget());
-        if (caption) caption->setBuddy(field);
-        form->addRow(caption, field);
-        return;
-    }
-#endif
+    auto* caption = text.isEmpty() ? nullptr : label(text, form->parentWidget());
+    if (caption) caption->setBuddy(field);
+    form->addRow(caption, field);
+    return;
+#else
     form->addRow(text, field);
+#endif
 }
 
 QPushButton* UiControls::pushButton(QWidget* parent) { return pushButton(QString(), parent); }
 QPushButton* UiControls::pushButton(const QString& text, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new ElaAction(text, parent));
-#endif
+    return prepare(new ElaAction(text, parent));
+#else
     return new QPushButton(text, parent);
+#endif
 }
 QToolButton* UiControls::toolButton(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* button = prepare(new AccessibleElaControl<ElaToolButton>(parent));
-        button->setPopupMode(QToolButton::DelayedPopup);
-        button->setIconSize(QSize(16, 16));
-        button->setBorderRadius(6);
-        QObject::connect(button, &QToolButton::toggled, button, &ElaToolButton::setIsSelected);
-        return button;
-    }
-#endif
+    auto* button = prepare(new AccessibleElaControl<ElaToolButton>(parent));
+    button->setPopupMode(QToolButton::DelayedPopup);
+    button->setIconSize(QSize(16, 16));
+    button->setBorderRadius(6);
+    QObject::connect(button, &QToolButton::toggled, button, &ElaToolButton::setIsSelected);
+    return button;
+#else
     return new QToolButton(parent);
+#endif
 }
 QToolButton* UiControls::railButton(QWidget* parent) {
     QToolButton* button = nullptr;
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* ela = prepare(new ElaRailButton(parent));
-        ela->setBorderRadius(8);
-        QObject::connect(ela, &QToolButton::toggled, ela, &ElaToolButton::setIsSelected);
-        button = ela;
-    }
+    auto* ela = prepare(new ElaRailButton(parent));
+    ela->setBorderRadius(8);
+    QObject::connect(ela, &QToolButton::toggled, ela, &ElaToolButton::setIsSelected);
+    button = ela;
+#else
+    button = new QToolButton(parent);
+    button->setProperty("zeroslackElaControl", false);
 #endif
-    if (!button) {
-        button = new QToolButton(parent);
-        button->setProperty("zeroslackElaControl", false);
-    }
     button->setToolButtonStyle(Qt::ToolButtonIconOnly);
     button->setIconSize(QSize(20, 20));
     button->setMinimumSize(36, 36);
@@ -579,35 +571,33 @@ QToolButton* UiControls::railButton(QWidget* parent) {
 }
 QToolButton* UiControls::badgedToolButton(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* button = prepare(new BadgedToolButton<AccessibleElaControl<ElaToolButton>>(parent));
-        button->setPopupMode(QToolButton::DelayedPopup);
-        button->setBorderRadius(8);
-        QObject::connect(button, &QToolButton::toggled, button, &ElaToolButton::setIsSelected);
-        return button;
-    }
-#endif
+    auto* button = prepare(new BadgedToolButton<AccessibleElaControl<ElaToolButton>>(parent));
+    button->setPopupMode(QToolButton::DelayedPopup);
+    button->setBorderRadius(8);
+    QObject::connect(button, &QToolButton::toggled, button, &ElaToolButton::setIsSelected);
+    return button;
+#else
     auto* button = new BadgedToolButton<QToolButton>(parent);
     button->setProperty("zeroslackElaControl", false);
     return button;
+#endif
 }
 void UiControls::setToolButtonBadge(QToolButton* button, const QString& text, const QString& tone) {
     if (auto* badge = dynamic_cast<ToolButtonBadge*>(button)) badge->setBadge(text, tone);
 }
 QWidget* UiControls::pageStack(QStackedWidget*& stack, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* surface = new ElaCentralStackedWidget(parent);
-        surface->setIsTransparent(true);
-        surface->setIsHasRadius(false);
-        QObject::connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
-            surface, [surface](bool enabled) { if (!enabled) surface->finishStackSwitch(); });
-        stack = surface->getContainerStackedWidget();
-        return surface;
-    }
-#endif
+    auto* surface = new ElaCentralStackedWidget(parent);
+    surface->setIsTransparent(true);
+    surface->setIsHasRadius(false);
+    QObject::connect(&ApplicationThemeManager::instance(), &ApplicationThemeManager::animationsEnabledChanged,
+        surface, [surface](bool enabled) { if (!enabled) surface->finishStackSwitch(); });
+    stack = surface->getContainerStackedWidget();
+    return surface;
+#else
     stack = new QStackedWidget(parent);
     return stack;
+#endif
 }
 void UiControls::selectPage(QStackedWidget* stack, int index, bool animate) {
     if (!stack || index < 0 || index >= stack->count()) return;
@@ -623,103 +613,105 @@ void UiControls::selectPage(QStackedWidget* stack, int index, bool animate) {
 QLineEdit* UiControls::lineEdit(QWidget* parent) { return lineEdit(QString(), parent); }
 QLineEdit* UiControls::lineEdit(const QString& text, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* edit = prepare(new AccessibleElaControl<ElaLineEdit>(parent));
-        edit->setText(text);
-        return edit;
-    }
-#endif
+    auto* edit = prepare(new AccessibleElaControl<ElaLineEdit>(parent));
+    edit->setText(text);
+    return edit;
+#else
     return new QLineEdit(text, parent);
+#endif
 }
 QComboBox* UiControls::comboBox(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new ElaChoice(parent));
-#endif
+    return prepare(new ElaChoice(parent));
+#else
     return new QComboBox(parent);
+#endif
 }
 QCheckBox* UiControls::checkBox(QWidget* parent) { return checkBox(QString(), parent); }
 QCheckBox* UiControls::checkBox(const QString& text, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new AccessibleElaControl<ElaCheckBox>(text, parent));
-#endif
+    return prepare(new AccessibleElaControl<ElaCheckBox>(text, parent));
+#else
     return new QCheckBox(text, parent);
+#endif
 }
 QSpinBox* UiControls::spinBox(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new ElaNumber<ElaSpinBox>(parent));
-#endif
+    return prepare(new ElaNumber<ElaSpinBox>(parent));
+#else
     return new QSpinBox(parent);
+#endif
 }
 QRadioButton* UiControls::radioButton(const QString& text, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new AccessibleElaControl<ElaRadioButton>(text, parent));
-#endif
+    return prepare(new AccessibleElaControl<ElaRadioButton>(text, parent));
+#else
     return new QRadioButton(text, parent);
+#endif
 }
 QDoubleSpinBox* UiControls::doubleSpinBox(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new ElaNumber<ElaDoubleSpinBox>(parent));
-#endif
+    return prepare(new ElaNumber<ElaDoubleSpinBox>(parent));
+#else
     return new QDoubleSpinBox(parent);
+#endif
 }
 QSlider* UiControls::slider(Qt::Orientation orientation, QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) return prepare(new AccessibleElaControl<ElaSlider>(orientation, parent));
-#endif
+    return prepare(new AccessibleElaControl<ElaSlider>(orientation, parent));
+#else
     return new QSlider(orientation, parent);
+#endif
 }
 QTreeView* UiControls::treeView(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* tree = prepare(new ElaTreeView(parent));
-        tree->setNativeItemContent(true);
-        tree->setItemHeight(qMax(28, tree->fontMetrics().height() + 10));
-        enableTreeTransitions(tree);
-        enableSmoothScrolling(tree);
-        return tree;
-    }
-#endif
+    auto* tree = prepare(new ElaTreeView(parent));
+    tree->setNativeItemContent(true);
+    tree->setItemHeight(qMax(28, tree->fontMetrics().height() + 10));
+    enableTreeTransitions(tree);
+    enableSmoothScrolling(tree);
+    return tree;
+#else
     return new QTreeView(parent);
+#endif
 }
 QTreeWidget* UiControls::treeWidget(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* tree = prepare(new ElaItemTree(parent));
-        tree->setStyle(ElaTreeView::createStyle(tree, qMax(28, tree->fontMetrics().height() + 10)));
-        tree->setMouseTracking(true);
-        enableTreeTransitions(tree);
-        enableSmoothScrolling(tree);
-        return tree;
-    }
-#endif
+    auto* tree = prepare(new ElaItemTree(parent));
+    tree->setStyle(ElaTreeView::createStyle(tree, qMax(28, tree->fontMetrics().height() + 10)));
+    tree->setMouseTracking(true);
+    enableTreeTransitions(tree);
+    enableSmoothScrolling(tree);
+    return tree;
+#else
     return new QTreeWidget(parent);
+#endif
 }
 QTabWidget* UiControls::editorTabWidget(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla())
-        return prepare(new ElaTabWidget(parent));
-#endif
+    return prepare(new ElaTabWidget(parent));
+#else
     return tabWidget(parent);
+#endif
 }
 
 QTabBar* UiControls::tabBar(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* bar = prepare(new WorkspaceTabBar<ElaTabBar>(parent));
-        bar->setNativeTabBehavior(true);
-        bar->setSmoothScrollEnabled(true);
-        bar->setTabsClosable(false);
-        bar->setMovable(false);
-        bar->setAcceptDrops(false);
-        return bar;
-    }
-#endif
+    auto* bar = prepare(new WorkspaceTabBar<ElaTabBar>(parent));
+    bar->setNativeTabBehavior(true);
+    bar->setSmoothScrollEnabled(true);
+    bar->setTabsClosable(false);
+    bar->setMovable(false);
+    bar->setAcceptDrops(false);
+    return bar;
+#else
     return new WorkspaceTabBar<QTabBar>(parent);
+#endif
 }
 
 void UiControls::enableSmoothScrolling(QAbstractScrollArea* area) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (area && usesEla()) {
+    if (area) {
         if (!area->property("zeroslackPrecisionWheelRouter").toBool()) {
             new PrecisionWheelRouter(area);
             area->setProperty("zeroslackPrecisionWheelRouter", true);
@@ -749,7 +741,7 @@ void UiControls::enableSmoothScrolling(QAbstractScrollArea* area) {
 
 void UiControls::enableTreeTransitions(QTreeView* tree) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (tree && usesEla()) tree->setAnimated(true);
+    if (tree) tree->setAnimated(true);
 #else
     Q_UNUSED(tree)
 #endif
@@ -777,76 +769,68 @@ QTabWidget* UiControls::navigationTabWidget(QWidget* parent) {
 QListWidget* UiControls::listWidget(QWidget* parent) {
     auto* list = new QListWidget(parent);
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        prepare(list);
-        ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
-        enableSmoothScrolling(list);
-    }
+    prepare(list);
+    ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
+    enableSmoothScrolling(list);
 #endif
     return list;
 }
 QListView* UiControls::listView(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* list = prepare(new ElaListView(parent));
-        ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
-        enableSmoothScrolling(list);
-        return list;
-    }
-#endif
+    auto* list = prepare(new ElaListView(parent));
+    ownViewStyle(list, ElaListView::createStyle(qApp, qMax(28, list->fontMetrics().height() + 10)));
+    enableSmoothScrolling(list);
+    return list;
+#else
     return new QListView(parent);
+#endif
 }
 QTableWidget* UiControls::tableWidget(QWidget* parent) { return tableWidget(0, 0, parent); }
 QTableWidget* UiControls::tableWidget(int rows, int columns, QWidget* parent) {
     auto* table = new QTableWidget(rows, columns, parent);
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        prepare(table);
-        ownViewStyle(table, ElaTableView::createStyle(qApp));
-        table->setShowGrid(false);
-        enableSmoothScrolling(table);
-    }
+    prepare(table);
+    ownViewStyle(table, ElaTableView::createStyle(qApp));
+    table->setShowGrid(false);
+    enableSmoothScrolling(table);
 #endif
     return table;
 }
 QTableView* UiControls::tableView(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* table = prepare(new ElaTableView(parent));
-        table->setNativeItemContent(true);
-        enableSmoothScrolling(table);
-        return table;
-    }
-#endif
+    auto* table = prepare(new ElaTableView(parent));
+    table->setNativeItemContent(true);
+    enableSmoothScrolling(table);
+    return table;
+#else
     return new QTableView(parent);
+#endif
 }
 QScrollArea* UiControls::scrollArea(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* area = prepare(new ElaScrollArea(parent));
-        area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-        area->setIsAnimation(Qt::Horizontal, false);
-        area->setIsAnimation(Qt::Vertical, false);
-        enableSmoothScrolling(area);
-        return area;
-    }
-#endif
+    auto* area = prepare(new ElaScrollArea(parent));
+    area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    area->setIsAnimation(Qt::Horizontal, false);
+    area->setIsAnimation(Qt::Vertical, false);
+    enableSmoothScrolling(area);
+    return area;
+#else
     return new QScrollArea(parent);
+#endif
 }
 QPlainTextEdit* UiControls::readOnlyText(QWidget* parent) {
     QPlainTextEdit* text = nullptr;
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* view = prepare(new ElaTextView(parent));
-        view->setNativeTextBehavior(true);
-        view->setStyleSheet(QString());
-        // Remove the constructor's explicit palette so host and theme roles inherit.
-        view->setPalette(QPalette());
-        text = view;
-    }
+    auto* view = prepare(new ElaTextView(parent));
+    view->setNativeTextBehavior(true);
+    view->setStyleSheet(QString());
+    // Remove the constructor's explicit palette so host and theme roles inherit.
+    view->setPalette(QPalette());
+    text = view;
+#else
+    text = new QPlainTextEdit(parent);
 #endif
-    if (!text) text = new QPlainTextEdit(parent);
     text->setReadOnly(true);
     enableSmoothScrolling(text);
     return text;
@@ -859,14 +843,13 @@ QPlainTextEdit* UiControls::readOnlyText(const QString& value, QWidget* parent) 
 
 QMenu* UiControls::menu(QWidget* parent) {
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (usesEla()) {
-        auto* popup = prepare(new ElaMenu(parent));
-        popup->setNativeMenuBehavior(true);
-        popup->setMenuItemHeight(qMax(28, popup->fontMetrics().height() + 12));
-        return popup;
-    }
-#endif
+    auto* popup = prepare(new ElaMenu(parent));
+    popup->setNativeMenuBehavior(true);
+    popup->setMenuItemHeight(qMax(28, popup->fontMetrics().height() + 12));
+    return popup;
+#else
     return new QMenu(parent);
+#endif
 }
 QMenu* UiControls::addMenu(QMenu* parent, const QString& title) {
     auto* child = menu(parent);

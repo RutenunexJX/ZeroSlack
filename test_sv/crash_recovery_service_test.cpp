@@ -13,6 +13,7 @@
 #include <QMutex>
 #include <QMutexLocker>
 #include <QProcess>
+#include <QLockFile>
 #include <QTextStream>
 #include <thread>
 
@@ -118,10 +119,10 @@ int recoveryPeer(const QStringList& args)
     return 0;
 }
 
-void checkIndependentEditingSessions()
+void checkIndependentEditingSessions(const QString& recoveryRoot = {})
 {
     QTemporaryDir temp;
-    const auto root = temp.filePath("recovery");
+    const auto root = recoveryRoot.isEmpty() ? temp.filePath("recovery") : recoveryRoot;
     const auto workspace = temp.filePath("workspace");
     const auto source = workspace + "/unit.sv";
     expect("multi-process source exists", replaceFile(source, "module base; endmodule\n"));
@@ -184,6 +185,108 @@ void checkIndependentEditingSessions()
         && QFileInfo::exists(legacyPath));
     expect("explicitly claimed legacy is retired by its recovering session", competitor.clearAfterNormalSave(key).succeeded()
         && !QFileInfo::exists(legacyPath));
+}
+
+void checkLongLockPaths()
+{
+    // A short fixture name leaves room to exercise exact final lock boundaries
+    // without changing the existing tests' temporary roots.
+    QTemporaryDir temp(QDir::tempPath() + "/rXXXXXX");
+    expect("lock boundary fixture is valid", temp.isValid());
+    if (!temp.isValid()) return;
+    const QString workspace = temp.filePath("workspace");
+    const QString source = workspace + "/unit.sv";
+    const QByteArray baseline("module base; endmodule\n");
+    const QString claimSuffix = "/workspaces/" + QString(64, 'a')
+        + "/records/" + QString(64, 'b') + ".json.claim";
+    for (int length : {259, 260, 261}) {
+        const auto check = [&](const char* name, bool value) {
+            const auto label = QString("claim-%1: %2").arg(length).arg(name).toUtf8();
+            expect(label.constData(), value);
+        };
+        const int padding = length - claimSuffix.size() - temp.path().size() - 1;
+        check("fixture accommodates exact boundary", padding > 0);
+        if (padding <= 0) continue;
+        const QString root = temp.path() + '/' + QString(padding, 'r');
+        check("baseline source is written", replaceFile(source, baseline));
+        auto owner = std::make_unique<CrashRecoveryService>(root);
+        auto request = fileRequest(workspace, source, "module changed; endmodule\n", 7,
+                                   baseline, QFileInfo(source).lastModified().toUTC());
+        const auto written = owner->writeSnapshot(request);
+        const QString claim = written.storagePath + ".claim";
+        check("final ordinary claim path has requested length",
+              written.succeeded() && claim.size() == length);
+        std::printf("LOCK_BOUNDARY claim requested=%d actual=%lld path=%s\n",
+                    length, static_cast<long long>(claim.size()), qPrintable(claim));
+        CrashRecoveryService other(root);
+        check("active foreign owner rejects recovery and discard",
+              other.recoverText(workspace, written.recoveryId).status == CrashRecoveryStatus::OwnedByAnotherSession
+              && other.discard(workspace, written.recoveryId).status == CrashRecoveryStatus::OwnedByAnotherSession);
+        check("own record is recoverable", owner->recoverText(workspace, written.recoveryId).text == request.text);
+        check("discard removes record and released claim", owner->discard(workspace, written.recoveryId).succeeded()
+              && !QFileInfo::exists(written.storagePath) && !QFileInfo::exists(claim));
+        const auto replacement = owner->writeSnapshot(request);
+        check("recreated identity can acquire a new claim", replacement.recoveryId == written.recoveryId
+              && owner->recoverText(workspace, written.recoveryId).succeeded());
+        owner.reset();
+        check("owner teardown releases claim while retaining snapshot",
+              !QFileInfo::exists(claim) && QFileInfo::exists(written.storagePath));
+        if (length == 259) {
+            QLockFile ordinary(claim);
+            ordinary.setStaleLockTime(0);
+            check("ordinary-path lock remains mutually exclusive with extended-path service",
+                  ordinary.tryLock(0) && other.recoverText(workspace, written.recoveryId).status
+                      == CrashRecoveryStatus::OwnedByAnotherSession);
+            ordinary.unlock();
+        }
+        check("later session recovers original ordinary record identity",
+              other.recoverText(workspace, written.recoveryId).text == request.text);
+        CrashRecoveryService competitor(root);
+        check("recovered claim excludes a competing session",
+              competitor.recoverText(workspace, written.recoveryId).status == CrashRecoveryStatus::OwnedByAnotherSession);
+        check("recovering session discards and releases claim", other.discard(workspace, written.recoveryId).succeeded()
+              && !QFileInfo::exists(claim));
+        const auto corrupt = other.writeSnapshot(request);
+        check("full-length corrupt fixture is written", corrupt.succeeded()
+              && replaceFile(corrupt.storagePath, "{invalid"));
+        const auto corruptScan = other.listCandidates(workspace);
+        check("corrupt isolation releases full-length claim", corruptScan.succeeded()
+              && corruptScan.candidates.isEmpty() && corruptScan.isolatedRecords.size() == 1
+              && corruptScan.isolatedRecords.first().status == CrashRecoveryStatus::CorruptRecord
+              && QFileInfo::exists(corruptScan.isolatedRecords.first().quarantinePath)
+              && !QFileInfo::exists(corrupt.storagePath) && !QFileInfo::exists(corrupt.storagePath + ".claim"));
+        const auto stale = other.writeSnapshot(request);
+        check("full-length stale fixture is written", stale.succeeded()
+              && replaceFile(source, QByteArray::fromHex("efbbbf") + request.text.toUtf8().replace("\n", "\r\n")));
+        const auto staleScan = other.listCandidates(workspace);
+        check("stale isolation releases full-length claim", staleScan.succeeded()
+              && staleScan.candidates.isEmpty() && staleScan.isolatedRecords.size() == 1
+              && staleScan.isolatedRecords.first().status == CrashRecoveryStatus::StaleRecord
+              && !QFileInfo::exists(stale.storagePath) && !QFileInfo::exists(stale.storagePath + ".claim"));
+    }
+    for (int length : {259, 260, 261}) {
+        const QString suffix = "/sessions/" + QString(36, 'a') + ".lock";
+        const int padding = length - suffix.size() - temp.path().size() - 1;
+        const QString root = temp.path() + '/' + QString(padding, 's');
+        auto owner = std::make_unique<CrashRecoveryService>(root);
+        const auto request = untitledRequest(workspace, "long-session", "dirty text", 1);
+        const auto written = owner->writeSnapshot(request);
+        const QString lease = root + "/sessions/" + owner->sessionId() + ".lock";
+        const auto label = QString("session-%1: lease length and active ownership").arg(length).toUtf8();
+        CrashRecoveryService other(root);
+        expect(label.constData(), written.succeeded() && lease.size() == length && QFileInfo::exists(lease)
+               && other.recoverText(workspace, written.recoveryId).status == CrashRecoveryStatus::OwnedByAnotherSession);
+        std::printf("LOCK_BOUNDARY session requested=%d actual=%lld path=%s\n",
+                    length, static_cast<long long>(lease.size()), qPrintable(lease));
+        owner.reset();
+        const auto released = QString("session-%1: released lease permits recovery and discard").arg(length).toUtf8();
+        expect(released.constData(), !QFileInfo::exists(lease)
+               && other.recoverText(workspace, written.recoveryId).text == request.text
+               && other.discard(workspace, written.recoveryId).succeeded()
+               && !QFileInfo::exists(written.storagePath + ".claim"));
+    }
+    // Reuse real peer termination to cover stale long leases, not just teardown.
+    checkIndependentEditingSessions(temp.filePath(QString(150, 'c')));
 }
 
 int main(int argc, char** argv)
@@ -703,6 +806,7 @@ int main(int argc, char** argv)
     }
 
     checkIndependentEditingSessions();
+    checkLongLockPaths();
     std::printf(
         "Crash recovery service checks: %d, failures: %d\n",
         checks,

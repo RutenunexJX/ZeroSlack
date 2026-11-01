@@ -79,38 +79,36 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
     navigationDock->setFeatures(QDockWidget::DockWidgetClosable);
     navigationDock->setAllowedAreas(Qt::LeftDockWidgetArea);
 #ifdef ZEROSLACK_ENABLE_ELA
-    if (ApplicationThemeManager::instance().backend() == UiStyleBackend::Ela) {
-        elaNavigationBar = new ElaNavigationBar(navigationDock);
-        elaNavigationBar->setObjectName(QStringLiteral("navigationElaBar"));
-        elaNavigationBar->setCustomContentWidthRange(200, 400);
-        navigationWidget = new NavigationWidget;
-        navigationWidget->setMinimumWidth(180);
-        elaNavigationBar->setCustomContent(navigationWidget);
-        elaNavigationBar->setNavigationBarWidth(280);
-        navigationDock->setWidget(elaNavigationBar);
-        connect(elaNavigationBar, &ElaNavigationBar::displayModeChanged, this,
-                [this](ElaNavigationType::NavigationDisplayMode mode) {
-            if (overlayParent) return;
-            if (mode != ElaNavigationType::Minimal && !elaNavigationBar->isDisplayModeAnimating()) navigationDock->show();
-        });
-        connect(elaNavigationBar, &ElaNavigationBar::displayModeTransitionFinished, this,
-                [this](ElaNavigationType::NavigationDisplayMode mode) {
-            if (overlayParent) return;
-            changingPlacement = true;
-            if (mode == ElaNavigationType::Minimal) navigationDock->hide();
-            else if (mode == ElaNavigationType::Maximal) {
-                navigationDock->show();
-                if (auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget()))
-                    window->resizeDocks({navigationDock}, {elaNavigationBar->getNavigationBarWidth()}, Qt::Horizontal);
-            }
-            changingPlacement = false;
-        });
-        connect(elaNavigationBar, &ElaNavigationBar::overlayTransitionFinished, this,
-                [this](bool open) { if (!open) finishOverlay(); });
-        qApp->installEventFilter(this);
-        return;
-    }
-#endif
+    elaNavigationBar = new ElaNavigationBar(navigationDock);
+    elaNavigationBar->setObjectName(QStringLiteral("navigationElaBar"));
+    elaNavigationBar->setCustomContentWidthRange(200, 400);
+    navigationWidget = new NavigationWidget;
+    navigationWidget->setMinimumWidth(180);
+    elaNavigationBar->setCustomContent(navigationWidget);
+    elaNavigationBar->setNavigationBarWidth(280);
+    navigationDock->setWidget(elaNavigationBar);
+    connect(elaNavigationBar, &ElaNavigationBar::displayModeChanged, this,
+            [this](ElaNavigationType::NavigationDisplayMode mode) {
+        if (overlayParent) return;
+        if (mode != ElaNavigationType::Minimal && !elaNavigationBar->isDisplayModeAnimating()) navigationDock->show();
+    });
+    connect(elaNavigationBar, &ElaNavigationBar::displayModeTransitionFinished, this,
+            [this](ElaNavigationType::NavigationDisplayMode mode) {
+        if (overlayParent) return;
+        changingPlacement = true;
+        if (mode == ElaNavigationType::Minimal) navigationDock->hide();
+        else if (mode == ElaNavigationType::Maximal) {
+            navigationDock->show();
+            if (auto* window = qobject_cast<QMainWindow*>(navigationDock->parentWidget()))
+                window->resizeDocks({navigationDock}, {elaNavigationBar->getNavigationBarWidth()}, Qt::Horizontal);
+        }
+        changingPlacement = false;
+    });
+    connect(elaNavigationBar, &ElaNavigationBar::overlayTransitionFinished, this,
+            [this](bool open) { if (!open) finishOverlay(); });
+    qApp->installEventFilter(this);
+    return;
+#else
     viewport = new NavigationViewport(navigationDock);
     viewport->setContentWidth(expandedWidth);
     navigationWidget = new NavigationWidget(viewport);
@@ -127,6 +125,7 @@ NavigationPaneCoordinator::NavigationPaneCoordinator(QWidget* parent)
                 if (!transitioning)
                     expanded = visible;
             });
+#endif
 }
 
 NavigationPaneCoordinator::~NavigationPaneCoordinator()
