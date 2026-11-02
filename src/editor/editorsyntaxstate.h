@@ -86,6 +86,8 @@ public:
     void setRevision(std::uint64_t revision);
     void setDeferredParsing(bool deferred);
     void flushPendingEdits();
+    void setInteractiveParsing(bool interactive);
+    void finishSynchronousLoad();
     void setReparseFinishedCallback(std::function<void()> callback);
     QString moduleNameAt(int charPos) const;
     TSPortAppendTarget portAppendTargetAt(int charPos) const;
@@ -138,6 +140,7 @@ private:
     friend struct EditorDocumentSyntax;
     std::shared_ptr<EditorDocumentSyntax> shared;
     std::function<void()> reparseFinished;
+    bool interactiveParsing = false;
 };
 
 #endif // EDITORSYNTAXSTATE_H

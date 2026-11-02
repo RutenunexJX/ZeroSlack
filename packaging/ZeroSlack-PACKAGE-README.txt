@@ -1,4 +1,6 @@
-ZeroSlack v0.33.1 Windows package
+ZeroSlack v0.33.2 Windows package
+
+Release 0.33.2 closes the reproduced full-regression failures and corrects editor parsing/highlighting, ordinary document saves, navigation refreshes and compact toolbar restoration. Test execution uses explicit runtime paths and per-process Qt evidence. The accepted candidate passed all 238 managed tests; bare CTest passed 239 with 10 policy-restricted tests not launched. Existing timeout limits, protected resources and scope restrictions remain enforced. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.33.1 retires the TB root/DUT templates, region UI and F24 template lock while preserving ordinary templates, slots, existing TBs and simulation. Ela is the sole UI backend; narrow panels, first-frame layout, recovery and session handling incorporate the accepted fixes. Four analysis views share the in-repository insightgraph component. Release preparation verifies the default ALL build, protected-resource policy and required layout checks. Scoped acceptance retains 29 pre-existing full-regression failures. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 

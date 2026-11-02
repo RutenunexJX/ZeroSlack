@@ -351,6 +351,11 @@ CommandSymbolCompletionItem CompletionService::commandSymbolCompletionItem(
             moduleInstantiationTemplateForRecord(semanticIndex(), record);
         item.defaultValue = instantiation.text;
         item.templateSlots = instantiation.slotMetadata;
+        // Plain completion falls back without slots when no semantic members exist.
+        // Direct DUT insertion retains the shared generator's instance slot.
+        if (item.templateSlots.size() == 1
+            && item.templateSlots.first().name == QStringLiteral("instance"))
+            item.templateSlots.clear();
         if (!item.templateSlots.isEmpty()) {
             item.selectionStart = item.templateSlots.first().start;
             item.selectionLength = item.templateSlots.first().length;

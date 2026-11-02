@@ -93,6 +93,9 @@ void MyHighlighter::rehighlight()
 {
     // Preserve the explicit synchronous API. Automatic document updates and
     // large theme changes use the bounded range queue above.
+    deferredRefresh.stop();
+    nextRefreshBlock = lastRefreshBlock = -1;
+    refreshBlockCount = document() ? document()->blockCount() : 0;
     applyingRefresh = true;
     QSyntaxHighlighter::rehighlight();
     applyingRefresh = false;

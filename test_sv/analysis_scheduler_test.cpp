@@ -3530,7 +3530,7 @@ void runPreparedPublicationRetirementIsOrderedAndShutdownSafe()
     for (int index = 0; index < 1200; ++index) {
         source += QStringLiteral("  logic retained_%1;\n").arg(index);
     }
-    source += QStringLiteral("endmodule\n");
+    source += QStringLiteral("  assign retained_0 = retained_1;\nendmodule\n");
     QFile sourceFile(fileName);
     expect("publication retirement source writes",
            sourceFile.open(QIODevice::WriteOnly | QIODevice::Text)
@@ -3592,6 +3592,11 @@ void runPreparedPublicationRetirementIsOrderedAndShutdownSafe()
     expect("second prepared replacement is not blocked by old destruction",
            waitUntil([&]() { return finishedSpy.size() == 3; }, 15000));
     const auto latestSnapshot = SemanticIndex::getInstance()->snapshot();
+    std::printf("diag.retirement snapshot=%d textEqual=%d state=%d current=%d pending=%d graph=%d snapshotGraph=%d\n",
+        bool(latestSnapshot), latestSnapshot && latestSnapshot->getCachedFileContent(fileName)==secondSaved,
+        int(scheduler.semanticStatus(fileName).state), int(DocumentSemanticState::Current),
+        analyzer.pendingPublicationRetirementsForTesting(), relationshipEngine.getRelationshipCount(),
+        latestSnapshot ? latestSnapshot->relationshipCount() : -1);
     expect("consecutive replacement publishes the latest snapshot and graph",
            latestSnapshot
                && latestSnapshot->getCachedFileContent(fileName)
@@ -3600,7 +3605,33 @@ void runPreparedPublicationRetirementIsOrderedAndShutdownSafe()
                       == DocumentSemanticState::Current
                && analyzer.pendingPublicationRetirementsForTesting() >= 2
                && relationshipEngine.getRelationshipCount()
-                      == latestSnapshot->relationshipCount());
+                      == latestSnapshot->relationshipEndpointCount()
+               && latestSnapshot->relationshipEndpointCount() > 0
+               && latestSnapshot->relationshipCount() >= 1200);
+
+    bool graphEvidenceMatches = bool(latestSnapshot);
+    int checkedEdges = 0;
+    QSet<QString> checkedEndpoints;
+    if (latestSnapshot) for (const auto& relationship : latestSnapshot->relationships()) {
+        if (relationship.fromId == relationship.toId) continue;
+        const QString endpoint = QStringLiteral("%1/%2/%3")
+            .arg(relationship.fromId).arg(relationship.toId).arg(int(relationship.type));
+        if (checkedEndpoints.contains(endpoint)) continue;
+        checkedEndpoints.insert(endpoint);
+        const auto metadata = relationshipEngine.getRelationshipMetadata(
+            relationship.fromId, relationship.toId, relationship.type);
+        const auto& expected = relationship.evidenceRange;
+        const auto& actual = metadata.evidenceRange;
+        graphEvidenceMatches &= metadata.found && expected.isValid()
+            && actual.fileName == expected.fileName && actual.line == expected.line
+            && actual.column == expected.column && actual.endLine == expected.endLine
+            && actual.endColumn == expected.endColumn && actual.position == expected.position
+            && actual.length == expected.length;
+        ++checkedEdges;
+    }
+    expect("published graph evidence belongs to the latest remapped source",
+           graphEvidenceMatches && checkedEdges > 0
+               && checkedEdges == relationshipEngine.getRelationshipCount());
 
     std::thread releaseThread([&releaseRetirement]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(120));

@@ -22,6 +22,7 @@ struct EditorDocumentSyntax : std::enable_shared_from_this<EditorDocumentSyntax>
     QPointer<MyHighlighter> highlighter;
     QList<EditorSyntaxState*> views;
     QSet<EditorSyntaxState*> deferredViews;
+    QSet<EditorSyntaxState*> interactiveViews;
     DocumentChange change;
     QPair<int, int> oldLineBounds;
     QList<TSChangedRange> ranges;
@@ -33,8 +34,12 @@ struct EditorDocumentSyntax : std::enable_shared_from_this<EditorDocumentSyntax>
 
     EditorDocumentSyntax()
     {
-        document->setSynchronousParseBudget(3000);
         continuation->setSingleShot(true);
+    }
+
+    void updateParseBudget()
+    {
+        document->setSynchronousParseBudget(interactiveViews.isEmpty() ? 0 : 3000);
     }
 
     void notifyReparsed()
@@ -171,6 +176,9 @@ void EditorSyntaxState::createHighlighter(QTextDocument* source, std::uint64_t r
     auto it = registry.find(source);
     if (it == registry.end()) {
         auto owner = std::make_shared<EditorDocumentSyntax>();
+        if (interactiveParsing)
+            owner->interactiveViews.insert(this);
+        owner->updateParseBudget();
         it = registry.insert(source, owner);
         owner->bind(source, revision);
         QObject::connect(source, &QObject::destroyed, [source] {
@@ -184,6 +192,9 @@ void EditorSyntaxState::createHighlighter(QTextDocument* source, std::uint64_t r
     }
     shared = it.value();
     shared->views.append(this);
+    if (interactiveParsing)
+        shared->interactiveViews.insert(this);
+    shared->updateParseBudget();
 }
 
 void EditorSyntaxState::detachHighlighter()
@@ -192,6 +203,8 @@ void EditorSyntaxState::detachHighlighter()
         return;
     shared->views.removeAll(this);
     shared->deferredViews.remove(this);
+    shared->interactiveViews.remove(this);
+    shared->updateParseBudget();
     if (shared->deferredViews.isEmpty() && shared->document->hasPendingEdits() && shared->source)
         shared->continuation->start(1);
 }
@@ -213,6 +226,23 @@ void EditorSyntaxState::setDeferredParsing(bool deferred)
         shared->deferredViews.insert(this);
     else
         shared->deferredViews.remove(this);
+}
+
+void EditorSyntaxState::setInteractiveParsing(bool interactive)
+{
+    interactiveParsing = interactive;
+    if (interactive)
+        shared->interactiveViews.insert(this);
+    else
+        shared->interactiveViews.remove(this);
+    shared->updateParseBudget();
+}
+
+void EditorSyntaxState::finishSynchronousLoad()
+{
+    flushPendingEdits();
+    if (shared->highlighter)
+        shared->highlighter->rehighlight();
 }
 
 void EditorSyntaxState::flushPendingEdits()

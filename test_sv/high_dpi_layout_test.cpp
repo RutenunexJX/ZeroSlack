@@ -33,11 +33,14 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QPointer>
+#include <QPushButton>
 #include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
+#include <QStyleOptionSpinBox>
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTest>
@@ -99,6 +102,72 @@ QRect displayedRect(QWidget* widget, QWidget* window)
         result = result.intersected(rectIn(scroll->viewport(), window));
     return result;
 }
+QRect spinEditField(QAbstractSpinBox* spin)
+{
+    QStyleOptionSpinBox option;
+    option.initFrom(spin);
+    option.frame = spin->hasFrame();
+    option.buttonSymbols = spin->buttonSymbols();
+    return spin->style()->subControlRect(QStyle::CC_SpinBox, &option,
+                                        QStyle::SC_SpinBoxEditField, spin);
+}
+
+bool belowIntrinsicMinimum(QWidget* widget)
+{
+    if (auto* edit = qobject_cast<QLineEdit*>(widget)) {
+        if (auto* spin = qobject_cast<QAbstractSpinBox*>(widget->parentWidget())) {
+            // This frameless editor occupies the parent's native subcontrol,
+            // not a separately framed line edit's minimumSizeHint.
+            const QRect field = spinEditField(spin);
+            const QRect content = edit->contentsRect().marginsRemoved(edit->textMargins());
+            return edit->geometry() != field
+                || content.height() < edit->fontMetrics().tightBoundingRect(edit->displayText()).height()
+                || content.width() < edit->fontMetrics().horizontalAdvance(edit->displayText());
+        }
+    }
+    const QSize minimum = widget->minimumSizeHint();
+    return widget->width() < minimum.width() || widget->height() < minimum.height();
+}
+
+void verifyIntrinsicGeometryRejection()
+{
+    QPushButton probe(QStringLiteral("Geometry probe"));
+    probe.ensurePolished();
+    const QSize minimum = probe.minimumSizeHint();
+    if (minimum.width() <= 1 || minimum.height() <= 1) { ++failures; return; }
+    probe.resize(minimum);
+    const bool validAccepted = !belowIntrinsicMinimum(&probe);
+    probe.resize(minimum.width() - 1, minimum.height());
+    const bool shortWidthRejected = belowIntrinsicMinimum(&probe);
+    probe.resize(minimum.width(), minimum.height() - 1);
+    const bool shortHeightRejected = belowIntrinsicMinimum(&probe);
+    failures += !validAccepted + !shortWidthRejected + !shortHeightRejected;
+    records.append(QJsonObject{{"case", "intrinsic-geometry-negative-controls"},
+        {"validAccepted", validAccepted}, {"onePixelShortWidthRejected", shortWidthRejected},
+        {"onePixelShortHeightRejected", shortHeightRejected}, {"minimum", sizeJson(minimum)}});
+
+    QSpinBox spin;
+    spin.setPrefix(QStringLiteral("Levels "));
+    spin.setRange(1, 8);
+    spin.ensurePolished();
+    spin.resize(spin.sizeHint());
+    spin.show();
+    QCoreApplication::processEvents();
+    auto* edit = spin.findChild<QLineEdit*>();
+    if (!edit) { ++failures; return; }
+    const QRect nativeField = spinEditField(&spin);
+    const bool nativeAccepted = !belowIntrinsicMinimum(edit);
+    edit->setGeometry(nativeField.adjusted(0, 0, -1, 0));
+    const bool nativeShortWidthRejected = belowIntrinsicMinimum(edit);
+    edit->setGeometry(nativeField.adjusted(0, 0, 0, -1));
+    const bool nativeShortHeightRejected = belowIntrinsicMinimum(edit);
+    failures += !nativeAccepted + !nativeShortWidthRejected + !nativeShortHeightRejected;
+    records.append(QJsonObject{{"case", "native-spin-edit-negative-controls"},
+        {"nativeField", rectJson(nativeField)}, {"validAccepted", nativeAccepted},
+        {"onePixelShortWidthRejected", nativeShortWidthRejected},
+        {"onePixelShortHeightRejected", nativeShortHeightRejected}});
+}
+
 QJsonObject audit(QWidget* window, const QString& name)
 {
     QJsonArray controls, intersections, reachability;
@@ -117,7 +186,7 @@ QJsonObject audit(QWidget* window, const QString& name)
         const QRect bounds = titleBar ? rectIn(titleBar, window).intersected(window->rect()) : window->contentsRect();
         const bool inside = displayed.isEmpty() || (bounds.contains(displayed)
             && (!titleBar || !window->contentsRect().intersects(displayed)));
-        const bool below = widget->width() < minimum.width() || widget->height() < minimum.height();
+        const bool below = belowIntrinsicMinimum(widget);
         outside += !inside;
         undersized += below;
         const QString helper = widget->property("_zeroslackInsightThemeHelper").toString();
@@ -126,12 +195,19 @@ QJsonObject audit(QWidget* window, const QString& name)
         if (auto* button = qobject_cast<QAbstractButton*>(widget)) text = button->text();
         if (auto* edit = qobject_cast<QLineEdit*>(widget)) text = edit->text();
         if (auto* combo = qobject_cast<QComboBox*>(widget)) text = combo->currentText();
-        controls.append(QJsonObject{{"widget", id(widget)}, {"parent", id(widget->parentWidget())},
+        QJsonObject control{{"widget", id(widget)}, {"parent", id(widget->parentWidget())},
             {"rect", rectJson(rect)}, {"minimumSizeHint", sizeJson(minimum)}, {"text", text},
             {"inside", inside}, {"belowMinimumHint", below}, {"helper", helper},
             {"surface", titleBar ? "titlebar" : "content"}, {"bounds", rectJson(bounds)},
             {"displayedRect", rectJson(displayed)}, {"scrollClipped", rect != displayed},
-            {"font", widget->font().toString()}});
+            {"font", widget->font().toString()}};
+        if (auto* edit = qobject_cast<QLineEdit*>(widget))
+            if (auto* spin = qobject_cast<QAbstractSpinBox*>(widget->parentWidget())) {
+                control.insert("intrinsicGeometryContract", "native-spin-edit-field");
+                control.insert("nativeFieldInParent", rectJson(spinEditField(spin)));
+                control.insert("textInkSize", sizeJson(edit->fontMetrics().tightBoundingRect(edit->displayText()).size()));
+            }
+        controls.append(control);
         visible.append(widget);
     }
     for (int i = 0; i < visible.size(); ++i) {
@@ -248,6 +324,35 @@ QJsonObject audit(QWidget* window, const QString& name)
     return result;
 }
 
+bool hasEmbeddedControls(QMenu* menu)
+{
+    for (auto* action : menu->actions()) {
+        if (!action->isVisible()) continue;
+        if (auto* widgetAction = qobject_cast<QWidgetAction*>(action))
+            if (widgetAction->defaultWidget()) return true;
+        if (action->menu() && hasEmbeddedControls(action->menu())) return true;
+    }
+    return false;
+}
+
+void captureMenu(QMenu* menu, const QPoint& position, const QString& name)
+{
+    menu->popup(position);
+    settle();
+    failures += !menu->isVisible() || !menu->screen()->availableGeometry().contains(menu->geometry());
+    records.append(audit(menu, name));
+    int index = 0;
+    for (auto* action : menu->actions()) {
+        auto* child = action->menu();
+        if (!action->isVisible() || !child || !hasEmbeddedControls(child)) continue;
+        menu->setActiveAction(action);
+        captureMenu(child, menu->mapToGlobal(menu->actionGeometry(action).topRight()),
+                    name + QStringLiteral("-submenu-%1").arg(index++));
+    }
+    menu->close();
+    settle();
+}
+
 void capture(QWidget* content, const QString& name, std::function<void()> ready = {})
 {
     QPointer<QWidget> originalParent = content->parentWidget();
@@ -268,19 +373,9 @@ void capture(QWidget* content, const QString& name, std::function<void()> ready 
     for (auto* button : content->findChildren<QToolButton*>()) {
         auto* menu = button->menu();
         if (!menu || !button->isVisibleTo(&host)) continue;
-        bool hasOverflow = false;
-        for (auto* action : menu->actions()) {
-            auto* widgets = qobject_cast<QWidgetAction*>(action);
-            hasOverflow |= widgets && widgets->isVisible() && widgets->defaultWidget()
-                && widgets->defaultWidget()->objectName().endsWith(QStringLiteral("OverflowScroll"));
-        }
-        if (!hasOverflow) continue;
-        menu->popup(button->mapToGlobal(QPoint(0, button->height())));
-        settle();
-        failures += !menu->isVisible() || !menu->screen()->availableGeometry().contains(menu->geometry());
-        records.append(audit(menu, name + QStringLiteral("-overflow-") + button->objectName()));
-        menu->close();
-        settle();
+        if (!hasEmbeddedControls(menu)) continue;
+        captureMenu(menu, button->mapToGlobal(QPoint(0, button->height())),
+                    name + QStringLiteral("-menu-") + button->objectName());
     }
     content->hide(); layout->removeWidget(content);
     if (originalDock) originalDock->setWidget(content);
@@ -339,6 +434,8 @@ void runCases(const QString& fixture, const QString& settingsDir)
     capture(rtl.dock()->widget(), "rtl-state", [&] { rtl.focusFit(); });
     RtlInsightWorkbench generic;
     capture(&generic, "workbench");
+    failures += !generic.setViewKind(InsightWorkbenchViewKind::StateTransition);
+    capture(&generic, "workbench-state-empty");
 
     CommandLayerPickerPanel picker;
     // Exercise its real popup and its real screen-clamping code, not a substitute line edit.
@@ -431,6 +528,7 @@ int main(int argc, char** argv)
     if (!root.isEmpty()) { artifactDir = root + QLatin1Char('/') + scale; QDir().mkpath(artifactDir); }
     const QString fixtureDir = qEnvironmentVariable("ZEROSLACK_HIDPI_FIXTURE_DIR", temporary.path());
     QDir().mkpath(fixtureDir);
+    verifyIntrinsicGeometryRejection();
     runCases(fixtureDir + "/dpi.sv", temporary.path());
     const QSet<QString> missingHelpers = encounteredHelpers - observedHelpers;
     failures += missingHelpers.size();

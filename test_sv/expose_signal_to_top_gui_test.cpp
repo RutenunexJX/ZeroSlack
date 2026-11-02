@@ -2,6 +2,8 @@
 #include "mainwindow.h"
 #include <QLabel>
 #include "editoractioncontextservice.h"
+#include "editorfileidentity.h"
+#include "editorcolumnmodecontroller.h"
 #include "editorhoverpopup.h"
 #include "hierarchyservice.h"
 #include "liveinsightscontextview.h"
@@ -16,6 +18,9 @@
 #include "mycodeeditor.h"
 #include "semantic_fixture_records.h"
 #include "semanticindexsnapshot.h"
+#include "slangmanager.h"
+#include "signaltracepanel.h"
+#include "panellayoutcontroller.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "workspaceeditdocumentmanager.h"
@@ -1288,6 +1293,8 @@ void runContextActionRegistryExecutionRegression()
         editor->cursorRect(columnEnd).center());
     const QStringList selectedColumnRows =
         editor->columnSelectionTexts();
+    const auto originalColumnSnapshot = editor->columnModeSnapshotForTest();
+    const QString originalColumnDocument = editor->toPlainText();
     resetApplicationActionExecutionHistory();
     QTest::keyClick(
         editor,
@@ -1323,11 +1330,45 @@ void runContextActionRegistryExecutionRegression()
         Qt::AltModifier);
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.column-before-new" << columnNumberOverrideAccepted << columnNumberShortcutIssues
+        << QApplication::activeModalWidget() << QApplication::activePopupWidget()
+        << QApplication::focusWidget() << editor->columnSelectionActive() << columnNumberToolPanel; }
+        std::printf("%s\n", qPrintable(diagnostic));
+    }
     const bool oldColumnNumberShortcutInactive =
         columnNumberToolPanel
         && !columnNumberToolPanel->isVisible()
         && applicationActionExecutionHistory()
                .lastActionId().isEmpty();
+    if (editor->toPlainText() != originalColumnDocument)
+        editor->undo();
+    check("unbound shortcut probe restores the original document",
+          editor->toPlainText() == originalColumnDocument);
+    window.activateWindow();
+    QApplication::setActiveWindow(&window);
+    editor->setFocus();
+    QTest::keyClick(editor, Qt::Key_Escape);
+    editor->setTextCursor(columnStart);
+    const auto columnModifiers = Qt::ShiftModifier | Qt::AltModifier;
+    QTest::keyClick(editor, Qt::Key_Down, columnModifiers);
+    for (int column = 0; column < QStringLiteral("first").size(); ++column)
+        QTest::keyClick(editor, Qt::Key_Right, columnModifiers);
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.column-restored" << editor->hasFocus()
+            << editor->columnSelectionActive() << editor->columnSelectionTexts() << selectedColumnRows
+            << editor->textCursor().position() << columnStart.position() << columnEnd.position()
+            << originalColumnSnapshot.anchorLine << originalColumnSnapshot.anchorColumn
+            << originalColumnSnapshot.currentLine << originalColumnSnapshot.currentColumn
+            << editor->columnModeSnapshotForTest().anchorLine << editor->columnModeSnapshotForTest().anchorColumn
+            << editor->columnModeSnapshotForTest().currentLine << editor->columnModeSnapshotForTest().currentColumn
+            << (originalColumnDocument == editor->toPlainText()); }
+        std::printf("%s\n", qPrintable(diagnostic));
+    }
+    check("configured column shortcut starts with the original column selection",
+          editor->hasFocus() && editor->columnSelectionTexts() == selectedColumnRows);
     QTest::keyClick(
         editor,
         Qt::Key_C,
@@ -1335,6 +1376,15 @@ void runContextActionRegistryExecutionRegression()
     QCoreApplication::processEvents(
         QEventLoop::AllEvents, 50);
     configureActionShortcutOverrides({{QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23")}});
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.column-after-new" << oldColumnNumberShortcutInactive
+        << (columnNumberToolPanel && columnNumberToolPanel->isVisible())
+        << (columnNumberToolPanel ? columnNumberToolPanel->property("entryActionId") : QVariant())
+        << applicationActionExecutionHistory().lastActionId()
+        << QApplication::activeModalWidget() << QApplication::activePopupWidget() << QApplication::focusWidget(); }
+        std::printf("%s\n", qPrintable(diagnostic));
+    }
     check("Column Number Tool shortcut executes its Registry route",
           columnNumberOverrideAccepted
               && columnNumberShortcutIssues.isEmpty()
@@ -1728,26 +1778,10 @@ void runContextActionRegistryExecutionRegression()
     if (!editor)
         return;
 
-    SemanticSymbolRecord payload =
-        SemanticFixtureRecordBuilder(
-            QStringLiteral("payload"),
-            SymbolTaxonomy::DeclarationKind::Signal)
-            .withFile(insightFile)
-            .withLocalHandle(401)
-            .withLine(2, 9)
-            .withTextSpan(
-                insightSource.indexOf(
-                    QStringLiteral("payload")),
-                7)
-            .withCollectorKind(
-                SymbolTaxonomy::CollectorKind::Logic)
-            .inModule(
-                QStringLiteral(
-                    "context_insight_execution"))
-            .record();
+    SlangManager insightSlang;
+    const QHash<QString, QString> insightContents{{insightFile, insightSource}};
     SemanticIndex::getInstance()->setSnapshot(
-        snapshot({payload},
-                 {{insightFile, insightSource}}));
+        snapshot(insightSlang.extractOverlayWorkspaceSymbolRecords(insightContents), insightContents));
     QTextCursor oldInsightCursor(editor->document());
     oldInsightCursor.setPosition(0);
     editor->setTextCursor(oldInsightCursor);
@@ -1757,27 +1791,20 @@ void runContextActionRegistryExecutionRegression()
             editor,
             QStringLiteral("payload"),
             QStringLiteral("insight.signalKernelGraph"));
-    QDockWidget* contextDock =
-        window.findChild<QDockWidget*>(
-            QStringLiteral("contextWorkspaceDock"));
-    // 0.29.0 lands source insight Actions in the sidebar section instead of a
-    // central tool tab, so the surface to find is the section's own.
-    LiveInsightToolPage* kernelSurface =
-        dynamic_cast<LiveInsightToolPage*>(
-            window.findChild<QWidget*>(
-                QStringLiteral("liveInsightSurface_kernel")));
-    LiveInsightToolPage* kernelTab =
-        dynamic_cast<LiveInsightToolPage*>(
-            window.findChild<QWidget*>(
-                QStringLiteral("liveInsightToolPage.kernel")));
-    LiveInsightsContextView* kernelSection = nullptr;
-    for (QWidget* parent = kernelSurface ? kernelSurface->parentWidget() : nullptr;
-         parent;
-         parent = parent->parentWidget()) {
-        if (auto* section = qobject_cast<LiveInsightsContextView*>(parent)) {
-            kernelSection = section;
-            break;
-        }
+    QWidget* kernelTab = window.findChild<QWidget*>(QStringLiteral("liveInsightToolPage.kernel"));
+    PanelLayoutController* panels = nullptr;
+    for (auto* child : window.children())
+        if (auto* candidate = dynamic_cast<PanelLayoutController*>(child)) panels = candidate;
+    auto* kernelSurface = panels && panels->drawerContent()
+        ? panels->drawerContent()->findChild<SignalTracePanel*>(QStringLiteral("signalTracePanel")) : nullptr;
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.kernel" << insightAction.menuShown << insightAction.triggered
+            << insightAction.actionId << insightAction.executionRoute << applicationActionExecutionHistory().lastActionId()
+            << (panels ? panels->activeBottomPanelId() : QString()) << (panels && panels->isPanelOpen("hotspot"))
+            << kernelSurface << (kernelSurface && kernelSurface->isVisible())
+            << (kernelSurface ? kernelSurface->saveViewState() : QVariantMap()); }
+        std::printf("%s\n", qPrintable(diagnostic));
     }
     QDockWidget* legacyKernelDock =
         window.findChild<QDockWidget*>(
@@ -1797,14 +1824,14 @@ void runContextActionRegistryExecutionRegression()
                      .lastActionId()
                      == QStringLiteral(
                          "insight.signalKernelGraph")
-              && contextDock
-              && contextDock->isVisible()
-              && kernelSurface
-              && kernelSurface->kind()
-                     == LiveInsightKind::Kernel
+              && panels && panels->isPanelOpen(QStringLiteral("hotspot"))
+              && panels->activeBottomPanelId() == QStringLiteral("hotspot")
+              && kernelSurface && kernelSurface->isVisible()
+              && kernelSurface->saveViewState().value("mode").toInt() == 0
               && kernelTab == nullptr
-              && kernelSection
-              && !kernelSection->saveState().value("target").toMap().isEmpty()
+              && kernelSurface->currentObject().symbol.symbolName == QStringLiteral("payload")
+              && EditorFileIdentity::same(kernelSurface->currentObject().symbol.fileName, insightFile)
+              && kernelSurface->currentObject().symbol.ownerScope.contains(QStringLiteral("context_insight_execution"))
               && legacyKernelDock == nullptr);
 
     const QString queueFile = temp.filePath(
@@ -2241,8 +2268,8 @@ void runCommandLayerCompletionPopupRegression()
     const auto restoreShortcuts = qScopeGuard([&] { configureActionShortcutOverrides(previousShortcuts); });
     auto testShortcuts = previousShortcuts;
     testShortcuts.insert(QString::fromLatin1(ActionIds::ViewCommandMode), QStringLiteral("F23"));
-    configureActionShortcutOverrides(testShortcuts);
     MainWindow window;
+    configureActionShortcutOverrides(testShortcuts);
     window.resize(900, 600);
     window.show();
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
@@ -2292,8 +2319,20 @@ void runCommandLayerCompletionPopupRegression()
           !completionPopup || !completionPopup->isVisible());
     const QString sourceAfterTab = editor->toPlainText();
 
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.com-before" << QApplication::activeWindow() << QApplication::focusWidget()
+        << QApplication::activeModalWidget() << QApplication::activePopupWidget() << editor->hasFocus(); }
+        std::printf("%s\n", qPrintable(diagnostic));
+    }
     QTest::keyPress(editor, Qt::Key_F23);
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    {
+        QString diagnostic;
+        { QDebug output(&diagnostic); output << "diag.com-after" << commandPanel->isVisible() << QApplication::focusWidget()
+        << QApplication::activeModalWidget() << QApplication::activePopupWidget(); }
+        std::printf("%s\n", qPrintable(diagnostic));
+    }
     check("COM opens without a legacy editor completion popup",
           (!completionPopup || !completionPopup->isVisible())
               && commandPanel->isVisible());

@@ -45,6 +45,8 @@
 #include <QStyleOptionViewItem>
 #include <QTemporaryDir>
 #include <QTimer>
+#include <QDeadlineTimer>
+#include <QEventLoop>
 #include <QtTest>
 #ifdef SIMDOCK_WITH_APPSUITE
 #include "support/suiteintegration.h"
@@ -59,6 +61,31 @@
 #include <QUrlQuery>
 #endif
 using namespace simdock;
+
+static bool waitForCompilation(MainWindow& window, const QString& root, const QDeadlineTimer& deadline)
+{
+    auto* workbench = window.findChild<Workbench*>();
+    auto* dut = window.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
+    if (!workbench || !dut) return false;
+    const auto ready = [&] {
+        const auto projects = loadProjects(root);
+        return projects.size() == 1
+            && !workbench->automationProjectState(projects.first()).value("compilationPending").toBool();
+    };
+    if (ready()) return true;
+    if (deadline.hasExpired()) return false;
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    // refreshCompilationOrder rebuilds the DUT model after applying the plan.
+    // A queued observation runs after updateControls, without resubmitting work.
+    QObject::connect(dut->model(), &QAbstractItemModel::rowsInserted, &loop,
+        [&] { if (ready()) loop.quit(); }, Qt::QueuedConnection);
+    timeout.start(int(deadline.remainingTime()));
+    loop.exec();
+    return ready();
+}
 
 static simdock::Module semanticModule(const QByteArray& content, const QString& file, const QString& root = {})
 {
@@ -269,6 +296,7 @@ private slots:
         MainWindow w;
         w.show();
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
+        const QDeadlineTimer operationDeadline(15000);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
         QVERIFY(w.createProject(QStringLiteral("Counter demo")));
@@ -292,6 +320,11 @@ private slots:
         QString error;
         const auto module = semanticModule(input, workspace.filePath("counter.sv"), workspace.path());
         QVERIFY2(w.createDemo(suggestedTbOptions(module), &error), qPrintable(error));
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.demo-before-run" << w.findChild<Workbench*>()->automationProjectState(project);
+        QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.demo-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
         QVERIFY(!w.createDemo(suggestedTbOptions(module), &error));
         w.openWorkspace(workspace.path());
@@ -403,13 +436,16 @@ private slots:
         source.close();
         MainWindow w;
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
+        const QDeadlineTimer operationDeadline(15000);
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 15000);
         QVERIFY(w.createProject(QStringLiteral("Named types")));
         auto* model = qobject_cast<QStandardItemModel*>(w.findChild<QListView*>(QStringLiteral("sourceList"))->model());
         QVERIFY(model);
         for (int row = 0; row < model->rowCount(); ++row)
-            if (model->item(row)->text().contains(QStringLiteral("dut.sv"))) model->item(row)->setCheckState(Qt::Checked);
+            if (model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("dut.sv")
+                || model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("types.sv"))
+                model->item(row)->setCheckState(Qt::Checked);
         const auto module = semanticModule(input, workspace.filePath("dut.sv"), workspace.path());
         TestbenchDialog dialog(module, 1000, &w);
         QVERIFY(dialog.content().contains(QStringLiteral("import demo_types::*;")));
@@ -419,6 +455,11 @@ private slots:
         QCOMPARE(dialog.result(), int(QDialog::Accepted));
         QString error;
         QVERIFY2(w.createDemo(dialog.options(), &error), qPrintable(error));
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.demo-before-run" << w.findChild<Workbench*>()->automationProjectState(project);
+        QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.demo-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
         const auto projects = loadProjects(workspace.path());
         QCOMPARE(projects.size(), 1);
@@ -522,10 +563,25 @@ private slots:
             dialog->findChild<ElaLineEdit*>(QStringLiteral("projectNameInput"))->setText(QStringLiteral("Dependencies"));
             dialog->findChild<ElaPushButton*>(QStringLiteral("confirmCreateProject"))->click();
         });
+        const QDeadlineTimer selectionDeadline(2000);
         const auto rect = list->visualRect(findSource(QStringLiteral("a_top.sv"))->index());
         QTest::mouseClick(list->viewport(), Qt::LeftButton, Qt::NoModifier, QPoint(rect.left()+18, rect.center().y()));
         QTRY_COMPARE_WITH_TIMEOUT(loadProjects(workspace.path()).size(), 1, 2000);
-        const QStringList expected{QStringLiteral("types.sv"), QStringLiteral("child.sv"), QStringLiteral("a_top.sv")};
+        // The historical case name is retained. Since 0.32.9, inputs are explicit;
+        // package references determine compilation order, not module instances.
+        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
+        const auto missing = w.findChild<Workbench*>()->automationProjectState(loadProjects(workspace.path()).first());
+        QVERIFY(missing.value("compilationDiagnostics").toString().contains("child"));
+        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
+        QCOMPARE(findSource(QStringLiteral("types.sv"))->checkState(), Qt::Unchecked);
+        findSource(QStringLiteral("child.sv"))->setCheckState(Qt::Checked);
+        findSource(QStringLiteral("types.sv"))->setCheckState(Qt::Checked);
+        const QStringList expected{QStringLiteral("a_top.sv"), QStringLiteral("types.sv"), QStringLiteral("child.sv")};
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.dependencies-before-order" << w.findChild<Workbench*>()->automationProjectState(project);
+        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
+        for (const auto& project : loadProjects(workspace.path()))
+            qInfo() << "diag.dependencies-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
         QCOMPARE(loadProjects(workspace.path()).first().sources, expected);
         QCOMPARE(dut->currentData().toStringList(), (QStringList{QStringLiteral("a_top.sv"), QStringLiteral("top")}));
         for (const auto& path : expected) QCOMPARE(findSource(path)->checkState(), Qt::Checked);
@@ -537,6 +593,9 @@ private slots:
         QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
         dut->setCurrentIndex(dut->findData(QStringList{QStringLiteral("other.sv"), QStringLiteral("other")}));
         dut->setCurrentIndex(dut->findData(QStringList{QStringLiteral("a_top.sv"), QStringLiteral("top")}));
+        QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Unchecked);
+        findSource(QStringLiteral("child.sv"))->setCheckState(Qt::Checked);
+        QVERIFY(waitForCompilation(w, workspace.path(), selectionDeadline));
         QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Checked);
         findSource(QStringLiteral("a_top.sv"))->setCheckState(Qt::Unchecked);
         QCOMPARE(findSource(QStringLiteral("child.sv"))->checkState(), Qt::Checked);

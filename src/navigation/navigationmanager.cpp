@@ -139,10 +139,10 @@ void NavigationManager::refreshDesignHierarchy(bool force)
     const bool refreshWidget = navigationWidget
         && (changed || force || !designHierarchyWidgetValid);
 
-    if (refreshWidget) {
-        navigationWidget->updateDesignHierarchy(caches.designHierarchy);
-        designHierarchyWidgetValid = true;
-    }
+    if (!refreshWidget)
+        return;
+    navigationWidget->updateDesignHierarchy(caches.designHierarchy);
+    designHierarchyWidgetValid = true;
 
     emit dataRefreshed(DesignHierarchyView);
     SemanticAnalysisTelemetry telemetry = semanticAnalysisContext;

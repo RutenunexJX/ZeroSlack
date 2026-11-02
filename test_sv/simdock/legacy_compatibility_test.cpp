@@ -83,17 +83,21 @@ int sessionPhase(const QString& mode, const QString& workspace, const QString& p
     if (host->saveState().value("legacyLayout").toMap().size() != 2) return 16;
     window.resizeDocks({controller->dockWidget()}, {1100}, Qt::Horizontal);
     QTest::qWait(150);
-    auto* options = panel->findChild<QToolButton*>("waveOptionsToggle");
+    auto* options = window.findChild<QPushButton*>("projectsDisclosure");
     if (!options || panel->findChild<QWidget*>("workbenchSection")) return 17;
     if (mode == "save") {
-        options->setChecked(true);
+        options->setChecked(false);
         QTest::qWait(60);
-        const auto state = host->saveState();
+        auto state = host->saveState();
+        state.insert("test/projectsExpanded", options->isChecked());
         if (!write(profile + "/expected-state.json", QJsonDocument(QJsonObject::fromVariantMap(state)).toJson())) return 18;
     } else {
-        const auto expected = SimDockState::decode(object(profile + "/expected-state.json").toVariantMap());
+        const auto expectedState = object(profile + "/expected-state.json").toVariantMap();
+        const auto expected = SimDockState::decode(expectedState);
         const auto actual = SimDockState::decode(host->saveState());
-        for (const auto& key : {"layout/waveOptionsExpanded", "projectId", "preferences", "legacyLayout"}) {
+        if (!expectedState.contains("test/projectsExpanded")
+            || options->isChecked() != expectedState.value("test/projectsExpanded").toBool()) return 19;
+        for (const auto& key : {"projectId", "preferences", "legacyLayout"}) {
             if (actual.value(key) != expected.value(key)) {
                 qCritical() << key << actual.value(key) << expected.value(key);
                 return 19;
@@ -283,6 +287,8 @@ private slots:
             if (!complete) { process.kill(); process.waitForFinished(5000); }
             const auto log = process.readAll();
             QVERIFY(write(profile + '/' + phase + ".log", log));
+            qInfo() << "diag.host-child" << phase << "complete" << complete
+                << "status" << process.exitStatus() << "code" << process.exitCode() << "error" << process.errorString();
             QVERIFY2(complete && process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0, log.constData());
         }
         const auto report = qEnvironmentVariable("SIMDOCK_LEGACY_REPORT");

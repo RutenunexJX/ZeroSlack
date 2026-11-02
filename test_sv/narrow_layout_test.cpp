@@ -1,5 +1,6 @@
 #include "narrow_layout_fixture.h"
 #include "compactlayout.h"
+#include "insightvisualstyle.h"
 #include "applicationthememanager.h"
 #include "testuistyle.h"
 #include "signaltracemodels.h"
@@ -10,6 +11,7 @@
 #include "live_insight_test_utils.h"
 #include "rtlinsightworkbench.h"
 #include "contextdockhost.h"
+#include "contextworkspacecontroller.h"
 #include "mainwindow.h"
 #include "analysisscheduler.h"
 #include "crashrecoveryservice.h"
@@ -36,6 +38,7 @@
 #include <QtTest>
 #include <QAbstractItemView>
 #include <QComboBox>
+#include <QElapsedTimer>
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QHeaderView>
@@ -59,6 +62,8 @@
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 #include <QScopeGuard>
+#include <QThreadPool>
+#include <QtConcurrent/QtConcurrentRun>
 
 namespace {
 template<class T>T* owner(QObject* root){
@@ -68,6 +73,88 @@ template<class T>T* owner(QObject* root){
 QRect inRoot(QWidget* widget,QWidget* root){return {widget->mapTo(root,QPoint()),widget->size()};}
 QString label(QWidget* widget){return widget->objectName().isEmpty()?QString::fromLatin1(widget->metaObject()->className()):widget->objectName();}
 QJsonArray strings(const QStringList& values){QJsonArray result;for(const auto& value:values)result.append(value);return result;}
+
+struct MeasurementCosts {
+    qint64 measureNs = 0, recordNs = 0, grabNs = 0, saveNs = 0;
+    int measurements = 0, images = 0, waits = 0;
+    qint64 waitNs = 0, requestedWaitNs = 0;
+    QJsonObject json() const {
+        return {{"measureNs", measureNs}, {"recordNs", recordNs}, {"grabNs", grabNs},
+            {"saveNs", saveNs}, {"measurements", measurements}, {"images", images},
+            {"waitNs", waitNs}, {"requestedWaitNs", requestedWaitNs}, {"waits", waits}};
+    }
+} measurementCosts;
+
+class ImageEvidenceWriter {
+    struct Result { bool saved; qint64 nanoseconds; };
+    QThreadPool pool;
+    QFuture<Result> pending;
+    QString pendingPath;
+    QString failure;
+public:
+    qint64 saveNs = 0;
+    ImageEvidenceWriter() { pool.setMaxThreadCount(1); }
+    ~ImageEvidenceWriter() { finish(); }
+    bool finish() {
+        if (!pendingPath.isEmpty()) {
+            const auto result = pending.result();
+            saveNs += result.nanoseconds;
+            if (!result.saved) failure = "Cannot save screenshot: " + pendingPath;
+            pendingPath.clear();
+        }
+        return failure.isEmpty();
+    }
+    QString error() const { return failure; }
+    bool enqueue(QImage image, const QString& path) {
+        if (!finish()) return false;
+        pendingPath = path;
+        pending = QtConcurrent::run(&pool, [image = std::move(image), path] {
+            QElapsedTimer timer; timer.start();
+            const bool saved = image.save(path);
+            return Result{saved, timer.nsecsElapsed()};
+        });
+        return true;
+    }
+};
+std::unique_ptr<ImageEvidenceWriter> imageEvidence;
+
+
+struct WaitCost {
+    QElapsedTimer timer;
+    explicit WaitCost(int milliseconds) {
+        timer.start();
+        measurementCosts.requestedWaitNs += qint64(milliseconds) * 1000000;
+        ++measurementCosts.waits;
+    }
+    ~WaitCost() { measurementCosts.waitNs += timer.nsecsElapsed(); }
+};
+
+struct PhaseCost {
+    QString phase;
+    QElapsedTimer timer;
+    qint64 checkpointNs = 0;
+    void checkpoint(const QString& part) {
+        const qint64 now = timer.nsecsElapsed();
+        const QJsonObject row{{"phase", phase + "/" + part}, {"data", QTest::currentDataTag()},
+            {"elapsedNs", now - checkpointNs}};
+        checkpointNs = now;
+        QFile output(qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR") + "/narrow-phase-costs.jsonl");
+        if (output.open(QIODevice::Append))
+            output.write(QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n');
+    }
+    qint64 waitStart = measurementCosts.waitNs;
+    qint64 recordStart = measurementCosts.recordNs;
+    explicit PhaseCost(QString value) : phase(std::move(value)) { timer.start(); }
+    ~PhaseCost() {
+        const QJsonObject row{{"phase", phase}, {"data", QTest::currentDataTag()},
+            {"elapsedNs", timer.nsecsElapsed()},
+            {"waitNs", measurementCosts.waitNs - waitStart},
+            {"recordNs", measurementCosts.recordNs - recordStart}};
+        QFile output(qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR") + "/narrow-phase-costs.jsonl");
+        if (output.open(QIODevice::Append))
+            output.write(QJsonDocument(row).toJson(QJsonDocument::Compact) + '\n');
+    }
+};
 
 struct Measurement {
     QJsonArray controls,views;
@@ -104,6 +191,7 @@ QRect reachableViewport(QWidget* widget,QWidget* root,QJsonArray* ancestors=null
 // lazy tool page's changes to the MainWindow minimum size.
 bool connectionsLayoutSettled(QWidget* window,QScrollArea* scroll)
 {
+    PhaseCost cost(QStringLiteral("connections-layout-settled"));
     class LayoutEvents : public QObject {
     public:
         QWidget* root;
@@ -137,6 +225,8 @@ bool connectionsLayoutSettled(QWidget* window,QScrollArea* scroll)
 
 Measurement measure(QWidget* root,int minimumRows=0)
 {
+    QElapsedTimer cost; cost.start();
+    const auto costScope = qScopeGuard([&] { measurementCosts.measureNs += cost.nsecsElapsed(); ++measurementCosts.measurements; });
     Measurement result;
     QList<QWidget*> controls;
     for(auto* widget:root->findChildren<QWidget*>()){
@@ -168,11 +258,28 @@ Measurement measure(QWidget* root,int minimumRows=0)
         for(auto* other:controls)if(other->parentWidget()==widget->parentWidget() && !rect.intersected(inRoot(other,root)).isEmpty())
             result.failures<<name+": overlaps "+label(other);
         controls<<widget;
-        result.controls.append(QJsonObject{{"name",name},{"x",rect.x()},{"y",rect.y()},{"width",rect.width()},{"height",rect.height()},
+        QJsonObject control{{"name",name},{"x",rect.x()},{"y",rect.y()},{"width",rect.width()},{"height",rect.height()},
             {"minimumWidth",widget->minimumSizeHint().width()},{"minimumHeight",widget->minimumSizeHint().height()},
             {"iconOnly",icon},{"accessibleName",widget->accessibleName()},{"tooltip",widget->toolTip()},
             {"reachableWidth",reachable.width()},{"reachableHeight",reachable.height()},
-            {"clippingAncestors",reachable==widget->rect()?QJsonArray():ancestors}});
+            {"clippingAncestors",reachable==widget->rect()?QJsonArray():ancestors}};
+        if (button && widget->width() < widget->minimumSizeHint().width()) {
+            auto* parent = widget->parentWidget();
+            auto* layout = parent ? parent->layout() : nullptr;
+            auto* item = layout ? layout->itemAt(layout->indexOf(widget)) : nullptr;
+            control.insert("intrinsicWidthDiagnostic", QJsonObject{
+                {"parent", parent ? parent->objectName() : QString()},
+                {"parentWidth", parent ? parent->width() : -1},
+                {"sizeHintWidth", widget->sizeHint().width()},
+                {"explicitMinimumWidth", widget->minimumWidth()},
+                {"explicitMaximumWidth", widget->maximumWidth()},
+                {"layoutWidth", layout ? layout->geometry().width() : -1},
+                {"layoutMinimumWidth", layout ? layout->minimumSize().width() : -1},
+                {"itemMinimumWidth", item ? item->minimumSize().width() : -1},
+                {"itemSizeHintWidth", item ? item->sizeHint().width() : -1},
+                {"itemMaximumWidth", item ? item->maximumSize().width() : -1}});
+        }
+        result.controls.append(control);
     }
     static const QStringList readableLabels={"instancePairConnectionHeading","instancePairConnectionState",
         "instancePairLeftInstancePath","instancePairRightInstancePath","instancePairLeftModule","instancePairRightModule",
@@ -240,6 +347,8 @@ Measurement measure(QWidget* root,int minimumRows=0)
 
 bool record(QWidget* root,const QString& suffix,const Measurement& measurement,QJsonObject extra={})
 {
+    QElapsedTimer cost; cost.start();
+    const auto costScope = qScopeGuard([&] { measurementCosts.recordNs += cost.nsecsElapsed(); });
     const QString dir=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
     if(dir.isEmpty())return false;
     QDir().mkpath(dir);
@@ -253,11 +362,19 @@ bool record(QWidget* root,const QString& suffix,const Measurement& measurement,Q
     data.insert("platform",QGuiApplication::platformName());
     data.insert("actualUiBackend","ela");
     data.insert("availableWidth",root->screen()->availableGeometry().width());data.insert("availableHeight",root->screen()->availableGeometry().height());
+    data.insert("cumulativeCostsBeforeCapture", measurementCosts.json());
     data.insert("controls",measurement.controls);data.insert("views",measurement.views);data.insert("failures",strings(measurement.failures));
     QFile output(dir+"/narrow-measurements.jsonl");
     if(!output.open(QIODevice::Append))return false;
     output.write(QJsonDocument(data).toJson(QJsonDocument::Compact)+"\n");
-    return root->grab().save(dir+"/"+name+".png");
+    QElapsedTimer captureCost; captureCost.start();
+    const QPixmap captured = root->grab();
+    measurementCosts.grabNs += captureCost.nsecsElapsed();
+    // Capture stays on the GUI thread; one bounded write overlaps existing waits.
+    const bool queued = imageEvidence->enqueue(captured.toImage(), dir+"/"+name+".png");
+    measurementCosts.saveNs = imageEvidence->saveNs;
+    ++measurementCosts.images;
+    return queued;
 }
 
 QJsonObject controlState(QWidget* root)
@@ -282,12 +399,12 @@ bool recordOverflow(QWidget* root,const QString& suffix,QStringList& failures)
         for(auto* action:menu->actions())if(qobject_cast<QWidgetAction*>(action)
             && action->objectName().endsWith("Overflow") && action->isVisible())overflow=true;
         if(!overflow)continue;
-        menu->popup(button->mapToGlobal(QPoint(0,button->height())));QTest::qWait(15);
+        menu->popup(button->mapToGlobal(QPoint(0,button->height())));{ WaitCost waitCost(15); QTest::qWait(15); }
         auto sample=measure(menu);
         if(!menu->screen()->availableGeometry().contains(menu->geometry()))sample.failures<<label(button)+": overflow menu outside available screen";
         failures+=sample.failures;
         const bool saved=record(menu,suffix+'-'+button->objectName(),sample,{{"host","actual toolbar overflow"}});
-        menu->close();QTest::qWait(5);
+        menu->close();{ WaitCost waitCost(5); QTest::qWait(5); }
         if(!saved)return false;
     }
     return true;
@@ -316,11 +433,83 @@ class NarrowLayoutMatrix final:public QObject {
         if(mode==0)panel->findChild<QComboBox*>("traceDirection")->setCurrentIndex(1);
     }
 private slots:
+    void cleanup() {
+        QVERIFY2(imageEvidence->finish(), qPrintable(imageEvidence->error()));
+        measurementCosts.saveNs = imageEvidence->saveNs;
+    }
+    void cleanupTestCase() {
+        QVERIFY2(imageEvidence->finish(), qPrintable(imageEvidence->error()));
+        measurementCosts.saveNs = imageEvidence->saveNs;
+        QFile costs(qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR") + "/narrow-costs.json");
+        QVERIFY(costs.open(QIODevice::WriteOnly));
+        const QByteArray report = QJsonDocument(measurementCosts.json()).toJson();
+        QCOMPARE(costs.write(report), report.size());
+        imageEvidence.reset();
+    }
     void initTestCase(){
+        imageEvidence = std::make_unique<ImageEvidenceWriter>();
+        QTemporaryDir encoding;
+        QVERIFY(encoding.isValid());
+        QImage pixels(7, 5, QImage::Format_ARGB32_Premultiplied);
+        pixels.fill(QColor(33, 127, 211, 179));
+        pixels.setDevicePixelRatio(1.5);
+        const auto pixmap = QPixmap::fromImage(pixels);
+        const auto original = encoding.filePath("original.png");
+        const auto queued = encoding.filePath("queued.png");
+        QVERIFY(pixmap.save(original));
+        ImageEvidenceWriter checked;
+        QVERIFY(checked.enqueue(pixmap.toImage(), queued));
+        QVERIFY2(checked.finish(), qPrintable(checked.error()));
+        QFile before(original), after(queued);
+        QVERIFY(before.open(QIODevice::ReadOnly));
+        QVERIFY(after.open(QIODevice::ReadOnly));
+        QCOMPARE(after.readAll(), before.readAll());
+        QCOMPARE(QImage(queued), QImage(original));
+        const auto missing = encoding.filePath("missing/screenshot.png");
+        QVERIFY(checked.enqueue(pixmap.toImage(), missing));
+        QVERIFY(!checked.finish());
+        QVERIFY(checked.error().contains(missing));
         QVERIFY(fixture.build());
         const qreal requested=qEnvironmentVariable("QT_SCALE_FACTOR","1").toDouble();
         QCOMPARE(QGuiApplication::primaryScreen()->devicePixelRatio(),requested);
     }
+private:
+    void overflowRestorationCommitsIntrinsicWidths() {
+        QWidget host;
+        auto* row = new QHBoxLayout;
+        QList<QPushButton*> buttons;
+        int fullWidth = 8;
+        for (const auto* text : {"Jump", "Focus", "Reveal"}) {
+            auto* button = UiControls::pushButton(QString::fromLatin1(text), &host);
+            InsightVisualStyle::applyToolbarButton(button);
+            row->addWidget(button);
+            buttons.append(button);
+            fullWidth += button->minimumSizeHint().width();
+        }
+        auto* toolbar = new CompactOverflowToolbar(row, QStringLiteral("restoration"), &host);
+        host.resize(fullWidth, 100);
+        toolbar->setGeometry(0, 0, fullWidth, 40);
+        host.show();
+        QCoreApplication::processEvents();
+        toolbar->setFixedWidth(fullWidth - 20);
+        QCoreApplication::processEvents();
+        auto* more = toolbar->findChild<QToolButton*>(QStringLiteral("restorationMore"));
+        QVERIFY(more && more->isVisible());
+        QVERIFY(buttons.last()->parentWidget() != toolbar);
+        toolbar->setFixedWidth(fullWidth);
+        // Dispatch the queued owner arrangement without relying on a later
+        // LayoutRequest to repair geometry after its visibility changes.
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+        QVERIFY(more->isHidden());
+        for (auto* button : buttons) {
+            QCOMPARE(button->parentWidget(), toolbar);
+            qInfo() << "overflow-restoration" << button->text() << "actualWidth" << button->width()
+                    << "intrinsicWidth" << button->minimumSizeHint().width();
+            QVERIFY(button->width() >= button->minimumSizeHint().width());
+        }
+    }
+
+private slots:
     void stableGeometryRejectsClipping_data(){
         QTest::addColumn<bool>("vertical");
         QTest::newRow("right-one-logical-pixel")<<false;
@@ -380,7 +569,7 @@ private slots:
         role->setFocus();QVERIFY(role->hasFocus());
         const auto reading=panel->saveViewState();const auto selected=panel->selectedObject().id();
         auto* root=panel->traceTree(SignalTraceDirection::Upstream)->topLevelItem(0);
-        host.setFixedWidth(220);QTest::qWait(20);
+        host.setFixedWidth(220);{ WaitCost waitCost(20); QTest::qWait(20); }
         auto* compactRole=panel->findChild<QToolButton*>("traceCompactRole");
         qInfo()<<"role focus"<<role->currentIndex()<<role->currentText()<<role->size()<<role->minimumSizeHint()
             <<"compact visible"<<(compactRole && compactRole->isVisible())<<"focused"<<QApplication::focusWidget();
@@ -391,22 +580,22 @@ private slots:
         QCOMPARE(panel->traceTree(SignalTraceDirection::Upstream)->topLevelItem(0),root);
         QVERIFY(compactRole->menu()->actions().last()->isChecked());
         compactRole->menu()->actions().at(0)->trigger();QCOMPARE(role->currentIndex(),0);
-        compactRole->setFocus();host.setFixedWidth(480);QTest::qWait(20);QVERIFY(role->hasFocus());
-        host.setFixedWidth(220);QTest::qWait(20);QCOMPARE(details->toolButtonStyle(),Qt::ToolButtonIconOnly);
+        compactRole->setFocus();host.setFixedWidth(480);{ WaitCost waitCost(20); QTest::qWait(20); }QVERIFY(role->hasFocus());
+        host.setFixedWidth(220);{ WaitCost waitCost(20); QTest::qWait(20); }QCOMPARE(details->toolButtonStyle(),Qt::ToolButtonIconOnly);
         QCOMPARE(details->accessibleName(),QString("References"));QVERIFY(details->toolTip().contains("References"));
         details->setFocus();QTest::keyClick(details,Qt::Key_Space);QVERIFY(details->isChecked());
-        QTest::qWait(10);
+        { WaitCost waitCost(10); QTest::qWait(10); }
         QVERIFY(panel->findChild<QTreeWidget*>("traceReferences")->isVisible());
         auto sample=measure(panel,4);failures+=sample.failures;QVERIFY(record(panel,"filtered-references",sample));
         QTest::keyClick(details,Qt::Key_Space);QVERIFY(!details->isChecked());
         bool expanded=false;panel->setMainAreaHandler([&](bool value){expanded=value;});
-        panel->setHeatmapMode(false);QTest::qWait(20);
+        panel->setHeatmapMode(false);{ WaitCost waitCost(20); QTest::qWait(20); }
         auto* direction=panel->findChild<QComboBox*>("traceDirection");
         auto* compactDirection=panel->findChild<QToolButton*>("traceCompactDirection");QVERIFY(compactDirection && compactDirection->isVisible());
         compactDirection->menu()->actions().at(1)->trigger();QCOMPARE(direction->currentIndex(),1);QVERIFY(SignalTraceTest::settled(*panel));
         auto* overflow=panel->findChild<QAction*>("traceMainAreaOverflow");QVERIFY(overflow && overflow->isVisible());overflow->trigger();QVERIFY(expanded);
         auto* moreButton=panel->findChild<QToolButton*>("traceMore");QVERIFY(moreButton);
-        moreButton->menu()->popup(moreButton->mapToGlobal(QPoint(0,moreButton->height())));QTest::qWait(10);
+        moreButton->menu()->popup(moreButton->mapToGlobal(QPoint(0,moreButton->height())));{ WaitCost waitCost(10); QTest::qWait(10); }
         QVERIFY(panel->screen()->availableGeometry().contains(moreButton->menu()->geometry()));moreButton->menu()->close();
         auto changed=fixture.context;changed.currentSourceHashes[fixture.file]=SemanticSignalRoleEvidence::sourceHash("changed");panel->setContext(changed);
         QVERIFY(status->isVisible() && status->text().contains("changed",Qt::CaseInsensitive));
@@ -427,7 +616,7 @@ private slots:
         panel.showForSymbol("core",paged.file,"top");QVERIFY(SignalTraceTest::settled(panel));panel.setHeatmapMode(true);
         auto* status=panel.findChild<QLabel*>("traceStatus");QVERIFY(status && status->text().contains("partial",Qt::CaseInsensitive));
         QVERIFY(!panel.heatModel()->isComplete());
-        panel.focusInspector();QTest::qWait(10);
+        panel.focusInspector();{ WaitCost waitCost(10); QTest::qWait(10); }
         auto sample=measure(&panel,4);QStringList failures=sample.failures;QVERIFY(record(&panel,"partial",sample));
         QPushButton* more=nullptr;for(auto* button:panel.findChildren<QPushButton*>())if(button->text()=="Load more references")more=button;
         QVERIFY(more);const int initial=panel.heatModel()->references().size();
@@ -438,7 +627,7 @@ private slots:
         }
         QVERIFY(panel.heatModel()->isComplete());QVERIFY(panel.heatModel()->references().size()>initial);
         const int complete=panel.heatModel()->references().size();
-        panel.setFixedWidth(480);QTest::qWait(10);panel.setFixedWidth(220);QTest::qWait(10);
+        panel.setFixedWidth(480);{ WaitCost waitCost(10); QTest::qWait(10); }panel.setFixedWidth(220);{ WaitCost waitCost(10); QTest::qWait(10); }
         QCOMPARE(panel.heatModel()->references().size(),complete);QVERIFY(panel.heatModel()->isComplete());
         SignalTraceTest::Fixture uncertain;
         QVERIFY(uncertain.build("module child(inout wire p); endmodule\nmodule top(inout wire a,b); alias a=b; child u(.p(a)); endmodule\n"));
@@ -451,31 +640,31 @@ private slots:
     void shortFilterPopup(){
         SignalTracePanel panel;panel.setFixedSize(220,280);panel.show();configure(&panel,true,1);QVERIFY(SignalTraceTest::settled(panel));
         auto* search=panel.findChild<QLineEdit*>("traceFilter");QVERIFY(search && search->isVisible());search->setText("references");search->setFocus();
-        panel.setFixedHeight(160);QTest::qWait(20);
+        panel.setFixedHeight(160);{ WaitCost waitCost(20); QTest::qWait(20); }
         auto* more=panel.findChild<QToolButton*>("traceMore");auto* filter=panel.findChild<QMenu*>("traceFilterMenu");
         QVERIFY(more && filter && filter->menuAction()->isVisible());QVERIFY(more->hasFocus());QVERIFY(!search->isVisible());
-        filter->popup(more->mapToGlobal(QPoint(0,more->height())));QTest::qWait(20);
+        filter->popup(more->mapToGlobal(QPoint(0,more->height())));{ WaitCost waitCost(20); QTest::qWait(20); }
         QVERIFY(search->isVisible() && search->hasFocus());QVERIFY(search->width()>=search->minimumSizeHint().width());
         QVERIFY(panel.screen()->availableGeometry().contains(filter->geometry()));
         QTest::keyClick(search,Qt::Key_A,Qt::ControlModifier);QTest::keyClicks(search,"original");QCOMPARE(search->text(),QString("original"));
-        panel.setFixedHeight(280);QTest::qWait(20);QVERIFY(search->isVisible() && search->hasFocus());
+        panel.setFixedHeight(280);{ WaitCost waitCost(20); QTest::qWait(20); }QVERIFY(search->isVisible() && search->hasFocus());
         QCOMPARE(search->text(),QString("original"));QVERIFY(!filter->menuAction()->isVisible());filter->close();
         const auto sample=measure(&panel);QVERIFY(record(&panel,"restored-from-menu",sample));QVERIFY2(sample.failures.isEmpty(),qPrintable(sample.failures.join('\n')));
     }
     void relocatedControlsKeepTheirState(){
         ScopedSearchPanel search;
-        search.setFixedSize(900,280);search.show();QTest::qWait(20);
+        search.setFixedSize(900,280);search.show();{ WaitCost waitCost(20); QTest::qWait(20); }
         auto* query=search.findChild<QLineEdit*>("scopedSearchQueryEdit");QVERIFY(query);
         query->setText("complete query with spaces");
         auto* scope=search.findChild<QComboBox*>("scopedSearchScopeCombo");QVERIFY(scope);
         scope->setCurrentIndex(2);scope->setFocus();QVERIFY(scope->hasFocus());
-        search.setFixedWidth(220);QTest::qWait(20);
+        search.setFixedWidth(220);{ WaitCost waitCost(20); QTest::qWait(20); }
         auto* more=search.findChild<QToolButton*>("scopedSearchMore");QVERIFY(more && more->isVisible());
         QVERIFY(more->hasFocus());QCOMPARE(scope->currentIndex(),2);QCOMPARE(query->text(),QString("complete query with spaces"));
-        more->menu()->popup(more->mapToGlobal(QPoint(0,more->height())));QTest::qWait(20);
+        more->menu()->popup(more->mapToGlobal(QPoint(0,more->height())));{ WaitCost waitCost(20); QTest::qWait(20); }
         QVERIFY(scope->isVisible());QVERIFY(scope->width()>=scope->minimumSizeHint().width());
         scope->setCurrentIndex(1);scope->setFocus();
-        more->menu()->close();more->setFocus();search.setFixedWidth(900);QTest::qWait(20);
+        more->menu()->close();more->setFocus();search.setFixedWidth(900);{ WaitCost waitCost(20); QTest::qWait(20); }
         QCOMPARE(scope->currentIndex(),1);QVERIFY(scope->isVisibleTo(&search));QVERIFY(scope->hasFocus());
         QCOMPARE(query->text(),QString("complete query with spaces"));
 
@@ -483,13 +672,13 @@ private slots:
         RtlConnectionTransformRequest defaults;
         edit.beginConnectionTransform(42,"top.instance_with_a_complete_long_name",defaults,true);
         RtlHighRiskEditPanelOutcome outcome;outcome.panelState=RtlHighRiskEditPanelState::Editing;
-        outcome.canPreview=true;outcome.canCancel=true;edit.presentOutcome(outcome);QTest::qWait(20);
+        outcome.canPreview=true;outcome.canCancel=true;edit.presentOutcome(outcome);{ WaitCost waitCost(20); QTest::qWait(20); }
         edit.setConnectionOptions(true,true,RtlMissingPortConnectionPolicy::ConnectSameNamedSignal,
             RtlExplicitCastPolicy::InsertWhenRequired,true,true);
         QSignalSpy changed(&edit,&RtlHighRiskEditPanel::draftChanged);
         QStringList failures;
         for(const QSize size:{QSize(220,160),QSize(480,280),QSize(220,280)}){
-            edit.setFixedSize(size);QTest::qWait(20);
+            edit.setFixedSize(size);{ WaitCost waitCost(20); QTest::qWait(20); }
             QCOMPARE(edit.sessionId(),std::uint64_t(42));QCOMPARE(edit.state(),RtlHighRiskEditPanelState::Editing);
             const auto draft=edit.draft();QVERIFY(draft.convertOrderedToNamed && draft.addMissingPorts && draft.removeUnknownPorts && draft.synchronizeAllInstances);
             QCOMPARE(draft.missingPortPolicy,RtlMissingPortConnectionPolicy::ConnectSameNamedSignal);
@@ -502,7 +691,7 @@ private slots:
         auto* preview=edit.findChild<QPushButton*>("rtlHighRiskPreviewButton");QVERIFY(preview);
         QSignalSpy requested(&edit,&RtlHighRiskEditPanel::previewRequested);
         auto* actions=edit.findChild<QToolButton*>("rtlHighRiskActionsMore");QVERIFY(actions);
-        actions->menu()->popup(actions->mapToGlobal(QPoint(0,actions->height())));QTest::qWait(20);
+        actions->menu()->popup(actions->mapToGlobal(QPoint(0,actions->height())));{ WaitCost waitCost(20); QTest::qWait(20); }
         QPushButton* previous=nullptr;
         for(const auto* name:{"rtlHighRiskConfirmButton","rtlHighRiskCancelButton","rtlHighRiskUndoButton","rtlHighRiskRetireButton"}){
             auto* button=edit.findChild<QPushButton*>(name);QVERIFY(button && button->isVisible());
@@ -513,6 +702,8 @@ private slots:
         QCOMPARE(requested.count(),1);QCOMPARE(requested.first().at(0).toULongLong(),qulonglong(42));
         actions->menu()->close();
         QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n')));
+        overflowRestorationCommitsIntrinsicWidths();
+        realMainWindowInspectorRestoration();
     }
     void signalModes_data(){dimensions(true,true);}
     void signalModes(){
@@ -520,7 +711,7 @@ private slots:
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
         LiveInsightToolPage host(LiveInsightKind::Kernel);host.setFixedSize(width,height);host.show();
         auto* panel=host.traceSurface();QVERIFY(panel);configure(panel,populated,modeIndex);
-        QVERIFY(SignalTraceTest::settled(*panel));QTest::qWait(10);
+        QVERIFY(SignalTraceTest::settled(*panel));{ WaitCost waitCost(10); QTest::qWait(10); }
         QCOMPARE(panel->width(),width);
         if(populated){
             QVERIFY(panel->currentObject().isValid());
@@ -532,13 +723,13 @@ private slots:
         QVERIFY(record(panel,"view",sample,{{"mode",modeIndex},{"populated",populated},{"requestedHeight",height}}));
         if(width==220 || width==480){
             const auto rootBefore=panel->currentObject().id();
-            panel->focusZoomIn();QTest::qWait(10);sample=measure(panel,height==160?2:4);failures+=sample.failures;
+            panel->focusZoomIn();{ WaitCost waitCost(10); QTest::qWait(10); }sample=measure(panel,height==160?2:4);failures+=sample.failures;
             QVERIFY(record(panel,"zoom",sample,{{"mode",modeIndex},{"populated",populated}}));
-            panel->focusZoomOut();if(modeIndex==2)panel->focusFit();QTest::qWait(10);
+            panel->focusZoomOut();if(modeIndex==2)panel->focusFit();{ WaitCost waitCost(10); QTest::qWait(10); }
             QCOMPARE(panel->currentObject().id(),rootBefore);QVERIFY(!panel->busy());
         }
         auto* details=panel->findChild<QToolButton*>("traceDetails");QVERIFY(details);
-        details->click();QTest::qWait(10);QVERIFY(details->isChecked());
+        details->click();{ WaitCost waitCost(10); QTest::qWait(10); }QVERIFY(details->isChecked());
         sample=measure(panel,height==160?2:4);failures+=sample.failures;
         QVERIFY(record(panel,"references",sample,{{"mode",modeIndex},{"populated",populated},{"requestedHeight",height}}));
         details->click();QVERIFY(!details->isChecked());
@@ -546,7 +737,7 @@ private slots:
         auto* tree=panel->traceTree(SignalTraceDirection::Upstream);auto* root=tree->topLevelItem(0);
         int resizeStep=0;
         for(int changed:{480,220,width}){
-            host.setFixedWidth(changed);QTest::qWait(10);
+            host.setFixedWidth(changed);{ WaitCost waitCost(10); QTest::qWait(10); }
             QCOMPARE(panel->selectedObject().id(),object);QCOMPARE(tree->topLevelItem(0),root);
             QCOMPARE(panel->saveViewState(),reading);QVERIFY(!panel->busy());
             sample=measure(panel,height==160?2:4);failures+=sample.failures;
@@ -573,7 +764,7 @@ private slots:
                 context.configureTrace=[&,populated](SignalTracePanel* panel){configure(panel,populated);};return context;});
             QVERIFY(host.addResource(resource,view,true));keys<<resource.stableKey();
         }
-        host.setFixedWidth(width);host.resize(width,640);host.show();QTest::qWait(50);
+        host.setFixedWidth(width);host.resize(width,640);host.show();{ WaitCost waitCost(50); QTest::qWait(50); }
         for(auto* panel:host.findChildren<SignalTracePanel*>())QVERIFY(SignalTraceTest::settled(*panel));
         for(auto* view:host.findChildren<LiveInsightsContextView*>())if(auto* surface=view->surfaceForTest())
             if(auto* workbench=surface->workbenchForTest())if(auto* panel=workbench->rtlSurfaceForTest()){
@@ -593,10 +784,10 @@ private slots:
             QVERIFY(host.setSectionCollapsed(key,true,false));QVERIFY(host.isSectionCollapsed(key));
             QVERIFY(host.setSectionCollapsed(key,false,false));QVERIFY(!host.isSectionCollapsed(key));
         }
-        QTest::qWait(20);sample=measure(&host);failures+=sample.failures;QVERIFY(record(&host,"restored",sample,{{"populated",populated}}));
+        { WaitCost waitCost(20); QTest::qWait(20); }sample=measure(&host);failures+=sample.failures;QVERIFY(record(&host,"restored",sample,{{"populated",populated}}));
         const auto controls=controlState(&host);
         for(int changed:{480,220,width}){
-            host.setFixedWidth(changed);QTest::qWait(20);
+            host.setFixedWidth(changed);{ WaitCost waitCost(20); QTest::qWait(20); }
             QCOMPARE(controlState(&host),controls);
             sample=measure(&host);failures+=sample.failures;
             QVERIFY(record(&host,QString("resize-w%1").arg(changed),sample,{{"populated",populated}}));
@@ -604,8 +795,90 @@ private slots:
         QVERIFY(recordOverflow(&host,"context-options",failures));
         QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n')));
     }
+private:
+    void realMainWindowInspectorRestoration(){
+        QTemporaryDir temporary;
+        qputenv("ZEROSLACK_SESSION_STORAGE_PATH",temporary.filePath("sessions.ini").toUtf8());
+        qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH",temporary.filePath("editing.json").toUtf8());
+        ApplicationThemeManager::instance().setMode(ThemeMode::Light);
+        MainWindow window;
+        window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temporary.filePath("recovery")));
+        window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
+        window.analysisScheduler->setSemanticAnalysisRuntimePolicy(SemanticAnalysisRuntimePolicy{});
+        window.resize(1280,760);window.show();
+        auto* sessions=window.findChild<WorkspaceSessionCoordinator*>();QVERIFY(sessions);
+        QVERIFY(sessions->openWorkspace(fixture.directory.path()));
+        QVERIFY(window.tabManager->openFileInTab(fixture.file));
+        window.analysisScheduler->requestDocumentSemanticRefresh({fixture.file});
+        QTRY_VERIFY_WITH_TIMEOUT(SemanticIndex::getInstance()->snapshotToken().snapshot
+            && !SemanticIndex::getInstance()->snapshotToken().snapshot->getSymbolRecordsByName("next_state",fixture.file).isEmpty(),20000);
+        QTRY_VERIFY_WITH_TIMEOUT(!window.analysisScheduler->isSemanticAnalysisActive(),20000);
+        auto* controller=window.findChild<ContextWorkspaceController*>();QVERIFY(controller);
+        const auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::State,fixture.directory.path());
+        QString error;
+        QVERIFY2(controller->openResource(resource,{ContextSurface::Docked,ContextPersistence::Kept},&error),qPrintable(error));
+        auto* view=qobject_cast<LiveInsightsContextView*>(controller->viewForResource(resource.stableKey()));QVERIFY(view);
+        view->setToolContextSource([&]{
+            LiveInsightToolContext context;
+            context.workspaceId=fixture.directory.path();context.projectId="narrow-layout";
+            context.documentId=fixture.file;context.documentRevision=1;
+            context.semanticRevision=SemanticIndex::getInstance()->snapshotToken().revision;
+            context.fileName=fixture.file;context.moduleName="top";context.signalName="next_state";
+            context.documentText=fixture.sources.value(fixture.file);
+            return context;
+        });
+        qInfo()<<"initial-state-target"<<view->saveState().value("target");
+        LiveInsightsContextView::TargetCandidate target;
+        target.label="next_state";target.fileName=fixture.file;target.moduleName="top";target.signalName="next_state";
+        QVERIFY(view->applyTargetCandidate(target));
+        QCOMPARE(view->saveState().value("target").toMap().value("signalName").toString(),QString("next_state"));
+        auto* surface=view->surfaceForTest();QVERIFY(surface);
+        auto* workbench=surface->workbenchForTest();QVERIFY(workbench);
+        auto* panel=workbench->rtlSurfaceForTest();QVERIFY(panel);
+        QVERIFY(waitForLiveInsightReports(*panel));
+        const auto snapshot=panel->graphSession()->snapshot(LiveInsightKind::State);
+        const auto report=snapshot.payload.value("graphReport").value<LiveInsightGraphReportPtr>();QVERIFY(report);
+        const auto* state=std::get_if<StateTransitionGraphReport>(&report->value);QVERIFY(state);
+        QVERIFY2(state->found,qPrintable(state->notFoundReasonDisplayName));QVERIFY(state->stateCount>=3);
+        auto* host=controller->dockHost();QVERIFY(host);
+        auto* dock=controller->dockWidget();QVERIFY(dock);
+        QVERIFY(controller->dockVisible());QVERIFY(window.isAncestorOf(view));
+        auto* scroll=view->findChild<QScrollArea*>("rtlInsightsGraphPanelScroll");QVERIFY(scroll);
+        const int narrowWidth=qMax(ContextWorkspaceState::kMinimumDockWidth,dock->minimumSizeHint().width());
+        const int wideWidth=qMax(480,narrowWidth+200);
+        QStringList failures;int step=0;
+        for(int width:{narrowWidth,wideWidth,narrowWidth,wideWidth}){
+            dock->setFixedWidth(width);
+            window.resizeDocks({dock},{width},Qt::Horizontal);
+            QCoreApplication::processEvents();
+            QCOMPARE(dock->width(),width);
+            QVERIFY(view->isVisibleTo(&window));
+            if(++step==3){
+                QVERIFY(host->setSectionCollapsed(resource.stableKey(),true,false));
+                QVERIFY(host->isSectionCollapsed(resource.stableKey()));
+                QVERIFY(host->setSectionCollapsed(resource.stableKey(),false,false));
+                QVERIFY(!host->isSectionCollapsed(resource.stableKey()));
+                QCoreApplication::processEvents();
+            }
+            QVERIFY(connectionsLayoutSettled(&window,scroll));
+            QVERIFY(dock->width()>=dock->minimumSizeHint().width());
+            const auto sample=measure(host);failures+=sample.failures;
+            QVERIFY(record(host,QString("state-view-%1").arg(step),sample,
+                {{"host","actual MainWindow / ContextWorkspaceController / State"},
+                 {"requestedDockWidth",width},{"minimumDockWidth",narrowWidth},{"stateCount",state->stateCount}}));
+            const QString screenshot=qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR")
+                +QString("/mainwindow-state-%1.png").arg(step);
+            QVERIFY(window.grab().save(screenshot));
+            qInfo()<<"actual-mainwindow"<<QGuiApplication::platformName()<<"DPR"<<window.devicePixelRatioF()
+                   <<"dockWidth"<<dock->width()<<"stateCount"<<state->stateCount<<"screenshot"<<screenshot;
+        }
+        QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n')));
+        QVERIFY(window.close());
+    }
+private slots:
     void realNavigationAndBottom_data(){dimensions(true);}
     void realNavigationAndBottom(){
+        PhaseCost cost(QStringLiteral("realNavigationAndBottom"));
         QFETCH(int,width);QFETCH(bool,dark);QFETCH(bool,populated);QFETCH(int,height);
         QTemporaryDir temporary;const QString workspace=temporary.filePath("workspace");QVERIFY(QDir().mkpath(workspace));
         const QString top=workspace+'/'+QFileInfo(fixture.file).fileName();
@@ -615,12 +888,16 @@ private slots:
         qputenv("ZEROSLACK_SESSION_STORAGE_PATH",temporary.filePath("sessions.ini").toUtf8());
         qputenv("ZEROSLACK_EDITING_TIME_STORAGE_PATH",temporary.filePath("editing.json").toUtf8());
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
+        cost.checkpoint("fixture");
         MainWindow window;
+        cost.checkpoint("create-window");
         window.tabManager->setCrashRecoveryService(std::make_unique<CrashRecoveryService>(temporary.filePath("recovery")));
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.analysisScheduler->setSemanticAnalysisRuntimePolicy(SemanticAnalysisRuntimePolicy{});
         window.resize(1280,760);window.show();
+        cost.checkpoint("show-window");
         auto* sessions=window.findChild<WorkspaceSessionCoordinator*>();QVERIFY(sessions);QVERIFY(sessions->openWorkspace(workspace));
+        cost.checkpoint("open-workspace");
         if(populated){
             QVERIFY(window.tabManager->openFileInTab(top));window.analysisScheduler->requestDocumentSemanticRefresh({top});
             QTRY_VERIFY_WITH_TIMEOUT(SemanticIndex::getInstance()->snapshotToken().snapshot
@@ -629,6 +906,7 @@ private slots:
         }
         QTRY_VERIFY_WITH_TIMEOUT(!window.analysisScheduler->isSemanticAnalysisActive(),20000);
         ApplicationThemeManager::instance().setMode(dark?ThemeMode::Dark:ThemeMode::Light);
+        cost.checkpoint("analysis");
         QStringList failures;
         auto* navigation=window.findChild<NavigationWidget*>();QVERIFY(navigation);
         auto* navigationPane=owner<NavigationPaneCoordinator>(&window);QVERIFY(navigationPane);
@@ -652,7 +930,7 @@ private slots:
         if(auto* bar=navigationPane->dock()->findChild<ElaNavigationBar*>("navigationElaBar"))bar->setNavigationBarWidth(designWidth);
 #endif
         window.resizeDocks({navigationPane->dock()},{designWidth},Qt::Horizontal);
-        QTest::qWait(20);
+        { WaitCost waitCost(20); QTest::qWait(20); }
         auto sample=measure(navigation,populated?4:0);
         if(navigation->width()!=designWidth)sample.failures<<QString("requested Design content width %1; actual %2").arg(designWidth).arg(navigation->width());
         failures+=sample.failures;
@@ -662,7 +940,7 @@ private slots:
 #ifdef ZEROSLACK_ENABLE_ELA
             if(auto* bar=navigationPane->dock()->findChild<ElaNavigationBar*>("navigationElaBar"))bar->setNavigationBarWidth(changed);
 #endif
-            window.resizeDocks({navigationPane->dock()},{changed},Qt::Horizontal);QTest::qWait(15);
+            window.resizeDocks({navigationPane->dock()},{changed},Qt::Horizontal);{ WaitCost waitCost(15); QTest::qWait(15); }
             sample=measure(navigation,populated?4:0);failures+=sample.failures;
             QCOMPARE(navigation->width(),changed);
             QVERIFY(record(navigation,QString("design-resize-%1").arg(changed),sample,{{"requestedWidth",changed}}));
@@ -670,6 +948,7 @@ private slots:
         navigationPane->setExpanded(false,false);QVERIFY(!navigationPane->isExpanded());
         navigationPane->setExpanded(true,false);QVERIFY(navigationPane->isExpanded());
 
+        cost.checkpoint("navigation");
         // Use the actual bottom split with its existing Context companion.
         auto* host=window.findChild<ContextDockHost*>();QVERIFY(host);
         const auto resource=LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module,workspace);
@@ -681,9 +960,11 @@ private slots:
         auto* stack=qobject_cast<QStackedWidget*>(layout->drawerContent());QVERIFY(stack);
         const QStringList expected={"problems","scopedSearch","activity","simulationLog","simulationEvents","hotspot","rtlHighRiskEdit","connections"};
         const auto ids=layout->bottomPanelIds();QCOMPARE(QSet<QString>(ids.begin(),ids.end()),QSet<QString>(expected.begin(),expected.end()));
+        cost.checkpoint("bottom-setup");
         for(const auto& id:ids){
+            PhaseCost panelCost(id);
             QVERIFY(layout->restorePanel(id));QVERIFY(layout->setPanelHeight(id,height));
-            QTest::qWait(10);
+            { WaitCost waitCost(10); QTest::qWait(10); }
             QWidget* panel=stack->currentWidget();QVERIFY(panel);
             if(id!="connections"){QCOMPARE(layout->activeBottomPanelId(),id);QVERIFY(panel->isVisibleTo(&window));}
             if(id=="hotspot"){
@@ -778,7 +1059,7 @@ private slots:
             }
             for(int mode=0;mode<(id=="hotspot"?3:1);++mode){
                 if(id=="hotspot"){auto* trace=qobject_cast<SignalTracePanel*>(panel);configure(trace,populated,mode);QVERIFY(SignalTraceTest::settled(*trace));}
-                for(int settle=0;settle<3;++settle){splitter->setSizes({width,splitter->width()-width-splitter->handleWidth()});QTest::qWait(10);}
+                for(int settle=0;settle<3;++settle){splitter->setSizes({width,splitter->width()-width-splitter->handleWidth()});{ WaitCost waitCost(10); QTest::qWait(10); }}
                 sample=measure(panel,height==160?2:4);
                 if(panel->width()!=width)sample.failures<<QString("requested width %1; actual %2").arg(width).arg(panel->width());
                 if(panel->height()!=height)sample.failures<<QString("requested content height %1; actual %2").arg(height).arg(panel->height());
@@ -790,7 +1071,7 @@ private slots:
                     int step=0;
                     for(const QSize changed:{QSize(480,280),QSize(220,160),QSize(width,height)}){
                         QVERIFY(layout->setPanelHeight(id,changed.height()));
-                        for(int settle=0;settle<3;++settle){splitter->setSizes({changed.width(),splitter->width()-changed.width()-splitter->handleWidth()});QTest::qWait(10);}
+                        for(int settle=0;settle<3;++settle){splitter->setSizes({changed.width(),splitter->width()-changed.width()-splitter->handleWidth()});{ WaitCost waitCost(10); QTest::qWait(10); }}
                         QCOMPARE(panel->size(),changed);QCOMPARE(controlState(panel),controls);
                         sample=measure(panel,changed.height()==160?2:4);failures+=sample.failures;
                         QVERIFY(record(panel,id+QString("-resize-%1").arg(++step),sample,{{"populated",populated}}));
@@ -798,16 +1079,18 @@ private slots:
                     QVERIFY(recordOverflow(panel,id+"-options",failures));
                     if(id=="scopedSearch"){
                         auto* toggle=panel->findChild<QToolButton*>("scopedSearchReplaceGroupToggle");QVERIFY(toggle);
-                        toggle->click();QTest::qWait(20);QVERIFY(toggle->isChecked());
+                        toggle->click();{ WaitCost waitCost(20); QTest::qWait(20); }QVERIFY(toggle->isChecked());
                         sample=measure(panel,height==160?2:4);failures+=sample.failures;
                         QVERIFY(record(panel,"scopedSearch-replace-expanded",sample,{{"populated",populated}}));
                         QVERIFY(recordOverflow(panel,"scopedSearch-replace-options",failures));
-                        toggle->click();QTest::qWait(20);QCOMPARE(controlState(panel),controls);
+                        toggle->click();{ WaitCost waitCost(20); QTest::qWait(20); }QCOMPARE(controlState(panel),controls);
                     }
                 }
             }
         }
+        cost.checkpoint("bottom-panels");
         QVERIFY(window.close());
+        cost.checkpoint("close-window");
         QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n')));
     }
 };

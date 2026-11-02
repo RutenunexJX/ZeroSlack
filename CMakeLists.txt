@@ -975,10 +975,11 @@ if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
 
     function(zeroslack_qt_test_command output name target)
+        string(REPLACE ";" "$<SEMICOLON>" qt_arguments "${ARGN}")
         set(${output} ${CMAKE_COMMAND}
             "-DQT_TEST_NAME=${name}"
             "-DQT_TEST_EXECUTABLE=$<TARGET_FILE:${target}>"
-            "-DQT_TEST_ARGUMENTS=${ARGN}"
+            "-DQT_TEST_ARGUMENTS=${qt_arguments}"
             "-DQT_TEST_LOG_ROOT=${CMAKE_CURRENT_BINARY_DIR}/Testing/QtGui"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/run_qt_gui_test.cmake"
             PARENT_SCOPE)
@@ -1003,9 +1004,7 @@ if(BUILD_TESTING)
 
     get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
     get_filename_component(ZEROSLACK_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    set(ZEROSLACK_TEST_PATH
-        "${ZEROSLACK_GIT_BIN_DIR};${ZEROSLACK_COMPILER_BIN_DIR};${QT_INSTALL_PREFIX}/bin;$ENV{PATH}"
-    )
+    zeroslack_test_runtime_path(ZEROSLACK_TEST_PATH)
     string(REPLACE ";" "\\;" ZEROSLACK_TEST_PATH "${ZEROSLACK_TEST_PATH}")
 
     add_executable(ts_doc_test test_sv/ts_doc_test.cpp)
@@ -1076,7 +1075,8 @@ if(BUILD_TESTING)
     add_executable(sidebar_mainwindow_test test_sv/sidebar_mainwindow_test.cpp)
     target_link_libraries(sidebar_mainwindow_test PRIVATE zeroslack_core Qt6::Test)
     target_include_directories(sidebar_mainwindow_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
-    add_test(NAME sidebar_mainwindow_test COMMAND sidebar_mainwindow_test)
+    zeroslack_qt_test_command(sidebar_mainwindow_test_qt_command sidebar_mainwindow_test sidebar_mainwindow_test)
+    add_test(NAME sidebar_mainwindow_test COMMAND ${sidebar_mainwindow_test_qt_command})
     set_tests_properties(sidebar_mainwindow_test PROPERTIES TIMEOUT 120)
     target_link_libraries(automation_service_test PRIVATE zeroslack_core Qt6::Test)
     add_test(NAME automation_service_test COMMAND ${CMAKE_COMMAND} -E env QT_QPA_PLATFORM=offscreen $<TARGET_FILE:automation_service_test>)
@@ -2001,12 +2001,13 @@ if(BUILD_TESTING)
     )
     set_tests_properties(live_insight_session_test
         PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(live_insights_context_provider_test_qt_command live_insights_context_provider_test live_insights_context_provider_test)
     add_test(NAME live_insights_context_provider_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:live_insights_context_provider_test>
+            ${live_insights_context_provider_test_qt_command}
     )
     set_tests_properties(live_insights_context_provider_test
         PROPERTIES TIMEOUT 120)
@@ -2180,27 +2181,30 @@ if(BUILD_TESTING)
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
             $<TARGET_FILE:editor_split_controller_test>
     )
+    zeroslack_qt_test_command(delayed_consumer_generation_test_qt_command delayed_consumer_generation_test delayed_consumer_generation_test)
     add_test(NAME delayed_consumer_generation_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:delayed_consumer_generation_test>
+            ${delayed_consumer_generation_test_qt_command}
     )
     set_tests_properties(delayed_consumer_generation_test PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(workspace_path_confirmation_test_qt_command workspace_path_confirmation_test workspace_path_confirmation_test)
     add_test(NAME workspace_path_confirmation_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_path_confirmation_test>)
+            ${workspace_path_confirmation_test_qt_command})
     set_tests_properties(workspace_path_confirmation_test PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(editing_time_contract_test_qt_command editing_time_contract_test editing_time_contract_test)
     add_test(NAME editing_time_contract_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:editing_time_contract_test>)
+            ${editing_time_contract_test_qt_command})
     set_tests_properties(editing_time_contract_test PROPERTIES TIMEOUT 120)
     zeroslack_qt_test_command(COMPACT_TEST_COMMAND compact_layout_test compact_layout_test)
     add_test(NAME compact_layout_test
@@ -2421,11 +2425,13 @@ if(BUILD_TESTING)
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
                 $<TARGET_FILE:zeroslack_suiteapp_integration_test>
         )
+        zeroslack_qt_test_command(zeroslack_suiteapp_ipc_test_qt_command zeroslack_suiteapp_ipc_test zeroslack_suiteapp_ipc_test)
         add_test(NAME zeroslack_suiteapp_ipc_test
             COMMAND ${CMAKE_COMMAND} -E env
                 "PATH=${ZEROSLACK_TEST_PATH}" "QT_QPA_PLATFORM=offscreen"
                 "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-                $<TARGET_FILE:zeroslack_suiteapp_ipc_test>)
+                "SUITEAPP_RUNTIME_EXECUTABLE=$<TARGET_FILE:SuiteApp::suite-runtime>"
+                ${zeroslack_suiteapp_ipc_test_qt_command})
         set_tests_properties(zeroslack_suiteapp_ipc_test PROPERTIES TIMEOUT 90 LABELS "suiteapp-ipc")
     endif()
     add_test(NAME editor_view_local_folding_test
@@ -2464,12 +2470,13 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:user_template_range_contract_test> -o -,txt)
     set_tests_properties(user_template_range_contract_test PROPERTIES TIMEOUT 30)
+    zeroslack_qt_test_command(workspace_switcher_test_qt_command workspace_switcher_test workspace_switcher_test)
     add_test(NAME workspace_switcher_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"
             "QT_QPA_PLATFORM=offscreen"
             "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
-            $<TARGET_FILE:workspace_switcher_test> -o -,txt
+            ${workspace_switcher_test_qt_command}
     )
     add_test(NAME controller_boundary_test
         COMMAND ${CMAKE_COMMAND} -E env

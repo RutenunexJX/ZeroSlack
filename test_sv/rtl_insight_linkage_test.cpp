@@ -691,12 +691,14 @@ int main(int argc, char** argv)
         context.moduleName = QStringLiteral("fsm_top");
         context.documentRevision = 41;
         left->setGraphContext(context, index.snapshotToken());
-        left->showModuleBlockDiagramForModule(fileName, context.moduleName);
-        leftSession->flushPending(LiveInsightKind::Module);
+        left->updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
+        left->showFsmGraph();
+        leftSession->flushPending(LiveInsightKind::State);
         context.documentRevision = 42;
         left->setGraphContext(context, index.snapshotToken());
-        left->showModuleBlockDiagramForModule(fileName, context.moduleName);
-        leftSession->flushPending(LiveInsightKind::Module);
+        left->updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
+        left->showFsmGraph();
+        leftSession->flushPending(LiveInsightKind::State);
         right.setGraphContext(context, index.snapshotToken());
         right.updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
         right.showFsmGraph();
@@ -710,25 +712,43 @@ int main(int argc, char** argv)
         };
         if (leftTasks.size() == 2 && rightTasks.size() == 1) {
             runWorker(leftTasks.takeLast());
-            const auto published = leftSession->snapshot(LiveInsightKind::Module);
+            const auto published = leftSession->snapshot(LiveInsightKind::State);
+            std::cerr << "diag.latest phase=" << int(published.phase)
+                      << " revision=" << published.publishedKey.documentRevision
+                      << " nodes=" << left->graphNodeItemCountForTest()
+                      << " baselineNodes=" << panel.graphNodeItemCountForTest()
+                      << " summaries=" << left->graphElementSummariesForTest().join(" || ").toStdString() << '\n';
             check(published.phase == LiveInsightPhase::Ready
                       && published.publishedKey.documentRevision == 42
-                      && left->graphNodeItemCountForTest() == 1,
-                  "latest captured document revision owns the applied module report");
+                      && left->graphNodeItemCountForTest() == 5,
+                  "latest captured document revision owns the applied FSM report");
+            const auto summaries = left->graphElementSummariesForTest();
+            const auto containsNode = [&](const QString& prefix) {
+                return std::any_of(summaries.cbegin(), summaries.cend(),
+                    [&](const QString& value) { return value.startsWith(prefix); });
+            };
+            check(containsNode("state|IDLE|initial|state_t|")
+                      && containsNode("state|RUN|state_q|state_t|")
+                      && containsNode("state|DONE|state_q|state_t|")
+                      && containsNode("state|IDLE|initial · alias|")
+                      && containsNode("state|default|unreachable · implicit|"),
+                  "latest FSM report retains all three states and both structural endpoints");
             runWorker(leftTasks.takeFirst());
-            check(leftSession->snapshot(LiveInsightKind::Module).publishedGeneration == published.publishedGeneration,
+            check(leftSession->snapshot(LiveInsightKind::State).publishedGeneration == published.publishedGeneration,
                   "old report completion cannot overwrite the current UI");
             runWorker(rightTasks.takeFirst());
             check(rightSession->snapshot(LiveInsightKind::State).phase == LiveInsightPhase::Ready
                       && right.graphNodeItemCountForTest() == panel.graphNodeItemCountForTest(),
-                  "independent FSM surface finishes while the module surface changes");
-            left->showModuleBlockDiagramForModule(fileName, context.moduleName);
-            leftSession->flushPending(LiveInsightKind::Module);
+                  "independent FSM surface finishes while the peer surface changes");
+            left->updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
+            left->showFsmGraph();
+            leftSession->flushPending(LiveInsightKind::State);
             check(leftTasks.isEmpty(), "repeated UI requests reuse the current completed report");
             ++context.documentRevision;
             left->setGraphContext(context, index.snapshotToken());
-            left->showModuleBlockDiagramForModule(fileName, context.moduleName);
-            leftSession->flushPending(LiveInsightKind::Module);
+            left->updateModuleContext(fileName, context.moduleName, QStringLiteral("state_d"));
+            left->showFsmGraph();
+            leftSession->flushPending(LiveInsightKind::State);
             QPointer<LiveInsightSession> lifetime(leftSession);
             left.reset();
             for (auto& task : leftTasks) runWorker(std::move(task));

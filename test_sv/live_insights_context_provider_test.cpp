@@ -479,7 +479,7 @@ void LiveInsightsContextProviderTest::fixedKindSectionRendersRealSurface()
     LiveInsightToolPage* surface = view->surfaceForTest();
     QVERIFY(surface);
     QCOMPARE(surface->kind(), LiveInsightKind::Kernel);
-    QVERIFY(surface->workbenchForTest());
+    QVERIFY(surface->traceSurface());
     QVERIFY(!view->kindSummaryLabel(LiveInsightKind::Kernel)
                  ->isVisibleTo(view));
     const int afterCreate = contextRequests;
@@ -679,7 +679,7 @@ void LiveInsightsContextProviderTest::targetSurvivesDocumentSwitchAndReceivesFre
 void LiveInsightsContextProviderTest::surfaceNotificationDuringChildTeardownIsIgnored()
 {
     LiveInsightSession session;
-    auto* view = new LiveInsightsContextView(&session, LiveInsightKind::Module);
+    auto* view = new LiveInsightsContextView(&session, LiveInsightKind::State);
     const auto context = stubContext(QStringLiteral("uart"), {});
     view->setToolContextSource([&] { return context; });
     view->show();
@@ -689,18 +689,18 @@ void LiveInsightsContextProviderTest::surfaceNotificationDuringChildTeardownIsIg
     QVERIFY(surfaceSession);
     int teardownNotifications = 0;
     int staleUiUpdates = 0;
-    QPointer<QLabel> status = view->kindStatusLabel(LiveInsightKind::Module);
-    QObject::connect(view->kindSummaryLabel(LiveInsightKind::Module), &QObject::destroyed, this,
+    QPointer<QLabel> status = view->kindStatusLabel(LiveInsightKind::State);
+    QObject::connect(view->kindSummaryLabel(LiveInsightKind::State), &QObject::destroyed, this,
         [&] {
             if (surfaceSession) {
                 ++teardownNotifications;
                 // Exercise the same reentrant notification as removing a
                 // visible graph consumer during child-widget destruction.
                 const QString before = status ? status->text() : QString();
-                auto snapshot = surfaceSession->snapshot(LiveInsightKind::Module);
+                auto snapshot = surfaceSession->snapshot(LiveInsightKind::State);
                 snapshot.phase = LiveInsightPhase::Error;
                 snapshot.errorText = QStringLiteral("late teardown notification");
-                emit surfaceSession->snapshotChanged(LiveInsightKind::Module, snapshot);
+                emit surfaceSession->snapshotChanged(LiveInsightKind::State, snapshot);
                 if (status && status->text() != before) ++staleUiUpdates;
             }
         });

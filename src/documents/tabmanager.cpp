@@ -2733,6 +2733,10 @@ bool TabManager::saveEditor(
     };
     auto* templates = DocumentTemplateModel::get(document->textDocument());
     const auto templateMetadata = templates->serialize(fileName);
+    QString metadataReadIssue;
+    const auto storedMetadata = WorkspaceSessionStateService().loadDocumentTemplates(writePath, &metadataReadIssue);
+    const bool needsTemplateCommit = !templates->instances().isEmpty()
+        || !storedMetadata.isEmpty() || !metadataReadIssue.isEmpty();
     if (!fileIo.writeTextFile(
             qobject_cast<QWidget*>(parent()),
             writePath,
@@ -2740,7 +2744,7 @@ bool TabManager::saveEditor(
             &saveFailure,
             &savedRawFingerprint,
             nullptr,
-            revalidateOverwrite, document->fileFormat(), &templateMetadata)) {
+            revalidateOverwrite, document->fileFormat(), needsTemplateCommit ? &templateMetadata : nullptr)) {
         writeRecoverySnapshot(document, true);
         emit fileSaveFailed(
             fileName,

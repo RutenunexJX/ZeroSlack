@@ -9,6 +9,7 @@
 #include <QtTest>
 #include <QtConcurrent>
 #include <QApplication>
+#include <QScopeGuard>
 #include <QCryptographicHash>
 #include <QAction>
 #include <QComboBox>
@@ -347,13 +348,13 @@ private slots:
         const auto palette = qApp->palette(); const auto font = qApp->font(); const auto sheet = qApp->styleSheet();
         const auto identity = qApp->applicationName(); const auto org = qApp->organizationName();
         const auto version = qApp->applicationVersion(); auto* style = qApp->style();
-        const auto keys = QSettings().allKeys();
         const auto paths = qApp->libraryPaths(); const auto locale = QLocale(); const bool quit = qApp->quitOnLastWindowClosed();
         QWidget host; QVBoxLayout layout(&host); layout.setContentsMargins(0, 0, 0, 0);
         auto* widget = create(&host, nullptr); layout.addWidget(widget); host.resize(960, 760); host.show();
         QVERIFY(widget->metaObject()->indexOfMethod("setDarkTheme(bool)") >= 0);
         QTemporaryDir root; fixture(root); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
         QVERIFY(call(widget, "setContext", root.path()).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
+        const auto keys = QSettings().allKeys();
         auto* sources = widget->findChild<QListView*>("sourceList"); auto* model = sources->model();
         sources->setCurrentIndex(model->index(0, 0)); const QPersistentModelIndex selected(sources->currentIndex());
         for (bool dark : {true, false, true}) {
@@ -402,6 +403,7 @@ private slots:
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
         QCOMPARE(qApp->palette(), palette); QCOMPARE(qApp->font(), font); QCOMPARE(qApp->styleSheet(), sheet); QCOMPARE(qApp->style(), style);
         QCOMPARE(qApp->applicationName(), identity); QCOMPARE(qApp->organizationName(), org); QCOMPARE(qApp->applicationVersion(), version);
+        qInfo() << "diag.host-settings" << "before" << keys << "after" << QSettings().allKeys();
         QCOMPARE(QSettings().allKeys(), keys); QCOMPARE(QSettings().value("host/sentinel").toString(), QStringLiteral("untouched"));
         QCOMPARE(qApp->libraryPaths(), paths); QCOMPARE(QLocale(), locale); QCOMPARE(qApp->quitOnLastWindowClosed(), quit);
     }
@@ -582,8 +584,19 @@ private slots:
     void destroyWithOpenDialog() {
         QFETCH(int, width);
         if (QByteArray(QTest::currentDataTag()).endsWith("-owner-teardown")) { ownerTeardown(width); return; }
+        auto* index = SemanticIndex::getInstance();
+        const auto previousSnapshot = index->snapshot();
+        const auto restoreSnapshot = qScopeGuard([&] { index->setSnapshot(previousSnapshot); });
         for (const auto* action : {"openSettings", "newProject", "createTb"}) {
-            QTemporaryDir root; fixture(root); QWidget host; QVBoxLayout layout(&host);
+            QTemporaryDir root; fixture(root);
+            if (QByteArray(action) == "createTb") {
+                QFile source(root.filePath("dut.sv")); QVERIFY(source.open(QIODevice::ReadOnly));
+                const QHash<QString, QString> contents{{source.fileName(), QString::fromUtf8(source.readAll())}};
+                SlangManager slang;
+                index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
+                    SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
+            }
+            QWidget host; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
             QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget); layout.addWidget(widget);
             host.show(); QSignalSpy scanned(widget, SIGNAL(scanFinished()));
@@ -605,7 +618,8 @@ private slots:
             });
             destroyPoll.start();
             if (menuAction) menuAction->trigger(); else QTest::mouseClick(button, Qt::LeftButton);
-            QTRY_VERIFY_WITH_TIMEOUT(widget.isNull(), 10000);
+            qInfo() << "diag.host-destroy" << action << "width" << width << "aliveAfterTrigger" << bool(widget);
+            QTRY_VERIFY2_WITH_TIMEOUT(widget.isNull(), action, 10000);
             QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         }
     }

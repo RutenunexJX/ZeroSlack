@@ -471,29 +471,58 @@ set(PHASE_L_REGEX_CLEANUP_ALLOWLIST
     src/editor/editorcoordinator.cpp
 )
 
-# Preserve the tested 0.6.1 lexical contract during source internalization.
+# The original 0.6.1 inventory was correct at b22417b. The 0.32.0 source
+# retirement was explicitly accepted as this inventory on 2026-11-01.
+# See build/coordination/20261101-full-failure-cleanup/stage-a/implementation/A2-SCOPE-APPROVAL.json.
+set(SIMDOCK_FROZEN_REGEX_SOURCE_REVISION "8a36ed8ecbb790c573664130b57f4c168ece340c")
+set(SIMDOCK_FROZEN_REGEX_EXTRACTION_VERSION "cmake-file-strings-strip-v1")
 # This is a frozen usage inventory, not a file-wide regex exception: changing
 # or adding a regex API statement requires an explicit policy review.
 set(SIMDOCK_FROZEN_REGEX_USAGE
-    "src/simulation/simdock/core/analyzer.cpp|69cdbf1c8da72efd3a016adb1dce8d6b965ec4639d4e5ef7106aaf7c2b2b347e"
-    "src/simulation/simdock/core/questasession.cpp|ccf703032b1d93f798503976a06179dff4f37ff132e0ac5018cbb3a412105b71"
+    "src/simulation/simdock/core/analyzer.cpp|8b22edd07c26ff33adcf014cf7f7fa21a936bc1d9201cad98b3f8b0cdb0c7552"
+    "src/simulation/simdock/core/questasession.cpp|9c739a5da4dff7ce01f05291fd853ce472ca7a06c4c681be57674a099fa8e599"
     "src/simulation/simdock/core/testbench.cpp|773aba6d7bf247eef60f8582ecde05c81a07ce37525448c41cc4bd08291b912c"
     "src/simulation/simdock/core/workspace.cpp|fea5206d8ec7c888c59c81fd2e80c6d89de64eeb4e3585d4814be4e835f5721d"
 )
+include("${CMAKE_CURRENT_LIST_DIR}/SimDockRegexContract.cmake")
+zeroslack_verify_simdock_regex_contract("${ZEROSLACK_SOURCE_DIR}"
+    "${SIMDOCK_FROZEN_REGEX_SOURCE_REVISION}"
+    "${SIMDOCK_FROZEN_REGEX_EXTRACTION_VERSION}"
+    ${SIMDOCK_FROZEN_REGEX_USAGE})
 foreach(entry IN LISTS SIMDOCK_FROZEN_REGEX_USAGE)
     string(REPLACE "|" ";" fields "${entry}")
     list(GET fields 0 relative)
-    list(GET fields 1 expected)
-    file(STRINGS "${ZEROSLACK_SOURCE_DIR}/${relative}" lines REGEX "QRegularExpression|QRegExp|std::regex|include[ \t]*<regex>")
-    set(usage "")
-    foreach(line IN LISTS lines)
-        string(STRIP "${line}" line)
-        string(APPEND usage "${line}\n")
-    endforeach()
-    string(SHA256 actual "${usage}")
-    if(NOT actual STREQUAL expected)
-        message(FATAL_ERROR "Frozen SimDock regex contract changed: ${relative}")
-    endif()
+    list(APPEND PHASE_L_REGEX_CLEANUP_ALLOWLIST "${relative}")
+endforeach()
+
+# Published 0.33.1 uses explicitly reviewed on 2026-11-01.
+# See A2-PHASE-L-APPROVAL.json in the full-failure-cleanup coordination task.
+# Each entry pins API usage and the complete LF-normalized source, including
+# pattern literals continued on lines without an API token.
+set(PHASE_L_REVIEWED_REGEX_SOURCE_REVISION "ff75d747110ea9cef6339abf5442c0b8b1e2fe42")
+set(PHASE_L_REVIEWED_REGEX_EXTRACTION_VERSION "cmake-file-strings-strip-v1")
+set(PHASE_L_REVIEWED_SOURCE_NORMALIZATION "utf8-crlf-to-lf-v1")
+set(PHASE_L_REVIEWED_REGEX_USAGE
+    "src/completion/simulationcommandprefix.cpp|89a216881e14bf981e64039b2ae2984be5a5b7cd5ab0a8fb1bcd6f5390a8b428|57c7598233bd8350fda5d03f74d5830be336409089d638424bf732d21fdc860b"
+    "src/completion/templatecapabilities.cpp|2c44206dc8be8af7887134525d2aa91cf7a6621ed7c761c0ccaaa1bfcf2cdb4f|73417fc560e907e70e006231ea6bd869b1f5680052e1893c192c1ca3ef888664"
+    "src/completion/usertemplateservice.cpp|d8f9a2e3fb7bd43796d6ec0f40025ec9e7405bf9214adb1ba5e622b21b2076b0|8b650c0d2e4be9049422fd803572430fa55ea670b4028fb535c717b9233e1778"
+    "src/editor/tbinputassist.cpp|692ce60c6209858c8c3bef0412990d80a81b5c530af200e9f361bc695674081f|743e724100edbd98bafb8ca068b7d4c32df96468c1a229142c188877306b7a66"
+    "src/integrations/xips/xipsassetsync.cpp|ebbffbf2fbd193b9d6fb14df17c662aa9c11399bee4a16ace7a712949234e203|494b643ed8808b47df2f64f8122e7ce5757793e0abe638c69db3e9f0dad72786"
+    "src/integrations/xips/xipscontextprovider.cpp|85fde73909049adc944c53d777aa32858f23c1666c5ee6cd98073e7940cac896|f309ec69a2989f82793e33ac57195ff7c235ee2c8089f1b1e6d3a616a33d7959"
+    "src/simulation/simdock/core/projectstore.cpp|680c77091791e43dddf34b1c80b55102ce4be6eeec137b5c4968c8d7d8eb6069|eac70917dfd8a69729255407a0965a32a9836579acf7d28ffecf50e88d2200f7"
+    "src/simulation/simdock/core/simulationevents.cpp|07ee07526219b3fe665b286a008b92c5ff26961cef8562c2f6daf390bfa23897|e5a1e9c8b24a76571c80f4b68735e0c8aff7a99173120484e92e2340107e16a7"
+    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|27787f70f6466eec5fd487269df380b19571dc8487af7e8273f882465f2f81d3"
+    "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|10766319b9fc1c22d1d530a99235ffb9267ef0b8ae290ead6979edb6a25f7a3e"
+    "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
+)
+zeroslack_verify_reviewed_regex_contract("${ZEROSLACK_SOURCE_DIR}"
+    "${PHASE_L_REVIEWED_REGEX_SOURCE_REVISION}"
+    "${PHASE_L_REVIEWED_REGEX_EXTRACTION_VERSION}"
+    "${PHASE_L_REVIEWED_SOURCE_NORMALIZATION}"
+    ${PHASE_L_REVIEWED_REGEX_USAGE})
+foreach(entry IN LISTS PHASE_L_REVIEWED_REGEX_USAGE)
+    string(REPLACE "|" ";" fields "${entry}")
+    list(GET fields 0 relative)
     list(APPEND PHASE_L_REGEX_CLEANUP_ALLOWLIST "${relative}")
 endforeach()
 
@@ -1548,11 +1577,12 @@ endif()
 
 file(GLOB_RECURSE phase_j_repo_sources
     RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-    "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
     "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
     "${ZEROSLACK_SOURCE_DIR}/src/*.h"
-        "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
+    "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
 )
+# Check the root file without recursively searching excluded trees for its name.
+list(PREPEND phase_j_repo_sources "CMakeLists.txt")
 list(APPEND phase_j_repo_sources ${policy_cpp_sv_test_sources})
 
 set(phase_j_fixture_cleanup_violations)
@@ -1784,11 +1814,13 @@ endif()
 if(ZEROSLACK_PHASE_I_ZERO_TARGET OR ZEROSLACK_PHASE_J_ZERO_TARGET)
     file(GLOB_RECURSE phase_j_zero_root_sources
         RELATIVE "${ZEROSLACK_SOURCE_DIR}"
-        "${ZEROSLACK_SOURCE_DIR}/CMakeLists.txt"
         "${ZEROSLACK_SOURCE_DIR}/src/*.cpp"
         "${ZEROSLACK_SOURCE_DIR}/src/*.h"
         "${ZEROSLACK_SOURCE_DIR}/include/zeroslack/*.h"
     )
+    # A literal root file must not make GLOB_RECURSE descend into build or
+    # user fixture directories while searching for nested CMakeLists.txt.
+    list(PREPEND phase_j_zero_root_sources "CMakeLists.txt")
     set(phase_j_zero_test_sources ${policy_test_sources})
     set(phase_j_zero_repo_sources
         ${phase_j_zero_root_sources}

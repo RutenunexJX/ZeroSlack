@@ -12,6 +12,7 @@
 #include "testuistyle.h"
 
 #include <QAbstractButton>
+#include <QAction>
 #include <QApplication>
 #include <QFile>
 #include <QDialog>
@@ -162,7 +163,7 @@ private slots:
             && !window.analysisScheduler->isSemanticAnalysisActive()
             && !SemanticIndex::getInstance()->getCachedFileContent(initial).isEmpty(), 10000);
         auto* controller = window.findChild<ContextWorkspaceController*>(); QVERIFY(controller);
-        const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module, fixture.path());
+        const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::State, fixture.path());
         QVERIFY(controller->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept}));
         auto* view = qobject_cast<LiveInsightsContextView*>(controller->viewForResource(resource.stableKey()));
         QVERIFY(view);
@@ -238,8 +239,8 @@ private slots:
             return;
         }
         if (transition == "clear") {
-            auto* clear = window->findChild<QAbstractButton*>("activityLogClearButton"); QVERIFY(clear);
-            clear->click();
+            auto* clear = window->findChild<QAction*>("activityLogClearAction"); QVERIFY(clear);
+            clear->trigger();
             service->append("R5", ActivityLogLevel::Warning, second);
         } else if (transition == "hide") {
             layout->setBottomCollapsed(true);

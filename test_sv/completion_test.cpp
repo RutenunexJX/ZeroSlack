@@ -1556,14 +1556,14 @@ int main(int argc, char** argv) {
     paletteContext.editorAvailable = true;
     paletteContext.fileName = path;
     paletteContext.moduleName = QStringLiteral("top");
-    paletteContext.documentText = content;
-    paletteContext.cursorLine = 1;
-    paletteContext.cursorPosition = content.indexOf(
-        QStringLiteral("module top"));
+    paletteContext.documentText = QStringLiteral("module top;\n  \nendmodule\n");
+    paletteContext.cursorLine = 2;
+    paletteContext.cursorPosition = paletteContext.documentText.indexOf(
+        QStringLiteral("  \n")) + 2;
     const EditorInsertPaletteService insertPalette;
     const QList<GlobalControlItem> paletteTemplates =
         insertPalette.query(GlobalControlCategory::Templates,
-                            QStringLiteral("always_comb"),
+                            QStringLiteral("process"),
                             paletteContext);
     expectBool("Ctrl+Space template category uses template catalog",
                std::any_of(
@@ -1572,9 +1572,11 @@ int main(int argc, char** argv) {
                    [](const GlobalControlItem& item) {
                        return item.kind
                                   == GlobalControlItemKind::Template
-                           && item.id == QStringLiteral(";;ac")
+                           && item.id == QStringLiteral("@process")
+                           && item.operation == GlobalControlItemOperation::InsertSimulationCommand
+                           && item.disabledReason.isEmpty()
                            && item.insertionText.contains(
-                               QStringLiteral("always_comb"));
+                               QStringLiteral("initial begin"));
                    }),
                true);
 

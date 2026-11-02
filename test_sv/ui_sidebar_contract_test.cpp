@@ -7,6 +7,7 @@
 #include "ElaNavigationBar.h"
 #endif
 #include <QFile>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QPlainTextEdit>
 #include <QPropertyAnimation>
@@ -93,8 +94,15 @@ private slots:
         QCOMPARE(dock->width(), 340);
         for (int i = 0; i < 4; ++i) {
             pane->setExpanded(false);
+            QElapsedTimer sampleTime; sampleTime.start();
             QTest::qWait(45);
+            const int beforeDueEvents = dock->isVisible() ? dock->width() : 0;
+            // Deliver frames already due at the unchanged 45 ms sample deadline.
+            QCoreApplication::processEvents(QEventLoop::AllEvents);
             const qreal partialWidth = dock->isVisible() ? dock->width() : 0;
+            qInfo() << "sidebar-motion-sample" << i << "requestedMs" << 45
+                    << "elapsedMs" << sampleTime.elapsed() << "widthBeforeDueEvents"
+                    << beforeDueEvents << "widthAfterDueEvents" << partialWidth;
             QVERIFY(partialWidth < 340);
             pane->setExpanded(true);
             QTRY_VERIFY(!pane->isAnimating());

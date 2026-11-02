@@ -2079,7 +2079,7 @@ void MainWindow::setupLinkedContext()
 {
     if (!pinloomCodeLinkCoordinator || !pinloomHostClient || !viewMenu)
         return;
-    QList<QWidget*> chrome{statusBar()};
+    QList<QWidget*> chrome;
     if (panelLayoutController) {
         chrome.append(panelLayoutController->buttonBar());
         chrome.append(panelLayoutController->resizeHandle());

@@ -3,6 +3,7 @@
 #include "semanticindex.h"
 #include "symbolanalyzer.h"
 #include "mainwindow.h"
+#include "../src/simulation/simdock/ui/workbench.h"
 #include "tabmanager.h"
 #include "workspacemanager.h"
 #include "workspacesessioncoordinator.h"
@@ -10,6 +11,10 @@
 #include "testuistyle.h"
 #include "navigationpanecoordinator.h"
 #include "navigationwidget.h"
+#include "navigationrowstyle.h"
+#include "liveinsightscontextprovider.h"
+#include "signaltracepanel.h"
+#include "panellayoutcontroller.h"
 #include "navigationmanager.h"
 #include "insightvisualstyle.h"
 #include "contextworkspacecontroller.h"
@@ -39,10 +44,39 @@
 #include <QTest>
 #include <QToolButton>
 #include <QElapsedTimer>
+#include <QDeadlineTimer>
+#include <QEventLoop>
+#include <QFutureWatcher>
 #include <QTabWidget>
 #include <functional>
 
 namespace {
+bool waitForContextIdle(MainWindow& window, ContextWorkspaceController& controller,
+                        const QDeadlineTimer& deadline)
+{
+    if (controller.canCloseResources()) return true;
+    if (deadline.hasExpired()) return false;
+    QEventLoop loop;
+    QTimer timeout;
+    timeout.setSingleShot(true);
+    QObject::connect(&timeout, &QTimer::timeout, &loop, &QEventLoop::quit);
+    QSet<QFutureWatcherBase*> observed;
+    std::function<void()> observe = [&] {
+        if (controller.canCloseResources()) { loop.quit(); return; }
+        for (auto* watcher : window.findChildren<QFutureWatcherBase*>()) {
+            if (observed.contains(watcher)) continue;
+            observed.insert(watcher);
+            QObject::connect(watcher, &QFutureWatcherBase::finished, &loop, observe, Qt::QueuedConnection);
+            QObject::connect(watcher, &QObject::destroyed, &loop, [&, watcher] { observed.remove(watcher); });
+        }
+    };
+    // The frozen xIPs component clears its busy state in watcher completion handlers.
+    // Observe after those handlers; a follow-on detail load shares this deadline.
+    observe();
+    timeout.start(int(deadline.remainingTime()));
+    loop.exec();
+    return controller.canCloseResources();
+}
 class StyleChangeObserver final : public QObject {
 public:
     int changes = 0;
@@ -483,12 +517,12 @@ private slots:
         report.topModule = "top"; report.selectedTopModule = "top";
         report.rootModules = {"top", "child"};
         DesignHierarchyNode root; root.id = "top"; root.instanceName = "top";
-        root.moduleType = "top"; root.definitionFile = top; root.isTop = true; root.inSelectedTop = true;
+        root.projectId = "top-project"; root.moduleType = "top"; root.definitionFile = top; root.isTop = true; root.inSelectedTop = true;
         DesignHierarchyNode child = root; child.id = "child"; child.instanceName = "child";
-        child.moduleType = "child"; child.definitionFile = other; child.inSelectedTop = false;
+        child.projectId = "child-project"; child.moduleType = "child"; child.definitionFile = other; child.inSelectedTop = false;
         report.nodes = {root, child};
         navigation.updateDesignHierarchy(report);
-        auto* tree = navigation.findChild<QTreeWidget*>("navigationFileTree"); QVERIFY(tree);
+        auto* tree = navigation.findChild<QTreeWidget*>("navigationDesignTree"); QVERIFY(tree);
         auto find = [tree](const QString& path) -> QTreeWidgetItem* {
             QTreeWidgetItemIterator iterator(tree);
             while (*iterator) {
@@ -497,23 +531,28 @@ private slots:
             }
             return nullptr;
         };
-        auto* topItem = find(top); auto* otherItem = find(other); QVERIFY(topItem && otherItem);
+        auto* topItem = find("top"); auto* otherItem = find("child"); QVERIFY(topItem && otherItem);
         for (auto theme : {ThemeMode::Light, ThemeMode::Dark}) {
             ApplicationThemeManager::instance().setMode(theme);
             navigation.highlightFile(other);
-            QVERIFY(topItem->font(0).bold());
-            QVERIFY(topItem->text(0).contains("[TOP]"));
+            QVERIFY(topItem->data(0, NavigationRowStyle::ActiveRole).toBool());
+            QVERIFY(topItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
             QVERIFY(topItem->data(0, NavigationWidget::DesignTopRole).toBool());
             QVERIFY(!otherItem->data(0, NavigationWidget::DesignTopRole).toBool());
         }
         report.selectedTopModule = "child";
+        report.nodes[0].inSelectedTop = false; report.nodes[1].inSelectedTop = true;
         navigation.updateDesignHierarchy(report);
-        QVERIFY(!topItem->text(0).contains("[TOP]")); QVERIFY(!topItem->font(0).bold());
-        QVERIFY(otherItem->text(0).contains("[TOP]"));
+        topItem = find("top"); otherItem = find("child"); QVERIFY(topItem && otherItem);
+        QVERIFY(!topItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project"));
+        QVERIFY(!topItem->data(0, NavigationRowStyle::ActiveRole).toBool());
+        QVERIFY(otherItem->data(0, Qt::AccessibleDescriptionRole).toString().contains("Active project")
+            && otherItem->data(0, NavigationRowStyle::ActiveRole).toBool()
+            && otherItem->data(0, NavigationWidget::DesignTopRole).toBool());
         navigation.setWorkspaceRoot("D:/another-project");
-        navigation.updateDesignSummary({});
+        navigation.updateDesignHierarchy({});
         navigation.updateFileHierarchy({top, other});
-        QVERIFY(!find(other)->text(0).contains("[TOP]"));
+        QVERIFY(!find("child") && !find("top"));
         ApplicationThemeManager::instance().setMode(ThemeMode::Light);
     }
 
@@ -555,21 +594,86 @@ private slots:
             QCOMPARE(ids.size(), 8);
             QVERIFY(ids.contains(QStringLiteral("simdock")));
             QCOMPARE(ids.size(), controller->providerIds().size());
+            auto* pane = window.findChild<NavigationPaneCoordinator*>(); QVERIFY(pane);
+            PanelLayoutController* panels = nullptr;
+            for (auto* child : window.children())
+                if (auto* candidate = dynamic_cast<PanelLayoutController*>(child)) panels = candidate;
+            QVERIFY(panels);
+            auto* trace = panels->drawerContent()->findChild<SignalTracePanel*>(QStringLiteral("signalTracePanel")); QVERIFY(trace);
+            const auto external = [](const QString& id) {
+                return id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module) || id == "rtlInsight.kernel" || id == "rtlInsight.hotspot";
+            };
+            const auto visible = [&](const QString& id) {
+                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module))
+                    return pane->isExpanded() && pane->dock()->isVisible()
+                        && pane->activeTab() == NavigationWidget::DesignTab;
+                if (id == "rtlInsight.kernel" || id == "rtlInsight.hotspot")
+                    return panels->isPanelOpen("hotspot") && panels->activeBottomPanelId() == "hotspot"
+                        && trace->isVisible()
+                        && trace->saveViewState().value("mode").toInt() == (id == "rtlInsight.hotspot" ? 1 : 0);
+                return controller->dockVisible() && controller->dockHost()->currentResource().providerId == id;
+            };
+            const auto destination = [&](const QString& id) -> QWidget* {
+                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module)) return pane->dock()->widget();
+                if (id == "rtlInsight.kernel" || id == "rtlInsight.hotspot") return trace;
+                return controller->dockHost()->viewForResource(controller->dockHost()->currentResource().stableKey());
+            };
+            const auto closeExternal = [&](const QString& id) {
+                if (id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module)) pane->setExpanded(false, false);
+                else panels->closePanel("hotspot");
+            };
             for (const auto& id : ids) {
                 auto* entry = controller->rail()->findChild<QAction*>("contextRail." + id); QVERIFY(entry);
                 QVERIFY(controller->setProviderPinned(id, true));
+                const QDeadlineTimer activationDeadline(5000);
+                QVERIFY2(waitForContextIdle(window, *controller, activationDeadline), "Previous component must finish before replacement");
+                if (external(id)) {
+                    QVERIFY(controller->openTool(QStringLiteral("simdock")));
+                    QCOMPARE(controller->rail()->activeEntryId(), QStringLiteral("simdock"));
+                    closeExternal(id);
+                }
                 QVERIFY(controller->setDockVisible(false));
                 entry->trigger();
-                QTRY_VERIFY(controller->dockVisible());
-                QTRY_COMPARE(controller->dockHost()->currentResource().providerId, id);
-                QCOMPARE(controller->rail()->activeEntryId(), id);
-                QWidget* retained = controller->dockHost()->viewForResource(controller->dockHost()->currentResource().stableKey());
+                if (id == QStringLiteral("simdock"))
+                    qInfo() << "diag.simdock-root" << controller->workspaceRoot()
+                        << window.simulationWorkbench()->workspace()
+                        << QFileInfo(controller->workspaceRoot()).canonicalFilePath();
+                if (controller->toolboxVisible())
+                    for (auto* label : window.findChild<QWidget*>("contextToolbox")->findChildren<QLabel*>(QString(), Qt::FindDirectChildrenOnly))
+                        qInfo() << "diag.toolbox-status" << id << label->text();
+                QTRY_VERIFY2_WITH_TIMEOUT(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
+                    .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
+                    .arg(controller->rail()->activeEntryId())), int(activationDeadline.remainingTime()));
+                if (external(id)) {
+                    QTRY_COMPARE(controller->dockHost()->currentResource().providerId, QStringLiteral("simdock"));
+                    QCOMPARE(controller->rail()->activeEntryId(), QString());
+                } else {
+                    QTRY_COMPARE(controller->dockHost()->currentResource().providerId, id);
+                    QCOMPARE(controller->rail()->activeEntryId(), id);
+                }
+                QWidget* retained = destination(id); QVERIFY(retained);
                 entry->trigger();
-                QTRY_VERIFY(!controller->dockVisible());
+                if (external(id)) {
+                    QTRY_VERIFY2(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
+                    .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
+                    .arg(controller->rail()->activeEntryId())));
+                    QCOMPARE(destination(id), retained);
+                    closeExternal(id);
+                    QTRY_VERIFY(!visible(id));
+                } else QTRY_VERIFY(!controller->dockVisible());
                 QVERIFY(controller->rail()->activeEntryId().isEmpty());
                 entry->trigger();
-                QTRY_VERIFY(controller->dockVisible());
-                QCOMPARE(controller->dockHost()->viewForResource(controller->dockHost()->currentResource().stableKey()), retained);
+                if (id == QStringLiteral("simdock"))
+                    qInfo() << "diag.simdock-root" << controller->workspaceRoot()
+                        << window.simulationWorkbench()->workspace()
+                        << QFileInfo(controller->workspaceRoot()).canonicalFilePath();
+                if (controller->toolboxVisible())
+                    for (auto* label : window.findChild<QWidget*>("contextToolbox")->findChildren<QLabel*>(QString(), Qt::FindDirectChildrenOnly))
+                        qInfo() << "diag.toolbox-status" << id << label->text();
+                QTRY_VERIFY2(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
+                    .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
+                    .arg(controller->rail()->activeEntryId())));
+                QCOMPARE(destination(id), retained);
                 more->trigger(); QTRY_VERIFY(controller->toolboxVisible());
                 QCOMPARE(controller->rail()->activeEntryId(), QString("toolbox"));
                 more->trigger(); QTRY_VERIFY(!controller->dockVisible());
@@ -579,15 +683,26 @@ private slots:
                 QVERIFY(run->text().isEmpty() && !run->toolTip().isEmpty());
                 run->click();
                 QTRY_VERIFY(!controller->toolboxVisible());
-                QCOMPARE(controller->dockHost()->currentResource().providerId, id);
-                QCOMPARE(controller->rail()->activeEntryId(), id);
+                QTRY_VERIFY2(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
+                    .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
+                    .arg(controller->rail()->activeEntryId())));
+                QCOMPARE(controller->dockHost()->currentResource().providerId,
+                    external(id) ? QStringLiteral("simdock") : id);
+                QCOMPARE(controller->rail()->activeEntryId(), external(id) ? QStringLiteral("simdock") : id);
             }
-            // Switching between different visible tools must keep the sidebar open.
+            // Each route keeps its owning surface open while switching tools.
             for (const auto& id : ids) {
+                const QDeadlineTimer activationDeadline(5000);
+                QVERIFY2(waitForContextIdle(window, *controller, activationDeadline), "Previous component must finish before replacement");
                 controller->rail()->findChild<QAction*>("contextRail." + id)->trigger();
-                QTRY_VERIFY(controller->dockVisible());
-                QCOMPARE(controller->dockHost()->currentResource().providerId, id);
+                QTRY_VERIFY2_WITH_TIMEOUT(visible(id), qPrintable(QStringLiteral("%1: dock=%2 resource=%3 rail=%4")
+                    .arg(id).arg(controller->dockVisible()).arg(controller->dockHost()->currentResource().providerId)
+                    .arg(controller->rail()->activeEntryId())), int(activationDeadline.remainingTime()));
+                if (external(id)) QCOMPARE(destination(id), id == LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module) ? pane->dock()->widget() : trace);
+                else QCOMPARE(controller->dockHost()->currentResource().providerId, id);
             }
+            closeExternal(LiveInsightsContextProvider::providerIdForKind(LiveInsightKind::Module));
+            QVERIFY(!pane->isExpanded());
             more->trigger(); QTRY_VERIFY(controller->toolboxVisible());
             auto* firstCard = window.findChild<QToolButton*>("contextToolRun." + ids.at(0))->parentWidget();
             auto* secondCard = window.findChild<QToolButton*>("contextToolRun." + ids.at(1))->parentWidget();
@@ -600,7 +715,7 @@ private slots:
             window.resizeDocks({controller->dockWidget()}, {280}, Qt::Horizontal);
             QTRY_COMPARE(firstCard->y(), secondCard->y());
             QVERIFY(firstCard->x() != secondCard->x());
-            hidden = ids.first();
+            hidden = QStringLiteral("simdock");
             auto* pin = window.findChild<QCheckBox*>("contextToolPin." + hidden); QVERIFY(pin && pin->isChecked());
             QTRY_VERIFY(pin->isVisible());
             pin->click();
@@ -618,13 +733,19 @@ private slots:
                 ApplicationThemeManager::instance().setMode(theme);
                 QTRY_COMPARE(titleBar->palette().color(QPalette::Window), QApplication::palette().color(QPalette::Window));
                 for (int width : {760, 1180}) {
-                    window.resize(width, 760); QTest::qWait(60);
+                    window.resize(width, 760);
+                    window.resizeDocks({controller->dockWidget()}, {280}, Qt::Horizontal);
+                    QTest::qWait(60);
                     QVERIFY(controller->toolboxVisible());
                     QTRY_VERIFY(window.findChild<QToolButton*>("contextToolRun." + hidden)->isVisible());
                 }
                 const int narrowRows = gridRows();
+                qInfo() << "diag.toolbox-narrow" << narrowRows << controller->dockWidget()->width()
+                    << controller->dockWidget()->minimumWidth() << controller->dockWidget()->maximumWidth()
+                    << firstCard->minimumSizeHint();
                 window.resizeDocks({controller->dockWidget()}, {520}, Qt::Horizontal);
                 QTest::qWait(60);
+                qInfo() << "diag.toolbox-wide" << gridRows() << controller->dockWidget()->width();
                 QTRY_VERIFY(gridRows() < narrowRows);
                 window.resizeDocks({controller->dockWidget()}, {280}, Qt::Horizontal);
                 QTest::qWait(60);

@@ -125,6 +125,12 @@ def verify_contracts(config_path):
         require(condition, 'Policy contract failed: '+name+'; evidence: '+str(root))
 
     try:
+        from test_runtime_path_contracts import verify_runtime_path
+        verify_runtime_path(config, root, env, check)
+        from test_frozen_regex_contracts import verify_frozen_regex
+        verify_frozen_regex(config, root, env, check)
+        from test_qt_gui_runner_contracts import verify_qt_gui_runner
+        verify_qt_gui_runner(config, root, env, check)
         return _verify(config, root, source, build, scripts, env, proof, check)
     except Exception as error:
         proof.update(status='failed', error=str(error))

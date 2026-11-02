@@ -401,6 +401,25 @@ def publish_result(out, result, echo_log=True):
     return result['exitCode']
 
 
+def observe_qt_gui_result(result, directory):
+    """Keep wrapper infrastructure failures distinct from Qt assertions."""
+    try:
+        contexts = list(Path(directory).glob('*/*/invocation.txt'))
+        require(len(contexts) == 1, 'Expected one Qt invocation context; found '+str(len(contexts)))
+        report = contexts[0].parent
+        phase = (report/'phase.txt').read_text(encoding='utf8').strip()
+        code_path = report/'exit-code.txt'
+        code = code_path.read_text(encoding='utf8').strip() if code_path.is_file() else None
+        result['qtInvocation'] = {'directory':str(report), 'phase':phase,
+                                  'rawExitCode':code, 'context':str(contexts[0])}
+        error_path = report/'infrastructure-error.txt'
+        require(not error_path.is_file(), error_path.read_text(encoding='utf8') if error_path.is_file() else '')
+        require(result['timeout'] or phase in {'complete','process_failed'},
+                'Qt runner did not finalize evidence; last phase='+phase+'; '+str(report))
+    except Exception as error:
+        infrastructure_error(result, 'qt_gui_evidence', error)
+
+
 def invoke(policy_path, spec_path):
     policy = load_policy(policy_path)
     spec = read_json(spec_path)
@@ -484,6 +503,8 @@ def invoke(policy_path, spec_path):
         result['timeoutCause']='undetermined; allowed prerequisites passed; requires diagnosis, not an ordinary assertion failure'
     else:
         result['classification']='passed' if result['exitCode']==0 else 'failed'
+    if any(Path(arg).as_posix() == (Path(spec['source'])/'cmake/run_qt_gui_test.cmake').as_posix() for arg in command):
+        observe_qt_gui_result(result, out/'QtGui')
     try:
         result['logSha256'] = digest(out/'output.log')
         result['settingsInitializations'] = [{'record':str(path),'sha256':digest(path),**read_json(path)}

@@ -1,6 +1,9 @@
 #include "codetemplatecontextanalyzer.h"
 #include "tsdocument.h"
 #include "semanticindex.h"
+#include "semanticindexsnapshot.h"
+#include "slangmanager.h"
+#include <QDir>
 #include "editorfileidentity.h"
 #include <algorithm>
 #include <cstring>
@@ -41,13 +44,18 @@ CodeTemplateSignalContext CodeTemplateContextAnalyzer::analyze(
     if (ts_node_is_null(module)) return result;
     result.currentModuleFound = true;
     auto* index = SemanticIndex::getInstance();
-    if (file.isEmpty() || !index->snapshotToken().isValid()
-        || index->getCachedFileContent(file) != text) {
-        return result;
+    auto snapshot = index->snapshot();
+    const QString contextFile = file.isEmpty()
+        ? QDir::temp().absoluteFilePath(QStringLiteral("zeroslack-template-context.sv")) : file;
+    if (file.isEmpty() || !snapshot || snapshot->getCachedFileContent(file) != text) {
+        SlangManager slang;
+        snapshot = std::make_shared<const SemanticIndexSnapshot>(
+            SemanticIndexSnapshot::fromSymbolRecords(
+                slang.extractSymbolRecords(contextFile, text), {}, {}, {{contextFile, text}}));
     }
     QString moduleName;
-    for (const auto& record : index->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Module)) {
-        if (EditorFileIdentity::same(record.location.fileName, file)
+    for (const auto& record : snapshot->getSymbolRecordsByDeclarationKind(SymbolTaxonomy::DeclarationKind::Module)) {
+        if (EditorFileIdentity::same(record.location.fileName, contextFile)
             && record.location.position * 2 >= int(ts_node_start_byte(module))
             && record.location.position * 2 < int(ts_node_end_byte(module))) {
             if (!moduleName.isEmpty()) return result;
@@ -57,7 +65,7 @@ CodeTemplateSignalContext CodeTemplateContextAnalyzer::analyze(
     if (moduleName.isEmpty()) {
         return result;
     }
-    auto records = index->getSymbolRecordsByOwner(moduleName);
+    auto records = snapshot->getSymbolRecordsByOwner(moduleName);
     std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
         return a.location.position < b.location.position;
     });
@@ -71,7 +79,7 @@ CodeTemplateSignalContext CodeTemplateContextAnalyzer::analyze(
             || !facts.available || !facts.integral || !facts.fixedSize
             || facts.unpackedArray || facts.interfaceType || facts.structuredLeavesAvailable
             || !facts.enumValues.isEmpty() || !facts.bitWidth
-            || !EditorFileIdentity::same(record.location.fileName, file))
+            || !EditorFileIdentity::same(record.location.fileName, contextFile))
             continue;
         if (facts.bitWidth == 1) {
             if (result.clockName.isEmpty()) result.clockName = record.name;

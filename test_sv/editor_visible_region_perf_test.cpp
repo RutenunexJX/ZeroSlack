@@ -234,6 +234,13 @@ void exerciseVisibleEditorPresentation()
                    <= metrics.visiblePresentationRefreshes * 64 + 64
                && metrics.diagnosticCandidatesExamined
                       <= metrics.visiblePresentationRefreshes * 64 + 64);
+    std::printf("diag.scroll scope=%d changes=%lld document=%llu materialize=%llu folding=%llu ghost=%llu pending=%d\n",
+        waveScopeChangesAfterScroll, static_cast<long long>(documentChanges.size()),
+        static_cast<unsigned long long>(metrics.documentChanges),
+        static_cast<unsigned long long>(metrics.fullTextMaterializations),
+        static_cast<unsigned long long>(metrics.fullFoldingRebuilds),
+        static_cast<unsigned long long>(metrics.fullGhostQueries),
+        editor.syntaxDocument()->hasPendingEdits());
     expect("scroll performs no wave-preview scope publication",
            waveScopeChangesAfterScroll == 0);
     expect("scroll and cursor movement perform no document or full rebuild",
@@ -264,6 +271,11 @@ void exerciseVisibleEditorPresentation()
     const auto resizeMetrics = editor.hotPathMetricsForTest();
     expect("width animation retains diagnostics and semantic highlight ranges",
            selectionsUnchanged && !beforeResize.isEmpty());
+    std::printf("diag.width refresh=%llu semantic=%llu diagnostic=%llu pending=%d\n",
+        static_cast<unsigned long long>(resizeMetrics.visiblePresentationRefreshes),
+        static_cast<unsigned long long>(resizeMetrics.semanticDecorationCandidatesExamined),
+        static_cast<unsigned long long>(resizeMetrics.diagnosticVisibleLineProbes),
+        editor.syntaxDocument()->hasPendingEdits());
     expect("width animation does not rebuild unchanged visible annotations",
            resizeMetrics.visiblePresentationRefreshes == 0
                && resizeMetrics.semanticDecorationCandidatesExamined == 0
@@ -315,6 +327,10 @@ void exerciseVisibleEditorPresentation()
         QCoreApplication::processEvents();
         editor.viewport()->repaint();
         peer.viewport()->repaint();
+        std::printf("diag.shared same=%d lines=%d/%d revision=%d/%d pending=%d\n",
+            peer.document()==editor.document(), peer.cursorForPosition(QPoint(0,0)).blockNumber(),
+            editor.cursorForPosition(QPoint(0,0)).blockNumber(), editor.document()->revision(), sharedRevision,
+            editor.syntaxDocument()->hasPendingEdits());
         expect("layout caches preserve independently scrolled shared-document views",
                peer.document() == editor.document()
                    && peer.cursorForPosition(QPoint(0, 0)).blockNumber()
@@ -322,6 +338,8 @@ void exerciseVisibleEditorPresentation()
                    && editor.document()->revision() == sharedRevision);
     }
     editor.viewport()->repaint();
+    std::printf("diag.shared-close revision=%d/%d height=%d textEqual=%d\n",
+        editor.document()->revision(), sharedRevision, editor.cursorRect().height(), editor.toPlainText()==fixture.text);
     expect("closing a cached peer leaves the remaining view usable",
            editor.document()->revision() == sharedRevision
                && editor.cursorRect().height() > 0

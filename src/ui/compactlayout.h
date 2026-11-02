@@ -173,6 +173,9 @@ private:
         overflow->setVisible(hasOverflow);
         const int height = row->sizeHint().height();
         if (height > 0 && minimumHeight() != height) setFixedHeight(height);
+        // Reparenting can lay out buttons while More is still visible. Commit
+        // the final visibility before returning from the owner arrangement.
+        row->activate();
         if (menu->isVisible()) sizePopup();
     }
     void sizePopup() {

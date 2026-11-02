@@ -415,6 +415,7 @@ MyCodeEditor::UserEditScope::UserEditScope(MyCodeEditor* value, int key, bool re
     if (outer) {
         document = editor->document();
         revision = editor->semanticDocumentRevision();
+        editor->state->syntax.setInteractiveParsing(true);
         emit editor->userEditStarted(key, repeat);
     }
 }
@@ -423,9 +424,11 @@ MyCodeEditor::UserEditScope::~UserEditScope()
 {
     if (!editor) return;
     --editor->userEditDepth;
-    if (outer)
+    if (outer) {
+        editor->state->syntax.setInteractiveParsing(false);
         emit editor->userEditFinished(document == editor->document()
             && revision != editor->semanticDocumentRevision());
+    }
 }
 
 MyCodeEditor::UserEditScope MyCodeEditor::beginUserEdit(int key, bool repeat)
@@ -454,6 +457,7 @@ void MyCodeEditor::setPlainText(const QString& text)
     {
         auto edit = beginSynchronousEditTransaction();
         QPlainTextEdit::setPlainText(text);
+        state->syntax.finishSynchronousLoad();
     }
     emit insightScopeChanged();
     bindTemplateModel();

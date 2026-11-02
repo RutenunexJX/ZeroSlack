@@ -217,7 +217,7 @@ private slots:
         QVERIFY(context->dockWidget()->minimumWidth() < context->dockWidget()->maximumWidth());
         // Restore a kept resource; transient tools and More intentionally do not
         // persist a section in the workspace state.
-        const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::Module, files.path());
+        const auto resource = LiveInsightsContextProvider::resourceForKind(LiveInsightKind::State, files.path());
         QVERIFY(context->openResource(resource, {ContextSurface::Docked, ContextPersistence::Kept, ContextBinding::Global}));
         motion->finishDrawerAnimation();
         window.resizeDocks({context->dockWidget()}, {preferred}, Qt::Horizontal); QTest::qWait(20);
