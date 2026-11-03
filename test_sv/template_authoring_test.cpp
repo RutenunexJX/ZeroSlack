@@ -11,6 +11,10 @@
 #include "usertemplateservice.h"
 #include <QtTest>
 #include <QtWidgets>
+#include <QScopeGuard>
+#include <QElapsedTimer>
+#include <QDeadlineTimer>
+#include <cstdio>
 #define private public
 #include "globalcontrolcoordinator.h"
 #include "globalcontrolpanel.h"
@@ -35,6 +39,11 @@ void evidence(const QString &name, const QByteArray &bytes) {
 }
 void type(const QString &text) {
   for (const auto character : text) {
+    std::printf("KEY_TARGET_BEFORE_WAIT code=%u focus=%p active=%p\n",
+                unsigned(character.unicode()), static_cast<void*>(QApplication::focusWidget()),
+                static_cast<void*>(QApplication::activeWindow()));
+    std::fflush(stdout);
+    QTRY_VERIFY(QApplication::focusWidget() != nullptr);
     if (character == '\n')
       QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
     else
@@ -80,13 +89,105 @@ void returnToParentCode(MyCodeEditor* editor, const QString& parent) {
 
 class PopupLifecycleObserver : public QObject {
 public:
-  int shows = 0, hides = 0, activations = 0;
-  bool eventFilter(QObject *, QEvent *event) override {
-    shows += event->type() == QEvent::Show;
-    hides += event->type() == QEvent::Hide;
-    activations += event->type() == QEvent::WindowActivate;
+  PopupLifecycleObserver(QWidget* owner, GlobalControlPanel* panel)
+      : owner(owner), panel(panel), search(panel->findChild<QLineEdit*>("globalControlSearchEdit")) {
+    clock.start();
+    qApp->installEventFilter(this);
+    record("observe-before-owner-show");
+  }
+  ~PopupLifecycleObserver() override {
+    qApp->removeEventFilter(this);
+    record("scope-exit", {{"testFailed", QTest::currentTestFailed()}});
+    const QJsonObject report{{"platform", QGuiApplication::platformName()},
+        {"dataRow", QString::fromLatin1(QTest::currentDataTag())}, {"events", events},
+        {"shows", shows}, {"hides", hides}, {"activations", activations},
+        {"filterShows", filterShows()}, {"filterHides", filterHides()}, {"filterActivations", filterActivations()}};
+    qInfo().noquote() << "POPUP_FOCUS_TRACE" << QJsonDocument(report).toJson(QJsonDocument::Compact);
+    const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (!directory.isEmpty()) {
+      QFile output(QDir(directory).filePath(QString("popup-focus-%1.json").arg(QTest::currentDataTag())));
+      if (output.open(QIODevice::WriteOnly)) output.write(QJsonDocument(report).toJson());
+      else qWarning() << "Popup focus trace could not be written:" << output.errorString();
+    }
+  }
+  void beginFiltering() {
+    startShows=shows; startHides=hides; startActivations=activations; filterStarted=true;
+    record("filter-begin");
+  }
+  void endFiltering() {
+    endShows=shows; endHides=hides; endActivations=activations; filterEnded=true;
+    record("filter-end");
+  }
+  int filterShows() const { return filterStarted ? (filterEnded ? endShows : shows)-startShows : 0; }
+  int filterHides() const { return filterStarted ? (filterEnded ? endHides : hides)-startHides : 0; }
+  int filterActivations() const { return filterStarted ? (filterEnded ? endActivations : activations)-startActivations : 0; }
+  QString diagnostic(const QString& reason) const {
+    return reason + " " + QString::fromUtf8(QJsonDocument(snapshot()).toJson(QJsonDocument::Compact));
+  }
+  void record(const char* boundary, QJsonObject details = {}) {
+    const auto state = snapshot();
+    for (auto it=state.begin();it!=state.end();++it) details.insert(it.key(),it.value());
+    details["boundary"]=QString::fromLatin1(boundary);
+    details["microseconds"]=clock.nsecsElapsed()/1000;
+    details["epochMs"]=QDateTime::currentMSecsSinceEpoch();
+    events.append(details);
+  }
+  int shows=0, hides=0, activations=0;
+protected:
+  bool eventFilter(QObject* object,QEvent* event) override {
+    if (object!=owner && object!=panel && object!=search && object!=qApp
+        && object!=owner->windowHandle() && object!=panel->windowHandle()) return false;
+    const char* name=nullptr;
+    switch(event->type()) {
+    case QEvent::Show: name="Show"; break;
+    case QEvent::Hide: name="Hide"; break;
+    case QEvent::WindowActivate: name="WindowActivate"; break;
+    case QEvent::WindowDeactivate: name="WindowDeactivate"; break;
+    case QEvent::FocusIn: name="FocusIn"; break;
+    case QEvent::FocusOut: name="FocusOut"; break;
+    case QEvent::Close: name="Close"; break;
+    case QEvent::ApplicationStateChange: name="ApplicationStateChange"; break;
+    default:return false;
+    }
+    if (object==panel) {
+      shows+=event->type()==QEvent::Show;
+      hides+=event->type()==QEvent::Hide;
+      activations+=event->type()==QEvent::WindowActivate;
+    }
+    QJsonObject details{{"object",label(object)},{"spontaneous",event->spontaneous()}};
+    if (event->type()==QEvent::FocusIn || event->type()==QEvent::FocusOut)
+      details["focusReason"]=int(static_cast<QFocusEvent*>(event)->reason());
+    record(name,details);
     return false;
   }
+private:
+  QString label(QObject* object) const {
+    if (!object) return "none";
+    const QString role=object==owner ? "owner" : object==panel ? "panel" : object==search ? "search"
+        : object==qApp ? "application" : object==owner->windowHandle() ? "ownerWindow"
+        : object==panel->windowHandle() ? "panelWindow" : "other";
+    return role+":"+object->metaObject()->className()+":"+object->objectName();
+  }
+  static QJsonArray rect(const QRect& value) { return {value.x(),value.y(),value.width(),value.height()}; }
+  QJsonObject snapshot() const {
+    return {{"dataRow",QString::fromLatin1(QTest::currentDataTag())},{"query",search ? search->text() : QString()},
+      {"ownerVisible",owner->isVisible()},{"ownerActive",owner->isActiveWindow()},
+      {"ownerMinimized",owner->isMinimized()},{"panelVisible",panel->isVisible()},
+      {"panelFlags",int(panel->windowFlags())},{"searchFocus",search && search->hasFocus()},
+      {"applicationState",int(qApp->applicationState())},{"activeWindow",label(QApplication::activeWindow())},
+      {"activePopup",label(QApplication::activePopupWidget())},{"focusWidget",label(QApplication::focusWidget())},
+      {"focusWindow",label(QGuiApplication::focusWindow())},{"geometry",rect(panel->geometry())},
+      {"availableGeometry",rect(owner->screen() ? owner->screen()->availableGeometry() : QRect())},
+      {"shows",shows},{"hides",hides},{"activations",activations},
+      {"filterShows",filterShows()},{"filterHides",filterHides()},{"filterActivations",filterActivations()}};
+  }
+  QWidget* owner;
+  GlobalControlPanel* panel;
+  QLineEdit* search;
+  QElapsedTimer clock;
+  QJsonArray events;
+  int startShows=0,startHides=0,startActivations=0,endShows=0,endHides=0,endActivations=0;
+  bool filterStarted=false,filterEnded=false;
 };
 class CatalogFixture {
 public:
@@ -159,12 +260,43 @@ public:
   MainWindow window;
   MyCodeEditor *editor = nullptr;
   QString path;
+  QObject focusContext;
+  QElapsedTimer focusClock;
+  QJsonArray focusEvents;
+  int focusTraceId = 0;
+  void recordFocus(const char* phase) {
+    const auto label = [](QObject* object) {
+      return object ? QString::fromLatin1(object->metaObject()->className()) + ":" + object->objectName()
+                    : QStringLiteral("none");
+    };
+    focusEvents.append(QJsonObject{{"phase", QString::fromLatin1(phase)},
+        {"microseconds", focusClock.nsecsElapsed() / 1000},
+        {"visible", window.isVisible()}, {"active", window.isActiveWindow()},
+        {"applicationActive", qApp->applicationState() == Qt::ApplicationActive},
+        {"focusWindowIsOwner", window.windowHandle() && QGuiApplication::focusWindow() == window.windowHandle()},
+        {"editorHasFocus", editor && editor->hasFocus()},
+        {"focusWidget", label(QApplication::focusWidget())},
+        {"activeWindow", label(QApplication::activeWindow())},
+        {"activePopup", label(QApplication::activePopupWidget())}});
+  }
   Fixture() {
+    static int nextFocusTraceId = 0;
+    focusTraceId = ++nextFocusTraceId;
+    focusClock.start();
+    QObject::connect(qApp, &QApplication::focusChanged, &focusContext,
+                     [this](QWidget*, QWidget*) { recordFocus("focusChanged"); });
+    QObject::connect(qApp, &QGuiApplication::applicationStateChanged, &focusContext,
+                     [this](Qt::ApplicationState) { recordFocus("applicationStateChanged"); });
+    recordFocus("before-setup");
     path = root.filePath("tb.sv");
     put(path, "module tb;\n  int hits = 0;\n\nendmodule\n");
     window.resize(1180, 850);
     window.show();
+    if (window.windowHandle())
+      QObject::connect(window.windowHandle(), &QWindow::activeChanged, &focusContext,
+                       [this] { recordFocus("owner-activeChanged"); });
     window.activateWindow();
+    recordFocus("after-initial-activation-request");
     window.workspaceSessionCoordinator->setRestoreOnActivation(false);
     window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(
         false);
@@ -173,8 +305,39 @@ public:
     editor = window.tabManager->getCurrentEditor();
     cursor(editor, editor->toPlainText().indexOf("\nendmodule"));
     editor->setFocus();
+    recordFocus("before-editor-focus-preparation");
+    const bool focusReady = QTest::qWaitFor([&] {
+      if (!window.isVisible() || window.isMinimized() || QApplication::activePopupWidget())
+        return false;
+      if (!window.isActiveWindow() || qApp->applicationState() != Qt::ApplicationActive
+          || QGuiApplication::focusWindow() != window.windowHandle()) {
+        recordFocus("owner-activation-request");
+        window.raise();
+        window.activateWindow();
+        return false;
+      }
+      if (!editor->hasFocus()) {
+        editor->setFocus();
+        recordFocus("editor-focus-request");
+      }
+      return editor->hasFocus() && QApplication::focusWidget() == editor;
+    }, QDeadlineTimer(QTest::Internal::defaultTryTimeout));
+    recordFocus(focusReady ? "focus-preparation-complete" : "focus-preparation-failed");
+    recordFocus("constructor-return");
   }
   ~Fixture() {
+    recordFocus("fixture-destruction");
+    const QJsonObject report{{"test", QString::fromLatin1(QTest::currentTestFunction())},
+        {"data", QString::fromLatin1(QTest::currentDataTag())}, {"fixture", focusTraceId},
+        {"failed", QTest::currentTestFailed()}, {"events", focusEvents}};
+    std::printf("FIXTURE_FOCUS_TRACE %s\n",
+                QJsonDocument(report).toJson(QJsonDocument::Compact).constData());
+    std::fflush(stdout);
+    const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+    if (!directory.isEmpty()) {
+      QFile output(QDir(directory).filePath(QString("fixture-focus-%1.json").arg(focusTraceId)));
+      if (output.open(QIODevice::WriteOnly)) output.write(QJsonDocument(report).toJson());
+    }
     for (auto *view : window.tabManager->openEditors())
       view->document()->setModified(false);
   }
@@ -194,6 +357,8 @@ class TemplateInputTest : public QObject {
     panel->resetQuery(query);
     f.window.globalControlCoordinator->refreshVisibleItems();
     panel->focusSearch(false);
+    auto* search = panel->findChild<QLineEdit*>("globalControlSearchEdit");
+    QTRY_VERIFY(search && search->hasFocus());
   }
   void insert(Fixture &f, const QString &token) {
     auto *editor = f.editor;
@@ -217,6 +382,7 @@ class TemplateInputTest : public QObject {
         qInfo() << "candidate" << list->item(i)->text()
                 << list->item(i)->toolTip() << list->item(i)->flags();
     QCOMPARE(list->currentItem()->text(), "@" + token);
+    QTRY_VERIFY(QApplication::focusWidget() != nullptr);
     QSignalSpy messages(f.window.simulationCommands.get(),
                         &SimulationCommandService::message);
     QTest::keyClick(QApplication::focusWidget(), Qt::Key_Return);
@@ -239,9 +405,12 @@ private slots:
     QFETCH(bool, largeFont);
     QWidget owner;
     owner.resize(900, 600);
+    GlobalControlPanel panel(&owner);
+    PopupLifecycleObserver lifecycle(&owner, &panel);
+    lifecycle.record("before-owner-show");
     owner.show();
     owner.activateWindow();
-    GlobalControlPanel panel(&owner);
+    lifecycle.record("after-owner-activate-request");
     panel.ensurePolished();
     auto *search = panel.findChild<QLineEdit *>("globalControlSearchEdit");
     auto *list = panel.findChild<QListWidget *>("globalControlResultList");
@@ -259,17 +428,43 @@ private slots:
         + "Select a procedural code container or use a declaration template at a module declaration position. "
           "The current selection remains unchanged.";
     panel.setQueryChangedHandler([&](const QString &query) {
+      lifecycle.record("query-callback-begin", {{"callbackQuery",query}});
       if (query == "one") panel.setItems({pool.at(4)});
       else if (query == "none") panel.setItems({}, reason);
       else if (query == "few") panel.setItems(pool.mid(0, 3));
       else panel.setItems(pool);
+      lifecycle.record("query-callback-end", {{"callbackQuery",query}});
     });
     panel.setItems(pool);
     const auto bounds = owner.screen()->availableGeometry();
     const QPoint anchor(bounds.right() - 20,
         edge == 0 ? bounds.top() + 12 : edge == 1 ? bounds.bottom() - 12 : bounds.center().y());
+    QElapsedTimer activationTime; activationTime.start();
+    int activationAttempts=0;
+    const auto establishOwnerActivation = [&] {
+      if (!owner.isVisible() || owner.isMinimized()) return false;
+      const auto active = [&] { return owner.isActiveWindow()
+          && qApp->applicationState()==Qt::ApplicationActive
+          && QGuiApplication::focusWindow()==owner.windowHandle(); };
+      if (active()) return true;
+      ++activationAttempts;
+      lifecycle.record("owner-activation-request", {{"attempt",activationAttempts}});
+      owner.raise(); owner.activateWindow();
+      return active();
+    };
+    QTRY_VERIFY2(establishOwnerActivation(), qPrintable(lifecycle.diagnostic("popup owner activation prerequisite failed")));
+    lifecycle.record("owner-activation-complete", {{"attempts",activationAttempts},{"elapsedMs",activationTime.elapsed()}});
+    lifecycle.record("before-first-showAt");
+    QVERIFY2(owner.isVisible() && !owner.isMinimized() && owner.isActiveWindow(),
+             qPrintable(lifecycle.diagnostic("popup owner lost activation before first showAt")));
     panel.showAt(&owner, anchor);
-    QTRY_VERIFY(search->hasFocus());
+    lifecycle.record("after-first-showAt");
+    QTRY_VERIFY2(panel.isVisible() && search->hasFocus()
+        && QApplication::activePopupWidget()==&panel && QApplication::focusWidget()==search
+        && qApp->applicationState()==Qt::ApplicationActive
+        && (QGuiApplication::focusWindow()==panel.windowHandle() || QGuiApplication::focusWindow()==owner.windowHandle()),
+        qPrintable(lifecycle.diagnostic("popup focus ownership prerequisite failed")));
+    lifecycle.record("popup-focus-established");
     if (largeFont) {
       list->setStyleSheet("QListWidget { font-size: 24px; }");
       notice->setStyleSheet("QLabel { font-size: 24px; }");
@@ -296,16 +491,17 @@ private slots:
     QVERIFY(list->verticalScrollBar()->value() > 0);
     QTest::keyClick(search, Qt::Key_Up);
     QCOMPARE(list->currentRow(), 10);
-    PopupLifecycleObserver lifecycle;
-    panel.installEventFilter(&lifecycle);
+    lifecycle.beginFiltering();
     for (const auto &query : {QString("one"), QString("none"), QString("few"), QString("one")}) {
+      lifecycle.record("before-keyClicks", {{"requestedQuery",query}});
       search->selectAll();
       QTest::keyClicks(search, query);
-      QTRY_VERIFY(search->hasFocus());
+      lifecycle.record("after-keyClicks", {{"requestedQuery",query}});
+      QTRY_VERIFY2(search->hasFocus(), qPrintable(lifecycle.diagnostic("popup search lost focus during filtering")));
       QCOMPARE(search->text(), query);
       qInfo() << "filtered popup" << query << panel.geometry() << "list" << list->geometry()
               << "viewport" << list->viewport()->geometry();
-      QVERIFY(panel.isVisible());
+      QVERIFY2(panel.isVisible(), qPrintable(lifecycle.diagnostic("popup hidden during filtering")));
       QCOMPARE(panel.width(), fullWidth);
       QVERIFY(bounds.contains(panel.geometry()));
       QVERIFY(panel.rect().contains(search->geometry()));
@@ -318,7 +514,7 @@ private slots:
         QVERIFY(notice->height() >= notice->heightForWidth(notice->width()));
         QVERIFY(notice->height() > notice->fontMetrics().height());
         QTest::keyClick(search, Qt::Key_Return);
-        QVERIFY(panel.isVisible());
+        QVERIFY2(panel.isVisible(), qPrintable(lifecycle.diagnostic("popup hidden during filtering")));
       } else {
         QCOMPARE(list->count(), query == "few" ? 3 : 1);
         QVERIFY(!list->isHidden());
@@ -340,9 +536,10 @@ private slots:
           {"scale", qEnvironmentVariable("QT_SCALE_FACTOR")}, {"devicePixelRatio", panel.devicePixelRatioF()},
           {"focusPreserved", search->hasFocus()}}).toJson());
     }
-    QCOMPARE(lifecycle.shows, 0);
-    QCOMPARE(lifecycle.hides, 0);
-    QCOMPARE(lifecycle.activations, 0);
+    lifecycle.endFiltering();
+    QCOMPARE(lifecycle.filterShows(), 0);
+    QCOMPARE(lifecycle.filterHides(), 0);
+    QCOMPARE(lifecycle.filterActivations(), 0);
     QString selected;
     panel.setItemActivatedHandler([&](const auto &item) { selected = item.id; });
     QTest::keyClick(search, Qt::Key_Return);
@@ -936,12 +1133,60 @@ private slots:
     QCOMPARE(editor->toPlainText(), before);
     editor->setReadOnly(false);
     QVERIFY(editor->editTemplateInstance());
-    QApplication::clipboard()->setText("hits += 2;");
-    if (QApplication::clipboard()->text() != "hits += 2;") {
-      QTest::qWait(100);
-      QApplication::clipboard()->setText("hits += 2;");
-    }
+    auto* clipboard = QApplication::clipboard();
+    QElapsedTimer clipboardClock;
+    clipboardClock.start();
+    const QDeadlineTimer clipboardDeadline(QTest::Internal::defaultTryTimeout);
+    QSignalSpy clipboardChanges(clipboard, &QClipboard::dataChanged);
+    QJsonArray clipboardEvents;
+    int clipboardWrites = 0;
+    const auto recordClipboard = [&](const char* phase) {
+      const auto text = clipboard->text();
+      const QJsonObject event{{"phase", QString::fromLatin1(phase)},
+          {"microseconds", clipboardClock.nsecsElapsed() / 1000},
+          {"writeAttempts", clipboardWrites}, {"changeSignals", clipboardChanges.size()},
+          {"ownsClipboard", clipboard->ownsClipboard()}, {"empty", text.isEmpty()},
+          {"expectedMatches", text == "hits += 2;"}};
+      clipboardEvents.append(event);
+      std::printf("CLIPBOARD_PRECONDITION %s\n",
+                  QJsonDocument(event).toJson(QJsonDocument::Compact).constData());
+      std::fflush(stdout);
+    };
+    QTimer clipboardRetry;
+    clipboardRetry.setInterval(50);
+    const auto writeClipboard = [&] {
+      ++clipboardWrites;
+      clipboard->setText("hits += 2;");
+      recordClipboard("write-return");
+    };
+    QObject::connect(&clipboardRetry, &QTimer::timeout, &clipboardRetry, [&] {
+      const auto current = clipboard->text();
+      if (clipboardDeadline.hasExpired()) {
+        clipboardRetry.stop();
+        recordClipboard("retry-budget-expired");
+        return;
+      }
+      if (current != "hits += 2;")
+        writeClipboard();
+    });
+    const auto recordClipboardResult = qScopeGuard([&] {
+      clipboardRetry.stop();
+      recordClipboard("scope-exit");
+      const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+      if (!directory.isEmpty()) {
+        QFile output(QDir(directory).filePath("clipboard-precondition.json"));
+        if (output.open(QIODevice::WriteOnly))
+          output.write(QJsonDocument(QJsonObject{{"events", clipboardEvents},
+              {"platform", QGuiApplication::platformName()},
+              {"testFailed", QTest::currentTestFailed()}}).toJson());
+      }
+    });
+    // Retry only fixture seeding within the original assertion's wait budget.
+    clipboardRetry.start();
+    writeClipboard();
     QTRY_COMPARE(QApplication::clipboard()->text(), QString("hits += 2;"));
+    clipboardRetry.stop();
+    recordClipboard("ready-before-paste");
     editor->paste();
     QVERIFY(editor->toPlainText().contains("hits += 2;"));
     QInputMethodEvent commit;
@@ -1587,31 +1832,64 @@ endmodule
   }
 
   void metadataSaveFailureAndRecovery() {
-    Fixture f;
-    auto *e = f.editor;
-    QTRY_VERIFY(e->hasFocus());
-    insert(f, "process");
-    type("hits += 1;\n");
-    const auto source = e->toPlainText();
-    const auto metadata = e->templateModel()->serialize(f.path);
-    QLockFile busy(qEnvironmentVariable("ZEROSLACK_SESSION_STORAGE_PATH") +
-                   ".write.lock");
-    QVERIFY(busy.tryLock(0));
-    QSignalSpy failures(f.window.tabManager.get(), &TabManager::fileSaveFailed);
-    QVERIFY(!f.window.tabManager->saveCurrentTab());
-    QVERIFY(!failures.isEmpty());
-    QVERIFY(e->document()->isModified());
-    QCOMPARE(e->toPlainText(), source);
-    QCOMPARE(e->templateModel()->serialize(f.path), metadata);
-    busy.unlock();
-    QVERIFY2(f.window.tabManager->saveCurrentTab(),
-             qPrintable(failures.last().at(1).toString()));
-    QVERIFY(!e->document()->isModified());
-    QString error;
-    QCOMPARE(
-        WorkspaceSessionStateService().loadDocumentTemplates(f.path, &error),
-        metadata);
-    QVERIFY(error.isEmpty());
+    const auto variable = "ZEROSLACK_SESSION_STORAGE_PATH";
+    const bool callerSet = qEnvironmentVariableIsSet(variable);
+    const QByteArray callerValue = qgetenv(variable);
+    QTemporaryDir storage;
+    QVERIFY(storage.isValid());
+    const auto privatePath = QDir::cleanPath(storage.filePath("sessions.ini"));
+    QVERIFY(QFileInfo(privatePath).isAbsolute());
+    bool restored = false, windowDestroyedBeforeRestore = false;
+    {
+      QPointer<MainWindow> observedWindow;
+      const auto restoreEnvironment = qScopeGuard([&] {
+        windowDestroyedBeforeRestore = observedWindow.isNull();
+        restored = callerSet ? qputenv(variable, callerValue) : qunsetenv(variable);
+        qInfo().noquote() << "METADATA_ENV_RESTORED" << QJsonDocument(QJsonObject{
+            {"callerWasSet", callerSet}, {"environmentSet", qEnvironmentVariableIsSet(variable)},
+            {"valueRestored", qgetenv(variable) == callerValue}, {"restoreSucceeded", restored},
+            {"windowDestroyedBeforeRestore", windowDestroyedBeforeRestore}}).toJson(QJsonDocument::Compact);
+      });
+      QVERIFY(qputenv(variable, privatePath.toUtf8()));
+      const auto resolvedPath = WorkspaceSessionStateService().localStoragePath();
+      QCOMPARE(resolvedPath, privatePath);
+      qInfo().noquote() << "METADATA_PRIVATE_STORAGE" << QJsonDocument(QJsonObject{
+          {"callerWasSet", callerSet}, {"callerValue", QString::fromUtf8(callerValue)},
+          {"privatePath", privatePath}, {"localStoragePath", resolvedPath}}).toJson(QJsonDocument::Compact);
+      Fixture f;
+      observedWindow = &f.window;
+      auto *e = f.editor;
+      QTRY_VERIFY(e->hasFocus());
+      insert(f, "process");
+      type("hits += 1;\n");
+      const auto source = e->toPlainText();
+      const auto metadata = e->templateModel()->serialize(f.path);
+      QCOMPARE(WorkspaceSessionStateService().localStoragePath(), resolvedPath);
+      const auto lockPath = resolvedPath + ".write.lock";
+      qInfo().noquote() << "METADATA_LOCK_BEFORE_SAVE" << QJsonDocument(QJsonObject{
+          {"localStoragePath", resolvedPath}, {"testLockPath", lockPath}}).toJson(QJsonDocument::Compact);
+      QLockFile busy(lockPath);
+      QVERIFY(busy.tryLock(0));
+      QSignalSpy failures(f.window.tabManager.get(), &TabManager::fileSaveFailed);
+      QVERIFY(!f.window.tabManager->saveCurrentTab());
+      QVERIFY(!failures.isEmpty());
+      QVERIFY(e->document()->isModified());
+      QCOMPARE(e->toPlainText(), source);
+      QCOMPARE(e->templateModel()->serialize(f.path), metadata);
+      busy.unlock();
+      QVERIFY2(f.window.tabManager->saveCurrentTab(),
+               qPrintable(failures.last().at(1).toString()));
+      QVERIFY(!e->document()->isModified());
+      QString error;
+      QCOMPARE(
+          WorkspaceSessionStateService().loadDocumentTemplates(f.path, &error),
+          metadata);
+      QVERIFY(error.isEmpty());
+    }
+    QVERIFY(windowDestroyedBeforeRestore);
+    QVERIFY(restored);
+    QCOMPARE(qEnvironmentVariableIsSet(variable), callerSet);
+    QCOMPARE(qgetenv(variable), callerValue);
   }
 };
 int main(int argc, char **argv) {

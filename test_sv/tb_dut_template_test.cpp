@@ -12,6 +12,7 @@
 #include "shareddocument.h"
 #include "annotationlayer.h"
 #include <algorithm>
+#include <cstdio>
 #include <QtTest>
 #include <QtWidgets>
 #define private public
@@ -29,9 +30,47 @@
 namespace {
 void put(const QString &path, const QByteArray &bytes) { QFile file(path); if (file.open(QIODevice::WriteOnly)) file.write(bytes); }
 void evidence(const QString &name, const QByteArray &data) {
-    const auto dir = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+    const auto requested = qEnvironmentVariable("SIMDOCK_TEST_ARTIFACT_DIR");
+    const auto dir = requested.isEmpty() ? qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR") : requested;
     if (!dir.isEmpty()) put(QDir(dir).filePath(name), data);
 }
+class SaveObserver : public QObject {
+public:
+    explicit SaveObserver(MainWindow& owner) : window(owner) {
+        clock.start();
+        connect(window.tabManager.get(), &TabManager::fileSaveFailed, this,
+            [this](const QString& file, const QString& reason) { record("fileSaveFailed", file, reason); });
+        connect(window.tabManager.get(), &TabManager::fileSaved, this,
+            [this](const QString& file) { record("fileSaved", file); });
+    }
+    ~SaveObserver() override {
+        record("scope-exit");
+        evidence(QString("save-%1-%2.json").arg(QTest::currentTestFunction(), QTest::currentDataTag()),
+                 QJsonDocument(events).toJson());
+    }
+    void beforeSave() { ++attempt; record("before-save"); }
+private:
+    void record(const char* phase, const QString& file = {}, const QString& reason = {}) {
+        auto* editor = window.tabManager->getCurrentEditor();
+        auto* document = window.tabManager->sharedDocumentForEditor(editor);
+        const QJsonObject event{{"phase", QString::fromLatin1(phase)},
+            {"test", QString::fromLatin1(QTest::currentTestFunction())},
+            {"data", QString::fromLatin1(QTest::currentDataTag())}, {"attempt", attempt},
+            {"microseconds", clock.nsecsElapsed()/1000}, {"testFailed", QTest::currentTestFailed()},
+            {"editorExists", editor != nullptr}, {"documentExists", document != nullptr},
+            {"documentFile", document ? document->fileName() : QString()},
+            {"documentDirty", document && document->dirty()},
+            {"externalState", document ? int(document->externalState()) : -1},
+            {"file", file}, {"reason", reason}};
+        events.append(event);
+        std::printf("TB_SAVE_TRACE %s\n", QJsonDocument(event).toJson(QJsonDocument::Compact).constData());
+        std::fflush(stdout);
+    }
+    MainWindow& window;
+    QElapsedTimer clock;
+    QJsonArray events;
+    int attempt = 0;
+};
 const QByteArray dut = R"(module core #(parameter int W=8) (
  input logic clk, input logic [W-1:0] data_in, output logic [W-1:0] data_out,
  inout wire pad, input logic [3:0] words [0:1]);
@@ -136,7 +175,7 @@ private slots:
         const auto restore = qScopeGuard([&] { catalog->setGlobalTemplateFilePath(original); });
         QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
         catalog->setGlobalTemplateFilePath(dir.filePath("templates.json"));
-        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        MainWindow window; SaveObserver saveObserver(window); window.resize(1180, 850); window.show(); window.activateWindow();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -177,6 +216,7 @@ private slots:
                 {"values",QJsonArray::fromStringList(choices.values)},{"reason",choices.reason}};
             evidence(QString("live-format-%1.json").arg(QTest::currentDataTag()), QJsonDocument(trace).toJson());
         };
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
         record("before");
         QCOMPARE(candidates().values, expected);
@@ -202,6 +242,7 @@ private slots:
         QCOMPARE(editor->templateSlotModeActiveIndex(), numeric ? 1 : 0);
         QCOMPARE(other.templateSlotModeActiveIndex(), numeric ? 0 : 1);
         QCOMPARE(editor->textCursor().selectedText(), selection); QCOMPARE(other.textCursor().selectedText(), otherSelection);
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
         record("formatted-current-analysis");
         QCOMPARE(candidates().values, expected);
@@ -220,11 +261,13 @@ private slots:
         other.undo(); record("undo-format"); QCOMPARE(editor->toPlainText(), oldText);
         QCOMPARE(editor->templateModel()->serialize(path), oldMetadata);
         QVERIFY(editor->templateInputEditing() && other.templateInputEditing());
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
         record("undo-current-analysis"); QCOMPARE(candidates().values, expected);
         editor->redo(); QCOMPARE(editor->toPlainText(), formatted);
         QCOMPARE(editor->templateModel()->serialize(path), formattedMetadata);
         QVERIFY(editor->templateInputEditing() && other.templateInputEditing());
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
         record("redo-current-analysis"); QCOMPARE(candidates().values, expected);
         QVERIFY(!editor->formatDocument().changed);
@@ -238,6 +281,7 @@ private slots:
         QTest::keyClicks(numberView, token == "clk_init" ? "125.5" : "20.5");
         const auto number = inputSlot(*editor->templateModel()->instance(child), numberName);
         QCOMPARE(editor->toPlainText().mid(number.start, number.length).trimmed(), token == "clk_init" ? "125.5" : "20.5");
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab()); QTRY_VERIFY_WITH_TIMEOUT(fresh(), 15000);
         record("changed-inputs"); QCOMPARE(candidates().values, expected);
         shared->detachView(&other); detach.dismiss();
@@ -252,6 +296,7 @@ private slots:
         QTest::keyClick(editor, Qt::Key_Down);
         QVERIFY(expected.contains(editor->textCursor().selectedText()));
         // A pending edit in a real DUT must invalidate proof until fresh analysis.
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab());
         QVERIFY(window.tabManager->openFileInTab(dir.filePath("dut.sv")));
         const auto changedDut = source.replace("posedge a", "posedge b").replace("negedge b", "negedge a")
@@ -261,6 +306,7 @@ private slots:
         QVERIFY(candidates().values.isEmpty());
         const auto retained = editor->toPlainText();
         QTest::keyClick(editor, Qt::Key_Down); QCOMPARE(editor->toPlainText(), retained);
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab());
         QTRY_VERIFY_WITH_TIMEOUT(fresh() && SemanticIndex::getInstance()->snapshot()->getCachedFileContent(dir.filePath("dut.sv"))
             == QString::fromUtf8(changedDut), 15000);
@@ -283,7 +329,7 @@ private slots:
         const auto restore = qScopeGuard([&] { catalog->setGlobalTemplateFilePath(original); });
         QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
         catalog->setGlobalTemplateFilePath(dir.filePath("templates.json"));
-        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        MainWindow window; SaveObserver saveObserver(window); window.resize(1180, 850); window.show(); window.activateWindow();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -353,6 +399,7 @@ private slots:
         }
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
         QVERIFY(editor->templateModel()->instance(child));
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab());
     }
     void formatPreservesTemplateIdentity_data() {
@@ -474,7 +521,7 @@ private slots:
         const auto restoreCatalog = qScopeGuard([&] { service->setGlobalTemplateFilePath(original); });
         QVERIFY(QFile::copy(QString::fromUtf8(TB_TEMPLATE_FILE), dir.filePath("templates.json")));
         service->setGlobalTemplateFilePath(dir.filePath("templates.json"));
-        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        MainWindow window; SaveObserver saveObserver(window); window.resize(1180, 850); window.show(); window.activateWindow();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -568,6 +615,7 @@ private slots:
         QCOMPARE(editor->toPlainText(), expected);
         QCOMPARE(editor->templateModel()->serialize(path), metadata);
         observe("input-api-boundaries");
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab());
         QVERIFY(window.tabManager->closeTabsInWorkspace(dir.path()));
         QVERIFY(window.tabManager->openFileInTab(path)); editor = window.tabManager->getCurrentEditor();
@@ -881,7 +929,7 @@ endmodule
         QVERIFY(!TemplateCapabilities::render(clock.command, clock.insertText, inputs).error.isEmpty());
         QTemporaryDir dir; const auto path = dir.filePath("tb.sv");
         put(path, "module tb;\n\nendmodule\n");
-        MainWindow window; window.show();
+        MainWindow window; SaveObserver saveObserver(window); window.show();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -910,7 +958,7 @@ endmodule
         QTemporaryDir dir;
         const auto path = dir.filePath("tb.sv");
         put(path, "module tb; int hits;\n\nendmodule\n");
-        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        MainWindow window; SaveObserver saveObserver(window); window.resize(1180, 850); window.show(); window.activateWindow();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -966,7 +1014,7 @@ endmodule
             }
         }
         QVERIFY(!clockCommand.isEmpty() && !resetCommand.isEmpty());
-        MainWindow window; window.resize(1180, 850); window.show(); window.activateWindow();
+        MainWindow window; SaveObserver saveObserver(window); window.resize(1180, 850); window.show(); window.activateWindow();
         window.workspaceSessionCoordinator->setRestoreOnActivation(false);
         window.workspaceManager->setRecentWorkspacePersistenceEnabledForTesting(false);
         window.workspaceSessionCoordinator->openWorkspace(dir.path());
@@ -1016,6 +1064,7 @@ endmodule
         QTest::keyClick(editor, Qt::Key_I, Qt::ControlModifier | Qt::ShiftModifier);
         QCOMPARE(editor->toPlainText(), afterFormat); QVERIFY(editor->templateInputEditing());
         QTest::keyClick(editor, Qt::Key_Return, Qt::ControlModifier);
+        saveObserver.beforeSave();
         QVERIFY(window.tabManager->saveCurrentTab());
         const auto saved = editor->toPlainText();
         QFile catalogFile(dir.filePath("templates.json")); QVERIFY(catalogFile.open(QIODevice::ReadOnly));
