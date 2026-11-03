@@ -1,4 +1,6 @@
-ZeroSlack v0.33.2 Windows package
+ZeroSlack v0.33.3 Windows package
+
+Release 0.33.3 strengthens managed regression coverage, focus and clipboard preparation, and Design preparation diagnostics. The accepted pre-version candidate passed 241 tests with 10 policy-restricted entries intercepted. The late Design request source and intermittent TB save cause remain unresolved. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
 Release 0.33.2 closes the reproduced full-regression failures and corrects editor parsing/highlighting, ordinary document saves, navigation refreshes and compact toolbar restoration. Test execution uses explicit runtime paths and per-process Qt evidence. The accepted candidate passed all 238 managed tests; bare CTest passed 239 with 10 policy-restricted tests not launched. Existing timeout limits, protected resources and scope restrictions remain enforced. SDK/Runtime remains 1.0.2 and embedded xIPs remains 2.14.2.
 
