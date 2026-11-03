@@ -15,6 +15,10 @@
 #include <QThreadPool>
 #include <QTreeWidget>
 #include <QTemporaryDir>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QCryptographicHash>
 
 #include <cstdio>
 #include <algorithm>
@@ -413,6 +417,197 @@ void printSetDifference(const char* label,
     std::fflush(stdout);
 }
 
+class OwDesignTrace final : public QObject
+{
+public:
+    OwDesignTrace(NavigationManager* navigation, AnalysisScheduler* scheduler,
+                  TabManager* tabs, SemanticIndex* semantic)
+        : manager(navigation), widget(navigation->navigationWidget), index(semantic)
+    {
+        clock.start();
+        if (widget) widget->installEventFilter(this);
+        connections << connect(navigation, &NavigationManager::dataRefreshed, this,
+            [this](NavigationManager::NavigationView view) {
+                mark("dataRefreshed", {{"view", int(view)},
+                    {"signalObservation", "direct"}, {"emitterSite", "unknown"},
+                    {"emittingRequest", "unknown; active may already be cleared"},
+                    {"triggerSource", "unknown"}});
+            });
+        connections << connect(navigation, &NavigationManager::navigationTelemetry, this,
+            [this](const SemanticAnalysisTelemetry& telemetry) {
+                mark("navigationTelemetry", {{"telemetry", telemetryJson(telemetry)},
+                    {"observation", "direct telemetry; signal association requires separate evidence"}});
+            });
+        connections << connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisStarted, this,
+            [this](const QString& file) { mark("fileSymbolAnalysisStarted", {{"file", file}}); });
+        connections << connect(scheduler, &AnalysisScheduler::fileSymbolAnalysisFinished, this,
+            [this](const QString& file, int symbols) {
+                mark("fileSymbolAnalysisFinished", {{"file", file}, {"symbols", symbols}});
+            });
+        connections << connect(scheduler, &AnalysisScheduler::relationshipDataRefreshRequested, this,
+            [this] { mark("relationshipDataRefreshRequested",
+                {{"observation", "receiver delivery; other connected slots may already have run"}}); });
+        connections << connect(tabs, &TabManager::activeDocumentChanged, this,
+            [this](const DocumentSnapshot& document) {
+                mark("activeDocumentChanged", {{"file", document.fileName},
+                    {"textVersion", QString::number(document.textVersion)}});
+            });
+        connections << connect(tabs, &TabManager::tabCreated, this,
+            [this](MyCodeEditor*) { mark("tabCreated"); });
+        mark("observer-enabled-before-design-preparation");
+    }
+
+    ~OwDesignTrace() override { finish(); }
+
+    void mark(const char* label, QJsonObject details = {})
+    {
+        if (finished) return;
+        details["sequence"] = ++sequence;
+        details["microseconds"] = clock.nsecsElapsed() / 1000;
+        details["label"] = QString::fromLatin1(label);
+        details["insideOpenFileInTab"] = insideOpen;
+        details["state"] = state();
+        events.append(details);
+        const auto bytes = QJsonDocument(details).toJson(QJsonDocument::Compact);
+        std::printf("OW_DESIGN_EVENT %s\n", bytes.constData());
+        std::fflush(stdout);
+    }
+
+    void beginOpen() { insideOpen = true; mark("openFileInTab-call-begin"); }
+    void endOpen() { mark("openFileInTab-call-end"); insideOpen = false; }
+
+    void sample(const char* name, const QSet<QString>& keys)
+    {
+        mark("saved-set-sample", {{"name", QString::fromLatin1(name)},
+            {"identity", identity(keys.values())}, {"use", "original saved set; sampling point preserved"}});
+    }
+
+    void snapshotSample(const char* name, const void* snapshot)
+    { mark("saved-snapshot-sample", {{"name", QString::fromLatin1(name)}, {"savedSnapshotAddress", pointer(snapshot)}}); }
+
+    void preparationPoll()
+    {
+        // Observe only existing predicate evaluations; do not pump events or wait.
+        const auto value = state();
+        const auto bytes = QJsonDocument(value).toJson(QJsonDocument::Compact);
+        if (bytes != previousPoll) {
+            previousPoll = bytes;
+            mark("preparation-predicate-state-change");
+        }
+    }
+
+    void finish()
+    {
+        if (finished) return;
+        mark("observer-finish", {{"testFailuresAtFinish", failures}});
+        if (widget) widget->removeEventFilter(this);
+        for (const auto& connection : connections) QObject::disconnect(connection);
+        finished = true;
+        const auto directory = qEnvironmentVariable("ZEROSLACK_TEST_ARTIFACT_DIR");
+        if (!directory.isEmpty()) {
+            QFile output(QDir(directory).filePath("ow-design-trace.json"));
+            if (output.open(QIODevice::WriteOnly))
+                output.write(QJsonDocument(QJsonObject{{"events", events},
+                    {"platform", QGuiApplication::platformName()},
+                    {"requestIdentityLimit", "observed active/pending states are not a captured emitter call stack"}}).toJson());
+            else std::printf("OW_DESIGN_ARTIFACT_ERROR %s\n", qPrintable(output.errorString()));
+        }
+        std::fflush(stdout);
+    }
+
+    static QJsonObject identity(QStringList keys)
+    {
+        std::sort(keys.begin(), keys.end());
+        const auto array = QJsonArray::fromStringList(keys);
+        const auto bytes = QJsonDocument(array).toJson(QJsonDocument::Compact);
+        return {{"size", keys.size()}, {"keys", array},
+            {"sha256", QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex())},
+            {"encoding", "sorted QString keys; compact JSON UTF-8 array with element boundaries"}};
+    }
+
+protected:
+    bool eventFilter(QObject* object, QEvent* event) override
+    {
+        if (object == widget && (event->type() == QEvent::Show || event->type() == QEvent::Hide))
+            mark(event->type() == QEvent::Show ? "NavigationWidget.Show" : "NavigationWidget.Hide",
+                {{"deliveryPhase", "event filter before widget handling; queued callback identity unknown"}});
+        return false;
+    }
+
+private:
+    static QString pointer(const void* value)
+    { return QStringLiteral("0x") + QString::number(reinterpret_cast<quintptr>(value), 16); }
+
+    static QJsonObject telemetryJson(const SemanticAnalysisTelemetry& value)
+    {
+        return {{"semanticRequestGeneration", QString::number(value.generation)},
+            {"stage", int(value.stage)}, {"reason", int(value.reason)},
+            {"detail", value.detail}, {"files", identity(value.files)},
+            {"changedFiles", identity(value.changedFiles)}, {"uiRefreshMs", value.uiRefreshMs},
+            {"workerMs", value.workerMs}, {"publicationMs", value.publicationMs}};
+    }
+
+    static QJsonArray rootsJson(const QList<DesignHierarchyRoot>& roots)
+    {
+        QJsonArray result;
+        for (const auto& root : roots)
+            result.append(QJsonObject{{"projectId", root.projectId}, {"name", root.name},
+                {"module", root.module}, {"file", root.file}, {"expanded", root.expanded}});
+        return result;
+    }
+
+    static QJsonObject requestJson(const std::optional<NavigationManager::DesignWorkRequest>& value)
+    {
+        if (!value) return {{"present", false}};
+        const auto& request = *value;
+        return {{"present", true}, {"observation", "direct fields at this sample"},
+            {"generation", QString::number(request.generation)}, {"force", request.force},
+            {"workspace", request.workspace}, {"selectedTop", request.selectedTop},
+            {"roots", rootsJson(request.roots)}, {"files", identity(request.files)},
+            {"filesOrdered", QJsonArray::fromStringList(request.files)},
+            {"candidateFiles", identity(request.candidateFiles)},
+            {"tokenAddress", pointer(request.token.snapshot.get())},
+            {"tokenRevision", QString::number(request.token.revision)},
+            {"previousStructure", QString::fromLatin1(request.previousFingerprint.toHex())},
+            {"previousAnchors", QString::fromLatin1(request.previousAnchorFingerprint.toHex())},
+            {"semanticTelemetry", telemetryJson(request.telemetry)}};
+    }
+
+    QJsonObject state() const
+    {
+        if (!manager || QThread::currentThread() != manager->thread())
+            return {{"available", false}, {"reason", "manager unavailable or non-owner thread; no UI state read"}};
+        const auto snapshot = index->snapshot();
+        const auto& cache = manager->caches;
+        return {{"available", true}, {"snapshotAddress", pointer(snapshot.get())},
+            {"semanticRevision", QString::number(index->snapshotRevision())},
+            {"cacheRevision", QString::number(cache.designSnapshotGeneration)},
+            {"cacheValid", cache.designHierarchyValid}, {"widgetValid", manager->designHierarchyWidgetValid},
+            {"currentView", int(manager->currentView)}, {"widgetVisible", widget && widget->isVisible()},
+            {"designRequestGeneration", QString::number(manager->designRequestGeneration)},
+            {"watcher", pointer(manager->designWatcher)},
+            {"activeRequest", requestJson(manager->activeDesignRequest)},
+            {"pendingRequest", requestJson(manager->pendingDesignRequest)},
+            {"workspace", manager->context.currentWorkspacePath}, {"selectedTop", cache.activeProjectId},
+            {"cacheRoots", rootsJson(cache.designRoots)}, {"cacheFiles", identity(cache.designFileScope)},
+            {"cacheFilesOrdered", QJsonArray::fromStringList(cache.designFileScope)},
+            {"cacheStructure", QString::fromLatin1(cache.designStructureFingerprint.toHex())},
+            {"cacheAnchors", QString::fromLatin1(cache.designAnchorFingerprint.toHex())},
+            {"liveManagerKeys", identity(designInstanceKeys(cache.designHierarchy).values())},
+            {"liveKeysUse", "diagnostic only; never substitutes the saved sets used by original checks"}};
+    }
+
+    QPointer<NavigationManager> manager;
+    QPointer<NavigationWidget> widget;
+    SemanticIndex* index;
+    QElapsedTimer clock;
+    QList<QMetaObject::Connection> connections;
+    QJsonArray events;
+    QByteArray previousPoll;
+    int sequence = 0;
+    bool insideOpen = false, finished = false;
+};
+
 EffectiveValueResult resolveUnboundEffectiveValue(
     const SemanticSymbolRecord& record,
     const QString& documentText)
@@ -699,30 +894,109 @@ int main(int argc, char** argv)
                        ->editorForFile(rtlTopPath));
 
     SemanticIndex* semanticIndex = SemanticIndex::getInstance();
+    OwDesignTrace designTrace(window.navigationManager.get(), window.analysisScheduler.get(),
+                              window.tabManager.get(), semanticIndex);
+    designTrace.mark("before-setDesignTop");
     check("design project selection succeeds",
           window.navigationManager->setDesignTop(QStringLiteral("rtl_top")).isEmpty());
+    designTrace.mark("after-setDesignTop-before-setActiveView");
     window.navigationManager->setActiveView(NavigationManager::DesignHierarchyView);
+    designTrace.mark("after-setActiveView-before-refreshCurrentView");
     window.navigationManager->refreshCurrentView();
+    designTrace.mark("after-preparation-refreshCurrentView");
     QTreeWidget* designTree = window.navigationPane
         && window.navigationPane->navigationWidget
         ? window.navigationPane->navigationWidget->designTreeWidget
         : nullptr;
     // Selecting a design project can publish a new semantic snapshot. Await
     // that transaction and its asynchronous projection before the clean-open baseline.
+    constexpr qint64 designStableWindowMs = 200;
+    constexpr qint64 designPreparationBudgetMs = 10000;
+    QElapsedTimer designPreparationClock;
+    qint64 designStableSinceMs = -1;
+    std::uint64_t designStableGeneration = 0;
+    int designStableResets = 0;
+    bool designOriginalReadySeen = false;
+    bool designPreviousReady = false;
+    bool designPreparationReady = false;
+    bool designPreparationDeadlineObserved = false;
+    designTrace.mark("before-preparation-wait-10000",
+        {{"windowMs", designStableWindowMs}, {"budgetMs", designPreparationBudgetMs},
+         {"observationLimit", "sampled original readiness and request generation; not all queued work"}});
+    designPreparationClock.start();
     check("design projection settles before clean-open baseline",
           waitUntil([&] {
-              return !window.analysisScheduler->isSemanticAnalysisActive()
+              designTrace.preparationPoll();
+              const bool originalReady = !window.analysisScheduler->isSemanticAnalysisActive()
                   && !window.navigationManager->designWatcher
                   && !window.navigationManager->pendingDesignRequest
                   && window.navigationManager->caches.designHierarchyValid
                   && window.navigationManager->caches.designSnapshotGeneration
                          == semanticIndex->snapshotRevision()
                   && designTree && designTreeContainsNestedModule(designTree, QStringLiteral("top_ctrl"));
+              const qint64 elapsedMs = designPreparationClock.elapsed();
+              const auto generation = window.navigationManager->designRequestGeneration;
+              if (originalReady && !designOriginalReadySeen) {
+                  designOriginalReadySeen = true;
+                  designTrace.mark("preparation-original-first-ready",
+                      {{"elapsedMs", elapsedMs}, {"generation", QString::number(generation)}});
+              }
+              if (designPreviousReady && !originalReady)
+                  designTrace.mark("preparation-original-readiness-lost",
+                      {{"elapsedMs", elapsedMs}, {"generation", QString::number(generation)}});
+              designPreviousReady = originalReady;
+              if (designStableSinceMs >= 0
+                  && (!originalReady || generation != designStableGeneration)) {
+                  QJsonArray reasons;
+                  if (!originalReady) reasons.append("original-condition-false");
+                  if (generation != designStableGeneration) reasons.append("generation-changed");
+                  ++designStableResets;
+                  designTrace.mark("preparation-stability-reset",
+                      {{"elapsedMs", elapsedMs}, {"stableSinceMs", designStableSinceMs},
+                       {"fromGeneration", QString::number(designStableGeneration)},
+                       {"toGeneration", QString::number(generation)},
+                       {"reasons", reasons}, {"resetCount", designStableResets}});
+                  designStableSinceMs = -1;
+              }
+              if (originalReady && designStableSinceMs < 0) {
+                  designStableSinceMs = elapsedMs;
+                  designStableGeneration = generation;
+                  designTrace.mark("preparation-stability-start",
+                      {{"elapsedMs", elapsedMs}, {"generation", QString::number(generation)},
+                       {"windowMs", designStableWindowMs}, {"resetCount", designStableResets}});
+              }
+              const qint64 observedMs = designPreparationClock.elapsed();
+              if (observedMs >= designPreparationBudgetMs) {
+                  if (!designPreparationDeadlineObserved) {
+                      designPreparationDeadlineObserved = true;
+                      designTrace.mark("preparation-stability-deadline",
+                          {{"elapsedMs", observedMs}, {"budgetMs", designPreparationBudgetMs},
+                           {"resetCount", designStableResets}});
+                  }
+                  return false;
+              }
+              if (originalReady && observedMs - designStableSinceMs >= designStableWindowMs) {
+                  designTrace.mark("preparation-stability-ready",
+                      {{"elapsedMs", observedMs}, {"stableSinceMs", designStableSinceMs},
+                       {"stableElapsedMs", observedMs - designStableSinceMs},
+                       {"windowMs", designStableWindowMs}, {"budgetMs", designPreparationBudgetMs},
+                       {"generation", QString::number(generation)}, {"resetCount", designStableResets}});
+                  designPreparationReady = designPreparationClock.elapsed() < designPreparationBudgetMs;
+                  return designPreparationReady;
+              }
+              return false;
           }, 10000));
+    designTrace.mark("after-preparation-wait-before-original-baseline",
+        {{"preparationReady", designPreparationReady}, {"elapsedMs", designPreparationClock.elapsed()},
+         {"stableSinceMs", designStableSinceMs}, {"generation", QString::number(designStableGeneration)},
+         {"windowMs", designStableWindowMs}, {"budgetMs", designPreparationBudgetMs},
+         {"resetCount", designStableResets}});
     const std::shared_ptr<const SemanticIndexSnapshot> beforeOpenSnapshot =
         semanticIndex->snapshot();
+    designTrace.snapshotSample("beforeOpenSnapshot", beforeOpenSnapshot.get());
     const std::uint64_t beforeOpenSnapshotRevision =
         semanticIndex->snapshotRevision();
+    designTrace.mark("saved-beforeOpenSnapshotRevision", {{"revision", QString::number(beforeOpenSnapshotRevision)}});
     const QSet<QString> beforeRelationshipKeys =
         stableRelationshipKeys(beforeOpenSnapshot);
     const SemanticSymbolRecord rtlTopBefore = semanticRecordInFile(
@@ -766,8 +1040,10 @@ int main(int argc, char** argv)
                                           designFileScope);
     const QSet<QString> designKeysBefore =
         designInstanceKeys(designBefore);
+    designTrace.sample("designKeysBefore", designKeysBefore);
     const QSet<QString> managerDesignKeysBefore = designInstanceKeys(
         window.navigationManager->caches.designHierarchy);
+    designTrace.sample("managerDesignKeysBefore", managerDesignKeysBefore);
 
     check("post-analysis baseline snapshot has stable-key relationships",
           beforeOpenSnapshot && !beforeRelationshipKeys.isEmpty());
@@ -824,6 +1100,7 @@ int main(int argc, char** argv)
                      [&](const QString&, int) {
                          ++openFileAnalysisFinishes;
                      });
+    designTrace.mark("before-original-refresh-counter-connect");
     QObject::connect(window.navigationManager.get(),
                      &NavigationManager::dataRefreshed,
                      &window,
@@ -832,8 +1109,11 @@ int main(int argc, char** argv)
                              ++designRefreshesAfterOpen;
                      });
 
+    designTrace.mark("after-original-refresh-counter-connect");
+    designTrace.beginOpen();
     check("open analyzed rtl_top through real TabManager",
           window.tabManager->openFileInTab(rtlTopPath));
+    designTrace.endOpen();
     MyCodeEditor* rtlTopEditor = window.tabManager->getCurrentEditor();
     const DocumentSnapshot rtlTopDocument =
         window.tabManager->getCurrentDocument();
@@ -845,6 +1125,7 @@ int main(int argc, char** argv)
           rtlTopDocument.textVersion == 0
               && rtlTopEditor
               && rtlTopEditor->semanticDocumentRevision() == 0);
+    designTrace.mark("before-original-analysis-wait-800");
     check("clean workspace file open skips all-open-tabs analysis",
           remainsTrueFor(
               [&]() {
@@ -854,11 +1135,13 @@ int main(int argc, char** argv)
                              == beforeOpenSnapshotRevision;
               },
               800));
+    designTrace.mark("after-original-analysis-wait-800");
     check("window survives post-analysis rtl_top open",
           windowGuard && window.isVisible());
 
     const std::shared_ptr<const SemanticIndexSnapshot> afterOpenSnapshot =
         semanticIndex->snapshot();
+    designTrace.snapshotSample("afterOpenSnapshot", afterOpenSnapshot.get());
     const QSet<QString> afterRelationshipKeys =
         stableRelationshipKeys(afterOpenSnapshot);
     const SemanticSymbolRecord rtlTopAfter = semanticRecordInFile(
@@ -894,8 +1177,10 @@ int main(int argc, char** argv)
                                           designFileScope);
     const QSet<QString> designKeysAfter =
         designInstanceKeys(designAfter);
+    designTrace.sample("designKeysAfter", designKeysAfter);
     const QSet<QString> managerDesignKeysAfter = designInstanceKeys(
         window.navigationManager->caches.designHierarchy);
+    designTrace.sample("managerDesignKeysAfter", managerDesignKeysAfter);
 
     printSetDifference("relationships",
                        beforeRelationshipKeys,
@@ -941,6 +1226,7 @@ int main(int argc, char** argv)
     check("post-analysis rtl_top open preserves formal port Ghost declarations",
           hasGhostAnnotationKind(afterGhostReport.annotations,
                                  GhostAnnotationKind::FormalPort));
+    designTrace.mark("before-original-Ghost-wait-5000");
     check("post-analysis rtl_top open refreshes actual editor Ghost",
           waitUntil(
               [&]() {
@@ -952,24 +1238,37 @@ int main(int argc, char** argv)
                           rtlTopEditor->state->ghostAnnotations);
               },
               5000));
+    designTrace.mark("after-original-Ghost-wait-5000");
+    designTrace.mark("before-original-Design-instances-check",
+        {{"savedAfterNonEmpty", !designKeysAfter.isEmpty()},
+         {"savedSetsEqual", designKeysAfter == designKeysBefore}});
     check("post-analysis rtl_top open preserves Design hierarchy instances",
           !designKeysAfter.isEmpty()
               && designKeysAfter == designKeysBefore);
+    designTrace.mark("after-original-Design-instances-check");
     std::printf("[DIAG] clean-open design refreshes=%d keys-before=%lld keys-after=%lld cache-revision=%llu semantic-revision=%llu\n",
                 designRefreshesAfterOpen, static_cast<long long>(managerDesignKeysBefore.size()),
                 static_cast<long long>(managerDesignKeysAfter.size()),
                 static_cast<unsigned long long>(window.navigationManager->caches.designSnapshotGeneration),
                 static_cast<unsigned long long>(semanticIndex->snapshotRevision()));
+    designTrace.mark("before-original-cached-Design-check",
+        {{"originalRefreshCount", designRefreshesAfterOpen}, {"zeroRefresh", designRefreshesAfterOpen == 0},
+         {"savedAfterNonEmpty", !managerDesignKeysAfter.isEmpty()},
+         {"savedSetsEqual", managerDesignKeysAfter == managerDesignKeysBefore},
+         {"liveRevisionsEqual", window.navigationManager->caches.designSnapshotGeneration == semanticIndex->snapshotRevision()}});
     check("post-analysis rtl_top open keeps cached Navigation Design",
           designRefreshesAfterOpen == 0
               && !managerDesignKeysAfter.isEmpty()
               && managerDesignKeysAfter == managerDesignKeysBefore
               && window.navigationManager->caches.designSnapshotGeneration
                      == semanticIndex->snapshotRevision());
+    designTrace.mark("after-original-cached-Design-check", {{"testFailures", failures}});
     check("post-analysis rtl_top open keeps NavigationWidget nested",
           designTree
               && designTreeContainsNestedModule(
                   designTree, QStringLiteral("top_ctrl")));
+
+    designTrace.finish();
 
     const int workspaceCountBeforeRepeat =
         window.workspaceManager->workspaceEntries().size();
