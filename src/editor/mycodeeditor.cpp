@@ -2249,6 +2249,13 @@ bool MyCodeEditor::sourceLineVisible(int line) const
     return state->projection.sourceLineVisible(line);
 }
 
+int MyCodeEditor::visibleRowForSourceLine(int sourceLine) const
+{
+    auto* editor = const_cast<MyCodeEditor*>(this);
+    state->projection.ensure(editor, state->folding.collapsedLineRanges());
+    return state->projection.visibleRowForSourceLine(sourceLine);
+}
+
 bool MyCodeEditor::viewProjectionActive() const
 {
     auto* editor = const_cast<MyCodeEditor*>(this);

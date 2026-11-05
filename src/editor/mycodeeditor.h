@@ -401,6 +401,7 @@ public:
     bool foldCollapsedAtLineForTest(int line) const;
     bool foldLineVisibleForTest(int line) const;
     bool sourceLineVisible(int line) const;
+    int visibleRowForSourceLine(int sourceLine) const;
     bool viewProjectionActive() const;
     void invalidateViewProjection();
     EditorViewProjectionMetrics viewProjectionMetricsForTest() const;

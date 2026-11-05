@@ -1,0 +1,7133 @@
+{
+  "schemaVersion": 1,
+  "source": "Actual pre-extraction LinkedContextController::Private::geometry and AnchorOverlay::paintEvent; task-local read-only probe in real Windows MainWindow",
+  "head": "6f26b974a505b1a3f1c455bf918f2cf740633b56",
+  "fixtureSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+  "baselineControllerSha256": "27787f70f6466eec5fd487269df380b19571dc8487af7e8273f882465f2f81d3",
+  "samples": [
+    {
+      "phase": "opened",
+      "geometry": {
+        "compact": "{\"anchors\":[{\"active\":true,\"id\":\"first-line\",\"visible\":true,\"y\":48},{\"active\":false,\"id\":\"ports\",\"visible\":true,\"y\":74},{\"active\":false,\"id\":\"same-line-count\",\"visible\":true,\"y\":178},{\"active\":false,\"id\":\"same-line-mirror\",\"visible\":true,\"y\":178},{\"active\":false,\"id\":\"always-range\",\"visible\":true,\"y\":230},{\"active\":false,\"id\":\"inside-reset\",\"visible\":true,\"y\":282},{\"active\":false,\"id\":\"inside-step\",\"visible\":true,\"y\":360},{\"active\":false,\"id\":\"inside-mirror\",\"visible\":true,\"y\":386},{\"active\":false,\"id\":\"assign\",\"visible\":false,\"y\":490},{\"active\":false,\"id\":\"last-line\",\"visible\":false,\"y\":880}],\"bottom\":438,\"detail\":false,\"height\":514,\"left\":0,\"right\":528,\"top\":0,\"width\":1055}",
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [
+            62,
+            32
+          ],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "",
+          "selectionEnd": 0,
+          "selectionStart": 0,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 88,
+            "minimum": 0,
+            "pageStep": 14,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "geometry": {
+          "anchors": [
+            {
+              "active": true,
+              "id": "first-line",
+              "visible": true,
+              "y": 48
+            },
+            {
+              "active": false,
+              "id": "ports",
+              "visible": true,
+              "y": 74
+            },
+            {
+              "active": false,
+              "id": "same-line-count",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": false,
+              "id": "same-line-mirror",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": false,
+              "id": "always-range",
+              "visible": true,
+              "y": 230
+            },
+            {
+              "active": false,
+              "id": "inside-reset",
+              "visible": true,
+              "y": 282
+            },
+            {
+              "active": false,
+              "id": "inside-step",
+              "visible": true,
+              "y": 360
+            },
+            {
+              "active": false,
+              "id": "inside-mirror",
+              "visible": true,
+              "y": 386
+            },
+            {
+              "active": false,
+              "id": "assign",
+              "visible": false,
+              "y": 490
+            },
+            {
+              "active": false,
+              "id": "last-line",
+              "visible": false,
+              "y": 880
+            }
+          ],
+          "bottom": 438,
+          "detail": false,
+          "height": 514,
+          "left": 0,
+          "right": 528,
+          "top": 0,
+          "width": 1055
+        },
+        "phase": "opened",
+        "utc": "2026-11-05T02:54:03.533Z"
+      },
+      "overlay": {
+        "antialiasing": true,
+        "brushStyle": 0,
+        "draws": [
+          {
+            "calls": [
+              {
+                "color": [
+                  52,
+                  120,
+                  212,
+                  18
+                ],
+                "operation": "fillRect",
+                "rect": [
+                  0,
+                  4,
+                  452,
+                  26
+                ]
+              },
+              {
+                "operation": "setPen",
+                "pen": {
+                  "brushStyle": 1,
+                  "cap": 16,
+                  "color": [
+                    52,
+                    120,
+                    212,
+                    180
+                  ],
+                  "cosmetic": false,
+                  "join": 64,
+                  "style": 1,
+                  "width": 1.5
+                }
+              },
+              {
+                "from": [
+                  0,
+                  16
+                ],
+                "operation": "drawLine",
+                "to": [
+                  1,
+                  16
+                ]
+              },
+              {
+                "from": [
+                  10,
+                  16
+                ],
+                "operation": "drawLine",
+                "to": [
+                  452,
+                  16
+                ]
+              },
+              {
+                "operation": "drawRoundedRect",
+                "radius": [
+                  2,
+                  2
+                ],
+                "rect": [
+                  2,
+                  3,
+                  5,
+                  28
+                ],
+                "sizeMode": 0
+              }
+            ],
+            "id": "first-line"
+          }
+        ],
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "",
+          "selectionEnd": 0,
+          "selectionStart": 0,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 88,
+            "minimum": 0,
+            "pageStep": 14,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "phase": "opened",
+        "surface": [
+          0,
+          0,
+          452,
+          392
+        ],
+        "utc": "2026-11-05T02:54:02.932Z"
+      }
+    },
+    {
+      "phase": "expanded",
+      "geometry": {
+        "compact": "{\"anchors\":[{\"active\":false,\"id\":\"first-line\",\"visible\":true,\"y\":48},{\"active\":false,\"id\":\"ports\",\"visible\":true,\"y\":74},{\"active\":false,\"id\":\"same-line-count\",\"visible\":true,\"y\":178},{\"active\":false,\"id\":\"same-line-mirror\",\"visible\":true,\"y\":178},{\"active\":true,\"id\":\"always-range\",\"visible\":true,\"y\":230},{\"active\":true,\"id\":\"inside-reset\",\"visible\":true,\"y\":282},{\"active\":false,\"id\":\"inside-step\",\"visible\":true,\"y\":360},{\"active\":false,\"id\":\"inside-mirror\",\"visible\":true,\"y\":386},{\"active\":false,\"id\":\"assign\",\"visible\":false,\"y\":490},{\"active\":false,\"id\":\"last-line\",\"visible\":false,\"y\":880}],\"bottom\":438,\"detail\":false,\"height\":514,\"left\":0,\"right\":528,\"top\":0,\"width\":1055}",
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [
+            62,
+            32
+          ],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "inside-reset",
+          "selectionEnd": 209,
+          "selectionStart": 194,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 88,
+            "minimum": 0,
+            "pageStep": 14,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "geometry": {
+          "anchors": [
+            {
+              "active": false,
+              "id": "first-line",
+              "visible": true,
+              "y": 48
+            },
+            {
+              "active": false,
+              "id": "ports",
+              "visible": true,
+              "y": 74
+            },
+            {
+              "active": false,
+              "id": "same-line-count",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": false,
+              "id": "same-line-mirror",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": true,
+              "id": "always-range",
+              "visible": true,
+              "y": 230
+            },
+            {
+              "active": true,
+              "id": "inside-reset",
+              "visible": true,
+              "y": 282
+            },
+            {
+              "active": false,
+              "id": "inside-step",
+              "visible": true,
+              "y": 360
+            },
+            {
+              "active": false,
+              "id": "inside-mirror",
+              "visible": true,
+              "y": 386
+            },
+            {
+              "active": false,
+              "id": "assign",
+              "visible": false,
+              "y": 490
+            },
+            {
+              "active": false,
+              "id": "last-line",
+              "visible": false,
+              "y": 880
+            }
+          ],
+          "bottom": 438,
+          "detail": false,
+          "height": 514,
+          "left": 0,
+          "right": 528,
+          "top": 0,
+          "width": 1055
+        },
+        "phase": "expanded",
+        "utc": "2026-11-05T02:56:18.638Z"
+      },
+      "overlay": {
+        "antialiasing": true,
+        "brushStyle": 0,
+        "draws": [
+          {
+            "calls": [
+              {
+                "color": [
+                  52,
+                  120,
+                  212,
+                  18
+                ],
+                "operation": "fillRect",
+                "rect": [
+                  0,
+                  186,
+                  452,
+                  206
+                ]
+              },
+              {
+                "operation": "setPen",
+                "pen": {
+                  "brushStyle": 1,
+                  "cap": 16,
+                  "color": [
+                    52,
+                    120,
+                    212,
+                    180
+                  ],
+                  "cosmetic": false,
+                  "join": 64,
+                  "style": 1,
+                  "width": 1.5
+                }
+              },
+              {
+                "from": [
+                  0,
+                  198
+                ],
+                "operation": "drawLine",
+                "to": [
+                  1,
+                  198
+                ]
+              },
+              {
+                "from": [
+                  10,
+                  198
+                ],
+                "operation": "drawLine",
+                "to": [
+                  452,
+                  198
+                ]
+              },
+              {
+                "operation": "drawRoundedRect",
+                "radius": [
+                  2,
+                  2
+                ],
+                "rect": [
+                  2,
+                  185,
+                  5,
+                  28
+                ],
+                "sizeMode": 0
+              }
+            ],
+            "id": "always-range"
+          },
+          {
+            "calls": [
+              {
+                "color": [
+                  52,
+                  120,
+                  212,
+                  18
+                ],
+                "operation": "fillRect",
+                "rect": [
+                  0,
+                  238,
+                  452,
+                  26
+                ]
+              },
+              {
+                "operation": "setPen",
+                "pen": {
+                  "brushStyle": 1,
+                  "cap": 16,
+                  "color": [
+                    52,
+                    120,
+                    212,
+                    180
+                  ],
+                  "cosmetic": false,
+                  "join": 64,
+                  "style": 1,
+                  "width": 1.5
+                }
+              },
+              {
+                "from": [
+                  0,
+                  250
+                ],
+                "operation": "drawLine",
+                "to": [
+                  97,
+                  250
+                ]
+              },
+              {
+                "from": [
+                  106,
+                  250
+                ],
+                "operation": "drawLine",
+                "to": [
+                  452,
+                  250
+                ]
+              },
+              {
+                "operation": "drawRoundedRect",
+                "radius": [
+                  2,
+                  2
+                ],
+                "rect": [
+                  98,
+                  237,
+                  5,
+                  28
+                ],
+                "sizeMode": 0
+              }
+            ],
+            "id": "inside-reset"
+          }
+        ],
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "inside-reset",
+          "selectionEnd": 209,
+          "selectionStart": 194,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 88,
+            "minimum": 0,
+            "pageStep": 14,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "phase": "expanded",
+        "surface": [
+          0,
+          0,
+          452,
+          392
+        ],
+        "utc": "2026-11-05T02:56:18.618Z"
+      }
+    },
+    {
+      "phase": "collapsed",
+      "geometry": {
+        "compact": "{\"anchors\":[{\"active\":false,\"id\":\"first-line\",\"visible\":true,\"y\":44},{\"active\":false,\"id\":\"ports\",\"visible\":true,\"y\":70},{\"active\":false,\"id\":\"same-line-count\",\"visible\":true,\"y\":174},{\"active\":false,\"id\":\"same-line-mirror\",\"visible\":true,\"y\":174},{\"active\":true,\"id\":\"always-range\",\"visible\":true,\"y\":226},{\"active\":false,\"id\":\"inside-reset\",\"visible\":false,\"y\":32},{\"active\":false,\"id\":\"inside-step\",\"visible\":false,\"y\":32},{\"active\":false,\"id\":\"inside-mirror\",\"visible\":false,\"y\":32},{\"active\":false,\"id\":\"assign\",\"visible\":true,\"y\":278},{\"active\":false,\"id\":\"last-line\",\"visible\":false,\"y\":2436}],\"bottom\":438,\"detail\":false,\"height\":514,\"left\":0,\"right\":528,\"top\":0,\"width\":1055}",
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [
+            62,
+            32
+          ],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 9,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 10,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 11,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 12,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 13,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 14,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 15,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": true,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                0,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                0,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                26,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                26,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                130,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                130,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                130,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                130,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                182,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                234,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                234,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                2392,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                2392,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "",
+          "selectionEnd": 133,
+          "selectionStart": 133,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 79,
+            "minimum": 0,
+            "pageStep": 16,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "geometry": {
+          "anchors": [
+            {
+              "active": false,
+              "id": "first-line",
+              "visible": true,
+              "y": 44
+            },
+            {
+              "active": false,
+              "id": "ports",
+              "visible": true,
+              "y": 70
+            },
+            {
+              "active": false,
+              "id": "same-line-count",
+              "visible": true,
+              "y": 174
+            },
+            {
+              "active": false,
+              "id": "same-line-mirror",
+              "visible": true,
+              "y": 174
+            },
+            {
+              "active": true,
+              "id": "always-range",
+              "visible": true,
+              "y": 226
+            },
+            {
+              "active": false,
+              "id": "inside-reset",
+              "visible": false,
+              "y": 32
+            },
+            {
+              "active": false,
+              "id": "inside-step",
+              "visible": false,
+              "y": 32
+            },
+            {
+              "active": false,
+              "id": "inside-mirror",
+              "visible": false,
+              "y": 32
+            },
+            {
+              "active": false,
+              "id": "assign",
+              "visible": true,
+              "y": 278
+            },
+            {
+              "active": false,
+              "id": "last-line",
+              "visible": false,
+              "y": 2436
+            }
+          ],
+          "bottom": 438,
+          "detail": false,
+          "height": 514,
+          "left": 0,
+          "right": 528,
+          "top": 0,
+          "width": 1055
+        },
+        "phase": "collapsed",
+        "utc": "2026-11-05T02:56:40.989Z"
+      },
+      "overlay": {
+        "antialiasing": true,
+        "brushStyle": 0,
+        "draws": [],
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 9,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 10,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 11,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 12,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 13,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 14,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 15,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": true,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                0,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                0,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                26,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                26,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                130,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                130,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                130,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                130,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                182,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                0,
+                0,
+                0,
+                0
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                234,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                234,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                2392,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                2392,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "",
+          "selectionEnd": 133,
+          "selectionStart": 133,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 79,
+            "minimum": 0,
+            "pageStep": 16,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "phase": "collapsed",
+        "surface": [
+          0,
+          0,
+          452,
+          392
+        ],
+        "utc": "2026-11-05T02:56:40.971Z"
+      }
+    },
+    {
+      "phase": "reexpanded",
+      "geometry": {
+        "compact": "{\"anchors\":[{\"active\":false,\"id\":\"first-line\",\"visible\":true,\"y\":48},{\"active\":false,\"id\":\"ports\",\"visible\":true,\"y\":74},{\"active\":false,\"id\":\"same-line-count\",\"visible\":true,\"y\":178},{\"active\":false,\"id\":\"same-line-mirror\",\"visible\":true,\"y\":178},{\"active\":true,\"id\":\"always-range\",\"visible\":true,\"y\":230},{\"active\":true,\"id\":\"inside-reset\",\"visible\":true,\"y\":282},{\"active\":false,\"id\":\"inside-step\",\"visible\":true,\"y\":360},{\"active\":false,\"id\":\"inside-mirror\",\"visible\":true,\"y\":386},{\"active\":false,\"id\":\"assign\",\"visible\":false,\"y\":490},{\"active\":false,\"id\":\"last-line\",\"visible\":false,\"y\":880}],\"bottom\":438,\"detail\":false,\"height\":514,\"left\":0,\"right\":528,\"top\":0,\"width\":1055}",
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [
+            62,
+            32
+          ],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "inside-reset",
+          "selectionEnd": 209,
+          "selectionStart": 194,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 87,
+            "minimum": 0,
+            "pageStep": 15,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "geometry": {
+          "anchors": [
+            {
+              "active": false,
+              "id": "first-line",
+              "visible": true,
+              "y": 48
+            },
+            {
+              "active": false,
+              "id": "ports",
+              "visible": true,
+              "y": 74
+            },
+            {
+              "active": false,
+              "id": "same-line-count",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": false,
+              "id": "same-line-mirror",
+              "visible": true,
+              "y": 178
+            },
+            {
+              "active": true,
+              "id": "always-range",
+              "visible": true,
+              "y": 230
+            },
+            {
+              "active": true,
+              "id": "inside-reset",
+              "visible": true,
+              "y": 282
+            },
+            {
+              "active": false,
+              "id": "inside-step",
+              "visible": true,
+              "y": 360
+            },
+            {
+              "active": false,
+              "id": "inside-mirror",
+              "visible": true,
+              "y": 386
+            },
+            {
+              "active": false,
+              "id": "assign",
+              "visible": false,
+              "y": 490
+            },
+            {
+              "active": false,
+              "id": "last-line",
+              "visible": false,
+              "y": 880
+            }
+          ],
+          "bottom": 438,
+          "detail": false,
+          "height": 514,
+          "left": 0,
+          "right": 528,
+          "top": 0,
+          "width": 1055
+        },
+        "phase": "reexpanded",
+        "utc": "2026-11-05T02:57:58.275Z"
+      },
+      "overlay": {
+        "antialiasing": true,
+        "brushStyle": 0,
+        "draws": [
+          {
+            "calls": [
+              {
+                "color": [
+                  52,
+                  120,
+                  212,
+                  18
+                ],
+                "operation": "fillRect",
+                "rect": [
+                  0,
+                  186,
+                  452,
+                  206
+                ]
+              },
+              {
+                "operation": "setPen",
+                "pen": {
+                  "brushStyle": 1,
+                  "cap": 16,
+                  "color": [
+                    52,
+                    120,
+                    212,
+                    180
+                  ],
+                  "cosmetic": false,
+                  "join": 64,
+                  "style": 1,
+                  "width": 1.5
+                }
+              },
+              {
+                "from": [
+                  0,
+                  198
+                ],
+                "operation": "drawLine",
+                "to": [
+                  1,
+                  198
+                ]
+              },
+              {
+                "from": [
+                  10,
+                  198
+                ],
+                "operation": "drawLine",
+                "to": [
+                  452,
+                  198
+                ]
+              },
+              {
+                "operation": "drawRoundedRect",
+                "radius": [
+                  2,
+                  2
+                ],
+                "rect": [
+                  2,
+                  185,
+                  5,
+                  28
+                ],
+                "sizeMode": 0
+              }
+            ],
+            "id": "always-range"
+          },
+          {
+            "calls": [
+              {
+                "color": [
+                  52,
+                  120,
+                  212,
+                  18
+                ],
+                "operation": "fillRect",
+                "rect": [
+                  0,
+                  238,
+                  452,
+                  26
+                ]
+              },
+              {
+                "operation": "setPen",
+                "pen": {
+                  "brushStyle": 1,
+                  "cap": 16,
+                  "color": [
+                    52,
+                    120,
+                    212,
+                    180
+                  ],
+                  "cosmetic": false,
+                  "join": 64,
+                  "style": 1,
+                  "width": 1.5
+                }
+              },
+              {
+                "from": [
+                  0,
+                  250
+                ],
+                "operation": "drawLine",
+                "to": [
+                  97,
+                  250
+                ]
+              },
+              {
+                "from": [
+                  106,
+                  250
+                ],
+                "operation": "drawLine",
+                "to": [
+                  452,
+                  250
+                ]
+              },
+              {
+                "operation": "drawRoundedRect",
+                "radius": [
+                  2,
+                  2
+                ],
+                "rect": [
+                  98,
+                  237,
+                  5,
+                  28
+                ],
+                "sizeMode": 0
+              }
+            ],
+            "id": "inside-reset"
+          }
+        ],
+        "editor": {
+          "dpr": 1,
+          "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+          "horizontal": {
+            "maximum": 24,
+            "minimum": 0,
+            "pageStep": 452,
+            "value": 0,
+            "visible": true
+          },
+          "origin": [],
+          "platform": "windows",
+          "projection": [
+            {
+              "sourceLine": -1,
+              "visible": false,
+              "visibleRow": -1
+            },
+            {
+              "sourceLine": 0,
+              "visible": true,
+              "visibleRow": 0
+            },
+            {
+              "sourceLine": 1,
+              "visible": true,
+              "visibleRow": 1
+            },
+            {
+              "sourceLine": 2,
+              "visible": true,
+              "visibleRow": 2
+            },
+            {
+              "sourceLine": 3,
+              "visible": true,
+              "visibleRow": 3
+            },
+            {
+              "sourceLine": 4,
+              "visible": true,
+              "visibleRow": 4
+            },
+            {
+              "sourceLine": 5,
+              "visible": true,
+              "visibleRow": 5
+            },
+            {
+              "sourceLine": 6,
+              "visible": true,
+              "visibleRow": 6
+            },
+            {
+              "sourceLine": 7,
+              "visible": true,
+              "visibleRow": 7
+            },
+            {
+              "sourceLine": 8,
+              "visible": true,
+              "visibleRow": 8
+            },
+            {
+              "sourceLine": 9,
+              "visible": true,
+              "visibleRow": 9
+            },
+            {
+              "sourceLine": 10,
+              "visible": true,
+              "visibleRow": 10
+            },
+            {
+              "sourceLine": 11,
+              "visible": true,
+              "visibleRow": 11
+            },
+            {
+              "sourceLine": 12,
+              "visible": true,
+              "visibleRow": 12
+            },
+            {
+              "sourceLine": 13,
+              "visible": true,
+              "visibleRow": 13
+            },
+            {
+              "sourceLine": 14,
+              "visible": true,
+              "visibleRow": 14
+            },
+            {
+              "sourceLine": 15,
+              "visible": true,
+              "visibleRow": 15
+            },
+            {
+              "sourceLine": 16,
+              "visible": true,
+              "visibleRow": 16
+            },
+            {
+              "sourceLine": 17,
+              "visible": true,
+              "visibleRow": 17
+            },
+            {
+              "sourceLine": 18,
+              "visible": true,
+              "visibleRow": 18
+            },
+            {
+              "sourceLine": 19,
+              "visible": true,
+              "visibleRow": 19
+            },
+            {
+              "sourceLine": 20,
+              "visible": true,
+              "visibleRow": 20
+            },
+            {
+              "sourceLine": 21,
+              "visible": true,
+              "visibleRow": 21
+            },
+            {
+              "sourceLine": 22,
+              "visible": true,
+              "visibleRow": 22
+            },
+            {
+              "sourceLine": 23,
+              "visible": true,
+              "visibleRow": 23
+            },
+            {
+              "sourceLine": 24,
+              "visible": true,
+              "visibleRow": 24
+            },
+            {
+              "sourceLine": 25,
+              "visible": true,
+              "visibleRow": 25
+            },
+            {
+              "sourceLine": 26,
+              "visible": true,
+              "visibleRow": 26
+            },
+            {
+              "sourceLine": 27,
+              "visible": true,
+              "visibleRow": 27
+            },
+            {
+              "sourceLine": 28,
+              "visible": true,
+              "visibleRow": 28
+            },
+            {
+              "sourceLine": 29,
+              "visible": true,
+              "visibleRow": 29
+            },
+            {
+              "sourceLine": 30,
+              "visible": true,
+              "visibleRow": 30
+            },
+            {
+              "sourceLine": 31,
+              "visible": true,
+              "visibleRow": 31
+            },
+            {
+              "sourceLine": 32,
+              "visible": true,
+              "visibleRow": 32
+            },
+            {
+              "sourceLine": 33,
+              "visible": true,
+              "visibleRow": 33
+            },
+            {
+              "sourceLine": 34,
+              "visible": true,
+              "visibleRow": 34
+            },
+            {
+              "sourceLine": 35,
+              "visible": true,
+              "visibleRow": 35
+            },
+            {
+              "sourceLine": 36,
+              "visible": true,
+              "visibleRow": 36
+            },
+            {
+              "sourceLine": 37,
+              "visible": true,
+              "visibleRow": 37
+            },
+            {
+              "sourceLine": 38,
+              "visible": true,
+              "visibleRow": 38
+            },
+            {
+              "sourceLine": 39,
+              "visible": true,
+              "visibleRow": 39
+            },
+            {
+              "sourceLine": 40,
+              "visible": true,
+              "visibleRow": 40
+            },
+            {
+              "sourceLine": 41,
+              "visible": true,
+              "visibleRow": 41
+            },
+            {
+              "sourceLine": 42,
+              "visible": true,
+              "visibleRow": 42
+            },
+            {
+              "sourceLine": 43,
+              "visible": true,
+              "visibleRow": 43
+            },
+            {
+              "sourceLine": 44,
+              "visible": true,
+              "visibleRow": 44
+            },
+            {
+              "sourceLine": 45,
+              "visible": true,
+              "visibleRow": 45
+            },
+            {
+              "sourceLine": 46,
+              "visible": true,
+              "visibleRow": 46
+            },
+            {
+              "sourceLine": 47,
+              "visible": true,
+              "visibleRow": 47
+            },
+            {
+              "sourceLine": 48,
+              "visible": true,
+              "visibleRow": 48
+            },
+            {
+              "sourceLine": 49,
+              "visible": true,
+              "visibleRow": 49
+            },
+            {
+              "sourceLine": 50,
+              "visible": true,
+              "visibleRow": 50
+            },
+            {
+              "sourceLine": 51,
+              "visible": true,
+              "visibleRow": 51
+            },
+            {
+              "sourceLine": 52,
+              "visible": true,
+              "visibleRow": 52
+            },
+            {
+              "sourceLine": 53,
+              "visible": true,
+              "visibleRow": 53
+            },
+            {
+              "sourceLine": 54,
+              "visible": true,
+              "visibleRow": 54
+            },
+            {
+              "sourceLine": 55,
+              "visible": true,
+              "visibleRow": 55
+            },
+            {
+              "sourceLine": 56,
+              "visible": true,
+              "visibleRow": 56
+            },
+            {
+              "sourceLine": 57,
+              "visible": true,
+              "visibleRow": 57
+            },
+            {
+              "sourceLine": 58,
+              "visible": true,
+              "visibleRow": 58
+            },
+            {
+              "sourceLine": 59,
+              "visible": true,
+              "visibleRow": 59
+            },
+            {
+              "sourceLine": 60,
+              "visible": true,
+              "visibleRow": 60
+            },
+            {
+              "sourceLine": 61,
+              "visible": true,
+              "visibleRow": 61
+            },
+            {
+              "sourceLine": 62,
+              "visible": true,
+              "visibleRow": 62
+            },
+            {
+              "sourceLine": 63,
+              "visible": true,
+              "visibleRow": 63
+            },
+            {
+              "sourceLine": 64,
+              "visible": true,
+              "visibleRow": 64
+            },
+            {
+              "sourceLine": 65,
+              "visible": true,
+              "visibleRow": 65
+            },
+            {
+              "sourceLine": 66,
+              "visible": true,
+              "visibleRow": 66
+            },
+            {
+              "sourceLine": 67,
+              "visible": true,
+              "visibleRow": 67
+            },
+            {
+              "sourceLine": 68,
+              "visible": true,
+              "visibleRow": 68
+            },
+            {
+              "sourceLine": 69,
+              "visible": true,
+              "visibleRow": 69
+            },
+            {
+              "sourceLine": 70,
+              "visible": true,
+              "visibleRow": 70
+            },
+            {
+              "sourceLine": 71,
+              "visible": true,
+              "visibleRow": 71
+            },
+            {
+              "sourceLine": 72,
+              "visible": true,
+              "visibleRow": 72
+            },
+            {
+              "sourceLine": 73,
+              "visible": true,
+              "visibleRow": 73
+            },
+            {
+              "sourceLine": 74,
+              "visible": true,
+              "visibleRow": 74
+            },
+            {
+              "sourceLine": 75,
+              "visible": true,
+              "visibleRow": 75
+            },
+            {
+              "sourceLine": 76,
+              "visible": true,
+              "visibleRow": 76
+            },
+            {
+              "sourceLine": 77,
+              "visible": true,
+              "visibleRow": 77
+            },
+            {
+              "sourceLine": 78,
+              "visible": true,
+              "visibleRow": 78
+            },
+            {
+              "sourceLine": 79,
+              "visible": true,
+              "visibleRow": 79
+            },
+            {
+              "sourceLine": 80,
+              "visible": true,
+              "visibleRow": 80
+            },
+            {
+              "sourceLine": 81,
+              "visible": true,
+              "visibleRow": 81
+            },
+            {
+              "sourceLine": 82,
+              "visible": true,
+              "visibleRow": 82
+            },
+            {
+              "sourceLine": 83,
+              "visible": true,
+              "visibleRow": 83
+            },
+            {
+              "sourceLine": 84,
+              "visible": true,
+              "visibleRow": 84
+            },
+            {
+              "sourceLine": 85,
+              "visible": true,
+              "visibleRow": 85
+            },
+            {
+              "sourceLine": 86,
+              "visible": true,
+              "visibleRow": 86
+            },
+            {
+              "sourceLine": 87,
+              "visible": true,
+              "visibleRow": 87
+            },
+            {
+              "sourceLine": 88,
+              "visible": true,
+              "visibleRow": 88
+            },
+            {
+              "sourceLine": 89,
+              "visible": true,
+              "visibleRow": 89
+            },
+            {
+              "sourceLine": 90,
+              "visible": true,
+              "visibleRow": 90
+            },
+            {
+              "sourceLine": 91,
+              "visible": true,
+              "visibleRow": 91
+            },
+            {
+              "sourceLine": 92,
+              "visible": true,
+              "visibleRow": 92
+            },
+            {
+              "sourceLine": 93,
+              "visible": true,
+              "visibleRow": 93
+            },
+            {
+              "sourceLine": 94,
+              "visible": true,
+              "visibleRow": 94
+            },
+            {
+              "sourceLine": 95,
+              "visible": true,
+              "visibleRow": 95
+            },
+            {
+              "sourceLine": 96,
+              "visible": true,
+              "visibleRow": 96
+            },
+            {
+              "sourceLine": 97,
+              "visible": true,
+              "visibleRow": 97
+            },
+            {
+              "sourceLine": 98,
+              "visible": true,
+              "visibleRow": 98
+            },
+            {
+              "sourceLine": 99,
+              "visible": true,
+              "visibleRow": 99
+            },
+            {
+              "sourceLine": 100,
+              "visible": true,
+              "visibleRow": 100
+            },
+            {
+              "sourceLine": 101,
+              "visible": true,
+              "visibleRow": 101
+            },
+            {
+              "sourceLine": 102,
+              "visible": false,
+              "visibleRow": -1
+            }
+          ],
+          "projectionActive": false,
+          "qt": "6.10.2",
+          "samples": [
+            {
+              "available": true,
+              "end": 30,
+              "firstLine": 0,
+              "firstPosition": 0,
+              "firstRect": [
+                4,
+                4,
+                1,
+                26
+              ],
+              "id": "first-line",
+              "lastLine": 0,
+              "lastPosition": 30,
+              "lastRect": [
+                364,
+                4,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 0
+            },
+            {
+              "available": true,
+              "end": 53,
+              "firstLine": 1,
+              "firstPosition": 37,
+              "firstRect": [
+                52,
+                30,
+                1,
+                26
+              ],
+              "id": "ports",
+              "lastLine": 1,
+              "lastPosition": 53,
+              "lastRect": [
+                244,
+                30,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 37
+            },
+            {
+              "available": true,
+              "end": 122,
+              "firstLine": 5,
+              "firstPosition": 117,
+              "firstRect": [
+                160,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-count",
+              "lastLine": 5,
+              "lastPosition": 122,
+              "lastRect": [
+                220,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 117
+            },
+            {
+              "available": true,
+              "end": 130,
+              "firstLine": 5,
+              "firstPosition": 124,
+              "firstRect": [
+                244,
+                134,
+                1,
+                26
+              ],
+              "id": "same-line-mirror",
+              "lastLine": 5,
+              "lastPosition": 130,
+              "lastRect": [
+                316,
+                134,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 124
+            },
+            {
+              "available": true,
+              "end": 322,
+              "firstLine": 7,
+              "firstPosition": 133,
+              "firstRect": [
+                4,
+                186,
+                1,
+                26
+              ],
+              "id": "always-range",
+              "lastLine": 15,
+              "lastPosition": 322,
+              "lastRect": [
+                40,
+                394,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 133
+            },
+            {
+              "available": true,
+              "end": 209,
+              "firstLine": 9,
+              "firstPosition": 194,
+              "firstRect": [
+                100,
+                238,
+                1,
+                26
+              ],
+              "id": "inside-reset",
+              "lastLine": 9,
+              "lastPosition": 209,
+              "lastRect": [
+                280,
+                238,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 194
+            },
+            {
+              "available": true,
+              "end": 285,
+              "firstLine": 12,
+              "firstPosition": 262,
+              "firstRect": [
+                100,
+                316,
+                1,
+                26
+              ],
+              "id": "inside-step",
+              "lastLine": 12,
+              "lastPosition": 285,
+              "lastRect": [
+                376,
+                316,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 262
+            },
+            {
+              "available": true,
+              "end": 310,
+              "firstLine": 13,
+              "firstPosition": 294,
+              "firstRect": [
+                100,
+                342,
+                1,
+                26
+              ],
+              "id": "inside-mirror",
+              "lastLine": 13,
+              "lastPosition": 310,
+              "lastRect": [
+                292,
+                342,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 294
+            },
+            {
+              "available": true,
+              "end": 356,
+              "firstLine": 17,
+              "firstPosition": 324,
+              "firstRect": [
+                4,
+                446,
+                1,
+                26
+              ],
+              "id": "assign",
+              "lastLine": 17,
+              "lastPosition": 356,
+              "lastRect": [
+                388,
+                446,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 324
+            },
+            {
+              "available": true,
+              "end": 3646,
+              "firstLine": 100,
+              "firstPosition": 3637,
+              "firstRect": [
+                4,
+                836,
+                1,
+                26
+              ],
+              "id": "last-line",
+              "lastLine": 100,
+              "lastPosition": 3646,
+              "lastRect": [
+                112,
+                836,
+                1,
+                26
+              ],
+              "resolution": 0,
+              "start": 3637
+            }
+          ],
+          "selected": "inside-reset",
+          "selectionEnd": 209,
+          "selectionStart": 194,
+          "textSha256": "8e4145df3de58ffe77e8d6404e7fe02b26ca5976609bbb9b3e542de74ca2923d",
+          "vertical": {
+            "maximum": 87,
+            "minimum": 0,
+            "pageStep": 15,
+            "value": 0,
+            "visible": true
+          },
+          "viewport": [
+            0,
+            0,
+            452,
+            392
+          ],
+          "viewportGlobalOrigin": [
+            486,
+            299
+          ],
+          "window": [
+            420,
+            185,
+            1063,
+            600
+          ],
+          "wrapMode": 0
+        },
+        "phase": "reexpanded",
+        "surface": [
+          0,
+          0,
+          452,
+          392
+        ],
+        "utc": "2026-11-05T02:57:58.255Z"
+      }
+    }
+  ]
+}

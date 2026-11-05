@@ -734,6 +734,7 @@ add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
     ${ZEROSLACK_CORE_SOURCES})
 
 target_sources(zeroslack_core PRIVATE
+    src/ui/linkedanchorgeometry.cpp src/ui/linkedanchorgeometry.h
     src/ui/linkedcontextcontroller.cpp src/ui/linkedcontextcontroller.h
     src/ui/linkedcontextstate.cpp src/ui/linkedcontextstate.h
     src/documents/webeditorcontainer.cpp src/documents/webeditorcontainer.h
@@ -1147,6 +1148,12 @@ if(BUILD_TESTING)
             "$<$<COMPILE_LANGUAGE:CXX>:-iquote${CMAKE_CURRENT_SOURCE_DIR}>")
     endif()
     target_link_libraries(editor_mode_controller_test PRIVATE Qt6::Core)
+
+    add_executable(linked_anchor_geometry_test
+        test_sv/linked_anchor_geometry_test.cpp)
+    target_link_libraries(linked_anchor_geometry_test PRIVATE zeroslack_core Qt6::Test)
+    target_compile_definitions(linked_anchor_geometry_test PRIVATE
+        LINKED_ANCHOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test_sv/fixtures/linked_anchor_geometry")
 
     add_executable(annotation_layer_test
         test_sv/annotation_layer_test.cpp
@@ -1919,6 +1926,15 @@ if(BUILD_TESTING)
             "PATH=${ZEROSLACK_TEST_PATH}"
             $<TARGET_FILE:editor_mode_controller_test>
     )
+    zeroslack_qt_test_command(linked_anchor_geometry_test_qt_command linked_anchor_geometry_test linked_anchor_geometry_test)
+    add_test(NAME linked_anchor_geometry_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            ${linked_anchor_geometry_test_qt_command}
+    )
+    set_tests_properties(linked_anchor_geometry_test PROPERTIES TIMEOUT 120)
     add_test(NAME annotation_layer_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

@@ -1,4 +1,5 @@
 #include "linkedcontextcontroller.h"
+#include "linkedanchorgeometry.h"
 #include "linkedcontextstate.h"
 #include "webeditorcontainer.h"
 #include "tabmanager.h"
@@ -92,21 +93,16 @@ public:
     void paintEvent(QPaintEvent*) override {
         if (!editor) return;
         QPainter painter(this); painter.setRenderHint(QPainter::Antialiasing);
-        const auto selection = editor->textCursor();
+        const auto selection = LinkedAnchorGeometry::sampleSelection(*editor, selected);
         for (const auto& anchor : anchors) {
-            if (!anchor.available()) continue;
-            const bool active = anchor.anchor.id == selected || (selection.selectionStart() <= anchor.endPosition && selection.selectionEnd() >= anchor.startPosition);
-            if (!active) continue;
-            QTextCursor cursor(editor->document()); cursor.setPosition(qBound(0, anchor.startPosition, editor->document()->characterCount()-1));
-            const QRect first = editor->cursorRect(cursor);
-            cursor.setPosition(qBound(0, anchor.endPosition, editor->document()->characterCount()-1));
-            const QRect last = editor->cursorRect(cursor);
-            if (last.bottom()<0 || first.top()>height()) continue;
-            const QRect band(0, qMax(0,first.top()), width(), qMin(height(),last.bottom()+1)-qMax(0,first.top()));
-            painter.fillRect(band,QColor(52,120,212,18)); painter.setPen(QPen(QColor(52,120,212,180),1.5));
-            const int y=qBound(0,first.center().y(),height()-1);
-            painter.drawLine(0,y,qMax(0,first.x()-3),y); painter.drawLine(qMin(width(),first.x()+6),y,width(),y);
-            painter.drawRoundedRect(first.adjusted(-2,-1,2,1),2,2);
+            const LinkedAnchorGeometry::Anchor input{anchor.anchor.id, anchor.available(), anchor.startPosition, anchor.endPosition};
+            if (!input.available || !LinkedAnchorGeometry::active(input, selection)) continue;
+            const auto sample = LinkedAnchorGeometry::sampleAnchor(*editor, input, true);
+            const auto geometry = LinkedAnchorGeometry::overlay(sample, selection, size());
+            if (!geometry.draw) continue;
+            painter.fillRect(geometry.band,QColor(52,120,212,18)); painter.setPen(QPen(QColor(52,120,212,180),1.5));
+            painter.drawLine(geometry.leading); painter.drawLine(geometry.trailing);
+            painter.drawRoundedRect(geometry.outline,2,2);
         }
     }
 };
@@ -316,16 +312,12 @@ struct LinkedContextController::Private {
     QJsonObject geometry() const {
         QJsonArray values;
         if(editor&&canvas){
-            const auto cursor=editor->textCursor();
+            const auto selection=LinkedAnchorGeometry::sampleSelection(*editor,selected);
             const auto origin=editor->viewport()->mapTo(canvas,QPoint());
             for(const auto& anchor:anchors){
-                int y=origin.y();bool visible=false;
-                if(anchor.available()){
-                    QTextCursor c(editor->document());c.setPosition(qBound(0,anchor.startPosition,editor->document()->characterCount()-1));
-                    const auto r=editor->cursorRect(c);y+=r.center().y();visible=r.bottom()>=0&&r.top()<editor->viewport()->height();
-                }
-                const bool related=anchor.anchor.id==selected||(anchor.available()&&cursor.selectionStart()<=anchor.endPosition&&cursor.selectionEnd()>=anchor.startPosition);
-                values.append(QJsonObject{{"id",anchor.anchor.id},{"y",y},{"visible",visible},{"active",related}});
+                const LinkedAnchorGeometry::Anchor input{anchor.anchor.id,anchor.available(),anchor.startPosition,anchor.endPosition};
+                values.append(LinkedAnchorGeometry::webItem(
+                    LinkedAnchorGeometry::sampleAnchor(*editor,input),selection,origin,editor->viewport()->height()));
             }
         }
         return {{"width",canvas?canvas->width():1},{"height",canvas?canvas->height():1},{"left",center?center->x():0},{"right",center?center->geometry().right()+1:0},{"top",0},{"bottom",center?center->height():0},{"detail",!expanded.isEmpty()},{"anchors",values}};

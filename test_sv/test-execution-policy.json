@@ -13,6 +13,23 @@
   "guard": "test_execution_policy_guard",
   "tests": [
     {
+      "name": "linked_anchor_geometry_test",
+      "role": "compiled",
+      "managedSince": "2026-11-05",
+      "reviewBy": "2026-11-06",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "D:/AppSuite/ZeroSlack/build/coordination/20261104-anchor-geometry/REQUEST.md:131-150",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Stage 0 geometry extraction; task-owned frozen baseline and real MyCodeEditor sampling."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Stage 0 R1 fixed 120-second budget; no timeout extensions or failed-test retries.",
+      "target": "linked_anchor_geometry_test"
+    },
+    {
       "name": "action_registry_test",
       "role": "compiled",
       "managedSince": "2026-10-30",

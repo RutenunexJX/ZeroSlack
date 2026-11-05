@@ -511,7 +511,10 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     "src/integrations/xips/xipscontextprovider.cpp|85fde73909049adc944c53d777aa32858f23c1666c5ee6cd98073e7940cac896|f309ec69a2989f82793e33ac57195ff7c235ee2c8089f1b1e6d3a616a33d7959"
     "src/simulation/simdock/core/projectstore.cpp|680c77091791e43dddf34b1c80b55102ce4be6eeec137b5c4968c8d7d8eb6069|eac70917dfd8a69729255407a0965a32a9836579acf7d28ffecf50e88d2200f7"
     "src/simulation/simdock/core/simulationevents.cpp|07ee07526219b3fe665b286a008b92c5ff26961cef8562c2f6daf390bfa23897|e5a1e9c8b24a76571c80f4b68735e0c8aff7a99173120484e92e2340107e16a7"
-    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|27787f70f6466eec5fd487269df380b19571dc8487af7e8273f882465f2f81d3"
+    # Stage 0 R2 re-review (2026-11-05); working-tree delta from 6f26b974a505b1a3f1c455bf918f2cf740633b56.
+    # Separate provenance: build/coordination/20261104-anchor-geometry/implementation/repair01/REGEX-REVIEW.json.
+    # Historical group revision and API usage identity remain unchanged.
+    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|1f627fdd6ef1483609e1067427db99f18463afcd6db392aa5d8fc15cd942e5ec"
     "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|10766319b9fc1c22d1d530a99235ffb9267ef0b8ae290ead6979edb6a25f7a3e"
     "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )
