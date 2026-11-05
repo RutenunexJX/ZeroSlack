@@ -735,6 +735,7 @@ add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
 
 target_sources(zeroslack_core PRIVATE
     src/ui/linkedanchorgeometry.cpp src/ui/linkedanchorgeometry.h
+    src/ui/linkednativerails.cpp src/ui/linkednativerails.h
     src/ui/linkedcontextcontroller.cpp src/ui/linkedcontextcontroller.h
     src/ui/linkedcontextstate.cpp src/ui/linkedcontextstate.h
     src/documents/webeditorcontainer.cpp src/documents/webeditorcontainer.h
@@ -1154,6 +1155,9 @@ if(BUILD_TESTING)
     target_link_libraries(linked_anchor_geometry_test PRIVATE zeroslack_core Qt6::Test)
     target_compile_definitions(linked_anchor_geometry_test PRIVATE
         LINKED_ANCHOR_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test_sv/fixtures/linked_anchor_geometry")
+
+    add_executable(linked_native_rails_test test_sv/linked_native_rails_test.cpp)
+    target_link_libraries(linked_native_rails_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(annotation_layer_test
         test_sv/annotation_layer_test.cpp
@@ -1935,6 +1939,15 @@ if(BUILD_TESTING)
             ${linked_anchor_geometry_test_qt_command}
     )
     set_tests_properties(linked_anchor_geometry_test PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(linked_native_rails_test_qt_command linked_native_rails_test linked_native_rails_test)
+    add_test(NAME linked_native_rails_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            ${linked_native_rails_test_qt_command}
+    )
+    set_tests_properties(linked_native_rails_test PROPERTIES TIMEOUT 120)
     add_test(NAME annotation_layer_test
         COMMAND ${CMAKE_COMMAND} -E env
             "PATH=${ZEROSLACK_TEST_PATH}"

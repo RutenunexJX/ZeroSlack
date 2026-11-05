@@ -514,7 +514,9 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Stage 0 R2 re-review (2026-11-05); working-tree delta from 6f26b974a505b1a3f1c455bf918f2cf740633b56.
     # Separate provenance: build/coordination/20261104-anchor-geometry/implementation/repair01/REGEX-REVIEW.json.
     # Historical group revision and API usage identity remain unchanged.
-    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|1f627fdd6ef1483609e1067427db99f18463afcd6db392aa5d8fc15cd942e5ec"
+    # Stage 1 review (2026-11-05): default-off native display routing only.
+    # Provenance: build/coordination/20261105-native-rails/implementation/REGEX-REVIEW.json.
+    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|6d2a7010acdb47bdd6ae0306ecba584b530b0aa9f4c55549a7a3a7e859fe654f"
     "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|10766319b9fc1c22d1d530a99235ffb9267ef0b8ae290ead6979edb6a25f7a3e"
     "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )

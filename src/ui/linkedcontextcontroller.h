@@ -3,6 +3,7 @@
 #include "zeroslackexport.h"
 #include <QObject>
 #include <QList>
+#include <QJsonObject>
 #include <memory>
 
 class QMainWindow;
@@ -24,6 +25,7 @@ public:
     void refreshAnchors();
     void reloadBoard();
     void setPinloomHostClient(PinloomHostClient* client);
+    QJsonObject viewSnapshot() const;
 signals:
     void aboutToEnter();
     void activeChanged(bool active);

@@ -13,6 +13,23 @@
   "guard": "test_execution_policy_guard",
   "tests": [
     {
+      "name": "linked_native_rails_test",
+      "role": "compiled",
+      "managedSince": "2026-11-05",
+      "reviewBy": "2026-11-06",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "D:/AppSuite/ZeroSlack/build/coordination/20261105-native-rails/REQUEST.md:113-163",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Stage 1 default-off native rails; task-created files and actual controller with controlled Pinloom transport."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Stage 1 R1 fixed 120-second budget, unchanged existing test budgets.",
+      "target": "linked_native_rails_test"
+    },
+    {
       "name": "linked_anchor_geometry_test",
       "role": "compiled",
       "managedSince": "2026-11-05",
