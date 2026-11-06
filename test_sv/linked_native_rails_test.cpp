@@ -16,10 +16,12 @@
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
+#include <QFileDialog>
 #include <QFrame>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QLockFile>
 #include <QMainWindow>
 #include <QPushButton>
 #include <QScrollArea>
@@ -37,12 +39,6 @@
 #include <algorithm>
 
 namespace {
-constexpr auto flag = "ZEROSLACK_LINKED_NATIVE_RAILS";
-struct Environment {
-    bool existed = qEnvironmentVariableIsSet(flag);
-    QByteArray old = qgetenv(flag);
-    ~Environment() { if (existed) qputenv(flag, old); else qunsetenv(flag); }
-};
 bool writeFile(const QString& path, const QByteArray& bytes) {
     if (!QDir().mkpath(QFileInfo(path).absolutePath())) return false;
     QFile file(path); return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
@@ -266,32 +262,74 @@ QStringList differentFields(const QJsonValue& a,const QJsonValue& b,const QStrin
 }
 }
 
-#include "fixtures/linked_rails_layout/default_web_observation.h"
+#include "fixtures/linked_rails_layout/default_native_observation.h"
+
+namespace {
+QJsonObject nativeState(QJsonArray expanded = {}) {
+    return {{"version",3},{"codeRatio",.5},{"referenceIds",QJsonArray{"a/link-0","a/link-1"}},
+        {"expandedReferences",QJsonArray{}},{"nativeView",QJsonObject{{"version",1},
+            {"weights",QJsonArray{.25,.5,.25}},{"expanded",expanded}}}};
+}
+QJsonObject diskState(const QString& path) { return QJsonDocument::fromJson(readFile(path)).object()["state"].toObject(); }
+bool drainSaveWindow() {
+    QElapsedTimer elapsed;elapsed.start();
+    return QTest::qWaitFor([&]{return elapsed.elapsed()>=650;},2000);
+}
+bool dragSplitter(Harness& h,int index,int delta) {
+    auto* handle=h.rails()->handle(index);if(!handle||!handle->isVisible())return false;
+    const auto before=h.rails()->sizes();const auto point=handle->rect().center();const auto destination=point+QPoint(delta,0);
+    const auto global=handle->mapToGlobal(destination);
+    QTest::mousePress(handle,Qt::LeftButton,Qt::NoModifier,point);
+    QMouseEvent move(QEvent::MouseMove,QPointF(destination),QPointF(global),Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+    QApplication::sendEvent(handle,&move);QTest::mouseRelease(handle,Qt::LeftButton,Qt::NoModifier,handle->mapFromGlobal(global));
+    return h.rails()->sizes()!=before;
+}
+bool recoveryDialog(Harness& h,const QString& destination,bool cancel=false,bool removeParentAfterAccept=false) {
+    auto* button=h.window.findChild<QPushButton*>("linkedSaveCopy");if(!button||!button->isVisible())return false;
+    bool seen=false,finished=false;
+    QTimer::singleShot(0,&h.window,[&]{
+        auto* dialog=qobject_cast<QFileDialog*>(QApplication::activeModalWidget());if(!dialog)return;
+        seen=true;
+        if(cancel){dialog->reject();finished=true;return;}
+        dialog->setOption(QFileDialog::DontConfirmOverwrite);dialog->selectFile(destination);
+        finished=QMetaObject::invokeMethod(dialog,"accept",Qt::DirectConnection)&&dialog->result()==QDialog::Accepted;
+        if(finished&&removeParentAfterAccept)finished=QDir().rmdir(QFileInfo(destination).absolutePath());
+    });
+    button->click();return seen&&finished;
+}
+}
 
 class LinkedNativeRailsTest : public QObject {
     Q_OBJECT
 private slots:
-    void defaultWebFrozen_data() {
-        QTest::addColumn<bool>("zero");QTest::newRow("unset")<<false;QTest::newRow("zero")<<true;
-    }
-    void defaultWebFrozen() {
-        QFETCH(bool,zero);Environment env;if(zero)qputenv(flag,"0");else qunsetenv(flag);
-        const QByteArray bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-web.json"));
-        QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("5a4024d1416031735f246d2ca5b304a487d94ef3b5343426f500278854992210"));
+    void defaultNativeFrozen() {
+        const QByteArray bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native.json"));
+        QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d"));
         const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
-        Harness h;QVERIFY(h.ready);const auto actual=DefaultWebObservation::capture(h);QVERIFY(!actual.isEmpty());
+        Harness h;QVERIFY(h.ready);const auto actual=DefaultNativeObservation::capture(h);QVERIFY(!actual.isEmpty());
         const auto differences=differentFields(expected,actual);
         QVERIFY2(differences.isEmpty(),qPrintable(differences.join('\n')));
-        const auto phases=actual["phases"].toArray();QCOMPARE(phases.size(),2);
-        QVERIFY(!differentFields(phases[0].toObject()["state"],phases[1].toObject()["state"]).isEmpty());
+        const auto phases=actual["phases"].toArray();QCOMPARE(phases.size(),7);
+        for(qsizetype i=1;i<phases.size();++i)QVERIFY(!differentFields(phases[i-1].toObject()["state"],phases[i].toObject()["state"]).isEmpty());
         auto changed=actual;auto alteredPhases=phases;auto phase=alteredPhases[0].toObject();
         auto state=phase["state"].toObject();auto editor=state["editor"].toObject();
-        editor["dpr"]=editor["dpr"].toDouble()+1;state["editor"]=editor;phase["state"]=state;
+        editor["position"]=editor["position"].toInt()+1;state["editor"]=editor;phase["state"]=state;
         alteredPhases[0]=phase;changed["phases"]=alteredPhases;
-        QCOMPARE(differentFields(actual,changed),QStringList({"/phases/0/state/editor/dpr"}));
+        QCOMPARE(differentFields(actual,changed),QStringList({"/phases/0/state/editor/position"}));
+    }
+    void frozenNativeSensitivity() {
+        const auto bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native.json"));
+        const auto expected=QJsonDocument::fromJson(bytes).object();QVERIFY(!expected.isEmpty());
+        for(const auto& field:QStringList{"references","paintedPaths","association"}){
+            auto altered=expected;auto phases=altered["phases"].toArray();auto phase=phases[0].toObject();auto state=phase["state"].toObject();QString path;
+            if(field=="references"){state.remove(field);path="/phases/0/state/references";}
+            else if(field=="paintedPaths"){auto connector=state["connector"].toObject();connector.remove(field);state["connector"]=connector;path="/phases/0/state/connector/paintedPaths";}
+            else {auto references=state["references"].toArray();auto first=references[0].toObject();first["anchor"]="wrong-anchor";references[0]=first;state["references"]=references;path="/phases/0/state/references/0/anchor";}
+            phase["state"]=state;phases[0]=phase;altered["phases"]=phases;QCOMPARE(differentFields(expected,altered),QStringList{path});
+        }
     }
     void foldAggregationAndRetainedCards() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
+        Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
         QVERIFY(h.store({anchorAt(h,"a","signal_000 <=",{"a0","a1"}),anchorAt(h,"b","signal_002 <=",{"b0","b1"}),
             anchorAt(h,"head","always_ff",{"head"}),anchorAt(h,"plain-a","logic clk",{"p0","p1"}),
             anchorAt(h,"plain-b","rst_n;",{"p2"}),anchorAt(h,"other","signal_003 =",{"other"})}));
@@ -328,7 +366,7 @@ private slots:
         QCOMPARE(h.rails()->sizes()[1],width);QVERIFY(completeCoverage(h));QVERIFY(watch.unchanged());
     }
     void nestedFoldRemappingAndUnrelatedFold() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
+        Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
         QVERIFY(h.store({anchorAt(h,"a","signal_000 <=",{"a0","a1"}),anchorAt(h,"b","signal_002 <=",{"b0"}),
             anchorAt(h,"head","always_ff",{"head"}),anchorAt(h,"other","signal_003 =",{"other"}),
             anchorAt(h,"plain","logic clk",{"p0","p1"})}));
@@ -356,7 +394,7 @@ private slots:
         QCOMPARE(h.rails()->sizes()[1],width);QVERIFY(watch.unchanged());
     }
     void singleHiddenAnchorCanExpand() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
+        Harness h;QVERIFY(h.ready);QVERIFY(prepareFoldSource(h));
         QVERIFY(h.store({anchorAt(h,"a","signal_000 <=",{"one"}),anchorAt(h,"plain","logic clk",{"p"})}));
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         QVERIFY(h.editor()->toggleFoldAtLineForTest(3));QTRY_VERIFY(presentationFor(h,"a")["folded"].toBool());
@@ -367,7 +405,7 @@ private slots:
         QVERIFY(h.editor()->sourceLineVisible(5));QVERIFY(completeCoverage(h));QVERIFY(watch.unchanged());
     }
     void railOperationsNeverNavigateEditor() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);h.defer=true;
+        Harness h;QVERIFY(h.ready);h.defer=true;
         QJsonArray rows;for(int i=0;i<20;++i)rows.append(h.anchor(QString("g%1").arg(i,2,10,QChar('0')),i*3,{QString::number(i),QString("extra-%1").arg(i)}));
         QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(!h.pending.isEmpty());
         MotionWatch watch(h.editor());const int width=h.rails()->sizes()[1];
@@ -394,7 +432,7 @@ private slots:
         QCOMPARE(h.rails()->sizes(),sizes);QVERIFY(watch.unchanged());
     }
     void reentryKeepsVisibleDemand() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QVERIFY(h.store({h.anchor("first",1,{"reentry"})}));
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         QVERIFY(h.controller->setActive(false));
@@ -411,7 +449,7 @@ private slots:
         QVERIFY(requested);
     }
     void identityDuringRealEdits() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QJsonArray rows;
         for(int i=0;i<12;++i)rows.append(h.anchor(QString("stable-%1").arg(i,2,10,QChar('0')),i*3,
             {QString("first-%1").arg(i),QString("second-%1").arg(i)}));
@@ -474,7 +512,7 @@ private slots:
         QCOMPARE(view(editor),editorState);
     }
     void independentFollowAndOuterIntent() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QJsonArray rows;for(int i=0;i<24;++i)rows.append(h.anchor(QString("g%1").arg(i,2,10,QChar('0')),i*3,{QString::number(i)}));
         QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         auto* left=h.rails()->findChild<QScrollArea*>("linkedNativeLeftRail");
@@ -521,7 +559,7 @@ private slots:
         QCOMPARE(view(h.editor()),original);QCOMPARE(cursorSignals.size(),0);
     }
     void typingAndExplicitNavigationIntent() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QJsonArray rows;for(int i=0;i<20;++i)rows.append(h.anchor(QString("g%1").arg(i,2,10,QChar('0')),1+i*3,{QString::number(i)}));
         QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         auto* left=h.rails()->findChild<QScrollArea*>("linkedNativeLeftRail");QVERIFY(left);
@@ -551,7 +589,7 @@ private slots:
         QCOMPARE(h.editor()->textCursor().selectedText(),QStringLiteral("signal_001"));
     }
     void previewWheelAndPixelScrollIntent() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);h.defer=true;
+        Harness h;QVERIFY(h.ready);h.defer=true;
         QVERIFY(h.store({h.anchor("a",1,{"long"}),h.anchor("b",2,{"peer"}),h.anchor("c",80,{"far"})}));
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(!h.pending.isEmpty());
         const auto work=h.pending;h.pending.clear();h.defer=false;
@@ -569,7 +607,7 @@ private slots:
         QVERIFY(left->verticalScrollBar()->value()!=outer);
     }
     void scrollbarIntentAndEmptyTrack() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QJsonArray rows;for(int i=0;i<20;++i)rows.append(h.anchor(QString::number(i),i*3,{QString::number(i)}));
         QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         auto* left=h.rails()->findChild<QScrollArea*>("linkedNativeLeftRail");QVERIFY(left);
@@ -594,7 +632,7 @@ private slots:
         QCOMPARE(trackState(h,0)["state"].toString(),QStringLiteral("Follow"));
     }
     void individualReferenceChangesPreservePeers() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QVERIFY(h.store({h.anchor("a",2,{"one","two"}),h.anchor("b",4,{"peer"})}));
         QVERIFY(h.controller->setActive(true));expandAllReferenceGroups(h);QTRY_VERIFY(h.allResourcesComplete());
         QMap<QString,QPointer<QFrame>> before;
@@ -619,7 +657,7 @@ private slots:
         QTRY_VERIFY(h.allResourcesComplete());
     }
     void collapsedStackAndExpandedCards() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QStringList entries;for(int i=0;i<20;++i)entries.append(QString("stack-%1").arg(i));
         QVERIFY(h.store({h.anchor("one",1,{"single"}),h.anchor("twenty",2,entries)}));
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
@@ -660,23 +698,13 @@ private slots:
         QCOMPARE(rails->sizes()[1],codeWidth);QCOMPARE(view(h.editor()),editorState);
         QCOMPARE(h.requested.value("single"),1);
     }
-    void disabledValues_data() {
-        QTest::addColumn<QByteArray>("value");QTest::addColumn<bool>("unset");
-        QTest::newRow("unset")<<QByteArray{}<<true;
-        QTest::newRow("zero")<<QByteArray("0")<<false;
-        QTest::newRow("empty")<<QByteArray("")<<false;
-        QTest::newRow("true-word")<<QByteArray("true")<<false;
-        QTest::newRow("padded-one")<<QByteArray(" 1")<<false;
-    }
-    void disabledValues() {
-        QFETCH(QByteArray,value);QFETCH(bool,unset);Environment env;
-        if(unset)qunsetenv(flag);else qputenv(flag,value);
+    void nativeReentryAndRestoration() {
         Harness h;QVERIFY(h.ready);QVERIFY(h.controller->setActive(true));
-        QVERIFY(!h.snapshot()["native"].toBool());QVERIFY(!h.rails());
-        QCOMPARE(h.window.findChildren<WebEditorContainer*>("linkedContextWebView").size(),1);
+        QVERIFY(h.snapshot()["native"].toBool());QVERIFY(h.rails());
+        QVERIFY(h.window.findChildren<WebEditorContainer*>("linkedContextWebView").isEmpty());
         auto* original=h.page;auto* editor=h.editor();auto* document=editor->document();
         const QJsonValue session=h.snapshot()["session"];
-        qputenv(flag,"1");QVERIFY(h.controller->setActive(true));QVERIFY(!h.rails());
+        QVERIFY(h.controller->setActive(true));QVERIFY(h.rails());
         QCOMPARE(h.snapshot()["session"],session);
         QVERIFY(h.controller->setActive(false));QCOMPARE(h.stack->currentWidget(),original);
         QCOMPARE(h.editor(),editor);QCOMPARE(editor->document(),document);
@@ -685,7 +713,7 @@ private slots:
         QVERIFY(h.controller->setActive(false));
     }
     void nativeSessionAndStructure() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QVERIFY(h.store({h.anchor("a",2,{"text"}),h.anchor("b",3,{"image"})}));
         auto* editor=h.editor();auto* document=editor->document();
         QVERIFY(h.controller->setActive(true));auto* rails=h.rails();QVERIFY(rails);
@@ -693,19 +721,19 @@ private slots:
         QCOMPARE(rails->findChildren<QScrollArea*>().size(),2);
         QVERIFY(h.window.findChildren<WebEditorContainer*>().isEmpty());
         QVERIFY(!h.window.findChild<QWidget*>("linkedContextActions"));
-        QVERIFY(!h.window.findChild<QWidget*>("linkedSaveCopy"));
+        auto* recovery=h.window.findChild<QPushButton*>("linkedSaveCopy");QVERIFY(recovery);QVERIFY(!recovery->isVisible());
         QVERIFY(h.snapshot()["initialized"].toBool());
         QTRY_VERIFY(h.allResourcesComplete());
-        const QJsonValue session=h.snapshot()["session"];qputenv(flag,"0");
+        const QJsonValue session=h.snapshot()["session"];
         QVERIFY(h.controller->setActive(true));QCOMPARE(h.rails(),rails);QCOMPARE(h.snapshot()["session"],session);
         QVERIFY(h.tabs->openFileInTab(h.second));QVERIFY(h.snapshot()["native"].toBool());QCOMPARE(h.rails(),rails);
         QVERIFY(h.snapshot()["session"]!=session);
         QElapsedTimer elapsed;elapsed.start();QVERIFY(h.controller->setActive(false));QVERIFY(elapsed.elapsed()<1000);
         QCOMPARE(h.stack->currentWidget(),h.page);QVERIFY(!h.rails());
-        QVERIFY(h.controller->setActive(true));QVERIFY(!h.rails());QVERIFY(h.controller->setActive(false));
+        QVERIFY(h.controller->setActive(true));QVERIFY(h.rails());QVERIFY(h.controller->setActive(false));
     }
     void groupsReferencesAndUnavailable() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         auto missing=h.anchor("missing",7,{"never-missing"});auto ambiguous=h.anchor("ambiguous",8,{"never-ambiguous"});
         for(auto* item:{&missing,&ambiguous}) {
             auto source=(*item)["source"].toObject();
@@ -740,7 +768,7 @@ private slots:
         QTRY_VERIFY(h.railsSnapshot()["groups"].toArray().isEmpty());QTRY_VERIFY(h.resources().isEmpty());
     }
     void editorStateAndExplicitNavigation() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);h.defer=true;
+        Harness h;QVERIFY(h.ready);h.defer=true;
         QVERIFY(h.store({h.anchor("near",22,{"text"}),h.anchor("far",82,{"image"})}));
         auto* editor=h.editor();editor->setFixedSize(520,360);QCoreApplication::processEvents();
         QTextCursor cursor(editor->document());cursor.setPosition(h.text.indexOf("signal_022"));cursor.movePosition(QTextCursor::Right,QTextCursor::KeepAnchor,7);
@@ -759,7 +787,7 @@ private slots:
         QVERIFY(h.controller->setActive(false));QCOMPARE(editor->document(),document);QCOMPARE(view(editor),before);
     }
     void widthRatioAndLogicalY() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QVERIFY(h.store({h.anchor("a",2,{"a"}),h.anchor("b",5,{"b"})}));
         QVERIFY(!h.board(h.file,savedState(.6)).isEmpty());QVERIFY(h.controller->setActive(true));
         auto* rails=h.rails();QVERIFY(rails);
@@ -781,7 +809,7 @@ private slots:
         for(int value:tiny.sizes())QVERIFY(value>=0);
     }
     void visibilityCapAndLaterSources() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
+        Harness h;QVERIFY(h.ready);
         QJsonArray rows;for(int i=0;i<40;++i)rows.append(h.anchor(QString("g%1").arg(i,3,10,QChar('0')),i,{QString("source-%1").arg(i,3,10,QChar('0'))}));
         QVERIFY(h.store(rows));h.window.resize(1500,18000);QCoreApplication::processEvents();QVERIFY(h.controller->setActive(true));
         QTRY_VERIFY(h.snapshot()["demanded"].toArray().size()>24);QTRY_COMPARE(h.resources().size(),24);QTRY_VERIFY(h.allResourcesComplete());
@@ -796,7 +824,7 @@ private slots:
         QVERIFY(h.controller->setActive(false));QVERIFY(h.resources().isEmpty());
     }
     void previewStatesAndRetry() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);h.defer=true;h.errorSources.insert("error");
+        Harness h;QVERIFY(h.ready);h.defer=true;h.errorSources.insert("error");
         QVERIFY(h.store({h.anchor("a",1,{"empty"}),h.anchor("b",2,{"error"}),h.anchor("c",3,{"deleted"}),h.anchor("d",4,{"image"}),h.anchor("e",5,{"text"})}));
         h.window.resize(1500,1600);QVERIFY(h.controller->setActive(true));QTRY_VERIFY(!h.pending.isEmpty());
         QCOMPARE(h.cardState("a/link-0"),QStringLiteral("loading"));
@@ -811,7 +839,7 @@ private slots:
         QVERIFY(!cardIdentity);QCOMPARE(h.requested.value("error"),2);
     }
     void lifecycleAndStaleReplies() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);h.defer=true;
+        Harness h;QVERIFY(h.ready);h.defer=true;
         QVERIFY(h.store({h.anchor("first",1,{"late-first"}),h.anchor("second",2,{"late-second"},h.second)}));
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(!h.pending.isEmpty());
         const auto old=h.pending.takeFirst();const auto generation=h.snapshot()["generation"].toDouble();
@@ -830,28 +858,212 @@ private slots:
         const auto late=h.pending.takeFirst();h.controller.reset();h.complete(late);QCoreApplication::processEvents();
         QCOMPARE(h.stack->currentWidget(),h.page);QVERIFY(!h.rails());QVERIFY(h.editor());
     }
+    void nativeSchemaRejectsInvalid_data() {
+        QTest::addColumn<QJsonObject>("state");
+        const auto add=[](const char* name,QJsonObject value){QTest::newRow(name)<<value;};
+        auto value=nativeState();value["version"]=3.5;add("fractional-version",value);
+        value=nativeState();value["version"]=4;add("unknown-version",value);
+        value=nativeState();value["codeRatio"]=.9;add("compat-ratio",value);
+        value=nativeState();value["referenceIds"]=QJsonArray{"same","same"};add("duplicate-reference",value);
+        value=nativeState();value["referenceIds"]=QJsonArray{12};add("non-string-reference",value);
+        value=nativeState();value["referenceIds"]=QJsonArray{QString(513,'x')};add("long-reference",value);
+        value=nativeState();QJsonArray tooMany;for(int i=0;i<10001;++i)tooMany.append(QString::number(i));value["referenceIds"]=tooMany;add("reference-limit",value);
+        value=nativeState();value.remove("expandedReferences");add("missing-deep-list",value);
+        value=nativeState();value["expandedReferences"]=QJsonArray{true};add("non-object-deep",value);
+        value=nativeState();value["nativeView"]=false;add("non-object-view",value);
+        const auto changeView=[&](const char* name,const QString& key,QJsonValue field){auto state=nativeState();auto view=state["nativeView"].toObject();view[key]=field;state["nativeView"]=view;add(name,state);};
+        changeView("unknown-view-version","version",2);changeView("fractional-view-version","version",1.25);
+        changeView("short-weights","weights",QJsonArray{1,2});changeView("negative-weight","weights",QJsonArray{1,-1,2});
+        changeView("zero-weights","weights",QJsonArray{0,0,0});changeView("string-weight","weights",QJsonArray{1,"2",3});
+        changeView("large-weight","weights",QJsonArray{1,1e10,3});changeView("null-weight","weights",QJsonArray{1,QJsonValue::Null,3});
+        changeView("duplicate-expansion","expanded",QJsonArray{"a","a"});changeView("empty-expansion-id","expanded",QJsonArray{""});
+        changeView("long-expansion-id","expanded",QJsonArray{QString(513,'x')});changeView("expansion-limit","expanded",tooMany);
+        QJsonObject deep{{"id","a/link-1"},{"parent","a/link-0"},{"anchor","a"},{"title","deep"},{"source",sourceUri("deep")}};
+        const auto changeDeep=[&](const char* name,const QString& key,QJsonValue field){auto state=nativeState();auto item=deep;item[key]=field;state["expandedReferences"]=QJsonArray{item};add(name,state);};
+        changeDeep("missing-parent","parent","absent");changeDeep("self-parent","parent","a/link-1");
+        changeDeep("invalid-source","source","invalid://source");changeDeep("wrong-title-type","title",9);
+        changeDeep("long-title","title",QString(8193,'x'));changeDeep("long-anchor","anchor",QString(513,'x'));
+        value=nativeState();value["expandedReferences"]=QJsonArray{deep,deep};add("duplicate-deep",value);
+        auto first=deep;first["id"]="a/link-0";first["parent"]="a/link-1";
+        value=nativeState();value["expandedReferences"]=QJsonArray{first,deep};add("cyclic-deep",value);
+        value=savedState();value["nativeView"]=QJsonObject{{"version",1},{"weights",QJsonArray{0,0,0}},{"expanded",QJsonArray{}}};add("legacy-invalid-view",value);
+    }
+    void nativeSchemaRejectsInvalid() {
+        QFETCH(QJsonObject,state);QString failure;QVERIFY(!LinkedContextState::validate(state,&failure));QVERIFY(!failure.isEmpty());
+    }
+    void nativeSchemaAndLegacyCompatibility() {
+        QString failure;QVERIFY(LinkedContextState::validate(nativeState({"a"}),&failure));
+        auto legacy=savedState();legacy["expandedReferences"]=QJsonArray{QJsonObject{{"legacyUnknown",42}}};
+        QVERIFY(LinkedContextState::validate(legacy,&failure));legacy["nativeView"]=nativeState()["nativeView"];
+        QVERIFY(LinkedContextState::validate(legacy,&failure));
+        auto state=nativeState();QJsonArray ids,deeper;
+        ids.append("root");
+        for(int i=1;i<10000;++i){const auto id=QString::number(i),parent=i==1?QString("root"):QString::number(i-1);ids.append(id);
+            deeper.append(QJsonObject{{"id",id},{"parent",parent},{"anchor","a"},{"title",""},{"source",sourceUri("deep")}});}
+        state["referenceIds"]=ids;state["expandedReferences"]=deeper;QVERIFY(LinkedContextState::validate(state,&failure));
+        deeper.append(deeper.last());state["expandedReferences"]=deeper;QVERIFY(!LinkedContextState::validate(state,&failure));
+    }
+    void nativeEmptyBoardAndAsymmetricViewRoundtrip() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        LinkedContextState board;QVERIFY(board.load(h.temp.path(),h.file));const auto path=board.path;
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());QVERIFY(drainSaveWindow());QVERIFY(!QFileInfo::exists(path));
+        auto* button=expandButton(h,"a");QVERIFY(button);button->click();QVERIFY(dragSplitter(h,1,420));
+        const auto sizes=h.rails()->sizes();const int total=sizes[0]+sizes[1]+sizes[2];
+        QVERIFY(sizes[0]!=sizes[2]);QVERIFY(double(sizes[1])/total<.3||double(sizes[1])/total>.7);
+        QTRY_VERIFY(QFileInfo::exists(path));const auto saved=diskState(path);QCOMPARE(saved["version"].toInt(),3);
+        QVERIFY(!saved.contains("native"));QVERIFY(!saved.contains("viewport"));QVERIFY(!saved.contains("documentViews"));
+        const auto weights=saved["nativeView"].toObject()["weights"].toArray();QCOMPARE(weights.size(),3);
+        for(int i=0;i<3;++i)QCOMPARE(weights[i].toDouble(),double(sizes[i])/total);
+        QCOMPARE(saved["nativeView"].toObject()["expanded"].toArray(),QJsonArray{"a"});
+        QVERIFY(saved["codeRatio"].toDouble()>=.3&&saved["codeRatio"].toDouble()<=.7);
+        const auto bytes=readFile(path);QVERIFY(h.controller->setActive(false));h.window.resize(1800,850);
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        QCOMPARE(h.rails()->expandedAnchors(),QStringList{"a"});const auto restored=h.rails()->sizes();const int sum=restored[0]+restored[1]+restored[2];
+        QCOMPARE(restored[0],qRound(weights[0].toDouble()*sum));QCOMPARE(restored[1],qRound(weights[1].toDouble()*sum));
+        QCOMPARE(restored[2],sum-restored[0]-restored[1]);QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),bytes);
+        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);
+    }
+    void nativeDeepReferencesAndReadOnlyIdentity() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        auto original=savedState(.6,QJsonArray{QJsonObject{{"id","a/link-0/deep"},{"anchor","a"},{"parent","a/link-0"},{"title","Preserved title"},{"source",sourceUri("deep")}}});
+        const auto path=h.board(h.file,original);QVERIFY(!path.isEmpty());const auto bytes=readFile(path);
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());QCOMPARE(h.snapshot()["references"].toArray().size(),3);
+        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);
+        QVERIFY(h.controller->setActive(true));expandButton(h,"a")->click();QTRY_VERIFY(readFile(path)!=bytes);
+        const auto changed=diskState(path);for(const auto& key:QStringList{"version","native","viewport","documentViews","expandedReferences","referenceIds","unknownStage1Sentinel"})QCOMPARE(changed[key],original[key]);
+        QCOMPARE(changed["nativeView"].toObject()["expanded"].toArray(),QJsonArray{"a"});QVERIFY(h.controller->setActive(false));
+    }
+    void nativeInvalidBoardPreserved_data() {
+        QTest::addColumn<int>("kind");QTest::newRow("corrupt")<<0;QTest::newRow("unknown-version")<<1;QTest::newRow("invalid-native")<<2;
+    }
+    void nativeInvalidBoardPreserved() {
+        QFETCH(int,kind);Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        LinkedContextState board;QVERIFY(board.load(h.temp.path(),h.file));QVERIFY(board.save(nativeState()));
+        const auto identity=QJsonDocument::fromJson(readFile(board.path)).object()["file"].toString();QVERIFY(!identity.isEmpty());
+        auto invalid=nativeState();invalid["version"]=kind==1?4:3;
+        if(kind==2){auto view=invalid["nativeView"].toObject();view["weights"]=QJsonArray{0,0,0};invalid["nativeView"]=view;}
+        const QByteArray bytes=kind==0?QByteArray("unreadable board bytes"):QJsonDocument(QJsonObject{{"file",identity},{"state",invalid}}).toJson();
+        QVERIFY(writeFile(board.path,bytes));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        auto* copy=h.window.findChild<QPushButton*>("linkedSaveCopy");QVERIFY(copy);QVERIFY(copy->isVisible());
+        QVERIFY(drainSaveWindow());QCOMPARE(readFile(board.path),bytes);QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(board.path),bytes);
+        QVERIFY(h.controller->setActive(true));const auto destination=h.temp.filePath("recovery.json");QVERIFY(recoveryDialog(h,destination));
+        const auto recovered=diskState(destination);QString failure;QVERIFY(LinkedContextState::validate(recovered,&failure));QCOMPARE(recovered["version"].toInt(),3);
+        QCOMPARE(QJsonDocument::fromJson(readFile(destination)).object()["file"].toString(),identity);QCOMPARE(readFile(board.path),bytes);
+        QVERIFY(h.controller->setActive(false));
+    }
+    void nativeRecoveryActualButtons() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));const auto path=h.board(h.file,savedState());QVERIFY(!path.isEmpty());
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());const QByteArray external="preserve external";QVERIFY(writeFile(path,external));
+        expandButton(h,"a")->click();auto* status=h.window.findChild<QLabel*>("linkedContextStatus");QVERIFY(status);QTRY_VERIFY(status->text().contains("changed on disk"));
+        QVERIFY(!h.controller->setActive(false));QVERIFY(recoveryDialog(h,{},true));QCOMPARE(readFile(path),external);QVERIFY(!h.controller->setActive(false));
+        QVERIFY(recoveryDialog(h,path));QVERIFY(status->text().contains("Choose another file"));QCOMPARE(readFile(path),external);
+        const auto absentParent=h.temp.filePath("remove-after-dialog");QVERIFY(QDir().mkpath(absentParent));const auto failed=absentParent+"/copy.json";
+        QVERIFY(recoveryDialog(h,failed,false,true));QVERIFY(!QFileInfo::exists(failed));QVERIFY(!h.controller->setActive(false));QCOMPARE(readFile(path),external);
+        const auto first=h.temp.filePath("first-copy.json");QVERIFY(recoveryDialog(h,first));QVERIFY(QFileInfo::exists(first));
+        const auto exported=diskState(first);QCOMPARE(exported["nativeView"].toObject()["expanded"].toArray(),QJsonArray{"a"});
+        expandButton(h,"a")->click();QVERIFY(!h.controller->setActive(false));QCOMPARE(diskState(first),exported);QCOMPARE(readFile(path),external);
+        const auto second=h.temp.filePath("second-copy.json");QVERIFY(recoveryDialog(h,second));QVERIFY(diskState(second)!=exported);
+        QCOMPARE(diskState(second)["nativeView"].toObject()["expanded"].toArray(),QJsonArray{});
+        QVERIFY(h.controller->setActive(false));QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),external);
+    }
+    void nativeReloadCancelsPendingSave() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));const auto path=h.board(h.file,nativeState());QVERIFY(!path.isEmpty());
+        const auto bytes=readFile(path);QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        const auto session=h.snapshot().value("session");expandButton(h,"a")->click();h.controller->reloadBoard();
+        QVERIFY(h.snapshot()["session"]!=session);QCOMPARE(h.rails()->expandedAnchors(),QStringList{});QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),bytes);
+        expandButton(h,"a")->click();auto envelope=QJsonDocument::fromJson(bytes).object();auto external=nativeState({"a"});
+        auto view=external["nativeView"].toObject();view["weights"]=QJsonArray{.1,.6,.3};external["nativeView"]=view;envelope["state"]=external;
+        const auto externalBytes=QJsonDocument(envelope).toJson();QVERIFY(writeFile(path,externalBytes));h.controller->reloadBoard();
+        QCOMPARE(h.rails()->expandedAnchors(),QStringList{"a"});QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),externalBytes);
+        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),externalBytes);
+    }
+    void nativeTransitionCommitAndRename() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        LinkedContextState first,second;QVERIFY(first.load(h.temp.path(),h.file));QVERIFY(second.load(h.temp.path(),h.second));
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());expandButton(h,"a")->click();
+        QVERIFY(h.tabs->openFileInTab(h.second));QVERIFY(QFileInfo::exists(first.path));QVERIFY(drainSaveWindow());QVERIFY(!QFileInfo::exists(second.path));
+        QVERIFY(h.tabs->activateOpenFile(h.file));QCOMPARE(h.rails()->expandedAnchors(),QStringList{"a"});
+        const auto previous=h.editor();const auto renamed=h.temp.filePath("renamed.sv");const auto sizes=h.rails()->sizes();
+        QVERIFY(h.tabs->saveEditorView(previous,true,renamed));QCOMPARE(h.editor(),previous);QCOMPARE(h.editor()->documentFileName(),renamed);QCOMPARE(h.rails()->sizes(),sizes);
+        LinkedContextState moved;QVERIFY(moved.load(h.temp.path(),renamed));QTRY_VERIFY(QFileInfo::exists(moved.path));
+        QCOMPARE(diskState(moved.path)["nativeView"].toObject()["expanded"].toArray(),QJsonArray{"a"});
+        QVERIFY(h.controller->setActive(false));
+    }
+    void nativeFailedTransitionsAndDestructor() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));const auto path=h.board(h.file,savedState());QVERIFY(!path.isEmpty());
+        const auto bytes=readFile(path);QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        QLockFile lock(path+".lock");QVERIFY(lock.tryLock(0));expandButton(h,"a")->click();
+        const auto session=h.snapshot().value("session");auto* editor=h.editor();
+        QVERIFY(h.tabs->openFileInTab(h.second));QCOMPARE(h.editor(),editor);QCOMPARE(h.editor()->documentFileName(),h.file);
+        QCOMPARE(h.snapshot()["session"],session);QVERIFY(h.controller->isActive());
+        const auto tabCount=h.tabWidget->count();h.tabs->closeTab(h.tabWidget->currentIndex());QCOMPARE(h.tabWidget->count(),tabCount);QCOMPARE(h.editor(),editor);
+        const auto rejectedRename=h.temp.filePath("must-not-rename.sv");QVERIFY(!h.tabs->saveEditorView(editor,true,rejectedRename));QVERIFY(!QFileInfo::exists(rejectedRename));
+        QVERIFY(!h.controller->setActive(false));QCOMPARE(readFile(path),bytes);lock.unlock();QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),bytes);
+        const auto other=h.temp.filePath("another-workspace");QVERIFY(QDir().mkpath(other));
+        const QByteArray external="changed outside";QVERIFY(writeFile(path,external));h.links.setWorkspaceRoot(other);h.controller->refreshAnchors();
+        QVERIFY(h.controller->isActive());QCOMPARE(readFile(path),external);
+        LinkedContextState otherBoard;QVERIFY(otherBoard.load(other,h.file));QVERIFY(!QFileInfo::exists(otherBoard.path));
+        const auto recovery=h.temp.filePath("old-identity-copy.json");QVERIFY(recoveryDialog(h,recovery));
+        QCOMPARE(QJsonDocument::fromJson(readFile(recovery)).object()["file"],QJsonDocument::fromJson(bytes).object()["file"]);
+        QVERIFY(h.controller->setActive(false));QVERIFY(!QFileInfo::exists(otherBoard.path));
+        h.links.setWorkspaceRoot(h.temp.path());QVERIFY(writeFile(path,bytes));QVERIFY(h.controller->setActive(true));
+        QTRY_VERIFY(h.allResourcesComplete());expandButton(h,"a")->click();h.controller.reset();
+        QCOMPARE(h.stack->currentWidget(),h.page);QVERIFY(!h.rails());QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),bytes);
+    }
+    void nativeReferenceChangesAndParserFailure() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));const auto path=h.board(h.file,nativeState());QVERIFY(!path.isEmpty());
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());const auto before=readFile(path);
+        h.editor()->setPlainText("// temporarily no parsed anchors\n");QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),before);
+        h.editor()->setPlainText(h.text);QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),before);
+        QVERIFY(h.store({h.anchor("a",2,{"one","two","third"})}));h.controller->refreshAnchors();
+        QTRY_COMPARE(diskState(path)["referenceIds"].toArray().size(),3);
+        const auto saved=readFile(path);h.controller->setPinloomHostClient(h.client.get());QVERIFY(drainSaveWindow());QCOMPARE(readFile(path),saved);
+        QVERIFY(h.controller->setActive(false));
+    }
+    void sharedGeometrySourcesAndCoalescing() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"}),h.anchor("b",20,{"three"})}));
+        QVERIFY(h.controller->setActive(true));QVERIFY(DefaultNativeObservation::settled(h));
+        auto* layer=h.window.findChild<LinkedConnectorOverlay*>();QVERIFY(layer);
+        const auto fresh=[&](quint64 previous){return DefaultNativeObservation::settled(h,double(previous));};
+        auto serial=layer->geometrySerial();h.window.resize(h.window.width()-40,h.window.height());QVERIFY(fresh(serial));
+        serial=layer->geometrySerial();QTextCursor cursor(h.editor()->document());cursor.setPosition(h.text.indexOf("signal_002"));h.editor()->setTextCursor(cursor);QVERIFY(fresh(serial));
+        serial=layer->geometrySerial();cursor.setPosition(cursor.position()+10,QTextCursor::KeepAnchor);h.editor()->setTextCursor(cursor);QVERIFY(fresh(serial));
+        serial=layer->geometrySerial();h.editor()->verticalScrollBar()->setValue(1);QVERIFY(fresh(serial));
+        serial=layer->geometrySerial();QTextCursor edit(h.editor()->document());edit.movePosition(QTextCursor::End);edit.insertText("// shared geometry edit\n");QVERIFY(fresh(serial));
+        QCOMPARE(layer->completion().identity.contentRevision,qint64(h.editor()->semanticDocumentRevision()));
+        serial=layer->geometrySerial();auto row=h.anchor("a",2,{"one","two"});auto links=row["links"].toArray();auto link=links[0].toObject();link["title"]="updated";links[0]=link;row["links"]=links;
+        QVERIFY(h.store({row,h.anchor("b",20,{"three"})}));h.controller->refreshAnchors();
+        QTRY_COMPARE(h.snapshot()["references"].toArray()[0].toObject()["title"].toString(),QString("updated"));QVERIFY(fresh(serial));
+        auto* locate=h.rails()->findChild<QPushButton*>("linkedNativeLocate");QVERIFY(locate);serial=layer->geometrySerial();locate->click();QVERIFY(fresh(serial));
+        QSignalSpy applied(layer,&LinkedConnectorOverlay::geometryApplied);serial=layer->geometrySerial();
+        for(int i=0;i<40;++i){QTextCursor c(h.editor()->document());c.setPosition(i+1);h.editor()->setTextCursor(c);}
+        QVERIFY(fresh(serial));QVERIFY(!applied.isEmpty());QVERIFY(applied.size()<40);
+        QCOMPARE(layer->completion().geometrySerial,layer->geometrySerial());QCOMPARE(layer->completion().identity.requestSerial,layer->scene().identity.requestSerial);
+        QCOMPARE(layer->completion().identity.layoutSerial,layer->scene().identity.layoutSerial);QCOMPARE(layer->completion().identity.contentRevision,qint64(h.editor()->semanticDocumentRevision()));
+        QVERIFY(h.controller->setActive(false));
+    }
     void nativeBoardBytesAndDefaultSaveFailure() {
-        Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);
-        QVERIFY(h.store({h.anchor("a",2,{"text"})}));const auto original=savedState(.6);
+        Harness h;QVERIFY(h.ready);
+        QVERIFY(h.store({h.anchor("a",2,{"text","second"})}));const auto original=savedState(.6);
         const auto path=h.board(h.file,original);QVERIFY(!path.isEmpty());const auto bytes=readFile(path);
         QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
         h.rails()->setSizes({200,800,400});h.controller->reloadBoard();QVERIFY(h.tabs->openFileInTab(h.second));
         QVERIFY(h.tabs->activateOpenFile(h.file));QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);
-        qputenv(flag,"0");QVERIFY(h.controller->setActive(true));
-        auto* web=h.window.findChild<WebEditorContainer*>("linkedContextWebView");QVERIFY(web);
-        const auto session=h.snapshot()["session"].toString();auto changed=original;changed["testSaveSentinel"]=43;
-        web->messageReceived({{"type","layout"},{"session",session},{"state",changed}});
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        auto* toggle=expandButton(h,"a");QVERIFY(toggle);toggle->click();
         QTRY_VERIFY(readFile(path)!=bytes);
-        QCOMPARE(QJsonDocument::fromJson(readFile(path)).object()["state"].toObject()["testSaveSentinel"].toInt(),43);
-        const QByteArray external="external revision preserved";QVERIFY(writeFile(path,external));changed["testSaveSentinel"]=44;
-        web->messageReceived({{"type","layout"},{"session",session},{"state",changed}});
+        const auto changed=diskState(path);QCOMPARE(changed["native"],original["native"]);QCOMPARE(changed["viewport"],original["viewport"]);
+        QCOMPARE(changed["documentViews"],original["documentViews"]);QCOMPARE(changed["unknownStage1Sentinel"],original["unknownStage1Sentinel"]);
+        QCOMPARE(changed["nativeView"].toObject()["expanded"].toArray(),QJsonArray{"a"});
+        const QByteArray external="external revision preserved";QVERIFY(writeFile(path,external));toggle->click();
         auto* status=h.window.findChild<QLabel*>("linkedContextStatus");QVERIFY(status);
         QTRY_VERIFY(status->text().contains("changed on disk"));QCOMPARE(readFile(path),external);
         auto* recovery=h.window.findChild<QPushButton*>("linkedSaveCopy");QVERIFY(recovery);QVERIFY(recovery->isVisible());
-        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),external);
+        QVERIFY(!h.controller->setActive(false));QCOMPARE(readFile(path),external);
     }
 };
 int main(int argc,char** argv) {
+    QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication app(argc,argv);
     QTemporaryDir settings(QDir::tempPath()+"/rails-settings-XXXXXX");if(!settings.isValid())return 2;
     QCoreApplication::setOrganizationName("ZeroSlackNativeRailsTest");QCoreApplication::setApplicationName("Stage1");

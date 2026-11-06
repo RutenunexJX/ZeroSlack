@@ -588,8 +588,19 @@ void LinkedNativeRails::setGroupExpanded(const QString& anchor, bool expanded) {
         }
         if(group.expanded==expanded)return;
         d->expansion.insert(anchor,expanded);
-        setGroups(d->logicalGroups,d->appliedContentRevision);return;
+        setGroups(d->logicalGroups,d->appliedContentRevision);emit groupExpansionChanged();return;
     }
+}
+QStringList LinkedNativeRails::expandedAnchors() const {
+    QStringList result;
+    for(auto it=d->expansion.cbegin();it!=d->expansion.cend();++it)if(it.value())result.append(it.key());
+    return result;
+}
+void LinkedNativeRails::restoreExpandedAnchors(const QStringList& anchors) {
+    QMap<QString,bool> restored;
+    for(const auto& group:d->logicalGroups)if(anchors.contains(group.anchor))restored.insert(group.anchor,true);
+    if(restored==d->expansion)return;
+    d->expansion=restored;setGroups(d->logicalGroups,d->appliedContentRevision);
 }
 void LinkedNativeRails::followAnchor(const QString& anchor, const QString& reason) {
     for (const auto& group : d->groups) if (group.value.members.contains(anchor)) {

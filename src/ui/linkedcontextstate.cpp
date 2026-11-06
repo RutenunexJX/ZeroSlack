@@ -1,4 +1,5 @@
 #include "linkedcontextstate.h"
+#include "pinloomhostclient.h"
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -28,11 +29,69 @@ bool viewportValid(const QJsonObject& value) {
     return number(value.value("zoom"), .05, 10) && number(value.value("centerX"), -1e7, 1e7)
         && number(value.value("centerY"), -1e7, 1e7);
 }
+bool identifierList(QJsonValue value, QSet<QString>* ids = nullptr) {
+    if (!value.isArray() || value.toArray().size() > 10000) return false;
+    QSet<QString> seen;
+    for (const auto& item : value.toArray()) {
+        const auto id = item.toString();
+        if (!item.isString() || id.isEmpty() || id.size() > 512 || seen.contains(id)) return false;
+        seen.insert(id);
+    }
+    if (ids) *ids = seen;
+    return true;
+}
+bool nativeViewValid(QJsonValue value) {
+    if (!value.isObject()) return false;
+    const auto view = value.toObject();
+    if (!number(view.value("version"), 1, 1) || !view.value("weights").isArray()
+        || view.value("weights").toArray().size() != 3 || !identifierList(view.value("expanded"))) return false;
+    double sum = 0;
+    for (const auto& weight : view.value("weights").toArray()) {
+        if (!number(weight, 0, 1e9)) return false;
+        sum += weight.toDouble();
+    }
+    return std::isfinite(sum) && sum > 0;
+}
+bool expandedReferencesValid(QJsonValue value, const QSet<QString>& ids) {
+    if (!value.isArray() || value.toArray().size() > 10000) return false;
+    QHash<QString, QString> parents;
+    for (const auto& item : value.toArray()) {
+        if (!item.isObject()) return false;
+        const auto reference = item.toObject();
+        for (const auto* key : {"id", "anchor", "parent", "title", "source"}) {
+            const auto field = reference.value(QLatin1String(key));
+            const bool title = QLatin1String(key) == QLatin1String("title");
+            const int maximum = title || QLatin1String(key) == QLatin1String("source") ? 8192 : 512;
+            if (!field.isString() || (!title && field.toString().isEmpty()) || field.toString().size() > maximum) return false;
+        }
+        const auto id = reference.value("id").toString(), parent = reference.value("parent").toString();
+        if (!ids.contains(id) || !ids.contains(parent) || parents.contains(id) || id == parent
+            || !PinloomHostIdentity::fromUri(QUrl(reference.value("source").toString())).isValid()) return false;
+        parents.insert(id, parent);
+    }
+    QHash<QString, int> visited;
+    for (auto it = parents.cbegin(); it != parents.cend(); ++it) {
+        QString current = it.key(); QStringList chain;
+        while (parents.contains(current) && visited.value(current) != 2) {
+            if (visited.value(current) == 1) return false;
+            visited.insert(current, 1); chain.append(current); current = parents.value(current);
+        }
+        for (const auto& id : chain) visited.insert(id, 2);
+    }
+    return true;
+}
 }
 
 bool LinkedContextState::validate(const QJsonObject& state, QString* error) {
     const auto fail = [error] { if (error) *error = QStringLiteral("The saved board has an unsupported or invalid layout. Its file was preserved."); return false; };
     if (state.isEmpty()) return true;
+    if (number(state.value("version"), 3, 3)) {
+        QSet<QString> ids;
+        if (!identifierList(state.value("referenceIds"), &ids)
+            || !expandedReferencesValid(state.value("expandedReferences"), ids)
+            || !nativeViewValid(state.value("nativeView")) || !number(state.value("codeRatio"), .3, .7)) return fail();
+        return true;
+    }
     if (state.value(QStringLiteral("version")).toInt() != 2 || !state.value(QStringLiteral("native")).isObject()) return fail();
     const auto native = state.value(QStringLiteral("native")).toObject();
     if (native.value("format") != "zeroslack.linked-board" || native.value("engine") != "blocksuite-0.22.4"
@@ -63,6 +122,7 @@ bool LinkedContextState::validate(const QJsonObject& state, QString* error) {
     if (views.size() > 10000) return fail();
     for (const auto& view : views) if (!viewportValid(view.toObject())) return fail();
     if (state.contains(QStringLiteral("codeRatio")) && !number(state.value(QStringLiteral("codeRatio")), .3, .7)) return fail();
+    if (state.contains("nativeView") && !nativeViewValid(state.value("nativeView"))) return fail();
     return true;
 }
 

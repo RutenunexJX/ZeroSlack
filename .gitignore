@@ -42,6 +42,7 @@ CMakeLists.txt.user.*
 !cmake/DomainTargets.cmake
 !cmake/CliTargets.cmake
 !cmake/run_qt_gui_test.cmake
+!cmake/sync_document_editors.cmake
 
 *.pro.user
 *.pro.user.*

@@ -43,8 +43,6 @@ ZEROSLACK_API Selection sampleSelection(const MyCodeEditor& editor, const QStrin
 ZEROSLACK_API Sample sampleAnchor(const MyCodeEditor& editor, const Anchor& anchor, bool sampleEnd = false);
 
 ZEROSLACK_API bool active(const Anchor& anchor, const Selection& selection);
-ZEROSLACK_API QJsonObject webItem(const Sample& sample, const Selection& selection,
-                                   const QPoint& origin, int viewportHeight);
 ZEROSLACK_API Overlay overlay(const Sample& sample, const Selection& selection,
                                 const QSize& viewportSize);
 }

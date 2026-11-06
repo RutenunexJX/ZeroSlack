@@ -31,16 +31,6 @@ bool active(const Anchor& anchor, const Selection& selection)
         || (anchor.available && selection.start <= anchor.end && selection.end >= anchor.start);
 }
 
-QJsonObject webItem(const Sample& sample, const Selection& selection,
-                    const QPoint& origin, int viewportHeight)
-{
-    const bool available = sample.anchor.available;
-    return {{"id", sample.anchor.id},
-            {"y", origin.y() + (available ? sample.first.center().y() : 0)},
-            {"visible", available && sample.first.bottom() >= 0 && sample.first.top() < viewportHeight},
-            {"active", active(sample.anchor, selection)}};
-}
-
 Overlay overlay(const Sample& sample, const Selection& selection, const QSize& viewportSize)
 {
     Overlay result;

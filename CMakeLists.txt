@@ -758,9 +758,16 @@ if(WIN32)
             "$<TARGET_FILE_DIR:zeroslack_core>/WebView2Loader.dll" VERBATIM)
 endif()
 if(ZEROSLACK_DOCUMENT_EDITORS_DIR)
+    if(NOT Python_EXECUTABLE)
+        find_package(Python REQUIRED COMPONENTS Interpreter)
+    endif()
     add_custom_target(zeroslack_document_editor_resources ALL
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${ZEROSLACK_DOCUMENT_EDITORS_DIR}"
-            "$<TARGET_FILE_DIR:zeroslack_core>/resources/document-editors" VERBATIM)
+        COMMAND ${CMAKE_COMMAND}
+            "-DPYTHON_EXECUTABLE=${Python_EXECUTABLE}"
+            "-DSOURCE_ROOT=${ZEROSLACK_DOCUMENT_EDITORS_DIR}"
+            "-DBUILD_ROOT=${CMAKE_BINARY_DIR}"
+            "-DRUNTIME_ROOT=$<TARGET_FILE_DIR:zeroslack_core>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sync_document_editors.cmake" VERBATIM)
     add_dependencies(zeroslack_core zeroslack_document_editor_resources)
 endif()
 

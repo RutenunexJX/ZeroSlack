@@ -129,20 +129,18 @@ public:
     QJsonObject report;
     QJsonArray events,requests;
     QElapsedTimer clock;
-    QSet<QString> renderedSources;
     double now() const{return clock.nsecsElapsed()/1e6;}
     void mark(const QString& operation,int request=0){qApp->setProperty("g7Meta",QVariant::fromValue(QJsonObject{{"operation",operation},{"request",request},{"hostRequestMs",now()}}));}
 public slots:
     void acceptProbe(const QJsonObject& event){auto value=event;value["hostObservedMs"]=now();events.append(value);}
 private:
-    bool applied(const QString& operation,int request,bool native,const QString& webType="geometry") const {
+    bool applied(const QString& operation,int request,const QString& scope="geometry") const {
         bool layout=false,processed=false;
         for(auto it=events.end();it!=events.begin();){const auto e=(*--it).toObject(),meta=e["meta"].toObject();
             if(meta["operation"]!=operation||meta["request"].toInt()!=request)continue;
-            if(native&&e["kind"]=="native-layout")layout=true;
-            if(native&&e["kind"]=="scope-end"&&e["scope"]==(webType=="references"?"resolve":"geometry"))processed=true;
-            if(!native&&e["kind"]=="web-applied"&&e["messageType"]==webType)return true;
-        }return native&&layout&&processed;
+            if(e["kind"]=="native-layout")layout=true;
+            if(e["kind"]=="scope-end"&&e["scope"]==scope)processed=true;
+        }return layout&&processed;
     }
     QJsonObject metric(const QString& operation,double started,double completed) const {
         QJsonArray selected;for(const auto& e:events)if(e.toObject()["meta"].toObject()["operation"]==operation)selected.append(e);
@@ -177,12 +175,11 @@ private slots:
     void boundedTrial(){
         clock.start();qApp->setProperty("g7EventSink",QVariant::fromValue<QObject*>(this));
         const int n=qEnvironmentVariableIntValue("ZEROSLACK_LINKED_PERFORMANCE_N"),trial=qEnvironmentVariableIntValue("ZEROSLACK_LINKED_PERFORMANCE_TRIAL");
-        const bool native=qgetenv("ZEROSLACK_LINKED_NATIVE_RAILS")=="1";
-        report={{"schema","zeroslack-linked-performance/v1"},{"arm",native?"native":"web"},{"anchorCount",n},{"trial",trial},
+        report={{"schema","zeroslack-linked-performance/v1"},{"arm","native"},{"anchorCount",n},{"trial",trial},
             {"platform",QGuiApplication::platformName()},{"windowLogical",QJsonArray{1440,800}},{"font","Consolas 10"},
             {"profile",qEnvironmentVariable("ZEROSLACK_PROFILE_ROOT")},{"debounceMs",QJsonObject{{"geometry",20},{"anchors",180}}},
-            {"resourceCondition","Every currently demanded resource complete; Web additionally acknowledges consumed preview after Lit updates and two animation frames."},
-            {"instrumentation","Task-only controller scope/post observers and Web consumption/view/paint acknowledgements; raw durations include observer overhead. No speedup claim."}};
+            {"resourceCondition","Every currently demanded resource complete."},
+            {"instrumentation","Task-only controller scope observers and native layout/paint observations; raw durations include observer overhead. No speedup claim."}};
         QVERIFY(n==50||n==200||n==1000);QVERIFY(trial>=1&&trial<=3);
         QCOMPARE(QGuiApplication::platformName(),QString("windows"));
         Fixture f(n);QVERIFY(f.ready);report["sourceSha256"]=digest(f.text.toUtf8());report["sourceBytes"]=f.text.toUtf8().size();
@@ -192,34 +189,28 @@ private slots:
         report["beforeEntryMemory"]=memory();mark("entry");const double enterStart=now();
         QVERIFY(f.controller->setActive(true));const double enterReturned=now();
         auto* rails=f.window.findChild<LinkedNativeRails*>();auto* web=f.window.findChild<WebEditorContainer*>();
-        QCOMPARE(bool(rails),native);QCOMPARE(bool(web),!native);
-        if(rails)connect(rails,&LinkedNativeRails::layoutApplied,this,[this](quint64 serial,qint64 revision){acceptProbe({{"kind","native-layout"},{"meta",qApp->property("g7Meta").toJsonObject()},{"serial",qint64(serial)},{"revision",revision}});});
-        if(web)connect(web,&WebEditorContainer::messageReceived,this,[this](const QJsonObject& m){
-            if(m["type"]=="g7-applied"){auto e=m;e["kind"]="web-applied";acceptProbe(e);if(m["messageType"]=="preview")renderedSources.insert(m["source"].toString());}
-            if(m["type"]=="error")acceptProbe({{"kind","web-error"},{"message",m}});
-        });
-        const auto previewsReady=[&]{if(native)return true;for(const auto& r:f.state()["resources"].toArray())if(!renderedSources.contains(r.toObject()["source"].toString()))return false;return true;};
-        QVERIFY(QTest::qWaitFor([&]{return f.state()["initialized"].toBool()&&f.state()["references"].toArray().size()==n&&f.resourcesComplete()&&previewsReady()
-            &&(native||applied("entry",0,false,"initialize"));},60000));
+        QVERIFY(rails);QVERIFY(!web);
+        connect(rails,&LinkedNativeRails::layoutApplied,this,[this](quint64 serial,qint64 revision){acceptProbe({{"kind","native-layout"},{"meta",qApp->property("g7Meta").toJsonObject()},{"serial",qint64(serial)},{"revision",revision}});});
+        QVERIFY(QTest::qWaitFor([&]{return f.state()["initialized"].toBool()&&f.state()["references"].toArray().size()==n&&f.resourcesComplete();},60000));
         report["entry"]=metric("entry",enterStart,now());report["entrySetActiveCallMs"]=enterReturned-enterStart;
         report["loadedMemory"]=memory();report["loadedState"]=f.state();
-        if(native){QVERIFY(QTest::qWaitFor([&]{return connectorApplied("entry",0);},60000));report["entryConnector"]=connectorMetric("entry",enterStart,now());}
+        QVERIFY(QTest::qWaitFor([&]{return connectorApplied("entry",0);},60000));report["entryConnector"]=connectorMetric("entry",enterStart,now());
         auto* bar=f.editor()->verticalScrollBar();QVERIFY(bar->maximum()>2);
         mark("single-update",1);const double single=now();bar->setValue(bar->value()+1);
-        QVERIFY(QTest::qWaitFor([&]{return applied("single-update",1,native);},60000));
+        QVERIFY(QTest::qWaitFor([&]{return applied("single-update",1);},60000));
         report["singleUpdate"]=metric("single-update",single,now());
-        if(native){QVERIFY(QTest::qWaitFor([&]{return connectorApplied("single-update",1);},60000));report["singleUpdateConnector"]=connectorMetric("single-update",single,now());}
+        QVERIFY(QTest::qWaitFor([&]{return connectorApplied("single-update",1);},60000));report["singleUpdateConnector"]=connectorMetric("single-update",single,now());
         const double scrollStart=now();int sent=0;QTimer cadence;cadence.setTimerType(Qt::PreciseTimer);cadence.setInterval(8);
         connect(&cadence,&QTimer::timeout,this,[&]{
             ++sent;mark("scroll-500",sent);int target=(sent*7)%(bar->maximum()+1);if(target==bar->value())target=(target+1)%(bar->maximum()+1);
             const double began=now();bar->setValue(target);requests.append(QJsonObject{{"request",sent},{"hostMs",began},{"target",target},{"dispatchMs",now()-began}});
             if(sent==500)cadence.stop();
         });cadence.start();
-        QVERIFY(QTest::qWaitFor([&]{return sent==500&&applied("scroll-500",500,native);},60000));
+        QVERIFY(QTest::qWaitFor([&]{return sent==500&&applied("scroll-500",500);},60000));
         auto scroll=metric("scroll-500",scrollStart,now());scroll["requestedCadenceMs"]=8;scroll["requests"]=requests;
         QMap<int,double> firstCompletion;int completionEvents=0;
         for(const auto& value:scroll["events"].toArray()){const auto e=value.toObject();
-            if((native&&e["kind"]=="scope-end"&&e["scope"]=="geometry")||(!native&&e["kind"]=="web-applied"&&e["messageType"]=="geometry")){
+            if(e["kind"]=="scope-end"&&e["scope"]=="geometry"){
                 ++completionEvents;const int request=e["meta"].toObject()["request"].toInt();if(!firstCompletion.contains(request))firstCompletion[request]=e["hostObservedMs"].toDouble();
             }}
         double maxDispatch=0,maxCompletedLatency=0;QJsonArray completed;
@@ -228,17 +219,16 @@ private slots:
         scroll["completionEvents"]=completionEvents;scroll["distinctCompletedRequestIds"]=completed;scroll["distinctCompletedCount"]=completed.size();
         scroll["requestsWithoutOwnCompletion"]=500-completed.size();scroll["maximumCompletedRequestLatencyMs"]=maxCompletedLatency;scroll["maximumSynchronousDispatchMs"]=maxDispatch;
         scroll["coalescingNote"]="Completions are associated with the latest request carried through the actual controller chain. Requests without their own completion were coalesced; no claim of 500 independent layouts.";report["scroll500"]=scroll;
-        if(native){
+        {
             QVERIFY(QTest::qWaitFor([&]{return connectorApplied("scroll-500",500);},60000));
             auto painted=connectorMetric("scroll-500",scrollStart,now());painted["requestsWithoutOwnCompletion"]=500-painted["distinctCompletedCount"].toInt();
             painted["requestedCadenceMs"]=8;painted["requestCount"]=500;report["scroll500Connector"]=painted;
         }
         mark("text-change",1);const double edit=now();QTextCursor cursor(f.editor()->document());cursor.movePosition(QTextCursor::End);cursor.insertText("// task performance edit\n");
         const auto revision=qint64(f.editor()->semanticDocumentRevision());
-        QVERIFY(QTest::qWaitFor([&]{return native?(f.state()["rails"].toObject()["appliedContentRevision"].toInteger()==revision&&applied("text-change",1,true,"references"))
-            :applied("text-change",1,false,"references");},60000));
+        QVERIFY(QTest::qWaitFor([&]{return f.state()["rails"].toObject()["appliedContentRevision"].toInteger()==revision&&applied("text-change",1,"resolve");},60000));
         report["textChange"]=metric("text-change",edit,now());report["expectedContentRevision"]=revision;
-        if(native){
+        {
             QVERIFY(QTest::qWaitFor([&]{return connectorApplied("text-change",1,revision);},60000));
             const auto painted=connectorMetric("text-change",edit,now());report["textChangeConnector"]=painted;
             QVERIFY(painted["emptyClearPaintEvents"].toInt()>0);
@@ -247,7 +237,7 @@ private slots:
         QVERIFY(!f.controller->isActive());QVERIFY(!f.window.findChild<LinkedNativeRails*>());QVERIFY(!f.window.findChild<WebEditorContainer*>());
         report["exit"]=metric("exit",exitStart,now());report["afterExitMemory"]=memory();report["resourceRequests"]=f.requests;
         QJsonArray bindingErrors;for(const auto& event:events)if(event.toObject()["kind"]=="connector-binding-error")bindingErrors.append(event);
-        report["connectorObservation"]=QJsonObject{{"schema","zeroslack-linked-connector-completion/v1"},{"enabled",native},
+        report["connectorObservation"]=QJsonObject{{"schema","zeroslack-linked-connector-completion/v1"},{"enabled",true},
             {"bindingErrors",bindingErrors},{"compatibility","Original processing/layout metrics retained; connector completion is additive, with independent geometry and paint serials."}};
         QVERIFY(bindingErrors.isEmpty());
         report["complete"]=true;

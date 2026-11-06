@@ -99,29 +99,26 @@ private slots:
     {
         QFETCH(int, phaseIndex);
         const auto phase = phases[phaseIndex].toObject();
-        const auto web = phase["geometry"].toObject();
-        const auto editor = web["editor"].toObject();
-        const auto original = web["geometry"].toObject();
+        const auto observation = phase["geometry"].toObject();
+        const auto editor = observation["editor"].toObject();
+        const auto original = observation["geometry"].toObject();
         const auto expected = original["anchors"].toArray();
         const auto frozenSamples = editor["samples"].toArray();
         const auto selected = selection(editor);
         const auto origin = point(editor["origin"]);
         const auto size = rectangle(editor["viewport"]).size();
         const auto oldDraws = phase["overlay"].toObject()["draws"].toArray();
-        QJsonArray actual;
         int drawIndex = 0;
         QCOMPARE(frozenSamples.size(), 10);
         for (qsizetype i = 0; i < frozenSamples.size(); ++i) {
             const auto value = frozenSamples[i].toObject();
             const Geometry::Sample sample{anchor(value), rectangle(value["firstRect"]), rectangle(value["lastRect"])};
-            const auto item = Geometry::webItem(sample, selected, origin, size.height());
-            QCOMPARE(item, expected[i].toObject());
-            QCOMPARE(item.keys(), QStringList({"active", "id", "visible", "y"}));
-            QVERIFY(item["id"].isString());
-            QVERIFY(item["y"].isDouble());
-            QVERIFY(item["visible"].isBool());
-            QVERIFY(item["active"].isBool());
-            actual.append(item);
+            const auto frozen = expected[i].toObject();
+            QCOMPARE(sample.anchor.id, frozen["id"].toString());
+            QCOMPARE(Geometry::active(sample.anchor, selected), frozen["active"].toBool());
+            QCOMPARE(origin.y() + sample.first.center().y(), frozen["y"].toInt());
+            const QRect verticalSample(0, sample.first.y(), 1, sample.first.height());
+            QCOMPARE(QRect(0, 0, 1, size.height()).intersects(verticalSample), frozen["visible"].toBool());
             const auto overlay = Geometry::overlay(sample, selected, size);
             if (!overlay.draw)
                 continue;
@@ -151,10 +148,6 @@ private slots:
             QCOMPARE(outline["sizeMode"].toInt(), int(Qt::AbsoluteSize));
         }
         QCOMPARE(drawIndex, oldDraws.size());
-        auto result = original;
-        result.insert("anchors", actual);
-        QCOMPARE(result, original);
-        QCOMPARE(QJsonDocument(result).toJson(QJsonDocument::Compact), web["compact"].toString().toUtf8());
     }
 
     void activeBoundaries_data()
@@ -183,10 +176,6 @@ private slots:
         const Geometry::Sample sample{{"a", available, 10, 20}, QRect(4, 6, 1, 20), QRect(9, 6, 1, 20)};
         const Geometry::Selection selection{start, end, selected};
         QCOMPARE(Geometry::active(sample.anchor, selection), expected);
-        const auto web = Geometry::webItem(sample, selection, QPoint(7, 32), 40);
-        QCOMPARE(web["active"].toBool(), expected);
-        QCOMPARE(web["y"].toInt(), available ? 47 : 32);
-        QCOMPARE(web["visible"].toBool(), available);
         QCOMPARE(Geometry::overlay(sample, selection, QSize(200, 40)).draw, available && expected);
     }
 
@@ -208,9 +197,8 @@ private slots:
         QFETCH(QRect, first); QFETCH(QRect, last); QFETCH(int, y); QFETCH(bool, visible); QFETCH(bool, draw);
         const Geometry::Sample sample{{"a",true,10,20},first,last};
         const Geometry::Selection selected{0,0,"a"};
-        const auto web = Geometry::webItem(sample, selected, QPoint(7,32),40);
-        QCOMPARE(web["y"].toInt(), y);
-        QCOMPARE(web["visible"].toBool(), visible);
+        QCOMPARE(32 + sample.first.center().y(), y);
+        QCOMPARE(QRect(0,0,1,40).intersects(QRect(0,first.y(),1,first.height())), visible);
         const auto overlay = Geometry::overlay(sample, selected, QSize(200,40));
         QCOMPARE(overlay.draw, draw);
         if (draw) {
@@ -252,21 +240,22 @@ private slots:
     void scrolling()
     {
         MyCodeEditor editor;prepareEditor(editor,source);materializeLines(editor);
-        const QPoint origin(62,32);const Geometry::Selection selection{};
+        const QPoint origin=editor.viewport()->mapTo(&editor,QPoint());
+        const QRect verticalViewport(0,0,1,editor.viewport()->height());
         editor.verticalScrollBar()->setValue(0);
         const auto initial=Geometry::sampleAnchor(editor,anchors.first(),true);
-        QVERIFY(Geometry::webItem(initial,selection,origin,editor.viewport()->height())["visible"].toBool());
-        QVERIFY(!Geometry::webItem(Geometry::sampleAnchor(editor,anchors.last()),selection,origin,editor.viewport()->height())["visible"].toBool());
+        QVERIFY(verticalViewport.intersects(QRect(0,initial.first.y(),1,initial.first.height())));
+        const auto initiallyLast=Geometry::sampleAnchor(editor,anchors.last());
+        QVERIFY(!verticalViewport.intersects(QRect(0,initiallyLast.first.y(),1,initiallyLast.first.height())));
         QVERIFY(editor.verticalScrollBar()->maximum()>8);
         editor.verticalScrollBar()->setValue(8);QCoreApplication::processEvents();
         const auto scrolled=Geometry::sampleAnchor(editor,anchors.first(),true);
-        const auto web=Geometry::webItem(scrolled,selection,origin,editor.viewport()->height());
-        QVERIFY(!web["visible"].toBool());QVERIFY(scrolled.first.center().y()<initial.first.center().y());
+        QVERIFY(!verticalViewport.intersects(QRect(0,scrolled.first.y(),1,scrolled.first.height())));QVERIFY(scrolled.first.center().y()<initial.first.center().y());
         QTextCursor cursor(editor.document());cursor.setPosition(anchors.first().start);
-        QCOMPARE(web["y"].toInt(),32+editor.cursorRect(cursor).center().y());
+        QCOMPARE(origin.y()+scrolled.first.center().y(),editor.viewport()->mapTo(&editor,editor.cursorRect(cursor).center()).y());
         editor.verticalScrollBar()->setValue(editor.verticalScrollBar()->maximum());QCoreApplication::processEvents();
         const auto last=Geometry::sampleAnchor(editor,anchors.last(),true);
-        QVERIFY(Geometry::webItem(last,selection,origin,editor.viewport()->height())["visible"].toBool());
+        QVERIFY(verticalViewport.intersects(QRect(0,last.first.y(),1,last.first.height())));
     }
 
     void foldingProjectionAndReadOnlyAccessor()
@@ -288,8 +277,9 @@ private slots:
         const auto hidden=Geometry::sampleAnchor(editor,a,true);
         QCOMPARE(hidden.first,QRect());QCOMPARE(hidden.last,QRect());
         const Geometry::Selection selected{0,0,a.id};
-        QCOMPARE(Geometry::webItem(hidden,selected,QPoint(62,32),editor.viewport()->height()),
-                 QJsonObject({{"id",a.id},{"y",32},{"visible",false},{"active",true}}));
+        QCOMPARE(hidden.anchor.id,a.id);
+        QVERIFY(Geometry::active(hidden.anchor,selected));
+        QVERIFY(!QRect(0,0,1,editor.viewport()->height()).intersects(QRect(0,hidden.first.y(),1,hidden.first.height())));
         QVERIFY(!Geometry::overlay(hidden,selected,editor.viewport()->size()).draw);
         const auto spanning=Geometry::sampleAnchor(editor,anchors.at(4),true);
         QVERIFY(!spanning.first.isEmpty());QCOMPARE(spanning.last,QRect());
@@ -310,8 +300,8 @@ private slots:
         const int horizontalValue=editor.horizontalScrollBar()->value();const int width=editor.viewport()->width();
         QVERIFY(scroll>0);QVERIFY(scroll<editor.verticalScrollBar()->maximum());
         QVERIFY(horizontal);QCOMPARE(editor.lineWrapMode(),QPlainTextEdit::NoWrap);
-        QList<int> relativeY,webY;const QPoint origin(62,32);const auto selected=Geometry::sampleSelection(editor,{});
-        for(const auto& a:anchors){const auto s=Geometry::sampleAnchor(editor,a);relativeY.append(s.first.center().y());webY.append(Geometry::webItem(s,selected,origin,height)["y"].toInt());}
+        QList<int> relativeY,projectedY;const QPoint origin=editor.viewport()->mapTo(&editor,QPoint());
+        for(const auto& a:anchors){const auto s=Geometry::sampleAnchor(editor,a);relativeY.append(s.first.center().y());projectedY.append(editor.viewport()->mapTo(&editor,s.first.center()).y());}
         editor.resize(520,editor.height());QCoreApplication::processEvents();materializeLines(editor);
         QVERIFY(editor.viewport()->width()<width);QCOMPARE(editor.viewport()->height(),height);
         QCOMPARE(editor.font(),font);QCOMPARE(editor.devicePixelRatioF(),dpr);
@@ -320,7 +310,7 @@ private slots:
         qInfo().noquote()<<"NoWrap preconditions: font="<<font.toString()<<"dpr="<<dpr<<"viewportHeight="<<height
             <<"verticalBefore/After="<<scroll<<editor.verticalScrollBar()->value()<<"horizontalBefore/After="<<horizontal<<editor.horizontalScrollBar()->isVisible()
             <<"origin="<<origin<<"widthBefore/After="<<width<<editor.viewport()->width();
-        for(qsizetype i=0;i<anchors.size();++i){const auto s=Geometry::sampleAnchor(editor,anchors[i]);QCOMPARE(s.first.center().y(),relativeY[i]);QCOMPARE(Geometry::webItem(s,selected,origin,height)["y"].toInt(),webY[i]);}
+        for(qsizetype i=0;i<anchors.size();++i){const auto s=Geometry::sampleAnchor(editor,anchors[i]);QCOMPARE(s.first.center().y(),relativeY[i]);QCOMPARE(editor.viewport()->mapTo(&editor,s.first.center()).y(),projectedY[i]);}
     }
 };
 

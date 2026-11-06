@@ -48,6 +48,8 @@ public:
     void updateAnchorPositions(const QMap<QString, Position>& positions);
     int railViewportTop() const;
     void setGroupExpanded(const QString& anchor, bool expanded);
+    QStringList expandedAnchors() const;
+    void restoreExpandedAnchors(const QStringList& anchors);
     void followAnchor(const QString& anchor, const QString& reason);
     void setPreview(const QString& source, const Preview& preview);
     void clearPreview(const QString& source);
@@ -61,6 +63,7 @@ signals:
     void locateCodeRequested(const QString& id);
     void openOriginalRequested(const QString& id);
     void codeRatioChanged(double ratio);
+    void groupExpansionChanged();
     void layoutApplied(quint64 serial, qint64 contentRevision);
     void expandFoldedRequested(const QStringList& anchors, qint64 contentRevision);
     void presentationChanged();

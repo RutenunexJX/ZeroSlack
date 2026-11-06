@@ -44,9 +44,4 @@ const options={nodePaths:[path.resolve('node_modules')],bundle:true,entryNames:'
  define:{'process.env.NODE_ENV':'"production"'},plugins:[litOnlyIcons,vanillaExtractPlugin()],metafile:true,logLevel:'info'};
 const result=await build({...options,entryPoints:[path.join(product,'blocks.ts')],outdir:output});
 await copyFile(path.join(product,'index.html'),path.join(output,'index.html'));
-const linkedOutput=path.join(path.dirname(output),'linked');
-const linked=await build({...options,entryPoints:[path.join(product,'linked.ts')],outdir:linkedOutput});
-await copyFile(path.join(product,'index.html'),path.join(linkedOutput,'index.html'));
-Object.assign(result.metafile.inputs,linked.metafile.inputs);
-Object.assign(result.metafile.outputs,linked.metafile.outputs);
 await writeFile('build-meta.json',JSON.stringify(result.metafile));

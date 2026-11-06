@@ -62,13 +62,6 @@ bool segmentsAvoidInterior(const QPolygonF& points, const QRectF& rect)
     return true;
 }
 
-struct NativeEnvironment {
-    const char* name = "ZEROSLACK_LINKED_NATIVE_RAILS";
-    bool existed = qEnvironmentVariableIsSet(name);
-    QByteArray previous = qgetenv(name);
-    NativeEnvironment() { qputenv(name, "1"); }
-    ~NativeEnvironment() { if (existed) qputenv(name, previous);else qunsetenv(name); }
-};
 
 bool writeFixture(const QString& path, const QByteArray& bytes)
 {
@@ -432,7 +425,7 @@ void LinkedConnectorTest::anchorOverlayPixels_data()
 void LinkedConnectorTest::anchorOverlayPixels()
 {
     QFETCH(double, dpr);QFETCH(int, scenario);
-    NativeEnvironment environment;ConnectorHarness h;QVERIFY(h.ready);
+    ConnectorHarness h;QVERIFY(h.ready);
     const int first = scenario == 2 ? 0 : h.text.indexOf("anchor_word");
     const int last = first + (scenario == 2 ? 6 : 11);
     const int repetitions = scenario == 1 ? 2 : 1;
@@ -613,7 +606,7 @@ void LinkedConnectorTest::actualEndpointsAndScrollNotification()
 
 void LinkedConnectorTest::controllerSceneAndRevision()
 {
-    NativeEnvironment environment;ConnectorHarness h(manyLines());QVERIFY(h.ready);
+    ConnectorHarness h(manyLines());QVERIFY(h.ready);
     QJsonArray rows;
     for (int i = 0; i < 8; ++i) { const int first = h.text.indexOf(QString("signal_%1;").arg(i));rows.append(h.anchor(QString("g%1").arg(i), first, first + 8)); }
     QVERIFY(h.store(rows));auto* editor = h.editor();auto* document = editor->document();
@@ -677,7 +670,7 @@ void LinkedConnectorTest::controllerSceneAndRevision()
 
 void LinkedConnectorTest::overlayPassesActualHitTesting()
 {
-    NativeEnvironment environment;ConnectorHarness h(manyLines());QVERIFY(h.ready);
+    ConnectorHarness h(manyLines());QVERIFY(h.ready);
     QJsonArray rows;
     for (int i = 0; i < 8; ++i) { const int first = h.text.indexOf(QString("signal_%1;").arg(i));rows.append(h.anchor(QString("g%1").arg(i), first, first + 8, 3)); }
     QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));
@@ -747,7 +740,7 @@ void LinkedConnectorTest::overlayPassesActualHitTesting()
 
 void LinkedConnectorTest::selectionHighlightsAndPreviewArrival()
 {
-    NativeEnvironment environment;ConnectorHarness h(manyLines());QVERIFY(h.ready);h.defer = true;
+    ConnectorHarness h(manyLines());QVERIFY(h.ready);h.defer = true;
     const int a = h.text.indexOf("signal_1;"), b = h.text.indexOf("signal_2;"), c = h.text.indexOf("signal_6;");
     auto first = h.anchor("a", a, a + 8, 2);auto links = first["links"].toArray();
     auto sameSource = links[0].toObject();sameSource["id"] = "reference1";links[1] = sameSource;first["links"] = links;
@@ -809,7 +802,7 @@ void LinkedConnectorTest::aggregateHighlightsAndSessionClear()
     const QString text = "module connector_fixture;\nlogic clk, rst_n;\nlogic [31:0] signal_a, signal_b;\n"
         "always_ff @(posedge clk) begin\n    if (!rst_n) begin\n        signal_a <= 0;\n"
         "    end else begin\n        signal_b <= signal_a+1;\n    end\nend\nendmodule\n";
-    NativeEnvironment environment;ConnectorHarness h(text);QVERIFY(h.ready);
+    ConnectorHarness h(text);QVERIFY(h.ready);
     const auto row = [&h](const QString& id, const QString& needle) { const int first = h.text.indexOf(needle);return h.anchor(id, first, first + needle.size(), 2); };
     const auto a = row("a", "signal_a <="), b = row("b", "signal_b <="), head = row("head", "always_ff"), plain = row("plain", "logic clk");
     QVERIFY(h.store({a, b, head, plain}));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.resourcesComplete());
@@ -856,7 +849,7 @@ void LinkedConnectorTest::aggregateHighlightsAndSessionClear()
 
 void LinkedConnectorTest::detachedSelectionAndTypingNeverFollow()
 {
-    NativeEnvironment environment;ConnectorHarness h(manyLines());QVERIFY(h.ready);QJsonArray rows;
+    ConnectorHarness h(manyLines());QVERIFY(h.ready);QJsonArray rows;
     for (int i = 0; i < 12; ++i) { const int first = h.text.indexOf(QString("signal_%1;").arg(i));rows.append(h.anchor(QString("g%1").arg(i), first, first + 8)); }
     QVERIFY(h.store(rows));QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.resourcesComplete());
     auto* area = h.rails()->findChild<QScrollArea*>("linkedNativeLeftRail");QVERIFY(area);
