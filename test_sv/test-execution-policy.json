@@ -13,6 +13,23 @@
   "guard": "test_execution_policy_guard",
   "tests": [
     {
+      "name": "linked_connector_test",
+      "role": "compiled",
+      "managedSince": "2026-11-06",
+      "reviewBy": "2026-11-06",
+      "reviewOwner": "AppSuite部署统筹",
+      "source": "D:/AppSuite/ZeroSlack/build/coordination/20261106-connector/REQUEST.md:4.1",
+      "when": {},
+      "execution": "run",
+      "reason": {
+        "category": "self_contained",
+        "detail": "Stage 3 pure connector paths, actual overlay rasterization and controlled native rails fixtures."
+      },
+      "timeout": 120,
+      "timeoutBasis": "Stage 3 R1 fixed 120-second budget; existing budgets unchanged.",
+      "target": "linked_connector_test"
+    },
+    {
       "name": "linked_rail_layout_test",
       "role": "compiled",
       "managedSince": "2026-11-06",

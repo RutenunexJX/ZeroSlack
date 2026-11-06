@@ -23,6 +23,12 @@ QPoint point(const QJsonValue& value)
     const auto a = value.toArray();
     return {a.at(0).toInt(), a.at(1).toInt()};
 }
+QJsonObject operation(const QJsonArray& calls, const QString& name)
+{
+    for (const auto& value : calls)
+        if (value.toObject()["operation"].toString() == name) return value.toObject();
+    return {};
+}
 Geometry::Anchor anchor(const QJsonObject& value)
 {
     return {value["id"].toString(), value["available"].toBool(), value["start"].toInt(), value["end"].toInt()};
@@ -123,11 +129,26 @@ private slots:
             const auto draw = oldDraws[drawIndex++].toObject();
             QCOMPARE(sample.anchor.id, draw["id"].toString());
             const auto calls = draw["calls"].toArray();
-            QCOMPARE(calls.size(), 5);
-            QCOMPARE(overlay.band, rectangle(calls[0].toObject()["rect"]));
-            QCOMPARE(overlay.leading, QLine(point(calls[2].toObject()["from"]), point(calls[2].toObject()["to"])));
-            QCOMPARE(overlay.trailing, QLine(point(calls[3].toObject()["from"]), point(calls[3].toObject()["to"])));
-            QCOMPARE(overlay.outline, rectangle(calls[4].toObject()["rect"]));
+            QCOMPARE(calls.size(), 3);
+            QStringList names;
+            for (const auto& call : calls) names.append(call.toObject()["operation"].toString());
+            QCOMPARE(names, QStringList({"fillRect", "setPen", "drawRoundedRect"}));
+            QVERIFY(operation(calls, QStringLiteral("drawLine")).isEmpty());
+            const auto band = operation(calls, QStringLiteral("fillRect"));
+            QCOMPARE(band.keys(), QStringList({"color", "operation", "rect"}));
+            QCOMPARE(overlay.band, rectangle(band["rect"]));
+            QCOMPARE(band["color"].toArray(), QJsonArray({52, 120, 212, 18}));
+            const auto pen = operation(calls, QStringLiteral("setPen"));
+            QCOMPARE(pen, QJsonObject({{"operation", "setPen"}, {"pen", QJsonObject{
+                {"brushStyle", 1}, {"cap", 16}, {"color", QJsonArray{52, 120, 212, 180}},
+                {"cosmetic", false}, {"join", 64}, {"style", 1}, {"width", 1.5}}}}));
+            QCOMPARE(overlay.leading, QLine());
+            QCOMPARE(overlay.trailing, QLine());
+            const auto outline = operation(calls, QStringLiteral("drawRoundedRect"));
+            QCOMPARE(outline.keys(), QStringList({"operation", "radius", "rect", "sizeMode"}));
+            QCOMPARE(overlay.outline, rectangle(outline["rect"]));
+            QCOMPARE(outline["radius"].toArray(), QJsonArray({2, 2}));
+            QCOMPARE(outline["sizeMode"].toInt(), int(Qt::AbsoluteSize));
         }
         QCOMPARE(drawIndex, oldDraws.size());
         auto result = original;
@@ -193,9 +214,9 @@ private slots:
         const auto overlay = Geometry::overlay(sample, selected, QSize(200,40));
         QCOMPARE(overlay.draw, draw);
         if (draw) {
-            QCOMPARE(overlay.trailing.x2(), 200);
-            QVERIFY(overlay.leading.y1() >= 0);
-            QVERIFY(overlay.leading.y1() < 40);
+            QCOMPARE(overlay.leading, QLine());
+            QCOMPARE(overlay.trailing, QLine());
+            QVERIFY(overlay.leading.isNull() && overlay.trailing.isNull());
         }
     }
 

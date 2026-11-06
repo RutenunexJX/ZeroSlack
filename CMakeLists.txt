@@ -736,6 +736,8 @@ add_library(zeroslack_core ${ZEROSLACK_CORE_LIBRARY_TYPE}
 target_sources(zeroslack_core PRIVATE
     src/ui/linkedraillayout.cpp src/ui/linkedraillayout.h
     src/ui/linkedanchorgeometry.cpp src/ui/linkedanchorgeometry.h
+    src/ui/linkedconnectorpath.cpp src/ui/linkedconnectorpath.h
+    src/ui/linkedconnectoroverlay.cpp src/ui/linkedconnectoroverlay.h
     src/ui/linkednativerails.cpp src/ui/linkednativerails.h
     src/ui/linkedcontextcontroller.cpp src/ui/linkedcontextcontroller.h
     src/ui/linkedcontextstate.cpp src/ui/linkedcontextstate.h
@@ -1165,6 +1167,9 @@ if(BUILD_TESTING)
 
     add_executable(linked_native_rails_test test_sv/linked_native_rails_test.cpp)
     target_link_libraries(linked_native_rails_test PRIVATE zeroslack_core Qt6::Test)
+
+    add_executable(linked_connector_test test_sv/linked_connector_test.cpp)
+    target_link_libraries(linked_connector_test PRIVATE zeroslack_core Qt6::Test)
 
     add_executable(linked_rail_layout_test
         test_sv/linked_rail_layout_test.cpp src/ui/linkedraillayout.cpp)
@@ -1959,6 +1964,15 @@ if(BUILD_TESTING)
             ${linked_native_rails_test_qt_command}
     )
     set_tests_properties(linked_native_rails_test PROPERTIES TIMEOUT 120)
+    zeroslack_qt_test_command(linked_connector_test_qt_command linked_connector_test linked_connector_test)
+    add_test(NAME linked_connector_test
+        COMMAND ${CMAKE_COMMAND} -E env
+            "PATH=${ZEROSLACK_TEST_PATH}"
+            "QT_QPA_PLATFORM=offscreen"
+            "QT_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins"
+            ${linked_connector_test_qt_command}
+    )
+    set_tests_properties(linked_connector_test PROPERTIES TIMEOUT 120)
     zeroslack_qt_test_command(linked_rail_layout_test_qt_command linked_rail_layout_test linked_rail_layout_test)
     add_test(NAME linked_rail_layout_test
         COMMAND ${CMAKE_COMMAND} -E env

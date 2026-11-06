@@ -922,28 +922,6 @@
                 }
               },
               {
-                "from": [
-                  0,
-                  16
-                ],
-                "operation": "drawLine",
-                "to": [
-                  1,
-                  16
-                ]
-              },
-              {
-                "from": [
-                  10,
-                  16
-                ],
-                "operation": "drawLine",
-                "to": [
-                  452,
-                  16
-                ]
-              },
-              {
                 "operation": "drawRoundedRect",
                 "radius": [
                   2,
@@ -2685,28 +2663,6 @@
                 }
               },
               {
-                "from": [
-                  0,
-                  198
-                ],
-                "operation": "drawLine",
-                "to": [
-                  1,
-                  198
-                ]
-              },
-              {
-                "from": [
-                  10,
-                  198
-                ],
-                "operation": "drawLine",
-                "to": [
-                  452,
-                  198
-                ]
-              },
-              {
                 "operation": "drawRoundedRect",
                 "radius": [
                   2,
@@ -2756,28 +2712,6 @@
                   "style": 1,
                   "width": 1.5
                 }
-              },
-              {
-                "from": [
-                  0,
-                  250
-                ],
-                "operation": "drawLine",
-                "to": [
-                  97,
-                  250
-                ]
-              },
-              {
-                "from": [
-                  106,
-                  250
-                ],
-                "operation": "drawLine",
-                "to": [
-                  452,
-                  250
-                ]
               },
               {
                 "operation": "drawRoundedRect",
@@ -6210,28 +6144,6 @@
                 }
               },
               {
-                "from": [
-                  0,
-                  198
-                ],
-                "operation": "drawLine",
-                "to": [
-                  1,
-                  198
-                ]
-              },
-              {
-                "from": [
-                  10,
-                  198
-                ],
-                "operation": "drawLine",
-                "to": [
-                  452,
-                  198
-                ]
-              },
-              {
                 "operation": "drawRoundedRect",
                 "radius": [
                   2,
@@ -6281,28 +6193,6 @@
                   "style": 1,
                   "width": 1.5
                 }
-              },
-              {
-                "from": [
-                  0,
-                  250
-                ],
-                "operation": "drawLine",
-                "to": [
-                  97,
-                  250
-                ]
-              },
-              {
-                "from": [
-                  106,
-                  250
-                ],
-                "operation": "drawLine",
-                "to": [
-                  452,
-                  250
-                ]
               },
               {
                 "operation": "drawRoundedRect",

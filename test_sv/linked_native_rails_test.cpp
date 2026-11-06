@@ -2,6 +2,7 @@
 #include "linkedcontextstate.h"
 #include "linkedanchorgeometry.h"
 #include "linkednativerails.h"
+#include "linkedconnectoroverlay.h"
 #include "mycodeeditor.h"
 #include "editorfoldviewstate.h"
 #include "pinloomcodelinkstore.h"
@@ -378,6 +379,19 @@ private slots:
         auto* follow=h.rails()->findChild<QPushButton*>("linkedNativeFollowLeft");QVERIFY(follow);follow->click();
         QCOMPARE(trackState(h,0)["state"].toString(),QStringLiteral("Follow"));QVERIFY(watch.unchanged());
         QCOMPARE(h.rails()->sizes()[1],width);
+        auto* connector=h.window.findChild<LinkedConnectorOverlay*>();QVERIFY(connector);
+        QTRY_COMPARE(connector->completion().geometrySerial,connector->geometrySerial());QVERIFY(watch.unchanged());
+        const auto sizes=h.rails()->sizes();const auto layoutSerial=h.rails()->connectorSnapshot(connector).layoutSerial;
+        QSignalSpy layouts(h.rails(),&LinkedNativeRails::layoutApplied),demands(h.rails(),&LinkedNativeRails::visibleReferencesChanged);
+        h.rails()->setActiveAnchors({"g00"});h.rails()->setActiveAnchors({"g00"});h.rails()->setActiveAnchors({});
+        QCOMPARE(layouts.size(),0);QCOMPARE(demands.size(),0);
+        QCOMPARE(h.rails()->connectorSnapshot(connector).layoutSerial,layoutSerial);QVERIFY(watch.unchanged());
+        const auto paint=connector->completion().paintSerial;connector->update();
+        QTRY_VERIFY(connector->completion().paintSerial>paint);QVERIFY(watch.unchanged());
+        connector->parentWidget()->hide();QVERIFY(!connector->scene().valid);QVERIFY(watch.unchanged());
+        connector->parentWidget()->show();
+        QTRY_VERIFY(connector->completion().valid&&connector->completion().geometrySerial==connector->geometrySerial());
+        QCOMPARE(h.rails()->sizes(),sizes);QVERIFY(watch.unchanged());
     }
     void reentryKeepsVisibleDemand() {
         Environment env;qputenv(flag,"1");Harness h;QVERIFY(h.ready);

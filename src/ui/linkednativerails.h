@@ -4,6 +4,7 @@
 #include <QImage>
 #include <QJsonObject>
 #include <QMap>
+#include <QSet>
 #include <QSplitter>
 #include <QStringList>
 #include <memory>
@@ -24,6 +25,21 @@ public:
         QStringList members;
     };
     struct Preview { QString title, text, location, error; QImage image; bool complete = false; };
+    struct ConnectorEndpoint {
+        QString id;
+        QStringList members;
+        int side = 0, sourceLine = -1;
+        bool positioned = false, visible = false;
+        QPointF header;
+        QRectF groupRect;
+    };
+    struct ConnectorSnapshot {
+        QList<ConnectorEndpoint> endpoints;
+        QRectF viewports[2];
+        QList<QRectF> occlusions;
+        quint64 layoutSerial = 0, presentationSerial = 0;
+        qint64 contentRevision = -1;
+    };
 
     explicit LinkedNativeRails(QWidget* editorPage, QWidget* parent = nullptr);
     ~LinkedNativeRails() override;
@@ -37,6 +53,8 @@ public:
     void clearPreview(const QString& source);
     void setInitialSizes(const QList<int>& saved, double codeRatio);
     QJsonObject snapshot() const;
+    ConnectorSnapshot connectorSnapshot(const QWidget* coordinates) const;
+    void setActiveAnchors(const QSet<QString>& ids);
 
 signals:
     void visibleReferencesChanged(const QStringList& ids);
@@ -45,6 +63,7 @@ signals:
     void codeRatioChanged(double ratio);
     void layoutApplied(quint64 serial, qint64 contentRevision);
     void expandFoldedRequested(const QStringList& anchors, qint64 contentRevision);
+    void presentationChanged();
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

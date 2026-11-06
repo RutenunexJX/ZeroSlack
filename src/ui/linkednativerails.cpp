@@ -28,10 +28,27 @@
 #endif
 
 namespace {
+class ReferenceGroup final : public QFrame {
+public:
+    using QFrame::QFrame;
+    bool highlighted = false;
+    void setHighlighted(bool value) { if (highlighted != value) { highlighted = value;update(); } }
+protected:
+    void paintEvent(QPaintEvent* event) override {
+        QFrame::paintEvent(event);
+        if (!highlighted) return;
+        QPainter painter(this);painter.setRenderHint(QPainter::Antialiasing);
+        auto tint = palette().color(QPalette::Highlight);tint.setAlpha(22);
+        painter.setBrush(tint);painter.setPen(palette().color(QPalette::Highlight));
+        painter.drawRoundedRect(QRectF(rect()).adjusted(.5,.5,-.5,-.5),4,4);
+    }
+};
 class ReferenceCard final : public QFrame {
 public:
     using QFrame::QFrame;
     int outlines = 0;
+    bool highlighted = false;
+    void setHighlighted(bool value) { if (highlighted != value) { highlighted = value;update(); } }
     void setOutlines(int count) {
         if (outlines == count) return;
         outlines = count;
@@ -42,7 +59,7 @@ protected:
     void paintEvent(QPaintEvent*) override {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        painter.setPen(palette().color(QPalette::Mid));
+        painter.setPen(palette().color(highlighted ? QPalette::Highlight : QPalette::Mid));
         painter.setBrush(palette().brush(QPalette::Base));
         const QRectF front = QRectF(rect()).adjusted(.5, .5, -.5 - 4 * outlines, -.5 - 4 * outlines);
         for (int layer = outlines; layer >= 0; --layer)
@@ -67,7 +84,7 @@ struct LinkedNativeRails::Private {
     };
     struct GroupView {
         Group value;
-        QFrame* frame = nullptr;
+        ReferenceGroup* frame = nullptr;
         int side = 0;
         QLabel* title = nullptr;
         QPushButton* toggle = nullptr;
@@ -96,6 +113,7 @@ struct LinkedNativeRails::Private {
     QMap<QString,bool> expansion;
     QMap<QString, Card> cards;
     QMap<QString, Preview> previews;
+    QSet<QString> activeAnchors;
     QStringList placedOrder;
     QStringList visible;
     QTimer visibilityTimer;
@@ -108,6 +126,7 @@ struct LinkedNativeRails::Private {
     qint64 pendingContentRevision = -1;
     quint64 reconciliationSerial = 0;
     quint64 layoutSerial = 0;
+    quint64 presentationSerial = 0;
     bool layingOut = false;
     bool layoutPending = false;
     bool alignmentPending = false;
@@ -115,6 +134,17 @@ struct LinkedNativeRails::Private {
     explicit Private(LinkedNativeRails* owner) : q(owner) {
         visibilityTimer.setSingleShot(true);
         QObject::connect(&visibilityTimer, &QTimer::timeout, q, [this] { reportVisible(); });
+    }
+    void applyHighlights() {
+        for (auto& group : groups) {
+            bool active = false;
+            for (const auto& member : group.value.members) active |= activeAnchors.contains(member);
+            group.frame->setHighlighted(active);
+            for (const auto& reference : group.value.references) {
+                const auto card = cards.find(reference.id);
+                if (card != cards.end()) card->frame->setHighlighted(active);
+            }
+        }
     }
     void scheduleVisible() { if (!rebuilding) visibilityTimer.start(0); }
     void reportVisible() {
@@ -301,6 +331,7 @@ struct LinkedNativeRails::Private {
         }
         appliedContentRevision = pendingContentRevision;
         ++layoutSerial; layingOut = false; scheduleVisible();
+        ++presentationSerial;
         emit q->layoutApplied(layoutSerial,appliedContentRevision);
         if (layoutPending) QTimer::singleShot(0,q,[this]{layoutGroups();});
     }
@@ -382,7 +413,10 @@ LinkedNativeRails::LinkedNativeRails(QWidget* editorPage, QWidget* parent)
         body->setMinimumWidth(0); body->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
         area->setWidget(body); area->viewport()->installEventFilter(this);
         area->verticalScrollBar()->installEventFilter(this);
-        connect(area->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { d->scheduleVisible(); });
+        connect(area->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+            d->scheduleVisible();
+            if (!d->layingOut && !d->rebuilding) { ++d->presentationSerial;emit presentationChanged(); }
+        });
     }
     addWidget(d->hosts[0]); addWidget(editorPage); addWidget(d->hosts[1]);
     setStretchFactor(0, 0); setStretchFactor(1, 1); setStretchFactor(2, 0);
@@ -399,6 +433,7 @@ void LinkedNativeRails::resetSession() {
     for (const auto& group : d->groups) delete group.frame;
     d->groups.clear(); d->cards.clear(); d->previews.clear(); d->placedOrder.clear(); d->visible.clear();
     d->logicalGroups.clear(); d->expansion.clear();
+    d->activeAnchors.clear();
     d->appliedContentRevision = -1; d->reconciliationSerial = 0; d->layoutSerial = 0; d->visibilityInvalidated = true;
     d->pendingContentRevision = -1;
     d->alignmentPending = false; d->layoutPending = false;
@@ -408,6 +443,7 @@ void LinkedNativeRails::resetSession() {
         d->tracks[side] = {}; d->followButtons[side]->hide(); d->rails[side]->verticalScrollBar()->setValue(0);
     }
     d->rebuilding = false;
+    ++d->presentationSerial;emit presentationChanged();
 }
 void LinkedNativeRails::setGroups(const QList<Group>& logicalGroups, qint64 contentRevision) {
     d->rebuilding = true; d->visibilityTimer.stop();
@@ -440,7 +476,7 @@ void LinkedNativeRails::setGroups(const QList<Group>& logicalGroups, qint64 cont
         seen.insert(value.anchor);
         Private::GroupView group = old.take(value.anchor);
         if (!group.frame) {
-            group.frame = new QFrame(d->contents[0]); group.frame->setObjectName("linkedNativeGroup");
+            group.frame = new ReferenceGroup(d->contents[0]); group.frame->setObjectName("linkedNativeGroup");
             group.frame->setProperty("anchorId", value.anchor); group.frame->setMinimumWidth(0);
             group.frame->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
             auto* layout = new QVBoxLayout(group.frame); layout->setContentsMargins(0, 0, 0, 0);
@@ -491,6 +527,7 @@ void LinkedNativeRails::setGroups(const QList<Group>& logicalGroups, qint64 cont
     }
     for (const auto& group : old) delete group.frame;
     d->groups = next;
+    d->applyHighlights();
     d->orderGroups();
     d->pendingContentRevision = contentRevision;
     d->rebuilding = false;
@@ -512,6 +549,36 @@ void LinkedNativeRails::updateAnchorPositions(const QMap<QString, Position>& pos
     d->layoutGroups(changed);
 }
 int LinkedNativeRails::railViewportTop() const { return d->rails[0]->viewport()->mapTo(this, QPoint()).y(); }
+void LinkedNativeRails::setActiveAnchors(const QSet<QString>& ids) {
+    if (d->activeAnchors == ids) return;
+    d->activeAnchors = ids;d->applyHighlights();
+}
+LinkedNativeRails::ConnectorSnapshot LinkedNativeRails::connectorSnapshot(const QWidget* coordinates) const {
+    ConnectorSnapshot result;
+    result.layoutSerial = d->layoutSerial;result.presentationSerial = d->presentationSerial;
+    result.contentRevision = d->appliedContentRevision;
+    const auto rectIn = [coordinates](const QWidget* widget) {
+        return QRectF(coordinates->mapFromGlobal(widget->mapToGlobal(QPoint())),widget->size());
+    };
+    for (int side = 0; side < 2; ++side) {
+        const auto* viewport = d->rails[side]->viewport();
+        result.viewports[side] = rectIn(viewport);
+        const auto* bar = d->rails[side]->verticalScrollBar();
+        if (bar->isVisible()) result.occlusions.append(rectIn(bar));
+    }
+    for (const auto& group : d->groups) {
+        const QRectF frame = rectIn(group.frame);
+        const QRectF title = rectIn(group.title);
+        const QPointF point(group.side == 0 ? frame.right() : frame.left(), title.center().y());
+        result.endpoints.append({group.value.anchor,group.value.members,group.side,
+            group.value.foldHead >= 0 ? group.value.foldHead : group.value.sourceLine,
+            group.value.positioned,
+            !frame.isEmpty() && !title.isEmpty() && group.frame->isVisible() && group.title->isVisible()
+                && result.viewports[group.side].contains(point),
+            point,frame});
+    }
+    return result;
+}
 void LinkedNativeRails::setGroupExpanded(const QString& anchor, bool expanded) {
     for(const auto& group:d->groups)if(group.value.anchor==anchor) {
         if(group.value.foldHead>=0) {
@@ -541,6 +608,7 @@ void LinkedNativeRails::setInitialSizes(const QList<int>& saved, double codeRati
 }
 QJsonObject LinkedNativeRails::snapshot() const {
     QJsonArray groups, cards, columns, presentation, tracks;
+    QSet<QString> displayed;
     for (int size : sizes()) columns.append(size);
     for(const auto& logical:d->logicalGroups) {
         QJsonArray ids;for(const auto& reference:logical.references)ids.append(reference.id);
@@ -548,6 +616,7 @@ QJsonObject LinkedNativeRails::snapshot() const {
         groups.append(QJsonObject{{"anchor",logical.anchor},{"y",logical.y},{"side",side},{"references",ids}});
     }
     for (const auto& group : d->groups) {
+        if (group.frame->highlighted) for (const auto& member : group.value.members) displayed.insert(member);
         QJsonArray ids; for (const auto& reference : group.value.references) ids.append(reference.id);
         QJsonObject memberExpansion;
         for(const auto& member:group.value.members)memberExpansion[member]=d->expansion.value(member);
@@ -556,14 +625,14 @@ QJsonObject LinkedNativeRails::snapshot() const {
             {"members",QJsonArray::fromStringList(group.value.members)},{"folded",group.value.foldHead>=0},
             {"memberExpansion",memberExpansion},
             {"foldHeadSourceLine",group.value.foldHead},{"foldHeadVisibleRow",group.value.visibleRow},
-            {"positioned",group.value.positioned},
+            {"positioned",group.value.positioned},{"highlighted",group.frame->highlighted},
             {"expanded",group.expanded},{"idealContentY",group.value.contentY},{"anchorViewportY",group.value.viewportY},
             {"effectiveIdealY",d->tracks[group.side].follow?group.value.contentY:d->tracks[group.side].frozen.value(group.value.anchor,group.value.contentY)},
             {"contentY",group.frame->y()},{"viewportY",group.frame->mapTo(viewport,QPoint()).y()},
             {"height",group.frame->height()},{"preferredHeight",group.preferredHeight},
             {"outlines",group.expanded?0:qMin(2,int(group.value.references.size())-1)}});
     }
-    for (const auto& card : d->cards) cards.append(QJsonObject{{"id",card.reference.id},{"source",card.reference.source},{"state",card.state}});
+    for (const auto& card : d->cards) cards.append(QJsonObject{{"id",card.reference.id},{"source",card.reference.source},{"state",card.state},{"highlighted",card.frame->highlighted}});
     for (int side=0;side<2;++side) {
         const auto& track=d->tracks[side];const auto* area=d->rails[side];
         tracks.append(QJsonObject{{"side",side},{"state",track.follow?"Follow":"Detached"},{"reason",track.reason},
@@ -571,7 +640,9 @@ QJsonObject LinkedNativeRails::snapshot() const {
             {"maximum",area->verticalScrollBar()->maximum()},{"contentHeight",area->widget()->height()},
             {"viewportHeight",area->viewport()->height()},{"structuralCorrection",track.structuralCorrection},{"clamped",track.clamped}});
     }
+    auto activeIds=d->activeAnchors.values();activeIds.sort();auto displayedIds=displayed.values();displayedIds.sort();
     return {{"groups",groups},{"cards",cards},{"visible",QJsonArray::fromStringList(d->visible)},{"sizes",columns},
+        {"activeAnchorIds",QJsonArray::fromStringList(activeIds)},{"displayHighlightedMembers",QJsonArray::fromStringList(displayedIds)},
         {"appliedContentRevision",d->appliedContentRevision},{"reconciliationSerial",double(d->reconciliationSerial)},
         {"presentation",presentation},{"layoutSerial",double(d->layoutSerial)},
         {"tracks",tracks},
@@ -601,5 +672,6 @@ bool LinkedNativeRails::eventFilter(QObject* watched, QEvent* event) {
         }
     }
     if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::Hide) d->layoutGroups();
+    if (event->type() == QEvent::Move) { ++d->presentationSerial;emit presentationChanged(); }
     return QSplitter::eventFilter(watched, event);
 }

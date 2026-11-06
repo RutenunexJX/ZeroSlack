@@ -148,6 +148,31 @@ private:
         QJsonArray selected;for(const auto& e:events)if(e.toObject()["meta"].toObject()["operation"]==operation)selected.append(e);
         return {{"startedHostMs",started},{"completedHostMs",completed},{"elapsedMs",completed-started},{"events",selected}};
     }
+    bool connectorApplied(const QString& operation,int request,qint64 revision=-1) const {
+        for(auto it=events.end();it!=events.begin();){const auto event=(*--it).toObject(),meta=event["meta"].toObject();
+            if(event["kind"]=="connector-paint"&&event["bound"].toBool()&&event["valid"].toBool()
+                &&meta["operation"]==operation&&meta["request"].toInt()==request
+                &&(revision<0||event["identity"].toObject()["contentRevision"].toInteger()==revision))return true;
+        }return false;
+    }
+    QJsonObject connectorMetric(const QString& operation,double started,double completed) const {
+        QJsonArray observed,completions;QMap<int,QJsonObject> firstCompletion;int paints=0,clears=0;
+        for(const auto& value:events){const auto event=value.toObject(),meta=event["meta"].toObject();
+            if(meta["operation"]!=operation||!event["kind"].toString().startsWith("connector-"))continue;
+            observed.append(event);
+            if(event["kind"]!="connector-paint"||!event["bound"].toBool())continue;
+            ++paints;if(!event["valid"].toBool()){if(event["paths"].toInt()==0)++clears;continue;}
+            const int request=meta["request"].toInt();
+            if(!firstCompletion.contains(request))firstCompletion[request]=QJsonObject{{"request",request},
+                {"latencyMs",event["hostObservedMs"].toDouble()-meta["hostRequestMs"].toDouble()},
+                {"geometrySerial",event["geometrySerial"]},{"paintSerial",event["paintSerial"]},{"identity",event["identity"]}};
+        }
+        for(const auto& value:firstCompletion)completions.append(value);
+        return {{"startedHostMs",started},{"completedHostMs",completed},{"elapsedMs",completed-started},
+            {"events",observed},{"paintEvents",paints},{"emptyClearPaintEvents",clears},
+            {"distinctCompletedCount",completions.size()},{"distinctCompletedRequestIds",completions},
+            {"completion","Qt painter ended; meta captured at geometryApplied and matched to painted scene identity. Not DWM presentation."}};
+    }
 private slots:
     void boundedTrial(){
         clock.start();qApp->setProperty("g7EventSink",QVariant::fromValue<QObject*>(this));
@@ -178,10 +203,12 @@ private slots:
             &&(native||applied("entry",0,false,"initialize"));},60000));
         report["entry"]=metric("entry",enterStart,now());report["entrySetActiveCallMs"]=enterReturned-enterStart;
         report["loadedMemory"]=memory();report["loadedState"]=f.state();
+        if(native){QVERIFY(QTest::qWaitFor([&]{return connectorApplied("entry",0);},60000));report["entryConnector"]=connectorMetric("entry",enterStart,now());}
         auto* bar=f.editor()->verticalScrollBar();QVERIFY(bar->maximum()>2);
         mark("single-update",1);const double single=now();bar->setValue(bar->value()+1);
         QVERIFY(QTest::qWaitFor([&]{return applied("single-update",1,native);},60000));
         report["singleUpdate"]=metric("single-update",single,now());
+        if(native){QVERIFY(QTest::qWaitFor([&]{return connectorApplied("single-update",1);},60000));report["singleUpdateConnector"]=connectorMetric("single-update",single,now());}
         const double scrollStart=now();int sent=0;QTimer cadence;cadence.setTimerType(Qt::PreciseTimer);cadence.setInterval(8);
         connect(&cadence,&QTimer::timeout,this,[&]{
             ++sent;mark("scroll-500",sent);int target=(sent*7)%(bar->maximum()+1);if(target==bar->value())target=(target+1)%(bar->maximum()+1);
@@ -201,14 +228,28 @@ private slots:
         scroll["completionEvents"]=completionEvents;scroll["distinctCompletedRequestIds"]=completed;scroll["distinctCompletedCount"]=completed.size();
         scroll["requestsWithoutOwnCompletion"]=500-completed.size();scroll["maximumCompletedRequestLatencyMs"]=maxCompletedLatency;scroll["maximumSynchronousDispatchMs"]=maxDispatch;
         scroll["coalescingNote"]="Completions are associated with the latest request carried through the actual controller chain. Requests without their own completion were coalesced; no claim of 500 independent layouts.";report["scroll500"]=scroll;
+        if(native){
+            QVERIFY(QTest::qWaitFor([&]{return connectorApplied("scroll-500",500);},60000));
+            auto painted=connectorMetric("scroll-500",scrollStart,now());painted["requestsWithoutOwnCompletion"]=500-painted["distinctCompletedCount"].toInt();
+            painted["requestedCadenceMs"]=8;painted["requestCount"]=500;report["scroll500Connector"]=painted;
+        }
         mark("text-change",1);const double edit=now();QTextCursor cursor(f.editor()->document());cursor.movePosition(QTextCursor::End);cursor.insertText("// task performance edit\n");
         const auto revision=qint64(f.editor()->semanticDocumentRevision());
         QVERIFY(QTest::qWaitFor([&]{return native?(f.state()["rails"].toObject()["appliedContentRevision"].toInteger()==revision&&applied("text-change",1,true,"references"))
             :applied("text-change",1,false,"references");},60000));
         report["textChange"]=metric("text-change",edit,now());report["expectedContentRevision"]=revision;
+        if(native){
+            QVERIFY(QTest::qWaitFor([&]{return connectorApplied("text-change",1,revision);},60000));
+            const auto painted=connectorMetric("text-change",edit,now());report["textChangeConnector"]=painted;
+            QVERIFY(painted["emptyClearPaintEvents"].toInt()>0);
+        }
         report["beforeExitMemory"]=memory();mark("exit");const double exitStart=now();QVERIFY(f.controller->setActive(false));
         QVERIFY(!f.controller->isActive());QVERIFY(!f.window.findChild<LinkedNativeRails*>());QVERIFY(!f.window.findChild<WebEditorContainer*>());
         report["exit"]=metric("exit",exitStart,now());report["afterExitMemory"]=memory();report["resourceRequests"]=f.requests;
+        QJsonArray bindingErrors;for(const auto& event:events)if(event.toObject()["kind"]=="connector-binding-error")bindingErrors.append(event);
+        report["connectorObservation"]=QJsonObject{{"schema","zeroslack-linked-connector-completion/v1"},{"enabled",native},
+            {"bindingErrors",bindingErrors},{"compatibility","Original processing/layout metrics retained; connector completion is additive, with independent geometry and paint serials."}};
+        QVERIFY(bindingErrors.isEmpty());
         report["complete"]=true;
     }
 };

@@ -51,9 +51,8 @@ Overlay overlay(const Sample& sample, const Selection& selection, const QSize& v
     result.draw = true;
     result.band = QRect(0, qMax(0, sample.first.top()), width,
                         qMin(height, sample.last.bottom() + 1) - qMax(0, sample.first.top()));
-    const int y = qBound(0, sample.first.center().y(), height - 1);
-    result.leading = QLine(0, y, qMax(0, sample.first.x() - 3), y);
-    result.trailing = QLine(qMin(width, sample.first.x() + 6), y, width, y);
+    result.leading = QLine();
+    result.trailing = QLine();
     result.outline = sample.first.adjusted(-2, -1, 2, 1);
     return result;
 }
