@@ -5,6 +5,7 @@
 #include "webeditorcontainer.h"
 #include "tabmanager.h"
 #include "mycodeeditor.h"
+#include "editorfoldviewstate.h"
 #include "pinloomcodelinkstore.h"
 #include "pinloomhostclient.h"
 #include "pinloompreviewimage.h"
@@ -24,6 +25,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMouseEvent>
@@ -37,6 +39,7 @@
 #include <QStackedWidget>
 #include <QStandardPaths>
 #include <QTextBrowser>
+#include <QTextBlock>
 #include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
@@ -128,6 +131,12 @@ struct LinkedContextController::Private {
     QPointer<LinkedNativeRails> nativeRails;
     QHash<QString,QList<int>> nativeSizes;
     bool nativeMode=false;
+    bool nativeMouseSelection=false;
+    quint64 nativeMouseRevision=0;
+    QString nativeMouseSession;
+    QPointer<QTextDocument> nativeMouseDocument;
+    qint64 nativeResolvedRevision=-1;
+    QList<QPair<int,int>> nativeFoldSignature;
     QPointer<QLabel> notice,detailTitle;
     QPointer<QTextBrowser> detailText;
     QPointer<PinloomPreviewImageLabel> detailImage;
@@ -241,26 +250,130 @@ struct LinkedContextController::Private {
         if(editor->textCursor().position()!=cursor.position()||editor->textCursor().anchor()!=cursor.anchor())editor->setTextCursor(cursor);
         editor->verticalScrollBar()->setValue(view.vertical);editor->horizontalScrollBar()->setValue(view.horizontal);
     }
+    QPair<int,int> nativeFoldRange(const EditorFoldAnchorState& fold) const {
+        const auto* document=editor->document();
+        const int start=!fold.startAnchor.isNull()&&fold.startAnchor.document()==document
+            ?fold.startAnchor.blockNumber():fold.fallbackStartLine;
+        const int end=!fold.endAnchor.isNull()&&fold.endAnchor.document()==document
+            ?fold.endAnchor.blockNumber():fold.fallbackEndLine;
+        return start>=0&&end>start&&end<document->blockCount()?qMakePair(start,end):qMakePair(-1,-1);
+    }
+    QList<QPair<int,int>> nativeFoldRanges() const {
+        QList<QPair<int,int>> ranges;
+        for(const auto& fold:editor->foldingViewState().collapsedRanges) {
+            const auto range=nativeFoldRange(fold);if(range.first>=0)ranges.append(range);
+        }
+        std::sort(ranges.begin(),ranges.end());return ranges;
+    }
+    LinkedNativeRails::Group nativeGroupGeometry(const ResolvedPinloomCodeLink& anchor,
+                                                const QList<QPair<int,int>>& folds) const {
+        LinkedNativeRails::Group group;group.anchor=anchor.anchor.id;group.title=anchor.anchor.source.suggestedTitle();
+        const auto original=LinkedAnchorGeometry::sampleAnchor(*editor,{anchor.anchor.id,true,anchor.startPosition,anchor.endPosition}).first;
+        group.y=original.center().y();
+        group.sourceLine=editor->document()->findBlock(anchor.startPosition).blockNumber();
+        QRect rectangle=original;
+        if(!editor->sourceLineVisible(group.sourceLine)) {
+            for(const auto& range:folds)if(range.first<group.sourceLine&&range.second>=group.sourceLine
+                &&editor->sourceLineVisible(range.first)) {
+                group.foldHead=range.first;break;
+            }
+            if(group.foldHead<0) {group.positioned=false;return group;}
+            QTextCursor head(editor->document()->findBlockByNumber(group.foldHead));
+            rectangle=editor->cursorRect(head);
+        }
+        group.visibleRow=editor->visibleRowForSourceLine(group.foldHead>=0?group.foldHead:group.sourceLine);
+        if(rectangle.isEmpty()||group.visibleRow<0) {group.positioned=false;return group;}
+        QTextCursor origin(editor->document());origin.setPosition(0);
+        const int offset=editor->viewport()->mapTo(nativeRails,QPoint()).y()-nativeRails->railViewportTop();
+        group.contentY=qint64(rectangle.center().y())-editor->cursorRect(origin).top()+offset;
+        group.viewportY=rectangle.center().y()+offset;return group;
+    }
     void refreshNativeGroups() {
         if(!nativeRails||!editor)return;
+        const auto folds=nativeFoldRanges();nativeFoldSignature=folds;
         QList<LinkedNativeRails::Group> groups;
         for(const auto& anchor:anchors){
             if(!anchor.available())continue;
-            LinkedNativeRails::Group group;
-            group.anchor=anchor.anchor.id;group.title=anchor.anchor.source.suggestedTitle();
-            group.y=LinkedAnchorGeometry::sampleAnchor(*editor,{anchor.anchor.id,true,anchor.startPosition,anchor.endPosition}).first.center().y();
+            auto group=nativeGroupGeometry(anchor,folds);
             for(const auto& ref:references)if(ref.anchor==group.anchor)group.references.append({ref.id,sourceKey(ref.identity),ref.title});
             if(!group.references.isEmpty())groups.append(group);
         }
-        nativeRails->setGroups(groups);
+        nativeRails->setGroups(groups,nativeResolvedRevision);
         for(auto it=resources.cbegin();it!=resources.cend();++it)publish(it.key(),it.value());
     }
     void updateNativePositions() {
         if(!nativeRails||!editor)return;
-        QMap<QString,int> positions;
-        for(const auto& anchor:anchors)if(anchor.available())positions.insert(anchor.anchor.id,
-            LinkedAnchorGeometry::sampleAnchor(*editor,{anchor.anchor.id,true,anchor.startPosition,anchor.endPosition}).first.center().y());
+        const auto folds=nativeFoldRanges();
+        if(folds!=nativeFoldSignature&&nativeResolvedRevision==qint64(editor->semanticDocumentRevision())) {
+            refreshNativeGroups();return;
+        }
+        QMap<QString,LinkedNativeRails::Position> positions;
+        for(const auto& anchor:anchors)if(anchor.available()) {
+            const auto group=nativeGroupGeometry(anchor,folds);
+            if(group.positioned)positions.insert(anchor.anchor.id,{group.y,group.contentY,group.viewportY});
+        }
         nativeRails->updateAnchorPositions(positions);
+    }
+    void expandNativeFolded(const QStringList& members,qint64 revision) {
+        if(!active||!nativeMode||!nativeRails||!editor||revision!=nativeResolvedRevision
+            ||revision!=qint64(editor->semanticDocumentRevision())||members.isEmpty())return;
+        QMap<QString,int> lines;
+        for(const auto& anchor:anchors)if(anchor.available()&&members.contains(anchor.anchor.id))
+            lines.insert(anchor.anchor.id,editor->document()->findBlock(anchor.startPosition).blockNumber());
+        if(lines.size()!=members.size())return;
+        const auto state=editor->foldingViewState();EditorFoldViewState unfolded;
+        bool changed=false;
+        for(const auto& fold:state.collapsedRanges) {
+            const auto range=nativeFoldRange(fold);bool blocking=false;
+            for(int line:lines)blocking|=range.first>=0&&range.first<line&&range.second>=line;
+            if(blocking)changed=true;else unfolded.collapsedRanges.append(fold);
+        }
+        if(!changed)return;
+        const QPointer<MyCodeEditor> source=editor;const QPointer<QTextDocument> document=editor->document();
+        const QString token=session;
+        editor->restoreFoldingViewState(unfolded);
+        QTimer::singleShot(0,q,[this,source,document,token,revision,members,lines]{
+            if(!active||!nativeMode||!nativeRails||!source||source!=editor||!document
+                ||document!=editor->document()||token!=session||revision!=qint64(editor->semanticDocumentRevision()))return;
+            for(int line:lines)if(!editor->sourceLineVisible(line))return;
+            refreshNativeGroups();
+            for(const auto& member:members)nativeRails->setGroupExpanded(member,true);
+        });
+    }
+    void deferNativeSelection(const QString& reason, quint64 revision, const QString& token, QTextDocument* document) {
+        const QPointer<MyCodeEditor> source=editor;
+        const QPointer<QTextDocument> sourceDocument=document;
+        QTimer::singleShot(0,q,[this,source,sourceDocument,revision,token,reason]{
+            if(!active||!nativeMode||!nativeRails||!source||source!=editor||!sourceDocument
+                ||sourceDocument!=editor->document()||session!=token||editor->semanticDocumentRevision()!=revision)return;
+            const auto selection=LinkedAnchorGeometry::sampleSelection(*editor,{});
+            const ResolvedPinloomCodeLink* closest=nullptr;
+            for(const auto& anchor:anchors)if(anchor.available()
+                &&LinkedAnchorGeometry::active({anchor.anchor.id,true,anchor.startPosition,anchor.endPosition},selection)
+                &&(!closest||qAbs(anchor.startPosition-editor->textCursor().position())<qAbs(closest->startPosition-editor->textCursor().position())))closest=&anchor;
+            if(closest)nativeRails->followAnchor(closest->anchor.id,reason);
+        });
+    }
+    void nativeInput(QObject* watched,QEvent* event) {
+        if(!nativeMode||!nativeRails||!editor)return;
+        if(watched==editor->viewport()&&event->type()==QEvent::MouseButtonPress) {
+            const auto* mouse=static_cast<QMouseEvent*>(event);
+            nativeMouseSelection=mouse->button()==Qt::LeftButton;
+            nativeMouseRevision=editor->semanticDocumentRevision();nativeMouseSession=session;nativeMouseDocument=editor->document();
+        }
+        if(watched==editor->viewport()&&event->type()==QEvent::MouseButtonRelease) {
+            const auto* mouse=static_cast<QMouseEvent*>(event);
+            if(nativeMouseSelection&&mouse->button()==Qt::LeftButton)
+                deferNativeSelection(QStringLiteral("code-mouse-selection"),nativeMouseRevision,nativeMouseSession,nativeMouseDocument);
+            nativeMouseSelection=false;
+        }
+        if(watched==editor&&event->type()==QEvent::KeyPress) {
+            const auto* key=static_cast<QKeyEvent*>(event);const int code=key->key();
+            const bool navigation=code==Qt::Key_Left||code==Qt::Key_Right||code==Qt::Key_Up||code==Qt::Key_Down
+                ||code==Qt::Key_Home||code==Qt::Key_End||code==Qt::Key_PageUp||code==Qt::Key_PageDown
+                ||(code==Qt::Key_A&&key->modifiers().testFlag(Qt::ControlModifier));
+            if(navigation)deferNativeSelection(QStringLiteral("code-navigation-key"),editor->semanticDocumentRevision(),session,editor->document());
+        }
     }
     void createNativePage() {
         page=new QWidget(stack);page->setObjectName("linkedContextPage");
@@ -282,6 +395,7 @@ struct LinkedContextController::Private {
         QObject::connect(nativeRails,&LinkedNativeRails::locateCodeRequested,q,[this](const QString& id){select(id);});
         QObject::connect(nativeRails,&LinkedNativeRails::openOriginalRequested,q,[this](const QString& id){open(id);});
         QObject::connect(nativeRails,&LinkedNativeRails::codeRatioChanged,q,[this](double ratio){codeRatio=ratio;});
+        QObject::connect(nativeRails,&LinkedNativeRails::expandFoldedRequested,q,[this](const QStringList& members,qint64 revision){expandNativeFolded(members,revision);});
         stack->addWidget(page);stack->setCurrentWidget(page);
     }
     void createPage() {
@@ -425,12 +539,15 @@ struct LinkedContextController::Private {
         if(!flush()){if(editor&&!file.isEmpty())tabs->activateOpenFile(file);switching=false;return;}
         const bool renamed=next==editor&&nextFile!=file;
         const auto previousNativeSizes=nativeRails?nativeRails->sizes():QList<int>{};
-        if(nativeRails)nativeSizes.insert(boardKey(),previousNativeSizes);
+        if(nativeRails&&editor)nativeSizes.insert(boardKey(),previousNativeSizes);
         const auto previousState=boardState;
         ++generation;dropResources();
+        if(nativeRails)nativeRails->resetSession();
         for(const auto& c:editorConnections)QObject::disconnect(c);editorConnections.clear();
         if(overlay)delete overlay;
-        if(editor)editor->viewport()->removeEventFilter(q);
+        if(editor){editor->viewport()->removeEventFilter(q);editor->removeEventFilter(q);}
+        nativeMouseSelection=false;
+        nativeResolvedRevision=-1;nativeFoldSignature.clear();
         editor=next;file=nextFile;workspace=links->workspaceRoot();selected.clear();expanded.clear();if(detail)detail->hide();
         session=QUuid::createUuid().toString(QUuid::WithoutBraces);initialized=false;
         board.load(workspace,file);boardState=board.value;popupRegion=QRegion();references.clear();exportedState={};
@@ -441,6 +558,7 @@ struct LinkedContextController::Private {
         codeRatio=boardState.value("codeRatio").toDouble(.5);syncBoundaries();
         if(nativeRails){if(renamed)nativeSizes.insert(boardKey(),previousNativeSizes);nativeRails->setInitialSizes(nativeSizes.value(boardKey()),codeRatio);}
         overlay=new AnchorOverlay(editor);overlay->show();editor->viewport()->installEventFilter(q);
+        if(nativeMode)editor->installEventFilter(q);
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::textChanged,q,[this]{anchorTimer.start();geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::cursorPositionChanged,q,[this]{selected.clear();if(overlay)overlay->selected.clear();geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::selectionChanged,q,[this]{geometryTimer.start();}));
@@ -466,7 +584,7 @@ struct LinkedContextController::Private {
         else status(references.isEmpty()?QStringLiteral("Attach a Pinloom link to a code selection to add references."):QString());
         if(initialized)post({{"type","references"},{"references",referenceJson()}});
         geometryTimer.start();
-        if(nativeMode)refreshNativeGroups();
+        if(nativeMode){nativeResolvedRevision=qint64(editor->semanticDocumentRevision());refreshNativeGroups();}
     }
     void select(const QString& id) {
         if(!references.contains(id)||!editor)return;
@@ -476,6 +594,7 @@ struct LinkedContextController::Private {
             QTextCursor cursor(editor->document());cursor.setPosition(qBound(0,anchor.startPosition,editor->document()->characterCount()-1));
             cursor.setPosition(qBound(0,anchor.endPosition,editor->document()->characterCount()-1),QTextCursor::KeepAnchor);
             editor->setTextCursor(cursor);editor->ensureCursorVisible();selected=anchor.anchor.id;
+            if(nativeRails)nativeRails->followAnchor(anchor.anchor.id,QStringLiteral("go-to-code"));
             if(overlay){overlay->selected=selected;overlay->update();}geometryTimer.start();return;
         }
     }
@@ -619,7 +738,7 @@ bool LinkedContextController::setActive(bool active) {
         if(!d->flush()&&!d->destroying)return false;
         d->active=false;++d->generation;d->dropResources();d->anchorTimer.stop();d->geometryTimer.stop();d->saveTimer.stop();
         for(const auto& connection:d->editorConnections)disconnect(connection);d->editorConnections.clear();
-        if(d->overlay)delete d->overlay;if(d->editor)d->editor->viewport()->removeEventFilter(this);d->editor.clear();
+        if(d->overlay)delete d->overlay;if(d->editor){d->editor->viewport()->removeEventFilter(this);d->editor->removeEventFilter(this);}d->editor.clear();
         if(d->web)d->web->shutdown();
         d->editorPage->setParent(d->stack);d->stack->addWidget(d->editorPage);d->stack->setCurrentWidget(d->editorPage);d->editorPage->show();
         if(d->page){d->stack->removeWidget(d->page);delete d->page;}
@@ -646,7 +765,7 @@ void LinkedContextController::reloadBoard(){
     ++d->generation;d->dropResources();d->initialized=false;d->expanded.clear();if(d->detail)d->detail->hide();d->popupRegion=QRegion();
     d->session=QUuid::createUuid().toString(QUuid::WithoutBraces);d->restoreExpandedReferences();
     d->codeRatio=d->boardState.value("codeRatio").toDouble(.5);d->syncBoundaries();
-    if(d->nativeRails)d->nativeRails->setInitialSizes(d->nativeRails->sizes(),d->codeRatio);
+    if(d->nativeRails){d->nativeRails->resetSession();d->nativeRails->setInitialSizes(d->nativeRails->sizes(),d->codeRatio);}
     d->resolveAnchors();d->arrange();d->initialize();
 }
 QJsonObject LinkedContextController::viewSnapshot()const{
@@ -663,6 +782,7 @@ QJsonObject LinkedContextController::viewSnapshot()const{
 }
 bool LinkedContextController::eventFilter(QObject* watched,QEvent* event){
     if(d->active){
+        d->nativeInput(watched,event);
         if(event->type()==QEvent::PaletteChange&&watched==d->window&&d->initialized)d->post({{"type","theme"},{"dark",d->window->palette().color(QPalette::Window).lightness()<128}});
         if(event->type()==QEvent::Show)for(const auto& entry:d->visibility)if(entry.first==watched){entry.first->hide();return false;}
         if(event->type()==QEvent::Resize&&(watched==d->canvas||(d->editor&&watched==d->editor->viewport())))d->arrange();

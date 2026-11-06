@@ -1,0 +1,874 @@
+{
+    "closed": true,
+    "coverage": "Actual controller geometry/references, original editor state and complete Qt widget/action kinds and hierarchy. Offscreen: no claim for WebView2 rendering, mask, browser message consumption, DPR negotiation or Overlay painting.",
+    "phases": [
+        {
+            "phase": "opened",
+            "state": {
+                "active": true,
+                "demanded": [
+                ],
+                "editor": {
+                    "anchor": 0,
+                    "dpr": 1,
+                    "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+                    "horizontal": 0,
+                    "origin": [
+                        422,
+                        32
+                    ],
+                    "position": 0,
+                    "sourceSha256": "97c3bf02bc9df88b584aaaa106c3297c4844766a04e683f0289eb86ec3c55112",
+                    "vertical": 0,
+                    "viewport": [
+                        644,
+                        531
+                    ],
+                    "wrap": 0
+                },
+                "generation": 1,
+                "geometry": {
+                    "anchors": [
+                        {
+                            "active": false,
+                            "id": "first",
+                            "visible": true,
+                            "y": 126
+                        },
+                        {
+                            "active": false,
+                            "id": "middle",
+                            "visible": false,
+                            "y": 594
+                        },
+                        {
+                            "active": false,
+                            "id": "last",
+                            "visible": false,
+                            "y": 1140
+                        }
+                    ],
+                    "bottom": 577,
+                    "detail": false,
+                    "height": 653,
+                    "left": 360,
+                    "right": 1080,
+                    "top": 0,
+                    "width": 1440
+                },
+                "initialized": false,
+                "native": false,
+                "references": [
+                    {
+                        "anchor": "first",
+                        "id": "first/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/alpha",
+                        "status": "resolved",
+                        "title": "alpha"
+                    },
+                    {
+                        "anchor": "middle",
+                        "id": "middle/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/beta",
+                        "status": "resolved",
+                        "title": "beta"
+                    },
+                    {
+                        "anchor": "last",
+                        "id": "last/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/gamma",
+                        "status": "resolved",
+                        "title": "gamma"
+                    }
+                ],
+                "resources": [
+                ],
+                "session": "<session>",
+                "tree": {
+                    "actions": [
+                    ],
+                    "children": [
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "exitLinkedContext"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "linkedPrimaryBoard"
+                                },
+                                {
+                                    "actions": [
+                                        {
+                                            "class": "QAction",
+                                            "enabled": true,
+                                            "name": "",
+                                            "text": ""
+                                        }
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedRestoreReferences",
+                                                    "text": "Restore references"
+                                                },
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedSave",
+                                                    "text": "Save layout"
+                                                },
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedReload",
+                                                    "text": "Reload board"
+                                                }
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaMenu",
+                                            "name": "ElaMenu"
+                                        }
+                                    ],
+                                    "class": "ElaToolButton",
+                                    "name": "linkedContextActions"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": "linkedContextControls"
+                        },
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QLabel",
+                                    "name": "linkedContextStatus"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "linkedSaveCopy"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": ""
+                        },
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "WebEditorContainer",
+                                    "name": "linkedContextWebView"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaToolButton",
+                                            "name": "linkedDetailBack"
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "QLabel",
+                                            "name": ""
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaPushButton",
+                                            "name": "linkedDetailOpen"
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "QLabel",
+                                            "name": ""
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_viewport"
+                                                },
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                            ],
+                                                            "class": "QScrollBar",
+                                                            "name": ""
+                                                        }
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_hcontainer"
+                                                },
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                            ],
+                                                            "class": "QScrollBar",
+                                                            "name": ""
+                                                        }
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_vcontainer"
+                                                }
+                                            ],
+                                            "class": "QTextBrowser",
+                                            "name": ""
+                                        }
+                                    ],
+                                    "class": "QWidget",
+                                    "name": "linkedContextDetail"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QSlider",
+                                    "name": "linkedCodeBoundaryLeft"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QSlider",
+                                    "name": "linkedCodeBoundaryRight"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QWidget",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_viewport"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "editorLineNumberGutter"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QScrollBar",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_hcontainer"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QScrollBar",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_vcontainer"
+                                                                        }
+                                                                    ],
+                                                                    "class": "MyCodeEditor",
+                                                                    "name": ""
+                                                                }
+                                                            ],
+                                                            "class": "QStackedWidget",
+                                                            "name": "qt_tabwidget_stackedwidget"
+                                                        },
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "CloseButton",
+                                                                    "name": ""
+                                                                },
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "QToolButton",
+                                                                    "name": "ScrollLeftButton"
+                                                                },
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "QToolButton",
+                                                                    "name": "ScrollRightButton"
+                                                                }
+                                                            ],
+                                                            "class": "QTabBar",
+                                                            "name": "qt_tabwidget_tabbar"
+                                                        }
+                                                    ],
+                                                    "class": "QTabWidget",
+                                                    "name": "editorTabGroup2"
+                                                }
+                                            ],
+                                            "class": "QWidget",
+                                            "name": "originalEditorPage"
+                                        }
+                                    ],
+                                    "class": "QWidget",
+                                    "name": "linkedContextNativeCenter"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": "linkedContextCanvas"
+                        }
+                    ],
+                    "class": "QWidget",
+                    "name": "linkedContextPage"
+                }
+            }
+        },
+        {
+            "phase": "selected-scrolled",
+            "state": {
+                "active": true,
+                "demanded": [
+                ],
+                "editor": {
+                    "anchor": 3075,
+                    "dpr": 1,
+                    "font": "Maple Mono,15,-1,7,400,0,0,0,1,0,0,0,0,0,0,1",
+                    "horizontal": 0,
+                    "origin": [
+                        422,
+                        32
+                    ],
+                    "position": 3085,
+                    "sourceSha256": "97c3bf02bc9df88b584aaaa106c3297c4844766a04e683f0289eb86ec3c55112",
+                    "vertical": 20,
+                    "viewport": [
+                        644,
+                        531
+                    ],
+                    "wrap": 0
+                },
+                "generation": 1,
+                "geometry": {
+                    "anchors": [
+                        {
+                            "active": false,
+                            "id": "first",
+                            "visible": false,
+                            "y": -397
+                        },
+                        {
+                            "active": true,
+                            "id": "middle",
+                            "visible": true,
+                            "y": 70
+                        },
+                        {
+                            "active": false,
+                            "id": "last",
+                            "visible": false,
+                            "y": 1136
+                        }
+                    ],
+                    "bottom": 577,
+                    "detail": false,
+                    "height": 653,
+                    "left": 360,
+                    "right": 1080,
+                    "top": 0,
+                    "width": 1440
+                },
+                "initialized": false,
+                "native": false,
+                "references": [
+                    {
+                        "anchor": "first",
+                        "id": "first/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/alpha",
+                        "status": "resolved",
+                        "title": "alpha"
+                    },
+                    {
+                        "anchor": "middle",
+                        "id": "middle/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/beta",
+                        "status": "resolved",
+                        "title": "beta"
+                    },
+                    {
+                        "anchor": "last",
+                        "id": "last/link-0",
+                        "parent": "",
+                        "source": "pinloom://entry/gamma",
+                        "status": "resolved",
+                        "title": "gamma"
+                    }
+                ],
+                "resources": [
+                ],
+                "session": "<session>",
+                "tree": {
+                    "actions": [
+                    ],
+                    "children": [
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "exitLinkedContext"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "linkedPrimaryBoard"
+                                },
+                                {
+                                    "actions": [
+                                        {
+                                            "class": "QAction",
+                                            "enabled": true,
+                                            "name": "",
+                                            "text": ""
+                                        }
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedRestoreReferences",
+                                                    "text": "Restore references"
+                                                },
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedSave",
+                                                    "text": "Save layout"
+                                                },
+                                                {
+                                                    "class": "QAction",
+                                                    "enabled": true,
+                                                    "name": "linkedReload",
+                                                    "text": "Reload board"
+                                                }
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaMenu",
+                                            "name": "ElaMenu"
+                                        }
+                                    ],
+                                    "class": "ElaToolButton",
+                                    "name": "linkedContextActions"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": "linkedContextControls"
+                        },
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QLabel",
+                                    "name": "linkedContextStatus"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "ElaPushButton",
+                                    "name": "linkedSaveCopy"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": ""
+                        },
+                        {
+                            "actions": [
+                            ],
+                            "children": [
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "WebEditorContainer",
+                                    "name": "linkedContextWebView"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaToolButton",
+                                            "name": "linkedDetailBack"
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "QLabel",
+                                            "name": ""
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "ElaPushButton",
+                                            "name": "linkedDetailOpen"
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                            ],
+                                            "class": "QLabel",
+                                            "name": ""
+                                        },
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_viewport"
+                                                },
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                            ],
+                                                            "class": "QScrollBar",
+                                                            "name": ""
+                                                        }
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_hcontainer"
+                                                },
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                            ],
+                                                            "class": "QScrollBar",
+                                                            "name": ""
+                                                        }
+                                                    ],
+                                                    "class": "QWidget",
+                                                    "name": "qt_scrollarea_vcontainer"
+                                                }
+                                            ],
+                                            "class": "QTextBrowser",
+                                            "name": ""
+                                        }
+                                    ],
+                                    "class": "QWidget",
+                                    "name": "linkedContextDetail"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QSlider",
+                                    "name": "linkedCodeBoundaryLeft"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                    ],
+                                    "class": "QSlider",
+                                    "name": "linkedCodeBoundaryRight"
+                                },
+                                {
+                                    "actions": [
+                                    ],
+                                    "children": [
+                                        {
+                                            "actions": [
+                                            ],
+                                            "children": [
+                                                {
+                                                    "actions": [
+                                                    ],
+                                                    "children": [
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QWidget",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_viewport"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "editorLineNumberGutter"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QScrollBar",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_hcontainer"
+                                                                        },
+                                                                        {
+                                                                            "actions": [
+                                                                            ],
+                                                                            "children": [
+                                                                                {
+                                                                                    "actions": [
+                                                                                    ],
+                                                                                    "children": [
+                                                                                    ],
+                                                                                    "class": "QScrollBar",
+                                                                                    "name": ""
+                                                                                }
+                                                                            ],
+                                                                            "class": "QWidget",
+                                                                            "name": "qt_scrollarea_vcontainer"
+                                                                        }
+                                                                    ],
+                                                                    "class": "MyCodeEditor",
+                                                                    "name": ""
+                                                                }
+                                                            ],
+                                                            "class": "QStackedWidget",
+                                                            "name": "qt_tabwidget_stackedwidget"
+                                                        },
+                                                        {
+                                                            "actions": [
+                                                            ],
+                                                            "children": [
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "CloseButton",
+                                                                    "name": ""
+                                                                },
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "QToolButton",
+                                                                    "name": "ScrollLeftButton"
+                                                                },
+                                                                {
+                                                                    "actions": [
+                                                                    ],
+                                                                    "children": [
+                                                                    ],
+                                                                    "class": "QToolButton",
+                                                                    "name": "ScrollRightButton"
+                                                                }
+                                                            ],
+                                                            "class": "QTabBar",
+                                                            "name": "qt_tabwidget_tabbar"
+                                                        }
+                                                    ],
+                                                    "class": "QTabWidget",
+                                                    "name": "editorTabGroup2"
+                                                }
+                                            ],
+                                            "class": "QWidget",
+                                            "name": "originalEditorPage"
+                                        }
+                                    ],
+                                    "class": "QWidget",
+                                    "name": "linkedContextNativeCenter"
+                                }
+                            ],
+                            "class": "QWidget",
+                            "name": "linkedContextCanvas"
+                        }
+                    ],
+                    "class": "QWidget",
+                    "name": "linkedContextPage"
+                }
+            }
+        }
+    ],
+    "platform": "offscreen",
+    "schema": "zeroslack-default-web-frozen/v1",
+    "window": [
+        1440,
+        720
+    ]
+}

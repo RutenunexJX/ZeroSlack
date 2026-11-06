@@ -12,13 +12,27 @@ class ZEROSLACK_API LinkedNativeRails final : public QSplitter {
     Q_OBJECT
 public:
     struct Reference { QString id, source, title; };
-    struct Group { QString anchor, title; int y = 0; QList<Reference> references; };
+    struct Position { int y = 0; qint64 contentY = 0; int viewportY = 0; };
+    struct Group {
+        QString anchor, title;
+        int y = 0;
+        QList<Reference> references;
+        qint64 contentY = 0;
+        int viewportY = 0;
+        int sourceLine = -1, foldHead = -1, visibleRow = -1;
+        bool positioned = true;
+        QStringList members;
+    };
     struct Preview { QString title, text, location, error; QImage image; bool complete = false; };
 
     explicit LinkedNativeRails(QWidget* editorPage, QWidget* parent = nullptr);
     ~LinkedNativeRails() override;
-    void setGroups(const QList<Group>& groups);
-    void updateAnchorPositions(const QMap<QString, int>& positions);
+    void setGroups(const QList<Group>& groups, qint64 contentRevision = -1);
+    void resetSession();
+    void updateAnchorPositions(const QMap<QString, Position>& positions);
+    int railViewportTop() const;
+    void setGroupExpanded(const QString& anchor, bool expanded);
+    void followAnchor(const QString& anchor, const QString& reason);
     void setPreview(const QString& source, const Preview& preview);
     void clearPreview(const QString& source);
     void setInitialSizes(const QList<int>& saved, double codeRatio);
@@ -29,6 +43,8 @@ signals:
     void locateCodeRequested(const QString& id);
     void openOriginalRequested(const QString& id);
     void codeRatioChanged(double ratio);
+    void layoutApplied(quint64 serial, qint64 contentRevision);
+    void expandFoldedRequested(const QStringList& anchors, qint64 contentRevision);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;

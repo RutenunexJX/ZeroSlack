@@ -1,0 +1,9 @@
+{
+  "head": "a0454f1b72b52040c7c4bda3cfd082c5ef1795d6",
+  "frozenUtc": "2026-11-05T16:33:23.659013+00:00",
+  "productEditsAtFreeze": 0,
+  "fixtureSha256": "5a4024d1416031735f246d2ca5b304a487d94ef3b5343426f500278854992210",
+  "observationSha256": "28e036738c8832a847610e7a34f3caa0a665b63110932cb8baeb18284e4896a3",
+  "origin": "20261105-rails-layout G0 actual offscreen default controller path, before product edits",
+  "coverage": "Actual controller geometry/references, original editor state and complete Qt widget/action kinds and hierarchy. Offscreen: no claim for WebView2 rendering, mask, browser message consumption, DPR negotiation or Overlay painting."
+}
