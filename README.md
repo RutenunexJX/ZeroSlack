@@ -1,6 +1,8 @@
 # ZeroSlack
 
-Current version: `v0.33.4`
+Current version: `v0.33.5`
+
+Release 0.33.5 removes the New TB editor action, New testbench context action, Create Demo TB action and their dedicated generation workflow. Existing and handwritten TBs, ordinary templates, formatting, TB selection and simulation remain available. The accepted pre-version candidate passed 245 tests; 10 policy-restricted entries were not launched, with no actual failures or timeouts. SDK/Runtime remains 1.0.2; xIPs native 2.16.0 and asset adapter 2.14.2 are retained.
 
 Release 0.33.4 introduces native linked-context rails, stacked reference groups and connector overlays, retires the linked Web canvas runtime, and adds a dismissible legacy-board notice with defensive loading coverage. The accepted 0.33.3 source candidate passed 245 tests; 10 policy-restricted entries were not launched. Canvas payloads remain in board files; no user-data migration or legacy-content extraction was performed. SDK/Runtime remains 1.0.2. The installed xIPs native component 2.16.0 and independent asset adapter 2.14.2 are retained.
 
@@ -272,7 +274,7 @@ end/endcase/endmodule align with their opening structure. Generated delimiter
 tracking preserves continuation indentation and repeated-close behavior after undo/redo.
 Release 0.31.17 fixes workspace-analysis handoff and removes redundant search, document, catalog, marker and semantic-query work.
 
-The current release is `0.33.4`. Ela is the sole formal package,
+The current release is `0.33.5`. Ela is the sole formal package,
 replacing the former classic package with the normal ZeroSlack name. The existing
 `ZeroSlack/ZeroSlack-Ela` INI storage identity is retained to preserve settings and sessions.
 `package-ela.ps1` forwards to the same release script for compatibility.

@@ -65,10 +65,4 @@ struct Project {
     QStringList compilationUnits, compilationIncludeDirectories;
     QHash<QString, QString> compilationDefines;
 };
-struct TbOptions {
-    QString name, clock, reset;
-    bool resetActiveLow = true;
-    int clockPeriodNs = 10;
-    int resetCycles = 5;
-};
 }

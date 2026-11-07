@@ -8,9 +8,6 @@
 #include <QJsonArray>
 #include "../../src/simulation/simdock/ui/dialogs.h"
 #include "../../src/simulation/simdock/core/analyzer.h"
-#include "../../src/simulation/simdock/core/testbench.h"
-#include "slangmanager.h"
-#include "semanticindexsnapshot.h"
 #include "../../src/simulation/simdock/core/workspace.h"
 #include "../../src/simulation/simdock/ui/uistyle.h"
 #include <ElaApplication.h>
@@ -35,6 +32,7 @@
 #include <QTextCursor>
 #include <QWheelEvent>
 #include <QFile>
+#include <QFileDialog>
 #include <QLabel>
 #include <QFontInfo>
 #include <QSettings>
@@ -87,20 +85,20 @@ static bool waitForCompilation(MainWindow& window, const QString& root, const QD
     return ready();
 }
 
-static simdock::Module semanticModule(const QByteArray& content, const QString& file, const QString& root = {})
+static bool chooseExistingTb(MainWindow& window, const QString& file)
 {
-    const auto absolute = QFileInfo(file).absoluteFilePath();
-    QHash<QString, QString> contents{{absolute, QString::fromUtf8(content)}};
-    if (!root.isEmpty()) for (const auto& source : simdock::scanWorkspace(root).files)
-        contents.insert(QDir(root).filePath(source.path), QString::fromUtf8(source.content));
-    SlangManager slang;
-    SemanticIndex::getInstance()->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
-    auto module = simdock::analyzeSource(content, absolute).modules.first();
-    QString error;
-    if (!simdock::completeTestbenchTypes(module, *SemanticIndex::getInstance(), absolute, QString::fromUtf8(content), &error))
-        module.limitations = {error};
-    return module;
+    auto* button = window.findChild<QAbstractButton*>("chooseTb");
+    if (!button || !button->isEnabled()) return false;
+    bool accepted = false;
+    QTimer::singleShot(0, &window, [&] {
+        auto* dialog = window.findChild<QFileDialog*>();
+        if (!dialog) return;
+        QTimer::singleShot(5000, dialog, &QDialog::reject);
+        dialog->selectFile(file);
+        accepted = QMetaObject::invokeMethod(dialog, "accept");
+    });
+    button->click();
+    return accepted;
 }
 
 class UiTest : public QObject {
@@ -293,6 +291,9 @@ private slots:
         QFile file(workspace.filePath(QStringLiteral("counter.sv")));
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(input); file.close();
+        const QByteArray handwritten("`timescale 1ns/1ps\nmodule tb_counter; logic clk=0, rst_n=0, enable=0; wire [7:0] count; counter dut(.*); always #5 clk=~clk; initial #50 rst_n=1; endmodule\n");
+        QFile tb(workspace.filePath("manual.sv")); QVERIFY(tb.open(QIODevice::WriteOnly));
+        QCOMPARE(tb.write(handwritten), qint64(handwritten.size())); tb.close();
         MainWindow w;
         w.show();
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
@@ -303,7 +304,7 @@ private slots:
         auto* list = w.findChild<QListView*>(QStringLiteral("sourceList"));
         QVERIFY(list);
         auto* model = qobject_cast<QStandardItemModel*>(list->model());
-        QCOMPARE(model->rowCount(), 1);
+        QCOMPARE(model->rowCount(), 2);
         QTest::qWait(100);
         const auto firstRow = list->visualRect(model->index(0, 0));
         QStyleOptionViewItem itemOption;
@@ -317,16 +318,11 @@ private slots:
         QCOMPARE(model->item(0)->checkState(), Qt::Checked);
         auto* dut = w.findChild<ElaComboBox*>(QStringLiteral("dutSelector"));
         QCOMPARE(dut->count(), 1);
-        QString error;
-        const auto module = semanticModule(input, workspace.filePath("counter.sv"), workspace.path());
-        QVERIFY2(w.createDemo(suggestedTbOptions(module), &error), qPrintable(error));
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.demo-before-run" << w.findChild<Workbench*>()->automationProjectState(project);
+        QVERIFY(chooseExistingTb(w, workspace.filePath("manual.sv")));
         QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.demo-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
-        QVERIFY(!w.createDemo(suggestedTbOptions(module), &error));
+        QCOMPARE(w.findChild<ElaLineEdit*>("tbFile")->text(), QString("manual.sv"));
+        QVERIFY(!w.findChild<QAction*>("createTb"));
         w.openWorkspace(workspace.path());
         QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 2, 15000);
         QVERIFY(!w.findChild<ElaLineEdit*>(QStringLiteral("tbFile"))->text().isEmpty());
@@ -343,11 +339,6 @@ private slots:
             QTest::qWait(150);
             QVERIFY(w.grab().save(QDir(screenshots).filePath(QStringLiteral("simdock-compact.png"))));
             w.resize(1200, 780);
-            TestbenchDialog tb(module, 1000, &w);
-            tb.show();
-            QTest::qWait(250);
-            QVERIFY(tb.grab().save(QDir(screenshots).filePath(QStringLiteral("simdock-tb.png"))));
-            tb.close();
             SettingsDialog setup(QStringLiteral("D:/questa/win64/vsim.exe"), &w);
             setup.show();
             QTest::qWait(250);
@@ -422,7 +413,7 @@ private slots:
         QCOMPARE(invalid.waveTheme(), WaveTheme::QuestaDefault);
         QSettings().remove(QStringLiteral("waveform/theme"));
     }
-    void namedTypeTbPreview()
+    void namedTypeExistingTb()
     {
         QTemporaryDir workspace;
         QFile package(workspace.filePath(QStringLiteral("types.sv")));
@@ -434,6 +425,9 @@ private slots:
         QVERIFY(source.open(QIODevice::WriteOnly));
         source.write(input);
         source.close();
+        const QByteArray handwritten("`timescale 1ns/1ps\nmodule tb_typed_dut; import demo_types::*; logic clk=0, rst=1; mode_e mode=IDLE; typed_dut dut(.*); always #5 clk=~clk; initial #50 rst=0; endmodule\n");
+        QFile tb(workspace.filePath("manual.sv")); QVERIFY(tb.open(QIODevice::WriteOnly));
+        QCOMPARE(tb.write(handwritten), qint64(handwritten.size())); tb.close();
         MainWindow w;
         QSignalSpy scanned(&w, &MainWindow::scanFinished);
         const QDeadlineTimer operationDeadline(15000);
@@ -446,28 +440,16 @@ private slots:
             if (model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("dut.sv")
                 || model->item(row)->data(Qt::UserRole).toString() == QStringLiteral("types.sv"))
                 model->item(row)->setCheckState(Qt::Checked);
-        const auto module = semanticModule(input, workspace.filePath("dut.sv"), workspace.path());
-        TestbenchDialog dialog(module, 1000, &w);
-        QVERIFY(dialog.content().contains(QStringLiteral("import demo_types::*;")));
-        QVERIFY(dialog.content().contains(QStringLiteral("mode = demo_types::IDLE;")));
-        for (const auto* box : dialog.findChildren<ElaComboBox*>()) QVERIFY(box->findData(QStringLiteral("mode")) < 0);
-        QTest::mouseClick(dialog.findChild<ElaPushButton*>(QStringLiteral("confirmCreateTb")), Qt::LeftButton);
-        QCOMPARE(dialog.result(), int(QDialog::Accepted));
-        QString error;
-        QVERIFY2(w.createDemo(dialog.options(), &error), qPrintable(error));
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.demo-before-run" << w.findChild<Workbench*>()->automationProjectState(project);
+        QVERIFY(chooseExistingTb(w, workspace.filePath("manual.sv")));
         QVERIFY(waitForCompilation(w, workspace.path(), operationDeadline));
-        for (const auto& project : loadProjects(workspace.path()))
-            qInfo() << "diag.demo-after-plan" << w.findChild<Workbench*>()->automationProjectState(project);
         QVERIFY(w.findChild<ElaPushButton*>(QStringLiteral("startSimulation"))->isEnabled());
         const auto projects = loadProjects(workspace.path());
         QCOMPARE(projects.size(), 1);
         const auto& project = projects.first();
         QVERIFY(project.sources.indexOf(QStringLiteral("types.sv")) < project.sources.indexOf(QStringLiteral("dut.sv")));
-        QFile generated(workspace.filePath(project.tbFile));
-        QVERIFY(generated.open(QIODevice::ReadOnly));
-        QVERIFY(generated.readAll().contains("mode_e mode;"));
+        QCOMPARE(project.tbFile, QString("manual.sv")); QCOMPARE(project.tbName, QString("tb_typed_dut"));
+        QFile existing(workspace.filePath(project.tbFile)); QVERIFY(existing.open(QIODevice::ReadOnly));
+        QCOMPARE(existing.readAll(), handwritten);
     }
     void firstSourceClickCreatesProject()
     {
@@ -1017,25 +999,26 @@ private slots:
         disposable->openWorkspace(first.path());
         delete disposable;
     }
-    void numericControlsAndDialogKeys()
+    void numericControlsAndSettingsKeys()
     {
-        const auto module = semanticModule(QByteArrayLiteral("module demo(input logic clk, rst_n); endmodule"), QStringLiteral("demo.sv"));
-        TestbenchDialog dialog(module, 1000);
-        dialog.show();
-        for (auto* spin : dialog.findChildren<ElaSpinBox*>()) {
-            spin->setValue(spin->maximum());
-            auto* edit = spin->findChild<QLineEdit*>();
-            QVERIFY(edit);
-            QTRY_VERIFY(edit->width() >= edit->fontMetrics().horizontalAdvance(edit->text()) + edit->textMargins().left() + edit->textMargins().right());
-        }
-        auto* name = dialog.findChild<ElaLineEdit*>(QStringLiteral("tbNameInput"));
-        name->setFocus();
-        QTest::keyClick(name, Qt::Key_Return);
-        QCOMPARE(dialog.result(), int(QDialog::Accepted));
-        TestbenchDialog cancelled(module, 1000);
-        cancelled.show();
-        QTest::keyClick(&cancelled, Qt::Key_Escape);
-        QCOMPARE(cancelled.result(), int(QDialog::Rejected));
+        QTemporaryDir workspace;
+        QVERIFY(workspace.isValid());
+        MainWindow window;
+        QSignalSpy scans(&window, &MainWindow::scanFinished);
+        window.openWorkspace(workspace.path());
+        window.show();
+        QTRY_COMPARE(scans.size(), 1);
+        QVERIFY(window.createProject(QStringLiteral("Numeric controls")));
+        auto* spin = window.findChild<ElaSpinBox*>("duration"); QVERIFY(spin);
+        QTRY_VERIFY(spin->isVisible() && spin->isEnabled());
+        spin->setValue(spin->maximum());
+        auto* edit = spin->findChild<QLineEdit*>(); QVERIFY(edit);
+        QTRY_VERIFY(edit->width() >= edit->fontMetrics().horizontalAdvance(edit->text()) + edit->textMargins().left() + edit->textMargins().right());
+        SettingsDialog dialog(QString(), &window, true); dialog.show();
+        auto* save = dialog.findChild<ElaPushButton*>("saveSettings"); QVERIFY(save); save->setFocus();
+        QTest::keyClick(save, Qt::Key_Return); QCOMPARE(dialog.result(), int(QDialog::Accepted));
+        SettingsDialog cancelled(QString(), &window, true); cancelled.show();
+        QTest::keyClick(&cancelled, Qt::Key_Escape); QCOMPARE(cancelled.result(), int(QDialog::Rejected));
         QVERIFY(!cancelled.isVisible());
     }
 };

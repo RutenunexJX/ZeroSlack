@@ -13,7 +13,6 @@ public:
     void openWorkspace(const QString& path);
     bool openSuiteTarget(const QString& root, const QString& projectId, QString* error);
     bool createProject(const QString& name);
-    bool createDemo(const TbOptions& options, QString* error);
     QString workspace() const;
     void setSimulator(const QString& executable);
 signals:

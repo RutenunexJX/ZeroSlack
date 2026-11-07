@@ -886,13 +886,6 @@ endmodule
         for (const auto& record : interfaceAnalysis.symbols)
             if (record.owner.name == "core" && record.name == "p") interfacePort = record.presentation.instanceInfoByPath.value("tb.unit");
         QVERIFY(interfacePort.interfaceType); QVERIFY(!interfacePort.fixedSize);
-        const auto typeParameter = analyzeSource(file,
-            "module core #(parameter type T=logic)(input T a); endmodule\nmodule tb; core unit(); endmodule\n");
-        QString generationIssue;
-        for (const auto& record : typeParameter.symbols)
-            if (record.name == "core" && record.declarationKind == SymbolTaxonomy::DeclarationKind::Module)
-                generationIssue = record.presentation.tbGenerationIssue;
-        QVERIFY(generationIssue.contains("Type parameters"));
         QVariantMap frequency{{"kind","Value"},{"finite",true},{"minimum","0"},{"exclusiveMinimum",true}};
         QVERIFY(TemplateInputService::validate(frequency,"156.25",{},{}).isEmpty());
         for (const auto &value : {"0", "-1", "1e309", "NaN"}) QVERIFY(!TemplateInputService::validate(frequency,value,{},{}).isEmpty());

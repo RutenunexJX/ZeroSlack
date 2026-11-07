@@ -40,7 +40,6 @@ private slots:
         QVERIFY2(saveProject(root.path(), b, &error), qPrintable(error));
         QCOMPARE(a.storageName, QString("Counter demo")); QCOMPARE(b.name, QString("Counter demo (2)"));
         QVERIFY(QFileInfo::exists(manifest(root.path(), a)));
-        QCOMPARE(projectTbPath(a, "tb_counter"), QString("sim/Counter demo/tb_counter.sv"));
         const auto old = manifest(root.path(), a), id = a.id;
         a.name = "Renamed project";
         QVERIFY2(saveProject(root.path(), a, &error), qPrintable(error));

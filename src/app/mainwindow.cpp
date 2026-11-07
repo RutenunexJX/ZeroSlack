@@ -1961,9 +1961,6 @@ void MainWindow::setupPanelLayoutController()
     }
     connect(simulation, &simdock::Workbench::openFileRequested, this,
         [this](const QString& file) { revealSuiteSource(file); });
-    simulation->setEditorTbCreator([this](const QString& file, const QString& module) {
-        if (editorCoordinator) editorCoordinator->createTestbench(file, module);
-    });
     registerPanel(
         RtlHighRiskEditPanelCoordinator::panelId(),
         semanticDocks
@@ -4771,18 +4768,6 @@ void MainWindow::setupEditorCoordinator()
                 }
             });
     editorCoordinator->connectSignals();
-    if (simulationWorkspace) connect(editorCoordinator.get(), &EditorCoordinator::testbenchCreated,
-        simulationWorkspace->workbench(), &simdock::Workbench::adoptCreatedTb);
-    const auto addTbButton = [this](QTabWidget* group) {
-        auto* button = UiControls::toolButton(group);
-        button->setObjectName(QStringLiteral("editorNewTb"));
-        button->setText(QStringLiteral("New TB"));
-        button->setToolTip(QStringLiteral("Create an editable testbench from the current DUT"));
-        connect(button, &QToolButton::clicked, this, [this] { editorCoordinator->createTestbench(); });
-        group->setCornerWidget(button, Qt::TopRightCorner);
-    };
-    addTbButton(initialEditorTabs);
-    connect(tabManager.get(), &TabManager::tabGroupCreated, this, addTbButton);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

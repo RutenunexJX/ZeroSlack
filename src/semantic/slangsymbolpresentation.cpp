@@ -2992,11 +2992,6 @@ void slang_symbols::populateSymbolPresentations(
                                  isCancelled);
     }
 
-    QSet<QString> parseErrorFiles;
-    for (const auto& diagnostic : compilation.getParseDiagnostics()) if (diagnostic.isError()) {
-        const auto position = slang_symbols::detail::qTextDocumentSourcePosition(sourceManager, diagnostic.location);
-        parseErrorFiles.insert(normalizedFileName(position.fileName));
-    }
     QList<SemanticSymbolRecord> updatedRecords = records;
     QHash<QString, QStringList> actualInstances,actualInstanceDeclarations;
     auto instanceVisitor = makeVisitor([&](auto& visitor, const InstanceSymbol& instance) {
@@ -3014,17 +3009,6 @@ void slang_symbols::populateSymbolPresentations(
             record.presentation.elaboratedInstancePaths=actualInstanceDeclarations.value(identityKey(record));
         if (record.declarationKind == SymbolTaxonomy::DeclarationKind::Module) {
             record.presentation.elaboratedInstancePaths = actualInstances.value(identityKey(record));
-            for (const auto* definition : definitions) {
-                if (QString::fromStdString(std::string(definition->name)) != record.name) continue;
-                record.presentation.moduleDefinitionAvailable = true;
-                if (parseErrorFiles.contains(normalizedFileName(record.location.fileName)))
-                    record.presentation.tbGenerationIssue = QStringLiteral("Resolve Slang parser / preprocessor errors before creating the TB.");
-                if (!definitionHasDefaults(*definition))
-                    record.presentation.tbGenerationIssue = QStringLiteral("DUT parameters require defaults before TB generation.");
-                for (const auto& parameter : definition->parameters)
-                    if (parameter.isTypeParam)
-                        record.presentation.tbGenerationIssue = QStringLiteral("Type parameters require a manually authored TB.");
-            }
         }
         const QChar kind = identityKind(record);
         if (kind == QLatin1Char('?'))

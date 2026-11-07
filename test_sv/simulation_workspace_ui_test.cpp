@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+#include "mycodeeditor.h"
+#include "editorsemanticcontextservice.h"
 #include "applicationthememanager.h"
 #include "contextworkspacecontroller.h"
 #include "contextfloatingwindow.h"
@@ -444,13 +446,63 @@ private slots:
         QTimer::singleShot(0, f.panel(), [&] { auto* dialog = qobject_cast<QDialog*>(QApplication::activeModalWidget()); QVERIFY(dialog); QCOMPARE(dialog->objectName(), QString("settingsDialog")); dialog->reject(); });
         settings->click();
         auto* menu = child<QToolButton>(f.panel(), "simulationActions")->menu(); QVERIFY(menu);
-        auto* action = child<QAction>(f.panel(), "createTb"); QVERIFY(menu->actions().contains(action));
-        action->trigger();
-        auto* popup = f.window->findChild<QWidget*>(QStringLiteral("newTbEditorPopup"));
-        QVERIFY(popup && popup->isVisible());
-        child<QAbstractButton>(popup, "tbCreateCancel")->click();
+        QVERIFY(!f.panel()->findChild<QAction*>("createTb"));
+        for (auto* action : menu->actions()) QVERIFY(!action->text().contains("Create Demo TB"));
         capture(f, QString::fromLatin1(QTest::currentDataTag()) + "-existing");
 
+    }
+    void retiredCreationEntrypoints() {
+        Host f; QVERIFY(f.open()); ready(f);
+        auto* tabs = f.window->tabManager.get();
+        const auto file = f.workspace + "/tb_manual.sv";
+        const auto original = read(file);
+        const auto files = QDir(f.workspace).entryList({"*.sv", "*.v"}, QDir::Files);
+        QVERIFY(tabs->openFileInTab(file));
+        const auto noCreationControls = [&] {
+            QVERIFY(!f.window->findChild<QAbstractButton*>("editorNewTb"));
+            for (auto* group : tabs->editorSplitController()->groups())
+                QVERIFY(!group->cornerWidget(Qt::TopRightCorner));
+        };
+        noCreationControls(); QCOMPARE(tabs->splitCount(), 1);
+        QVERIFY(tabs->splitCurrentView(EditorSplitDirection::Right));
+        QCOMPARE(tabs->splitCount(), 2); noCreationControls();
+        auto* group = tabs->editorSplitController()->activeGroup();
+        tabs->closeTab(group->currentIndex());
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(tabs->splitCount(), 1); noCreationControls();
+        QVERIFY(tabs->reopenClosedTab()); QCOMPARE(tabs->splitCount(), 2); noCreationControls();
+        auto* editor = tabs->getCurrentEditor(); QVERIFY(editor);
+        QMenu menu;
+        editor->sourceSymbolContextMenuRequested(&menu, editor->editorSemanticContextForPosition(0, true));
+        QVERIFY(!menu.findChild<QAction*>("editorNewTestbench"));
+        for (auto* action : menu.actions()) QVERIFY(!action->text().contains("New testbench"));
+        QVERIFY(f.simulation()); QVERIFY(!f.panel()->findChild<QAction*>("createTb"));
+        const auto formatted = editor->formatDocument(); QVERIFY2(formatted.accepted(), qPrintable(formatted.diagnostic));
+        QVERIFY(tabs->saveCurrentTab()); const auto saved = editor->toPlainText();
+        QVERIFY(tabs->closeAllTabs()); QVERIFY(tabs->openFileInTab(file));
+        QCOMPARE(tabs->getCurrentEditor()->toPlainText(), saved); QCOMPARE(read(file), saved.toUtf8());
+        auto empty = f.saved(); empty.tbFile.clear(); empty.tbName.clear();
+        QCOMPARE(simdock::validateInputs(f.workspace, empty), QString("Select an existing TB first."));
+        QVERIFY(f.panel()->createProject("Choose existing TB"));
+        QVERIFY(!child<QAbstractButton>(f.panel(), "startSimulation")->isEnabled());
+        bool chose = false;
+        QTimer::singleShot(0, f.panel(), [&] {
+            auto* dialog = f.panel()->findChild<QFileDialog*>(); QVERIFY(dialog);
+            QTimer::singleShot(5000, dialog, &QDialog::reject);
+            dialog->selectFile(file); chose = QMetaObject::invokeMethod(dialog, "accept");
+        });
+        click(f.panel(), "chooseTb"); QVERIFY(chose);
+        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
+        QCOMPARE(child<QLineEdit>(f.panel(), "tbTop")->text(), QString("tb_manual"));
+        click(f.panel(), "openTb"); QCOMPARE(tabs->getCurrentEditor()->toPlainText(), saved);
+        const auto projectId = f.panel()->activeProjectId();
+        QVERIFY(f.sessions()->saveSession(false)); QVERIFY(f.sessions()->openWorkspace(f.other));
+        QVERIFY(f.sessions()->openWorkspace(f.workspace));
+        QTRY_COMPARE(f.panel()->activeProjectId(), projectId);
+        QCOMPARE(child<QLineEdit>(f.panel(), "tbFile")->text(), QString("tb_manual.sv"));
+        QCOMPARE(read(file), saved.toUtf8()); QVERIFY(!original.isEmpty());
+        QCOMPARE(QDir(f.workspace).entryList({"*.sv", "*.v"}, QDir::Files), files);
+        noCreationControls();
     }
     void liveQuestaStartStopFailureRecovery() {
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");

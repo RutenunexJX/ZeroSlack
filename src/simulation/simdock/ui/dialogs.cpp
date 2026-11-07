@@ -1,12 +1,9 @@
 #include "dialogs.h"
 #include "../core/questasession.h"
-#include "../core/testbench.h"
 #include "uistyle.h"
 #include <ElaComboBox.h>
 #include <ElaLineEdit.h>
-#include <ElaPlainTextEdit.h>
 #include <ElaPushButton.h>
-#include <ElaSpinBox.h>
 #include <ElaText.h>
 #include <ElaTheme.h>
 #include <QFileDialog>
@@ -166,110 +163,6 @@ SettingsDialog::SettingsDialog(const QString& executable, QWidget* parent, bool 
 QString SettingsDialog::executable() const { return m_path->text().trimmed(); }
 bool SettingsDialog::darkTheme() const { return m_theme->currentIndex() == 1; }
 WaveTheme SettingsDialog::waveTheme() const { return waveThemeFromId(m_waveTheme->currentData().toString()); }
-
-TestbenchDialog::TestbenchDialog(const Module& module, qint64 durationNs, QWidget* parent)
-    : ElaDialog(parent), m_module(module), m_duration(durationNs)
-{
-    setWindowTitle(QStringLiteral("Create Demo TB"));
-    setObjectName(QStringLiteral("testbenchDialog"));
-    setIsDefaultClosed(true);
-    setIsStayTop(false);
-    setAppBarHeight(36);
-    setWindowButtonFlags(ElaAppBarType::CloseButtonHint);
-    resize(780, 660);
-    setMinimumSize(660, 540);
-    auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(24, 20, 24, 20);
-    layout->addWidget(Ui::label(QStringLiteral("Create a Demo TB for %1").arg(module.name), this, Ui::Role::PageTitle));
-    auto* note = Ui::label(QStringLiteral("Select clock and reset signals. Other inputs start at zero; edit the generated TB to add stimulus."), this, Ui::Role::Metadata);
-    note->setWordWrap(true);
-    layout->addWidget(note);
-    layout->setSpacing(12);
-    const auto suggestion = suggestedTbOptions(module);
-    auto* form = new QFormLayout;
-    form->setVerticalSpacing(12);
-    form->setHorizontalSpacing(16);
-    form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    m_name = new ElaLineEdit(this);
-    m_name->setObjectName(QStringLiteral("tbNameInput"));
-    m_name->setText(suggestion.name);
-    Ui::formRow(form, QStringLiteral("TB top-level name"), m_name);
-    m_clock = new ElaComboBox(this);
-    m_reset = new ElaComboBox(this);
-    for (auto* box : {m_clock, m_reset}) {
-        box->addItem(QStringLiteral("None"), QString());
-        for (const auto& p : module.ports)
-            if (isTimingInput(p)) box->addItem(p.name, p.name);
-    }
-    m_clock->setCurrentIndex(qMax(0, m_clock->findData(suggestion.clock)));
-    m_reset->setCurrentIndex(qMax(0, m_reset->findData(suggestion.reset)));
-    m_period = Ui::spinBox(this);
-    m_period->setRange(2, 1000000);
-    m_period->setValue(10);
-    m_period->setSuffix(QStringLiteral(" ns"));
-    m_polarity = new ElaComboBox(this);
-    m_polarity->addItems({QStringLiteral("Active low"), QStringLiteral("Active high")});
-    m_polarity->setCurrentIndex(suggestion.resetActiveLow ? 0 : 1);
-    m_cycles = Ui::spinBox(this);
-    m_cycles->setRange(1, 1000);
-    m_cycles->setValue(5);
-    auto* clocks = new QHBoxLayout;
-    clocks->addWidget(m_clock, 1);
-    clocks->addWidget(m_period, 1);
-    Ui::formRow(form, QStringLiteral("Clock / period"), clocks);
-    auto* resets = new QHBoxLayout;
-    resets->addWidget(m_reset, 1);
-    resets->addWidget(m_polarity, 1);
-    resets->addWidget(m_cycles, 1);
-    Ui::formRow(form, QStringLiteral("Reset / polarity / cycles"), resets);
-    layout->addLayout(form);
-    m_preview = Ui::textView(this);
-    m_preview->setObjectName(QStringLiteral("tbPreview"));
-    m_preview->setReadOnly(true);
-    m_preview->setProperty("codeSurface", true);
-    m_preview->setNativeTextBehavior(true);
-    m_preview->setFont(Ui::codeFont());
-    layout->addWidget(m_preview, 1);
-    m_error = Ui::label(QString(), this, Ui::Role::Metadata);
-    m_error->setProperty("error", true);
-    m_error->setWordWrap(true);
-    layout->addWidget(m_error);
-    auto* buttons = new QHBoxLayout;
-    buttons->addStretch();
-    auto* cancel = Ui::button(QStringLiteral("Cancel"), this);
-    auto* create = Ui::button(QStringLiteral("Create file"), this, true);
-    create->setObjectName(QStringLiteral("confirmCreateTb"));
-    create->setDefault(true);
-    buttons->addWidget(cancel);
-    buttons->addWidget(create);
-    layout->addLayout(buttons);
-    connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
-    connect(create, &QPushButton::clicked, this, [this] {
-        updatePreview();
-        if (m_error->text().isEmpty()) accept();
-    });
-    connect(m_name, &QLineEdit::textChanged, this, &TestbenchDialog::updatePreview);
-    for (auto* box : {m_clock, m_reset, m_polarity})
-        connect(box, &QComboBox::currentIndexChanged, this, &TestbenchDialog::updatePreview);
-    for (auto* spin : {m_period, m_cycles})
-        connect(spin, &QSpinBox::valueChanged, this, &TestbenchDialog::updatePreview);
-    Ui::normalizeControls(this);
-    updatePreview();
-    Ui::constrainDialog(this);
-}
-TbOptions TestbenchDialog::options() const
-{
-    return {m_name->text().trimmed(), m_clock->currentData().toString(), m_reset->currentData().toString(),
-        m_polarity->currentIndex() == 0, m_period->value(), m_cycles->value()};
-}
-QString TestbenchDialog::content() const { return m_preview->toPlainText(); }
-void TestbenchDialog::updatePreview()
-{
-    QString error;
-    m_preview->setPlainText(generateTestbench(m_module, options(), m_duration, &error));
-    m_error->setText(error);
-    m_error->setVisible(!error.isEmpty());
-}
 
 QString askProjectName(QWidget* parent, const QString& currentName)
 {

@@ -44,9 +44,6 @@ public:
     void openWorkspace(const QString& path);
     bool openSuiteTarget(const QString& root, const QString& projectId, QString* error);
     bool createProject(const QString& name);
-    bool createDemo(const TbOptions& options, QString* error);
-    void setEditorTbCreator(std::function<void(const QString&, const QString&)> creator) { m_editorTbCreator = std::move(creator); }
-    void adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName);
     QString activeProjectId() const;
     QList<DesignHierarchyRoot> designRoots() const;
     QString addDesignProject(const QString& file, const QString& module, bool activate = true);
@@ -80,7 +77,6 @@ signals:
     void designProjectsChanged();
     void preferencesChanged();
 private:
-    std::function<void(const QString&, const QString&)> m_editorTbCreator;
     QString contextError() const;
     QVariant preference(const QString& key, const QVariant& fallback = {}) const;
     void setPreference(const QString& key, const QVariant& value);
@@ -90,7 +86,7 @@ private:
     QWidget *m_existingInput = nullptr, *m_durationInput = nullptr;
     ElaText *m_emptyState = nullptr, *m_inputNotice = nullptr;
     QToolButton* m_settings = nullptr;
-    QAction *m_generate = nullptr, *m_closeSession = nullptr, *m_legacyInfo = nullptr;
+    QAction *m_closeSession = nullptr, *m_legacyInfo = nullptr;
     bool m_standalone = false;
     QVariantMap m_preferences;
     std::optional<bool> m_hostDarkTheme;
@@ -108,7 +104,6 @@ private:
     bool saveCurrent();
     void renameProject();
     void chooseTb();
-    void createTb();
     void startSimulation();
     void cancelPreparation();
     QString workspacePreferenceKey() const;

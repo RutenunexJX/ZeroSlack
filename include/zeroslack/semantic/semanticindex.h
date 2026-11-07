@@ -307,8 +307,6 @@ struct SemanticCallableArgument {
 };
 
 struct SemanticSymbolPresentation {
-    bool moduleDefinitionAvailable = false;
-    QString tbGenerationIssue;
     bool callableSignatureAvailable = false;
     QList<SemanticCallableArgument> callableArguments;
     QString callableQualifiedName;

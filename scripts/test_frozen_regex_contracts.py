@@ -13,7 +13,13 @@ def verify_frozen_regex(config, root, env, check):
     extractor = re.search(r'set\(SIMDOCK_FROZEN_REGEX_EXTRACTION_VERSION "([^"]+)"\)', guard).group(1)
     inventory = re.search(r'set\(SIMDOCK_FROZEN_REGEX_USAGE\s+(.*?)\n\)', guard, re.S).group(1)
     entries = re.findall(r'"(src/simulation/simdock/core/[^"]+)"', inventory)
-    check(len(entries) == 4, 'frozen regex inventory retains all four core files')
+    expected_paths = {
+        'src/simulation/simdock/core/analyzer.cpp',
+        'src/simulation/simdock/core/questasession.cpp',
+        'src/simulation/simdock/core/workspace.cpp',
+    }
+    check(len(entries) == 3 and {entry.split('|')[0] for entry in entries} == expected_paths,
+          'frozen regex inventory retains the three shared core files after TB generator retirement')
     contents = {entry.split('|')[0]: (source_root/entry.split('|')[0]).read_bytes() for entry in entries}
     cmake = Path(config['ctest']).with_name('cmake.exe' if os.name == 'nt' else 'cmake')
     controls = root/'frozen-regex'

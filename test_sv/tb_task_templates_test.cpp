@@ -13,8 +13,6 @@
 #include "semanticindexsnapshot.h"
 #include "slangmanager.h"
 #include "usertemplateservice.h"
-#include "../src/simulation/simdock/core/analyzer.h"
-#include "../src/simulation/simdock/core/testbench.h"
 #include "../src/simulation/simdock/core/questasession.h"
 #include "../src/simulation/simdock/core/workspace.h"
 #include "../src/integrations/xips/xipshdlcallbuilder.h"
@@ -185,27 +183,6 @@ private slots:
         q.documentText+="// unsaved\n"; ++q.documentRevision;
         QVERIFY(!service.query(GlobalControlCategory::Symbols,"t existing",q).first().disabledReason.isEmpty());
     }
-    void generationUsesSlang() {
-        QTemporaryDir dir; const auto file=dir.filePath("design.sv");
-        const QString text="package p; parameter int W=12; typedef enum logic [1:0] {IDLE=1,GO=2} mode_t; endpackage\n"
-            "module chip #(parameter int W=p::W)(input logic clk, input p::mode_t mode, input logic signed [W-1:0] value, inout wire pin); endmodule\n";
-        install(file,text);
-        auto module=simdock::analyzeSource(text.toUtf8(),file).modules.first();
-        QVERIFY(module.ports.isEmpty()); QVERIFY(!module.limitations.isEmpty());
-        QString error;
-        QVERIFY2(simdock::completeTestbenchTypes(module,*SemanticIndex::getInstance(),file,text,&error),qPrintable(error));
-        QCOMPARE(module.ports.size(),4); QCOMPARE(module.parameters.size(),1);
-        const auto tb=simdock::generateTestbench(module,simdock::suggestedTbOptions(module),100,&error);
-        QVERIFY2(error.isEmpty(),qPrintable(error)); QVERIFY(tb.contains("p::mode_t mode;"));
-        QVERIFY(tb.contains("mode = p::IDLE;")); QVERIFY(tb.contains("wire "));
-        QVERIFY(put(QDir(report()).filePath("generated-dut.sv"),text));
-        QVERIFY(put(QDir(report()).filePath("generated-tb.sv"),tb));
-        QVERIFY(!simdock::completeTestbenchTypes(module,*SemanticIndex::getInstance(),file,text+"\n",&error));
-        const QString typeParam="module chip #(parameter type T=logic)(input T value); endmodule\n";
-        install(file,typeParam); module.name="chip";
-        QVERIFY(!simdock::completeTestbenchTypes(module,*SemanticIndex::getInstance(),file,typeParam,&error));
-        QVERIFY(error.contains("Type parameters"));
-    }
     void allWaveCommandsAndStorage() {
         QTemporaryDir root; simdock::Project p; p.id="legacy"; p.name="legacy"; p.tbName="task_tb";
         p.sources={"tb.sv"}; p.tbFile="tb.sv"; p.durationNs=50;
@@ -218,7 +195,7 @@ private slots:
             QCOMPARE(json["waveScope"].toString(),QString(scope));
         }
     }
-    void pausedAssistAndCreateTb() {
+    void pausedAssistAndExistingTb() {
         QTemporaryDir data; const auto root=data.filePath("workspace"); QDir().mkpath(root);
         const auto file=root+"/tb.sv"; const auto original=source(); QVERIFY(put(file,original));
         qputenv("ZEROSLACK_SESSION_STORAGE_PATH",data.filePath("sessions.ini").toUtf8());
@@ -262,21 +239,9 @@ private slots:
         QVERIFY(window.tabManager->saveCurrentTab()); QVERIFY(window.tabManager->closeAllTabs());
         QVERIFY(window.tabManager->openFileInTab(file));
         QCOMPARE(window.tabManager->getCurrentEditor()->toPlainText(),withCall);
-        const auto dutFile=root+"/chip.sv";
-        const QString dut="package input_types; typedef enum logic [1:0] {IDLE=1,RUN=2} mode_t; endpackage\n"
-            "module chip(input logic clk, rst_n, input input_types::mode_t mode, input logic [11:0] value); endmodule\n";
-        QVERIFY(put(dutFile,dut)); QVERIFY(window.tabManager->openFileInTab(dutFile));
-        QTRY_COMPARE_WITH_TIMEOUT(SemanticIndex::getInstance()->getCachedFileContent(dutFile),dut,20000);
-        auto* newTb=window.findChild<QAbstractButton*>("editorNewTb"); QVERIFY(newTb); newTb->click();
-        auto* creator=window.findChild<QFrame*>("newTbEditorPopup"); QVERIFY(creator);
-        auto* create=creator->findChild<QPushButton*>("tbCreateAndOpen"); QVERIFY(create);
-        QVERIFY2(create->isEnabled(),qPrintable(creator->findChild<QLabel*>("tbNewStatus")->text()));
-        QVERIFY(window.grab().save(QDir(report()).filePath("new-tb-slang-preview.png")));
-        create->click();
-        QTRY_VERIFY(window.tabManager->getCurrentEditor()->toPlainText().contains("module tb_chip;"));
-        QVERIFY(window.tabManager->getCurrentEditor()->toPlainText().contains("mode = input_types::IDLE;"));
+        QVERIFY(!window.findChild<QAbstractButton*>("editorNewTb"));
         QCOMPARE(TbInputAssistService::analysisCountForTesting(),before);
-        QVERIFY(window.grab().save(QDir(report()).filePath("new-tb-assist-disabled.png")));
+        QVERIFY(window.grab().save(QDir(report()).filePath("existing-tb-assist-disabled.png")));
         for(auto* e:window.tabManager->openEditors()) e->document()->setModified(false);
         const auto second=data.filePath("second"); QDir().mkpath(second);
         QVERIFY(put(second+"/empty.sv","module empty; endmodule\n"));

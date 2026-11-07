@@ -98,7 +98,6 @@ Module moduleFrom(TSNode node, const QByteArray& source, const QString& file, co
     TSNode name = ts_node_is_null(header) ? TSNode{} : ts_node_child_by_field_name(header, "name", 4);
     if (ts_node_is_null(name)) name = ts_node_child_by_field_name(node, "name", 4);
     module.name = text(name, source);
-    module.limitations << QStringLiteral("Analyze the current DUT with Slang before creating its TB.");
     return module;
 }
 }

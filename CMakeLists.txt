@@ -374,7 +374,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/ghostannotationservice.cpp
     src/editor/tbinputassist.cpp
     src/editor/tbinputassistcontroller.cpp
-    src/editor/tbeditorworkflow.cpp
     src/insights/graphexportservice.cpp
     src/settings/workspaceconfigurationdialog.cpp
     src/workspace/workspacesessioncoordinator.cpp
@@ -601,7 +600,6 @@ set(ZEROSLACK_CORE_SOURCES
     src/editor/ghostannotationservice.h
     src/editor/tbinputassist.h
     src/editor/tbinputassistcontroller.h
-    src/editor/tbeditorworkflow.h
     src/settings/workspaceconfigurationdialog.h
     src/workspace/workspacesessioncoordinator.h
     src/workspace/workspacesessionstateservice.h

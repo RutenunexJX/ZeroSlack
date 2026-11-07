@@ -40,7 +40,6 @@ bool MainWindow::openSuiteTarget(const QString& root, const QString& projectId, 
     return true;
 }
 bool MainWindow::createProject(const QString& name) { return m_workbench->createProject(name); }
-bool MainWindow::createDemo(const TbOptions& options, QString* error) { return m_workbench->createDemo(options, error); }
 QString MainWindow::workspace() const { return m_workbench->workspace(); }
 void MainWindow::setSimulator(const QString& executable) { m_workbench->setSimulator(executable); }
 void MainWindow::closeEvent(QCloseEvent* event)

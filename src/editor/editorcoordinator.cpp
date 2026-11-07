@@ -3,7 +3,6 @@
 #include "editorcoordinator.h"
 #include <QApplication>
 #include <QClipboard>
-#include "tbeditorworkflow.h"
 #include "filecreation.h"
 
 #include "actionregistry.h"
@@ -302,15 +301,6 @@ void EditorCoordinator::setWorkflowDependencies(
                      newFileCommandCoordinator,
                      newNavigationCommandCoordinator,
                      newSemanticPanelRefresh);
-    if (!tbWorkflow && tabManager && newWorkspaceManager) {
-        tbWorkflow = new TbEditorWorkflow(tabManager, newWorkspaceManager, this);
-        connect(tbWorkflow, &TbEditorWorkflow::testbenchCreated, this, &EditorCoordinator::testbenchCreated);
-    }
-}
-
-void EditorCoordinator::createTestbench(const QString& dutFile, const QString& dutName)
-{
-    if (tbWorkflow) tbWorkflow->create(dutFile, dutName);
 }
 
 void EditorCoordinator::setAppearanceSettings(
@@ -1345,11 +1335,6 @@ void EditorCoordinator::handleSourceSymbolContextMenuRequested(
     if (!menu || !editor)
         return;
     editor->addTbInputAssistMenu(menu, context.cursorPosition);
-    if (tbWorkflow) {
-        auto* create = menu->addAction(QStringLiteral("New testbench…"));
-        create->setObjectName(QStringLiteral("editorNewTestbench"));
-        connect(create, &QAction::triggered, tbWorkflow, [this] { tbWorkflow->create(); });
-    }
 
     const EditorSourceSymbolContextMenuState menuState =
         contextService()->sourceSymbolContextMenuState(context);

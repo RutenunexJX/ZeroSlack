@@ -23,7 +23,6 @@ struct EditorSourceNavigationTarget;
 struct HierarchyInstanceContext;
 enum class SourceSymbolAction;
 class MyCodeEditor;
-class TbEditorWorkflow;
 class NavigationCommandCoordinator;
 class PinloomCodeLinkStore;
 class PinloomHostClient;
@@ -74,7 +73,6 @@ public:
 
     void connectSignals();
     void attachEditor(MyCodeEditor* editor);
-    void createTestbench(const QString& dutFile = {}, const QString& dutName = {});
     void populateSourceSymbolContextMenuForTest(
         QMenu* menu,
         const EditorSemanticContext& context) const;
@@ -87,10 +85,7 @@ public:
 
 signals:
     void pinloomCodeLinksChanged() const;
-    void testbenchCreated(const QString& dutFile, const QString& dutName,
-                          const QString& tbFile, const QString& tbName);
 private:
-    TbEditorWorkflow* tbWorkflow = nullptr;
     struct WorkflowDependencies {
         WorkspaceManager* workspaceManager = nullptr;
         FileCommandCoordinator* fileCommandCoordinator = nullptr;

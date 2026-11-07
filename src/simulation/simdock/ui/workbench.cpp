@@ -6,7 +6,6 @@
 #include "../core/dependencies.h"
 #include "../core/analyzer.h"
 #include "dialogs.h"
-#include "../core/testbench.h"
 #include "../core/workspace.h"
 #include "uistyle.h"
 #include "sourcedelegate.h"
@@ -128,8 +127,6 @@ void Workbench::buildUi()
     auxiliary->setAccessibleName(QStringLiteral("Simulation actions"));
     auxiliary->setToolTip(QStringLiteral("Simulation actions"));
     auto* menu = UiControls::menu(this);
-    m_generate = menu->addAction(QStringLiteral("Create Demo TB"));
-    m_generate->setObjectName(QStringLiteral("createTb"));
     m_closeSession=menu->addAction(QStringLiteral("Close session"));
     m_closeSession->setObjectName(QStringLiteral("closeSimulationSession"));
     m_legacyInfo=menu->addAction(QStringLiteral("Saved graphical inputs…"));
@@ -213,14 +210,14 @@ void Workbench::buildUi()
     timing->addWidget(m_duration, 1);
     timing->addWidget(m_units);
     form->addWidget(m_durationInput);
-    auto* demoHeading=new SidebarSectionButton(QStringLiteral("Demo TB configuration"),m_projectPanel);
+    auto* demoHeading=new SidebarSectionButton(QStringLiteral("DUT selection"),m_projectPanel);
     demoHeading->setObjectName(QStringLiteral("demoTbConfiguration"));demoHeading->setChecked(false);form->addWidget(demoHeading);
     auto* demoBody=new QWidget(m_projectPanel);auto* demoLayout=new QVBoxLayout(demoBody);demoLayout->setContentsMargins(0,0,0,0);demoLayout->setSpacing(4);
     demoLayout->addWidget(Ui::label(QStringLiteral("DUT module"),demoBody,Ui::Role::Section));
     m_dut=new ElaComboBox(demoBody);m_dut->setObjectName(QStringLiteral("dutSelector"));
     m_dut->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);m_dut->setMinimumContentsLength(1);
     m_dut->setMinimumWidth(0);m_dut->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Fixed);
-    m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));m_dut->setAccessibleName(QStringLiteral("DUT for Demo TB"));demoLayout->addWidget(m_dut);
+    m_dut->setPlaceholderText(QStringLiteral("Select build inputs first"));m_dut->setAccessibleName(QStringLiteral("DUT module"));demoLayout->addWidget(m_dut);
     form->addWidget(demoBody);demoBody->hide();connect(demoHeading,&QPushButton::toggled,demoBody,&QWidget::setVisible);
     form->addStretch();
     scroll->setWidget(m_projectPanel);
@@ -419,7 +416,6 @@ void Workbench::buildUi()
     };
     connect(m_duration, &QSpinBox::valueChanged, this, durationChanged);
     connect(m_units, &QComboBox::currentIndexChanged, this, durationChanged);
-    connect(m_generate, &QAction::triggered, this, &Workbench::createTb);
     connect(m_chooseTb, &QToolButton::clicked, this, &Workbench::chooseTb);
     connect(m_run, &QPushButton::clicked, this, &Workbench::startSimulation);
     connect(m_stop, &QPushButton::clicked, this, [this] {
@@ -1075,7 +1071,6 @@ void Workbench::updateControls()
         :!toolIssue.isEmpty()?tr("Choose a valid Questa installation in Simulation settings."):QString());
     m_inputNotice->setVisible(!busy&&!m_inputNotice->text().isEmpty());
     m_rename->setEnabled(p && !busy && !m_scanning);
-    m_generate->setEnabled(p && currentModule() && !busy && !m_scanning);
     m_run->setEnabled(p && !p->sources.isEmpty() && tbAvailable && !p->tbName.trimmed().isEmpty() && !busy && !m_scanning && !m_orderPending && m_orderIssue.isEmpty());
     m_stop->setEnabled(m_preparing || m_session.alive());
     m_stop->setVisible(busy);
@@ -1105,65 +1100,6 @@ void Workbench::chooseTb()
     p->tbFile = source.path;
     p->tbName = source.modules.size() == 1 ? source.modules.first().name : QFileInfo(path).completeBaseName();
     m_tbFile->setText(p->tbFile); m_tbTop->setText(p->tbName);
-    saveCurrent(); selectProject(m_projectIndex);
-}
-bool Workbench::createDemo(const TbOptions& options, QString* error)
-{
-    auto* p = current();
-    const auto* module = currentModule();
-    if (!p || !module) { *error = QStringLiteral("Select a DUT first."); return false; }
-    const auto duration = p->durationNs;
-    auto semanticModule = *module;
-    auto* semantic = SemanticIndex::getInstance();
-    const auto file = QDir(m_root).filePath(module->file);
-    QFile source(file);
-    if (!source.open(QIODevice::ReadOnly)) { *error = source.errorString(); return false; }
-    if (!completeTestbenchTypes(semanticModule, *semantic, file, QString::fromUtf8(source.readAll()), error)) return false;
-    const QString text = generateTestbench(semanticModule, options, duration, error);
-    if (!error->isEmpty()) return false;
-    const QString path = projectTbPath(*p, options.name);
-    if (!writeNewTb(m_root, path, text, error)) return false;
-    p->tbFile = path; p->tbName = options.name;
-    p->durationNs = duration;
-    m_tbFile->setText(path); m_tbTop->setText(options.name);
-    saveCurrent();
-    appendLog(QStringLiteral("Created %1\n").arg(path));
-    selectProject(m_projectIndex);
-    return true;
-}
-void Workbench::createTb()
-{
-    if (!current() || !currentModule()) return;
-    if (m_editorTbCreator) {
-        m_editorTbCreator(QDir(m_root).filePath(currentModule()->file), currentModule()->name);
-        return;
-    }
-    auto module = *currentModule();
-    auto* semantic = SemanticIndex::getInstance();
-    const auto file = QDir(m_root).filePath(module.file);
-    QString semanticError;
-    QFile source(file);
-    if (!source.open(QIODevice::ReadOnly)) { appendLog(source.errorString()); return; }
-    if (!completeTestbenchTypes(module, *semantic, file, QString::fromUtf8(source.readAll()), &semanticError)) {
-        appendLog(semanticError + QLatin1Char('\n')); return;
-    }
-    QPointer<Workbench> owner(this);
-    QPointer<TestbenchDialog> dialog = new TestbenchDialog(module, current()->durationNs, this);
-    const auto result = dialog->exec();
-    if (!owner || !dialog) return;
-    const auto options = dialog->options();
-    delete dialog;
-    if (result != QDialog::Accepted) return;
-    QString error;
-    if (!createDemo(options, &error)) appendLog(error + QLatin1Char('\n'));
-}
-void Workbench::adoptCreatedTb(const QString& dutFile, const QString& dutName, const QString& tbFile, const QString& tbName)
-{
-    auto* p = current();
-    if (!p || p->dutName != dutName || resolvedPath(QDir(m_root).filePath(p->dutFile)) != resolvedPath(dutFile)
-        || !insideWorkspace(m_root, tbFile)) return;
-    p->tbFile = QDir(m_root).relativeFilePath(tbFile); p->tbName = tbName;
-    m_tbFile->setText(p->tbFile); m_tbTop->setText(tbName);
     saveCurrent(); selectProject(m_projectIndex);
 }
 void Workbench::cancelPreparation()

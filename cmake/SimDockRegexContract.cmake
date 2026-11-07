@@ -70,7 +70,6 @@ function(zeroslack_verify_simdock_regex_contract source_dir source_revision extr
     set(approved_paths
         src/simulation/simdock/core/analyzer.cpp
         src/simulation/simdock/core/questasession.cpp
-        src/simulation/simdock/core/testbench.cpp
         src/simulation/simdock/core/workspace.cpp)
     _zeroslack_verify_regex_inventory("Frozen SimDock regex" "${source_dir}"
         "${source_revision}" "${extraction_version}" "${approved_paths}" 2 ${ARGN})

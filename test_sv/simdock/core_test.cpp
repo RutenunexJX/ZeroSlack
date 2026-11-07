@@ -1,7 +1,6 @@
 #include "../../src/simulation/simdock/core/analyzer.h"
 #include "../../src/simulation/simdock/core/dependencies.h"
 #include "../../src/simulation/simdock/core/questasession.h"
-#include "../../src/simulation/simdock/core/testbench.h"
 #include "../../src/simulation/simdock/core/sessionfiles.h"
 #include "../../src/simulation/simdock/core/workspace.h"
 #include "slangmanager.h"
@@ -15,6 +14,7 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QtTest>
+#include <algorithm>
 #ifdef Q_OS_WIN
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -91,22 +91,42 @@ static QByteArray typedModule()
         "input word_t data, output mode_e result); assign result = mode; endmodule\n");
 }
 
-static SourceFile semanticSource(const QByteArray& bytes, const QString& path)
+static QByteArray counterTb()
 {
-    auto source = simdock::analyzeSource(bytes, path);
-    const auto absolute = QFileInfo(path).absoluteFilePath();
-    const QHash<QString, QString> contents{{absolute, QString::fromUtf8(bytes)},
+    return QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_counter;\n"
+        "localparam WIDTH=8; logic clk=0, rst_n=0, enable=0; wire [WIDTH-1:0] count;\n"
+        "counter #(.WIDTH(WIDTH)) dut(.*); always #5 clk=~clk;\n"
+        "initial begin #50; rst_n=1; end\nendmodule\n");
+}
+static QByteArray typedTb()
+{
+    return QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_typed_dut; import demo_types::*;\n"
+        "logic clk=0, rst=1; mode_e mode=IDLE, mode_copy=IDLE, result;\n"
+        "payload_t payload='0; word_t data='0; typed_dut dut(.*);\n"
+        "always #5 clk=~clk; initial begin #50; rst=0; end\nendmodule\n");
+}
+static auto semanticRecords(const QByteArray& bytes, const QString& path)
+{
+    const QHash<QString, QString> contents{{QFileInfo(path).absoluteFilePath(), QString::fromUtf8(bytes)},
         {QFileInfo("fixture_types.sv").absoluteFilePath(), QString::fromUtf8(typedPackage()) + "\npackage hidden; endpackage\npackage later; endpackage\n"}};
     SlangManager slang;
-    SemanticIndex index;
-    index.setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-        SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
-    for (auto& module : source.modules) {
-        QString error;
-        if (!completeTestbenchTypes(module, index, absolute, QString::fromUtf8(bytes), &error))
-            module.limitations = {error};
-    }
-    return source;
+    return slang.extractOverlayWorkspaceSymbolRecords(contents);
+}
+static QHash<QString, SemanticSymbolRecord> semanticSymbols(const QByteArray& bytes, const QString& path)
+{
+    QHash<QString, SemanticSymbolRecord> result;
+    for (const auto& record : semanticRecords(bytes, path))
+        if (record.usageRole == SymbolTaxonomy::SymbolUsageRole::Declaration)
+            result.insert(record.owner.name + "." + record.name, record);
+    return result;
+}
+
+static int symbolCount(const QHash<QString, SemanticSymbolRecord>& symbols, const QString& owner,
+                       SymbolTaxonomy::DeclarationKind kind)
+{
+    return int(std::count_if(symbols.cbegin(), symbols.cend(), [&](const auto& record) {
+        return record.owner.name == owner && record.declarationKind == kind;
+    }));
 }
 
 class CoreTest : public QObject {
@@ -240,143 +260,88 @@ private slots:
     void qualifiedPackageConstants()
     {
         const auto bytes = QByteArrayLiteral("module child #(parameter int W=cfg::WIDTH)(input logic clk, output logic [W-1:0] data); endmodule");
-        const auto source = semanticSource(bytes, QStringLiteral("child.sv"));
+        const auto source = analyzeSource(bytes, QStringLiteral("child.sv"));
         QVERIFY2(source.referencedPackages.contains(QStringLiteral("cfg")), qPrintable(syntaxTree(bytes)));
     }
     void ansiParametersAndInheritedPorts()
     {
-        const auto source = semanticSource(counter(), QStringLiteral("rtl/counter.sv"));
+        const auto source = analyzeSource(counter(), "rtl/counter.sv");
         QVERIFY2(!source.syntaxError, qPrintable(syntaxTree(counter())));
         QCOMPARE(source.modules.size(), 1);
-        const auto& m = source.modules.first();
-        QCOMPARE(m.name, QStringLiteral("counter"));
-        QCOMPARE(m.parameters.size(), 1);
-        QCOMPARE(m.parameters.first().name, QStringLiteral("WIDTH"));
-        QCOMPARE(m.parameters.first().value, QStringLiteral("8"));
-        QCOMPARE(m.ports.size(), 4);
-        QCOMPARE(m.ports[1].direction, QStringLiteral("input"));
-        QCOMPARE(m.ports.last().type, QStringLiteral("logic unsigned [7:0]"));
-        QVERIFY2(m.limitations.isEmpty(), qPrintable(m.limitations.join(QLatin1Char('\n'))));
+        QCOMPARE(source.modules.first().name, QString("counter"));
+        const auto symbols = semanticSymbols(counter(), "rtl/counter.sv");
+        QCOMPARE(symbolCount(symbols, "counter", SymbolTaxonomy::DeclarationKind::Parameter), 1);
+        QCOMPARE(symbolCount(symbols, "counter", SymbolTaxonomy::DeclarationKind::Port), 4);
+        const auto width = symbols.value("counter.WIDTH").presentation.defaultInfo;
+        QVERIFY(width.available); QCOMPARE(width.valueText, QString("8"));
+        for (const auto& name : {"clk", "rst_n", "enable", "count"})
+            QVERIFY(symbols.value("counter." + QString(name)).presentation.defaultInfo.available);
+        QCOMPARE(symbols.value("counter.rst_n").presentation.defaultInfo.portDirection, QString("input"));
+        const auto count = symbols.value("counter.count").presentation.defaultInfo;
+        QCOMPARE(count.portDirection, QString("output")); QCOMPARE(count.bitWidth, std::uint64_t(8));
+        QVERIFY(count.fixedSize); QVERIFY(count.integral); QVERIFY(!count.signedIntegral);
+        QCOMPARE(symbols.value("counter.count").presentation.defaultDeclaredTypeFacts.externalDeclarationBaseText, QString("logic unsigned"));
     }
     void nonAnsiPorts()
     {
         const auto bytes = QByteArrayLiteral("module legacy(clk, data, result); input clk; input [7:0] data; output [7:0] result; assign result=data; endmodule");
-        const auto source = semanticSource(bytes, QStringLiteral("legacy.v"));
-        QCOMPARE(source.modules.size(), 1);
-        QVERIFY2(source.modules.first().ports.size() == 3, qPrintable(syntaxTree(bytes)));
-        QCOMPARE(source.modules.first().ports.last().direction, QStringLiteral("output"));
-    }
-    void unsupportedPortIsExplicit()
-    {
-        const auto source = semanticSource(QByteArrayLiteral("module m(input logic [7:0] x [4]); endmodule"), QStringLiteral("m.sv"));
-        QCOMPARE(source.modules.size(), 1);
-        QVERIFY(!source.modules.first().limitations.isEmpty());
-        QString error;
-        QVERIFY(generateTestbench(source.modules.first(), suggestedTbOptions(source.modules.first()), 1000, &error).isEmpty());
-        QVERIFY(!error.isEmpty());
-    }
-    void generateDemo()
-    {
-        const auto module = semanticSource(counter(), QStringLiteral("counter.sv")).modules.first();
-        const auto options = suggestedTbOptions(module);
-        QCOMPARE(options.clock, QStringLiteral("clk"));
-        QCOMPARE(options.reset, QStringLiteral("rst_n"));
-        QVERIFY(options.resetActiveLow);
-        QString error;
-        const auto tb = generateTestbench(module, options, 1000, &error);
-        QVERIFY2(error.isEmpty(), qPrintable(error));
-        QVERIFY(tb.contains(QStringLiteral(".WIDTH(WIDTH)")));
-        QVERIFY(tb.contains(QStringLiteral("enable = '0")));
-        const auto parsed = semanticSource(tb.toUtf8(), QStringLiteral("tb_counter.sv"));
-        QVERIFY2(!parsed.syntaxError, qPrintable(syntaxTree(tb.toUtf8())));
-        QCOMPARE(parsed.modules.first().name, QStringLiteral("tb_counter"));
+        QCOMPARE(analyzeSource(bytes, "legacy.v").modules.size(), 1);
+        const auto symbols = semanticSymbols(bytes, "legacy.v");
+        QCOMPARE(symbolCount(symbols, "legacy", SymbolTaxonomy::DeclarationKind::Port), 3);
+        for (const auto& name : {"clk", "data", "result"})
+            QVERIFY(symbols.value("legacy." + QString(name)).presentation.defaultInfo.available);
+        QCOMPARE(symbols.value("legacy.result").presentation.defaultInfo.portDirection, QString("output"));
+        QCOMPARE(symbols.value("legacy.result").presentation.defaultInfo.bitWidth, std::uint64_t(8));
     }
     void namedPackageTypes()
     {
-        const auto source = semanticSource(typedModule(), QStringLiteral("typed.sv"));
+        const auto source = analyzeSource(typedModule(), "typed.sv");
         QVERIFY2(!source.syntaxError, qPrintable(syntaxTree(typedModule())));
         QCOMPARE(source.modules.size(), 1);
-        const auto& module = source.modules.first();
-        QVERIFY2(module.limitations.isEmpty(), qPrintable(module.limitations.join(QLatin1Char('\n'))));
-        QCOMPARE(module.imports, QStringList{QStringLiteral("import demo_types::*;")});
-        QCOMPARE(module.ports.size(), 7);
-        QVERIFY(module.ports[2].namedType);
-        QVERIFY(module.ports[3].namedType);
-        QCOMPARE(module.ports[3].type, QStringLiteral("demo_types::mode_e"));
-        QVERIFY(!isTimingInput(module.ports[2]));
-        auto options = suggestedTbOptions(module);
-        QCOMPARE(options.clock, QStringLiteral("clk"));
-        QCOMPARE(options.reset, QStringLiteral("rst"));
-        QString error;
-        const auto tb = generateTestbench(module, options, 1000, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        QVERIFY(tb.indexOf(QStringLiteral("import demo_types::*;")) < tb.indexOf(QStringLiteral("localparam logic signed [31:0] WIDTH")));
-        QVERIFY(tb.contains(QStringLiteral("mode_e mode_copy;")));
-        QVERIFY(tb.contains(QStringLiteral("mode_copy = demo_types::IDLE;")));
-        QVERIFY(tb.contains(QStringLiteral("payload = demo_types::payload_t'('0);")));
-        QVERIFY(tb.contains(QStringLiteral("data = demo_types::word_t'('0);")));
-        QVERIFY(!tb.contains(QStringLiteral("result =")));
-        QVERIFY2(!semanticSource(tb.toUtf8(), QStringLiteral("tb.sv")).syntaxError, qPrintable(syntaxTree(tb.toUtf8())));
-        options.clock = QStringLiteral("mode");
-        QVERIFY(generateTestbench(module, options, 1000, &error).isEmpty());
-        QVERIFY(error.contains(QStringLiteral("scalar input")));
+        const auto symbols = semanticSymbols(typedModule(), "typed.sv");
+        QCOMPARE(symbolCount(symbols, "typed_dut", SymbolTaxonomy::DeclarationKind::Port), 7);
+        for (const auto& name : {"clk", "rst", "mode", "mode_copy", "payload", "data", "result"})
+            QVERIFY(symbols.value("typed_dut." + QString(name)).presentation.defaultInfo.available);
+        for (const auto& name : {"mode", "mode_copy", "result"}) {
+            const auto record = symbols.value("typed_dut." + QString(name));
+            QCOMPARE(record.presentation.defaultDeclaredTypeFacts.externalDeclarationBaseText, QString("demo_types::mode_e"));
+            QCOMPARE(record.presentation.defaultInfo.enumValues.size(), 3);
+            QCOMPARE(record.presentation.defaultInfo.enumValues.first().expressionText, QString("demo_types::IDLE"));
+        }
+        QCOMPARE(symbols.value("typed_dut.payload").presentation.defaultInfo.bitWidth, std::uint64_t(8));
+        QCOMPARE(symbols.value("typed_dut.data").presentation.defaultInfo.bitWidth, std::uint64_t(8));
+        QVERIFY(!analyzeSource(typedTb(), "tb.sv").syntaxError);
     }
     void importVisibility()
     {
         const auto input = QByteArrayLiteral("module first(input logic clk); import hidden::*; endmodule\n"
             "import demo_types::mode_e, demo_types::word_t;\n"
             "module selected(input mode_e mode, input word_t data); endmodule\n"
-            "module qualified(input demo_types::payload_t payload); endmodule\n"
-            "import later::*;\n");
-        const auto source = semanticSource(input, QStringLiteral("imports.sv"));
-        QVERIFY2(!source.syntaxError, qPrintable(syntaxTree(input)));
-        QCOMPARE(source.modules.size(), 3);
-        QVERIFY(source.modules.first().imports.contains(QStringLiteral("import hidden::*;")));
-        for (int i = 1; i < source.modules.size(); ++i) {
-            const auto& module = source.modules[i];
-            QVERIFY2(module.limitations.isEmpty(), qPrintable(module.limitations.join(QLatin1Char('\n'))));
-            QString error;
-            QVERIFY2(!generateTestbench(module, suggestedTbOptions(module), 1000, &error).isEmpty(), qPrintable(error));
-        }
-        const auto qualified = semanticSource(QByteArrayLiteral("module qualified(input demo_types::mode_e mode); endmodule"), QStringLiteral("qualified.sv")).modules.first();
-        QVERIFY(qualified.limitations.isEmpty());
-        QVERIFY(qualified.ports.first().namedType);
-    }
-    void unsupportedNamedPorts_data()
-    {
-        QTest::addColumn<QByteArray>("input");
-        QTest::newRow("unresolved") << QByteArrayLiteral("module m(input missing_type value); endmodule");
-        QTest::newRow("unimported") << QByteArrayLiteral("module m import demo_types::word_t; (input mode_e value); endmodule");
-        QTest::newRow("interface") << QByteArrayLiteral("module m import demo_types::*; (bus_if bus); endmodule");
-        QTest::newRow("modport") << QByteArrayLiteral("module m import demo_types::*; (bus_if.master bus); endmodule");
-            QTest::newRow("ref") << QByteArrayLiteral("module m(ref demo_types::word_t data); endmodule");
-        QTest::newRow("unpacked") << QByteArrayLiteral("module m(input demo_types::word_t data [4]); endmodule");
-        QTest::newRow("macro") << QByteArrayLiteral("module m(input `CUSTOM_TYPE data); endmodule");
-    }
-    void unsupportedNamedPorts()
-    {
-        QFETCH(QByteArray, input);
-        const auto source = semanticSource(input, QStringLiteral("unsupported.sv"));
-        QCOMPARE(source.modules.size(), 1);
-        const auto& module = source.modules.first();
-        QVERIFY2(!module.limitations.isEmpty(), qPrintable(syntaxTree(input)));
-        QString error;
-        QVERIFY(generateTestbench(module, suggestedTbOptions(module), 1000, &error).isEmpty());
-        QVERIFY(!error.isEmpty());
+            "module qualified(input demo_types::payload_t payload); endmodule\nimport later::*;\n");
+        const auto source = analyzeSource(input, "imports.sv");
+        QVERIFY2(!source.syntaxError, qPrintable(syntaxTree(input))); QCOMPARE(source.modules.size(), 3);
+        const auto records = semanticRecords(input, "imports.sv");
+        QVERIFY(std::any_of(records.cbegin(), records.cend(), [](const auto& record) {
+            return record.owner.name == "first" && record.name == "hidden"
+                && record.collectorKind == SymbolTaxonomy::CollectorKind::PackageImport;
+        }));
+        const auto symbols = semanticSymbols(input, "imports.sv");
+        QCOMPARE(symbols.value("selected.mode").presentation.defaultDeclaredTypeFacts.externalDeclarationBaseText, QString("demo_types::mode_e"));
+        QCOMPARE(symbols.value("selected.data").presentation.defaultDeclaredTypeFacts.externalDeclarationBaseText, QString("demo_types::word_t"));
+        QCOMPARE(symbols.value("qualified.payload").presentation.defaultDeclaredTypeFacts.externalDeclarationBaseText, QString("demo_types::payload_t"));
+        for (const auto& name : {"selected.mode", "selected.data", "qualified.payload"})
+            QVERIFY(symbols.value(name).presentation.defaultInfo.fixedSize);
     }
     void liveNamedTypeCompilation()
     {
         const QString executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
-        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to compile generated named-type ports in Questa.");
+        if (executable.isEmpty()) QSKIP("Set SIMDOCK_TEST_QUESTA to compile handwritten named-type ports in Questa.");
         QTemporaryDir workspace;
         QVERIFY(workspace.isValid());
         QVERIFY(put(workspace.filePath(QStringLiteral("types.sv")), typedPackage()));
         QVERIFY(put(workspace.filePath(QStringLiteral("dut.sv")), typedModule()));
-        const auto module = semanticSource(typedModule(), QStringLiteral("dut.sv")).modules.first();
         QString error;
-        const auto tb = generateTestbench(module, suggestedTbOptions(module), 1000, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        QVERIFY(put(workspace.filePath(QStringLiteral("tb.sv")), tb.toUtf8()));
+        QVERIFY(put(workspace.filePath(QStringLiteral("tb.sv")), typedTb()));
         auto selected = newProject("Named ports"); selected.sources = {"dut.sv", "types.sv"};
         const auto plan = planBuildInputs(workspace.path(), selected);
         QVERIFY2(plan.order.valid(), qPrintable(plan.error()));
@@ -433,17 +398,6 @@ private slots:
         p.tbFile = QStringLiteral("tb.sv"); p.tbName = QStringLiteral("tb");
         QVERIFY2(validateInputs(root, p).contains(QStringLiteral("outside the workspace")), qPrintable(syntaxTree(source)));
     }
-    void neverOverwriteTb()
-    {
-        QTemporaryDir temp;
-        QString error;
-        const auto path = QStringLiteral("sim/tb.sv");
-        QVERIFY(writeNewTb(temp.path(), path, QStringLiteral("original"), &error));
-        QVERIFY(!writeNewTb(temp.path(), path, QStringLiteral("replacement"), &error));
-        QFile file(temp.filePath(path));
-        QVERIFY(file.open(QIODevice::ReadOnly));
-        QCOMPARE(file.readAll(), QByteArrayLiteral("original"));
-    }
     void tclArgumentsAreData()
     {
         QCOMPARE(tclWord(QStringLiteral("a $x [exec wrong] \\ \" b")), QStringLiteral("\"a \\$x \\[exec wrong\\] \\\\ \\\" b\""));
@@ -468,7 +422,7 @@ private slots:
         project.sources = {"counter.sv"}; project.dutFile = "counter.sv"; project.dutName = "counter";
         project.tbName = "tb_counter"; project.durationNs = 100;
         QVERIFY2(saveProject(workspace.path(), project, &error), qPrintable(error));
-        project.tbFile = projectTbPath(project, project.tbName);
+        project.tbFile = "sim/" + name + "/tb_counter.sv";
         QCOMPARE(project.tbFile, "sim/" + name + "/tb_counter.sv");
         const auto inputDir = QFileInfo(workspace.filePath(project.tbFile)).absolutePath();
         auto rtl = counter();
@@ -489,14 +443,12 @@ private slots:
                  "if (count != 4*STEP || dut.PRIORITY != 11) $fatal(1, \"Include order mismatch\");\n"
                  "$display(\"LITERAL_INCLUDE_OK\"); end endmodule\n";
         } else {
-            const auto module = semanticSource(counter(), "counter.sv").modules.first();
-            tb = generateTestbench(module, suggestedTbOptions(module), project.durationNs, &error).toUtf8();
-            QVERIFY2(!tb.isEmpty(), qPrintable(error));
+            tb = counterTb();
         }
         QVERIFY(put(workspace.filePath("counter.sv"), rtl));
         const auto header = QDir(inputDir).filePath("step.svh");
         QVERIFY(put(header, "localparam STEP=1;\n"));
-        QVERIFY(writeNewTb(workspace.path(), project.tbFile, QString::fromUtf8(tb), &error));
+        QVERIFY(put(workspace.filePath(project.tbFile), tb));
         QVERIFY(saveProject(workspace.path(), project, &error));
         QString shortPath;
 #ifdef Q_OS_WIN
@@ -581,11 +533,9 @@ private slots:
         project.includeDirectories = {"include"};
         project.tbFile = QStringLiteral("tb_top.sv");
         project.tbName = QStringLiteral("tb_top");
-        const auto module = semanticSource(top, QStringLiteral("a_top.sv")).modules.first();
         QString error;
-        const auto tb = generateTestbench(module, suggestedTbOptions(module), 1000, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        QVERIFY(writeNewTb(workspace.path(), project.tbFile, tb, &error));
+        const auto tb = QByteArrayLiteral("`timescale 1ns/1ps\nmodule tb_top; logic clk=0; wire [7:0] data; top dut(.*); always #5 clk=~clk; endmodule\n");
+        QVERIFY(put(workspace.filePath(project.tbFile), tb));
         QuestaSession session;
         QSignalSpy finished(&session, &QuestaSession::finished);
         QString log;
@@ -741,9 +691,8 @@ private slots:
         project.sources << QStringLiteral("dut.sv");
         project.tbFile = QStringLiteral("tb.sv");
         project.tbName = QStringLiteral("tb_load_error");
-        const auto module = semanticSource(broken, QStringLiteral("dut.sv")).modules.first();
         QString error;
-        QVERIFY(put(workspace.filePath(project.tbFile), generateTestbench(module, suggestedTbOptions(module), project.durationNs, &error).toUtf8()));
+        QVERIFY(put(workspace.filePath(project.tbFile), "`timescale 1ns/1ps\nmodule tb_load_error; logic clk=0; wire value; load_error dut(.*); always #5 clk=~clk; endmodule\n"));
         QuestaSession session;
         QSignalSpy finished(&session, &QuestaSession::finished);
         QSignalSpy states(&session, &QuestaSession::stateChanged);
@@ -892,14 +841,9 @@ private slots:
         QVERIFY(put(workspace.filePath("step.svh"), "localparam STEP=1;\n"));
         auto p = newProject("Compile reuse");
         p.sources = {"counter.sv"}; p.dutFile = "counter.sv"; p.dutName = "counter";
-        const auto scan = scanWorkspace(workspace.path());
-        const auto module = semanticSource(rtl, "counter.sv").modules.first();
         QString error;
-        const auto options = suggestedTbOptions(module);
-        p.tbName = options.name; p.tbFile = "manual.sv"; p.durationNs = 100;
-        const auto tb = generateTestbench(module, options, p.durationNs, &error);
-        QVERIFY2(!tb.isEmpty(), qPrintable(error));
-        QVERIFY(put(workspace.filePath(p.tbFile), tb.toUtf8()));
+        p.tbName = "tb_counter"; p.tbFile = "manual.sv"; p.durationNs = 100;
+        QVERIFY(put(workspace.filePath(p.tbFile), counterTb()));
         QuestaSession session; QSignalSpy finished(&session, &QuestaSession::finished);
         QString log; connect(&session, &QuestaSession::logText, this, [&log](const QString &text) { log += text; });
         auto prepared = prepareRun(executable, workspace.path(), p);
@@ -951,9 +895,8 @@ private slots:
         auto p = newProject(QStringLiteral("Questa smoke"));
         p.sources << QStringLiteral("counter.sv");
         p.tbFile = QStringLiteral("tb_counter.sv"); p.tbName = QStringLiteral("tb_counter");
-        const auto module = semanticSource(counter(), p.sources.first()).modules.first();
         QString error;
-        QVERIFY(writeNewTb(temp.path(), p.tbFile, generateTestbench(module, suggestedTbOptions(module), p.durationNs, &error), &error));
+        QVERIFY(put(temp.filePath(p.tbFile), counterTb()));
         QuestaSession session;
         QSignalSpy finished(&session, &QuestaSession::finished);
         QSignalSpy states(&session, &QuestaSession::stateChanged);

@@ -168,7 +168,8 @@ private slots:
         const auto tb = read(workspace.filePath(project.tbFile)); QString error;
         QVERIFY(simdock::saveProject(workspace.path(), project, &error));
         QCOMPARE(simdock::projectJson(simdock::loadProjects(workspace.path()).first()), simdock::projectJson(project));
-        QVERIFY(!simdock::writeNewTb(workspace.path(), project.tbFile, "replacement", &error));
+        QVERIFY(!tb.isEmpty());
+        QCOMPARE(simdock::loadProjects(workspace.path()).first().tbFile, project.tbFile);
         QCOMPARE(read(workspace.filePath(project.tbFile)), tb);
     }
     void settingsMigrationIsReadOnlyAndRetryable() {

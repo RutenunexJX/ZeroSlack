@@ -481,7 +481,6 @@ set(SIMDOCK_FROZEN_REGEX_EXTRACTION_VERSION "cmake-file-strings-strip-v1")
 set(SIMDOCK_FROZEN_REGEX_USAGE
     "src/simulation/simdock/core/analyzer.cpp|8b22edd07c26ff33adcf014cf7f7fa21a936bc1d9201cad98b3f8b0cdb0c7552"
     "src/simulation/simdock/core/questasession.cpp|9c739a5da4dff7ce01f05291fd853ce472ca7a06c4c681be57674a099fa8e599"
-    "src/simulation/simdock/core/testbench.cpp|773aba6d7bf247eef60f8582ecde05c81a07ce37525448c41cc4bd08291b912c"
     "src/simulation/simdock/core/workspace.cpp|fea5206d8ec7c888c59c81fd2e80c6d89de64eeb4e3585d4814be4e835f5721d"
 )
 include("${CMAKE_CURRENT_LIST_DIR}/SimDockRegexContract.cmake")

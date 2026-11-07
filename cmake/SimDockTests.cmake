@@ -6,14 +6,16 @@ add_executable(tb_task_templates_test test_sv/tb_task_templates_test.cpp
     src/integrations/xips/xipshdlcallbuilder.cpp)
 target_link_libraries(tb_task_templates_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_task_templates_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
-add_test(NAME tb_task_templates COMMAND tb_task_templates_test)
+add_test(NAME tb_task_templates COMMAND tb_task_templates_test
+    -o "${CMAKE_BINARY_DIR}/tb-task-templates.xml,junitxml" -o "${CMAKE_BINARY_DIR}/tb-task-templates.log,txt")
 set_tests_properties(tb_task_templates PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
 add_executable(tb_editor_assistance_test test_sv/tb_editor_assistance_test.cpp)
 target_link_libraries(tb_editor_assistance_test PRIVATE zeroslack_core Qt6::Test)
 target_include_directories(tb_editor_assistance_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
-add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes)
+add_test(NAME tb_editor_assistance COMMAND tb_editor_assistance_test numericRules semanticInitializers semanticEnumScopes sharedEnumScopes enumScopeWindow existingTbEditingWorkflow
+    -o "${CMAKE_BINARY_DIR}/tb-editor-assistance.xml,junitxml" -o "${CMAKE_BINARY_DIR}/tb-editor-assistance.log,txt")
 set_tests_properties(tb_editor_assistance PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")
@@ -22,7 +24,8 @@ target_link_libraries(simulation_workspace_ui_test PRIVATE zeroslack_core Qt6::T
 target_include_directories(simulation_workspace_ui_test PRIVATE ${ZEROSLACK_MODULE_INCLUDE_DIRS} ${ZEROSLACK_GENERATED_INCLUDE_DIR})
 add_test(NAME simulation_workspace_ui COMMAND simulation_workspace_ui_test
     sourceFirstSingleOwnershipAndSessionRestore navigationSearchAndTransferredModalGuard
-    existingTestbenchAndRetiredInputs logSelectionScrollAndHiddenDelivery hostVisualsAndMenus)
+    existingTestbenchAndRetiredInputs logSelectionScrollAndHiddenDelivery hostVisualsAndMenus retiredCreationEntrypoints
+    -o "${CMAKE_BINARY_DIR}/simulation-workspace-ui.xml,junitxml" -o "${CMAKE_BINARY_DIR}/simulation-workspace-ui.log,txt")
 set_tests_properties(simulation_workspace_ui PROPERTIES TIMEOUT 180
     ENVIRONMENT "QT_QPA_PLATFORM=windows;QT_SCALE_FACTOR=1"
     ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:ElaWidgetTools>;PATH=path_list_prepend:${ZEROSLACK_COMPILER_BIN_DIR};QT_PLUGIN_PATH=set:$<TARGET_FILE_DIR:Qt6::Core>/../plugins")

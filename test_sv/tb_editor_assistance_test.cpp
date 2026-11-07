@@ -12,7 +12,6 @@
 #include "testuistyle.h"
 #include "../src/simulation/simdock/core/analyzer.h"
 #include "../src/simulation/simdock/core/dependencies.h"
-#include "../src/simulation/simdock/core/testbench.h"
 #include "../src/simulation/simdock/core/workspace.h"
 #include "../src/simulation/simdock/core/questasession.h"
 #include <QtTest>
@@ -95,10 +94,6 @@ QList<EnumScopeFixture> enumScopeFixtures() {
             "C::mode_t", "C::IDLE"), {}, {}, false}
     };
 }
-template<class T> T* child(QObject* object, const char* name) {
-    auto* p = object->findChild<T*>(QLatin1String(name)); if (!p) qFatal("Missing %s", name); return p;
-}
-void click(QObject* owner, const char* name) { auto* b = child<QAbstractButton>(owner, name); QTest::mouseClick(b, Qt::LeftButton); }
 TbInputAssist scalar(QString expression = QStringLiteral("16'd9")) {
     TbInputAssist input; input.current = true; input.signal = QStringLiteral("divider"); input.module = QStringLiteral("tb");
     input.expression = expression; input.bitWidth = 16;
@@ -208,12 +203,6 @@ private slots:
         QCOMPARE(items.size(), 5);
         for (const auto& i : items) if (i.signal == "divider") { QVERIFY(!i.current); QVERIFY(i.status.contains("Multiple")); }
         QVERIFY(TbInputAssistService::analyze(file, duplicate, index, [] { return true; }).isEmpty());
-        auto module = simdock::analyzeSource((packages() + dut()).toUtf8(), "design.sv").modules.first();
-        const auto design = packages() + dut(); index.setSnapshot(analyze({{file, design}})); QString error;
-        QVERIFY2(simdock::completeTestbenchTypes(module, index, file, design, &error), qPrintable(error));
-        const auto generated = simdock::generateTestbench(module, simdock::suggestedTbOptions(module), 1000, &error);
-        QVERIFY2(error.isEmpty(), qPrintable(error)); QVERIFY(generated.contains("mode = drive_pkg::IDLE"));
-        QVERIFY(generated.contains("W = 16")); QVERIFY(!generated.contains("observed =")); QVERIFY(generated.contains("assign pin = 'z"));
     }
     void semanticEnumScopes_data() {
         QTest::addColumn<QString>("source");
@@ -272,12 +261,6 @@ private slots:
             }
         }
         QVERIFY(found);
-        const auto classSource = enumScopeFixtures().first().source;
-        index.setSnapshot(analyze({{file, classSource}}));
-        auto module = simdock::analyzeSource(classSource.toUtf8(), "class.sv").modules.first();
-        QString error;
-        QVERIFY(!simdock::completeTestbenchTypes(module, index, file, classSource, &error));
-        QVERIFY(!error.isEmpty()); // Class-typed new TB generation remains outside the supported contract.
     }
     void enumScopeWindow() {
         QVERIFY(!TbInputAssistService::interactiveEnabled());
@@ -302,7 +285,7 @@ private slots:
             QVERIFY(f.window->close());
         }
     }
-    void mainWindowWorkflow() {
+    void existingTbEditingWorkflow() {
         QVERIFY(!TbInputAssistService::interactiveEnabled());
         const auto originalTheme=ApplicationThemeManager::instance().mode();
         const auto restoreTheme=qScopeGuard([&]{ApplicationThemeManager::instance().setMode(originalTheme);});
@@ -310,23 +293,20 @@ private slots:
         const auto dutFile = f.workspace + "/controller.sv";
         QVERIFY(f.window->tabManager->openFileInTab(dutFile));
         QTRY_COMPARE_WITH_TIMEOUT(SemanticIndex::getInstance()->getCachedFileContent(dutFile), dut(), 30000);
-        click(f.window.get(), "editorNewTb");
-        QTRY_VERIFY(f.window->findChild<QFrame*>("newTbEditorPopup"));
-        auto* creator = child<QFrame>(f.window.get(), "newTbEditorPopup");
-        QVERIFY2(child<QPushButton>(creator, "tbCreateAndOpen")->isEnabled(), qPrintable(child<QLabel>(creator, "tbNewStatus")->text()));
-        QVERIFY(child<QPlainTextEdit>(creator, "tbNewPreview")->toPlainText().contains("mode = drive_pkg::IDLE"));
         const auto tbFile = f.workspace + "/sim/tb_controller.sv";
-        click(creator, "tbCreateCancel"); QVERIFY(!QFileInfo::exists(tbFile));
-        QCoreApplication::sendPostedEvents(nullptr,QEvent::DeferredDelete);
-        click(f.window.get(), "editorNewTb");
-        creator=child<QFrame>(f.window.get(), "newTbEditorPopup");
-        capture(f.window.get(), "01-create-framework");
-        click(creator, "tbCreateAndOpen");
-        QTRY_COMPARE(f.editor()->documentFileName(), tbFile);
-        auto* editor=f.editor(); const auto generated=editor->toPlainText();
-        QVERIFY(put(QDir(report()).filePath("generated.sv"),generated.toUtf8()));
-        QTRY_COMPARE_WITH_TIMEOUT(SemanticIndex::getInstance()->getCachedFileContent(tbFile),generated,30000);
-        const auto facts=TbInputAssistService::analyze(tbFile,generated,*SemanticIndex::getInstance());
+        const QString handwritten = "`timescale 1ns/1ps\nmodule tb_controller;\n"
+            " logic clk=0, rst_n=0; logic [15:0] divider, observed; wire pin; drive_pkg::mode_t mode;\n"
+            " controller dut(.clk(clk),.rst_n(rst_n),.mode(mode),.divider(divider),.observed(observed),.pin(pin));\n"
+            " assign pin='z; always #5 clk=~clk;\n"
+            " initial begin mode = drive_pkg::IDLE; divider = '0; #20 rst_n=1; end\nendmodule\n";
+        QVERIFY(put(tbFile, handwritten.toUtf8()));
+        QVERIFY(f.window->tabManager->openFileInTab(tbFile));
+        auto* editor=f.editor(); const auto original=editor->toPlainText();
+        QCOMPARE(original,handwritten);
+        QVERIFY(!f.window->findChild<QAbstractButton*>("editorNewTb"));
+        if (!report().isEmpty()) QVERIFY(put(QDir(report()).filePath("handwritten.sv"),original.toUtf8()));
+        QTRY_COMPARE_WITH_TIMEOUT(SemanticIndex::getInstance()->getCachedFileContent(tbFile),original,30000);
+        const auto facts=TbInputAssistService::analyze(tbFile,original,*SemanticIndex::getInstance());
         const auto mode=std::find_if(facts.cbegin(),facts.cend(),[](const auto& input){return input.signal=="mode";});
         QVERIFY(mode!=facts.cend()); QVERIFY(mode->current); QCOMPARE(mode->enumValues.size(),3);
         QVERIFY(editor->tbInputAssists().isEmpty());
@@ -339,14 +319,13 @@ private slots:
         const auto edited=editor->toPlainText();
         QVERIFY(edited.contains("mode = drive_pkg::RUN")); QVERIFY(edited.contains("divider = 16'd32"));
         QVERIFY(editor->document()->isModified());
-        editor->undo(); QCOMPARE(editor->toPlainText(),generated);
+        editor->undo(); QCOMPARE(editor->toPlainText(),original);
         editor->redo(); QCOMPARE(editor->toPlainText(),edited);
         QVERIFY(f.window->tabManager->saveCurrentTab()); QCOMPARE(read(tbFile),edited.toUtf8());
-        QVERIFY(put(QDir(report()).filePath("edited.sv"),edited.toUtf8()));
-        QVERIFY(f.window->tabManager->openFileInTab(dutFile)); click(f.window.get(), "editorNewTb");
-        creator=child<QFrame>(f.window.get(), "newTbEditorPopup");
-        QVERIFY(!child<QPushButton>(creator, "tbCreateAndOpen")->isEnabled());
-        click(creator, "tbCreateCancel"); QCOMPARE(read(tbFile),edited.toUtf8());
+        if (!report().isEmpty()) QVERIFY(put(QDir(report()).filePath("edited.sv"),edited.toUtf8()));
+        QVERIFY(f.window->tabManager->openFileInTab(dutFile));
+        QVERIFY(!f.window->findChild<QAbstractButton*>("editorNewTb"));
+        QCOMPARE(read(tbFile),edited.toUtf8());
         QVERIFY(f.window->tabManager->closeAllTabs());
         QVERIFY(f.window->tabManager->openFileInTab(tbFile)); editor=f.editor();
         QCOMPARE(editor->toPlainText(),edited);
@@ -360,13 +339,13 @@ private slots:
         QVERIFY(!f.window->findChild<QFrame*>("tbInputAssistPopup"));
         QVERIFY(f.window->close());
     }
-    void liveQuestaGeneratedAndEdited() {
+    void liveQuestaHandwrittenAndEdited() {
         const auto executable = qEnvironmentVariable("SIMDOCK_TEST_QUESTA");
         if (executable.isEmpty()) QSKIP("Requires the explicitly configured real Questa executable.");
         QVERIFY(!report().isEmpty());
-        const auto generated = read(QDir(report()).filePath("generated.sv"));
+        const auto handwritten = read(QDir(report()).filePath("handwritten.sv"));
         const auto edited = read(QDir(report()).filePath("edited.sv"));
-        QVERIFY(!generated.isEmpty()); QVERIFY(!edited.isEmpty());
+        QVERIFY(!handwritten.isEmpty()); QVERIFY(!edited.isEmpty());
         QTemporaryDir data(QDir(qEnvironmentVariable("SIMDOCK_TEST_WORKSPACE_PARENT", QDir::tempPath())).filePath("tb-questa-$-[demo]-XXXXXX"));
         QVERIFY(data.isValid()); const auto root = data.path();
         QVERIFY(put(root + "/types.sv", packages().toUtf8())); QVERIFY(put(root + "/controller.sv", dut().toUtf8()));
@@ -379,20 +358,20 @@ private slots:
         QCOMPARE(project.sources, QStringList({"types.sv", "controller.sv"}));
         QCOMPARE(project.compilationUnits, project.sources);
         QString error; QVERIFY2(simdock::saveProject(root, project, &error), qPrintable(error));
-        project.tbName = "tb_controller"; project.tbFile = simdock::projectTbPath(project, project.tbName); project.durationNs = 500;
+        project.tbName = "tb_controller"; project.tbFile = QStringLiteral("sim/tb_controller.sv"); project.durationNs = 500;
         simdock::QuestaSession session; QString log;
         connect(&session, &simdock::QuestaSession::logText, this, [&](const QString& chunk) { log += chunk; });
         QSignalSpy finished(&session, &simdock::QuestaSession::finished);
         const auto cleanup = qScopeGuard([&] { session.stop(); });
         QString previousRun; qint64 pid = 0;
-        for (const auto& phase : {QStringLiteral("generated"), QStringLiteral("edited"), QStringLiteral("repeat")}) {
-            QVERIFY(put(QDir(root).filePath(project.tbFile), phase == "generated" ? generated : edited));
+        for (const auto& phase : {QStringLiteral("handwritten"), QStringLiteral("edited"), QStringLiteral("repeat")}) {
+            QVERIFY(put(QDir(root).filePath(project.tbFile), phase == "handwritten" ? handwritten : edited));
             auto checkedDut = QStringLiteral("`timescale 1ns/1ps\n") + dut();
             checkedDut.replace(" assign observed", QStringLiteral(
                 " initial begin #1; if (mode !== drive_pkg::%1 || divider !== 16'd%2) $fatal(1, \"Input verification failed\");\n"
                 " $display(\"TB_ASSIST_INPUTS_PASS\"); end\n assign observed")
-                .arg(phase == "generated" ? QStringLiteral("IDLE") : QStringLiteral("RUN"))
-                .arg(phase == "generated" ? 0 : 32));
+                .arg(phase == "handwritten" ? QStringLiteral("IDLE") : QStringLiteral("RUN"))
+                .arg(phase == "handwritten" ? 0 : 32));
             QVERIFY(put(root + "/controller.sv", checkedDut.toUtf8()));
             const auto prepared = simdock::prepareRun(executable, root, project);
             QVERIFY2(prepared.error.isEmpty(), qPrintable(prepared.error));

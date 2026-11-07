@@ -26,11 +26,9 @@ bool saveProject(const QString& root, Project& project, QString* error);
 Project newProject(const QString& name);
 QString validateStorageName(const QString& name);
 QString validateProject(const QString& root, const Project& project);
-QString projectTbPath(const Project& project, const QString& top);
 QString validateInputs(const QString& root, const Project& project,
                        QMap<QString, QByteArray>* fingerprints = nullptr,
                        const std::atomic_bool* cancelled = nullptr,
                        const QMap<QString, QByteArray>& overrides = {}, BuildInputPlan* plan = nullptr);
-bool writeNewTb(const QString& root, const QString& relativePath, const QString& content, QString* error);
 QJsonObject projectJson(const Project& project);
 }

@@ -3,9 +3,6 @@
 #include "../../src/simulation/simdock/ui/dialogs.h"
 #include "applicationthememanager.h"
 #include "insightvisualstyle.h"
-#include "semanticindex.h"
-#include "semanticindexsnapshot.h"
-#include "slangmanager.h"
 #include <QtTest>
 #include <QtConcurrent>
 #include <QApplication>
@@ -218,21 +215,8 @@ class WorkbenchHostTest : public QObject {
         }
     }
     void ownerTeardown(int width) {
-        auto* index = SemanticIndex::getInstance();
-        struct RestoreSnapshot {
-            SemanticIndex* index;
-            std::shared_ptr<const SemanticIndexSnapshot> snapshot;
-            ~RestoreSnapshot() { index->setSnapshot(snapshot); }
-        } restoreSnapshot{index, index->snapshot()};
-        for (const auto* action : {"openSettings", "newProject", "createTb"}) {
+        for (const auto* action : {"openSettings", "newProject"}) {
             QTemporaryDir root; fixture(root);
-            if (QByteArray(action) == "createTb") {
-                QFile source(root.filePath("dut.sv")); QVERIFY(source.open(QIODevice::ReadOnly));
-                const QHash<QString, QString> contents{{source.fileName(), QString::fromUtf8(source.readAll())}};
-                SlangManager slang;
-                index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-                    SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
-            }
             QWidget host, escapedOwner; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
             QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget);
@@ -584,18 +568,8 @@ private slots:
     void destroyWithOpenDialog() {
         QFETCH(int, width);
         if (QByteArray(QTest::currentDataTag()).endsWith("-owner-teardown")) { ownerTeardown(width); return; }
-        auto* index = SemanticIndex::getInstance();
-        const auto previousSnapshot = index->snapshot();
-        const auto restoreSnapshot = qScopeGuard([&] { index->setSnapshot(previousSnapshot); });
-        for (const auto* action : {"openSettings", "newProject", "createTb"}) {
+        for (const auto* action : {"openSettings", "newProject"}) {
             QTemporaryDir root; fixture(root);
-            if (QByteArray(action) == "createTb") {
-                QFile source(root.filePath("dut.sv")); QVERIFY(source.open(QIODevice::ReadOnly));
-                const QHash<QString, QString> contents{{source.fileName(), QString::fromUtf8(source.readAll())}};
-                SlangManager slang;
-                index->setSnapshot(std::make_shared<const SemanticIndexSnapshot>(
-                    SemanticIndexSnapshot::fromSymbolRecords(slang.extractOverlayWorkspaceSymbolRecords(contents), {}, {}, contents)));
-            }
             QWidget host; QVBoxLayout layout(&host);
             layout.setContentsMargins(0, 0, 0, 0); host.resize(width, 700);
             QPointer<QWidget> widget(create(&host, nullptr)); QVERIFY(widget); layout.addWidget(widget);
@@ -636,16 +610,8 @@ private slots:
         saved["preferences"] = QVariantMap{{"simulator/path", simulator}};
         QVERIFY(restore(widget, saved).isEmpty()); QTRY_COMPARE_WITH_TIMEOUT(scanned.size(), 1, 10000);
         section(widget, "simulation");
-        auto* generate = widget->findChild<QAction*>("createTb"); QVERIFY(generate && generate->isEnabled());
+        QVERIFY(!widget->findChild<QAction*>("createTb"));
         QVERIFY(reachable(widget->findChild<QWidget*>("simulationActions"), widget));
-        QTimer::singleShot(0, widget, [&] {
-            auto* dialog = widget->findChild<QDialog*>(); QVERIFY(dialog);
-            QTimer::singleShot(3000, dialog, &QDialog::reject);
-            dialogFits(dialog, QString("demo-tb-%1").arg(width));
-            for (auto* button : dialog->findChildren<QPushButton*>())
-                if (button->text() == "Create file") { QVERIFY(reachable(button, dialog)); QTest::mouseClick(button, Qt::LeftButton); return; }
-        });
-        generate->trigger();
         auto* choose = widget->findChild<QAbstractButton*>("chooseTb"); QVERIFY(reachable(choose, widget));
         const auto tbFile = widget->findChild<QLineEdit*>("tbFile")->text(); QVERIFY(!tbFile.isEmpty());
         QTimer::singleShot(0, widget, [&] {

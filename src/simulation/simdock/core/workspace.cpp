@@ -176,11 +176,6 @@ QString validateProject(const QString& root, const Project& p)
     return {};
 }
 
-QString projectTbPath(const Project& p, const QString& top)
-{
-    return QStringLiteral("sim/%1/%2.sv").arg(p.storageName.isEmpty() ? p.name : p.storageName, top);
-}
-
 QString validateInputs(const QString& root, const Project& p, QMap<QString, QByteArray>* fingerprints,
                        const std::atomic_bool* cancelled, const QMap<QString, QByteArray>& overrides, BuildInputPlan* outputPlan)
 {
@@ -188,7 +183,7 @@ QString validateInputs(const QString& root, const Project& p, QMap<QString, QByt
     const QString issue = validateProject(root, p);
     if (!issue.isEmpty()) return issue;
     if (p.sources.isEmpty()) return QStringLiteral("Select source files first.");
-    if (p.tbFile.isEmpty() || p.tbName.isEmpty()) return QStringLiteral("Create or select a TB first.");
+    if (p.tbFile.isEmpty() || p.tbName.isEmpty()) return QStringLiteral("Select an existing TB first.");
     if (!QRegularExpression(QStringLiteral("^[A-Za-z_][A-Za-z0-9_$]*$")).match(p.tbName).hasMatch())
         return QStringLiteral("Invalid TB top-level name.");
     const auto plan = planBuildInputs(root, p, cancelled, overrides);
@@ -203,19 +198,4 @@ QString validateInputs(const QString& root, const Project& p, QMap<QString, QByt
     return {};
 }
 
-bool writeNewTb(const QString& root, const QString& relative, const QString& content, QString* error)
-{
-    const QString path = QDir(root).filePath(relative);
-    if (QDir::isAbsolutePath(relative) || !insideWorkspace(root, path)) {
-        *error = QStringLiteral("The TB must be saved inside the workspace."); return false;
-    }
-    if (!QDir().mkpath(QFileInfo(path).absolutePath())) { *error = QStringLiteral("Could not create the TB directory."); return false; }
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
-        *error = QStringLiteral("Could not create the TB (existing files are never overwritten): %1").arg(file.errorString()); return false;
-    }
-    const auto bytes = content.toUtf8();
-    if (file.write(bytes) != bytes.size()) { *error = file.errorString(); return false; }
-    return true;
-}
 }
