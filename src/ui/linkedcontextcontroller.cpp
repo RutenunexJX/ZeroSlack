@@ -13,7 +13,9 @@
 #include "roundedicons.h"
 #include <QApplication>
 #include <QDockWidget>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -37,6 +39,8 @@
 
 namespace {
 QString sourceKey(const PinloomHostIdentity& identity) { return identity.toUri().toString(QUrl::FullyEncoded); }
+QSet<QString>& shownLegacyBoards() { static QSet<QString> boards; return boards; }
+const QString legacyBoardMessage = QStringLiteral("Legacy card positions and stacking are not used here. Canvas data remains in the board file.");
 class AnchorOverlay final : public QWidget {
 public:
     explicit AnchorOverlay(MyCodeEditor* owner) : QWidget(owner->viewport()), editor(owner) {
@@ -89,6 +93,10 @@ struct LinkedContextController::Private {
     QList<QPair<int,int>> nativeFoldSignature;
     QPointer<QLabel> notice;
     QPointer<QPushButton> saveCopyButton;
+    QPointer<QWidget> legacyNotice;
+    QPointer<QLabel> legacyText;
+    QString legacyBoard;
+    bool legacyShown=false,legacyDismissed=false;
     QPointer<AnchorOverlay> overlay;
     QPointer<MyCodeEditor> editor;
     QTimer anchorTimer,geometryTimer,saveTimer;
@@ -132,7 +140,47 @@ struct LinkedContextController::Private {
         if(notice){notice->setText(text);notice->setToolTip(text);}
         if(saveCopyButton)saveCopyButton->setVisible(recovery);
         if(statusRow)statusRow->setVisible(!text.isEmpty()||recovery);
+        updateLegacyVisibility();
         if(!text.isEmpty())emit q->message(text);
+    }
+    void clearLegacyNotice() {
+        if(legacyNotice)delete legacyNotice;
+        legacyBoard.clear();legacyShown=false;legacyDismissed=false;
+    }
+    void elideLegacyText() {
+        if(legacyText)legacyText->setText(legacyText->fontMetrics().elidedText(legacyBoardMessage,Qt::ElideRight,legacyText->contentsRect().width()));
+    }
+    void updateLegacyVisibility() {
+        if(legacyNotice)legacyNotice->setVisible(!legacyDismissed&&board.error.isEmpty()&&links->loadFailureReason().isEmpty());
+    }
+    void legacyShow() {
+        if(!legacyNotice||!legacyNotice->isVisible()||legacyShown)return;
+        if(shownLegacyBoards().contains(legacyBoard)){legacyDismissed=true;legacyNotice->hide();return;}
+        shownLegacyBoards().insert(legacyBoard);legacyShown=true;
+    }
+    void loadedLegacyNotice(bool loaded) {
+        QString key;
+        if(loaded&&!board.value.isEmpty()&&board.value.value("version").toInt()==2)
+            key=QDir::fromNativeSeparators(QFileInfo(board.path).canonicalFilePath());
+#ifdef Q_OS_WIN
+        key=key.toCaseFolded();
+#endif
+        if(key.isEmpty()||key!=legacyBoard)clearLegacyNotice();
+        if(key.isEmpty()||!page)return;
+        if(legacyNotice){updateLegacyVisibility();return;}
+        if(shownLegacyBoards().contains(key))return;
+        legacyBoard=key;legacyNotice=new QWidget(page);legacyNotice->setObjectName("linkedLegacyNotice");legacyNotice->hide();
+        legacyNotice->installEventFilter(q);
+        auto* row=new QHBoxLayout(legacyNotice);row->setContentsMargins(8,2,8,2);row->setSpacing(6);
+        legacyText=UiControls::label(legacyNotice);legacyText->setObjectName("linkedLegacyNoticeText");
+        legacyText->setMinimumWidth(0);legacyText->setSizePolicy(QSizePolicy::Ignored,QSizePolicy::Preferred);
+        legacyText->setToolTip(legacyBoardMessage);legacyText->setAccessibleName(legacyBoardMessage);legacyText->installEventFilter(q);row->addWidget(legacyText,1);
+        auto* close=UiControls::pushButton(legacyNotice);close->setObjectName("linkedLegacyNoticeClose");
+        close->setIcon(RoundedIcons::icon(RoundedIcons::Close));close->setFixedSize(28,28);close->setFocusPolicy(Qt::NoFocus);
+        close->setToolTip(QStringLiteral("Dismiss legacy board notice"));close->setAccessibleName(close->toolTip());row->addWidget(close);
+        QObject::connect(close,&QPushButton::clicked,q,[this]{legacyDismissed=true;legacyNotice->hide();});
+        static_cast<QVBoxLayout*>(page->layout())->insertWidget(2,legacyNotice);
+        updateLegacyVisibility();elideLegacyText();
     }
     QString boardKey() const { return workspace+QLatin1Char('\n')+(file.isEmpty()&&editor?editor->property("sharedDocumentId").toString():file); }
     void restoreExpandedReferences() {
@@ -461,6 +509,7 @@ struct LinkedContextController::Private {
         if(!editor)for(const auto& view:originalViews)if(view.editor==next&&view.document==next->document()){nativeView=view;break;}
         switching=true;
         if(!flush()){if(editor&&!file.isEmpty())tabs->activateOpenFile(file);switching=false;return;}
+        clearLegacyNotice();
         nativeRestoring=true;nativeDirty=false;nativeReferencesReady=false;nativeReferencesChanged=false;
         const bool renamed=next==editor&&nextFile!=file;
         const auto previousNativeSizes=nativeRails?nativeRails->sizes():QList<int>{};
@@ -476,7 +525,7 @@ struct LinkedContextController::Private {
         nativeResolvedRevision=-1;nativeFoldSignature.clear();
         editor=next;file=nextFile;workspace=links->workspaceRoot();selected.clear();
         session=QUuid::createUuid().toString(QUuid::WithoutBraces);initialized=false;
-        board.load(workspace,file);boardState=board.value;references.clear();exportedState={};
+        const bool loaded=board.load(workspace,file);boardState=board.value;references.clear();exportedState={};
         boardReadOnly=!board.path.isEmpty()&&!board.error.isEmpty();
         if(board.path.isEmpty()&&memoryBoards.contains(boardKey()))boardState=memoryBoards.value(boardKey());
         if(renamed&&boardState.isEmpty()&&board.error.isEmpty())boardState=previousState;
@@ -491,7 +540,7 @@ struct LinkedContextController::Private {
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::cursorPositionChanged,q,[this]{selected.clear();if(overlay)overlay->selected.clear();geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::selectionChanged,q,[this]{geometryTimer.start();}));
         editorConnections.append(QObject::connect(editor,&QPlainTextEdit::updateRequest,q,[this]{geometryTimer.start();}));
-        resolveAnchors();restoreNativeExpansion();arrange();initialize();switching=false;nativeRestoring=false;
+        resolveAnchors();loadedLegacyNotice(loaded);restoreNativeExpansion();arrange();initialize();switching=false;nativeRestoring=false;
         if(renamed&&!boardState.isEmpty()&&boardState!=board.value)nativeChanged(false);
         restoreNativeView(nativeView);
     }
@@ -608,6 +657,7 @@ bool LinkedContextController::setActive(bool active) {
     }else{
         if(!d->destroying&&!d->flush())return false;
         d->active=false;++d->generation;d->dropResources();d->anchorTimer.stop();d->geometryTimer.stop();d->saveTimer.stop();
+        d->clearLegacyNotice();
         if(d->connector)d->connector->setScene({});
         for(const auto& connection:d->editorConnections)disconnect(connection);d->editorConnections.clear();
         if(d->overlay)delete d->overlay;if(d->editor){d->editor->viewport()->removeEventFilter(this);d->editor->removeEventFilter(this);}d->editor.clear();
@@ -633,7 +683,7 @@ void LinkedContextController::reloadBoard(){
     if(!d->active)return;
     d->nativeRestoring=true;d->nativeDirty=false;d->nativeReferencesReady=false;d->nativeReferencesChanged=false;
     d->anchorTimer.stop();d->geometryTimer.stop();d->nativeSizes.remove(d->boardKey());
-    d->saveTimer.stop();d->memoryBoards.remove(d->boardKey());d->board.load(d->workspace,d->file);d->boardState=d->board.value;d->exportedState={};
+    d->saveTimer.stop();d->memoryBoards.remove(d->boardKey());const bool loaded=d->board.load(d->workspace,d->file);d->boardState=d->board.value;d->exportedState={};
     d->boardReadOnly=!d->board.path.isEmpty()&&!d->board.error.isEmpty();
     ++d->generation;d->dropResources();d->initialized=false;
     if(d->connector)d->connector->setScene({});
@@ -641,7 +691,7 @@ void LinkedContextController::reloadBoard(){
     d->codeRatio=d->boardState.value("codeRatio").toDouble(.5);
     d->nativeViewState=d->boardState.value("nativeView").toObject();
     if(d->nativeRails){d->nativeRails->resetSession();d->nativeRails->setInitialSizes(d->savedNativeSizes(),d->codeRatio);}
-    d->resolveAnchors();d->restoreNativeExpansion();d->arrange();d->initialize();d->nativeRestoring=false;
+    d->resolveAnchors();d->loadedLegacyNotice(loaded);d->restoreNativeExpansion();d->arrange();d->initialize();d->nativeRestoring=false;
 }
 QJsonObject LinkedContextController::viewSnapshot()const{
     QJsonArray resources;QStringList demanded=d->demanded.values();demanded.sort();
@@ -666,6 +716,8 @@ QJsonObject LinkedContextController::viewSnapshot()const{
 }
 bool LinkedContextController::eventFilter(QObject* watched,QEvent* event){
     if(d->active){
+        if(watched==d->legacyNotice&&event->type()==QEvent::Show)d->legacyShow();
+        if(watched==d->legacyText&&(event->type()==QEvent::Resize||event->type()==QEvent::FontChange))d->elideLegacyText();
         d->nativeInput(watched,event);
         if(event->type()==QEvent::Show)for(const auto& entry:d->visibility)if(entry.first==watched){entry.first->hide();return false;}
         if(event->type()==QEvent::Resize&&(watched==d->nativeRails||(d->editor&&watched==d->editor->viewport())))d->arrange();

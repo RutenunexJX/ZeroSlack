@@ -522,7 +522,7 @@ set(PHASE_L_REVIEWED_REGEX_USAGE
     # Provenance: build/coordination/20261106-connector/implementation/REGEX-REVIEW.json.
     # Stage 4 review (2026-11-06): native default/persistence and linked Web retirement.
     # Provenance: build/coordination/20261106-web-retire/implementation/REGEX-REVIEW.json.
-    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|feab3dfeb3f661d0bdcdc3170ec285a474ea6889856104ca0954fa6e19992149"
+    "src/ui/linkedcontextcontroller.cpp|37e0c01114dfdb1d91a57785f9a699dc85ed5510795ad189e2b99902cb63e213|b97e3a1c9ce9962becb3a95ca47b7f3842b37fd35618f69f72a1387b80ca905b"
     "src/ui/templatemanagerdialog.cpp|9b6e26960cb1535017135d00fd49807feb213d838e3a24063380eeea7b09923c|10766319b9fc1c22d1d530a99235ffb9267ef0b8ae290ead6979edb6a25f7a3e"
     "src/ui/welcomeanimation.cpp|3bb1f59db5ab492fc78b96466e83f175e69fa44fda0c8d23fe21045d44dd9e5a|cff975616d667eadcf0dbbd07a1ef1a77400baf93cc226f0011b3bd66cf09f0d"
 )

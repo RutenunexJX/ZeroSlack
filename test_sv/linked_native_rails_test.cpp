@@ -297,11 +297,191 @@ bool recoveryDialog(Harness& h,const QString& destination,bool cancel=false,bool
     });
     button->click();return seen&&finished;
 }
+QString fileDigest(const QString& path) {
+    QFile file(path);if(!file.open(QIODevice::ReadOnly))return {};
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    return hash.addData(&file)?QString::fromLatin1(hash.result().toHex()):QString();
+}
+bool legacyEvidence(const QString& name,const QJsonObject& value) {
+    const auto root=qEnvironmentVariable("ZEROSLACK_LINKED_LEGACY_EVIDENCE");
+    return root.isEmpty()||writeFile(QDir(root).filePath(name+".json"),QJsonDocument(value).toJson());
+}
+QWidget* legacyNotice(const Harness& h) {return h.window.findChild<QWidget*>("linkedLegacyNotice");}
+bool dismissLegacy(Harness& h) {
+    auto* close=h.window.findChild<QPushButton*>("linkedLegacyNoticeClose");
+    if(!close||!close->isVisible())return false;
+    QTest::mouseClick(close,Qt::LeftButton);return !legacyNotice(h)->isVisible();
+}
+bool parentInvariant(const QJsonArray& references) {
+    QSet<QString> ids;for(const auto& value:references)ids.insert(value.toObject()["id"].toString());
+    for(const auto& value:references) {
+        const auto ref=value.toObject();const auto parent=ref["parent"].toString();
+        if(!parent.isEmpty()&&(!ids.contains(parent)||parent==ref["id"].toString()))return false;
+    }
+    return true;
+}
 }
 
 class LinkedNativeRailsTest : public QObject {
     Q_OBJECT
 private slots:
+    void legacyNoticeLifecycle() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"}),h.anchor("b",4,{"other"},h.second)}));
+        const auto first=h.board(h.file,savedState()),second=h.board(h.second,savedState());QVERIFY(!first.isEmpty()&&!second.isEmpty());
+        const auto firstBytes=readFile(first),secondBytes=readFile(second),storeBytes=readFile(h.links.storagePath());
+        const auto unchanged=[&]{return readFile(first)==firstBytes&&readFile(second)==secondBytes&&readFile(h.links.storagePath())==storeBytes;};
+        QSignalSpy messages(h.controller.get(),&LinkedContextController::message);
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());QVERIFY(legacyNotice(h));QVERIFY(legacyNotice(h)->isVisible());
+        auto* row=legacyNotice(h);h.controller->reloadBoard();QCOMPARE(legacyNotice(h),row);QVERIFY(row->isVisible());QVERIFY(unchanged());
+        QTextCursor cursor=h.editor()->textCursor();cursor.setPosition(30);cursor.setPosition(40,QTextCursor::KeepAnchor);h.editor()->setTextCursor(cursor);h.editor()->setFocus();
+        QTRY_COMPARE(QApplication::focusWidget(),h.editor());const auto selection=motion(h.editor());auto* focus=QApplication::focusWidget();
+        QVERIFY(dismissLegacy(h));QCOMPARE(QApplication::focusWidget(),focus);QCOMPARE(motion(h.editor()),selection);QVERIFY(unchanged());
+        h.controller->reloadBoard();QCOMPARE(legacyNotice(h),row);QVERIFY(!row->isVisible());QVERIFY(unchanged());
+        QVERIFY(h.tabs->openFileInTab(h.second));QTRY_VERIFY(legacyNotice(h)&&legacyNotice(h)->isVisible());QVERIFY(unchanged());
+        QVERIFY(h.tabs->activateOpenFile(h.file));QVERIFY(!legacyNotice(h));QVERIFY(unchanged());
+        QVERIFY(h.controller->setActive(false));QVERIFY(unchanged());QVERIFY(h.controller->setActive(true));QVERIFY(!legacyNotice(h));
+        QVERIFY(h.controller->setActive(false));QVERIFY(drainSaveWindow());QVERIFY(unchanged());QVERIFY(messages.isEmpty());
+        QVERIFY(legacyEvidence("notice-lifecycle",{{"firstBoard",fileDigest(first)},{"secondBoard",fileDigest(second)},{"store",fileDigest(h.links.storagePath())},{"allNoBusinessChangeBytesPreserved",true},{"dismissFocusSelectionPreserved",true}}));
+    }
+    void legacyNoticeEligibility_data() {
+        QTest::addColumn<QString>("kind");for(const auto* kind:{"missing","empty","v3","corrupt"})QTest::newRow(kind)<<QString::fromLatin1(kind);
+    }
+    void legacyNoticeEligibility() {
+        QFETCH(QString,kind);Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        const auto path=h.board(h.file,savedState());QVERIFY(!path.isEmpty());const auto valid=readFile(path);auto wrapper=QJsonDocument::fromJson(valid).object();
+        if(kind=="missing")QVERIFY(QFile::remove(path));
+        else if(kind=="corrupt")QVERIFY(writeFile(path,"invalid synthetic board"));
+        else {wrapper["state"]=kind=="empty"?QJsonObject{}:nativeState();QVERIFY(writeFile(path,QJsonDocument(wrapper).toJson()));}
+        const auto bytes=readFile(path),store=readFile(h.links.storagePath());QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        QVERIFY(!legacyNotice(h));auto* recovery=h.window.findChild<QPushButton*>("linkedSaveCopy");QVERIFY(recovery);QCOMPARE(recovery->isVisible(),kind=="corrupt");
+        h.controller->reloadBoard();QVERIFY(!legacyNotice(h));QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);QCOMPARE(readFile(h.links.storagePath()),store);
+        QVERIFY(h.controller->setActive(true));QVERIFY(writeFile(path,valid));h.controller->reloadBoard();QTRY_VERIFY(legacyNotice(h)&&legacyNotice(h)->isVisible());
+        QVERIFY(!h.window.findChild<QPushButton*>("linkedSaveCopy")->isVisible());QVERIFY(dismissLegacy(h));QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),valid);QCOMPARE(readFile(h.links.storagePath()),store);
+    }
+    void legacyNoticeSharedIdentity() {
+        Harness hidden;QVERIFY(hidden.ready);QVERIFY(hidden.store({hidden.anchor("a",2,{"one","two"})}));
+        const auto path=hidden.board(hidden.file,savedState());QVERIFY(!path.isEmpty());const auto bytes=readFile(path),store=readFile(hidden.links.storagePath());
+        hidden.window.hide();QVERIFY(hidden.controller->setActive(true));QVERIFY(legacyNotice(hidden));QVERIFY(!legacyNotice(hidden)->isVisible());
+        Harness peer;QVERIFY(peer.ready);peer.tabs->setWorkspaceScope({hidden.temp.path()},hidden.temp.path());peer.links.setWorkspaceRoot(hidden.temp.path());
+        QVERIFY(peer.tabs->openFileInTab(hidden.file));QVERIFY(peer.controller->setActive(true));QTRY_VERIFY(legacyNotice(peer)&&legacyNotice(peer)->isVisible());
+        hidden.window.show();QTRY_VERIFY(hidden.window.isVisible());QVERIFY(!legacyNotice(hidden)->isVisible());
+        QVERIFY(peer.controller->setActive(false));QVERIFY(peer.controller->setActive(true));QVERIFY(!legacyNotice(peer));QVERIFY(peer.controller->setActive(false));
+        QVERIFY(hidden.controller->setActive(false));QCOMPARE(readFile(path),bytes);QCOMPARE(readFile(hidden.links.storagePath()),store);
+        Harness other;QVERIFY(other.ready);QVERIFY(other.store({other.anchor("a",2,{"one","two"})}));QVERIFY(!other.board(other.file,savedState()).isEmpty());
+        QCOMPARE(QFileInfo(other.file).fileName(),QFileInfo(hidden.file).fileName());QVERIFY(other.controller->setActive(true));QVERIFY(legacyNotice(other)->isVisible());QVERIFY(other.controller->setActive(false));
+    }
+    void legacyNoticeNarrowAndErrors() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));const auto path=h.board(h.file,savedState());QVERIFY(!path.isEmpty());
+        const auto bytes=readFile(path),store=readFile(h.links.storagePath());QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        auto* row=legacyNotice(h);auto* text=h.window.findChild<QLabel*>("linkedLegacyNoticeText");auto* close=h.window.findChild<QPushButton*>("linkedLegacyNoticeClose");QVERIFY(row&&text&&close);
+        const QString full="Legacy card positions and stacking are not used here. Canvas data remains in the board file.";
+        QCOMPARE(text->toolTip(),full);QCOMPARE(text->accessibleName(),full);QCOMPARE(close->focusPolicy(),Qt::NoFocus);QVERIFY(close->shortcut().isEmpty());
+        h.window.resize(480,600);QTRY_VERIFY(h.window.width()<=480);
+        QVERIFY(legacyEvidence("notice-narrow",{{"windowWidth",h.window.width()},{"textWidth",text->contentsRect().width()},{"fullTextWidth",text->fontMetrics().horizontalAdvance(full)},{"font",text->font().toString()}}));
+        QTRY_VERIFY(text->contentsRect().width()<text->fontMetrics().horizontalAdvance(full));QTRY_VERIFY(text->text()!=full);QVERIFY(!text->text().isEmpty());
+        QVERIFY(row->rect().contains(QRect(close->mapTo(row,QPoint()),close->size())));QVERIFY(close->isVisible());
+        QLockFile lock(path+".lock");QVERIFY(lock.tryLock(0));QVERIFY(expandButton(h,"a"));expandButton(h,"a")->click();
+        auto* status=h.window.findChild<QLabel*>("linkedContextStatus");QTRY_VERIFY(status->isVisible()&&!status->text().isEmpty());
+        QTRY_VERIFY(!row->isVisible());QVERIFY(h.window.findChild<QPushButton*>("linkedSaveCopy")->isVisible());QVERIFY(!h.controller->setActive(false));QCOMPARE(readFile(path),bytes);
+        lock.unlock();h.controller->reloadBoard();QCOMPARE(legacyNotice(h),row);QTRY_VERIFY(row->isVisible());
+        QVERIFY(dismissLegacy(h));QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);QCOMPARE(readFile(h.links.storagePath()),store);
+    }
+    void legacyDefensiveReferences_data() {
+        QTest::addColumn<bool>("orphan");QTest::newRow("stale-id")<<false;QTest::newRow("orphan-parent")<<true;
+    }
+    void legacyDefensiveReferences() {
+        QFETCH(bool,orphan);Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"})}));
+        const auto deep=QJsonObject{{"id","old/deep"},{"anchor","a"},{"parent",orphan?"missing-parent":"a/link-0"},{"title","Legacy child"},{"source",sourceUri("deep")}};
+        auto original=savedState(.5,{deep});original["referenceIds"]=QJsonArray{"a/link-0","a/link-1","stale-id"};
+        QString error;QVERIFY(LinkedContextState::validate(original,&error));const auto path=h.board(h.file,original);QVERIFY(!path.isEmpty());
+        LinkedContextState loaded;QVERIFY(loaded.load(h.temp.path(),h.file));QCOMPARE(loaded.value,original);
+        const auto bytes=readFile(path),store=readFile(h.links.storagePath());QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());
+        const auto refs=h.snapshot()["references"].toArray();QCOMPARE(refs.size(),orphan?2:3);QVERIFY(parentInvariant(refs));QVERIFY(dismissLegacy(h));
+        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),bytes);QCOMPARE(readFile(h.links.storagePath()),store);
+        QVERIFY(h.controller->setActive(true));QTRY_VERIFY(h.allResourcesComplete());QVERIFY(dragSplitter(h,1,32));QTRY_VERIFY(readFile(path)!=bytes);
+        const auto changed=diskState(path);QVERIFY(LinkedContextState::validate(changed,&error));
+        for(const auto& key:QStringList{"version","referenceIds","expandedReferences","native","viewport","documentViews","unknownStage1Sentinel"})QCOMPARE(changed[key],original[key]);
+        QVERIFY(changed.contains("nativeView"));QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(h.links.storagePath()),store);
+        QVERIFY(legacyEvidence(orphan?"orphan-parent":"stale-id",{{"loaded",true},{"runtimeReferences",refs},{"layoutSaveValid",true},{"oldFieldsPreserved",true},{"storeSha256",fileDigest(h.links.storagePath())}}));
+    }
+    void legacyDocumentsBoundary_data() {
+        QTest::addColumn<int>("count");QTest::newRow("10000")<<10000;QTest::newRow("10001")<<10001;
+    }
+    void legacyDocumentsBoundary() {
+        QFETCH(int,count);QTemporaryDir temp;QVERIFY(temp.isValid());const auto file=temp.filePath("documents.sv");QVERIFY(writeFile(file,"module documents; endmodule\n"));
+        LinkedContextState board;QVERIFY(board.load(temp.path(),file));QVERIFY(board.save(savedState()));auto wrapper=QJsonDocument::fromJson(readFile(board.path)).object();
+        auto value=savedState(),native=value["native"].toObject();QJsonArray documents;
+        for(int i=0;i<count;++i)documents.append(QJsonObject{{"id",i==0?QString("document"):QString("document-%1").arg(i)},{"state","AA=="}});
+        native["documents"]=documents;value["native"]=native;QString error;QCOMPARE(LinkedContextState::validate(value,&error),count==10000);
+        wrapper["state"]=value;QVERIFY(writeFile(board.path,QJsonDocument(wrapper).toJson()));const auto bytes=readFile(board.path);
+        LinkedContextState loaded;QCOMPARE(loaded.load(temp.path(),file),count==10000);QCOMPARE(readFile(board.path),bytes);
+        if(count==10000)QVERIFY(loaded.value==value);else {QVERIFY(loaded.value.isEmpty());QVERIFY(!loaded.error.isEmpty());QVERIFY(!loaded.save(savedState()));}
+        QVERIFY(legacyEvidence(QString("documents-%1").arg(count),{{"count",count},{"accepted",count==10000},{"bytes",bytes.size()},{"sha256",fileDigest(board.path)}}));
+    }
+    void legacyBase64Boundary_data() {
+        QTest::addColumn<QString>("field");QTest::addColumn<bool>("over");
+        for(const auto* field:{"root","state"}){QTest::newRow(qPrintable(QString(field)+"-normal"))<<QString(field)<<false;QTest::newRow(qPrintable(QString(field)+"-over"))<<QString(field)<<true;}
+    }
+    void legacyBase64Boundary() {
+        QFETCH(QString,field);QFETCH(bool,over);constexpr qsizetype limit=64*1024*1024;
+        auto value=savedState(),native=value["native"].toObject();const QString encoded=over?QString(limit+4,QLatin1Char('A')):QString("AA==");
+        QCOMPARE(encoded.size()%4,0);if(over){QCOMPARE(encoded.size(),limit+4);QCOMPARE(encoded.count(QLatin1Char('A')),encoded.size());}
+        native[field]=encoded;value["native"]=native;QString error;QCOMPARE(LinkedContextState::validate(value,&error),!over);QCOMPARE(error.isEmpty(),!over);
+        QVERIFY(legacyEvidence(field+(over?"-over":"-normal"),{{"encodedChars",encoded.size()},{"validBase64Construction",true},{"accepted",!over}}));
+    }
+    void legacyFileSizeBoundary() {
+        constexpr qint64 limit=64*1024*1024;const auto root=qEnvironmentVariable("ZEROSLACK_LINKED_BOUNDARY_SCRATCH");
+        QVERIFY2(!root.isEmpty(),"Set ZEROSLACK_LINKED_BOUNDARY_SCRATCH to an owned directory outside managed evidence");QVERIFY(QDir(root).exists());
+        QString scratchPath;QJsonObject evidence;
+        {
+            QTemporaryDir scratch(QDir(root).filePath("size-XXXXXX"));QVERIFY(scratch.isValid());scratchPath=scratch.path();
+            const auto file=scratch.filePath("size.sv");QVERIFY(writeFile(file,"module size; endmodule\n"));LinkedContextState initial;QVERIFY(initial.load(scratch.path(),file));QVERIFY(initial.save(savedState()));
+            QFile large(initial.path);QVERIFY(large.open(QIODevice::WriteOnly));QVERIFY(large.resize(limit+1));large.close();QCOMPARE(QFileInfo(initial.path).size(),limit+1);
+            const auto before=fileDigest(initial.path);QVERIFY(!before.isEmpty());LinkedContextState failed;QVERIFY(!failed.load(scratch.path(),file));
+            QCOMPARE(failed.error,QString("The board state exceeds 64 MiB."));QVERIFY(failed.value.isEmpty());QVERIFY(!failed.save(savedState()));
+            QCOMPARE(QFileInfo(initial.path).size(),limit+1);QCOMPARE(fileDigest(initial.path),before);
+            evidence={{"scratch",scratchPath},{"logicalBytes",limit+1},{"sha256",before},{"loadRejected",true},{"subsequentSaveRejected",true},{"unchanged",true}};
+        }
+        QVERIFY(!QFileInfo::exists(scratchPath));evidence["raiiRemoved"]=true;QVERIFY(legacyEvidence("file-size",evidence));
+    }
+    void legacySerializedBoundary() {
+        constexpr qsizetype limit=64*1024*1024;QTemporaryDir temp;QVERIFY(temp.isValid());const auto file=temp.filePath("aggregate.sv");QVERIFY(writeFile(file,"module aggregate; endmodule\n"));
+        LinkedContextState board;QVERIFY(board.load(temp.path(),file));const auto small=savedState();QVERIFY(board.save(small));const auto original=readFile(board.path);
+        auto wrapper=QJsonDocument::fromJson(original).object();auto value=small;value["unknownBoundaryPayload"]="";wrapper["state"]=value;
+        const auto base=QJsonDocument(wrapper).toJson(QJsonDocument::Indented).size();const auto payload=limit+1-base;QVERIFY(payload>0);
+        value["unknownBoundaryPayload"]=QString(payload,QLatin1Char('A'));wrapper["state"]=value;QString error;QVERIFY(LinkedContextState::validate(value,&error));
+        const auto serialized=QJsonDocument(wrapper).toJson(QJsonDocument::Indented).size();QCOMPARE(serialized,limit+1);
+        QVERIFY(!board.save(value));QVERIFY(board.error.contains("state is too large"));QCOMPARE(readFile(board.path),original);
+        wrapper={};value={};auto recovered=small;recovered["codeRatio"]=.6;QVERIFY(board.save(recovered));QCOMPARE(diskState(board.path),recovered);
+        QVERIFY(legacyEvidence("serialized-size",{{"baseBytes",base},{"payloadChars",payload},{"serializedBytes",serialized},{"validateAccepted",true},{"saveRejectedOriginalPreserved",true},{"smallSaveRecovered",true}}));
+    }
+    void nativeParentInvariantSequence() {
+        Harness h;QVERIFY(h.ready);QVERIFY(h.store({h.anchor("a",2,{"one","two"}),h.anchor("b",4,{"other"},h.second)}));
+        const auto deep=[](const QString& id,const QString& parent,const QString& entry){return QJsonObject{{"id",id},{"anchor","a"},{"parent",parent},{"title",entry},{"source",sourceUri(entry)}};};
+        auto state=nativeState();state["referenceIds"]=QJsonArray{"a/link-0","a/link-1","a/deep","a/deeper"};state["expandedReferences"]=QJsonArray{deep("a/deep","a/link-1","deep"),deep("a/deeper","a/deep","deeper")};
+        const auto path=h.board(h.file,state);QVERIFY(!path.isEmpty());const auto initial=readFile(path);QJsonArray steps;
+        auto secondState=nativeState();secondState["referenceIds"]=QJsonArray{"b/link-0"};const auto secondPath=h.board(h.second,secondState);QVERIFY(!secondPath.isEmpty());const auto secondBytes=readFile(secondPath);
+        const auto record=[&](const QString& label,const QString& boardPath){
+            const auto refs=h.snapshot()["references"].toArray();const auto saved=diskState(boardPath);QString error;
+            const bool valid=parentInvariant(refs)&&LinkedContextState::validate(saved,&error);
+            steps.append(QJsonObject{{"step",label},{"references",refs},{"diskState",saved},{"diskFile",QJsonDocument::fromJson(readFile(boardPath)).object()["file"]},{"editorFile",h.editor()->documentFileName()},{"diskSha256",fileDigest(boardPath)},{"valid",valid},{"active",h.controller->isActive()}});
+            return legacyEvidence("parent-invariant-sequence",{{"steps",steps},{"complete",false}})&&valid;
+        };
+        h.defer=true;QVERIFY(h.controller->setActive(true));QTRY_VERIFY(!h.pending.isEmpty());QCOMPARE(h.snapshot()["references"].toArray().size(),4);QVERIFY(record("loaded-chain",path));
+        auto old=h.pending;h.pending.clear();QVERIFY(expandButton(h,"a"));expandButton(h,"a")->click();QTRY_VERIFY(readFile(path)!=initial);QVERIFY(record("expanded-saved",path));
+        QVERIFY(h.store({h.anchor("a",2,{"one"}),h.anchor("b",4,{"other"},h.second)}));h.controller->refreshAnchors();QTRY_COMPARE(h.snapshot()["references"].toArray().size(),1);
+        QTRY_COMPARE(diskState(path)["referenceIds"].toArray().size(),1);QVERIFY(record("explicit-parent-removed",path));const QJsonValue refsAfterRemove=h.snapshot().value("references");
+        for(const auto& item:old)h.complete(item);QCOMPARE(h.snapshot()["references"],refsAfterRemove);QVERIFY(record("old-resource-replies",path));
+        QVERIFY(h.store({h.anchor("a",2,{"one","two","three"}),h.anchor("b",4,{"other"},h.second)}));h.controller->refreshAnchors();QTRY_COMPARE(diskState(path)["referenceIds"].toArray().size(),3);QVERIFY(record("direct-references-added",path));
+        const auto beforeReload=readFile(path);const auto session=h.snapshot().value("session");auto delayed=h.pending;h.pending.clear();h.controller->reloadBoard();QVERIFY(h.snapshot()["session"]!=session);
+        for(const auto& item:delayed)h.complete(item);QCOMPARE(readFile(path),beforeReload);QCOMPARE(h.snapshot()["references"].toArray().size(),3);QVERIFY(record("reload-old-generation",path));
+        auto delayedAgain=h.pending;h.pending.clear();QVERIFY(h.tabs->openFileInTab(h.second));QCOMPARE(h.snapshot()["references"].toArray().size(),1);QVERIFY(parentInvariant(h.snapshot()["references"].toArray()));
+        QVERIFY(record("switch-second",secondPath));QCOMPARE(readFile(path),beforeReload);QCOMPARE(readFile(secondPath),secondBytes);
+        for(const auto& item:delayedAgain)h.complete(item);QCOMPARE(h.snapshot()["references"].toArray().size(),1);QVERIFY(record("second-old-generation",secondPath));QCOMPARE(readFile(secondPath),secondBytes);
+        QVERIFY(h.tabs->activateOpenFile(h.file));QCOMPARE(h.snapshot()["references"].toArray().size(),3);h.defer=false;h.releasePending();QTRY_VERIFY(h.allResourcesComplete());QVERIFY(record("return-first",path));
+        QVERIFY(h.controller->setActive(false));QCOMPARE(readFile(path),beforeReload);QCOMPARE(readFile(secondPath),secondBytes);steps.append(QJsonObject{{"step","exit"},{"success",true},{"diskSha256",fileDigest(path)},{"secondDiskSha256",fileDigest(secondPath)}});
+        QVERIFY(legacyEvidence("parent-invariant-sequence",{{"steps",steps},{"complete",true},{"boundedConclusion","Invariant holds in this covered public-controller sequence; explicit parent removal filters unreachable descendants by the existing algorithm."}}));
+    }
     void defaultNativeFrozen() {
         const QByteArray bytes=readFile(QFileInfo(QString::fromUtf8(__FILE__)).dir().filePath("fixtures/linked_rails_layout/default-native.json"));
         QCOMPARE(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex(),QByteArray("07fd31225cc5d11be617bdbf3c4ec3b6e093e1035b8a7530e67d562fa7f4816d"));
